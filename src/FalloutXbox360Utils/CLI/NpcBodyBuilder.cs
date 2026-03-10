@@ -96,56 +96,22 @@ internal static class NpcBodyBuilder
                 meshesArchive, meshExtractor, textureResolver, idleBones, bodyModel);
         }
 
-        // Head equipment transform: skeleton's idle-pose Bip01 Head world transform.
-        // Equipment NIFs are in world-oriented space (Z-up), needing only translation
-        // to the head position + the idle animation's head tilt rotation.
-        // poseDelta = inv(skelBind) * skelIdle: the Bip01 hierarchy's 90° rotation
-        // cancels in the product, leaving only the idle animation's local rotation delta.
-        Matrix4x4? headEquipTransform = null;
-        Matrix4x4? headEquipCorrection = null;
-        if (skeletonBoneCache != null &&
-            skeletonBoneCache.TryGetValue("Bip01 Head", out var skelIdleHead))
-        {
-            headEquipTransform = skelIdleHead;
-
-            if (poseDeltaCache != null &&
-                poseDeltaCache.TryGetValue("Bip01 Head", out var headPoseDelta))
-            {
-                // Extract just the rotation from the pose delta (strip translation).
-                // The pose delta's translation is in a rotated frame; we use the
-                // skeleton's idle-pose translation directly for correct world positioning.
-                var rotOnly = headPoseDelta;
-                rotOnly.M41 = 0;
-                rotOnly.M42 = 0;
-                rotOnly.M43 = 0;
-                headEquipCorrection = rotOnly * Matrix4x4.CreateTranslation(skelIdleHead.Translation);
-                Log.Debug("Head poseDelta rotation: [{0:F4},{1:F4},{2:F4}] [{3:F4},{4:F4},{5:F4}] [{6:F4},{7:F4},{8:F4}]",
-                    rotOnly.M11, rotOnly.M12, rotOnly.M13,
-                    rotOnly.M21, rotOnly.M22, rotOnly.M23,
-                    rotOnly.M31, rotOnly.M32, rotOnly.M33);
-            }
-            else
-            {
-                Log.Debug("No poseDelta for Bip01 Head — equipment uses translation-only (bind pose)");
-            }
-        }
+        var bonelessHeadAttachmentTransform = NpcRenderHelpers.BuildBonelessHeadAttachmentTransform(
+            skeletonBoneCache,
+            poseDeltaCache);
 
         // Load equipment meshes
         LoadEquipment(npc, meshesArchive, meshExtractor, textureResolver, idleBones,
-            headEquipTransform, effectiveBodyTex, effectiveHandTex, bodyModel, s,
-            headEquipCorrection, egmCache);
+            effectiveBodyTex, effectiveHandTex, bodyModel, s);
 
         // Load weapon mesh (positioned using holster animation bone transforms)
         LoadWeapon(npc, meshesArchive, meshExtractor, textureResolver, idleBones, bodyModel, s,
             npc.SkeletonNifPath);
 
-        // Build head model with hat-aware hair filtering
-        var hasHat = (coveredSlots & (0x01 | 0x400 | 0x4000)) != 0;
-        var hairFilter = hasHat ? "Hat" : null;
-
         var headModel = NpcHeadBuilder.Build(npc, meshesArchive, meshExtractor, textureResolver,
-            headMeshCache, egmCache, egtCache, s, hairFilter,
-            idlePoseBones: skeletonBoneCache);
+            headMeshCache, egmCache, egtCache, s,
+            idlePoseBones: skeletonBoneCache,
+            headEquipmentTransformOverride: bonelessHeadAttachmentTransform);
 
         if (headModel != null && headModel.HasGeometry)
         {
@@ -354,21 +320,16 @@ internal static class NpcBodyBuilder
         BsaArchive meshesArchive, BsaExtractor meshExtractor,
         NifTextureResolver textureResolver,
         Dictionary<string, Matrix4x4>? idleBoneTransforms,
-        Matrix4x4? headEquipTransform,
         string? effectiveBodyTex, string? effectiveHandTex,
-        NifRenderableModel bodyModel, NpcRenderSettings s,
-        Matrix4x4? headEquipCorrection = null,
-        Dictionary<string, EgmParser?>? egmCache = null)
+        NifRenderableModel bodyModel, NpcRenderSettings s)
     {
         if (s.NoEquip || npc.EquippedItems == null)
             return;
 
-        // Head | Hair | Headband | Hat | EyeGlasses | Mask
-        const uint headEquipFlags = 0x01 | 0x02 | 0x200 | 0x400 | 0x800 | 0x4000;
-
         foreach (var item in npc.EquippedItems)
         {
-            var isHeadEquip = (item.BipedFlags & headEquipFlags) != 0;
+            if (NpcRenderHelpers.IsHeadEquipment(item.BipedFlags))
+                continue;
 
             var equipRaw = NpcRenderHelpers.LoadNifRawFromBsa(item.MeshPath, meshesArchive, meshExtractor);
             if (equipRaw == null)
@@ -385,36 +346,6 @@ internal static class NpcBodyBuilder
             {
                 Log.Warn("Equipment NIF has no geometry: {0}", item.MeshPath);
                 continue;
-            }
-
-            // Unskinned head equipment (hats, glasses, masks): translate to head position
-            // with idle animation tilt. Equipment NIFs are modeled in world-oriented space
-            // (Z-up, same axes as NIF world) centered near the bone origin — they need
-            // translation to the head position plus the idle animation's head tilt rotation,
-            // but NOT the Bip01 hierarchy's 90° bone rotation (which would rotate Z-up to X).
-            if (isHeadEquip && headEquipTransform.HasValue)
-            {
-                var hasSkinning = equipRaw.Value.Info.Blocks.Any(b =>
-                    b.TypeName is "NiSkinInstance" or "BSDismemberSkinInstance");
-                if (!hasSkinning)
-                {
-                    // Apply FaceGen EGM morphs to head equipment (glasses, masks, etc.)
-                    // before positioning. Equipment NIFs have matching .egm files with
-                    // morph deltas that adjust the mesh to fit the NPC's face shape.
-                    if (egmCache != null &&
-                        (npc.FaceGenSymmetricCoeffs != null || npc.FaceGenAsymmetricCoeffs != null))
-                    {
-                        var egmPath = Path.ChangeExtension(item.MeshPath, ".egm");
-                        NpcRenderHelpers.LoadAndApplyEgm(egmPath, equipModel,
-                            npc.FaceGenSymmetricCoeffs, npc.FaceGenAsymmetricCoeffs,
-                            meshesArchive, meshExtractor, egmCache);
-                    }
-
-                    var correction = headEquipCorrection
-                        ?? Matrix4x4.CreateTranslation(headEquipTransform.Value.Translation);
-                    foreach (var sub in equipModel.Submeshes)
-                        NpcRenderHelpers.TransformSubmesh(sub, correction);
-                }
             }
 
             Log.Debug("Equipment '{0}': {1} submeshes, bounds ({2:F2},{3:F2},{4:F2})→({5:F2},{6:F2},{7:F2})",

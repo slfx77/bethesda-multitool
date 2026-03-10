@@ -21,6 +21,84 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
 internal static class NpcRenderHelpers
 {
     private static readonly Logger Log = Logger.Instance;
+    internal const uint HeadEquipmentFlags = 0x01 | 0x02 | 0x200 | 0x400 | 0x800 | 0x4000;
+    internal const uint HatEquipmentFlags = 0x01 | 0x400 | 0x4000;
+
+    internal enum HeadAttachmentCorrectionMode
+    {
+        Boned,
+        BonelessUseAttachmentTransform
+    }
+
+    internal readonly record struct HeadAttachmentCorrectionResult(
+        Matrix4x4 Correction,
+        HeadAttachmentCorrectionMode Mode,
+        float RootDeterminant);
+
+    internal static bool IsHeadEquipment(uint bipedFlags)
+    {
+        return (bipedFlags & HeadEquipmentFlags) != 0;
+    }
+
+    internal static bool HasHatEquipment(IEnumerable<EquippedItem>? equippedItems)
+    {
+        if (equippedItems == null)
+            return false;
+
+        foreach (var item in equippedItems)
+        {
+            if ((item.BipedFlags & HatEquipmentFlags) != 0)
+                return true;
+        }
+
+        return false;
+    }
+
+    internal static Matrix4x4? BuildBonelessHeadAttachmentTransform(
+        IReadOnlyDictionary<string, Matrix4x4>? attachmentBoneTransforms,
+        IReadOnlyDictionary<string, Matrix4x4>? poseDeltaCache)
+    {
+        if (attachmentBoneTransforms == null ||
+            !attachmentBoneTransforms.TryGetValue("Bip01 Head", out var targetHeadTransform))
+        {
+            return null;
+        }
+
+        var correction = Matrix4x4.CreateTranslation(targetHeadTransform.Translation);
+
+        if (poseDeltaCache != null &&
+            poseDeltaCache.TryGetValue("Bip01 Head", out var headPoseDelta))
+        {
+            var rotationOnly = RemoveTranslation(headPoseDelta);
+            correction = rotationOnly * Matrix4x4.CreateTranslation(targetHeadTransform.Translation);
+        }
+
+        return correction;
+    }
+
+    internal static Matrix4x4? BuildHeadEquipmentTransformOverride(
+        IReadOnlyDictionary<string, Matrix4x4>? attachmentBoneTransforms,
+        IReadOnlyDictionary<string, Matrix4x4>? poseDeltaCache)
+    {
+        return BuildBonelessHeadAttachmentTransform(attachmentBoneTransforms, poseDeltaCache);
+    }
+
+    internal static Matrix4x4 BuildRootAdjustedTransform(
+        IReadOnlyDictionary<string, Matrix4x4> nifBones,
+        Matrix4x4 targetTransform)
+    {
+        if (!nifBones.TryGetValue(NifGeometryExtractor.RootTransformKey, out var nifRoot))
+            return targetTransform;
+
+        var rootRotation = RemoveTranslation(nifRoot);
+        if (IsNearlyIdentity(rootRotation) ||
+            !Matrix4x4.Invert(rootRotation, out var invRootRotation))
+        {
+            return targetTransform;
+        }
+
+        return invRootRotation * targetTransform;
+    }
 
     /// <summary>
     ///     Transforms all positions (and normals/tangents/bitangents if present) in a submesh by the given matrix.
@@ -80,100 +158,132 @@ internal static class NpcRenderHelpers
         }
     }
 
+    internal static void TransformModel(NifRenderableModel model, Matrix4x4 transform)
+    {
+        foreach (var sub in model.Submeshes)
+            TransformSubmesh(sub, transform);
+
+        model.MinX = float.MaxValue;
+        model.MinY = float.MaxValue;
+        model.MinZ = float.MaxValue;
+        model.MaxX = float.MinValue;
+        model.MaxY = float.MinValue;
+        model.MaxZ = float.MinValue;
+
+        foreach (var sub in model.Submeshes)
+            model.ExpandBounds(sub.Positions);
+    }
+
     /// <summary>
     ///     Applies a correction transform to unskinned head attachment geometry (hair, eyes,
-    ///     eyebrows). These NIFs are in bone-local space — if the NIF has Bip01 Head in its
-    ///     scene graph, we undo that baked-in transform and apply the target's instead.
-    ///     If the NIF has no Bip01 Head (boneless), vertices are in the head bone's local
-    ///     frame (near origin) and we translate them to the target head bone position.
+    ///     eyebrows). Boned NIFs (with Bip01 Head): undo the NIF's own bone transform and
+    ///     apply the target's. Boneless attachments preserve their authored local basis and
+    ///     use an explicit boneless attachment transform instead of inheriting the head
+    ///     bone's full basis.
     /// </summary>
     internal static void ApplyHeadBoneCorrection(
         NifRenderableModel model,
         byte[] nifData, NifInfo nifInfo,
-        Matrix4x4 targetHeadTransform)
+        Matrix4x4 targetHeadTransform,
+        Matrix4x4? bonelessAttachmentTransform = null,
+        string? attachmentLabel = null)
     {
         var nifBones = NifGeometryExtractor.ExtractNamedBoneTransforms(nifData, nifInfo);
+        var correctionResult = GetHeadAttachmentCorrection(
+            nifBones,
+            targetHeadTransform,
+            bonelessAttachmentTransform);
 
-        Log.Debug("HeadBoneCorrection: {0} NIF bones: [{1}]",
+        Log.Debug("HeadBoneCorrection[{0}]: {1} NIF bones: [{2}]",
+            attachmentLabel ?? "(unnamed)",
             nifBones.Count,
             nifBones.Count > 0 ? string.Join(", ", nifBones.Keys) : "(none)");
+        Log.Debug(
+            "  Target: T=({0:F2},{1:F2},{2:F2}) R=[{3:F4},{4:F4},{5:F4}] [{6:F4},{7:F4},{8:F4}] [{9:F4},{10:F4},{11:F4}]",
+            targetHeadTransform.M41, targetHeadTransform.M42, targetHeadTransform.M43,
+            targetHeadTransform.M11, targetHeadTransform.M12, targetHeadTransform.M13,
+            targetHeadTransform.M21, targetHeadTransform.M22, targetHeadTransform.M23,
+            targetHeadTransform.M31, targetHeadTransform.M32, targetHeadTransform.M33);
+        Log.Debug(
+            "  Mode={0} correction T=({1:F2},{2:F2},{3:F2}) rootDet={4:F2}",
+            correctionResult.Mode,
+            correctionResult.Correction.M41,
+            correctionResult.Correction.M42,
+            correctionResult.Correction.M43,
+            correctionResult.RootDeterminant);
+        TransformModel(model, correctionResult.Correction);
 
-        Matrix4x4 correction;
+        if (model.Submeshes.Count > 0)
+        {
+            Log.Debug("  Post-correction bounds: ({0:F1},{1:F1},{2:F1})→({3:F1},{4:F1},{5:F1})",
+                model.MinX, model.MinY, model.MinZ, model.MaxX, model.MaxY, model.MaxZ);
+        }
+    }
+
+    internal static HeadAttachmentCorrectionResult GetHeadAttachmentCorrection(
+        IReadOnlyDictionary<string, Matrix4x4> nifBones,
+        Matrix4x4 targetHeadTransform,
+        Matrix4x4? bonelessAttachmentTransform = null)
+    {
+        // Boned NIFs (hair, eyebrows, teeth): undo the NIF's own Bip01 Head and apply target's.
         if (nifBones.TryGetValue("Bip01 Head", out var nifBip01Head) &&
             Matrix4x4.Invert(nifBip01Head, out var invNifBip01Head))
         {
-            // Boned NIF: undo baked-in bone transform, apply target transform.
-            correction = invNifBip01Head * targetHeadTransform;
-            Log.Debug("  BONED: nifBone T=({0:F2},{1:F2},{2:F2}), correction T=({3:F2},{4:F2},{5:F2})",
-                nifBip01Head.M41, nifBip01Head.M42, nifBip01Head.M43,
-                correction.M41, correction.M42, correction.M43);
-        }
-        else
-        {
-            // Boneless NIF: undo the NIF's own root transform, then translate to the
-            // bone position. The NIF's __root__ rotation is an authoring-space transform
-            // (Identity for hair/eyebrows, 90° for eyes, flip for some female hair).
-            // Inverting it brings vertices back to their raw positions, then translating
-            // to the bone's world position places them correctly on the head.
-            nifBones.TryGetValue("__root__", out var nifRoot);
-            var boneTranslation = Matrix4x4.CreateTranslation(targetHeadTransform.Translation);
-
-            // Compute determinant of upper-left 3x3 to distinguish rotation from reflection.
-            // det > 0 = rotation: undo it (e.g. eye NIFs have 90° root rotation).
-            // det < 0 = reflection: preserve it (e.g. female hair NIFs have intentional X-flip).
-            var det3x3 = nifRoot.M11 * (nifRoot.M22 * nifRoot.M33 - nifRoot.M23 * nifRoot.M32)
-                       - nifRoot.M12 * (nifRoot.M21 * nifRoot.M33 - nifRoot.M23 * nifRoot.M31)
-                       + nifRoot.M13 * (nifRoot.M21 * nifRoot.M32 - nifRoot.M22 * nifRoot.M31);
-
-            var isNonTrivialRotation = det3x3 > 0 && nifRoot != default
-                && (MathF.Abs(nifRoot.M11 - 1) > 0.01f || MathF.Abs(nifRoot.M22 - 1) > 0.01f
-                    || MathF.Abs(nifRoot.M33 - 1) > 0.01f);
-
-            if (isNonTrivialRotation && Matrix4x4.Invert(nifRoot, out var invNifRoot))
-            {
-                correction = invNifRoot * boneTranslation;
-                Log.Debug("  BONELESS: inv(__root__) * T({0:F2},{1:F2},{2:F2}) [det={3:F2}, rotation]",
-                    targetHeadTransform.Translation.X,
-                    targetHeadTransform.Translation.Y,
-                    targetHeadTransform.Translation.Z,
-                    det3x3);
-            }
-            else
-            {
-                correction = boneTranslation;
-                Log.Debug("  BONELESS: T({0:F2},{1:F2},{2:F2}) [det={3:F2}, diag=({4:F2},{5:F2},{6:F2})]",
-                    targetHeadTransform.Translation.X,
-                    targetHeadTransform.Translation.Y,
-                    targetHeadTransform.Translation.Z,
-                    det3x3,
-                    nifRoot.M11, nifRoot.M22, nifRoot.M33);
-            }
+            return new HeadAttachmentCorrectionResult(
+                invNifBip01Head * targetHeadTransform,
+                HeadAttachmentCorrectionMode.Boned,
+                0f);
         }
 
-        foreach (var sub in model.Submeshes)
-            TransformSubmesh(sub, correction);
+        // Boneless attachments preserve their authored local root basis. Most head attachments
+        // (hair, brows, facial hair, head-slot gear) should use the explicit boneless
+        // attachment transform instead of the full head basis. Eyes are the special case:
+        // they intentionally omit the override and keep the target head transform so their
+        // socket basis remains intact.
+        nifBones.TryGetValue("__root__", out var nifRoot);
+        var det3x3 = GetDeterminant3x3(RemoveTranslation(nifRoot));
+        var effectiveBonelessTransform = bonelessAttachmentTransform ?? targetHeadTransform;
 
-        // Log post-correction bounds for debugging attachment positioning
-        if (model.Submeshes.Count > 0)
-        {
-            float minX = float.MaxValue, minY = float.MaxValue, minZ = float.MaxValue;
-            float maxX = float.MinValue, maxY = float.MinValue, maxZ = float.MinValue;
-            foreach (var sub in model.Submeshes)
-            {
-                for (var i = 0; i < sub.Positions.Length; i += 3)
-                {
-                    minX = MathF.Min(minX, sub.Positions[i]);
-                    minY = MathF.Min(minY, sub.Positions[i + 1]);
-                    minZ = MathF.Min(minZ, sub.Positions[i + 2]);
-                    maxX = MathF.Max(maxX, sub.Positions[i]);
-                    maxY = MathF.Max(maxY, sub.Positions[i + 1]);
-                    maxZ = MathF.Max(maxZ, sub.Positions[i + 2]);
-                }
-            }
+        return new HeadAttachmentCorrectionResult(
+            effectiveBonelessTransform,
+            HeadAttachmentCorrectionMode.BonelessUseAttachmentTransform,
+            det3x3);
+    }
 
-            Log.Debug("  Post-correction bounds: ({0:F1},{1:F1},{2:F1})→({3:F1},{4:F1},{5:F1})",
-                minX, minY, minZ, maxX, maxY, maxZ);
-        }
+    private static Matrix4x4 RemoveTranslation(Matrix4x4 transform)
+    {
+        transform.M41 = 0f;
+        transform.M42 = 0f;
+        transform.M43 = 0f;
+        transform.M44 = 1f;
+        return transform;
+    }
+
+    private static bool IsNearlyIdentity(Matrix4x4 transform)
+    {
+        return MathF.Abs(transform.M11 - 1f) < 0.0001f &&
+               MathF.Abs(transform.M22 - 1f) < 0.0001f &&
+               MathF.Abs(transform.M33 - 1f) < 0.0001f &&
+               MathF.Abs(transform.M44 - 1f) < 0.0001f &&
+               MathF.Abs(transform.M12) < 0.0001f &&
+               MathF.Abs(transform.M13) < 0.0001f &&
+               MathF.Abs(transform.M14) < 0.0001f &&
+               MathF.Abs(transform.M21) < 0.0001f &&
+               MathF.Abs(transform.M23) < 0.0001f &&
+               MathF.Abs(transform.M24) < 0.0001f &&
+               MathF.Abs(transform.M31) < 0.0001f &&
+               MathF.Abs(transform.M32) < 0.0001f &&
+               MathF.Abs(transform.M34) < 0.0001f &&
+               MathF.Abs(transform.M41) < 0.0001f &&
+               MathF.Abs(transform.M42) < 0.0001f &&
+               MathF.Abs(transform.M43) < 0.0001f;
+    }
+
+    private static float GetDeterminant3x3(Matrix4x4 transform)
+    {
+        return transform.M11 * (transform.M22 * transform.M33 - transform.M23 * transform.M32)
+             - transform.M12 * (transform.M21 * transform.M33 - transform.M23 * transform.M31)
+             + transform.M13 * (transform.M21 * transform.M32 - transform.M22 * transform.M31);
     }
 
     /// <summary>
@@ -380,12 +490,12 @@ internal static class NpcRenderHelpers
             {
                 ShapeName = sub.ShapeName,
                 Positions = (float[])sub.Positions.Clone(),
-                Triangles = sub.Triangles,
+                Triangles = (ushort[])sub.Triangles.Clone(),
                 Normals = sub.Normals != null ? (float[])sub.Normals.Clone() : null,
-                UVs = sub.UVs,
-                VertexColors = sub.VertexColors,
-                Tangents = sub.Tangents,
-                Bitangents = sub.Bitangents,
+                UVs = sub.UVs != null ? (float[])sub.UVs.Clone() : null,
+                VertexColors = sub.VertexColors != null ? (byte[])sub.VertexColors.Clone() : null,
+                Tangents = sub.Tangents != null ? (float[])sub.Tangents.Clone() : null,
+                Bitangents = sub.Bitangents != null ? (float[])sub.Bitangents.Clone() : null,
                 ShaderMetadata = sub.ShaderMetadata,
                 DiffuseTexturePath = sub.DiffuseTexturePath,
                 NormalMapTexturePath = sub.NormalMapTexturePath,
@@ -396,8 +506,13 @@ internal static class NpcRenderHelpers
                 HasAlphaTest = sub.HasAlphaTest,
                 AlphaTestThreshold = sub.AlphaTestThreshold,
                 AlphaTestFunction = sub.AlphaTestFunction,
+                SrcBlendMode = sub.SrcBlendMode,
+                DstBlendMode = sub.DstBlendMode,
+                MaterialAlpha = sub.MaterialAlpha,
                 IsEyeEnvmap = sub.IsEyeEnvmap,
-                EnvMapScale = sub.EnvMapScale
+                EnvMapScale = sub.EnvMapScale,
+                RenderOrder = sub.RenderOrder,
+                TintColor = sub.TintColor
             });
         }
 

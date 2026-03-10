@@ -93,7 +93,7 @@ public static class RenderNpcCommand
         };
         var noEquipOption = new Option<bool>("--no-equip")
         {
-            Description = "Render full body but skip equipment"
+            Description = "Skip equipped armor/accessories, including head-slot gear"
         };
         var noWeaponOption = new Option<bool>("--no-weapon")
         {

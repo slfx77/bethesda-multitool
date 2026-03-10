@@ -377,8 +377,13 @@ internal static class NpcRenderPipeline
 
                     if (currentModel is { HasGeometry: true })
                     {
-                        pending = gpuRenderer.SubmitRender(
+                        var renderModel = PrepareModelForView(
                             currentModel,
+                            azimuth,
+                            elevation,
+                            cloneForRender: viewIndex < views.Length - 1);
+                        pending = gpuRenderer.SubmitRender(
+                            renderModel,
                             textureResolver,
                             1.0f,
                             32,
@@ -465,6 +470,21 @@ internal static class NpcRenderPipeline
             settings);
     }
 
+    private static NifRenderableModel PrepareModelForView(
+        NifRenderableModel model,
+        float azimuth,
+        float elevation,
+        bool cloneForRender)
+    {
+        var renderModel = cloneForRender ? NpcRenderHelpers.DeepCloneModel(model) : model;
+        if (NpcEyeLookAt.HasEyeSubmeshes(renderModel))
+        {
+            NpcEyeLookAt.Apply(renderModel, azimuth, elevation);
+        }
+
+        return renderModel;
+    }
+
     private static SpriteResult? RenderNpcHead(
         NpcAppearance npc,
         BsaArchive meshesArchive,
@@ -487,6 +507,11 @@ internal static class NpcRenderPipeline
         if (model == null || !model.HasGeometry)
         {
             return null;
+        }
+
+        if (NpcEyeLookAt.HasEyeSubmeshes(model))
+        {
+            NpcEyeLookAt.Apply(model, azimuth, elevation);
         }
 
         return NifSpriteRenderer.Render(
@@ -524,6 +549,11 @@ internal static class NpcRenderPipeline
         if (model == null)
         {
             return null;
+        }
+
+        if (NpcEyeLookAt.HasEyeSubmeshes(model))
+        {
+            NpcEyeLookAt.Apply(model, azimuth, elevation);
         }
 
         return NifSpriteRenderer.Render(

@@ -5,6 +5,7 @@ using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
 using FalloutXbox360Utils.Tests.Core;
 using Xunit;
 
@@ -14,7 +15,9 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
 public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
 {
     private const uint BooneFormId = 0x00092BD2;
+    private const string DocMitchellEditorId = "DocMitchell";
     private const string LucyEditorId = "VMS38RedLucy";
+    private const string VeronicaEditorId = "VeronicaSantiago";
     private const string LucyOutfitDiffusePath = @"textures\armor\lucassimms\OutfitF.dds";
 
     [Fact]
@@ -155,6 +158,225 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
         Assert.True(evidence.OpaqueHairDominanceCount > 10);
     }
 
+    [Fact]
+    public void BuildRedLucyHeadOnly_Xbox360AttachmentsRemainAnchoredToFace()
+    {
+        Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
+
+        using var assets = CreateXboxAssets();
+        var pluginName = Path.GetFileName(samples.Xbox360FinalEsm!);
+        var lucy = ResolveNpcAppearance(
+            assets.AppearanceResolver,
+            pluginName,
+            fullName: "Red Lucy",
+            editorIdFragment: LucyEditorId);
+
+        Assert.NotNull(lucy);
+
+        var headMeshCache =
+            new Dictionary<string, NifRenderableModel?>(StringComparer.OrdinalIgnoreCase);
+        var egmCache =
+            new Dictionary<string, EgmParser?>(StringComparer.OrdinalIgnoreCase);
+        var egtCache =
+            new Dictionary<string, EgtParser?>(StringComparer.OrdinalIgnoreCase);
+
+        var model = NpcHeadBuilder.Build(
+            lucy!,
+            assets.MeshesArchive,
+            assets.MeshExtractor,
+            assets.TextureResolver,
+            headMeshCache,
+            egmCache,
+            egtCache,
+            CreateSettings(headOnly: true));
+
+        Assert.NotNull(model);
+        Assert.True(model.HasGeometry);
+        AssertAttachmentAnchoring(model, assets.TextureResolver);
+    }
+
+    [Fact]
+    public void BuildRedLucyHeadOnly_Xbox360EyesAimTowardFrontCamera()
+    {
+        Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
+
+        using var assets = CreateXboxAssets();
+        var pluginName = Path.GetFileName(samples.Xbox360FinalEsm!);
+        var lucy = ResolveNpcAppearance(
+            assets.AppearanceResolver,
+            pluginName,
+            fullName: "Red Lucy",
+            editorIdFragment: LucyEditorId);
+
+        Assert.NotNull(lucy);
+
+        var headMeshCache =
+            new Dictionary<string, NifRenderableModel?>(StringComparer.OrdinalIgnoreCase);
+        var egmCache =
+            new Dictionary<string, EgmParser?>(StringComparer.OrdinalIgnoreCase);
+        var egtCache =
+            new Dictionary<string, EgtParser?>(StringComparer.OrdinalIgnoreCase);
+
+        var model = NpcHeadBuilder.Build(
+            lucy!,
+            assets.MeshesArchive,
+            assets.MeshExtractor,
+            assets.TextureResolver,
+            headMeshCache,
+            egmCache,
+            egtCache,
+            CreateSettings(headOnly: true));
+
+        Assert.NotNull(model);
+        Assert.True(model.HasGeometry);
+
+        AssertEyesAimTowardCamera(model, new System.Numerics.Vector3(0f, 1f, 0f));
+    }
+
+    [Fact]
+    public void BuildRedLucyFullBodyHead_Xbox360AttachmentsRemainAnchoredToFace()
+    {
+        Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
+
+        using var assets = CreateXboxAssets();
+        var pluginName = Path.GetFileName(samples.Xbox360FinalEsm!);
+        var lucy = ResolveNpcAppearance(
+            assets.AppearanceResolver,
+            pluginName,
+            fullName: "Red Lucy",
+            editorIdFragment: LucyEditorId);
+
+        Assert.NotNull(lucy);
+        var model = BuildFullBodyHeadModel(assets, lucy!);
+        AssertAttachmentAnchoring(model, assets.TextureResolver);
+    }
+
+    [Fact]
+    public void BuildCraigBooneFullBodyHead_Xbox360AttachmentsRemainAnchoredToFace()
+    {
+        Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
+
+        using var assets = CreateXboxAssets();
+        var pluginName = Path.GetFileName(samples.Xbox360FinalEsm!);
+        var boone = assets.AppearanceResolver.ResolveHeadOnly(BooneFormId, pluginName);
+
+        Assert.NotNull(boone);
+
+        var model = BuildFullBodyHeadModel(assets, boone);
+        AssertAttachmentAnchoring(model, assets.TextureResolver);
+    }
+
+    [Fact]
+    public void BuildCraigBooneHeadOnly_Xbox360AttachmentsRemainAnchoredToFace()
+    {
+        Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
+
+        using var assets = CreateXboxAssets();
+        var pluginName = Path.GetFileName(samples.Xbox360FinalEsm!);
+        var boone = assets.AppearanceResolver.ResolveHeadOnly(BooneFormId, pluginName);
+
+        Assert.NotNull(boone);
+
+        var model = BuildHeadOnlyModel(assets, boone);
+        AssertAttachmentAnchoring(model, assets.TextureResolver);
+    }
+
+    [Fact]
+    public void BuildCraigBooneHeadOnly_Xbox360IncludesHeadEquipmentUnlessNoEquip()
+    {
+        Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
+
+        using var assets = CreateXboxAssets();
+        var pluginName = Path.GetFileName(samples.Xbox360FinalEsm!);
+        var boone = assets.AppearanceResolver.ResolveHeadOnly(BooneFormId, pluginName);
+
+        Assert.NotNull(boone);
+        Assert.NotNull(boone.EquippedItems);
+        Assert.Contains(boone.EquippedItems!, item => NpcRenderHelpers.IsHeadEquipment(item.BipedFlags));
+
+        var withEquip = BuildHeadOnlyModel(assets, boone);
+        var withoutEquip = BuildHeadOnlyModel(assets, boone, noEquip: true);
+
+        Assert.Contains(withEquip.Submeshes, submesh => submesh.RenderOrder == 3);
+        Assert.DoesNotContain(withoutEquip.Submeshes, submesh => submesh.RenderOrder == 3);
+    }
+
+    [Fact]
+    public void BuildRedLucyFullBodyHead_Xbox360EyesAimTowardFrontCamera()
+    {
+        Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
+
+        using var assets = CreateXboxAssets();
+        var pluginName = Path.GetFileName(samples.Xbox360FinalEsm!);
+        var lucy = ResolveNpcAppearance(
+            assets.AppearanceResolver,
+            pluginName,
+            fullName: "Red Lucy",
+            editorIdFragment: LucyEditorId);
+
+        Assert.NotNull(lucy);
+
+        var model = BuildFullBodyHeadModel(assets, lucy!);
+        AssertEyesAimTowardCamera(model, new System.Numerics.Vector3(0f, 1f, 0f));
+    }
+
+    [Fact]
+    public void BuildDocMitchellHeadOnly_Xbox360AttachmentsRemainAnchoredToFace()
+    {
+        Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
+
+        using var assets = CreateXboxAssets();
+        var pluginName = Path.GetFileName(samples.Xbox360FinalEsm!);
+        var docMitchell = ResolveNpcAppearance(
+            assets.AppearanceResolver,
+            pluginName,
+            fullName: "Doc Mitchell",
+            editorIdFragment: DocMitchellEditorId);
+
+        Assert.NotNull(docMitchell);
+
+        var headMeshCache =
+            new Dictionary<string, NifRenderableModel?>(StringComparer.OrdinalIgnoreCase);
+        var egmCache =
+            new Dictionary<string, EgmParser?>(StringComparer.OrdinalIgnoreCase);
+        var egtCache =
+            new Dictionary<string, EgtParser?>(StringComparer.OrdinalIgnoreCase);
+
+        var model = NpcHeadBuilder.Build(
+            docMitchell!,
+            assets.MeshesArchive,
+            assets.MeshExtractor,
+            assets.TextureResolver,
+            headMeshCache,
+            egmCache,
+            egtCache,
+            CreateSettings(headOnly: true));
+
+        Assert.NotNull(model);
+        Assert.True(model.HasGeometry);
+        AssertAttachmentAnchoring(model, assets.TextureResolver);
+        AssertEyesAimTowardCamera(model, new System.Numerics.Vector3(0f, 1f, 0f));
+    }
+
+    [Fact]
+    public void BuildVeronicaSantiagoHeadOnly_Xbox360AttachmentsRemainAnchoredToFace()
+    {
+        Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
+
+        using var assets = CreateXboxAssets();
+        var pluginName = Path.GetFileName(samples.Xbox360FinalEsm!);
+        var veronica = ResolveNpcAppearance(
+            assets.AppearanceResolver,
+            pluginName,
+            fullName: "Veronica",
+            editorIdFragment: VeronicaEditorId);
+
+        Assert.NotNull(veronica);
+
+        var model = BuildHeadOnlyModel(assets, veronica!);
+        AssertAttachmentAnchoring(model, assets.TextureResolver);
+    }
+
     private XboxAssets CreateXboxAssets()
     {
         var meshesBsa = SampleFileFixture.FindSamplePath(
@@ -182,7 +404,7 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
             NpcAppearanceResolver.Build(esm.Data, esm.IsBigEndian));
     }
 
-    private NpcRenderSettings CreateSettings(bool headOnly)
+    private NpcRenderSettings CreateSettings(bool headOnly, bool noEquip = false)
     {
         return new NpcRenderSettings
         {
@@ -190,13 +412,17 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
             EsmPath = samples.Xbox360FinalEsm!,
             OutputDir = Path.GetTempPath(),
             HeadOnly = headOnly,
+            NoEquip = noEquip,
             ForceCpu = true,
             NoEgt = false,
             NoEgm = false
         };
     }
 
-    private static SpriteResult? RenderSprite(NifRenderableModel model, NifTextureResolver? textureResolver)
+    private static SpriteResult? RenderSprite(
+        NifRenderableModel model,
+        NifTextureResolver? textureResolver,
+        int fixedSize = 160)
     {
         return NifSpriteRenderer.Render(
             model,
@@ -206,7 +432,7 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
             maxSize: 192,
             azimuthDeg: 90f,
             elevationDeg: 0f,
-            fixedSize: 160);
+            fixedSize: fixedSize);
     }
 
     private static NifRenderableModel CreateModel(
@@ -237,6 +463,190 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
     {
         return Enumerable.Range(0, sprite.Pixels.Length / 4)
             .Count(index => sprite.Pixels[index * 4 + 3] > 0);
+    }
+
+    private NifRenderableModel BuildHeadOnlyModel(
+        XboxAssets assets,
+        NpcAppearance npc,
+        bool noEquip = false)
+    {
+        var headMeshCache =
+            new Dictionary<string, NifRenderableModel?>(StringComparer.OrdinalIgnoreCase);
+        var egmCache =
+            new Dictionary<string, EgmParser?>(StringComparer.OrdinalIgnoreCase);
+        var egtCache =
+            new Dictionary<string, EgtParser?>(StringComparer.OrdinalIgnoreCase);
+
+        var model = NpcHeadBuilder.Build(
+            npc,
+            assets.MeshesArchive,
+            assets.MeshExtractor,
+            assets.TextureResolver,
+            headMeshCache,
+            egmCache,
+            egtCache,
+            CreateSettings(headOnly: true, noEquip: noEquip));
+
+        Assert.NotNull(model);
+        Assert.True(model.HasGeometry);
+        return model;
+    }
+
+    private NifRenderableModel BuildFullBodyHeadModel(XboxAssets assets, NpcAppearance npc)
+    {
+        var headMeshCache =
+            new Dictionary<string, NifRenderableModel?>(StringComparer.OrdinalIgnoreCase);
+        var egmCache =
+            new Dictionary<string, EgmParser?>(StringComparer.OrdinalIgnoreCase);
+        var egtCache =
+            new Dictionary<string, EgtParser?>(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, System.Numerics.Matrix4x4>? skeletonBoneCache = null;
+        Dictionary<string, System.Numerics.Matrix4x4>? poseDeltaCache = null;
+
+        var bodyModel = NpcBodyBuilder.Build(
+            npc,
+            assets.MeshesArchive,
+            assets.MeshExtractor,
+            assets.TextureResolver,
+            headMeshCache,
+            egmCache,
+            egtCache,
+            ref skeletonBoneCache,
+            ref poseDeltaCache,
+            CreateSettings(headOnly: false));
+
+        Assert.NotNull(bodyModel);
+        Assert.NotNull(skeletonBoneCache);
+
+        var bonelessHeadAttachmentTransform = NpcRenderHelpers.BuildBonelessHeadAttachmentTransform(
+            skeletonBoneCache,
+            poseDeltaCache);
+
+        var fullBodyHeadModel = NpcHeadBuilder.Build(
+            npc,
+            assets.MeshesArchive,
+            assets.MeshExtractor,
+            assets.TextureResolver,
+            headMeshCache,
+            egmCache,
+            egtCache,
+            CreateSettings(headOnly: false),
+            idlePoseBones: skeletonBoneCache,
+            headEquipmentTransformOverride: bonelessHeadAttachmentTransform);
+
+        Assert.NotNull(fullBodyHeadModel);
+        Assert.True(fullBodyHeadModel.HasGeometry);
+        return fullBodyHeadModel;
+    }
+
+    private static void AssertAttachmentAnchoring(
+        NifRenderableModel model,
+        NifTextureResolver textureResolver)
+    {
+        var faceSubmeshes = model.Submeshes.Where(IsBaseFaceSubmesh).ToList();
+        var attachmentSubmeshes = model.Submeshes.Where(IsAnchoredAttachmentSubmesh).ToList();
+        var eyeSubmeshes = model.Submeshes.Where(IsEyeSubmesh).ToList();
+
+        Assert.NotEmpty(faceSubmeshes);
+        Assert.NotEmpty(attachmentSubmeshes);
+        Assert.NotEmpty(eyeSubmeshes);
+
+        using var _ = new RendererStateScope();
+        var faceSprite = RenderSprite(CreateModel(faceSubmeshes, model), textureResolver, fixedSize: 320);
+        var attachmentSprite = RenderSprite(CreateModel(attachmentSubmeshes, model), textureResolver, fixedSize: 320);
+        var eyeSprite = RenderSprite(CreateModel(eyeSubmeshes, model), textureResolver, fixedSize: 320);
+
+        Assert.NotNull(faceSprite);
+        Assert.NotNull(attachmentSprite);
+        Assert.NotNull(eyeSprite);
+
+        var faceBounds = GetVisibleBounds(faceSprite!);
+        var attachmentBounds = GetVisibleBounds(attachmentSprite!);
+        var eyeBounds = GetVisibleBounds(eyeSprite!);
+
+        Assert.NotNull(faceBounds);
+        Assert.NotNull(attachmentBounds);
+        Assert.NotNull(eyeBounds);
+
+        var eyeEnvelope = ExpandBounds(faceBounds!.Value, eyeSprite!.Width, eyeSprite.Height, 0.08f, 0.10f);
+        var attachmentEnvelope = ExpandBounds(faceBounds.Value, attachmentSprite!.Width, attachmentSprite.Height, 0.55f, 0.45f);
+
+        var eyeInsideRatio = CountVisiblePixelsInsideBounds(eyeSprite, eyeEnvelope) /
+                             (float)CountVisiblePixels(eyeSprite);
+        var attachmentInsideRatio = CountVisiblePixelsInsideBounds(attachmentSprite, attachmentEnvelope) /
+                                    (float)CountVisiblePixels(attachmentSprite);
+
+        Assert.True(
+            eyeEnvelope.Contains(eyeBounds.Value.CenterX, eyeBounds.Value.CenterY),
+            $"Eye bbox center ({eyeBounds.Value.CenterX:F1},{eyeBounds.Value.CenterY:F1}) fell outside face envelope [{eyeEnvelope.MinX},{eyeEnvelope.MinY}]→[{eyeEnvelope.MaxX},{eyeEnvelope.MaxY}]");
+        Assert.True(
+            attachmentEnvelope.Contains(attachmentBounds.Value.CenterX, attachmentBounds.Value.CenterY),
+            $"Attachment bbox center ({attachmentBounds.Value.CenterX:F1},{attachmentBounds.Value.CenterY:F1}) fell outside face envelope [{attachmentEnvelope.MinX},{attachmentEnvelope.MinY}]→[{attachmentEnvelope.MaxX},{attachmentEnvelope.MaxY}]");
+        Assert.True(eyeInsideRatio >= 0.45f, $"Eye coverage inside face envelope too low: {eyeInsideRatio:F3}");
+        Assert.True(
+            attachmentInsideRatio >= 0.45f,
+            $"Attachment coverage inside face envelope too low: {attachmentInsideRatio:F3}");
+    }
+
+    private static SpriteBounds? GetVisibleBounds(SpriteResult sprite)
+    {
+        var minX = sprite.Width;
+        var minY = sprite.Height;
+        var maxX = -1;
+        var maxY = -1;
+
+        for (var y = 0; y < sprite.Height; y++)
+        {
+            for (var x = 0; x < sprite.Width; x++)
+            {
+                if (ReadPixel(sprite, x, y).A == 0)
+                {
+                    continue;
+                }
+
+                minX = Math.Min(minX, x);
+                minY = Math.Min(minY, y);
+                maxX = Math.Max(maxX, x);
+                maxY = Math.Max(maxY, y);
+            }
+        }
+
+        return maxX < minX || maxY < minY
+            ? null
+            : new SpriteBounds(minX, minY, maxX, maxY);
+    }
+
+    private static SpriteBounds ExpandBounds(
+        SpriteBounds bounds,
+        int width,
+        int height,
+        float xPaddingFraction,
+        float yPaddingFraction)
+    {
+        var paddingX = (int)MathF.Ceiling(bounds.Width * xPaddingFraction);
+        var paddingY = (int)MathF.Ceiling(bounds.Height * yPaddingFraction);
+        return new SpriteBounds(
+            Math.Max(0, bounds.MinX - paddingX),
+            Math.Max(0, bounds.MinY - paddingY),
+            Math.Min(width - 1, bounds.MaxX + paddingX),
+            Math.Min(height - 1, bounds.MaxY + paddingY));
+    }
+
+    private static int CountVisiblePixelsInsideBounds(SpriteResult sprite, SpriteBounds bounds)
+    {
+        var count = 0;
+        for (var y = bounds.MinY; y <= bounds.MaxY; y++)
+        {
+            for (var x = bounds.MinX; x <= bounds.MaxX; x++)
+            {
+                if (ReadPixel(sprite, x, y).A > 0)
+                {
+                    count++;
+                }
+            }
+        }
+
+        return count;
     }
 
     private static NpcAppearance? ResolveNpcAppearance(
@@ -280,6 +690,99 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
                    value.Contains("brow", StringComparison.OrdinalIgnoreCase) ||
                    value.Contains("lash", StringComparison.OrdinalIgnoreCase) ||
                    value.Contains("beard", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    private static bool IsBaseFaceSubmesh(RenderableSubmesh submesh)
+    {
+        return submesh.RenderOrder == 0 && !IsHairLikeSubmesh(submesh);
+    }
+
+    private static bool IsPrimaryHairSubmesh(RenderableSubmesh submesh)
+    {
+        return submesh.RenderOrder == 1 || ContainsHint(submesh.ShapeName, "hair");
+    }
+
+    private static bool IsAnchoredAttachmentSubmesh(RenderableSubmesh submesh)
+    {
+        if (IsEyeSubmesh(submesh) || IsBaseFaceSubmesh(submesh))
+        {
+            return false;
+        }
+
+        return submesh.RenderOrder is 1 or 3 ||
+               ContainsHint(submesh.ShapeName, "hair") ||
+               ContainsHint(submesh.ShapeName, "brow") ||
+               ContainsHint(submesh.ShapeName, "lash") ||
+               ContainsHint(submesh.ShapeName, "beard") ||
+               ContainsHint(submesh.ShapeName, "mustache") ||
+               ContainsHint(submesh.ShapeName, "moustache") ||
+               ContainsHint(submesh.ShapeName, "hood") ||
+               ContainsHint(submesh.ShapeName, "hat") ||
+               ContainsHint(submesh.ShapeName, "beret") ||
+               ContainsHint(submesh.ShapeName, "shade") ||
+               ContainsHint(submesh.ShapeName, "glass") ||
+               ContainsHint(submesh.DiffuseTexturePath, "hair") ||
+               ContainsHint(submesh.DiffuseTexturePath, "brow") ||
+               ContainsHint(submesh.DiffuseTexturePath, "lash") ||
+               ContainsHint(submesh.DiffuseTexturePath, "beard") ||
+               ContainsHint(submesh.DiffuseTexturePath, "mustache") ||
+               ContainsHint(submesh.DiffuseTexturePath, "moustache") ||
+               ContainsHint(submesh.DiffuseTexturePath, "hood") ||
+               ContainsHint(submesh.DiffuseTexturePath, "hat") ||
+               ContainsHint(submesh.DiffuseTexturePath, "beret") ||
+               ContainsHint(submesh.DiffuseTexturePath, "shade") ||
+               ContainsHint(submesh.DiffuseTexturePath, "glass");
+    }
+
+    private static bool IsEyeSubmesh(RenderableSubmesh submesh)
+    {
+        return submesh.RenderOrder == 2 ||
+               submesh.IsEyeEnvmap ||
+               HasExplicitEyeHint(submesh.ShapeName) ||
+               HasExplicitEyeHint(submesh.DiffuseTexturePath);
+    }
+
+    private static bool ContainsHint(string? value, string hint)
+    {
+        return !string.IsNullOrWhiteSpace(value) &&
+               value.Contains(hint, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HasExplicitEyeHint(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        return (value.Contains("eyeleft", StringComparison.OrdinalIgnoreCase) ||
+                value.Contains("eyeright", StringComparison.OrdinalIgnoreCase) ||
+                value.Contains("\\eyes\\", StringComparison.OrdinalIgnoreCase) ||
+                value.Contains("/eyes/", StringComparison.OrdinalIgnoreCase)) &&
+               !value.Contains("eyebrow", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void AssertEyesAimTowardCamera(
+        NifRenderableModel model,
+        System.Numerics.Vector3 desiredForward)
+    {
+        var azimuth = MathF.Atan2(desiredForward.Y, desiredForward.X) * 180f / MathF.PI;
+        var elevation = MathF.Asin(Math.Clamp(desiredForward.Z, -1f, 1f)) * 180f / MathF.PI;
+        if (NpcEyeLookAt.HasEyeSubmeshes(model))
+        {
+            NpcEyeLookAt.Apply(model, azimuth, elevation);
+        }
+
+        var eyeSubmeshes = model.Submeshes.Where(IsEyeSubmesh).ToList();
+        Assert.NotEmpty(eyeSubmeshes);
+
+        foreach (var submesh in eyeSubmeshes)
+        {
+            Assert.True(NpcEyeLookAt.TryEstimateLookDirection(submesh, out _, out var lookDirection));
+            Assert.True(
+                System.Numerics.Vector3.Dot(lookDirection, desiredForward) >= 0.92f,
+                $"Eye submesh '{submesh.ShapeName ?? "(unnamed)"}' look direction was {lookDirection}");
         }
     }
 
@@ -367,6 +870,20 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
         int TranslucentBlendCount,
         int OpaqueHairCandidateCount,
         int OpaqueHairDominanceCount);
+
+    private readonly record struct SpriteBounds(int MinX, int MinY, int MaxX, int MaxY)
+    {
+        public int Width => MaxX - MinX + 1;
+        public int Height => MaxY - MinY + 1;
+        public float CenterX => (MinX + MaxX) * 0.5f;
+        public float CenterY => (MinY + MaxY) * 0.5f;
+
+        public bool Contains(float x, float y)
+        {
+            return x >= MinX && x <= MaxX &&
+                   y >= MinY && y <= MaxY;
+        }
+    }
 
     private sealed class RendererStateScope : IDisposable
     {
