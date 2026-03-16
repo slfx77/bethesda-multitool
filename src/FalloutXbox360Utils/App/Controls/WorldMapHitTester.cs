@@ -425,17 +425,26 @@ internal static class WorldMapHitTester
 
     internal readonly struct ClickResult
     {
-        internal enum ClickAction { Nothing, ShowObject, ShowCell, DeselectAndShowCell }
+        internal enum ClickAction
+        {
+            Nothing,
+            ShowObject,
+            ShowCell,
+            DeselectAndShowCell
+        }
 
         internal ClickAction Action { get; init; }
         internal PlacedReference? Object { get; init; }
         internal CellRecord? Cell { get; init; }
 
         internal static ClickResult None => new() { Action = ClickAction.Nothing };
+
         internal static ClickResult InspectObject(PlacedReference obj) =>
             new() { Action = ClickAction.ShowObject, Object = obj };
+
         internal static ClickResult InspectCell(CellRecord cell) =>
             new() { Action = ClickAction.ShowCell, Cell = cell };
+
         internal static ClickResult DeselectAndShowCell(CellRecord cell) =>
             new() { Action = ClickAction.DeselectAndShowCell, Cell = cell };
     }

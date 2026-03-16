@@ -92,6 +92,43 @@ public sealed partial class SingleFileTab
 
     #endregion
 
+    #region Record Breakdown
+
+    private void PopulateRecordBreakdown()
+    {
+        if (_session.SemanticResult == null) return;
+
+        var r = _session.SemanticResult;
+        RecordBreakdownPanel.Children.Clear();
+
+        // Totals header
+        var totalsText = new TextBlock
+        {
+            Text = PipelinePhaseHelper.BuildRecordTotalsText(r, _session.IsEsmFile),
+            FontSize = 13,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Margin = new Thickness(0, 0, 0, 4)
+        };
+        RecordBreakdownPanel.Children.Add(totalsText);
+
+        // Build category data and render 3-column card layout
+        var categories = ResultsFormatter.BuildRecordBreakdownCategories(r);
+        RecordBreakdownPanel.Children.Add(PropertyPanelBuilder.BuildThreeColumnCardLayout(categories));
+
+        // Unparsed record types
+        if (r.UnparsedTypeCounts.Count > 0)
+        {
+            var otherLabel = _session.IsEsmFile ? "Other (not parsed)" : "Other (not reconstructed)";
+            var otherRecords = ResultsFormatter.GetUnparsedRecords(r.UnparsedTypeCounts);
+            RecordBreakdownPanel.Children.Add(PropertyPanelBuilder.BuildCategoryCard(otherLabel, otherRecords));
+        }
+
+        SummaryRecordPanel.Visibility = Visibility.Visible;
+        _session.RecordBreakdownPopulated = true;
+    }
+
+    #endregion
+
     #region Property Panel Building
 
     /// <summary>
@@ -289,43 +326,6 @@ public sealed partial class SingleFileTab
             SubTabView.SelectedIndex = 0; // Switch to Memory Map tab
             HexViewer.NavigateToOffset(gap.RawFileOffset);
         }
-    }
-
-    #endregion
-
-    #region Record Breakdown
-
-    private void PopulateRecordBreakdown()
-    {
-        if (_session.SemanticResult == null) return;
-
-        var r = _session.SemanticResult;
-        RecordBreakdownPanel.Children.Clear();
-
-        // Totals header
-        var totalsText = new TextBlock
-        {
-            Text = PipelinePhaseHelper.BuildRecordTotalsText(r, _session.IsEsmFile),
-            FontSize = 13,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            Margin = new Thickness(0, 0, 0, 4)
-        };
-        RecordBreakdownPanel.Children.Add(totalsText);
-
-        // Build category data and render 3-column card layout
-        var categories = ResultsFormatter.BuildRecordBreakdownCategories(r);
-        RecordBreakdownPanel.Children.Add(PropertyPanelBuilder.BuildThreeColumnCardLayout(categories));
-
-        // Unparsed record types
-        if (r.UnparsedTypeCounts.Count > 0)
-        {
-            var otherLabel = _session.IsEsmFile ? "Other (not parsed)" : "Other (not reconstructed)";
-            var otherRecords = ResultsFormatter.GetUnparsedRecords(r.UnparsedTypeCounts);
-            RecordBreakdownPanel.Children.Add(PropertyPanelBuilder.BuildCategoryCard(otherLabel, otherRecords));
-        }
-
-        SummaryRecordPanel.Visibility = Visibility.Visible;
-        _session.RecordBreakdownPopulated = true;
     }
 
     #endregion

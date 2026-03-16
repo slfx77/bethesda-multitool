@@ -17,9 +17,10 @@ namespace FalloutXbox360Utils;
 /// </summary>
 public sealed partial class SingleFileTab
 {
+    private Dictionary<int, DecodedFormData>? _pendingDecodedForms;
+
     // Temporary fields to pass save data from AnalyzeSaveFileAsync to the session
     private SaveFile? _pendingSaveData;
-    private Dictionary<int, DecodedFormData>? _pendingDecodedForms;
 
     #region Dependency Checking
 

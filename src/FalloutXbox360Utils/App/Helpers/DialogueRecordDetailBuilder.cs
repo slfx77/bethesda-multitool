@@ -10,11 +10,6 @@ namespace FalloutXbox360Utils;
 internal static class DialogueRecordDetailBuilder
 {
     /// <summary>
-    ///     A single row in a record detail panel: label, display value, and optional link target.
-    /// </summary>
-    internal readonly record struct DetailRow(string Label, string? Value, uint? LinkFormId = null);
-
-    /// <summary>
     ///     Builds the detail rows for a dialogue INFO record, including identity, subtitle enrichment,
     ///     relationships, flags, linking, response detail, and location.
     /// </summary>
@@ -210,4 +205,9 @@ internal static class DialogueRecordDetailBuilder
             rows.Add(new DetailRow(label, value));
         }
     }
+
+    /// <summary>
+    ///     A single row in a record detail panel: label, display value, and optional link target.
+    /// </summary>
+    internal readonly record struct DetailRow(string Label, string? Value, uint? LinkFormId = null);
 }

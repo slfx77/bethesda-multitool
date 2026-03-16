@@ -170,13 +170,6 @@ internal static class EsmPropertyFormatter
     };
 
     /// <summary>
-    ///     Fallout NV skill names indexed by skill ID (0-based).
-    ///     Actor value codes 32-45 map to indices 0-13.
-    ///     Delegates to the shared fallback array in FormIdResolver (single source of truth).
-    /// </summary>
-    internal static string[] SkillNames => FormIdResolver.FallbackSkillNames;
-
-    /// <summary>
     ///     Cache for PropertyInfo[] by type - avoids repeated GetProperties() calls.
     /// </summary>
     internal static readonly ConcurrentDictionary<Type, PropertyInfo[]> PropertyCache = new();
@@ -193,6 +186,13 @@ internal static class EsmPropertyFormatter
         "", "", "", "",
         "Near Linked Ref"
     ];
+
+    /// <summary>
+    ///     Fallout NV skill names indexed by skill ID (0-based).
+    ///     Actor value codes 32-45 map to indices 0-13.
+    ///     Delegates to the shared fallback array in FormIdResolver (single source of truth).
+    /// </summary>
+    internal static string[] SkillNames => FormIdResolver.FallbackSkillNames;
 
     /// <summary>
     ///     Maps an actor value code to a skill name.

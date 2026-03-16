@@ -350,6 +350,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                 {
                     AllCellsButton_Click(this, new RoutedEventArgs());
                 }
+
                 break;
 
             case ViewMode.CellDetail when state.CellFormId.HasValue:
@@ -358,11 +359,13 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                 {
                     WorldspaceComboBox.SelectedIndex = state.WorldspaceComboIndex;
                 }
+
                 var cell = FindCellByFormId(state.CellFormId.Value);
                 if (cell != null)
                 {
                     NavigateToCell(cell);
                 }
+
                 break;
 
             default:
@@ -371,6 +374,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                 {
                     WorldspaceComboBox.SelectedIndex = state.WorldspaceComboIndex;
                 }
+
                 break;
         }
 
@@ -389,6 +393,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             var cell = _selectedWorldspace.Cells.Find(c => c.FormId == formId);
             if (cell != null) return cell;
         }
+
         return _data?.AllCells.Find(c => c.FormId == formId);
     }
 
@@ -404,6 +409,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         {
             ApplyZoomToFitWorldspace();
         }
+
         MapCanvas.Invalidate();
     }
 
@@ -570,6 +576,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                     : "";
                 MapCanvas.Invalidate();
             }
+
             SetInteractiveCursor(hitObj != null);
         }
         else if (_mode == ViewMode.WorldOverview && _data != null)
@@ -614,6 +621,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                     break;
             }
         }
+
         _isPanning = false;
         e.Handled = true;
     }
@@ -715,6 +723,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             _cellHeightmapBitmap?.Dispose();
             _cellHeightmapBitmap = null;
         }
+
         SetCanvasMode(true);
     }
 
@@ -869,8 +878,19 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     // Inner Types
     // ========================================================================
 
-    internal enum ViewMode { WorldOverview, CellDetail, CellBrowser }
-    internal enum BrowserMode { None, Interiors, AllCells }
+    internal enum ViewMode
+    {
+        WorldOverview,
+        CellDetail,
+        CellBrowser
+    }
+
+    internal enum BrowserMode
+    {
+        None,
+        Interiors,
+        AllCells
+    }
 
     internal record WorldNavState(ViewMode Mode, BrowserMode Browser, int WorldspaceComboIndex, uint? CellFormId);
 

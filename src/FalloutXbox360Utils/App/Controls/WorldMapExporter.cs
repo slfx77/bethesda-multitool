@@ -27,7 +27,7 @@ internal static class WorldMapExporter
     /// </summary>
     internal static (int ImageW, int ImageH, int PixelsPerCell,
         int MinGridX, int MaxGridX, int MinGridY, int MaxGridY)? ComputeExportLayout(
-        List<CellRecord> cells, int exportLongEdge)
+            List<CellRecord> cells, int exportLongEdge)
     {
         var cellsWithGrid = cells.Where(c => c.GridX.HasValue && c.GridY.HasValue).ToList();
         if (cellsWithGrid.Count == 0) return null;

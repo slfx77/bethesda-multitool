@@ -270,7 +270,8 @@ public sealed partial class SingleFileTab
 
         if (fileType != AnalysisFileType.EsmFile && fileType != AnalysisFileType.Minidump)
         {
-            await ShowDialogAsync("Load Failed", $"Only ESM, ESP, and DMP files are supported: {entry.DisplayName}", true);
+            await ShowDialogAsync("Load Failed", $"Only ESM, ESP, and DMP files are supported: {entry.DisplayName}",
+                true);
             return;
         }
 

@@ -337,7 +337,9 @@ internal static class EsmCharacterPropertyBuilder
         var radResist = (end - 1) * 2;
 
         properties.Add(new EsmPropertyEntry
-            { Name = "Health", Value = $"{calcHealth} (Base: {baseHealth} + Level\u00d710)", Category = "Derived Stats" });
+        {
+            Name = "Health", Value = $"{calcHealth} (Base: {baseHealth} + Level\u00d710)", Category = "Derived Stats"
+        });
         properties.Add(new EsmPropertyEntry
         {
             Name = "Fatigue", Value = $"{calcFatigue} (Base: {fatigueBase} + (STR+END)\u00d710)",

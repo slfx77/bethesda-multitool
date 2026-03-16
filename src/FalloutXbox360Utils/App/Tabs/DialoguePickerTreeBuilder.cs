@@ -10,15 +10,6 @@ namespace FalloutXbox360Utils;
 /// </summary>
 internal static class DialoguePickerTreeBuilder
 {
-    // Typed wrappers for TreeView DataObject to disambiguate quest vs NPC picker context
-    internal sealed record QuestPickerData(uint QuestFormId, List<TopicDialogueNode> Topics);
-
-    internal sealed record SpeakerPickerData(uint SpeakerFormId, List<TopicDialogueNode> Topics);
-
-    internal sealed record QuestTopicPickerData(uint QuestFormId, TopicDialogueNode Topic);
-
-    internal sealed record SpeakerTopicPickerData(uint SpeakerFormId, TopicDialogueNode Topic);
-
     /// <summary>
     ///     Builds quest-grouped root nodes for the dialogue picker tree.
     /// </summary>
@@ -271,4 +262,13 @@ internal static class DialoguePickerTreeBuilder
 
         return topic;
     }
+
+    // Typed wrappers for TreeView DataObject to disambiguate quest vs NPC picker context
+    internal sealed record QuestPickerData(uint QuestFormId, List<TopicDialogueNode> Topics);
+
+    internal sealed record SpeakerPickerData(uint SpeakerFormId, List<TopicDialogueNode> Topics);
+
+    internal sealed record QuestTopicPickerData(uint QuestFormId, TopicDialogueNode Topic);
+
+    internal sealed record SpeakerTopicPickerData(uint SpeakerFormId, TopicDialogueNode Topic);
 }

@@ -20,7 +20,8 @@ internal static class ResultsFormatter
         sb.Append($"File size:           {coverage.FileSize,15:N0} bytes\n");
         sb.Append($"Memory regions:      {coverage.TotalMemoryRegions,6:N0}   (total: {totalRegion:N0} bytes)\n");
         sb.Append($"Minidump overhead:   {coverage.MinidumpOverhead,15:N0} bytes\n\n");
-        sb.Append($"Recognized data:     {coverage.TotalRecognizedBytes,15:N0} bytes  ({coverage.RecognizedPercent:F1}%)\n");
+        sb.Append(
+            $"Recognized data:     {coverage.TotalRecognizedBytes,15:N0} bytes  ({coverage.RecognizedPercent:F1}%)\n");
 
         foreach (var (cat, bytes) in coverage.CategoryBytes.OrderByDescending(kv => kv.Value))
         {

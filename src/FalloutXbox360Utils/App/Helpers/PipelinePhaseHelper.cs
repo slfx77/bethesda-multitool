@@ -9,11 +9,6 @@ namespace FalloutXbox360Utils;
 internal static class PipelinePhaseHelper
 {
     /// <summary>
-    ///     Describes the desired progress bar state for a given pipeline phase.
-    /// </summary>
-    internal readonly record struct ProgressBarState(bool IsVisible, bool IsIndeterminate);
-
-    /// <summary>
     ///     Computes the progress bar visibility and indeterminate state for a given pipeline phase.
     /// </summary>
     internal static ProgressBarState GetProgressBarState(SingleFileTab.AnalysisPipelinePhase phase)
@@ -60,20 +55,6 @@ internal static class PipelinePhaseHelper
         var dir = Path.GetDirectoryName(inputPath) ?? "";
         var name = Path.GetFileNameWithoutExtension(inputPath);
         return Path.Combine(dir, $"{name}_extracted");
-    }
-
-    /// <summary>
-    ///     Describes the values to display in the file info card.
-    /// </summary>
-    internal sealed class FileInfoDisplay
-    {
-        public required string FileName { get; init; }
-        public required string FileSize { get; init; }
-        public required string Format { get; init; }
-        public required string Endianness { get; init; }
-        public bool ShowBuildPanel { get; init; }
-        public string? ModuleName { get; init; }
-        public string? CompileDate { get; init; }
     }
 
     /// <summary>
@@ -136,5 +117,24 @@ internal static class PipelinePhaseHelper
     {
         var detailLabel = isEsmFile ? "Parsed" : "Reconstructed";
         return $"Total Records Processed: {r.TotalRecordsProcessed:N0}    {detailLabel}: {r.TotalRecordsParsed:N0}";
+    }
+
+    /// <summary>
+    ///     Describes the desired progress bar state for a given pipeline phase.
+    /// </summary>
+    internal readonly record struct ProgressBarState(bool IsVisible, bool IsIndeterminate);
+
+    /// <summary>
+    ///     Describes the values to display in the file info card.
+    /// </summary>
+    internal sealed class FileInfoDisplay
+    {
+        public required string FileName { get; init; }
+        public required string FileSize { get; init; }
+        public required string Format { get; init; }
+        public required string Endianness { get; init; }
+        public bool ShowBuildPanel { get; init; }
+        public string? ModuleName { get; init; }
+        public string? CompileDate { get; init; }
     }
 }

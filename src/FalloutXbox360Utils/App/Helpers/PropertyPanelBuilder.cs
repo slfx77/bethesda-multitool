@@ -12,21 +12,6 @@ namespace FalloutXbox360Utils;
 internal static class PropertyPanelBuilder
 {
     /// <summary>
-    ///     Callbacks that connect the property panel to instance-specific navigation features.
-    /// </summary>
-    internal sealed class Callbacks
-    {
-        /// <summary>Returns true if the given FormID can be navigated to in the browser.</summary>
-        public required Func<uint, bool> IsFormIdNavigable { get; init; }
-
-        /// <summary>Creates a HyperlinkButton styled as an underlined FormID link.</summary>
-        public required Func<string, uint, int, bool, HyperlinkButton> CreateFormIdLink { get; init; }
-
-        /// <summary>Navigates to a cell in the world map (populates map, navigates, switches tab).</summary>
-        public required Func<uint, Task> NavigateToCellInWorldMap { get; init; }
-    }
-
-    /// <summary>
     ///     Builds the main property panel Grid from a list of property entries.
     /// </summary>
     internal static Grid BuildGrid(List<EsmPropertyEntry> properties, Callbacks callbacks)
@@ -405,6 +390,21 @@ internal static class PropertyPanelBuilder
         Grid.SetColumn(valText, 2);
         Grid.SetColumnSpan(valText, 2);
         grid.Children.Add(valText);
+    }
+
+    /// <summary>
+    ///     Callbacks that connect the property panel to instance-specific navigation features.
+    /// </summary>
+    internal sealed class Callbacks
+    {
+        /// <summary>Returns true if the given FormID can be navigated to in the browser.</summary>
+        public required Func<uint, bool> IsFormIdNavigable { get; init; }
+
+        /// <summary>Creates a HyperlinkButton styled as an underlined FormID link.</summary>
+        public required Func<string, uint, int, bool, HyperlinkButton> CreateFormIdLink { get; init; }
+
+        /// <summary>Navigates to a cell in the world map (populates map, navigates, switches tab).</summary>
+        public required Func<uint, Task> NavigateToCellInWorldMap { get; init; }
     }
 
     #region Record Breakdown Cards

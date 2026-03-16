@@ -486,5 +486,4 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     }
 
     #endregion
-
 }

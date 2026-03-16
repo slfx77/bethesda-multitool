@@ -9,16 +9,6 @@ namespace FalloutXbox360Utils;
 /// </summary>
 internal static class WorldMapHeightmapBuilder
 {
-    internal readonly struct HeightmapInfo(
-        CanvasBitmap bitmap, int minX, int maxY, int pixelWidth, int pixelHeight)
-    {
-        internal CanvasBitmap Bitmap { get; } = bitmap;
-        internal int MinX { get; } = minX;
-        internal int MaxY { get; } = maxY;
-        internal int PixelWidth { get; } = pixelWidth;
-        internal int PixelHeight { get; } = pixelHeight;
-    }
-
     internal static HeightmapInfo? Build(
         CanvasControl canvas,
         List<CellRecord> activeCells,
@@ -64,5 +54,19 @@ internal static class WorldMapHeightmapBuilder
             canvas, tintedPixels, imgW, imgH,
             Windows.Graphics.DirectX.DirectXPixelFormat.R8G8B8A8UIntNormalized);
         return new HeightmapInfo(bmp, minX, maxY, imgW, imgH);
+    }
+
+    internal readonly struct HeightmapInfo(
+        CanvasBitmap bitmap,
+        int minX,
+        int maxY,
+        int pixelWidth,
+        int pixelHeight)
+    {
+        internal CanvasBitmap Bitmap { get; } = bitmap;
+        internal int MinX { get; } = minX;
+        internal int MaxY { get; } = maxY;
+        internal int PixelWidth { get; } = pixelWidth;
+        internal int PixelHeight { get; } = pixelHeight;
     }
 }
