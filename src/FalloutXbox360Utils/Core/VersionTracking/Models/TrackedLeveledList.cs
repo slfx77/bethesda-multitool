@@ -13,8 +13,3 @@ public record TrackedLeveledList
     public uint? GlobalFormId { get; init; }
     public List<TrackedLeveledEntry> Entries { get; init; } = [];
 }
-
-/// <summary>
-///     Single entry in a leveled list for version tracking.
-/// </summary>
-public record TrackedLeveledEntry(ushort Level, uint FormId, ushort Count);

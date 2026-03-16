@@ -218,28 +218,3 @@ internal sealed class EsmModelCrossReference
         return path.Replace('/', '\\').ToLowerInvariant();
     }
 }
-
-/// <summary>
-///     A base record (STAT, ACTI, DOOR, etc.) that references a model path.
-/// </summary>
-internal sealed record BaseRecordRef(uint FormId, string? EditorId, string RecordType);
-
-/// <summary>
-///     A placed reference (REFR/ACHR/ACRE) with optional editor ID.
-/// </summary>
-internal sealed record RefEntry(uint FormId, string? EditorId);
-
-/// <summary>
-///     Result of a model path cross-reference lookup.
-/// </summary>
-internal sealed class ModelCrossRefResult
-{
-    public ModelCrossRefResult(List<BaseRecordRef> baseRecords, List<RefEntry> refs)
-    {
-        BaseRecords = baseRecords;
-        Refs = refs;
-    }
-
-    public List<BaseRecordRef> BaseRecords { get; }
-    public List<RefEntry> Refs { get; }
-}

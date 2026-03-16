@@ -31,38 +31,3 @@ public sealed class RttiResult
     /// </summary>
     public bool HasMultipleInheritance { get; init; }
 }
-
-/// <summary>
-///     A single base class in an RTTI hierarchy.
-/// </summary>
-public sealed class RttiBaseClass
-{
-    /// <summary>Demangled class name.</summary>
-    public required string ClassName { get; init; }
-
-    /// <summary>Raw mangled name.</summary>
-    public required string MangledName { get; init; }
-
-    /// <summary>
-    ///     Member displacement — where this base sits in the object layout.
-    /// </summary>
-    public int MemberDisplacement { get; init; }
-
-    /// <summary>Number of classes this base itself contains.</summary>
-    public uint NumContainedBases { get; init; }
-}
-
-/// <summary>
-///     A single entry in a heap census — one C++ class with its instance count.
-/// </summary>
-public sealed class CensusEntry
-{
-    /// <summary>RTTI resolution result (class name, hierarchy, etc.).</summary>
-    public required RttiResult Rtti { get; init; }
-
-    /// <summary>Number of instances found in the scanned memory regions.</summary>
-    public int InstanceCount { get; init; }
-
-    /// <summary>Whether this class derives from TESForm (checked via base class list).</summary>
-    public bool IsTesForm { get; init; }
-}

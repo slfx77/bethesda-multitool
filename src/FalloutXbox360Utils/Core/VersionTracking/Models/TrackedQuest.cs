@@ -15,7 +15,3 @@ public record TrackedQuest
     public List<TrackedQuestStage> Stages { get; init; } = [];
     public List<TrackedQuestObjective> Objectives { get; init; } = [];
 }
-
-public record TrackedQuestStage(int Index, string? LogEntry, byte Flags);
-
-public record TrackedQuestObjective(int Index, string? DisplayText);

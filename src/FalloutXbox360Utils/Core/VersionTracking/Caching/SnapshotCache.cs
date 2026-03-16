@@ -1,7 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using FalloutXbox360Utils.Core.VersionTracking.Models;
 
 namespace FalloutXbox360Utils.Core.VersionTracking.Caching;
@@ -139,10 +138,3 @@ public class SnapshotCache
         public VersionSnapshot? Snapshot { get; init; }
     }
 }
-
-[JsonSourceGenerationOptions(
-    WriteIndented = true,
-    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
-    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
-[JsonSerializable(typeof(SnapshotCache.CacheEnvelope))]
-internal partial class SnapshotCacheJsonContext : JsonSerializerContext;

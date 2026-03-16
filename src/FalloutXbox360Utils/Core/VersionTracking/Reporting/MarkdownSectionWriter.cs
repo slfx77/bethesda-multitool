@@ -10,6 +10,165 @@ namespace FalloutXbox360Utils.Core.VersionTracking.Reporting;
 /// </summary>
 internal static class MarkdownSectionWriter
 {
+    #region FormID History
+
+    internal static void WriteFormIdHistory(StringBuilder sb, List<VersionSnapshot> snapshots, uint formId)
+    {
+        sb.AppendLine($"## FormID History: 0x{formId:X8}");
+        sb.AppendLine();
+        sb.AppendLine("| Build | Date | Present | Name | Details |");
+        sb.AppendLine("|-------|------|---------|------|---------|");
+
+        foreach (var snapshot in snapshots)
+        {
+            var date = snapshot.Build.BuildDate?.ToString("yyyy-MM-dd") ?? "?";
+
+            if (snapshot.Quests.TryGetValue(formId, out var quest))
+            {
+                var stages = string.Join(", ", quest.Stages.Select(s => s.Index));
+                var objectives = string.Join("; ", quest.Objectives.Select(o => o.DisplayText ?? "?"));
+                sb.AppendLine(
+                    $"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | QUST | {quest.FullName ?? quest.EditorId ?? ""} | Stages: [{stages}] Objectives: [{objectives}] |");
+            }
+            else if (snapshot.Npcs.TryGetValue(formId, out var npc))
+            {
+                sb.AppendLine(
+                    $"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | NPC_ | {npc.FullName ?? npc.EditorId ?? ""} | Level: {npc.Level} |");
+            }
+            else if (snapshot.Weapons.TryGetValue(formId, out var weapon))
+            {
+                sb.AppendLine(
+                    $"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | WEAP | {weapon.FullName ?? weapon.EditorId ?? ""} | Dmg: {weapon.Damage}, Clip: {weapon.ClipSize} |");
+            }
+            else if (snapshot.Armor.TryGetValue(formId, out var armor))
+            {
+                sb.AppendLine(
+                    $"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | ARMO | {armor.FullName ?? armor.EditorId ?? ""} | DT: {armor.DamageThreshold:F1} |");
+            }
+            else if (snapshot.Items.TryGetValue(formId, out var item))
+            {
+                sb.AppendLine(
+                    $"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | {item.RecordType} | {item.FullName ?? item.EditorId ?? ""} | Value: {item.Value} |");
+            }
+            else if (snapshot.Scripts.TryGetValue(formId, out var script))
+            {
+                var hasSource = !string.IsNullOrEmpty(script.SourceText);
+                sb.AppendLine(
+                    $"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | SCPT | {script.EditorId ?? ""} | {script.ScriptType}, Vars: {script.VariableCount}, Source: {(hasSource ? "Yes" : "No")} |");
+            }
+            else if (snapshot.Dialogues.TryGetValue(formId, out var dialogue))
+            {
+                var text = dialogue.ResponseTexts.FirstOrDefault() ?? "";
+                sb.AppendLine(
+                    $"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | INFO | {dialogue.EditorId ?? ""} | {MarkdownMultiPageWriter.Esc(text)} |");
+            }
+            else if (snapshot.Locations.TryGetValue(formId, out var location))
+            {
+                sb.AppendLine(
+                    $"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | {location.RecordType} | {location.FullName ?? location.EditorId ?? ""} | |");
+            }
+            else if (snapshot.Creatures.TryGetValue(formId, out var creature))
+            {
+                sb.AppendLine(
+                    $"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | CREA | {creature.FullName ?? creature.EditorId ?? ""} | Level: {creature.Level}, Dmg: {creature.AttackDamage} |");
+            }
+            else if (snapshot.Perks.TryGetValue(formId, out var perk))
+            {
+                sb.AppendLine(
+                    $"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | PERK | {perk.FullName ?? perk.EditorId ?? ""} | Ranks: {perk.Ranks}, MinLevel: {perk.MinLevel} |");
+            }
+            else if (snapshot.Ammo.TryGetValue(formId, out var ammo))
+            {
+                sb.AppendLine(
+                    $"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | AMMO | {ammo.FullName ?? ammo.EditorId ?? ""} | Value: {ammo.Value}, Speed: {ammo.Speed:F1} |");
+            }
+            else if (snapshot.LeveledLists.TryGetValue(formId, out var leveledList))
+            {
+                sb.AppendLine(
+                    $"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | {leveledList.ListType} | {leveledList.EditorId ?? ""} | Entries: {leveledList.Entries.Count}, ChanceNone: {leveledList.ChanceNone} |");
+            }
+            else if (snapshot.Notes.TryGetValue(formId, out var note))
+            {
+                sb.AppendLine(
+                    $"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | NOTE | {note.FullName ?? note.EditorId ?? ""} | Type: {note.NoteType} |");
+            }
+            else if (snapshot.Terminals.TryGetValue(formId, out var terminal))
+            {
+                sb.AppendLine(
+                    $"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | TERM | {terminal.FullName ?? terminal.EditorId ?? ""} | MenuItems: {terminal.MenuItemCount} |");
+            }
+            else
+            {
+                sb.AppendLine($"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | - | (not found) | |");
+            }
+        }
+    }
+
+    #endregion
+
+    #region Cut Record Data Computation
+
+    internal static Dictionary<string, List<MarkdownMultiPageWriter.CutRecord>> ComputeAllCutRecords(
+        List<VersionSnapshot> allSnapshots,
+        List<VersionSnapshot> dmpSnapshots,
+        VersionSnapshot finalEsm,
+        HashSet<uint>? fo3LeftoverFormIds)
+    {
+        var result = new Dictionary<string, List<MarkdownMultiPageWriter.CutRecord>>();
+
+        result["Quests"] = MarkdownMultiPageWriter.FindCutRecords(
+            dmpSnapshots.SelectMany(s => s.Quests), finalEsm.Quests, allSnapshots, fo3LeftoverFormIds);
+        result["NPCs"] = MarkdownMultiPageWriter.FindCutRecords(
+            dmpSnapshots.SelectMany(s => s.Npcs), finalEsm.Npcs, allSnapshots, fo3LeftoverFormIds);
+        result["Weapons"] = MarkdownMultiPageWriter.FindCutRecords(
+            dmpSnapshots.SelectMany(s => s.Weapons), finalEsm.Weapons, allSnapshots, fo3LeftoverFormIds);
+        result["Armor"] = MarkdownMultiPageWriter.FindCutRecords(
+            dmpSnapshots.SelectMany(s => s.Armor), finalEsm.Armor, allSnapshots, fo3LeftoverFormIds);
+        result["Items"] = MarkdownMultiPageWriter.FindCutRecords(
+            dmpSnapshots.SelectMany(s => s.Items), finalEsm.Items, allSnapshots, fo3LeftoverFormIds);
+        result["Scripts"] = MarkdownMultiPageWriter.FindCutRecords(
+            dmpSnapshots.SelectMany(s => s.Scripts), finalEsm.Scripts, allSnapshots, fo3LeftoverFormIds);
+        result["Dialogues"] = MarkdownMultiPageWriter.FindCutRecords(
+            dmpSnapshots.SelectMany(s => s.Dialogues), finalEsm.Dialogues, allSnapshots, fo3LeftoverFormIds);
+        result["Locations"] = MarkdownMultiPageWriter.FindCutRecords(
+            dmpSnapshots.SelectMany(s => s.Locations), finalEsm.Locations, allSnapshots, fo3LeftoverFormIds);
+        result["Placements"] = MarkdownMultiPageWriter.FindCutRecords(
+            dmpSnapshots.SelectMany(s => s.Placements), finalEsm.Placements, allSnapshots, fo3LeftoverFormIds);
+        result["Creatures"] = MarkdownMultiPageWriter.FindCutRecords(
+            dmpSnapshots.SelectMany(s => s.Creatures), finalEsm.Creatures, allSnapshots, fo3LeftoverFormIds);
+        result["Perks"] = MarkdownMultiPageWriter.FindCutRecords(
+            dmpSnapshots.SelectMany(s => s.Perks), finalEsm.Perks, allSnapshots, fo3LeftoverFormIds);
+        result["Ammo"] = MarkdownMultiPageWriter.FindCutRecords(
+            dmpSnapshots.SelectMany(s => s.Ammo), finalEsm.Ammo, allSnapshots, fo3LeftoverFormIds);
+        result["Leveled Lists"] = MarkdownMultiPageWriter.FindCutRecords(
+            dmpSnapshots.SelectMany(s => s.LeveledLists), finalEsm.LeveledLists, allSnapshots, fo3LeftoverFormIds);
+        result["Notes"] = MarkdownMultiPageWriter.FindCutRecords(
+            dmpSnapshots.SelectMany(s => s.Notes), finalEsm.Notes, allSnapshots, fo3LeftoverFormIds);
+        result["Terminals"] = MarkdownMultiPageWriter.FindCutRecords(
+            dmpSnapshots.SelectMany(s => s.Terminals), finalEsm.Terminals, allSnapshots, fo3LeftoverFormIds);
+
+        return result;
+    }
+
+    #endregion
+
+    #region Significance Classification
+
+    internal static bool HasSignificantChanges(MarkdownMultiPageWriter.RecordHistory history)
+    {
+        return history.ChangePoints.Any(cp => cp.FieldChanges.Any(f =>
+            f.FieldName is "FullName" or "PromptText" or "ResponseTexts" or "SourceText" ||
+            f.FieldName.StartsWith("Stage ", StringComparison.Ordinal) ||
+            f.FieldName.StartsWith("Objective ", StringComparison.Ordinal) ||
+            f.FieldName is "Damage" or "Value" or "DamageThreshold" or "ClipSize" or "Level" ||
+            f.FieldName is "WeaponType" or "AmmoFormId" or "MarkerName" ||
+            f.FieldName is "AttackDamage" or "CreatureType" or "Description" or "Ranks" or "MinLevel" ||
+            f.FieldName is "Speed" or "ChanceNone" or "EntryCount" or "NoteType" or "Text" ||
+            f.FieldName is "Difficulty" or "Password" or "HeaderText" or "MenuItemCount"));
+    }
+
+    #endregion
+
     #region Cut Content Section
 
     internal static void WriteCutContentSection(
@@ -271,165 +430,6 @@ internal static class MarkdownSectionWriter
         }
 
         sb.AppendLine();
-    }
-
-    #endregion
-
-    #region FormID History
-
-    internal static void WriteFormIdHistory(StringBuilder sb, List<VersionSnapshot> snapshots, uint formId)
-    {
-        sb.AppendLine($"## FormID History: 0x{formId:X8}");
-        sb.AppendLine();
-        sb.AppendLine("| Build | Date | Present | Name | Details |");
-        sb.AppendLine("|-------|------|---------|------|---------|");
-
-        foreach (var snapshot in snapshots)
-        {
-            var date = snapshot.Build.BuildDate?.ToString("yyyy-MM-dd") ?? "?";
-
-            if (snapshot.Quests.TryGetValue(formId, out var quest))
-            {
-                var stages = string.Join(", ", quest.Stages.Select(s => s.Index));
-                var objectives = string.Join("; ", quest.Objectives.Select(o => o.DisplayText ?? "?"));
-                sb.AppendLine(
-                    $"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | QUST | {quest.FullName ?? quest.EditorId ?? ""} | Stages: [{stages}] Objectives: [{objectives}] |");
-            }
-            else if (snapshot.Npcs.TryGetValue(formId, out var npc))
-            {
-                sb.AppendLine(
-                    $"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | NPC_ | {npc.FullName ?? npc.EditorId ?? ""} | Level: {npc.Level} |");
-            }
-            else if (snapshot.Weapons.TryGetValue(formId, out var weapon))
-            {
-                sb.AppendLine(
-                    $"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | WEAP | {weapon.FullName ?? weapon.EditorId ?? ""} | Dmg: {weapon.Damage}, Clip: {weapon.ClipSize} |");
-            }
-            else if (snapshot.Armor.TryGetValue(formId, out var armor))
-            {
-                sb.AppendLine(
-                    $"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | ARMO | {armor.FullName ?? armor.EditorId ?? ""} | DT: {armor.DamageThreshold:F1} |");
-            }
-            else if (snapshot.Items.TryGetValue(formId, out var item))
-            {
-                sb.AppendLine(
-                    $"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | {item.RecordType} | {item.FullName ?? item.EditorId ?? ""} | Value: {item.Value} |");
-            }
-            else if (snapshot.Scripts.TryGetValue(formId, out var script))
-            {
-                var hasSource = !string.IsNullOrEmpty(script.SourceText);
-                sb.AppendLine(
-                    $"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | SCPT | {script.EditorId ?? ""} | {script.ScriptType}, Vars: {script.VariableCount}, Source: {(hasSource ? "Yes" : "No")} |");
-            }
-            else if (snapshot.Dialogues.TryGetValue(formId, out var dialogue))
-            {
-                var text = dialogue.ResponseTexts.FirstOrDefault() ?? "";
-                sb.AppendLine(
-                    $"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | INFO | {dialogue.EditorId ?? ""} | {MarkdownMultiPageWriter.Esc(text)} |");
-            }
-            else if (snapshot.Locations.TryGetValue(formId, out var location))
-            {
-                sb.AppendLine(
-                    $"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | {location.RecordType} | {location.FullName ?? location.EditorId ?? ""} | |");
-            }
-            else if (snapshot.Creatures.TryGetValue(formId, out var creature))
-            {
-                sb.AppendLine(
-                    $"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | CREA | {creature.FullName ?? creature.EditorId ?? ""} | Level: {creature.Level}, Dmg: {creature.AttackDamage} |");
-            }
-            else if (snapshot.Perks.TryGetValue(formId, out var perk))
-            {
-                sb.AppendLine(
-                    $"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | PERK | {perk.FullName ?? perk.EditorId ?? ""} | Ranks: {perk.Ranks}, MinLevel: {perk.MinLevel} |");
-            }
-            else if (snapshot.Ammo.TryGetValue(formId, out var ammo))
-            {
-                sb.AppendLine(
-                    $"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | AMMO | {ammo.FullName ?? ammo.EditorId ?? ""} | Value: {ammo.Value}, Speed: {ammo.Speed:F1} |");
-            }
-            else if (snapshot.LeveledLists.TryGetValue(formId, out var leveledList))
-            {
-                sb.AppendLine(
-                    $"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | {leveledList.ListType} | {leveledList.EditorId ?? ""} | Entries: {leveledList.Entries.Count}, ChanceNone: {leveledList.ChanceNone} |");
-            }
-            else if (snapshot.Notes.TryGetValue(formId, out var note))
-            {
-                sb.AppendLine(
-                    $"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | NOTE | {note.FullName ?? note.EditorId ?? ""} | Type: {note.NoteType} |");
-            }
-            else if (snapshot.Terminals.TryGetValue(formId, out var terminal))
-            {
-                sb.AppendLine(
-                    $"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | TERM | {terminal.FullName ?? terminal.EditorId ?? ""} | MenuItems: {terminal.MenuItemCount} |");
-            }
-            else
-            {
-                sb.AppendLine($"| {MarkdownMultiPageWriter.Esc(snapshot.Build.Label)} | {date} | - | (not found) | |");
-            }
-        }
-    }
-
-    #endregion
-
-    #region Cut Record Data Computation
-
-    internal static Dictionary<string, List<MarkdownMultiPageWriter.CutRecord>> ComputeAllCutRecords(
-        List<VersionSnapshot> allSnapshots,
-        List<VersionSnapshot> dmpSnapshots,
-        VersionSnapshot finalEsm,
-        HashSet<uint>? fo3LeftoverFormIds)
-    {
-        var result = new Dictionary<string, List<MarkdownMultiPageWriter.CutRecord>>();
-
-        result["Quests"] = MarkdownMultiPageWriter.FindCutRecords(
-            dmpSnapshots.SelectMany(s => s.Quests), finalEsm.Quests, allSnapshots, fo3LeftoverFormIds);
-        result["NPCs"] = MarkdownMultiPageWriter.FindCutRecords(
-            dmpSnapshots.SelectMany(s => s.Npcs), finalEsm.Npcs, allSnapshots, fo3LeftoverFormIds);
-        result["Weapons"] = MarkdownMultiPageWriter.FindCutRecords(
-            dmpSnapshots.SelectMany(s => s.Weapons), finalEsm.Weapons, allSnapshots, fo3LeftoverFormIds);
-        result["Armor"] = MarkdownMultiPageWriter.FindCutRecords(
-            dmpSnapshots.SelectMany(s => s.Armor), finalEsm.Armor, allSnapshots, fo3LeftoverFormIds);
-        result["Items"] = MarkdownMultiPageWriter.FindCutRecords(
-            dmpSnapshots.SelectMany(s => s.Items), finalEsm.Items, allSnapshots, fo3LeftoverFormIds);
-        result["Scripts"] = MarkdownMultiPageWriter.FindCutRecords(
-            dmpSnapshots.SelectMany(s => s.Scripts), finalEsm.Scripts, allSnapshots, fo3LeftoverFormIds);
-        result["Dialogues"] = MarkdownMultiPageWriter.FindCutRecords(
-            dmpSnapshots.SelectMany(s => s.Dialogues), finalEsm.Dialogues, allSnapshots, fo3LeftoverFormIds);
-        result["Locations"] = MarkdownMultiPageWriter.FindCutRecords(
-            dmpSnapshots.SelectMany(s => s.Locations), finalEsm.Locations, allSnapshots, fo3LeftoverFormIds);
-        result["Placements"] = MarkdownMultiPageWriter.FindCutRecords(
-            dmpSnapshots.SelectMany(s => s.Placements), finalEsm.Placements, allSnapshots, fo3LeftoverFormIds);
-        result["Creatures"] = MarkdownMultiPageWriter.FindCutRecords(
-            dmpSnapshots.SelectMany(s => s.Creatures), finalEsm.Creatures, allSnapshots, fo3LeftoverFormIds);
-        result["Perks"] = MarkdownMultiPageWriter.FindCutRecords(
-            dmpSnapshots.SelectMany(s => s.Perks), finalEsm.Perks, allSnapshots, fo3LeftoverFormIds);
-        result["Ammo"] = MarkdownMultiPageWriter.FindCutRecords(
-            dmpSnapshots.SelectMany(s => s.Ammo), finalEsm.Ammo, allSnapshots, fo3LeftoverFormIds);
-        result["Leveled Lists"] = MarkdownMultiPageWriter.FindCutRecords(
-            dmpSnapshots.SelectMany(s => s.LeveledLists), finalEsm.LeveledLists, allSnapshots, fo3LeftoverFormIds);
-        result["Notes"] = MarkdownMultiPageWriter.FindCutRecords(
-            dmpSnapshots.SelectMany(s => s.Notes), finalEsm.Notes, allSnapshots, fo3LeftoverFormIds);
-        result["Terminals"] = MarkdownMultiPageWriter.FindCutRecords(
-            dmpSnapshots.SelectMany(s => s.Terminals), finalEsm.Terminals, allSnapshots, fo3LeftoverFormIds);
-
-        return result;
-    }
-
-    #endregion
-
-    #region Significance Classification
-
-    internal static bool HasSignificantChanges(MarkdownMultiPageWriter.RecordHistory history)
-    {
-        return history.ChangePoints.Any(cp => cp.FieldChanges.Any(f =>
-            f.FieldName is "FullName" or "PromptText" or "ResponseTexts" or "SourceText" ||
-            f.FieldName.StartsWith("Stage ", StringComparison.Ordinal) ||
-            f.FieldName.StartsWith("Objective ", StringComparison.Ordinal) ||
-            f.FieldName is "Damage" or "Value" or "DamageThreshold" or "ClipSize" or "Level" ||
-            f.FieldName is "WeaponType" or "AmmoFormId" or "MarkerName" ||
-            f.FieldName is "AttackDamage" or "CreatureType" or "Description" or "Ranks" or "MinLevel" ||
-            f.FieldName is "Speed" or "ChanceNone" or "EntryCount" or "NoteType" or "Text" ||
-            f.FieldName is "Difficulty" or "Password" or "HeaderText" or "MenuItemCount"));
     }
 
     #endregion

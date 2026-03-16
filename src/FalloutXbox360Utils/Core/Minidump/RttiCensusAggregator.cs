@@ -1,54 +1,6 @@
 namespace FalloutXbox360Utils.Core.Minidump;
 
 /// <summary>
-///     Per-dump census result with metadata about the dump file.
-/// </summary>
-public sealed class DumpCensusResult
-{
-    public required string FileName { get; init; }
-    public required string FilePath { get; init; }
-    public string? BuildType { get; init; }
-    public uint? PeTimestamp { get; init; }
-    public int ClassCount { get; init; }
-    public int TotalInstances { get; init; }
-    public required List<CensusEntry> Entries { get; init; }
-}
-
-/// <summary>
-///     Aggregated RTTI census entry across multiple DMP files.
-///     Keyed by class name since vtable addresses differ across builds.
-/// </summary>
-public sealed class AggregatedCensusEntry
-{
-    public required string ClassName { get; init; }
-    public bool IsTesForm { get; set; }
-    public int TotalInstances { get; set; }
-    public int DumpsPresent { get; set; }
-
-    /// <summary>Per-build-type instance counts (e.g., "Release Beta" → 150000).</summary>
-    public Dictionary<string, int> InstancesByBuildType { get; } = new();
-
-    /// <summary>Base classes from the first successful resolution.</summary>
-    public List<string>? BaseClassNames { get; set; }
-
-    /// <summary>Per-dump breakdown: file name → instance count.</summary>
-    public Dictionary<string, int> InstancesByDump { get; } = new();
-}
-
-/// <summary>
-///     Top-level aggregated census report across all DMP files.
-/// </summary>
-public sealed class AggregatedCensusReport
-{
-    public int TotalDumps { get; init; }
-    public int TotalClasses { get; init; }
-    public long TotalInstances { get; init; }
-    public int TesFormClasses { get; init; }
-    public required List<AggregatedCensusEntry> Classes { get; init; }
-    public required List<DumpCensusResult> Dumps { get; init; }
-}
-
-/// <summary>
 ///     Aggregates per-dump RTTI census results into a single cross-dump report.
 ///     Groups by demangled class name (build-independent) since vtable addresses
 ///     differ across builds.

@@ -1,16 +1,6 @@
 namespace FalloutXbox360Utils.Core.VersionTracking.Models;
 
 /// <summary>
-///     Type of change detected for a record.
-/// </summary>
-public enum ChangeType
-{
-    Added,
-    Removed,
-    Changed
-}
-
-/// <summary>
 ///     Describes a change to a single record between two build snapshots.
 /// </summary>
 public record RecordChange

@@ -4,16 +4,6 @@ using System.Text;
 namespace FalloutXbox360Utils.Core.Formats.Subtitles;
 
 /// <summary>
-///     A single subtitle entry parsed from a transcriber CSV export.
-/// </summary>
-public sealed record SubtitleEntry(
-    string? Text,
-    string? Speaker,
-    string? Quest,
-    string? VoiceType,
-    string? Source);
-
-/// <summary>
 ///     Indexed subtitle data parsed from a transcriber CSV export.
 ///     Maps INFO FormIDs to subtitle text, speaker, and quest names.
 ///     CSV format: File,FormID,VoiceType,Speaker,Quest,Source,Text

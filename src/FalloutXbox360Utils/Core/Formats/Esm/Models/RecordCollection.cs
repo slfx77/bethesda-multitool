@@ -2,9 +2,6 @@ using FalloutXbox360Utils.Core.Formats.Esm.Export;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
-/// <summary>A single world placement of a base object in a cell.</summary>
-public record WorldPlacement(PlacedReference Ref, CellRecord Cell);
-
 /// <summary>
 ///     Aggregated semantic parsing result from a memory dump.
 /// </summary>

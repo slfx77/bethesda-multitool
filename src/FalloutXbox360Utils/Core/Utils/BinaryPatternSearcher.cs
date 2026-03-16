@@ -2,10 +2,6 @@ using System.Text;
 
 namespace FalloutXbox360Utils.Core.Utils;
 
-internal readonly record struct BinarySearchPattern(
-    byte[] PatternBytes,
-    byte[]? PatternBytesLower);
-
 internal static class BinaryPatternSearcher
 {
     public const int DefaultStreamBufferSize = 8 * 1024 * 1024;

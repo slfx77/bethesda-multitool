@@ -26,12 +26,3 @@ public record BuildInfo
     /// <summary>Whether this source is authoritative (ESM = true, DMP = false).</summary>
     public bool IsAuthoritative => SourceType == BuildSourceType.Esm;
 }
-
-/// <summary>
-///     Type of data source for version tracking.
-/// </summary>
-public enum BuildSourceType
-{
-    Esm,
-    Dmp
-}

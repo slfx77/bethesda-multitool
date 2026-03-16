@@ -3,65 +3,6 @@ using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
 /// <summary>
-///     Measures rendered text dimensions. Each renderer provides its own implementation
-///     (precise Win2D CanvasTextLayout vs estimated character-width multiplication).
-/// </summary>
-public delegate (float Width, float Height) TextMeasurer(string text, float fontSize);
-
-/// <summary>
-///     Lightweight projection of any marker type for layout computation.
-///     Both PlacedReference (GUI) and ExtractedRefrRecord (CLI) project into this.
-/// </summary>
-public readonly record struct MapMarkerInput(float WorldX, float WorldY, MapMarkerType? Type, string? Name);
-
-/// <summary>Proportional sizing values computed from the image long edge.</summary>
-public readonly record struct MapExportSizing(
-    float MarkerRadius,
-    float LabelFontSize,
-    float OutlineWidth,
-    float LabelPadH,
-    float LabelPadV,
-    float Gap);
-
-/// <summary>A positioned marker circle with color and glyph.</summary>
-public readonly record struct MarkerLayout(
-    int OriginalIndex,
-    float PixelX,
-    float PixelY,
-    MapMarkerType? Type,
-    byte ColorR,
-    byte ColorG,
-    byte ColorB,
-    string Glyph);
-
-/// <summary>A positioned label with optional leader line back to its marker.</summary>
-public readonly record struct LabelLayout(
-    int MarkerIndex,
-    float LabelX,
-    float LabelY,
-    float PillWidth,
-    float PillHeight,
-    float PadH,
-    float PadV,
-    float TextHeight,
-    string Text,
-    bool NeedsLeader,
-    float MarkerPixelX,
-    float MarkerPixelY);
-
-/// <summary>A grid line segment in pixel coordinates.</summary>
-public readonly record struct GridLine(float X1, float Y1, float X2, float Y2);
-
-/// <summary>Complete layout result for one map export frame.</summary>
-public sealed class MapExportLayout
-{
-    public required IReadOnlyList<MarkerLayout> Markers { get; init; }
-    public required IReadOnlyList<LabelLayout> Labels { get; init; }
-    public required IReadOnlyList<GridLine> GridLines { get; init; }
-    public required MapExportSizing Sizing { get; init; }
-}
-
-/// <summary>
 ///     Shared layout engine for map marker exports. Computes marker positions, label placement
 ///     with collision avoidance and leader lines, and cell grid lines — all as pure data.
 ///     Both the GUI (Win2D) and CLI (Magick.NET) renderers consume this output.

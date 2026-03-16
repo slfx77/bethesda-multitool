@@ -210,6 +210,16 @@ public static class MarkdownTimelineWriter
 
     #endregion
 
+    #region Cut Content
+
+    private static void WriteCutContentSection(StringBuilder sb, List<VersionSnapshot> snapshots,
+        HashSet<uint>? fo3LeftoverFormIds)
+    {
+        CutContentTimelineWriter.WriteCutContentSection(sb, snapshots, fo3LeftoverFormIds);
+    }
+
+    #endregion
+
     #region Per-Record Timelines
 
     private static void WriteRecordTimelines(
@@ -422,16 +432,6 @@ public static class MarkdownTimelineWriter
         }
 
         sb.AppendLine();
-    }
-
-    #endregion
-
-    #region Cut Content
-
-    private static void WriteCutContentSection(StringBuilder sb, List<VersionSnapshot> snapshots,
-        HashSet<uint>? fo3LeftoverFormIds)
-    {
-        CutContentTimelineWriter.WriteCutContentSection(sb, snapshots, fo3LeftoverFormIds);
     }
 
     #endregion

@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
-using FalloutXbox360Utils.Core.Formats;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 
@@ -57,12 +56,12 @@ internal static class ConcurrentScanCoordinator
     }
 
     private static async Task<(
-        List<(string SignatureId, long Offset)> matches,
-        EsmRecordScanResult esmRecords,
-        List<DetectedAssetString> assetStrings,
-        List<ExtractedMesh>? meshes,
-        List<ExtractedTexture>? textures,
-        List<ExtractedTexture>? gpuTextures)>
+            List<(string SignatureId, long Offset)> matches,
+            EsmRecordScanResult esmRecords,
+            List<DetectedAssetString> assetStrings,
+            List<ExtractedMesh>? meshes,
+            List<ExtractedTexture>? textures,
+            List<ExtractedTexture>? gpuTextures)>
         LaunchConcurrentScansAsync(
             MemoryMappedViewAccessor accessor,
             AnalysisResult result,
@@ -119,7 +118,7 @@ internal static class ConcurrentScanCoordinator
         {
             var scanSw = Stopwatch.StartNew();
             esmRecords = EsmRecordScanner.ScanForRecordsMemoryMapped(
-                accessor, result.FileSize, moduleRanges, null);
+                accessor, result.FileSize, moduleRanges);
             log.Debug("ConcurrentScan:   ESM records: {0:N0} in {1:N0} ms",
                 esmRecords.MainRecords.Count, scanSw.ElapsedMilliseconds);
         }, ct));

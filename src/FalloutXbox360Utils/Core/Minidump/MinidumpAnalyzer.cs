@@ -7,9 +7,9 @@ namespace FalloutXbox360Utils.Core.Minidump;
 /// <summary>
 ///     Unified analyzer for memory dumps. Provides both file carving analysis
 ///     (for GUI visualization) and metadata extraction (for CLI reporting).
-///     Delegates scanning to <see cref="MinidumpFileScanner"/>, reporting to
-///     <see cref="MinidumpReportWriter"/>, and metadata extraction to
-///     <see cref="MinidumpMetadataExtractor"/>.
+///     Delegates scanning to <see cref="MinidumpFileScanner" />, reporting to
+///     <see cref="MinidumpReportWriter" />, and metadata extraction to
+///     <see cref="MinidumpMetadataExtractor" />.
 /// </summary>
 public sealed class MinidumpAnalyzer
 {

@@ -70,6 +70,7 @@ public static class EsmCommand
         });
 
         command.Subcommands.Add(PackagesCommand.Create());
+        command.Subcommands.Add(NpcInventoryCommand.CreateEsmCommand());
         command.Subcommands.Add(reportsCommand);
         command.Subcommands.Add(EsmStatsCommand.CreateStatsCommand());
         command.Subcommands.Add(EsmDumpCommand.CreateDumpCommand());

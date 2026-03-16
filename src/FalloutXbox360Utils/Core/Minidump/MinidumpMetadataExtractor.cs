@@ -14,7 +14,7 @@ internal static class MinidumpMetadataExtractor
     /// <summary>
     ///     Post-process pre-computed scan results: merge ESM records and asset strings,
     ///     extract LAND/REFR records, map FormIDs, walk scene graph, and add carved file entries.
-    ///     Called by <see cref="ConcurrentScanCoordinator"/> after all concurrent scans complete.
+    ///     Called by <see cref="ConcurrentScanCoordinator" /> after all concurrent scans complete.
     /// </summary>
     internal static async Task PostProcessMetadataAsync(
         MemoryMappedViewAccessor accessor,

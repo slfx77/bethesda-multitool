@@ -49,6 +49,7 @@ test_output/
 output/
 TestOutput/
 publish/
+artifacts/
 
 # Tools folder - ignore most but allow specific tools
 tools/*

@@ -9,31 +9,6 @@ namespace FalloutXbox360Utils.Core.VersionTracking.Reporting;
 /// </summary>
 public static class MarkdownMultiPageWriter
 {
-    #region Types
-
-    internal sealed record ChangePoint(string BuildLabel, DateTimeOffset? BuildDate, List<FieldChange> FieldChanges);
-
-    internal sealed record RecordHistory(
-        uint FormId,
-        string? EditorId,
-        string? FullName,
-        string Category,
-        List<ChangePoint> ChangePoints);
-
-    internal sealed record CutRecord(uint FormId, string? EditorId, string? Name, string FirstSeen, string LastSeen);
-
-    /// <summary>Defines a record category with accessors for snapshots and diffs.</summary>
-    internal sealed record CategoryDef(
-        string Name,
-        string FileName,
-        string Description,
-        Func<VersionDiffResult, List<RecordChange>> DiffSelector,
-        Func<VersionSnapshot, int> Counter,
-        Func<VersionSnapshot, IEnumerable<KeyValuePair<uint, object>>> RecordSelector,
-        Func<object, List<VersionSnapshot>, string> GroupClassifier);
-
-    #endregion
-
     #region Category Definitions
 
     private static readonly CategoryDef[] Categories =
@@ -320,6 +295,31 @@ public static class MarkdownMultiPageWriter
 
         return sb.ToString();
     }
+
+    #endregion
+
+    #region Types
+
+    internal sealed record ChangePoint(string BuildLabel, DateTimeOffset? BuildDate, List<FieldChange> FieldChanges);
+
+    internal sealed record RecordHistory(
+        uint FormId,
+        string? EditorId,
+        string? FullName,
+        string Category,
+        List<ChangePoint> ChangePoints);
+
+    internal sealed record CutRecord(uint FormId, string? EditorId, string? Name, string FirstSeen, string LastSeen);
+
+    /// <summary>Defines a record category with accessors for snapshots and diffs.</summary>
+    internal sealed record CategoryDef(
+        string Name,
+        string FileName,
+        string Description,
+        Func<VersionDiffResult, List<RecordChange>> DiffSelector,
+        Func<VersionSnapshot, int> Counter,
+        Func<VersionSnapshot, IEnumerable<KeyValuePair<uint, object>>> RecordSelector,
+        Func<object, List<VersionSnapshot>, string> GroupClassifier);
 
     #endregion
 
