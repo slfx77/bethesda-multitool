@@ -10,24 +10,12 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 internal static class NifAnimationParser
 {
     /// <summary>
-    ///     Per-channel animation override. Rotation is always present; translation and scale
-    ///     are optional.
-    /// </summary>
-    internal readonly record struct AnimPoseOverride(
-        Quaternion Rotation,
-        bool HasTranslation,
-        float Tx,
-        float Ty,
-        float Tz,
-        bool HasScale,
-        float Scale);
-
-    /// <summary>
     ///     Parse idle pose overrides from NiControllerSequence blocks in a skeleton/KF NIF.
     /// </summary>
     internal static Dictionary<string, AnimPoseOverride>? ParseIdlePoseOverrides(
         byte[] data,
-        NifInfo nif)
+        NifInfo nif,
+        bool sampleLastKeyframe = false)
     {
         var be = nif.IsBigEndian;
         var sequenceBlock = NifControllerSequenceSelector.SelectIdleSequence(data, nif, be);
@@ -70,7 +58,8 @@ internal static class NifAnimationParser
                 data,
                 nif,
                 nif.Blocks[interpolatorRef],
-                be);
+                be,
+                sampleLastKeyframe);
             if (pose == null)
             {
                 continue;
@@ -115,4 +104,17 @@ internal static class NifAnimationParser
             result.Remove(pelvisVariant);
         }
     }
+
+    /// <summary>
+    ///     Per-channel animation override. Rotation is always present; translation and scale
+    ///     are optional.
+    /// </summary>
+    internal readonly record struct AnimPoseOverride(
+        Quaternion Rotation,
+        bool HasTranslation,
+        float Tx,
+        float Ty,
+        float Tz,
+        bool HasScale,
+        float Scale);
 }

@@ -326,6 +326,14 @@ public static class ShowCommand
         lines.Add($"  [cyan]Female Head Mesh:[/]  {Markup.Escape(race.FemaleHeadModelPath ?? "(none)")}");
         lines.Add($"  [cyan]Male Head Tex:[/]     {Markup.Escape(race.MaleHeadTexturePath ?? "(none)")}");
         lines.Add($"  [cyan]Female Head Tex:[/]   {Markup.Escape(race.FemaleHeadTexturePath ?? "(none)")}");
+        lines.Add($"  [cyan]Male Mouth Mesh:[/]   {Markup.Escape(race.MaleMouthModelPath ?? "(none)")}");
+        lines.Add($"  [cyan]Female Mouth Mesh:[/] {Markup.Escape(race.FemaleMouthModelPath ?? "(none)")}");
+        lines.Add($"  [cyan]Male Lower Teeth:[/]  {Markup.Escape(race.MaleLowerTeethModelPath ?? "(none)")}");
+        lines.Add($"  [cyan]Female Lower Teeth:[/] {Markup.Escape(race.FemaleLowerTeethModelPath ?? "(none)")}");
+        lines.Add($"  [cyan]Male Upper Teeth:[/]  {Markup.Escape(race.MaleUpperTeethModelPath ?? "(none)")}");
+        lines.Add($"  [cyan]Female Upper Teeth:[/] {Markup.Escape(race.FemaleUpperTeethModelPath ?? "(none)")}");
+        lines.Add($"  [cyan]Male Tongue:[/]       {Markup.Escape(race.MaleTongueModelPath ?? "(none)")}");
+        lines.Add($"  [cyan]Female Tongue:[/]     {Markup.Escape(race.FemaleTongueModelPath ?? "(none)")}");
 
         // Body meshes
         lines.Add("");

@@ -14,6 +14,10 @@ internal sealed class NifShaderTextureMetadata
 
     public string? DiffusePath => GetTextureSlot(0);
     public string? NormalMapPath => GetTextureSlot(1);
+    public string? GlowMapPath => GetTextureSlot(2);
+    public string? HeightMapPath => GetTextureSlot(3);
+    public string? EnvironmentMapPath => GetTextureSlot(4);
+    public string? EnvironmentMaskPath => GetTextureSlot(5);
 
     public bool HasRemappableTextures =>
         ShaderFlags.HasValue && (ShaderFlags.Value & (1u << 25)) != 0;

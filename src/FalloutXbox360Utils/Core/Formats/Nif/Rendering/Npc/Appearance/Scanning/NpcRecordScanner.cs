@@ -1,5 +1,5 @@
-using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
@@ -27,14 +27,17 @@ internal static class NpcRecordScanner
         uint? hairFormId = null;
         uint? eyesFormId = null;
         uint? hairColor = null;
-        bool isFemale = false;
+        var isFemale = false;
         ushort templateFlags = 0;
         uint? templateFormId = null;
         float[]? faceGenSymmetric = null;
         float[]? faceGenAsymmetric = null;
         float[]? faceGenTexture = null;
+        byte[]? specialStats = null;
+        byte[]? skills = null;
         var headPartFormIds = new List<uint>();
-        var inventoryFormIds = new List<uint>();
+        var inventoryItems = new List<InventoryItem>();
+        var packageFormIds = new List<uint>();
 
         foreach (var subrecord in subrecords)
         {
@@ -97,7 +100,14 @@ internal static class NpcRecordScanner
                     break;
                 }
                 case "CNTO" when subrecord.Data.Length >= 8:
-                    inventoryFormIds.Add(
+                {
+                    inventoryItems.Add(new InventoryItem(
+                        BinaryUtils.ReadUInt32(subrecord.Data, 0, bigEndian),
+                        BinaryUtils.ReadInt32(subrecord.Data, 4, bigEndian)));
+                    break;
+                }
+                case "PKID" when subrecord.Data.Length == 4:
+                    packageFormIds.Add(
                         BinaryUtils.ReadUInt32(subrecord.Data, 0, bigEndian));
                     break;
                 case "TPLT" when subrecord.Data.Length == 4:
@@ -121,6 +131,28 @@ internal static class NpcRecordScanner
                         subrecord.Data,
                         bigEndian);
                     break;
+                case "DATA" when subrecord.Data.Length == 11:
+                    specialStats =
+                    [
+                        subrecord.Data[4],
+                        subrecord.Data[5],
+                        subrecord.Data[6],
+                        subrecord.Data[7],
+                        subrecord.Data[8],
+                        subrecord.Data[9],
+                        subrecord.Data[10]
+                    ];
+                    break;
+                case "DNAM" when subrecord.Data.Length == 28:
+                {
+                    skills = new byte[14];
+                    for (var i = 0; i < skills.Length; i++)
+                    {
+                        skills[i] = subrecord.Data[i * 2];
+                    }
+
+                    break;
+                }
             }
         }
 
@@ -135,9 +167,12 @@ internal static class NpcRecordScanner
             FaceGenSymmetric = faceGenSymmetric,
             FaceGenAsymmetric = faceGenAsymmetric,
             FaceGenTexture = faceGenTexture,
+            SpecialStats = specialStats,
+            Skills = skills,
             HeadPartFormIds = headPartFormIds.Count > 0 ? headPartFormIds : null,
             HairColor = hairColor,
-            InventoryFormIds = inventoryFormIds.Count > 0 ? inventoryFormIds : null,
+            InventoryItems = inventoryItems.Count > 0 ? inventoryItems : null,
+            PackageFormIds = packageFormIds.Count > 0 ? packageFormIds : null,
             TemplateFormId = templateFormId,
             TemplateFlags = templateFlags
         };

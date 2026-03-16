@@ -7,6 +7,77 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Skinning;
 /// </summary>
 internal static class NifSkinningMath
 {
+    private const float UnitScaleTolerance = 0.025f;
+    private const float OrthogonalityTolerance = 0.015f;
+    private const float DeterminantTolerance = 0.05f;
+
+    internal static DualQuaternionCompatibility AnalyzeDualQuaternionCompatibility(
+        Matrix4x4[] boneSkinMatrices)
+    {
+        for (var matrixIndex = 0; matrixIndex < boneSkinMatrices.Length; matrixIndex++)
+        {
+            var matrix = boneSkinMatrices[matrixIndex];
+            var axisX = new Vector3(matrix.M11, matrix.M12, matrix.M13);
+            var axisY = new Vector3(matrix.M21, matrix.M22, matrix.M23);
+            var axisZ = new Vector3(matrix.M31, matrix.M32, matrix.M33);
+
+            var scaleX = axisX.Length();
+            var scaleY = axisY.Length();
+            var scaleZ = axisZ.Length();
+            if (scaleX < 1e-6f || scaleY < 1e-6f || scaleZ < 1e-6f)
+            {
+                return new DualQuaternionCompatibility(
+                    false,
+                    matrixIndex,
+                    scaleX,
+                    scaleY,
+                    scaleZ,
+                    1f,
+                    0f);
+            }
+
+            var normalizedAxisX = axisX / scaleX;
+            var normalizedAxisY = axisY / scaleY;
+            var normalizedAxisZ = axisZ / scaleZ;
+            var maxAxisDot = MathF.Max(
+                MathF.Abs(Vector3.Dot(normalizedAxisX, normalizedAxisY)),
+                MathF.Max(
+                    MathF.Abs(Vector3.Dot(normalizedAxisX, normalizedAxisZ)),
+                    MathF.Abs(Vector3.Dot(normalizedAxisY, normalizedAxisZ))));
+            var determinant = Vector3.Dot(axisX, Vector3.Cross(axisY, axisZ));
+
+            var hasUnitScale =
+                MathF.Abs(scaleX - 1f) <= UnitScaleTolerance &&
+                MathF.Abs(scaleY - 1f) <= UnitScaleTolerance &&
+                MathF.Abs(scaleZ - 1f) <= UnitScaleTolerance;
+            var hasOrthogonalAxes = maxAxisDot <= OrthogonalityTolerance;
+            var hasPositiveUnitDeterminant =
+                determinant > 0f &&
+                MathF.Abs(determinant - 1f) <= DeterminantTolerance;
+
+            if (!hasUnitScale || !hasOrthogonalAxes || !hasPositiveUnitDeterminant)
+            {
+                return new DualQuaternionCompatibility(
+                    false,
+                    matrixIndex,
+                    scaleX,
+                    scaleY,
+                    scaleZ,
+                    maxAxisDot,
+                    determinant);
+            }
+        }
+
+        return new DualQuaternionCompatibility(
+            true,
+            -1,
+            1f,
+            1f,
+            1f,
+            0f,
+            1f);
+    }
+
     internal static float[] ApplySkinningPositions(
         float[] positions,
         (int BoneIdx, float Weight)[][] perVertexInfluences,
@@ -237,6 +308,15 @@ internal static class NifSkinningMath
         destination[vertexIndex * 3 + 2] = value.Z;
     }
 
+    internal readonly record struct DualQuaternionCompatibility(
+        bool CanUse,
+        int MatrixIndex,
+        float ScaleX,
+        float ScaleY,
+        float ScaleZ,
+        float MaxAxisDot,
+        float Determinant);
+
     private readonly struct DualQuaternion(Quaternion real, Quaternion dual)
     {
         internal static readonly DualQuaternion Identity =
@@ -247,7 +327,9 @@ internal static class NifSkinningMath
         internal Quaternion Dual { get; } = dual;
 
         internal static DualQuaternion FromMatrix4x4(Matrix4x4 matrix)
-            => FromMatrix4x4(matrix, out _);
+        {
+            return FromMatrix4x4(matrix, out _);
+        }
 
         internal static DualQuaternion FromMatrix4x4(
             Matrix4x4 matrix,

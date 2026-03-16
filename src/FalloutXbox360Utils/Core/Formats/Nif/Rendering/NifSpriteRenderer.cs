@@ -3,13 +3,27 @@ using FalloutXbox360Utils.Core.Formats.Dds;
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 
 /// <summary>
-///     Renders a <see cref="NifRenderableModel"/> to a transparent RGBA pixel buffer
+///     Renders a <see cref="NifRenderableModel" /> to a transparent RGBA pixel buffer
 ///     using orthographic top-down projection with per-vertex smooth shading, optional texture mapping,
 ///     bump mapping, and vertex colors.
 ///     Uses a scanline triangle rasterizer with Z-buffer depth testing.
 /// </summary>
 internal static class NifSpriteRenderer
 {
+    // SM3002.pso hair tint shader constant: the "lightScalar" in the tint formula is
+    // a hardcoded -0.5 (from def c6 = {-0.5, 0, -1, -2}, register never overwritten).
+    // Formula: tintedShade = 2 * (vc * (HairTint - 0.5) + 0.5)
+    // With vc=1 this simplifies to 2 * HairTint, so dark tints darken and light tints brighten.
+
+    // Lighting constants from shared RenderLightingConstants
+    private static readonly float LightDirX = RenderLightingConstants.LightDir.X;
+    private static readonly float LightDirY = RenderLightingConstants.LightDir.Y;
+    private static readonly float LightDirZ = RenderLightingConstants.LightDir.Z;
+    private static readonly float HalfVecX = RenderLightingConstants.HalfVec.X;
+    private static readonly float HalfVecY = RenderLightingConstants.HalfVec.Y;
+
+    private static readonly float HalfVecZ = RenderLightingConstants.HalfVec.Z;
+
     // Debug flags for diagnosing rendering artifacts
     internal static bool DisableBilinear { get; set; }
     internal static bool DisableBumpMapping { get; set; }
@@ -22,19 +36,6 @@ internal static class NifSpriteRenderer
     ///     it.  Default 0.5 compensates for the missing fill lights.
     /// </summary>
     internal static float BumpStrength { get; set; } = 0.5f;
-
-    // SM3002.pso hair tint shader constant: the "lightScalar" in the tint formula is
-    // a hardcoded -0.5 (from def c6 = {-0.5, 0, -1, -2}, register never overwritten).
-    // Formula: tintedShade = 2 * (vc * (HairTint - 0.5) + 0.5)
-    // With vc=1 this simplifies to 2 * HairTint, so dark tints darken and light tints brighten.
-
-    // Lighting constants from shared RenderLightingConstants
-    private static readonly float LightDirX = RenderLightingConstants.LightDir.X;
-    private static readonly float LightDirY = RenderLightingConstants.LightDir.Y;
-    private static readonly float LightDirZ = RenderLightingConstants.LightDir.Z;
-    private static readonly float HalfVecX = RenderLightingConstants.HalfVec.X;
-    private static readonly float HalfVecY = RenderLightingConstants.HalfVec.Y;
-    private static readonly float HalfVecZ = RenderLightingConstants.HalfVec.Z;
 
     public static SpriteResult? Render(NifRenderableModel model,
         NifTextureResolver? textureResolver = null,
@@ -442,9 +443,12 @@ internal static class NifSpriteRenderer
 
                     if (uv0 + 1 < uvs.Length && uv1 + 1 < uvs.Length && uv2 + 1 < uvs.Length)
                     {
-                        tri.U0 = uvs[uv0]; tri.V0 = uvs[uv0 + 1];
-                        tri.U1 = uvs[uv1]; tri.V1 = uvs[uv1 + 1];
-                        tri.U2 = uvs[uv2]; tri.V2 = uvs[uv2 + 1];
+                        tri.U0 = uvs[uv0];
+                        tri.V0 = uvs[uv0 + 1];
+                        tri.U1 = uvs[uv1];
+                        tri.V1 = uvs[uv1 + 1];
+                        tri.U2 = uvs[uv2];
+                        tri.V2 = uvs[uv2 + 1];
                         tri.Texture = texture;
                         tri.NormalMap = normalMap;
                     }
@@ -454,9 +458,15 @@ internal static class NifSpriteRenderer
                 var hasVertexNormals = false;
                 if (nrm != null && i0 + 2 < nrm.Length && i1 + 2 < nrm.Length && i2 + 2 < nrm.Length)
                 {
-                    tri.Nx0 = nrm[i0]; tri.Ny0 = nrm[i0 + 1]; tri.Nz0 = nrm[i0 + 2];
-                    tri.Nx1 = nrm[i1]; tri.Ny1 = nrm[i1 + 1]; tri.Nz1 = nrm[i1 + 2];
-                    tri.Nx2 = nrm[i2]; tri.Ny2 = nrm[i2 + 1]; tri.Nz2 = nrm[i2 + 2];
+                    tri.Nx0 = nrm[i0];
+                    tri.Ny0 = nrm[i0 + 1];
+                    tri.Nz0 = nrm[i0 + 2];
+                    tri.Nx1 = nrm[i1];
+                    tri.Ny1 = nrm[i1 + 1];
+                    tri.Nz1 = nrm[i1 + 2];
+                    tri.Nx2 = nrm[i2];
+                    tri.Ny2 = nrm[i2 + 1];
+                    tri.Nz2 = nrm[i2 + 2];
                     tri.HasVertexNormals = true;
                     hasVertexNormals = true;
                 }
@@ -466,27 +476,55 @@ internal static class NifSpriteRenderer
                     i0 + 2 < tan.Length && i1 + 2 < tan.Length && i2 + 2 < tan.Length &&
                     i0 + 2 < bitan.Length && i1 + 2 < bitan.Length && i2 + 2 < bitan.Length)
                 {
-                    tri.Tx0 = tan[i0]; tri.Ty0 = tan[i0 + 1]; tri.Tz0 = tan[i0 + 2];
-                    tri.Tx1 = tan[i1]; tri.Ty1 = tan[i1 + 1]; tri.Tz1 = tan[i1 + 2];
-                    tri.Tx2 = tan[i2]; tri.Ty2 = tan[i2 + 1]; tri.Tz2 = tan[i2 + 2];
-                    tri.Bx0 = bitan[i0]; tri.By0 = bitan[i0 + 1]; tri.Bz0 = bitan[i0 + 2];
-                    tri.Bx1 = bitan[i1]; tri.By1 = bitan[i1 + 1]; tri.Bz1 = bitan[i1 + 2];
-                    tri.Bx2 = bitan[i2]; tri.By2 = bitan[i2 + 1]; tri.Bz2 = bitan[i2 + 2];
+                    tri.Tx0 = tan[i0];
+                    tri.Ty0 = tan[i0 + 1];
+                    tri.Tz0 = tan[i0 + 2];
+                    tri.Tx1 = tan[i1];
+                    tri.Ty1 = tan[i1 + 1];
+                    tri.Tz1 = tan[i1 + 2];
+                    tri.Tx2 = tan[i2];
+                    tri.Ty2 = tan[i2 + 1];
+                    tri.Tz2 = tan[i2 + 2];
+                    tri.Bx0 = bitan[i0];
+                    tri.By0 = bitan[i0 + 1];
+                    tri.Bz0 = bitan[i0 + 2];
+                    tri.Bx1 = bitan[i1];
+                    tri.By1 = bitan[i1 + 1];
+                    tri.Bz1 = bitan[i1 + 2];
+                    tri.Bx2 = bitan[i2];
+                    tri.By2 = bitan[i2 + 1];
+                    tri.Bz2 = bitan[i2 + 2];
                     tri.HasTangents = true;
                 }
 
-                // Per-vertex colors: gated by BSShaderFlags2 Vertex_Colors bit for lit shaders,
-                // but always applied for emissive submeshes (neon signs use vertex colors for glow tint)
-                if (vcol != null && (submesh.UseVertexColors || submesh.IsEmissive))
+                if (NifVertexColorPolicy.HasVertexColorData(submesh))
                 {
-                    var ci0 = tris[t] * 4;
-                    var ci1 = tris[t + 1] * 4;
-                    var ci2 = tris[t + 2] * 4;
-                    if (ci0 + 3 < vcol.Length && ci1 + 3 < vcol.Length && ci2 + 3 < vcol.Length)
+                    var vertexIndex0 = tris[t];
+                    var vertexIndex1 = tris[t + 1];
+                    var vertexIndex2 = tris[t + 2];
+                    var ci0 = vertexIndex0 * 4;
+                    var ci1 = vertexIndex1 * 4;
+                    var ci2 = vertexIndex2 * 4;
+                    if (vcol != null &&
+                        ci0 + 3 < vcol.Length &&
+                        ci1 + 3 < vcol.Length &&
+                        ci2 + 3 < vcol.Length)
                     {
-                        tri.R0 = vcol[ci0]; tri.G0 = vcol[ci0 + 1]; tri.B0 = vcol[ci0 + 2]; tri.A0 = vcol[ci0 + 3];
-                        tri.R1 = vcol[ci1]; tri.G1 = vcol[ci1 + 1]; tri.B1 = vcol[ci1 + 2]; tri.A1 = vcol[ci1 + 3];
-                        tri.R2 = vcol[ci2]; tri.G2 = vcol[ci2 + 1]; tri.B2 = vcol[ci2 + 2]; tri.A2 = vcol[ci2 + 3];
+                        var c0 = NifVertexColorPolicy.Read(submesh, vertexIndex0);
+                        var c1 = NifVertexColorPolicy.Read(submesh, vertexIndex1);
+                        var c2 = NifVertexColorPolicy.Read(submesh, vertexIndex2);
+                        tri.R0 = c0.R;
+                        tri.G0 = c0.G;
+                        tri.B0 = c0.B;
+                        tri.A0 = c0.A;
+                        tri.R1 = c1.R;
+                        tri.G1 = c1.G;
+                        tri.B1 = c1.B;
+                        tri.A1 = c1.A;
+                        tri.R2 = c2.R;
+                        tri.G2 = c2.G;
+                        tri.B2 = c2.B;
+                        tri.A2 = c2.A;
                         tri.HasVertexColors = true;
                     }
                 }
@@ -523,18 +561,14 @@ internal static class NifSpriteRenderer
         return list;
     }
 
-    private sealed record RenderLayer(
-        TriangleData[] OpaqueAndCutoutTriangles,
-        TriangleData[] BlendedTriangles);
-
     /// <summary>
     ///     Compute shading from a world-space normal using the SKIN2000.pso formula
     ///     (from D3D9 bytecode disassembly of Bethesda's face/skin pixel shader).
     ///     <para>
-    ///     SKIN2000 lighting:
-    ///       fresnel = dot(H, -L) * (1 - NdotH)^2
-    ///       directional = min(PSLightColor * NdotL + PSLightColor * fresnel * 0.5, 1.0)
-    ///       shade = directional + AmbientColor
+    ///         SKIN2000 lighting:
+    ///         fresnel = dot(H, -L) * (1 - NdotH)^2
+    ///         directional = min(PSLightColor * NdotL + PSLightColor * fresnel * 0.5, 1.0)
+    ///         shade = directional + AmbientColor
     ///     </para>
     /// </summary>
     internal static float ComputeShade(float nx, float ny, float nz, bool twoSidedLighting = false)
@@ -543,7 +577,7 @@ internal static class NifSpriteRenderer
         // Negated: view-space Y points down, so -ny maps "up" normals to sky
         var hemiBlend = -ny * 0.5f + 0.5f;
         var ambient = RenderLightingConstants.GroundAmbient +
-            (RenderLightingConstants.SkyAmbient - RenderLightingConstants.GroundAmbient) * hemiBlend;
+                      (RenderLightingConstants.SkyAmbient - RenderLightingConstants.GroundAmbient) * hemiBlend;
 
         // NdotL — diffuse with wrap lighting to soften terminator line on FaceGen creases.
         // Wrap factor 0.25: allows normals slightly facing away from light to receive partial
@@ -565,7 +599,7 @@ internal static class NifSpriteRenderer
 
         // SKIN2000: min(lightColor * NdotL + lightColor * fresnel * 0.5, 1.0) + ambient
         var directional = MathF.Min(RenderLightingConstants.LightIntensity * NdotL +
-            RenderLightingConstants.LightIntensity * fresnel * 0.5f, 1f);
+                                    RenderLightingConstants.LightIntensity * fresnel * 0.5f, 1f);
 
         return Math.Clamp(directional + ambient, 0f, 1f);
     }
@@ -613,4 +647,8 @@ internal static class NifSpriteRenderer
 
         return dst;
     }
+
+    private sealed record RenderLayer(
+        TriangleData[] OpaqueAndCutoutTriangles,
+        TriangleData[] BlendedTriangles);
 }

@@ -1,5 +1,3 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Enums;
-
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 
 /// <summary>
@@ -12,6 +10,7 @@ internal sealed class NpcAppearance
     public string? EditorId { get; init; }
     public string? FullName { get; init; }
     public bool IsFemale { get; init; }
+    public string? RenderVariantLabel { get; init; }
 
     // Phase 1: Head mesh
     public string? BaseHeadNifPath { get; init; }
@@ -22,8 +21,10 @@ internal sealed class NpcAppearance
     public float[]? FaceGenSymmetricCoeffs { get; init; }
     public float[]? FaceGenAsymmetricCoeffs { get; init; }
 
-    // Phase 3: EGT texture morph coefficients (merged NPC + race base)
+    // Phase 3: EGT texture morph coefficients for the current render/export path.
     public float[]? FaceGenTextureCoeffs { get; init; }
+    public float[]? NpcFaceGenTextureCoeffs { get; init; }
+    public float[]? RaceFaceGenTextureCoeffs { get; init; }
 
     // Phase 4: Hair mesh and texture
     public string? HairNifPath { get; init; }
@@ -34,19 +35,25 @@ internal sealed class NpcAppearance
     public string? RightEyeNifPath { get; init; }
     public string? EyeTexturePath { get; init; }
 
-    // Phase 6: Head parts (eyebrows, beards, teeth, etc.)
+    // Phase 6: Race face parts (mouth, teeth, tongue)
+    public string? MouthNifPath { get; init; }
+    public string? LowerTeethNifPath { get; init; }
+    public string? UpperTeethNifPath { get; init; }
+    public string? TongueNifPath { get; init; }
+
+    // Phase 7: Head parts (eyebrows, beards, NPC HDPT attachments, etc.)
     public List<string>? HeadPartNifPaths { get; init; }
 
     // Hair color tint (packed 0x00BBGGRR from HCLR subrecord)
     public uint? HairColor { get; init; }
 
-    // Phase 7: Equipment (resolved from NPC_ CNTO inventory → ARMO biped models)
+    // Phase 8: Equipment (resolved from NPC_ CNTO inventory → ARMO biped models)
     public List<EquippedItem>? EquippedItems { get; init; }
 
-    // Phase 10: Weapon (resolved from NPC_ CNTO inventory → WEAP)
-    public EquippedWeapon? EquippedWeapon { get; init; }
+    // Phase 11: Weapon (resolved from packages + inventory, rendered in holster or equipped space by class)
+    public WeaponVisual? WeaponVisual { get; init; }
 
-    // Phase 8: Body meshes (from RACE body parts section, after NAM1)
+    // Phase 9: Body meshes (from RACE body parts section, after NAM1)
     public string? UpperBodyNifPath { get; init; }
     public string? LeftHandNifPath { get; init; }
     public string? RightHandNifPath { get; init; }
@@ -54,26 +61,52 @@ internal sealed class NpcAppearance
     public string? HandTexturePath { get; init; }
     public string? SkeletonNifPath { get; init; }
 
-    // Phase 9: Body EGT paths (for body/hand skin tinting via FaceGen texture morphs)
+    // Phase 10: Body EGT paths (for body/hand skin tinting via FaceGen texture morphs)
     public string? BodyEgtPath { get; init; }
     public string? LeftHandEgtPath { get; init; }
     public string? RightHandEgtPath { get; init; }
-}
 
-/// <summary>
-///     A single piece of equipment resolved from NPC_ CNTO → ARMO.
-/// </summary>
-internal sealed class EquippedItem
-{
-    public uint BipedFlags { get; init; }
-    public string MeshPath { get; init; } = "";
-}
-
-/// <summary>
-///     A weapon resolved from NPC_ CNTO inventory → WEAP.
-/// </summary>
-internal sealed class EquippedWeapon
-{
-    public WeaponType WeaponType { get; init; }
-    public string MeshPath { get; init; } = "";
+    internal NpcAppearance CloneWithTextureVariant(
+        float[]? textureCoeffs,
+        string? renderVariantLabel)
+    {
+        return new NpcAppearance
+        {
+            NpcFormId = NpcFormId,
+            EditorId = EditorId,
+            FullName = FullName,
+            IsFemale = IsFemale,
+            RenderVariantLabel = renderVariantLabel,
+            BaseHeadNifPath = BaseHeadNifPath,
+            HeadDiffuseOverride = HeadDiffuseOverride,
+            FaceGenNifPath = FaceGenNifPath,
+            FaceGenSymmetricCoeffs = FaceGenSymmetricCoeffs,
+            FaceGenAsymmetricCoeffs = FaceGenAsymmetricCoeffs,
+            FaceGenTextureCoeffs = textureCoeffs,
+            NpcFaceGenTextureCoeffs = NpcFaceGenTextureCoeffs,
+            RaceFaceGenTextureCoeffs = RaceFaceGenTextureCoeffs,
+            HairNifPath = HairNifPath,
+            HairTexturePath = HairTexturePath,
+            LeftEyeNifPath = LeftEyeNifPath,
+            RightEyeNifPath = RightEyeNifPath,
+            EyeTexturePath = EyeTexturePath,
+            MouthNifPath = MouthNifPath,
+            LowerTeethNifPath = LowerTeethNifPath,
+            UpperTeethNifPath = UpperTeethNifPath,
+            TongueNifPath = TongueNifPath,
+            HeadPartNifPaths = HeadPartNifPaths,
+            HairColor = HairColor,
+            EquippedItems = EquippedItems,
+            WeaponVisual = WeaponVisual,
+            UpperBodyNifPath = UpperBodyNifPath,
+            LeftHandNifPath = LeftHandNifPath,
+            RightHandNifPath = RightHandNifPath,
+            BodyTexturePath = BodyTexturePath,
+            HandTexturePath = HandTexturePath,
+            SkeletonNifPath = SkeletonNifPath,
+            BodyEgtPath = BodyEgtPath,
+            LeftHandEgtPath = LeftHandEgtPath,
+            RightHandEgtPath = RightHandEgtPath
+        };
+    }
 }

@@ -80,6 +80,78 @@ public sealed class PackageParsingTests
         Assert.Equal(xboxResult.TypeSpecificFlags, pcResult.TypeSpecificFlags);
     }
 
+    [Fact]
+    public void ParsePackageData_PreservesWeaponsUnequippedAndWeaponDrawnFlags()
+    {
+        var data = new byte[12];
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(0), 0x00A00000);
+        data[4] = 16; // Use Weapon
+
+        var result = AiRecordHandler.ParsePackageData(data, false);
+
+        Assert.Equal(16, result.Type);
+        Assert.Equal(0x00A00000u, result.GeneralFlags);
+        Assert.Contains("Weapons Unequipped",
+            FlagRegistry.DecodeFlagNames(result.GeneralFlags, FlagRegistry.PackageGeneralFlags));
+        Assert.Contains("Weapon Drawn",
+            FlagRegistry.DecodeFlagNames(result.GeneralFlags, FlagRegistry.PackageGeneralFlags));
+    }
+
+    [Fact]
+    public void ParsePackageUseWeaponData_Xbox360BigEndian_DecodesCorrectly()
+    {
+        var data = new byte[24];
+        data[0] = 1;
+        data[1] = 0;
+        data[2] = 1;
+        data[3] = 0;
+        data[4] = 1;
+        data[5] = 1;
+        BinaryPrimitives.WriteUInt16BigEndian(data.AsSpan(6), 3);
+        BinaryPrimitives.WriteUInt16BigEndian(data.AsSpan(8), 2);
+        BinaryPrimitives.WriteUInt16BigEndian(data.AsSpan(10), 5);
+        BinaryPrimitives.WriteSingleBigEndian(data.AsSpan(12), 0.25f);
+        BinaryPrimitives.WriteSingleBigEndian(data.AsSpan(16), 1.5f);
+        BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(20), 0x0010F00Du);
+
+        var result = AiRecordHandler.ParsePackageUseWeaponData(data, true);
+
+        Assert.True(result.AlwaysHit);
+        Assert.False(result.DoNoDamage);
+        Assert.True(result.Crouch);
+        Assert.False(result.HoldFire);
+        Assert.True(result.VolleyFire);
+        Assert.True(result.RepeatFire);
+        Assert.Equal((ushort)3, result.BurstCount);
+        Assert.Equal((ushort)2, result.VolleyShotsMin);
+        Assert.Equal((ushort)5, result.VolleyShotsMax);
+        Assert.Equal(0.25f, result.VolleyWaitMin);
+        Assert.Equal(1.5f, result.VolleyWaitMax);
+        Assert.Equal(0x0010F00Du, result.WeaponFormId);
+    }
+
+    [Fact]
+    public void ParsePackageUseWeaponData_PcLittleEndian_ZeroWeaponBecomesNull()
+    {
+        var data = new byte[24];
+        data[3] = 1;
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(6), 7);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(8), 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(10), 3);
+        BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(12), 0.5f);
+        BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(16), 2.0f);
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(20), 0);
+
+        var result = AiRecordHandler.ParsePackageUseWeaponData(data, false);
+
+        Assert.False(result.AlwaysHit);
+        Assert.True(result.HoldFire);
+        Assert.Equal((ushort)7, result.BurstCount);
+        Assert.Equal(0.5f, result.VolleyWaitMin);
+        Assert.Equal(2.0f, result.VolleyWaitMax);
+        Assert.Null(result.WeaponFormId);
+    }
+
     // ================================================================
     // PSDT - Package Schedule parsing
     // ================================================================

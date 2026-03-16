@@ -167,7 +167,7 @@ internal static class NifSkinInfluenceBuilder
                 }
 
                 var globalBoneIndex = partition.Bones[partitionLocalBone];
-                influences.Add(((int)globalBoneIndex, weight));
+                influences.Add((globalBoneIndex, weight));
                 totalWeight += weight;
             }
 

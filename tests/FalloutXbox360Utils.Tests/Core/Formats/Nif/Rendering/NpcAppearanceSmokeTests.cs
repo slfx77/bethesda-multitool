@@ -1,6 +1,5 @@
 using FalloutXbox360Utils.CLI;
 using FalloutXbox360Utils.CLI.Rendering.Npc;
-using FalloutXbox360Utils.Core.Formats.Bsa;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
@@ -32,7 +31,7 @@ public sealed class NpcAppearanceSmokeTests(SampleFileFixture samples)
         Assert.NotNull(boone.HairNifPath);
         Assert.NotNull(boone.LeftEyeNifPath);
         Assert.NotNull(boone.EquippedItems);
-        Assert.NotNull(boone.EquippedWeapon);
+        Assert.True(boone.WeaponVisual?.IsVisible == true);
     }
 
     [Fact]
@@ -78,14 +77,12 @@ public sealed class NpcAppearanceSmokeTests(SampleFileFixture samples)
         var egtCache =
             new Dictionary<string, EgtParser?>(StringComparer.OrdinalIgnoreCase);
 
-        var meshesArchive = BsaParser.Parse(meshesBsa!);
-        using var meshExtractor = new BsaExtractor(meshesBsa!);
+        using var meshArchives = NpcMeshArchiveSet.Open(meshesBsa!, null);
         using var textureResolver = new NifTextureResolver(texturesBsa!, textures2Bsa!);
 
         var model = NpcHeadBuilder.Build(
             boone,
-            meshesArchive,
-            meshExtractor,
+            meshArchives,
             textureResolver,
             headMeshCache,
             egmCache,

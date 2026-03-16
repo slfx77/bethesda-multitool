@@ -18,6 +18,7 @@ public static class DmpCommand
         var command = new Command("dmp", "Minidump analysis, diagnostics, and memory inspection");
 
         command.Subcommands.Add(CreateModulesCommand());
+        command.Subcommands.Add(NpcInventoryCommand.CreateDmpCommand());
         command.Subcommands.Add(CreateRegionsCommand());
         command.Subcommands.Add(CreateVa2OffsetCommand());
         command.Subcommands.Add(CreateHexDumpCommand());

@@ -1,4 +1,3 @@
-using System.Linq;
 using FalloutXbox360Utils.Core.Formats.Dds;
 using Veldrid;
 

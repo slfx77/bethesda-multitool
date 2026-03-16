@@ -10,33 +10,29 @@ internal static class NifTextureLoader
 {
     internal static DecodedTexture? TryLoadFromSources(
         string path,
-        IEnumerable<NifTextureArchiveSource> sources)
+        IEnumerable<INifTextureSource> sources)
     {
         foreach (var source in sources)
         {
-            if (!source.FileIndex.TryGetValue(path, out var fileRecord))
+            var texture = source.TryLoad(path);
+            if (texture != null)
             {
-                continue;
-            }
-
-            try
-            {
-                var rawData = source.Extractor.ExtractFile(fileRecord);
-                var ddsData = ConvertDdxIfNeeded(rawData);
-                return DdsTextureDecoder.Decode(ddsData);
-            }
-            catch
-            {
-                // Try the next archive.
+                return texture;
             }
         }
 
         return null;
     }
 
+    internal static DecodedTexture? DecodeTextureData(byte[] data)
+    {
+        var ddsData = ConvertDdxIfNeeded(data);
+        return DdsTextureDecoder.Decode(ddsData);
+    }
+
     /// <summary>
-     ///     If the data is a DDX texture (Xbox 360 format), convert it to DDS in memory.
-     /// </summary>
+    ///     If the data is a DDX texture (Xbox 360 format), convert it to DDS in memory.
+    /// </summary>
     private static byte[] ConvertDdxIfNeeded(byte[] data)
     {
         if (data.Length < 4)

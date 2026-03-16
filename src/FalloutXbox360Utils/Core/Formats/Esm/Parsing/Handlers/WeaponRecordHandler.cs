@@ -83,6 +83,7 @@ internal sealed class WeaponRecordHandler(RecordParserContext context)
         string? editorId = null;
         string? fullName = null;
         string? modelPath = null;
+        string? embeddedWeaponNode = null;
         ObjectBounds? bounds = null;
 
         // DATA subrecord (15 bytes)
@@ -154,6 +155,9 @@ internal sealed class WeaponRecordHandler(RecordParserContext context)
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
                     break;
+                case "NNAM":
+                    embeddedWeaponNode = EsmStringUtils.ReadNullTermString(subData);
+                    break;
                 case "OBND" when sub.DataLength == 12:
                     bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
                     break;
@@ -181,7 +185,9 @@ internal sealed class WeaponRecordHandler(RecordParserContext context)
                     {
                         var wt = SubrecordDataReader.GetByte(fields, "WeaponType");
                         animationType = wt;
-                        weaponType = (WeaponType)(wt <= 11 ? wt : 0);
+                        weaponType = Enum.IsDefined(typeof(WeaponType), wt)
+                            ? (WeaponType)wt
+                            : WeaponType.HandToHandMelee;
                         speed = SubrecordDataReader.GetFloat(fields, "Speed");
                         reach = SubrecordDataReader.GetFloat(fields, "Reach");
                         flags = SubrecordDataReader.GetByte(fields, "Flags");
@@ -289,6 +295,7 @@ internal sealed class WeaponRecordHandler(RecordParserContext context)
             EditorId = editorId ?? _context.GetEditorId(record.FormId),
             FullName = fullName,
             ModelPath = modelPath,
+            EmbeddedWeaponNode = embeddedWeaponNode,
             Bounds = bounds,
             Value = value,
             Health = health,

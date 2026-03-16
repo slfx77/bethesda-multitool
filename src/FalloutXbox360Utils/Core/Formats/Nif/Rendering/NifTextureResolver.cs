@@ -10,48 +10,69 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 /// </summary>
 internal sealed class NifTextureResolver : IDisposable
 {
-    private readonly List<NifTextureArchiveSource> _sources;
     private readonly ConcurrentDictionary<string, DecodedTexture?> _cache =
         new(StringComparer.OrdinalIgnoreCase);
 
+    private readonly List<INifTextureSource> _sources;
+
     private int _cacheHits;
     private int _cacheMisses;
-
-    public int CacheHits => _cacheHits;
-
-    public int CacheMisses => _cacheMisses;
 
     public NifTextureResolver(params string[] texturesBsaPaths)
     {
         _sources = NifTextureArchiveSourceFactory.Create(texturesBsaPaths);
     }
 
+    public int CacheHits => _cacheHits;
+
+    public int CacheMisses => _cacheMisses;
+
+    public void Dispose()
+    {
+        foreach (var source in _sources)
+        {
+            source.Dispose();
+        }
+    }
+
     public static string? ResolveDiffusePath(byte[] data, NifInfo nif, List<int> propertyRefs)
-        => NifShaderTexturePropertyReader.ResolveDiffusePath(data, nif, propertyRefs);
+    {
+        return NifShaderTexturePropertyReader.ResolveDiffusePath(data, nif, propertyRefs);
+    }
 
     public static NifShaderTextureMetadata? ReadShaderMetadata(
         byte[] data,
         NifInfo nif,
         List<int> propertyRefs)
-        => NifShaderTexturePropertyReader.ReadShaderMetadata(data, nif, propertyRefs);
+    {
+        return NifShaderTexturePropertyReader.ReadShaderMetadata(data, nif, propertyRefs);
+    }
 
     public static uint? ReadShaderFlags2(byte[] data, NifInfo nif, List<int> propertyRefs)
-        => NifShaderTexturePropertyReader.ReadShaderFlags2(data, nif, propertyRefs);
+    {
+        return NifShaderTexturePropertyReader.ReadShaderFlags2(data, nif, propertyRefs);
+    }
 
     public static (uint ShaderFlags, uint ShaderFlags2)? ReadShaderFlagsBoth(
         byte[] data,
         NifInfo nif,
         List<int> propertyRefs)
-        => NifShaderTexturePropertyReader.ReadShaderFlagsBoth(data, nif, propertyRefs);
+    {
+        return NifShaderTexturePropertyReader.ReadShaderFlagsBoth(data, nif, propertyRefs);
+    }
 
     public static (uint ShaderFlags, float EnvMapScale)? ReadEnvMapInfo(
         byte[] data,
         NifInfo nif,
         List<int> propertyRefs)
-        => NifShaderTexturePropertyReader.ReadEnvMapInfo(data, nif, propertyRefs);
+    {
+        return NifShaderTexturePropertyReader.ReadEnvMapInfo(data, nif, propertyRefs);
+    }
 
     public static string? ResolveNormalMapPath(byte[] data, NifInfo nif, List<int> propertyRefs)
-        => NifShaderTexturePropertyReader.ResolveNormalMapPath(data, nif, propertyRefs);
+    {
+        return NifShaderTexturePropertyReader.ResolveNormalMapPath(data, nif, propertyRefs);
+    }
 
     /// <summary>
     ///     Injects a pre-built texture into the cache under the given path key.
@@ -84,14 +105,6 @@ internal sealed class NifTextureResolver : IDisposable
     public void RecordCacheHit()
     {
         Interlocked.Increment(ref _cacheHits);
-    }
-
-    public void Dispose()
-    {
-        foreach (var source in _sources)
-        {
-            source.Extractor.Dispose();
-        }
     }
 
     private DecodedTexture? LoadTexture(string path)

@@ -103,6 +103,46 @@ public sealed class NifAlphaCompositionTests
             fixedSize: 64);
 
         AssertPairShowsOpaqueBaseAndTransparentGrime(gpuSprite);
+        AssertVisiblePixelsRemainOpaque(gpuSprite!);
+    }
+
+    [Fact]
+    public void Render_Gpu_CutoutWritesSolidAlphaAfterDiscard()
+    {
+        using var _ = new RendererStateScope();
+        using var textureResolver = new NifTextureResolver();
+        textureResolver.InjectTexture(
+            FrontBlendTexturePath,
+            CreateTexture(
+                2,
+                1,
+                (255, 255, 255, 255),
+                (255, 255, 255, 0)));
+
+        var model = CreateModel(
+            CreateQuadSubmesh(
+                y: 0f,
+                diffuseTexturePath: FrontBlendTexturePath,
+                hasAlphaTest: true,
+                alphaTestThreshold: 0,
+                alphaTestFunction: 4));
+
+        using var gpu = GpuDevice.Create();
+        Assert.SkipWhen(gpu is null, "GPU backend not available");
+
+        using var renderer = new GpuSpriteRenderer(gpu!);
+        var gpuSprite = renderer.Render(
+            model,
+            textureResolver,
+            pixelsPerUnit: 1f,
+            minSize: 32,
+            maxSize: 64,
+            azimuthDeg: 90f,
+            elevationDeg: 0f,
+            fixedSize: 64);
+
+        Assert.NotNull(gpuSprite);
+        AssertVisiblePixelsRemainOpaque(gpuSprite!);
     }
 
     [Theory]
@@ -156,6 +196,53 @@ public sealed class NifAlphaCompositionTests
         Assert.InRange(gpuStats.AvgB, 96f, 160f);
     }
 
+    [Fact]
+    public void Render_EmissiveWithoutVertexColorFlag_PreservesAlphaButNeutralizesRgb()
+    {
+        using var _ = new RendererStateScope();
+        using var textureResolver = new NifTextureResolver();
+        textureResolver.InjectTexture(
+            FrontBlendTexturePath,
+            CreateTexture(1, 1, (255, 255, 255, 255)));
+
+        byte[] vertexColors =
+        [
+            255, 255, 0, 128,
+            255, 255, 0, 128,
+            255, 255, 0, 128,
+            255, 255, 0, 128
+        ];
+
+        var model = CreateModel(
+            CreateQuadSubmesh(
+                y: 0f,
+                diffuseTexturePath: FrontBlendTexturePath,
+                hasAlphaBlend: true,
+                vertexColors: vertexColors,
+                useVertexColors: false));
+
+        var cpuSprite = RenderCpu(model, textureResolver);
+        Assert.NotNull(cpuSprite);
+        AssertPixelIsNearNeutralWhite(ReadPixel(cpuSprite!, cpuSprite.Width / 2, cpuSprite.Height / 2));
+
+        using var gpu = GpuDevice.Create();
+        Assert.SkipWhen(gpu is null, "GPU backend not available");
+
+        using var renderer = new GpuSpriteRenderer(gpu!);
+        var gpuSprite = renderer.Render(
+            model,
+            textureResolver,
+            pixelsPerUnit: 1f,
+            minSize: 32,
+            maxSize: 64,
+            azimuthDeg: 90f,
+            elevationDeg: 0f,
+            fixedSize: 64);
+
+        Assert.NotNull(gpuSprite);
+        AssertPixelIsNearNeutralWhite(ReadPixel(gpuSprite!, gpuSprite.Width / 2, gpuSprite.Height / 2));
+    }
+
     private static SpriteResult? RenderCpu(NifRenderableModel model, NifTextureResolver textureResolver)
     {
         return NifSpriteRenderer.Render(
@@ -186,8 +273,13 @@ public sealed class NifAlphaCompositionTests
         string diffuseTexturePath,
         string? shapeName = null,
         bool hasAlphaBlend = false,
+        bool hasAlphaTest = false,
+        byte alphaTestThreshold = 128,
+        byte alphaTestFunction = 4,
         byte srcBlendMode = 6,
-        byte dstBlendMode = 7)
+        byte dstBlendMode = 7,
+        byte[]? vertexColors = null,
+        bool useVertexColors = false)
     {
         return new RenderableSubmesh
         {
@@ -205,9 +297,14 @@ public sealed class NifAlphaCompositionTests
             IsEmissive = true,
             IsDoubleSided = true,
             HasAlphaBlend = hasAlphaBlend,
+            HasAlphaTest = hasAlphaTest,
+            AlphaTestThreshold = alphaTestThreshold,
+            AlphaTestFunction = alphaTestFunction,
             SrcBlendMode = srcBlendMode,
             DstBlendMode = dstBlendMode,
-            MaterialAlpha = 1f
+            MaterialAlpha = 1f,
+            VertexColors = vertexColors,
+            UseVertexColors = useVertexColors
         };
     }
 
@@ -242,6 +339,17 @@ public sealed class NifAlphaCompositionTests
         Assert.Contains(rowPixels, pixel => IsDark(pixel));
         Assert.Contains(rowPixels, pixel => IsRedDominant(pixel));
         Assert.DoesNotContain(rowPixels, pixel => IsBlueDominant(pixel));
+    }
+
+    private static void AssertVisiblePixelsRemainOpaque(SpriteResult sprite)
+    {
+        var visibleAlphas = Enumerable.Range(0, sprite.Pixels.Length / 4)
+            .Select(index => sprite.Pixels[index * 4 + 3])
+            .Where(alpha => alpha > 32)
+            .ToArray();
+
+        Assert.NotEmpty(visibleAlphas);
+        Assert.All(visibleAlphas, alpha => Assert.Equal<byte>(255, alpha));
     }
 
     private static (byte R, byte G, byte B, byte A) ReadPixel(SpriteResult sprite, int x, int y)
@@ -293,6 +401,16 @@ public sealed class NifAlphaCompositionTests
 
     private static bool IsBlueDominant((byte R, byte G, byte B, byte A) pixel)
         => pixel.B > 96 && pixel.B > pixel.R + 32 && pixel.B > pixel.G + 32 && pixel.A > 0;
+
+    private static void AssertPixelIsNearNeutralWhite((byte R, byte G, byte B, byte A) pixel)
+    {
+        Assert.InRange(pixel.R, 96, 255);
+        Assert.InRange(pixel.G, 96, 255);
+        Assert.InRange(pixel.B, 96, 255);
+        Assert.InRange(Math.Abs(pixel.R - pixel.G), 0, 16);
+        Assert.InRange(Math.Abs(pixel.R - pixel.B), 0, 16);
+        Assert.InRange(pixel.A, 96, 255);
+    }
 
     private sealed class RendererStateScope : IDisposable
     {

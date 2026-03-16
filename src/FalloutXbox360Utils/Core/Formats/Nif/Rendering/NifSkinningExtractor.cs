@@ -17,7 +17,8 @@ internal static class NifSkinningExtractor
             Dictionary<int, Matrix4x4> worldTransforms,
             Dictionary<string, Matrix4x4>? externalBoneTransforms = null,
             Dictionary<string, Matrix4x4>? externalPoseDeltas = null)
-        => NifShapeSkinningDataBuilder.Build(
+    {
+        return NifShapeSkinningDataBuilder.Build(
             data,
             nif,
             shapeSkinInstanceMap,
@@ -25,23 +26,32 @@ internal static class NifSkinningExtractor
             worldTransforms,
             externalBoneTransforms,
             externalPoseDeltas);
+    }
 
     internal static Matrix4x4 ParseNiTransform(byte[] data, int pos, bool be)
-        => NifSkinBlockParser.ParseNiTransform(data, pos, be);
+    {
+        return NifSkinBlockParser.ParseNiTransform(data, pos, be);
+    }
 
     internal static NifSkinInstanceData? ParseNiSkinInstance(
         byte[] data,
         BlockInfo block,
         bool be)
-        => NifSkinBlockParser.ParseNiSkinInstance(data, block, be);
+    {
+        return NifSkinBlockParser.ParseNiSkinInstance(data, block, be);
+    }
 
     internal static NifSkinData? ParseNiSkinData(byte[] data, BlockInfo block, bool be)
-        => NifSkinBlockParser.ParseNiSkinData(data, block, be);
+    {
+        return NifSkinBlockParser.ParseNiSkinData(data, block, be);
+    }
 
     internal static (int BoneIdx, float Weight)[][] BuildPerVertexInfluences(
         NifSkinData skinData,
         int numVertices)
-        => NifSkinInfluenceBuilder.BuildPerVertexInfluences(skinData, numVertices);
+    {
+        return NifSkinInfluenceBuilder.BuildPerVertexInfluences(skinData, numVertices);
+    }
 
     internal static (int BoneIdx, float Weight)[][]? BuildPerVertexInfluencesFromPartitions(
         byte[] data,
@@ -49,46 +59,62 @@ internal static class NifSkinningExtractor
         NifSkinInstanceData skinInstance,
         int numVertices,
         out bool hasExpandedData)
-        => NifSkinInfluenceBuilder.BuildPerVertexInfluencesFromPartitions(
+    {
+        return NifSkinInfluenceBuilder.BuildPerVertexInfluencesFromPartitions(
             data,
             nif,
             skinInstance,
             numVertices,
             out hasExpandedData);
+    }
 
     internal static float[] ApplySkinningPositions(
         float[] positions,
         (int BoneIdx, float Weight)[][] perVertexInfluences,
         Matrix4x4[] boneSkinMatrices)
-        => NifSkinningMath.ApplySkinningPositions(
+    {
+        return NifSkinningMath.ApplySkinningPositions(
             positions,
             perVertexInfluences,
             boneSkinMatrices);
+    }
 
     internal static float[] ApplySkinningNormals(
         float[] normals,
         (int BoneIdx, float Weight)[][] perVertexInfluences,
         Matrix4x4[] boneSkinMatrices)
-        => NifSkinningMath.ApplySkinningNormals(
+    {
+        return NifSkinningMath.ApplySkinningNormals(
             normals,
             perVertexInfluences,
             boneSkinMatrices);
+    }
 
     internal static float[] ApplySkinningPositionsDQS(
         float[] positions,
         (int BoneIdx, float Weight)[][] perVertexInfluences,
         Matrix4x4[] boneSkinMatrices)
-        => NifSkinningMath.ApplySkinningPositionsDqs(
+    {
+        return NifSkinningMath.ApplySkinningPositionsDqs(
             positions,
             perVertexInfluences,
             boneSkinMatrices);
+    }
 
     internal static float[] ApplySkinningNormalsDQS(
         float[] normals,
         (int BoneIdx, float Weight)[][] perVertexInfluences,
         Matrix4x4[] boneSkinMatrices)
-        => NifSkinningMath.ApplySkinningNormalsDqs(
+    {
+        return NifSkinningMath.ApplySkinningNormalsDqs(
             normals,
             perVertexInfluences,
             boneSkinMatrices);
+    }
+
+    internal static NifSkinningMath.DualQuaternionCompatibility AnalyzeDualQuaternionCompatibility(
+        Matrix4x4[] boneSkinMatrices)
+    {
+        return NifSkinningMath.AnalyzeDualQuaternionCompatibility(boneSkinMatrices);
+    }
 }

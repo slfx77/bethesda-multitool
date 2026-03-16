@@ -1,4 +1,3 @@
-using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion;
 using FalloutXbox360Utils.Core.Utils;
 
@@ -30,6 +29,14 @@ internal static class RaceRecordScanner
         string? femaleHeadModel = null;
         string? maleHeadTexture = null;
         string? femaleHeadTexture = null;
+        string? maleMouthModel = null;
+        string? femaleMouthModel = null;
+        string? maleLowerTeethModel = null;
+        string? femaleLowerTeethModel = null;
+        string? maleUpperTeethModel = null;
+        string? femaleUpperTeethModel = null;
+        string? maleTongueModel = null;
+        string? femaleTongueModel = null;
         string? maleEyeLeftModel = null;
         string? femaleEyeLeftModel = null;
         string? maleEyeRightModel = null;
@@ -41,6 +48,8 @@ internal static class RaceRecordScanner
         float[]? maleFgts = null;
         float[]? femaleFgts = null;
         uint? defaultEyesFormId = null;
+        uint? olderRaceFormId = null;
+        uint? youngerRaceFormId = null;
         string? maleUpperBody = null;
         string? femaleUpperBody = null;
         string? maleLeftHand = null;
@@ -88,6 +97,34 @@ internal static class RaceRecordScanner
                         inMaleSection,
                         ref maleHeadModel,
                         ref femaleHeadModel);
+                    break;
+                case "MODL" when inHeadPartsSection && currentIndex == 2:
+                    AssignPath(
+                        EsmRecordParser.GetSubrecordString(subrecord),
+                        inMaleSection,
+                        ref maleMouthModel,
+                        ref femaleMouthModel);
+                    break;
+                case "MODL" when inHeadPartsSection && currentIndex == 3:
+                    AssignPath(
+                        EsmRecordParser.GetSubrecordString(subrecord),
+                        inMaleSection,
+                        ref maleLowerTeethModel,
+                        ref femaleLowerTeethModel);
+                    break;
+                case "MODL" when inHeadPartsSection && currentIndex == 4:
+                    AssignPath(
+                        EsmRecordParser.GetSubrecordString(subrecord),
+                        inMaleSection,
+                        ref maleUpperTeethModel,
+                        ref femaleUpperTeethModel);
+                    break;
+                case "MODL" when inHeadPartsSection && currentIndex == 5:
+                    AssignPath(
+                        EsmRecordParser.GetSubrecordString(subrecord),
+                        inMaleSection,
+                        ref maleTongueModel,
+                        ref femaleTongueModel);
                     break;
                 case "MODL" when inHeadPartsSection && currentIndex == 6:
                     AssignPath(
@@ -144,6 +181,18 @@ internal static class RaceRecordScanner
                         0,
                         bigEndian);
                     break;
+                case "ONAM" when subrecord.Data.Length >= 4:
+                    olderRaceFormId ??= BinaryUtils.ReadUInt32(
+                        subrecord.Data,
+                        0,
+                        bigEndian);
+                    break;
+                case "YNAM" when subrecord.Data.Length >= 4:
+                    youngerRaceFormId ??= BinaryUtils.ReadUInt32(
+                        subrecord.Data,
+                        0,
+                        bigEndian);
+                    break;
                 case "FGGS" when subrecord.Data.Length == 200:
                     AssignCoefficients(
                         subrecord.Data,
@@ -174,11 +223,21 @@ internal static class RaceRecordScanner
         return new RaceScanEntry
         {
             EditorId = editorId,
+            OlderRaceFormId = olderRaceFormId,
+            YoungerRaceFormId = youngerRaceFormId,
             DefaultEyesFormId = defaultEyesFormId,
             MaleHeadModelPath = maleHeadModel,
             FemaleHeadModelPath = femaleHeadModel,
             MaleHeadTexturePath = maleHeadTexture,
             FemaleHeadTexturePath = femaleHeadTexture,
+            MaleMouthModelPath = maleMouthModel,
+            FemaleMouthModelPath = femaleMouthModel,
+            MaleLowerTeethModelPath = maleLowerTeethModel,
+            FemaleLowerTeethModelPath = femaleLowerTeethModel,
+            MaleUpperTeethModelPath = maleUpperTeethModel,
+            FemaleUpperTeethModelPath = femaleUpperTeethModel,
+            MaleTongueModelPath = maleTongueModel,
+            FemaleTongueModelPath = femaleTongueModel,
             MaleEyeLeftModelPath = maleEyeLeftModel,
             FemaleEyeLeftModelPath = femaleEyeLeftModel,
             MaleEyeRightModelPath = maleEyeRightModel,

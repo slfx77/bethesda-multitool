@@ -81,6 +81,20 @@ internal sealed class EgtParser
         };
     }
 
+    /// <summary>
+    ///     Creates an EgtParser from pre-built morph arrays (for testing channel permutations, etc.).
+    /// </summary>
+    internal static EgtParser CreateFromMorphs(int cols, int rows, EgtMorph[] symmetricMorphs)
+    {
+        return new EgtParser
+        {
+            Cols = cols,
+            Rows = rows,
+            SymmetricMorphs = symmetricMorphs,
+            AsymmetricMorphs = []
+        };
+    }
+
     private static EgtMorph? ReadMorph(byte[] data, ref int offset, int cols, int rows)
     {
         // Scale factor (float32 LE)
@@ -118,22 +132,4 @@ internal sealed class EgtParser
             DeltaB = b
         };
     }
-}
-
-/// <summary>
-///     A single EGT texture morph basis: scale factor + per-texel int8 RGB deltas.
-/// </summary>
-internal sealed class EgtMorph
-{
-    /// <summary>Scale factor applied to all deltas before adding to texture pixels.</summary>
-    public required float Scale { get; init; }
-
-    /// <summary>Red channel deltas, length = rows * cols.</summary>
-    public required sbyte[] DeltaR { get; init; }
-
-    /// <summary>Green channel deltas, length = rows * cols.</summary>
-    public required sbyte[] DeltaG { get; init; }
-
-    /// <summary>Blue channel deltas, length = rows * cols.</summary>
-    public required sbyte[] DeltaB { get; init; }
 }

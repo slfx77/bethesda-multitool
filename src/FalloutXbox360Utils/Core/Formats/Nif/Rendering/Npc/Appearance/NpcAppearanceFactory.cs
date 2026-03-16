@@ -4,10 +4,10 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance;
 
 internal sealed class NpcAppearanceFactory
 {
-    private readonly NpcAppearanceIndex _index;
-    private readonly NpcHeadPartPathResolver _headPartPathResolver;
-    private readonly NpcInventoryResolver _inventoryResolver;
     private readonly NpcEquipmentResolver _equipmentResolver;
+    private readonly NpcHeadPartPathResolver _headPartPathResolver;
+    private readonly NpcAppearanceIndex _index;
+    private readonly NpcInventoryResolver _inventoryResolver;
     private readonly NpcWeaponResolver _weaponResolver;
 
     internal NpcAppearanceFactory(NpcAppearanceIndex index)
@@ -15,8 +15,17 @@ internal sealed class NpcAppearanceFactory
         _index = index;
         _headPartPathResolver = new NpcHeadPartPathResolver(index.HeadParts);
         _inventoryResolver = new NpcInventoryResolver(index.Npcs, index.LeveledNpcs);
-        _equipmentResolver = new NpcEquipmentResolver(index.Armors, index.LeveledItems);
-        _weaponResolver = new NpcWeaponResolver(index.Weapons, index.LeveledItems);
+        _equipmentResolver = new NpcEquipmentResolver(
+            index.Armors,
+            index.ArmorAddons,
+            index.FormLists,
+            index.LeveledItems);
+        _weaponResolver = new NpcWeaponResolver(
+            index.Packages,
+            index.Weapons,
+            index.ArmorAddons,
+            index.LeveledItems,
+            index.Idles);
     }
 
     internal NpcAppearance Build(uint formId, NpcScanEntry npc, string pluginName)
@@ -38,6 +47,22 @@ internal sealed class NpcAppearanceFactory
             npc.IsFemale,
             race?.MaleEyeRightModelPath,
             race?.FemaleEyeRightModelPath);
+        var mouthModelPath = SelectGenderValue(
+            npc.IsFemale,
+            race?.MaleMouthModelPath,
+            race?.FemaleMouthModelPath);
+        var lowerTeethModelPath = SelectGenderValue(
+            npc.IsFemale,
+            race?.MaleLowerTeethModelPath,
+            race?.FemaleLowerTeethModelPath);
+        var upperTeethModelPath = SelectGenderValue(
+            npc.IsFemale,
+            race?.MaleUpperTeethModelPath,
+            race?.FemaleUpperTeethModelPath);
+        var tongueModelPath = SelectGenderValue(
+            npc.IsFemale,
+            race?.MaleTongueModelPath,
+            race?.FemaleTongueModelPath);
         var upperBodyPath = SelectGenderValue(
             npc.IsFemale,
             race?.MaleUpperBodyPath,
@@ -56,11 +81,11 @@ internal sealed class NpcAppearanceFactory
             race?.FemaleBodyTexturePath);
         var hair = ResolveHair(npc.HairFormId);
         var eyeTexturePath = ResolveEyeTexture(npc.EyesFormId, race);
-        var inventoryFormIds = _inventoryResolver.ResolveInventoryFormIds(npc);
+        var inventoryItems = _inventoryResolver.ResolveInventoryItems(npc);
         var equippedItems = _equipmentResolver.Resolve(
-            inventoryFormIds,
+            inventoryItems,
             npc.IsFemale);
-        var equippedWeapon = _weaponResolver.Resolve(inventoryFormIds);
+        var weaponVisual = _weaponResolver.Resolve(npc, inventoryItems);
         var symmetricCoefficients = NpcFaceGenCoefficientMerger.Merge(
             npc.FaceGenSymmetric,
             SelectGenderValue(
@@ -73,12 +98,13 @@ internal sealed class NpcAppearanceFactory
                 npc.IsFemale,
                 race?.MaleFaceGenAsymmetric,
                 race?.FemaleFaceGenAsymmetric));
+        var raceTextureCoefficients = SelectGenderValue(
+            npc.IsFemale,
+            race?.MaleFaceGenTexture,
+            race?.FemaleFaceGenTexture);
         var textureCoefficients = NpcFaceGenCoefficientMerger.Merge(
             npc.FaceGenTexture,
-            SelectGenderValue(
-                npc.IsFemale,
-                race?.MaleFaceGenTexture,
-                race?.FemaleFaceGenTexture));
+            raceTextureCoefficients);
         var handTexturePath = NpcAppearancePathDeriver.DeriveHandTexturePath(
             bodyTexturePath,
             npc.IsFemale);
@@ -102,13 +128,19 @@ internal sealed class NpcAppearanceFactory
             LeftEyeNifPath = NpcAppearancePathDeriver.AsMeshPath(leftEyeModelPath),
             RightEyeNifPath = NpcAppearancePathDeriver.AsMeshPath(rightEyeModelPath),
             EyeTexturePath = NpcAppearancePathDeriver.AsTexturePath(eyeTexturePath),
+            MouthNifPath = NpcAppearancePathDeriver.AsMeshPath(mouthModelPath),
+            LowerTeethNifPath = NpcAppearancePathDeriver.AsMeshPath(lowerTeethModelPath),
+            UpperTeethNifPath = NpcAppearancePathDeriver.AsMeshPath(upperTeethModelPath),
+            TongueNifPath = NpcAppearancePathDeriver.AsMeshPath(tongueModelPath),
             HeadPartNifPaths = _headPartPathResolver.Resolve(npc.HeadPartFormIds),
             HairColor = npc.HairColor,
             FaceGenSymmetricCoeffs = symmetricCoefficients,
             FaceGenAsymmetricCoeffs = asymmetricCoefficients,
             FaceGenTextureCoeffs = textureCoefficients,
+            NpcFaceGenTextureCoeffs = npc.FaceGenTexture,
+            RaceFaceGenTextureCoeffs = raceTextureCoefficients,
             EquippedItems = equippedItems,
-            EquippedWeapon = equippedWeapon,
+            WeaponVisual = weaponVisual,
             UpperBodyNifPath = NpcAppearancePathDeriver.AsMeshPath(upperBodyPath),
             LeftHandNifPath = NpcAppearancePathDeriver.AsMeshPath(leftHandPath),
             RightHandNifPath = NpcAppearancePathDeriver.AsMeshPath(rightHandPath),
@@ -123,7 +155,8 @@ internal sealed class NpcAppearanceFactory
 
     internal NpcAppearance BuildFromDmpRecord(
         NpcRecord npcRecord,
-        string pluginName)
+        string pluginName,
+        NpcWeaponResolver.RuntimeWeaponSelection? runtimeWeaponSelection = null)
     {
         var isFemale = npcRecord.Stats != null && (npcRecord.Stats.Flags & 1) != 0;
         var race = ResolveRace(npcRecord.Race);
@@ -143,6 +176,22 @@ internal sealed class NpcAppearanceFactory
             isFemale,
             race?.MaleEyeRightModelPath,
             race?.FemaleEyeRightModelPath);
+        var mouthModelPath = SelectGenderValue(
+            isFemale,
+            race?.MaleMouthModelPath,
+            race?.FemaleMouthModelPath);
+        var lowerTeethModelPath = SelectGenderValue(
+            isFemale,
+            race?.MaleLowerTeethModelPath,
+            race?.FemaleLowerTeethModelPath);
+        var upperTeethModelPath = SelectGenderValue(
+            isFemale,
+            race?.MaleUpperTeethModelPath,
+            race?.FemaleUpperTeethModelPath);
+        var tongueModelPath = SelectGenderValue(
+            isFemale,
+            race?.MaleTongueModelPath,
+            race?.FemaleTongueModelPath);
         var upperBodyPath = SelectGenderValue(
             isFemale,
             race?.MaleUpperBodyPath,
@@ -161,8 +210,11 @@ internal sealed class NpcAppearanceFactory
             race?.FemaleBodyTexturePath);
         var hair = ResolveHair(npcRecord.HairFormId);
         var eyeFormId = npcRecord.EyesFormId ?? race?.DefaultEyesFormId;
-        var eyeTexturePath = ResolveEyeTexture(eyeFormId, race, useRaceDefault: false);
+        var eyeTexturePath = ResolveEyeTexture(eyeFormId, race, false);
         var (hairColor, headPartIds) = ResolveDmpFallbacks(npcRecord);
+        _index.Npcs.TryGetValue(npcRecord.FormId, out var esmNpc);
+        var weaponResolutionNpc = BuildWeaponResolutionNpc(npcRecord, esmNpc, isFemale);
+        var inventoryItems = ResolveDmpInventoryItems(weaponResolutionNpc, npcRecord);
         var symmetricCoefficients = NpcFaceGenCoefficientMerger.Merge(
             npcRecord.FaceGenGeometrySymmetric,
             SelectGenderValue(
@@ -175,14 +227,18 @@ internal sealed class NpcAppearanceFactory
                 isFemale,
                 race?.MaleFaceGenAsymmetric,
                 race?.FemaleFaceGenAsymmetric));
+        var raceTextureCoefficients = SelectGenderValue(
+            isFemale,
+            race?.MaleFaceGenTexture,
+            race?.FemaleFaceGenTexture);
         var textureCoefficients = NpcFaceGenCoefficientMerger.Merge(
             npcRecord.FaceGenTextureSymmetric,
-            SelectGenderValue(
-                isFemale,
-                race?.MaleFaceGenTexture,
-                race?.FemaleFaceGenTexture));
-        var equippedItems = ResolveDmpEquipment(npcRecord.FormId, isFemale);
-        var equippedWeapon = ResolveDmpWeapon(npcRecord.FormId);
+            raceTextureCoefficients);
+        var equippedItems = _equipmentResolver.Resolve(inventoryItems, isFemale);
+        var weaponVisual = _weaponResolver.Resolve(
+            weaponResolutionNpc,
+            inventoryItems,
+            runtimeWeaponSelection);
         var handTexturePath = NpcAppearancePathDeriver.DeriveHandTexturePath(
             bodyTexturePath,
             isFemale);
@@ -206,13 +262,19 @@ internal sealed class NpcAppearanceFactory
             LeftEyeNifPath = NpcAppearancePathDeriver.AsMeshPath(leftEyeModelPath),
             RightEyeNifPath = NpcAppearancePathDeriver.AsMeshPath(rightEyeModelPath),
             EyeTexturePath = NpcAppearancePathDeriver.AsTexturePath(eyeTexturePath),
+            MouthNifPath = NpcAppearancePathDeriver.AsMeshPath(mouthModelPath),
+            LowerTeethNifPath = NpcAppearancePathDeriver.AsMeshPath(lowerTeethModelPath),
+            UpperTeethNifPath = NpcAppearancePathDeriver.AsMeshPath(upperTeethModelPath),
+            TongueNifPath = NpcAppearancePathDeriver.AsMeshPath(tongueModelPath),
             HeadPartNifPaths = _headPartPathResolver.Resolve(headPartIds),
             HairColor = hairColor,
             FaceGenSymmetricCoeffs = symmetricCoefficients,
             FaceGenAsymmetricCoeffs = asymmetricCoefficients,
             FaceGenTextureCoeffs = textureCoefficients,
+            NpcFaceGenTextureCoeffs = npcRecord.FaceGenTextureSymmetric,
+            RaceFaceGenTextureCoeffs = raceTextureCoefficients,
             EquippedItems = equippedItems,
-            EquippedWeapon = equippedWeapon,
+            WeaponVisual = weaponVisual,
             UpperBodyNifPath = NpcAppearancePathDeriver.AsMeshPath(upperBodyPath),
             LeftHandNifPath = NpcAppearancePathDeriver.AsMeshPath(leftHandPath),
             RightHandNifPath = NpcAppearancePathDeriver.AsMeshPath(rightHandPath),
@@ -284,26 +346,41 @@ internal sealed class NpcAppearanceFactory
         return (hairColor, headPartIds);
     }
 
-    private List<EquippedItem>? ResolveDmpEquipment(uint formId, bool isFemale)
+    private NpcScanEntry BuildWeaponResolutionNpc(
+        NpcRecord npcRecord,
+        NpcScanEntry? esmNpc,
+        bool isFemale)
     {
-        if (!_index.Npcs.TryGetValue(formId, out var esmNpc))
+        return new NpcScanEntry
         {
-            return null;
-        }
-
-        var inventory = _inventoryResolver.ResolveInventoryFormIds(esmNpc);
-        return _equipmentResolver.Resolve(inventory, isFemale);
+            EditorId = esmNpc?.EditorId ?? npcRecord.EditorId,
+            FullName = esmNpc?.FullName ?? npcRecord.FullName,
+            RaceFormId = esmNpc?.RaceFormId ?? npcRecord.Race,
+            IsFemale = isFemale,
+            SpecialStats = npcRecord.SpecialStats ?? esmNpc?.SpecialStats,
+            Skills = npcRecord.Skills ?? esmNpc?.Skills,
+            PackageFormIds = npcRecord.Packages.Count > 0
+                ? npcRecord.Packages
+                : esmNpc?.PackageFormIds,
+            InventoryItems = npcRecord.Inventory.Count > 0
+                ? npcRecord.Inventory
+                : esmNpc?.InventoryItems,
+            TemplateFormId = esmNpc?.TemplateFormId,
+            TemplateFlags = esmNpc?.TemplateFlags ?? 0
+        };
     }
 
-    private EquippedWeapon? ResolveDmpWeapon(uint formId)
+    private List<InventoryItem>? ResolveDmpInventoryItems(
+        NpcScanEntry weaponResolutionNpc,
+        NpcRecord npcRecord)
     {
-        if (!_index.Npcs.TryGetValue(formId, out var esmNpc))
+        var inventory = _inventoryResolver.ResolveInventoryItems(weaponResolutionNpc);
+        if (inventory is { Count: > 0 })
         {
-            return null;
+            return inventory;
         }
 
-        var inventory = _inventoryResolver.ResolveInventoryFormIds(esmNpc);
-        return _weaponResolver.Resolve(inventory);
+        return npcRecord.Inventory.Count > 0 ? npcRecord.Inventory : null;
     }
 
     private static T? SelectGenderValue<T>(

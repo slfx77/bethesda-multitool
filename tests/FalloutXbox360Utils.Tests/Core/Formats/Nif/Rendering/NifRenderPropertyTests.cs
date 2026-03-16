@@ -20,6 +20,7 @@ public sealed class NifRenderPropertyTests
         data[30] = 96;
 
         WriteNiObjectNetHeader(data, 32, be: true);
+        WriteFloat(data, 68, 12f, be: true);
         WriteFloat(data, 72, 0.35f, be: true);
 
         var nif = CreateNifInfo(
@@ -43,6 +44,7 @@ public sealed class NifRenderPropertyTests
             out var srcBlendMode,
             out var dstBlendMode);
         var materialAlpha = NifBlockParsers.ReadMaterialAlpha(data, nif, propertyRefs);
+        var materialGlossiness = NifBlockParsers.ReadMaterialGlossiness(data, nif, propertyRefs);
 
         Assert.True(isDoubleSided);
         Assert.False(hasAlphaBlend);
@@ -51,6 +53,7 @@ public sealed class NifRenderPropertyTests
         Assert.Equal((byte)4, alphaTestFunction);
         Assert.Equal((byte)6, srcBlendMode);
         Assert.Equal((byte)7, dstBlendMode);
+        Assert.Equal(12f, materialGlossiness, 3);
         Assert.Equal(0.35f, materialAlpha, 3);
     }
 
@@ -61,6 +64,7 @@ public sealed class NifRenderPropertyTests
 
         WriteNiObjectNetHeader(data, 0, be: false);
         WriteUInt16(data, 12, 0, be: false);
+        WriteFloat(data, 62, 24f, be: false);
         WriteFloat(data, 66, 0.6f, be: false);
 
         var nif = CreateNifInfo(
@@ -70,7 +74,9 @@ public sealed class NifRenderPropertyTests
             isBigEndian: false);
 
         var materialAlpha = NifBlockParsers.ReadMaterialAlpha(data, nif, [0]);
+        var materialGlossiness = NifBlockParsers.ReadMaterialGlossiness(data, nif, [0]);
 
+        Assert.Equal(24f, materialGlossiness, 3);
         Assert.Equal(0.6f, materialAlpha, 3);
     }
 

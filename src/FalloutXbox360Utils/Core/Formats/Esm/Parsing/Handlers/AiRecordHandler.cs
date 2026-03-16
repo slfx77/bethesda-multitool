@@ -74,6 +74,7 @@ internal sealed class AiRecordHandler(RecordParserContext context)
         string? editorId = null;
         PackageData? packageData = null;
         PackageSchedule? schedule = null;
+        PackageUseWeaponData? useWeaponData = null;
         PackageLocation? location = null;
         PackageLocation? location2 = null;
         PackageTarget? target = null;
@@ -95,6 +96,9 @@ internal sealed class AiRecordHandler(RecordParserContext context)
                     break;
                 case "PSDT" when sub.DataLength >= 8:
                     schedule = ParsePackageSchedule(subData, record.IsBigEndian);
+                    break;
+                case "PKW3" when sub.DataLength >= 24:
+                    useWeaponData = ParsePackageUseWeaponData(subData, record.IsBigEndian);
                     break;
                 case "PLDT" when sub.DataLength >= 12:
                     location ??= ParsePackageLocation(subData, record.IsBigEndian);
@@ -120,6 +124,7 @@ internal sealed class AiRecordHandler(RecordParserContext context)
             EditorId = editorId ?? _context.GetEditorId(record.FormId),
             Data = packageData,
             Schedule = schedule,
+            UseWeaponData = useWeaponData,
             Location = location,
             Location2 = location2,
             Target = target,
@@ -219,6 +224,46 @@ internal sealed class AiRecordHandler(RecordParserContext context)
             Date = (sbyte)data[2],
             Time = (sbyte)data[3],
             Duration = duration
+        };
+    }
+
+    internal static PackageUseWeaponData ParsePackageUseWeaponData(
+        ReadOnlySpan<byte> data,
+        bool isBigEndian)
+    {
+        var burstCount = isBigEndian
+            ? BinaryPrimitives.ReadUInt16BigEndian(data[6..])
+            : BinaryPrimitives.ReadUInt16LittleEndian(data[6..]);
+        var volleyShotsMin = isBigEndian
+            ? BinaryPrimitives.ReadUInt16BigEndian(data[8..])
+            : BinaryPrimitives.ReadUInt16LittleEndian(data[8..]);
+        var volleyShotsMax = isBigEndian
+            ? BinaryPrimitives.ReadUInt16BigEndian(data[10..])
+            : BinaryPrimitives.ReadUInt16LittleEndian(data[10..]);
+        var volleyWaitMin = isBigEndian
+            ? BinaryPrimitives.ReadSingleBigEndian(data[12..])
+            : BinaryPrimitives.ReadSingleLittleEndian(data[12..]);
+        var volleyWaitMax = isBigEndian
+            ? BinaryPrimitives.ReadSingleBigEndian(data[16..])
+            : BinaryPrimitives.ReadSingleLittleEndian(data[16..]);
+        var weaponFormId = isBigEndian
+            ? BinaryPrimitives.ReadUInt32BigEndian(data[20..])
+            : BinaryPrimitives.ReadUInt32LittleEndian(data[20..]);
+
+        return new PackageUseWeaponData
+        {
+            AlwaysHit = data[0] != 0,
+            DoNoDamage = data[1] != 0,
+            Crouch = data[2] != 0,
+            HoldFire = data[3] != 0,
+            VolleyFire = data[4] != 0,
+            RepeatFire = data[5] != 0,
+            BurstCount = burstCount,
+            VolleyShotsMin = volleyShotsMin,
+            VolleyShotsMax = volleyShotsMax,
+            VolleyWaitMin = volleyWaitMin,
+            VolleyWaitMax = volleyWaitMax,
+            WeaponFormId = weaponFormId != 0 ? weaponFormId : null
         };
     }
 

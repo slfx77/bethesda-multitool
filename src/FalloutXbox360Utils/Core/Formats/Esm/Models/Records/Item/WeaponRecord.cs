@@ -154,6 +154,9 @@ public record WeaponRecord
     /// <summary>Model file path (MODL subrecord).</summary>
     public string? ModelPath { get; init; }
 
+    /// <summary>Embedded weapon attach node name (NNAM subrecord / runtime BSStringT).</summary>
+    public string? EmbeddedWeaponNode { get; init; }
+
     // Sound effects (TESSound* pointers, empirically verified at dump offsets)
     /// <summary>Pickup sound FormID (BGSPickupPutdownSounds, dump +252).</summary>
     public uint? PickupSoundFormId { get; init; }
@@ -202,18 +205,20 @@ public record WeaponRecord
     /// <summary>Human-readable weapon type name.</summary>
     public string WeaponTypeName => WeaponType switch
     {
-        WeaponType.HandToHand => "Hand-to-Hand",
-        WeaponType.Melee1H => "Melee (1H)",
-        WeaponType.Melee2H => "Melee (2H)",
-        WeaponType.Pistol => "Pistol",
-        WeaponType.PistolAutomatic => "Pistol (Auto)",
-        WeaponType.Rifle => "Rifle",
-        WeaponType.RifleAutomatic => "Rifle (Auto)",
-        WeaponType.Handle => "Handle",
-        WeaponType.Launcher => "Launcher",
-        WeaponType.GrenadeThrow => "Grenade",
-        WeaponType.LandMine => "Land Mine",
-        WeaponType.MinePlacement => "Mine Placement",
+        WeaponType.HandToHandMelee => "Hand-to-Hand",
+        WeaponType.OneHandMelee => "Melee (1H)",
+        WeaponType.TwoHandMelee => "Melee (2H)",
+        WeaponType.OneHandPistol => "Pistol",
+        WeaponType.OneHandPistolEnergy => "Pistol (Energy)",
+        WeaponType.TwoHandRifle => "Rifle",
+        WeaponType.TwoHandAutomatic => "Automatic (2H)",
+        WeaponType.TwoHandRifleEnergy => "Rifle (Energy)",
+        WeaponType.TwoHandHandle => "Handle",
+        WeaponType.TwoHandLauncher => "Launcher",
+        WeaponType.OneHandGrenade => "Grenade",
+        WeaponType.OneHandMine => "Mine",
+        WeaponType.OneHandLunchboxMine => "Lunchbox Mine",
+        WeaponType.OneHandThrown => "Thrown / Spear",
         _ => $"Unknown ({(byte)WeaponType})"
     };
 

@@ -1,11 +1,9 @@
-using FalloutXbox360Utils.CLI;
-using FalloutXbox360Utils.Core.Formats.Bsa;
-using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI.Rendering.Npc;
@@ -42,7 +40,13 @@ internal static class NpcRenderPipeline
         AnsiConsole.MarkupLine(
             "Parsing meshes BSA: [cyan]{0}[/]",
             Path.GetFileName(settings.MeshesBsaPath));
-        var meshesArchive = BsaParser.Parse(settings.MeshesBsaPath);
+        using var meshArchives = NpcMeshArchiveSet.Open(settings.MeshesBsaPath, settings.ExtraMeshesBsaPaths);
+        foreach (var extraMeshesBsaPath in meshArchives.ArchivePaths.Skip(1))
+        {
+            AnsiConsole.MarkupLine(
+                "Loading fallback meshes BSA: [cyan]{0}[/]",
+                Path.GetFileName(extraMeshesBsaPath));
+        }
 
         foreach (var path in texturesBsaPaths)
         {
@@ -59,7 +63,14 @@ internal static class NpcRenderPipeline
             return;
         }
 
-        using var meshExtractor = new BsaExtractor(settings.MeshesBsaPath);
+        if (settings.CompareRaceTextureFgts)
+        {
+            appearances = BuildTextureComparisonVariants(appearances);
+            AnsiConsole.MarkupLine(
+                "Expanded to [green]{0}[/] NPC render variants ([cyan]npc_only[/] + [cyan]npc_plus_race[/])",
+                appearances.Count);
+        }
+
         var caches = new NpcRenderCaches();
         var rendered = 0;
         var skipped = 0;
@@ -76,8 +87,7 @@ internal static class NpcRenderPipeline
             RenderNpcsPipelinedGpu(
                 appearances,
                 gpuResources.Renderer,
-                meshesArchive,
-                meshExtractor,
+                meshArchives,
                 textureResolver,
                 caches,
                 settings,
@@ -89,8 +99,7 @@ internal static class NpcRenderPipeline
         {
             RenderNpcsCpu(
                 appearances,
-                meshesArchive,
-                meshExtractor,
+                meshArchives,
                 textureResolver,
                 caches,
                 settings,
@@ -120,6 +129,20 @@ internal static class NpcRenderPipeline
             return false;
         }
 
+        if (settings.ExtraMeshesBsaPaths is { Length: > 0 })
+        {
+            foreach (var extraMeshesBsaPath in settings.ExtraMeshesBsaPaths)
+            {
+                if (!File.Exists(extraMeshesBsaPath))
+                {
+                    AnsiConsole.MarkupLine(
+                        "[red]Error:[/] Extra meshes BSA not found: {0}",
+                        extraMeshesBsaPath);
+                    return false;
+                }
+            }
+        }
+
         if (!File.Exists(settings.EsmPath))
         {
             AnsiConsole.MarkupLine(
@@ -130,7 +153,7 @@ internal static class NpcRenderPipeline
 
         texturesBsaPaths = NpcRenderHelpers.ResolveTexturesBsaPaths(
             settings.MeshesBsaPath,
-            settings.ExplicitTexturesBsaPath);
+            settings.ExplicitTexturesBsaPaths);
         if (texturesBsaPaths.Length == 0)
         {
             AnsiConsole.MarkupLine("[red]Error:[/] No texture BSA files found");
@@ -202,8 +225,7 @@ internal static class NpcRenderPipeline
 
     private static void RenderNpcsCpu(
         List<NpcAppearance> appearances,
-        BsaArchive meshesArchive,
-        BsaExtractor meshExtractor,
+        NpcMeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         NpcRenderCaches caches,
         NpcRenderSettings settings,
@@ -212,8 +234,8 @@ internal static class NpcRenderPipeline
         ref int failed)
     {
         var views = settings.Camera.ResolveViews(
-            defaultAzimuth: 90f,
-            defaultElevation: 0f);
+            90f,
+            0f);
 
         foreach (var npc in appearances)
         {
@@ -224,8 +246,7 @@ internal static class NpcRenderPipeline
                     var result = settings.HeadOnly
                         ? RenderNpcHead(
                             npc,
-                            meshesArchive,
-                            meshExtractor,
+                            meshArchives,
                             textureResolver,
                             caches,
                             settings,
@@ -233,8 +254,7 @@ internal static class NpcRenderPipeline
                             elevation)
                         : RenderNpcFullBody(
                             npc,
-                            meshesArchive,
-                            meshExtractor,
+                            meshArchives,
                             textureResolver,
                             caches,
                             settings,
@@ -263,7 +283,7 @@ internal static class NpcRenderPipeline
             }
             finally
             {
-                EvictNpcFaceTexture(textureResolver, npc);
+                EvictNpcTextures(textureResolver, npc);
             }
         }
     }
@@ -275,14 +295,11 @@ internal static class NpcRenderPipeline
     {
         if (settings.DmpPath != null)
         {
-            var dmpFormId = settings.NpcFilters != null
-                ? NpcRenderHelpers.ParseFormId(settings.NpcFilters.FirstOrDefault())
-                : null;
             var dmpAppearances = NpcRenderHelpers.ResolveFromDmp(
                 settings.DmpPath,
                 resolver,
                 pluginName,
-                dmpFormId);
+                settings.NpcFilters);
             if (dmpAppearances.Count == 0)
             {
                 AnsiConsole.MarkupLine("[yellow]No NPCs resolved from DMP[/]");
@@ -345,8 +362,7 @@ internal static class NpcRenderPipeline
     private static void RenderNpcsPipelinedGpu(
         List<NpcAppearance> appearances,
         GpuSpriteRenderer gpuRenderer,
-        BsaArchive meshesArchive,
-        BsaExtractor meshExtractor,
+        NpcMeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         NpcRenderCaches caches,
         NpcRenderSettings settings,
@@ -355,16 +371,15 @@ internal static class NpcRenderPipeline
         ref int failed)
     {
         var views = settings.Camera.ResolveViews(
-            defaultAzimuth: 90f,
-            defaultElevation: 0f);
+            90f,
+            0f);
 
         NifRenderableModel? currentModel = null;
         if (appearances.Count > 0)
         {
             currentModel = BuildNpcModel(
                 appearances[0],
-                meshesArchive,
-                meshExtractor,
+                meshArchives,
                 textureResolver,
                 caches,
                 settings);
@@ -386,7 +401,7 @@ internal static class NpcRenderPipeline
                     {
                         var renderModel = PrepareModelForView(
                             currentModel,
-                            cloneForRender: viewIndex < views.Length - 1);
+                            viewIndex < views.Length - 1);
                         pending = gpuRenderer.SubmitRender(
                             renderModel,
                             textureResolver,
@@ -402,8 +417,7 @@ internal static class NpcRenderPipeline
                     {
                         nextModel = BuildNpcModel(
                             appearances[i + 1],
-                            meshesArchive,
-                            meshExtractor,
+                            meshArchives,
                             textureResolver,
                             caches,
                             settings);
@@ -434,8 +448,20 @@ internal static class NpcRenderPipeline
             }
             finally
             {
-                EvictNpcFaceTexture(textureResolver, npc);
-                gpuRenderer.EvictTexture($"facegen_egt\\{npc.NpcFormId:X8}.dds");
+                EvictNpcTextures(textureResolver, npc);
+                gpuRenderer.EvictTexture(NpcRenderHelpers.BuildNpcFaceEgtTextureKey(npc));
+                gpuRenderer.EvictTexture(NpcRenderHelpers.BuildNpcBodyEgtTextureKey(
+                    npc.NpcFormId,
+                    "upperbody",
+                    npc.RenderVariantLabel));
+                gpuRenderer.EvictTexture(NpcRenderHelpers.BuildNpcBodyEgtTextureKey(
+                    npc.NpcFormId,
+                    "lefthand",
+                    npc.RenderVariantLabel));
+                gpuRenderer.EvictTexture(NpcRenderHelpers.BuildNpcBodyEgtTextureKey(
+                    npc.NpcFormId,
+                    "righthand",
+                    npc.RenderVariantLabel));
                 currentModel = nextModel;
             }
         }
@@ -443,8 +469,7 @@ internal static class NpcRenderPipeline
 
     private static NifRenderableModel? BuildNpcModel(
         NpcAppearance npc,
-        BsaArchive meshesArchive,
-        BsaExtractor meshExtractor,
+        NpcMeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         NpcRenderCaches caches,
         NpcRenderSettings settings)
@@ -453,8 +478,7 @@ internal static class NpcRenderPipeline
         {
             return NpcHeadBuilder.Build(
                 npc,
-                meshesArchive,
-                meshExtractor,
+                meshArchives,
                 textureResolver,
                 caches.HeadMeshes,
                 caches.EgmFiles,
@@ -464,8 +488,7 @@ internal static class NpcRenderPipeline
 
         return NpcBodyBuilder.Build(
             npc,
-            meshesArchive,
-            meshExtractor,
+            meshArchives,
             textureResolver,
             caches.HeadMeshes,
             caches.EgmFiles,
@@ -485,8 +508,7 @@ internal static class NpcRenderPipeline
 
     private static SpriteResult? RenderNpcHead(
         NpcAppearance npc,
-        BsaArchive meshesArchive,
-        BsaExtractor meshExtractor,
+        NpcMeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         NpcRenderCaches caches,
         NpcRenderSettings settings,
@@ -495,8 +517,7 @@ internal static class NpcRenderPipeline
     {
         var model = NpcHeadBuilder.Build(
             npc,
-            meshesArchive,
-            meshExtractor,
+            meshArchives,
             textureResolver,
             caches.HeadMeshes,
             caches.EgmFiles,
@@ -520,8 +541,7 @@ internal static class NpcRenderPipeline
 
     private static SpriteResult? RenderNpcFullBody(
         NpcAppearance npc,
-        BsaArchive meshesArchive,
-        BsaExtractor meshExtractor,
+        NpcMeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         NpcRenderCaches caches,
         NpcRenderSettings settings,
@@ -530,8 +550,7 @@ internal static class NpcRenderPipeline
     {
         var model = NpcBodyBuilder.Build(
             npc,
-            meshesArchive,
-            meshExtractor,
+            meshArchives,
             textureResolver,
             caches.HeadMeshes,
             caches.EgmFiles,
@@ -579,7 +598,7 @@ internal static class NpcRenderPipeline
             return;
         }
 
-        var name = npc.EditorId ?? $"{npc.NpcFormId:X8}";
+        var name = NpcRenderHelpers.BuildNpcRenderName(npc);
         var fileName = $"{name}{viewSuffix}.png";
         var outputPath = Path.Combine(settings.OutputDir, fileName);
         var expectedLength = result.Width * result.Height * 4;
@@ -617,11 +636,42 @@ internal static class NpcRenderPipeline
         }
     }
 
-    private static void EvictNpcFaceTexture(
+    internal static List<NpcAppearance> BuildTextureComparisonVariants(
+        IReadOnlyList<NpcAppearance> appearances)
+    {
+        var variants = new List<NpcAppearance>(appearances.Count * 2);
+        foreach (var appearance in appearances)
+        {
+            variants.Add(appearance.CloneWithTextureVariant(
+                appearance.NpcFaceGenTextureCoeffs,
+                "npc_only"));
+            variants.Add(appearance.CloneWithTextureVariant(
+                NpcFaceGenCoefficientMerger.Merge(
+                    appearance.NpcFaceGenTextureCoeffs,
+                    appearance.RaceFaceGenTextureCoeffs),
+                "npc_plus_race"));
+        }
+
+        return variants;
+    }
+
+    private static void EvictNpcTextures(
         NifTextureResolver textureResolver,
         NpcAppearance npc)
     {
-        textureResolver.EvictTexture($"facegen_egt\\{npc.NpcFormId:X8}.dds");
+        textureResolver.EvictTexture(NpcRenderHelpers.BuildNpcFaceEgtTextureKey(npc));
+        textureResolver.EvictTexture(NpcRenderHelpers.BuildNpcBodyEgtTextureKey(
+            npc.NpcFormId,
+            "upperbody",
+            npc.RenderVariantLabel));
+        textureResolver.EvictTexture(NpcRenderHelpers.BuildNpcBodyEgtTextureKey(
+            npc.NpcFormId,
+            "lefthand",
+            npc.RenderVariantLabel));
+        textureResolver.EvictTexture(NpcRenderHelpers.BuildNpcBodyEgtTextureKey(
+            npc.NpcFormId,
+            "righthand",
+            npc.RenderVariantLabel));
     }
 
     private sealed class NpcGpuRenderResources : IDisposable
@@ -650,6 +700,19 @@ internal static class NpcRenderPipeline
 
         internal static NpcGpuRenderResources Create(NpcRenderSettings settings)
         {
+            if (settings.CompareRaceTextureFgts)
+            {
+                if (settings.ForceGpu)
+                {
+                    AnsiConsole.MarkupLine(
+                        "[yellow]--compare-race-fgts currently uses the CPU renderer; ignoring --gpu[/]");
+                }
+
+                AnsiConsole.MarkupLine(
+                    "Using [yellow]CPU software renderer[/] (--compare-race-fgts)");
+                return new NpcGpuRenderResources(null, null, false);
+            }
+
             if (settings.Wireframe)
             {
                 if (settings.ForceGpu)

@@ -44,13 +44,16 @@ internal static class GpuMeshUploader
             if (sub.UVs != null && uvi + 1 < sub.UVs.Length)
                 vertices[i].TexCoord = new Vector2(sub.UVs[uvi], sub.UVs[uvi + 1]);
 
-            if (sub.VertexColors != null && ci + 3 < sub.VertexColors.Length)
+            if (NifVertexColorPolicy.HasVertexColorData(sub) &&
+                sub.VertexColors != null &&
+                ci + 3 < sub.VertexColors.Length)
             {
+                var color = NifVertexColorPolicy.Read(sub, i);
                 vertices[i].VertexColor = new Vector4(
-                    sub.VertexColors[ci] / 255f,
-                    sub.VertexColors[ci + 1] / 255f,
-                    sub.VertexColors[ci + 2] / 255f,
-                    sub.VertexColors[ci + 3] / 255f);
+                    color.R / 255f,
+                    color.G / 255f,
+                    color.B / 255f,
+                    color.A / 255f);
             }
             else
             {

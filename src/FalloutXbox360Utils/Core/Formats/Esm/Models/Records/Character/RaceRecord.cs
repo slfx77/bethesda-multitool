@@ -116,6 +116,30 @@ public record RaceRecord
     /// <summary>Female head texture path (NAM0 INDX 0 ICON).</summary>
     public string? FemaleHeadTexturePath { get; init; }
 
+    /// <summary>Male mouth model path (NAM0 INDX 2 MODL).</summary>
+    public string? MaleMouthModelPath { get; init; }
+
+    /// <summary>Female mouth model path (NAM0 INDX 2 MODL).</summary>
+    public string? FemaleMouthModelPath { get; init; }
+
+    /// <summary>Male lower teeth model path (NAM0 INDX 3 MODL).</summary>
+    public string? MaleLowerTeethModelPath { get; init; }
+
+    /// <summary>Female lower teeth model path (NAM0 INDX 3 MODL).</summary>
+    public string? FemaleLowerTeethModelPath { get; init; }
+
+    /// <summary>Male upper teeth model path (NAM0 INDX 4 MODL).</summary>
+    public string? MaleUpperTeethModelPath { get; init; }
+
+    /// <summary>Female upper teeth model path (NAM0 INDX 4 MODL).</summary>
+    public string? FemaleUpperTeethModelPath { get; init; }
+
+    /// <summary>Male tongue model path (NAM0 INDX 5 MODL).</summary>
+    public string? MaleTongueModelPath { get; init; }
+
+    /// <summary>Female tongue model path (NAM0 INDX 5 MODL).</summary>
+    public string? FemaleTongueModelPath { get; init; }
+
     /// <summary>Male upper body model path (NAM1 INDX 0 MODL).</summary>
     public string? MaleUpperBodyPath { get; init; }
 

@@ -18,21 +18,27 @@ public static class RenderNpcCommand
     {
         var command = new Command(
             "npc",
-            "Render NPC head sprites from BSA + ESM data");
+            "Render NPC sprites from BSA + ESM data");
 
         var inputArg = new Argument<string>("meshes-bsa")
         {
             Description = "Path to meshes BSA file"
+        };
+        var extraMeshesBsaOption = new Option<string[]?>("--extra-meshes-bsa")
+        {
+            Description = "Additional meshes BSA file(s) searched as fallback for NIF/EGM/EGT assets",
+            AllowMultipleArgumentsPerToken = true
         };
         var esmOption = new Option<string>("--esm")
         {
             Description = "Path to ESM file",
             Required = true
         };
-        var texturesBsaOption = new Option<string?>("--textures-bsa")
+        var texturesBsaOption = new Option<string[]?>("--textures-bsa")
         {
             Description =
-                "Path to textures BSA file (auto-detected from meshes BSA directory if omitted)"
+                "Path to textures BSA file(s) (auto-detected from meshes BSA directory if omitted)",
+            AllowMultipleArgumentsPerToken = true
         };
         var outputOption = new Option<string>("-o", "--output")
         {
@@ -44,6 +50,10 @@ public static class RenderNpcCommand
             Description =
                 "Render specific NPCs by FormID or EditorID (e.g., --npc 0x00104C0C --npc CraigBoone)",
             AllowMultipleArgumentsPerToken = true
+        };
+        var npcFileOption = new Option<string?>("--npc-file")
+        {
+            Description = "Path to a text file containing NPC FormIDs or EditorIDs, one per line"
         };
         var sizeOption = new Option<int>("--size")
         {
@@ -62,6 +72,10 @@ public static class RenderNpcCommand
         var exportEgtOption = new Option<bool>("--export-egt")
         {
             Description = "Export EGT debug textures (native + upscaled deltas) to output dir"
+        };
+        var compareRaceTextureFgtsOption = new Option<bool>("--compare-race-fgts")
+        {
+            Description = "Render both npc_only and npc_plus_race EGT variants for the selected NPCs"
         };
         var noBilinearOption = new Option<bool>("--no-bilinear")
         {
@@ -98,6 +112,14 @@ public static class RenderNpcCommand
         var noWeaponOption = new Option<bool>("--no-weapon")
         {
             Description = "Skip weapon rendering"
+        };
+        var weaponOption = new Option<bool>("--weapon")
+        {
+            Description = "Include weapon geometry in GLB export mode"
+        };
+        var glbOption = new Option<bool>("--glb")
+        {
+            Description = "Export GLB instead of rendering PNG sprites"
         };
         var gpuOption = new Option<bool>("--gpu")
         {
@@ -147,14 +169,17 @@ public static class RenderNpcCommand
         };
 
         command.Arguments.Add(inputArg);
+        command.Options.Add(extraMeshesBsaOption);
         command.Options.Add(esmOption);
         command.Options.Add(texturesBsaOption);
         command.Options.Add(outputOption);
         command.Options.Add(npcOption);
+        command.Options.Add(npcFileOption);
         command.Options.Add(sizeOption);
         command.Options.Add(verboseOption);
         command.Options.Add(dmpOption);
         command.Options.Add(exportEgtOption);
+        command.Options.Add(compareRaceTextureFgtsOption);
         command.Options.Add(noBilinearOption);
         command.Options.Add(noEgmOption);
         command.Options.Add(noEgtOption);
@@ -164,6 +189,8 @@ public static class RenderNpcCommand
         command.Options.Add(headOnlyOption);
         command.Options.Add(noEquipOption);
         command.Options.Add(noWeaponOption);
+        command.Options.Add(weaponOption);
+        command.Options.Add(glbOption);
         command.Options.Add(gpuOption);
         command.Options.Add(cpuOption);
         command.Options.Add(skeletonOption);
@@ -191,16 +218,100 @@ public static class RenderNpcCommand
             }
 
             var elevationExplicit = parseResult.GetResult(elevationOption) is { Implicit: false };
+            var compareRaceTextureFgts = parseResult.GetValue(compareRaceTextureFgtsOption);
+            if (parseResult.GetValue(glbOption))
+            {
+                if (compareRaceTextureFgts)
+                {
+                    AnsiConsole.MarkupLine(
+                        "[red]Error:[/] --compare-race-fgts is not supported in GLB export mode");
+                    return Task.CompletedTask;
+                }
+
+                if (!NpcExportCommandSupport.TryCreateSettings(
+                        parseResult,
+                        inputArg,
+                        extraMeshesBsaOption,
+                        esmOption,
+                        texturesBsaOption,
+                        outputOption,
+                        npcOption,
+                        npcFileOption,
+                        verboseOption,
+                        dmpOption,
+                        headOnlyOption,
+                        noEquipOption,
+                        noEgmOption,
+                        noEgtOption,
+                        bindPoseOption,
+                        animOption,
+                        weaponOption,
+                        noWeaponOption,
+                        sizeOption,
+                        exportEgtOption,
+                        noBilinearOption,
+                        noBumpOption,
+                        noTexOption,
+                        bumpStrengthOption,
+                        gpuOption,
+                        cpuOption,
+                        skeletonOption,
+                        wireframeOption,
+                        isoOption,
+                        elevationOption,
+                        sideOption,
+                        trimetricOption,
+                        out var exportSettings,
+                        out var exportError))
+                {
+                    AnsiConsole.MarkupLine("[red]Error:[/] {0}",
+                        Markup.Escape(exportError ?? "invalid GLB export options"));
+                    return Task.CompletedTask;
+                }
+
+                NpcExportPipeline.Run(exportSettings!);
+                return Task.CompletedTask;
+            }
+
+            if (!NpcExportCommandSupport.TryLoadNpcFilters(
+                    parseResult.GetValue(npcOption),
+                    parseResult.GetValue(npcFileOption),
+                    out var npcFilters,
+                    out var filterError))
+            {
+                AnsiConsole.MarkupLine("[red]Error:[/] {0}", Markup.Escape(filterError ?? "invalid NPC filters"));
+                return Task.CompletedTask;
+            }
+
+            if (compareRaceTextureFgts)
+            {
+                if (parseResult.GetValue(noEgtOption))
+                {
+                    AnsiConsole.MarkupLine(
+                        "[red]Error:[/] --compare-race-fgts cannot be combined with --no-egt");
+                    return Task.CompletedTask;
+                }
+
+                if (npcFilters is not { Length: > 0 })
+                {
+                    AnsiConsole.MarkupLine(
+                        "[red]Error:[/] --compare-race-fgts requires at least one --npc or --npc-file filter");
+                    return Task.CompletedTask;
+                }
+            }
+
             var settings = new NpcRenderSettings
             {
                 MeshesBsaPath = parseResult.GetValue(inputArg)!,
+                ExtraMeshesBsaPaths = parseResult.GetValue(extraMeshesBsaOption),
                 EsmPath = parseResult.GetValue(esmOption)!,
-                ExplicitTexturesBsaPath = parseResult.GetValue(texturesBsaOption),
+                ExplicitTexturesBsaPaths = parseResult.GetValue(texturesBsaOption),
                 OutputDir = parseResult.GetValue(outputOption)!,
-                NpcFilters = parseResult.GetValue(npcOption),
+                NpcFilters = npcFilters,
                 SpriteSize = parseResult.GetValue(sizeOption),
                 DmpPath = parseResult.GetValue(dmpOption),
                 ExportEgt = parseResult.GetValue(exportEgtOption),
+                CompareRaceTextureFgts = compareRaceTextureFgts,
                 NoBilinear = parseResult.GetValue(noBilinearOption),
                 NoEgm = parseResult.GetValue(noEgmOption),
                 NoEgt = parseResult.GetValue(noEgtOption),
@@ -229,6 +340,9 @@ public static class RenderNpcCommand
             NpcRenderPipeline.Run(settings);
             return Task.CompletedTask;
         });
+
+        command.Subcommands.Add(NpcVerifyEgtCommand.Create());
+        command.Subcommands.Add(NpcCompareRuntimeCaptureCommand.Create());
 
         return command;
     }

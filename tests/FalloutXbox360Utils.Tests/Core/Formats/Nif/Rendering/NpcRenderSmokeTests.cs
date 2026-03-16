@@ -1,6 +1,6 @@
 using System.Numerics;
+using FalloutXbox360Utils.CLI;
 using FalloutXbox360Utils.CLI.Rendering.Npc;
-using FalloutXbox360Utils.Core.Formats.Bsa;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
@@ -39,8 +39,7 @@ public sealed class NpcRenderSmokeTests(SampleFileFixture samples)
 
         var model = NpcHeadBuilder.Build(
             veronica!,
-            assets.MeshesArchive,
-            assets.MeshExtractor,
+            assets.MeshArchives,
             assets.TextureResolver,
             headMeshCache,
             egmCache,
@@ -108,8 +107,7 @@ public sealed class NpcRenderSmokeTests(SampleFileFixture samples)
 
         var model = NpcBodyBuilder.Build(
             lucy!,
-            assets.MeshesArchive,
-            assets.MeshExtractor,
+            assets.MeshArchives,
             assets.TextureResolver,
             headMeshCache,
             egmCache,
@@ -173,8 +171,7 @@ public sealed class NpcRenderSmokeTests(SampleFileFixture samples)
         Assert.NotNull(esm);
 
         return new PcAssets(
-            BsaParser.Parse(meshesBsa!),
-            new BsaExtractor(meshesBsa!),
+            NpcMeshArchiveSet.Open(meshesBsa!, null),
             new NifTextureResolver(texturesBsa!, textures2Bsa!),
             NpcAppearanceResolver.Build(esm.Data, esm.IsBigEndian));
     }
@@ -225,14 +222,13 @@ public sealed class NpcRenderSmokeTests(SampleFileFixture samples)
     }
 
     private sealed record PcAssets(
-        BsaArchive MeshesArchive,
-        BsaExtractor MeshExtractor,
+        NpcMeshArchiveSet MeshArchives,
         NifTextureResolver TextureResolver,
         NpcAppearanceResolver AppearanceResolver) : IDisposable
     {
         public void Dispose()
         {
-            MeshExtractor.Dispose();
+            MeshArchives.Dispose();
             TextureResolver.Dispose();
         }
     }

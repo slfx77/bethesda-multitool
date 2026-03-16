@@ -4,7 +4,7 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 
 /// <summary>
 ///     Scanline triangle rasterizer with per-pixel Z-buffer, texture mapping, bump mapping,
-///     alpha blending, and vertex color support. Extracted from <see cref="NifSpriteRenderer"/>.
+///     alpha blending, and vertex color support. Extracted from <see cref="NifSpriteRenderer" />.
 /// </summary>
 internal static class NifScanlineRasterizer
 {
@@ -131,6 +131,7 @@ internal static class NifScanlineRasterizer
                         ny = -ny;
                         nz = -nz;
                     }
+
                     var nLen = MathF.Sqrt(nx * nx + ny * ny + nz * nz);
                     if (nLen > 0.001f)
                     {
@@ -178,23 +179,45 @@ internal static class NifScanlineRasterizer
                             by = tri.By0 * w0 + tri.By1 * w1 + tri.By2 * w2;
                             bz = tri.Bz0 * w0 + tri.Bz1 * w1 + tri.Bz2 * w2;
                             var tLen = MathF.Sqrt(tx * tx + ty * ty + tz * tz);
-                            if (tLen > 0.001f) { tx /= tLen; ty /= tLen; tz /= tLen; }
+                            if (tLen > 0.001f)
+                            {
+                                tx /= tLen;
+                                ty /= tLen;
+                                tz /= tLen;
+                            }
+
                             var bLen = MathF.Sqrt(bx * bx + by * by + bz * bz);
-                            if (bLen > 0.001f) { bx /= bLen; by /= bLen; bz /= bLen; }
+                            if (bLen > 0.001f)
+                            {
+                                bx /= bLen;
+                                by /= bLen;
+                                bz /= bLen;
+                            }
                         }
                         else
                         {
                             // Fallback: derive tangent from cross product with stable axis
                             if (MathF.Abs(nx) < 0.9f)
                             {
-                                tx = 0f; ty = nz; tz = -ny;
+                                tx = 0f;
+                                ty = nz;
+                                tz = -ny;
                             }
                             else
                             {
-                                tx = -nz; ty = 0f; tz = nx;
+                                tx = -nz;
+                                ty = 0f;
+                                tz = nx;
                             }
+
                             var tLen = MathF.Sqrt(tx * tx + ty * ty + tz * tz);
-                            if (tLen > 0.001f) { tx /= tLen; ty /= tLen; tz /= tLen; }
+                            if (tLen > 0.001f)
+                            {
+                                tx /= tLen;
+                                ty /= tLen;
+                                tz /= tLen;
+                            }
+
                             bx = ny * tz - nz * ty;
                             by = nz * tx - nx * tz;
                             bz = nx * ty - ny * tx;
@@ -259,14 +282,14 @@ internal static class NifScanlineRasterizer
                     {
                         var pass = tri.AlphaTestFunction switch
                         {
-                            0 => true,                              // ALWAYS
-                            1 => a < tri.AlphaTestThreshold,        // LESS
-                            2 => a == tri.AlphaTestThreshold,       // EQUAL
-                            3 => a <= tri.AlphaTestThreshold,       // LEQUAL
-                            4 => a > tri.AlphaTestThreshold,        // GREATER
-                            5 => a != tri.AlphaTestThreshold,       // NOTEQUAL
-                            6 => a >= tri.AlphaTestThreshold,       // GEQUAL
-                            _ => false,                             // NEVER
+                            0 => true, // ALWAYS
+                            1 => a < tri.AlphaTestThreshold, // LESS
+                            2 => a == tri.AlphaTestThreshold, // EQUAL
+                            3 => a <= tri.AlphaTestThreshold, // LEQUAL
+                            4 => a > tri.AlphaTestThreshold, // GREATER
+                            5 => a != tri.AlphaTestThreshold, // NOTEQUAL
+                            6 => a >= tri.AlphaTestThreshold, // GEQUAL
+                            _ => false // NEVER
                         };
                         if (!pass) continue;
                     }
@@ -283,12 +306,12 @@ internal static class NifScanlineRasterizer
                         //   final = accumulatedDiffuse * blendedTex * tintedShade
                         // The "lightScalar" is a hardcoded -0.5 (def c6), NOT per-pixel NdotL.
                         // With vc=1: tintedShade = 2*HairTint. Dark tints darken, light tints brighten.
-                        float vc = tri.HasVertexColors
+                        var vc = tri.HasVertexColors
                             ? (tri.G0 * w0 + tri.G1 * w1 + tri.G2 * w2) / 255f
                             : 1f;
-                        float tintShadeR = 2f * (vc * (tri.TintR - 0.5f) + 0.5f);
-                        float tintShadeG = 2f * (vc * (tri.TintG - 0.5f) + 0.5f);
-                        float tintShadeB = 2f * (vc * (tri.TintB - 0.5f) + 0.5f);
+                        var tintShadeR = 2f * (vc * (tri.TintR - 0.5f) + 0.5f);
+                        var tintShadeG = 2f * (vc * (tri.TintG - 0.5f) + 0.5f);
+                        var tintShadeB = 2f * (vc * (tri.TintB - 0.5f) + 0.5f);
                         fr = r * tintShadeR * shade;
                         fg = g * tintShadeG * shade;
                         fb = b * tintShadeB * shade;
@@ -372,19 +395,19 @@ internal static class NifScanlineRasterizer
                     if (tri.HasTintColor)
                     {
                         // Hair tint (no texture fallback): same SM3002 formula
-                        float vc = tri.HasVertexColors
+                        var vc = tri.HasVertexColors
                             ? (tri.G0 * w0 + tri.G1 * w1 + tri.G2 * w2) / 255f
                             : 1f;
-                        float baseVal = tri.HasVertexColors ? 255f : brightness;
+                        var baseVal = tri.HasVertexColors ? 255f : brightness;
                         fr = Math.Clamp(baseVal * 2f * (vc * (tri.TintR - 0.5f) + 0.5f) * shade, 0, 255);
                         fg = Math.Clamp(baseVal * 2f * (vc * (tri.TintG - 0.5f) + 0.5f) * shade, 0, 255);
                         fb = Math.Clamp(baseVal * 2f * (vc * (tri.TintB - 0.5f) + 0.5f) * shade, 0, 255);
                     }
                     else if (tri.HasVertexColors)
                     {
-                        float vcr = tri.R0 * w0 + tri.R1 * w1 + tri.R2 * w2;
-                        float vcg = tri.G0 * w0 + tri.G1 * w1 + tri.G2 * w2;
-                        float vcb = tri.B0 * w0 + tri.B1 * w1 + tri.B2 * w2;
+                        var vcr = tri.R0 * w0 + tri.R1 * w1 + tri.R2 * w2;
+                        var vcg = tri.G0 * w0 + tri.G1 * w1 + tri.G2 * w2;
+                        var vcb = tri.B0 * w0 + tri.B1 * w1 + tri.B2 * w2;
                         fr = Math.Clamp(vcr * shade, 0, 255);
                         fg = Math.Clamp(vcg * shade, 0, 255);
                         fb = Math.Clamp(vcb * shade, 0, 255);
@@ -616,9 +639,9 @@ internal static class NifScanlineRasterizer
 
         // Wrap coordinates for tiling
         var x1 = x0 + 1;
-        x0 = ((x0 % mipLevel.Width) + mipLevel.Width) % mipLevel.Width;
-        x1 = ((x1 % mipLevel.Width) + mipLevel.Width) % mipLevel.Width;
-        y0 = ((y0 % mipLevel.Height) + mipLevel.Height) % mipLevel.Height;
+        x0 = (x0 % mipLevel.Width + mipLevel.Width) % mipLevel.Width;
+        x1 = (x1 % mipLevel.Width + mipLevel.Width) % mipLevel.Width;
+        y0 = (y0 % mipLevel.Height + mipLevel.Height) % mipLevel.Height;
         var y1 = (y0 + 1) % mipLevel.Height;
 
         // Fetch 4 texels
@@ -649,16 +672,19 @@ internal static class NifScanlineRasterizer
     ///     Modes 2/3 (SRC_COLOR/INV_SRC_COLOR) approximated using alpha since we don't have
     ///     per-channel source color separately in the blend equation.
     /// </summary>
-    internal static float ResolveBlendFactor(byte mode, float srcAlpha) => mode switch
+    internal static float ResolveBlendFactor(byte mode, float srcAlpha)
     {
-        0 => 1f,           // ONE
-        1 => 0f,           // ZERO
-        2 => srcAlpha,     // SRC_COLOR (approx: use alpha)
-        3 => 1f - srcAlpha, // INV_SRC_COLOR (approx)
-        6 => srcAlpha,     // SRC_ALPHA
-        7 => 1f - srcAlpha, // INV_SRC_ALPHA
-        _ => srcAlpha      // Fallback to SRC_ALPHA behavior
-    };
+        return mode switch
+        {
+            0 => 1f, // ONE
+            1 => 0f, // ZERO
+            2 => srcAlpha, // SRC_COLOR (approx: use alpha)
+            3 => 1f - srcAlpha, // INV_SRC_COLOR (approx)
+            6 => srcAlpha, // SRC_ALPHA
+            7 => 1f - srcAlpha, // INV_SRC_ALPHA
+            _ => srcAlpha // Fallback to SRC_ALPHA behavior
+        };
+    }
 
     private static void DrawWireframeEdge(
         byte[] pixels,
@@ -779,10 +805,13 @@ internal static class NifScanlineRasterizer
         pixels[idx + 3] = 255;
     }
 
-    private static (byte R, byte G, byte B) ResolveWireframeColor(int renderOrder) => renderOrder switch
+    private static (byte R, byte G, byte B) ResolveWireframeColor(int renderOrder)
     {
-        2 => ((byte)0, (byte)255, (byte)255),
-        1 => ((byte)255, (byte)220, (byte)0),
-        _ => ((byte)0, (byte)255, (byte)0)
-    };
+        return renderOrder switch
+        {
+            2 => (0, 255, 255),
+            1 => (255, 220, 0),
+            _ => (0, 255, 0)
+        };
+    }
 }

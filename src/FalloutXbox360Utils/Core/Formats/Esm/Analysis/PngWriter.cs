@@ -46,6 +46,12 @@ public static class PngWriter
     /// </summary>
     public static void SaveRgba(byte[] pixels, int width, int height, string path)
     {
+        var pngBytes = EncodeRgba(pixels, width, height);
+        File.WriteAllBytes(path, pngBytes);
+    }
+
+    public static byte[] EncodeRgba(byte[] pixels, int width, int height)
+    {
         var settings = new MagickReadSettings
         {
             Width = (uint)width,
@@ -55,6 +61,8 @@ public static class PngWriter
         };
 
         using var image = new MagickImage(pixels, settings);
-        image.Write(path, MagickFormat.Png);
+        using var stream = new MemoryStream();
+        image.Write(stream, MagickFormat.Png);
+        return stream.ToArray();
     }
 }

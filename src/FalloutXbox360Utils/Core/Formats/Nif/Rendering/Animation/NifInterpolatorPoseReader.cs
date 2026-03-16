@@ -12,14 +12,15 @@ internal static class NifInterpolatorPoseReader
         byte[] data,
         NifInfo nif,
         BlockInfo block,
-        bool be)
+        bool be,
+        bool sampleLastKeyframe = false)
     {
         return block.TypeName switch
         {
             "NiTransformInterpolator" or "BSRotAccumTransfInterpolator" =>
-                ParseTransformInterpolator(data, nif, block, be),
+                ParseTransformInterpolator(data, nif, block, be, sampleLastKeyframe),
             "NiBSplineCompTransformInterpolator" or "BSTreadTransfInterpolator" =>
-                ParseBsplineInterpolator(data, nif, block, be),
+                ParseBsplineInterpolator(data, nif, block, be, sampleLastKeyframe),
             _ => null
         };
     }
@@ -28,7 +29,8 @@ internal static class NifInterpolatorPoseReader
         byte[] data,
         NifInfo nif,
         BlockInfo block,
-        bool be)
+        bool be,
+        bool sampleLastKeyframe)
     {
         if (block.Size < 32)
         {
@@ -55,11 +57,12 @@ internal static class NifInterpolatorPoseReader
             }
 
             var dataRef = BinaryUtils.ReadInt32(data, pos + 32, be);
-            return NifTransformDataKeyframeReader.ReadFirstKeyframe(
+            return NifTransformDataKeyframeReader.ReadKeyframe(
                 data,
                 nif,
                 dataRef,
-                be);
+                be,
+                sampleLastKeyframe);
         }
 
         var hasTranslation = MathF.Abs(tx) < 1e30f;
@@ -78,7 +81,8 @@ internal static class NifInterpolatorPoseReader
         byte[] data,
         NifInfo nif,
         BlockInfo block,
-        bool be)
+        bool be,
+        bool sampleLastKeyframe)
     {
         if (block.Size < 84)
         {
@@ -86,9 +90,30 @@ internal static class NifInterpolatorPoseReader
         }
 
         var splineDataRef = BinaryUtils.ReadInt32(data, block.DataOffset + 8, be);
+        var basisDataRef = BinaryUtils.ReadInt32(data, block.DataOffset + 12, be);
         var transHandle = (uint)BinaryUtils.ReadInt32(data, block.DataOffset + 48, be);
         var rotHandle = (uint)BinaryUtils.ReadInt32(data, block.DataOffset + 52, be);
         var scaleHandle = (uint)BinaryUtils.ReadInt32(data, block.DataOffset + 56, be);
+
+        // When sampling the last keyframe, offset handles to the last control point set.
+        // NiBSplineBasisData stores numControlPoints as a uint32 at offset 0.
+        if (sampleLastKeyframe &&
+            basisDataRef >= 0 && basisDataRef < nif.Blocks.Count &&
+            nif.Blocks[basisDataRef].TypeName == "NiBSplineBasisData")
+        {
+            var basisBlock = nif.Blocks[basisDataRef];
+            var numControlPoints = BinaryUtils.ReadUInt32(data, basisBlock.DataOffset, be);
+            if (numControlPoints > 1)
+            {
+                var lastCpOffset = numControlPoints - 1;
+                if (rotHandle != 0xFFFF)
+                    rotHandle += lastCpOffset * 4; // WXYZ per control point
+                if (transHandle != 0xFFFF)
+                    transHandle += lastCpOffset * 3; // XYZ per control point
+                if (scaleHandle != 0xFFFF)
+                    scaleHandle += lastCpOffset; // 1 value per control point
+            }
+        }
 
         if (rotHandle != 0xFFFF &&
             splineDataRef >= 0 &&
@@ -240,10 +265,12 @@ internal static class NifInterpolatorPoseReader
     }
 
     private static bool UsesFloatSentinels(float qw, float qx, float qy, float qz)
-        => MathF.Abs(qw) > 1e30f &&
-           MathF.Abs(qx) > 1e30f &&
-           MathF.Abs(qy) > 1e30f &&
-           MathF.Abs(qz) > 1e30f;
+    {
+        return MathF.Abs(qw) > 1e30f &&
+               MathF.Abs(qx) > 1e30f &&
+               MathF.Abs(qy) > 1e30f &&
+               MathF.Abs(qz) > 1e30f;
+    }
 
     private static float DecompressControlPoint(
         byte[] data,

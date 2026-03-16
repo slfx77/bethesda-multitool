@@ -1,4 +1,3 @@
-using System.Linq;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Parsing;
 using FalloutXbox360Utils.Core.Utils;
 
@@ -129,9 +128,11 @@ internal static class NifShaderTexturePropertyReader
     }
 
     private static bool IsShaderProperty(BlockInfo propBlock)
-        => propBlock.TypeName is
+    {
+        return propBlock.TypeName is
             "BSShaderPPLightingProperty" or
             "BSShaderNoLightingProperty";
+    }
 
     private static bool TryReadCommonShaderData(
         byte[] data,

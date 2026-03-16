@@ -8,11 +8,12 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Animation;
 /// </summary>
 internal static class NifTransformDataKeyframeReader
 {
-    internal static NifAnimationParser.AnimPoseOverride? ReadFirstKeyframe(
+    internal static NifAnimationParser.AnimPoseOverride? ReadKeyframe(
         byte[] data,
         NifInfo nif,
         int dataRef,
-        bool be)
+        bool be,
+        bool useLastKeyframe)
     {
         if (dataRef < 0 || dataRef >= nif.Blocks.Count)
         {
@@ -36,10 +37,10 @@ internal static class NifTransformDataKeyframeReader
         var numRotKeys = BinaryUtils.ReadInt32(data, pos, be);
         pos += 4;
 
-        float qw = float.NaN;
-        float qx = float.NaN;
-        float qy = float.NaN;
-        float qz = float.NaN;
+        var qw = float.NaN;
+        var qx = float.NaN;
+        var qy = float.NaN;
+        var qz = float.NaN;
 
         if (numRotKeys > 0)
         {
@@ -55,16 +56,6 @@ internal static class NifTransformDataKeyframeReader
                 return null;
             }
 
-            if (pos + 20 > end)
-            {
-                return null;
-            }
-
-            qw = BinaryUtils.ReadFloat(data, pos + 4, be);
-            qx = BinaryUtils.ReadFloat(data, pos + 8, be);
-            qy = BinaryUtils.ReadFloat(data, pos + 12, be);
-            qz = BinaryUtils.ReadFloat(data, pos + 16, be);
-
             var rotKeyStride = rotType switch
             {
                 1 => 20,
@@ -72,6 +63,17 @@ internal static class NifTransformDataKeyframeReader
                 3 => 32,
                 _ => 20
             };
+
+            var rotationKeyOffset = useLastKeyframe ? pos + (numRotKeys - 1) * rotKeyStride : pos;
+            if (rotationKeyOffset + 20 > end)
+            {
+                return null;
+            }
+
+            qw = BinaryUtils.ReadFloat(data, rotationKeyOffset + 4, be);
+            qx = BinaryUtils.ReadFloat(data, rotationKeyOffset + 8, be);
+            qy = BinaryUtils.ReadFloat(data, rotationKeyOffset + 12, be);
+            qz = BinaryUtils.ReadFloat(data, rotationKeyOffset + 16, be);
             pos += numRotKeys * rotKeyStride;
         }
 
@@ -94,14 +96,6 @@ internal static class NifTransformDataKeyframeReader
                 var posType = BinaryUtils.ReadInt32(data, pos, be);
                 pos += 4;
 
-                if (pos + 16 <= end)
-                {
-                    tx = BinaryUtils.ReadFloat(data, pos + 4, be);
-                    ty = BinaryUtils.ReadFloat(data, pos + 8, be);
-                    tz = BinaryUtils.ReadFloat(data, pos + 12, be);
-                    hasTranslation = true;
-                }
-
                 var posKeyStride = posType switch
                 {
                     1 => 16,
@@ -109,6 +103,16 @@ internal static class NifTransformDataKeyframeReader
                     3 => 28,
                     _ => 16
                 };
+                var translationKeyOffset = useLastKeyframe ? pos + (numPosKeys - 1) * posKeyStride : pos;
+
+                if (translationKeyOffset + 16 <= end)
+                {
+                    tx = BinaryUtils.ReadFloat(data, translationKeyOffset + 4, be);
+                    ty = BinaryUtils.ReadFloat(data, translationKeyOffset + 8, be);
+                    tz = BinaryUtils.ReadFloat(data, translationKeyOffset + 12, be);
+                    hasTranslation = true;
+                }
+
                 pos += numPosKeys * posKeyStride;
             }
         }
@@ -122,10 +126,21 @@ internal static class NifTransformDataKeyframeReader
 
             if (numScaleKeys > 0 && pos + 4 <= end)
             {
+                var scaleType = BinaryUtils.ReadInt32(data, pos, be);
                 pos += 4;
-                if (pos + 8 <= end)
+
+                var scaleKeyStride = scaleType switch
                 {
-                    scale = BinaryUtils.ReadFloat(data, pos + 4, be);
+                    1 => 8,
+                    2 => 12,
+                    3 => 12,
+                    _ => 8
+                };
+                var scaleKeyOffset = useLastKeyframe ? pos + (numScaleKeys - 1) * scaleKeyStride : pos;
+
+                if (scaleKeyOffset + 8 <= end)
+                {
+                    scale = BinaryUtils.ReadFloat(data, scaleKeyOffset + 4, be);
                     hasScale = true;
                 }
             }
@@ -139,5 +154,14 @@ internal static class NifTransformDataKeyframeReader
             tz,
             hasScale,
             scale);
+    }
+
+    internal static NifAnimationParser.AnimPoseOverride? ReadFirstKeyframe(
+        byte[] data,
+        NifInfo nif,
+        int dataRef,
+        bool be)
+    {
+        return ReadKeyframe(data, nif, dataRef, be, false);
     }
 }

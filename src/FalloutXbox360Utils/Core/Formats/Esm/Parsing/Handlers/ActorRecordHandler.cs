@@ -362,6 +362,10 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
         var currentIndx = -1;
         string? maleHeadModel = null, femaleHeadModel = null;
         string? maleHeadTexture = null, femaleHeadTexture = null;
+        string? maleMouthModel = null, femaleMouthModel = null;
+        string? maleLowerTeethModel = null, femaleLowerTeethModel = null;
+        string? maleUpperTeethModel = null, femaleUpperTeethModel = null;
+        string? maleTongueModel = null, femaleTongueModel = null;
         string? maleUpperBody = null, femaleUpperBody = null;
         string? maleLeftHand = null, femaleLeftHand = null;
         string? maleRightHand = null, femaleRightHand = null;
@@ -494,6 +498,50 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
 
                     break;
                 }
+                case "MODL" when inHeadPartsSection && currentIndx == 2:
+                {
+                    var path = EsmStringUtils.ReadNullTermString(subData);
+                    if (path != null)
+                    {
+                        if (inMaleSection) maleMouthModel = path;
+                        else femaleMouthModel = path;
+                    }
+
+                    break;
+                }
+                case "MODL" when inHeadPartsSection && currentIndx == 3:
+                {
+                    var path = EsmStringUtils.ReadNullTermString(subData);
+                    if (path != null)
+                    {
+                        if (inMaleSection) maleLowerTeethModel = path;
+                        else femaleLowerTeethModel = path;
+                    }
+
+                    break;
+                }
+                case "MODL" when inHeadPartsSection && currentIndx == 4:
+                {
+                    var path = EsmStringUtils.ReadNullTermString(subData);
+                    if (path != null)
+                    {
+                        if (inMaleSection) maleUpperTeethModel = path;
+                        else femaleUpperTeethModel = path;
+                    }
+
+                    break;
+                }
+                case "MODL" when inHeadPartsSection && currentIndx == 5:
+                {
+                    var path = EsmStringUtils.ReadNullTermString(subData);
+                    if (path != null)
+                    {
+                        if (inMaleSection) maleTongueModel = path;
+                        else femaleTongueModel = path;
+                    }
+
+                    break;
+                }
                 case "MODL" when inBodyPartsSection && currentIndx >= 0 && currentIndx <= 2:
                 {
                     var path = EsmStringUtils.ReadNullTermString(subData);
@@ -605,6 +653,14 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
             FemaleHeadModelPath = femaleHeadModel,
             MaleHeadTexturePath = maleHeadTexture,
             FemaleHeadTexturePath = femaleHeadTexture,
+            MaleMouthModelPath = maleMouthModel,
+            FemaleMouthModelPath = femaleMouthModel,
+            MaleLowerTeethModelPath = maleLowerTeethModel,
+            FemaleLowerTeethModelPath = femaleLowerTeethModel,
+            MaleUpperTeethModelPath = maleUpperTeethModel,
+            FemaleUpperTeethModelPath = femaleUpperTeethModel,
+            MaleTongueModelPath = maleTongueModel,
+            FemaleTongueModelPath = femaleTongueModel,
             MaleUpperBodyPath = maleUpperBody,
             FemaleUpperBodyPath = femaleUpperBody,
             MaleLeftHandPath = maleLeftHand,

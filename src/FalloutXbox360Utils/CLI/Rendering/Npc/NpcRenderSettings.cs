@@ -1,17 +1,17 @@
-using FalloutXbox360Utils.CLI;
-
 namespace FalloutXbox360Utils.CLI.Rendering.Npc;
 
 internal sealed class NpcRenderSettings
 {
     public required string MeshesBsaPath { get; init; }
+    public string[]? ExtraMeshesBsaPaths { get; init; }
     public required string EsmPath { get; init; }
-    public string? ExplicitTexturesBsaPath { get; init; }
+    public string[]? ExplicitTexturesBsaPaths { get; init; }
     public required string OutputDir { get; init; }
     public string[]? NpcFilters { get; init; }
     public int SpriteSize { get; init; } = 512;
     public string? DmpPath { get; init; }
     public bool ExportEgt { get; init; }
+    public bool CompareRaceTextureFgts { get; init; }
     public bool NoBilinear { get; init; }
     public bool NoEgm { get; init; }
     public bool NoEgt { get; init; }

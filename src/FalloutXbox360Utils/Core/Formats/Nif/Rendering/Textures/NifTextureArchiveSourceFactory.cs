@@ -7,15 +7,20 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures;
 /// </summary>
 internal static class NifTextureArchiveSourceFactory
 {
-    internal static List<NifTextureArchiveSource> Create(params string[] texturesBsaPaths)
+    internal static List<INifTextureSource> Create(params string[] textureSourcePaths)
     {
-        var sources = new List<NifTextureArchiveSource>(texturesBsaPaths.Length);
-        foreach (var bsaPath in texturesBsaPaths)
+        var sources = new List<INifTextureSource>(textureSourcePaths.Length);
+        foreach (var sourcePath in textureSourcePaths)
         {
-            var archive = BsaParser.Parse(bsaPath);
-            var extractor = new BsaExtractor(bsaPath);
-            var fileIndex = new Dictionary<string, BsaFileRecord>(
-                StringComparer.OrdinalIgnoreCase);
+            if (Directory.Exists(sourcePath))
+            {
+                sources.Add(new NifTextureDirectorySource(sourcePath));
+                continue;
+            }
+
+            var archive = BsaParser.Parse(sourcePath);
+            var extractor = new BsaExtractor(sourcePath);
+            var fileIndex = new Dictionary<string, BsaFileRecord>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var file in archive.AllFiles)
             {

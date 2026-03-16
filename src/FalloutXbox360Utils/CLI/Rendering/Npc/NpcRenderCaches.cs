@@ -5,6 +5,10 @@ namespace FalloutXbox360Utils.CLI.Rendering.Npc;
 
 internal sealed class NpcRenderCaches
 {
+    public Dictionary<string, Matrix4x4>? PoseDeltas;
+
+    public Dictionary<string, Matrix4x4>? SkeletonBones;
+
     public Dictionary<string, NifRenderableModel?> HeadMeshes { get; } =
         new(StringComparer.OrdinalIgnoreCase);
 
@@ -13,8 +17,4 @@ internal sealed class NpcRenderCaches
 
     public Dictionary<string, EgtParser?> EgtFiles { get; } =
         new(StringComparer.OrdinalIgnoreCase);
-
-    public Dictionary<string, Matrix4x4>? SkeletonBones;
-
-    public Dictionary<string, Matrix4x4>? PoseDeltas;
 }

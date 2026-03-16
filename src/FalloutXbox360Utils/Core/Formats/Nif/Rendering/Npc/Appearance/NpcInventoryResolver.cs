@@ -1,9 +1,11 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
+
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance;
 
 internal sealed class NpcInventoryResolver
 {
-    private readonly IReadOnlyDictionary<uint, NpcScanEntry> _npcs;
     private readonly IReadOnlyDictionary<uint, List<uint>> _leveledNpcs;
+    private readonly IReadOnlyDictionary<uint, NpcScanEntry> _npcs;
 
     internal NpcInventoryResolver(
         IReadOnlyDictionary<uint, NpcScanEntry> npcs,
@@ -13,11 +15,11 @@ internal sealed class NpcInventoryResolver
         _leveledNpcs = leveledNpcs;
     }
 
-    internal List<uint>? ResolveInventoryFormIds(NpcScanEntry npc)
+    internal List<InventoryItem>? ResolveInventoryItems(NpcScanEntry npc)
     {
-        if (npc.InventoryFormIds is { Count: > 0 })
+        if (npc.InventoryItems is { Count: > 0 })
         {
-            return npc.InventoryFormIds;
+            return npc.InventoryItems;
         }
 
         if (npc.TemplateFormId == null || (npc.TemplateFlags & 0x0100) == 0)
@@ -28,7 +30,7 @@ internal sealed class NpcInventoryResolver
         return ResolveInventoryFromTemplate(npc.TemplateFormId.Value, 0);
     }
 
-    private List<uint>? ResolveInventoryFromTemplate(uint templateId, int depth)
+    private List<InventoryItem>? ResolveInventoryFromTemplate(uint templateId, int depth)
     {
         if (depth > 5)
         {
@@ -37,9 +39,9 @@ internal sealed class NpcInventoryResolver
 
         if (_npcs.TryGetValue(templateId, out var templateNpc))
         {
-            if (templateNpc.InventoryFormIds is { Count: > 0 })
+            if (templateNpc.InventoryItems is { Count: > 0 })
             {
-                return templateNpc.InventoryFormIds;
+                return templateNpc.InventoryItems;
             }
 
             if (templateNpc.TemplateFormId != null &&
@@ -62,7 +64,7 @@ internal sealed class NpcInventoryResolver
         {
             if (_npcs.TryGetValue(entryId, out var leveledNpc))
             {
-                var inventory = ResolveInventoryFormIds(leveledNpc);
+                var inventory = ResolveInventoryItems(leveledNpc);
                 if (inventory != null)
                 {
                     return inventory;

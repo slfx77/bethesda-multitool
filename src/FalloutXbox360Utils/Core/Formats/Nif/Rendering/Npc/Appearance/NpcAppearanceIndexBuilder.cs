@@ -50,11 +50,49 @@ internal static class NpcAppearanceIndexBuilder
                         record.FormId,
                         ArmorRecordScanner.Process(esmData, bigEndian, record));
                     break;
+                case "ARMA":
+                    AddIfPresent(
+                        index.ArmorAddons,
+                        record.FormId,
+                        ArmorAddonRecordScanner.Process(esmData, bigEndian, record));
+                    break;
                 case "WEAP":
                     AddIfPresent(
                         index.Weapons,
                         record.FormId,
                         WeaponRecordScanner.Process(esmData, bigEndian, record));
+                    break;
+                case "PACK":
+                    AddIfPresent(
+                        index.Packages,
+                        record.FormId,
+                        PackageRecordScanner.Process(esmData, bigEndian, record));
+                    break;
+                case "IDLE":
+                {
+                    var idle = IdleRecordScanner.Process(esmData, bigEndian, record);
+                    AddIfPresent(
+                        index.Idles,
+                        record.FormId,
+                        idle);
+                    if (idle?.ParentIdleFormId is uint parentIdleFormId)
+                    {
+                        if (!index.IdleChildrenByParent.TryGetValue(parentIdleFormId, out var children))
+                        {
+                            children = [];
+                            index.IdleChildrenByParent[parentIdleFormId] = children;
+                        }
+
+                        children.Add(record.FormId);
+                    }
+
+                    break;
+                }
+                case "FLST":
+                    AddIfPresent(
+                        index.FormLists,
+                        record.FormId,
+                        FormListRecordScanner.Process(esmData, bigEndian, record));
                     break;
                 case "LVLI":
                     AddIfPresent(

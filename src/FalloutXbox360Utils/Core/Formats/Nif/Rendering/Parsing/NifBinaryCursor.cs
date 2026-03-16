@@ -40,6 +40,41 @@ internal static class NifBinaryCursor
     }
 
     /// <summary>
+    ///     Read the controller ref from a NiObjectNET header without advancing past it.
+    ///     Returns the block index of the first controller, or -1 if none/invalid.
+    /// </summary>
+    internal static int ReadNiObjectNETControllerRef(byte[] data, int dataOffset, int end, bool be)
+    {
+        var pos = dataOffset;
+
+        // Name ref (string table index)
+        if (pos + 4 > end)
+        {
+            return -1;
+        }
+
+        pos += 4;
+
+        // NumExtraData + refs
+        if (pos + 4 > end)
+        {
+            return -1;
+        }
+
+        var numExtraData = BinaryUtils.ReadUInt32(data, pos, be);
+        pos += 4;
+        pos += (int)Math.Min(numExtraData, 100) * 4;
+
+        // Controller ref
+        if (pos + 4 > end)
+        {
+            return -1;
+        }
+
+        return BinaryUtils.ReadInt32(data, pos, be);
+    }
+
+    /// <summary>
     ///     Read a NIF SizedString (uint32 length + ASCII payload) at the current cursor position.
     /// </summary>
     internal static string? ReadSizedString(byte[] data, ref int pos, int end, bool be)

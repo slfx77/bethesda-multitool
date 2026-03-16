@@ -9,6 +9,8 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Geometry;
 /// </summary>
 internal static class NifSubmeshExtractor
 {
+    private static readonly Logger Log = Logger.Instance;
+
     internal static RenderableSubmesh? ExtractSubmesh(
         byte[] data,
         NifInfo nif,
@@ -32,6 +34,7 @@ internal static class NifSubmeshExtractor
         byte srcBlendMode = 6,
         byte dstBlendMode = 7,
         float materialAlpha = 1f,
+        float materialGlossiness = 10f,
         bool useDualQuaternionSkinning = false,
         float[]? preSkinMorphDeltas = null)
     {
@@ -42,7 +45,7 @@ internal static class NifSubmeshExtractor
             transform = Matrix4x4.Identity;
         }
 
-        RenderableSubmesh? submesh = dataBlock.TypeName switch
+        var submesh = dataBlock.TypeName switch
         {
             "NiTriShapeData" => ExtractTriShapeData(
                 data,
@@ -52,7 +55,8 @@ internal static class NifSubmeshExtractor
                 transform,
                 skinning,
                 useDualQuaternionSkinning,
-                preSkinMorphDeltas),
+                preSkinMorphDeltas,
+                shapeName),
             "NiTriStripsData" => ExtractTriStripsData(
                 data,
                 dataBlock,
@@ -61,7 +65,8 @@ internal static class NifSubmeshExtractor
                 transform,
                 skinning,
                 useDualQuaternionSkinning,
-                preSkinMorphDeltas),
+                preSkinMorphDeltas,
+                shapeName),
             _ => null
         };
 
@@ -94,7 +99,8 @@ internal static class NifSubmeshExtractor
             EnvMapScale = envMapScale,
             SrcBlendMode = srcBlendMode,
             DstBlendMode = dstBlendMode,
-            MaterialAlpha = materialAlpha
+            MaterialAlpha = materialAlpha,
+            MaterialGlossiness = materialGlossiness
         };
     }
 
@@ -106,7 +112,8 @@ internal static class NifSubmeshExtractor
         Matrix4x4 transform,
         ((int BoneIdx, float Weight)[][] PerVertexInfluences, Matrix4x4[] BoneSkinMatrices)? skinning = null,
         bool useDualQuaternionSkinning = false,
-        float[]? preSkinMorphDeltas = null)
+        float[]? preSkinMorphDeltas = null,
+        string? shapeName = null)
     {
         var pos = block.DataOffset;
         var end = block.DataOffset + block.Size;
@@ -266,7 +273,7 @@ internal static class NifSubmeshExtractor
         }
 
         // Apply EGM morph deltas in bind-pose space BEFORE skinning transforms vertices
-        if (preSkinMorphDeltas != null && positions != null)
+        if (preSkinMorphDeltas != null)
         {
             var count = Math.Min(positions.Length, preSkinMorphDeltas.Length);
             for (var i = 0; i < count; i++)
@@ -280,7 +287,8 @@ internal static class NifSubmeshExtractor
             bitangents,
             transform,
             skinning,
-            useDualQuaternionSkinning);
+            useDualQuaternionSkinning,
+            shapeName);
 
         return new RenderableSubmesh
         {
@@ -302,7 +310,8 @@ internal static class NifSubmeshExtractor
         Matrix4x4 transform,
         ((int BoneIdx, float Weight)[][] PerVertexInfluences, Matrix4x4[] BoneSkinMatrices)? skinning = null,
         bool useDualQuaternionSkinning = false,
-        float[]? preSkinMorphDeltas = null)
+        float[]? preSkinMorphDeltas = null,
+        string? shapeName = null)
     {
         var triangles = NifTriStripExtractor.ExtractTrianglesFromTriStripsData(data, block, be);
         if (triangles == null || triangles.Length == 0)
@@ -431,7 +440,8 @@ internal static class NifSubmeshExtractor
             bitangents,
             transform,
             skinning,
-            useDualQuaternionSkinning);
+            useDualQuaternionSkinning,
+            shapeName);
 
         return new RenderableSubmesh
         {
@@ -450,13 +460,14 @@ internal static class NifSubmeshExtractor
         float[]? Normals,
         float[]? Tangents,
         float[]? Bitangents) ApplySkinningOrTransform(
-        float[] positions,
-        float[]? normals,
-        float[]? tangents,
-        float[]? bitangents,
-        Matrix4x4 transform,
-        ((int BoneIdx, float Weight)[][] PerVertexInfluences, Matrix4x4[] BoneSkinMatrices)? skinning,
-        bool useDualQuaternionSkinning)
+            float[] positions,
+            float[]? normals,
+            float[]? tangents,
+            float[]? bitangents,
+            Matrix4x4 transform,
+            ((int BoneIdx, float Weight)[][] PerVertexInfluences, Matrix4x4[] BoneSkinMatrices)? skinning,
+            bool useDualQuaternionSkinning,
+            string? shapeName)
     {
         if (!skinning.HasValue)
         {
@@ -476,29 +487,46 @@ internal static class NifSubmeshExtractor
         var (perVertexInfluences, boneSkinMatrices) = skinning.Value;
         if (useDualQuaternionSkinning)
         {
-            return (
-                NifSkinningExtractor.ApplySkinningPositionsDQS(
-                    positions,
-                    perVertexInfluences,
-                    boneSkinMatrices),
-                normals != null
-                    ? NifSkinningExtractor.ApplySkinningNormalsDQS(
-                        normals,
+            var compatibility = NifSkinningExtractor.AnalyzeDualQuaternionCompatibility(
+                boneSkinMatrices);
+            if (!compatibility.CanUse)
+            {
+                Log.Debug(
+                    "Submesh '{0}': using linear skinning instead of DQS; matrix {1} is non-rigid (scale={2:F3}/{3:F3}/{4:F3}, axisDot={5:F3}, det={6:F3})",
+                    shapeName ?? "(unnamed)",
+                    compatibility.MatrixIndex,
+                    compatibility.ScaleX,
+                    compatibility.ScaleY,
+                    compatibility.ScaleZ,
+                    compatibility.MaxAxisDot,
+                    compatibility.Determinant);
+            }
+            else
+            {
+                return (
+                    NifSkinningExtractor.ApplySkinningPositionsDQS(
+                        positions,
                         perVertexInfluences,
-                        boneSkinMatrices)
-                    : null,
-                tangents != null
-                    ? NifSkinningExtractor.ApplySkinningNormalsDQS(
-                        tangents,
-                        perVertexInfluences,
-                        boneSkinMatrices)
-                    : null,
-                bitangents != null
-                    ? NifSkinningExtractor.ApplySkinningNormalsDQS(
-                        bitangents,
-                        perVertexInfluences,
-                        boneSkinMatrices)
-                    : null);
+                        boneSkinMatrices),
+                    normals != null
+                        ? NifSkinningExtractor.ApplySkinningNormalsDQS(
+                            normals,
+                            perVertexInfluences,
+                            boneSkinMatrices)
+                        : null,
+                    tangents != null
+                        ? NifSkinningExtractor.ApplySkinningNormalsDQS(
+                            tangents,
+                            perVertexInfluences,
+                            boneSkinMatrices)
+                        : null,
+                    bitangents != null
+                        ? NifSkinningExtractor.ApplySkinningNormalsDQS(
+                            bitangents,
+                            perVertexInfluences,
+                            boneSkinMatrices)
+                        : null);
+            }
         }
 
         return (

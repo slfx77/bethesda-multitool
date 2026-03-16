@@ -1,7 +1,9 @@
 using System.Buffers.Binary;
+using FalloutXbox360Utils.CLI.Rendering.Nif;
 using FalloutXbox360Utils.Core.Formats.Nif;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures;
+using FalloutXbox360Utils.Tests;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
@@ -98,6 +100,23 @@ public sealed class NifTextureResolverTests
         {
             Assert.Null(metadata.GetTextureSlot(slot));
         }
+    }
+
+    [Fact]
+    public void ResolveLooseTexture_FromUnpackedDataRoot_LoadsDecodedTexture()
+    {
+        var nifPath = SampleFileFixture.FindSamplePath(
+            @"Sample\Unpacked_Builds\360_July_Unpacked\FalloutNV\Data\meshes\architecture\barracks\barracks01.nif");
+        Assert.SkipWhen(nifPath is null, "Unpacked July NIF sample not available");
+
+        Assert.True(NifExportPathResolver.TryDetectDataRoot(nifPath!, out var dataRoot));
+
+        using var resolver = new NifTextureResolver(dataRoot);
+        var texture = resolver.GetTexture(@"textures\architecture\barracks\barracks01.dds");
+
+        Assert.NotNull(texture);
+        Assert.True(texture.Width > 0);
+        Assert.True(texture.Height > 0);
     }
 
     private static NifInfo CreateNifInfo(params (string TypeName, int DataOffset, int Size)[] blocks)

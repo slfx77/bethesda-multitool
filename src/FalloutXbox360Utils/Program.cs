@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.CommandLine.Help;
 using System.Text;
 using FalloutXbox360Utils.CLI;
 using FalloutXbox360Utils.Core;
@@ -52,16 +53,19 @@ public static class Program
 
         // Strip flags before System.CommandLine sees them
         args = args.Where(a => !a.Equals("--plain", StringComparison.OrdinalIgnoreCase)
-                            && !a.Equals("--no-ansi", StringComparison.OrdinalIgnoreCase))
-                   .ToArray();
+                               && !a.Equals("--no-ansi", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
 
         Console.OutputEncoding = Encoding.UTF8;
 
-        AnsiConsole.Write(
-            new FigletText("Fallout 360 Utils")
-                .Color(Color.Green));
-        AnsiConsole.MarkupLine("[grey]Xbox 360 to PC Conversion Utilities - CLI Mode[/]");
-        AnsiConsole.WriteLine();
+        if (!plainMode)
+        {
+            AnsiConsole.Write(
+                new FigletText("Fallout 360 Utils")
+                    .Color(Color.Green));
+            AnsiConsole.MarkupLine("[grey]Xbox 360 to PC Conversion Utilities - CLI Mode[/]");
+            AnsiConsole.WriteLine();
+        }
 
         var rootCommand = BuildRootCommand();
 
@@ -84,6 +88,7 @@ public static class Program
         rootCommand.Subcommands.Add(SaveCommand.Create());
         rootCommand.Subcommands.Add(DmpCommand.Create());
         rootCommand.Subcommands.Add(RenderCommand.Create());
+        rootCommand.Subcommands.Add(ExportCommand.Create());
 
         return rootCommand.Parse(args).Invoke();
     }
@@ -152,7 +157,7 @@ public static class Program
 
             if (string.IsNullOrEmpty(input))
             {
-                new System.CommandLine.Help.HelpAction().Invoke(parseResult);
+                new HelpAction().Invoke(parseResult);
                 return 0;
             }
 

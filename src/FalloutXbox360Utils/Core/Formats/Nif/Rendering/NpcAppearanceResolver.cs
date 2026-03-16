@@ -57,10 +57,24 @@ internal sealed class NpcAppearanceResolver
 
     public NpcAppearance ResolveFromDmpRecord(
         NpcRecord npcRecord,
-        string pluginName) =>
-        _appearanceFactory.BuildFromDmpRecord(npcRecord, pluginName);
+        string pluginName,
+        NpcWeaponResolver.RuntimeWeaponSelection? runtimeWeaponSelection = null)
+    {
+        return _appearanceFactory.BuildFromDmpRecord(npcRecord, pluginName, runtimeWeaponSelection);
+    }
 
-    public IReadOnlyDictionary<uint, NpcScanEntry> GetAllNpcs() => _index.Npcs;
+    public IReadOnlyDictionary<uint, NpcScanEntry> GetAllNpcs()
+    {
+        return _index.Npcs;
+    }
 
-    public IReadOnlyDictionary<uint, RaceScanEntry> GetAllRaces() => _index.Races;
+    public IReadOnlyDictionary<uint, RaceScanEntry> GetAllRaces()
+    {
+        return _index.Races;
+    }
+
+    public bool TryGetNpc(uint formId, out NpcScanEntry npc)
+    {
+        return _index.Npcs.TryGetValue(formId, out npc!);
+    }
 }

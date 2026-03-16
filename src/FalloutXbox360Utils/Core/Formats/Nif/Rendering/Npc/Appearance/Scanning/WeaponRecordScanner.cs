@@ -24,8 +24,22 @@ internal static class WeaponRecordScanner
         var subrecords = EsmRecordParser.ParseSubrecords(recordData, bigEndian);
         string? editorId = null;
         string? modelPath = null;
-        var weaponType = WeaponType.HandToHand;
+        string? mod2ModelPath = null;
+        string? embeddedWeaponNode = null;
+        var weaponType = WeaponType.HandToHandMelee;
         short damage = 0;
+        var health = 0;
+        var shotsPerSec = 1f;
+        var spread = 0f;
+        var minRange = 0f;
+        var maxRange = 0f;
+        byte flags = 0;
+        uint flagsEx = 0;
+        uint? ammoFormId = null;
+        uint skillActorValue = 0;
+        uint skillRequirement = 0;
+        uint strengthRequirement = 0;
+        byte handGripAnim = 0xff;
 
         foreach (var subrecord in subrecords)
         {
@@ -37,20 +51,65 @@ internal static class WeaponRecordScanner
                 case "MODL":
                     modelPath = EsmRecordParser.GetSubrecordString(subrecord);
                     break;
-                case "DNAM" when subrecord.Data.Length >= 1:
+                case "MOD2":
+                    mod2ModelPath = EsmRecordParser.GetSubrecordString(subrecord);
+                    break;
+                case "NNAM":
+                    embeddedWeaponNode = EsmRecordParser.GetSubrecordString(subrecord);
+                    break;
+                case "ENAM" when subrecord.Data.Length == 4:
+                    ammoFormId = BinaryUtils.ReadUInt32(
+                        subrecord.Data,
+                        0,
+                        bigEndian);
+                    if (ammoFormId == 0)
+                    {
+                        ammoFormId = null;
+                    }
+
+                    break;
+                case "DNAM" when subrecord.Data.Length >= 64:
                 {
-                    var rawWeaponType = subrecord.Data[0];
-                    weaponType = rawWeaponType <= 11
-                        ? (WeaponType)rawWeaponType
-                        : WeaponType.HandToHand;
+                    var fields = SubrecordDataReader.ReadFields(
+                        "DNAM",
+                        "WEAP",
+                        subrecord.Data,
+                        bigEndian);
+                    if (fields.Count > 0)
+                    {
+                        var rawWeaponType = SubrecordDataReader.GetByte(fields, "WeaponType");
+                        weaponType = Enum.IsDefined(typeof(WeaponType), rawWeaponType)
+                            ? (WeaponType)rawWeaponType
+                            : WeaponType.HandToHandMelee;
+                        flags = SubrecordDataReader.GetByte(fields, "Flags");
+                        handGripAnim = SubrecordDataReader.GetByte(fields, "HandGripAnim");
+                        spread = SubrecordDataReader.GetFloat(fields, "Spread");
+                        minRange = SubrecordDataReader.GetFloat(fields, "MinRange");
+                        maxRange = SubrecordDataReader.GetFloat(fields, "MaxRange");
+                        flagsEx = SubrecordDataReader.GetUInt32(fields, "FlagsEx");
+                        shotsPerSec = SubrecordDataReader.GetFloat(fields, "ShotsPerSec");
+                        skillActorValue = SubrecordDataReader.GetUInt32(fields, "Skill");
+                        strengthRequirement = SubrecordDataReader.GetUInt32(fields, "StrengthRequirement");
+                        skillRequirement = SubrecordDataReader.GetUInt32(fields, "SkillRequirement");
+                    }
+
                     break;
                 }
                 case "DATA" when subrecord.Data.Length >= 14:
-                    damage = (short)BinaryUtils.ReadUInt16(
+                {
+                    var fields = SubrecordDataReader.ReadFields(
+                        "DATA",
+                        "WEAP",
                         subrecord.Data,
-                        12,
                         bigEndian);
+                    if (fields.Count > 0)
+                    {
+                        health = SubrecordDataReader.GetInt32(fields, "Health");
+                        damage = SubrecordDataReader.GetInt16(fields, "Damage");
+                    }
+
                     break;
+                }
             }
         }
 
@@ -63,8 +122,22 @@ internal static class WeaponRecordScanner
         {
             EditorId = editorId,
             ModelPath = modelPath,
+            Mod2ModelPath = mod2ModelPath,
             WeaponType = weaponType,
-            Damage = damage
+            Damage = damage,
+            Health = health,
+            ShotsPerSec = shotsPerSec,
+            Spread = spread,
+            MinRange = minRange,
+            MaxRange = maxRange,
+            Flags = flags,
+            FlagsEx = flagsEx,
+            AmmoFormId = ammoFormId,
+            SkillActorValue = skillActorValue,
+            SkillRequirement = skillRequirement,
+            StrengthRequirement = strengthRequirement,
+            HandGripAnim = handGripAnim,
+            EmbeddedWeaponNode = embeddedWeaponNode
         };
     }
 }

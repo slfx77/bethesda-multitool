@@ -11,6 +11,7 @@ public sealed class DdsTextureDecoderTests
     [InlineData("DXT1", 8)]
     [InlineData("DXT3", 16)]
     [InlineData("DXT5", 16)]
+    [InlineData("ATI1", 8)]
     [InlineData("ATI2", 16)]
     public void Decode_CompressedMipChain_ReturnsAllLevels(
         string fourCc,

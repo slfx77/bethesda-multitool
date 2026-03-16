@@ -2,14 +2,20 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance;
 
 internal static class NpcAppearancePathDeriver
 {
-    internal static string? AsMeshPath(string? relativePath) =>
-        relativePath != null ? "meshes\\" + relativePath : null;
+    internal static string? AsMeshPath(string? relativePath)
+    {
+        return relativePath != null ? "meshes\\" + relativePath : null;
+    }
 
-    internal static string? AsTexturePath(string? relativePath) =>
-        relativePath != null ? "textures\\" + relativePath : null;
+    internal static string? AsTexturePath(string? relativePath)
+    {
+        return relativePath != null ? "textures\\" + relativePath : null;
+    }
 
-    internal static string BuildFaceGenNifPath(string pluginName, uint formId) =>
-        $"meshes\\characters\\facegendata\\facegeom\\{pluginName}\\{formId:X8}.nif";
+    internal static string BuildFaceGenNifPath(string pluginName, uint formId)
+    {
+        return $"meshes\\characters\\facegendata\\facegeom\\{pluginName}\\{formId:X8}.nif";
+    }
 
     internal static string? DeriveHandTexturePath(
         string? bodyTexturePath,

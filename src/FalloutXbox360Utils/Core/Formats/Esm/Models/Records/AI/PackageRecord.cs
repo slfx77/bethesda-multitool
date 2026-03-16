@@ -18,6 +18,9 @@ public record PackageRecord
     /// <summary>Package schedule from PSDT subrecord.</summary>
     public PackageSchedule? Schedule { get; init; }
 
+    /// <summary>Use Weapon package data from PKW3, when present.</summary>
+    public PackageUseWeaponData? UseWeaponData { get; init; }
+
     /// <summary>Primary package location (PLDT subrecord).</summary>
     public PackageLocation? Location { get; init; }
 

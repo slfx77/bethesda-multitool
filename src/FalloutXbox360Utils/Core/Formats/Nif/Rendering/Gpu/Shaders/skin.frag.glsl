@@ -182,6 +182,12 @@ void main()
         texColor.rgb *= vVertexColor.rgb;
     }
 
-    // Apply shading + material alpha
-    fragColor = vec4(texColor.rgb * shade, texColor.a * uMaterial.x);
+    // Match CPU export alpha semantics:
+    // - opaque + cutout materials write solid alpha after any discard
+    // - only true blended materials preserve texture/material alpha in the output
+    float outAlpha = ((flags & HAS_ALPHA_BLEND) != 0u)
+        ? texColor.a * uMaterial.x
+        : 1.0;
+
+    fragColor = vec4(texColor.rgb * shade, outAlpha);
 }

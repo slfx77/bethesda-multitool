@@ -108,4 +108,20 @@ public sealed class NpcCameraDefaultsTests
 
         Assert.Empty(parseResult.Errors);
     }
+
+    [Fact]
+    public void RenderNpcCommand_CompareRaceTextureFgtsOptionParsesWithoutErrors()
+    {
+        var command = RenderNpcCommand.Create();
+
+        var parseResult = command.Parse([
+            "meshes.bsa",
+            "--esm", "FalloutNV.esm",
+            "--output", "TestOutput",
+            "--npc", "VMS38RedLucy",
+            "--compare-race-fgts"
+        ]);
+
+        Assert.Empty(parseResult.Errors);
+    }
 }

@@ -313,6 +313,31 @@ public static partial class SubrecordSchemaRegistry
             Description = "Idle Animation Parents"
         };
 
+        // DATA - IDLE differs between Xbox and PC.
+        // Xbox: AnimData(1), LoopMin(1), LoopMax(1), pad(1), ReplayDelay(2 BE), FlagsEx(1), pad(1)
+        // PC:   AnimData(1), LoopMin(1), LoopMax(1), pad(1), ReplayDelay(2 LE)
+        schemas[new SchemaKey("DATA", "IDLE", 8)] = new SubrecordSchema(
+            F.UInt8("AnimData"),
+            F.UInt8("LoopMin"),
+            F.UInt8("LoopMax"),
+            F.Padding(1),
+            F.UInt16("ReplayDelay"),
+            F.UInt8("FlagsEx"),
+            F.Padding(1))
+        {
+            Description = "Idle Animation Data (Xbox 360)"
+        };
+
+        schemas[new SchemaKey("DATA", "IDLE", 6)] = new SubrecordSchema(
+            F.UInt8("AnimData"),
+            F.UInt8("LoopMin"),
+            F.UInt8("LoopMax"),
+            F.Padding(1),
+            F.UInt16("ReplayDelay"))
+        {
+            Description = "Idle Animation Data (PC)"
+        };
+
         // IDLA - Idle Marker Animations (array of FormIDs)
         schemas[new SchemaKey("IDLA")] = SubrecordSchema.FormIdArray;
 

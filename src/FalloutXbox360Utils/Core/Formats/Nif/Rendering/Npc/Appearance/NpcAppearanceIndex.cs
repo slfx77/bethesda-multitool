@@ -20,7 +20,22 @@ internal sealed class NpcAppearanceIndex
     public Dictionary<uint, ArmoScanEntry> Armors { get; } =
         new();
 
+    public Dictionary<uint, ArmaAddonScanEntry> ArmorAddons { get; } =
+        new();
+
     public Dictionary<uint, WeapScanEntry> Weapons { get; } =
+        new();
+
+    public Dictionary<uint, PackageScanEntry> Packages { get; } =
+        new();
+
+    public Dictionary<uint, IdleScanEntry> Idles { get; } =
+        new();
+
+    public Dictionary<uint, List<uint>> IdleChildrenByParent { get; } =
+        new();
+
+    public Dictionary<uint, List<uint>> FormLists { get; } =
         new();
 
     public Dictionary<uint, List<uint>> LeveledItems { get; } =

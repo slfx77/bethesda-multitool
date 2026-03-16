@@ -1,4 +1,3 @@
-using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion;
 using FalloutXbox360Utils.Core.Utils;
 

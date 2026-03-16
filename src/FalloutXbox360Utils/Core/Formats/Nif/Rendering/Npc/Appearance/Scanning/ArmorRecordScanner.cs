@@ -1,4 +1,3 @@
-using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion;
 using FalloutXbox360Utils.Core.Utils;
 
@@ -25,6 +24,8 @@ internal static class ArmorRecordScanner
         string? maleBipedModel = null;
         string? femaleBipedModel = null;
         uint bipedFlags = 0;
+        byte generalFlags = 0;
+        uint? bipedModelListFormId = null;
 
         foreach (var subrecord in subrecords)
         {
@@ -44,11 +45,23 @@ internal static class ArmorRecordScanner
                         subrecord.Data,
                         0,
                         bigEndian);
+                    if (subrecord.Data.Length >= 5)
+                    {
+                        generalFlags = subrecord.Data[4];
+                    }
+
+                    break;
+                case "BIPL" when subrecord.Data.Length == 4:
+                    bipedModelListFormId = BinaryUtils.ReadUInt32(
+                        subrecord.Data,
+                        0,
+                        bigEndian);
                     break;
             }
         }
 
-        if (bipedFlags == 0 || (maleBipedModel == null && femaleBipedModel == null))
+        if (bipedFlags == 0 ||
+            (maleBipedModel == null && femaleBipedModel == null && !bipedModelListFormId.HasValue))
         {
             return null;
         }
@@ -57,8 +70,10 @@ internal static class ArmorRecordScanner
         {
             EditorId = editorId,
             BipedFlags = bipedFlags,
+            GeneralFlags = generalFlags,
             MaleBipedModelPath = maleBipedModel,
-            FemaleBipedModelPath = femaleBipedModel
+            FemaleBipedModelPath = femaleBipedModel,
+            BipedModelListFormId = bipedModelListFormId
         };
     }
 }

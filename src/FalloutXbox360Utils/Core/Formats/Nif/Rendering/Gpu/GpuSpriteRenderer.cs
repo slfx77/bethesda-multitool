@@ -16,10 +16,10 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
 internal sealed class GpuSpriteRenderer : IDisposable
 {
     private static readonly Logger Log = Logger.Instance;
+    private readonly Dictionary<BlendPipelineKey, Pipeline> _blendPipelines = [];
 
     private readonly GpuDevice _gpu;
     private readonly Sampler _linearSampler;
-    private readonly Dictionary<BlendPipelineKey, Pipeline> _blendPipelines = [];
     private readonly Pipeline _opaqueDoubleSidedPipeline;
     private readonly Pipeline _opaquePipeline;
     private readonly Shader[] _shaders;
@@ -65,8 +65,8 @@ internal sealed class GpuSpriteRenderer : IDisposable
             SamplerFilter.MinLinear_MagLinear_MipLinear,
             null, 0, 0, 0, 0, SamplerBorderColor.TransparentBlack));
 
-        _opaquePipeline = CreatePipeline(factory, blendAttachment: null, depthWriteEnabled: true, doubleSided: false);
-        _opaqueDoubleSidedPipeline = CreatePipeline(factory, blendAttachment: null, depthWriteEnabled: true, doubleSided: true);
+        _opaquePipeline = CreatePipeline(factory, null, true, false);
+        _opaqueDoubleSidedPipeline = CreatePipeline(factory, null, true, true);
     }
 
     public void Dispose()
@@ -79,6 +79,7 @@ internal sealed class GpuSpriteRenderer : IDisposable
         {
             pipeline.Dispose();
         }
+
         _uniformLayout.Dispose();
         _textureLayout.Dispose();
         _linearSampler.Dispose();
@@ -139,7 +140,7 @@ internal sealed class GpuSpriteRenderer : IDisposable
             BlendFactor.One,
             BlendFunction.Maximum);
 
-        var pipeline = CreatePipeline(_gpu.Factory, blendAttachment, depthWriteEnabled: false, doubleSided: doubleSided);
+        var pipeline = CreatePipeline(_gpu.Factory, blendAttachment, false, doubleSided);
         _blendPipelines[key] = pipeline;
         return pipeline;
     }
@@ -306,7 +307,7 @@ internal sealed class GpuSpriteRenderer : IDisposable
             if (sub.Normals != null) flags |= 2; // HAS_NORMALS
             if (sub.Tangents != null && sub.Bitangents != null && sub.NormalMapTexturePath != null)
                 flags |= 4; // HAS_BUMP
-            if (sub.VertexColors != null && (sub.UseVertexColors || sub.IsEmissive))
+            if (NifVertexColorPolicy.HasVertexColorData(sub))
                 flags |= 8; // HAS_VCOL
             if (sub.IsEmissive) flags |= 16; // IS_EMISSIVE
             if (sub.IsDoubleSided) flags |= 32; // IS_DOUBLE_SIDED
@@ -324,7 +325,8 @@ internal sealed class GpuSpriteRenderer : IDisposable
                 View = viewMatrix,
                 LightDir = new Vector4(RenderLightingConstants.LightDir, 0),
                 HalfVec = new Vector4(RenderLightingConstants.HalfVec, RenderLightingConstants.HdotNegL),
-                Ambient = new Vector4(RenderLightingConstants.SkyAmbient, RenderLightingConstants.GroundAmbient, RenderLightingConstants.LightIntensity,
+                Ambient = new Vector4(RenderLightingConstants.SkyAmbient, RenderLightingConstants.GroundAmbient,
+                    RenderLightingConstants.LightIntensity,
                     NifSpriteRenderer.BumpStrength),
                 Material = new Vector4(alphaState.MaterialAlpha, sub.EnvMapScale,
                     alphaState.AlphaTestThreshold / 255f, alphaState.AlphaTestFunction),
@@ -422,7 +424,8 @@ internal sealed class GpuSpriteRenderer : IDisposable
 
         // Read pixels from staging texture
         var ssPixels = ReadBackStagingPixels(device, (uint)pending.SsWidth, (uint)pending.SsHeight);
-        var pixels = NifSpriteRenderer.Downsample(ssPixels, pending.SsWidth, pending.SsHeight, RenderLightingConstants.SsaaFactor);
+        var pixels = NifSpriteRenderer.Downsample(ssPixels, pending.SsWidth, pending.SsHeight,
+            RenderLightingConstants.SsaaFactor);
 
         // Cleanup: dispose per-submesh resources, then per-frame resources
         foreach (var d in pending.Disposables)
@@ -526,16 +529,19 @@ internal sealed class GpuSpriteRenderer : IDisposable
         return sum / count;
     }
 
-    private static BlendFactor ResolveBlendFactor(byte mode) => mode switch
+    private static BlendFactor ResolveBlendFactor(byte mode)
     {
-        0 => BlendFactor.One,
-        1 => BlendFactor.Zero,
-        2 => BlendFactor.SourceAlpha,
-        3 => BlendFactor.InverseSourceAlpha,
-        6 => BlendFactor.SourceAlpha,
-        7 => BlendFactor.InverseSourceAlpha,
-        _ => BlendFactor.SourceAlpha
-    };
+        return mode switch
+        {
+            0 => BlendFactor.One,
+            1 => BlendFactor.Zero,
+            2 => BlendFactor.SourceAlpha,
+            3 => BlendFactor.InverseSourceAlpha,
+            6 => BlendFactor.SourceAlpha,
+            7 => BlendFactor.InverseSourceAlpha,
+            _ => BlendFactor.SourceAlpha
+        };
+    }
 
     /// <summary>
     ///     Reads pixels from the persistent staging texture (already populated via CopyTexture
