@@ -327,7 +327,9 @@ internal static class HighProcessDecoder
                     r.TrySkipPipe();
                     children.Add(new DecodedField
                     {
-                        Name = "Position", DisplayValue = $"({FormFieldWriter.FormatFloat(x)}, {FormFieldWriter.FormatFloat(y)}, {FormFieldWriter.FormatFloat(z)})",
+                        Name = "Position",
+                        DisplayValue =
+                            $"({FormFieldWriter.FormatFloat(x)}, {FormFieldWriter.FormatFloat(y)}, {FormFieldWriter.FormatFloat(z)})",
                         DataOffset = s, DataLength = r.Position - s
                     });
                 }
@@ -339,7 +341,9 @@ internal static class HighProcessDecoder
                     r.TrySkipPipe();
                     children.Add(new DecodedField
                     {
-                        Name = "Position2", DisplayValue = $"({FormFieldWriter.FormatFloat(x)}, {FormFieldWriter.FormatFloat(y)}, {FormFieldWriter.FormatFloat(z)})",
+                        Name = "Position2",
+                        DisplayValue =
+                            $"({FormFieldWriter.FormatFloat(x)}, {FormFieldWriter.FormatFloat(y)}, {FormFieldWriter.FormatFloat(z)})",
                         DataOffset = s, DataLength = r.Position - s
                     });
                 }

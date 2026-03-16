@@ -6,7 +6,7 @@ namespace FalloutXbox360Utils.Core.Formats.SaveGame;
 /// <summary>
 ///     Parses save file body sections: changed forms, global data entries, FormID arrays,
 ///     and global data type decoders (player location, misc stats, global variables).
-///     Extracted from <see cref="SaveFileParser"/> for maintainability.
+///     Extracted from <see cref="SaveFileParser" /> for maintainability.
 /// </summary>
 internal static class ChangedFormParser
 {

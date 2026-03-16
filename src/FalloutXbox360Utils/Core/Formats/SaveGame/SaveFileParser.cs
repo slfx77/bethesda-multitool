@@ -430,7 +430,7 @@ public static class SaveFileParser
 
     /// <summary>
     ///     Parse Global Data entries from a section.
-    ///     Delegates to <see cref="ChangedFormParser"/>.
+    ///     Delegates to <see cref="ChangedFormParser" />.
     /// </summary>
     private static List<GlobalDataEntry> ParseGlobalDataEntries(ReadOnlySpan<byte> data, int bodyBase,
         uint sectionOffset, uint count)
@@ -440,7 +440,7 @@ public static class SaveFileParser
 
     /// <summary>
     ///     Parse Changed Form entries from the body.
-    ///     Delegates to <see cref="ChangedFormParser"/>.
+    ///     Delegates to <see cref="ChangedFormParser" />.
     /// </summary>
     private static List<ChangedForm> ParseChangedForms(ReadOnlySpan<byte> data, int bodyBase, uint sectionOffset,
         uint count)
@@ -450,7 +450,7 @@ public static class SaveFileParser
 
     /// <summary>
     ///     Parse the FormID lookup array.
-    ///     Delegates to <see cref="ChangedFormParser"/>.
+    ///     Delegates to <see cref="ChangedFormParser" />.
     /// </summary>
     private static List<uint> ParseFormIdArray(ReadOnlySpan<byte> data, int offset, out int endOffset)
     {
@@ -459,7 +459,7 @@ public static class SaveFileParser
 
     /// <summary>
     ///     Parse player location from Global Data Type 1 (TES).
-    ///     Delegates to <see cref="ChangedFormParser"/>.
+    ///     Delegates to <see cref="ChangedFormParser" />.
     /// </summary>
     private static PlayerLocation? ParsePlayerLocation(ReadOnlySpan<byte> data)
     {
@@ -468,7 +468,7 @@ public static class SaveFileParser
 
     /// <summary>
     ///     Parse Misc Stats from Global Data Type 0.
-    ///     Delegates to <see cref="ChangedFormParser"/>.
+    ///     Delegates to <see cref="ChangedFormParser" />.
     /// </summary>
     private static SaveStatistics ParseMiscStats(ReadOnlySpan<byte> data)
     {
@@ -477,7 +477,7 @@ public static class SaveFileParser
 
     /// <summary>
     ///     Parse global variables from Global Data Type 3.
-    ///     Delegates to <see cref="ChangedFormParser"/>.
+    ///     Delegates to <see cref="ChangedFormParser" />.
     /// </summary>
     private static List<GlobalVariable> ParseGlobalVariables(ReadOnlySpan<byte> data)
     {

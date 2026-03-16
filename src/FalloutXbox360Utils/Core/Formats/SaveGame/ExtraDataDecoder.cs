@@ -41,7 +41,12 @@ internal static class ExtraDataDecoder
                 case 0x1C or 0x21 or 0x22 or 0x39 or 0x3C or 0x3F or 0x46 or 0x49
                     or 0x55 or 0x6C or 0x74 or 0x89:
                 {
-                    if (!r.HasData(3)) { aborted = true; break; }
+                    if (!r.HasData(3))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
                     var refId = r.ReadRefId();
                     r.TrySkipPipe();
                     displayValue = $"{ExtraDataTypeHandlers.ExtraTypeName(type)}: {refId}";
@@ -52,7 +57,12 @@ internal static class ExtraDataDecoder
                 case 0x1E or 0x23 or 0x25 or 0x27 or 0x28 or 0x30
                     or 0x56 or 0x5C or 0x5D:
                 {
-                    if (!r.HasData(4)) { aborted = true; break; }
+                    if (!r.HasData(4))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
                     var val = r.ReadUInt32();
                     r.TrySkipPipe();
                     displayValue = $"{ExtraDataTypeHandlers.ExtraTypeName(type)}: 0x{val:X8}";
@@ -62,7 +72,12 @@ internal static class ExtraDataDecoder
                 // Single byte types
                 case 0x26 or 0x4A or 0x4E or 0x8D:
                 {
-                    if (!r.HasData(1)) { aborted = true; break; }
+                    if (!r.HasData(1))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
                     var val = r.ReadByte();
                     r.TrySkipPipe();
                     displayValue = $"{ExtraDataTypeHandlers.ExtraTypeName(type)}: 0x{val:X2}";
@@ -72,7 +87,12 @@ internal static class ExtraDataDecoder
                 // Single uint16 type
                 case 0x24:
                 {
-                    if (!r.HasData(2)) { aborted = true; break; }
+                    if (!r.HasData(2))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
                     var val = r.ReadUInt16();
                     r.TrySkipPipe();
                     displayValue = $"{ExtraDataTypeHandlers.ExtraTypeName(type)}: {val}";
@@ -82,7 +102,12 @@ internal static class ExtraDataDecoder
                 // Two uint32 values
                 case 0x92:
                 {
-                    if (!r.HasData(8)) { aborted = true; break; }
+                    if (!r.HasData(8))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
                     var val1 = r.ReadUInt32();
                     r.TrySkipPipe();
                     var val2 = r.ReadUInt32();
@@ -94,7 +119,12 @@ internal static class ExtraDataDecoder
                 // Single uint32 (standalone cases)
                 case 0x54:
                 {
-                    if (!r.HasData(4)) { aborted = true; break; }
+                    if (!r.HasData(4))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
                     var val = r.ReadUInt32();
                     r.TrySkipPipe();
                     displayValue = $"Extra0x54: 0x{val:X8}";
@@ -103,7 +133,12 @@ internal static class ExtraDataDecoder
 
                 case 0x60:
                 {
-                    if (!r.HasData(4)) { aborted = true; break; }
+                    if (!r.HasData(4))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
                     var val = r.ReadUInt32();
                     r.TrySkipPipe();
                     displayValue = $"EditorRef: 0x{val:X8}";
@@ -113,7 +148,12 @@ internal static class ExtraDataDecoder
                 // Single byte (activate ref children)
                 case 0x2C:
                 {
-                    if (!r.HasData(1)) { aborted = true; break; }
+                    if (!r.HasData(1))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
                     var val = r.ReadByte();
                     r.TrySkipPipe();
                     displayValue = $"ActivateRefChildren: {val}";

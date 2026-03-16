@@ -1,6 +1,3 @@
-using System.Buffers.Binary;
-using System.Text;
-
 namespace FalloutXbox360Utils.Core.Formats.SaveGame;
 
 /// <summary>
@@ -252,5 +249,4 @@ internal static class RefrDecoder
             FormFieldWriter.AddRawBlobField(ref r, result, "REFR_EXTRA_GAME_ONLY", "Game-only extra data");
         }
     }
-
 }

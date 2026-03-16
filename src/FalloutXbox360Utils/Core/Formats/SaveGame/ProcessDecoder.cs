@@ -1,6 +1,3 @@
-using System.Buffers.Binary;
-using System.Text;
-
 namespace FalloutXbox360Utils.Core.Formats.SaveGame;
 
 /// <summary>
@@ -266,5 +263,4 @@ internal static class ProcessDecoder
 
         return true;
     }
-
 }

@@ -1,11 +1,6 @@
 namespace FalloutXbox360Utils.Core.Formats.SaveGame;
 
 /// <summary>
-///     Defines a single change flag: a bitmask and its human-readable name.
-/// </summary>
-public readonly record struct ChangeFlagDef(uint Mask, string Name);
-
-/// <summary>
 ///     Maps each ChangedForm type to its applicable change flag definitions.
 ///     Flag values and names sourced from the CHANGE_TYPE enum in the game PDB
 ///     (Fallout_Debug_Final/types_full.txt, lines 301695-301767).

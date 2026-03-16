@@ -1,6 +1,3 @@
-using System.Buffers.Binary;
-using System.Text;
-
 namespace FalloutXbox360Utils.Core.Formats.SaveGame;
 
 /// <summary>
@@ -402,7 +399,8 @@ internal static class ActorDecoder
             result.Fields.Add(new DecodedField
             {
                 Name = "MOVER_GOAL_POS",
-                DisplayValue = $"({FormFieldWriter.FormatFloat(x)}, {FormFieldWriter.FormatFloat(y)}, {FormFieldWriter.FormatFloat(z)})",
+                DisplayValue =
+                    $"({FormFieldWriter.FormatFloat(x)}, {FormFieldWriter.FormatFloat(y)}, {FormFieldWriter.FormatFloat(z)})",
                 DataOffset = startPos,
                 DataLength = r.Position - startPos
             });
@@ -419,7 +417,8 @@ internal static class ActorDecoder
             result.Fields.Add(new DecodedField
             {
                 Name = "MOVER_GOAL_ROT",
-                DisplayValue = $"({FormFieldWriter.FormatFloat(x)}, {FormFieldWriter.FormatFloat(y)}, {FormFieldWriter.FormatFloat(z)})",
+                DisplayValue =
+                    $"({FormFieldWriter.FormatFloat(x)}, {FormFieldWriter.FormatFloat(y)}, {FormFieldWriter.FormatFloat(z)})",
                 DataOffset = startPos,
                 DataLength = r.Position - startPos
             });
@@ -458,7 +457,8 @@ internal static class ActorDecoder
             result.Fields.Add(new DecodedField
             {
                 Name = "MOVER_PATH_TARGET",
-                DisplayValue = $"({FormFieldWriter.FormatFloat(px)}, {FormFieldWriter.FormatFloat(py)}, {FormFieldWriter.FormatFloat(pz)})",
+                DisplayValue =
+                    $"({FormFieldWriter.FormatFloat(px)}, {FormFieldWriter.FormatFloat(py)}, {FormFieldWriter.FormatFloat(pz)})",
                 DataOffset = startPos,
                 DataLength = r.Position - startPos
             });
@@ -512,5 +512,4 @@ internal static class ActorDecoder
                 "Combat group state (variable, undecoded)");
         }
     }
-
 }

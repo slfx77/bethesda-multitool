@@ -451,5 +451,4 @@ internal static class BaseTypeDecoder
             FormFieldWriter.AddUInt32Field(ref r, result, "CHALLENGE_VALUE");
         }
     }
-
 }

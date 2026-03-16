@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using System.Text;
 
 namespace FalloutXbox360Utils.Core.Formats.SaveGame;
 
@@ -22,7 +21,8 @@ internal static class SharedFieldDecoder
         result.Fields.Add(new DecodedField
         {
             Name = name,
-            DisplayValue = $"({FormFieldWriter.FormatFloat(x)}, {FormFieldWriter.FormatFloat(y)}, {FormFieldWriter.FormatFloat(z)})",
+            DisplayValue =
+                $"({FormFieldWriter.FormatFloat(x)}, {FormFieldWriter.FormatFloat(y)}, {FormFieldWriter.FormatFloat(z)})",
             DataOffset = startPos,
             DataLength = r.Position - startPos
         });
@@ -380,5 +380,4 @@ internal static class SharedFieldDecoder
             });
         }
     }
-
 }
