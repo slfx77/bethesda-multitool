@@ -815,10 +815,16 @@ internal static class NpcBodyBuilder
                 weaponRaw.Value.Data,
                 weaponRaw.Value.Info,
                 "Weapon",
-                out var modelAnchorCompensation))
+                out var modelAnchorCompensation,
+                out var compensationKind) &&
+            ShouldApplyWeaponModelAttachmentCompensation(
+                npc.WeaponVisual.AttachmentMode,
+                compensationKind))
         {
             NpcRenderHelpers.TransformModel(weaponModel, modelAnchorCompensation);
-            modelAnchorCompensationLabel = " + model Weapon anchor compensation";
+            modelAnchorCompensationLabel = compensationKind == ModelAttachmentCompensationKind.ExplicitAttachmentNode
+                ? " + model Weapon anchor compensation"
+                : " + model root fallback compensation";
         }
 
         if (weaponModel != null && weaponModel.HasGeometry)
@@ -1542,9 +1548,11 @@ internal static class NpcBodyBuilder
         NifInfo nif,
         string nodeName,
         out Matrix4x4 compensationTransform,
+        out ModelAttachmentCompensationKind compensationKind,
         Dictionary<string, NifAnimationParser.AnimPoseOverride>? animOverrides = null)
     {
         compensationTransform = Matrix4x4.Identity;
+        compensationKind = ModelAttachmentCompensationKind.ExplicitAttachmentNode;
 
         var namedTransforms = NifGeometryExtractor.ExtractNamedBoneTransforms(data, nif, animOverrides);
         if (!namedTransforms.TryGetValue(nodeName, out var attachmentWorldTransform))
@@ -1556,10 +1564,36 @@ internal static class NpcBodyBuilder
                 {
                     return false;
                 }
+
+                compensationKind = ModelAttachmentCompensationKind.RootFallback;
             }
         }
 
         return Matrix4x4.Invert(attachmentWorldTransform, out compensationTransform);
+    }
+
+    internal static bool TryResolveModelAttachmentCompensation(
+        byte[] data,
+        NifInfo nif,
+        string nodeName,
+        out Matrix4x4 compensationTransform,
+        Dictionary<string, NifAnimationParser.AnimPoseOverride>? animOverrides = null)
+    {
+        return TryResolveModelAttachmentCompensation(
+            data,
+            nif,
+            nodeName,
+            out compensationTransform,
+            out _,
+            animOverrides);
+    }
+
+    internal static bool ShouldApplyWeaponModelAttachmentCompensation(
+        WeaponAttachmentMode attachmentMode,
+        ModelAttachmentCompensationKind compensationKind)
+    {
+        return compensationKind == ModelAttachmentCompensationKind.ExplicitAttachmentNode ||
+               attachmentMode != WeaponAttachmentMode.HolsterPose;
     }
 
     internal static HashSet<int> FindShapeBlockIndices(byte[] data, NifInfo nif)
@@ -1834,4 +1868,10 @@ internal static class NpcBodyBuilder
         byte[] SkeletonData,
         NifInfo SkeletonInfo,
         string? ParentOverrideBone);
+
+    internal enum ModelAttachmentCompensationKind
+    {
+        ExplicitAttachmentNode,
+        RootFallback
+    }
 }

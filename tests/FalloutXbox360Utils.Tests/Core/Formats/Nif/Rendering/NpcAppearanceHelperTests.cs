@@ -1340,6 +1340,28 @@ public sealed class NpcAppearanceHelperTests
     }
 
     [Fact]
+    public void TwoHandMeleeHolsterSequence_PreservesInterpolatorBaseWeaponTranslation()
+    {
+        var holsterKf = LoadNif(Path.Combine(MaleSampleCharacterRoot, "2hmHolster.kf"));
+        Assert.NotNull(holsterKf);
+
+        var holsterOverrides = NifAnimationParser.ParseIdlePoseOverrides(
+            holsterKf.Value.Data,
+            holsterKf.Value.Info,
+            sampleLastKeyframe: true);
+        var parentOverride = NpcBodyBuilder.TryParseSequenceParentBoneName(holsterKf.Value.Info);
+
+        Assert.NotNull(holsterOverrides);
+        Assert.Equal("Bip01 Spine2", parentOverride);
+
+        var weaponPose = Assert.Contains("Weapon", holsterOverrides!);
+        Assert.True(weaponPose.HasTranslation);
+        Assert.Equal(16.985f, weaponPose.Tx, 3);
+        Assert.Equal(-12.076f, weaponPose.Ty, 3);
+        Assert.Equal(4.451f, weaponPose.Tz, 3);
+    }
+
+    [Fact]
     public void PowerFistRigidModel_DoesNotExposeInternalWeaponAnchorCompensation()
     {
         var rigid = LoadNif(FindPowerFistRigidPath());
@@ -1369,10 +1391,32 @@ public sealed class NpcAppearanceHelperTests
             bat.Value.Data,
             bat.Value.Info,
             "Weapon",
-            out var compensation);
+            out var compensation,
+            out var compensationKind);
 
         Assert.True(result);
+        Assert.Equal(NpcBodyBuilder.ModelAttachmentCompensationKind.RootFallback, compensationKind);
         Assert.False(compensation.Equals(Matrix4x4.Identity));
+    }
+
+    [Fact]
+    public void RootFallbackWeaponCompensation_IsSkippedForHolsterPoseWeapons()
+    {
+        var shouldApply = NpcBodyBuilder.ShouldApplyWeaponModelAttachmentCompensation(
+            WeaponAttachmentMode.HolsterPose,
+            NpcBodyBuilder.ModelAttachmentCompensationKind.RootFallback);
+
+        Assert.False(shouldApply);
+    }
+
+    [Fact]
+    public void ExplicitWeaponNodeCompensation_IsPreservedForHolsterPoseWeapons()
+    {
+        var shouldApply = NpcBodyBuilder.ShouldApplyWeaponModelAttachmentCompensation(
+            WeaponAttachmentMode.HolsterPose,
+            NpcBodyBuilder.ModelAttachmentCompensationKind.ExplicitAttachmentNode);
+
+        Assert.True(shouldApply);
     }
 
     [Fact]

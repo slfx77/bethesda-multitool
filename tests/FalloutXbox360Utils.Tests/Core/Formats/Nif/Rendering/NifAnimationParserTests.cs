@@ -78,6 +78,68 @@ public sealed class NifAnimationParserTests
         Assert.Equal(1.25f, pose.Scale, 3);
     }
 
+    [Fact]
+    public void ParseIdlePoseOverrides_MergesInterpolatorBaseTranslationWhenKeyframesOnlyAnimateRotation()
+    {
+        var data = new byte[256];
+
+        WriteControllerSequence(
+            data,
+            offset: 0,
+            nameIndex: 0,
+            numBlocks: 1,
+            interpolatorRef: 1,
+            nodeNameIndex: 2);
+
+        WriteMixedTransformInterpolator(
+            data,
+            offset: 96,
+            dataRef: 2,
+            tx: 16.985f,
+            ty: -12.076f,
+            tz: 4.451f);
+        WriteRotationOnlyTransformData(data, 136);
+
+        var nif = new NifInfo
+        {
+            IsBigEndian = false
+        };
+        nif.Strings.AddRange(["idle", "walk", "Weapon"]);
+        nif.Blocks.AddRange(
+        [
+            new BlockInfo
+            {
+                Index = 0,
+                TypeName = "NiControllerSequence",
+                DataOffset = 0,
+                Size = 73
+            },
+            new BlockInfo
+            {
+                Index = 1,
+                TypeName = "NiTransformInterpolator",
+                DataOffset = 96,
+                Size = 36
+            },
+            new BlockInfo
+            {
+                Index = 2,
+                TypeName = "NiTransformData",
+                DataOffset = 136,
+                Size = 36
+            }
+        ]);
+
+        var overrides = NifAnimationParser.ParseIdlePoseOverrides(data, nif);
+
+        var pose = Assert.Contains("Weapon", overrides!);
+        Assert.True(pose.HasTranslation);
+        Assert.Equal(16.985f, pose.Tx, 3);
+        Assert.Equal(-12.076f, pose.Ty, 3);
+        Assert.Equal(4.451f, pose.Tz, 3);
+        Assert.False(pose.HasScale);
+    }
+
     private static void WriteControllerSequence(
         byte[] data,
         int offset,
@@ -112,6 +174,25 @@ public sealed class NifAnimationParserTests
         WriteInt32(data, offset + 32, dataRef);
     }
 
+    private static void WriteMixedTransformInterpolator(
+        byte[] data,
+        int offset,
+        int dataRef,
+        float tx,
+        float ty,
+        float tz)
+    {
+        WriteFloat(data, offset, tx);
+        WriteFloat(data, offset + 4, ty);
+        WriteFloat(data, offset + 8, tz);
+        WriteFloat(data, offset + 12, float.MaxValue);
+        WriteFloat(data, offset + 16, float.MaxValue);
+        WriteFloat(data, offset + 20, float.MaxValue);
+        WriteFloat(data, offset + 24, float.MaxValue);
+        WriteFloat(data, offset + 28, float.MaxValue);
+        WriteInt32(data, offset + 32, dataRef);
+    }
+
     private static void WriteTransformData(byte[] data, int offset)
     {
         WriteInt32(data, offset, 1);
@@ -133,6 +214,20 @@ public sealed class NifAnimationParserTests
         WriteInt32(data, offset + 56, 1);
         WriteFloat(data, offset + 60, 0f);
         WriteFloat(data, offset + 64, 1.25f);
+    }
+
+    private static void WriteRotationOnlyTransformData(byte[] data, int offset)
+    {
+        WriteInt32(data, offset, 1);
+        WriteInt32(data, offset + 4, 1);
+        WriteFloat(data, offset + 8, 0f);
+        WriteFloat(data, offset + 12, 1f);
+        WriteFloat(data, offset + 16, 0f);
+        WriteFloat(data, offset + 20, 0f);
+        WriteFloat(data, offset + 24, 0f);
+
+        WriteInt32(data, offset + 28, 0);
+        WriteInt32(data, offset + 32, 0);
     }
 
     private static void WriteInt32(byte[] data, int offset, int value)

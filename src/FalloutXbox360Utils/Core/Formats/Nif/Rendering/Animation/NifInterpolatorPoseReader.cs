@@ -46,6 +46,8 @@ internal static class NifInterpolatorPoseReader
         var qy = BinaryUtils.ReadFloat(data, pos + 20, be);
         var qz = BinaryUtils.ReadFloat(data, pos + 24, be);
         var scale = BinaryUtils.ReadFloat(data, pos + 28, be);
+        var hasTranslation = MathF.Abs(tx) < 1e30f;
+        var hasScale = MathF.Abs(scale) < 1e30f;
 
         var hasKeyframes = block.Size >= 36 &&
                            BinaryUtils.ReadInt32(data, pos + 32, be) >= 0;
@@ -57,16 +59,34 @@ internal static class NifInterpolatorPoseReader
             }
 
             var dataRef = BinaryUtils.ReadInt32(data, pos + 32, be);
-            return NifTransformDataKeyframeReader.ReadKeyframe(
+            var keyedPose = NifTransformDataKeyframeReader.ReadKeyframe(
                 data,
                 nif,
                 dataRef,
                 be,
                 sampleLastKeyframe);
+            if (keyedPose == null)
+            {
+                return null;
+            }
+
+            if (keyedPose.Value.HasTranslation == hasTranslation &&
+                keyedPose.Value.HasScale == hasScale)
+            {
+                return keyedPose;
+            }
+
+            return keyedPose.Value with
+            {
+                HasTranslation = keyedPose.Value.HasTranslation || hasTranslation,
+                Tx = keyedPose.Value.HasTranslation ? keyedPose.Value.Tx : tx,
+                Ty = keyedPose.Value.HasTranslation ? keyedPose.Value.Ty : ty,
+                Tz = keyedPose.Value.HasTranslation ? keyedPose.Value.Tz : tz,
+                HasScale = keyedPose.Value.HasScale || hasScale,
+                Scale = keyedPose.Value.HasScale ? keyedPose.Value.Scale : scale
+            };
         }
 
-        var hasTranslation = MathF.Abs(tx) < 1e30f;
-        var hasScale = MathF.Abs(scale) < 1e30f;
         return new NifAnimationParser.AnimPoseOverride(
             new Quaternion(qx, qy, qz, qw),
             hasTranslation,

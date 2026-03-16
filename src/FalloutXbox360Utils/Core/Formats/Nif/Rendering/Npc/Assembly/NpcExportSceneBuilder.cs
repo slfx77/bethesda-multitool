@@ -411,7 +411,11 @@ internal static class NpcExportSceneBuilder
                     weaponRaw.Value.Data,
                     weaponRaw.Value.Info,
                     "Weapon",
-                    out var modelAnchorCompensation))
+                    out var modelAnchorCompensation,
+                    out var compensationKind) &&
+                NpcBodyBuilder.ShouldApplyWeaponModelAttachmentCompensation(
+                    npc.WeaponVisual.AttachmentMode,
+                    compensationKind))
             {
                 NpcRenderHelpers.TransformModel(weaponModel, modelAnchorCompensation);
             }
