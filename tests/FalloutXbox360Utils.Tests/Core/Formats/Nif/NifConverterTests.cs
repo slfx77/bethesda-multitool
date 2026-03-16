@@ -163,6 +163,21 @@ public class NifConverterTests
 
     #endregion
 
+    #region Vertex colors
+
+    [Fact]
+    public void ExtractRgba_PreservesPackedRgbaChannelOrder()
+    {
+        var (r, g, b, a) = NifGeometryWriter.ExtractRgba([255, 128, 64, 32], 0);
+
+        Assert.Equal(1.0f, r, 3);
+        Assert.Equal(128 / 255.0f, g, 3);
+        Assert.Equal(64 / 255.0f, b, 3);
+        Assert.Equal(32 / 255.0f, a, 3);
+    }
+
+    #endregion
+
     #region ReadUInt16BE / ReadInt32BE
 
     [Fact]

@@ -1,5 +1,4 @@
 using System.Numerics;
-using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Skinning;
 

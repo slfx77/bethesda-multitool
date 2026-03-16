@@ -330,8 +330,8 @@ internal static class NifGeometryWriter
             (byte)(ctx.PackedData.VertexColors != null && !ctx.IsSkinned ? 1 : origHasVertexColors);
         ctx.Output[outPos++] = newHasVertexColors;
 
-        // NIF stores vertex colors as Color4 (4 floats, 16 bytes per vertex) in RGBA order
-        // Xbox 360 packed data stores them as ByteColor4 (4 bytes per vertex) in ARGB order
+        // PackedGeometryData.VertexColors is already normalized to RGBA byte order by the extractor.
+        // Write those channels directly into NIF Color4 float slots.
         if (newHasVertexColors != 0 && ctx.PackedData.VertexColors != null && !ctx.IsSkinned)
         {
             outPos = WriteVertexColorsFromPackedData(ctx, outPos);
@@ -372,8 +372,7 @@ internal static class NifGeometryWriter
                 continue;
             }
 
-            // Xbox packed format: A, R, G, B -> NIF Color4 format: R, G, B, A
-            var (r, g, b, a) = ExtractArgbAsRgba(ctx.PackedData.VertexColors, partitionIdx);
+            var (r, g, b, a) = ExtractRgba(ctx.PackedData.VertexColors, partitionIdx);
 
             var writePos = basePos + meshIdx * 16;
             BinaryPrimitives.WriteSingleLittleEndian(ctx.Output.AsSpan(writePos), r);
@@ -389,8 +388,7 @@ internal static class NifGeometryWriter
     {
         for (var v = 0; v < numVertices; v++)
         {
-            // Xbox packed format: A, R, G, B -> NIF Color4 format: R, G, B, A
-            var (r, g, b, a) = ExtractArgbAsRgba(colors, v);
+            var (r, g, b, a) = ExtractRgba(colors, v);
             BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), r);
             outPos += 4;
             BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), g);
@@ -404,12 +402,12 @@ internal static class NifGeometryWriter
         return outPos;
     }
 
-    internal static (float r, float g, float b, float a) ExtractArgbAsRgba(byte[] colors, int index)
+    internal static (float r, float g, float b, float a) ExtractRgba(byte[] colors, int index)
     {
-        var a = colors[index * 4 + 0] / 255.0f;
-        var r = colors[index * 4 + 1] / 255.0f;
-        var g = colors[index * 4 + 2] / 255.0f;
-        var b = colors[index * 4 + 3] / 255.0f;
+        var r = colors[index * 4 + 0] / 255.0f;
+        var g = colors[index * 4 + 1] / 255.0f;
+        var b = colors[index * 4 + 2] / 255.0f;
+        var a = colors[index * 4 + 3] / 255.0f;
         return (r, g, b, a);
     }
 

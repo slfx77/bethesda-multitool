@@ -12,6 +12,8 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Geometry;
 /// </summary>
 internal static class NifPackedDataExtractor
 {
+    private const float WeightEpsilon = 0.02f;
+    private const float SentinelWeightThreshold = 0.98f;
     private static readonly Logger Log = Logger.Instance;
 
     /// <summary>
@@ -47,9 +49,9 @@ internal static class NifPackedDataExtractor
             var ctx = new ExtractionContext(data, rawDataOffset, numVertices, stride, isBigEndian);
 
             ExtractUVs(ctx, categorizedStreams.Half2Streams, result);
-            ExtractSkinnedOrVertexColorData(ctx, categorizedStreams, result);
+            var isSkinnedLayout = ExtractSkinnedOrVertexColorData(ctx, categorizedStreams, result);
             ExtractPositions(ctx, categorizedStreams.Half4Streams, result);
-            ExtractNormalsTangentsBitangents(ctx, categorizedStreams.Half4Streams, result);
+            ExtractNormalsTangentsBitangents(ctx, categorizedStreams.Half4Streams, result, isSkinnedLayout);
             ComputeMissingBitangents(numVertices, result);
             CalculateBsDataFlags(result);
 
@@ -221,22 +223,53 @@ internal static class NifPackedDataExtractor
         }
     }
 
-    private static void ExtractSkinnedOrVertexColorData(ExtractionContext ctx, CategorizedStreams streams,
+    private static bool ExtractSkinnedOrVertexColorData(ExtractionContext ctx, CategorizedStreams streams,
         PackedGeometryData result)
     {
         var hasBoneIndicesStream = streams.Ubyte4Streams.Any(s => s.BlockOffset == 16);
+        var hasBoneWeightsStream = streams.Half4Streams.Any(s => s.BlockOffset == 8);
+        // Verified skinned Xbox layouts use packed weights at offset 8 plus packed indices at
+        // offset 16 on 48-byte and 52-byte vertex strides. 40-byte layouts reuse offset 16 for
+        // vertex colors and offset 8 for normals, so treating them as skinned detaches heads,
+        // hands, and other body parts.
+        var isSkinnedLayout =
+            hasBoneIndicesStream &&
+            hasBoneWeightsStream &&
+            ctx.Stride is 48 or 52;
 
-        if (ctx.IsSkinned && hasBoneIndicesStream)
+        if (isSkinnedLayout)
         {
             ExtractBoneData(ctx, streams, result);
+            var vertexColorStream = streams.Ubyte4Streams.FirstOrDefault(s => s.BlockOffset != 16);
+            if (vertexColorStream != null)
+            {
+                result.VertexColors = ExtractUbyte4Stream(
+                    ctx.Data,
+                    ctx.RawDataOffset,
+                    ctx.NumVertices,
+                    ctx.Stride,
+                    vertexColorStream,
+                    ctx.IsBigEndian);
+                Log.Debug($"      Skinned mesh: extracted vertex colors from offset {vertexColorStream.BlockOffset}");
+            }
+
+            return true;
         }
-        else if (streams.Ubyte4Streams.Count > 0)
+
+        if (streams.Ubyte4Streams.Count > 0)
         {
             // Non-skinned mesh: ubyte4 (if present) is vertex colors
-            result.VertexColors = ExtractUbyte4Stream(ctx.Data, ctx.RawDataOffset, ctx.NumVertices, ctx.Stride,
-                streams.Ubyte4Streams[0], ctx.IsBigEndian);
+            result.VertexColors = ExtractUbyte4Stream(
+                ctx.Data,
+                ctx.RawDataOffset,
+                ctx.NumVertices,
+                ctx.Stride,
+                streams.Ubyte4Streams[0],
+                ctx.IsBigEndian);
             Log.Debug("      Non-skinned mesh: extracted vertex colors");
         }
+
+        return false;
     }
 
     private static void ExtractBoneData(ExtractionContext ctx, CategorizedStreams streams, PackedGeometryData result)
@@ -256,7 +289,7 @@ internal static class NifPackedDataExtractor
             Log.Debug("      Extracted bone weights from offset 8");
         }
 
-        Log.Debug("      Skinned mesh (stride 48): extracted bone indices");
+        Log.Debug($"      Skinned mesh (stride {ctx.Stride}): extracted bone indices");
     }
 
     private static void ExtractPositions(ExtractionContext ctx, List<DataStreamInfo> half4Streams,
@@ -270,14 +303,17 @@ internal static class NifPackedDataExtractor
         }
     }
 
-    private static void ExtractNormalsTangentsBitangents(ExtractionContext ctx, List<DataStreamInfo> half4Streams,
-        PackedGeometryData result)
+    private static void ExtractNormalsTangentsBitangents(
+        ExtractionContext ctx,
+        List<DataStreamInfo> half4Streams,
+        PackedGeometryData result,
+        bool isSkinnedLayout)
     {
         // Find ALL unit-length streams (including offset 8 for non-skinned meshes)
         var unitStreams = FindUnitLengthStreams(ctx, half4Streams);
 
         // Assign unit-length streams based on layout type
-        AssignUnitLengthStreams(unitStreams, ctx.IsSkinned, result);
+        AssignUnitLengthStreams(unitStreams, isSkinnedLayout, result);
     }
 
     private static List<(DataStreamInfo stream, float[] data, int offset)> FindUnitLengthStreams(
@@ -485,13 +521,45 @@ internal static class NifPackedDataExtractor
             }
 
             // Read all 4 half-floats for bone weights
-            result[v * 4 + 0] = BinaryUtils.HalfToFloat(BinaryUtils.ReadUInt16(data, vertexOffset, isBigEndian));
-            result[v * 4 + 1] = BinaryUtils.HalfToFloat(BinaryUtils.ReadUInt16(data, vertexOffset + 2, isBigEndian));
-            result[v * 4 + 2] = BinaryUtils.HalfToFloat(BinaryUtils.ReadUInt16(data, vertexOffset + 4, isBigEndian));
-            result[v * 4 + 3] = BinaryUtils.HalfToFloat(BinaryUtils.ReadUInt16(data, vertexOffset + 6, isBigEndian));
+            var x = BinaryUtils.HalfToFloat(BinaryUtils.ReadUInt16(data, vertexOffset, isBigEndian));
+            var y = BinaryUtils.HalfToFloat(BinaryUtils.ReadUInt16(data, vertexOffset + 2, isBigEndian));
+            var z = BinaryUtils.HalfToFloat(BinaryUtils.ReadUInt16(data, vertexOffset + 4, isBigEndian));
+            var w = BinaryUtils.HalfToFloat(BinaryUtils.ReadUInt16(data, vertexOffset + 6, isBigEndian));
+
+            NormalizeDecodedBoneWeights(ref x, ref y, ref z, ref w);
+
+            result[v * 4 + 0] = x;
+            result[v * 4 + 1] = y;
+            result[v * 4 + 2] = z;
+            result[v * 4 + 3] = w;
         }
 
         return result;
+    }
+
+    internal static void NormalizeDecodedBoneWeights(ref float x, ref float y, ref float z, ref float w)
+    {
+        // Some Xbox packed meshes encode the unused fourth slot as a literal 1.0 sentinel
+        // while the first three weights already sum to ~1.0. Treating that value as a real
+        // influence doubles the vertex weight mass and creates severe skinning spikes.
+        var xyzSum = x + y + z;
+        if (w >= SentinelWeightThreshold &&
+            xyzSum >= 1f - WeightEpsilon &&
+            xyzSum <= 1f + WeightEpsilon)
+        {
+            w = 0f;
+        }
+
+        var total = x + y + z + w;
+        if (total <= 0.0001f || Math.Abs(total - 1f) <= 0.001f)
+        {
+            return;
+        }
+
+        x /= total;
+        y /= total;
+        z /= total;
+        w /= total;
     }
 
     /// <summary>

@@ -143,6 +143,112 @@ public sealed class NpcHeadBoneCorrectionTests
     }
 
     [Fact]
+    public void GetHeadAttachmentCorrection_HeadEquipmentRootOnlyIdentityRoot_UsesTargetHeadTransform()
+    {
+        var targetHeadTransform = CreateTransform(
+            translation: new Vector3(2f, 4f, 6f),
+            rotation: Matrix4x4.CreateRotationY(0.25f));
+        var bonelessAttachmentTransform = Matrix4x4.CreateTranslation(20f, 30f, 40f);
+        var nifBones = new Dictionary<string, Matrix4x4>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["__root__"] = Matrix4x4.Identity
+        };
+
+        var result = NpcRenderHelpers.GetHeadAttachmentCorrection(
+            nifBones,
+            targetHeadTransform,
+            bonelessAttachmentTransform,
+            NpcRenderHelpers.HeadAttachmentRootPolicy.CompensateRotatedRoot);
+
+        Assert.Equal(
+            NpcRenderHelpers.HeadAttachmentCorrectionMode.BonelessUseAttachmentTransform,
+            result.Mode);
+        AssertMatrixEqual(targetHeadTransform, result.Correction);
+    }
+
+    [Fact]
+    public void GetHeadAttachmentCorrection_HeadEquipmentRootOnlyRotatedRoot_UsesInverseRootTimesTargetHeadTransform()
+    {
+        var targetHeadTransform = CreateTransform(
+            translation: new Vector3(3f, 5f, 7f),
+            rotation: Matrix4x4.CreateRotationX(0.1f) * Matrix4x4.CreateRotationZ(-0.2f));
+        var bonelessAttachmentTransform = Matrix4x4.CreateTranslation(30f, 40f, 50f);
+        var rootRotation = Matrix4x4.CreateRotationZ(MathF.PI / 2f);
+        var nifBones = new Dictionary<string, Matrix4x4>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["__root__"] = rootRotation * Matrix4x4.CreateTranslation(8f, 9f, 10f)
+        };
+        Matrix4x4.Invert(rootRotation, out var invRootRotation);
+
+        var result = NpcRenderHelpers.GetHeadAttachmentCorrection(
+            nifBones,
+            targetHeadTransform,
+            bonelessAttachmentTransform,
+            NpcRenderHelpers.HeadAttachmentRootPolicy.CompensateRotatedRoot);
+
+        Assert.Equal(
+            NpcRenderHelpers.HeadAttachmentCorrectionMode.BonelessUseAttachmentTransform,
+            result.Mode);
+        AssertMatrixEqual(invRootRotation * targetHeadTransform, result.Correction);
+    }
+
+    [Fact]
+    public void GetHeadAttachmentCorrection_HeadEquipmentNamedNodeIdentityRoot_UsesBonelessAttachmentTransform()
+    {
+        var targetHeadTransform = CreateTransform(
+            translation: new Vector3(9f, 8f, 7f),
+            rotation: Matrix4x4.CreateRotationZ(0.35f));
+        var bonelessAttachmentTransform =
+            Matrix4x4.CreateRotationX(-0.1f) *
+            Matrix4x4.CreateTranslation(20f, 30f, 40f);
+        var nifBones = new Dictionary<string, Matrix4x4>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["NamedHat"] = Matrix4x4.Identity,
+            ["__root__"] = Matrix4x4.Identity
+        };
+
+        var result = NpcRenderHelpers.GetHeadAttachmentCorrection(
+            nifBones,
+            targetHeadTransform,
+            bonelessAttachmentTransform,
+            NpcRenderHelpers.HeadAttachmentRootPolicy.CompensateRotatedRoot);
+
+        Assert.Equal(
+            NpcRenderHelpers.HeadAttachmentCorrectionMode.BonelessUseAttachmentTransform,
+            result.Mode);
+        AssertMatrixEqual(bonelessAttachmentTransform, result.Correction);
+    }
+
+    [Fact]
+    public void GetHeadAttachmentCorrection_HeadEquipmentNamedNodeRotatedRoot_UsesInverseRootTimesBonelessAttachmentTransform()
+    {
+        var targetHeadTransform = CreateTransform(
+            translation: new Vector3(1f, 3f, 5f),
+            rotation: Matrix4x4.CreateRotationX(0.15f) * Matrix4x4.CreateRotationY(0.25f));
+        var bonelessAttachmentTransform =
+            Matrix4x4.CreateRotationZ(-0.25f) *
+            Matrix4x4.CreateTranslation(30f, 40f, 50f);
+        var rootRotation = Matrix4x4.CreateRotationZ(MathF.PI / 2f);
+        var nifBones = new Dictionary<string, Matrix4x4>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["NamedHat"] = Matrix4x4.Identity,
+            ["__root__"] = rootRotation * Matrix4x4.CreateTranslation(8f, 9f, 10f)
+        };
+        Matrix4x4.Invert(rootRotation, out var invRootRotation);
+
+        var result = NpcRenderHelpers.GetHeadAttachmentCorrection(
+            nifBones,
+            targetHeadTransform,
+            bonelessAttachmentTransform,
+            NpcRenderHelpers.HeadAttachmentRootPolicy.CompensateRotatedRoot);
+
+        Assert.Equal(
+            NpcRenderHelpers.HeadAttachmentCorrectionMode.BonelessUseAttachmentTransform,
+            result.Mode);
+        AssertMatrixEqual(invRootRotation * bonelessAttachmentTransform, result.Correction);
+    }
+
+    [Fact]
     public void GetHeadAttachmentCorrection_BonedAttachment_UsesInverseHeadTimesTarget()
     {
         var targetHeadTransform = CreateTransform(

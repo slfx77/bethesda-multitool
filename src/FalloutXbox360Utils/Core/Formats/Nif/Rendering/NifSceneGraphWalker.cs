@@ -1,5 +1,6 @@
 using System.Numerics;
-using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Parsing;
+using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 
@@ -10,7 +11,7 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 internal static class NifSceneGraphWalker
 {
     internal static readonly HashSet<string> NodeTypes =
-        ["NiNode", "BSFadeNode", "BSMultiBoundNode", "BSOrderedNode", "BSLeafAnimNode"];
+        ["NiNode", "NiBillboardNode", "BSFadeNode", "BSMultiBoundNode", "BSOrderedNode", "BSLeafAnimNode"];
 
     internal static readonly HashSet<string> ShapeTypes = ["NiTriShape", "NiTriStrips", "BSLODTriShape"];
 
@@ -43,7 +44,7 @@ internal static class NifSceneGraphWalker
                 var shapeName = NifBlockParsers.ReadBlockName(data, block, nif);
                 if (NifBlockParsers.IsGoreShape(shapeName) || NifBlockParsers.IsEditorHelperShape(shapeName))
                 {
-                                    continue;
+                    continue;
                 }
 
                 // Skip gore shapes identified via BSDismemberSkinInstance partition data.
@@ -55,7 +56,7 @@ internal static class NifSceneGraphWalker
                     var bodyParts = NifBlockParsers.ParseDismemberPartitions(data, nif.Blocks[skinRef], be);
                     if (NifBlockParsers.IsDismemberGoreShape(bodyParts))
                     {
-                                            continue;
+                        continue;
                     }
                 }
 
@@ -125,10 +126,12 @@ internal static class NifSceneGraphWalker
         // Also handle shapes that are direct root children (not under any node)
         for (var i = 0; i < nif.Blocks.Count; i++)
         {
-            if (ShapeTypes.Contains(nif.Blocks[i].TypeName) && !worldTransforms.ContainsKey(i) && !allChildren.Contains(i))
+            if (ShapeTypes.Contains(nif.Blocks[i].TypeName) && !worldTransforms.ContainsKey(i) &&
+                !allChildren.Contains(i))
             {
                 // Root-level shape — parse its own transform
-                var localTransform = NifBlockParsers.ParseNiAVObjectTransform(data, nif.Blocks[i], nif.BsVersion, nif.IsBigEndian);
+                var localTransform =
+                    NifBlockParsers.ParseNiAVObjectTransform(data, nif.Blocks[i], nif.BsVersion, nif.IsBigEndian);
                 worldTransforms[i] = localTransform;
             }
         }
@@ -195,8 +198,173 @@ internal static class NifSceneGraphWalker
             else if (ShapeTypes.Contains(childType))
             {
                 // Shape inherits parent's world transform + its own local transform
-                var shapeLocal = NifBlockParsers.ParseNiAVObjectTransform(data, nif.Blocks[childIdx], nif.BsVersion, nif.IsBigEndian);
+                var shapeLocal =
+                    NifBlockParsers.ParseNiAVObjectTransform(data, nif.Blocks[childIdx], nif.BsVersion,
+                        nif.IsBigEndian);
                 worldTransforms[childIdx] = shapeLocal * worldTransform;
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Analyze a weapon NIF for NiVisController usage and attachment-bone metadata.
+     ///     Returns vis-controlled shape indices (to exclude in holster mode) and
+    ///     attachment groups for non-vis-controlled sibling nodes (backpack/tank shapes
+    ///     that attach to specific character skeleton bones via Prn or UPB metadata).
+    /// </summary>
+    internal static VisControllerAnalysis AnalyzeVisControllers(byte[] data, NifInfo nif)
+    {
+        var be = nif.IsBigEndian;
+
+        // Step 1: Build node children map
+        var nodeChildren = new Dictionary<int, List<int>>();
+        for (var i = 0; i < nif.Blocks.Count; i++)
+        {
+            var block = nif.Blocks[i];
+            if (NodeTypes.Contains(block.TypeName))
+            {
+                var children = NifBlockParsers.ParseNodeChildren(data, block, nif.BsVersion, be);
+                if (children != null)
+                {
+                    nodeChildren[i] = children;
+                }
+            }
+        }
+
+        // Step 2: Find nodes with NiVisController attached
+        var visControlledNodes = new HashSet<int>();
+        for (var i = 0; i < nif.Blocks.Count; i++)
+        {
+            var block = nif.Blocks[i];
+            if (!NodeTypes.Contains(block.TypeName))
+            {
+                continue;
+            }
+
+            var controllerRef = NifBinaryCursor.ReadNiObjectNETControllerRef(
+                data, block.DataOffset, block.DataOffset + block.Size, be);
+
+            // Walk the controller chain (NiTimeController has a nextController ref at offset 4)
+            while (controllerRef >= 0 && controllerRef < nif.Blocks.Count)
+            {
+                if (nif.Blocks[controllerRef].TypeName == "NiVisController")
+                {
+                    visControlledNodes.Add(i);
+                    break;
+                }
+
+                var ctrlBlock = nif.Blocks[controllerRef];
+                var ctrlPos = ctrlBlock.DataOffset;
+                if (ctrlPos + 4 > ctrlBlock.DataOffset + ctrlBlock.Size)
+                {
+                    break;
+                }
+
+                controllerRef = BinaryUtils.ReadInt32(data, ctrlPos, be);
+            }
+        }
+
+        var visControlledShapes = new HashSet<int>();
+        if (visControlledNodes.Count == 0)
+        {
+            return new VisControllerAnalysis(visControlledShapes, []);
+        }
+
+        // Step 3: Collect all shape descendants of vis-controlled nodes
+        foreach (var nodeIdx in visControlledNodes)
+        {
+            CollectDescendantShapes(nodeIdx, nodeChildren, nif, visControlledShapes);
+        }
+
+        // Step 4: For non-vis-controlled sibling nodes of the scene root, read their
+        // attachment-bone metadata and collect their descendant shapes. This tells
+        // us which character skeleton bone each group of shapes should be attached to.
+        var parentBoneGroups = new List<ParentBoneShapeGroup>();
+        if (nodeChildren.TryGetValue(0, out var rootChildren))
+        {
+            foreach (var childIdx in rootChildren)
+            {
+                if (childIdx < 0 || childIdx >= nif.Blocks.Count)
+                {
+                    continue;
+                }
+
+                if (!NodeTypes.Contains(nif.Blocks[childIdx].TypeName))
+                {
+                    continue;
+                }
+
+                if (visControlledNodes.Contains(childIdx))
+                {
+                    continue;
+                }
+
+                var attachmentBone = NifBlockParsers.ReadAttachmentBoneExtraData(data, nif.Blocks[childIdx], nif);
+                if (attachmentBone == null)
+                {
+                    continue;
+                }
+
+                var shapes = new HashSet<int>();
+                CollectDescendantShapes(childIdx, nodeChildren, nif, shapes);
+
+                // Also include direct shape children
+                if (ShapeTypes.Contains(nif.Blocks[childIdx].TypeName))
+                {
+                    shapes.Add(childIdx);
+                }
+
+                if (shapes.Count > 0)
+                {
+                    var sourceNodeName = NifBlockParsers.ReadBlockName(data, nif.Blocks[childIdx], nif) ??
+                                         $"Node_{childIdx}";
+                    parentBoneGroups.Add(new ParentBoneShapeGroup(attachmentBone, sourceNodeName, shapes));
+                }
+            }
+        }
+
+        return new VisControllerAnalysis(visControlledShapes, parentBoneGroups);
+    }
+
+    /// <summary>Result of NiVisController analysis for a weapon NIF.</summary>
+    internal sealed record VisControllerAnalysis(
+        HashSet<int> VisControlledShapeIndices,
+        List<ParentBoneShapeGroup> ParentBoneGroups);
+
+    /// <summary>A group of shapes that should be attached to a specific skeleton bone.</summary>
+    internal sealed record ParentBoneShapeGroup(string BoneName, string SourceNodeName, HashSet<int> ShapeIndices);
+
+    /// <summary>
+    ///     Find all shape block indices that are descendants of NiNode blocks with a
+    ///     NiVisController in their controller chain.
+    /// </summary>
+    internal static HashSet<int> FindVisControlledShapeIndices(byte[] data, NifInfo nif)
+    {
+        return AnalyzeVisControllers(data, nif).VisControlledShapeIndices;
+    }
+
+    private static void CollectDescendantShapes(int nodeIdx, Dictionary<int, List<int>> nodeChildren,
+        NifInfo nif, HashSet<int> shapes)
+    {
+        if (!nodeChildren.TryGetValue(nodeIdx, out var children))
+        {
+            return;
+        }
+
+        foreach (var childIdx in children)
+        {
+            if (childIdx < 0 || childIdx >= nif.Blocks.Count)
+            {
+                continue;
+            }
+
+            if (ShapeTypes.Contains(nif.Blocks[childIdx].TypeName))
+            {
+                shapes.Add(childIdx);
+            }
+            else if (NodeTypes.Contains(nif.Blocks[childIdx].TypeName))
+            {
+                CollectDescendantShapes(childIdx, nodeChildren, nif, shapes);
             }
         }
     }

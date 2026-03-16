@@ -1,15 +1,14 @@
 using System.Numerics;
-using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
-using FalloutXbox360Utils.Core.Formats.Nif.Geometry;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 
 /// <summary>
 ///     Extracts all renderable geometry from a NIF file with scene graph transforms applied.
 ///     Handles NiTriShapeData (explicit triangles) and NiTriStripsData (triangle strips).
-///     Delegates to <see cref="NifSceneGraphWalker"/> for scene graph traversal,
-///     <see cref="NifSkinningExtractor"/> for skeletal skinning, and
-///     <see cref="NifBlockParsers"/> for NIF block parsing.
+///     Delegates to <see cref="NifSceneGraphWalker" /> for scene graph traversal,
+///     <see cref="NifSkinningExtractor" /> for skeletal skinning, and
+///     <see cref="NifBlockParsers" /> for NIF block parsing.
 /// </summary>
 internal static class NifGeometryExtractor
 {
@@ -17,13 +16,6 @@ internal static class NifGeometryExtractor
     ///     Reserved key for the root node's world transform in bone transform dictionaries.
     /// </summary>
     public const string RootTransformKey = "__root__";
-
-    /// <summary>
-    ///     Skeleton hierarchy: named bone transforms plus parent→child links.
-    /// </summary>
-    internal sealed record SkeletonHierarchy(
-        Dictionary<string, Matrix4x4> BoneTransforms,
-        List<(string Parent, string Child)> BoneLinks);
 
     /// <summary>
     ///     Extracts the full skeleton hierarchy including parent-child bone links.
@@ -127,7 +119,9 @@ internal static class NifGeometryExtractor
         string? filterShapeName = null,
         Dictionary<string, Matrix4x4>? externalPoseDeltas = null,
         bool useDualQuaternionSkinning = false,
-        float[]? preSkinMorphDeltas = null)
+        float[]? preSkinMorphDeltas = null,
+        HashSet<int>? excludeBlockIndices = null,
+        Dictionary<string, NifAnimationParser.AnimPoseOverride>? animOverrides = null)
     {
         if (nif.Blocks.Count == 0)
         {
@@ -141,7 +135,19 @@ internal static class NifGeometryExtractor
         var shapePropertyMap = new Dictionary<int, List<int>>();
 
         var shapeSkinInstanceMap = new Dictionary<int, int>();
-        NifSceneGraphWalker.ClassifyBlocks(data, nif, nodeChildren, shapeDataMap, shapePropertyMap, shapeSkinInstanceMap);
+        NifSceneGraphWalker.ClassifyBlocks(data, nif, nodeChildren, shapeDataMap, shapePropertyMap,
+            shapeSkinInstanceMap);
+
+        // Remove specific block indices (e.g., shapes under NiVisController-targeted nodes)
+        if (excludeBlockIndices is { Count: > 0 })
+        {
+            foreach (var idx in excludeBlockIndices)
+            {
+                shapeDataMap.Remove(idx);
+                shapePropertyMap.Remove(idx);
+                shapeSkinInstanceMap.Remove(idx);
+            }
+        }
 
         // Filter shapes by name if requested (e.g., "NoHat" for hair NIFs to exclude "Hat" variant).
         // Hair NIFs may contain both "NoHat" (full hair) and "Hat" (trimmed for headgear) shapes;
@@ -155,10 +161,13 @@ internal static class NifGeometryExtractor
 
             // Shape matching: "NoHat" matches shapes containing "NoHat"; "Hat" matches shapes
             // containing "Hat" but NOT "NoHat" (since "NoHat" contains "Hat" as a substring).
-            bool MatchesFilter(string name) => filterShapeName.Equals("Hat", StringComparison.OrdinalIgnoreCase)
-                ? name.Contains("Hat", StringComparison.OrdinalIgnoreCase) &&
-                  !name.Contains("NoHat", StringComparison.OrdinalIgnoreCase)
-                : name.Contains(filterShapeName, StringComparison.OrdinalIgnoreCase);
+            bool MatchesFilter(string name)
+            {
+                return filterShapeName.Equals("Hat", StringComparison.OrdinalIgnoreCase)
+                    ? name.Contains("Hat", StringComparison.OrdinalIgnoreCase) &&
+                      !name.Contains("NoHat", StringComparison.OrdinalIgnoreCase)
+                    : name.Contains(filterShapeName, StringComparison.OrdinalIgnoreCase);
+            }
 
             var hasMatchingShape = shapeNames.Any(s => MatchesFilter(s.name));
             if (hasMatchingShape)
@@ -179,7 +188,7 @@ internal static class NifGeometryExtractor
         // Compute world transforms by walking the scene graph from root.
         // Static NIF transforms represent the rest pose — animation overrides are not applied
         // since NiControllerSequence keyframes define runtime motion, not the initial pose.
-        NifSceneGraphWalker.ComputeWorldTransforms(data, nif, nodeChildren, nodeTransforms);
+        NifSceneGraphWalker.ComputeWorldTransforms(data, nif, nodeChildren, nodeTransforms, animOverrides);
 
         Dictionary<int, ((int BoneIdx, float Weight)[][] PerVertexInfluences, Matrix4x4[] BoneSkinMatrices)>
             shapeSkinning;
@@ -225,9 +234,11 @@ internal static class NifGeometryExtractor
             byte srcBlendMode = 6; // SRC_ALPHA
             byte dstBlendMode = 7; // INV_SRC_ALPHA
             var materialAlpha = 1f;
+            var materialGlossiness = 10f;
             var isEyeEnvmap = false;
             var envMapScale = 0f;
-            if (shapePropertyMap.TryGetValue(shapeIndex, out var propRefs))
+            List<int>? propRefs = null;
+            if (shapePropertyMap.TryGetValue(shapeIndex, out propRefs))
             {
                 if (textureResolver != null)
                 {
@@ -238,7 +249,7 @@ internal static class NifGeometryExtractor
                     diffusePath = shaderMetadata?.DiffusePath;
                     normalMapPath = shaderMetadata?.NormalMapPath;
                     isEmissive = shaderMetadata?.PropertyType ==
-                        "BSShaderNoLightingProperty";
+                                 "BSShaderNoLightingProperty";
 
                     // BSShaderFlags2 bit 5 = Vertex_Colors: controls whether vertex colors
                     // should modulate the diffuse texture. Hair NIFs have vertex color data
@@ -266,6 +277,7 @@ internal static class NifGeometryExtractor
 
                 // NiMaterialProperty: alpha float (< 1.0 triggers blending even without NiAlphaProperty)
                 materialAlpha = NifBlockParsers.ReadMaterialAlpha(data, nif, propRefs);
+                materialGlossiness = NifBlockParsers.ReadMaterialGlossiness(data, nif, propRefs);
             }
 
             // Look up skinning data for this shape (null if not skinned or bind-pose mode)
@@ -282,12 +294,21 @@ internal static class NifGeometryExtractor
             }
 
             var submesh = NifBlockParsers.ExtractSubmesh(data, nif, shapeIndex, dataIndex, effectiveTransforms,
-                shapeName, shaderMetadata, diffusePath, normalMapPath, isEmissive, skinning, useVertexColors, isDoubleSided,
+                shapeName, shaderMetadata, diffusePath, normalMapPath, isEmissive, skinning, useVertexColors,
+                isDoubleSided,
                 hasAlphaBlend, hasAlphaTest, alphaTestThreshold, alphaTestFunction,
-                isEyeEnvmap, envMapScale, srcBlendMode, dstBlendMode, materialAlpha,
+                isEyeEnvmap, envMapScale, srcBlendMode, dstBlendMode, materialAlpha, materialGlossiness,
                 useDualQuaternionSkinning, shapeMorphDeltas);
             if (submesh != null)
             {
+                if (propRefs != null &&
+                    submesh.UVs != null &&
+                    NifTextureAnimationEvaluator.TryResolveBaseUvTransform(data, nif, propRefs, out var uvTransform))
+                {
+                    NifTextureAnimationEvaluator.ApplyInPlace(submesh.UVs, uvTransform);
+                }
+
+                if (skinning != null) model.WasSkinned = true;
                 model.Submeshes.Add(submesh);
                 model.ExpandBounds(submesh.Positions);
             }
@@ -295,4 +316,11 @@ internal static class NifGeometryExtractor
 
         return model.HasGeometry ? model : null;
     }
+
+    /// <summary>
+    ///     Skeleton hierarchy: named bone transforms plus parent→child links.
+    /// </summary>
+    internal sealed record SkeletonHierarchy(
+        Dictionary<string, Matrix4x4> BoneTransforms,
+        List<(string Parent, string Child)> BoneLinks);
 }

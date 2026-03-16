@@ -10,66 +10,103 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 internal static class NifBlockParsers
 {
     internal static bool SkipNiObjectNET(byte[] data, ref int pos, int end, bool be)
-        => NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, be);
+    {
+        return NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, be);
+    }
 
     internal static Matrix4x4 ParseNiAVObjectTransform(
         byte[] data,
         BlockInfo block,
         uint bsVersion,
-        bool be) => NifObjectBlockReader.ParseNiAVObjectTransform(data, block, bsVersion, be);
+        bool be)
+    {
+        return NifObjectBlockReader.ParseNiAVObjectTransform(data, block, bsVersion, be);
+    }
 
     internal static string? ReadBlockName(byte[] data, BlockInfo block, NifInfo nif)
-        => NifObjectBlockReader.ReadBlockName(data, block, nif);
+    {
+        return NifObjectBlockReader.ReadBlockName(data, block, nif);
+    }
+
+    internal static string? ReadParentNodeExtraData(byte[] data, BlockInfo block, NifInfo nif)
+    {
+        return NifObjectBlockReader.ReadParentNodeExtraData(data, block, nif);
+    }
+
+    internal static string? ReadAttachmentBoneExtraData(byte[] data, BlockInfo block, NifInfo nif)
+    {
+        return NifObjectBlockReader.ReadAttachmentBoneExtraData(data, block, nif);
+    }
 
     internal static bool IsGoreShape(string? name)
-        => name != null &&
-           (name.Contains("gore", StringComparison.OrdinalIgnoreCase) ||
-            name.Contains("dismember", StringComparison.OrdinalIgnoreCase) ||
-            name.Contains("decap", StringComparison.OrdinalIgnoreCase));
+    {
+        return name != null &&
+               (name.Contains("gore", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("dismember", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("decap", StringComparison.OrdinalIgnoreCase));
+    }
 
     internal static bool IsEditorHelperShape(string? name)
-        => name != null &&
-           name.Contains("EditorMarker", StringComparison.OrdinalIgnoreCase);
+    {
+        return name != null &&
+               name.Contains("EditorMarker", StringComparison.OrdinalIgnoreCase);
+    }
 
     internal static int ParseShapeSkinInstanceRef(
         byte[] data,
         BlockInfo block,
         uint bsVersion,
         bool be)
-        => NifSceneGraphBlockReader.ParseShapeSkinInstanceRef(data, block, bsVersion, be);
+    {
+        return NifSceneGraphBlockReader.ParseShapeSkinInstanceRef(data, block, bsVersion, be);
+    }
 
     internal static int[]? ParseDismemberPartitions(byte[] data, BlockInfo block, bool be)
-        => NifSceneGraphBlockReader.ParseDismemberPartitions(data, block, be);
+    {
+        return NifSceneGraphBlockReader.ParseDismemberPartitions(data, block, be);
+    }
 
     internal static bool IsDismemberGoreShape(int[]? bodyParts)
-        => NifSceneGraphBlockReader.IsDismemberGoreShape(bodyParts);
+    {
+        return NifSceneGraphBlockReader.IsDismemberGoreShape(bodyParts);
+    }
 
     internal static int ParseGeometryAdditionalDataRef(
         byte[] data,
         BlockInfo block,
         uint bsVersion,
         bool be)
-        => NifSceneGraphBlockReader.ParseGeometryAdditionalDataRef(data, block, bsVersion, be);
+    {
+        return NifSceneGraphBlockReader.ParseGeometryAdditionalDataRef(data, block, bsVersion, be);
+    }
 
     internal static int ReadVertexCount(byte[] data, BlockInfo block, bool be)
-        => NifSceneGraphBlockReader.ReadVertexCount(data, block, be);
+    {
+        return NifSceneGraphBlockReader.ReadVertexCount(data, block, be);
+    }
 
     internal static List<int>? ParseNodeChildren(
         byte[] data,
         BlockInfo block,
         uint bsVersion,
         bool be)
-        => NifSceneGraphBlockReader.ParseNodeChildren(data, block, bsVersion, be);
+    {
+        return NifSceneGraphBlockReader.ParseNodeChildren(data, block, bsVersion, be);
+    }
 
     internal static int ParseShapeDataRef(byte[] data, BlockInfo block, uint bsVersion, bool be)
-        => NifSceneGraphBlockReader.ParseShapeDataRef(data, block, bsVersion, be);
+    {
+        return NifSceneGraphBlockReader.ParseShapeDataRef(data, block, bsVersion, be);
+    }
 
     internal static List<int>? ParseShapePropertyRefs(
         byte[] data,
         BlockInfo block,
         uint bsVersion,
         bool be)
-        => NifSceneGraphBlockReader.ParseShapePropertyRefs(data, block, bsVersion, be);
+    {
+        return NifSceneGraphBlockReader.ParseShapePropertyRefs(data, block, bsVersion, be);
+    }
 
     internal static RenderableSubmesh? ExtractSubmesh(
         byte[] data,
@@ -94,9 +131,11 @@ internal static class NifBlockParsers
         byte srcBlendMode = 6,
         byte dstBlendMode = 7,
         float materialAlpha = 1f,
+        float materialGlossiness = 10f,
         bool useDualQuaternionSkinning = false,
         float[]? preSkinMorphDeltas = null)
-        => NifSubmeshExtractor.ExtractSubmesh(
+    {
+        return NifSubmeshExtractor.ExtractSubmesh(
             data,
             nif,
             shapeIndex,
@@ -119,8 +158,10 @@ internal static class NifBlockParsers
             srcBlendMode,
             dstBlendMode,
             materialAlpha,
+            materialGlossiness,
             useDualQuaternionSkinning,
             preSkinMorphDeltas);
+    }
 
     internal static RenderableSubmesh? ExtractTriShapeData(
         byte[] data,
@@ -130,7 +171,8 @@ internal static class NifBlockParsers
         Matrix4x4 transform,
         ((int BoneIdx, float Weight)[][] PerVertexInfluences, Matrix4x4[] BoneSkinMatrices)? skinning = null,
         bool useDualQuaternionSkinning = false)
-        => NifSubmeshExtractor.ExtractTriShapeData(
+    {
+        return NifSubmeshExtractor.ExtractTriShapeData(
             data,
             block,
             be,
@@ -138,6 +180,7 @@ internal static class NifBlockParsers
             transform,
             skinning,
             useDualQuaternionSkinning);
+    }
 
     internal static RenderableSubmesh? ExtractTriStripsData(
         byte[] data,
@@ -147,7 +190,8 @@ internal static class NifBlockParsers
         Matrix4x4 transform,
         ((int BoneIdx, float Weight)[][] PerVertexInfluences, Matrix4x4[] BoneSkinMatrices)? skinning = null,
         bool useDualQuaternionSkinning = false)
-        => NifSubmeshExtractor.ExtractTriStripsData(
+    {
+        return NifSubmeshExtractor.ExtractTriStripsData(
             data,
             block,
             be,
@@ -155,15 +199,22 @@ internal static class NifBlockParsers
             transform,
             skinning,
             useDualQuaternionSkinning);
+    }
 
     internal static float[] ReadVertexPositions(byte[] data, int offset, int numVerts, bool be)
-        => NifGeometryDataReader.ReadVertexPositions(data, offset, numVerts, be);
+    {
+        return NifGeometryDataReader.ReadVertexPositions(data, offset, numVerts, be);
+    }
 
     internal static float[] ReadUVs(byte[] data, int offset, int numVerts, bool be)
-        => NifGeometryDataReader.ReadUvs(data, offset, numVerts, be);
+    {
+        return NifGeometryDataReader.ReadUvs(data, offset, numVerts, be);
+    }
 
     internal static bool ReadIsDoubleSided(byte[] data, NifInfo nif, List<int> propertyRefs)
-        => NifRenderPropertyReader.ReadIsDoubleSided(data, nif, propertyRefs);
+    {
+        return NifRenderPropertyReader.ReadIsDoubleSided(data, nif, propertyRefs);
+    }
 
     internal static void ReadAlphaProperty(
         byte[] data,
@@ -186,17 +237,32 @@ internal static class NifBlockParsers
     }
 
     internal static float ReadMaterialAlpha(byte[] data, NifInfo nif, List<int> propertyRefs)
-        => NifRenderPropertyReader.ReadMaterialAlpha(data, nif, propertyRefs);
+    {
+        return NifRenderPropertyReader.ReadMaterialAlpha(data, nif, propertyRefs);
+    }
+
+    internal static float ReadMaterialGlossiness(byte[] data, NifInfo nif, List<int> propertyRefs)
+    {
+        return NifRenderPropertyReader.ReadMaterialGlossiness(data, nif, propertyRefs);
+    }
 
     internal static byte[] ReadVertexColors(byte[] data, int offset, int numVerts, bool be)
-        => NifGeometryDataReader.ReadVertexColors(data, offset, numVerts, be);
+    {
+        return NifGeometryDataReader.ReadVertexColors(data, offset, numVerts, be);
+    }
 
     internal static float[] TransformPositions(float[] positions, Matrix4x4 transform)
-        => NifGeometryTransformUtils.TransformPositions(positions, transform);
+    {
+        return NifGeometryTransformUtils.TransformPositions(positions, transform);
+    }
 
     internal static float[] TransformNormals(float[] normals, Matrix4x4 transform)
-        => NifGeometryTransformUtils.TransformNormals(normals, transform);
+    {
+        return NifGeometryTransformUtils.TransformNormals(normals, transform);
+    }
 
     public static float[] RecomputeSmoothNormals(float[] positions, ushort[] triangles)
-        => NifGeometryTransformUtils.RecomputeSmoothNormals(positions, triangles);
+    {
+        return NifGeometryTransformUtils.RecomputeSmoothNormals(positions, triangles);
+    }
 }

@@ -92,4 +92,124 @@ internal static class NifObjectBlockReader
             ? null
             : nif.Strings[nameIndex];
     }
+
+    /// <summary>
+    ///     Read the "Prn" (parent node) extra data from a NiNode/NiAVObject block.
+    ///     Returns the bone name string (e.g., "Bip01 Spine2") if found, null otherwise.
+    /// </summary>
+    internal static string? ReadParentNodeExtraData(byte[] data, BlockInfo block, NifInfo nif)
+    {
+        return ReadStringExtraData(data, block, nif, "Prn");
+    }
+
+    /// <summary>
+    ///     Read the "UPB" user property buffer string from a NiNode/NiAVObject block.
+    /// </summary>
+    internal static string? ReadUserPropertyBufferExtraData(byte[] data, BlockInfo block, NifInfo nif)
+    {
+        return ReadStringExtraData(data, block, nif, "UPB");
+    }
+
+    /// <summary>
+    ///     Read attachment-bone metadata from a node. Most NIFs use "Prn"; some weapon
+    ///     subtrees store the equivalent parent bone in the "UPB" string instead.
+    /// </summary>
+    internal static string? ReadAttachmentBoneExtraData(byte[] data, BlockInfo block, NifInfo nif)
+    {
+        var prn = ReadParentNodeExtraData(data, block, nif);
+        if (!string.IsNullOrWhiteSpace(prn))
+        {
+            return prn;
+        }
+
+        var upb = ReadUserPropertyBufferExtraData(data, block, nif);
+        return TryParseAttachmentBoneFromUserPropertyBuffer(upb);
+    }
+
+    private static string? ReadStringExtraData(
+        byte[] data,
+        BlockInfo block,
+        NifInfo nif,
+        string extraDataName)
+    {
+        var be = nif.IsBigEndian;
+        var pos = block.DataOffset;
+        var end = block.DataOffset + block.Size;
+
+        // NiObjectNET header: nameRef(4) + numExtraData(4) + extraDataRefs(N*4) + controllerRef(4)
+        if (pos + 4 > end)
+        {
+            return null;
+        }
+
+        pos += 4;
+
+        if (pos + 4 > end)
+        {
+            return null;
+        }
+
+        var numExtraData = (int)BinaryUtils.ReadUInt32(data, pos, be);
+        pos += 4;
+
+        if (numExtraData <= 0 || numExtraData > 100 || pos + numExtraData * 4 > end)
+        {
+            return null;
+        }
+
+        for (var i = 0; i < numExtraData; i++)
+        {
+            var edRef = BinaryUtils.ReadInt32(data, pos, be);
+            pos += 4;
+
+            if (edRef < 0 || edRef >= nif.Blocks.Count)
+            {
+                continue;
+            }
+
+            var edBlock = nif.Blocks[edRef];
+            if (edBlock.TypeName != "NiStringExtraData" || edBlock.Size < 8)
+            {
+                continue;
+            }
+
+            var edNameIdx = BinaryUtils.ReadInt32(data, edBlock.DataOffset, be);
+            if (edNameIdx < 0 || edNameIdx >= nif.Strings.Count)
+            {
+                continue;
+            }
+
+            if (!string.Equals(nif.Strings[edNameIdx], extraDataName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var valueIdx = BinaryUtils.ReadInt32(data, edBlock.DataOffset + 4, be);
+            if (valueIdx >= 0 && valueIdx < nif.Strings.Count)
+            {
+                return nif.Strings[valueIdx];
+            }
+        }
+
+        return null;
+    }
+
+    private static string? TryParseAttachmentBoneFromUserPropertyBuffer(string? userPropertyBuffer)
+    {
+        if (string.IsNullOrWhiteSpace(userPropertyBuffer))
+        {
+            return null;
+        }
+
+        var trimmed = userPropertyBuffer.Trim();
+        if (trimmed.Length == 0 || trimmed.Contains('='))
+        {
+            return null;
+        }
+
+        return trimmed.StartsWith("Bip01", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(trimmed, "Weapon", StringComparison.OrdinalIgnoreCase)
+            ? trimmed
+            : null;
+    }
 }

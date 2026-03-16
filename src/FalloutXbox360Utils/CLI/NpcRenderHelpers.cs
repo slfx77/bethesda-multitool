@@ -1,14 +1,11 @@
 using System.Globalization;
 using System.IO.MemoryMappedFiles;
 using System.Numerics;
-using FalloutXbox360Utils.Core;
-using FalloutXbox360Utils.Core.Formats.Bsa;
+using FalloutXbox360Utils.CLI;
 using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
-using FalloutXbox360Utils.Core.Formats.Nif;
 using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance;
 using FalloutXbox360Utils.Core.Minidump;
 using Spectre.Console;
 
@@ -20,20 +17,38 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
 /// </summary>
 internal static class NpcRenderHelpers
 {
-    private static readonly Logger Log = Logger.Instance;
     internal const uint HeadEquipmentFlags = 0x01 | 0x02 | 0x200 | 0x400 | 0x800 | 0x4000;
     internal const uint HatEquipmentFlags = 0x01 | 0x400 | 0x4000;
+    private static readonly Logger Log = Logger.Instance;
 
-    internal enum HeadAttachmentCorrectionMode
+    internal static string BuildNpcRenderName(NpcAppearance npc)
     {
-        Boned,
-        BonelessUseAttachmentTransform
+        var baseName = npc.EditorId ?? $"{npc.NpcFormId:X8}";
+        return baseName + BuildRenderVariantSuffix(npc.RenderVariantLabel);
     }
 
-    internal readonly record struct HeadAttachmentCorrectionResult(
-        Matrix4x4 Correction,
-        HeadAttachmentCorrectionMode Mode,
-        float RootDeterminant);
+    internal static string BuildNpcFaceEgtTextureKey(NpcAppearance npc)
+    {
+        return $"facegen_egt\\{npc.NpcFormId:X8}{BuildRenderVariantSuffix(npc.RenderVariantLabel)}.dds";
+    }
+
+    internal static string BuildNpcBodyEgtTextureKey(
+        uint npcFormId,
+        string partLabel,
+        string? renderVariantLabel)
+    {
+        return $"body_egt\\{npcFormId:X8}{BuildRenderVariantSuffix(renderVariantLabel)}_{partLabel}.dds";
+    }
+
+    private static string BuildRenderVariantSuffix(string? renderVariantLabel)
+    {
+        if (string.IsNullOrWhiteSpace(renderVariantLabel))
+        {
+            return string.Empty;
+        }
+
+        return "_" + renderVariantLabel.Trim();
+    }
 
     internal static bool IsHeadEquipment(uint bipedFlags)
     {
@@ -208,13 +223,15 @@ internal static class NpcRenderHelpers
         byte[] nifData, NifInfo nifInfo,
         Matrix4x4 targetHeadTransform,
         Matrix4x4? bonelessAttachmentTransform = null,
-        string? attachmentLabel = null)
+        string? attachmentLabel = null,
+        HeadAttachmentRootPolicy rootPolicy = HeadAttachmentRootPolicy.PreserveAuthoredBasis)
     {
         var nifBones = NifGeometryExtractor.ExtractNamedBoneTransforms(nifData, nifInfo);
         var correctionResult = GetHeadAttachmentCorrection(
             nifBones,
             targetHeadTransform,
-            bonelessAttachmentTransform);
+            bonelessAttachmentTransform,
+            rootPolicy);
 
         Log.Debug("HeadBoneCorrection[{0}]: {1} NIF bones: [{2}]",
             attachmentLabel ?? "(unnamed)",
@@ -227,8 +244,9 @@ internal static class NpcRenderHelpers
             targetHeadTransform.M21, targetHeadTransform.M22, targetHeadTransform.M23,
             targetHeadTransform.M31, targetHeadTransform.M32, targetHeadTransform.M33);
         Log.Debug(
-            "  Mode={0} correction T=({1:F2},{2:F2},{3:F2}) rootDet={4:F2}",
+            "  Mode={0} rootPolicy={1} correction T=({2:F2},{3:F2},{4:F2}) rootDet={5:F2}",
             correctionResult.Mode,
+            rootPolicy,
             correctionResult.Correction.M41,
             correctionResult.Correction.M42,
             correctionResult.Correction.M43,
@@ -245,7 +263,8 @@ internal static class NpcRenderHelpers
     internal static HeadAttachmentCorrectionResult GetHeadAttachmentCorrection(
         IReadOnlyDictionary<string, Matrix4x4> nifBones,
         Matrix4x4 targetHeadTransform,
-        Matrix4x4? bonelessAttachmentTransform = null)
+        Matrix4x4? bonelessAttachmentTransform = null,
+        HeadAttachmentRootPolicy rootPolicy = HeadAttachmentRootPolicy.PreserveAuthoredBasis)
     {
         // Boned NIFs (hair, eyebrows, teeth): undo the NIF's own Bip01 Head and apply target's.
         if (nifBones.TryGetValue("Bip01 Head", out var nifBip01Head) &&
@@ -257,17 +276,51 @@ internal static class NpcRenderHelpers
                 0f);
         }
 
-        // Boneless attachments preserve their authored local root basis. Most head attachments
-        // (hair, brows, facial hair, head-slot gear) should use the explicit boneless
-        // attachment transform instead of the full head basis.
+        // Boneless attachments preserve their authored local root basis. Hair/head parts always
+        // use the explicit boneless attachment transform. For rigid head equipment, only root-only
+        // NIFs should inherit the full head basis; named local nodes (e.g. berets/shades) still
+        // preserve their authored basis and only compensate rotated NIF roots.
         nifBones.TryGetValue("__root__", out var nifRoot);
         var det3x3 = GetDeterminant3x3(RemoveTranslation(nifRoot));
         var effectiveBonelessTransform = bonelessAttachmentTransform ?? targetHeadTransform;
+        if (rootPolicy == HeadAttachmentRootPolicy.CompensateRotatedRoot &&
+            !HasNamedLocalAttachmentNodes(nifBones))
+        {
+            effectiveBonelessTransform = targetHeadTransform;
+        }
+
+        if (rootPolicy == HeadAttachmentRootPolicy.CompensateRotatedRoot)
+        {
+            // Compensate for NIF root rotation (e.g., hats with rotated root nodes).
+            // Mirrors the eye attachment root compensation pattern in TryGetRootRotationCompensation.
+            var rootRotation = RemoveTranslation(nifRoot);
+            if (!IsNearlyIdentity(rootRotation) &&
+                Matrix4x4.Invert(rootRotation, out var invRootRotation))
+            {
+                effectiveBonelessTransform = invRootRotation * effectiveBonelessTransform;
+            }
+        }
 
         return new HeadAttachmentCorrectionResult(
             effectiveBonelessTransform,
             HeadAttachmentCorrectionMode.BonelessUseAttachmentTransform,
             det3x3);
+    }
+
+    private static bool HasNamedLocalAttachmentNodes(IReadOnlyDictionary<string, Matrix4x4> nifBones)
+    {
+        foreach (var boneName in nifBones.Keys)
+        {
+            if (string.Equals(boneName, "Bip01 Head", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(boneName, "__root__", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     private static Matrix4x4 RemoveTranslation(Matrix4x4 transform)
@@ -302,8 +355,8 @@ internal static class NpcRenderHelpers
     private static float GetDeterminant3x3(Matrix4x4 transform)
     {
         return transform.M11 * (transform.M22 * transform.M33 - transform.M23 * transform.M32)
-             - transform.M12 * (transform.M21 * transform.M33 - transform.M23 * transform.M31)
-             + transform.M13 * (transform.M21 * transform.M32 - transform.M22 * transform.M31);
+               - transform.M12 * (transform.M21 * transform.M33 - transform.M23 * transform.M31)
+               + transform.M13 * (transform.M21 * transform.M32 - transform.M22 * transform.M31);
     }
 
     /// <summary>
@@ -311,15 +364,14 @@ internal static class NpcRenderHelpers
     /// </summary>
     internal static NifRenderableModel? LoadNifFromBsa(
         string bsaPath,
-        BsaArchive archive,
-        BsaExtractor extractor,
+        NpcMeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, Matrix4x4>? externalBoneTransforms = null,
         string? filterShapeName = null,
         Dictionary<string, Matrix4x4>? externalPoseDeltas = null,
         bool useDualQuaternionSkinning = false)
     {
-        var result = LoadNifRawFromBsa(bsaPath, archive, extractor);
+        var result = LoadNifRawFromBsa(bsaPath, meshArchives);
         if (result == null)
             return null;
 
@@ -335,18 +387,15 @@ internal static class NpcRenderHelpers
     /// </summary>
     internal static (byte[] Data, NifInfo Info)? LoadNifRawFromBsa(
         string bsaPath,
-        BsaArchive archive,
-        BsaExtractor extractor,
+        NpcMeshArchiveSet meshArchives,
         bool skipConversion = false)
     {
-        var fileRecord = archive.FindFile(bsaPath);
-        if (fileRecord == null)
+        if (!meshArchives.TryExtractFile(bsaPath, out var nifData, out _))
         {
             Log.Warn("NIF not found in BSA: {0}", bsaPath);
             return null;
         }
 
-        var nifData = extractor.ExtractFile(fileRecord);
         if (nifData.Length == 0)
         {
             Log.Warn("NIF extracted but empty (0 bytes): {0}", bsaPath);
@@ -384,16 +433,14 @@ internal static class NpcRenderHelpers
         return (nifData, nif);
     }
 
-    internal static EgmParser? LoadEgmFromBsa(string bsaPath, BsaArchive archive, BsaExtractor extractor)
+    internal static EgmParser? LoadEgmFromBsa(string bsaPath, NpcMeshArchiveSet meshArchives)
     {
-        var fileRecord = archive.FindFile(bsaPath);
-        if (fileRecord == null)
+        if (!meshArchives.TryExtractFile(bsaPath, out var data, out _))
         {
             Log.Warn("EGM not found in BSA: {0}", bsaPath);
             return null;
         }
 
-        var data = extractor.ExtractFile(fileRecord);
         if (data.Length == 0)
         {
             Log.Warn("EGM extracted but empty (0 bytes): {0}", bsaPath);
@@ -403,16 +450,14 @@ internal static class NpcRenderHelpers
         return EgmParser.Parse(data);
     }
 
-    internal static EgtParser? LoadEgtFromBsa(string bsaPath, BsaArchive archive, BsaExtractor extractor)
+    internal static EgtParser? LoadEgtFromBsa(string bsaPath, NpcMeshArchiveSet meshArchives)
     {
-        var fileRecord = archive.FindFile(bsaPath);
-        if (fileRecord == null)
+        if (!meshArchives.TryExtractFile(bsaPath, out var data, out _))
         {
             Log.Warn("EGT not found in BSA: {0}", bsaPath);
             return null;
         }
 
-        var data = extractor.ExtractFile(fileRecord);
         if (data.Length == 0)
         {
             Log.Warn("EGT extracted but empty (0 bytes): {0}", bsaPath);
@@ -430,12 +475,12 @@ internal static class NpcRenderHelpers
         string egmPath,
         NifRenderableModel model,
         float[]? symCoeffs, float[]? asymCoeffs,
-        BsaArchive archive, BsaExtractor extractor,
+        NpcMeshArchiveSet meshArchives,
         Dictionary<string, EgmParser?> egmCache)
     {
         if (!egmCache.TryGetValue(egmPath, out var egm))
         {
-            egm = LoadEgmFromBsa(egmPath, archive, extractor);
+            egm = LoadEgmFromBsa(egmPath, meshArchives);
             egmCache[egmPath] = egm;
         }
 
@@ -449,12 +494,12 @@ internal static class NpcRenderHelpers
 
     internal static EgmParser? LoadAndCacheEgm(
         string egmPath,
-        BsaArchive archive, BsaExtractor extractor,
+        NpcMeshArchiveSet meshArchives,
         Dictionary<string, EgmParser?> egmCache)
     {
         if (!egmCache.TryGetValue(egmPath, out var egm))
         {
-            egm = LoadEgmFromBsa(egmPath, archive, extractor);
+            egm = LoadEgmFromBsa(egmPath, meshArchives);
             egmCache[egmPath] = egm;
         }
 
@@ -472,14 +517,14 @@ internal static class NpcRenderHelpers
         float[] textureCoeffs,
         uint npcFormId,
         string partLabel,
-        BsaArchive meshesArchive,
-        BsaExtractor meshExtractor,
+        string? renderVariantLabel,
+        NpcMeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, EgtParser?> egtCache)
     {
         if (!egtCache.TryGetValue(egtPath, out var egt))
         {
-            egt = LoadEgtFromBsa(egtPath, meshesArchive, meshExtractor);
+            egt = LoadEgtFromBsa(egtPath, meshArchives);
             egtCache[egtPath] = egt;
         }
 
@@ -500,7 +545,7 @@ internal static class NpcRenderHelpers
             return null;
         }
 
-        var morphedKey = $"body_egt\\{npcFormId:X8}_{partLabel}.dds";
+        var morphedKey = BuildNpcBodyEgtTextureKey(npcFormId, partLabel, renderVariantLabel);
         textureResolver.InjectTexture(morphedKey, morphed);
         Log.Debug("Body EGT morph applied: NPC 0x{0:X8} {1} → {2}", npcFormId, partLabel, egtPath);
         return morphedKey;
@@ -622,17 +667,23 @@ internal static class NpcRenderHelpers
     ///     Resolves texture BSA paths. If an explicit path is given, uses that.
     ///     Otherwise, auto-discovers all *Texture* BSA files in the meshes BSA directory.
     /// </summary>
-    internal static string[] ResolveTexturesBsaPaths(string meshesBsaPath, string? explicitPath)
+    internal static string[] ResolveTexturesBsaPaths(string meshesBsaPath, string[]? explicitPaths)
     {
-        if (!string.IsNullOrEmpty(explicitPath))
+        if (explicitPaths is { Length: > 0 })
         {
-            if (!File.Exists(explicitPath))
+            var resolvedPaths = new List<string>(explicitPaths.Length);
+            foreach (var explicitPath in explicitPaths)
             {
-                AnsiConsole.MarkupLine("[red]Error:[/] Textures BSA not found: {0}", explicitPath);
-                return [];
+                if (!File.Exists(explicitPath))
+                {
+                    AnsiConsole.MarkupLine("[red]Error:[/] Textures BSA not found: {0}", explicitPath);
+                    return [];
+                }
+
+                resolvedPaths.Add(explicitPath);
             }
 
-            return [explicitPath];
+            return resolvedPaths.ToArray();
         }
 
         var dir = Path.GetDirectoryName(Path.GetFullPath(meshesBsaPath));
@@ -655,7 +706,10 @@ internal static class NpcRenderHelpers
     ///     Loads NPC records from a DMP file and resolves their appearance using ESM asset data.
     /// </summary>
     internal static List<NpcAppearance> ResolveFromDmp(
-        string dmpPath, NpcAppearanceResolver resolver, string pluginName, uint? filterFormId)
+        string dmpPath,
+        NpcAppearanceResolver resolver,
+        string pluginName,
+        string[]? filters)
     {
         if (!File.Exists(dmpPath))
         {
@@ -692,25 +746,61 @@ internal static class NpcRenderHelpers
 
         AnsiConsole.MarkupLine("Found [green]{0}[/] NPC_ entries in DMP", npcEntries.Count);
 
-        var structReader = new RuntimeStructReader(accessor, fileInfo.Length, minidumpInfo);
+        var structReader = scanResult.RuntimeRefrFormEntries.Count > 0 || npcEntries.Count > 0
+            ? RuntimeStructReader.CreateWithAutoDetect(
+                accessor,
+                fileInfo.Length,
+                minidumpInfo,
+                scanResult.RuntimeRefrFormEntries,
+                npcEntries)
+            : new RuntimeStructReader(accessor, fileInfo.Length, minidumpInfo);
+        var npcEntriesByFormId = npcEntries.ToDictionary(entry => entry.FormId);
+        var npcEntriesByEditorId = npcEntries
+            .Where(entry => !string.IsNullOrWhiteSpace(entry.EditorId))
+            .GroupBy(entry => entry.EditorId!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+        var actorInfos = LoadRuntimeActorInfos(structReader, scanResult.RuntimeRefrFormEntries);
+        var actorInfosByFormId = actorInfos.ToDictionary(info => info.Entry.FormId);
+        var actorInfosByBaseNpcFormId = actorInfos
+            .GroupBy(info => info.Refr.BaseFormId)
+            .ToDictionary(group => group.Key, group => group.ToList());
+        var targets = BuildDmpTargets(
+            filters,
+            npcEntries,
+            npcEntriesByFormId,
+            npcEntriesByEditorId,
+            actorInfosByFormId,
+            actorInfosByBaseNpcFormId);
         var appearances = new List<NpcAppearance>();
+        var seenTargetKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var entry in npcEntries)
+        foreach (var target in targets)
         {
-            if (filterFormId.HasValue && entry.FormId != filterFormId.Value)
-                continue;
-
-            var npcRecord = structReader.ReadRuntimeNpc(entry);
-            if (npcRecord == null)
+            var targetKey = target.RuntimeWeaponSelection is
+                { HasRuntimeTarget: true, ActorRefFormId: { } actorRefFormId }
+                ? $"ACHR:{actorRefFormId:X8}"
+                : $"NPC:{target.NpcEntry.FormId:X8}";
+            if (!seenTargetKeys.Add(targetKey))
             {
-                Log.Debug("Failed to read NPC struct for 0x{0:X8} ({1})", entry.FormId, entry.EditorId);
                 continue;
             }
 
-            var appearance = resolver.ResolveFromDmpRecord(npcRecord, pluginName);
+            var npcRecord = structReader.ReadRuntimeNpc(target.NpcEntry);
+            if (npcRecord == null)
+            {
+                Log.Debug("Failed to read NPC struct for 0x{0:X8} ({1})", target.NpcEntry.FormId,
+                    target.NpcEntry.EditorId);
+                continue;
+            }
+
+            var appearance = resolver.ResolveFromDmpRecord(
+                npcRecord,
+                pluginName,
+                target.RuntimeWeaponSelection);
             if (appearance == null)
             {
-                Log.Debug("Failed to resolve appearance for 0x{0:X8} ({1})", entry.FormId, entry.EditorId);
+                Log.Debug("Failed to resolve appearance for 0x{0:X8} ({1})", target.NpcEntry.FormId,
+                    target.NpcEntry.EditorId);
                 continue;
             }
 
@@ -720,6 +810,108 @@ internal static class NpcRenderHelpers
 
         AnsiConsole.MarkupLine("Resolved [green]{0}[/] NPC appearances from DMP", appearances.Count);
         return appearances;
+    }
+
+    private static List<DmpActorRuntimeInfo> LoadRuntimeActorInfos(
+        RuntimeStructReader structReader,
+        IReadOnlyList<RuntimeEditorIdEntry> runtimeRefrEntries)
+    {
+        var actorInfos = new List<DmpActorRuntimeInfo>();
+        foreach (var entry in runtimeRefrEntries)
+        {
+            if (entry.FormType != 0x3B)
+            {
+                continue;
+            }
+
+            var refr = structReader.ReadRuntimeRefr(entry);
+            if (refr == null)
+            {
+                continue;
+            }
+
+            var weaponState = structReader.ReadRuntimeActorWeaponState(entry);
+            actorInfos.Add(new DmpActorRuntimeInfo(entry, refr, weaponState));
+        }
+
+        return actorInfos;
+    }
+
+    private static List<DmpNpcTarget> BuildDmpTargets(
+        string[]? filters,
+        IReadOnlyList<RuntimeEditorIdEntry> npcEntries,
+        IReadOnlyDictionary<uint, RuntimeEditorIdEntry> npcEntriesByFormId,
+        IReadOnlyDictionary<string, RuntimeEditorIdEntry> npcEntriesByEditorId,
+        IReadOnlyDictionary<uint, DmpActorRuntimeInfo> actorInfosByFormId,
+        IReadOnlyDictionary<uint, List<DmpActorRuntimeInfo>> actorInfosByBaseNpcFormId)
+    {
+        var targets = new List<DmpNpcTarget>();
+
+        if (filters is not { Length: > 0 })
+        {
+            foreach (var npcEntry in npcEntries)
+            {
+                targets.Add(new DmpNpcTarget(
+                    npcEntry,
+                    TryBuildRuntimeSelection(npcEntry.FormId, actorInfosByBaseNpcFormId)));
+            }
+
+            return targets;
+        }
+
+        foreach (var filter in filters)
+        {
+            var formId = ParseFormId(filter);
+            if (formId.HasValue)
+            {
+                if (actorInfosByFormId.TryGetValue(formId.Value, out var actorInfo) &&
+                    npcEntriesByFormId.TryGetValue(actorInfo.Refr.BaseFormId, out var actorBaseNpc))
+                {
+                    targets.Add(new DmpNpcTarget(
+                        actorBaseNpc,
+                        new NpcWeaponResolver.RuntimeWeaponSelection(
+                            true,
+                            actorInfo.Entry.FormId,
+                            actorInfo.WeaponState?.WeaponFormId)));
+                    continue;
+                }
+
+                if (npcEntriesByFormId.TryGetValue(formId.Value, out var npcEntry))
+                {
+                    targets.Add(new DmpNpcTarget(
+                        npcEntry,
+                        TryBuildRuntimeSelection(formId.Value, actorInfosByBaseNpcFormId)));
+                }
+
+                continue;
+            }
+
+            if (npcEntriesByEditorId.TryGetValue(filter.Trim(), out var editorIdNpc))
+            {
+                targets.Add(new DmpNpcTarget(
+                    editorIdNpc,
+                    TryBuildRuntimeSelection(editorIdNpc.FormId, actorInfosByBaseNpcFormId)));
+            }
+        }
+
+        return targets;
+    }
+
+    private static NpcWeaponResolver.RuntimeWeaponSelection? TryBuildRuntimeSelection(
+        uint npcFormId,
+        IReadOnlyDictionary<uint, List<DmpActorRuntimeInfo>> actorInfosByBaseNpcFormId)
+    {
+        if (!actorInfosByBaseNpcFormId.TryGetValue(npcFormId, out var actorInfos) ||
+            actorInfos.Count != 1)
+        {
+            return null;
+        }
+
+        var actorInfo = actorInfos[0];
+        return new NpcWeaponResolver.RuntimeWeaponSelection(
+            true,
+            actorInfo.Entry.FormId,
+            actorInfo.WeaponState?.WeaponFormId);
     }
 
     /// <summary>
@@ -763,4 +955,30 @@ internal static class NpcRenderHelpers
 
         return (matched, total);
     }
+
+    internal enum HeadAttachmentCorrectionMode
+    {
+        Boned,
+        BonelessUseAttachmentTransform
+    }
+
+    internal enum HeadAttachmentRootPolicy
+    {
+        PreserveAuthoredBasis,
+        CompensateRotatedRoot
+    }
+
+    internal readonly record struct HeadAttachmentCorrectionResult(
+        Matrix4x4 Correction,
+        HeadAttachmentCorrectionMode Mode,
+        float RootDeterminant);
+
+    private readonly record struct DmpNpcTarget(
+        RuntimeEditorIdEntry NpcEntry,
+        NpcWeaponResolver.RuntimeWeaponSelection? RuntimeWeaponSelection);
+
+    private readonly record struct DmpActorRuntimeInfo(
+        RuntimeEditorIdEntry Entry,
+        ExtractedRefrRecord Refr,
+        RuntimeActorWeaponReader.RuntimeActorWeaponState? WeaponState);
 }
