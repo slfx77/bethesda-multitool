@@ -3,27 +3,6 @@ using System.Text.Json;
 namespace FalloutXbox360Utils.Core.Formats.Esm;
 
 /// <summary>
-///     A single field in a flattened PDB struct layout.
-/// </summary>
-internal sealed record PdbFieldLayout(
-    string Name,
-    int Offset,
-    int Size,
-    string Kind,
-    string? Owner,
-    string? TypeDetail);
-
-/// <summary>
-///     PDB-derived struct layout for a single FormType (e.g., TESFaction, TESObjectWEAP).
-/// </summary>
-internal sealed record PdbTypeLayout(
-    byte FormType,
-    string RecordCode,
-    string ClassName,
-    int StructSize,
-    List<PdbFieldLayout> Fields);
-
-/// <summary>
 ///     Loads and caches PDB-derived struct layouts from the embedded JSON resource.
 ///     Provides O(1) lookup by FormType byte for the generic runtime reader.
 /// </summary>

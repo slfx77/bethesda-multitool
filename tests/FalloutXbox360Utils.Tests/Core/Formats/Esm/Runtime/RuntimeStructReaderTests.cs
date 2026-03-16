@@ -28,12 +28,18 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : IDispos
     // Struct constants mirrored from RuntimeStructReader for test clarity
     private const int AmmoValueOffset = 140;
     private const byte AmmoFormType = 0x29;
+    private const byte ActorFormType = 0x3B;
+    private const int ActorCurrentProcessPtrOffset = 120;
+    private const int ActorBipedPtrOffset = 452;
 
     private const int MiscValueOffset = 136;
     private const int MiscWeightOffset = 144;
     private const byte MiscFormType = 0x1F;
 
     private const int ModelPathBSStringTOffset = 80;
+    private const byte WeaponFormType = 0x28;
+    private const int BipedWeaponOffset = 0x7C;
+    private const int ProcessWeaponDrawnOffset = 0x135;
     private readonly ITestOutputHelper _output = output;
     private MemoryMappedViewAccessor? _accessor;
     private MemoryMappedFile? _mmf;
@@ -99,6 +105,103 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : IDispos
 
         _output.WriteLine($"Struct1: formId=0x{result1.FormId:X8} value={result1.Value}");
         _output.WriteLine($"Struct2: formId=0x{result2.FormId:X8} value={result2.Value}");
+    }
+
+    #endregion
+
+    #region ReadRuntimeActorWeaponState Tests
+
+    [Fact]
+    public void ReadRuntimeActorWeaponState_ValidActor_ReturnsWeaponAndDrawnState()
+    {
+        var data = new byte[DataSize];
+        const uint actorFormId = 0x000E32A9;
+        const uint weaponFormId = 0x0000433F;
+        const int actorOffset = 256;
+        const int bipedOffset = 1024;
+        const int weaponOffset = 1536;
+        const int processOffset = 2048;
+
+        WriteTesFormHeader(data, actorOffset, 0x82010000, ActorFormType, actorFormId);
+        WriteUInt32BE(data, actorOffset + ActorBipedPtrOffset, FileOffsetToVa(bipedOffset));
+        WriteUInt32BE(data, actorOffset + ActorCurrentProcessPtrOffset, FileOffsetToVa(processOffset));
+        WriteUInt32BE(data, bipedOffset + BipedWeaponOffset, FileOffsetToVa(weaponOffset));
+        WriteTesFormHeader(data, weaponOffset, 0x82010000, WeaponFormType, weaponFormId);
+        data[processOffset + ProcessWeaponDrawnOffset] = 1;
+
+        var reader = CreateReader(data);
+        var entry = MakeEntry("ACHRVeronica", actorFormId, ActorFormType, actorOffset);
+
+        var result = reader.ReadRuntimeActorWeaponState(entry);
+
+        Assert.NotNull(result);
+        Assert.Equal(actorFormId, result.Value.ActorFormId);
+        Assert.Equal(weaponFormId, result.Value.WeaponFormId);
+        Assert.True(result.Value.IsWeaponDrawn);
+    }
+
+    [Fact]
+    public void ReadRuntimeActorWeaponState_NullBipedPointer_StillReturnsDrawnState()
+    {
+        var data = new byte[DataSize];
+        const uint actorFormId = 0x000E6117;
+        const int actorOffset = 256;
+        const int processOffset = 2048;
+
+        WriteTesFormHeader(data, actorOffset, 0x82010000, ActorFormType, actorFormId);
+        WriteUInt32BE(data, actorOffset + ActorCurrentProcessPtrOffset, FileOffsetToVa(processOffset));
+        data[processOffset + ProcessWeaponDrawnOffset] = 1;
+
+        var reader = CreateReader(data);
+        var entry = MakeEntry("ACHRSunny", actorFormId, ActorFormType, actorOffset);
+
+        var result = reader.ReadRuntimeActorWeaponState(entry);
+
+        Assert.NotNull(result);
+        Assert.Equal(actorFormId, result.Value.ActorFormId);
+        Assert.Null(result.Value.WeaponFormId);
+        Assert.True(result.Value.IsWeaponDrawn);
+    }
+
+    [Fact]
+    public void ReadRuntimeActorWeaponState_NonWeaponPointer_IgnoresWeaponButKeepsActorState()
+    {
+        var data = new byte[DataSize];
+        const uint actorFormId = 0x00092BD2;
+        const int actorOffset = 256;
+        const int bipedOffset = 1024;
+        const int miscOffset = 1536;
+
+        WriteTesFormHeader(data, actorOffset, 0x82010000, ActorFormType, actorFormId);
+        WriteUInt32BE(data, actorOffset + ActorBipedPtrOffset, FileOffsetToVa(bipedOffset));
+        WriteUInt32BE(data, bipedOffset + BipedWeaponOffset, FileOffsetToVa(miscOffset));
+        WriteTesFormHeader(data, miscOffset, 0x82010000, MiscFormType, 0x00011111);
+
+        var reader = CreateReader(data);
+        var entry = MakeEntry("ACHRBoone", actorFormId, ActorFormType, actorOffset);
+
+        var result = reader.ReadRuntimeActorWeaponState(entry);
+
+        Assert.NotNull(result);
+        Assert.Equal(actorFormId, result.Value.ActorFormId);
+        Assert.Null(result.Value.WeaponFormId);
+        Assert.False(result.Value.IsWeaponDrawn);
+    }
+
+    [Fact]
+    public void ReadRuntimeActorWeaponState_FormIdMismatch_ReturnsNull()
+    {
+        var data = new byte[DataSize];
+        const int actorOffset = 256;
+
+        WriteTesFormHeader(data, actorOffset, 0x82010000, ActorFormType, 0x0000BEEF);
+
+        var reader = CreateReader(data);
+        var entry = MakeEntry("ACHRMismatch", 0x0000CAFE, ActorFormType, actorOffset);
+
+        var result = reader.ReadRuntimeActorWeaponState(entry);
+
+        Assert.Null(result);
     }
 
     #endregion

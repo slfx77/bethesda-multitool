@@ -75,6 +75,7 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
 
         // Read model path via BSStringT at TESModel offset
         var modelPath = _context.ReadBSStringT(offset, Layouts.WeapModelPathOffset);
+        var embeddedWeaponNode = _context.ReadBSStringT(offset, Layouts.WeapEmbeddedWeaponNodeOffset);
 
         // Read sound pointers (TESSound* at various offsets)
         var pickupSound = _context.FollowPointerToFormId(buffer, Layouts.WeapPickupSoundOffset);
@@ -115,6 +116,7 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
             CriticalDamage = critFields.Damage,
             CriticalChance = critFields.Chance,
             ModelPath = modelPath,
+            EmbeddedWeaponNode = embeddedWeaponNode,
             Bounds = ReadBounds(buffer),
             PickupSoundFormId = pickupSound,
             PutdownSoundFormId = putdownSound,

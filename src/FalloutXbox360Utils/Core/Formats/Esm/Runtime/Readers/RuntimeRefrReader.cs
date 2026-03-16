@@ -160,24 +160,23 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
 
         var earlyReader = new RuntimeRefrReader(context, true);
         var finalReader = new RuntimeRefrReader(context);
-
-        var earlySuccesses = 0;
-        var finalSuccesses = 0;
-
-        foreach (var entry in samples)
+        var candidates = new List<RuntimeLayoutProbeCandidate<bool>>
         {
-            if (earlyReader.ReadRuntimeRefr(entry) != null)
-            {
-                earlySuccesses++;
-            }
+            new("Final", false),
+            new("Early", true)
+        };
 
-            if (finalReader.ReadRuntimeRefr(entry) != null)
+        var result = RuntimeLayoutProbeEngine.Probe(
+            samples,
+            candidates,
+            (entry, candidate) =>
             {
-                finalSuccesses++;
-            }
-        }
+                var reader = candidate.Layout ? earlyReader : finalReader;
+                return new RuntimeLayoutProbeScore(reader.ReadRuntimeRefr(entry) != null ? 1 : 0, 1);
+            },
+            "REFR Probe");
 
-        return earlySuccesses > finalSuccesses;
+        return result.Winner.Layout;
     }
 
     /// <summary>

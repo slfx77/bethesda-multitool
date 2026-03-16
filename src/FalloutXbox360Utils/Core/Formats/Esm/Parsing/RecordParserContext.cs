@@ -34,8 +34,11 @@ public sealed class RecordParserContext
         // Uses probe-based auto-detection of early vs final build struct layout
         if (accessor != null && minidumpInfo != null && fileSize > 0)
         {
+            var npcEntries = scanResult.RuntimeEditorIds
+                .Where(entry => entry.FormType == 0x2A)
+                .ToList();
             RuntimeReader = RuntimeStructReader.CreateWithAutoDetect(
-                accessor, fileSize, minidumpInfo, scanResult.RuntimeRefrFormEntries);
+                accessor, fileSize, minidumpInfo, scanResult.RuntimeRefrFormEntries, npcEntries);
         }
 
         // Build FormID lookup from main records

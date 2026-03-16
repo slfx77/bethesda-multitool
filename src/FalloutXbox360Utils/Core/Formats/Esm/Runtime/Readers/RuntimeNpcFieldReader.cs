@@ -10,15 +10,20 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 /// </summary>
 internal sealed class RuntimeNpcFieldReader
 {
+    private readonly int _appearanceShift;
     private readonly RuntimeMemoryContext _context;
 
-    // Build-specific offset shift: Proto Debug PDB + _s = actual dump offset.
-    private readonly int _s;
+    private readonly int _coreShift;
+    private readonly int _lateAppearanceShift;
+    private readonly RuntimeNpcLayout _layout;
 
-    public RuntimeNpcFieldReader(RuntimeMemoryContext context, int pdbShift)
+    public RuntimeNpcFieldReader(RuntimeMemoryContext context, RuntimeNpcLayout layout)
     {
         _context = context;
-        _s = pdbShift;
+        _layout = layout;
+        _coreShift = layout.CoreShift;
+        _appearanceShift = layout.AppearanceShift;
+        _lateAppearanceShift = layout.LateAppearanceShift;
     }
 
     /// <summary>
@@ -289,7 +294,7 @@ internal sealed class RuntimeNpcFieldReader
         // Follow first item pointer to BGSHeadPart → read FormID at +12
         if (itemPtr != 0 && _context.IsValidPointer(itemPtr))
         {
-            var formId = _context.FollowPointerVaToFormId(itemPtr);
+            var formId = _context.FollowPointerVaToFormId(itemPtr, 0x09);
             if (formId is > 0 and < 0x01000000)
                 parts.Add(formId.Value);
         }
@@ -312,7 +317,7 @@ internal sealed class RuntimeNpcFieldReader
 
             if (nodeItemPtr != 0 && _context.IsValidPointer(nodeItemPtr))
             {
-                var formId = _context.FollowPointerVaToFormId(nodeItemPtr);
+                var formId = _context.FollowPointerVaToFormId(nodeItemPtr, 0x09);
                 if (formId is > 0 and < 0x01000000)
                     parts.Add(formId.Value);
             }
@@ -547,23 +552,43 @@ internal sealed class RuntimeNpcFieldReader
     ///     Returns null if the pointer is invalid or the data cannot be read.
     ///     Empirically verified across xex3 + xex44 dumps, all tested NPCs have consistent data.
     /// </summary>
-    public float[]? ReadFaceGenMorphArray(byte[] npcBuffer, int pointerOffset, int countOffset)
+    public float[]? ReadFaceGenMorphArray(byte[] npcBuffer, RuntimeNpcFaceGenFieldLayout fieldLayout)
     {
-        if (pointerOffset + 4 > npcBuffer.Length || countOffset + 4 > npcBuffer.Length)
+        if (fieldLayout.PointerOffset + 4 > npcBuffer.Length || fieldLayout.CountOffset + 4 > npcBuffer.Length)
         {
             return null;
         }
 
-        var pointer = BinaryUtils.ReadUInt32BE(npcBuffer, pointerOffset);
-        if (pointer == 0)
+        var pointer = BinaryUtils.ReadUInt32BE(npcBuffer, fieldLayout.PointerOffset);
+        if (pointer == 0 || !_context.IsValidPointer(pointer))
         {
             return null;
         }
 
-        var count = (int)BinaryUtils.ReadUInt32BE(npcBuffer, countOffset);
+        var count = (int)BinaryUtils.ReadUInt32BE(npcBuffer, fieldLayout.CountOffset);
         if (count <= 0 || count > 200)
         {
             return null;
+        }
+
+        if (_layout.FaceGenMode == RuntimeNpcFaceGenArrayMode.PrimitiveArray)
+        {
+            if (fieldLayout.EndPointerOffset is not int endPointerOffset || endPointerOffset + 4 > npcBuffer.Length)
+            {
+                return null;
+            }
+
+            var endPointer = BinaryUtils.ReadUInt32BE(npcBuffer, endPointerOffset);
+            if (endPointer == 0 || !_context.IsValidPointer(endPointer) || endPointer < pointer)
+            {
+                return null;
+            }
+
+            var expectedByteCount = count * 4;
+            if (endPointer - pointer != expectedByteCount)
+            {
+                return null;
+            }
         }
 
         // Convert VA to file offset (these are in module space, not heap)
@@ -643,71 +668,68 @@ internal sealed class RuntimeNpcFieldReader
         return new InventoryItem(itemFormId.Value, count);
     }
 
-    #region NPC Struct Layout (Proto Debug PDB base + _s)
+    #region NPC Struct Layout (Proto Debug PDB base + selected shifts)
 
     // TESNPC: PDB size 492, MemDebug PDB 508. Fields after the RaceFaceOffsetCoord inline
     // array (PDB 308-404) are +32 bytes higher at runtime vs PDB, likely due to 8-byte alignment
     // padding in FR2MatrixVTC (24B padded to 32B × 4 = 128B vs PDB's 96B).
-    // Read buffer extends +32 to cover pOriginalRace, pFaceNPC, fHeight, fWeight at tail.
-    public int NpcStructSize => 524 + _s;
-    public int NpcAcbsOffset => 52 + _s;
-    public int NpcDeathItemPtrOffset => 76 + _s;
-    public int NpcVoiceTypePtrOffset => 80 + _s;
-    public int NpcTemplatePtrOffset => 84 + _s;
-    public int NpcRacePtrOffset => 272 + _s;
-    public int NpcClassPtrOffset => 304 + _s;
-    private int NpcAiDataOffset => 148 + _s;
-    private int NpcMoodOffset => 152 + _s;
-    private int NpcAiFlagsOffset => 156 + _s;
-    private int NpcAiAssistanceOffset => 162 + _s;
-    private int NpcSpecialOffset => 188 + _s;
+    // Probe reads a fixed window so appearance-tail candidates can move independently.
+    public int NpcStructSize => _layout.ReadSize;
+    public int NpcAcbsOffset => 52 + _coreShift;
+    public int NpcDeathItemPtrOffset => 76 + _coreShift;
+    public int NpcVoiceTypePtrOffset => 80 + _coreShift;
+    public int NpcTemplatePtrOffset => 84 + _coreShift;
+    public int NpcRacePtrOffset => 272 + _coreShift;
+    public int NpcClassPtrOffset => 304 + _coreShift;
+    private int NpcAiDataOffset => 148 + _coreShift;
+    private int NpcMoodOffset => 152 + _coreShift;
+    private int NpcAiFlagsOffset => 156 + _coreShift;
+    private int NpcAiAssistanceOffset => 162 + _coreShift;
+    private int NpcSpecialOffset => 188 + _coreShift;
     private const int NpcSpecialSize = 7;
-    private int NpcSkillsOffset => 276 + _s;
+    private int NpcSkillsOffset => 276 + _coreShift;
     private const int NpcSkillsSize = 14;
-    public int NpcFggsPointerOffset => 320 + _s;
-    public int NpcFggsCountOffset => 332 + _s;
-    public int NpcFggaPointerOffset => 352 + _s;
-    public int NpcFggaCountOffset => 364 + _s;
-    public int NpcFgtsPointerOffset => 384 + _s;
-    public int NpcFgtsCountOffset => 396 + _s;
-    public int NpcHairPtrOffset => 440 + _s;
-    private int NpcHairLengthOffset => 444 + _s;
-    public int NpcEyesPtrOffset => 448 + _s;
-    public int NpcCombatStylePtrOffset => 468 + _s;
-    private int NpcHairColorOffset => 472 + _s; // iHairColor (uint32, packed 0x00BBGGRR)
-    private int NpcHeadPartListOffset => 476 + _s; // listHeadParts (BSSimpleList<BGSHeadPart*>, 8B)
-    public int NpcScriptPtrOffset => 248 + _s; // TESScriptableForm::pFormScript (base+244, field+4)
-    private int NpcContainerDataOffset => 104 + _s;
-    private int NpcContainerNextOffset => 108 + _s;
+    public RuntimeNpcFaceGenFieldLayout NpcFggsLayout => _layout.Fggs;
+    public RuntimeNpcFaceGenFieldLayout NpcFggaLayout => _layout.Fgga;
+    public RuntimeNpcFaceGenFieldLayout NpcFgtsLayout => _layout.Fgts;
+    public int NpcHairPtrOffset => 440 + _appearanceShift;
+    private int NpcHairLengthOffset => 444 + _appearanceShift;
+    public int NpcEyesPtrOffset => 448 + _appearanceShift;
+    public int NpcCombatStylePtrOffset => 468 + _appearanceShift;
+    private int NpcHairColorOffset => 472 + _appearanceShift; // iHairColor (uint32, packed 0x00BBGGRR)
+    private int NpcHeadPartListOffset => 476 + _appearanceShift; // listHeadParts (BSSimpleList<BGSHeadPart*>, 8B)
+    public int NpcScriptPtrOffset => 248 + _coreShift; // TESScriptableForm::pFormScript (base+244, field+4)
+    private int NpcContainerDataOffset => 104 + _coreShift;
+    private int NpcContainerNextOffset => 108 + _coreShift;
 
-    private int NpcFactionListHeadOffset => 92 + _s;
+    private int NpcFactionListHeadOffset => 92 + _coreShift;
 
     // TESAIForm at offset 144 in TESActorBase; AIPackList (BSSimpleList<TESPackage*>) at +24 within TESAIForm
-    private int PackageListOffset => 168 + _s;
+    private int PackageListOffset => 168 + _coreShift;
 
     // Additional TESNPC fields from PDB (Proto Debug offset + 32 runtime shift + _s).
     // The +32 matches the empirical shift applied to all post-FaceGen fields (Hair, Eyes, etc.).
-    private int NpcRaceFacePresetOffset => 464 + _s; // PDB 432 + 32: sLastRaceFaceNum (uint16)
-    private int NpcBloodImpactMaterialOffset => 484 + _s; // PDB 452 + 32: eBloodImpactMaterial (enum)
-    public int NpcOriginalRacePtrOffset => 492 + _s; // PDB 460 + 32: pOriginalRace (TESRace*)
-    public int NpcFaceNpcPtrOffset => 496 + _s; // PDB 464 + 32: pFaceNPC (TESNPC*)
-    private int NpcHeightOffset => 500 + _s; // PDB 468 + 32: fHeight (float, ~0.9-1.1)
-    private int NpcWeightOffset => 504 + _s; // PDB 472 + 32: fWeight (float, 0-100)
+    private int NpcRaceFacePresetOffset => 464 + _appearanceShift; // PDB 432 + 32: sLastRaceFaceNum (uint16)
+    private int NpcBloodImpactMaterialOffset => 484 + _appearanceShift; // PDB 452 + 32: eBloodImpactMaterial (enum)
+    public int NpcOriginalRacePtrOffset => 492 + _lateAppearanceShift; // PDB 460 + 32: pOriginalRace (TESRace*)
+    public int NpcFaceNpcPtrOffset => 496 + _lateAppearanceShift; // PDB 464 + 32: pFaceNPC (TESNPC*)
+    private int NpcHeightOffset => 500 + _lateAppearanceShift; // PDB 468 + 32: fHeight (float, ~0.9-1.1)
+    private int NpcWeightOffset => 504 + _lateAppearanceShift; // PDB 472 + 32: fWeight (float, 0-100)
 
     #endregion
 
-    #region Creature Struct Layout (Proto Debug PDB base + _s)
+    #region Creature Struct Layout (Proto Debug PDB base + core shift)
 
     // TESCreature: PDB size 352, Debug dump 356, Release dump 368
-    public int CreaStructSize => 352 + _s;
-    public int CreaModelPathOffset => 172 + _s;
-    public int CreaScriptOffset => 248 + _s; // TESScriptableForm::pFormScript (base+244, field+4)
-    public int CreaCombatSkillOffset => 212 + _s;
-    public int CreaMagicSkillOffset => 213 + _s;
-    public int CreaStealthSkillOffset => 214 + _s;
-    public int CreaAttackDamageOffset => 216 + _s;
-    public int CreaTypeOffset => 220 + _s;
-    public int CreaAcbsOffset => 8 + _s;
+    public int CreaStructSize => 352 + _coreShift;
+    public int CreaModelPathOffset => 172 + _coreShift;
+    public int CreaScriptOffset => 248 + _coreShift; // TESScriptableForm::pFormScript (base+244, field+4)
+    public int CreaCombatSkillOffset => 212 + _coreShift;
+    public int CreaMagicSkillOffset => 213 + _coreShift;
+    public int CreaStealthSkillOffset => 214 + _coreShift;
+    public int CreaAttackDamageOffset => 216 + _coreShift;
+    public int CreaTypeOffset => 220 + _coreShift;
+    public int CreaAcbsOffset => 8 + _coreShift;
 
     #endregion
 }

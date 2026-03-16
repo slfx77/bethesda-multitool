@@ -333,129 +333,131 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
             return -1;
         }
 
-        var log = Logger.Instance;
-        log.Info($"  [DIAL Probe] Entry: {entry.EditorId} (FormID 0x{entry.FormId:X8}), TesFormOffset=0x{offset:X}");
-
-        // Try each shift hypothesis
-        int[] shifts = [0, 4, 8, 16];
-        var bestShift = -1;
-        var bestScore = 0;
-
-        foreach (var shift in shifts)
+        var sample = new DialProbeSample(entry, offset, buffer);
+        var candidates = new List<RuntimeLayoutProbeCandidate<int>>
         {
-            var score = 0;
-            var details = new StringBuilder();
-            details.Append($"    Shift +{shift}: ");
+            new("Shift +0", 0),
+            new("Shift +4", 4),
+            new("Shift +8", 8),
+            new("Shift +16", 16)
+        };
 
-            // Check BSStringT for FullName at PDB+28+shift
-            var bstOff = 28 + shift;
-            if (bstOff + 8 <= buffer.Length)
-            {
-                var pStr = BinaryUtils.ReadUInt32BE(buffer, bstOff);
-                var sLen = BinaryUtils.ReadUInt16BE(buffer, bstOff + 4);
-                var strValid = pStr != 0 && sLen > 0 && sLen < 256 && _context.IsValidPointer(pStr);
-                if (strValid)
-                {
-                    // Try to read the actual string
-                    var name = _context.ReadBSStringT(offset, bstOff);
-                    if (name != null)
-                    {
-                        details.Append($"FullName=\"{name}\" OK, ");
-                        score += 3;
-                    }
-                    else
-                    {
-                        details.Append("FullName=<ptr valid but string unreadable>, ");
-                        score += 1;
-                    }
-                }
-                else
-                {
-                    details.Append($"FullName=<invalid ptr=0x{pStr:X8} len={sLen}>, ");
-                }
-            }
+        var result = RuntimeLayoutProbeEngine.Probe(
+            [sample],
+            candidates,
+            (probeSample, candidate) => ScoreDialCandidate(probeSample, candidate.Layout),
+            "DIAL Probe",
+            Logger.Instance.Info,
+            probeSample =>
+                $"Entry: {probeSample.Entry.EditorId} (FormID 0x{probeSample.Entry.FormId:X8}), TesFormOffset=0x{probeSample.Offset:X}",
+            true);
 
-            // Check m_Data.type at PDB+36+shift (should be 0-7)
-            var typeOff = 36 + shift;
-            if (typeOff < buffer.Length)
-            {
-                var topicType = buffer[typeOff];
-                if (topicType <= 7)
-                {
-                    details.Append($"type={topicType} OK, ");
-                    score += 2;
-                }
-                else
-                {
-                    details.Append($"type={topicType} FAIL, ");
-                }
-            }
-
-            // Check m_Data.cFlags at PDB+37+shift (should be 0-3, only bits 0-1 used)
-            var flagsOff = 37 + shift;
-            if (flagsOff < buffer.Length)
-            {
-                var flags = buffer[flagsOff];
-                if (flags <= 3)
-                {
-                    details.Append($"flags={flags} OK, ");
-                    score += 1;
-                }
-                else
-                {
-                    details.Append($"flags=0x{flags:X2} FAIL, ");
-                }
-            }
-
-            // Check m_fPriority at PDB+40+shift (should be a reasonable float, typically 50.0)
-            var priorityOff = 40 + shift;
-            if (priorityOff + 4 <= buffer.Length)
-            {
-                var priority = BinaryUtils.ReadFloatBE(buffer, priorityOff);
-                if (RuntimeMemoryContext.IsNormalFloat(priority) && priority >= 0 && priority <= 200)
-                {
-                    details.Append($"priority={priority:F1} OK, ");
-                    score += 2;
-                }
-                else
-                {
-                    details.Append($"priority={priority:F1} FAIL, ");
-                }
-            }
-
-            // Check m_uiTopicCount at PDB+68+shift (should be a reasonable count, 0-10000)
-            var countOff = 68 + shift;
-            if (countOff + 4 <= buffer.Length)
-            {
-                var count = BinaryUtils.ReadUInt32BE(buffer, countOff);
-                if (count <= 10000)
-                {
-                    details.Append($"topicCount={count} OK");
-                    score += 1;
-                }
-                else
-                {
-                    details.Append($"topicCount={count} FAIL");
-                }
-            }
-
-            log.Info(details.ToString());
-            log.Info($"      Score: {score}/9");
-
-            if (score > bestScore)
-            {
-                bestScore = score;
-                bestShift = shift;
-            }
-        }
-
-        if (bestShift >= 0)
-        {
-            log.Info($"  [DIAL Probe] Best shift: +{bestShift} (score {bestScore}/9)");
-        }
-
-        return bestShift;
+        return result.WinnerScore > 0 ? result.Winner.Layout : -1;
     }
+
+    private RuntimeLayoutProbeScore ScoreDialCandidate(DialProbeSample sample, int shift)
+    {
+        var score = 0;
+        var details = new StringBuilder();
+
+        // Check BSStringT for FullName at PDB+28+shift
+        var bstOff = 28 + shift;
+        if (bstOff + 8 <= sample.Buffer.Length)
+        {
+            var pStr = BinaryUtils.ReadUInt32BE(sample.Buffer, bstOff);
+            var sLen = BinaryUtils.ReadUInt16BE(sample.Buffer, bstOff + 4);
+            var strValid = pStr != 0 && sLen > 0 && sLen < 256 && _context.IsValidPointer(pStr);
+            if (strValid)
+            {
+                var name = _context.ReadBSStringT(sample.Offset, bstOff);
+                if (name != null)
+                {
+                    details.Append($"FullName=\"{name}\" OK, ");
+                    score += 3;
+                }
+                else
+                {
+                    details.Append("FullName=<ptr valid but string unreadable>, ");
+                    score += 1;
+                }
+            }
+            else
+            {
+                details.Append($"FullName=<invalid ptr=0x{pStr:X8} len={sLen}>, ");
+            }
+        }
+
+        // Check m_Data.type at PDB+36+shift (should be 0-7)
+        var typeOff = 36 + shift;
+        if (typeOff < sample.Buffer.Length)
+        {
+            var topicType = sample.Buffer[typeOff];
+            if (topicType <= 7)
+            {
+                details.Append($"type={topicType} OK, ");
+                score += 2;
+            }
+            else
+            {
+                details.Append($"type={topicType} FAIL, ");
+            }
+        }
+
+        // Check m_Data.cFlags at PDB+37+shift (should be 0-3, only bits 0-1 used)
+        var flagsOff = 37 + shift;
+        if (flagsOff < sample.Buffer.Length)
+        {
+            var flags = sample.Buffer[flagsOff];
+            if (flags <= 3)
+            {
+                details.Append($"flags={flags} OK, ");
+                score += 1;
+            }
+            else
+            {
+                details.Append($"flags=0x{flags:X2} FAIL, ");
+            }
+        }
+
+        // Check m_fPriority at PDB+40+shift (should be a reasonable float, typically 50.0)
+        var priorityOff = 40 + shift;
+        if (priorityOff + 4 <= sample.Buffer.Length)
+        {
+            var priority = BinaryUtils.ReadFloatBE(sample.Buffer, priorityOff);
+            if (RuntimeMemoryContext.IsNormalFloat(priority) && priority >= 0 && priority <= 200)
+            {
+                details.Append($"priority={priority:F1} OK, ");
+                score += 2;
+            }
+            else
+            {
+                details.Append($"priority={priority:F1} FAIL, ");
+            }
+        }
+
+        // Check m_uiTopicCount at PDB+68+shift (should be a reasonable count, 0-10000)
+        var countOff = 68 + shift;
+        if (countOff + 4 <= sample.Buffer.Length)
+        {
+            var count = BinaryUtils.ReadUInt32BE(sample.Buffer, countOff);
+            if (count <= 10000)
+            {
+                details.Append($"topicCount={count} OK");
+                score += 1;
+            }
+            else
+            {
+                details.Append($"topicCount={count} FAIL");
+            }
+        }
+
+        return new RuntimeLayoutProbeScore(score, 9, details.ToString());
+    }
+
+    private sealed record DialProbeSample(
+        RuntimeEditorIdEntry Entry,
+        long Offset,
+        byte[] Buffer);
 
     #region World/Land Struct Layout
 

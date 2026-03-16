@@ -9,18 +9,31 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 ///     Reader for NPC, Creature, and Faction runtime structs from Xbox 360 memory dumps.
 ///     Extracts actor stats, inventory, factions, FaceGen morphs, and other character data.
 /// </summary>
-internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
+internal sealed class RuntimeActorReader
 {
-    private readonly RuntimeMemoryContext _context = context;
+    private readonly RuntimeMemoryContext _context;
+    private readonly RuntimeNpcLayoutProbeResult _npcLayoutProbe;
 
     // Build-specific offset shift: Proto Debug PDB + _s = actual dump offset.
-    // Debug dumps: _s=4, Release dumps: _s=16.
-    private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
-        MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
+    private readonly int _s;
 
     // Delegate NPC field reading to the extracted helper class.
     private RuntimeNpcFieldReader? _npcFieldReader;
-    private RuntimeNpcFieldReader NpcFields => _npcFieldReader ??= new RuntimeNpcFieldReader(_context, _s);
+
+    public RuntimeActorReader(RuntimeMemoryContext context, RuntimeNpcLayoutProbeResult? npcLayoutProbe = null)
+    {
+        _context = context;
+        _s = RuntimeBuildOffsets.GetPdbShift(MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
+        _npcLayoutProbe = npcLayoutProbe ?? new RuntimeNpcLayoutProbeResult(
+            RuntimeNpcLayout.CreateDefault(context.MinidumpInfo),
+            true,
+            0,
+            0,
+            0);
+    }
+
+    private RuntimeNpcFieldReader NpcFields =>
+        _npcFieldReader ??= new RuntimeNpcFieldReader(_context, _npcLayoutProbe.Layout);
 
     /// <summary>
     ///     Read extended NPC data from a runtime TESNPC struct.
@@ -35,17 +48,8 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
         }
 
         var offset = entry.TesFormOffset.Value;
-        if (offset + NpcFields.NpcStructSize > _context.FileSize)
-        {
-            return null;
-        }
-
-        var buffer = new byte[NpcFields.NpcStructSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, NpcFields.NpcStructSize);
-        }
-        catch
+        var buffer = ReadNpcStructBuffer(entry, offset);
+        if (buffer == null)
         {
             return null;
         }
@@ -58,7 +62,7 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
         }
 
         // Read script pointer before ACBS validation so it's available even for minimal NPCs
-        var scriptFormId = _context.FollowPointerToFormId(buffer, NpcFields.NpcScriptPtrOffset);
+        var scriptFormId = _context.FollowPointerToFormId(buffer, NpcFields.NpcScriptPtrOffset, 0x11);
 
         // Read ACBS stats block at empirically verified offset +68
         var stats = ReadActorBaseStats(buffer, NpcFields.NpcAcbsOffset, offset);
@@ -68,11 +72,11 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
         }
 
         // Follow pointer fields to get FormIDs
-        var race = _context.FollowPointerToFormId(buffer, NpcFields.NpcRacePtrOffset);
-        var classFormId = _context.FollowPointerToFormId(buffer, NpcFields.NpcClassPtrOffset);
+        var race = _context.FollowPointerToFormId(buffer, NpcFields.NpcRacePtrOffset, 0x0C);
+        var classFormId = _context.FollowPointerToFormId(buffer, NpcFields.NpcClassPtrOffset, 0x07);
         var deathItem = _context.FollowPointerToFormId(buffer, NpcFields.NpcDeathItemPtrOffset);
-        var voiceType = _context.FollowPointerToFormId(buffer, NpcFields.NpcVoiceTypePtrOffset);
-        var template = _context.FollowPointerToFormId(buffer, NpcFields.NpcTemplatePtrOffset);
+        var voiceType = _context.FollowPointerToFormId(buffer, NpcFields.NpcVoiceTypePtrOffset, 0x5D);
+        var template = _context.FollowPointerToFormId(buffer, NpcFields.NpcTemplatePtrOffset, 0x2A);
 
         // Read sub-item lists (container inventory, faction memberships)
         var inventory = NpcFields.ReadNpcInventory(buffer, offset);
@@ -88,28 +92,32 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
         var aiData = NpcFields.ReadNpcAiData(buffer);
 
         // Read physical traits (hair, eyes, hair length, combat style, hair color, head parts)
-        var hair = _context.FollowPointerToFormId(buffer, NpcFields.NpcHairPtrOffset);
-        var eyes = _context.FollowPointerToFormId(buffer, NpcFields.NpcEyesPtrOffset);
-        var combatStyle = _context.FollowPointerToFormId(buffer, NpcFields.NpcCombatStylePtrOffset);
+        var hair = _context.FollowPointerToFormId(buffer, NpcFields.NpcHairPtrOffset, 0x0A);
+        var eyes = _context.FollowPointerToFormId(buffer, NpcFields.NpcEyesPtrOffset, 0x0B);
+        var combatStyle = _context.FollowPointerToFormId(buffer, NpcFields.NpcCombatStylePtrOffset, 0x4A);
         var hairLength = NpcFields.ReadNpcHairLength(buffer);
         var hairColor = NpcFields.ReadNpcHairColor(buffer);
         var headPartFormIds = NpcFields.ReadNpcHeadPartFormIds(buffer);
 
         // Read additional PDB-derived fields
-        var originalRace = _context.FollowPointerToFormId(buffer, NpcFields.NpcOriginalRacePtrOffset);
-        var faceNpc = _context.FollowPointerToFormId(buffer, NpcFields.NpcFaceNpcPtrOffset);
+        var originalRace = _context.FollowPointerToFormId(buffer, NpcFields.NpcOriginalRacePtrOffset, 0x0C);
+        var faceNpc = _context.FollowPointerToFormId(buffer, NpcFields.NpcFaceNpcPtrOffset, 0x2A);
         var height = NpcFields.ReadNpcHeight(buffer);
         var weight = NpcFields.ReadNpcWeight(buffer);
         var bloodImpactMaterial = NpcFields.ReadNpcBloodImpactMaterial(buffer);
         var raceFacePreset = NpcFields.ReadNpcRaceFacePreset(buffer);
 
         // Read FaceGen morph data (follow pointers to float arrays in module space)
-        var fggs = NpcFields.ReadFaceGenMorphArray(buffer, NpcFields.NpcFggsPointerOffset,
-            NpcFields.NpcFggsCountOffset);
-        var fgga = NpcFields.ReadFaceGenMorphArray(buffer, NpcFields.NpcFggaPointerOffset,
-            NpcFields.NpcFggaCountOffset);
-        var fgts = NpcFields.ReadFaceGenMorphArray(buffer, NpcFields.NpcFgtsPointerOffset,
-            NpcFields.NpcFgtsCountOffset);
+        var fggs = NpcFields.ReadFaceGenMorphArray(buffer, NpcFields.NpcFggsLayout);
+        var fgga = NpcFields.ReadFaceGenMorphArray(buffer, NpcFields.NpcFggaLayout);
+        var fgts = NpcFields.ReadFaceGenMorphArray(buffer, NpcFields.NpcFgtsLayout);
+
+        if (!_npcLayoutProbe.IsHighConfidence)
+        {
+            fggs = null;
+            fgga = null;
+            fgts = null;
+        }
 
         // Read AI package list (BSSimpleList<TESPackage*> at TESAIForm+24)
         var packages = NpcFields.ReadPackageList(buffer);
@@ -150,6 +158,16 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
             Offset = offset,
             IsBigEndian = true
         };
+    }
+
+    private byte[]? ReadNpcStructBuffer(RuntimeEditorIdEntry entry, long fileOffset)
+    {
+        if (entry.TesFormPointer.HasValue)
+        {
+            return _context.ReadBytesAtVa(entry.TesFormPointer.Value, NpcFields.NpcStructSize);
+        }
+
+        return _context.ReadBytes(fileOffset, NpcFields.NpcStructSize);
     }
 
     /// <summary>
@@ -298,7 +316,7 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
     ///     +20: dispositionBase (int16)
     ///     +22: templateFlags (uint16)
     /// </summary>
-    private static ActorBaseSubrecord? ReadActorBaseStats(byte[] buffer, int acbsStart, long structOffset)
+    internal static ActorBaseSubrecord? ReadActorBaseStats(byte[] buffer, int acbsStart, long structOffset)
     {
         if (acbsStart + 24 > buffer.Length)
         {

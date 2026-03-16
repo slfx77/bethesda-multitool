@@ -209,6 +209,20 @@ internal sealed class RuntimeMemoryContext(
     /// </summary>
     public uint? FollowPointerVaToFormId(uint va)
     {
+        return FollowPointerVaToFormIdCore(va, null);
+    }
+
+    /// <summary>
+    ///     Follow a virtual address pointer to a TESForm and return its FormID if the
+    ///     target matches the expected FormType.
+    /// </summary>
+    public uint? FollowPointerVaToFormId(uint va, byte expectedFormType)
+    {
+        return FollowPointerVaToFormIdCore(va, expectedFormType);
+    }
+
+    private uint? FollowPointerVaToFormIdCore(uint va, byte? expectedFormType)
+    {
         if (va == 0)
         {
             return null;
@@ -227,7 +241,14 @@ internal sealed class RuntimeMemoryContext(
         }
 
         var formType = formBuf[4];
-        if (formType > 200)
+        if (expectedFormType.HasValue)
+        {
+            if (formType != expectedFormType.Value)
+            {
+                return null;
+            }
+        }
+        else if (formType > 200)
         {
             return null;
         }

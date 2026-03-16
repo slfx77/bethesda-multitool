@@ -11,6 +11,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 public sealed class RuntimeStructReader
 {
     private readonly RuntimeActorReader _actors;
+    private readonly RuntimeActorWeaponReader _actorWeapons;
     private readonly RuntimeCellReader _cells;
     private readonly RuntimeMemoryContext _context;
     private readonly RuntimeDialogueReader _dialogue;
@@ -27,10 +28,20 @@ public sealed class RuntimeStructReader
         long fileSize,
         MinidumpInfo minidumpInfo,
         bool useProtoOffsets = false)
+        : this(accessor, fileSize, minidumpInfo, useProtoOffsets, null)
+    {
+    }
+
+    internal RuntimeStructReader(
+        MemoryMappedViewAccessor accessor,
+        long fileSize,
+        MinidumpInfo minidumpInfo,
+        bool useProtoOffsets,
+        RuntimeNpcLayoutProbeResult? npcLayoutProbe)
     {
         IsEarlyBuild = useProtoOffsets;
         _context = new RuntimeMemoryContext(accessor, fileSize, minidumpInfo);
-        _actors = new RuntimeActorReader(_context);
+        _actors = new RuntimeActorReader(_context, npcLayoutProbe);
         _generic = new RuntimeGenericReader(_context);
         _items = new RuntimeItemReader(_context);
         _dialogue = new RuntimeDialogueReader(_context);
@@ -39,6 +50,7 @@ public sealed class RuntimeStructReader
         _world = new RuntimeWorldReader(_context);
         _refrs = new RuntimeRefrReader(_context, useProtoOffsets);
         _packages = new RuntimePackageReader(_context);
+        _actorWeapons = new RuntimeActorWeaponReader(_context);
         _cells = new RuntimeCellReader(_context, useProtoOffsets);
     }
 
@@ -53,11 +65,15 @@ public sealed class RuntimeStructReader
         MemoryMappedViewAccessor accessor,
         long fileSize,
         MinidumpInfo minidumpInfo,
-        IReadOnlyList<RuntimeEditorIdEntry> refrEntries)
+        IReadOnlyList<RuntimeEditorIdEntry> refrEntries,
+        IReadOnlyList<RuntimeEditorIdEntry>? npcEntries = null)
     {
         var context = new RuntimeMemoryContext(accessor, fileSize, minidumpInfo);
         var isEarlyBuild = RuntimeRefrReader.ProbeIsEarlyBuild(context, refrEntries);
-        return new RuntimeStructReader(accessor, fileSize, minidumpInfo, isEarlyBuild);
+        var npcLayoutProbe = npcEntries is { Count: > 0 }
+            ? RuntimeNpcLayoutProbe.Probe(context, npcEntries)
+            : null;
+        return new RuntimeStructReader(accessor, fileSize, minidumpInfo, isEarlyBuild, npcLayoutProbe);
     }
 
     #region Effects
@@ -110,6 +126,11 @@ public sealed class RuntimeStructReader
     public NpcRecord? ReadRuntimeNpc(RuntimeEditorIdEntry entry)
     {
         return _actors.ReadRuntimeNpc(entry);
+    }
+
+    internal RuntimeActorWeaponReader.RuntimeActorWeaponState? ReadRuntimeActorWeaponState(RuntimeEditorIdEntry entry)
+    {
+        return _actorWeapons.ReadRuntimeActorWeaponState(entry);
     }
 
     public CreatureRecord? ReadRuntimeCreature(RuntimeEditorIdEntry entry)

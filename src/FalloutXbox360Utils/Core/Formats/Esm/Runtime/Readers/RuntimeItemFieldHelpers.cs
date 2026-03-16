@@ -59,7 +59,7 @@ internal sealed class RuntimeItemFieldHelpers
     {
         // animationType is stored as uint8 at the first byte of a 4-byte aligned field
         var animTypeByte = buffer[_layouts.WeapAnimTypeOffset];
-        var animationType = animTypeByte <= 20 ? animTypeByte : 0u;
+        var animationType = Enum.IsDefined(typeof(WeaponType), animTypeByte) ? animTypeByte : 0u;
 
         var speed = BinaryUtils.ReadFloatBE(buffer, _layouts.WeapSpeedOffset);
         var reach = BinaryUtils.ReadFloatBE(buffer, _layouts.WeapReachOffset);
@@ -74,8 +74,9 @@ internal sealed class RuntimeItemFieldHelpers
             reach = 0;
         }
 
-        // Animation type byte maps directly to WeaponType enum
-        var weaponType = animTypeByte <= 11 ? (WeaponType)animTypeByte : 0;
+        var weaponType = Enum.IsDefined(typeof(WeaponType), animTypeByte)
+            ? (WeaponType)animTypeByte
+            : WeaponType.HandToHandMelee;
 
         var dataStart = _layouts.WeapDataStart;
         var minSpread =

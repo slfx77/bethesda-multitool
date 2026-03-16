@@ -56,6 +56,7 @@ internal sealed class RuntimeItemLayouts
     internal int WeapEquipSoundOffset => 560 + _s;
     internal int WeapUnequipSoundOffset => 564 + _s;
     internal int WeapImpactDataSetOffset => 568 + _s;
+    internal int WeapEmbeddedWeaponNodeOffset => 876 + _s;
 
     #endregion
 

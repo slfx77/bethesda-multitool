@@ -13,7 +13,6 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 ///     The struct layout was reverse-engineered from Ghidra decompilation of
 ///     NiXenonSourceTextureData::Create, CreateSurf, InitializeFromD3DTexture,
 ///     CopyDataToSurface, and CopyDataToSurfaceLevel.
-///
 ///     NiXenonSourceTextureData (0x88 = 136 bytes):
 ///     +0x00 vtable (ptr)
 ///     +0x04 m_uiRefCount (uint32 BE)
@@ -21,9 +20,9 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 ///     +0x0C Width (uint32 BE) — set from NiPixelData during CreateSurf
 ///     +0x10 Height (uint32 BE)
 ///     +0x14 D3DBaseTexture (0x44 = 68 bytes inline) — GPU texture descriptor
-///       +0x14+0x1C = +0x30: GPU fetch constant DWORD[0..5] (24 bytes)
-///       +0x14+0x34 = +0x48: BaseAddress (physical addr of texture data)
-///       +0x14+0x38 = +0x4C: MipAddress
+///     +0x14+0x1C = +0x30: GPU fetch constant DWORD[0..5] (24 bytes)
+///     +0x14+0x34 = +0x48: BaseAddress (physical addr of texture data)
+///     +0x14+0x38 = +0x4C: MipAddress
 ///     +0x58 DDX format info (2 bytes)
 ///     +0x5A GPU format code byte (0xFF = uninitialized)
 ///     +0x5B Quality/degradation state
@@ -34,7 +33,6 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 ///     +0x71 IsPowerOfTwo flag (byte)
 ///     +0x74 Total texture data size in bytes (uint32 BE)
 ///     +0x7C Base mip level offset (uint32 BE)
-///
 ///     GPU fetch constant (6 DWORDs at +0x30, Xenia xe_gpu_texture_fetch_t layout):
 ///     DWORD[3] at +0x3C: tiled(1) | pitch(9) | _(1) | DataFormat(6) | _(1) | _(1) | base_address(20)
 ///     DWORD[4] at +0x40: width-1(13) | height-1(13) | _(6) — for 2D textures
@@ -322,7 +320,7 @@ internal sealed class RuntimeGpuTextureScanner(RuntimeMemoryContext context)
         if (isTiled)
         {
             // Tiled: use Morton/Z-order untiling + endian swap in one pass
-            return TextureUtilities.UnswizzleMortonDXT(data, width, height, gpuFormat, swapEndian: true);
+            return TextureUtilities.UnswizzleMortonDXT(data, width, height, gpuFormat, true);
         }
 
         // Untiled (linear): just endian swap for compressed formats
