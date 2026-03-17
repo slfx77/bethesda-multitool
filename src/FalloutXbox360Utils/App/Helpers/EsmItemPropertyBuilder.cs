@@ -241,18 +241,17 @@ internal static class EsmItemPropertyBuilder
         // Placed references: Base EditorID/Type | Position | Base FormID | Own FormID
         if (item is PlacedReference refr)
         {
-            var baseEditor = refr.BaseEditorId ?? refr.RecordType;
+            var refName = PlacedObjectCategoryResolver.GetReferenceEditorId(refr, resolver)
+                          ?? PlacedObjectCategoryResolver.GetReferenceAwareName(refr, resolver);
+            var baseName = resolver?.GetBestName(refr.BaseFormId) ?? refr.BaseEditorId ?? refr.RecordType;
             var pos = $"({refr.X:F0}, {refr.Y:F0}, {refr.Z:F0})";
-            var extra = refr.DestinationDoorFormId is > 0
-                ? $"0x{refr.FormId:X8} \u2192 door"
-                : $"0x{refr.FormId:X8}";
             return new EsmPropertyEntry
             {
-                Col1 = baseEditor,
+                Col1 = refName,
                 Col2 = pos,
-                Col3 = $"0x{refr.BaseFormId:X8}",
-                Col4 = extra,
-                Col3FormId = refr.BaseFormId
+                Col3 = $"0x{refr.FormId:X8}",
+                Col4 = $"{baseName} (0x{refr.BaseFormId:X8})",
+                Col3FormId = refr.FormId
             };
         }
 

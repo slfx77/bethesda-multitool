@@ -18,18 +18,26 @@ internal static class PdbStructLayouts
     [
         0x08, // FACT — RuntimeActorReader
         0x11, // SCPT — RuntimeScriptReader
+        0x15, // ACTI — RuntimeWorldObjectReader
         0x17, // TERM — RuntimeDialogueReader
         0x18, // ARMO — RuntimeItemReader
         0x1B, // CONT — RuntimeContainerReader
+        0x1C, // DOOR — RuntimeWorldObjectReader
+        0x1E, // LIGH — RuntimeWorldObjectReader
         0x1F, // MISC — RuntimeItemReader
+        0x20, // STAT — RuntimeWorldObjectReader
+        0x27, // FURN — RuntimeWorldObjectReader
         0x28, // WEAP — RuntimeItemReader
         0x29, // AMMO — RuntimeItemReader
         0x2A, // NPC_ — RuntimeActorReader
         0x2B, // CREA — RuntimeActorReader
+        0x2C, // LVLC — RuntimeCollectionReader
+        0x2D, // LVLN — RuntimeCollectionReader
         0x2E, // KEYM — RuntimeItemReader
         0x2F, // ALCH — RuntimeItemReader
         0x31, // NOTE — RuntimeDialogueReader
         0x33, // PROJ — RuntimeEffectReader
+        0x34, // LVLI — RuntimeCollectionReader
         0x39, // CELL — RuntimeCellReader
         0x3A, // REFR — RuntimeRefrReader
         0x3B, // ACHR — RuntimeRefrReader (via actor)
@@ -40,6 +48,7 @@ internal static class PdbStructLayouts
         0x46, // INFO — RuntimeDialogueReader
         0x47, // QUST — RuntimeDialogueReader
         0x49, // PACK — RuntimePackageReader
+        0x55, // FLST — RuntimeCollectionReader
         0x59 // AVIF — RuntimeActorReader
     ];
 

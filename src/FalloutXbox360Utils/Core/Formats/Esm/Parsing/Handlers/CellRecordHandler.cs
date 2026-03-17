@@ -1,6 +1,5 @@
 using System.Buffers;
 using System.Buffers.Binary;
-using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Utils;
 
@@ -23,6 +22,7 @@ internal sealed class CellRecordHandler(RecordParserContext context)
         var refrRecords = _context.ScanResult.RefrRecords;
         var cellWorldMap = _context.ScanResult.CellToWorldspaceMap;
         var cellToRefrMap = _context.ScanResult.CellToRefrMap;
+        var runtimeCellMapEntries = BuildRuntimeCellMapIndex();
 
         // Pre-build REFR FormID -> ExtractedRefrRecord lookup for O(1) access
         // Use GroupBy to handle duplicates (same REFR can appear in multiple memory regions in dumps)
@@ -72,7 +72,8 @@ internal sealed class CellRecordHandler(RecordParserContext context)
             foreach (var record in cellRecords)
             {
                 var cell = ParseCellFromScanResult(record, refrByFormId,
-                    hasGrupMapping ? cellToRefrMap : null, refrOffsetIndex, refrSortedByOffset);
+                    hasGrupMapping ? cellToRefrMap : null, refrOffsetIndex, refrSortedByOffset,
+                    runtimeCellMapEntries.GetValueOrDefault(record.FormId));
                 if (cell != null)
                 {
                     if (cellWorldMap.TryGetValue(cell.FormId, out var worldFormId))
@@ -94,7 +95,8 @@ internal sealed class CellRecordHandler(RecordParserContext context)
                     cellWorldMap.TryGetValue(record.FormId, out var cellWs);
                     var cell = ParseCellFromAccessor(record, refrByFormId,
                         hasGrupMapping ? cellToRefrMap : null, refrOffsetIndex, refrSortedByOffset,
-                        heightmapByGrid, terrainMeshByGrid, cellWs, buffer);
+                        heightmapByGrid, terrainMeshByGrid, cellWs, buffer,
+                        runtimeCellMapEntries.GetValueOrDefault(record.FormId));
                     if (cell != null)
                     {
                         if (cellWs > 0)
@@ -111,6 +113,8 @@ internal sealed class CellRecordHandler(RecordParserContext context)
                 ArrayPool<byte>.Shared.Return(buffer);
             }
         }
+
+        MergeRuntimeCells(cells, heightmapByGrid, terrainMeshByGrid, runtimeCellMapEntries, refrByFormId);
 
         // Post-processing: resolve door destinations to linked cells
         ResolveDoorLinks(cells);
@@ -177,18 +181,23 @@ internal sealed class CellRecordHandler(RecordParserContext context)
         Dictionary<uint, ExtractedRefrRecord> refrByFormId,
         Dictionary<uint, List<uint>>? cellToRefrMap,
         long[]? refrOffsetIndex,
-        ExtractedRefrRecord[]? refrSortedByOffset)
+        ExtractedRefrRecord[]? refrSortedByOffset,
+        RuntimeCellMapEntry? runtimeCellMapEntry)
     {
-        IEnumerable<ExtractedRefrRecord> sourceRefs;
-
         if (cellToRefrMap != null && cellToRefrMap.TryGetValue(record.FormId, out var refrFormIds))
         {
-            // GRUP-based: exact O(1) lookup per REFR
-            sourceRefs = refrFormIds
-                .Select(fid => refrByFormId.GetValueOrDefault(fid))
-                .Where(r => r != null)!;
+            return ResolvePlacedReferencesByFormIds(refrFormIds, refrByFormId, AssignmentSourceCellGrup);
         }
-        else if (refrOffsetIndex != null && refrSortedByOffset != null)
+
+        if (runtimeCellMapEntry is { ReferenceFormIds.Count: > 0 })
+        {
+            return ResolvePlacedReferencesByFormIds(
+                runtimeCellMapEntry.ReferenceFormIds,
+                refrByFormId,
+                AssignmentSourceRuntimeCellList);
+        }
+
+        if (refrOffsetIndex != null && refrSortedByOffset != null)
         {
             // DMP fallback with binary search: O(log N + K) instead of O(N)
             var startOffset = record.Offset;
@@ -213,41 +222,10 @@ internal sealed class CellRecordHandler(RecordParserContext context)
                     $"  [Semantic] Cell 0x{record.FormId:X8}: DMP proximity found {results.Count} REFRs (may include neighbors)");
             }
 
-            sourceRefs = results;
-        }
-        else
-        {
-            sourceRefs = [];
+            return ToPlacedReferences(results, AssignmentSourceProximity);
         }
 
-        return sourceRefs
-            .Select(r => new PlacedReference
-            {
-                FormId = r.Header.FormId,
-                BaseFormId = r.BaseFormId,
-                BaseEditorId = r.BaseEditorId ?? _context.GetEditorId(r.BaseFormId),
-                RecordType = r.Header.RecordType,
-                X = r.Position?.X ?? 0,
-                Y = r.Position?.Y ?? 0,
-                Z = r.Position?.Z ?? 0,
-                RotX = r.Position?.RotX ?? 0,
-                RotY = r.Position?.RotY ?? 0,
-                RotZ = r.Position?.RotZ ?? 0,
-                Scale = r.Scale,
-                OwnerFormId = r.OwnerFormId,
-                EnableParentFormId = r.EnableParentFormId,
-                EnableParentFlags = r.EnableParentFlags,
-                IsPersistent = r.Header.IsPersistent,
-                IsInitiallyDisabled = r.Header.IsInitiallyDisabled,
-                DestinationDoorFormId = r.DestinationDoorFormId,
-                IsMapMarker = r.IsMapMarker,
-                MarkerType = r.MarkerType.HasValue ? (MapMarkerType)r.MarkerType.Value : null,
-                MarkerName = r.MarkerName,
-                LinkedRefFormId = r.LinkedRefFormId,
-                Offset = r.Header.Offset,
-                IsBigEndian = r.Header.IsBigEndian
-            })
-            .ToList();
+        return [];
     }
 
     private CellRecord? ParseCellFromAccessor(DetectedMainRecord record,
@@ -258,13 +236,14 @@ internal sealed class CellRecordHandler(RecordParserContext context)
         Dictionary<(uint, int, int), LandHeightmap> heightmapByGrid,
         Dictionary<(uint, int, int), RuntimeTerrainMesh> terrainMeshByGrid,
         uint cellWorldspace,
-        byte[] buffer)
+        byte[] buffer,
+        RuntimeCellMapEntry? runtimeCellMapEntry)
     {
         var recordData = _context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
             return ParseCellFromScanResult(record, refrByFormId, cellToRefrMap,
-                refrOffsetIndex, refrSortedByOffset);
+                refrOffsetIndex, refrSortedByOffset, runtimeCellMapEntry);
         }
 
         var (data, dataSize) = recordData.Value;
@@ -327,7 +306,7 @@ internal sealed class CellRecordHandler(RecordParserContext context)
         }
 
         var cellRefs = ResolveCellRefs(record, refrByFormId, cellToRefrMap,
-            refrOffsetIndex, refrSortedByOffset);
+            refrOffsetIndex, refrSortedByOffset, runtimeCellMapEntry);
 
         // Find associated heightmap and terrain mesh via O(1) dictionary lookups.
         // Key includes worldspace to prevent cross-worldspace pollution.
@@ -374,14 +353,15 @@ internal sealed class CellRecordHandler(RecordParserContext context)
         Dictionary<uint, ExtractedRefrRecord> refrByFormId,
         Dictionary<uint, List<uint>>? cellToRefrMap,
         long[]? refrOffsetIndex,
-        ExtractedRefrRecord[]? refrSortedByOffset)
+        ExtractedRefrRecord[]? refrSortedByOffset,
+        RuntimeCellMapEntry? runtimeCellMapEntry)
     {
         // Find XCLC near this CELL record
         var cellGrid = _context.ScanResult.CellGrids
             .FirstOrDefault(g => Math.Abs(g.Offset - record.Offset) < 200);
 
         var cellRefs = ResolveCellRefs(record, refrByFormId, cellToRefrMap,
-            refrOffsetIndex, refrSortedByOffset);
+            refrOffsetIndex, refrSortedByOffset, runtimeCellMapEntry);
 
         return new CellRecord
         {
@@ -396,5 +376,280 @@ internal sealed class CellRecordHandler(RecordParserContext context)
         };
     }
 
+    private void MergeRuntimeCells(
+        List<CellRecord> cells,
+        Dictionary<(uint, int, int), LandHeightmap> heightmapByGrid,
+        Dictionary<(uint, int, int), RuntimeTerrainMesh> terrainMeshByGrid,
+        Dictionary<uint, RuntimeCellMapEntry> runtimeCellMapEntries,
+        Dictionary<uint, ExtractedRefrRecord> refrByFormId)
+    {
+        if (_context.RuntimeReader == null)
+        {
+            return;
+        }
+
+        _context.MergeRuntimeOverlayRecords(
+            cells,
+            [0x39],
+            record => record.FormId,
+            (reader, entry) =>
+            {
+                if (runtimeCellMapEntries.TryGetValue(entry.FormId, out var mapEntry))
+                {
+                    return BuildRuntimeCellRecord(
+                        reader,
+                        mapEntry,
+                        refrByFormId,
+                        entry.EditorId,
+                        entry.DisplayName,
+                        entry);
+                }
+
+                return reader.ReadRuntimeCell(entry);
+            },
+            MergeCell,
+            "cells");
+
+        if (runtimeCellMapEntries.Count > 0)
+        {
+            var cellIndexByFormId = new Dictionary<uint, int>(cells.Count);
+            for (var i = 0; i < cells.Count; i++)
+            {
+                cellIndexByFormId.TryAdd(cells[i].FormId, i);
+            }
+
+            var mapOnlyAdded = 0;
+            foreach (var (cellFormId, mapEntry) in runtimeCellMapEntries)
+            {
+                var displayName = _context.FormIdToFullName.GetValueOrDefault(cellFormId);
+                var mapRuntimeCell = BuildRuntimeCellRecord(
+                    _context.RuntimeReader,
+                    mapEntry,
+                    refrByFormId,
+                    _context.GetEditorId(cellFormId),
+                    displayName);
+                if (mapRuntimeCell == null)
+                {
+                    continue;
+                }
+
+                if (cellIndexByFormId.TryGetValue(cellFormId, out var existingIndex))
+                {
+                    cells[existingIndex] = MergeCell(cells[existingIndex], mapRuntimeCell);
+                }
+                else
+                {
+                    cells.Add(mapRuntimeCell);
+                    cellIndexByFormId[cellFormId] = cells.Count - 1;
+                    mapOnlyAdded++;
+                }
+            }
+
+            if (mapOnlyAdded > 0)
+            {
+                Logger.Instance.Debug(
+                    $"  [Semantic] Added {mapOnlyAdded} partial cells from runtime worldspace maps");
+            }
+        }
+
+        for (var i = 0; i < cells.Count; i++)
+        {
+            cells[i] = AttachTerrainData(cells[i], heightmapByGrid, terrainMeshByGrid);
+        }
+    }
+
+    private Dictionary<uint, RuntimeCellMapEntry> BuildRuntimeCellMapIndex()
+    {
+        var entries = new Dictionary<uint, RuntimeCellMapEntry>();
+        if (_context.RuntimeWorldspaceCellMaps is not { Count: > 0 })
+        {
+            return entries;
+        }
+
+        foreach (var (_, worldData) in _context.RuntimeWorldspaceCellMaps)
+        {
+            foreach (var entry in worldData.Cells)
+            {
+                entries.TryAdd(entry.CellFormId, entry);
+            }
+
+            if (worldData.PersistentCellFormId is > 0 &&
+                !entries.ContainsKey(worldData.PersistentCellFormId.Value))
+            {
+                entries[worldData.PersistentCellFormId.Value] = new RuntimeCellMapEntry
+                {
+                    CellFormId = worldData.PersistentCellFormId.Value,
+                    GridX = 0,
+                    GridY = 0,
+                    IsPersistent = true,
+                    WorldspaceFormId = worldData.FormId
+                };
+            }
+        }
+
+        return entries;
+    }
+
+    private static CellRecord MergeCell(CellRecord esm, CellRecord runtime)
+    {
+        return esm with
+        {
+            EditorId = esm.EditorId ?? runtime.EditorId,
+            FullName = esm.FullName ?? runtime.FullName,
+            GridX = esm.GridX ?? runtime.GridX,
+            GridY = esm.GridY ?? runtime.GridY,
+            WorldspaceFormId = esm.WorldspaceFormId ?? runtime.WorldspaceFormId,
+            Flags = esm.Flags != 0 ? esm.Flags : runtime.Flags,
+            WaterHeight = esm.WaterHeight ?? runtime.WaterHeight,
+            EncounterZoneFormId = esm.EncounterZoneFormId ?? runtime.EncounterZoneFormId,
+            MusicTypeFormId = esm.MusicTypeFormId ?? runtime.MusicTypeFormId,
+            AcousticSpaceFormId = esm.AcousticSpaceFormId ?? runtime.AcousticSpaceFormId,
+            ImageSpaceFormId = esm.ImageSpaceFormId ?? runtime.ImageSpaceFormId,
+            PlacedObjects = ShouldUseRuntimePlacedObjects(esm, runtime)
+                ? runtime.PlacedObjects
+                : esm.PlacedObjects.Count > 0 ? esm.PlacedObjects : runtime.PlacedObjects,
+            LinkedCellFormIds = esm.LinkedCellFormIds.Count > 0 ? esm.LinkedCellFormIds : runtime.LinkedCellFormIds,
+            Heightmap = esm.Heightmap ?? runtime.Heightmap,
+            RuntimeTerrainMesh = esm.RuntimeTerrainMesh ?? runtime.RuntimeTerrainMesh,
+            HasPersistentObjects = esm.HasPersistentObjects || runtime.HasPersistentObjects,
+            IsVirtual = esm.IsVirtual || runtime.IsVirtual,
+            Offset = esm.Offset != 0 ? esm.Offset : runtime.Offset,
+            IsBigEndian = esm.IsBigEndian || runtime.IsBigEndian
+        };
+    }
+
+    private CellRecord? BuildRuntimeCellRecord(
+        RuntimeStructReader reader,
+        RuntimeCellMapEntry mapEntry,
+        Dictionary<uint, ExtractedRefrRecord> refrByFormId,
+        string? editorId = null,
+        string? displayName = null,
+        RuntimeEditorIdEntry? runtimeEntry = null)
+    {
+        var mapCell = reader.ReadRuntimeCell(mapEntry, editorId, displayName);
+        var runtimeCell = runtimeEntry != null
+            ? reader.ReadRuntimeCell(runtimeEntry)
+            : null;
+
+        var mergedCell = runtimeCell != null
+            ? mapCell != null ? MergeCell(runtimeCell, mapCell) : runtimeCell
+            : mapCell;
+        if (mergedCell == null)
+        {
+            return null;
+        }
+
+        var placedObjects = ResolvePlacedReferencesByFormIds(
+            mapEntry.ReferenceFormIds,
+            refrByFormId,
+            AssignmentSourceRuntimeCellList);
+        if (placedObjects.Count == 0)
+        {
+            return mergedCell;
+        }
+
+        return mergedCell with
+        {
+            PlacedObjects = placedObjects,
+            HasPersistentObjects = mergedCell.HasPersistentObjects || placedObjects.Exists(obj => obj.IsPersistent)
+        };
+    }
+
+    private List<PlacedReference> ResolvePlacedReferencesByFormIds(
+        IEnumerable<uint> formIds,
+        Dictionary<uint, ExtractedRefrRecord> refrByFormId,
+        string assignmentSource)
+    {
+        var seen = new HashSet<uint>();
+        var sourceRefs = new List<ExtractedRefrRecord>();
+
+        foreach (var formId in formIds)
+        {
+            if (formId == 0 || !seen.Add(formId))
+            {
+                continue;
+            }
+
+            if (refrByFormId.TryGetValue(formId, out var refr))
+            {
+                sourceRefs.Add(refr);
+            }
+        }
+
+        return ToPlacedReferences(sourceRefs, assignmentSource);
+    }
+
+    private List<PlacedReference> ToPlacedReferences(
+        IEnumerable<ExtractedRefrRecord> sourceRefs,
+        string assignmentSource)
+    {
+        return sourceRefs
+            .Select(r => CellLinkageHandler.ToPlacedReference(r, _context, assignmentSource))
+            .ToList();
+    }
+
+    private static bool ShouldUseRuntimePlacedObjects(CellRecord existing, CellRecord runtime)
+    {
+        if (runtime.PlacedObjects.Count == 0)
+        {
+            return false;
+        }
+
+        if (existing.PlacedObjects.Count == 0)
+        {
+            return true;
+        }
+
+        return runtime.PlacedObjects.TrueForAll(obj => obj.AssignmentSource == AssignmentSourceRuntimeCellList) &&
+               existing.PlacedObjects.TrueForAll(obj => obj.AssignmentSource == AssignmentSourceProximity);
+    }
+
+    private static CellRecord AttachTerrainData(
+        CellRecord cell,
+        Dictionary<(uint, int, int), LandHeightmap> heightmapByGrid,
+        Dictionary<(uint, int, int), RuntimeTerrainMesh> terrainMeshByGrid)
+    {
+        if (!cell.GridX.HasValue || !cell.GridY.HasValue)
+        {
+            return cell;
+        }
+
+        LandHeightmap? heightmap = cell.Heightmap;
+        RuntimeTerrainMesh? terrainMesh = cell.RuntimeTerrainMesh;
+
+        var worldspaceFormId = cell.WorldspaceFormId ?? 0;
+        var key = (worldspaceFormId, cell.GridX.Value, cell.GridY.Value);
+        if (heightmap == null)
+        {
+            if (!heightmapByGrid.TryGetValue(key, out heightmap) && worldspaceFormId != 0)
+            {
+                heightmapByGrid.TryGetValue((0u, cell.GridX.Value, cell.GridY.Value), out heightmap);
+            }
+        }
+
+        if (terrainMesh == null)
+        {
+            if (!terrainMeshByGrid.TryGetValue(key, out terrainMesh) && worldspaceFormId != 0)
+            {
+                terrainMeshByGrid.TryGetValue((0u, cell.GridX.Value, cell.GridY.Value), out terrainMesh);
+            }
+        }
+
+        if (heightmap == null && terrainMesh == null)
+        {
+            return cell;
+        }
+
+        return cell with
+        {
+            Heightmap = heightmap ?? cell.Heightmap,
+            RuntimeTerrainMesh = terrainMesh ?? cell.RuntimeTerrainMesh
+        };
+    }
+
     #endregion
+
+    private const string AssignmentSourceCellGrup = "CellGrup";
+    private const string AssignmentSourceRuntimeCellList = "RuntimeCellList";
+    private const string AssignmentSourceProximity = "Proximity";
 }

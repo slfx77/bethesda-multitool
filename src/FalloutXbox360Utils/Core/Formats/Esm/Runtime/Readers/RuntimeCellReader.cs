@@ -7,14 +7,148 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 ///     Reader for TESWorldSpace and TESObjectCELL runtime structs from Xbox 360 memory dumps.
 ///     Walks the worldspace's pCellMap (NiTPointerMap&lt;int, TESObjectCELL*&gt;) hash table
 ///     to extract cell-to-grid mappings and persistent cell identification.
-///     WRLD and CELL do NOT inherit from TESChildCell, so the early-era -4 REFR shift
-///     does not apply. Uses final offsets for both eras until early WRLD/CELL layout is
-///     confirmed via Ghidra analysis.
 /// </summary>
-internal sealed class RuntimeCellReader(RuntimeMemoryContext context, bool useProtoOffsets = false)
+internal sealed class RuntimeCellReader
 {
-    private readonly RuntimeMemoryContext _context = context;
-    private readonly int _shift = RuntimeBuildOffsets.GetWorldCellFieldShift(useProtoOffsets);
+    private readonly RuntimeMemoryContext _context;
+    private readonly RuntimePdbFieldAccessor _fields;
+    private readonly RuntimeWorldCellLayout _layout;
+    private readonly bool _allowStructuralReads;
+
+    internal RuntimeCellReader(
+        RuntimeMemoryContext context,
+        bool useProtoOffsets = false,
+        RuntimeWorldCellLayoutProbeResult? layoutProbe = null)
+        : this(
+            context,
+            layoutProbe is { IsHighConfidence: true }
+                ? layoutProbe.Layout
+                : RuntimeWorldCellLayout.CreateDefault(useProtoOffsets),
+            layoutProbe?.IsHighConfidence != false)
+    {
+    }
+
+    internal RuntimeCellReader(RuntimeMemoryContext context, RuntimeWorldCellLayout layout)
+        : this(context, layout, true)
+    {
+    }
+
+    private RuntimeCellReader(
+        RuntimeMemoryContext context,
+        RuntimeWorldCellLayout layout,
+        bool allowStructuralReads)
+    {
+        _context = context;
+        _fields = new RuntimePdbFieldAccessor(context);
+        _layout = layout;
+        _allowStructuralReads = allowStructuralReads;
+    }
+
+    public WorldspaceRecord? ReadRuntimeWorldspace(RuntimeEditorIdEntry entry)
+    {
+        if (entry.FormType != 0x41 || !entry.TesFormOffset.HasValue)
+        {
+            return null;
+        }
+
+        var worldspace = ReadRuntimeWorldspaceCore(entry);
+        var cellMapData = ReadWorldspaceCellMap(entry);
+        if (worldspace != null)
+        {
+            return cellMapData == null
+                ? worldspace
+                : MergeRuntimeWorldspace(worldspace, ToWorldspaceRecord(cellMapData));
+        }
+
+        if (cellMapData == null)
+        {
+            return null;
+        }
+
+        return ToWorldspaceRecord(cellMapData);
+    }
+
+    public CellRecord? ReadRuntimeCell(RuntimeEditorIdEntry entry)
+    {
+        if (entry.FormType != 0x39 || !entry.TesFormOffset.HasValue)
+        {
+            return null;
+        }
+
+        return BuildCellRecord(
+            ReadRuntimeCellProbeSnapshot(entry),
+            entry.TesFormOffset.Value,
+            entry.EditorId,
+            entry.DisplayName);
+    }
+
+    public CellRecord? ReadRuntimeCell(RuntimeCellMapEntry entry, string? editorId = null, string? displayName = null)
+    {
+        CellRecord? cell = null;
+        if (entry.CellPointer.HasValue)
+        {
+            var fileOffset = _context.VaToFileOffset(entry.CellPointer.Value);
+            if (fileOffset.HasValue)
+            {
+                cell = BuildCellRecord(
+                    ReadRuntimeCellProbeSnapshot(fileOffset.Value, entry.CellFormId, displayName),
+                    fileOffset.Value,
+                    editorId,
+                    displayName);
+            }
+        }
+
+        if (cell == null)
+        {
+            return new CellRecord
+            {
+                FormId = entry.CellFormId,
+                EditorId = NormalizeString(editorId),
+                FullName = NormalizeString(displayName),
+                GridX = entry.GridX,
+                GridY = entry.GridY,
+                WorldspaceFormId = entry.WorldspaceFormId,
+                Flags = entry.IsInterior ? (byte)0x01 : (byte)0x00,
+                HasPersistentObjects = entry.IsPersistent,
+                IsBigEndian = true
+            };
+        }
+
+        return cell with
+        {
+            GridX = cell.GridX ?? entry.GridX,
+            GridY = cell.GridY ?? entry.GridY,
+            WorldspaceFormId = cell.WorldspaceFormId ?? entry.WorldspaceFormId,
+            HasPersistentObjects = cell.HasPersistentObjects || entry.IsPersistent
+        };
+    }
+
+    internal RuntimeCellProbeSnapshot? ReadRuntimeCellProbeSnapshot(RuntimeEditorIdEntry entry)
+    {
+        if (entry.FormType != 0x39 || !entry.TesFormOffset.HasValue)
+        {
+            return null;
+        }
+
+        var layout = PdbStructLayouts.Get(0x39);
+        if (layout == null)
+        {
+            return null;
+        }
+
+        var buffer = ReadStructBuffer(entry, layout.StructSize);
+        if (buffer == null)
+        {
+            return null;
+        }
+
+        return ReadRuntimeCellProbeSnapshotFromBuffer(
+            buffer,
+            entry.TesFormOffset.Value,
+            entry.FormId,
+            entry.DisplayName,
+            layout);
+    }
 
     /// <summary>
     ///     Read all worldspace cell maps from the given WRLD form entries.
@@ -43,15 +177,13 @@ internal sealed class RuntimeCellReader(RuntimeMemoryContext context, bool usePr
     /// </summary>
     public RuntimeWorldspaceData? ReadWorldspaceCellMap(RuntimeEditorIdEntry entry)
     {
-        if (entry.TesFormOffset == null)
+        if (!_allowStructuralReads || entry.TesFormOffset == null)
         {
             return null;
         }
 
-        // Read enough of the worldspace struct for the fields we need
-        var readSize = Math.Min(WorldStructSize, WorldPersistentCellPtrOffset + 4);
-        var buffer = ReadStructBuffer(entry, readSize);
-        if (buffer == null)
+        var buffer = ReadStructBuffer(entry, WorldStructSize);
+        if (buffer == null || buffer.Length < 16)
         {
             return null;
         }
@@ -68,6 +200,13 @@ internal sealed class RuntimeCellReader(RuntimeMemoryContext context, bool usePr
         if (formId != entry.FormId || formId == 0)
         {
             return null;
+        }
+
+        WorldspaceRecord? worldspaceMetadata = null;
+        var layout = PdbStructLayouts.Get(0x41);
+        if (layout != null)
+        {
+            worldspaceMetadata = BuildRuntimeWorldspaceRecord(entry, buffer, layout);
         }
 
         // Read pPersistentCell pointer
@@ -99,8 +238,290 @@ internal sealed class RuntimeCellReader(RuntimeMemoryContext context, bool usePr
         {
             FormId = formId,
             PersistentCellFormId = persistentCellFormId,
-            ParentWorldFormId = parentWorldFormId,
+            EditorId = worldspaceMetadata?.EditorId ?? NormalizeString(entry.EditorId),
+            FullName = worldspaceMetadata?.FullName ?? NormalizeString(entry.DisplayName),
+            ParentWorldFormId = worldspaceMetadata?.ParentWorldspaceFormId ?? parentWorldFormId,
+            ClimateFormId = worldspaceMetadata?.ClimateFormId,
+            WaterFormId = worldspaceMetadata?.WaterFormId,
+            DefaultLandHeight = worldspaceMetadata?.DefaultLandHeight,
+            DefaultWaterHeight = worldspaceMetadata?.DefaultWaterHeight,
+            MapUsableWidth = worldspaceMetadata?.MapUsableWidth,
+            MapUsableHeight = worldspaceMetadata?.MapUsableHeight,
+            MapNWCellX = worldspaceMetadata?.MapNWCellX,
+            MapNWCellY = worldspaceMetadata?.MapNWCellY,
+            MapSECellX = worldspaceMetadata?.MapSECellX,
+            MapSECellY = worldspaceMetadata?.MapSECellY,
+            BoundsMinX = worldspaceMetadata?.BoundsMinX,
+            BoundsMinY = worldspaceMetadata?.BoundsMinY,
+            BoundsMaxX = worldspaceMetadata?.BoundsMaxX,
+            BoundsMaxY = worldspaceMetadata?.BoundsMaxY,
+            EncounterZoneFormId = worldspaceMetadata?.EncounterZoneFormId,
+            Offset = entry.TesFormOffset.Value,
             Cells = cells
+        };
+    }
+
+    private WorldspaceRecord? ReadRuntimeWorldspaceCore(RuntimeEditorIdEntry entry)
+    {
+        var layout = PdbStructLayouts.Get(0x41);
+        if (layout == null)
+        {
+            return null;
+        }
+
+        var buffer = ReadStructBuffer(entry, layout.StructSize);
+        if (buffer == null || !IsExpectedForm(buffer, 0x41, entry.FormId))
+        {
+            return null;
+        }
+
+        var mapDataOffset = AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "WorldMapData", "TESWorldSpace"));
+        var minimumCoordsOffset = AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "MinimumCoords", "TESWorldSpace"));
+        var maximumCoordsOffset = AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "MaximumCoords", "TESWorldSpace"));
+
+        int? mapUsableWidth = null;
+        int? mapUsableHeight = null;
+        short? mapNWCellX = null;
+        short? mapNWCellY = null;
+        short? mapSECellX = null;
+        short? mapSECellY = null;
+
+        if (mapDataOffset.HasValue && mapDataOffset.Value + 16 <= buffer.Length)
+        {
+            mapUsableWidth = RuntimePdbFieldAccessor.ReadInt32(buffer, mapDataOffset.Value);
+            mapUsableHeight = RuntimePdbFieldAccessor.ReadInt32(buffer, mapDataOffset.Value + 4);
+            mapNWCellX = unchecked((short)RuntimePdbFieldAccessor.ReadUInt16(buffer, mapDataOffset.Value + 8));
+            mapNWCellY = unchecked((short)RuntimePdbFieldAccessor.ReadUInt16(buffer, mapDataOffset.Value + 10));
+            mapSECellX = unchecked((short)RuntimePdbFieldAccessor.ReadUInt16(buffer, mapDataOffset.Value + 12));
+            mapSECellY = unchecked((short)RuntimePdbFieldAccessor.ReadUInt16(buffer, mapDataOffset.Value + 14));
+
+            if (mapUsableWidth == 0 && mapUsableHeight == 0 &&
+                mapNWCellX == 0 && mapNWCellY == 0 &&
+                mapSECellX == 0 && mapSECellY == 0)
+            {
+                mapUsableWidth = null;
+                mapUsableHeight = null;
+                mapNWCellX = null;
+                mapNWCellY = null;
+                mapSECellX = null;
+                mapSECellY = null;
+            }
+        }
+
+        float? boundsMinX = null;
+        float? boundsMinY = null;
+        if (minimumCoordsOffset.HasValue && minimumCoordsOffset.Value + 8 <= buffer.Length)
+        {
+            boundsMinX = ReadNormalFloat(buffer, minimumCoordsOffset.Value);
+            boundsMinY = ReadNormalFloat(buffer, minimumCoordsOffset.Value + 4);
+        }
+
+        float? boundsMaxX = null;
+        float? boundsMaxY = null;
+        if (maximumCoordsOffset.HasValue && maximumCoordsOffset.Value + 8 <= buffer.Length)
+        {
+            boundsMaxX = ReadNormalFloat(buffer, maximumCoordsOffset.Value);
+            boundsMaxY = ReadNormalFloat(buffer, maximumCoordsOffset.Value + 4);
+        }
+
+        if (boundsMinX == 0 && boundsMinY == 0 && boundsMaxX == 0 && boundsMaxY == 0)
+        {
+            boundsMinX = null;
+            boundsMinY = null;
+            boundsMaxX = null;
+            boundsMaxY = null;
+        }
+
+        return BuildRuntimeWorldspaceRecord(
+            entry,
+            buffer,
+            layout,
+            mapUsableWidth,
+            mapUsableHeight,
+            mapNWCellX,
+            mapNWCellY,
+            mapSECellX,
+            mapSECellY,
+            boundsMinX,
+            boundsMinY,
+            boundsMaxX,
+            boundsMaxY);
+    }
+
+    private WorldspaceRecord BuildRuntimeWorldspaceRecord(
+        RuntimeEditorIdEntry entry,
+        byte[] buffer,
+        PdbTypeLayout layout,
+        int? mapUsableWidth,
+        int? mapUsableHeight,
+        short? mapNWCellX,
+        short? mapNWCellY,
+        short? mapSECellX,
+        short? mapSECellY,
+        float? boundsMinX,
+        float? boundsMinY,
+        float? boundsMaxX,
+        float? boundsMaxY)
+    {
+        return new WorldspaceRecord
+        {
+            FormId = entry.FormId,
+            EditorId = NormalizeString(entry.EditorId),
+            FullName = NormalizeString(entry.DisplayName)
+                       ?? _fields.ReadBsString(entry.TesFormOffset!.Value, layout, "cFullName", "TESFullName"),
+            ParentWorldspaceFormId = ReadWorldFormIdPointer(buffer, layout, "pParentWorld", "TESWorldSpace", 0x41),
+            ClimateFormId = ReadWorldFormIdPointer(buffer, layout, "pClimate", "TESWorldSpace", 0x36),
+            WaterFormId = ReadWorldFormIdPointer(buffer, layout, "pWorldWater", "TESWorldSpace", 0x4E),
+            DefaultLandHeight = ReadNormalFloat(buffer,
+                AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "fDefaultLandHeight", "TESWorldSpace"))),
+            DefaultWaterHeight = ReadNormalFloat(buffer,
+                AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "fDefaultWaterHeight", "TESWorldSpace"))),
+            MapUsableWidth = mapUsableWidth,
+            MapUsableHeight = mapUsableHeight,
+            MapNWCellX = mapNWCellX,
+            MapNWCellY = mapNWCellY,
+            MapSECellX = mapSECellX,
+            MapSECellY = mapSECellY,
+            BoundsMinX = boundsMinX,
+            BoundsMinY = boundsMinY,
+            BoundsMaxX = boundsMaxX,
+            BoundsMaxY = boundsMaxY,
+            EncounterZoneFormId = ReadWorldFormIdPointer(buffer, layout, "pEncounterZone", "TESWorldSpace", 0x61),
+            Offset = entry.TesFormOffset!.Value,
+            IsBigEndian = true
+        };
+    }
+
+    private WorldspaceRecord BuildRuntimeWorldspaceRecord(
+        RuntimeEditorIdEntry entry,
+        byte[] buffer,
+        PdbTypeLayout layout)
+    {
+        var mapDataOffset = AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "WorldMapData", "TESWorldSpace"));
+        var minimumCoordsOffset = AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "MinimumCoords", "TESWorldSpace"));
+        var maximumCoordsOffset = AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "MaximumCoords", "TESWorldSpace"));
+
+        int? mapUsableWidth = null;
+        int? mapUsableHeight = null;
+        short? mapNWCellX = null;
+        short? mapNWCellY = null;
+        short? mapSECellX = null;
+        short? mapSECellY = null;
+
+        if (mapDataOffset.HasValue && mapDataOffset.Value + 16 <= buffer.Length)
+        {
+            mapUsableWidth = RuntimePdbFieldAccessor.ReadInt32(buffer, mapDataOffset.Value);
+            mapUsableHeight = RuntimePdbFieldAccessor.ReadInt32(buffer, mapDataOffset.Value + 4);
+            mapNWCellX = unchecked((short)RuntimePdbFieldAccessor.ReadUInt16(buffer, mapDataOffset.Value + 8));
+            mapNWCellY = unchecked((short)RuntimePdbFieldAccessor.ReadUInt16(buffer, mapDataOffset.Value + 10));
+            mapSECellX = unchecked((short)RuntimePdbFieldAccessor.ReadUInt16(buffer, mapDataOffset.Value + 12));
+            mapSECellY = unchecked((short)RuntimePdbFieldAccessor.ReadUInt16(buffer, mapDataOffset.Value + 14));
+
+            if (mapUsableWidth == 0 && mapUsableHeight == 0 &&
+                mapNWCellX == 0 && mapNWCellY == 0 &&
+                mapSECellX == 0 && mapSECellY == 0)
+            {
+                mapUsableWidth = null;
+                mapUsableHeight = null;
+                mapNWCellX = null;
+                mapNWCellY = null;
+                mapSECellX = null;
+                mapSECellY = null;
+            }
+        }
+
+        float? boundsMinX = null;
+        float? boundsMinY = null;
+        if (minimumCoordsOffset.HasValue && minimumCoordsOffset.Value + 8 <= buffer.Length)
+        {
+            boundsMinX = ReadNormalFloat(buffer, minimumCoordsOffset.Value);
+            boundsMinY = ReadNormalFloat(buffer, minimumCoordsOffset.Value + 4);
+        }
+
+        float? boundsMaxX = null;
+        float? boundsMaxY = null;
+        if (maximumCoordsOffset.HasValue && maximumCoordsOffset.Value + 8 <= buffer.Length)
+        {
+            boundsMaxX = ReadNormalFloat(buffer, maximumCoordsOffset.Value);
+            boundsMaxY = ReadNormalFloat(buffer, maximumCoordsOffset.Value + 4);
+        }
+
+        if (boundsMinX == 0 && boundsMinY == 0 && boundsMaxX == 0 && boundsMaxY == 0)
+        {
+            boundsMinX = null;
+            boundsMinY = null;
+            boundsMaxX = null;
+            boundsMaxY = null;
+        }
+
+        return BuildRuntimeWorldspaceRecord(
+            entry,
+            buffer,
+            layout,
+            mapUsableWidth,
+            mapUsableHeight,
+            mapNWCellX,
+            mapNWCellY,
+            mapSECellX,
+            mapSECellY,
+            boundsMinX,
+            boundsMinY,
+            boundsMaxX,
+            boundsMaxY);
+    }
+
+    private static WorldspaceRecord ToWorldspaceRecord(RuntimeWorldspaceData worldData)
+    {
+        return new WorldspaceRecord
+        {
+            FormId = worldData.FormId,
+            EditorId = worldData.EditorId,
+            FullName = worldData.FullName,
+            ParentWorldspaceFormId = worldData.ParentWorldFormId,
+            ClimateFormId = worldData.ClimateFormId,
+            WaterFormId = worldData.WaterFormId,
+            DefaultLandHeight = worldData.DefaultLandHeight,
+            DefaultWaterHeight = worldData.DefaultWaterHeight,
+            MapUsableWidth = worldData.MapUsableWidth,
+            MapUsableHeight = worldData.MapUsableHeight,
+            MapNWCellX = worldData.MapNWCellX,
+            MapNWCellY = worldData.MapNWCellY,
+            MapSECellX = worldData.MapSECellX,
+            MapSECellY = worldData.MapSECellY,
+            BoundsMinX = worldData.BoundsMinX,
+            BoundsMinY = worldData.BoundsMinY,
+            BoundsMaxX = worldData.BoundsMaxX,
+            BoundsMaxY = worldData.BoundsMaxY,
+            EncounterZoneFormId = worldData.EncounterZoneFormId,
+            Offset = worldData.Offset,
+            IsBigEndian = true
+        };
+    }
+
+    private static WorldspaceRecord MergeRuntimeWorldspace(WorldspaceRecord preferred, WorldspaceRecord fallback)
+    {
+        return preferred with
+        {
+            EditorId = preferred.EditorId ?? fallback.EditorId,
+            FullName = preferred.FullName ?? fallback.FullName,
+            ParentWorldspaceFormId = preferred.ParentWorldspaceFormId ?? fallback.ParentWorldspaceFormId,
+            ClimateFormId = preferred.ClimateFormId ?? fallback.ClimateFormId,
+            WaterFormId = preferred.WaterFormId ?? fallback.WaterFormId,
+            DefaultLandHeight = preferred.DefaultLandHeight ?? fallback.DefaultLandHeight,
+            DefaultWaterHeight = preferred.DefaultWaterHeight ?? fallback.DefaultWaterHeight,
+            MapUsableWidth = preferred.MapUsableWidth ?? fallback.MapUsableWidth,
+            MapUsableHeight = preferred.MapUsableHeight ?? fallback.MapUsableHeight,
+            MapNWCellX = preferred.MapNWCellX ?? fallback.MapNWCellX,
+            MapNWCellY = preferred.MapNWCellY ?? fallback.MapNWCellY,
+            MapSECellX = preferred.MapSECellX ?? fallback.MapSECellX,
+            MapSECellY = preferred.MapSECellY ?? fallback.MapSECellY,
+            BoundsMinX = preferred.BoundsMinX ?? fallback.BoundsMinX,
+            BoundsMinY = preferred.BoundsMinY ?? fallback.BoundsMinY,
+            BoundsMaxX = preferred.BoundsMaxX ?? fallback.BoundsMaxX,
+            BoundsMaxY = preferred.BoundsMaxY ?? fallback.BoundsMaxY,
+            EncounterZoneFormId = preferred.EncounterZoneFormId ?? fallback.EncounterZoneFormId,
+            Offset = preferred.Offset != 0 ? preferred.Offset : fallback.Offset,
+            IsBigEndian = preferred.IsBigEndian || fallback.IsBigEndian
         };
     }
 
@@ -222,58 +643,33 @@ internal sealed class RuntimeCellReader(RuntimeMemoryContext context, bool usePr
     private RuntimeCellMapEntry? ReadCellFromPointer(uint cellVa, int gridX, int gridY)
     {
         var cellVaLong = Xbox360MemoryUtils.VaToLong(cellVa);
-
-        // Read enough for all cell fields we need (up to pWorldSpace at +160)
-        var readSize = CellWorldSpacePtrOffset + 4;
-        if (!_context.MinidumpInfo.IsVaRangeCaptured(cellVaLong, readSize))
+        if (!_context.MinidumpInfo.IsVaRangeCaptured(cellVaLong, CellStructSize))
         {
             return null;
         }
 
-        var cellBuffer = _context.ReadBytesAtVa(cellVaLong, readSize);
-        if (cellBuffer == null)
+        var cellOffset = _context.VaToFileOffset(cellVa);
+        if (cellOffset == null)
         {
             return null;
         }
 
-        // Validate FormType (0x39 = CELL)
-        var formType = cellBuffer[4];
-        if (formType != 0x39)
+        var snapshot = ReadRuntimeCellProbeSnapshot(cellOffset.Value, null, null);
+        if (snapshot == null || snapshot.FormId == 0)
         {
             return null;
-        }
-
-        var cellFormId = BinaryUtils.ReadUInt32BE(cellBuffer, 12);
-        if (cellFormId == 0)
-        {
-            return null;
-        }
-
-        var cellFlags = cellBuffer[CellFlagsOffset];
-        var isInterior = (cellFlags & 0x01) != 0;
-
-        // Follow pCellLand → LAND FormID (optional, may fail)
-        uint? landFormId = null;
-        if (CellLandPtrOffset + 4 <= readSize)
-        {
-            landFormId = _context.FollowPointerToFormId(cellBuffer, CellLandPtrOffset);
-        }
-
-        // Follow pWorldSpace → worldspace FormID (optional)
-        uint? worldspaceFormId = null;
-        if (CellWorldSpacePtrOffset + 4 <= readSize)
-        {
-            worldspaceFormId = _context.FollowPointerToFormId(cellBuffer, CellWorldSpacePtrOffset, 0x41);
         }
 
         return new RuntimeCellMapEntry
         {
-            CellFormId = cellFormId,
+            CellFormId = snapshot.FormId,
+            CellPointer = cellVa,
             GridX = gridX,
             GridY = gridY,
-            IsInterior = isInterior,
-            WorldspaceFormId = worldspaceFormId,
-            LandFormId = landFormId
+            IsInterior = (snapshot.Flags & 0x01) != 0,
+            WorldspaceFormId = snapshot.WorldspaceFormId,
+            LandFormId = snapshot.LandFormId,
+            ReferenceFormIds = snapshot.ReferenceFormIds.ToList()
         };
     }
 
@@ -288,6 +684,128 @@ internal sealed class RuntimeCellReader(RuntimeMemoryContext context, bool usePr
         }
 
         return _context.FollowPointerToFormId(buffer, pointerOffset, 0x39);
+    }
+
+    private RuntimeCellProbeSnapshot? ReadRuntimeCellProbeSnapshot(long fileOffset, uint? expectedFormId, string? displayName)
+    {
+        var layout = PdbStructLayouts.Get(0x39);
+        if (layout == null)
+        {
+            return null;
+        }
+
+        var buffer = _context.ReadBytes(fileOffset, layout.StructSize);
+        if (buffer == null)
+        {
+            return null;
+        }
+
+        return ReadRuntimeCellProbeSnapshotFromBuffer(
+            buffer,
+            fileOffset,
+            expectedFormId,
+            displayName,
+            layout);
+    }
+
+    private RuntimeCellProbeSnapshot? ReadRuntimeCellProbeSnapshotFromBuffer(
+        byte[] buffer,
+        long fileOffset,
+        uint? expectedFormId,
+        string? displayName,
+        PdbTypeLayout layout)
+    {
+        if (buffer.Length < 16 || buffer[4] != 0x39)
+        {
+            return null;
+        }
+
+        var formId = BinaryUtils.ReadUInt32BE(buffer, 12);
+        if (formId == 0 || formId == 0xFFFFFFFF)
+        {
+            return null;
+        }
+
+        if (expectedFormId.HasValue && formId != expectedFormId.Value)
+        {
+            return null;
+        }
+
+        var flagsOffset = AdjustCellFieldOffset(_fields.FindFieldOffset(layout, "cCellFlags", "TESObjectCELL"));
+        var waterHeightOffset = AdjustCellFieldOffset(_fields.FindFieldOffset(layout, "fWaterHeight", "TESObjectCELL"));
+        var worldspaceOffset = AdjustCellFieldOffset(_fields.FindFieldOffset(layout, "pWorldSpace", "TESObjectCELL"));
+        var landOffset = AdjustCellFieldOffset(_fields.FindFieldOffset(layout, "pCellLand", "TESObjectCELL"));
+        var referenceListOffset = AdjustCellFieldOffset(_fields.FindFieldOffset(layout, "listReferences", "TESObjectCELL"));
+
+        var flags = flagsOffset.HasValue && flagsOffset.Value < buffer.Length
+            ? buffer[flagsOffset.Value]
+            : (byte)0;
+
+        return new RuntimeCellProbeSnapshot(
+            formId,
+            NormalizeString(displayName)
+            ?? _fields.ReadBsString(fileOffset, layout, "cFullName", "TESFullName"),
+            flags,
+            ReadNormalFloat(buffer, waterHeightOffset),
+            worldspaceOffset.HasValue
+                ? _fields.ReadPointerToFormId(buffer, worldspaceOffset.Value, 0x41)
+                : null,
+            landOffset.HasValue
+                ? _fields.ReadPointerToFormId(buffer, landOffset.Value)
+                : null,
+            referenceListOffset.HasValue
+                ? ReadCellReferenceFormIds(buffer, referenceListOffset.Value)
+                : []);
+    }
+
+    private static CellRecord? BuildCellRecord(
+        RuntimeCellProbeSnapshot? snapshot,
+        long fileOffset,
+        string? editorId,
+        string? displayName)
+    {
+        if (snapshot == null)
+        {
+            return null;
+        }
+
+        return new CellRecord
+        {
+            FormId = snapshot.FormId,
+            EditorId = NormalizeString(editorId),
+            FullName = snapshot.FullName ?? NormalizeString(displayName),
+            Flags = snapshot.Flags,
+            WaterHeight = snapshot.WaterHeight,
+            WorldspaceFormId = snapshot.WorldspaceFormId,
+            Offset = fileOffset,
+            IsBigEndian = true
+        };
+    }
+
+    private List<uint> ReadCellReferenceFormIds(byte[] cellBuffer, int listHeadOffset)
+    {
+        if (listHeadOffset + 8 > cellBuffer.Length)
+        {
+            return [];
+        }
+
+        var formIds = _fields.ReadFormIdSimpleList(cellBuffer, listHeadOffset);
+        if (formIds.Count <= 1)
+        {
+            return formIds;
+        }
+
+        var seen = new HashSet<uint>();
+        var deduped = new List<uint>(formIds.Count);
+        foreach (var formId in formIds)
+        {
+            if (formId != 0 && seen.Add(formId))
+            {
+                deduped.Add(formId);
+            }
+        }
+
+        return deduped;
     }
 
     /// <summary>
@@ -309,26 +827,94 @@ internal sealed class RuntimeCellReader(RuntimeMemoryContext context, bool usePr
         return _context.ReadBytes(offset, size);
     }
 
+    private uint? ReadWorldFormIdPointer(
+        byte[] buffer,
+        PdbTypeLayout layout,
+        string name,
+        string? owner = null,
+        byte? expectedFormType = null)
+    {
+        var fieldOffset = AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, name, owner));
+        return fieldOffset.HasValue
+            ? _fields.ReadPointerToFormId(buffer, fieldOffset.Value, expectedFormType)
+            : null;
+    }
+
+    private int? AdjustWorldFieldOffset(int? offset)
+    {
+        if (!offset.HasValue)
+        {
+            return null;
+        }
+
+        return offset.Value >= WorldShiftStartOffset
+            ? offset.Value + _layout.WorldShift
+            : offset.Value;
+    }
+
+    private int? AdjustCellFieldOffset(int? offset)
+    {
+        if (!offset.HasValue)
+        {
+            return null;
+        }
+
+        return offset.Value >= CellShiftStartOffset
+            ? offset.Value + _layout.CellShift
+            : offset.Value;
+    }
+
+    private static bool IsExpectedForm(byte[] buffer, byte expectedFormType, uint expectedFormId)
+    {
+        if (buffer.Length < 16 || buffer[4] != expectedFormType)
+        {
+            return false;
+        }
+
+        return BinaryUtils.ReadUInt32BE(buffer, 12) == expectedFormId && expectedFormId != 0;
+    }
+
+    private static string? NormalizeString(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    private static float? ReadNormalFloat(byte[] buffer, int? offset)
+    {
+        if (!offset.HasValue || offset.Value + 4 > buffer.Length)
+        {
+            return null;
+        }
+
+        var value = RuntimePdbFieldAccessor.ReadFloat(buffer, offset.Value);
+        return RuntimeMemoryContext.IsNormalFloat(value) ? value : null;
+    }
+
+    internal sealed record RuntimeCellProbeSnapshot(
+        uint FormId,
+        string? FullName,
+        byte Flags,
+        float? WaterHeight,
+        uint? WorldspaceFormId,
+        uint? LandFormId,
+        IReadOnlyList<uint> ReferenceFormIds);
+
     #region TESWorldSpace Struct Layout
 
-    // Final PDB: TESWorldSpace = 244 bytes, TESForm = 40 bytes
-    // WRLD/CELL don't inherit TESChildCell — no shift needed for early builds.
+    // Final PDB: TESWorldSpace = 244 bytes.
     private const int WorldStructSize = 244;
+    private const int WorldShiftStartOffset = 64;
 
-    // Field offsets (final layout — same for early builds until confirmed otherwise)
-    private int WorldCellMapPtrOffset => 64 + _shift;
-    private int WorldPersistentCellPtrOffset => 68 + _shift;
-    private int WorldParentWorldPtrOffset => 128 + _shift;
+    private int WorldCellMapPtrOffset => 64 + _layout.WorldShift;
+    private int WorldPersistentCellPtrOffset => 68 + _layout.WorldShift;
+    private int WorldParentWorldPtrOffset => 128 + _layout.WorldShift;
 
     #endregion
 
     #region TESObjectCELL Struct Layout
 
-    // Final PDB: TESObjectCELL = 192 bytes
-    // FormID is always at offset 12 (TESForm header, no shift)
-    private int CellFlagsOffset => 52 + _shift;
-    private int CellLandPtrOffset => 92 + _shift;
-    private int CellWorldSpacePtrOffset => 160 + _shift;
+    private const int CellStructSize = 192;
+    private const int CellShiftStartOffset = 52;
 
     #endregion
 

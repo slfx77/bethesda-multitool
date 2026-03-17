@@ -117,9 +117,14 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
                     FullName = existing.FullName ?? runtimeTopic.FullName,
                     TopicType = runtimeTopic.TopicType,
                     Flags = runtimeTopic.Flags,
-                    ResponseCount = (int)runtimeTopic.TopicCount,
-                    Priority = runtimeTopic.Priority,
-                    DummyPrompt = runtimeTopic.DummyPrompt
+                    ResponseCount = existing.ResponseCount != 0
+                        ? existing.ResponseCount
+                        : (int)runtimeTopic.TopicCount,
+                    Priority = existing.Priority != 0f ? existing.Priority : runtimeTopic.Priority,
+                    JournalIndex = existing.JournalIndex != 0
+                        ? existing.JournalIndex
+                        : runtimeTopic.JournalIndex,
+                    DummyPrompt = existing.DummyPrompt ?? runtimeTopic.DummyPrompt
                 };
                 mergedCount++;
             }
@@ -135,6 +140,7 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
                     Flags = runtimeTopic.Flags,
                     ResponseCount = (int)runtimeTopic.TopicCount,
                     Priority = runtimeTopic.Priority,
+                    JournalIndex = runtimeTopic.JournalIndex,
                     DummyPrompt = runtimeTopic.DummyPrompt,
                     Offset = entry.TesFormOffset.Value,
                     IsBigEndian = true
@@ -183,21 +189,7 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
                 continue;
             }
 
-            dialogues[i] = dialogue with
-            {
-                EditorId = dialogue.EditorId ?? entry.EditorId ?? runtimeInfo.FormEditorId,
-                PromptText = runtimeInfo.PromptText ?? dialogue.PromptText,
-                InfoIndex = runtimeInfo.InfoIndex,
-                InfoFlags = runtimeInfo.InfoFlags,
-                InfoFlagsExt = runtimeInfo.InfoFlagsExt,
-                Difficulty = runtimeInfo.Difficulty > 0 ? runtimeInfo.Difficulty : dialogue.Difficulty,
-                SpeakerFormId = runtimeInfo.SpeakerFormId ?? dialogue.SpeakerFormId,
-                QuestFormId = runtimeInfo.QuestFormId ?? dialogue.QuestFormId,
-                SaidOnce = runtimeInfo.SaidOnce,
-                AddTopics = runtimeInfo.AddTopicFormIds.Count > 0 && dialogue.AddTopics.Count == 0
-                    ? runtimeInfo.AddTopicFormIds
-                    : dialogue.AddTopics
-            };
+            dialogues[i] = MergeDialogueWithRuntimeInfo(dialogue, runtimeInfo, entry.EditorId);
             mergedCount++;
         }
 
@@ -222,6 +214,7 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
         }
 
         var dialogueByFormId = BuildDialogueFormIdIndex(dialogues);
+        var topicByFormId = BuildTopicFormIdIndex(topics);
         var stats = new TopicLinkStats();
 
         foreach (var entry in _context.ScanResult.RuntimeEditorIds)
@@ -240,6 +233,7 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
             stats.TopicsWalked++;
             stats.TotalInfosFound += questLinks.Sum(l => l.InfoEntries.Count);
 
+            UpdateTopicFromQuestLinks(topics, topicByFormId, entry.FormId, questLinks, stats);
             ProcessTopicQuestLinks(dialogues, dialogueByFormId, entry.FormId, questLinks, stats);
         }
 
@@ -247,7 +241,8 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
             $"  [Semantic] Topic->Quest walk: {stats.TopicsWalked} topics, " +
             $"{stats.TotalInfosFound} INFO ptrs, {stats.TotalInfosLinked} existing linked, " +
             $"{stats.NewInfoCount} new INFOs created " +
-            $"(+{stats.TopicLinked} TopicFormId, +{stats.QuestLinked} QuestFormId)");
+            $"(+{stats.TopicLinked} TopicFormId, +{stats.QuestLinked} QuestFormId, " +
+            $"+{stats.TopicQuestLinked} topic QuestFormId, +{stats.TopicResponseDerived} topic ResponseCount)");
     }
 
     /// <summary>
@@ -298,6 +293,65 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
     }
 
     /// <summary>
+    ///     Build a FormID -> list index lookup for topics.
+    /// </summary>
+    private static Dictionary<uint, int> BuildTopicFormIdIndex(List<DialogTopicRecord> topics)
+    {
+        var index = new Dictionary<uint, int>();
+        for (var i = 0; i < topics.Count; i++)
+        {
+            index.TryAdd(topics[i].FormId, i);
+        }
+
+        return index;
+    }
+
+    /// <summary>
+    ///     Fill topic-level quest linkage and response count from QUEST_INFO when the topic lacks them.
+    /// </summary>
+    private static void UpdateTopicFromQuestLinks(
+        List<DialogTopicRecord> topics,
+        Dictionary<uint, int> topicByFormId,
+        uint topicFormId,
+        List<TopicQuestLink> questLinks,
+        TopicLinkStats stats)
+    {
+        if (!topicByFormId.TryGetValue(topicFormId, out var index))
+        {
+            return;
+        }
+
+        var existing = topics[index];
+        var updated = existing;
+
+        var distinctQuestIds = questLinks
+            .Select(link => link.QuestFormId)
+            .Where(formId => formId != 0)
+            .Distinct()
+            .Take(2)
+            .ToList();
+        var derivedResponseCount = questLinks.Sum(link => link.InfoEntries.Count);
+
+        if ((!existing.QuestFormId.HasValue || existing.QuestFormId.Value == 0) &&
+            distinctQuestIds.Count == 1)
+        {
+            updated = updated with { QuestFormId = distinctQuestIds[0] };
+            stats.TopicQuestLinked++;
+        }
+
+        if (existing.ResponseCount == 0 && derivedResponseCount > 0)
+        {
+            updated = updated with { ResponseCount = derivedResponseCount };
+            stats.TopicResponseDerived++;
+        }
+
+        if (updated != existing)
+        {
+            topics[index] = updated;
+        }
+    }
+
+    /// <summary>
     ///     Process quest links for a single topic, updating or creating dialogue records.
     /// </summary>
     private void ProcessTopicQuestLinks(
@@ -313,7 +367,7 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
             {
                 if (dialogueByFormId.TryGetValue(infoEntry.FormId, out var idx))
                 {
-                    UpdateExistingDialogue(dialogues, idx, topicFormId, link.QuestFormId, stats);
+                    UpdateExistingDialogue(dialogues, idx, topicFormId, link.QuestFormId, infoEntry, stats);
                 }
                 else
                 {
@@ -326,11 +380,12 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
     /// <summary>
     ///     Update an existing dialogue record with topic and quest FormIds if not already set.
     /// </summary>
-    private static void UpdateExistingDialogue(
+    private void UpdateExistingDialogue(
         List<DialogueRecord> dialogues,
         int index,
         uint topicFormId,
         uint questFormId,
+        InfoPointerEntry infoEntry,
         TopicLinkStats stats)
     {
         var existing = dialogues[index];
@@ -346,6 +401,12 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
         {
             updated = updated with { QuestFormId = questFormId };
             stats.QuestLinked++;
+        }
+
+        var runtimeInfo = _context.RuntimeReader!.ReadRuntimeDialogueInfoFromVA(infoEntry.VirtualAddress);
+        if (runtimeInfo != null)
+        {
+            updated = MergeDialogueWithRuntimeInfo(updated, runtimeInfo);
         }
 
         if (updated != existing)
@@ -383,9 +444,17 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
             InfoFlags = runtimeInfo.InfoFlags,
             InfoFlagsExt = runtimeInfo.InfoFlagsExt,
             Difficulty = runtimeInfo.Difficulty,
-            SpeakerFormId = runtimeInfo.SpeakerFormId,
+            SpeakerFormId = runtimeInfo.SpeakerFormId ?? runtimeInfo.ConditionSpeakerFormId,
+            SpeakerFactionFormId = runtimeInfo.SpeakerFactionFormId,
+            SpeakerRaceFormId = runtimeInfo.SpeakerRaceFormId,
+            SpeakerVoiceTypeFormId = runtimeInfo.SpeakerVoiceTypeFormId,
+            ConditionFunctions = runtimeInfo.ConditionFunctions,
+            Conditions = runtimeInfo.Conditions,
             SaidOnce = runtimeInfo.SaidOnce,
+            LinkToTopics = runtimeInfo.LinkToTopicFormIds,
+            LinkFromTopics = runtimeInfo.LinkFromTopicFormIds,
             AddTopics = runtimeInfo.AddTopicFormIds,
+            FollowUpInfos = runtimeInfo.FollowUpInfoFormIds,
             Offset = runtimeInfo.DumpOffset,
             IsBigEndian = true
         };
@@ -398,13 +467,61 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
     }
 
     /// <summary>
+    ///     Merge runtime TESTopicInfo fields into an existing semantic dialogue record.
+    ///     ESM/carved fields stay authoritative; runtime only fills gaps.
+    /// </summary>
+    private static DialogueRecord MergeDialogueWithRuntimeInfo(
+        DialogueRecord dialogue,
+        RuntimeDialogueInfo runtimeInfo,
+        string? runtimeEditorId = null)
+    {
+        return dialogue with
+        {
+            EditorId = dialogue.EditorId ?? runtimeEditorId ?? runtimeInfo.FormEditorId,
+            PromptText = runtimeInfo.PromptText ?? dialogue.PromptText,
+            InfoIndex = runtimeInfo.InfoIndex,
+            InfoFlags = runtimeInfo.InfoFlags,
+            InfoFlagsExt = runtimeInfo.InfoFlagsExt,
+            Difficulty = runtimeInfo.Difficulty > 0 ? runtimeInfo.Difficulty : dialogue.Difficulty,
+            SpeakerFormId = dialogue.SpeakerFormId
+                            ?? runtimeInfo.SpeakerFormId
+                            ?? runtimeInfo.ConditionSpeakerFormId,
+            SpeakerFactionFormId = dialogue.SpeakerFactionFormId ?? runtimeInfo.SpeakerFactionFormId,
+            SpeakerRaceFormId = dialogue.SpeakerRaceFormId ?? runtimeInfo.SpeakerRaceFormId,
+            SpeakerVoiceTypeFormId = dialogue.SpeakerVoiceTypeFormId ?? runtimeInfo.SpeakerVoiceTypeFormId,
+            QuestFormId = runtimeInfo.QuestFormId ?? dialogue.QuestFormId,
+            ConditionFunctions = dialogue.ConditionFunctions.Count > 0
+                ? dialogue.ConditionFunctions
+                : runtimeInfo.ConditionFunctions,
+            Conditions = dialogue.Conditions.Count > 0
+                ? dialogue.Conditions
+                : runtimeInfo.Conditions,
+            SaidOnce = runtimeInfo.SaidOnce,
+            LinkToTopics = runtimeInfo.LinkToTopicFormIds.Count > 0 && dialogue.LinkToTopics.Count == 0
+                ? runtimeInfo.LinkToTopicFormIds
+                : dialogue.LinkToTopics,
+            LinkFromTopics = runtimeInfo.LinkFromTopicFormIds.Count > 0 && dialogue.LinkFromTopics.Count == 0
+                ? runtimeInfo.LinkFromTopicFormIds
+                : dialogue.LinkFromTopics,
+            AddTopics = runtimeInfo.AddTopicFormIds.Count > 0 && dialogue.AddTopics.Count == 0
+                ? runtimeInfo.AddTopicFormIds
+                : dialogue.AddTopics,
+            FollowUpInfos = runtimeInfo.FollowUpInfoFormIds.Count > 0 && dialogue.FollowUpInfos.Count == 0
+                ? runtimeInfo.FollowUpInfoFormIds
+                : dialogue.FollowUpInfos
+        };
+    }
+
+    /// <summary>
     ///     Statistics for topic linking operations.
     /// </summary>
     private sealed class TopicLinkStats
     {
         public int NewInfoCount;
         public int QuestLinked;
+        public int TopicQuestLinked;
         public int TopicLinked;
+        public int TopicResponseDerived;
         public int TopicsWalked;
         public int TotalInfosFound;
         public int TotalInfosLinked;

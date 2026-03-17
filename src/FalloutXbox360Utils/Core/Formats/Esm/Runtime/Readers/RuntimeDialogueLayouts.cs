@@ -10,20 +10,23 @@ internal static class RuntimeDialogueLayouts
     // cFormEditorID BSStringT at offset 16 (same in both PDB and runtime — within TESForm base).
     internal const int FormEditorIdOffset = 16;
 
-    // Additional TESTopicInfo offsets (adjusted = PDB + 4 shift):
-    // bSaidOnce at PDB+34 → dump +38, m_listAddTopics at PDB+48 → dump +52.
-    internal const int InfoSaidOnceOffset = 38;
-    internal const int InfoAddTopicsOffset = 52;
+    // TESTopicInfo Release Beta / Final layout:
+    // bSaidOnce at +50, m_listAddTopics at +64.
+    internal const int InfoSaidOnceOffset = 50;
+    internal const int InfoAddTopicsOffset = 64;
 
-    // TESTopic layout — consistent across all known builds (Final Debug / Release PDB, 80 bytes).
-    // FullName=+44, DataType=+52, Flags=+53, Priority=+56, QuestInfoList=+60, DummyPrompt=+68.
-    internal const int DialStructSize = 80;
+    // TESTopic layout — consistent across validated dump families (Debug, Release Beta variants,
+    // MemDebug). Dump size is 88 bytes: FullName=+44, DataType=+52, Flags=+53, Priority=+56,
+    // QuestInfoList=+60, DummyPrompt=+68, JournalIndex=+76, TopicCount=+84.
+    internal const int DialStructSize = 88;
     internal const int DialFullNameOffset = 44;
     internal const int DialDataTypeOffset = 52;
     internal const int DialDataFlagsOffset = 53;
     internal const int DialPriorityOffset = 56;
     internal const int DialQuestInfoListOffset = 60;
     internal const int DialDummyPromptOffset = 68;
+    internal const int DialJournalIndexOffset = 76;
+    internal const int DialTopicCountOffset = 84;
 
     // TERMINAL_MENU_ITEM offsets — fixed within the menu item struct, not TESForm-derived
     internal const int MenuItemSize = 120;
@@ -31,15 +34,14 @@ internal static class RuntimeDialogueLayouts
     internal const int MenuItemResultScriptOffset = 16;
     internal const int MenuItemSubMenuOffset = 112;
 
-    // TESTopicInfo: Proto Debug PDB = 80 bytes, dump = 84 bytes (PDB + 4 shift after TESForm base).
-    // PDB offsets → dump offsets: 32→36, 35→39, 40→44, 60→64, 68→72, 72→76.
-    internal static readonly InfoOffsets InfoLayout = new(84, 36, 39, 44, 64, 72, 76);
+    // TESTopicInfo: Release Beta / Final PDB = runtime layout directly.
+    // Field offsets: iInfoIndex=48, m_Data=51, cPrompt=56, pSpeaker=76, eDifficulty=84, pOwnerQuest=88.
+    internal static readonly InfoOffsets InfoLayout = new(96, 48, 51, 56, 76, 84, 88);
 
     /// <summary>
-    ///     TESTopicInfo struct layout offsets.
-    ///     TESTopicInfo inherits directly from TESForm (not TESBoundObject), so fields after
-    ///     TESForm base (+24) are shifted by only +4 in the dump, not +16.
-    ///     PDB size = 80 bytes, dump size = 84 bytes (+4 shift extends last field to +84).
+    ///     TESTopicInfo struct layout offsets from the Release Beta / Final PDB-backed runtime path.
+    ///     TESTopicInfo inherits directly from TESForm and the validated dump families match these
+    ///     offsets directly for the fields currently consumed by the runtime dialogue readers.
     /// </summary>
     internal sealed record InfoOffsets(
         int StructSize,

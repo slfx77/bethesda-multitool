@@ -455,6 +455,7 @@ public sealed partial class SingleFileTab
         _placementIndex = null;
         _factionMembersIndex = null;
         _raceLookup = null;
+        _usageIndex = null;
         _currentSearchQuery = "";
         EsmSearchBox.Text = "";
         EsmSortComboBox.SelectedIndex = 0;

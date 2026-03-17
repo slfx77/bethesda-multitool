@@ -68,11 +68,19 @@ internal static class PlacedObjectCategoryResolver
         WorldViewData? worldViewData,
         FormIdResolver? resolver)
     {
+        var effectiveResolver = worldViewData?.Resolver ?? resolver;
         var properties = new List<EsmPropertyEntry>();
+        var referenceEditorId = GetReferenceEditorId(obj, effectiveResolver);
 
         // Identity
         properties.Add(new EsmPropertyEntry
             { Name = "Form ID", Value = $"0x{obj.FormId:X8}", Category = "Identity" });
+        if (!string.IsNullOrEmpty(referenceEditorId))
+        {
+            properties.Add(new EsmPropertyEntry
+                { Name = "Reference Editor ID", Value = referenceEditorId, Category = "Identity" });
+        }
+
         properties.Add(new EsmPropertyEntry
         {
             Name = "Base Form ID",
@@ -80,14 +88,14 @@ internal static class PlacedObjectCategoryResolver
             Category = "Identity",
             LinkedFormId = obj.BaseFormId
         });
-        var baseEditorId = obj.BaseEditorId ?? resolver?.GetEditorId(obj.BaseFormId);
+        var baseEditorId = obj.BaseEditorId ?? effectiveResolver?.GetEditorId(obj.BaseFormId);
         if (!string.IsNullOrEmpty(baseEditorId))
         {
             properties.Add(new EsmPropertyEntry
                 { Name = "Base Editor ID", Value = baseEditorId, Category = "Identity" });
         }
 
-        var baseFullName = resolver?.GetDisplayName(obj.BaseFormId);
+        var baseFullName = effectiveResolver?.GetDisplayName(obj.BaseFormId);
         if (!string.IsNullOrEmpty(baseFullName))
         {
             properties.Add(new EsmPropertyEntry
@@ -121,6 +129,13 @@ internal static class PlacedObjectCategoryResolver
         {
             properties.Add(new EsmPropertyEntry
                 { Name = "Category", Value = "Creature", Category = "Identity" });
+        }
+
+        var useCount = worldViewData?.UsageIndex?.GetUseCount(obj.FormId) ?? 0;
+        if (useCount > 0)
+        {
+            properties.Add(new EsmPropertyEntry
+                { Name = "Use", Value = useCount.ToString("N0"), Category = "Identity" });
         }
 
         if (obj.IsInitiallyDisabled)
@@ -157,6 +172,12 @@ internal static class PlacedObjectCategoryResolver
                 { Name = "Scale", Value = $"{obj.Scale:F3}", Category = "Position" });
         }
 
+        if (obj.Radius is > 0)
+        {
+            properties.Add(new EsmPropertyEntry
+                { Name = "Radius", Value = $"{obj.Radius.Value:F1}", Category = "Position" });
+        }
+
         if (worldViewData?.BoundsIndex.TryGetValue(obj.BaseFormId, out var bounds) == true)
         {
             properties.Add(new EsmPropertyEntry
@@ -165,8 +186,26 @@ internal static class PlacedObjectCategoryResolver
 
         // References
         AddFormIdProperty(properties, "Owner", obj.OwnerFormId, "References");
+        AddFormIdProperty(properties, "Encounter Zone", obj.EncounterZoneFormId, "References");
+        AddFormIdProperty(properties, "Lock Key", obj.LockKeyFormId, "References");
         AddFormIdProperty(properties, "Enable Parent", obj.EnableParentFormId, "References");
+        AddFormIdProperty(properties, "Persistent Cell", obj.PersistentCellFormId, "References");
+        AddFormIdProperty(properties, "Starting World/Cell", obj.StartingWorldOrCellFormId, "References");
+        AddFormIdProperty(properties, "Linked Ref Keyword", obj.LinkedRefKeywordFormId, "References");
+        AddFormIdProperty(properties, "Linked Ref", obj.LinkedRefFormId, "References");
+        AddFormIdProperty(properties, "Merchant Container", obj.MerchantContainerFormId, "References");
+        AddFormIdProperty(properties, "Leveled Original Base", obj.LeveledCreatureOriginalBaseFormId, "References");
+        AddFormIdProperty(properties, "Leveled Template", obj.LeveledCreatureTemplateFormId, "References");
         AddFormIdProperty(properties, "Destination Door", obj.DestinationDoorFormId, "References");
+        if (obj.LinkedRefChildrenFormIds.Count > 0)
+        {
+            properties.Add(new EsmPropertyEntry
+            {
+                Name = "Linked Ref Children",
+                Value = obj.LinkedRefChildrenFormIds.Count.ToString("N0"),
+                Category = "References"
+            });
+        }
 
         if (obj.DestinationCellFormId is > 0)
         {
@@ -183,6 +222,71 @@ internal static class PlacedObjectCategoryResolver
                 Category = "References",
                 CellNavigationFormId = obj.DestinationCellFormId.Value
             });
+        }
+
+        if (obj.StartingPosition != null || obj.PackageStartLocation != null)
+        {
+            if (obj.StartingPosition != null)
+            {
+                properties.Add(new EsmPropertyEntry
+                {
+                    Name = "Starting Position",
+                    Value = $"({obj.StartingPosition.X:F1}, {obj.StartingPosition.Y:F1}, {obj.StartingPosition.Z:F1})",
+                    Category = "Spawn"
+                });
+                properties.Add(new EsmPropertyEntry
+                {
+                    Name = "Starting Rotation",
+                    Value =
+                        $"({obj.StartingPosition.RotX:F3}, {obj.StartingPosition.RotY:F3}, {obj.StartingPosition.RotZ:F3}) rad",
+                    Category = "Spawn"
+                });
+            }
+
+            if (obj.PackageStartLocation != null)
+            {
+                AddFormIdProperty(properties, "Package Start Form", obj.PackageStartLocation.LocationFormId, "Spawn");
+                properties.Add(new EsmPropertyEntry
+                {
+                    Name = "Package Start Position",
+                    Value =
+                        $"({obj.PackageStartLocation.X:F1}, {obj.PackageStartLocation.Y:F1}, {obj.PackageStartLocation.Z:F1})",
+                    Category = "Spawn"
+                });
+                properties.Add(new EsmPropertyEntry
+                {
+                    Name = "Package Start Z Rotation",
+                    Value = $"{obj.PackageStartLocation.RotZ:F3} rad",
+                    Category = "Spawn"
+                });
+            }
+        }
+
+        if (obj.LockLevel.HasValue || obj.LockFlags.HasValue || obj.LockNumTries.HasValue || obj.LockTimesUnlocked.HasValue)
+        {
+            if (obj.LockLevel.HasValue)
+            {
+                properties.Add(new EsmPropertyEntry
+                    { Name = "Level", Value = obj.LockLevel.Value.ToString(), Category = "Lock" });
+            }
+
+            if (obj.LockFlags.HasValue)
+            {
+                properties.Add(new EsmPropertyEntry
+                    { Name = "Flags", Value = $"0x{obj.LockFlags.Value:X2}", Category = "Lock" });
+            }
+
+            if (obj.LockNumTries.HasValue)
+            {
+                properties.Add(new EsmPropertyEntry
+                    { Name = "Failed Attempts", Value = obj.LockNumTries.Value.ToString("N0"), Category = "Lock" });
+            }
+
+            if (obj.LockTimesUnlocked.HasValue)
+            {
+                properties.Add(new EsmPropertyEntry
+                    { Name = "Unlock Count", Value = obj.LockTimesUnlocked.Value.ToString("N0"), Category = "Lock" });
+            }
         }
 
         // Map Marker
@@ -202,7 +306,8 @@ internal static class PlacedObjectCategoryResolver
         }
 
         // Spawn Info (for ACHR/ACRE placing leveled lists or direct actors)
-        AddSpawnInfo(properties, obj, worldViewData, resolver);
+        AddSpawnInfo(properties, obj, worldViewData, effectiveResolver);
+        AddUsageInfo(properties, obj, worldViewData?.UsageIndex, effectiveResolver);
 
         // Metadata
         properties.Add(new EsmPropertyEntry
@@ -226,19 +331,8 @@ internal static class PlacedObjectCategoryResolver
         WorldViewData? worldViewData,
         FormIdResolver? resolver)
     {
-        // Build display name: prefer marker name, then display name, then editor ID
-        string displayName;
-        if (obj.IsMapMarker && !string.IsNullOrEmpty(obj.MarkerName))
-        {
-            displayName = obj.MarkerName;
-        }
-        else
-        {
-            displayName = resolver?.GetDisplayName(obj.BaseFormId)
-                          ?? obj.BaseEditorId
-                          ?? resolver?.GetBestName(obj.BaseFormId)
-                          ?? $"0x{obj.BaseFormId:X8}";
-        }
+        var effectiveResolver = worldViewData?.Resolver ?? resolver;
+        var displayName = GetReferenceAwareName(obj, effectiveResolver);
 
         // Category-based prefix (not raw record type)
         string prefix;
@@ -268,7 +362,7 @@ internal static class PlacedObjectCategoryResolver
             : $"{prefix}: {displayName}";
 
         // Check if spawn index has a leveled-list title override
-        var leveledTitle = GetLeveledTitleOverride(obj, worldViewData?.SpawnIndex, resolver);
+        var leveledTitle = GetLeveledTitleOverride(obj, worldViewData?.SpawnIndex, effectiveResolver);
         return leveledTitle ?? title;
     }
 
@@ -288,11 +382,32 @@ internal static class PlacedObjectCategoryResolver
         if (!isAchr && !isAcre || !isLeveled) return null;
 
         var name = resolver?.GetDisplayName(obj.BaseFormId)
+                   ?? GetReferenceEditorId(obj, resolver)
                    ?? obj.BaseEditorId
                    ?? resolver?.GetBestName(obj.BaseFormId)
                    ?? $"0x{obj.BaseFormId:X8}";
         var lvlPrefix = isAchr ? "NPC" : "Creature";
         return $"{lvlPrefix}: [Leveled] {name}";
+    }
+
+    public static string? GetReferenceEditorId(PlacedReference obj, FormIdResolver? resolver)
+    {
+        return resolver?.GetEditorId(obj.FormId);
+    }
+
+    public static string GetReferenceAwareName(PlacedReference obj, FormIdResolver? resolver)
+    {
+        if (obj.IsMapMarker && !string.IsNullOrEmpty(obj.MarkerName))
+        {
+            return obj.MarkerName;
+        }
+
+        return GetReferenceEditorId(obj, resolver)
+               ?? resolver?.GetDisplayName(obj.FormId)
+               ?? resolver?.GetDisplayName(obj.BaseFormId)
+               ?? obj.BaseEditorId
+               ?? resolver?.GetBestName(obj.BaseFormId)
+               ?? $"0x{obj.BaseFormId:X8}";
     }
 
     // -- Private helpers --
@@ -430,5 +545,41 @@ internal static class PlacedObjectCategoryResolver
                 }).ToList()
             });
         }
+    }
+
+    private static void AddUsageInfo(
+        List<EsmPropertyEntry> properties,
+        PlacedReference obj,
+        FormUsageIndex? usageIndex,
+        FormIdResolver? resolver)
+    {
+        if (usageIndex == null)
+        {
+            return;
+        }
+
+        var usages = usageIndex.GetUsages(obj.FormId);
+        if (usages.Count == 0)
+        {
+            return;
+        }
+
+        properties.Add(new EsmPropertyEntry
+        {
+            Name = $"Used By ({usages.Count})",
+            Value = "",
+            Category = "References",
+            IsExpandable = true,
+            SubItems = usages
+                .OrderBy(u => resolver?.GetBestNameWithRefChain(u.SourceFormId) ?? "", StringComparer.OrdinalIgnoreCase)
+                .ThenBy(u => u.Context, StringComparer.OrdinalIgnoreCase)
+                .Select(u => new EsmPropertyEntry
+                {
+                    Name = resolver?.GetBestNameWithRefChain(u.SourceFormId) ?? $"0x{u.SourceFormId:X8}",
+                    Value = $"{u.Context} [{u.SourceKind}] 0x{u.SourceFormId:X8}",
+                    LinkedFormId = u.SourceFormId
+                })
+                .ToList()
+        });
     }
 }

@@ -218,31 +218,6 @@ public sealed class RecordParser
         var cellTime = phaseSw.Elapsed;
         var worldspaces = _world.ParseWorldspaces();
 
-        // DMP fallback: create stub WorldspaceRecords from runtime cell map walking
-        // when no WRLD records were found via ESM parsing
-        if (worldspaces.Count == 0 && _context.RuntimeWorldspaceCellMaps is { Count: > 0 })
-        {
-            foreach (var (wsFormId, wsData) in _context.RuntimeWorldspaceCellMaps)
-            {
-                if (wsFormId == 0) continue;
-
-                worldspaces.Add(new WorldspaceRecord
-                {
-                    FormId = wsFormId,
-                    EditorId = _context.GetEditorId(wsFormId),
-                    FullName = _context.FormIdToFullName.GetValueOrDefault(wsFormId),
-                    ParentWorldspaceFormId = wsData.ParentWorldFormId,
-                    IsBigEndian = true
-                });
-            }
-
-            if (worldspaces.Count > 0)
-            {
-                Logger.Instance.Debug(
-                    $"  [Semantic] Created {worldspaces.Count} stub worldspaces from runtime cell maps");
-            }
-        }
-
         // DMP fallback: infer worldspace membership from cell grid coordinates when GRUP data is absent
         if (_context.ScanResult.CellToWorldspaceMap.Count == 0 && worldspaces.Count > 0)
         {
@@ -255,8 +230,15 @@ public sealed class RecordParser
             var virtualCells = WorldRecordHandler.CreateVirtualCells(
                 cells, _context.ScanResult.RefrRecords, _context);
             cells.AddRange(virtualCells);
+
+            // New runtime-only stubs can pick up worldspace membership after orphan-cell recovery.
+            if (_context.ScanResult.CellToWorldspaceMap.Count == 0 && worldspaces.Count > 0)
+            {
+                WorldRecordHandler.InferCellWorldspaces(cells, worldspaces);
+            }
         }
 
+        WorldRecordHandler.EnsureWorldspacesForCells(cells, worldspaces, _context);
         WorldRecordHandler.LinkCellsToWorldspaces(cells, worldspaces);
         var packages = _ai.ParsePackages();
         var leveledLists = _miscCollections.ParseLeveledLists();

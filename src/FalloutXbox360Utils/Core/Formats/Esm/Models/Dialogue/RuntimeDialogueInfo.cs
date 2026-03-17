@@ -33,6 +33,18 @@ public record RuntimeDialogueInfo
     /// <summary>Parent quest FormID (from pOwnerQuest pointer).</summary>
     public uint? QuestFormId { get; init; }
 
+    /// <summary>Speaker NPC FormID inferred from runtime conditions (e.g. GetIsID).</summary>
+    public uint? ConditionSpeakerFormId { get; init; }
+
+    /// <summary>Speaker faction FormID inferred from runtime conditions (e.g. GetInFaction).</summary>
+    public uint? SpeakerFactionFormId { get; init; }
+
+    /// <summary>Speaker race FormID inferred from runtime conditions (e.g. GetIsRace).</summary>
+    public uint? SpeakerRaceFormId { get; init; }
+
+    /// <summary>Speaker voice type FormID inferred from runtime conditions (e.g. GetIsVoiceType).</summary>
+    public uint? SpeakerVoiceTypeFormId { get; init; }
+
     /// <summary>Player-visible prompt text (from cPrompt BSStringT).</summary>
     public string? PromptText { get; init; }
 
@@ -44,6 +56,21 @@ public record RuntimeDialogueInfo
 
     /// <summary>Topics added to NPC's general menu (from runtime m_listAddTopics BSSimpleList).</summary>
     public List<uint> AddTopicFormIds { get; init; } = [];
+
+    /// <summary>Topics this INFO links FROM (runtime TESConversationData.m_listLinkFrom).</summary>
+    public List<uint> LinkFromTopicFormIds { get; init; } = [];
+
+    /// <summary>Topics this INFO links TO (runtime TESConversationData.m_listLinkTo).</summary>
+    public List<uint> LinkToTopicFormIds { get; init; } = [];
+
+    /// <summary>Follow-up INFO records from runtime TESConversationData.m_listFollowUpInfos.</summary>
+    public List<uint> FollowUpInfoFormIds { get; init; } = [];
+
+    /// <summary>All condition function indices found on this INFO's runtime TESCondition list.</summary>
+    public List<ushort> ConditionFunctions { get; init; } = [];
+
+    /// <summary>Runtime conditions read from TESTopicInfo.objConditions.</summary>
+    public List<DialogueCondition> Conditions { get; init; } = [];
 
     /// <summary>Whether this INFO was already said by the player (runtime bSaidOnce flag).</summary>
     public bool SaidOnce { get; init; }

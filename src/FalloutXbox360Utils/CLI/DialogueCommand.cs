@@ -336,10 +336,22 @@ public static class DialogueCommand
                     string.Join(", ", info.LinkToTopics.Select(id => $"0x{id:X8}")));
             }
 
+            if (info.LinkFromTopics.Count > 0)
+            {
+                infoTable.AddRow("Link-From Topics (TCLF)",
+                    string.Join(", ", info.LinkFromTopics.Select(id => $"0x{id:X8}")));
+            }
+
             if (info.AddTopics.Count > 0)
             {
                 infoTable.AddRow("Add Topics (NAME)",
                     string.Join(", ", info.AddTopics.Select(id => $"0x{id:X8}")));
+            }
+
+            if (info.FollowUpInfos.Count > 0)
+            {
+                infoTable.AddRow("Follow-Up INFOs (runtime)",
+                    string.Join(", ", info.FollowUpInfos.Select(id => $"0x{id:X8}")));
             }
 
             if (info.Difficulty > 0)

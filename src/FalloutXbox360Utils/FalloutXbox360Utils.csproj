@@ -105,6 +105,8 @@
   <ItemGroup Condition="!$(TargetFramework.Contains('windows'))">
     <!-- All GUI code is in App/ folder -->
     <Compile Remove="App\**\*.cs" />
+    <!-- Keep non-UI helpers that are shared with tests and analysis code -->
+    <Compile Include="App\Helpers\FormUsageIndex.cs" />
     <!-- XAML files in App/ -->
     <Page Remove="App\**\*.xaml" />
     <!-- Root XAML files -->

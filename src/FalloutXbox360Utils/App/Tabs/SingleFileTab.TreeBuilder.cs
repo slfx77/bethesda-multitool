@@ -38,8 +38,9 @@ public sealed partial class SingleFileTab
         {
             EsmBrowserTreeBuilder.LoadRecordTypeChildren(
                 browserNode,
-                _session.Resolver,
+                _session.EffectiveResolver,
                 _placementIndex,
+                _usageIndex,
                 _raceLookup,
                 _factionMembersIndex);
         }
@@ -68,9 +69,11 @@ public sealed partial class SingleFileTab
                     else if (browserNode.NodeType == "RecordType" && browserNode.Children.Count == 0)
                         EsmBrowserTreeBuilder.LoadRecordTypeChildren(
                             browserNode,
-                            _session.Resolver,
+                            _session.EffectiveResolver,
                             _placementIndex,
-                            _raceLookup);
+                            _usageIndex,
+                            _raceLookup,
+                            _factionMembersIndex);
                     AddChildNodesProgressively(treeNode, browserNode.Children);
                     EnsureTreeScrollViewerHooked();
                 }
@@ -251,10 +254,17 @@ public sealed partial class SingleFileTab
         if (!_flatListBuilt)
         {
             StatusTextBlock.Text = Strings.Status_BuildingSearchIndex;
-            var resolver = _session.Resolver;
+            var resolver = _session.EffectiveResolver;
             var tree = _esmBrowserTree;
             var placements = _placementIndex;
-            await Task.Run(() => EnsureAllChildrenLoaded(tree, resolver, placements, _raceLookup, _factionMembersIndex),
+            var usageIndex = _usageIndex;
+            await Task.Run(() => EnsureAllChildrenLoaded(
+                    tree,
+                    resolver,
+                    placements,
+                    usageIndex,
+                    _raceLookup,
+                    _factionMembersIndex),
                 token);
             _flatListBuilt = true;
         }
@@ -300,6 +310,7 @@ public sealed partial class SingleFileTab
         ObservableCollection<EsmBrowserNode> tree,
         FormIdResolver? resolver,
         Dictionary<uint, List<WorldPlacement>>? placementIndex = null,
+        FormUsageIndex? usageIndex = null,
         IReadOnlyDictionary<uint, RaceRecord>? raceLookup = null,
         Dictionary<uint, List<(uint FormId, string? Name)>>? factionMembersIndex = null)
     {
@@ -323,8 +334,8 @@ public sealed partial class SingleFileTab
 
                 if (typeNode.HasUnrealizedChildren && typeNode.Children.Count == 0)
                 {
-                    EsmBrowserTreeBuilder.LoadRecordTypeChildren(typeNode, resolver, placementIndex, raceLookup,
-                        factionMembersIndex);
+                    EsmBrowserTreeBuilder.LoadRecordTypeChildren(typeNode, resolver, placementIndex, usageIndex,
+                        raceLookup, factionMembersIndex);
                 }
             }
         }

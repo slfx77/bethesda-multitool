@@ -16,7 +16,7 @@ Xbox 360 crash dumps exhibit consistent offset shifts between PDB-defined offset
 | Struct Category                                | PDB Size | Dump Size | Shift                            | Cause                                                  |
 | ---------------------------------------------- | -------- | --------- | -------------------------------- | ------------------------------------------------------ |
 | TESBoundObject-derived (NPC, WEAP, ARMO, etc.) | varies   | +16       | **+16**                          | Extra vtable/debug data at struct start                |
-| TESTopicInfo (INFO)                            | 80       | 84        | **+4** on fields after offset 24 | TESForm base is 24 bytes but field offsets shift by +4 |
+| TESTopicInfo (INFO, Release Beta/Final layout) | 96       | 96        | **0**                            | Current runtime INFO reader uses the direct 96-byte Release Beta / Final layout |
 | TESTopic (DIAL)                                | 72       | 88        | **+16**                          | Same as TESBoundObject pattern                         |
 | TESForm base                                   | 24       | 24        | **0**                            | No shift on base class                                 |
 | TESObjectREFR (Final PDB)                      | 120      | 120       | **0**                            | Final PDB offsets = dump offsets directly               |
@@ -421,7 +421,9 @@ Dialog topic containers. Each topic belongs to a quest and contains INFO records
 
 **PDB Type:** `0x1887F` — PDB Size: 72 — Dump Size: 88 (+16 shift)
 **Code:** `RuntimeStructReader.ReadRuntimeDialogTopic()` → `Models/RuntimeDialogTopicInfo.cs`
-**Called from:** `RecordParser.MergeRuntimeDialogTopicData()`
+**Called from:** `RecordParser.MergeRuntimeDialogTopicData()` and `DialogueRuntimeMerger.MergeRuntimeDialogueTopicLinks()`
+
+Topic-level default speaker (`TNAM` in ESM) is not represented in the validated `TESTopic` runtime layout above. Current DMP parity for `DIAL` therefore treats topic metadata and `QUEST_INFO` linkage as runtime-backed, while topic default speaker remains ESM-authored unless new runtime evidence is found.
 
 #### DIALOGUE_DATA — Embedded at TESTopic +52 (dump)
 
@@ -436,28 +438,30 @@ Dialog topic containers. Each topic belongs to a quest and contains INFO records
 
 Individual dialogue response entries. Each belongs to a TESTopic.
 
-| PDB Offset | Dump Offset | Type                 | Field               | Description                              |
-| ---------- | ----------- | -------------------- | ------------------- | ---------------------------------------- |
-| 0-23       | 0-23        | TESForm (24)         | (base)              | Inherited TESForm (no shift)             |
-| 24         | 28          | TESConditionItem (8) | objConditions       | Condition list                           |
-| 32         | 36          | uint16               | iInfoIndex          | Ordering index within topic              |
-| 34         | 38          | bool                 | bSaidOnce           | Said-once state flag                     |
-| 35         | 39          | TOPIC_INFO_DATA (4)  | m_Data              | Type, speaker, flags                     |
-| 40         | 44          | BSStringT (8)        | cPrompt             | Player-visible prompt text               |
-| 48         | 52          | BSSimpleList (8)     | m_listAddTopics     | Additional topics list                   |
-| 56         | 60          | ptr                  | m_pConversationData | Conversation data (always null in dumps) |
-| 60         | 64          | ptr                  | pSpeaker            | Speaker NPC (TESActorBase\*)             |
-| 64         | 68          | ptr                  | pPerkSkillStat      | Perk/skill stat pointer                  |
-| 68         | 72          | uint32               | eDifficulty         | Speech challenge difficulty (0-5)        |
-| 72         | 76          | ptr                  | pOwnerQuest         | Parent quest (TESQuest\*)                |
-| 76         | 80          | uint32               | iFileOffset         | File offset (mostly zero or VA in dumps) |
+| PDB Offset | Dump Offset | Type                 | Field               | Description                                                   |
+| ---------- | ----------- | -------------------- | ------------------- | ------------------------------------------------------------- |
+| 0-39       | 0-39        | TESForm (40)         | (base)              | Inherited TESForm including `cFormEditorID` in Release builds |
+| 40         | 40          | TESCondition (8)     | objConditions       | Condition list                                                |
+| 48         | 48          | uint16               | iInfoIndex          | Ordering index within topic                                   |
+| 50         | 50          | bool                 | bSaidOnce           | Said-once state flag                                          |
+| 51         | 51          | TOPIC_INFO_DATA (4)  | m_Data              | Type, next speaker, flags                                     |
+| 56         | 56          | BSStringT (8)        | cPrompt             | Player-visible prompt text                                    |
+| 64         | 64          | BSSimpleList (8)     | m_listAddTopics     | Additional topics list                                        |
+| 72         | 72          | ptr                  | m_pConversationData | Conversation link data                                        |
+| 76         | 76          | ptr                  | pSpeaker            | Speaker NPC (TESActorBase\*)                                  |
+| 80         | 80          | ptr                  | pPerkSkillStat      | Perk/skill stat pointer                                       |
+| 84         | 84          | uint32               | eDifficulty         | Speech challenge difficulty (0-5)                             |
+| 88         | 88          | ptr                  | pOwnerQuest         | Parent quest (TESQuest\*)                                     |
+| 92         | 92          | uint32               | iFileOffset         | Temp/source offset metadata; not a reliable ESM file offset   |
 
-**PDB Type:** `0x214D7` — Size: 80 bytes
-**Shift Note:** Fields after TESForm base (+24) are shifted by +4 in the dump, not +16.
+**PDB Type:** `0x0001E2F9` — Size: 96 bytes
+**Layout Note:** Current runtime INFO reading uses the direct 96-byte Release Beta / Final layout. The older Proto Debug `80 -> 84` shifted layout remains historical reference only.
 **Code:** `RuntimeStructReader.ReadRuntimeDialogueInfo()` / `ReadRuntimeDialogueInfoFromVA()` → `Models/RuntimeDialogueInfo.cs`
 **Called from:** `RecordParser.MergeRuntimeDialogueData()`, `MergeRuntimeDialogueTopicLinks()`
 
-#### TOPIC_INFO_DATA — Embedded at TESTopicInfo +39 (dump)
+On real dumps, direct INFO hash-table hits can be sparse or absent. The semantic INFO path therefore also relies on `QUEST_INFO` topic walking plus `ReadRuntimeDialogueInfoFromVA()` to enrich existing dialogues when only the topic graph exposes the runtime INFO structs.
+
+#### TOPIC_INFO_DATA — Embedded at TESTopicInfo +51
 
 | Offset | Type  | Field       | Description                                                                                    |
 | ------ | ----- | ----------- | ---------------------------------------------------------------------------------------------- |
@@ -468,7 +472,7 @@ Individual dialogue response entries. Each belongs to a TESTopic.
 
 **PDB Type:** `0x1BBC9` — Size: 4 bytes
 
-**Crash dump caveat:** In all analyzed crash dumps, TOPIC_INFO_DATA is **uninitialized** across all 15,548 TESTopicInfo entries — every instance contains the same constant bytes (`00 82 04 48`), with `0xCB` fill patterns visible in adjacent fields (Xbox 360 debug heap fill). The game engine appears to populate these fields lazily during active dialogue conversations; since crash dumps are captured outside dialogue, the data is never written. `RuntimeStructReader` validates these fields (`nextSpeaker ≤ 2`, `type ≤ 7`) and zeros them when invalid to prevent garbage flags from propagating.
+**Crash dump caveat:** `TOPIC_INFO_DATA` is often uninitialized in dumps and can carry heap-fill patterns instead of live dialogue state. `RuntimeStructReader` validates these fields (`nextSpeaker ≤ 2`, `type ≤ 7`) and zeros them when invalid to prevent garbage flags from propagating.
 
 ### QUEST_INFO — Embedded in TESTopic.m_listQuestInfo
 
@@ -531,7 +535,10 @@ Links a quest to its INFO records within a topic. Walked via pointer following f
 | 16         | BSSimpleList (8) | m_listFollowUpInfos | Follow-up INFO records |
 
 **PDB Type:** `0x17098` — Size: 24 bytes
-**Status:** Pointer at TESTopicInfo +60 (dump). Always null/invalid in analyzed crash dumps.
+**Status:** This pointer is not generally resident, but it is not universally null. Current sample-dump evidence is:
+
+- `m_listFollowUpInfos` has positive real-dump hits on `Fallout_Release_MemDebug.xex.dmp`.
+- `m_listLinkFrom` / `m_listLinkTo` are still unproven on the validated sample dumps.
 
 ---
 
@@ -563,6 +570,38 @@ Quest definitions with stages and objectives.
 
 **PDB Type:** `0x13B82` — PDB Size: 108 — Dump Size: 140 (+16 shift)
 **Code:** `RuntimeStructReader.ReadRuntimeQuest()` → `Models/QuestRecord.cs`
+
+#### TESQuestStageItem
+
+Runtime stage-item helper hanging off `TESQuest.m_listStages -> TESQuestStage -> BSSimpleList<TESQuestStageItem*>`.
+
+| PDB Offset | Type          | Field          | Description                                   |
+| ---------- | ------------- | -------------- | --------------------------------------------- |
+| 0          | struct(1)     | m_Data         | Stage-item flags block (`QUEST_STAGE_ITEM_DATA`) |
+| 4          | TESCondition  | objConditions  | Stage-item conditions                         |
+| 12         | Script\*      | cResultScript  | Stage-item result script                      |
+| 112        | uint32        | m_fileOffset   | Source file offset metadata                   |
+| 116        | uint8         | ucIndex        | Stage item index                              |
+| 117        | bool          | m_bHasLogEntry | Whether the stage item has an associated log entry |
+| 120        | Date\*        | m_pLogDate     | Optional log date                             |
+| 124        | TESQuest\*    | m_pOwner       | Owning quest                                  |
+| 128        | TESQuest\*    | m_pNextQuest   | Linked quest pointer                          |
+
+Relevant methods from the Final Debug PDB:
+
+- `GetLogEntry(TESForm*) -> char*`
+- `GetFileOffset() -> uint32`
+- `HasLogEntry() -> bool`
+- `GetOwner() -> TESQuest*`
+- `SetLogEntry(bool)` / `Resolve(bool)`
+
+Current parity conclusion:
+
+- The PDB shows no inline runtime string field for quest stage log text.
+- `GetLogEntry` requires a `TESForm*` argument, so the text appears to be resolved contextually rather than stored directly on `TESQuestStageItem`.
+- `m_fileOffset` and `m_bHasLogEntry` are useful evidence, but they are not enough on their own to reconstruct `CNAM` stage log text safely from DMP memory.
+- `TESQuest::SaveGame[_v2]` / `LoadGame[_v2]` also support that boundary: the save stream carries stage index, stage flags, per-log index, a `hasNote` byte, and optional 4-byte note payloads, but not stage log text.
+- Runtime parity should therefore treat quest stage log entries as `ESM-only` until decompilation or dump-backed evidence proves a stable resolution path.
 
 ---
 
@@ -729,7 +768,7 @@ TESObjectREFR (+120 bytes)
 | TESFaction    | 76       | 108       | `ReadRuntimeFaction()`      | `FactionRecord.cs`                           | `ReconstructFactions()`             |
 | TESQuest      | 108      | 140       | `ReadRuntimeQuest()`        | `QuestRecord.cs`                             | `ReconstructQuests()`               |
 | TESTopic      | 72       | 88        | `ReadRuntimeDialogTopic()`  | `RuntimeDialogTopicInfo.cs`                         | `MergeRuntimeDialogTopicData()`     |
-| TESTopicInfo  | 80       | 84        | `ReadRuntimeDialogueInfo()` | `RuntimeDialogueInfo.cs`                            | `MergeRuntimeDialogueData()`        |
+| TESTopicInfo  | 96       | 96        | `ReadRuntimeDialogueInfo()` | `RuntimeDialogueInfo.cs`                            | `MergeRuntimeDialogueData()`        |
 | TESObjectLAND | 44       | 60        | `ReadRuntimeLandData()`     | `RuntimeLoadedLandData.cs`                          | `ReadAllRuntimeLandData()`          |
 
 ---
@@ -742,15 +781,22 @@ Found in PDB with full field definitions. Contains `cResponseText` (BSStringT at
 
 ### TESConversationData (PDB: 24 bytes)
 
-Pointer at TESTopicInfo dump+60 (`m_pConversationData`). In all analyzed crash dumps, this pointer is null or points to invalid memory. The struct contains `m_listLinkFrom`, `m_listLinkTo`, and `m_listFollowUpInfos` — all BSSimpleList containers for dialogue flow linking.
+Pointer at TESTopicInfo +72 (`m_pConversationData`) in the current Release Beta / Final INFO layout. The runtime reader already walks the struct when the pointer survives. Current real-dump evidence is asymmetric: `m_listFollowUpInfos` has positive hits on `Fallout_Release_MemDebug.xex.dmp`, while `m_listLinkFrom` / `m_listLinkTo` do not yet have stable positive sample-dump decodes.
 
-### m_listAddTopics (BSSimpleList at TESTopicInfo dump+52)
+### m_listAddTopics (BSSimpleList at TESTopicInfo +64)
 
-Present in the PDB at TESTopicInfo +48 (dump +52). Not currently walked. Would contain additional topics triggered by choosing this dialogue option. Listed in dialogue CSV as `AddTopics` column (currently 0% populated from runtime data).
+Present at TESTopicInfo +64 in the current Release Beta / Final INFO layout. This is already walked by `RuntimeDialogueReader`. Real sample-dump counts are positive on the validated families:
 
-### iFileOffset (uint32 at TESTopicInfo dump+80)
+- `Fallout_Debug.xex.dmp`: `103`
+- `Fallout_Release_Beta.xex4.dmp`: `104`
+- `Fallout_Release_Beta.xex44.dmp`: `166`
+- `Fallout_Release_MemDebug.xex.dmp`: `175`
 
-PDB field at TESTopicInfo +76 (dump +80). Investigation showed 91% are zero, remainder are VA-range pointers — NOT ESM file offsets as the field name suggests. Not useful for response text recovery.
+Base `Fallout_Release_Beta.xex.dmp` did not yield valid runtime INFO reads in the same pass, so it is not treated as a negative signal for this field.
+
+### iFileOffset (uint32 at TESTopicInfo +92)
+
+PDB field at TESTopicInfo +92 in the current Release Beta / Final INFO layout. Investigation still shows that most values are zero and the remainder behave like transient VA-range metadata rather than stable ESM file offsets. It is not useful for response text recovery.
 
 ### TNAM Speaker Propagation (ESM DIAL subrecord)
 

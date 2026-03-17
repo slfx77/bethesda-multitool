@@ -66,6 +66,37 @@ internal static class DialogueRecordDetailBuilder
                 $"{animDisplay} (0x{info.SpeakerAnimationFormId.Value:X8})", info.SpeakerAnimationFormId.Value));
         }
 
+        if (info.SpeakerFactionFormId is > 0)
+        {
+            var factionDisplay = resolveFormName(info.SpeakerFactionFormId.Value);
+            rows.Add(new DetailRow("Speaker Faction",
+                $"{factionDisplay} (0x{info.SpeakerFactionFormId.Value:X8})", info.SpeakerFactionFormId.Value));
+        }
+
+        if (info.SpeakerRaceFormId is > 0)
+        {
+            var raceDisplay = resolveFormName(info.SpeakerRaceFormId.Value);
+            rows.Add(new DetailRow("Speaker Race",
+                $"{raceDisplay} (0x{info.SpeakerRaceFormId.Value:X8})", info.SpeakerRaceFormId.Value));
+        }
+
+        if (info.SpeakerVoiceTypeFormId is > 0)
+        {
+            var voiceDisplay = resolveFormName(info.SpeakerVoiceTypeFormId.Value);
+            rows.Add(new DetailRow("Speaker Voice Type",
+                $"{voiceDisplay} (0x{info.SpeakerVoiceTypeFormId.Value:X8})", info.SpeakerVoiceTypeFormId.Value));
+        }
+
+        if (info.Conditions.Count > 0)
+        {
+            for (var i = 0; i < info.Conditions.Count; i++)
+            {
+                rows.Add(new DetailRow(
+                    info.Conditions.Count > 1 ? $"Condition {i + 1}" : "Condition",
+                    DialogueConditionDisplayFormatter.FormatCondition(info.Conditions[i], resolveFormName)));
+            }
+        }
+
         // Flags
         rows.Add(new DetailRow("Info Index", info.InfoIndex.ToString()));
         if (info.InfoFlags != 0)
@@ -113,6 +144,37 @@ internal static class DialogueRecordDetailBuilder
                 string.Join(", ", info.AddTopics.Select(id => $"0x{id:X8}"))));
         }
 
+        if (info.FollowUpInfos.Count > 0)
+        {
+            rows.Add(new DetailRow("Follow-Up INFOs",
+                string.Join(", ", info.FollowUpInfos.Select(id => $"0x{id:X8}"))));
+        }
+
+        if (info.ResultScripts.Count > 0)
+        {
+            for (var i = 0; i < info.ResultScripts.Count; i++)
+            {
+                var script = info.ResultScripts[i];
+                var label = info.ResultScripts.Count > 1 ? $"Result Script {i + 1}" : "Result Script";
+                var scriptText = script.SourceText ?? script.DecompiledText;
+                if (!string.IsNullOrWhiteSpace(scriptText))
+                {
+                    rows.Add(new DetailRow(label, scriptText));
+                }
+                else if (script.CompiledData is { Length: > 0 })
+                {
+                    rows.Add(new DetailRow(label, $"Compiled only ({script.CompiledData.Length} bytes)"));
+                }
+
+                if (script.ReferencedObjects.Count > 0)
+                {
+                    rows.Add(new DetailRow(
+                        $"{label} Refs",
+                        DialogueConditionDisplayFormatter.FormatResultScriptReferences(script, resolveFormName)));
+                }
+            }
+        }
+
         // Response detail
         for (var i = 0; i < info.Responses.Count; i++)
         {
@@ -148,6 +210,11 @@ internal static class DialogueRecordDetailBuilder
         AddIfNotEmpty(rows, "Topic EditorID", linkedTopic.Topic?.EditorId);
         AddIfNotEmpty(rows, "Topic Name", linkedTopic.Topic?.FullName);
         AddIfNotEmpty(rows, "Topic Type", linkedTopic.Topic?.TopicTypeName);
+        if (linkedTopic.Topic is { JournalIndex: not 0 })
+        {
+            rows.Add(new DetailRow("Journal Index", linkedTopic.Topic.JournalIndex.ToString()));
+        }
+
         rows.Add(new DetailRow("INFO Count", linkedTopic.InfoChain.Count.ToString()));
 
         // Quest link

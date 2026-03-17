@@ -21,6 +21,9 @@ public record RuntimeDialogTopicInfo
     /// <summary>Number of INFO responses under this topic (runtime m_uiTopicCount).</summary>
     public uint TopicCount { get; init; }
 
+    /// <summary>Journal index (runtime m_iJournalIndex).</summary>
+    public int JournalIndex { get; init; }
+
     /// <summary>Display name from TESFullName BSStringT.</summary>
     public string? FullName { get; init; }
 

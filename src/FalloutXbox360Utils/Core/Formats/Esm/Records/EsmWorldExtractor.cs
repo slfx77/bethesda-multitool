@@ -68,10 +68,18 @@ internal static class EsmWorldExtractor
         uint baseFormId = 0;
         PositionSubrecord? position = null;
         var scale = 1.0f;
+        float? radius = null;
         uint? ownerFormId = null;
+        uint? encounterZoneFormId = null;
+        byte? lockLevel = null;
+        uint? lockKeyFormId = null;
+        byte? lockFlags = null;
+        uint? lockNumTries = null;
+        uint? lockTimesUnlocked = null;
         uint? destinationDoorFormId = null;
         uint? enableParentFormId = null;
         byte? enableParentFlags = null;
+        uint? linkedRefKeywordFormId = null;
         uint? linkedRefFormId = null;
         var isMapMarker = false;
         ushort? markerType = null;
@@ -104,8 +112,37 @@ internal static class EsmWorldExtractor
                     scale = SubrecordSchemaReader.ReadXsclScale(subData, header.IsBigEndian) ?? 1.0f;
                     break;
 
+                case "XRDS" when sub.DataLength == 4:
+                {
+                    var parsedRadius = header.IsBigEndian
+                        ? BinaryPrimitives.ReadSingleBigEndian(subData)
+                        : BinaryPrimitives.ReadSingleLittleEndian(subData);
+                    if (float.IsFinite(parsedRadius) && parsedRadius > 0)
+                    {
+                        radius = parsedRadius;
+                    }
+
+                    break;
+                }
+
                 case "XOWN" when sub.DataLength == 4:
                     ownerFormId = SubrecordSchemaReader.ReadNameFormId(subData, header.IsBigEndian);
+                    break;
+
+                case "XEZN" when sub.DataLength == 4:
+                    encounterZoneFormId = SubrecordSchemaReader.ReadNameFormId(subData, header.IsBigEndian);
+                    break;
+
+                case "XLOC" when sub.DataLength >= 20:
+                    lockLevel = subData[0];
+                    lockKeyFormId = SubrecordSchemaReader.ReadNameFormId(subData[4..8], header.IsBigEndian);
+                    lockFlags = subData[8];
+                    lockNumTries = header.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData[12..16])
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData[12..16]);
+                    lockTimesUnlocked = header.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData[16..20])
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData[16..20]);
                     break;
 
                 case "XTEL" when sub.DataLength >= 4: // Door teleport destination
@@ -121,7 +158,16 @@ internal static class EsmWorldExtractor
                     enableParentFlags = subData[4];
                     break;
 
-                case "XLKR" when sub.DataLength >= 4: // Linked Reference
+                case "XLKR" when sub.DataLength >= 8: // Linked Reference (keyword + reference)
+                    linkedRefKeywordFormId = header.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
+                    linkedRefFormId = header.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData[4..8])
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData[4..8]);
+                    break;
+
+                case "XLKR" when sub.DataLength == 4: // Linked Reference (reference only)
                     linkedRefFormId = header.IsBigEndian
                         ? BinaryPrimitives.ReadUInt32BigEndian(subData)
                         : BinaryPrimitives.ReadUInt32LittleEndian(subData);
@@ -164,7 +210,14 @@ internal static class EsmWorldExtractor
             BaseFormId = baseFormId,
             Position = position,
             Scale = scale,
+            Radius = radius,
             OwnerFormId = ownerFormId,
+            EncounterZoneFormId = encounterZoneFormId,
+            LockLevel = lockLevel,
+            LockKeyFormId = lockKeyFormId,
+            LockFlags = lockFlags,
+            LockNumTries = lockNumTries,
+            LockTimesUnlocked = lockTimesUnlocked,
             DestinationDoorFormId = destinationDoorFormId,
             EnableParentFormId = enableParentFormId,
             EnableParentFlags = enableParentFlags,
@@ -172,6 +225,7 @@ internal static class EsmWorldExtractor
             IsMapMarker = isMapMarker,
             MarkerType = markerType,
             MarkerName = markerName,
+            LinkedRefKeywordFormId = linkedRefKeywordFormId,
             LinkedRefFormId = linkedRefFormId
         };
     }

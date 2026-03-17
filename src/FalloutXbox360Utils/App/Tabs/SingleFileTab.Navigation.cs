@@ -43,8 +43,9 @@ public sealed partial class SingleFileTab
         {
             EnsureAllChildrenLoaded(
                 _esmBrowserTree,
-                _session.Resolver,
+                _session.EffectiveResolver,
                 _placementIndex,
+                _usageIndex,
                 _raceLookup,
                 _factionMembersIndex);
             _flatListBuilt = true;

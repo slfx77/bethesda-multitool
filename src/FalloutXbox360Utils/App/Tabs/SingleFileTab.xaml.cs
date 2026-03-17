@@ -137,6 +137,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     private Dictionary<uint, List<(uint FormId, string? Name)>>? _factionMembersIndex;
     private Dictionary<uint, List<WorldPlacement>>? _placementIndex;
     private IReadOnlyDictionary<uint, RaceRecord>? _raceLookup;
+    private FormUsageIndex? _usageIndex;
     private CancellationTokenSource? _searchDebounceToken;
     private string? _lastInputPath;
     private string _reportFullContent = "";

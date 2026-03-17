@@ -13,6 +13,7 @@ public sealed class RuntimeStructReader
     private readonly RuntimeActorReader _actors;
     private readonly RuntimeActorWeaponReader _actorWeapons;
     private readonly RuntimeCellReader _cells;
+    private readonly RuntimeCollectionReader _collections;
     private readonly RuntimeMemoryContext _context;
     private readonly RuntimeDialogueReader _dialogue;
     private readonly RuntimeEffectReader _effects;
@@ -22,13 +23,14 @@ public sealed class RuntimeStructReader
     private readonly RuntimeRefrReader _refrs;
     private readonly RuntimeScriptReader _scripts;
     private readonly RuntimeWorldReader _world;
+    private readonly RuntimeWorldObjectReader _worldObjects;
 
     public RuntimeStructReader(
         MemoryMappedViewAccessor accessor,
         long fileSize,
         MinidumpInfo minidumpInfo,
         bool useProtoOffsets = false)
-        : this(accessor, fileSize, minidumpInfo, useProtoOffsets, null)
+        : this(accessor, fileSize, minidumpInfo, useProtoOffsets, null, null)
     {
     }
 
@@ -37,9 +39,11 @@ public sealed class RuntimeStructReader
         long fileSize,
         MinidumpInfo minidumpInfo,
         bool useProtoOffsets,
-        RuntimeNpcLayoutProbeResult? npcLayoutProbe)
+        RuntimeNpcLayoutProbeResult? npcLayoutProbe,
+        RuntimeWorldCellLayoutProbeResult? worldCellLayoutProbe = null)
     {
         IsEarlyBuild = useProtoOffsets;
+        WorldCellLayoutProbe = worldCellLayoutProbe;
         _context = new RuntimeMemoryContext(accessor, fileSize, minidumpInfo);
         _actors = new RuntimeActorReader(_context, npcLayoutProbe);
         _generic = new RuntimeGenericReader(_context);
@@ -51,10 +55,13 @@ public sealed class RuntimeStructReader
         _refrs = new RuntimeRefrReader(_context, useProtoOffsets);
         _packages = new RuntimePackageReader(_context);
         _actorWeapons = new RuntimeActorWeaponReader(_context);
-        _cells = new RuntimeCellReader(_context, useProtoOffsets);
+        _cells = new RuntimeCellReader(_context, useProtoOffsets, worldCellLayoutProbe);
+        _collections = new RuntimeCollectionReader(_context);
+        _worldObjects = new RuntimeWorldObjectReader(_context);
     }
 
     public bool IsEarlyBuild { get; }
+    internal RuntimeWorldCellLayoutProbeResult? WorldCellLayoutProbe { get; }
 
     /// <summary>
     ///     Factory that probes the DMP memory to auto-detect early vs final build layout.
@@ -66,14 +73,26 @@ public sealed class RuntimeStructReader
         long fileSize,
         MinidumpInfo minidumpInfo,
         IReadOnlyList<RuntimeEditorIdEntry> refrEntries,
-        IReadOnlyList<RuntimeEditorIdEntry>? npcEntries = null)
+        IReadOnlyList<RuntimeEditorIdEntry>? npcEntries = null,
+        IReadOnlyList<RuntimeEditorIdEntry>? worldEntries = null,
+        IReadOnlyList<RuntimeEditorIdEntry>? cellEntries = null)
     {
         var context = new RuntimeMemoryContext(accessor, fileSize, minidumpInfo);
         var isEarlyBuild = RuntimeRefrReader.ProbeIsEarlyBuild(context, refrEntries);
         var npcLayoutProbe = npcEntries is { Count: > 0 }
             ? RuntimeNpcLayoutProbe.Probe(context, npcEntries)
             : null;
-        return new RuntimeStructReader(accessor, fileSize, minidumpInfo, isEarlyBuild, npcLayoutProbe);
+        var worldCellLayoutProbe =
+            (worldEntries is { Count: > 0 } || cellEntries is { Count: > 0 })
+                ? RuntimeWorldCellLayoutProbe.Probe(context, worldEntries, cellEntries)
+                : null;
+        return new RuntimeStructReader(
+            accessor,
+            fileSize,
+            minidumpInfo,
+            isEarlyBuild,
+            npcLayoutProbe,
+            worldCellLayoutProbe);
     }
 
     #region Effects
@@ -257,10 +276,75 @@ public sealed class RuntimeStructReader
         return _refrs.ReadAllRuntimeRefrs(entries);
     }
 
+    internal RuntimeRefrExtraDataCensus BuildRuntimeRefrExtraDataCensus(
+        IEnumerable<RuntimeEditorIdEntry> entries,
+        int maxEntries = 256)
+    {
+        return _refrs.BuildExtraDataCensus(entries, maxEntries);
+    }
+
     public Dictionary<uint, RuntimeWorldspaceData> ReadAllWorldspaceCellMaps(
         IEnumerable<RuntimeEditorIdEntry> entries)
     {
         return _cells.ReadAllWorldspaceCellMaps(entries);
+    }
+
+    public WorldspaceRecord? ReadRuntimeWorldspace(RuntimeEditorIdEntry entry)
+    {
+        return _cells.ReadRuntimeWorldspace(entry);
+    }
+
+    public CellRecord? ReadRuntimeCell(RuntimeEditorIdEntry entry)
+    {
+        return _cells.ReadRuntimeCell(entry);
+    }
+
+    public CellRecord? ReadRuntimeCell(RuntimeCellMapEntry entry, string? editorId = null, string? displayName = null)
+    {
+        return _cells.ReadRuntimeCell(entry, editorId, displayName);
+    }
+
+    #endregion
+
+    #region Collections
+
+    public FormListRecord? ReadRuntimeFormList(RuntimeEditorIdEntry entry)
+    {
+        return _collections.ReadRuntimeFormList(entry);
+    }
+
+    public LeveledListRecord? ReadRuntimeLeveledList(RuntimeEditorIdEntry entry)
+    {
+        return _collections.ReadRuntimeLeveledList(entry);
+    }
+
+    #endregion
+
+    #region World Objects
+
+    public ActivatorRecord? ReadRuntimeActivator(RuntimeEditorIdEntry entry)
+    {
+        return _worldObjects.ReadRuntimeActivator(entry);
+    }
+
+    public LightRecord? ReadRuntimeLight(RuntimeEditorIdEntry entry)
+    {
+        return _worldObjects.ReadRuntimeLight(entry);
+    }
+
+    public DoorRecord? ReadRuntimeDoor(RuntimeEditorIdEntry entry)
+    {
+        return _worldObjects.ReadRuntimeDoor(entry);
+    }
+
+    public StaticRecord? ReadRuntimeStatic(RuntimeEditorIdEntry entry)
+    {
+        return _worldObjects.ReadRuntimeStatic(entry);
+    }
+
+    public FurnitureRecord? ReadRuntimeFurniture(RuntimeEditorIdEntry entry)
+    {
+        return _worldObjects.ReadRuntimeFurniture(entry);
     }
 
     #endregion

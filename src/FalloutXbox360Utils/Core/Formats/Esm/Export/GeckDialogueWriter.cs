@@ -92,6 +92,11 @@ internal static class GeckDialogueWriter
             {
                 sb.AppendLine($"Responses:      {topic.ResponseCount}");
             }
+
+            if (topic.JournalIndex != 0)
+            {
+                sb.AppendLine($"Journal Index:  {topic.JournalIndex}");
+            }
         }
     }
 

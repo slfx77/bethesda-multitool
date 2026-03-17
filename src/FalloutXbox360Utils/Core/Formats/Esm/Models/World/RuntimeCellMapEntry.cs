@@ -9,6 +9,9 @@ public record RuntimeCellMapEntry
     /// <summary>FormID of the TESObjectCELL.</summary>
     public uint CellFormId { get; init; }
 
+    /// <summary>Virtual address of the TESObjectCELL runtime struct.</summary>
+    public uint? CellPointer { get; init; }
+
     /// <summary>Grid X coordinate (decoded from NiTMap key).</summary>
     public int GridX { get; init; }
 
@@ -26,4 +29,10 @@ public record RuntimeCellMapEntry
 
     /// <summary>FormID of the associated LAND record (from pCellLand pointer).</summary>
     public uint? LandFormId { get; init; }
+
+    /// <summary>
+    ///     FormIDs of placed references currently linked from TESObjectCELL.listReferences.
+    ///     This is runtime membership data, not carved REFR subrecord ownership.
+    /// </summary>
+    public List<uint> ReferenceFormIds { get; init; } = [];
 }

@@ -90,6 +90,14 @@ internal sealed class MiscCollectionHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
+        _context.MergeRuntimeOverlayRecords(
+            formLists,
+            [0x55],
+            record => record.FormId,
+            static (reader, entry) => reader.ReadRuntimeFormList(entry),
+            MergeFormList,
+            "form lists");
+
         return formLists;
     }
 
@@ -144,6 +152,14 @@ internal sealed class MiscCollectionHandler(RecordParserContext context)
             }
         }
 
+        _context.MergeRuntimeOverlayRecords(
+            lists,
+            [0x2C, 0x2D, 0x34],
+            record => record.FormId,
+            static (reader, entry) => reader.ReadRuntimeLeveledList(entry),
+            MergeLeveledList,
+            "leveled lists");
+
         return lists;
     }
 
@@ -157,6 +173,7 @@ internal sealed class MiscCollectionHandler(RecordParserContext context)
 
         var (data, dataSize) = recordData.Value;
 
+        string? editorId = null;
         byte chanceNone = 0;
         byte flags = 0;
         uint? globalFormId = null;
@@ -169,6 +186,15 @@ internal sealed class MiscCollectionHandler(RecordParserContext context)
 
             switch (sub.Signature)
             {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        _context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+
                 case "LVLD" when sub.DataLength == 1:
                     chanceNone = subData[0];
                     break;
@@ -200,7 +226,7 @@ internal sealed class MiscCollectionHandler(RecordParserContext context)
         return new LeveledListRecord
         {
             FormId = record.FormId,
-            EditorId = _context.GetEditorId(record.FormId),
+            EditorId = editorId ?? _context.GetEditorId(record.FormId),
             ListType = record.RecordType,
             ChanceNone = chanceNone,
             Flags = flags,
@@ -220,6 +246,34 @@ internal sealed class MiscCollectionHandler(RecordParserContext context)
             ListType = record.RecordType,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    private static FormListRecord MergeFormList(FormListRecord esm, FormListRecord runtime)
+    {
+        return esm with
+        {
+            EditorId = esm.EditorId ?? runtime.EditorId,
+            FormIds = esm.FormIds.Count > 0 ? esm.FormIds : runtime.FormIds,
+            Offset = esm.Offset != 0 ? esm.Offset : runtime.Offset,
+            IsBigEndian = esm.IsBigEndian || runtime.IsBigEndian
+        };
+    }
+
+    private static LeveledListRecord MergeLeveledList(LeveledListRecord esm, LeveledListRecord runtime)
+    {
+        var hasEsmEntries = esm.Entries.Count > 0;
+
+        return esm with
+        {
+            EditorId = esm.EditorId ?? runtime.EditorId,
+            ListType = string.IsNullOrEmpty(esm.ListType) ? runtime.ListType : esm.ListType,
+            ChanceNone = hasEsmEntries ? esm.ChanceNone : runtime.ChanceNone,
+            Flags = hasEsmEntries ? esm.Flags : runtime.Flags,
+            GlobalFormId = esm.GlobalFormId ?? runtime.GlobalFormId,
+            Entries = hasEsmEntries ? esm.Entries : runtime.Entries,
+            Offset = esm.Offset != 0 ? esm.Offset : runtime.Offset,
+            IsBigEndian = esm.IsBigEndian || runtime.IsBigEndian
         };
     }
 

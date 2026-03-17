@@ -140,10 +140,19 @@ internal static class EsmDataExtractor
             uint baseFormId = 0;
             PositionSubrecord? position = null;
             var scale = 1.0f;
+            float? radius = null;
             uint? ownerFormId = null;
+            uint? encounterZoneFormId = null;
+            byte? lockLevel = null;
+            uint? lockKeyFormId = null;
+            byte? lockFlags = null;
+            uint? lockNumTries = null;
+            uint? lockTimesUnlocked = null;
             uint? destinationDoorFormId = null;
             uint? enableParentFormId = null;
             byte? enableParentFlags = null;
+            uint? linkedRefKeywordFormId = null;
+            uint? linkedRefFormId = null;
             var isMapMarker = false;
             ushort? markerType = null;
             string? markerName = null;
@@ -165,10 +174,40 @@ internal static class EsmDataExtractor
                             ? BinaryPrimitives.ReadSingleBigEndian(sub.Data)
                             : BinaryPrimitives.ReadSingleLittleEndian(sub.Data);
                         break;
+                    case "XRDS" when sub.Data.Length == 4:
+                    {
+                        var parsedRadius = bigEndian
+                            ? BinaryPrimitives.ReadSingleBigEndian(sub.Data)
+                            : BinaryPrimitives.ReadSingleLittleEndian(sub.Data);
+                        if (float.IsFinite(parsedRadius) && parsedRadius > 0)
+                        {
+                            radius = parsedRadius;
+                        }
+
+                        break;
+                    }
                     case "XOWN" when sub.Data.Length == 4:
                         ownerFormId = bigEndian
                             ? BinaryPrimitives.ReadUInt32BigEndian(sub.Data)
                             : BinaryPrimitives.ReadUInt32LittleEndian(sub.Data);
+                        break;
+                    case "XEZN" when sub.Data.Length == 4:
+                        encounterZoneFormId = bigEndian
+                            ? BinaryPrimitives.ReadUInt32BigEndian(sub.Data)
+                            : BinaryPrimitives.ReadUInt32LittleEndian(sub.Data);
+                        break;
+                    case "XLOC" when sub.Data.Length >= 20:
+                        lockLevel = sub.Data[0];
+                        lockKeyFormId = bigEndian
+                            ? BinaryPrimitives.ReadUInt32BigEndian(sub.Data.AsSpan(4, 4))
+                            : BinaryPrimitives.ReadUInt32LittleEndian(sub.Data.AsSpan(4, 4));
+                        lockFlags = sub.Data[8];
+                        lockNumTries = bigEndian
+                            ? BinaryPrimitives.ReadUInt32BigEndian(sub.Data.AsSpan(12, 4))
+                            : BinaryPrimitives.ReadUInt32LittleEndian(sub.Data.AsSpan(12, 4));
+                        lockTimesUnlocked = bigEndian
+                            ? BinaryPrimitives.ReadUInt32BigEndian(sub.Data.AsSpan(16, 4))
+                            : BinaryPrimitives.ReadUInt32LittleEndian(sub.Data.AsSpan(16, 4));
                         break;
                     case "XTEL" when sub.Data.Length >= 4:
                         destinationDoorFormId = bigEndian
@@ -180,6 +219,19 @@ internal static class EsmDataExtractor
                             ? BinaryPrimitives.ReadUInt32BigEndian(sub.Data)
                             : BinaryPrimitives.ReadUInt32LittleEndian(sub.Data);
                         enableParentFlags = sub.Data[4];
+                        break;
+                    case "XLKR" when sub.Data.Length >= 8:
+                        linkedRefKeywordFormId = bigEndian
+                            ? BinaryPrimitives.ReadUInt32BigEndian(sub.Data.AsSpan(0, 4))
+                            : BinaryPrimitives.ReadUInt32LittleEndian(sub.Data.AsSpan(0, 4));
+                        linkedRefFormId = bigEndian
+                            ? BinaryPrimitives.ReadUInt32BigEndian(sub.Data.AsSpan(4, 4))
+                            : BinaryPrimitives.ReadUInt32LittleEndian(sub.Data.AsSpan(4, 4));
+                        break;
+                    case "XLKR" when sub.Data.Length == 4:
+                        linkedRefFormId = bigEndian
+                            ? BinaryPrimitives.ReadUInt32BigEndian(sub.Data)
+                            : BinaryPrimitives.ReadUInt32LittleEndian(sub.Data);
                         break;
                     case "XMRK":
                         isMapMarker = true;
@@ -214,13 +266,22 @@ internal static class EsmDataExtractor
                 BaseFormId = baseFormId,
                 Position = position,
                 Scale = scale,
+                Radius = radius,
                 OwnerFormId = ownerFormId,
+                EncounterZoneFormId = encounterZoneFormId,
+                LockLevel = lockLevel,
+                LockKeyFormId = lockKeyFormId,
+                LockFlags = lockFlags,
+                LockNumTries = lockNumTries,
+                LockTimesUnlocked = lockTimesUnlocked,
                 DestinationDoorFormId = destinationDoorFormId,
                 EnableParentFormId = enableParentFormId,
                 EnableParentFlags = enableParentFlags,
                 IsMapMarker = isMapMarker,
                 MarkerType = markerType,
-                MarkerName = markerName
+                MarkerName = markerName,
+                LinkedRefKeywordFormId = linkedRefKeywordFormId,
+                LinkedRefFormId = linkedRefFormId
             });
         }
     }

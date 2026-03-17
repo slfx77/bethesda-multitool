@@ -239,29 +239,15 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
 
                 if (questByFormId.ContainsKey(entry.FormId))
                 {
-                    // Quest already exists from ESM scan — enrich with runtime data if missing
                     var existing = questByFormId[entry.FormId];
-                    var needsEnrichment = string.IsNullOrEmpty(existing.FullName)
-                                          || !existing.Script.HasValue;
+                    var needsEnrichment = NeedsRuntimeQuestEnrichment(existing);
                     if (needsEnrichment)
                     {
                         var runtimeQuest = _context.RuntimeReader.ReadRuntimeQuest(entry);
-                        var newName = existing.FullName;
-                        if (string.IsNullOrEmpty(newName))
-                        {
-                            newName = runtimeQuest?.FullName ?? entry.DisplayName;
-                        }
-
-                        var script = existing.Script ?? runtimeQuest?.Script;
-
-                        if (!string.IsNullOrEmpty(newName) || script.HasValue)
+                        if (runtimeQuest != null)
                         {
                             var idx = quests.IndexOf(existing);
-                            quests[idx] = existing with
-                            {
-                                FullName = newName ?? existing.FullName,
-                                Script = script
-                            };
+                            quests[idx] = MergeRuntimeQuest(existing, runtimeQuest, entry);
                             questByFormId[entry.FormId] = quests[idx];
                             enrichedCount++;
                         }
@@ -453,6 +439,151 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
+    }
+
+    private static bool NeedsRuntimeQuestEnrichment(QuestRecord quest)
+    {
+        return string.IsNullOrEmpty(quest.FullName)
+               || string.IsNullOrEmpty(quest.EditorId)
+               || !quest.Script.HasValue
+               || (quest.Flags == 0 && quest.Priority == 0 && MathF.Abs(quest.QuestDelay) < 0.0001f)
+               || quest.Stages.Count == 0
+               || quest.Stages.Any(stage => stage.Flags == 0)
+               || quest.Objectives.Count == 0
+               || quest.Objectives.Any(objective => string.IsNullOrEmpty(objective.DisplayText));
+    }
+
+    private static QuestRecord MergeRuntimeQuest(
+        QuestRecord existing,
+        QuestRecord runtimeQuest,
+        RuntimeEditorIdEntry entry)
+    {
+        return existing with
+        {
+            EditorId = existing.EditorId ?? runtimeQuest.EditorId ?? entry.EditorId,
+            FullName = string.IsNullOrEmpty(existing.FullName)
+                ? runtimeQuest.FullName ?? entry.DisplayName
+                : existing.FullName,
+            Flags = existing.Flags != 0 ? existing.Flags : runtimeQuest.Flags,
+            Priority = existing.Priority != 0 ? existing.Priority : runtimeQuest.Priority,
+            QuestDelay = MathF.Abs(existing.QuestDelay) > 0.0001f
+                ? existing.QuestDelay
+                : runtimeQuest.QuestDelay,
+            Script = existing.Script ?? runtimeQuest.Script,
+            Stages = MergeQuestStages(existing.Stages, runtimeQuest.Stages),
+            Objectives = MergeQuestObjectives(existing.Objectives, runtimeQuest.Objectives)
+        };
+    }
+
+    private static List<QuestStage> MergeQuestStages(
+        IReadOnlyList<QuestStage> esmStages,
+        IReadOnlyList<QuestStage> runtimeStages)
+    {
+        if (runtimeStages.Count == 0)
+        {
+            return esmStages
+                .OrderBy(stage => stage.Index)
+                .ToList();
+        }
+
+        if (esmStages.Count == 0)
+        {
+            return runtimeStages
+                .GroupBy(stage => stage.Index)
+                .Select(group => group
+                    .OrderByDescending(stage => stage.Flags != 0 ? 1 : 0)
+                    .First())
+                .OrderBy(stage => stage.Index)
+                .ToList();
+        }
+
+        var merged = esmStages
+            .GroupBy(stage => stage.Index)
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .OrderByDescending(stage => stage.LogEntry?.Length ?? 0)
+                    .ThenByDescending(stage => stage.Flags != 0 ? 1 : 0)
+                    .First());
+
+        foreach (var runtimeStage in runtimeStages)
+        {
+            if (merged.TryGetValue(runtimeStage.Index, out var existingStage))
+            {
+                merged[runtimeStage.Index] = existingStage with
+                {
+                    LogEntry = string.IsNullOrEmpty(existingStage.LogEntry)
+                        ? runtimeStage.LogEntry
+                        : existingStage.LogEntry,
+                    Flags = existingStage.Flags != 0
+                        ? existingStage.Flags
+                        : runtimeStage.Flags
+                };
+            }
+            else
+            {
+                merged[runtimeStage.Index] = runtimeStage;
+            }
+        }
+
+        return merged
+            .OrderBy(pair => pair.Key)
+            .Select(pair => pair.Value)
+            .ToList();
+    }
+
+    private static List<QuestObjective> MergeQuestObjectives(
+        IReadOnlyList<QuestObjective> esmObjectives,
+        IReadOnlyList<QuestObjective> runtimeObjectives)
+    {
+        if (runtimeObjectives.Count == 0)
+        {
+            return esmObjectives
+                .OrderBy(objective => objective.Index)
+                .ToList();
+        }
+
+        if (esmObjectives.Count == 0)
+        {
+            return runtimeObjectives
+                .GroupBy(objective => objective.Index)
+                .Select(group => group
+                    .OrderByDescending(objective => objective.DisplayText?.Length ?? 0)
+                    .First())
+                .OrderBy(objective => objective.Index)
+                .ToList();
+        }
+
+        var merged = esmObjectives
+            .GroupBy(objective => objective.Index)
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .OrderByDescending(objective => objective.DisplayText?.Length ?? 0)
+                    .First());
+
+        foreach (var runtimeObjective in runtimeObjectives)
+        {
+            if (merged.TryGetValue(runtimeObjective.Index, out var existingObjective))
+            {
+                merged[runtimeObjective.Index] = existingObjective with
+                {
+                    DisplayText = string.IsNullOrEmpty(existingObjective.DisplayText)
+                        ? runtimeObjective.DisplayText
+                        : existingObjective.DisplayText,
+                    TargetStage = existingObjective.TargetStage ?? runtimeObjective.TargetStage
+                };
+            }
+            else
+            {
+                merged[runtimeObjective.Index] = runtimeObjective;
+            }
+        }
+
+        return merged
+            .OrderBy(pair => pair.Key)
+            .Select(pair => pair.Value)
+            .ToList();
     }
 
     #endregion

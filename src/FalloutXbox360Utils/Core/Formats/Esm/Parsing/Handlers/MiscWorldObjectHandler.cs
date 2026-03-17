@@ -119,6 +119,14 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
+        _context.MergeRuntimeOverlayRecords(
+            activators,
+            [0x15],
+            record => record.FormId,
+            static (reader, entry) => reader.ReadRuntimeActivator(entry),
+            MergeActivator,
+            "activators");
+
         return activators;
     }
 
@@ -260,6 +268,14 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
+        _context.MergeRuntimeOverlayRecords(
+            lights,
+            [0x1E],
+            record => record.FormId,
+            static (reader, entry) => reader.ReadRuntimeLight(entry),
+            MergeLight,
+            "lights");
+
         return lights;
     }
 
@@ -385,7 +401,71 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
+        _context.MergeRuntimeOverlayRecords(
+            doors,
+            [0x1C],
+            record => record.FormId,
+            static (reader, entry) => reader.ReadRuntimeDoor(entry),
+            MergeDoor,
+            "doors");
+
         return doors;
+    }
+
+    private static ActivatorRecord MergeActivator(ActivatorRecord esm, ActivatorRecord runtime)
+    {
+        return esm with
+        {
+            EditorId = esm.EditorId ?? runtime.EditorId,
+            FullName = esm.FullName ?? runtime.FullName,
+            ModelPath = esm.ModelPath ?? runtime.ModelPath,
+            Bounds = esm.Bounds ?? runtime.Bounds,
+            Script = esm.Script ?? runtime.Script,
+            ActivationSoundFormId = esm.ActivationSoundFormId ?? runtime.ActivationSoundFormId,
+            RadioStationFormId = esm.RadioStationFormId ?? runtime.RadioStationFormId,
+            WaterTypeFormId = esm.WaterTypeFormId ?? runtime.WaterTypeFormId,
+            Offset = esm.Offset != 0 ? esm.Offset : runtime.Offset,
+            IsBigEndian = esm.IsBigEndian || runtime.IsBigEndian
+        };
+    }
+
+    private static LightRecord MergeLight(LightRecord esm, LightRecord runtime)
+    {
+        return esm with
+        {
+            EditorId = esm.EditorId ?? runtime.EditorId,
+            FullName = esm.FullName ?? runtime.FullName,
+            ModelPath = esm.ModelPath ?? runtime.ModelPath,
+            Bounds = esm.Bounds ?? runtime.Bounds,
+            Duration = esm.Duration != 0 ? esm.Duration : runtime.Duration,
+            Radius = esm.Radius != 0 ? esm.Radius : runtime.Radius,
+            Color = esm.Color != 0 ? esm.Color : runtime.Color,
+            Flags = esm.Flags != 0 ? esm.Flags : runtime.Flags,
+            FalloffExponent = esm.FalloffExponent != 0 ? esm.FalloffExponent : runtime.FalloffExponent,
+            FOV = esm.FOV != 0 ? esm.FOV : runtime.FOV,
+            Value = esm.Value != 0 ? esm.Value : runtime.Value,
+            Weight = esm.Weight != 0 ? esm.Weight : runtime.Weight,
+            Offset = esm.Offset != 0 ? esm.Offset : runtime.Offset,
+            IsBigEndian = esm.IsBigEndian || runtime.IsBigEndian
+        };
+    }
+
+    private static DoorRecord MergeDoor(DoorRecord esm, DoorRecord runtime)
+    {
+        return esm with
+        {
+            EditorId = esm.EditorId ?? runtime.EditorId,
+            FullName = esm.FullName ?? runtime.FullName,
+            ModelPath = esm.ModelPath ?? runtime.ModelPath,
+            Bounds = esm.Bounds ?? runtime.Bounds,
+            Script = esm.Script ?? runtime.Script,
+            OpenSoundFormId = esm.OpenSoundFormId ?? runtime.OpenSoundFormId,
+            CloseSoundFormId = esm.CloseSoundFormId ?? runtime.CloseSoundFormId,
+            LoopSoundFormId = esm.LoopSoundFormId ?? runtime.LoopSoundFormId,
+            Flags = esm.Flags != 0 ? esm.Flags : runtime.Flags,
+            Offset = esm.Offset != 0 ? esm.Offset : runtime.Offset,
+            IsBigEndian = esm.IsBigEndian || runtime.IsBigEndian
+        };
     }
 
     #endregion

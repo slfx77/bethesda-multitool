@@ -1,4 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Script;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm;
@@ -20,7 +21,7 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
 
     /// <summary>
     ///     Read extended topic data from a runtime TESTopic struct.
-    ///     Returns topic metadata, or null if validation fails.
+    ///     Returns topic metadata, journal index, and response count, or null if validation fails.
     /// </summary>
     public RuntimeDialogTopicInfo? ReadRuntimeDialogTopic(RuntimeEditorIdEntry entry)
     {
@@ -30,15 +31,15 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
         }
 
         var offset = entry.TesFormOffset.Value;
-        if (offset + DialStructSize > _context.FileSize)
+        if (offset + RuntimeDialogueLayouts.DialStructSize > _context.FileSize)
         {
             return null;
         }
 
-        var buffer = new byte[DialStructSize];
+        var buffer = new byte[RuntimeDialogueLayouts.DialStructSize];
         try
         {
-            _context.Accessor.ReadArray(offset, buffer, 0, DialStructSize);
+            _context.Accessor.ReadArray(offset, buffer, 0, RuntimeDialogueLayouts.DialStructSize);
         }
         catch
         {
@@ -53,8 +54,8 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
         }
 
         // Read topic type and flags
-        var topicType = buffer[DialDataTypeOffset];
-        var flags = buffer[DialDataFlagsOffset];
+        var topicType = buffer[RuntimeDialogueLayouts.DialDataTypeOffset];
+        var flags = buffer[RuntimeDialogueLayouts.DialDataFlagsOffset];
 
         // Validate topic type (0-7)
         if (topicType > 7)
@@ -63,20 +64,31 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
         }
 
         // Read priority
-        var priority = BinaryUtils.ReadFloatBE(buffer, DialPriorityOffset);
+        var priority = BinaryUtils.ReadFloatBE(buffer, RuntimeDialogueLayouts.DialPriorityOffset);
         if (!RuntimeMemoryContext.IsNormalFloat(priority) || priority < 0 || priority > 200)
         {
             priority = 0;
         }
 
-        // Read topic count (may be beyond struct boundary for some builds)
-        uint topicCount = 0;
+        // Read journal index (typically non-negative, but some builds use -1 as "unset")
+        var journalIndex = BinaryUtils.ReadInt32BE(buffer, RuntimeDialogueLayouts.DialJournalIndexOffset);
+        if (journalIndex < -1 || journalIndex > 100000)
+        {
+            journalIndex = 0;
+        }
+
+        // Read topic count
+        var topicCount = BinaryUtils.ReadUInt32BE(buffer, RuntimeDialogueLayouts.DialTopicCountOffset);
+        if (topicCount > 10000)
+        {
+            topicCount = 0;
+        }
 
         // Read FullName via BSStringT
-        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, DialFullNameOffset);
+        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, RuntimeDialogueLayouts.DialFullNameOffset);
 
         // Read DummyPrompt via BSStringT
-        var dummyPrompt = _context.ReadBSStringT(offset, DialDummyPromptOffset);
+        var dummyPrompt = _context.ReadBSStringT(offset, RuntimeDialogueLayouts.DialDummyPromptOffset);
 
         return new RuntimeDialogTopicInfo
         {
@@ -85,6 +97,7 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
             Flags = flags,
             Priority = priority,
             TopicCount = topicCount,
+            JournalIndex = journalIndex,
             FullName = fullName,
             DummyPrompt = dummyPrompt
         };
@@ -169,8 +182,14 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
         // Read bSaidOnce (bool8)
         var saidOnce = buffer[InfoSaidOnceOffset] != 0;
 
+        // Read objConditions (TESCondition -> BSSimpleList<TESConditionItem*>)
+        var conditionData = ReadConditions(offset);
+
         // Walk m_listAddTopics BSSimpleList<TESTopic*>
         var addTopicFormIds = WalkAddTopicsList(offset);
+
+        // Walk TESConversationData when present.
+        var conversationData = ReadConversationData(buffer);
 
         // Read cFormEditorID from TESForm base (Release build field at +16)
         var formEditorId = _context.ReadBSStringT(offset, FormEditorIdOffset);
@@ -186,9 +205,19 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
             SpeakerFormId = speakerFormId,
             Difficulty = difficulty,
             QuestFormId = questFormId,
-            PromptText = entry.DialogueLine,
+            ConditionSpeakerFormId = conditionData.ConditionSpeakerFormId,
+            SpeakerFactionFormId = conditionData.SpeakerFactionFormId,
+            SpeakerRaceFormId = conditionData.SpeakerRaceFormId,
+            SpeakerVoiceTypeFormId = conditionData.SpeakerVoiceTypeFormId,
+            PromptText = entry.DialogueLine ?? _context.ReadBSStringT(offset, _info.PromptOffset),
+            DumpOffset = offset,
             SaidOnce = saidOnce,
             AddTopicFormIds = addTopicFormIds,
+            LinkFromTopicFormIds = conversationData.LinkFromTopicFormIds,
+            LinkToTopicFormIds = conversationData.LinkToTopicFormIds,
+            FollowUpInfoFormIds = conversationData.FollowUpInfoFormIds,
+            ConditionFunctions = conditionData.Functions,
+            Conditions = conditionData.Conditions,
             FormEditorId = formEditorId
         };
     }
@@ -264,8 +293,14 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
         // Read bSaidOnce (bool8)
         var saidOnce = buffer[InfoSaidOnceOffset] != 0;
 
+        // Read objConditions (TESCondition -> BSSimpleList<TESConditionItem*>)
+        var conditionData = ReadConditions(fileOffset.Value);
+
         // Walk m_listAddTopics BSSimpleList<TESTopic*>
         var addTopicFormIds = WalkAddTopicsList(fileOffset.Value);
+
+        // Walk TESConversationData when present.
+        var conversationData = ReadConversationData(buffer);
 
         // Read cFormEditorID from TESForm base (Release build field at +16)
         var formEditorId = _context.ReadBSStringT(fileOffset.Value, FormEditorIdOffset);
@@ -281,10 +316,19 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
             SpeakerFormId = speakerFormId,
             Difficulty = difficulty,
             QuestFormId = questFormId,
+            ConditionSpeakerFormId = conditionData.ConditionSpeakerFormId,
+            SpeakerFactionFormId = conditionData.SpeakerFactionFormId,
+            SpeakerRaceFormId = conditionData.SpeakerRaceFormId,
+            SpeakerVoiceTypeFormId = conditionData.SpeakerVoiceTypeFormId,
             PromptText = promptText,
             DumpOffset = fileOffset.Value,
             SaidOnce = saidOnce,
             AddTopicFormIds = addTopicFormIds,
+            LinkFromTopicFormIds = conversationData.LinkFromTopicFormIds,
+            LinkToTopicFormIds = conversationData.LinkToTopicFormIds,
+            FollowUpInfoFormIds = conversationData.FollowUpInfoFormIds,
+            ConditionFunctions = conditionData.Functions,
+            Conditions = conditionData.Conditions,
             FormEditorId = formEditorId
         };
     }
@@ -409,13 +453,13 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
         }
 
         var offset = entry.TesFormOffset.Value;
-        if (offset + DialStructSize > _context.FileSize)
+        if (offset + RuntimeDialogueLayouts.DialStructSize > _context.FileSize)
         {
             return results;
         }
 
         // Read the BSSimpleList inline node (8 bytes: m_item + m_pkNext)
-        var listOffset = offset + DialQuestInfoListOffset;
+        var listOffset = offset + RuntimeDialogueLayouts.DialQuestInfoListOffset;
         var listBuf = _context.ReadBytes(listOffset, 8);
         if (listBuf == null)
         {
@@ -525,6 +569,278 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
         return results;
     }
 
+    /// <summary>
+    ///     Read TESTopicInfo.m_pConversationData (TESConversationData) and project its link lists.
+    ///     This is the runtime equivalent of INFO TCLF/TCLT linkage when the object survives in memory.
+    /// </summary>
+    private RuntimeConversationData ReadConversationData(byte[] infoBuffer)
+    {
+        var results = new RuntimeConversationData();
+
+        if (_info.ConversationDataPtrOffset + 4 > infoBuffer.Length)
+        {
+            return results;
+        }
+
+        var conversationVa = BinaryUtils.ReadUInt32BE(infoBuffer, _info.ConversationDataPtrOffset);
+        if (!_context.IsValidPointer(conversationVa))
+        {
+            return results;
+        }
+
+        var conversationBuf = _context.ReadBytesAtVa(conversationVa, ConversationDataSize);
+        if (conversationBuf == null)
+        {
+            return results;
+        }
+
+        results.LinkFromTopicFormIds = WalkTopicFormList(conversationBuf, ConversationDataLinkFromOffset);
+        results.LinkToTopicFormIds = WalkTopicFormList(conversationBuf, ConversationDataLinkToOffset);
+        results.FollowUpInfoFormIds = WalkInfoFormList(conversationBuf, ConversationDataFollowUpInfosOffset);
+        return results;
+    }
+
+    private List<uint> WalkTopicFormList(byte[] conversationBuffer, int listHeadOffset)
+    {
+        return WalkFormIdSimpleList(conversationBuffer, listHeadOffset);
+    }
+
+    private List<uint> WalkInfoFormList(byte[] conversationBuffer, int listHeadOffset)
+    {
+        return WalkFormIdSimpleList(conversationBuffer, listHeadOffset);
+    }
+
+    private List<uint> WalkFormIdSimpleList(byte[] structBuffer, int listHeadOffset)
+    {
+        var results = new List<uint>();
+        if (listHeadOffset + 8 > structBuffer.Length)
+        {
+            return results;
+        }
+
+        var firstItem = BinaryUtils.ReadUInt32BE(structBuffer, listHeadOffset);
+        var firstNext = BinaryUtils.ReadUInt32BE(structBuffer, listHeadOffset + 4);
+
+        var firstFormId = _context.FollowPointerVaToFormId(firstItem);
+        if (firstFormId is > 0)
+        {
+            results.Add(firstFormId.Value);
+        }
+
+        var nextVa = firstNext;
+        var visited = new HashSet<uint>();
+        while (nextVa != 0 && results.Count < RuntimeMemoryContext.MaxListItems && visited.Add(nextVa))
+        {
+            var nodeBuf = _context.ReadBytesAtVa(nextVa, 8);
+            if (nodeBuf == null)
+            {
+                break;
+            }
+
+            var itemPtr = BinaryUtils.ReadUInt32BE(nodeBuf);
+            nextVa = BinaryUtils.ReadUInt32BE(nodeBuf, 4);
+
+            var formId = _context.FollowPointerVaToFormId(itemPtr);
+            if (formId is > 0)
+            {
+                results.Add(formId.Value);
+            }
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    ///     Walk TESTopicInfo.objConditions (TESCondition) and decode TESConditionItem entries
+    ///     into the same semantic model used for CTDA subrecords.
+    /// </summary>
+    private RuntimeConditionData ReadConditions(long infoStructOffset)
+    {
+        var results = new RuntimeConditionData();
+
+        var listOffset = infoStructOffset + _info.ConditionsOffset;
+        var listBuf = _context.ReadBytes(listOffset, 8);
+        if (listBuf == null)
+        {
+            return results;
+        }
+
+        ReadConditionListItem(BinaryUtils.ReadUInt32BE(listBuf), results);
+
+        var nextVa = BinaryUtils.ReadUInt32BE(listBuf, 4);
+        var visited = new HashSet<uint>();
+        while (nextVa != 0 &&
+               results.Conditions.Count < RuntimeMemoryContext.MaxListItems &&
+               !visited.Contains(nextVa))
+        {
+            visited.Add(nextVa);
+
+            var nodeBuf = _context.ReadBytesAtVa(nextVa, 8);
+            if (nodeBuf == null)
+            {
+                break;
+            }
+
+            ReadConditionListItem(BinaryUtils.ReadUInt32BE(nodeBuf), results);
+            nextVa = BinaryUtils.ReadUInt32BE(nodeBuf, 4);
+        }
+
+        return results;
+    }
+
+    private void ReadConditionListItem(uint conditionItemVa, RuntimeConditionData results)
+    {
+        var condition = ReadCondition(conditionItemVa);
+        if (condition == null)
+        {
+            return;
+        }
+
+        results.Functions.Add(condition.FunctionIndex);
+        results.Conditions.Add(condition);
+        ApplySpeakerConditionHints(
+            condition,
+            ref results.ConditionSpeakerFormId,
+            ref results.SpeakerFactionFormId,
+            ref results.SpeakerRaceFormId,
+            ref results.SpeakerVoiceTypeFormId);
+    }
+
+    private DialogueCondition? ReadCondition(uint conditionItemVa)
+    {
+        if (!_context.IsValidPointer(conditionItemVa))
+        {
+            return null;
+        }
+
+        // TESConditionItem is a 28-byte wrapper whose first field is CONDITION_ITEM_DATA.
+        var buffer = _context.ReadBytesAtVa(conditionItemVa, 28);
+        if (buffer == null)
+        {
+            return null;
+        }
+
+        var type = buffer[0];
+        var comparisonOperator = (type >> 5) & 0x7;
+        if (comparisonOperator > 5)
+        {
+            return null;
+        }
+
+        var functionIndex = BinaryUtils.ReadUInt16BE(buffer, 8);
+        var comparisonValue = BinaryUtils.ReadFloatBE(buffer, 4);
+        if (!RuntimeMemoryContext.IsNormalFloat(comparisonValue))
+        {
+            comparisonValue = 0;
+        }
+
+        var rawParam1 = BinaryUtils.ReadUInt32BE(buffer, 12);
+        var rawParam2 = BinaryUtils.ReadUInt32BE(buffer, 16);
+        var runOn = BinaryUtils.ReadUInt32BE(buffer, 20);
+        var referencePtr = BinaryUtils.ReadUInt32BE(buffer, 24);
+
+        if (type == 0 &&
+            functionIndex == 0 &&
+            rawParam1 == 0 &&
+            rawParam2 == 0 &&
+            runOn == 0 &&
+            referencePtr == 0 &&
+            MathF.Abs(comparisonValue) < 0.0001f)
+        {
+            return null;
+        }
+
+        return new DialogueCondition
+        {
+            Type = type,
+            ComparisonValue = comparisonValue,
+            FunctionIndex = functionIndex,
+            Parameter1 = ResolveConditionParameter(functionIndex, 0, rawParam1),
+            Parameter2 = ResolveConditionParameter(functionIndex, 1, rawParam2),
+            RunOn = runOn,
+            Reference = _context.FollowPointerVaToFormId(referencePtr) ?? 0
+        };
+    }
+
+    private uint ResolveConditionParameter(ushort functionIndex, int parameterIndex, uint rawValue)
+    {
+        if (rawValue == 0)
+        {
+            return 0;
+        }
+
+        var function = ScriptFunctionTable.Get((ushort)(0x1000 | functionIndex));
+        var paramType = function is not null && parameterIndex < function.Params.Length
+            ? function.Params[parameterIndex].Type
+            : (ScriptParamType?)null;
+
+        if (!ShouldResolveConditionParameterAsForm(paramType))
+        {
+            return rawValue;
+        }
+
+        return _context.FollowPointerVaToFormId(rawValue) ?? rawValue;
+    }
+
+    private static bool ShouldResolveConditionParameterAsForm(ScriptParamType? paramType)
+    {
+        return paramType switch
+        {
+            null => false,
+            ScriptParamType.Char or
+            ScriptParamType.Int or
+            ScriptParamType.Float or
+            ScriptParamType.Axis or
+            ScriptParamType.AnimGroup or
+            ScriptParamType.Sex or
+            ScriptParamType.ScriptVar or
+            ScriptParamType.Stage or
+            ScriptParamType.CrimeType or
+            ScriptParamType.FormType or
+            ScriptParamType.MiscStat or
+            ScriptParamType.VatsValue or
+            ScriptParamType.VatsValueData or
+            ScriptParamType.Alignment or
+            ScriptParamType.CritStage => false,
+            _ => true
+        };
+    }
+
+    private static void ApplySpeakerConditionHints(
+        DialogueCondition condition,
+        ref uint? conditionSpeaker,
+        ref uint? conditionFaction,
+        ref uint? conditionRace,
+        ref uint? conditionVoiceType)
+    {
+        var comparisonOperator = (condition.Type >> 5) & 0x7;
+        var isPositive = condition.RunOn == 0 &&
+                         ((comparisonOperator is 0 or 3 && condition.ComparisonValue >= 0.99f) ||
+                          (comparisonOperator is 1 && condition.ComparisonValue < 0.01f) ||
+                          (comparisonOperator is 2 && condition.ComparisonValue < 0.01f));
+
+        if (!isPositive)
+        {
+            return;
+        }
+
+        switch (condition.FunctionIndex)
+        {
+            case 0x48:
+                conditionSpeaker ??= condition.Parameter1;
+                break;
+            case 0x47:
+                conditionFaction ??= condition.Parameter1;
+                break;
+            case 0x45:
+                conditionRace ??= condition.Parameter1;
+                break;
+            case 0x1AB:
+                conditionVoiceType ??= condition.Parameter1;
+                break;
+        }
+    }
+
     #region Struct Layouts
 
     /// <summary>
@@ -535,17 +851,20 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
     /// </summary>
     private sealed record InfoOffsets(
         int StructSize,
+        int ConditionsOffset,
         int IndexOffset,
         int DataOffset,
         int PromptOffset,
+        int ConversationDataPtrOffset,
         int SpeakerPtrOffset,
         int DifficultyOffset,
         int QuestPtrOffset);
 
     // TESTopicInfo: Release Beta PDB = 96 bytes.
     // Field offsets from Release Beta PDB (match runtime layout directly):
-    //   iInfoIndex=48, m_Data=51, cPrompt=56, pSpeaker=76, eDifficulty=84, pOwnerQuest=88.
-    private static readonly InfoOffsets InfoLayout = new(96, 48, 51, 56, 76, 84, 88);
+    //   objConditions=40, iInfoIndex=48, m_Data=51, cPrompt=56, m_pConversationData=72,
+    //   pSpeaker=76, eDifficulty=84, pOwnerQuest=88.
+    private static readonly InfoOffsets InfoLayout = new(96, 40, 48, 51, 56, 72, 76, 84, 88);
 
     // TESForm field present in Release builds (not in Proto Debug PDB):
     // cFormEditorID BSStringT at offset 16 (within TESForm base, same in all builds).
@@ -555,18 +874,29 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
     // bSaidOnce at +50, m_listAddTopics at +64.
     private const int InfoSaidOnceOffset = 50;
     private const int InfoAddTopicsOffset = 64;
-
-    // TESTopic layout — consistent across all known builds (Final Debug / Release PDB, 80 bytes).
-    // FullName=+44, DataType=+52, Flags=+53, Priority=+56, QuestInfoList=+60, DummyPrompt=+68.
-    private const int DialStructSize = 80;
-    private const int DialFullNameOffset = 44;
-    private const int DialDataTypeOffset = 52;
-    private const int DialDataFlagsOffset = 53;
-    private const int DialPriorityOffset = 56;
-    private const int DialQuestInfoListOffset = 60;
-    private const int DialDummyPromptOffset = 68;
+    private const int ConversationDataSize = 24;
+    private const int ConversationDataLinkFromOffset = 0;
+    private const int ConversationDataLinkToOffset = 8;
+    private const int ConversationDataFollowUpInfosOffset = 16;
 
     #endregion
+
+    private sealed class RuntimeConditionData
+    {
+        public uint? ConditionSpeakerFormId;
+        public List<DialogueCondition> Conditions { get; } = [];
+        public List<ushort> Functions { get; } = [];
+        public uint? SpeakerFactionFormId;
+        public uint? SpeakerRaceFormId;
+        public uint? SpeakerVoiceTypeFormId;
+    }
+
+    private sealed class RuntimeConversationData
+    {
+        public List<uint> FollowUpInfoFormIds { get; set; } = [];
+        public List<uint> LinkFromTopicFormIds { get; set; } = [];
+        public List<uint> LinkToTopicFormIds { get; set; } = [];
+    }
 
     // Note, Quest, and Terminal struct layout constants are provided by QuestTerminal.
 }

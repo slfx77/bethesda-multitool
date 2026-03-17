@@ -26,6 +26,12 @@ public class SampleFileFixture
     /// <summary>Release beta memory dump.</summary>
     public string? ReleaseDump { get; } = FindSamplePath(@"Sample\MemoryDump\Fallout_Release_Beta.xex.dmp");
 
+    /// <summary>Early release beta memory dump variant.</summary>
+    public string? ReleaseDumpXex4 { get; } = FindSamplePath(@"Sample\MemoryDump\Fallout_Release_Beta.xex4.dmp");
+
+    /// <summary>Late release beta memory dump variant.</summary>
+    public string? ReleaseDumpXex44 { get; } = FindSamplePath(@"Sample\MemoryDump\Fallout_Release_Beta.xex44.dmp");
+
     public static string? FindSamplePath(string relativePath)
     {
         var dir = AppContext.BaseDirectory;

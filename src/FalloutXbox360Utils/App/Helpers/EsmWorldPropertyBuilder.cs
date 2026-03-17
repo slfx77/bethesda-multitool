@@ -166,7 +166,7 @@ internal static class EsmWorldPropertyBuilder
 
         properties.Add(new EsmPropertyEntry
         {
-            Name = $"World Placements ({worldPlacements.Count} uses)",
+            Name = $"World Placements ({worldPlacements.Count} instances)",
             Value = "",
             Category = "References",
             IsExpandable = true,

@@ -17,6 +17,7 @@ internal static class WorldMapCellPropertyBuilder
         WorldViewData? worldViewData,
         FormIdResolver? resolver)
     {
+        var effectiveResolver = worldViewData?.Resolver ?? resolver;
         var properties = new List<EsmPropertyEntry>();
 
         // Identity
@@ -76,7 +77,7 @@ internal static class WorldMapCellPropertyBuilder
         AddCellStatistics(properties, cell);
 
         // Placed Objects (expandable by category)
-        AddCellPlacedObjects(properties, cell, worldViewData, resolver);
+        AddCellPlacedObjects(properties, cell, worldViewData, effectiveResolver);
 
         // Metadata
         properties.Add(new EsmPropertyEntry
@@ -208,16 +209,19 @@ internal static class WorldMapCellPropertyBuilder
                 IsExpandable = true,
                 SubItems = group.Select(obj =>
                 {
-                    var baseName = obj.BaseEditorId
-                                   ?? resolver?.GetBestName(obj.BaseFormId)
-                                   ?? $"0x{obj.BaseFormId:X8}";
+                    var referenceName = PlacedObjectCategoryResolver.GetReferenceAwareName(obj, resolver);
+                    var baseName = resolver?.GetBestName(obj.BaseFormId);
+                    var displayName = !string.IsNullOrEmpty(baseName) &&
+                                      !string.Equals(referenceName, baseName, StringComparison.OrdinalIgnoreCase)
+                        ? $"{referenceName} [{baseName}]"
+                        : referenceName;
                     return new EsmPropertyEntry
                     {
-                        Col1 = baseName,
-                        Col3 = $"0x{obj.BaseFormId:X8}",
-                        Col3FormId = obj.BaseFormId,
-                        Name = baseName,
-                        Value = $"0x{obj.BaseFormId:X8}"
+                        Col1 = displayName,
+                        Col3 = $"0x{obj.FormId:X8}",
+                        Col3FormId = obj.FormId,
+                        Name = displayName,
+                        Value = $"0x{obj.FormId:X8}"
                     };
                 }).ToList()
             });

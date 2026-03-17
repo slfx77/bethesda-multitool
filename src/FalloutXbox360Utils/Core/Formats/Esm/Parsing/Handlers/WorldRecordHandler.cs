@@ -41,15 +41,31 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
                 RotY = refr.Position?.RotY ?? 0,
                 RotZ = refr.Position?.RotZ ?? 0,
                 Scale = refr.Scale,
+                Radius = refr.Radius,
                 OwnerFormId = refr.OwnerFormId,
+                EncounterZoneFormId = refr.EncounterZoneFormId,
+                LockLevel = refr.LockLevel,
+                LockKeyFormId = refr.LockKeyFormId,
+                LockFlags = refr.LockFlags,
+                LockNumTries = refr.LockNumTries,
+                LockTimesUnlocked = refr.LockTimesUnlocked,
                 EnableParentFormId = refr.EnableParentFormId,
                 EnableParentFlags = refr.EnableParentFlags,
+                PersistentCellFormId = refr.PersistentCellFormId,
+                StartingPosition = refr.StartingPosition,
+                StartingWorldOrCellFormId = refr.StartingWorldOrCellFormId,
+                PackageStartLocation = refr.PackageStartLocation,
+                MerchantContainerFormId = refr.MerchantContainerFormId,
+                LeveledCreatureOriginalBaseFormId = refr.LeveledCreatureOriginalBaseFormId,
+                LeveledCreatureTemplateFormId = refr.LeveledCreatureTemplateFormId,
                 IsPersistent = refr.Header.IsPersistent,
                 IsInitiallyDisabled = refr.Header.IsInitiallyDisabled,
                 IsMapMarker = true,
                 MarkerType = refr.MarkerType.HasValue ? (MapMarkerType)refr.MarkerType.Value : null,
                 MarkerName = refr.MarkerName,
+                LinkedRefKeywordFormId = refr.LinkedRefKeywordFormId,
                 LinkedRefFormId = refr.LinkedRefFormId,
+                LinkedRefChildrenFormIds = refr.LinkedRefChildrenFormIds,
                 Offset = refr.Header.Offset,
                 IsBigEndian = refr.Header.IsBigEndian
             };
@@ -127,6 +143,117 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
     }
 
     /// <summary>
+    ///     DMP fallback: create partial worldspace stubs for cells that already know their parent WRLD
+    ///     FormID even when no WRLD record or runtime cell-map-backed worldspace was parsed.
+    /// </summary>
+    internal static void EnsureWorldspacesForCells(
+        List<CellRecord> cells,
+        List<WorldspaceRecord> worldspaces,
+        RecordParserContext context)
+    {
+        if (cells.Count == 0)
+        {
+            return;
+        }
+
+        var worldspaceIndexByFormId = new Dictionary<uint, int>(worldspaces.Count);
+        for (var i = 0; i < worldspaces.Count; i++)
+        {
+            worldspaceIndexByFormId.TryAdd(worldspaces[i].FormId, i);
+        }
+
+        Dictionary<uint, RuntimeEditorIdEntry>? runtimeWorldEntries = null;
+        if (context.RuntimeReader != null)
+        {
+            runtimeWorldEntries = new Dictionary<uint, RuntimeEditorIdEntry>();
+            foreach (var entry in context.ScanResult.RuntimeEditorIds)
+            {
+                if (entry.FormType == 0x41 && entry.FormId != 0)
+                {
+                    runtimeWorldEntries.TryAdd(entry.FormId, entry);
+                }
+            }
+        }
+
+        var added = 0;
+        var enriched = 0;
+        foreach (var group in cells
+                     .Where(cell => cell.WorldspaceFormId is > 0)
+                     .GroupBy(cell => cell.WorldspaceFormId!.Value))
+        {
+            var relatedCells = group.ToList();
+            var cellBackedWorldspace = BuildCellBackedWorldspaceStub(group.Key, relatedCells, context);
+            var runtimeCellMapWorldspace = context.RuntimeWorldspaceCellMaps is { Count: > 0 } &&
+                                           context.RuntimeWorldspaceCellMaps.TryGetValue(group.Key, out var runtimeWorldData)
+                ? BuildRuntimeCellMapWorldspace(runtimeWorldData, context)
+                : null;
+            if (worldspaceIndexByFormId.TryGetValue(group.Key, out var existingIndex))
+            {
+                if (runtimeCellMapWorldspace != null)
+                {
+                    var merged = MergeWorldspace(worldspaces[existingIndex], runtimeCellMapWorldspace);
+                    if (!Equals(merged, worldspaces[existingIndex]))
+                    {
+                        worldspaces[existingIndex] = merged;
+                        enriched++;
+                    }
+                }
+
+                if (cellBackedWorldspace != null)
+                {
+                    var merged = MergeWorldspace(worldspaces[existingIndex], cellBackedWorldspace);
+                    if (!Equals(merged, worldspaces[existingIndex]))
+                    {
+                        worldspaces[existingIndex] = merged;
+                        enriched++;
+                    }
+                }
+
+                continue;
+            }
+
+            WorldspaceRecord? worldspace = null;
+            if (context.RuntimeReader != null &&
+                runtimeWorldEntries != null &&
+                runtimeWorldEntries.TryGetValue(group.Key, out var runtimeWorldEntry))
+            {
+                worldspace = context.RuntimeReader.ReadRuntimeWorldspace(runtimeWorldEntry);
+            }
+
+            if (runtimeCellMapWorldspace != null)
+            {
+                worldspace = worldspace != null
+                    ? MergeWorldspace(worldspace, runtimeCellMapWorldspace)
+                    : runtimeCellMapWorldspace;
+            }
+
+            worldspace = cellBackedWorldspace != null
+                ? worldspace != null ? MergeWorldspace(worldspace, cellBackedWorldspace) : cellBackedWorldspace
+                : worldspace;
+            if (worldspace == null)
+            {
+                continue;
+            }
+
+            worldspaces.Add(worldspace);
+            worldspaceIndexByFormId[group.Key] = worldspaces.Count - 1;
+            added++;
+        }
+
+        if (added > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] Added {added} partial worldspaces from cell-backed worldspace signals");
+        }
+
+        if (enriched > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] Enriched {enriched} existing worldspaces from linked cell coverage");
+        }
+    }
+
+    /// <summary>
     ///     DMP fallback: create virtual cells for orphan placed references.
     ///     Delegates to <see cref="CellLinkageHandler" />.
     /// </summary>
@@ -178,6 +305,46 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
             finally
             {
                 ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+
+        _context.MergeRuntimeOverlayRecords(
+            worldspaces,
+            [0x41],
+            record => record.FormId,
+            static (reader, entry) => reader.ReadRuntimeWorldspace(entry),
+            MergeWorldspace,
+            "worldspaces");
+
+        if (_context.RuntimeWorldspaceCellMaps is { Count: > 0 })
+        {
+            var indexedWorldspaces = new Dictionary<uint, int>(worldspaces.Count);
+            for (var i = 0; i < worldspaces.Count; i++)
+            {
+                indexedWorldspaces.TryAdd(worldspaces[i].FormId, i);
+            }
+
+            var cellMapOnlyAdded = 0;
+            foreach (var (worldspaceFormId, worldData) in _context.RuntimeWorldspaceCellMaps)
+            {
+                var runtimeFallback = BuildRuntimeCellMapWorldspace(worldData, _context);
+
+                if (indexedWorldspaces.TryGetValue(worldspaceFormId, out var existingIndex))
+                {
+                    worldspaces[existingIndex] = MergeWorldspace(worldspaces[existingIndex], runtimeFallback);
+                }
+                else
+                {
+                    worldspaces.Add(runtimeFallback);
+                    indexedWorldspaces[worldspaceFormId] = worldspaces.Count - 1;
+                    cellMapOnlyAdded++;
+                }
+            }
+
+            if (cellMapOnlyAdded > 0)
+            {
+                Logger.Instance.Debug(
+                    $"  [Semantic] Added {cellMapOnlyAdded} partial worldspaces from runtime cell maps");
             }
         }
 
@@ -319,6 +486,148 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
             FullName = _context.FindFullNameNear(record.Offset),
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    private static WorldspaceRecord? BuildCellBackedWorldspaceStub(
+        uint worldspaceFormId,
+        List<CellRecord> relatedCells,
+        RecordParserContext context)
+    {
+        if (worldspaceFormId == 0)
+        {
+            return null;
+        }
+
+        short? mapNwCellX = null;
+        short? mapNwCellY = null;
+        short? mapSeCellX = null;
+        short? mapSeCellY = null;
+        float? boundsMinX = null;
+        float? boundsMinY = null;
+        float? boundsMaxX = null;
+        float? boundsMaxY = null;
+        var encounterZoneFormId = GetConsensusFormId(
+            relatedCells.Select(cell => cell.EncounterZoneFormId));
+
+        var griddedCells = relatedCells
+            .Where(cell => cell.GridX.HasValue && cell.GridY.HasValue)
+            .ToList();
+        if (griddedCells.Count > 0)
+        {
+            var minX = griddedCells.Min(cell => cell.GridX!.Value);
+            var maxX = griddedCells.Max(cell => cell.GridX!.Value);
+            var minY = griddedCells.Min(cell => cell.GridY!.Value);
+            var maxY = griddedCells.Max(cell => cell.GridY!.Value);
+
+            mapNwCellX = checked((short)minX);
+            mapNwCellY = checked((short)maxY);
+            mapSeCellX = checked((short)maxX);
+            mapSeCellY = checked((short)minY);
+            boundsMinX = minX * 4096f;
+            boundsMinY = minY * 4096f;
+            boundsMaxX = (maxX + 1) * 4096f;
+            boundsMaxY = (maxY + 1) * 4096f;
+        }
+
+        return new WorldspaceRecord
+        {
+            FormId = worldspaceFormId,
+            EditorId = context.GetEditorId(worldspaceFormId),
+            FullName = context.FormIdToFullName.GetValueOrDefault(worldspaceFormId),
+            MapNWCellX = mapNwCellX,
+            MapNWCellY = mapNwCellY,
+            MapSECellX = mapSeCellX,
+            MapSECellY = mapSeCellY,
+            BoundsMinX = boundsMinX,
+            BoundsMinY = boundsMinY,
+            BoundsMaxX = boundsMaxX,
+            BoundsMaxY = boundsMaxY,
+            EncounterZoneFormId = encounterZoneFormId,
+            IsBigEndian = true
+        };
+    }
+
+    private static WorldspaceRecord BuildRuntimeCellMapWorldspace(
+        RuntimeWorldspaceData worldData,
+        RecordParserContext context)
+    {
+        return new WorldspaceRecord
+        {
+            FormId = worldData.FormId,
+            EditorId = worldData.EditorId ?? context.GetEditorId(worldData.FormId),
+            FullName = worldData.FullName ?? context.FormIdToFullName.GetValueOrDefault(worldData.FormId),
+            ParentWorldspaceFormId = worldData.ParentWorldFormId,
+            ClimateFormId = worldData.ClimateFormId,
+            WaterFormId = worldData.WaterFormId,
+            DefaultLandHeight = worldData.DefaultLandHeight,
+            DefaultWaterHeight = worldData.DefaultWaterHeight,
+            MapUsableWidth = worldData.MapUsableWidth,
+            MapUsableHeight = worldData.MapUsableHeight,
+            MapNWCellX = worldData.MapNWCellX,
+            MapNWCellY = worldData.MapNWCellY,
+            MapSECellX = worldData.MapSECellX,
+            MapSECellY = worldData.MapSECellY,
+            BoundsMinX = worldData.BoundsMinX,
+            BoundsMinY = worldData.BoundsMinY,
+            BoundsMaxX = worldData.BoundsMaxX,
+            BoundsMaxY = worldData.BoundsMaxY,
+            EncounterZoneFormId = worldData.EncounterZoneFormId,
+            Offset = worldData.Offset,
+            IsBigEndian = true
+        };
+    }
+
+    private static uint? GetConsensusFormId(IEnumerable<uint?> formIds)
+    {
+        uint? consensus = null;
+        foreach (var formId in formIds)
+        {
+            if (formId is not > 0)
+            {
+                continue;
+            }
+
+            if (consensus == null)
+            {
+                consensus = formId.Value;
+                continue;
+            }
+
+            if (consensus.Value != formId.Value)
+            {
+                return null;
+            }
+        }
+
+        return consensus;
+    }
+
+    private static WorldspaceRecord MergeWorldspace(WorldspaceRecord esm, WorldspaceRecord runtime)
+    {
+        return esm with
+        {
+            EditorId = esm.EditorId ?? runtime.EditorId,
+            FullName = esm.FullName ?? runtime.FullName,
+            ParentWorldspaceFormId = esm.ParentWorldspaceFormId ?? runtime.ParentWorldspaceFormId,
+            ClimateFormId = esm.ClimateFormId ?? runtime.ClimateFormId,
+            WaterFormId = esm.WaterFormId ?? runtime.WaterFormId,
+            DefaultLandHeight = esm.DefaultLandHeight ?? runtime.DefaultLandHeight,
+            DefaultWaterHeight = esm.DefaultWaterHeight ?? runtime.DefaultWaterHeight,
+            MapUsableWidth = esm.MapUsableWidth ?? runtime.MapUsableWidth,
+            MapUsableHeight = esm.MapUsableHeight ?? runtime.MapUsableHeight,
+            MapNWCellX = esm.MapNWCellX ?? runtime.MapNWCellX,
+            MapNWCellY = esm.MapNWCellY ?? runtime.MapNWCellY,
+            MapSECellX = esm.MapSECellX ?? runtime.MapSECellX,
+            MapSECellY = esm.MapSECellY ?? runtime.MapSECellY,
+            BoundsMinX = esm.BoundsMinX ?? runtime.BoundsMinX,
+            BoundsMinY = esm.BoundsMinY ?? runtime.BoundsMinY,
+            BoundsMaxX = esm.BoundsMaxX ?? runtime.BoundsMaxX,
+            BoundsMaxY = esm.BoundsMaxY ?? runtime.BoundsMaxY,
+            EncounterZoneFormId = esm.EncounterZoneFormId ?? runtime.EncounterZoneFormId,
+            Cells = esm.Cells.Count > 0 ? esm.Cells : runtime.Cells,
+            Offset = esm.Offset != 0 ? esm.Offset : runtime.Offset,
+            IsBigEndian = esm.IsBigEndian || runtime.IsBigEndian
         };
     }
 

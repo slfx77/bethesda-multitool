@@ -211,6 +211,7 @@ internal static class EsmBrowserTreeBuilder
         EsmBrowserNode typeNode,
         FormIdResolver? resolver = null,
         Dictionary<uint, List<WorldPlacement>>? placementIndex = null,
+        FormUsageIndex? usageIndex = null,
         IReadOnlyDictionary<uint, RaceRecord>? raceLookup = null,
         Dictionary<uint, List<(uint FormId, string? Name)>>? factionMembersIndex = null)
     {
@@ -227,13 +228,15 @@ internal static class EsmBrowserTreeBuilder
             var (formId, editorId, fullName, offset) = EsmPropertyFormatter.ExtractRecordIdentity(record);
             var formIdHex = $"0x{formId:X8}";
 
-            // Look up world placement count for this base object
-            int useCount = 0;
+            // Look up Count/Use data
+            var placementCount = 0;
             if (placementIndex != null && formId != 0 &&
                 placementIndex.TryGetValue(formId, out var placements))
             {
-                useCount = placements.Count;
+                placementCount = placements.Count;
             }
+
+            var useCount = usageIndex?.GetUseCount(formId) ?? 0;
 
             // Build display name and detail (shown as secondary text in tree)
             string displayName;
@@ -272,12 +275,24 @@ internal static class EsmBrowserTreeBuilder
                 detail = null;
             }
 
-            // Append use count to detail text
-            if (useCount > 0)
+            // Append Count/Use summary to detail text
+            if (placementCount > 0 || useCount > 0)
             {
+                var countParts = new List<string>();
+                if (placementCount > 0)
+                {
+                    countParts.Add($"Count {placementCount}");
+                }
+
+                if (useCount > 0)
+                {
+                    countParts.Add($"Use {useCount}");
+                }
+
+                var summary = $"[{string.Join(", ", countParts)}]";
                 detail = detail != null
-                    ? $"{detail} [{useCount} uses]"
-                    : $"[{useCount} uses]";
+                    ? $"{detail} {summary}"
+                    : summary;
             }
 
             var recordNode = new EsmBrowserNode
@@ -292,7 +307,8 @@ internal static class EsmBrowserTreeBuilder
                 ParentIconGlyph = typeNode.IconGlyph,
                 FileOffset = offset,
                 DataObject = record,
-                Properties = BuildProperties(record, resolver, placementIndex, raceLookup, factionMembersIndex)
+                Properties = BuildProperties(record, resolver, placementIndex, usageIndex, raceLookup,
+                    factionMembersIndex)
             };
 
             recordNodes.Add(recordNode);
@@ -363,11 +379,13 @@ internal static class EsmBrowserTreeBuilder
         object record,
         FormIdResolver? resolver = null,
         Dictionary<uint, List<WorldPlacement>>? placementIndex = null,
+        FormUsageIndex? usageIndex = null,
         IReadOnlyDictionary<uint, RaceRecord>? raceLookup = null,
         Dictionary<uint, List<(uint FormId, string? Name)>>? factionMembersIndex = null)
     {
         var properties = new List<EsmPropertyEntry>();
         var type = record.GetType();
+        var (recordFormId, _, _, _) = EsmPropertyFormatter.ExtractRecordIdentity(record);
 
         // Add record type signature as the first Identity property
         if (record is GenericEsmRecord generic)
@@ -388,6 +406,8 @@ internal static class EsmBrowserTreeBuilder
                 Category = "Identity"
             });
         }
+
+        AddCountAndUse(properties, recordFormId, placementIndex, usageIndex);
 
         // Record-type flags for special handling
         var isCreature = record is CreatureRecord;
@@ -515,6 +535,7 @@ internal static class EsmBrowserTreeBuilder
         EsmCharacterPropertyBuilder.AddRaceSkillBoosts(properties, record, resolver);
         EsmWorldPropertyBuilder.AddWorldspaceStats(properties, record);
         EsmWorldPropertyBuilder.AddWorldPlacements(properties, record, type, placementIndex);
+        AddUsageReferences(properties, recordFormId, usageIndex, resolver);
         AddFactionMembers(properties, record, factionMembersIndex);
 
         // Sort properties by category for consistent grouping
@@ -522,6 +543,87 @@ internal static class EsmBrowserTreeBuilder
             .OrderBy(p => Array.IndexOf(EsmPropertyFormatter.CategoryOrder, p.Category ?? "General"))
             .ThenBy(p => p.Category == "General" ? 1 : 0)
             .ToList();
+    }
+
+    private static void AddCountAndUse(
+        List<EsmPropertyEntry> properties,
+        uint recordFormId,
+        Dictionary<uint, List<WorldPlacement>>? placementIndex,
+        FormUsageIndex? usageIndex)
+    {
+        if (recordFormId == 0)
+        {
+            return;
+        }
+
+        var placementCount = placementIndex != null && placementIndex.TryGetValue(recordFormId, out var placements)
+            ? placements.Count
+            : 0;
+        var useCount = usageIndex?.GetUseCount(recordFormId) ?? 0;
+
+        if (placementCount > 0)
+        {
+            properties.Add(new EsmPropertyEntry
+            {
+                Name = "Count",
+                Value = placementCount.ToString("N0"),
+                Category = "Statistics"
+            });
+        }
+
+        if (useCount > 0)
+        {
+            properties.Add(new EsmPropertyEntry
+            {
+                Name = "Use",
+                Value = useCount.ToString("N0"),
+                Category = "Statistics"
+            });
+        }
+    }
+
+    private static void AddUsageReferences(
+        List<EsmPropertyEntry> properties,
+        uint recordFormId,
+        FormUsageIndex? usageIndex,
+        FormIdResolver? resolver)
+    {
+        if (recordFormId == 0 || usageIndex == null)
+        {
+            return;
+        }
+
+        var usages = usageIndex.GetUsages(recordFormId);
+        if (usages.Count == 0)
+        {
+            return;
+        }
+
+        var subItems = usages
+            .OrderBy(u => resolver?.GetBestNameWithRefChain(u.SourceFormId) ?? "", StringComparer.OrdinalIgnoreCase)
+            .ThenBy(u => u.Context, StringComparer.OrdinalIgnoreCase)
+            .Select(u =>
+            {
+                var sourceName = resolver?.GetBestNameWithRefChain(u.SourceFormId) ?? $"0x{u.SourceFormId:X8}";
+                return new EsmPropertyEntry
+                {
+                    Col1 = sourceName,
+                    Col2 = u.Context,
+                    Col3 = $"0x{u.SourceFormId:X8}",
+                    Col3FormId = u.SourceFormId,
+                    Col4 = u.SourceKind
+                };
+            })
+            .ToList();
+
+        properties.Add(new EsmPropertyEntry
+        {
+            Name = $"Used By ({usages.Count})",
+            Value = "",
+            Category = "References",
+            IsExpandable = true,
+            SubItems = subItems
+        });
     }
 
     /// <summary>

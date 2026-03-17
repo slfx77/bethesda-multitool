@@ -66,23 +66,41 @@ internal static class RuntimeDataEnricher
         {
             if (existingByFormId.TryGetValue(formId, out var idx))
             {
-                // Merge: prefer runtime non-null values over ESM
+                // Merge: keep ESM-authored values authoritative and let runtime fill gaps.
                 var existing = context.ScanResult.RefrRecords[idx];
                 context.ScanResult.RefrRecords[idx] = existing with
                 {
-                    BaseFormId = runtimeRefr.BaseFormId != 0 ? runtimeRefr.BaseFormId : existing.BaseFormId,
-                    Position = runtimeRefr.Position ?? existing.Position,
-                    Scale = Math.Abs(runtimeRefr.Scale - 1.0f) > 0.001f ? runtimeRefr.Scale : existing.Scale,
-                    ParentCellFormId = runtimeRefr.ParentCellFormId ?? existing.ParentCellFormId,
-                    ParentCellIsInterior = runtimeRefr.ParentCellIsInterior ?? existing.ParentCellIsInterior,
-                    IsMapMarker = runtimeRefr.IsMapMarker || existing.IsMapMarker,
-                    MarkerType = runtimeRefr.MarkerType ?? existing.MarkerType,
-                    MarkerName = runtimeRefr.MarkerName ?? existing.MarkerName,
-                    EnableParentFormId = runtimeRefr.EnableParentFormId ?? existing.EnableParentFormId,
-                    EnableParentFlags = runtimeRefr.EnableParentFlags ?? existing.EnableParentFlags,
-                    LinkedRefFormId = runtimeRefr.LinkedRefFormId ?? existing.LinkedRefFormId,
-                    OwnerFormId = runtimeRefr.OwnerFormId ?? existing.OwnerFormId,
-                    DestinationDoorFormId = runtimeRefr.DestinationDoorFormId ?? existing.DestinationDoorFormId
+                    BaseFormId = existing.BaseFormId != 0 ? existing.BaseFormId : runtimeRefr.BaseFormId,
+                    Position = existing.Position ?? runtimeRefr.Position,
+                    Scale = Math.Abs(existing.Scale - 1.0f) > 0.001f ? existing.Scale : runtimeRefr.Scale,
+                    Radius = existing.Radius ?? runtimeRefr.Radius,
+                    ParentCellFormId = existing.ParentCellFormId ?? runtimeRefr.ParentCellFormId,
+                    ParentCellIsInterior = existing.ParentCellIsInterior ?? runtimeRefr.ParentCellIsInterior,
+                    PersistentCellFormId = existing.PersistentCellFormId ?? runtimeRefr.PersistentCellFormId,
+                    StartingPosition = existing.StartingPosition ?? runtimeRefr.StartingPosition,
+                    StartingWorldOrCellFormId = existing.StartingWorldOrCellFormId ?? runtimeRefr.StartingWorldOrCellFormId,
+                    PackageStartLocation = existing.PackageStartLocation ?? runtimeRefr.PackageStartLocation,
+                    MerchantContainerFormId = existing.MerchantContainerFormId ?? runtimeRefr.MerchantContainerFormId,
+                    LeveledCreatureOriginalBaseFormId = existing.LeveledCreatureOriginalBaseFormId ?? runtimeRefr.LeveledCreatureOriginalBaseFormId,
+                    LeveledCreatureTemplateFormId = existing.LeveledCreatureTemplateFormId ?? runtimeRefr.LeveledCreatureTemplateFormId,
+                    IsMapMarker = existing.IsMapMarker || runtimeRefr.IsMapMarker,
+                    MarkerType = existing.MarkerType ?? runtimeRefr.MarkerType,
+                    MarkerName = existing.MarkerName ?? runtimeRefr.MarkerName,
+                    EncounterZoneFormId = existing.EncounterZoneFormId ?? runtimeRefr.EncounterZoneFormId,
+                    LockLevel = existing.LockLevel ?? runtimeRefr.LockLevel,
+                    LockKeyFormId = existing.LockKeyFormId ?? runtimeRefr.LockKeyFormId,
+                    LockFlags = existing.LockFlags ?? runtimeRefr.LockFlags,
+                    LockNumTries = existing.LockNumTries ?? runtimeRefr.LockNumTries,
+                    LockTimesUnlocked = existing.LockTimesUnlocked ?? runtimeRefr.LockTimesUnlocked,
+                    EnableParentFormId = existing.EnableParentFormId ?? runtimeRefr.EnableParentFormId,
+                    EnableParentFlags = existing.EnableParentFlags ?? runtimeRefr.EnableParentFlags,
+                    LinkedRefKeywordFormId = existing.LinkedRefKeywordFormId ?? runtimeRefr.LinkedRefKeywordFormId,
+                    LinkedRefFormId = existing.LinkedRefFormId ?? runtimeRefr.LinkedRefFormId,
+                    LinkedRefChildrenFormIds = existing.LinkedRefChildrenFormIds.Count > 0
+                        ? existing.LinkedRefChildrenFormIds
+                        : runtimeRefr.LinkedRefChildrenFormIds,
+                    OwnerFormId = existing.OwnerFormId ?? runtimeRefr.OwnerFormId,
+                    DestinationDoorFormId = existing.DestinationDoorFormId ?? runtimeRefr.DestinationDoorFormId
                 };
                 mergedCount++;
             }

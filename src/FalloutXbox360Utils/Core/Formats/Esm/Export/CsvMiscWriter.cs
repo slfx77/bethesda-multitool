@@ -130,7 +130,7 @@ internal static class CsvMiscWriter
     {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "RowType,FormID,EditorID,Name,TopicType,TopicTypeName,Flags,IsRumors,IsTopLevel,QuestFormID,QuestName,QuestDisplayName,ResponseCount,Priority,DummyPrompt,Endianness,Offset");
+            "RowType,FormID,EditorID,Name,TopicType,TopicTypeName,Flags,IsRumors,IsTopLevel,QuestFormID,QuestName,QuestDisplayName,ResponseCount,Priority,JournalIndex,DummyPrompt,Endianness,Offset");
 
         foreach (var t in topics.OrderBy(t => t.EditorId ?? ""))
         {
@@ -149,6 +149,7 @@ internal static class CsvMiscWriter
                 resolver.ResolveDisplayNameCsv(t.QuestFormId ?? 0),
                 t.ResponseCount.ToString(),
                 t.Priority is not 0f ? t.Priority.ToString("F1") : "",
+                t.JournalIndex != 0 ? t.JournalIndex.ToString() : "",
                 Fmt.CsvEscape(t.DummyPrompt),
                 Fmt.Endian(t.IsBigEndian),
                 t.Offset.ToString()));

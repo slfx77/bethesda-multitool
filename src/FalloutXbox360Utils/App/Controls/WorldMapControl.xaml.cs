@@ -571,8 +571,11 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             if (hitObj != _hoveredObject)
             {
                 _hoveredObject = hitObj;
+                var hoverName = hitObj != null
+                    ? PlacedObjectCategoryResolver.GetReferenceAwareName(hitObj, _data?.Resolver)
+                    : null;
                 HoverInfoText.Text = hitObj != null
-                    ? $"{hitObj.RecordType}: {hitObj.BaseEditorId ?? $"0x{hitObj.BaseFormId:X8}"} at ({hitObj.X:F0}, {hitObj.Y:F0}, {hitObj.Z:F0})"
+                    ? $"{hitObj.RecordType}: {hoverName} at ({hitObj.X:F0}, {hitObj.Y:F0}, {hitObj.Z:F0})"
                     : "";
                 MapCanvas.Invalidate();
             }

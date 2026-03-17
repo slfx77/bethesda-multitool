@@ -33,6 +33,9 @@ public record DialogTopicRecord
     /// <summary>Topic ordering priority (runtime m_fPriority).</summary>
     public float Priority { get; init; }
 
+    /// <summary>Journal index (runtime m_iJournalIndex).</summary>
+    public int JournalIndex { get; init; }
+
     /// <summary>Fallback prompt text when no INFO-specific prompt exists (runtime cDummyPrompt).</summary>
     public string? DummyPrompt { get; init; }
 

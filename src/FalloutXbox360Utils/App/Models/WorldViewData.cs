@@ -60,6 +60,9 @@ internal sealed class WorldViewData
     /// <summary>Spawn resolution index for leveled list and AI package lookups.</summary>
     public SpawnResolutionIndex? SpawnIndex { get; init; }
 
+    /// <summary>GECK-style reverse usage index for scripts, lists, containers, and packages.</summary>
+    public FormUsageIndex? UsageIndex { get; init; }
+
     /// <summary>Reference FormID → world position for drawing AI package overlays.</summary>
     public Dictionary<uint, (float X, float Y)>? RefPositionIndex { get; init; }
 

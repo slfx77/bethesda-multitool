@@ -19,8 +19,13 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
 
     /// <summary>
     ///     Read extended quest data from a runtime TESQuest struct.
-    ///     Returns a QuestRecord with Flags/Priority, or null if validation fails.
-    ///     Note: Stage and Objective lists require BSSimpleList traversal (Phase 5D).
+    ///     Returns a QuestRecord with flags, delay, script, stages, and objectives, or null if validation fails.
+    ///     Runtime stage traversal is conservative: it projects stage index and flags when a valid
+    ///     TESQuestStageItem is available, but does not guess stage log text. PDB evidence only shows
+    ///     TESQuestStageItem.GetLogEntry(TESForm*) plus m_fileOffset/m_bHasLogEntry; there is no proven
+    ///     inline runtime text field to project directly from dump memory. Save/load decompilation also
+    ///     indicates quest stage persistence keeps indices, flags, and note/reference metadata rather
+    ///     than serializing the display text itself.
     /// </summary>
     internal QuestRecord? ReadRuntimeQuest(RuntimeEditorIdEntry entry)
     {
@@ -53,12 +58,19 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
 
         var flags = buffer[QustFlagsOffset];
         var priority = buffer[QustPriorityOffset];
+        var questDelay = BinaryUtils.ReadFloatBE(buffer, QustDelayOffset);
+        if (!RuntimeMemoryContext.IsNormalFloat(questDelay))
+        {
+            questDelay = 0;
+        }
 
         // Try to read quest display name from BSStringT, with fallback to hash table DisplayName
         var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, QustFullNameOffset);
 
         // Follow pFormScript pointer → Script* → get Script FormID (0x11 = SCPT)
         var scriptFormId = _context.FollowPointerToFormId(buffer, QustScriptOffset, 0x11);
+        var stages = WalkQuestStageList(offset, entry.FormId);
+        var objectives = WalkQuestObjectiveList(offset, entry.FormId);
 
         return new QuestRecord
         {
@@ -67,7 +79,10 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
             FullName = fullName,
             Flags = flags,
             Priority = priority,
+            QuestDelay = questDelay,
             Script = scriptFormId,
+            Stages = stages,
+            Objectives = objectives,
             Offset = offset,
             IsBigEndian = true
         };
@@ -299,6 +314,279 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
         };
     }
 
+    /// <summary>
+    ///     Walk the BSSimpleList of TESQuestStage pointers on TESQuest.
+    ///     Runtime stage projection keeps only stage index and flags; log text remains null until a
+    ///     directly provable runtime source is mapped.
+    /// </summary>
+    private List<QuestStage> WalkQuestStageList(long questOffset, uint questFormId)
+    {
+        var results = new List<QuestStage>();
+
+        var listOffset = questOffset + QustStageListOffset;
+        var listBuf = _context.ReadBytes(listOffset, 8);
+        if (listBuf == null)
+        {
+            return results;
+        }
+
+        ReadQuestStage(BinaryUtils.ReadUInt32BE(listBuf), questFormId, results);
+
+        var nextVA = BinaryUtils.ReadUInt32BE(listBuf, 4);
+        var visited = new HashSet<uint>();
+        while (nextVA != 0 && results.Count < RuntimeMemoryContext.MaxListItems && !visited.Contains(nextVA))
+        {
+            visited.Add(nextVA);
+            var nodeFileOffset = _context.VaToFileOffset(nextVA);
+            if (nodeFileOffset == null)
+            {
+                break;
+            }
+
+            var nodeBuf = _context.ReadBytes(nodeFileOffset.Value, 8);
+            if (nodeBuf == null)
+            {
+                break;
+            }
+
+            ReadQuestStage(BinaryUtils.ReadUInt32BE(nodeBuf), questFormId, results);
+            nextVA = BinaryUtils.ReadUInt32BE(nodeBuf, 4);
+        }
+
+        return results
+            .GroupBy(stage => stage.Index)
+            .Select(group => group
+                .OrderByDescending(stage => stage.Flags != 0 ? 1 : 0)
+                .First())
+            .OrderBy(stage => stage.Index)
+            .ToList();
+    }
+
+    private void ReadQuestStage(uint stageVa, uint questFormId, List<QuestStage> results)
+    {
+        var stage = ReadQuestStage(stageVa, questFormId);
+        if (stage != null)
+        {
+            results.Add(stage);
+        }
+    }
+
+    private QuestStage? ReadQuestStage(uint stageVa, uint questFormId)
+    {
+        if (stageVa == 0)
+        {
+            return null;
+        }
+
+        var fileOffset = _context.VaToFileOffset(stageVa);
+        if (fileOffset == null)
+        {
+            return null;
+        }
+
+        var buf = _context.ReadBytes(fileOffset.Value, QuestStageStructSize);
+        if (buf == null)
+        {
+            return null;
+        }
+
+        var index = buf[QuestStageIndexOffset];
+        var flags = WalkQuestStageItemList(fileOffset.Value, questFormId);
+
+        return new QuestStage
+        {
+            Index = index,
+            Flags = flags ?? 0
+        };
+    }
+
+    /// <summary>
+    ///     Walk the BSSimpleList of TESQuestStageItem pointers on TESQuestStage and return the
+    ///     first valid stage-item flags byte. Validation is conservative: if the owner quest is
+    ///     readable and does not match, the stage item is rejected.
+    /// </summary>
+    private byte? WalkQuestStageItemList(long stageOffset, uint questFormId)
+    {
+        var listBuf = _context.ReadBytes(stageOffset + QuestStageItemListOffset, 8);
+        if (listBuf == null)
+        {
+            return null;
+        }
+
+        var firstFlags = ReadQuestStageItemFlags(BinaryUtils.ReadUInt32BE(listBuf), questFormId);
+        if (firstFlags.HasValue)
+        {
+            return firstFlags.Value;
+        }
+
+        var nextVA = BinaryUtils.ReadUInt32BE(listBuf, 4);
+        var visited = new HashSet<uint>();
+        while (nextVA != 0 && visited.Count < RuntimeMemoryContext.MaxListItems && !visited.Contains(nextVA))
+        {
+            visited.Add(nextVA);
+            var nodeFileOffset = _context.VaToFileOffset(nextVA);
+            if (nodeFileOffset == null)
+            {
+                break;
+            }
+
+            var nodeBuf = _context.ReadBytes(nodeFileOffset.Value, 8);
+            if (nodeBuf == null)
+            {
+                break;
+            }
+
+            var flags = ReadQuestStageItemFlags(BinaryUtils.ReadUInt32BE(nodeBuf), questFormId);
+            if (flags.HasValue)
+            {
+                return flags.Value;
+            }
+
+            nextVA = BinaryUtils.ReadUInt32BE(nodeBuf, 4);
+        }
+
+        return null;
+    }
+
+    private byte? ReadQuestStageItemFlags(uint stageItemVa, uint questFormId)
+    {
+        if (stageItemVa == 0)
+        {
+            return null;
+        }
+
+        var fileOffset = _context.VaToFileOffset(stageItemVa);
+        if (fileOffset == null)
+        {
+            return null;
+        }
+
+        var buf = _context.ReadBytes(fileOffset.Value, QuestStageItemStructSize);
+        if (buf == null)
+        {
+            return null;
+        }
+
+        var ownerQuestFormId =
+            _context.FollowPointerVaToFormId(BinaryUtils.ReadUInt32BE(buf, QuestStageItemOwnerQuestPtrOffset));
+        if (ownerQuestFormId.HasValue && ownerQuestFormId.Value != questFormId)
+        {
+            return null;
+        }
+
+        return buf[QuestStageItemFlagsOffset];
+    }
+
+    /// <summary>
+    ///     Walk the BSSimpleList of BGSQuestObjective pointers on TESQuest.
+    ///     Each objective stores index, display text, owner quest, and runtime state.
+    ///     Only index/text are projected into the semantic model for now.
+    /// </summary>
+    private List<QuestObjective> WalkQuestObjectiveList(long questOffset, uint questFormId)
+    {
+        var results = new List<QuestObjective>();
+
+        var listOffset = questOffset + QustObjectiveListOffset;
+        var listBuf = _context.ReadBytes(listOffset, 8);
+        if (listBuf == null)
+        {
+            return results;
+        }
+
+        ReadQuestObjective(BinaryUtils.ReadUInt32BE(listBuf), questFormId, results);
+
+        var nextVA = BinaryUtils.ReadUInt32BE(listBuf, 4);
+        var visited = new HashSet<uint>();
+        while (nextVA != 0 && results.Count < RuntimeMemoryContext.MaxListItems && !visited.Contains(nextVA))
+        {
+            visited.Add(nextVA);
+            var nodeFileOffset = _context.VaToFileOffset(nextVA);
+            if (nodeFileOffset == null)
+            {
+                break;
+            }
+
+            var nodeBuf = _context.ReadBytes(nodeFileOffset.Value, 8);
+            if (nodeBuf == null)
+            {
+                break;
+            }
+
+            ReadQuestObjective(BinaryUtils.ReadUInt32BE(nodeBuf), questFormId, results);
+            nextVA = BinaryUtils.ReadUInt32BE(nodeBuf, 4);
+        }
+
+        return results
+            .GroupBy(objective => objective.Index)
+            .Select(group => group
+                .OrderByDescending(objective => objective.DisplayText?.Length ?? 0)
+                .First())
+            .OrderBy(objective => objective.Index)
+            .ToList();
+    }
+
+    private void ReadQuestObjective(uint objectiveVa, uint questFormId, List<QuestObjective> results)
+    {
+        var objective = ReadQuestObjective(objectiveVa, questFormId);
+        if (objective != null)
+        {
+            results.Add(objective);
+        }
+    }
+
+    private QuestObjective? ReadQuestObjective(uint objectiveVa, uint questFormId)
+    {
+        if (objectiveVa == 0)
+        {
+            return null;
+        }
+
+        var fileOffset = _context.VaToFileOffset(objectiveVa);
+        if (fileOffset == null)
+        {
+            return null;
+        }
+
+        var buf = _context.ReadBytes(fileOffset.Value, QuestObjectiveStructSize);
+        if (buf == null)
+        {
+            return null;
+        }
+
+        var index = unchecked((int)BinaryUtils.ReadUInt32BE(buf, QuestObjectiveIndexOffset));
+        if (index < 0 || index > 4096)
+        {
+            return null;
+        }
+
+        var ownerQuestFormId = _context.FollowPointerVaToFormId(BinaryUtils.ReadUInt32BE(buf, QuestObjectiveOwnerQuestPtrOffset));
+        if (ownerQuestFormId.HasValue && ownerQuestFormId.Value != questFormId)
+        {
+            return null;
+        }
+
+        var initialized = buf[QuestObjectiveInitializedOffset] != 0;
+        var displayText = _context.ReadBSStringT(fileOffset.Value, QuestObjectiveDisplayTextOffset);
+        var state = BinaryUtils.ReadUInt32BE(buf, QuestObjectiveStateOffset);
+        if (!initialized && string.IsNullOrEmpty(displayText))
+        {
+            return null;
+        }
+
+        // Objective state is retained only for sanity filtering for now; the public semantic model
+        // still only carries the ESM-parity fields (index/text/target stage).
+        if (state > 8)
+        {
+            return null;
+        }
+
+        return new QuestObjective
+        {
+            Index = index,
+            DisplayText = displayText
+        };
+    }
+
     #region Quest Struct Layout (Proto Debug PDB base + _s)
 
     // TESQuest: PDB size 108, Debug dump 112, Release dump 124
@@ -307,6 +595,24 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
     private int QustFullNameOffset => 52 + _s;
     private int QustFlagsOffset => 60 + _s;
     private int QustPriorityOffset => 61 + _s;
+    private int QustDelayOffset => 64 + _s;
+    private int QustStageListOffset => 68 + _s;
+    private int QustObjectiveListOffset => 76 + _s;
+
+    private const int QuestStageStructSize = 12;
+    private const int QuestStageIndexOffset = 0;
+    private const int QuestStageItemListOffset = 4;
+
+    private const int QuestStageItemStructSize = 132;
+    private const int QuestStageItemFlagsOffset = 0;
+    private const int QuestStageItemOwnerQuestPtrOffset = 124;
+
+    private const int QuestObjectiveStructSize = 36;
+    private const int QuestObjectiveIndexOffset = 4;
+    private const int QuestObjectiveDisplayTextOffset = 8;
+    private const int QuestObjectiveOwnerQuestPtrOffset = 16;
+    private const int QuestObjectiveInitializedOffset = 28;
+    private const int QuestObjectiveStateOffset = 32;
 
     #endregion
 

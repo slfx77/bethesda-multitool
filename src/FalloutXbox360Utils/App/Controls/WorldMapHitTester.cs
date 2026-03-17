@@ -396,7 +396,7 @@ internal static class WorldMapHitTester
             hiddenCategories, hideDisabledActors, zoom);
         if (hitObj != null)
         {
-            var name = hitObj.BaseEditorId ?? $"0x{hitObj.BaseFormId:X8}";
+            var name = PlacedObjectCategoryResolver.GetReferenceAwareName(hitObj, data.Resolver);
             return new HoverResult(
                 $"{hitObj.RecordType}: {name} at ({hitObj.X:F0}, {hitObj.Y:F0}, {hitObj.Z:F0})",
                 hitObj, true);

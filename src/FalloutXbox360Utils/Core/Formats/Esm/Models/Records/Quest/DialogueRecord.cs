@@ -3,7 +3,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 /// <summary>
 ///     Parsed dialogue response from INFO record.
 ///     Aggregates data from INFO main record header, NAM1 (response text), TRDT (emotion),
-///     runtime TESTopicInfo struct (speaker, quest, flags), and linking subrecords (TCLT/TCLF/NAME).
+///     runtime TESTopicInfo struct (speaker, quest, flags, conversation links), and linking subrecords.
 /// </summary>
 public record DialogueRecord
 {
@@ -36,6 +36,9 @@ public record DialogueRecord
 
     /// <summary>All CTDA condition function indices found on this INFO (for diagnostics).</summary>
     public List<ushort> ConditionFunctions { get; init; } = [];
+
+    /// <summary>Parsed INFO conditions from CTDA subrecords.</summary>
+    public List<DialogueCondition> Conditions { get; init; } = [];
 
     /// <summary>Response entries (each INFO can have multiple responses).</summary>
     public List<DialogueResponse> Responses { get; init; } = [];
@@ -71,8 +74,14 @@ public record DialogueRecord
     /// <summary>Topics unlocked by saying this INFO (NAME subrecords).</summary>
     public List<uint> AddTopics { get; init; } = [];
 
+    /// <summary>Follow-up INFO records from runtime TESConversationData.m_listFollowUpInfos (DMP only).</summary>
+    public List<uint> FollowUpInfos { get; init; } = [];
+
     /// <summary>Whether this INFO has a result script (SCHR subrecord present).</summary>
     public bool HasResultScript { get; init; }
+
+    /// <summary>Parsed result-script blocks from SCHR/SCDA/SCTX/SCRO/NEXT subrecords.</summary>
+    public List<DialogueResultScript> ResultScripts { get; init; } = [];
 
     /// <summary>Whether this INFO was already said by the player (runtime bSaidOnce — DMP only).</summary>
     public bool SaidOnce { get; init; }

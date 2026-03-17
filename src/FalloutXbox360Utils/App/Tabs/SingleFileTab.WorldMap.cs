@@ -120,8 +120,9 @@ public sealed partial class SingleFileTab
             ? $"Cell [{cell.GridX.Value}, {cell.GridY.Value}]: {name}"
             : $"Cell: {name}";
 
+        var worldResolver = _session.WorldViewData?.Resolver ?? _session.Resolver;
         BuildWorldPropertyPanel(
-            WorldMapCellPropertyBuilder.BuildCellProperties(cell, _session.WorldViewData, _session.Resolver));
+            WorldMapCellPropertyBuilder.BuildCellProperties(cell, _session.WorldViewData, worldResolver));
     }
 
     private void ViewCellInDetail_Click(object sender, RoutedEventArgs e)
@@ -158,12 +159,13 @@ public sealed partial class SingleFileTab
 
         WorldMapControl?.SelectObject(obj);
 
+        var worldResolver = _session.WorldViewData?.Resolver ?? _session.Resolver;
         WorldObjectTitle.Text = PlacedObjectCategoryResolver.GetObjectInspectionTitle(
-            obj, _session.WorldViewData, _session.Resolver);
+            obj, _session.WorldViewData, worldResolver);
 
         WorldPropertyPanel.Children.Clear();
         BuildWorldPropertyPanel(
-            PlacedObjectCategoryResolver.BuildObjectProperties(obj, _session.WorldViewData, _session.Resolver));
+            PlacedObjectCategoryResolver.BuildObjectProperties(obj, _session.WorldViewData, worldResolver));
     }
 
     private void BuildWorldPropertyPanel(List<EsmPropertyEntry> properties)

@@ -59,6 +59,7 @@ internal static class WorldMapOverlayBuilder
 
         // Build spawn resolution index
         var spawnIndex = SpawnResolutionIndex.Build(semantic);
+        var usageIndex = FormUsageIndex.Build(semantic);
 
         return new WorldViewData
         {
@@ -83,6 +84,7 @@ internal static class WorldMapOverlayBuilder
             HeightmapMaxCellY = hmMaxY,
             SourceFilePath = sourceFilePath,
             SpawnIndex = spawnIndex,
+            UsageIndex = usageIndex,
             RefPositionIndex = refPositionIndex
         };
     }
@@ -127,6 +129,7 @@ internal static class WorldMapOverlayBuilder
             Resolver = resolver,
             MapMarkers = [],
             MarkersByWorldspace = [],
+            UsageIndex = null,
             SaveOverlayMarkers = overlayMarkers,
             PlayerPosition = playerPos
         };
@@ -173,6 +176,7 @@ internal static class WorldMapOverlayBuilder
         var cellByFormId = BuildCellByFormId(suppRecords.Cells);
         var (refrToCellIndex, refPositionIndex) = BuildRefrIndices(suppRecords.Cells);
         var spawnIndex = SpawnResolutionIndex.Build(suppRecords);
+        var usageIndex = FormUsageIndex.Build(suppRecords);
 
         return new WorldViewData
         {
@@ -197,6 +201,7 @@ internal static class WorldMapOverlayBuilder
             HeightmapMaxCellY = hmMaxY,
             SourceFilePath = supplementaryEsmPath,
             SpawnIndex = spawnIndex,
+            UsageIndex = usageIndex,
             RefPositionIndex = refPositionIndex,
             SaveOverlayMarkers = overlayMarkers,
             PlayerPosition = playerPos

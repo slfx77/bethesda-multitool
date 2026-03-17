@@ -95,6 +95,14 @@ internal sealed class MiscStaticObjectHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
+        _context.MergeRuntimeOverlayRecords(
+            statics,
+            [0x20],
+            record => record.FormId,
+            static (reader, entry) => reader.ReadRuntimeStatic(entry),
+            MergeStatic,
+            "statics");
+
         return statics;
     }
 
@@ -203,6 +211,41 @@ internal sealed class MiscStaticObjectHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
+        _context.MergeRuntimeOverlayRecords(
+            furniture,
+            [0x27],
+            record => record.FormId,
+            static (reader, entry) => reader.ReadRuntimeFurniture(entry),
+            MergeFurniture,
+            "furniture");
+
         return furniture;
+    }
+
+    private static StaticRecord MergeStatic(StaticRecord esm, StaticRecord runtime)
+    {
+        return esm with
+        {
+            EditorId = esm.EditorId ?? runtime.EditorId,
+            ModelPath = esm.ModelPath ?? runtime.ModelPath,
+            Bounds = esm.Bounds ?? runtime.Bounds,
+            Offset = esm.Offset != 0 ? esm.Offset : runtime.Offset,
+            IsBigEndian = esm.IsBigEndian || runtime.IsBigEndian
+        };
+    }
+
+    private static FurnitureRecord MergeFurniture(FurnitureRecord esm, FurnitureRecord runtime)
+    {
+        return esm with
+        {
+            EditorId = esm.EditorId ?? runtime.EditorId,
+            FullName = esm.FullName ?? runtime.FullName,
+            ModelPath = esm.ModelPath ?? runtime.ModelPath,
+            Bounds = esm.Bounds ?? runtime.Bounds,
+            Script = esm.Script ?? runtime.Script,
+            MarkerFlags = esm.MarkerFlags != 0 ? esm.MarkerFlags : runtime.MarkerFlags,
+            Offset = esm.Offset != 0 ? esm.Offset : runtime.Offset,
+            IsBigEndian = esm.IsBigEndian || runtime.IsBigEndian
+        };
     }
 }

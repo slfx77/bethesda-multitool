@@ -37,8 +37,20 @@ public sealed class RecordParserContext
             var npcEntries = scanResult.RuntimeEditorIds
                 .Where(entry => entry.FormType == 0x2A)
                 .ToList();
+            var worldEntries = scanResult.RuntimeEditorIds
+                .Where(entry => entry.FormType == 0x41)
+                .ToList();
+            var cellEntries = scanResult.RuntimeEditorIds
+                .Where(entry => entry.FormType == 0x39)
+                .ToList();
             RuntimeReader = RuntimeStructReader.CreateWithAutoDetect(
-                accessor, fileSize, minidumpInfo, scanResult.RuntimeRefrFormEntries, npcEntries);
+                accessor,
+                fileSize,
+                minidumpInfo,
+                scanResult.RuntimeRefrFormEntries,
+                npcEntries,
+                worldEntries,
+                cellEntries);
         }
 
         // Build FormID lookup from main records
@@ -154,6 +166,7 @@ public sealed class RecordParserContext
             if (item != null)
             {
                 records.Add(item);
+                esmFormIds.Add(entry.FormId);
                 runtimeCount++;
             }
         }
@@ -163,6 +176,66 @@ public sealed class RecordParserContext
             Logger.Instance.Debug(
                 $"  [Semantic] Added {runtimeCount} {typeName} from runtime struct reading " +
                 $"(total: {records.Count}, ESM: {esmFormIds.Count})");
+        }
+    }
+
+    /// <summary>
+    ///     Merges runtime records into an existing list, overlaying ESM-backed records in place
+    ///     while preserving ESM precedence and adding runtime-only records when no semantic
+    ///     record exists yet.
+    /// </summary>
+    public void MergeRuntimeOverlayRecords<T>(
+        List<T> records,
+        IReadOnlyCollection<byte> formTypes,
+        Func<T, uint> formIdSelector,
+        Func<RuntimeStructReader, RuntimeEditorIdEntry, T?> factory,
+        Func<T, T, T> merger,
+        string typeName) where T : class
+    {
+        if (RuntimeReader == null || formTypes.Count == 0)
+        {
+            return;
+        }
+
+        var recordIndexByFormId = new Dictionary<uint, int>(records.Count);
+        for (var i = 0; i < records.Count; i++)
+        {
+            recordIndexByFormId.TryAdd(formIdSelector(records[i]), i);
+        }
+
+        var mergedCount = 0;
+        var addedCount = 0;
+        foreach (var entry in ScanResult.RuntimeEditorIds)
+        {
+            if (!formTypes.Contains(entry.FormType))
+            {
+                continue;
+            }
+
+            var runtimeRecord = factory(RuntimeReader, entry);
+            if (runtimeRecord == null)
+            {
+                continue;
+            }
+
+            if (recordIndexByFormId.TryGetValue(entry.FormId, out var existingIndex))
+            {
+                records[existingIndex] = merger(records[existingIndex], runtimeRecord);
+                mergedCount++;
+            }
+            else
+            {
+                records.Add(runtimeRecord);
+                recordIndexByFormId[entry.FormId] = records.Count - 1;
+                addedCount++;
+            }
+        }
+
+        if (mergedCount > 0 || addedCount > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] Runtime overlay merged {mergedCount} and added {addedCount} {typeName} " +
+                $"(total: {records.Count})");
         }
     }
 

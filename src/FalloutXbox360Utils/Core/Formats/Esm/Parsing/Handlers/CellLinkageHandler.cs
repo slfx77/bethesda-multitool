@@ -212,6 +212,7 @@ internal static class CellLinkageHandler
         // This gives Phase 1 (ParentCellFormId) and Phase 1.5 (grid lookup) real CellRecords
         // to assign orphans to, instead of falling through to virtual cells.
         var stubsCreated = CreateCellMapStubs(existingCells, cellByFormId, context);
+        var parentSignalStubsCreated = CreateReferencedCellStubs(orphans, existingCells, cellByFormId, context);
 
         // Phase Interior: Group interior orphans by their parent cell FormID.
         var interiorCellsCreated = AssignInteriorOrphans(interiorOrphans, existingCells, cellByFormId, context);
@@ -223,7 +224,7 @@ internal static class CellLinkageHandler
 
         if (exteriorOrphans.Count == 0)
         {
-            if (stubsCreated > 0 || interiorCellsCreated > 0)
+            if (stubsCreated > 0 || parentSignalStubsCreated > 0 || interiorCellsCreated > 0)
             {
                 Logger.Instance.Debug(
                     "  [Semantic] CreateVirtualCells: all orphans resolved (stubs + interior), no virtual cells needed");
@@ -232,13 +233,15 @@ internal static class CellLinkageHandler
             return [];
         }
 
-        // Phase 1: Assign exterior orphans to existing cells using ParentCellFormId.
+        // Phase 1: Assign exterior orphans to existing cells using ParentCellFormId,
+        // falling back to runtime ExtraPersistentCell when the direct parent-cell signal is absent.
         var reassigned = 0;
         var trueOrphans = new List<ExtractedRefrRecord>();
         foreach (var orphan in exteriorOrphans)
         {
-            if (orphan.ParentCellFormId.HasValue &&
-                cellByFormId.TryGetValue(orphan.ParentCellFormId.Value, out var parentCell))
+            var assignmentCellFormId = orphan.ParentCellFormId ?? orphan.PersistentCellFormId;
+            if (assignmentCellFormId.HasValue &&
+                cellByFormId.TryGetValue(assignmentCellFormId.Value, out var parentCell))
             {
                 parentCell.PlacedObjects.Add(ToPlacedReference(orphan, context, "ParentCell"));
                 reassigned++;
@@ -252,7 +255,7 @@ internal static class CellLinkageHandler
         if (reassigned > 0)
         {
             Logger.Instance.Debug(
-                $"  [Semantic] CreateVirtualCells: {reassigned}/{exteriorOrphans.Count} exterior orphans reassigned via ParentCellFormId");
+                $"  [Semantic] CreateVirtualCells: {reassigned}/{exteriorOrphans.Count} exterior orphans reassigned via parent/persistent cell");
         }
 
         if (trueOrphans.Count == 0)
@@ -439,7 +442,85 @@ internal static class CellLinkageHandler
     }
 
     /// <summary>
-    ///     Group interior orphan refs by ParentCellFormId and assign them to interior cell stubs.
+    ///     Create real-ID cell stubs for parent/persistent cell FormIDs carried directly on orphan refs.
+    ///     This handles DMP cases where the REFR points at a valid runtime CELL but the cell itself
+    ///     did not appear in carved ESM fragments or runtime worldspace cell maps.
+    /// </summary>
+    private static int CreateReferencedCellStubs(
+        List<ExtractedRefrRecord> orphans,
+        List<CellRecord> existingCells,
+        Dictionary<uint, CellRecord> cellByFormId,
+        RecordParserContext context)
+    {
+        if (orphans.Count == 0)
+        {
+            return 0;
+        }
+
+        Dictionary<uint, RuntimeEditorIdEntry>? runtimeCellEntries = null;
+        if (context.RuntimeReader != null)
+        {
+            runtimeCellEntries = new Dictionary<uint, RuntimeEditorIdEntry>();
+            foreach (var entry in context.ScanResult.RuntimeEditorIds)
+            {
+                if (entry.FormType == 0x39 && entry.FormId != 0)
+                {
+                    runtimeCellEntries.TryAdd(entry.FormId, entry);
+                }
+            }
+        }
+
+        var stubsCreated = 0;
+        foreach (var group in orphans
+                     .Select(orphan => (CellFormId: orphan.ParentCellFormId ?? orphan.PersistentCellFormId ?? 0u, Orphan: orphan))
+                     .Where(item => item.CellFormId != 0 && !cellByFormId.ContainsKey(item.CellFormId))
+                     .GroupBy(item => item.CellFormId))
+        {
+            var relatedOrphans = group.Select(item => item.Orphan).ToList();
+            var derivedStub = BuildReferencedCellStub(group.Key, relatedOrphans, context);
+            if (derivedStub == null)
+            {
+                continue;
+            }
+
+            CellRecord cell = derivedStub;
+            if (context.RuntimeReader != null &&
+                runtimeCellEntries != null &&
+                runtimeCellEntries.TryGetValue(group.Key, out var runtimeCellEntry))
+            {
+                var runtimeCell = context.RuntimeReader.ReadRuntimeCell(runtimeCellEntry);
+                if (runtimeCell != null)
+                {
+                    cell = runtimeCell with
+                    {
+                        EditorId = runtimeCell.EditorId ?? derivedStub.EditorId,
+                        FullName = runtimeCell.FullName ?? derivedStub.FullName,
+                        GridX = runtimeCell.GridX ?? derivedStub.GridX,
+                        GridY = runtimeCell.GridY ?? derivedStub.GridY,
+                        WorldspaceFormId = runtimeCell.WorldspaceFormId ?? derivedStub.WorldspaceFormId,
+                        Flags = runtimeCell.Flags != 0 ? runtimeCell.Flags : derivedStub.Flags,
+                        HasPersistentObjects = runtimeCell.HasPersistentObjects || derivedStub.HasPersistentObjects
+                    };
+                }
+            }
+
+            cellByFormId[cell.FormId] = cell;
+            existingCells.Add(cell);
+            stubsCreated++;
+        }
+
+        if (stubsCreated > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] CreateVirtualCells: created {stubsCreated} stub cells from parent/persistent cell signals");
+        }
+
+        return stubsCreated;
+    }
+
+    /// <summary>
+    ///     Group interior orphan refs by ParentCellFormId (or runtime persistent-cell fallback)
+    ///     and assign them to interior cell stubs.
     ///     Creates new CellRecord stubs with IsInterior=true for cells not already parsed.
     /// </summary>
     private static int AssignInteriorOrphans(
@@ -456,7 +537,7 @@ internal static class CellLinkageHandler
         var cellsCreated = 0;
 
         // Group by parent cell FormID
-        foreach (var group in interiorOrphans.GroupBy(r => r.ParentCellFormId ?? 0))
+        foreach (var group in interiorOrphans.GroupBy(r => r.ParentCellFormId ?? r.PersistentCellFormId ?? 0))
         {
             CellRecord cell;
             if (group.Key != 0 && cellByFormId.TryGetValue(group.Key, out var existingCell))
@@ -509,6 +590,53 @@ internal static class CellLinkageHandler
         return cellsCreated;
     }
 
+    private static CellRecord? BuildReferencedCellStub(
+        uint cellFormId,
+        List<ExtractedRefrRecord> relatedOrphans,
+        RecordParserContext context)
+    {
+        if (cellFormId == 0 || relatedOrphans.Count == 0)
+        {
+            return null;
+        }
+
+        var isInterior = relatedOrphans.Any(orphan => orphan.ParentCellIsInterior == true);
+        var hasPersistentObjects = relatedOrphans.Any(orphan =>
+            orphan.Header.IsPersistent || orphan.PersistentCellFormId == cellFormId);
+
+        int? gridX = null;
+        int? gridY = null;
+        if (!isInterior)
+        {
+            var distinctGrids = relatedOrphans
+                .Where(orphan => orphan.Position != null)
+                .Select(orphan => (
+                    X: (int)MathF.Floor(orphan.Position!.X / 4096f),
+                    Y: (int)MathF.Floor(orphan.Position.Y / 4096f)))
+                .Distinct()
+                .Take(2)
+                .ToList();
+
+            if (distinctGrids.Count == 1)
+            {
+                gridX = distinctGrids[0].X;
+                gridY = distinctGrids[0].Y;
+            }
+        }
+
+        return new CellRecord
+        {
+            FormId = cellFormId,
+            EditorId = context.GetEditorId(cellFormId),
+            FullName = context.FormIdToFullName.GetValueOrDefault(cellFormId),
+            GridX = gridX,
+            GridY = gridY,
+            Flags = isInterior ? (byte)0x01 : (byte)0x00,
+            HasPersistentObjects = hasPersistentObjects,
+            IsBigEndian = true
+        };
+    }
+
     internal static PlacedReference ToPlacedReference(
         ExtractedRefrRecord r, RecordParserContext context, string? assignmentSource = null)
     {
@@ -525,16 +653,32 @@ internal static class CellLinkageHandler
             RotY = r.Position?.RotY ?? 0,
             RotZ = r.Position?.RotZ ?? 0,
             Scale = r.Scale,
+            Radius = r.Radius,
             OwnerFormId = r.OwnerFormId,
+            EncounterZoneFormId = r.EncounterZoneFormId,
+            LockLevel = r.LockLevel,
+            LockKeyFormId = r.LockKeyFormId,
+            LockFlags = r.LockFlags,
+            LockNumTries = r.LockNumTries,
+            LockTimesUnlocked = r.LockTimesUnlocked,
             EnableParentFormId = r.EnableParentFormId,
             EnableParentFlags = r.EnableParentFlags,
+            PersistentCellFormId = r.PersistentCellFormId,
+            StartingPosition = r.StartingPosition,
+            StartingWorldOrCellFormId = r.StartingWorldOrCellFormId,
+            PackageStartLocation = r.PackageStartLocation,
+            MerchantContainerFormId = r.MerchantContainerFormId,
+            LeveledCreatureOriginalBaseFormId = r.LeveledCreatureOriginalBaseFormId,
+            LeveledCreatureTemplateFormId = r.LeveledCreatureTemplateFormId,
             IsPersistent = r.Header.IsPersistent,
             IsInitiallyDisabled = r.Header.IsInitiallyDisabled,
             DestinationDoorFormId = r.DestinationDoorFormId,
             IsMapMarker = r.IsMapMarker,
             MarkerType = r.MarkerType.HasValue ? (MapMarkerType)r.MarkerType.Value : null,
             MarkerName = r.MarkerName,
+            LinkedRefKeywordFormId = r.LinkedRefKeywordFormId,
             LinkedRefFormId = r.LinkedRefFormId,
+            LinkedRefChildrenFormIds = r.LinkedRefChildrenFormIds,
             Offset = r.Header.Offset,
             IsBigEndian = r.Header.IsBigEndian,
             AssignmentSource = assignmentSource

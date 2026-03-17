@@ -399,6 +399,75 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
     }
 
     [Fact]
+    public void ParseDialogue_WithSplitInfoRecords_MergesConditionsAndResultScripts()
+    {
+        var conditionData = new byte[28];
+        conditionData[0] = 0x00; // Equal
+        BinaryPrimitives.WriteSingleLittleEndian(conditionData.AsSpan(4), 1.0f);
+        BinaryPrimitives.WriteUInt16LittleEndian(conditionData.AsSpan(8), 0x48); // GetIsID
+        BinaryPrimitives.WriteUInt32LittleEndian(conditionData.AsSpan(12), 0x00001234);
+        BinaryPrimitives.WriteUInt32LittleEndian(conditionData.AsSpan(20), 0); // Subject
+
+        var sourceText = NullTermString("StartCombat Player");
+
+        var responseData = new byte[24];
+        responseData[12] = 1;
+
+        var scriptHeader = new byte[20];
+        scriptHeader[18] = 1; // compiled
+
+        var scriptReference = new byte[4];
+        BinaryPrimitives.WriteUInt32LittleEndian(scriptReference, 0x00004321);
+
+        var baseRecordBytes = BuildRecordBytes(0x00070001, "INFO", false,
+            ("EDID", NullTermString("InfoTestSplit")),
+            ("CTDA", conditionData),
+            ("SCTX", sourceText));
+
+        var responseRecordBytes = BuildRecordBytes(0x00070001, "INFO", false,
+            ("TRDT", responseData),
+            ("NAM1", NullTermString("Hello there")),
+            ("SCHR", scriptHeader),
+            ("SCRO", scriptReference));
+
+        var recordBytes = new byte[baseRecordBytes.Length + responseRecordBytes.Length];
+        Array.Copy(baseRecordBytes, 0, recordBytes, 0, baseRecordBytes.Length);
+        Array.Copy(responseRecordBytes, 0, recordBytes, baseRecordBytes.Length, responseRecordBytes.Length);
+
+        var mainRecords = new List<DetectedMainRecord>
+        {
+            new("INFO", (uint)(baseRecordBytes.Length - 24), 0, 0x00070001, 0, false),
+            new("INFO", (uint)(responseRecordBytes.Length - 24), 0, 0x00070001, baseRecordBytes.Length, false)
+        };
+        var correlations = new Dictionary<uint, string>
+        {
+            [0x00001234] = "Cooke",
+            [0x00004321] = "MarkerGoodspringsPatrol"
+        };
+        var scanResult = MakeScanResult(mainRecords);
+
+        using var mmf = MemoryMappedFile.CreateNew(null, recordBytes.Length);
+        using var accessor = mmf.CreateViewAccessor(0, recordBytes.Length);
+        accessor.WriteArray(0, recordBytes, 0, recordBytes.Length);
+
+        var parser = new RecordParser(scanResult, correlations, accessor, recordBytes.Length);
+        var dialogues = parser.ParseDialogue();
+
+        var info = Assert.Single(dialogues);
+        Assert.Equal("InfoTestSplit", info.EditorId);
+        Assert.Equal(0x00001234u, info.SpeakerFormId);
+        Assert.Single(info.Conditions);
+        Assert.Equal(0x48, info.Conditions[0].FunctionIndex);
+        Assert.Equal(0x00001234u, info.Conditions[0].Parameter1);
+        Assert.True(info.HasResultScript);
+        Assert.Single(info.ResultScripts);
+        Assert.Equal("StartCombat Player", info.ResultScripts[0].SourceText);
+        Assert.Contains(0x00004321u, info.ResultScripts[0].ReferencedObjects);
+        Assert.Single(info.Responses);
+        Assert.Equal("Hello there", info.Responses[0].Text);
+    }
+
+    [Fact]
     public void ParseGlobals_WithAccessor_ParsesSubrecords()
     {
         var edidData = NullTermString("TimeScale");

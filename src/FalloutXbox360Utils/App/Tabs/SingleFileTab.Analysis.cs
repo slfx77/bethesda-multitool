@@ -162,6 +162,7 @@ public sealed partial class SingleFileTab
             _placementIndex = null;
             _factionMembersIndex = null;
             _raceLookup = null;
+            _usageIndex = null;
             _flatListBuilt = false;
 
             StatusTextBlock.Text = "Loading tree view...";
@@ -344,14 +345,17 @@ public sealed partial class SingleFileTab
                     StatusTextBlock.Text = status;
                 }));
 
-            // Build tree, placement index, faction members, and race lookup on background thread
-            var (tree, placements, factionMembers, raceLookup) = await Task.Run(() =>
+            // Build tree and lookup indexes on a background thread
+            var (tree, placements, usageIndex, factionMembers, raceLookup) = await Task.Run(() =>
             {
                 ((IProgress<string>)progress).Report(Strings.Status_BuildingCategoryTree);
                 var builtTree = EsmBrowserTreeBuilder.BuildTree(semanticResult, resolver);
 
-                // Build reverse placement index for "Use Info" (base FormID → world placements)
+                // Build reverse placement index for Count (base FormID → world placements)
                 var placementIndex = semanticResult.BuildBaseToPlacementsMap();
+
+                // Build reverse usage index for GECK-style Use (scripts, lists, containers, packages)
+                var formUsageIndex = FormUsageIndex.Build(semanticResult);
 
                 // Build reverse faction index (faction FormID → NPC/creature members)
                 var factionIndex = semanticResult.BuildFactionMembersIndex();
@@ -366,11 +370,12 @@ public sealed partial class SingleFileTab
                 ((IProgress<string>)progress).Report(Strings.Status_SortingRecords);
                 EsmBrowserTreeBuilder.SortRecordChildren(builtTree, EsmBrowserTreeBuilder.RecordSortMode.Name);
 
-                return (builtTree, placementIndex, factionIndex, races);
+                return (builtTree, placementIndex, formUsageIndex, factionIndex, races);
             });
 
             _esmBrowserTree = tree;
             _placementIndex = placements;
+            _usageIndex = usageIndex;
             _factionMembersIndex = factionMembers;
             _raceLookup = raceLookup;
             _flatListBuilt = false;
