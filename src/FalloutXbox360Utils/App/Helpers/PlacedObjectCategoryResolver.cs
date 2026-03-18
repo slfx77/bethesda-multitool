@@ -262,7 +262,8 @@ internal static class PlacedObjectCategoryResolver
             }
         }
 
-        if (obj.LockLevel.HasValue || obj.LockFlags.HasValue || obj.LockNumTries.HasValue || obj.LockTimesUnlocked.HasValue)
+        if (obj.LockLevel.HasValue || obj.LockFlags.HasValue || obj.LockNumTries.HasValue ||
+            obj.LockTimesUnlocked.HasValue)
         {
             if (obj.LockLevel.HasValue)
             {

@@ -96,20 +96,20 @@ internal static class DialogueConditionDisplayFormatter
         return paramType switch
         {
             ScriptParamType.Char or
-            ScriptParamType.Int or
-            ScriptParamType.Float or
-            ScriptParamType.Axis or
-            ScriptParamType.AnimGroup or
-            ScriptParamType.Sex or
-            ScriptParamType.ScriptVar or
-            ScriptParamType.Stage or
-            ScriptParamType.CrimeType or
-            ScriptParamType.FormType or
-            ScriptParamType.MiscStat or
-            ScriptParamType.VatsValue or
-            ScriptParamType.VatsValueData or
-            ScriptParamType.Alignment or
-            ScriptParamType.CritStage => value.ToString(),
+                ScriptParamType.Int or
+                ScriptParamType.Float or
+                ScriptParamType.Axis or
+                ScriptParamType.AnimGroup or
+                ScriptParamType.Sex or
+                ScriptParamType.ScriptVar or
+                ScriptParamType.Stage or
+                ScriptParamType.CrimeType or
+                ScriptParamType.FormType or
+                ScriptParamType.MiscStat or
+                ScriptParamType.VatsValue or
+                ScriptParamType.VatsValueData or
+                ScriptParamType.Alignment or
+                ScriptParamType.CritStage => value.ToString(),
             _ => $"{resolveFormName(value)} (0x{value:X8})"
         };
     }

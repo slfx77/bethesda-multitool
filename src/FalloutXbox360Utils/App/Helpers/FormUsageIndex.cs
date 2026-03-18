@@ -300,8 +300,3 @@ internal sealed class FormUsageIndex
         }
     }
 }
-
-internal sealed record FormUsageReference(
-    uint SourceFormId,
-    string SourceKind,
-    string Context);
