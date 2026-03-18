@@ -113,6 +113,7 @@ internal static class NifScanlineRasterizer
 
                 // Emissive surfaces (BSShaderNoLightingProperty) are self-illuminated — no shading
                 float shade;
+                float nx = 0, ny = 0, nz = 1; // default normal (toward camera)
 
                 if (tri.IsEmissive)
                 {
@@ -120,9 +121,9 @@ internal static class NifScanlineRasterizer
                 }
                 else if (tri.HasVertexNormals)
                 {
-                    var nx = tri.Nx0 * w0 + tri.Nx1 * w1 + tri.Nx2 * w2;
-                    var ny = tri.Ny0 * w0 + tri.Ny1 * w1 + tri.Ny2 * w2;
-                    var nz = tri.Nz0 * w0 + tri.Nz1 * w1 + tri.Nz2 * w2;
+                    nx = tri.Nx0 * w0 + tri.Nx1 * w1 + tri.Nx2 * w2;
+                    ny = tri.Ny0 * w0 + tri.Ny1 * w1 + tri.Ny2 * w2;
+                    nz = tri.Nz0 * w0 + tri.Nz1 * w1 + tri.Nz2 * w2;
 
                     // Flip normals for back-facing double-sided triangles so they shade correctly
                     if (isBackFacing)

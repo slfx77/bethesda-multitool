@@ -315,6 +315,7 @@ internal sealed class GpuSpriteRenderer : IDisposable
             if (alphaState.HasAlphaTest) flags |= 128; // HAS_ALPHA_TEST
             if (sub.IsEyeEnvmap) flags |= 256; // IS_EYE_ENVMAP
             if (sub.TintColor.HasValue) flags |= 512; // HAS_TINT
+            if (sub.IsFaceGen) flags |= 1024; // IS_FACEGEN
 
             // Per-submesh uniform buffer (each submesh needs different material/flags)
             var subUniformBuffer = factory.CreateBuffer(new BufferDescription(
@@ -332,7 +333,8 @@ internal sealed class GpuSpriteRenderer : IDisposable
                     alphaState.AlphaTestThreshold / 255f, alphaState.AlphaTestFunction),
                 TintColor = new Vector4(
                     sub.TintColor?.R ?? 1f, sub.TintColor?.G ?? 1f, sub.TintColor?.B ?? 1f, 0),
-                Flags = new Vector4(flags, 0, 0, 0)
+                Flags = new Vector4(flags,
+                    sub.SubsurfaceColor.R, sub.SubsurfaceColor.G, sub.SubsurfaceColor.B)
             };
             device.UpdateBuffer(subUniformBuffer, 0, uniforms);
 

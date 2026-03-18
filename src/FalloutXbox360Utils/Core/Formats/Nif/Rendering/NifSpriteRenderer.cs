@@ -431,7 +431,11 @@ internal static class NifSpriteRenderer
                     HasTintColor = submesh.TintColor.HasValue,
                     TintR = submesh.TintColor?.R ?? 1f,
                     TintG = submesh.TintColor?.G ?? 1f,
-                    TintB = submesh.TintColor?.B ?? 1f
+                    TintB = submesh.TintColor?.B ?? 1f,
+                    IsFaceGen = submesh.IsFaceGen,
+                    SubsurfaceR = submesh.SubsurfaceColor.R,
+                    SubsurfaceG = submesh.SubsurfaceColor.G,
+                    SubsurfaceB = submesh.SubsurfaceColor.B
                 };
 
                 // Populate UV data if texture is available

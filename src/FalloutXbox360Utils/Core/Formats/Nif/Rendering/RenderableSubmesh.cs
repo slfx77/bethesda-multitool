@@ -94,6 +94,22 @@ internal sealed class RenderableSubmesh
     /// </summary>
     public (float R, float G, float B)? TintColor { get; set; }
 
+    /// <summary>
+    ///     True if this submesh uses the FaceGen skin shader (shader type 14, flag bit 10).
+    ///     When set, the renderer applies a subsurface scattering approximation using
+    ///     <see cref="SubsurfaceColor" /> to simulate light transmission through skin.
+    /// </summary>
+    public bool IsFaceGen { get; set; }
+
+    /// <summary>
+    ///     Subsurface scattering color for FaceGen skin shader (normalized 0-1 RGB).
+    ///     Derived from the BSShaderTextureSet slot 2 face tint texture (_sk).
+    ///     The engine multiplies this by a scatter intensity to add warm red backlighting
+    ///     that counteracts green casts from EGT texture morphs.
+    ///     Only used when <see cref="IsFaceGen" /> is true. Default = (0, 0, 0) = no scatter.
+    /// </summary>
+    public (float R, float G, float B) SubsurfaceColor { get; set; }
+
     public int VertexCount => Positions.Length / 3;
     public int TriangleCount => Triangles.Length / 3;
 }

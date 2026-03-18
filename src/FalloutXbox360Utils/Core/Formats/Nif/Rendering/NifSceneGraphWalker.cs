@@ -208,7 +208,7 @@ internal static class NifSceneGraphWalker
 
     /// <summary>
     ///     Analyze a weapon NIF for NiVisController usage and attachment-bone metadata.
-     ///     Returns vis-controlled shape indices (to exclude in holster mode) and
+    ///     Returns vis-controlled shape indices (to exclude in holster mode) and
     ///     attachment groups for non-vis-controlled sibling nodes (backpack/tank shapes
     ///     that attach to specific character skeleton bones via Prn or UPB metadata).
     /// </summary>
@@ -326,14 +326,6 @@ internal static class NifSceneGraphWalker
         return new VisControllerAnalysis(visControlledShapes, parentBoneGroups);
     }
 
-    /// <summary>Result of NiVisController analysis for a weapon NIF.</summary>
-    internal sealed record VisControllerAnalysis(
-        HashSet<int> VisControlledShapeIndices,
-        List<ParentBoneShapeGroup> ParentBoneGroups);
-
-    /// <summary>A group of shapes that should be attached to a specific skeleton bone.</summary>
-    internal sealed record ParentBoneShapeGroup(string BoneName, string SourceNodeName, HashSet<int> ShapeIndices);
-
     /// <summary>
     ///     Find all shape block indices that are descendants of NiNode blocks with a
     ///     NiVisController in their controller chain.
@@ -368,4 +360,12 @@ internal static class NifSceneGraphWalker
             }
         }
     }
+
+    /// <summary>Result of NiVisController analysis for a weapon NIF.</summary>
+    internal sealed record VisControllerAnalysis(
+        HashSet<int> VisControlledShapeIndices,
+        List<ParentBoneShapeGroup> ParentBoneGroups);
+
+    /// <summary>A group of shapes that should be attached to a specific skeleton bone.</summary>
+    internal sealed record ParentBoneShapeGroup(string BoneName, string SourceNodeName, HashSet<int> ShapeIndices);
 }

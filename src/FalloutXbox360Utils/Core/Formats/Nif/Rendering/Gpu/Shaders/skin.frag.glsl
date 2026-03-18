@@ -39,6 +39,7 @@ const uint HAS_ALPHA_BLEND = 64u;
 const uint HAS_ALPHA_TEST  = 128u;
 const uint IS_EYE_ENVMAP   = 256u;
 const uint HAS_TINT        = 512u;
+const uint IS_FACEGEN      = 1024u;
 
 float computeShade(vec3 n, bool twoSidedLighting)
 {

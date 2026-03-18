@@ -344,6 +344,9 @@ internal static class FaceGenTextureMorpher
         {
             TextureAccumulationMode.CurrentFloat => AccumulateNativeDeltasFloat(egt, textureCoeffs),
             TextureAccumulationMode.EngineQuantized256 => AccumulateNativeDeltasQuantized256(egt, textureCoeffs),
+            TextureAccumulationMode.EngineQuantized256Double => AccumulateNativeDeltasQuantized256Double(egt, textureCoeffs),
+            TextureAccumulationMode.EngineQuantizedCombined256 => AccumulateNativeDeltasQuantizedCombined(egt, textureCoeffs, 256),
+            TextureAccumulationMode.EngineQuantizedCombined65536 => AccumulateNativeDeltasQuantizedCombined(egt, textureCoeffs, 65536),
             _ => throw new ArgumentOutOfRangeException(nameof(accumulationMode), accumulationMode, null)
         };
     }
@@ -427,6 +430,95 @@ internal static class FaceGenTextureMorpher
         return (nativeR, nativeG, nativeB);
     }
 
+    private static (float[] R, float[] G, float[] B) AccumulateNativeDeltasQuantized256Double(
+        EgtParser egt,
+        float[] textureCoeffs)
+    {
+        var nativeSize = egt.Cols * egt.Rows;
+        var accumR = new int[nativeSize];
+        var accumG = new int[nativeSize];
+        var accumB = new int[nativeSize];
+
+        var count = Math.Min(textureCoeffs.Length, egt.SymmetricMorphs.Length);
+        for (var morphIndex = 0; morphIndex < count; morphIndex++)
+        {
+            var coeff256 = (int)((double)textureCoeffs[morphIndex] * 256.0);
+            if (coeff256 == 0)
+            {
+                continue;
+            }
+
+            var morph = egt.SymmetricMorphs[morphIndex];
+            var scale256 = (int)((double)morph.Scale * 256.0);
+            if (scale256 == 0)
+            {
+                continue;
+            }
+
+            for (var pixelIndex = 0; pixelIndex < nativeSize; pixelIndex++)
+            {
+                accumR[pixelIndex] += morph.DeltaR[pixelIndex] * coeff256 * scale256;
+                accumG[pixelIndex] += morph.DeltaG[pixelIndex] * coeff256 * scale256;
+                accumB[pixelIndex] += morph.DeltaB[pixelIndex] * coeff256 * scale256;
+            }
+        }
+
+        const float normalization = 1f / 65536f;
+        var nativeR = new float[nativeSize];
+        var nativeG = new float[nativeSize];
+        var nativeB = new float[nativeSize];
+        for (var pixelIndex = 0; pixelIndex < nativeSize; pixelIndex++)
+        {
+            nativeR[pixelIndex] = accumR[pixelIndex] * normalization;
+            nativeG[pixelIndex] = accumG[pixelIndex] * normalization;
+            nativeB[pixelIndex] = accumB[pixelIndex] * normalization;
+        }
+
+        return (nativeR, nativeG, nativeB);
+    }
+
+    private static (float[] R, float[] G, float[] B) AccumulateNativeDeltasQuantizedCombined(
+        EgtParser egt,
+        float[] textureCoeffs,
+        int quantizationFactor)
+    {
+        var nativeSize = egt.Cols * egt.Rows;
+        var accumR = new long[nativeSize];
+        var accumG = new long[nativeSize];
+        var accumB = new long[nativeSize];
+
+        var count = Math.Min(textureCoeffs.Length, egt.SymmetricMorphs.Length);
+        for (var morphIndex = 0; morphIndex < count; morphIndex++)
+        {
+            var morph = egt.SymmetricMorphs[morphIndex];
+            var combinedWeight = (int)(textureCoeffs[morphIndex] * morph.Scale * quantizationFactor);
+            if (combinedWeight == 0)
+            {
+                continue;
+            }
+
+            for (var pixelIndex = 0; pixelIndex < nativeSize; pixelIndex++)
+            {
+                accumR[pixelIndex] += morph.DeltaR[pixelIndex] * (long)combinedWeight;
+                accumG[pixelIndex] += morph.DeltaG[pixelIndex] * (long)combinedWeight;
+                accumB[pixelIndex] += morph.DeltaB[pixelIndex] * (long)combinedWeight;
+            }
+        }
+
+        var normalization = 1f / quantizationFactor;
+        var nativeR = new float[nativeSize];
+        var nativeG = new float[nativeSize];
+        var nativeB = new float[nativeSize];
+        for (var pixelIndex = 0; pixelIndex < nativeSize; pixelIndex++)
+        {
+            nativeR[pixelIndex] = accumR[pixelIndex] * normalization;
+            nativeG[pixelIndex] = accumG[pixelIndex] * normalization;
+            nativeB[pixelIndex] = accumB[pixelIndex] * normalization;
+        }
+
+        return (nativeR, nativeG, nativeB);
+    }
+
     private static byte[] EncodeNativeDeltaPixels(
         float[] nativeR,
         float[] nativeG,
@@ -481,6 +573,7 @@ internal static class FaceGenTextureMorpher
         {
             DeltaTextureEncodingMode.Centered128 => ClampByte(128 + delta),
             DeltaTextureEncodingMode.EngineCompressed255Half => EncodeEngineCompressedChannel(delta),
+            DeltaTextureEncodingMode.EngineCompressed255HalfTruncate => EncodeEngineCompressedChannelTruncate(delta),
             _ => throw new ArgumentOutOfRangeException(nameof(encodingMode), encodingMode, null)
         };
     }
@@ -490,16 +583,18 @@ internal static class FaceGenTextureMorpher
         var clamped = Math.Clamp(delta, EngineCompressedDeltaMin, EngineCompressedDeltaMax);
         var integral = MathF.Floor(clamped);
         var encoded = (integral - EngineCompressedDeltaMin) * EngineCompressedDeltaScale;
-        if (encoded <= 0f)
-        {
-            return 0;
-        }
+        if (encoded <= 0f) return 0;
+        if (encoded >= 255f) return 255;
+        return (byte)encoded;
+    }
 
-        if (encoded >= 255f)
-        {
-            return 255;
-        }
-
+    private static byte EncodeEngineCompressedChannelTruncate(float delta)
+    {
+        var clamped = Math.Clamp(delta, EngineCompressedDeltaMin, EngineCompressedDeltaMax);
+        var integral = MathF.Truncate(clamped);
+        var encoded = (integral - EngineCompressedDeltaMin) * EngineCompressedDeltaScale;
+        if (encoded <= 0f) return 0;
+        if (encoded >= 255f) return 255;
         return (byte)encoded;
     }
 
@@ -616,7 +711,11 @@ internal static class FaceGenTextureMorpher
         int height)
     {
         var (r, g, b, _) = BilinearSampleTexture(pixels, fx, fy, width, height);
-        return (r - 128f, g - 128f, b - 128f);
+        // Shader decode: (sample - 0.5) * 2.0, where sample = byte/255.
+        // In byte-space: byte * 2 - 255. Maps byte 0→-255, 127→-1, 128→1, 255→255.
+        // Matches EncodeEngineCompressedChannel inverse: encode = (delta + 255) * 0.5
+        // Citation: SKIN2000.pso (SKIN2000_annotated.txt:77-78) — additive delta decode
+        return (r * 2f - 255f, g * 2f - 255f, b * 2f - 255f);
     }
 
     private static byte ClampByte(float value)
@@ -629,12 +728,16 @@ internal static class FaceGenTextureMorpher
     internal enum TextureAccumulationMode
     {
         CurrentFloat,
-        EngineQuantized256
+        EngineQuantized256,
+        EngineQuantized256Double,
+        EngineQuantizedCombined256,
+        EngineQuantizedCombined65536
     }
 
     internal enum DeltaTextureEncodingMode
     {
         Centered128,
-        EngineCompressed255Half
+        EngineCompressed255Half,
+        EngineCompressed255HalfTruncate
     }
 }

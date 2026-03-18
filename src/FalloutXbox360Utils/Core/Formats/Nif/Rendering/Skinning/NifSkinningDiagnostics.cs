@@ -88,8 +88,8 @@ internal static class NifSkinningDiagnostics
                 vertexCount,
                 out _);
         var partitions = TryParsePartitions(data, nif, skinInstance);
-        var partitionsWithExpandedData = partitions?.Count(
-            partition => partition.HasVertexWeights && partition.HasBoneIndices) ?? 0;
+        var partitionsWithExpandedData =
+            partitions?.Count(partition => partition.HasVertexWeights && partition.HasBoneIndices) ?? 0;
         var partitionCount = partitions?.Count ?? 0;
         var partitionsMissingExpandedData = partitionCount - partitionsWithExpandedData;
 
@@ -180,30 +180,4 @@ internal static class NifSkinningDiagnostics
                MathF.Abs(matrix.M42) < 0.0001f &&
                MathF.Abs(matrix.M43) < 0.0001f;
     }
-}
-
-internal sealed class NifSkinningDiagnosticReport
-{
-    public required IReadOnlyList<NifSkinnedShapeDiagnostic> Shapes { get; init; }
-
-    public int SkinnedShapeCount => Shapes.Count;
-}
-
-internal sealed class NifSkinnedShapeDiagnostic
-{
-    public required string ShapeName { get; init; }
-    public required int ShapeIndex { get; init; }
-    public required int VertexCount { get; init; }
-    public required int BoneRefCount { get; init; }
-    public required bool UsesNiSkinDataVertexWeights { get; init; }
-    public required bool HasExpandedPartitionData { get; init; }
-    public required bool HasNonIdentityOverallTransform { get; init; }
-    public required int VerticesWithInfluences { get; init; }
-    public required int VerticesWithMultipleInfluences { get; init; }
-    public required int MaxInfluencesPerVertex { get; init; }
-    public required int PartitionCount { get; init; }
-    public required int PartitionsWithExpandedData { get; init; }
-    public required int PartitionsMissingExpandedData { get; init; }
-
-    public bool AllPartitionsExpanded => PartitionCount > 0 && PartitionsMissingExpandedData == 0;
 }

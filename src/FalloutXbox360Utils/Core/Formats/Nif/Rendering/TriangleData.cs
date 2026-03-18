@@ -67,4 +67,8 @@ internal struct TriangleData
     // Hair tint from HCLR: SM3002.pso formula 2*(vc*(tint-0.5)+0.5) * accDiffuse * tex
     public bool HasTintColor;
     public float TintR, TintG, TintB;
+
+    // FaceGen subsurface scattering: warm backlight from _sk face tint texture
+    public bool IsFaceGen;
+    public float SubsurfaceR, SubsurfaceG, SubsurfaceB;
 }

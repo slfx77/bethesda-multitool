@@ -392,7 +392,7 @@ internal static class NpcExportSceneBuilder
             holsterModelPoseOverrides = NifNodeControllerPoseReader.Parse(
                 weaponRaw.Value.Data,
                 weaponRaw.Value.Info,
-                sampleLastKeyframe: true);
+                true);
             Log.Debug(
                 "Export weapon '{0}': holster mode - suppressing remaining root-attached geometry; rendering explicit attachment groups only",
                 npc.WeaponVisual.MeshPath);
@@ -620,8 +620,7 @@ internal static class NpcExportSceneBuilder
                 hairRaw.Value.Info,
                 headBone,
                 bonelessAttachmentTransform,
-                npc.HairNifPath,
-                NpcRenderHelpers.HeadAttachmentRootPolicy.PreserveAuthoredBasis);
+                npc.HairNifPath);
         }
 
         var tint = NpcRenderHelpers.UnpackHairColor(npc.HairColor);
@@ -751,8 +750,7 @@ internal static class NpcExportSceneBuilder
                     partRaw.Value.Info,
                     headBone,
                     bonelessAttachmentTransform,
-                    headPartPath,
-                    NpcRenderHelpers.HeadAttachmentRootPolicy.PreserveAuthoredBasis);
+                    headPartPath);
             }
 
             var tint = NpcRenderHelpers.UnpackHairColor(npc.HairColor);

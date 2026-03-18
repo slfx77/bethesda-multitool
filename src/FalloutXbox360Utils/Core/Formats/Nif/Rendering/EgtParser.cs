@@ -37,13 +37,20 @@ internal sealed class EgtParser
 
         // Header layout (64 bytes total):
         //   [0-7]:   magic "FREGT003"
-        //   [8-11]:  uint32 LE cols (texture width)
-        //   [12-15]: uint32 LE rows (texture height)
+        //   [8-11]:  uint32 LE rows (texture height)
+        //   [12-15]: uint32 LE cols (texture width)
         //   [16-19]: uint32 LE symmetric morph count (typically 50)
         //   [20-23]: uint32 LE asymmetric morph count (typically 0)
         //   [24-63]: reserved/other parameters
-        var cols = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(8));
-        var rows = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(12));
+        // Citation: FgEgtFileIO_ParseEgtFile (egt_parser_decompiled.txt:620-646)
+        //   uStack_b0 (header offset 0) = row count (loop bound for row iteration)
+        //   iStack_ac (header offset 4) = width (bytes read per row)
+        // Note: Engine aligns row stride to 8 bytes: stride = (width + 7) & ~7.
+        //   For 256-wide EGTs this is a no-op. Non-8-aligned widths would need padding.
+        // Note: Engine V-flips during parse (reads rows bottom-to-top into memory).
+        //   We read top-to-bottom here; V-flip is applied later in FaceGenTextureMorpher.
+        var rows = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(8));
+        var cols = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(12));
         var symCount = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(16));
         var asymCount = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(20));
 
