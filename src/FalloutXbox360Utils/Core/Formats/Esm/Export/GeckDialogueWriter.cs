@@ -411,17 +411,18 @@ internal static class GeckDialogueWriter
     /// <summary>
     ///     Delegates to <see cref="GeckTextContentWriter" />.
     /// </summary>
-    internal static void AppendBooksSection(StringBuilder sb, List<BookRecord> books)
+    internal static void AppendBooksSection(StringBuilder sb, List<BookRecord> books,
+        FormIdResolver resolver)
     {
-        GeckTextContentWriter.AppendBooksSection(sb, books);
+        GeckTextContentWriter.AppendBooksSection(sb, books, resolver);
     }
 
     /// <summary>
     ///     Generate a report for Books only.
     /// </summary>
-    internal static string GenerateBooksReport(List<BookRecord> books, Dictionary<uint, string>? lookup = null)
+    internal static string GenerateBooksReport(List<BookRecord> books, FormIdResolver? resolver = null)
     {
-        return GeckTextContentWriter.GenerateBooksReport(books, lookup);
+        return GeckTextContentWriter.GenerateBooksReport(books, resolver);
     }
 
     /// <summary>

@@ -66,7 +66,7 @@ public static class GeckReportGenerator
 
         if (result.Books.Count > 0)
         {
-            GeckDialogueWriter.AppendBooksSection(sb, result.Books);
+            GeckDialogueWriter.AppendBooksSection(sb, result.Books, resolver);
         }
 
         if (result.Terminals.Count > 0)
@@ -141,6 +141,11 @@ public static class GeckReportGenerator
         if (result.Worldspaces.Count > 0)
         {
             GeckWorldWriter.AppendWorldspacesSection(sb, result.Worldspaces, resolver);
+        }
+
+        if (result.Sounds.Count > 0)
+        {
+            GeckWorldWriter.AppendSoundsSection(sb, result.Sounds);
         }
 
         // String pool data from runtime memory
@@ -228,8 +233,8 @@ public static class GeckReportGenerator
 
         if (result.Books.Count > 0)
         {
-            files["books.csv"] = CsvItemWriter.GenerateBooksCsv(result.Books);
-            files["book_report.txt"] = GeckDialogueWriter.GenerateBooksReport(result.Books);
+            files["books.csv"] = CsvItemWriter.GenerateBooksCsv(result.Books, resolver);
+            files["book_report.txt"] = GeckDialogueWriter.GenerateBooksReport(result.Books, resolver);
         }
 
         if (result.Terminals.Count > 0)
@@ -384,7 +389,7 @@ public static class GeckReportGenerator
 
         if (result.Challenges.Count > 0)
         {
-            files["challenges.csv"] = CsvMiscWriter.GenerateChallengesCsv(result.Challenges);
+            files["challenges.csv"] = CsvMiscWriter.GenerateChallengesCsv(result.Challenges, resolver);
             files["challenge_report.txt"] = GeckFactionWriter.GenerateChallengesReport(result.Challenges, resolver);
         }
 
@@ -400,15 +405,21 @@ public static class GeckReportGenerator
             files["projectile_report.txt"] = GeckWorldWriter.GenerateProjectilesReport(result.Projectiles, resolver);
         }
 
+        if (result.Sounds.Count > 0)
+        {
+            files["sounds.csv"] = CsvSupplementalWriter.GenerateSoundsCsv(result.Sounds);
+            files["sound_report.txt"] = GeckWorldWriter.GenerateSoundsReport(result.Sounds);
+        }
+
         if (result.Explosions.Count > 0)
         {
-            files["explosions.csv"] = CsvMiscWriter.GenerateExplosionsCsv(result.Explosions);
+            files["explosions.csv"] = CsvMiscWriter.GenerateExplosionsCsv(result.Explosions, resolver);
             files["explosion_report.txt"] = GeckWorldWriter.GenerateExplosionsReport(result.Explosions, resolver);
         }
 
         if (result.Messages.Count > 0)
         {
-            files["messages.csv"] = CsvSupplementalWriter.GenerateMessagesCsv(result.Messages);
+            files["messages.csv"] = CsvSupplementalWriter.GenerateMessagesCsv(result.Messages, resolver);
             files["message_report.txt"] = GeckDialogueWriter.GenerateMessagesReport(result.Messages, resolver);
         }
 

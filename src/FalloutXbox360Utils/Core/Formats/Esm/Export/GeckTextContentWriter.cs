@@ -1,4 +1,5 @@
 using System.Text;
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
@@ -47,7 +48,8 @@ internal static class GeckTextContentWriter
         return sb.ToString();
     }
 
-    internal static void AppendBooksSection(StringBuilder sb, List<BookRecord> books)
+    internal static void AppendBooksSection(StringBuilder sb, List<BookRecord> books,
+        FormIdResolver resolver)
     {
         GeckReportHelpers.AppendSectionHeader(sb, $"Books ({books.Count})");
 
@@ -60,13 +62,29 @@ internal static class GeckTextContentWriter
             sb.AppendLine($"Display Name:   {book.FullName ?? "(none)"}");
             sb.AppendLine($"Value:          {book.Value} caps");
             sb.AppendLine($"Weight:         {book.Weight:F1}");
-            sb.AppendLine($"Endianness:     {(book.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")}");
-            sb.AppendLine($"Offset:         0x{book.Offset:X8}");
+
+            if (book.Flags != 0)
+            {
+                sb.AppendLine(
+                    $"Flags:          {FlagRegistry.DecodeFlagNamesWithHex(book.Flags, FlagRegistry.BookFlags)}");
+            }
 
             if (book.TeachesSkill)
             {
-                sb.AppendLine($"Teaches Skill:  {book.SkillTaught}");
+                sb.AppendLine($"Teaches Skill:  {resolver.GetSkillName(book.SkillTaught) ?? $"Skill#{book.SkillTaught}"}");
             }
+
+            if (book.EnchantmentFormId is > 0)
+            {
+                sb.AppendLine($"Enchantment:    {resolver.FormatFull(book.EnchantmentFormId.Value)}");
+                if (book.EnchantmentAmount != 0)
+                {
+                    sb.AppendLine($"Enchant Amount: {book.EnchantmentAmount}");
+                }
+            }
+
+            sb.AppendLine($"Endianness:     {(book.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")}");
+            sb.AppendLine($"Offset:         0x{book.Offset:X8}");
 
             if (!string.IsNullOrEmpty(book.Text))
             {
@@ -83,10 +101,10 @@ internal static class GeckTextContentWriter
     /// <summary>
     ///     Generate a report for Books only.
     /// </summary>
-    internal static string GenerateBooksReport(List<BookRecord> books, Dictionary<uint, string>? lookup = null)
+    internal static string GenerateBooksReport(List<BookRecord> books, FormIdResolver? resolver = null)
     {
         var sb = new StringBuilder();
-        AppendBooksSection(sb, books);
+        AppendBooksSection(sb, books, resolver ?? FormIdResolver.Empty);
         return sb.ToString();
     }
 

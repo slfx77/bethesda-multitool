@@ -1,9 +1,10 @@
 using System.Text;
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
-/// <summary>Generates GECK-style text reports for Cell, Worldspace, Map Marker, Explosion, and Projectile records.</summary>
+/// <summary>Generates GECK-style text reports for Cell, Worldspace, Map Marker, Sound, Explosion, and Projectile records.</summary>
 internal static class GeckWorldWriter
 {
     internal static void AppendPlacedObjects(
@@ -386,7 +387,8 @@ internal static class GeckWorldWriter
 
             if (expl.Flags != 0)
             {
-                sb.AppendLine($"  Flags:       0x{expl.Flags:X8}");
+                sb.AppendLine(
+                    $"  Flags:       {FlagRegistry.DecodeFlagNamesWithHex(expl.Flags, FlagRegistry.ExplosionFlags)}");
             }
 
             sb.AppendLine();
@@ -492,6 +494,64 @@ internal static class GeckWorldWriter
     {
         var sb = new StringBuilder();
         AppendProjectilesSection(sb, projectiles, resolver ?? FormIdResolver.Empty);
+        return sb.ToString();
+    }
+
+    internal static void AppendSoundsSection(StringBuilder sb, List<SoundRecord> sounds)
+    {
+        GeckReportHelpers.AppendSectionHeader(sb, $"Sounds ({sounds.Count})");
+        sb.AppendLine();
+
+        var withFile = sounds.Count(s => !string.IsNullOrEmpty(s.FileName));
+        var looping = sounds.Count(s => (s.Flags & 0x0010) != 0);
+        sb.AppendLine($"Total Sounds: {sounds.Count:N0}");
+        sb.AppendLine($"  With File Path: {withFile:N0}");
+        sb.AppendLine($"  Looping:        {looping:N0}");
+        sb.AppendLine();
+
+        foreach (var snd in sounds.OrderBy(s => s.EditorId, StringComparer.OrdinalIgnoreCase))
+        {
+            sb.AppendLine(new string('\u2500', 80));
+            sb.AppendLine($"  SOUND: {snd.EditorId ?? "(none)"}");
+            sb.AppendLine($"  FormID:         {GeckReportHelpers.FormatFormId(snd.FormId)}");
+
+            if (!string.IsNullOrEmpty(snd.FileName))
+            {
+                sb.AppendLine($"  File:           {snd.FileName}");
+            }
+
+            sb.AppendLine($"  Min Atten Dist: {snd.MinAttenuationDistance * 5}");
+            sb.AppendLine($"  Max Atten Dist: {snd.MaxAttenuationDistance * 5}");
+
+            if (snd.StaticAttenuation != 0)
+            {
+                sb.AppendLine($"  Static Atten:   {snd.StaticAttenuation / 100.0:F2} dB");
+            }
+
+            if (snd.Flags != 0)
+            {
+                sb.AppendLine(
+                    $"  Flags:          {FlagRegistry.DecodeFlagNamesWithHex(snd.Flags, FlagRegistry.SoundFlags)}");
+            }
+
+            if (snd.StartTime != 0 || snd.EndTime != 0)
+            {
+                sb.AppendLine($"  Play Hours:     {snd.StartTime}:00 \u2013 {snd.EndTime}:00");
+            }
+
+            if (snd.RandomPercentChance != 0)
+            {
+                sb.AppendLine($"  Random Chance:  {snd.RandomPercentChance}%");
+            }
+
+            sb.AppendLine();
+        }
+    }
+
+    public static string GenerateSoundsReport(List<SoundRecord> sounds)
+    {
+        var sb = new StringBuilder();
+        AppendSoundsSection(sb, sounds);
         return sb.ToString();
     }
 }

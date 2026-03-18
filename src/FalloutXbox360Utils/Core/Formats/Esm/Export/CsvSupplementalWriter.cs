@@ -1,4 +1,5 @@
 using System.Text;
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Strings;
 
@@ -133,11 +134,11 @@ internal static class CsvSupplementalWriter
         return sb.ToString();
     }
 
-    public static string GenerateMessagesCsv(List<MessageRecord> messages)
+    public static string GenerateMessagesCsv(List<MessageRecord> messages, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "RowType,FormID,EditorID,Title,Description,IsMessageBox,IsAutoDisplay,ButtonCount,Endianness,Offset");
+            "RowType,FormID,EditorID,Title,Description,IsMessageBox,IsAutoDisplay,QuestFormID,QuestName,DisplayTime,ButtonCount,Icon,Endianness,Offset");
 
         foreach (var m in messages.OrderBy(m => m.EditorId ?? ""))
         {
@@ -149,7 +150,11 @@ internal static class CsvSupplementalWriter
                 Fmt.CsvEscape(m.Description),
                 m.IsMessageBox ? "Yes" : "No",
                 m.IsAutoDisplay ? "Yes" : "No",
+                m.QuestFormId != 0 ? Fmt.FId(m.QuestFormId) : "",
+                m.QuestFormId != 0 ? resolver.ResolveCsv(m.QuestFormId) : "",
+                m.DisplayTime != 0 ? m.DisplayTime.ToString() : "",
                 m.Buttons.Count.ToString(),
+                Fmt.CsvEscape(m.Icon),
                 Fmt.Endian(m.IsBigEndian),
                 m.Offset.ToString()));
         }
@@ -201,6 +206,34 @@ internal static class CsvSupplementalWriter
                 Fmt.FIdN(p.Explosion),
                 Fmt.Endian(p.IsBigEndian),
                 p.Offset.ToString()));
+        }
+
+        return sb.ToString();
+    }
+
+    public static string GenerateSoundsCsv(List<SoundRecord> sounds)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine(
+            "RowType,FormID,EditorID,FileName,MinAttenDist,MaxAttenDist,StaticAttenDB,Flags,FlagsDescription,StartTime,EndTime,RandomChance,Endianness,Offset");
+
+        foreach (var s in sounds.OrderBy(s => s.EditorId ?? ""))
+        {
+            sb.AppendLine(string.Join(",",
+                "SOUND",
+                Fmt.FId(s.FormId),
+                Fmt.CsvEscape(s.EditorId),
+                Fmt.CsvEscape(s.FileName),
+                (s.MinAttenuationDistance * 5).ToString(),
+                (s.MaxAttenuationDistance * 5).ToString(),
+                (s.StaticAttenuation / 100.0).ToString("F2"),
+                $"0x{s.Flags:X4}",
+                Fmt.CsvEscape(FlagRegistry.DecodeFlagNames(s.Flags, FlagRegistry.SoundFlags)),
+                s.StartTime.ToString(),
+                s.EndTime.ToString(),
+                s.RandomPercentChance.ToString(),
+                Fmt.Endian(s.IsBigEndian),
+                s.Offset.ToString()));
         }
 
         return sb.ToString();

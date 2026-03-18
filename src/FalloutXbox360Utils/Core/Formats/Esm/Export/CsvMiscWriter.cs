@@ -1,4 +1,5 @@
 using System.Text;
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
@@ -382,10 +383,11 @@ internal static class CsvMiscWriter
         return sb.ToString();
     }
 
-    public static string GenerateChallengesCsv(List<ChallengeRecord> challenges)
+    public static string GenerateChallengesCsv(List<ChallengeRecord> challenges, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("RowType,FormID,EditorID,Name,Type,Threshold,Interval,Description,Endianness,Offset");
+        sb.AppendLine(
+            "RowType,FormID,EditorID,Name,Type,TypeName,Threshold,Interval,Flags,FlagsDescription,Value1,Value2,Value3,ScriptFormID,ScriptName,Description,Endianness,Offset");
 
         foreach (var c in challenges.OrderBy(c => c.EditorId ?? ""))
         {
@@ -394,9 +396,17 @@ internal static class CsvMiscWriter
                 Fmt.FId(c.FormId),
                 Fmt.CsvEscape(c.EditorId),
                 Fmt.CsvEscape(c.FullName),
-                c.TypeName,
+                c.ChallengeType.ToString(),
+                Fmt.CsvEscape(c.TypeName),
                 c.Threshold.ToString(),
                 c.Interval.ToString(),
+                $"0x{c.Flags:X4}",
+                Fmt.CsvEscape(FlagRegistry.DecodeFlagNames(c.Flags, FlagRegistry.ChallengeFlags)),
+                c.Value1.ToString(),
+                c.Value2.ToString(),
+                c.Value3.ToString(),
+                c.Script != 0 ? Fmt.FId(c.Script) : "",
+                c.Script != 0 ? resolver.ResolveCsv(c.Script) : "",
                 Fmt.CsvEscape(c.Description),
                 Fmt.Endian(c.IsBigEndian),
                 c.Offset.ToString()));
@@ -405,10 +415,11 @@ internal static class CsvMiscWriter
         return sb.ToString();
     }
 
-    public static string GenerateExplosionsCsv(List<ExplosionRecord> explosions)
+    public static string GenerateExplosionsCsv(List<ExplosionRecord> explosions, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("RowType,FormID,EditorID,Name,Force,Damage,Radius,Endianness,Offset");
+        sb.AppendLine(
+            "RowType,FormID,EditorID,Name,Force,Damage,Radius,ISRadius,Flags,FlagsDescription,LightFormID,LightName,Sound1FormID,Sound1Name,Sound2FormID,Sound2Name,ImpactDataSetFormID,ImpactDataSetName,EnchantmentFormID,EnchantmentName,ModelPath,Endianness,Offset");
 
         foreach (var e in explosions.OrderBy(e => e.EditorId ?? ""))
         {
@@ -420,6 +431,20 @@ internal static class CsvMiscWriter
                 e.Force.ToString("F1"),
                 e.Damage.ToString("F1"),
                 e.Radius.ToString("F1"),
+                e.ISRadius.ToString("F1"),
+                $"0x{e.Flags:X4}",
+                Fmt.CsvEscape(FlagRegistry.DecodeFlagNames(e.Flags, FlagRegistry.ExplosionFlags)),
+                Fmt.FIdAlways(e.Light),
+                resolver.ResolveCsv(e.Light),
+                Fmt.FIdAlways(e.Sound1),
+                resolver.ResolveCsv(e.Sound1),
+                Fmt.FIdAlways(e.Sound2),
+                resolver.ResolveCsv(e.Sound2),
+                Fmt.FIdAlways(e.ImpactDataSet),
+                resolver.ResolveCsv(e.ImpactDataSet),
+                Fmt.FIdAlways(e.Enchantment),
+                resolver.ResolveCsv(e.Enchantment),
+                Fmt.CsvEscape(e.ModelPath),
                 Fmt.Endian(e.IsBigEndian),
                 e.Offset.ToString()));
         }

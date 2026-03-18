@@ -293,11 +293,11 @@ internal static class CsvItemWriter
         return sb.ToString();
     }
 
-    public static string GenerateBooksCsv(List<BookRecord> books)
+    public static string GenerateBooksCsv(List<BookRecord> books, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "RowType,FormID,EditorID,Name,Value,Weight,TeachesSkill,SkillTaught,Text,ModelPath,Endianness,Offset");
+            "RowType,FormID,EditorID,Name,Value,Weight,Flags,TeachesSkill,SkillTaughtName,EnchantmentFormID,EnchantmentName,EnchantmentAmount,Text,ModelPath,Endianness,Offset");
 
         foreach (var b in books.OrderBy(b => b.EditorId ?? ""))
         {
@@ -308,8 +308,12 @@ internal static class CsvItemWriter
                 Fmt.CsvEscape(b.FullName),
                 b.Value.ToString(),
                 b.Weight.ToString("F2"),
+                $"0x{b.Flags:X2}",
                 b.TeachesSkill.ToString(),
-                b.SkillTaught.ToString(),
+                b.TeachesSkill ? Fmt.CsvEscape(resolver.GetSkillName(b.SkillTaught) ?? b.SkillTaught.ToString()) : "",
+                Fmt.FIdN(b.EnchantmentFormId),
+                b.EnchantmentFormId is > 0 ? resolver.ResolveCsv(b.EnchantmentFormId.Value) : "",
+                b.EnchantmentAmount != 0 ? b.EnchantmentAmount.ToString() : "",
                 Fmt.CsvEscape(b.Text),
                 Fmt.CsvEscape(b.ModelPath),
                 Fmt.Endian(b.IsBigEndian),
