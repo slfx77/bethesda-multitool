@@ -90,7 +90,9 @@ public sealed class Logger
     public void SetLogFile(string filePath)
     {
         _logFileWriter?.Dispose();
-        _logFileWriter = new StreamWriter(filePath, true) { AutoFlush = true };
+        _logFileWriter = new StreamWriter(
+            new FileStream(filePath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
+        { AutoFlush = true };
     }
 
     /// <summary>
@@ -278,6 +280,7 @@ public sealed class Logger
     /// </summary>
     public void Reset()
     {
+        CloseLogFile();
         Level = LogLevel.Info;
         UseSpectre = true;
         IncludeTimestamp = false;

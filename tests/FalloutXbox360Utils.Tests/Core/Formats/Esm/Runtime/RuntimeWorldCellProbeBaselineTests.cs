@@ -2,10 +2,12 @@ using System.IO.MemoryMappedFiles;
 using System.Text.Json;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Minidump;
+using FalloutXbox360Utils.Tests.Core;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime;
 
+[Collection(DumpSerialTestGroup.Name)]
 public sealed class RuntimeWorldCellProbeBaselineTests
 {
     private static readonly HashSet<string> AllowedConfidence =
@@ -82,7 +84,8 @@ public sealed class RuntimeWorldCellProbeBaselineTests
         foreach (var baseline in baselines)
         {
             var samplePath = SampleFileFixture.FindSamplePath(baseline.SamplePath);
-            Assert.True(samplePath is not null, $"Sample dump not found for baseline '{baseline.Label}': {baseline.SamplePath}");
+            Assert.True(samplePath is not null,
+                $"Sample dump not found for baseline '{baseline.Label}': {baseline.SamplePath}");
 
             var observed = await ProbeDumpAsync(samplePath!);
             var mismatch = BuildMismatchMessage(baseline, observed);

@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using FalloutXbox360Utils.Core.Formats.Esm.Script;
+using FalloutXbox360Utils.Tests.Core;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Script;
@@ -10,6 +11,7 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Script;
 ///     release builds (which only have compiled bytecode).
 ///     These tests are skipped when sample dump files are not present.
 /// </summary>
+[Collection(DumpSerialTestGroup.Name)]
 public class ScriptDecompilerMemoryDumpTests(ITestOutputHelper output, SampleFileFixture samples)
 {
     private readonly ITestOutputHelper _output = output;

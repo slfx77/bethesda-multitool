@@ -1,19 +1,19 @@
 using System.Globalization;
-using FalloutXbox360Utils.CLI.Rendering.Npc;
+using System.Numerics;
 using FalloutXbox360Utils.CLI;
-using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.CLI.Rendering.Npc;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Nif;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Skinning;
-using FalloutXbox360Utils.Tests.Core;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
 
 [Collection(LoggerSerialTestGroup.Name)]
+[Trait("Category", "Slow")]
 public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
 {
     private const uint UpperBodySlot = 0x04;
@@ -38,8 +38,8 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
         var lucy = ResolveNpcAppearance(
             assets.AppearanceResolver,
             pluginName,
-            fullName: "Red Lucy",
-            editorIdFragment: LucyEditorId);
+            "Red Lucy",
+            LucyEditorId);
 
         Assert.NotNull(lucy);
 
@@ -49,8 +49,8 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
             new Dictionary<string, EgmParser?>(StringComparer.OrdinalIgnoreCase);
         var egtCache =
             new Dictionary<string, EgtParser?>(StringComparer.OrdinalIgnoreCase);
-        Dictionary<string, System.Numerics.Matrix4x4>? skeletonBoneCache = null;
-        Dictionary<string, System.Numerics.Matrix4x4>? poseDeltaCache = null;
+        Dictionary<string, Matrix4x4>? skeletonBoneCache = null;
+        Dictionary<string, Matrix4x4>? poseDeltaCache = null;
 
         var model = NpcBodyBuilder.Build(
             lucy!,
@@ -61,7 +61,7 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
             egtCache,
             ref skeletonBoneCache,
             ref poseDeltaCache,
-            CreateSettings(assets, headOnly: false));
+            CreateSettings(assets, false));
 
         Assert.NotNull(model);
         Assert.True(model.HasGeometry);
@@ -95,7 +95,7 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
         using var _ = new RendererStateScope();
         var outfitModel = CreateModel(outfitSubmeshes);
         var texturedSprite = RenderSprite(outfitModel, assets.TextureResolver);
-        var flatSprite = RenderSprite(outfitModel, textureResolver: null);
+        var flatSprite = RenderSprite(outfitModel, null);
 
         Assert.NotNull(texturedSprite);
         Assert.NotNull(flatSprite);
@@ -121,8 +121,8 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
         var lucy = ResolveNpcAppearance(
             assets.AppearanceResolver,
             pluginName,
-            fullName: "Red Lucy",
-            editorIdFragment: LucyEditorId);
+            "Red Lucy",
+            LucyEditorId);
 
         Assert.NotNull(lucy);
         Assert.True(lucy!.WeaponVisual?.IsVisible == true);
@@ -180,8 +180,8 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
         var docMitchell = ResolveNpcAppearance(
             assets.AppearanceResolver,
             pluginName,
-            fullName: "Doc Mitchell",
-            editorIdFragment: DocMitchellEditorId);
+            "Doc Mitchell",
+            DocMitchellEditorId);
 
         Assert.NotNull(docMitchell);
         Assert.False(docMitchell!.WeaponVisual?.IsVisible == true);
@@ -200,8 +200,8 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
         var veronica = ResolveNpcAppearance(
             assets.AppearanceResolver,
             pluginName,
-            fullName: "Veronica",
-            editorIdFragment: VeronicaEditorId);
+            "Veronica",
+            VeronicaEditorId);
 
         Assert.NotNull(veronica);
         Assert.True(veronica!.WeaponVisual?.IsVisible == true);
@@ -225,8 +225,8 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
         var argyll = ResolveNpcAppearance(
             assets.AppearanceResolver,
             pluginName,
-            fullName: "Argyll",
-            editorIdFragment: ArgyllEditorId);
+            "Argyll",
+            ArgyllEditorId);
 
         Assert.NotNull(argyll);
         Assert.NotNull(argyll!.EquippedItems);
@@ -237,8 +237,10 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
         var model = BuildFullBodyModel(assets, argyll);
         var pipboySubmeshes = model.Submeshes
             .Where(submesh =>
-                string.Equals(submesh.DiffuseTexturePath, @"textures\pipboy3000\PipBoyArm01.dds", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(submesh.DiffuseTexturePath, @"textures\pipboy3000\GreenScreen.dds", StringComparison.OrdinalIgnoreCase))
+                string.Equals(submesh.DiffuseTexturePath, @"textures\pipboy3000\PipBoyArm01.dds",
+                    StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(submesh.DiffuseTexturePath, @"textures\pipboy3000\GreenScreen.dds",
+                    StringComparison.OrdinalIgnoreCase))
             .ToList();
 
         Assert.NotEmpty(pipboySubmeshes);
@@ -308,7 +310,7 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
             headMeshCache,
             egmCache,
             egtCache,
-            CreateSettings(assets, headOnly: true));
+            CreateSettings(assets, true));
 
         Assert.NotNull(model);
         Assert.True(model.HasGeometry);
@@ -346,8 +348,8 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
         var lucy = ResolveNpcAppearance(
             assets.AppearanceResolver,
             pluginName,
-            fullName: "Red Lucy",
-            editorIdFragment: LucyEditorId);
+            "Red Lucy",
+            LucyEditorId);
 
         Assert.NotNull(lucy);
 
@@ -365,7 +367,7 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
             headMeshCache,
             egmCache,
             egtCache,
-            CreateSettings(assets, headOnly: true));
+            CreateSettings(assets, true));
 
         Assert.NotNull(model);
         Assert.True(model.HasGeometry);
@@ -382,8 +384,8 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
         var lucy = ResolveNpcAppearance(
             assets.AppearanceResolver,
             pluginName,
-            fullName: "Red Lucy",
-            editorIdFragment: LucyEditorId);
+            "Red Lucy",
+            LucyEditorId);
 
         Assert.NotNull(lucy);
         var model = BuildFullBodyHeadModel(assets, lucy!);
@@ -467,7 +469,7 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
         Assert.Contains(boone.EquippedItems!, item => NpcRenderHelpers.IsHeadEquipment(item.BipedFlags));
 
         var withEquip = BuildHeadOnlyModel(assets, boone);
-        var withoutEquip = BuildHeadOnlyModel(assets, boone, noEquip: true);
+        var withoutEquip = BuildHeadOnlyModel(assets, boone, true);
 
         Assert.Contains(withEquip.Submeshes, submesh => submesh.RenderOrder == 3);
         Assert.DoesNotContain(withoutEquip.Submeshes, submesh => submesh.RenderOrder == 3);
@@ -483,8 +485,8 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
         var docMitchell = ResolveNpcAppearance(
             assets.AppearanceResolver,
             pluginName,
-            fullName: "Doc Mitchell",
-            editorIdFragment: DocMitchellEditorId);
+            "Doc Mitchell",
+            DocMitchellEditorId);
 
         Assert.NotNull(docMitchell);
 
@@ -502,7 +504,7 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
             headMeshCache,
             egmCache,
             egtCache,
-            CreateSettings(assets, headOnly: true));
+            CreateSettings(assets, true));
 
         Assert.NotNull(model);
         Assert.True(model.HasGeometry);
@@ -519,8 +521,8 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
         var veronica = ResolveNpcAppearance(
             assets.AppearanceResolver,
             pluginName,
-            fullName: "Veronica",
-            editorIdFragment: VeronicaEditorId);
+            "Veronica",
+            VeronicaEditorId);
 
         Assert.NotNull(veronica);
 
@@ -578,10 +580,10 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
 
         using var _ = new RendererStateScope();
 
-        var pcFront = RenderSprite(pcModel, textureResolver: null, fixedSize: 384, azimuthDeg: 0f);
-        var xboxFront = RenderSprite(xboxModel, textureResolver: null, fixedSize: 384, azimuthDeg: 0f);
-        var pcLeft = RenderSprite(pcModel, textureResolver: null, fixedSize: 384, azimuthDeg: 90f);
-        var xboxLeft = RenderSprite(xboxModel, textureResolver: null, fixedSize: 384, azimuthDeg: 90f);
+        var pcFront = RenderSprite(pcModel, null, 384, 0f);
+        var xboxFront = RenderSprite(xboxModel, null, 384, 0f);
+        var pcLeft = RenderSprite(pcModel, null, 384, 90f);
+        var xboxLeft = RenderSprite(xboxModel, null, 384, 90f);
 
         AssertSpriteBoundsSimilar(pcFront, xboxFront, editorId, "front", "full-body");
         AssertSpriteBoundsSimilar(pcLeft, xboxLeft, editorId, "left", "full-body");
@@ -631,10 +633,10 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
 
         using var _ = new RendererStateScope();
 
-        var pcFront = RenderSprite(pcArmorModel, textureResolver: null, fixedSize: 384, azimuthDeg: 0f);
-        var xboxFront = RenderSprite(xboxArmorModel, textureResolver: null, fixedSize: 384, azimuthDeg: 0f);
-        var pcLeft = RenderSprite(pcArmorModel, textureResolver: null, fixedSize: 384, azimuthDeg: 90f);
-        var xboxLeft = RenderSprite(xboxArmorModel, textureResolver: null, fixedSize: 384, azimuthDeg: 90f);
+        var pcFront = RenderSprite(pcArmorModel, null, 384, 0f);
+        var xboxFront = RenderSprite(xboxArmorModel, null, 384, 0f);
+        var pcLeft = RenderSprite(pcArmorModel, null, 384, 90f);
+        var xboxLeft = RenderSprite(xboxArmorModel, null, 384, 90f);
 
         AssertSpriteBoundsSimilar(pcFront, xboxFront, editorId, "front", pcArmorMeshPath);
         AssertSpriteBoundsSimilar(pcLeft, xboxLeft, editorId, "left", pcArmorMeshPath);
@@ -719,12 +721,12 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
         return NifSpriteRenderer.Render(
             model,
             textureResolver,
-            pixelsPerUnit: 1f,
-            minSize: 64,
-            maxSize: 192,
-            azimuthDeg: azimuthDeg,
-            elevationDeg: elevationDeg,
-            fixedSize: fixedSize);
+            1f,
+            64,
+            192,
+            azimuthDeg,
+            elevationDeg,
+            fixedSize);
     }
 
     private static NifRenderableModel CreateModel(
@@ -776,7 +778,7 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
             headMeshCache,
             egmCache,
             egtCache,
-            CreateSettings(assets, headOnly: true, noEquip: noEquip));
+            CreateSettings(assets, true, noEquip));
 
         Assert.NotNull(model);
         Assert.True(model.HasGeometry);
@@ -791,8 +793,8 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
             new Dictionary<string, EgmParser?>(StringComparer.OrdinalIgnoreCase);
         var egtCache =
             new Dictionary<string, EgtParser?>(StringComparer.OrdinalIgnoreCase);
-        Dictionary<string, System.Numerics.Matrix4x4>? skeletonBoneCache = null;
-        Dictionary<string, System.Numerics.Matrix4x4>? poseDeltaCache = null;
+        Dictionary<string, Matrix4x4>? skeletonBoneCache = null;
+        Dictionary<string, Matrix4x4>? poseDeltaCache = null;
 
         var bodyModel = NpcBodyBuilder.Build(
             npc,
@@ -803,7 +805,7 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
             egtCache,
             ref skeletonBoneCache,
             ref poseDeltaCache,
-            CreateSettings(assets, headOnly: false));
+            CreateSettings(assets, false));
 
         Assert.NotNull(bodyModel);
         Assert.NotNull(skeletonBoneCache);
@@ -819,7 +821,7 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
             headMeshCache,
             egmCache,
             egtCache,
-            CreateSettings(assets, headOnly: false),
+            CreateSettings(assets, false),
             idlePoseBones: skeletonBoneCache,
             headEquipmentTransformOverride: bonelessHeadAttachmentTransform);
 
@@ -836,8 +838,8 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
             new Dictionary<string, EgmParser?>(StringComparer.OrdinalIgnoreCase);
         var egtCache =
             new Dictionary<string, EgtParser?>(StringComparer.OrdinalIgnoreCase);
-        Dictionary<string, System.Numerics.Matrix4x4>? skeletonBoneCache = null;
-        Dictionary<string, System.Numerics.Matrix4x4>? poseDeltaCache = null;
+        Dictionary<string, Matrix4x4>? skeletonBoneCache = null;
+        Dictionary<string, Matrix4x4>? poseDeltaCache = null;
 
         var bodyModel = NpcBodyBuilder.Build(
             npc,
@@ -848,7 +850,7 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
             egtCache,
             ref skeletonBoneCache,
             ref poseDeltaCache,
-            CreateSettings(assets, headOnly: false));
+            CreateSettings(assets, false));
 
         Assert.NotNull(bodyModel);
         Assert.True(bodyModel.HasGeometry);
@@ -866,8 +868,8 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
             new Dictionary<string, EgmParser?>(StringComparer.OrdinalIgnoreCase);
         var egtCache =
             new Dictionary<string, EgtParser?>(StringComparer.OrdinalIgnoreCase);
-        Dictionary<string, System.Numerics.Matrix4x4>? skeletonBoneCache = null;
-        Dictionary<string, System.Numerics.Matrix4x4>? poseDeltaCache = null;
+        Dictionary<string, Matrix4x4>? skeletonBoneCache = null;
+        Dictionary<string, Matrix4x4>? poseDeltaCache = null;
 
         _ = NpcBodyBuilder.Build(
             npc,
@@ -878,7 +880,7 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
             egtCache,
             ref skeletonBoneCache,
             ref poseDeltaCache,
-            CreateSettings(assets, headOnly: false));
+            CreateSettings(assets, false));
 
         Assert.NotNull(skeletonBoneCache);
 
@@ -886,7 +888,7 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
         var armorModel = NifGeometryExtractor.Extract(
             raw.Data,
             raw.Info,
-            textureResolver: null,
+            null,
             externalBoneTransforms: skeletonBoneCache,
             useDualQuaternionSkinning: true);
 
@@ -925,9 +927,9 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
         Assert.NotEmpty(eyeSubmeshes);
 
         using var _ = new RendererStateScope();
-        var faceSprite = RenderSprite(CreateModel(faceSubmeshes, model), textureResolver, fixedSize: 320);
-        var attachmentSprite = RenderSprite(CreateModel(attachmentSubmeshes, model), textureResolver, fixedSize: 320);
-        var eyeSprite = RenderSprite(CreateModel(eyeSubmeshes, model), textureResolver, fixedSize: 320);
+        var faceSprite = RenderSprite(CreateModel(faceSubmeshes, model), textureResolver, 320);
+        var attachmentSprite = RenderSprite(CreateModel(attachmentSubmeshes, model), textureResolver, 320);
+        var eyeSprite = RenderSprite(CreateModel(eyeSubmeshes, model), textureResolver, 320);
 
         Assert.NotNull(faceSprite);
         Assert.NotNull(attachmentSprite);
@@ -942,7 +944,8 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
         Assert.NotNull(eyeBounds);
 
         var eyeEnvelope = ExpandBounds(faceBounds!.Value, eyeSprite!.Width, eyeSprite.Height, 0.08f, 0.10f);
-        var attachmentEnvelope = ExpandBounds(faceBounds.Value, attachmentSprite!.Width, attachmentSprite.Height, 0.55f, 0.45f);
+        var attachmentEnvelope =
+            ExpandBounds(faceBounds.Value, attachmentSprite!.Width, attachmentSprite.Height, 0.55f, 0.45f);
 
         var eyeInsideRatio = CountVisiblePixelsInsideBounds(eyeSprite, eyeEnvelope) /
                              (float)CountVisiblePixels(eyeSprite);
@@ -974,8 +977,8 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
         Assert.NotEmpty(headEquipmentSubmeshes);
 
         using var _ = new RendererStateScope();
-        var faceSprite = RenderSprite(CreateModel(faceSubmeshes, model), textureResolver, fixedSize: 320);
-        var equipmentSprite = RenderSprite(CreateModel(headEquipmentSubmeshes, model), textureResolver, fixedSize: 320);
+        var faceSprite = RenderSprite(CreateModel(faceSubmeshes, model), textureResolver, 320);
+        var equipmentSprite = RenderSprite(CreateModel(headEquipmentSubmeshes, model), textureResolver, 320);
 
         Assert.NotNull(faceSprite);
         Assert.NotNull(equipmentSprite);
@@ -990,8 +993,8 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
             faceBounds!.Value,
             equipmentSprite!.Width,
             equipmentSprite.Height,
-            xPaddingFraction: 0.35f,
-            yPaddingFraction: 0.55f);
+            0.35f,
+            0.55f);
         var equipmentInsideRatio = CountVisiblePixelsInsideBounds(equipmentSprite, equipmentEnvelope) /
                                    (float)CountVisiblePixels(equipmentSprite);
         var maxCenterOffsetX = faceBounds.Value.Width * 0.55f;
@@ -1022,13 +1025,13 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
         var faceSprite = RenderSprite(
             CreateModel(faceSubmeshes, model),
             textureResolver,
-            fixedSize: 320,
-            azimuthDeg: 90f);
+            320,
+            90f);
         var hairSprite = RenderSprite(
             CreateModel(hairSubmeshes, model),
             textureResolver,
-            fixedSize: 320,
-            azimuthDeg: 90f);
+            320,
+            90f);
 
         Assert.NotNull(faceSprite);
         Assert.NotNull(hairSprite);
@@ -1043,8 +1046,8 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
             faceBounds!.Value,
             hairSprite!.Width,
             hairSprite.Height,
-            xPaddingFraction: 0.22f,
-            yPaddingFraction: 0.30f);
+            0.22f,
+            0.30f);
         var hairInsideRatio = CountVisiblePixelsInsideBounds(hairSprite, hairEnvelope) /
                               (float)CountVisiblePixels(hairSprite);
 
@@ -1065,7 +1068,7 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
         Assert.NotEmpty(weaponSubmeshes);
 
         using var _ = new RendererStateScope();
-        var weaponSprite = RenderSprite(CreateModel(weaponSubmeshes, model), textureResolver, fixedSize: 320);
+        var weaponSprite = RenderSprite(CreateModel(weaponSubmeshes, model), textureResolver, 320);
 
         Assert.NotNull(weaponSprite);
         Assert.True(CountVisiblePixels(weaponSprite!) > 0);
@@ -1236,15 +1239,14 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
         string fullName,
         string editorIdFragment)
     {
-        var match = resolver.GetAllNpcs().FirstOrDefault(
-            entry =>
-                string.Equals(
-                    entry.Value.FullName,
-                    fullName,
-                    StringComparison.OrdinalIgnoreCase) ||
-                (entry.Value.EditorId?.Contains(
-                    editorIdFragment,
-                    StringComparison.OrdinalIgnoreCase) ?? false));
+        var match = resolver.GetAllNpcs().FirstOrDefault(entry =>
+            string.Equals(
+                entry.Value.FullName,
+                fullName,
+                StringComparison.OrdinalIgnoreCase) ||
+            (entry.Value.EditorId?.Contains(
+                editorIdFragment,
+                StringComparison.OrdinalIgnoreCase) ?? false));
 
         return match.Value == null
             ? null
@@ -1541,10 +1543,10 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
 
     private sealed class RendererStateScope : IDisposable
     {
+        private readonly float _bumpStrength;
         private readonly bool _disableBilinear;
         private readonly bool _disableBumpMapping;
         private readonly bool _disableTextures;
-        private readonly float _bumpStrength;
 
         public RendererStateScope()
         {

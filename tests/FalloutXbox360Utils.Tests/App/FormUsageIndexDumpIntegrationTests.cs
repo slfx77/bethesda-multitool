@@ -1,10 +1,12 @@
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Minidump;
+using FalloutXbox360Utils.Tests.Core;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.App;
 
+[Collection(DumpSerialTestGroup.Name)]
 public class FormUsageIndexDumpIntegrationTests(SampleFileFixture samples)
 {
     [Fact]

@@ -1,6 +1,6 @@
+using System.Globalization;
 using System.IO.MemoryMappedFiles;
 using System.Text;
-using System.Globalization;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
@@ -13,6 +13,7 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.AI;
 ///     Diagnostic comparison of packages between memory dump and proto ESM.
 ///     Identifies discrepancies in type, flags, and schedule between the two sources.
 /// </summary>
+[Collection(Core.DumpSerialTestGroup.Name)]
 public sealed class PackageComparisonTests(ITestOutputHelper output, SampleFileFixture samples)
 {
     private static readonly string ResultFile = Path.Combine(

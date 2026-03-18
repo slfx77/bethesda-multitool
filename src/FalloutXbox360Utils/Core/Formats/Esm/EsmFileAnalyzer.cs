@@ -168,6 +168,7 @@ public static class EsmFileAnalyzer
         });
 
         Logger.Instance.Info($"[ESM Analysis] Complete. Time: {stopwatch.Elapsed}, Records: {parsedRecords.Count}");
+        Logger.Instance.CloseLogFile();
 
         return result;
     }

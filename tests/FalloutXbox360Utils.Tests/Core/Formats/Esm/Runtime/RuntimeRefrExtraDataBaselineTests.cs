@@ -3,10 +3,12 @@ using System.Text.Json;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Minidump;
+using FalloutXbox360Utils.Tests.Core;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime;
 
+[Collection(DumpSerialTestGroup.Name)]
 public sealed class RuntimeRefrExtraDataBaselineTests
 {
     private static readonly JsonSerializerOptions BaselineJsonOptions = new()
@@ -49,6 +51,8 @@ public sealed class RuntimeRefrExtraDataBaselineTests
             Assert.True(row.TryGetProperty("merchantContainerCount", out var merchantContainerCountElement));
             Assert.True(row.TryGetProperty("leveledCreatureCount", out var leveledCreatureCountElement));
             Assert.True(row.TryGetProperty("radiusCount", out var radiusCountElement));
+            Assert.True(row.TryGetProperty("countCount", out var countCountElement));
+            Assert.True(row.TryGetProperty("editorIdCount", out var editorIdCountElement));
             Assert.True(row.TryGetProperty("typeCounts", out var typeCountsElement));
             Assert.True(row.TryGetProperty("notes", out var notesElement));
 
@@ -81,6 +85,8 @@ public sealed class RuntimeRefrExtraDataBaselineTests
             Assert.True(merchantContainerCountElement.GetInt32() >= 0);
             Assert.True(leveledCreatureCountElement.GetInt32() >= 0);
             Assert.True(radiusCountElement.GetInt32() >= 0);
+            Assert.True(countCountElement.GetInt32() >= 0);
+            Assert.True(editorIdCountElement.GetInt32() >= 0);
             Assert.Equal(JsonValueKind.Object, typeCountsElement.ValueKind);
             Assert.False(string.IsNullOrWhiteSpace(notesElement.GetString()));
 
@@ -102,7 +108,8 @@ public sealed class RuntimeRefrExtraDataBaselineTests
         foreach (var baseline in baselines)
         {
             var samplePath = SampleFileFixture.FindSamplePath(baseline.SamplePath);
-            Assert.True(samplePath is not null, $"Sample dump not found for baseline '{baseline.Label}': {baseline.SamplePath}");
+            Assert.True(samplePath is not null,
+                $"Sample dump not found for baseline '{baseline.Label}': {baseline.SamplePath}");
 
             var observed = await ObserveDumpAsync(samplePath!, baseline.SampleLimit);
             var mismatch = BuildMismatchMessage(baseline, observed);
@@ -125,11 +132,14 @@ public sealed class RuntimeRefrExtraDataBaselineTests
             Assert.True(observed.MerchantContainerCount == baseline.MerchantContainerCount, mismatch);
             Assert.True(observed.LeveledCreatureCount == baseline.LeveledCreatureCount, mismatch);
             Assert.True(observed.RadiusCount == baseline.RadiusCount, mismatch);
+            Assert.True(observed.CountCount == baseline.CountCount, mismatch);
+            Assert.True(observed.EditorIdCount == baseline.EditorIdCount, mismatch);
             Assert.True(TypeCountsEqual(observed.TypeCounts, baseline.TypeCounts), mismatch);
         }
     }
 
-    private static bool TypeCountsEqual(IReadOnlyDictionary<byte, int> observed, IReadOnlyDictionary<string, int> baseline)
+    private static bool TypeCountsEqual(IReadOnlyDictionary<byte, int> observed,
+        IReadOnlyDictionary<string, int> baseline)
     {
         if (observed.Count != baseline.Count)
         {
@@ -159,6 +169,7 @@ public sealed class RuntimeRefrExtraDataBaselineTests
             $"enableParent={baseline.EnableParentCount}, linkedRef={baseline.LinkedRefCount}, encounterZone={baseline.EncounterZoneCount}, " +
             $"startingPosition={baseline.StartingPositionCount}, startingWorldOrCell={baseline.StartingWorldOrCellCount}, packageStart={baseline.PackageStartLocationCount}, " +
             $"merchantContainer={baseline.MerchantContainerCount}, leveledCreature={baseline.LeveledCreatureCount}, radius={baseline.RadiusCount}, " +
+            $"count={baseline.CountCount}, editorId={baseline.EditorIdCount}, " +
             $"typeCounts={JsonSerializer.Serialize(baseline.TypeCounts)}. " +
             $"Observed early={observed.IsEarlyBuild}, sampleCount={observed.SampleCount}, valid={observed.ValidRefrCount}, " +
             $"withExtra={observed.RefsWithExtraData}, nodes={observed.VisitedNodeCount}, ownership={observed.OwnershipCount}, " +
@@ -166,6 +177,7 @@ public sealed class RuntimeRefrExtraDataBaselineTests
             $"enableParent={observed.EnableParentCount}, linkedRef={observed.LinkedRefCount}, encounterZone={observed.EncounterZoneCount}, " +
             $"startingPosition={observed.StartingPositionCount}, startingWorldOrCell={observed.StartingWorldOrCellCount}, packageStart={observed.PackageStartLocationCount}, " +
             $"merchantContainer={observed.MerchantContainerCount}, leveledCreature={observed.LeveledCreatureCount}, radius={observed.RadiusCount}, " +
+            $"count={observed.CountCount}, editorId={observed.EditorIdCount}, " +
             $"typeCounts={JsonSerializer.Serialize(observed.TypeCounts.OrderBy(pair => pair.Key).ToDictionary(pair => pair.Key.ToString(), pair => pair.Value))}.";
     }
 
@@ -208,6 +220,8 @@ public sealed class RuntimeRefrExtraDataBaselineTests
             census.MerchantContainerCount,
             census.LeveledCreatureCount,
             census.RadiusCount,
+            census.CountCount,
+            census.EditorIdCount,
             census.TypeCounts);
     }
 
@@ -281,6 +295,8 @@ public sealed class RuntimeRefrExtraDataBaselineTests
         int MerchantContainerCount,
         int LeveledCreatureCount,
         int RadiusCount,
+        int CountCount,
+        int EditorIdCount,
         Dictionary<string, int> TypeCounts,
         string Notes);
 
@@ -303,5 +319,7 @@ public sealed class RuntimeRefrExtraDataBaselineTests
         int MerchantContainerCount,
         int LeveledCreatureCount,
         int RadiusCount,
+        int CountCount,
+        int EditorIdCount,
         IReadOnlyDictionary<byte, int> TypeCounts);
 }

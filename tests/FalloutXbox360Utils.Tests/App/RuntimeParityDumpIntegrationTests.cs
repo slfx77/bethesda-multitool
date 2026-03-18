@@ -2,10 +2,12 @@ using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Minidump;
+using FalloutXbox360Utils.Tests.Core;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.App;
 
+[Collection(DumpSerialTestGroup.Name)]
 public sealed class RuntimeParityDumpIntegrationTests(SampleFileFixture samples)
 {
     [Fact]
@@ -23,8 +25,10 @@ public sealed class RuntimeParityDumpIntegrationTests(SampleFileFixture samples)
             .ToList();
         Assert.NotEmpty(wrldEntries);
 
-        using var mmf = MemoryMappedFile.CreateFromFile(samples.DebugDump!, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-        using var accessor = mmf.CreateViewAccessor(0, new FileInfo(samples.DebugDump!).Length, MemoryMappedFileAccess.Read);
+        using var mmf =
+            MemoryMappedFile.CreateFromFile(samples.DebugDump!, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+        using var accessor =
+            mmf.CreateViewAccessor(0, new FileInfo(samples.DebugDump!).Length, MemoryMappedFileAccess.Read);
         var runtimeReader = RuntimeStructReader.CreateWithAutoDetect(
             accessor,
             new FileInfo(samples.DebugDump!).Length,
@@ -41,7 +45,8 @@ public sealed class RuntimeParityDumpIntegrationTests(SampleFileFixture samples)
             .ToList();
 
         Assert.NotEmpty(runtimeWorldspaces);
-        Assert.Contains(runtimeWorldspaces, worldspace => worldspace.MapUsableWidth is > 0 || worldspace.MapUsableHeight is > 0);
+        Assert.Contains(runtimeWorldspaces,
+            worldspace => worldspace.MapUsableWidth is > 0 || worldspace.MapUsableHeight is > 0);
 
         var worldspaceCellMaps = runtimeReader.ReadAllWorldspaceCellMaps(wrldEntries);
         Assert.NotEmpty(worldspaceCellMaps);
@@ -61,8 +66,10 @@ public sealed class RuntimeParityDumpIntegrationTests(SampleFileFixture samples)
         Assert.NotNull(analysisResult.EsmRecords);
         Assert.NotNull(analysisResult.MinidumpInfo);
 
-        using var mmf = MemoryMappedFile.CreateFromFile(samples.ReleaseDump!, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-        using var accessor = mmf.CreateViewAccessor(0, new FileInfo(samples.ReleaseDump!).Length, MemoryMappedFileAccess.Read);
+        using var mmf = MemoryMappedFile.CreateFromFile(samples.ReleaseDump!, FileMode.Open, null, 0,
+            MemoryMappedFileAccess.Read);
+        using var accessor =
+            mmf.CreateViewAccessor(0, new FileInfo(samples.ReleaseDump!).Length, MemoryMappedFileAccess.Read);
         var runtimeReader = RuntimeStructReader.CreateWithAutoDetect(
             accessor,
             new FileInfo(samples.ReleaseDump!).Length,
@@ -176,7 +183,8 @@ public sealed class RuntimeParityDumpIntegrationTests(SampleFileFixture samples)
             Assert.NotNull(analysisResult.MinidumpInfo);
 
             var fileInfo = new FileInfo(dumpPath!);
-            using var mmf = MemoryMappedFile.CreateFromFile(dumpPath!, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+            using var mmf =
+                MemoryMappedFile.CreateFromFile(dumpPath!, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
             using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
             var runtimeReader = RuntimeStructReader.CreateWithAutoDetect(
                 accessor,
@@ -250,7 +258,8 @@ public sealed class RuntimeParityDumpIntegrationTests(SampleFileFixture samples)
             Assert.NotNull(analysisResult.MinidumpInfo);
 
             var fileInfo = new FileInfo(dumpPath!);
-            using var mmf = MemoryMappedFile.CreateFromFile(dumpPath!, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+            using var mmf =
+                MemoryMappedFile.CreateFromFile(dumpPath!, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
             using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
             var runtimeReader = RuntimeStructReader.CreateWithAutoDetect(
                 accessor,
@@ -322,7 +331,8 @@ public sealed class RuntimeParityDumpIntegrationTests(SampleFileFixture samples)
             Assert.NotNull(analysisResult.MinidumpInfo);
 
             var fileInfo = new FileInfo(dumpPath!);
-            using var mmf = MemoryMappedFile.CreateFromFile(dumpPath!, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+            using var mmf =
+                MemoryMappedFile.CreateFromFile(dumpPath!, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
             using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
             var runtimeReader = RuntimeStructReader.CreateWithAutoDetect(
                 accessor,
@@ -339,7 +349,8 @@ public sealed class RuntimeParityDumpIntegrationTests(SampleFileFixture samples)
                 {
                     Entry = entry,
                     Topic = runtimeReader.ReadRuntimeDialogTopic(entry),
-                    DerivedResponseCount = runtimeReader.WalkTopicQuestInfoList(entry).Sum(link => link.InfoEntries.Count)
+                    DerivedResponseCount =
+                        runtimeReader.WalkTopicQuestInfoList(entry).Sum(link => link.InfoEntries.Count)
                 })
                 .Where(signal => signal.Topic is not null)
                 .ToList();
@@ -411,7 +422,8 @@ public sealed class RuntimeParityDumpIntegrationTests(SampleFileFixture samples)
             Assert.NotNull(analysisResult.MinidumpInfo);
 
             var fileInfo = new FileInfo(dumpPath!);
-            using var mmf = MemoryMappedFile.CreateFromFile(dumpPath!, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+            using var mmf =
+                MemoryMappedFile.CreateFromFile(dumpPath!, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
             using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
             var runtimeReader = RuntimeStructReader.CreateWithAutoDetect(
                 accessor,
@@ -470,8 +482,10 @@ public sealed class RuntimeParityDumpIntegrationTests(SampleFileFixture samples)
         Assert.NotNull(analysisResult.EsmRecords);
         Assert.NotNull(analysisResult.MinidumpInfo);
 
-        using var mmf = MemoryMappedFile.CreateFromFile(releaseEncounterDump!, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-        using var accessor = mmf.CreateViewAccessor(0, new FileInfo(releaseEncounterDump!).Length, MemoryMappedFileAccess.Read);
+        using var mmf = MemoryMappedFile.CreateFromFile(releaseEncounterDump!, FileMode.Open, null, 0,
+            MemoryMappedFileAccess.Read);
+        using var accessor =
+            mmf.CreateViewAccessor(0, new FileInfo(releaseEncounterDump!).Length, MemoryMappedFileAccess.Read);
         var runtimeReader = RuntimeStructReader.CreateWithAutoDetect(
             accessor,
             new FileInfo(releaseEncounterDump!).Length,
@@ -504,7 +518,8 @@ public sealed class RuntimeParityDumpIntegrationTests(SampleFileFixture samples)
         Assert.NotNull(analysisResult.EsmRecords);
         Assert.NotNull(analysisResult.MinidumpInfo);
 
-        using var mmf = MemoryMappedFile.CreateFromFile(merchantDump!, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+        using var mmf =
+            MemoryMappedFile.CreateFromFile(merchantDump!, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
         using var accessor = mmf.CreateViewAccessor(0, new FileInfo(merchantDump!).Length, MemoryMappedFileAccess.Read);
         var runtimeReader = RuntimeStructReader.CreateWithAutoDetect(
             accessor,
@@ -536,7 +551,8 @@ public sealed class RuntimeParityDumpIntegrationTests(SampleFileFixture samples)
         Assert.NotNull(analysisResult.EsmRecords);
 
         var fileInfo = new FileInfo(samples.DebugDump!);
-        using var mmf = MemoryMappedFile.CreateFromFile(samples.DebugDump!, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+        using var mmf =
+            MemoryMappedFile.CreateFromFile(samples.DebugDump!, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
         using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
 
         var parser = new RecordParser(
@@ -548,8 +564,10 @@ public sealed class RuntimeParityDumpIntegrationTests(SampleFileFixture samples)
 
         var semantic = parser.ParseAll();
 
-        Assert.Contains(semantic.Worldspaces, worldspace => worldspace.MapUsableWidth is > 0 || worldspace.MapUsableHeight is > 0);
-        Assert.Contains(semantic.Cells, cell => cell.GridX.HasValue && cell.GridY.HasValue && cell.WorldspaceFormId is > 0);
+        Assert.Contains(semantic.Worldspaces,
+            worldspace => worldspace.MapUsableWidth is > 0 || worldspace.MapUsableHeight is > 0);
+        Assert.Contains(semantic.Cells,
+            cell => cell.GridX.HasValue && cell.GridY.HasValue && cell.WorldspaceFormId is > 0);
         Assert.Contains(semantic.FormLists, record => record.FormIds.Count > 0);
         Assert.Contains(semantic.LeveledLists, record => record.Entries.Count > 0);
         Assert.Contains(semantic.Activators, record => record.ModelPath != null || record.Script is > 0);
@@ -580,7 +598,8 @@ public sealed class RuntimeParityDumpIntegrationTests(SampleFileFixture samples)
         Assert.NotNull(analysisResult.EsmRecords);
 
         var fileInfo = new FileInfo(samples.ReleaseDump!);
-        using var mmf = MemoryMappedFile.CreateFromFile(samples.ReleaseDump!, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+        using var mmf = MemoryMappedFile.CreateFromFile(samples.ReleaseDump!, FileMode.Open, null, 0,
+            MemoryMappedFileAccess.Read);
         using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
 
         var parser = new RecordParser(
@@ -630,7 +649,8 @@ public sealed class RuntimeParityDumpIntegrationTests(SampleFileFixture samples)
         Assert.NotNull(analysisResult.EsmRecords);
 
         var fileInfo = new FileInfo(releaseEncounterDump!);
-        using var mmf = MemoryMappedFile.CreateFromFile(releaseEncounterDump!, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+        using var mmf = MemoryMappedFile.CreateFromFile(releaseEncounterDump!, FileMode.Open, null, 0,
+            MemoryMappedFileAccess.Read);
         using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
 
         var parser = new RecordParser(
@@ -661,7 +681,8 @@ public sealed class RuntimeParityDumpIntegrationTests(SampleFileFixture samples)
         Assert.NotNull(analysisResult.EsmRecords);
 
         var fileInfo = new FileInfo(merchantDump!);
-        using var mmf = MemoryMappedFile.CreateFromFile(merchantDump!, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+        using var mmf =
+            MemoryMappedFile.CreateFromFile(merchantDump!, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
         using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
 
         var parser = new RecordParser(
@@ -684,7 +705,8 @@ public sealed class RuntimeParityDumpIntegrationTests(SampleFileFixture samples)
     [Trait("Category", "Slow")]
     public async Task ParseAll_OnReleaseBetaVariant_ProducesRuntimeOnlyNonVirtualParentCellAssignments()
     {
-        var parentSignalDump = samples.ReleaseDumpXex4 ?? samples.ReleaseDumpXex44 ?? samples.ReleaseDump ?? samples.DebugDump;
+        var parentSignalDump = samples.ReleaseDumpXex4 ??
+                               samples.ReleaseDumpXex44 ?? samples.ReleaseDump ?? samples.DebugDump;
         Assert.SkipWhen(parentSignalDump is null,
             "Parent-cell-positive dump variant not available");
 
@@ -692,7 +714,8 @@ public sealed class RuntimeParityDumpIntegrationTests(SampleFileFixture samples)
         Assert.NotNull(analysisResult.EsmRecords);
 
         var fileInfo = new FileInfo(parentSignalDump!);
-        using var mmf = MemoryMappedFile.CreateFromFile(parentSignalDump!, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+        using var mmf =
+            MemoryMappedFile.CreateFromFile(parentSignalDump!, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
         using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
 
         var parser = new RecordParser(
@@ -736,7 +759,8 @@ public sealed class RuntimeParityDumpIntegrationTests(SampleFileFixture samples)
         Assert.NotNull(analysisResult.EsmRecords);
 
         var fileInfo = new FileInfo(worldspaceStubDump!);
-        using var mmf = MemoryMappedFile.CreateFromFile(worldspaceStubDump!, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+        using var mmf =
+            MemoryMappedFile.CreateFromFile(worldspaceStubDump!, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
         using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
 
         var parser = new RecordParser(
@@ -766,6 +790,261 @@ public sealed class RuntimeParityDumpIntegrationTests(SampleFileFixture samples)
         Assert.True(
             derivedExtentWorldspaces.Count > 0,
             $"Expected at least one runtime-only worldspace stub with derived extents in {Path.GetFileName(worldspaceStubDump)}.");
+    }
+
+    [Fact]
+    [Trait("Category", "Slow")]
+    public async Task RuntimeReader_OnAllDumps_DiagnosesConversationDataLinkPopulation()
+    {
+        var candidateDumps = new[]
+            {
+                samples.DebugDump,
+                samples.ReleaseDump,
+                samples.ReleaseDumpXex4,
+                samples.ReleaseDumpXex44,
+                SampleFileFixture.FindSamplePath(@"Sample\MemoryDump\Fallout_Release_MemDebug.xex.dmp")
+            }
+            .Where(path => !string.IsNullOrEmpty(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        Assert.SkipWhen(candidateDumps.Count == 0, "No memory dumps available");
+
+        var allDiagnostics = new List<(string DumpName, int ValidPtrs, int LinkFromHeads, int LinkFromDecodes,
+            int LinkToHeads, int LinkToDecodes, int FollowUpHeads, int FollowUpDecodes)>();
+
+        foreach (var dumpPath in candidateDumps)
+        {
+            var analysisResult = await AnalyzeDumpAsync(dumpPath!);
+            Assert.NotNull(analysisResult.EsmRecords);
+            Assert.NotNull(analysisResult.MinidumpInfo);
+
+            var fileInfo = new FileInfo(dumpPath!);
+            using var mmf =
+                MemoryMappedFile.CreateFromFile(dumpPath!, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+            using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
+            var runtimeReader = RuntimeStructReader.CreateWithAutoDetect(
+                accessor,
+                fileInfo.Length,
+                analysisResult.MinidumpInfo!,
+                analysisResult.EsmRecords!.RuntimeRefrFormEntries,
+                analysisResult.EsmRecords.RuntimeEditorIds.Where(entry => entry.FormType == 0x2A).ToList(),
+                analysisResult.EsmRecords.RuntimeEditorIds.Where(entry => entry.FormType == 0x41).ToList(),
+                analysisResult.EsmRecords.RuntimeEditorIds.Where(entry => entry.FormType == 0x39).ToList());
+
+            // Walk DIAL topics → QUEST_INFO → read all TESTopicInfo structs
+            var topicEntries = analysisResult.EsmRecords.RuntimeEditorIds
+                .Where(entry => entry.FormType == 0x45 && entry.TesFormOffset.HasValue)
+                .ToList();
+
+            foreach (var topicEntry in topicEntries)
+            {
+                var links = runtimeReader.WalkTopicQuestInfoList(topicEntry);
+                foreach (var link in links)
+                {
+                    foreach (var infoEntry in link.InfoEntries)
+                    {
+                        runtimeReader.ReadRuntimeDialogueInfoFromVA(infoEntry.VirtualAddress);
+                    }
+                }
+            }
+
+            var diag = runtimeReader.DialogueConversationDiagnostics;
+            allDiagnostics.Add((
+                Path.GetFileName(dumpPath!),
+                diag.ValidPointerCount,
+                diag.LinkFromNonZeroHead, diag.LinkFromPositiveDecodes,
+                diag.LinkToNonZeroHead, diag.LinkToPositiveDecodes,
+                diag.FollowUpNonZeroHead, diag.FollowUpPositiveDecodes));
+        }
+
+        // Write diagnostic output to TestResults for post-hoc inspection
+        var diagLines = allDiagnostics.Select(d =>
+            $"{d.DumpName}: ConvDataPtrs={d.ValidPtrs}, " +
+            $"LinkFrom(heads={d.LinkFromHeads}, decodes={d.LinkFromDecodes}), " +
+            $"LinkTo(heads={d.LinkToHeads}, decodes={d.LinkToDecodes}), " +
+            $"FollowUp(heads={d.FollowUpHeads}, decodes={d.FollowUpDecodes})").ToList();
+        var diagPath = Path.Combine(AppContext.BaseDirectory, "TestResults", "conversation_data_diagnostics.txt");
+        Directory.CreateDirectory(Path.GetDirectoryName(diagPath)!);
+        await File.WriteAllLinesAsync(diagPath, diagLines);
+
+        // Verify: at least one dump had valid TESConversationData pointers
+        Assert.True(
+            allDiagnostics.Any(d => d.ValidPtrs > 0),
+            $"Expected valid TESConversationData pointers in at least one dump. " +
+            $"Diagnostics:\n{string.Join("\n", diagLines)}");
+    }
+
+    [Fact]
+    [Trait("Category", "Slow")]
+    public async Task RuntimeReader_OnAllDumps_ReadsPerkSkillStatForSpeechChallenges()
+    {
+        var candidateDumps = new[]
+            {
+                samples.DebugDump,
+                samples.ReleaseDump,
+                samples.ReleaseDumpXex4,
+                samples.ReleaseDumpXex44,
+                SampleFileFixture.FindSamplePath(@"Sample\MemoryDump\Fallout_Release_MemDebug.xex.dmp")
+            }
+            .Where(path => !string.IsNullOrEmpty(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        Assert.SkipWhen(candidateDumps.Count == 0, "No memory dumps available");
+
+        var totalSpeechChallengeInfos = 0;
+        var totalWithPerkSkillStat = 0;
+
+        foreach (var dumpPath in candidateDumps)
+        {
+            var analysisResult = await AnalyzeDumpAsync(dumpPath!);
+            Assert.NotNull(analysisResult.EsmRecords);
+            Assert.NotNull(analysisResult.MinidumpInfo);
+
+            var fileInfo = new FileInfo(dumpPath!);
+            using var mmf =
+                MemoryMappedFile.CreateFromFile(dumpPath!, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+            using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
+            var runtimeReader = RuntimeStructReader.CreateWithAutoDetect(
+                accessor,
+                fileInfo.Length,
+                analysisResult.MinidumpInfo!,
+                analysisResult.EsmRecords!.RuntimeRefrFormEntries,
+                analysisResult.EsmRecords.RuntimeEditorIds.Where(entry => entry.FormType == 0x2A).ToList(),
+                analysisResult.EsmRecords.RuntimeEditorIds.Where(entry => entry.FormType == 0x41).ToList(),
+                analysisResult.EsmRecords.RuntimeEditorIds.Where(entry => entry.FormType == 0x39).ToList());
+
+            // Walk DIAL topics → QUEST_INFO → read TESTopicInfo with speech challenges
+            var topicEntries = analysisResult.EsmRecords.RuntimeEditorIds
+                .Where(entry => entry.FormType == 0x45 && entry.TesFormOffset.HasValue)
+                .ToList();
+
+            foreach (var topicEntry in topicEntries)
+            {
+                var links = runtimeReader.WalkTopicQuestInfoList(topicEntry);
+                foreach (var link in links)
+                {
+                    foreach (var infoEntry in link.InfoEntries)
+                    {
+                        var info = runtimeReader.ReadRuntimeDialogueInfoFromVA(infoEntry.VirtualAddress);
+                        if (info is { Difficulty: > 0 })
+                        {
+                            totalSpeechChallengeInfos++;
+                            if (info.PerkSkillStatFormId.HasValue)
+                            {
+                                totalWithPerkSkillStat++;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Write pPerkSkillStat diagnostic alongside conversation data diagnostics
+        var perkDiagPath = Path.Combine(AppContext.BaseDirectory, "TestResults", "perk_skill_stat_diagnostics.txt");
+        Directory.CreateDirectory(Path.GetDirectoryName(perkDiagPath)!);
+        await File.WriteAllTextAsync(perkDiagPath,
+            $"Total speech challenge INFOs: {totalSpeechChallengeInfos}\n" +
+            $"Total with pPerkSkillStat: {totalWithPerkSkillStat}\n");
+
+        // Expect speech challenges to exist in at least one dump
+        Assert.True(totalSpeechChallengeInfos > 0,
+            "Expected at least one speech challenge INFO across dump families");
+
+        // Expect a meaningful proportion to have valid pPerkSkillStat pointers
+        Assert.True(totalWithPerkSkillStat > 0,
+            $"Expected at least one speech challenge INFO with pPerkSkillStat. " +
+            $"Found {totalSpeechChallengeInfos} speech challenges, {totalWithPerkSkillStat} with pPerkSkillStat.");
+    }
+
+    [Fact]
+    [Trait("Category", "Slow")]
+    public async Task RuntimeReader_OnAllDumps_ReadsProjectilePhysicsData()
+    {
+        var candidateDumps = new[]
+            {
+                samples.DebugDump,
+                samples.ReleaseDump,
+                samples.ReleaseDumpXex4,
+                samples.ReleaseDumpXex44,
+                SampleFileFixture.FindSamplePath(@"Sample\MemoryDump\Fallout_Release_MemDebug.xex.dmp")
+            }
+            .Where(path => !string.IsNullOrEmpty(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        Assert.SkipWhen(candidateDumps.Count == 0, "No memory dumps available");
+
+        var allResults = new List<(string DumpName, int TotalProj, int Decoded, int WithSpeed, int WithExplosion,
+            int WithLight, int WithCountdownSound, int WithDefaultWeapon, int WithRotation, int WithBounce)>();
+
+        foreach (var dumpPath in candidateDumps)
+        {
+            var analysisResult = await AnalyzeDumpAsync(dumpPath!);
+            Assert.NotNull(analysisResult.EsmRecords);
+            Assert.NotNull(analysisResult.MinidumpInfo);
+
+            var fileInfo = new FileInfo(dumpPath!);
+            using var mmf =
+                MemoryMappedFile.CreateFromFile(dumpPath!, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+            using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
+            var runtimeReader = RuntimeStructReader.CreateWithAutoDetect(
+                accessor,
+                fileInfo.Length,
+                analysisResult.MinidumpInfo!,
+                analysisResult.EsmRecords!.RuntimeRefrFormEntries,
+                analysisResult.EsmRecords.RuntimeEditorIds.Where(entry => entry.FormType == 0x2A).ToList(),
+                analysisResult.EsmRecords.RuntimeEditorIds.Where(entry => entry.FormType == 0x41).ToList(),
+                analysisResult.EsmRecords.RuntimeEditorIds.Where(entry => entry.FormType == 0x39).ToList());
+
+            var projEntries = analysisResult.EsmRecords.RuntimeEditorIds
+                .Where(entry => entry.FormType == 0x33 && entry.TesFormOffset.HasValue)
+                .ToList();
+
+            int decoded = 0, withSpeed = 0, withExplosion = 0, withLight = 0;
+            int withCountdownSound = 0, withDefaultWeapon = 0, withRotation = 0, withBounce = 0;
+
+            foreach (var entry in projEntries)
+            {
+                var data = runtimeReader.ReadProjectilePhysics(entry.TesFormOffset!.Value, entry.FormId);
+                if (data == null) continue;
+                decoded++;
+                if (data.Speed != 0) withSpeed++;
+                if (data.ExplosionFormId.HasValue) withExplosion++;
+                if (data.LightFormId.HasValue) withLight++;
+                if (data.CountdownSoundFormId.HasValue) withCountdownSound++;
+                if (data.DefaultWeaponSourceFormId.HasValue) withDefaultWeapon++;
+                if (data.RotationX != 0 || data.RotationY != 0 || data.RotationZ != 0) withRotation++;
+                if (data.BounceMultiplier != 0) withBounce++;
+            }
+
+            allResults.Add((Path.GetFileName(dumpPath!), projEntries.Count, decoded, withSpeed, withExplosion,
+                withLight, withCountdownSound, withDefaultWeapon, withRotation, withBounce));
+        }
+
+        // Write diagnostics
+        var diagPath = Path.Combine(AppContext.BaseDirectory, "TestResults", "proj_runtime_diagnostics.txt");
+        Directory.CreateDirectory(Path.GetDirectoryName(diagPath)!);
+        var lines = new List<string>
+        {
+            "DumpFile | Total | Decoded | Speed | Explosion | Light | Countdown | DefWeapon | Rotation | Bounce"
+        };
+        foreach (var r in allResults)
+        {
+            lines.Add($"{r.DumpName} | {r.TotalProj} | {r.Decoded} | {r.WithSpeed} | {r.WithExplosion} | " +
+                      $"{r.WithLight} | {r.WithCountdownSound} | {r.WithDefaultWeapon} | {r.WithRotation} | {r.WithBounce}");
+        }
+
+        await File.WriteAllTextAsync(diagPath, string.Join("\n", lines));
+
+        // At least one dump should have decodable projectiles
+        Assert.True(allResults.Any(r => r.Decoded > 0),
+            "Expected at least one dump to have decodable PROJ runtime structs");
+
+        // Most decoded projectiles should have non-zero speed (basic physics validation)
+        var totalDecoded = allResults.Sum(r => r.Decoded);
+        var totalWithSpeed = allResults.Sum(r => r.WithSpeed);
+        Assert.True(totalWithSpeed > totalDecoded / 2,
+            $"Expected majority of decoded projectiles to have non-zero speed. " +
+            $"Decoded: {totalDecoded}, With speed: {totalWithSpeed}");
     }
 
     private static async Task<AnalysisResult> AnalyzeDumpAsync(string dumpPath)

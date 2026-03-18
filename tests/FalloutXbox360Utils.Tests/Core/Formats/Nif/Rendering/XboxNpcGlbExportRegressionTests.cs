@@ -5,13 +5,13 @@ using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
-using FalloutXbox360Utils.Tests.Core;
 using SharpGLTF.Schema2;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
 
 [Collection(LoggerSerialTestGroup.Name)]
+[Trait("Category", "Slow")]
 public sealed class XboxNpcGlbExportRegressionTests(SampleFileFixture samples)
 {
     private const uint BooneFormId = 0x00092BD2;
@@ -73,12 +73,12 @@ public sealed class XboxNpcGlbExportRegressionTests(SampleFileFixture samples)
         var lucy = ResolveNpcAppearance(
             assets.AppearanceResolver,
             pluginName,
-            fullName: "Red Lucy",
-            editorIdFragment: LucyEditorId);
+            "Red Lucy",
+            LucyEditorId);
 
         Assert.NotNull(lucy);
 
-        using var export = ExportNpcGlb(assets, lucy!, headOnly: false, includeWeapon: false);
+        using var export = ExportNpcGlb(assets, lucy!, false, false);
 
         var outfitParts = export.Scene.MeshParts
             .Where(part =>
@@ -116,7 +116,7 @@ public sealed class XboxNpcGlbExportRegressionTests(SampleFileFixture samples)
 
         Assert.NotNull(boone);
 
-        using var export = ExportNpcGlb(assets, boone!, headOnly: true, includeWeapon: false);
+        using var export = ExportNpcGlb(assets, boone!, true, false);
 
         Assert.NotEmpty(export.Scene.MeshParts);
         Assert.Contains(export.Scene.MeshParts, part => part.Skin != null);
@@ -138,8 +138,8 @@ public sealed class XboxNpcGlbExportRegressionTests(SampleFileFixture samples)
         Assert.True(boone!.WeaponVisual?.IsVisible == true);
         Assert.NotNull(boone.WeaponVisual!.MeshPath);
 
-        using var withoutWeapon = ExportNpcGlb(assets, boone, headOnly: false, includeWeapon: false);
-        using var withWeapon = ExportNpcGlb(assets, boone, headOnly: false, includeWeapon: true);
+        using var withoutWeapon = ExportNpcGlb(assets, boone, false, false);
+        using var withWeapon = ExportNpcGlb(assets, boone, false, true);
 
         var weaponStem = Path.GetFileNameWithoutExtension(boone.WeaponVisual.MeshPath);
 
@@ -158,14 +158,14 @@ public sealed class XboxNpcGlbExportRegressionTests(SampleFileFixture samples)
         var docMitchell = ResolveNpcAppearance(
             assets.AppearanceResolver,
             pluginName,
-            fullName: "Doc Mitchell",
-            editorIdFragment: DocMitchellEditorId);
+            "Doc Mitchell",
+            DocMitchellEditorId);
 
         Assert.NotNull(docMitchell);
         Assert.False(docMitchell!.WeaponVisual?.IsVisible == true);
 
-        using var defaultExport = ExportNpcGlb(assets, docMitchell, headOnly: false, includeWeapon: false);
-        using var forcedWeaponExport = ExportNpcGlb(assets, docMitchell, headOnly: false, includeWeapon: true);
+        using var defaultExport = ExportNpcGlb(assets, docMitchell, false, false);
+        using var forcedWeaponExport = ExportNpcGlb(assets, docMitchell, false, true);
 
         Assert.Equal(defaultExport.Scene.MeshParts.Count, forcedWeaponExport.Scene.MeshParts.Count);
         Assert.Equal(defaultExport.Model.LogicalMeshes.Count, forcedWeaponExport.Model.LogicalMeshes.Count);
@@ -184,12 +184,12 @@ public sealed class XboxNpcGlbExportRegressionTests(SampleFileFixture samples)
         var cass = ResolveNpcAppearance(
             assets.AppearanceResolver,
             pluginName,
-            fullName: "Cass",
-            editorIdFragment: CassEditorId);
+            "Cass",
+            CassEditorId);
 
         Assert.NotNull(cass);
 
-        using var export = ExportNpcGlb(assets, cass!, headOnly: false, includeWeapon: false);
+        using var export = ExportNpcGlb(assets, cass!, false, false);
         var glbBytes = File.ReadAllBytes(export.OutputPath);
 
         Assert.False(ContainsAscii(glbBytes, "HairBun_hl"));
@@ -274,15 +274,14 @@ public sealed class XboxNpcGlbExportRegressionTests(SampleFileFixture samples)
         string fullName,
         string editorIdFragment)
     {
-        var match = resolver.GetAllNpcs().FirstOrDefault(
-            entry =>
-                string.Equals(
-                    entry.Value.FullName,
-                    fullName,
-                    StringComparison.OrdinalIgnoreCase) ||
-                (entry.Value.EditorId?.Contains(
-                    editorIdFragment,
-                    StringComparison.OrdinalIgnoreCase) ?? false));
+        var match = resolver.GetAllNpcs().FirstOrDefault(entry =>
+            string.Equals(
+                entry.Value.FullName,
+                fullName,
+                StringComparison.OrdinalIgnoreCase) ||
+            (entry.Value.EditorId?.Contains(
+                editorIdFragment,
+                StringComparison.OrdinalIgnoreCase) ?? false));
 
         return match.Value == null
             ? null
@@ -356,7 +355,7 @@ public sealed class XboxNpcGlbExportRegressionTests(SampleFileFixture samples)
         {
             if (Directory.Exists(Path))
             {
-                Directory.Delete(Path, recursive: true);
+                Directory.Delete(Path, true);
             }
         }
     }
