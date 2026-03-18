@@ -559,7 +559,8 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var ownerQuestFormId = _context.FollowPointerVaToFormId(BinaryUtils.ReadUInt32BE(buf, QuestObjectiveOwnerQuestPtrOffset));
+        var ownerQuestFormId =
+            _context.FollowPointerVaToFormId(BinaryUtils.ReadUInt32BE(buf, QuestObjectiveOwnerQuestPtrOffset));
         if (ownerQuestFormId.HasValue && ownerQuestFormId.Value != questFormId)
         {
             return null;

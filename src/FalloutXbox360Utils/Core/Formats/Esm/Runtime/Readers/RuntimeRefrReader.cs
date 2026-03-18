@@ -120,6 +120,7 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
             LeveledCreatureOriginalBaseFormId = extraData.LeveledCreatureOriginalBaseFormId,
             LeveledCreatureTemplateFormId = extraData.LeveledCreatureTemplateFormId,
             Radius = extraData.Radius,
+            Count = extraData.Count,
             OwnerFormId = extraData.OwnerFormId,
             EncounterZoneFormId = extraData.EncounterZoneFormId,
             LockLevel = extraData.LockLevel,
@@ -134,7 +135,8 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
             MarkerType = extraData.MarkerType,
             MarkerName = extraData.MarkerName,
             LinkedRefFormId = extraData.LinkedRefFormId,
-            LinkedRefChildrenFormIds = extraData.LinkedRefChildrenFormIds ?? []
+            LinkedRefChildrenFormIds = extraData.LinkedRefChildrenFormIds ?? [],
+            EditorId = extraData.EditorId
         };
     }
 
@@ -219,7 +221,8 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
         return result;
     }
 
-    internal RuntimeRefrExtraDataCensus BuildExtraDataCensus(IEnumerable<RuntimeEditorIdEntry> entries, int maxEntries = 256)
+    internal RuntimeRefrExtraDataCensus BuildExtraDataCensus(IEnumerable<RuntimeEditorIdEntry> entries,
+        int maxEntries = 256)
     {
         var sampleCount = 0;
         var validRefrCount = 0;
@@ -238,6 +241,8 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
         var merchantContainerCount = 0;
         var leveledCreatureCount = 0;
         var radiusCount = 0;
+        var countCount = 0;
+        var editorIdCount = 0;
         var typeCounts = new Dictionary<byte, int>();
 
         foreach (var entry in entries)
@@ -338,6 +343,16 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
             {
                 radiusCount++;
             }
+
+            if (inspection.Data.Count.HasValue)
+            {
+                countCount++;
+            }
+
+            if (inspection.Data.EditorId != null)
+            {
+                editorIdCount++;
+            }
         }
 
         return new RuntimeRefrExtraDataCensus(
@@ -358,7 +373,9 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
             packageStartLocationCount,
             merchantContainerCount,
             leveledCreatureCount,
-            radiusCount);
+            radiusCount,
+            countCount,
+            editorIdCount);
     }
 
     /// <summary>
@@ -530,6 +547,12 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
                 }
                 case ExtraRadiusType:
                     result.Radius ??= ReadRadius(nodeFileOffset.Value);
+                    break;
+                case ExtraCountType:
+                    result.Count ??= ReadCount(nodeFileOffset.Value);
+                    break;
+                case ExtraEditorIDType:
+                    result.EditorId ??= ReadEditorId(nodeFileOffset.Value);
                     break;
             }
 
@@ -707,6 +730,25 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
             : null;
     }
 
+    private short? ReadCount(long nodeFileOffset)
+    {
+        // ExtraCount: BSExtraData(12) + iCount(int16 at +12) = 16 bytes total.
+        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraPointerNodeSize);
+        if (nodeBuffer == null)
+        {
+            return null;
+        }
+
+        return BinaryUtils.ReadInt16BE(nodeBuffer, ExtraPayloadPtrOffset);
+    }
+
+    private string? ReadEditorId(long nodeFileOffset)
+    {
+        // ExtraEditorID: BSExtraData(12) + BSStringT<char>(8) at +12 = 20 bytes total.
+        // BSStringT layout: char* pString(4) + uint16 sLen(2) + uint16 maxLen(2).
+        return _context.ReadBSStringT(nodeFileOffset, ExtraPayloadPtrOffset);
+    }
+
     private uint? ReadTeleportDestinationDoorFormId(long nodeFileOffset)
     {
         var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraPointerNodeSize);
@@ -733,7 +775,7 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
             return null;
         }
 
-        var linkedDoorVa = BinaryUtils.ReadUInt32BE(teleportBuffer, DoorTeleportLinkedDoorPtrOffset);
+        var linkedDoorVa = BinaryUtils.ReadUInt32BE(teleportBuffer);
         return ReadPlacedRefFormId(linkedDoorVa);
     }
 
@@ -898,7 +940,7 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
                 break;
             }
 
-            itemPtr = BinaryUtils.ReadUInt32BE(nodeBuffer, 0);
+            itemPtr = BinaryUtils.ReadUInt32BE(nodeBuffer);
             nextPtr = BinaryUtils.ReadUInt32BE(nodeBuffer, 4);
             AddPlacedRefFormId(formIds, itemPtr);
         }
@@ -1047,8 +1089,10 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
     private const byte ExtraRadiusType = 0x5C; // 92 decimal
     private const byte ExtraStartingWorldOrCellType = 0x49; // 73 decimal
     private const byte ExtraEncounterZoneType = 0x74; // 116 decimal
+    private const byte ExtraCountType = 0x15; // 21 decimal
     private const byte ExtraLinkedRefType = 0x51; // 81 decimal
     private const byte ExtraLinkedRefChildrenType = 0x52; // 82 decimal
+    private const byte ExtraEditorIDType = 0x62; // 98 decimal
     private const int ExtraLinkedRefChildrenNodeSize = 20;
     private const int ExtraStartingPositionNodeSize = 36;
     private const int ExtraPackageStartLocationNodeSize = 32;
@@ -1121,6 +1165,10 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
         public uint? LinkedRefFormId { get; set; }
 
         public List<uint>? LinkedRefChildrenFormIds { get; set; }
+
+        public short? Count { get; set; }
+
+        public string? EditorId { get; set; }
     }
 
     private readonly record struct RuntimeRefrLockData
@@ -1151,23 +1199,3 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
 
     #endregion
 }
-
-internal sealed record RuntimeRefrExtraDataCensus(
-    int SampleCount,
-    int ValidRefrCount,
-    int RefsWithExtraData,
-    int VisitedNodeCount,
-    IReadOnlyDictionary<byte, int> TypeCounts,
-    int OwnershipCount,
-    int LockCount,
-    int TeleportCount,
-    int MapMarkerCount,
-    int EnableParentCount,
-    int LinkedRefCount,
-    int EncounterZoneCount,
-    int StartingPositionCount,
-    int StartingWorldOrCellCount,
-    int PackageStartLocationCount,
-    int MerchantContainerCount,
-    int LeveledCreatureCount,
-    int RadiusCount);

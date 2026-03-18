@@ -10,10 +10,10 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 /// </summary>
 internal sealed class RuntimeCellReader
 {
+    private readonly bool _allowStructuralReads;
     private readonly RuntimeMemoryContext _context;
     private readonly RuntimePdbFieldAccessor _fields;
     private readonly RuntimeWorldCellLayout _layout;
-    private readonly bool _allowStructuralReads;
 
     internal RuntimeCellReader(
         RuntimeMemoryContext context,
@@ -276,8 +276,10 @@ internal sealed class RuntimeCellReader
         }
 
         var mapDataOffset = AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "WorldMapData", "TESWorldSpace"));
-        var minimumCoordsOffset = AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "MinimumCoords", "TESWorldSpace"));
-        var maximumCoordsOffset = AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "MaximumCoords", "TESWorldSpace"));
+        var minimumCoordsOffset =
+            AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "MinimumCoords", "TESWorldSpace"));
+        var maximumCoordsOffset =
+            AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "MaximumCoords", "TESWorldSpace"));
 
         int? mapUsableWidth = null;
         int? mapUsableHeight = null;
@@ -363,6 +365,8 @@ internal sealed class RuntimeCellReader
         float? boundsMaxX,
         float? boundsMaxY)
     {
+        var ext = ReadWorldExtendedFields(buffer, layout);
+
         return new WorldspaceRecord
         {
             FormId = entry.FormId,
@@ -387,6 +391,13 @@ internal sealed class RuntimeCellReader
             BoundsMaxX = boundsMaxX,
             BoundsMaxY = boundsMaxY,
             EncounterZoneFormId = ReadWorldFormIdPointer(buffer, layout, "pEncounterZone", "TESWorldSpace", 0x61),
+            Flags = ext.Flags,
+            ParentUseFlags = ext.ParentUseFlags,
+            ImageSpaceFormId = ext.ImageSpaceFormId,
+            MusicTypeFormId = ext.MusicTypeFormId,
+            MapOffsetScaleX = ext.MapOffsetScaleX,
+            MapOffsetScaleY = ext.MapOffsetScaleY,
+            MapOffsetZ = ext.MapOffsetZ,
             Offset = entry.TesFormOffset!.Value,
             IsBigEndian = true
         };
@@ -398,8 +409,10 @@ internal sealed class RuntimeCellReader
         PdbTypeLayout layout)
     {
         var mapDataOffset = AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "WorldMapData", "TESWorldSpace"));
-        var minimumCoordsOffset = AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "MinimumCoords", "TESWorldSpace"));
-        var maximumCoordsOffset = AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "MaximumCoords", "TESWorldSpace"));
+        var minimumCoordsOffset =
+            AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "MinimumCoords", "TESWorldSpace"));
+        var maximumCoordsOffset =
+            AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "MaximumCoords", "TESWorldSpace"));
 
         int? mapUsableWidth = null;
         int? mapUsableHeight = null;
@@ -520,6 +533,13 @@ internal sealed class RuntimeCellReader
             BoundsMaxX = preferred.BoundsMaxX ?? fallback.BoundsMaxX,
             BoundsMaxY = preferred.BoundsMaxY ?? fallback.BoundsMaxY,
             EncounterZoneFormId = preferred.EncounterZoneFormId ?? fallback.EncounterZoneFormId,
+            Flags = preferred.Flags ?? fallback.Flags,
+            ParentUseFlags = preferred.ParentUseFlags ?? fallback.ParentUseFlags,
+            ImageSpaceFormId = preferred.ImageSpaceFormId ?? fallback.ImageSpaceFormId,
+            MusicTypeFormId = preferred.MusicTypeFormId ?? fallback.MusicTypeFormId,
+            MapOffsetScaleX = preferred.MapOffsetScaleX ?? fallback.MapOffsetScaleX,
+            MapOffsetScaleY = preferred.MapOffsetScaleY ?? fallback.MapOffsetScaleY,
+            MapOffsetZ = preferred.MapOffsetZ ?? fallback.MapOffsetZ,
             Offset = preferred.Offset != 0 ? preferred.Offset : fallback.Offset,
             IsBigEndian = preferred.IsBigEndian || fallback.IsBigEndian
         };
@@ -686,7 +706,8 @@ internal sealed class RuntimeCellReader
         return _context.FollowPointerToFormId(buffer, pointerOffset, 0x39);
     }
 
-    private RuntimeCellProbeSnapshot? ReadRuntimeCellProbeSnapshot(long fileOffset, uint? expectedFormId, string? displayName)
+    private RuntimeCellProbeSnapshot? ReadRuntimeCellProbeSnapshot(long fileOffset, uint? expectedFormId,
+        string? displayName)
     {
         var layout = PdbStructLayouts.Get(0x39);
         if (layout == null)
@@ -735,11 +756,29 @@ internal sealed class RuntimeCellReader
         var waterHeightOffset = AdjustCellFieldOffset(_fields.FindFieldOffset(layout, "fWaterHeight", "TESObjectCELL"));
         var worldspaceOffset = AdjustCellFieldOffset(_fields.FindFieldOffset(layout, "pWorldSpace", "TESObjectCELL"));
         var landOffset = AdjustCellFieldOffset(_fields.FindFieldOffset(layout, "pCellLand", "TESObjectCELL"));
-        var referenceListOffset = AdjustCellFieldOffset(_fields.FindFieldOffset(layout, "listReferences", "TESObjectCELL"));
+        var referenceListOffset =
+            AdjustCellFieldOffset(_fields.FindFieldOffset(layout, "listReferences", "TESObjectCELL"));
 
         var flags = flagsOffset.HasValue && flagsOffset.Value < buffer.Length
             ? buffer[flagsOffset.Value]
             : (byte)0;
+
+        // pLightingTemplate — BGSLightingTemplate pointer (FormType 0x67)
+        var lightingTemplateOffset =
+            AdjustCellFieldOffset(_fields.FindFieldOffset(layout, "pLightingTemplate", "TESObjectCELL"));
+        var lightingTemplateFormId = lightingTemplateOffset.HasValue
+            ? _fields.ReadPointerToFormId(buffer, lightingTemplateOffset.Value, 0x67)
+            : null;
+
+        // iLightingTemplateInheritanceFlags (uint32)
+        var inheritFlagsOffset = AdjustCellFieldOffset(
+            _fields.FindFieldOffset(layout, "iLightingTemplateInheritanceFlags", "TESObjectCELL"));
+        uint? lightingInheritanceFlags = inheritFlagsOffset.HasValue && inheritFlagsOffset.Value + 4 <= buffer.Length
+            ? RuntimePdbFieldAccessor.ReadUInt32(buffer, inheritFlagsOffset.Value)
+            : null;
+
+        // Walk the BSExtraData linked list for encounter zone, music, acoustic, image space
+        var cellExtras = ReadCellExtraData(buffer, layout);
 
         return new RuntimeCellProbeSnapshot(
             formId,
@@ -755,7 +794,13 @@ internal sealed class RuntimeCellReader
                 : null,
             referenceListOffset.HasValue
                 ? ReadCellReferenceFormIds(buffer, referenceListOffset.Value)
-                : []);
+                : [],
+            lightingTemplateFormId,
+            lightingInheritanceFlags,
+            cellExtras.EncounterZoneFormId,
+            cellExtras.MusicTypeFormId,
+            cellExtras.AcousticSpaceFormId,
+            cellExtras.ImageSpaceFormId);
     }
 
     private static CellRecord? BuildCellRecord(
@@ -777,6 +822,12 @@ internal sealed class RuntimeCellReader
             Flags = snapshot.Flags,
             WaterHeight = snapshot.WaterHeight,
             WorldspaceFormId = snapshot.WorldspaceFormId,
+            LightingTemplateFormId = snapshot.LightingTemplateFormId,
+            LightingTemplateInheritanceFlags = snapshot.LightingTemplateInheritanceFlags,
+            EncounterZoneFormId = snapshot.EncounterZoneFormId,
+            MusicTypeFormId = snapshot.MusicTypeFormId,
+            AcousticSpaceFormId = snapshot.AcousticSpaceFormId,
+            ImageSpaceFormId = snapshot.ImageSpaceFormId,
             Offset = fileOffset,
             IsBigEndian = true
         };
@@ -827,6 +878,55 @@ internal sealed class RuntimeCellReader
         return _context.ReadBytes(offset, size);
     }
 
+    private (byte? Flags, ushort? ParentUseFlags, uint? ImageSpaceFormId, uint? MusicTypeFormId,
+        float? MapOffsetScaleX, float? MapOffsetScaleY, float? MapOffsetZ) ReadWorldExtendedFields(
+            byte[] buffer, PdbTypeLayout layout)
+    {
+        // cFlags (uint8) — worldspace flags
+        var flagsOffset = AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "cFlags", "TESWorldSpace"));
+        byte? flags = flagsOffset.HasValue && flagsOffset.Value < buffer.Length
+            ? buffer[flagsOffset.Value]
+            : null;
+
+        // sParentUseFlags (uint16) — parent inheritance flags
+        var parentUseFlagsOffset =
+            AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "sParentUseFlags", "TESWorldSpace"));
+        ushort? parentUseFlags = parentUseFlagsOffset.HasValue && parentUseFlagsOffset.Value + 2 <= buffer.Length
+            ? RuntimePdbFieldAccessor.ReadUInt16(buffer, parentUseFlagsOffset.Value)
+            : null;
+
+        // pImageSpace — TESImageSpace pointer (FormType 0x56)
+        var imageSpaceFormId = ReadWorldFormIdPointer(buffer, layout, "pImageSpace", "TESWorldSpace", 0x56);
+
+        // pMusicType — BGSMusicType pointer (FormType 0x6B)
+        var musicTypeFormId = ReadWorldFormIdPointer(buffer, layout, "pMusicType", "TESWorldSpace", 0x6B);
+
+        // WorldMapOffsetData (12 bytes: 3 floats — scaleX, scaleY, offsetZ)
+        var offsetDataOffset =
+            AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "WorldMapOffsetData", "TESWorldSpace"));
+        float? mapOffsetScaleX = null;
+        float? mapOffsetScaleY = null;
+        float? mapOffsetZ = null;
+
+        if (offsetDataOffset.HasValue && offsetDataOffset.Value + 12 <= buffer.Length)
+        {
+            mapOffsetScaleX = BinaryUtils.ReadFloatBE(buffer, offsetDataOffset.Value);
+            mapOffsetScaleY = BinaryUtils.ReadFloatBE(buffer, offsetDataOffset.Value + 4);
+            mapOffsetZ = BinaryUtils.ReadFloatBE(buffer, offsetDataOffset.Value + 8);
+
+            // All zeros = unpopulated
+            if (mapOffsetScaleX == 0 && mapOffsetScaleY == 0 && mapOffsetZ == 0)
+            {
+                mapOffsetScaleX = null;
+                mapOffsetScaleY = null;
+                mapOffsetZ = null;
+            }
+        }
+
+        return (flags, parentUseFlags, imageSpaceFormId, musicTypeFormId,
+            mapOffsetScaleX, mapOffsetScaleY, mapOffsetZ);
+    }
+
     private uint? ReadWorldFormIdPointer(
         byte[] buffer,
         PdbTypeLayout layout,
@@ -838,6 +938,99 @@ internal sealed class RuntimeCellReader
         return fieldOffset.HasValue
             ? _fields.ReadPointerToFormId(buffer, fieldOffset.Value, expectedFormType)
             : null;
+    }
+
+    /// <summary>
+    ///     Walk the BSExtraData linked list from a CELL's ExtraDataList and extract
+    ///     encounter zone, music type, acoustic space, and image space FormIDs.
+    /// </summary>
+    private (uint? EncounterZoneFormId, uint? MusicTypeFormId, uint? AcousticSpaceFormId, uint? ImageSpaceFormId)
+        ReadCellExtraData(byte[] cellBuffer, PdbTypeLayout layout)
+    {
+        // ExtraDataList is an embedded struct in TESObjectCELL; pHead is at +4 within it.
+        var extraDataOffset = AdjustCellFieldOffset(
+            _fields.FindFieldOffset(layout, "ExtraData", "TESObjectCELL"));
+        if (!extraDataOffset.HasValue || extraDataOffset.Value + 8 > cellBuffer.Length)
+        {
+            return (null, null, null, null);
+        }
+
+        // pHead is at ExtraDataList+4 (first 4 bytes are vfptr)
+        var pHead = BinaryUtils.ReadUInt32BE(cellBuffer, extraDataOffset.Value + 4);
+        if (pHead == 0 || !_context.IsValidPointer(pHead))
+        {
+            return (null, null, null, null);
+        }
+
+        uint? encounterZoneFormId = null;
+        uint? musicTypeFormId = null;
+        uint? acousticSpaceFormId = null;
+        uint? imageSpaceFormId = null;
+
+        var visited = new HashSet<uint>();
+        var currentVa = pHead;
+
+        for (var i = 0; i < MaxCellExtraListNodes; i++)
+        {
+            if (currentVa == 0 || !visited.Add(currentVa))
+            {
+                break;
+            }
+
+            var nodeFileOffset = _context.VaToFileOffset(currentVa);
+            if (nodeFileOffset == null)
+            {
+                break;
+            }
+
+            var nodeBuffer = _context.ReadBytes(nodeFileOffset.Value, CellExtraNodeReadSize);
+            if (nodeBuffer == null)
+            {
+                break;
+            }
+
+            var eType = nodeBuffer[CellExtraEtypeOffset];
+            var nextVa = BinaryUtils.ReadUInt32BE(nodeBuffer, CellExtraNextOffset);
+
+            switch (eType)
+            {
+                case ExtraEncounterZoneCode:
+                {
+                    var zoneVa = BinaryUtils.ReadUInt32BE(nodeBuffer, CellExtraPayloadOffset);
+                    encounterZoneFormId ??= _context.FollowPointerVaToFormId(zoneVa, 0x61);
+                    break;
+                }
+                case ExtraCellMusicTypeCode:
+                {
+                    var musicVa = BinaryUtils.ReadUInt32BE(nodeBuffer, CellExtraPayloadOffset);
+                    musicTypeFormId ??= _context.FollowPointerVaToFormId(musicVa, 0x6B);
+                    break;
+                }
+                case ExtraCellAcousticSpaceCode:
+                {
+                    var acousticVa = BinaryUtils.ReadUInt32BE(nodeBuffer, CellExtraPayloadOffset);
+                    acousticSpaceFormId ??= _context.FollowPointerVaToFormId(acousticVa);
+                    break;
+                }
+                case ExtraCellImageSpaceCode:
+                {
+                    var imageVa = BinaryUtils.ReadUInt32BE(nodeBuffer, CellExtraPayloadOffset);
+                    imageSpaceFormId ??= _context.FollowPointerVaToFormId(imageVa, 0x56);
+                    break;
+                }
+            }
+
+            // Early exit if all four found
+            if (encounterZoneFormId.HasValue && musicTypeFormId.HasValue &&
+                acousticSpaceFormId.HasValue && imageSpaceFormId.HasValue)
+            {
+                break;
+            }
+
+            currentVa = nextVa;
+        }
+
+        return (encounterZoneFormId, musicTypeFormId, acousticSpaceFormId, imageSpaceFormId);
     }
 
     private int? AdjustWorldFieldOffset(int? offset)
@@ -897,7 +1090,13 @@ internal sealed class RuntimeCellReader
         float? WaterHeight,
         uint? WorldspaceFormId,
         uint? LandFormId,
-        IReadOnlyList<uint> ReferenceFormIds);
+        IReadOnlyList<uint> ReferenceFormIds,
+        uint? LightingTemplateFormId = null,
+        uint? LightingTemplateInheritanceFlags = null,
+        uint? EncounterZoneFormId = null,
+        uint? MusicTypeFormId = null,
+        uint? AcousticSpaceFormId = null,
+        uint? ImageSpaceFormId = null);
 
     #region TESWorldSpace Struct Layout
 
@@ -915,6 +1114,23 @@ internal sealed class RuntimeCellReader
 
     private const int CellStructSize = 192;
     private const int CellShiftStartOffset = 52;
+
+    #endregion
+
+    #region BSExtraData Linked List (Cell ExtraDataList at +56)
+
+    // BSExtraData node layout: vfptr(4) + cEtype(1) + pad(3) + pNext(4) = 12 bytes header
+    private const int CellExtraEtypeOffset = 4;
+    private const int CellExtraNextOffset = 8;
+    private const int CellExtraPayloadOffset = 12; // pointer payload starts after header
+    private const int CellExtraNodeReadSize = 16; // header(12) + pointer(4)
+    private const int MaxCellExtraListNodes = 64;
+
+    // BSExtraData type codes for CELL-specific extras (from NVSE GameExtraData.h)
+    private const byte ExtraCellMusicTypeCode = 0x07; // 7
+    private const byte ExtraCellImageSpaceCode = 0x59; // 89
+    private const byte ExtraEncounterZoneCode = 0x74; // 116
+    private const byte ExtraCellAcousticSpaceCode = 0x81; // 129
 
     #endregion
 

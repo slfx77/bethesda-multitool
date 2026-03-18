@@ -54,8 +54,7 @@ internal static class RuntimeNpcLayoutProbe
                 fieldReaders[candidate.Layout]),
             "NPC Probe",
             log,
-            sample => $"{sample.Entry.EditorId} (FormID 0x{sample.Entry.FormId:X8})",
-            false);
+            sample => $"{sample.Entry.EditorId} (FormID 0x{sample.Entry.FormId:X8})");
 
         var winner = result.Winner.Layout;
         var isHighConfidence = result.WinnerScore > 0 && result.Margin >= MinConfidenceMargin;

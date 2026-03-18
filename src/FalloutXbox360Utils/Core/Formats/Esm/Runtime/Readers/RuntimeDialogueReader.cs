@@ -11,6 +11,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
 {
     private readonly RuntimeMemoryContext _context = context;
+
     private readonly InfoOffsets _info = InfoLayout;
 
     // Delegate quest/terminal/note reading to the extracted helper class.
@@ -18,6 +19,9 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
 
     private RuntimeQuestTerminalReader QuestTerminal =>
         _questTerminalReader ??= new RuntimeQuestTerminalReader(_context);
+
+    /// <summary>Accumulated diagnostics for TESConversationData link list population.</summary>
+    internal ConversationDataDiagnostics ConversationDiagnostics { get; } = new();
 
     /// <summary>
     ///     Read extended topic data from a runtime TESTopic struct.
@@ -169,6 +173,9 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
         var speakerFormId = _context.FollowPointerToFormId(buffer, _info.SpeakerPtrOffset, 0x2A)
                             ?? _context.FollowPointerToFormId(buffer, _info.SpeakerPtrOffset, 0x2B);
 
+        // Follow pPerkSkillStat pointer → TESForm* (any type: PERK, AVIF, etc.)
+        var perkSkillStatFormId = _context.FollowPointerToFormId(buffer, InfoPerkSkillStatPtrOffset);
+
         // Read eDifficulty (uint32 BE)
         var difficulty = BinaryUtils.ReadUInt32BE(buffer, _info.DifficultyOffset);
         if (difficulty > 10)
@@ -203,6 +210,7 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
             InfoFlags = dataFlags,
             InfoFlagsExt = dataFlagsExt,
             SpeakerFormId = speakerFormId,
+            PerkSkillStatFormId = perkSkillStatFormId,
             Difficulty = difficulty,
             QuestFormId = questFormId,
             ConditionSpeakerFormId = conditionData.ConditionSpeakerFormId,
@@ -277,6 +285,9 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
         var speakerFormId = _context.FollowPointerToFormId(buffer, _info.SpeakerPtrOffset, 0x2A)
                             ?? _context.FollowPointerToFormId(buffer, _info.SpeakerPtrOffset, 0x2B);
 
+        // Follow pPerkSkillStat pointer → TESForm* (any type: PERK, AVIF, etc.)
+        var perkSkillStatFormId = _context.FollowPointerToFormId(buffer, InfoPerkSkillStatPtrOffset);
+
         // Read eDifficulty
         var difficulty = BinaryUtils.ReadUInt32BE(buffer, _info.DifficultyOffset);
         if (difficulty > 10)
@@ -314,6 +325,7 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
             InfoFlags = dataFlags,
             InfoFlagsExt = dataFlagsExt,
             SpeakerFormId = speakerFormId,
+            PerkSkillStatFormId = perkSkillStatFormId,
             Difficulty = difficulty,
             QuestFormId = questFormId,
             ConditionSpeakerFormId = conditionData.ConditionSpeakerFormId,
@@ -576,6 +588,7 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
     private RuntimeConversationData ReadConversationData(byte[] infoBuffer)
     {
         var results = new RuntimeConversationData();
+        ConversationDiagnostics.ConversationDataReads++;
 
         if (_info.ConversationDataPtrOffset + 4 > infoBuffer.Length)
         {
@@ -594,9 +607,25 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
             return results;
         }
 
+        ConversationDiagnostics.ValidPointerCount++;
+
+        // Track non-zero list heads for diagnostics (BSSimpleList m_item at offset +0 of each list)
+        var linkFromHead = BinaryUtils.ReadUInt32BE(conversationBuf);
+        var linkToHead = BinaryUtils.ReadUInt32BE(conversationBuf, ConversationDataLinkToOffset);
+        var followUpHead = BinaryUtils.ReadUInt32BE(conversationBuf, ConversationDataFollowUpInfosOffset);
+
+        if (linkFromHead != 0) ConversationDiagnostics.LinkFromNonZeroHead++;
+        if (linkToHead != 0) ConversationDiagnostics.LinkToNonZeroHead++;
+        if (followUpHead != 0) ConversationDiagnostics.FollowUpNonZeroHead++;
+
         results.LinkFromTopicFormIds = WalkTopicFormList(conversationBuf, ConversationDataLinkFromOffset);
         results.LinkToTopicFormIds = WalkTopicFormList(conversationBuf, ConversationDataLinkToOffset);
         results.FollowUpInfoFormIds = WalkInfoFormList(conversationBuf, ConversationDataFollowUpInfosOffset);
+
+        if (results.LinkFromTopicFormIds.Count > 0) ConversationDiagnostics.LinkFromPositiveDecodes++;
+        if (results.LinkToTopicFormIds.Count > 0) ConversationDiagnostics.LinkToPositiveDecodes++;
+        if (results.FollowUpInfoFormIds.Count > 0) ConversationDiagnostics.FollowUpPositiveDecodes++;
+
         return results;
     }
 
@@ -788,20 +817,20 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
         {
             null => false,
             ScriptParamType.Char or
-            ScriptParamType.Int or
-            ScriptParamType.Float or
-            ScriptParamType.Axis or
-            ScriptParamType.AnimGroup or
-            ScriptParamType.Sex or
-            ScriptParamType.ScriptVar or
-            ScriptParamType.Stage or
-            ScriptParamType.CrimeType or
-            ScriptParamType.FormType or
-            ScriptParamType.MiscStat or
-            ScriptParamType.VatsValue or
-            ScriptParamType.VatsValueData or
-            ScriptParamType.Alignment or
-            ScriptParamType.CritStage => false,
+                ScriptParamType.Int or
+                ScriptParamType.Float or
+                ScriptParamType.Axis or
+                ScriptParamType.AnimGroup or
+                ScriptParamType.Sex or
+                ScriptParamType.ScriptVar or
+                ScriptParamType.Stage or
+                ScriptParamType.CrimeType or
+                ScriptParamType.FormType or
+                ScriptParamType.MiscStat or
+                ScriptParamType.VatsValue or
+                ScriptParamType.VatsValueData or
+                ScriptParamType.Alignment or
+                ScriptParamType.CritStage => false,
             _ => true
         };
     }
@@ -841,6 +870,39 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
         }
     }
 
+    private sealed class RuntimeConditionData
+    {
+        public uint? ConditionSpeakerFormId;
+        public uint? SpeakerFactionFormId;
+        public uint? SpeakerRaceFormId;
+        public uint? SpeakerVoiceTypeFormId;
+        public List<DialogueCondition> Conditions { get; } = [];
+        public List<ushort> Functions { get; } = [];
+    }
+
+    private sealed class RuntimeConversationData
+    {
+        public List<uint> FollowUpInfoFormIds { get; set; } = [];
+        public List<uint> LinkFromTopicFormIds { get; set; } = [];
+        public List<uint> LinkToTopicFormIds { get; set; } = [];
+    }
+
+    /// <summary>
+    ///     Diagnostic counters for TESConversationData link list population.
+    ///     Used to determine whether m_listLinkFrom/m_listLinkTo are ever populated at runtime.
+    /// </summary>
+    internal sealed class ConversationDataDiagnostics
+    {
+        public int ConversationDataReads { get; set; }
+        public int ValidPointerCount { get; set; }
+        public int LinkFromNonZeroHead { get; set; }
+        public int LinkFromPositiveDecodes { get; set; }
+        public int LinkToNonZeroHead { get; set; }
+        public int LinkToPositiveDecodes { get; set; }
+        public int FollowUpNonZeroHead { get; set; }
+        public int FollowUpPositiveDecodes { get; set; }
+    }
+
     #region Struct Layouts
 
     /// <summary>
@@ -874,29 +936,13 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
     // bSaidOnce at +50, m_listAddTopics at +64.
     private const int InfoSaidOnceOffset = 50;
     private const int InfoAddTopicsOffset = 64;
+    private const int InfoPerkSkillStatPtrOffset = 80;
     private const int ConversationDataSize = 24;
     private const int ConversationDataLinkFromOffset = 0;
     private const int ConversationDataLinkToOffset = 8;
     private const int ConversationDataFollowUpInfosOffset = 16;
 
     #endregion
-
-    private sealed class RuntimeConditionData
-    {
-        public uint? ConditionSpeakerFormId;
-        public List<DialogueCondition> Conditions { get; } = [];
-        public List<ushort> Functions { get; } = [];
-        public uint? SpeakerFactionFormId;
-        public uint? SpeakerRaceFormId;
-        public uint? SpeakerVoiceTypeFormId;
-    }
-
-    private sealed class RuntimeConversationData
-    {
-        public List<uint> FollowUpInfoFormIds { get; set; } = [];
-        public List<uint> LinkFromTopicFormIds { get; set; } = [];
-        public List<uint> LinkToTopicFormIds { get; set; } = [];
-    }
 
     // Note, Quest, and Terminal struct layout constants are provided by QuestTerminal.
 }

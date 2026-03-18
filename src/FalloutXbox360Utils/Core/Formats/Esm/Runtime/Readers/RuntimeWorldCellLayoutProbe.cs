@@ -1,6 +1,5 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
-using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm;
 
@@ -44,8 +43,7 @@ internal static class RuntimeWorldCellLayoutProbe
             (sample, candidate) => ScoreSample(sample, readers[candidate.Layout]),
             "WRLD/CELL Probe",
             log,
-            sample => $"{sample.Kind}: {sample.Entry.EditorId} (FormID 0x{sample.Entry.FormId:X8})",
-            false);
+            sample => $"{sample.Kind}: {sample.Entry.EditorId} (FormID 0x{sample.Entry.FormId:X8})");
 
         var winner = result.Winner.Layout;
         var isHighConfidence = result.WinnerScore > 0 && result.Margin >= MinConfidenceMargin;
@@ -247,7 +245,8 @@ internal static class RuntimeWorldCellLayoutProbe
         {
             foreach (var entry in worldEntries)
             {
-                if (samples.Count(sample => sample.Kind == RuntimeWorldCellProbeSampleKind.Worldspace) >= MaxWorldSamples)
+                if (samples.Count(sample => sample.Kind == RuntimeWorldCellProbeSampleKind.Worldspace) >=
+                    MaxWorldSamples)
                 {
                     break;
                 }

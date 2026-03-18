@@ -320,7 +320,7 @@ internal sealed class RuntimeGpuTextureScanner(RuntimeMemoryContext context)
         if (isTiled)
         {
             // Tiled: use Morton/Z-order untiling + endian swap in one pass
-            return TextureUtilities.UnswizzleMortonDXT(data, width, height, gpuFormat, true);
+            return TextureUtilities.UnswizzleMortonDXT(data, width, height, gpuFormat);
         }
 
         // Untiled (linear): just endian swap for compressed formats
