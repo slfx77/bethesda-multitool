@@ -141,6 +141,7 @@ internal static class EsmDataExtractor
             PositionSubrecord? position = null;
             var scale = 1.0f;
             float? radius = null;
+            short? count = null;
             uint? ownerFormId = null;
             uint? encounterZoneFormId = null;
             byte? lockLevel = null;
@@ -195,6 +196,11 @@ internal static class EsmDataExtractor
                         encounterZoneFormId = bigEndian
                             ? BinaryPrimitives.ReadUInt32BigEndian(sub.Data)
                             : BinaryPrimitives.ReadUInt32LittleEndian(sub.Data);
+                        break;
+                    case "XCNT" when sub.Data.Length >= 4:
+                        count = (short)(bigEndian
+                            ? BinaryPrimitives.ReadInt32BigEndian(sub.Data)
+                            : BinaryPrimitives.ReadInt32LittleEndian(sub.Data));
                         break;
                     case "XLOC" when sub.Data.Length >= 20:
                         lockLevel = sub.Data[0];
@@ -267,6 +273,7 @@ internal static class EsmDataExtractor
                 Position = position,
                 Scale = scale,
                 Radius = radius,
+                Count = count,
                 OwnerFormId = ownerFormId,
                 EncounterZoneFormId = encounterZoneFormId,
                 LockLevel = lockLevel,

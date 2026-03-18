@@ -1,13 +1,5 @@
 namespace FalloutAudioTranscriber.Models;
 
-public enum BatchItemStatus
-{
-    Success,
-    Empty,
-    Error,
-    Skipped
-}
-
 public class BatchProgressItem
 {
     public string DisplayName { get; init; } = "";

@@ -278,8 +278,7 @@ internal static class NpcBodyBuilder
         var armPoseOverrides = LoadNamedAnimationOverrides(
             skeletonNifPath,
             meshArchives,
-            relativeEquippedPoseKfPath!,
-            false);
+            relativeEquippedPoseKfPath!);
         if (armPoseOverrides == null || armPoseOverrides.Count == 0)
         {
             return fallbackIdleBones;
@@ -297,7 +296,7 @@ internal static class NpcBodyBuilder
             // (translation 29.3, 0, -6.5) is only active during the draw animation.
             // During idle, h2hidle.kf has NO Weapon bone override, so the Weapon bone
             // stays at its skeleton bind-pose position. Only apply arm bone overrides.
-            if (ShouldUseHandToHandEquippedBone(boneName, includeWeaponOverride: false))
+            if (ShouldUseHandToHandEquippedBone(boneName, false))
             {
                 mergedOverrides[boneName] = pose;
             }
@@ -783,7 +782,7 @@ internal static class NpcBodyBuilder
             holsterModelPoseOverrides = NifNodeControllerPoseReader.Parse(
                 weaponRaw.Value.Data,
                 weaponRaw.Value.Info,
-                sampleLastKeyframe: true);
+                true);
             if (holsterModelPoseOverrides != null)
             {
                 Log.Debug(
@@ -792,6 +791,7 @@ internal static class NpcBodyBuilder
                     holsterModelPoseOverrides.Count,
                     string.Join(", ", holsterModelPoseOverrides.Keys.OrderBy(name => name)));
             }
+
             Log.Debug(
                 "Weapon '{0}': holster mode - suppressing remaining root-attached geometry; rendering explicit attachment groups only",
                 npc.WeaponVisual.MeshPath);

@@ -664,8 +664,8 @@ internal static class NpcRenderHelpers
     }
 
     /// <summary>
-    ///     Resolves texture BSA paths. If an explicit path is given, uses that.
-    ///     Otherwise, auto-discovers all *Texture* BSA files in the meshes BSA directory.
+    ///     Resolves texture source paths. Explicit paths may be BSAs or loose texture
+    ///     directories. Otherwise, auto-discovers all *Texture* BSAs in the meshes BSA directory.
     /// </summary>
     internal static string[] ResolveTexturesBsaPaths(string meshesBsaPath, string[]? explicitPaths)
     {
@@ -674,9 +674,9 @@ internal static class NpcRenderHelpers
             var resolvedPaths = new List<string>(explicitPaths.Length);
             foreach (var explicitPath in explicitPaths)
             {
-                if (!File.Exists(explicitPath))
+                if (!File.Exists(explicitPath) && !Directory.Exists(explicitPath))
                 {
-                    AnsiConsole.MarkupLine("[red]Error:[/] Textures BSA not found: {0}", explicitPath);
+                    AnsiConsole.MarkupLine("[red]Error:[/] Texture source not found: {0}", explicitPath);
                     return [];
                 }
 

@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
@@ -54,7 +54,7 @@
   <Target Name="RemoveReferencedProjectPri" BeforeTargets="_GenerateProjectPriConfigurationFiles">
     <ItemGroup>
       <_PriFile Remove="@(_PriFile)"
-        Condition="$([System.String]::new('%(Filename)').StartsWith('FalloutXbox360Utils'))" />
+                Condition="$([System.String]::new('%(Filename)').StartsWith('FalloutXbox360Utils'))" />
     </ItemGroup>
   </Target>
 
@@ -65,7 +65,7 @@
   <Target Name="RemoveReferencedProjectPublishContent" BeforeTargets="_ComputeFilesToBundle">
     <ItemGroup>
       <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
-        Condition="$([System.String]::new('%(FullPath)').Contains('FalloutXbox360Utils')) AND
+                             Condition="$([System.String]::new('%(FullPath)').Contains('FalloutXbox360Utils')) AND
                    !$([System.String]::new('%(FullPath)').Contains('bin')) AND
                    !$([System.String]::new('%(FullPath)').Contains('.nuget'))" />
     </ItemGroup>

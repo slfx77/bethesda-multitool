@@ -176,7 +176,7 @@ internal static class NpcHeadBuilder
 
         // Load and attach eye meshes (left and right)
         AttachEyeMeshes(npc, model, attachmentBoneTransforms, usedBaseRaceMesh,
-            meshArchives, textureResolver, egmCache,
+            meshArchives, textureResolver, egmCache, egtCache, s,
             effectiveBonelessAttachmentTransform);
 
         if (!s.NoEquip && npc.EquippedItems != null)
@@ -349,7 +349,14 @@ internal static class NpcHeadBuilder
         var npcTexKey = NpcRenderHelpers.BuildNpcFaceEgtTextureKey(npc);
         textureResolver.InjectTexture(npcTexKey, morphed);
         foreach (var submesh in model.Submeshes)
+        {
             submesh.DiffuseTexturePath = npcTexKey;
+            submesh.IsFaceGen = true;
+            // _sk subsurface color: RGB(24, 8, 8) / 255 — uniform across all races/genders.
+            // The engine's SKIN shader multiplies this by a scatter intensity to add warm red
+            // backlighting that counteracts green casts from EGT texture morphs.
+            submesh.SubsurfaceColor = (24f / 255f, 8f / 255f, 8f / 255f);
+        }
     }
 
     private static void AttachHairMesh(
@@ -405,8 +412,7 @@ internal static class NpcHeadBuilder
                 hairRaw.Value.Info,
                 headBoneMatrix,
                 bonelessAttachmentTransform,
-                hairNifPath,
-                NpcRenderHelpers.HeadAttachmentRootPolicy.PreserveAuthoredBasis);
+                hairNifPath);
         }
         else
         {
@@ -446,6 +452,8 @@ internal static class NpcHeadBuilder
         NpcMeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, EgmParser?> egmCache,
+        Dictionary<string, EgtParser?> egtCache,
+        NpcRenderSettings s,
         Matrix4x4? bonelessAttachmentTransform)
     {
         var eyeAttachmentTransform = bonelessAttachmentTransform;
@@ -522,6 +530,23 @@ internal static class NpcHeadBuilder
                     sub.DiffuseTexturePath = npc.EyeTexturePath;
             }
 
+            // Apply EGT texture morphs to eye meshes.
+            if (!s.NoEgt && usedBaseRaceMesh && npc.FaceGenTextureCoeffs != null)
+            {
+                var eyeEgtPath = Path.ChangeExtension(eyeNifPath, ".egt");
+                var eyeBaseName = Path.GetFileNameWithoutExtension(eyeNifPath);
+                foreach (var sub in eyeModel.Submeshes)
+                {
+                    if (sub.DiffuseTexturePath == null) continue;
+                    var morphedKey = NpcRenderHelpers.ApplyBodyEgtMorph(
+                        eyeEgtPath, sub.DiffuseTexturePath, npc.FaceGenTextureCoeffs,
+                        npc.NpcFormId, eyeBaseName!, npc.RenderVariantLabel,
+                        meshArchives, textureResolver, egtCache);
+                    if (morphedKey != null)
+                        sub.DiffuseTexturePath = morphedKey;
+                }
+            }
+
             // Merge eye submeshes into head model.
             foreach (var sub in eyeModel.Submeshes)
             {
@@ -577,8 +602,7 @@ internal static class NpcHeadBuilder
                     partRaw.Value.Info,
                     headBone,
                     bonelessAttachmentTransform,
-                    partPath,
-                    NpcRenderHelpers.HeadAttachmentRootPolicy.PreserveAuthoredBasis);
+                    partPath);
             }
 
             // Merge into head model. RenderOrder=0 (before hair).

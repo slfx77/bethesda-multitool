@@ -341,9 +341,6 @@ public static class RenderNpcCommand
             return Task.CompletedTask;
         });
 
-        command.Subcommands.Add(NpcVerifyEgtCommand.Create());
-        command.Subcommands.Add(NpcCompareRuntimeCaptureCommand.Create());
-
         return command;
     }
 }

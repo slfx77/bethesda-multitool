@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <!-- Multi-target: cross-platform CLI + Windows GUI -->
@@ -41,6 +41,7 @@
     <InternalsVisibleTo Include="NifAnalyzer" />
     <InternalsVisibleTo Include="MinidumpAnalyzer" />
     <InternalsVisibleTo Include="FalloutAudioTranscriber" />
+    <InternalsVisibleTo Include="EgtAnalyzer" />
   </ItemGroup>
 
   <!-- Windows GUI settings -->
@@ -107,6 +108,7 @@
     <Compile Remove="App\**\*.cs" />
     <!-- Keep non-UI helpers that are shared with tests and analysis code -->
     <Compile Include="App\Helpers\FormUsageIndex.cs" />
+    <Compile Include="App\Helpers\FormUsageReference.cs" />
     <!-- XAML files in App/ -->
     <Page Remove="App\**\*.xaml" />
     <!-- Root XAML files -->

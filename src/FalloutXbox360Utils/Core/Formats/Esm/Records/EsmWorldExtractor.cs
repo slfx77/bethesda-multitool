@@ -69,6 +69,7 @@ internal static class EsmWorldExtractor
         PositionSubrecord? position = null;
         var scale = 1.0f;
         float? radius = null;
+        short? count = null;
         uint? ownerFormId = null;
         uint? encounterZoneFormId = null;
         byte? lockLevel = null;
@@ -124,6 +125,12 @@ internal static class EsmWorldExtractor
 
                     break;
                 }
+
+                case "XCNT" when sub.DataLength >= 4:
+                    count = (short)(header.IsBigEndian
+                        ? BinaryPrimitives.ReadInt32BigEndian(subData)
+                        : BinaryPrimitives.ReadInt32LittleEndian(subData));
+                    break;
 
                 case "XOWN" when sub.DataLength == 4:
                     ownerFormId = SubrecordSchemaReader.ReadNameFormId(subData, header.IsBigEndian);
@@ -211,6 +218,7 @@ internal static class EsmWorldExtractor
             Position = position,
             Scale = scale,
             Radius = radius,
+            Count = count,
             OwnerFormId = ownerFormId,
             EncounterZoneFormId = encounterZoneFormId,
             LockLevel = lockLevel,

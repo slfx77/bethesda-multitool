@@ -330,15 +330,3 @@ dotnet build -c Release
 dotnet test -p:CollectCoverage=false
 ```
 
-## Deferred Tasks
-
-### Boone Brow Dark Mark (Lighting Terminator Artifact)
-
-EGM mesh morphing creates a deep brow crease on some NPCs (e.g., Boone 0x00092BD2) that produces a thin dark line at the lighting terminator. Exhaustive investigation confirmed:
-
-- **NOT a geometry hole**: 0 degenerate triangles, 0 UV seam separations, mesh topologically intact
-- **NOT normal recalculation**: present even with original NIF normals
-- **NOT backface culling, bump mapping, or textures**: present without all of these
-- **IS a lighting terminator**: `max(0, NdotL)` creates a hard dark boundary at the sharp crease
-
-Current mitigation: wrap lighting (`wrap=0.25`) in both CPU and GPU shaders partially softens it. The in-game engine masks it with multiple light sources and environment maps. Low priority — cosmetic only, affects few NPCs.

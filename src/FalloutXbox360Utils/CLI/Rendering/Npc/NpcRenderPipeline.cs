@@ -234,8 +234,7 @@ internal static class NpcRenderPipeline
         ref int failed)
     {
         var views = settings.Camera.ResolveViews(
-            90f,
-            0f);
+            90f);
 
         foreach (var npc in appearances)
         {
@@ -371,8 +370,7 @@ internal static class NpcRenderPipeline
         ref int failed)
     {
         var views = settings.Camera.ResolveViews(
-            90f,
-            0f);
+            90f);
 
         NifRenderableModel? currentModel = null;
         if (appearances.Count > 0)
