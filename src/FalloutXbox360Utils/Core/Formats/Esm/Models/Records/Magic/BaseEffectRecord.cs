@@ -41,6 +41,39 @@ public record BaseEffectRecord
     /// <summary>Explosion FormID from DATA.</summary>
     public uint Explosion { get; init; }
 
+    /// <summary>Light FormID from DATA.</summary>
+    public uint? LightFormId { get; init; }
+
+    /// <summary>Projectile speed from DATA.</summary>
+    public float? ProjectileSpeed { get; init; }
+
+    /// <summary>Effect shader FormID from DATA.</summary>
+    public uint? EffectShaderFormId { get; init; }
+
+    /// <summary>Enchant effect (ObjectEffect) FormID from DATA.</summary>
+    public uint? EnchantEffectFormId { get; init; }
+
+    /// <summary>Casting sound FormID from DATA.</summary>
+    public uint? CastingSoundFormId { get; init; }
+
+    /// <summary>Bolt sound FormID from DATA.</summary>
+    public uint? BoltSoundFormId { get; init; }
+
+    /// <summary>Hit sound FormID from DATA.</summary>
+    public uint? HitSoundFormId { get; init; }
+
+    /// <summary>Area sound FormID from DATA.</summary>
+    public uint? AreaSoundFormId { get; init; }
+
+    /// <summary>Constant effect enchantment factor from DATA.</summary>
+    public float? CEEnchantFactor { get; init; }
+
+    /// <summary>Constant effect barter factor from DATA.</summary>
+    public float? CEBarterFactor { get; init; }
+
+    /// <summary>Counter effect FormIDs (runtime BSSimpleList).</summary>
+    public List<uint>? CounterEffectFormIds { get; init; }
+
     /// <summary>Icon path from ICON subrecord.</summary>
     public string? Icon { get; init; }
 

@@ -62,6 +62,27 @@ public record WorldspaceRecord
     /// <summary>Encounter zone FormID (XEZN subrecord).</summary>
     public uint? EncounterZoneFormId { get; init; }
 
+    /// <summary>Worldspace flags from DATA subrecord / cFlags byte (small world, can't fast travel, etc.).</summary>
+    public byte? Flags { get; init; }
+
+    /// <summary>Parent use flags from PNAM subrecord / sParentUseFlags (which parent fields to inherit).</summary>
+    public ushort? ParentUseFlags { get; init; }
+
+    /// <summary>Image space FormID (INAM subrecord / pImageSpace pointer).</summary>
+    public uint? ImageSpaceFormId { get; init; }
+
+    /// <summary>Music type FormID (ZNAM subrecord / pMusicType pointer).</summary>
+    public uint? MusicTypeFormId { get; init; }
+
+    /// <summary>Map offset X scale from ONAM subrecord / WorldMapOffsetData.</summary>
+    public float? MapOffsetScaleX { get; init; }
+
+    /// <summary>Map offset Y scale from ONAM subrecord / WorldMapOffsetData.</summary>
+    public float? MapOffsetScaleY { get; init; }
+
+    /// <summary>Map offset Z from ONAM subrecord / WorldMapOffsetData.</summary>
+    public float? MapOffsetZ { get; init; }
+
     /// <summary>Cells belonging to this worldspace.</summary>
     public List<CellRecord> Cells { get; init; } = [];
 

@@ -33,6 +33,15 @@ public record ProjectileRecord
     /// <summary>Muzzle flash light FormID from DATA.</summary>
     public uint MuzzleFlashLight { get; init; }
 
+    /// <summary>Tracer chance (0.0–1.0) from DATA.</summary>
+    public float TracerChance { get; init; }
+
+    /// <summary>Explosion proximity trigger distance from DATA.</summary>
+    public float ExplosionProximity { get; init; }
+
+    /// <summary>Explosion countdown timer (seconds) from DATA.</summary>
+    public float ExplosionTimer { get; init; }
+
     /// <summary>Explosion FormID from DATA.</summary>
     public uint Explosion { get; init; }
 
@@ -48,8 +57,32 @@ public record ProjectileRecord
     /// <summary>Impact force from DATA.</summary>
     public float ImpactForce { get; init; }
 
-    /// <summary>Countdown timer from DATA.</summary>
-    public float Timer { get; init; }
+    /// <summary>Countdown sound FormID from DATA.</summary>
+    public uint CountdownSound { get; init; }
+
+    /// <summary>Deactivate sound FormID from DATA.</summary>
+    public uint DeactivateSound { get; init; }
+
+    /// <summary>Default weapon source FormID from DATA.</summary>
+    public uint DefaultWeaponSource { get; init; }
+
+    /// <summary>Initial X rotation (radians) from DATA.</summary>
+    public float RotationX { get; init; }
+
+    /// <summary>Initial Y rotation (radians) from DATA.</summary>
+    public float RotationY { get; init; }
+
+    /// <summary>Initial Z rotation (radians) from DATA.</summary>
+    public float RotationZ { get; init; }
+
+    /// <summary>Bounce multiplier from DATA.</summary>
+    public float BounceMultiplier { get; init; }
+
+    /// <summary>Sound attenuation level from VNAM subrecord.</summary>
+    public uint SoundLevel { get; init; }
+
+    /// <summary>Countdown timer from DATA (legacy alias for ExplosionTimer).</summary>
+    public float Timer => ExplosionTimer;
 
     public long Offset { get; init; }
     public bool IsBigEndian { get; init; }

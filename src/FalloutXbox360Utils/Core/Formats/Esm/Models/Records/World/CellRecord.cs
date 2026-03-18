@@ -48,6 +48,12 @@ public record CellRecord
     /// <summary>Image space FormID (XCIM subrecord).</summary>
     public uint? ImageSpaceFormId { get; init; }
 
+    /// <summary>Lighting template FormID (LTMP subrecord / pLightingTemplate pointer).</summary>
+    public uint? LightingTemplateFormId { get; init; }
+
+    /// <summary>Lighting template inheritance flags (LTMP data / iLightingTemplateInheritanceFlags).</summary>
+    public uint? LightingTemplateInheritanceFlags { get; init; }
+
     /// <summary>Placed objects in this cell (REFR, ACHR, ACRE records).</summary>
     public List<PlacedReference> PlacedObjects { get; init; } = [];
 

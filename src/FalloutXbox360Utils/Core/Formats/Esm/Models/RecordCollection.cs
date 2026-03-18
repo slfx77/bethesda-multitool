@@ -124,6 +124,12 @@ public record RecordCollection
     /// <summary>Parsed Class (CLAS) records.</summary>
     public List<ClassRecord> Classes { get; init; } = [];
 
+    /// <summary>Parsed Eyes (EYES) records.</summary>
+    public List<EyesRecord> Eyes { get; init; } = [];
+
+    /// <summary>Parsed Hair (HAIR) records.</summary>
+    public List<HairRecord> Hair { get; init; } = [];
+
     /// <summary>Parsed Form ID List (FLST) records.</summary>
     public List<FormListRecord> FormLists { get; init; } = [];
 
@@ -206,6 +212,7 @@ public record RecordCollection
         GameSettings.Count + Globals.Count + Enchantments.Count + BaseEffects.Count +
         WeaponMods.Count + Recipes.Count + Challenges.Count + Reputations.Count +
         Projectiles.Count + Explosions.Count + Messages.Count + Classes.Count +
+        Eyes.Count + Hair.Count +
         FormLists.Count + Activators.Count +
         Lights.Count + Doors.Count + Statics.Count + Furniture.Count +
         Packages.Count +

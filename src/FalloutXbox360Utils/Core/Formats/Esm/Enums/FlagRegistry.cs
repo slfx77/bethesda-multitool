@@ -237,6 +237,27 @@ public static class FlagRegistry
     ];
 
     // ================================================================
+    // SOUN - Sound Flags (SNDD)
+    // ================================================================
+
+    public static readonly FlagBit[] SoundFlags =
+    [
+        new(0x0001, "Random Frequency Shift"),
+        new(0x0002, "Play At Random"),
+        new(0x0004, "Environment Ignored"),
+        new(0x0008, "Random Location"),
+        new(0x0010, "Loop"),
+        new(0x0020, "Menu Sound"),
+        new(0x0040, "2D"),
+        new(0x0080, "360 LFE"),
+        new(0x0100, "Dialogue Sound"),
+        new(0x0200, "Envelope Fast"),
+        new(0x0400, "Envelope Slow"),
+        new(0x0800, "2D Radius"),
+        new(0x1000, "Mute When Submerged")
+    ];
+
+    // ================================================================
     // CELL - Cell Flags
     // ================================================================
 

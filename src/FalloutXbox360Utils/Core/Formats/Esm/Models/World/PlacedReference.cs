@@ -23,6 +23,9 @@ public record PlacedReference
     /// <summary>Editor ID of the base object (if resolved).</summary>
     public string? BaseEditorId { get; init; }
 
+    /// <summary>Editor ID of the placed reference itself (from EDID subrecord or ExtraEditorID at runtime).</summary>
+    public string? EditorId { get; init; }
+
     /// <summary>Record type (REFR, ACHR, or ACRE).</summary>
     public string RecordType { get; init; } = "REFR";
 
@@ -49,6 +52,9 @@ public record PlacedReference
 
     /// <summary>Activation or placement radius from XRDS/ExtraRadius.</summary>
     public float? Radius { get; init; }
+
+    /// <summary>Item stack count from XCNT subrecord / ExtraCount.</summary>
+    public short? Count { get; init; }
 
     /// <summary>Owner FormID (XOWN subrecord).</summary>
     public uint? OwnerFormId { get; init; }

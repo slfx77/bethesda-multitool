@@ -36,6 +36,12 @@ public record BookRecord
     /// <summary>Object bounds (OBND subrecord).</summary>
     public ObjectBounds? Bounds { get; init; }
 
+    /// <summary>FormID of enchantment applied to this book (runtime pointer follow).</summary>
+    public uint? EnchantmentFormId { get; init; }
+
+    /// <summary>Enchantment charge amount.</summary>
+    public ushort EnchantmentAmount { get; init; }
+
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }
 

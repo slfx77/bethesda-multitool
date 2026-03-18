@@ -30,6 +30,9 @@ public record RuntimeDialogueInfo
     /// <summary>Speech challenge difficulty (0=None, 1=VeryEasy, ..., 5=VeryHard).</summary>
     public uint Difficulty { get; init; }
 
+    /// <summary>Perk or actor value FormID for speech challenges (from pPerkSkillStat pointer at +80).</summary>
+    public uint? PerkSkillStatFormId { get; init; }
+
     /// <summary>Parent quest FormID (from pOwnerQuest pointer).</summary>
     public uint? QuestFormId { get; init; }
 

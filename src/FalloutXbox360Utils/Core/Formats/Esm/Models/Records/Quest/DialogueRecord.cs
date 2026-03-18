@@ -63,6 +63,9 @@ public record DialogueRecord
     /// <summary>Speech challenge difficulty (0=None, 1=VeryEasy, ..., 5=VeryHard).</summary>
     public uint Difficulty { get; init; }
 
+    /// <summary>Perk or actor value FormID for speech challenges (runtime pPerkSkillStat).</summary>
+    public uint? PerkSkillStatFormId { get; init; }
+
     // ESM linking subrecords
 
     /// <summary>Topics this INFO links TO (TCLT subrecords — choosing this response leads to these topics).</summary>
@@ -97,8 +100,20 @@ public record DialogueRecord
     /// <summary>Whether this INFO ends the conversation.</summary>
     public bool IsGoodbye => (InfoFlags & 0x01) != 0;
 
+    /// <summary>Whether this INFO is randomly selected from alternatives.</summary>
+    public bool IsRandom => (InfoFlags & 0x02) != 0;
+
+    /// <summary>Whether this INFO ends a random selection group.</summary>
+    public bool IsRandomEnd => (InfoFlags & 0x04) != 0;
+
+    /// <summary>Whether result scripts run for rumor responses.</summary>
+    public bool IsRunForRumors => (InfoFlags & 0x08) != 0;
+
     /// <summary>Whether this INFO can only be said once.</summary>
     public bool IsSayOnce => (InfoFlags & 0x10) != 0;
+
+    /// <summary>Whether this INFO uses inline response display.</summary>
+    public bool IsInlineResponse => (InfoFlags & 0x40) != 0;
 
     /// <summary>Whether this INFO is a speech challenge option.</summary>
     public bool IsSpeechChallenge => (InfoFlags & 0x80) != 0;

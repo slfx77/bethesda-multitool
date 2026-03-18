@@ -36,6 +36,9 @@ public record SoundRecord
     /// <summary>End time (0-24).</summary>
     public byte EndTime { get; init; }
 
+    /// <summary>Random percent chance for sound playback variation.</summary>
+    public sbyte RandomPercentChance { get; init; }
+
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }
 

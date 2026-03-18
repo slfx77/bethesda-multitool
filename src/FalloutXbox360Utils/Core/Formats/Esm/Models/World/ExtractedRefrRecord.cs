@@ -74,6 +74,9 @@ public record ExtractedRefrRecord
     /// <summary>Runtime spawn template FormID from ExtraLeveledCreature when present.</summary>
     public uint? LeveledCreatureTemplateFormId { get; init; }
 
+    /// <summary>XCNT - Item stack count from ExtraCount (int16 at BSExtraData+12).</summary>
+    public short? Count { get; init; }
+
     /// <summary>XESP - Enable Parent FormID.</summary>
     public uint? EnableParentFormId { get; init; }
 
@@ -82,6 +85,9 @@ public record ExtractedRefrRecord
 
     /// <summary>Editor ID of base object (if resolved).</summary>
     public string? BaseEditorId { get; init; }
+
+    /// <summary>EDID - Editor ID of the placed reference itself (from ExtraEditorID at runtime, EDID subrecord in ESM).</summary>
+    public string? EditorId { get; init; }
 
     /// <summary>XMRK - Whether this is a map marker.</summary>
     public bool IsMapMarker { get; init; }
