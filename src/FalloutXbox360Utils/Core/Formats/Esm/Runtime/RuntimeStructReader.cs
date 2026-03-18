@@ -17,11 +17,24 @@ public sealed class RuntimeStructReader
     private readonly RuntimeMemoryContext _context;
     private readonly RuntimeDialogueReader _dialogue;
     private readonly RuntimeEffectReader _effects;
+    private readonly RuntimeCharacterAppearanceReader _appearance;
+    private readonly RuntimeClassReader _classes;
     private readonly RuntimeGenericReader _generic;
+    private readonly RuntimeGlobalReader _globals;
     private readonly RuntimeItemReader _items;
+    private readonly RuntimeMagicReader _magic;
     private readonly RuntimePackageReader _packages;
+    private readonly RuntimeRaceReader _races;
+    private readonly RuntimeBookReader _books;
+    private readonly RuntimeChallengeReader _challenges;
+    private readonly RuntimeExplosionReader _explosions;
+    private readonly RuntimeMessageReader _messages;
     private readonly RuntimeRefrReader _refrs;
+    private readonly RuntimeReputationReader _reputations;
     private readonly RuntimeScriptReader _scripts;
+    private readonly RuntimeSoundReader _sounds;
+    private readonly RuntimeRecipeReader _recipes;
+    private readonly RuntimeWeaponModReader _weaponMods;
     private readonly RuntimeWorldReader _world;
     private readonly RuntimeWorldObjectReader _worldObjects;
 
@@ -30,7 +43,7 @@ public sealed class RuntimeStructReader
         long fileSize,
         MinidumpInfo minidumpInfo,
         bool useProtoOffsets = false)
-        : this(accessor, fileSize, minidumpInfo, useProtoOffsets, null, null)
+        : this(accessor, fileSize, minidumpInfo, useProtoOffsets, null)
     {
     }
 
@@ -58,6 +71,19 @@ public sealed class RuntimeStructReader
         _cells = new RuntimeCellReader(_context, useProtoOffsets, worldCellLayoutProbe);
         _collections = new RuntimeCollectionReader(_context);
         _worldObjects = new RuntimeWorldObjectReader(_context);
+        _races = new RuntimeRaceReader(_context);
+        _magic = new RuntimeMagicReader(_context);
+        _globals = new RuntimeGlobalReader(_context);
+        _classes = new RuntimeClassReader(_context);
+        _appearance = new RuntimeCharacterAppearanceReader(_context);
+        _reputations = new RuntimeReputationReader(_context);
+        _sounds = new RuntimeSoundReader(_context);
+        _books = new RuntimeBookReader(_context);
+        _weaponMods = new RuntimeWeaponModReader(_context);
+        _recipes = new RuntimeRecipeReader(_context);
+        _challenges = new RuntimeChallengeReader(_context);
+        _explosions = new RuntimeExplosionReader(_context);
+        _messages = new RuntimeMessageReader(_context);
     }
 
     public bool IsEarlyBuild { get; }
@@ -83,7 +109,7 @@ public sealed class RuntimeStructReader
             ? RuntimeNpcLayoutProbe.Probe(context, npcEntries)
             : null;
         var worldCellLayoutProbe =
-            (worldEntries is { Count: > 0 } || cellEntries is { Count: > 0 })
+            worldEntries is { Count: > 0 } || cellEntries is { Count: > 0 }
                 ? RuntimeWorldCellLayoutProbe.Probe(context, worldEntries, cellEntries)
                 : null;
         return new RuntimeStructReader(
@@ -167,6 +193,85 @@ public sealed class RuntimeStructReader
         return _actors.ReadRuntimeAvif(entry);
     }
 
+    public RaceRecord? ReadRuntimeRace(RuntimeEditorIdEntry entry)
+    {
+        return _races.ReadRuntimeRace(entry);
+    }
+
+    #endregion
+
+    #region Magic / Effects
+
+    public BaseEffectRecord? ReadRuntimeBaseEffect(RuntimeEditorIdEntry entry)
+    {
+        return _magic.ReadRuntimeBaseEffect(entry);
+    }
+
+    public SpellRecord? ReadRuntimeSpell(RuntimeEditorIdEntry entry)
+    {
+        return _magic.ReadRuntimeSpell(entry);
+    }
+
+    public EnchantmentRecord? ReadRuntimeEnchantment(RuntimeEditorIdEntry entry)
+    {
+        return _magic.ReadRuntimeEnchantment(entry);
+    }
+
+    public PerkRecord? ReadRuntimePerk(RuntimeEditorIdEntry entry)
+    {
+        return _magic.ReadRuntimePerk(entry);
+    }
+
+    #endregion
+
+    #region Globals
+
+    public GlobalRecord? ReadRuntimeGlobal(RuntimeEditorIdEntry entry)
+    {
+        return _globals.ReadRuntimeGlobal(entry);
+    }
+
+    #endregion
+
+    #region Classes
+
+    public ClassRecord? ReadRuntimeClass(RuntimeEditorIdEntry entry)
+    {
+        return _classes.ReadRuntimeClass(entry);
+    }
+
+    #endregion
+
+    #region Character Appearance
+
+    public EyesRecord? ReadRuntimeEyes(RuntimeEditorIdEntry entry)
+    {
+        return _appearance.ReadRuntimeEyes(entry);
+    }
+
+    public HairRecord? ReadRuntimeHair(RuntimeEditorIdEntry entry)
+    {
+        return _appearance.ReadRuntimeHair(entry);
+    }
+
+    #endregion
+
+    #region Reputations
+
+    public ReputationRecord? ReadRuntimeReputation(RuntimeEditorIdEntry entry)
+    {
+        return _reputations.ReadRuntimeReputation(entry);
+    }
+
+    #endregion
+
+    #region Sounds
+
+    public SoundRecord? ReadRuntimeSound(RuntimeEditorIdEntry entry)
+    {
+        return _sounds.ReadRuntimeSound(entry);
+    }
+
     #endregion
 
     #region Items
@@ -204,6 +309,36 @@ public sealed class RuntimeStructReader
     public ContainerRecord? ReadRuntimeContainer(RuntimeEditorIdEntry entry)
     {
         return _items.ReadRuntimeContainer(entry);
+    }
+
+    public BookRecord? ReadRuntimeBook(RuntimeEditorIdEntry entry)
+    {
+        return _books.ReadRuntimeBook(entry);
+    }
+
+    public WeaponModRecord? ReadRuntimeWeaponMod(RuntimeEditorIdEntry entry)
+    {
+        return _weaponMods.ReadRuntimeWeaponMod(entry);
+    }
+
+    public RecipeRecord? ReadRuntimeRecipe(RuntimeEditorIdEntry entry)
+    {
+        return _recipes.ReadRuntimeRecipe(entry);
+    }
+
+    public ChallengeRecord? ReadRuntimeChallenge(RuntimeEditorIdEntry entry)
+    {
+        return _challenges.ReadRuntimeChallenge(entry);
+    }
+
+    public ExplosionRecord? ReadRuntimeExplosion(RuntimeEditorIdEntry entry)
+    {
+        return _explosions.ReadRuntimeExplosion(entry);
+    }
+
+    public MessageRecord? ReadRuntimeMessage(RuntimeEditorIdEntry entry)
+    {
+        return _messages.ReadRuntimeMessage(entry);
     }
 
     #endregion
@@ -244,6 +379,10 @@ public sealed class RuntimeStructReader
     {
         return _dialogue.WalkTopicQuestInfoList(entry);
     }
+
+    /// <summary>Accumulated diagnostics for TESConversationData link list population.</summary>
+    internal RuntimeDialogueReader.ConversationDataDiagnostics DialogueConversationDiagnostics =>
+        _dialogue.ConversationDiagnostics;
 
     #endregion
 

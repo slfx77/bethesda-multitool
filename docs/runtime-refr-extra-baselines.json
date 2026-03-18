@@ -22,6 +22,8 @@
     "merchantContainerCount": 1,
     "leveledCreatureCount": 10,
     "radiusCount": 3,
+    "countCount": 92,
+    "editorIdCount": 0,
     "typeCounts": {
       "12": 149,
       "13": 48,
@@ -76,6 +78,8 @@
     "merchantContainerCount": 0,
     "leveledCreatureCount": 22,
     "radiusCount": 17,
+    "countCount": 47,
+    "editorIdCount": 0,
     "typeCounts": {
       "12": 147,
       "13": 18,
@@ -130,6 +134,8 @@
     "merchantContainerCount": 2,
     "leveledCreatureCount": 1,
     "radiusCount": 19,
+    "countCount": 48,
+    "editorIdCount": 0,
     "typeCounts": {
       "12": 113,
       "13": 32,
@@ -186,6 +192,8 @@
     "merchantContainerCount": 2,
     "leveledCreatureCount": 40,
     "radiusCount": 1,
+    "countCount": 99,
+    "editorIdCount": 0,
     "typeCounts": {
       "12": 94,
       "13": 88,
@@ -242,6 +250,8 @@
     "merchantContainerCount": 2,
     "leveledCreatureCount": 45,
     "radiusCount": 1,
+    "countCount": 96,
+    "editorIdCount": 0,
     "typeCounts": {
       "12": 94,
       "13": 94,
