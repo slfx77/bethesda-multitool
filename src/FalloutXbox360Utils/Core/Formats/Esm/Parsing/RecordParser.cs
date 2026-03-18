@@ -259,9 +259,12 @@ public sealed class RecordParser
         var challenges = _miscBasicTypes.ParseChallenges();
         var reputations = _miscBasicTypes.ParseReputations();
         var projectiles = _combatEffects.ParseProjectiles();
+        _combatEffects.EnrichProjectilesWithRuntime(projectiles);
         var explosions = _combatEffects.ParseExplosions();
         var messages = _text.ParseMessages();
         var classes = _miscBasicTypes.ParseClasses();
+        var eyes = _miscBasicTypes.ParseEyes();
+        var hair = _miscBasicTypes.ParseHair();
         var formLists = _miscCollections.ParseFormLists();
         // activators, doors, furniture already parsed above (before script cross-ref chains)
         var lights = _miscWorldObjects.ParseLights();
@@ -375,6 +378,8 @@ public sealed class RecordParser
             Explosions = explosions,
             Messages = messages,
             Classes = classes,
+            Eyes = eyes,
+            Hair = hair,
             FormLists = formLists,
             Activators = activators,
             Lights = lights,

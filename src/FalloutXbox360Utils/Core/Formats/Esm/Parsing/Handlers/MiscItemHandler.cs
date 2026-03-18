@@ -101,6 +101,9 @@ internal sealed class MiscItemHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
+        _context.MergeRuntimeRecords(mods, 0x67, m => m.FormId,
+            (reader, entry) => reader.ReadRuntimeWeaponMod(entry), "weapon mods");
+
         return mods;
     }
 
@@ -217,6 +220,9 @@ internal sealed class MiscItemHandler(RecordParserContext context)
         {
             ArrayPool<byte>.Shared.Return(buffer);
         }
+
+        _context.MergeRuntimeRecords(recipes, 0x6A, r => r.FormId,
+            (reader, entry) => reader.ReadRuntimeRecipe(entry), "recipes");
 
         return recipes;
     }

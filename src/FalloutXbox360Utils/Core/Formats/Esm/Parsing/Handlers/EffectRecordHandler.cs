@@ -118,6 +118,9 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
+        _context.MergeRuntimeRecords(enchantments, 0x13, e => e.FormId,
+            (reader, entry) => reader.ReadRuntimeEnchantment(entry), "enchantments");
+
         return enchantments;
     }
 
@@ -155,6 +158,9 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
                 uint flags = 0, associatedItem = 0, archetype = 0, projectile = 0, explosion = 0;
                 float baseCost = 0;
                 int magicSchool = -1, resistValue = -1, actorValue = -1;
+                uint? lightFormId = null, effectShaderFormId = null, enchantEffectFormId = null;
+                uint? castingSoundFormId = null, boltSoundFormId = null, hitSoundFormId = null, areaSoundFormId = null;
+                float? projectileSpeed = null, ceEnchantFactor = null, ceBarterFactor = null;
 
                 foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
                 {
@@ -195,6 +201,24 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
                                 resistValue = SubrecordDataReader.GetInt32(fields, "ResistanceValue");
                                 archetype = SubrecordDataReader.GetUInt32(fields, "Archtype");
                                 actorValue = SubrecordDataReader.GetInt32(fields, "ActorValue");
+                                var light = SubrecordDataReader.GetUInt32(fields, "Light");
+                                if (light != 0) lightFormId = light;
+                                projectileSpeed = SubrecordDataReader.GetFloat(fields, "ProjectileSpeed");
+                                var shader = SubrecordDataReader.GetUInt32(fields, "EffectShader");
+                                if (shader != 0) effectShaderFormId = shader;
+                                var enchEff = SubrecordDataReader.GetUInt32(fields, "EnchantEffect");
+                                if (enchEff != 0) enchantEffectFormId = enchEff;
+                                var castSnd = SubrecordDataReader.GetUInt32(fields, "CastingSound");
+                                if (castSnd != 0) castingSoundFormId = castSnd;
+                                var boltSnd = SubrecordDataReader.GetUInt32(fields, "BoltSound");
+                                if (boltSnd != 0) boltSoundFormId = boltSnd;
+                                var hitSnd = SubrecordDataReader.GetUInt32(fields, "HitSound");
+                                if (hitSnd != 0) hitSoundFormId = hitSnd;
+                                var areaSnd = SubrecordDataReader.GetUInt32(fields, "AreaSound");
+                                if (areaSnd != 0) areaSoundFormId = areaSnd;
+                                ceEnchantFactor =
+                                    SubrecordDataReader.GetFloat(fields, "ConstantEffectEnchantmentFactor");
+                                ceBarterFactor = SubrecordDataReader.GetFloat(fields, "ConstantEffectBarterFactor");
                             }
 
                             break;
@@ -217,6 +241,16 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
                     ActorValue = actorValue,
                     Projectile = projectile,
                     Explosion = explosion,
+                    LightFormId = lightFormId,
+                    ProjectileSpeed = projectileSpeed,
+                    EffectShaderFormId = effectShaderFormId,
+                    EnchantEffectFormId = enchantEffectFormId,
+                    CastingSoundFormId = castingSoundFormId,
+                    BoltSoundFormId = boltSoundFormId,
+                    HitSoundFormId = hitSoundFormId,
+                    AreaSoundFormId = areaSoundFormId,
+                    CEEnchantFactor = ceEnchantFactor,
+                    CEBarterFactor = ceBarterFactor,
                     Icon = icon,
                     ModelPath = modelPath,
                     Offset = record.Offset,
@@ -228,6 +262,9 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
         {
             ArrayPool<byte>.Shared.Return(buffer);
         }
+
+        _context.MergeRuntimeRecords(effects, 0x10, e => e.FormId,
+            (reader, entry) => reader.ReadRuntimeBaseEffect(entry), "base effects");
 
         return effects;
     }
@@ -277,6 +314,9 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
                 ArrayPool<byte>.Shared.Return(buffer);
             }
         }
+
+        _context.MergeRuntimeRecords(perks, 0x56, p => p.FormId,
+            (reader, entry) => reader.ReadRuntimePerk(entry), "perks");
 
         return perks;
     }
@@ -418,6 +458,9 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
                 ArrayPool<byte>.Shared.Return(buffer);
             }
         }
+
+        _context.MergeRuntimeRecords(spells, 0x14, s => s.FormId,
+            (reader, entry) => reader.ReadRuntimeSpell(entry), "spells");
 
         return spells;
     }

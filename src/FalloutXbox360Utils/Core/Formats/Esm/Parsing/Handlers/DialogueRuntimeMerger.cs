@@ -444,6 +444,7 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
             InfoFlags = runtimeInfo.InfoFlags,
             InfoFlagsExt = runtimeInfo.InfoFlagsExt,
             Difficulty = runtimeInfo.Difficulty,
+            PerkSkillStatFormId = runtimeInfo.PerkSkillStatFormId,
             SpeakerFormId = runtimeInfo.SpeakerFormId ?? runtimeInfo.ConditionSpeakerFormId,
             SpeakerFactionFormId = runtimeInfo.SpeakerFactionFormId,
             SpeakerRaceFormId = runtimeInfo.SpeakerRaceFormId,
@@ -483,6 +484,7 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
             InfoFlags = runtimeInfo.InfoFlags,
             InfoFlagsExt = runtimeInfo.InfoFlagsExt,
             Difficulty = runtimeInfo.Difficulty > 0 ? runtimeInfo.Difficulty : dialogue.Difficulty,
+            PerkSkillStatFormId = dialogue.PerkSkillStatFormId ?? runtimeInfo.PerkSkillStatFormId,
             SpeakerFormId = dialogue.SpeakerFormId
                             ?? runtimeInfo.SpeakerFormId
                             ?? runtimeInfo.ConditionSpeakerFormId,
@@ -519,8 +521,8 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
     {
         public int NewInfoCount;
         public int QuestLinked;
-        public int TopicQuestLinked;
         public int TopicLinked;
+        public int TopicQuestLinked;
         public int TopicResponseDerived;
         public int TopicsWalked;
         public int TotalInfosFound;

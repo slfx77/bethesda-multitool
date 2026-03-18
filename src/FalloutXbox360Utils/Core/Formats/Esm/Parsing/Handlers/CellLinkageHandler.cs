@@ -472,7 +472,8 @@ internal static class CellLinkageHandler
 
         var stubsCreated = 0;
         foreach (var group in orphans
-                     .Select(orphan => (CellFormId: orphan.ParentCellFormId ?? orphan.PersistentCellFormId ?? 0u, Orphan: orphan))
+                     .Select(orphan => (CellFormId: orphan.ParentCellFormId ?? orphan.PersistentCellFormId ?? 0u,
+                         Orphan: orphan))
                      .Where(item => item.CellFormId != 0 && !cellByFormId.ContainsKey(item.CellFormId))
                      .GroupBy(item => item.CellFormId))
         {
@@ -483,7 +484,7 @@ internal static class CellLinkageHandler
                 continue;
             }
 
-            CellRecord cell = derivedStub;
+            var cell = derivedStub;
             if (context.RuntimeReader != null &&
                 runtimeCellEntries != null &&
                 runtimeCellEntries.TryGetValue(group.Key, out var runtimeCellEntry))
@@ -654,6 +655,7 @@ internal static class CellLinkageHandler
             RotZ = r.Position?.RotZ ?? 0,
             Scale = r.Scale,
             Radius = r.Radius,
+            Count = r.Count,
             OwnerFormId = r.OwnerFormId,
             EncounterZoneFormId = r.EncounterZoneFormId,
             LockLevel = r.LockLevel,
@@ -679,6 +681,7 @@ internal static class CellLinkageHandler
             LinkedRefKeywordFormId = r.LinkedRefKeywordFormId,
             LinkedRefFormId = r.LinkedRefFormId,
             LinkedRefChildrenFormIds = r.LinkedRefChildrenFormIds,
+            EditorId = r.EditorId,
             Offset = r.Header.Offset,
             IsBigEndian = r.Header.IsBigEndian,
             AssignmentSource = assignmentSource

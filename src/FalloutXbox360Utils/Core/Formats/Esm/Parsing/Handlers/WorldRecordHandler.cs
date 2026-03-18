@@ -184,7 +184,8 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
             var relatedCells = group.ToList();
             var cellBackedWorldspace = BuildCellBackedWorldspaceStub(group.Key, relatedCells, context);
             var runtimeCellMapWorldspace = context.RuntimeWorldspaceCellMaps is { Count: > 0 } &&
-                                           context.RuntimeWorldspaceCellMaps.TryGetValue(group.Key, out var runtimeWorldData)
+                                           context.RuntimeWorldspaceCellMaps.TryGetValue(group.Key,
+                                               out var runtimeWorldData)
                 ? BuildRuntimeCellMapWorldspace(runtimeWorldData, context)
                 : null;
             if (worldspaceIndexByFormId.TryGetValue(group.Key, out var existingIndex))
@@ -379,6 +380,13 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
         float? boundsMaxX = null;
         float? boundsMaxY = null;
         uint? encounterZone = null;
+        byte? flags = null;
+        ushort? parentUseFlags = null;
+        uint? imageSpace = null;
+        uint? musicType = null;
+        float? mapOffsetScaleX = null;
+        float? mapOffsetScaleY = null;
+        float? mapOffsetZ = null;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -448,6 +456,31 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
                 case "XEZN" when sub.DataLength == 4:
                     encounterZone = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
+                case "DATA" when sub.DataLength >= 1:
+                    flags = subData[0];
+                    break;
+                case "PNAM" when sub.DataLength >= 2:
+                    parentUseFlags = record.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt16BigEndian(subData)
+                        : BinaryPrimitives.ReadUInt16LittleEndian(subData);
+                    break;
+                case "INAM" when sub.DataLength == 4:
+                    imageSpace = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "ZNAM" when sub.DataLength == 4:
+                    musicType = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "ONAM" when sub.DataLength >= 12:
+                    mapOffsetScaleX = record.IsBigEndian
+                        ? BinaryPrimitives.ReadSingleBigEndian(subData)
+                        : BinaryPrimitives.ReadSingleLittleEndian(subData);
+                    mapOffsetScaleY = record.IsBigEndian
+                        ? BinaryPrimitives.ReadSingleBigEndian(subData[4..])
+                        : BinaryPrimitives.ReadSingleLittleEndian(subData[4..]);
+                    mapOffsetZ = record.IsBigEndian
+                        ? BinaryPrimitives.ReadSingleBigEndian(subData[8..])
+                        : BinaryPrimitives.ReadSingleLittleEndian(subData[8..]);
+                    break;
             }
         }
 
@@ -472,6 +505,13 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
             BoundsMaxX = boundsMaxX,
             BoundsMaxY = boundsMaxY,
             EncounterZoneFormId = encounterZone,
+            Flags = flags,
+            ParentUseFlags = parentUseFlags,
+            ImageSpaceFormId = imageSpace,
+            MusicTypeFormId = musicType,
+            MapOffsetScaleX = mapOffsetScaleX,
+            MapOffsetScaleY = mapOffsetScaleY,
+            MapOffsetZ = mapOffsetZ,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
@@ -625,6 +665,13 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
             BoundsMaxX = esm.BoundsMaxX ?? runtime.BoundsMaxX,
             BoundsMaxY = esm.BoundsMaxY ?? runtime.BoundsMaxY,
             EncounterZoneFormId = esm.EncounterZoneFormId ?? runtime.EncounterZoneFormId,
+            Flags = esm.Flags ?? runtime.Flags,
+            ParentUseFlags = esm.ParentUseFlags ?? runtime.ParentUseFlags,
+            ImageSpaceFormId = esm.ImageSpaceFormId ?? runtime.ImageSpaceFormId,
+            MusicTypeFormId = esm.MusicTypeFormId ?? runtime.MusicTypeFormId,
+            MapOffsetScaleX = esm.MapOffsetScaleX ?? runtime.MapOffsetScaleX,
+            MapOffsetScaleY = esm.MapOffsetScaleY ?? runtime.MapOffsetScaleY,
+            MapOffsetZ = esm.MapOffsetZ ?? runtime.MapOffsetZ,
             Cells = esm.Cells.Count > 0 ? esm.Cells : runtime.Cells,
             Offset = esm.Offset != 0 ? esm.Offset : runtime.Offset,
             IsBigEndian = esm.IsBigEndian || runtime.IsBigEndian

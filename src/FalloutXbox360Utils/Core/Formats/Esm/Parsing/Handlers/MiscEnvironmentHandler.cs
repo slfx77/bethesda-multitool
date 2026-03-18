@@ -368,6 +368,9 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
+        _context.MergeRuntimeRecords(sounds, 0x0D, s => s.FormId,
+            (reader, entry) => reader.ReadRuntimeSound(entry), "sounds");
+
         return sounds;
     }
 

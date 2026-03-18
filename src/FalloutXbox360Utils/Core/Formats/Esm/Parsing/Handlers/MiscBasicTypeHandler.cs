@@ -79,6 +79,9 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
+        _context.MergeRuntimeRecords(globals, 0x06, g => g.FormId,
+            (reader, entry) => reader.ReadRuntimeGlobal(entry), "globals");
+
         return globals;
     }
 
@@ -194,7 +197,172 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
+        _context.MergeRuntimeRecords(classes, 0x07, c => c.FormId,
+            (reader, entry) => reader.ReadRuntimeClass(entry), "classes");
+
         return classes;
+    }
+
+    #endregion
+
+    #region Eyes
+
+    /// <summary>
+    ///     Parse all Eyes (EYES) records.
+    /// </summary>
+    internal List<EyesRecord> ParseEyes()
+    {
+        var eyes = new List<EyesRecord>();
+
+        if (_context.Accessor == null)
+        {
+            return eyes;
+        }
+
+        var buffer = ArrayPool<byte>.Shared.Rent(512);
+        try
+        {
+            foreach (var record in _context.GetRecordsByType("EYES"))
+            {
+                var recordData = _context.ReadRecordData(record, buffer);
+                if (recordData == null)
+                {
+                    continue;
+                }
+
+                var (data, dataSize) = recordData.Value;
+
+                string? editorId = null, fullName = null, texturePath = null;
+                byte flags = 0;
+
+                foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+                {
+                    switch (sub.Signature)
+                    {
+                        case "EDID":
+                            editorId = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                            if (!string.IsNullOrEmpty(editorId))
+                            {
+                                _context.FormIdToEditorId[record.FormId] = editorId;
+                            }
+
+                            break;
+                        case "FULL":
+                            fullName = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                            break;
+                        case "ICON":
+                            texturePath = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                            break;
+                        case "DATA" when sub.DataLength >= 1:
+                            flags = data[sub.DataOffset];
+                            break;
+                    }
+                }
+
+                eyes.Add(new EyesRecord
+                {
+                    FormId = record.FormId,
+                    EditorId = editorId,
+                    FullName = fullName,
+                    TexturePath = texturePath,
+                    Flags = flags,
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        _context.MergeRuntimeRecords(eyes, 0x0B, e => e.FormId,
+            (reader, entry) => reader.ReadRuntimeEyes(entry), "eyes");
+
+        return eyes;
+    }
+
+    #endregion
+
+    #region Hair
+
+    /// <summary>
+    ///     Parse all Hair (HAIR) records.
+    /// </summary>
+    internal List<HairRecord> ParseHair()
+    {
+        var hair = new List<HairRecord>();
+
+        if (_context.Accessor == null)
+        {
+            return hair;
+        }
+
+        var buffer = ArrayPool<byte>.Shared.Rent(512);
+        try
+        {
+            foreach (var record in _context.GetRecordsByType("HAIR"))
+            {
+                var recordData = _context.ReadRecordData(record, buffer);
+                if (recordData == null)
+                {
+                    continue;
+                }
+
+                var (data, dataSize) = recordData.Value;
+
+                string? editorId = null, fullName = null, modelPath = null, texturePath = null;
+                byte flags = 0;
+
+                foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+                {
+                    switch (sub.Signature)
+                    {
+                        case "EDID":
+                            editorId = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                            if (!string.IsNullOrEmpty(editorId))
+                            {
+                                _context.FormIdToEditorId[record.FormId] = editorId;
+                            }
+
+                            break;
+                        case "FULL":
+                            fullName = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                            break;
+                        case "MODL":
+                            modelPath = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                            break;
+                        case "ICON":
+                            texturePath = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                            break;
+                        case "DATA" when sub.DataLength >= 1:
+                            flags = data[sub.DataOffset];
+                            break;
+                    }
+                }
+
+                hair.Add(new HairRecord
+                {
+                    FormId = record.FormId,
+                    EditorId = editorId,
+                    FullName = fullName,
+                    ModelPath = modelPath,
+                    TexturePath = texturePath,
+                    Flags = flags,
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        _context.MergeRuntimeRecords(hair, 0x0A, h => h.FormId,
+            (reader, entry) => reader.ReadRuntimeHair(entry), "hair");
+
+        return hair;
     }
 
     #endregion
@@ -301,6 +469,9 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
+        _context.MergeRuntimeRecords(challenges, 0x71, c => c.FormId,
+            (reader, entry) => reader.ReadRuntimeChallenge(entry), "challenges");
+
         return challenges;
     }
 
@@ -382,6 +553,9 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
         {
             ArrayPool<byte>.Shared.Return(buffer);
         }
+
+        _context.MergeRuntimeRecords(reputations, 0x68, r => r.FormId,
+            (reader, entry) => reader.ReadRuntimeReputation(entry), "reputations");
 
         return reputations;
     }

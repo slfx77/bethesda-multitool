@@ -78,11 +78,14 @@ internal static class RuntimeDataEnricher
                     ParentCellIsInterior = existing.ParentCellIsInterior ?? runtimeRefr.ParentCellIsInterior,
                     PersistentCellFormId = existing.PersistentCellFormId ?? runtimeRefr.PersistentCellFormId,
                     StartingPosition = existing.StartingPosition ?? runtimeRefr.StartingPosition,
-                    StartingWorldOrCellFormId = existing.StartingWorldOrCellFormId ?? runtimeRefr.StartingWorldOrCellFormId,
+                    StartingWorldOrCellFormId =
+                    existing.StartingWorldOrCellFormId ?? runtimeRefr.StartingWorldOrCellFormId,
                     PackageStartLocation = existing.PackageStartLocation ?? runtimeRefr.PackageStartLocation,
                     MerchantContainerFormId = existing.MerchantContainerFormId ?? runtimeRefr.MerchantContainerFormId,
-                    LeveledCreatureOriginalBaseFormId = existing.LeveledCreatureOriginalBaseFormId ?? runtimeRefr.LeveledCreatureOriginalBaseFormId,
-                    LeveledCreatureTemplateFormId = existing.LeveledCreatureTemplateFormId ?? runtimeRefr.LeveledCreatureTemplateFormId,
+                    LeveledCreatureOriginalBaseFormId = existing.LeveledCreatureOriginalBaseFormId ??
+                                                        runtimeRefr.LeveledCreatureOriginalBaseFormId,
+                    LeveledCreatureTemplateFormId = existing.LeveledCreatureTemplateFormId ??
+                                                    runtimeRefr.LeveledCreatureTemplateFormId,
                     IsMapMarker = existing.IsMapMarker || runtimeRefr.IsMapMarker,
                     MarkerType = existing.MarkerType ?? runtimeRefr.MarkerType,
                     MarkerName = existing.MarkerName ?? runtimeRefr.MarkerName,

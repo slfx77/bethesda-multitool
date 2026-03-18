@@ -298,6 +298,9 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
             }
         }
 
+        _context.MergeRuntimeRecords(races, 0x0C, r => r.FormId,
+            (reader, entry) => reader.ReadRuntimeRace(entry), "races");
+
         return races;
     }
 

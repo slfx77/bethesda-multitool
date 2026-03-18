@@ -139,6 +139,9 @@ internal sealed class TextRecordHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
+        _context.MergeRuntimeRecords(messages, 0x62, m => m.FormId,
+            (reader, entry) => reader.ReadRuntimeMessage(entry), "messages");
+
         return messages;
     }
 
@@ -187,6 +190,9 @@ internal sealed class TextRecordHandler(RecordParserContext context)
                 ArrayPool<byte>.Shared.Return(buffer);
             }
         }
+
+        _context.MergeRuntimeRecords(books, 0x19, b => b.FormId,
+            (reader, entry) => reader.ReadRuntimeBook(entry), "books");
 
         return books;
     }

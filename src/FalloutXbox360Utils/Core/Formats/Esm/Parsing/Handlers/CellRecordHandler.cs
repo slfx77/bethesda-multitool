@@ -7,6 +7,9 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
 internal sealed class CellRecordHandler(RecordParserContext context)
 {
+    private const string AssignmentSourceCellGrup = "CellGrup";
+    private const string AssignmentSourceRuntimeCellList = "RuntimeCellList";
+    private const string AssignmentSourceProximity = "Proximity";
     private readonly RecordParserContext _context = context;
 
     #region Cells
@@ -258,6 +261,8 @@ internal sealed class CellRecordHandler(RecordParserContext context)
         uint? musicTypeFormId = null;
         uint? acousticSpaceFormId = null;
         uint? imageSpaceFormId = null;
+        uint? lightingTemplateFormId = null;
+        uint? lightingTemplateInheritanceFlags = null;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -302,6 +307,14 @@ internal sealed class CellRecordHandler(RecordParserContext context)
                 case "XCIM" when sub.DataLength == 4:
                     imageSpaceFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
+                case "LTMP" when sub.DataLength == 4:
+                    lightingTemplateFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "LNAM" when sub.DataLength == 4:
+                    lightingTemplateInheritanceFlags = record.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
+                    break;
             }
         }
 
@@ -340,6 +353,8 @@ internal sealed class CellRecordHandler(RecordParserContext context)
             MusicTypeFormId = musicTypeFormId,
             AcousticSpaceFormId = acousticSpaceFormId,
             ImageSpaceFormId = imageSpaceFormId,
+            LightingTemplateFormId = lightingTemplateFormId,
+            LightingTemplateInheritanceFlags = lightingTemplateInheritanceFlags,
             PlacedObjects = cellRefs,
             HasPersistentObjects = cellRefs.Exists(r => r.IsPersistent),
             Heightmap = heightmap,
@@ -505,9 +520,14 @@ internal sealed class CellRecordHandler(RecordParserContext context)
             MusicTypeFormId = esm.MusicTypeFormId ?? runtime.MusicTypeFormId,
             AcousticSpaceFormId = esm.AcousticSpaceFormId ?? runtime.AcousticSpaceFormId,
             ImageSpaceFormId = esm.ImageSpaceFormId ?? runtime.ImageSpaceFormId,
+            LightingTemplateFormId = esm.LightingTemplateFormId ?? runtime.LightingTemplateFormId,
+            LightingTemplateInheritanceFlags =
+            esm.LightingTemplateInheritanceFlags ?? runtime.LightingTemplateInheritanceFlags,
             PlacedObjects = ShouldUseRuntimePlacedObjects(esm, runtime)
                 ? runtime.PlacedObjects
-                : esm.PlacedObjects.Count > 0 ? esm.PlacedObjects : runtime.PlacedObjects,
+                : esm.PlacedObjects.Count > 0
+                    ? esm.PlacedObjects
+                    : runtime.PlacedObjects,
             LinkedCellFormIds = esm.LinkedCellFormIds.Count > 0 ? esm.LinkedCellFormIds : runtime.LinkedCellFormIds,
             Heightmap = esm.Heightmap ?? runtime.Heightmap,
             RuntimeTerrainMesh = esm.RuntimeTerrainMesh ?? runtime.RuntimeTerrainMesh,
@@ -614,8 +634,8 @@ internal sealed class CellRecordHandler(RecordParserContext context)
             return cell;
         }
 
-        LandHeightmap? heightmap = cell.Heightmap;
-        RuntimeTerrainMesh? terrainMesh = cell.RuntimeTerrainMesh;
+        var heightmap = cell.Heightmap;
+        var terrainMesh = cell.RuntimeTerrainMesh;
 
         var worldspaceFormId = cell.WorldspaceFormId ?? 0;
         var key = (worldspaceFormId, cell.GridX.Value, cell.GridY.Value);
@@ -648,8 +668,4 @@ internal sealed class CellRecordHandler(RecordParserContext context)
     }
 
     #endregion
-
-    private const string AssignmentSourceCellGrup = "CellGrup";
-    private const string AssignmentSourceRuntimeCellList = "RuntimeCellList";
-    private const string AssignmentSourceProximity = "Proximity";
 }

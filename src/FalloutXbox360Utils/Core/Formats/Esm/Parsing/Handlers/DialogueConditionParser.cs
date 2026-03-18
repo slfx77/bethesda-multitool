@@ -557,7 +557,8 @@ internal sealed class DialogueConditionParser(RecordParserContext context)
 
         AssignSourceTextsToBlocks(sourceTexts, blocks);
 
-        var resultScripts = new List<DialogueResultScript>(blocks.Count + Math.Max(0, sourceTexts.Count - blocks.Count));
+        var resultScripts =
+            new List<DialogueResultScript>(blocks.Count + Math.Max(0, sourceTexts.Count - blocks.Count));
         for (var i = 0; i < blocks.Count; i++)
         {
             var block = blocks[i];
