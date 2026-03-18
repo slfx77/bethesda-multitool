@@ -43,8 +43,7 @@ public sealed class NifFacePartTransformTests
         var preserved = NpcRenderHelpers.GetHeadAttachmentCorrection(
             nifBones,
             targetHeadTransform,
-            bonelessAttachmentTransform,
-            NpcRenderHelpers.HeadAttachmentRootPolicy.PreserveAuthoredBasis);
+            bonelessAttachmentTransform);
         var compensated = NpcRenderHelpers.GetHeadAttachmentCorrection(
             nifBones,
             targetHeadTransform,

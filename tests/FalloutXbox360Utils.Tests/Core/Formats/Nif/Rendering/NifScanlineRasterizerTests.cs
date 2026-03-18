@@ -1,6 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Dds;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
-using FalloutXbox360Utils.Tests.Core;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
@@ -23,13 +22,13 @@ public sealed class NifScanlineRasterizerTests
 
         var gradients = NifScanlineRasterizer.ComputeUvGradients(
             tri,
-            sx0: 0f,
-            sy0: 0f,
-            sx1: 2f,
-            sy1: 0f,
-            sx2: 0f,
-            sy2: 2f,
-            invDenom: 0.25f);
+            0f,
+            0f,
+            2f,
+            0f,
+            0f,
+            2f,
+            0.25f);
 
         Assert.Equal(0.5f, gradients.DuDx, 3);
         Assert.Equal(0f, gradients.DuDy, 3);
@@ -55,18 +54,18 @@ public sealed class NifScanlineRasterizerTests
             texture,
             0.25f,
             0.25f,
-            duDx: 0.01f,
-            dvDx: 0f,
-            duDy: 0f,
-            dvDy: 0.01f);
+            0.01f,
+            0f,
+            0f,
+            0.01f);
         var highFootprintSample = NifScanlineRasterizer.SampleTexture(
             texture,
             0.25f,
             0.25f,
-            duDx: 0.5f,
-            dvDx: 0f,
-            duDy: 0f,
-            dvDy: 0.5f);
+            0.5f,
+            0f,
+            0f,
+            0.5f);
 
         Assert.Equal(0, NifScanlineRasterizer.SelectMipLevel(
             texture,
@@ -103,7 +102,7 @@ public sealed class NifScanlineRasterizerTests
             emissiveMask,
             width,
             height,
-            z: -1f,
+            -1f,
             CreateTexture(1, 1, (0, 0, 255, 255)),
             NifAlphaRenderMode.Opaque);
         RasterizeQuad(
@@ -113,7 +112,7 @@ public sealed class NifScanlineRasterizerTests
             emissiveMask,
             width,
             height,
-            z: 0f,
+            0f,
             CreateTexture(
                 2,
                 1,
@@ -127,14 +126,14 @@ public sealed class NifScanlineRasterizerTests
             emissiveMask,
             width,
             height,
-            z: 1f,
+            1f,
             CreateTexture(
                 2,
                 1,
                 (0, 0, 0, 255),
                 (0, 0, 0, 0)),
             NifAlphaRenderMode.Blend,
-            hasAlphaBlend: true);
+            true);
 
         var sampleA = ReadPixel(pixels, width, 8, 16);
         var sampleB = ReadPixel(pixels, width, 24, 16);
@@ -163,7 +162,7 @@ public sealed class NifScanlineRasterizerTests
             emissiveMask,
             width,
             height,
-            z: 0f,
+            0f,
             CreateTexture(1, 1, (200, 160, 140, 255)),
             NifAlphaRenderMode.Opaque);
         RasterizeQuad(
@@ -173,10 +172,10 @@ public sealed class NifScanlineRasterizerTests
             emissiveMask,
             width,
             height,
-            z: 1f,
+            1f,
             CreateTexture(1, 1, (20, 10, 5, 128)),
             NifAlphaRenderMode.Blend,
-            hasAlphaBlend: true);
+            true);
 
         var center = ReadPixel(pixels, width, 16, 16);
         var centerIndex = 16 * width + 16;
@@ -207,7 +206,7 @@ public sealed class NifScanlineRasterizerTests
             emissiveMask,
             width,
             height,
-            z: 0f,
+            0f,
             CreateTexture(1, 1, (0, 0, 255, 255)),
             NifAlphaRenderMode.Opaque);
         RasterizeQuad(
@@ -217,7 +216,7 @@ public sealed class NifScanlineRasterizerTests
             emissiveMask,
             width,
             height,
-            z: 1f,
+            1f,
             CreateTexture(
                 2,
                 1,
@@ -267,9 +266,9 @@ public sealed class NifScanlineRasterizerTests
             width,
             height,
             triangle,
-            ppu: 1f,
-            offsetX: 0f,
-            offsetY: 0f);
+            1f,
+            0f,
+            0f);
 
         var sample = ReadPixel(pixels, width, 16, 8);
         Assert.True(sample.G > 200);
@@ -305,9 +304,9 @@ public sealed class NifScanlineRasterizerTests
             width,
             height,
             triangle,
-            ppu: 1f,
-            offsetX: 0f,
-            offsetY: 0f);
+            1f,
+            0f,
+            0f);
 
         Assert.All(pixels, component => Assert.Equal(0, component));
     }
@@ -368,11 +367,11 @@ public sealed class NifScanlineRasterizerTests
                 emissiveMask,
                 width,
                 triangle,
-                ppu: 1f,
-                offsetX: 0f,
-                offsetY: 0f,
-                bandMinY: 0,
-                bandMaxY: height - 1);
+                1f,
+                0f,
+                0f,
+                0,
+                height - 1);
         }
     }
 
@@ -468,24 +467,32 @@ public sealed class NifScanlineRasterizerTests
     }
 
     private static bool IsDark((byte R, byte G, byte B, byte A) pixel)
-        => pixel.R < 16 && pixel.G < 16 && pixel.B < 16 && pixel.A > 0;
+    {
+        return pixel.R < 16 && pixel.G < 16 && pixel.B < 16 && pixel.A > 0;
+    }
 
     private static bool IsRedDominant((byte R, byte G, byte B, byte A) pixel)
-        => pixel.R > 96 && pixel.R > pixel.G + 32 && pixel.R > pixel.B + 32 && pixel.A > 0;
+    {
+        return pixel.R > 96 && pixel.R > pixel.G + 32 && pixel.R > pixel.B + 32 && pixel.A > 0;
+    }
 
     private static bool IsGreenDominant((byte R, byte G, byte B, byte A) pixel)
-        => pixel.G > 96 && pixel.G > pixel.R + 32 && pixel.G > pixel.B + 32 && pixel.A > 0;
+    {
+        return pixel.G > 96 && pixel.G > pixel.R + 32 && pixel.G > pixel.B + 32 && pixel.A > 0;
+    }
 
     private static bool IsBlueDominant((byte R, byte G, byte B, byte A) pixel)
-        => pixel.B > 96 && pixel.B > pixel.R + 32 && pixel.B > pixel.G + 32 && pixel.A > 0;
+    {
+        return pixel.B > 96 && pixel.B > pixel.R + 32 && pixel.B > pixel.G + 32 && pixel.A > 0;
+    }
 
     private sealed class RendererStateScope : IDisposable
     {
+        private readonly float _bumpStrength;
         private readonly bool _disableBilinear;
         private readonly bool _disableBumpMapping;
         private readonly bool _disableTextures;
         private readonly bool _drawWireframeOverlay;
-        private readonly float _bumpStrength;
 
         public RendererStateScope()
         {

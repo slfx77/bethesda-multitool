@@ -12,113 +12,6 @@ namespace FalloutXbox360Utils.Tests.CLI;
 /// </summary>
 public class SemdiffRecordParserTests
 {
-    #region ParseRecordsWithSubrecords — Little-Endian
-
-    [Fact]
-    public void ParseRecords_SingleRecord_LE_ParsesCorrectly()
-    {
-        // Build an ALCH record with an EDID subrecord containing "Stimpak\0"
-        var edidData = Encoding.ASCII.GetBytes("Stimpak\0");
-        var data = BuildMinimalRecordLE("ALCH", 0x00015169, "EDID", edidData);
-
-        var records = SemdiffRecordParser.ParseRecordsWithSubrecords(data, bigEndian: false, null, null);
-
-        Assert.Single(records);
-        Assert.Equal("ALCH", records[0].Type);
-        Assert.Equal(0x00015169u, records[0].FormId);
-        Assert.Single(records[0].Subrecords);
-        Assert.Equal("EDID", records[0].Subrecords[0].Signature);
-        Assert.Equal(edidData, records[0].Subrecords[0].Data);
-    }
-
-    [Fact]
-    public void ParseRecords_MultipleSubrecords_LE_ParsesAll()
-    {
-        var edidData = Encoding.ASCII.GetBytes("TestWeap\0");
-        var fullData = Encoding.ASCII.GetBytes("Test Weapon\0");
-        var data = BuildRecordWithSubrecordsLE("WEAP", 0x000F1234,
-            ("EDID", edidData),
-            ("FULL", fullData));
-
-        var records = SemdiffRecordParser.ParseRecordsWithSubrecords(data, bigEndian: false, null, null);
-
-        Assert.Single(records);
-        Assert.Equal(2, records[0].Subrecords.Count);
-        Assert.Equal("EDID", records[0].Subrecords[0].Signature);
-        Assert.Equal("FULL", records[0].Subrecords[1].Signature);
-        Assert.Equal(fullData, records[0].Subrecords[1].Data);
-    }
-
-    [Fact]
-    public void ParseRecords_TypeFilter_FiltersCorrectly()
-    {
-        // Build two records: one ALCH, one WEAP
-        var alchData = BuildMinimalRecordLE("ALCH", 0x00010001, "EDID", [0x41, 0x00]);
-        var weapData = BuildMinimalRecordLE("WEAP", 0x00020002, "EDID", [0x42, 0x00]);
-        var combined = new byte[alchData.Length + weapData.Length];
-        Array.Copy(alchData, 0, combined, 0, alchData.Length);
-        Array.Copy(weapData, 0, combined, alchData.Length, weapData.Length);
-
-        // Filter to WEAP only
-        var records = SemdiffRecordParser.ParseRecordsWithSubrecords(combined, bigEndian: false, "WEAP", null);
-
-        Assert.Single(records);
-        Assert.Equal("WEAP", records[0].Type);
-        Assert.Equal(0x00020002u, records[0].FormId);
-    }
-
-    [Fact]
-    public void ParseRecords_FormIdFilter_FiltersCorrectly()
-    {
-        var rec1 = BuildMinimalRecordLE("ALCH", 0x00010001, "EDID", [0x41, 0x00]);
-        var rec2 = BuildMinimalRecordLE("ALCH", 0x00020002, "EDID", [0x42, 0x00]);
-        var combined = new byte[rec1.Length + rec2.Length];
-        Array.Copy(rec1, 0, combined, 0, rec1.Length);
-        Array.Copy(rec2, 0, combined, rec1.Length, rec2.Length);
-
-        var records = SemdiffRecordParser.ParseRecordsWithSubrecords(combined, bigEndian: false, null, 0x00020002);
-
-        Assert.Single(records);
-        Assert.Equal(0x00020002u, records[0].FormId);
-    }
-
-    [Fact]
-    public void ParseRecords_GrupRecord_IsSkipped()
-    {
-        // Build a GRUP "record" (24 bytes) followed by a real ALCH record
-        var alchData = BuildMinimalRecordLE("ALCH", 0x00010001, "EDID", [0x41, 0x00]);
-        var combined = new byte[24 + alchData.Length];
-
-        // Write GRUP header (the parser skips it by advancing 24 bytes)
-        WriteSig(combined, 0, "GRUP");
-        WriteUInt32LE(combined, 4, 24); // Group size = header only
-        // rest of GRUP header is zeros
-
-        Array.Copy(alchData, 0, combined, 24, alchData.Length);
-
-        var records = SemdiffRecordParser.ParseRecordsWithSubrecords(combined, bigEndian: false, null, null);
-
-        Assert.Single(records);
-        Assert.Equal("ALCH", records[0].Type);
-    }
-
-    [Fact]
-    public void ParseRecords_EmptyData_ReturnsEmpty()
-    {
-        var records = SemdiffRecordParser.ParseRecordsWithSubrecords([], bigEndian: false, null, null);
-        Assert.Empty(records);
-    }
-
-    [Fact]
-    public void ParseRecords_DataTooShortForHeader_ReturnsEmpty()
-    {
-        // Less than 24 bytes means no record can be parsed
-        var records = SemdiffRecordParser.ParseRecordsWithSubrecords(new byte[20], bigEndian: false, null, null);
-        Assert.Empty(records);
-    }
-
-    #endregion
-
     #region ParseRecordsWithSubrecords — Big-Endian
 
     [Fact]
@@ -127,7 +20,7 @@ public class SemdiffRecordParserTests
         var edidData = Encoding.ASCII.GetBytes("TestNPC\0");
         var data = BuildMinimalRecordBE("NPC_", 0x0017B37C, "EDID", edidData);
 
-        var records = SemdiffRecordParser.ParseRecordsWithSubrecords(data, bigEndian: true, null, null);
+        var records = SemdiffRecordParser.ParseRecordsWithSubrecords(data, true, null, null);
 
         Assert.Single(records);
         Assert.Equal("NPC_", records[0].Type);
@@ -160,7 +53,7 @@ public class SemdiffRecordParserTests
         };
         var recB = new SemdiffTypes.ParsedRecord("ALCH", 0x00010001, 0, 0, subrecordsB);
 
-        var diffs = SemdiffRecordParser.CompareRecordFields(recA, recB, bigEndianA: false, bigEndianB: false);
+        var diffs = SemdiffRecordParser.CompareRecordFields(recA, recB, false, false);
 
         Assert.Empty(diffs);
     }
@@ -184,12 +77,119 @@ public class SemdiffRecordParserTests
         var recA = new SemdiffTypes.ParsedRecord("ALCH", 0x00010001, 0, 0, subA);
         var recB = new SemdiffTypes.ParsedRecord("ALCH", 0x00010001, 0, 0, subB);
 
-        var diffs = SemdiffRecordParser.CompareRecordFields(recA, recB, bigEndianA: false, bigEndianB: false);
+        var diffs = SemdiffRecordParser.CompareRecordFields(recA, recB, false, false);
 
         Assert.Single(diffs);
         Assert.Equal("DATA", diffs[0].Signature);
         Assert.NotNull(diffs[0].DataA);
         Assert.NotNull(diffs[0].DataB);
+    }
+
+    #endregion
+
+    #region ParseRecordsWithSubrecords — Little-Endian
+
+    [Fact]
+    public void ParseRecords_SingleRecord_LE_ParsesCorrectly()
+    {
+        // Build an ALCH record with an EDID subrecord containing "Stimpak\0"
+        var edidData = Encoding.ASCII.GetBytes("Stimpak\0");
+        var data = BuildMinimalRecordLE("ALCH", 0x00015169, "EDID", edidData);
+
+        var records = SemdiffRecordParser.ParseRecordsWithSubrecords(data, false, null, null);
+
+        Assert.Single(records);
+        Assert.Equal("ALCH", records[0].Type);
+        Assert.Equal(0x00015169u, records[0].FormId);
+        Assert.Single(records[0].Subrecords);
+        Assert.Equal("EDID", records[0].Subrecords[0].Signature);
+        Assert.Equal(edidData, records[0].Subrecords[0].Data);
+    }
+
+    [Fact]
+    public void ParseRecords_MultipleSubrecords_LE_ParsesAll()
+    {
+        var edidData = Encoding.ASCII.GetBytes("TestWeap\0");
+        var fullData = Encoding.ASCII.GetBytes("Test Weapon\0");
+        var data = BuildRecordWithSubrecordsLE("WEAP", 0x000F1234,
+            ("EDID", edidData),
+            ("FULL", fullData));
+
+        var records = SemdiffRecordParser.ParseRecordsWithSubrecords(data, false, null, null);
+
+        Assert.Single(records);
+        Assert.Equal(2, records[0].Subrecords.Count);
+        Assert.Equal("EDID", records[0].Subrecords[0].Signature);
+        Assert.Equal("FULL", records[0].Subrecords[1].Signature);
+        Assert.Equal(fullData, records[0].Subrecords[1].Data);
+    }
+
+    [Fact]
+    public void ParseRecords_TypeFilter_FiltersCorrectly()
+    {
+        // Build two records: one ALCH, one WEAP
+        var alchData = BuildMinimalRecordLE("ALCH", 0x00010001, "EDID", [0x41, 0x00]);
+        var weapData = BuildMinimalRecordLE("WEAP", 0x00020002, "EDID", [0x42, 0x00]);
+        var combined = new byte[alchData.Length + weapData.Length];
+        Array.Copy(alchData, 0, combined, 0, alchData.Length);
+        Array.Copy(weapData, 0, combined, alchData.Length, weapData.Length);
+
+        // Filter to WEAP only
+        var records = SemdiffRecordParser.ParseRecordsWithSubrecords(combined, false, "WEAP", null);
+
+        Assert.Single(records);
+        Assert.Equal("WEAP", records[0].Type);
+        Assert.Equal(0x00020002u, records[0].FormId);
+    }
+
+    [Fact]
+    public void ParseRecords_FormIdFilter_FiltersCorrectly()
+    {
+        var rec1 = BuildMinimalRecordLE("ALCH", 0x00010001, "EDID", [0x41, 0x00]);
+        var rec2 = BuildMinimalRecordLE("ALCH", 0x00020002, "EDID", [0x42, 0x00]);
+        var combined = new byte[rec1.Length + rec2.Length];
+        Array.Copy(rec1, 0, combined, 0, rec1.Length);
+        Array.Copy(rec2, 0, combined, rec1.Length, rec2.Length);
+
+        var records = SemdiffRecordParser.ParseRecordsWithSubrecords(combined, false, null, 0x00020002);
+
+        Assert.Single(records);
+        Assert.Equal(0x00020002u, records[0].FormId);
+    }
+
+    [Fact]
+    public void ParseRecords_GrupRecord_IsSkipped()
+    {
+        // Build a GRUP "record" (24 bytes) followed by a real ALCH record
+        var alchData = BuildMinimalRecordLE("ALCH", 0x00010001, "EDID", [0x41, 0x00]);
+        var combined = new byte[24 + alchData.Length];
+
+        // Write GRUP header (the parser skips it by advancing 24 bytes)
+        WriteSig(combined, 0, "GRUP");
+        WriteUInt32LE(combined, 4, 24); // Group size = header only
+        // rest of GRUP header is zeros
+
+        Array.Copy(alchData, 0, combined, 24, alchData.Length);
+
+        var records = SemdiffRecordParser.ParseRecordsWithSubrecords(combined, false, null, null);
+
+        Assert.Single(records);
+        Assert.Equal("ALCH", records[0].Type);
+    }
+
+    [Fact]
+    public void ParseRecords_EmptyData_ReturnsEmpty()
+    {
+        var records = SemdiffRecordParser.ParseRecordsWithSubrecords([], false, null, null);
+        Assert.Empty(records);
+    }
+
+    [Fact]
+    public void ParseRecords_DataTooShortForHeader_ReturnsEmpty()
+    {
+        // Less than 24 bytes means no record can be parsed
+        var records = SemdiffRecordParser.ParseRecordsWithSubrecords(new byte[20], false, null, null);
+        Assert.Empty(records);
     }
 
     #endregion
@@ -212,7 +212,7 @@ public class SemdiffRecordParserTests
         var recA = new SemdiffTypes.ParsedRecord("INFO", 0x00010001, 0, 0, subA);
         var recB = new SemdiffTypes.ParsedRecord("INFO", 0x00010001, 0, 0, subB);
 
-        var diffs = SemdiffRecordParser.CompareRecordFields(recA, recB, bigEndianA: false, bigEndianB: false);
+        var diffs = SemdiffRecordParser.CompareRecordFields(recA, recB, false, false);
 
         Assert.Single(diffs);
         Assert.Equal("PNAM", diffs[0].Signature);
@@ -237,7 +237,7 @@ public class SemdiffRecordParserTests
         var recA = new SemdiffTypes.ParsedRecord("REFR", 0x00010001, 0, 0, subA);
         var recB = new SemdiffTypes.ParsedRecord("REFR", 0x00010001, 0, 0, subB);
 
-        var diffs = SemdiffRecordParser.CompareRecordFields(recA, recB, bigEndianA: false, bigEndianB: false);
+        var diffs = SemdiffRecordParser.CompareRecordFields(recA, recB, false, false);
 
         Assert.Single(diffs);
         Assert.Equal("XSCL", diffs[0].Signature);
@@ -268,7 +268,7 @@ public class SemdiffRecordParserTests
         var recA = new SemdiffTypes.ParsedRecord("INFO", 0x00010001, 0, 0, subA);
         var recB = new SemdiffTypes.ParsedRecord("INFO", 0x00010001, 0, 0, subB);
 
-        var diffs = SemdiffRecordParser.CompareRecordFields(recA, recB, bigEndianA: false, bigEndianB: false);
+        var diffs = SemdiffRecordParser.CompareRecordFields(recA, recB, false, false);
 
         // Only the second CTDA should differ
         Assert.Single(diffs);
@@ -296,7 +296,7 @@ public class SemdiffRecordParserTests
         var recA = new SemdiffTypes.ParsedRecord("INFO", 0x00010001, 0, 0, subA);
         var recB = new SemdiffTypes.ParsedRecord("INFO", 0x00010001, 0, 0, subB);
 
-        var diffs = SemdiffRecordParser.CompareRecordFields(recA, recB, bigEndianA: false, bigEndianB: false);
+        var diffs = SemdiffRecordParser.CompareRecordFields(recA, recB, false, false);
 
         Assert.Single(diffs);
         Assert.Contains("Only in A", diffs[0].Message);

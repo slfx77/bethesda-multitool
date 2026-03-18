@@ -21,7 +21,7 @@ public sealed class IdleRecordScannerTests(SampleFileFixture samples)
             "DATA",
             "IDLE",
             [0x07, 0x01, 0x02, 0x00, 0x12, 0x34, 0x56, 0x00],
-            bigEndian: true);
+            true);
 
         Assert.Equal((byte)0x07, SubrecordDataReader.GetByte(xboxFields, "AnimData"));
         Assert.Equal((byte)0x01, SubrecordDataReader.GetByte(xboxFields, "LoopMin"));
@@ -33,7 +33,7 @@ public sealed class IdleRecordScannerTests(SampleFileFixture samples)
             "DATA",
             "IDLE",
             [0x07, 0x01, 0x02, 0x00, 0x34, 0x12],
-            bigEndian: false);
+            false);
 
         Assert.Equal((byte)0x07, SubrecordDataReader.GetByte(pcFields, "AnimData"));
         Assert.Equal((byte)0x01, SubrecordDataReader.GetByte(pcFields, "LoopMin"));
@@ -47,7 +47,7 @@ public sealed class IdleRecordScannerTests(SampleFileFixture samples)
     {
         Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
 
-        var esm = EsmFileLoader.Load(samples.Xbox360FinalEsm!, printStatus: false);
+        var esm = EsmFileLoader.Load(samples.Xbox360FinalEsm!, false);
         Assert.NotNull(esm);
 
         var index = NpcAppearanceIndexBuilder.Build(esm!.Data, esm.IsBigEndian);
@@ -77,7 +77,7 @@ public sealed class IdleRecordScannerTests(SampleFileFixture samples)
     {
         Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
 
-        var esm = EsmFileLoader.Load(samples.Xbox360FinalEsm!, printStatus: false);
+        var esm = EsmFileLoader.Load(samples.Xbox360FinalEsm!, false);
         Assert.NotNull(esm);
 
         var index = NpcAppearanceIndexBuilder.Build(esm!.Data, esm.IsBigEndian);

@@ -1,4 +1,3 @@
-using FalloutXbox360Utils;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using Xunit;
 
@@ -113,7 +112,8 @@ public class FormUsageIndexTests
         var markerUses = usageIndex.GetUsages(markerRefFormId);
         Assert.Contains(markerUses, u => u.SourceFormId == packageFormId && u.SourceKind == "Package");
         Assert.Contains(markerUses, u => u.SourceFormId == npcFormId &&
-                                         u.Context.StartsWith("AI package UseMarkerPackage:", StringComparison.Ordinal));
+                                         u.Context.StartsWith("AI package UseMarkerPackage:",
+                                             StringComparison.Ordinal));
         Assert.Contains(markerUses, u => u.SourceKind == "Dialogue" && u.Context == "Result script 1");
 
         var questScriptUses = usageIndex.GetUsages(questScriptFormId);

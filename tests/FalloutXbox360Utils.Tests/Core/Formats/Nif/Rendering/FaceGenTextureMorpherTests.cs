@@ -11,7 +11,7 @@ public sealed class FaceGenTextureMorpherTests
     [Fact]
     public void BuildNativeDeltaTexture_EngineQuantized256_TruncatesCoefficientAt256Steps()
     {
-        var egt = CreateSinglePixelEgt(scale: 1.0f, deltaR: 127, deltaG: 0, deltaB: 0);
+        var egt = CreateSinglePixelEgt(1.0f, 127, 0, 0);
 
         var current = FaceGenTextureMorpher.BuildNativeDeltaTexture(
             egt,
@@ -37,7 +37,7 @@ public sealed class FaceGenTextureMorpherTests
     [Fact]
     public void BuildNativeDeltaTexture_EngineCompressedEncoding_UsesRecoveredClampFloorAndHalfScale()
     {
-        var egt = CreateSinglePixelEgt(scale: 1.0f, deltaR: 1, deltaG: 0, deltaB: 0);
+        var egt = CreateSinglePixelEgt(1.0f, 1, 0, 0);
 
         var centered = FaceGenTextureMorpher.BuildNativeDeltaTexture(
             egt,
@@ -68,12 +68,16 @@ public sealed class FaceGenTextureMorpherTests
 
         var applied = FaceGenTextureMorpher.ApplyEncodedDeltaTexture(baseTexture, deltaTexture);
 
+        // Shader decode: delta = byte * 2 - 255 (matches SKIN2000.pso's (sample - 0.5) * 2.0)
+        // R: 138*2-255 = 21, 100+21 = 121
+        // G: 123*2-255 = -9, 110-9 = 101
+        // B: 128*2-255 = 1,  120+1 = 121
         Assert.NotNull(applied);
         for (var offset = 0; offset < applied!.Pixels.Length; offset += 4)
         {
-            Assert.Equal(110, applied.Pixels[offset]);
-            Assert.Equal(105, applied.Pixels[offset + 1]);
-            Assert.Equal(120, applied.Pixels[offset + 2]);
+            Assert.Equal(121, applied.Pixels[offset]);
+            Assert.Equal(101, applied.Pixels[offset + 1]);
+            Assert.Equal(121, applied.Pixels[offset + 2]);
             Assert.Equal(255, applied.Pixels[offset + 3]);
         }
     }

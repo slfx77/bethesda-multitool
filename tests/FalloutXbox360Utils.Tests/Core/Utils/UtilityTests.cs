@@ -20,6 +20,25 @@ public class UtilityTests
 
     #endregion
 
+    #region Xbox360MemoryUtils.IsValidPointer
+
+    [Theory]
+    [InlineData(0x40000000u, true)] // HeapBase
+    [InlineData(0x45000000u, true)] // InHeap
+    [InlineData(0x50000000u, false)] // HeapEnd (exclusive)
+    [InlineData(0x82000000u, true)] // ModuleBase
+    [InlineData(0x90000000u, true)] // AboveModuleBase
+    [InlineData(0u, false)] // Zero
+    [InlineData(0xFFFFFFFFu, true)] // MaxUInt32 >= ModuleBase
+    [InlineData(0x30000000u, false)] // BelowHeap
+    [InlineData(0x60000000u, false)] // BetweenHeapAndModule
+    public void IsValidPointer_VariousAddresses(uint address, bool expected)
+    {
+        Assert.Equal(expected, Xbox360MemoryUtils.IsValidPointer(address));
+    }
+
+    #endregion
+
     #region EsmStringUtils.ReadNullTermString (Span overload)
 
     [Fact]
@@ -369,25 +388,6 @@ public class UtilityTests
     public void VaToLong_MaxUInt32_ReturnsNegative1()
     {
         Assert.Equal(-1L, Xbox360MemoryUtils.VaToLong(0xFFFFFFFF));
-    }
-
-    #endregion
-
-    #region Xbox360MemoryUtils.IsValidPointer
-
-    [Theory]
-    [InlineData(0x40000000u, true)]  // HeapBase
-    [InlineData(0x45000000u, true)]  // InHeap
-    [InlineData(0x50000000u, false)] // HeapEnd (exclusive)
-    [InlineData(0x82000000u, true)]  // ModuleBase
-    [InlineData(0x90000000u, true)]  // AboveModuleBase
-    [InlineData(0u, false)]          // Zero
-    [InlineData(0xFFFFFFFFu, true)]  // MaxUInt32 >= ModuleBase
-    [InlineData(0x30000000u, false)] // BelowHeap
-    [InlineData(0x60000000u, false)] // BetweenHeapAndModule
-    public void IsValidPointer_VariousAddresses(uint address, bool expected)
-    {
-        Assert.Equal(expected, Xbox360MemoryUtils.IsValidPointer(address));
     }
 
     #endregion

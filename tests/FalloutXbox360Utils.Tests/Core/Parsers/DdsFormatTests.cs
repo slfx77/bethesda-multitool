@@ -1,7 +1,7 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Dds;
-using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
 using Xunit;
+using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
 
 namespace FalloutXbox360Utils.Tests.Core.Parsers;
 
@@ -48,6 +48,56 @@ public class DdsFormatTests
         Assert.NotNull(result);
         Assert.Equal("little", result.Metadata["endianness"]);
         Assert.False((bool)result.Metadata["isXbox360"]);
+    }
+
+    #endregion
+
+    #region Helper Methods
+
+    private static byte[] CreateDdsHeader(int width, int height, string fourcc, int mipCount = 1)
+    {
+        var data = new byte[256]; // Extra space beyond header
+
+        // Magic "DDS "
+        "DDS "u8.CopyTo(data.AsSpan(0));
+
+        // Header size (124 for standard DDS)
+        WriteUInt32LE(data, 4, 124);
+
+        // Flags
+        WriteUInt32LE(data, 8, 0x1 | 0x2 | 0x4 | 0x1000); // CAPS, HEIGHT, WIDTH, PIXELFORMAT
+
+        // Height
+        WriteUInt32LE(data, 12, (uint)height);
+
+        // Width
+        WriteUInt32LE(data, 16, (uint)width);
+
+        // Pitch or linear size
+        WriteUInt32LE(data, 20, 0);
+
+        // Depth
+        WriteUInt32LE(data, 24, 0);
+
+        // Mip map count
+        WriteUInt32LE(data, 28, (uint)mipCount);
+
+        // Reserved (44 bytes at offset 32)
+
+        // Pixel format starts at offset 76
+        // Size of pixel format structure (32)
+        WriteUInt32LE(data, 76, 32);
+
+        // Pixel format flags (DDPF_FOURCC = 0x4)
+        WriteUInt32LE(data, 80, 0x4);
+
+        // FourCC at offset 84
+        Encoding.ASCII.GetBytes(fourcc).CopyTo(data, 84);
+
+        // RGB bit count (0 for compressed)
+        WriteUInt32LE(data, 88, 0);
+
+        return data;
     }
 
     #endregion
@@ -195,56 +245,6 @@ public class DdsFormatTests
         Assert.NotNull(result);
         // Size should be larger than just the base level
         Assert.True(result.EstimatedSize > 32768 + 128);
-    }
-
-    #endregion
-
-    #region Helper Methods
-
-    private static byte[] CreateDdsHeader(int width, int height, string fourcc, int mipCount = 1)
-    {
-        var data = new byte[256]; // Extra space beyond header
-
-        // Magic "DDS "
-        "DDS "u8.CopyTo(data.AsSpan(0));
-
-        // Header size (124 for standard DDS)
-        WriteUInt32LE(data, 4, 124);
-
-        // Flags
-        WriteUInt32LE(data, 8, 0x1 | 0x2 | 0x4 | 0x1000); // CAPS, HEIGHT, WIDTH, PIXELFORMAT
-
-        // Height
-        WriteUInt32LE(data, 12, (uint)height);
-
-        // Width
-        WriteUInt32LE(data, 16, (uint)width);
-
-        // Pitch or linear size
-        WriteUInt32LE(data, 20, 0);
-
-        // Depth
-        WriteUInt32LE(data, 24, 0);
-
-        // Mip map count
-        WriteUInt32LE(data, 28, (uint)mipCount);
-
-        // Reserved (44 bytes at offset 32)
-
-        // Pixel format starts at offset 76
-        // Size of pixel format structure (32)
-        WriteUInt32LE(data, 76, 32);
-
-        // Pixel format flags (DDPF_FOURCC = 0x4)
-        WriteUInt32LE(data, 80, 0x4);
-
-        // FourCC at offset 84
-        Encoding.ASCII.GetBytes(fourcc).CopyTo(data, 84);
-
-        // RGB bit count (0 for compressed)
-        WriteUInt32LE(data, 88, 0);
-
-        return data;
     }
 
     #endregion

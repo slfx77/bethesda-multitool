@@ -12,13 +12,13 @@ public sealed class NpcHeadBoneCorrectionTests
         var attachmentBones = new Dictionary<string, Matrix4x4>(StringComparer.OrdinalIgnoreCase)
         {
             ["Bip01 Head"] = CreateTransform(
-                translation: new Vector3(1f, 2f, 3f),
-                rotation: Matrix4x4.CreateRotationX(0.35f))
+                new Vector3(1f, 2f, 3f),
+                Matrix4x4.CreateRotationX(0.35f))
         };
 
         var result = NpcRenderHelpers.BuildBonelessHeadAttachmentTransform(
             attachmentBones,
-            poseDeltaCache: null);
+            null);
 
         Assert.True(result.HasValue);
         AssertMatrixEqual(Matrix4x4.CreateTranslation(1f, 2f, 3f), result.Value);
@@ -30,8 +30,8 @@ public sealed class NpcHeadBoneCorrectionTests
         var attachmentBones = new Dictionary<string, Matrix4x4>(StringComparer.OrdinalIgnoreCase)
         {
             ["Bip01 Head"] = CreateTransform(
-                translation: new Vector3(4f, 5f, 6f),
-                rotation: Matrix4x4.CreateRotationX(0.35f))
+                new Vector3(4f, 5f, 6f),
+                Matrix4x4.CreateRotationX(0.35f))
         };
         var poseDeltas = new Dictionary<string, Matrix4x4>(StringComparer.OrdinalIgnoreCase)
         {
@@ -53,8 +53,8 @@ public sealed class NpcHeadBoneCorrectionTests
     public void GetHeadAttachmentCorrection_BonelessIdentityRoot_UsesBonelessAttachmentTransform()
     {
         var targetHeadTransform = CreateTransform(
-            translation: new Vector3(1f, 2f, 3f),
-            rotation: Matrix4x4.CreateRotationX(0.35f));
+            new Vector3(1f, 2f, 3f),
+            Matrix4x4.CreateRotationX(0.35f));
         var bonelessAttachmentTransform = Matrix4x4.CreateTranslation(1f, 2f, 3f);
         var nifBones = new Dictionary<string, Matrix4x4>(StringComparer.OrdinalIgnoreCase)
         {
@@ -76,8 +76,8 @@ public sealed class NpcHeadBoneCorrectionTests
     public void GetHeadAttachmentCorrection_BonelessRotatedRoot_UsesBonelessAttachmentTransform()
     {
         var targetHeadTransform = CreateTransform(
-            translation: new Vector3(4f, 5f, 6f),
-            rotation: Matrix4x4.CreateRotationY(-0.25f));
+            new Vector3(4f, 5f, 6f),
+            Matrix4x4.CreateRotationY(-0.25f));
         var bonelessAttachmentTransform =
             Matrix4x4.CreateRotationZ(-0.15f) *
             Matrix4x4.CreateTranslation(4f, 5f, 6f);
@@ -102,8 +102,8 @@ public sealed class NpcHeadBoneCorrectionTests
     public void GetHeadAttachmentCorrection_BonelessWithoutOverride_UsesTargetHeadTransform()
     {
         var targetHeadTransform = CreateTransform(
-            translation: new Vector3(4f, 5f, 6f),
-            rotation: Matrix4x4.CreateRotationY(-0.25f));
+            new Vector3(4f, 5f, 6f),
+            Matrix4x4.CreateRotationY(-0.25f));
         var rootRotation = Matrix4x4.CreateRotationY(-MathF.PI / 2f);
         var nifBones = new Dictionary<string, Matrix4x4>(StringComparer.OrdinalIgnoreCase)
         {
@@ -122,8 +122,8 @@ public sealed class NpcHeadBoneCorrectionTests
     public void GetHeadAttachmentCorrection_BonelessReflectedRoot_UsesBonelessAttachmentTransform()
     {
         var targetHeadTransform = CreateTransform(
-            translation: new Vector3(7f, 8f, 9f),
-            rotation: Matrix4x4.CreateRotationZ(0.4f));
+            new Vector3(7f, 8f, 9f),
+            Matrix4x4.CreateRotationZ(0.4f));
         var bonelessAttachmentTransform = Matrix4x4.CreateTranslation(7f, 8f, 9f);
         var rootScale = Matrix4x4.CreateScale(-1f, 1f, 1f);
         var nifBones = new Dictionary<string, Matrix4x4>(StringComparer.OrdinalIgnoreCase)
@@ -146,8 +146,8 @@ public sealed class NpcHeadBoneCorrectionTests
     public void GetHeadAttachmentCorrection_HeadEquipmentRootOnlyIdentityRoot_UsesTargetHeadTransform()
     {
         var targetHeadTransform = CreateTransform(
-            translation: new Vector3(2f, 4f, 6f),
-            rotation: Matrix4x4.CreateRotationY(0.25f));
+            new Vector3(2f, 4f, 6f),
+            Matrix4x4.CreateRotationY(0.25f));
         var bonelessAttachmentTransform = Matrix4x4.CreateTranslation(20f, 30f, 40f);
         var nifBones = new Dictionary<string, Matrix4x4>(StringComparer.OrdinalIgnoreCase)
         {
@@ -170,8 +170,8 @@ public sealed class NpcHeadBoneCorrectionTests
     public void GetHeadAttachmentCorrection_HeadEquipmentRootOnlyRotatedRoot_UsesInverseRootTimesTargetHeadTransform()
     {
         var targetHeadTransform = CreateTransform(
-            translation: new Vector3(3f, 5f, 7f),
-            rotation: Matrix4x4.CreateRotationX(0.1f) * Matrix4x4.CreateRotationZ(-0.2f));
+            new Vector3(3f, 5f, 7f),
+            Matrix4x4.CreateRotationX(0.1f) * Matrix4x4.CreateRotationZ(-0.2f));
         var bonelessAttachmentTransform = Matrix4x4.CreateTranslation(30f, 40f, 50f);
         var rootRotation = Matrix4x4.CreateRotationZ(MathF.PI / 2f);
         var nifBones = new Dictionary<string, Matrix4x4>(StringComparer.OrdinalIgnoreCase)
@@ -196,8 +196,8 @@ public sealed class NpcHeadBoneCorrectionTests
     public void GetHeadAttachmentCorrection_HeadEquipmentNamedNodeIdentityRoot_UsesBonelessAttachmentTransform()
     {
         var targetHeadTransform = CreateTransform(
-            translation: new Vector3(9f, 8f, 7f),
-            rotation: Matrix4x4.CreateRotationZ(0.35f));
+            new Vector3(9f, 8f, 7f),
+            Matrix4x4.CreateRotationZ(0.35f));
         var bonelessAttachmentTransform =
             Matrix4x4.CreateRotationX(-0.1f) *
             Matrix4x4.CreateTranslation(20f, 30f, 40f);
@@ -220,11 +220,12 @@ public sealed class NpcHeadBoneCorrectionTests
     }
 
     [Fact]
-    public void GetHeadAttachmentCorrection_HeadEquipmentNamedNodeRotatedRoot_UsesInverseRootTimesBonelessAttachmentTransform()
+    public void
+        GetHeadAttachmentCorrection_HeadEquipmentNamedNodeRotatedRoot_UsesInverseRootTimesBonelessAttachmentTransform()
     {
         var targetHeadTransform = CreateTransform(
-            translation: new Vector3(1f, 3f, 5f),
-            rotation: Matrix4x4.CreateRotationX(0.15f) * Matrix4x4.CreateRotationY(0.25f));
+            new Vector3(1f, 3f, 5f),
+            Matrix4x4.CreateRotationX(0.15f) * Matrix4x4.CreateRotationY(0.25f));
         var bonelessAttachmentTransform =
             Matrix4x4.CreateRotationZ(-0.25f) *
             Matrix4x4.CreateTranslation(30f, 40f, 50f);
@@ -252,11 +253,11 @@ public sealed class NpcHeadBoneCorrectionTests
     public void GetHeadAttachmentCorrection_BonedAttachment_UsesInverseHeadTimesTarget()
     {
         var targetHeadTransform = CreateTransform(
-            translation: new Vector3(3f, 2f, 1f),
-            rotation: Matrix4x4.CreateRotationX(0.15f) * Matrix4x4.CreateRotationY(0.2f));
+            new Vector3(3f, 2f, 1f),
+            Matrix4x4.CreateRotationX(0.15f) * Matrix4x4.CreateRotationY(0.2f));
         var nifHeadTransform = CreateTransform(
-            translation: new Vector3(11f, 12f, 13f),
-            rotation: Matrix4x4.CreateRotationZ(-0.3f));
+            new Vector3(11f, 12f, 13f),
+            Matrix4x4.CreateRotationZ(-0.3f));
         Matrix4x4.Invert(nifHeadTransform, out var invNifHeadTransform);
         var nifBones = new Dictionary<string, Matrix4x4>(StringComparer.OrdinalIgnoreCase)
         {

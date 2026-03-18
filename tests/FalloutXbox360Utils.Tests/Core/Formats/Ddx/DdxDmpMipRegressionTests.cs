@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Globalization;
 using System.Text.Json;
 using DDXConv;
 using FalloutXbox360Utils.Core.Carving;
@@ -9,13 +8,27 @@ using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 using Xunit;
+using Xunit.Sdk;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Ddx;
 
 public sealed class DdxDmpMipRegressionTests
 {
+    public enum ComparisonMode
+    {
+        ExactAlignedRgb,
+        CountAndAlignedDimensions
+    }
+
+    public enum DdxKind
+    {
+        Xdo,
+        Xdr
+    }
+
     private static readonly ConcurrentDictionary<string, Lazy<Task<CarvedDumpContext>>> CarvedDumpCache =
         new(StringComparer.OrdinalIgnoreCase);
+
     private static readonly JsonSerializerOptions MetricsJsonOptions = new() { WriteIndented = true };
 
     public static TheoryData<CarvedRegressionCase> RepresentativeCases =>
@@ -26,120 +39,120 @@ public sealed class DdxDmpMipRegressionTests
             "nv_reflectron_rm.ddx",
             @"textures\terminals\nv_reflectron_rm.ddx",
             DdxKind.Xdo,
-            ExpectedMipCount: 9,
-            ExpectedReferenceOffset: 0,
+            9,
+            0,
             ComparisonMode.ExactAlignedRgb,
-            CompareStartActualMip: 0),
+            0),
         new CarvedRegressionCase(
             "debug_rugsmall01_tail",
             @"Sample\MemoryDump\Fallout_Debug.xex.dmp",
             "rugsmall01.ddx",
             @"textures\clutter\rugs\rugsmall01.ddx",
             DdxKind.Xdo,
-            ExpectedMipCount: 10,
-            ExpectedReferenceOffset: 0,
+            10,
+            0,
             ComparisonMode.ExactAlignedRgb,
-            CompareStartActualMip: 1),
+            1),
         new CarvedRegressionCase(
             "debug_anesthesiamachine01_lod",
             @"Sample\MemoryDump\Fallout_Debug.xex.dmp",
             "anesthesiamachine01.ddx",
             @"textures\clutter\hospital\anesthesiamachine01.ddx",
             DdxKind.Xdo,
-            ExpectedMipCount: 7,
-            ExpectedReferenceOffset: 1,
+            7,
+            1,
             ComparisonMode.CountAndAlignedDimensions,
-            CompareStartActualMip: 0),
+            0),
         new CarvedRegressionCase(
             "debug_impactdecalglass01_n_lod",
             @"Sample\MemoryDump\Fallout_Debug.xex.dmp",
             "impactdecalglass01_n.ddx",
             @"textures\decals\impactdecalglass01_n.ddx",
             DdxKind.Xdo,
-            ExpectedMipCount: 9,
-            ExpectedReferenceOffset: 1,
+            9,
+            1,
             ComparisonMode.CountAndAlignedDimensions,
-            CompareStartActualMip: 0),
+            0),
         new CarvedRegressionCase(
             "debug_nv_reflectron_m_lod",
             @"Sample\MemoryDump\Fallout_Debug.xex.dmp",
             "nv_reflectron_m.ddx",
             @"textures\terminals\nv_reflectron_m.ddx",
             DdxKind.Xdo,
-            ExpectedMipCount: 6,
-            ExpectedReferenceOffset: 1,
+            6,
+            1,
             ComparisonMode.CountAndAlignedDimensions,
-            CompareStartActualMip: 0),
+            0),
         new CarvedRegressionCase(
             "debug_med_history_ok_btn_on_3xdr",
             @"Sample\MemoryDump\Fallout_Debug.xex.dmp",
             "med_history_ok_btn_on.ddx",
             @"textures\terminals\med_history_ok_btn_on.ddx",
             DdxKind.Xdr,
-            ExpectedMipCount: 1,
-            ExpectedReferenceOffset: 0,
+            1,
+            0,
             ComparisonMode.ExactAlignedRgb,
-            CompareStartActualMip: 0),
+            0),
         new CarvedRegressionCase(
             "release2_terminalscreen01",
             @"Sample\MemoryDump\Fallout_Release_Beta.xex2.dmp",
             "terminalscreen01.ddx",
             @"textures\terminals\terminalscreen01.ddx",
             DdxKind.Xdo,
-            ExpectedMipCount: 9,
-            ExpectedReferenceOffset: 0,
+            9,
+            0,
             ComparisonMode.ExactAlignedRgb,
-            CompareStartActualMip: 0),
+            0),
         new CarvedRegressionCase(
             "release2_offrmtrimglass02",
             @"Sample\MemoryDump\Fallout_Release_Beta.xex2.dmp",
             "offrmtrimglass02.ddx",
             @"textures\dungeons\office\offrmtrimglass02.ddx",
             DdxKind.Xdo,
-            ExpectedMipCount: 10,
-            ExpectedReferenceOffset: 0,
+            10,
+            0,
             ComparisonMode.ExactAlignedRgb,
-            CompareStartActualMip: 0),
+            0),
         new CarvedRegressionCase(
             "release2_offswitches01",
             @"Sample\MemoryDump\Fallout_Release_Beta.xex2.dmp",
             "offswitches01.ddx",
             @"textures\dungeons\office\offswitches01.ddx",
             DdxKind.Xdo,
-            ExpectedMipCount: 9,
-            ExpectedReferenceOffset: 0,
+            9,
+            0,
             ComparisonMode.ExactAlignedRgb,
-            CompareStartActualMip: 0),
+            0),
         new CarvedRegressionCase(
             "release2_hairwavy_lod1",
             @"Sample\MemoryDump\Fallout_Release_Beta.xex2.dmp",
             "hairwavy_2.ddx",
             @"textures\characters\hair\hairwavy.ddx",
             DdxKind.Xdo,
-            ExpectedMipCount: 7,
-            ExpectedReferenceOffset: 1,
+            7,
+            1,
             ComparisonMode.CountAndAlignedDimensions,
-            CompareStartActualMip: 0),
+            0),
         new CarvedRegressionCase(
             "release2_outfitweatheredm_n_lod2",
             @"Sample\MemoryDump\Fallout_Release_Beta.xex2.dmp",
             "outfitweatheredm_n.ddx",
             @"textures\armor\1950stylesuit\outfitweatheredm_n.ddx",
             DdxKind.Xdo,
-            ExpectedMipCount: 6,
-            ExpectedReferenceOffset: 2,
+            6,
+            2,
             ComparisonMode.CountAndAlignedDimensions,
-            CompareStartActualMip: 0),
+            0),
         new CarvedRegressionCase(
             "release2_handfemale_sk_3xdr",
             @"Sample\MemoryDump\Fallout_Release_Beta.xex2.dmp",
             "handfemale_sk.ddx",
             @"textures\characters\female\handfemale_sk.ddx",
             DdxKind.Xdr,
-            ExpectedMipCount: 1,
-            ExpectedReferenceOffset: 0,
+            1,
+            0,
             ComparisonMode.CountAndAlignedDimensions,
-            CompareStartActualMip: 0)
+            0)
     ];
 
     [Theory]
@@ -163,7 +176,7 @@ public sealed class DdxDmpMipRegressionTests
         Assert.Equal(regressionCase.Kind, ReadDdxKind(ddxPath));
 
         var referenceDdsPath = Path.Combine(repoRoot, "Sample", "Unpacked_Builds", "PC_Final_Unpacked", "Data",
-            regressionCase.OriginalPath)
+                regressionCase.OriginalPath)
             .Replace(".ddx", ".dds", StringComparison.OrdinalIgnoreCase);
         Assert.True(File.Exists(referenceDdsPath), $"Missing PC reference DDS: {referenceDdsPath}");
 
@@ -172,7 +185,7 @@ public sealed class DdxDmpMipRegressionTests
 
         var outputDds = Path.Combine(artifactRoot, Path.GetFileNameWithoutExtension(entry.Filename) + ".dds");
         var referenceCopy = Path.Combine(artifactRoot, "pc_" + Path.GetFileName(referenceDdsPath));
-        File.Copy(referenceDdsPath, referenceCopy, overwrite: true);
+        File.Copy(referenceDdsPath, referenceCopy, true);
 
         var parser = new DdxParser();
         parser.ConvertDdxToDds(ddxPath, outputDds, new ConversionOptions { SaveAtlas = true });
@@ -271,7 +284,7 @@ public sealed class DdxDmpMipRegressionTests
                     Verbose = false,
                     MaxFilesPerType = 200
                 },
-                progress: null);
+                null);
         }
 
         var entries = await CarveManifest.LoadAsync(manifestPath);
@@ -305,7 +318,7 @@ public sealed class DdxDmpMipRegressionTests
             }
         }
 
-        throw new Xunit.Sdk.XunitException(
+        throw new XunitException(
             $"Could not align converted mip0 size {actualMip0.Width}x{actualMip0.Height} to any reference mip.");
     }
 
@@ -472,18 +485,6 @@ public sealed class DdxDmpMipRegressionTests
         int ExpectedReferenceOffset,
         ComparisonMode Mode,
         int CompareStartActualMip);
-
-    public enum ComparisonMode
-    {
-        ExactAlignedRgb,
-        CountAndAlignedDimensions
-    }
-
-    public enum DdxKind
-    {
-        Xdo,
-        Xdr
-    }
 
     private sealed record CarvedDumpContext(
         string ExtractRoot,

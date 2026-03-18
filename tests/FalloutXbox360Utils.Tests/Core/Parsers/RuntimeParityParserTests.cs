@@ -18,9 +18,44 @@ public sealed class RuntimeParityParserTests : IDisposable
     private const int DataSize = 24 * 1024;
     private const uint HeapBaseVa = 0x40000000;
 
-    private MemoryMappedFile? _mmf;
+    private const byte ExtraOwnershipType = 0x21;
+    private const byte ExtraPersistentCellType = 0x0C;
+    private const byte ExtraStartingPositionType = 0x0F;
+    private const byte ExtraPackageStartLocationType = 0x18;
+    private const byte ExtraLeveledCreatureType = 0x2E;
+    private const byte ExtraLockType = 0x2A;
+    private const byte ExtraTeleportType = 0x2B;
+    private const byte ExtraMapMarkerType = 0x2C;
+    private const byte ExtraMerchantContainerType = 0x3C;
+    private const byte ExtraEnableParentType = 0x37;
+    private const byte ExtraRadiusType = 0x5C;
+    private const byte ExtraStartingWorldOrCellType = 0x49;
+    private const byte ExtraEncounterZoneType = 0x74;
+    private const byte ExtraLinkedRefType = 0x51;
+    private const byte ExtraLinkedRefChildrenType = 0x52;
     private MemoryMappedViewAccessor? _accessor;
+
+    private MemoryMappedFile? _mmf;
     private string? _tempFilePath;
+
+    public void Dispose()
+    {
+        GC.SuppressFinalize(this);
+        _accessor?.Dispose();
+        _mmf?.Dispose();
+
+        if (_tempFilePath != null && File.Exists(_tempFilePath))
+        {
+            try
+            {
+                File.Delete(_tempFilePath);
+            }
+            catch
+            {
+                // Best-effort temp cleanup only.
+            }
+        }
+    }
 
     [Fact]
     public void ParseFormLists_RuntimeOverlayPreservesEsmEditorIdAndFillsEntries()
@@ -137,7 +172,8 @@ public sealed class RuntimeParityParserTests : IDisposable
         WriteTesFormHeader(data, runtimeStructOffset, 0x82010000, 0x15, activatorFormId);
         WriteBounds(data, runtimeStructOffset + 52, -2, -2, 0, 2, 2, 8);
         WriteBSStringT(data, runtimeStructOffset + 68, FileOffsetToVa(nameOffset), "Switch From Runtime", nameOffset);
-        WriteBSStringT(data, runtimeStructOffset + 80, FileOffsetToVa(modelOffset), "meshes\\clutter\\switch01.nif", modelOffset);
+        WriteBSStringT(data, runtimeStructOffset + 80, FileOffsetToVa(modelOffset), "meshes\\clutter\\switch01.nif",
+            modelOffset);
         WriteTesFormHeader(data, scriptOffset, 0x82010000, 0x11, 0x00F20001);
         WriteTesFormHeader(data, soundOffset, 0x82010000, 0x0D, 0x00F20002);
         WriteUInt32BE(data, runtimeStructOffset + 112, FileOffsetToVa(scriptOffset));
@@ -235,7 +271,8 @@ public sealed class RuntimeParityParserTests : IDisposable
         var scanResult = MakeScanResult(
             [
                 new DetectedMainRecord("DIAL", (uint)(topicRecordBytes.Length - 24), 0, topicFormId, 0, false),
-                new DetectedMainRecord("DIAL", (uint)(siblingRecordBytes.Length - 24), siblingRecordOffset, siblingTopicFormId, 0, false)
+                new DetectedMainRecord("DIAL", (uint)(siblingRecordBytes.Length - 24), siblingRecordOffset,
+                    siblingTopicFormId, 0, false)
             ],
             runtimeEditorIds:
             [
@@ -340,7 +377,8 @@ public sealed class RuntimeParityParserTests : IDisposable
         var scanResult = MakeScanResult(
             [
                 new DetectedMainRecord("DIAL", (uint)(topicRecordBytes.Length - 24), 0, topicFormId, 0, false),
-                new DetectedMainRecord("DIAL", (uint)(siblingRecordBytes.Length - 24), siblingRecordOffset, siblingTopicFormId, 0, false)
+                new DetectedMainRecord("DIAL", (uint)(siblingRecordBytes.Length - 24), siblingRecordOffset,
+                    siblingTopicFormId, 0, false)
             ],
             runtimeEditorIds:
             [
@@ -449,8 +487,10 @@ public sealed class RuntimeParityParserTests : IDisposable
 
         var scanResult = MakeScanResult(
             [
-                new DetectedMainRecord("INFO", (uint)(runtimeFilledInfoRecordBytes.Length - 24), 0, runtimeFilledInfoFormId, 0, false),
-                new DetectedMainRecord("INFO", (uint)(esmPreferredInfoRecordBytes.Length - 24), esmPreferredRecordOffset, esmPreferredInfoFormId, 0, false)
+                new DetectedMainRecord("INFO", (uint)(runtimeFilledInfoRecordBytes.Length - 24), 0,
+                    runtimeFilledInfoFormId, 0, false),
+                new DetectedMainRecord("INFO", (uint)(esmPreferredInfoRecordBytes.Length - 24),
+                    esmPreferredRecordOffset, esmPreferredInfoFormId, 0, false)
             ],
             runtimeEditorIds:
             [
@@ -533,9 +573,10 @@ public sealed class RuntimeParityParserTests : IDisposable
             "Objective 10 From Runtime",
             objectiveATextOffset,
             FileOffsetToVa(runtimeStructOffset),
-            initialized: true,
-            state: 1);
-        WriteSimpleListNode(data, objectiveNodeAOffset, FileOffsetToVa(objectiveBOffset), FileOffsetToVa(objectiveNodeBOffset));
+            true,
+            1);
+        WriteSimpleListNode(data, objectiveNodeAOffset, FileOffsetToVa(objectiveBOffset),
+            FileOffsetToVa(objectiveNodeBOffset));
         WriteQuestObjective(
             data,
             objectiveBOffset,
@@ -543,8 +584,8 @@ public sealed class RuntimeParityParserTests : IDisposable
             "Objective 20 From Runtime",
             objectiveBTextOffset,
             FileOffsetToVa(runtimeStructOffset),
-            initialized: true,
-            state: 1);
+            true,
+            1);
         WriteSimpleListNode(data, objectiveNodeBOffset, FileOffsetToVa(objectiveCOffset), 0);
         WriteQuestObjective(
             data,
@@ -553,8 +594,8 @@ public sealed class RuntimeParityParserTests : IDisposable
             "Objective 30 Runtime Only",
             objectiveCTextOffset,
             FileOffsetToVa(runtimeStructOffset),
-            initialized: true,
-            state: 2);
+            true,
+            2);
 
         var scanResult = MakeScanResult(
             [new DetectedMainRecord("QUST", (uint)(questRecordBytes.Length - 24), 0, questFormId, 0, false)],
@@ -632,9 +673,9 @@ public sealed class RuntimeParityParserTests : IDisposable
         WriteSimpleListNode(data, stageNodeBOffset, FileOffsetToVa(stageCOffset), 0);
         WriteQuestStage(data, stageCOffset, 30, FileOffsetToVa(stageCItemOffset));
 
-        WriteQuestStageItem(data, stageAItemOffset, 0x04, FileOffsetToVa(runtimeStructOffset), hasLogEntry: true);
-        WriteQuestStageItem(data, stageBItemOffset, 0x08, FileOffsetToVa(runtimeStructOffset), hasLogEntry: false);
-        WriteQuestStageItem(data, stageCItemOffset, 0x02, FileOffsetToVa(runtimeStructOffset), hasLogEntry: false);
+        WriteQuestStageItem(data, stageAItemOffset, 0x04, FileOffsetToVa(runtimeStructOffset), true);
+        WriteQuestStageItem(data, stageBItemOffset, 0x08, FileOffsetToVa(runtimeStructOffset), false);
+        WriteQuestStageItem(data, stageCItemOffset, 0x02, FileOffsetToVa(runtimeStructOffset), false);
 
         var scanResult = MakeScanResult(
             [new DetectedMainRecord("QUST", (uint)(questRecordBytes.Length - 24), 0, questFormId, 0, false)],
@@ -699,15 +740,16 @@ public sealed class RuntimeParityParserTests : IDisposable
         Array.Copy(worldRecordBytes, 0, data, worldRecordOffset, worldRecordBytes.Length);
 
         WriteTesFormHeader(data, runtimeWorldOffset, 0x82010000, 0x41, worldspaceFormId);
-        WriteBSStringT(data, runtimeWorldOffset + 44, FileOffsetToVa(worldNameOffset), "World Name From Runtime", worldNameOffset);
+        WriteBSStringT(data, runtimeWorldOffset + 44, FileOffsetToVa(worldNameOffset), "World Name From Runtime",
+            worldNameOffset);
         WriteUInt32BE(data, runtimeWorldOffset + 64, FileOffsetToVa(runtimeCellMapOffset));
         WriteUInt32BE(data, runtimeWorldOffset + 68, FileOffsetToVa(runtimeCellOffset));
         WriteInt32BE(data, runtimeWorldOffset + 144, 768);
         WriteInt32BE(data, runtimeWorldOffset + 148, 512);
         WriteUInt16BE(data, runtimeWorldOffset + 152, unchecked((ushort)-4));
         WriteUInt16BE(data, runtimeWorldOffset + 154, unchecked((ushort)-4));
-        WriteUInt16BE(data, runtimeWorldOffset + 156, unchecked((ushort)8));
-        WriteUInt16BE(data, runtimeWorldOffset + 158, unchecked((ushort)8));
+        WriteUInt16BE(data, runtimeWorldOffset + 156, unchecked(8));
+        WriteUInt16BE(data, runtimeWorldOffset + 158, unchecked(8));
 
         WriteUInt32BE(data, runtimeCellMapOffset + 4, 1);
         WriteUInt32BE(data, runtimeCellMapOffset + 8, FileOffsetToVa(runtimeBucketArrayOffset));
@@ -718,15 +760,18 @@ public sealed class RuntimeParityParserTests : IDisposable
         WriteUInt32BE(data, runtimeBucketItemOffset + 8, FileOffsetToVa(runtimeCellOffset));
 
         WriteTesFormHeader(data, runtimeCellOffset, 0x82010000, 0x39, cellFormId);
-        WriteBSStringT(data, runtimeCellOffset + 44, FileOffsetToVa(cellNameOffset), "Cell Name From Runtime", cellNameOffset);
+        WriteBSStringT(data, runtimeCellOffset + 44, FileOffsetToVa(cellNameOffset), "Cell Name From Runtime",
+            cellNameOffset);
         data[runtimeCellOffset + 52] = 0x02;
         WriteFloatBE(data, runtimeCellOffset + 96, 96f);
         WriteUInt32BE(data, runtimeCellOffset + 160, FileOffsetToVa(runtimeWorldOffset));
 
         var scanResult = MakeScanResult(
             [
-                new DetectedMainRecord("CELL", (uint)(cellRecordBytes.Length - 24), 0, cellFormId, cellRecordOffset, false),
-                new DetectedMainRecord("WRLD", (uint)(worldRecordBytes.Length - 24), 0, worldspaceFormId, worldRecordOffset, false)
+                new DetectedMainRecord("CELL", (uint)(cellRecordBytes.Length - 24), 0, cellFormId, cellRecordOffset,
+                    false),
+                new DetectedMainRecord("WRLD", (uint)(worldRecordBytes.Length - 24), 0, worldspaceFormId,
+                    worldRecordOffset, false)
             ],
             runtimeEditorIds:
             [
@@ -929,8 +974,10 @@ public sealed class RuntimeParityParserTests : IDisposable
         {
             MainRecords =
             [
-                new DetectedMainRecord("CELL", (uint)(cellRecordBytes.Length - 24), 0, cellFormId, cellRecordOffset, false),
-                new DetectedMainRecord("WRLD", (uint)(worldRecordBytes.Length - 24), 0, worldspaceFormId, worldRecordOffset, false)
+                new DetectedMainRecord("CELL", (uint)(cellRecordBytes.Length - 24), 0, cellFormId, cellRecordOffset,
+                    false),
+                new DetectedMainRecord("WRLD", (uint)(worldRecordBytes.Length - 24), 0, worldspaceFormId,
+                    worldRecordOffset, false)
             ],
             RefrRecords =
             [
@@ -1005,8 +1052,8 @@ public sealed class RuntimeParityParserTests : IDisposable
         WriteInt32BE(data, runtimeWorldOffset + 148, 512);
         WriteUInt16BE(data, runtimeWorldOffset + 152, unchecked((ushort)-4));
         WriteUInt16BE(data, runtimeWorldOffset + 154, unchecked((ushort)-4));
-        WriteUInt16BE(data, runtimeWorldOffset + 156, unchecked((ushort)8));
-        WriteUInt16BE(data, runtimeWorldOffset + 158, unchecked((ushort)8));
+        WriteUInt16BE(data, runtimeWorldOffset + 156, unchecked(8));
+        WriteUInt16BE(data, runtimeWorldOffset + 158, unchecked(8));
 
         WriteTesFormHeader(data, runtimeRefrOffset, 0x82010000, 0x3A, refrFormId);
         WriteUInt32BE(data, runtimeRefrOffset + 48, FileOffsetToVa(runtimeBaseObjectOffset));
@@ -1024,7 +1071,8 @@ public sealed class RuntimeParityParserTests : IDisposable
         {
             MainRecords =
             [
-                new DetectedMainRecord("WRLD", (uint)(worldRecordBytes.Length - 24), 0, worldspaceFormId, worldRecordOffset, false)
+                new DetectedMainRecord("WRLD", (uint)(worldRecordBytes.Length - 24), 0, worldspaceFormId,
+                    worldRecordOffset, false)
             ],
             RefrRecords =
             [
@@ -1085,7 +1133,8 @@ public sealed class RuntimeParityParserTests : IDisposable
         const int cellNameOffset = 5120;
 
         WriteTesFormHeader(data, runtimeCellOffset, 0x82010000, 0x39, cellFormId);
-        WriteBSStringT(data, runtimeCellOffset + 44, FileOffsetToVa(cellNameOffset), "Runtime Cell Only", cellNameOffset);
+        WriteBSStringT(data, runtimeCellOffset + 44, FileOffsetToVa(cellNameOffset), "Runtime Cell Only",
+            cellNameOffset);
         data[runtimeCellOffset + 52] = 0x00;
         WriteUInt32BE(data, runtimeCellOffset + 160, FileOffsetToVa(runtimeWorldOffset));
 
@@ -1148,7 +1197,8 @@ public sealed class RuntimeParityParserTests : IDisposable
             MainRecords =
             [
                 new DetectedMainRecord("WRLD", (uint)(worldRecordBytes.Length - 24), 0, worldspaceFormId, 0, false),
-                new DetectedMainRecord("CELL", (uint)(cellRecordBytes.Length - 24), 0, cellFormId, worldRecordBytes.Length, false)
+                new DetectedMainRecord("CELL", (uint)(cellRecordBytes.Length - 24), 0, cellFormId,
+                    worldRecordBytes.Length, false)
             ],
             CellToWorldspaceMap =
             {
@@ -1398,23 +1448,31 @@ public sealed class RuntimeParityParserTests : IDisposable
         WriteTesFormHeader(data, runtimeDestinationDoorOffset, 0x82010000, 0x3A, 0x0014BB05);
         WriteTesFormHeader(data, runtimeEncounterZoneOffset, 0x82010000, 0x61, 0x0014BB07);
 
-        WriteExtraPointerNode(data, extraOwnershipOffset, ExtraOwnershipType, FileOffsetToVa(extraLockOffset), FileOffsetToVa(runtimeOwnerOffset));
-        WriteExtraPointerNode(data, extraLockOffset, ExtraLockType, FileOffsetToVa(extraEncounterZoneOffset), FileOffsetToVa(runtimeLockDataOffset));
-        WriteExtraPointerNode(data, extraEncounterZoneOffset, ExtraEncounterZoneType, FileOffsetToVa(extraEnableParentOffset), FileOffsetToVa(runtimeEncounterZoneOffset));
-        WriteExtraEnableParentNode(data, extraEnableParentOffset, FileOffsetToVa(extraLinkedRefOffset), FileOffsetToVa(runtimeEnableParentOffset), 0x02);
-        WriteExtraPointerNode(data, extraLinkedRefOffset, ExtraLinkedRefType, FileOffsetToVa(extraTeleportOffset), FileOffsetToVa(runtimeLinkedRefOffset));
-        WriteExtraPointerNode(data, extraTeleportOffset, ExtraTeleportType, FileOffsetToVa(extraMapMarkerOffset), FileOffsetToVa(runtimeTeleportDataOffset));
+        WriteExtraPointerNode(data, extraOwnershipOffset, ExtraOwnershipType, FileOffsetToVa(extraLockOffset),
+            FileOffsetToVa(runtimeOwnerOffset));
+        WriteExtraPointerNode(data, extraLockOffset, ExtraLockType, FileOffsetToVa(extraEncounterZoneOffset),
+            FileOffsetToVa(runtimeLockDataOffset));
+        WriteExtraPointerNode(data, extraEncounterZoneOffset, ExtraEncounterZoneType,
+            FileOffsetToVa(extraEnableParentOffset), FileOffsetToVa(runtimeEncounterZoneOffset));
+        WriteExtraEnableParentNode(data, extraEnableParentOffset, FileOffsetToVa(extraLinkedRefOffset),
+            FileOffsetToVa(runtimeEnableParentOffset), 0x02);
+        WriteExtraPointerNode(data, extraLinkedRefOffset, ExtraLinkedRefType, FileOffsetToVa(extraTeleportOffset),
+            FileOffsetToVa(runtimeLinkedRefOffset));
+        WriteExtraPointerNode(data, extraTeleportOffset, ExtraTeleportType, FileOffsetToVa(extraMapMarkerOffset),
+            FileOffsetToVa(runtimeTeleportDataOffset));
         WriteExtraPointerNode(data, extraMapMarkerOffset, ExtraMapMarkerType, 0, FileOffsetToVa(runtimeMapDataOffset));
 
         WriteRefrLockData(data, runtimeLockDataOffset, 25, FileOffsetToVa(runtimeLockKeyOffset), 0x03, 4, 2);
         WriteDoorTeleportData(data, runtimeTeleportDataOffset, FileOffsetToVa(runtimeDestinationDoorOffset));
-        WriteMapMarkerData(data, runtimeMapDataOffset, FileOffsetToVa(runtimeMarkerNameOffset), "Runtime Marker", runtimeMarkerNameOffset, 9);
+        WriteMapMarkerData(data, runtimeMapDataOffset, FileOffsetToVa(runtimeMarkerNameOffset), "Runtime Marker",
+            runtimeMarkerNameOffset, 9);
 
         var scanResult = new EsmRecordScanResult
         {
             MainRecords =
             [
-                new DetectedMainRecord("CELL", (uint)(cellRecordBytes.Length - 24), 0, cellFormId, cellRecordOffset, false)
+                new DetectedMainRecord("CELL", (uint)(cellRecordBytes.Length - 24), 0, cellFormId, cellRecordOffset,
+                    false)
             ],
             RefrRecords =
             [
@@ -1512,8 +1570,10 @@ public sealed class RuntimeParityParserTests : IDisposable
         WriteTesFormHeader(data, runtimeChildBOffset, 0x82010000, 0x3B, 0x00145B03);
         WriteTesFormHeader(data, runtimeEncounterZoneOffset, 0x82010000, 0x61, 0x00145B04);
 
-        WriteExtraPointerNode(data, extraPersistentCellOffset, ExtraPersistentCellType, FileOffsetToVa(extraEncounterZoneOffset), FileOffsetToVa(runtimePersistentCellOffset));
-        WriteExtraPointerNode(data, extraEncounterZoneOffset, ExtraEncounterZoneType, FileOffsetToVa(extraLinkedRefChildrenOffset), FileOffsetToVa(runtimeEncounterZoneOffset));
+        WriteExtraPointerNode(data, extraPersistentCellOffset, ExtraPersistentCellType,
+            FileOffsetToVa(extraEncounterZoneOffset), FileOffsetToVa(runtimePersistentCellOffset));
+        WriteExtraPointerNode(data, extraEncounterZoneOffset, ExtraEncounterZoneType,
+            FileOffsetToVa(extraLinkedRefChildrenOffset), FileOffsetToVa(runtimeEncounterZoneOffset));
         WriteExtraLinkedRefChildrenNode(
             data,
             extraLinkedRefChildrenOffset,
@@ -1526,7 +1586,8 @@ public sealed class RuntimeParityParserTests : IDisposable
         {
             MainRecords =
             [
-                new DetectedMainRecord("CELL", (uint)(cellRecordBytes.Length - 24), 0, cellFormId, cellRecordOffset, false)
+                new DetectedMainRecord("CELL", (uint)(cellRecordBytes.Length - 24), 0, cellFormId, cellRecordOffset,
+                    false)
             ],
             RefrRecords =
             [
@@ -1628,7 +1689,8 @@ public sealed class RuntimeParityParserTests : IDisposable
         {
             MainRecords =
             [
-                new DetectedMainRecord("CELL", (uint)(cellRecordBytes.Length - 24), 0, cellFormId, cellRecordOffset, false)
+                new DetectedMainRecord("CELL", (uint)(cellRecordBytes.Length - 24), 0, cellFormId, cellRecordOffset,
+                    false)
             ],
             RefrRecords =
             [
@@ -1708,7 +1770,8 @@ public sealed class RuntimeParityParserTests : IDisposable
         {
             MainRecords =
             [
-                new DetectedMainRecord("CELL", (uint)(cellRecordBytes.Length - 24), 0, cellFormId, cellRecordOffset, false)
+                new DetectedMainRecord("CELL", (uint)(cellRecordBytes.Length - 24), 0, cellFormId, cellRecordOffset,
+                    false)
             ],
             RefrRecords =
             [
@@ -1776,7 +1839,8 @@ public sealed class RuntimeParityParserTests : IDisposable
         {
             MainRecords =
             [
-                new DetectedMainRecord("CELL", (uint)(cellRecordBytes.Length - 24), 0, cellFormId, cellRecordOffset, false)
+                new DetectedMainRecord("CELL", (uint)(cellRecordBytes.Length - 24), 0, cellFormId, cellRecordOffset,
+                    false)
             ],
             RefrRecords =
             [
@@ -1861,7 +1925,8 @@ public sealed class RuntimeParityParserTests : IDisposable
         {
             MainRecords =
             [
-                new DetectedMainRecord("CELL", (uint)(cellRecordBytes.Length - 24), 0, cellFormId, cellRecordOffset, false)
+                new DetectedMainRecord("CELL", (uint)(cellRecordBytes.Length - 24), 0, cellFormId, cellRecordOffset,
+                    false)
             ],
             RefrRecords =
             [
@@ -1895,31 +1960,13 @@ public sealed class RuntimeParityParserTests : IDisposable
         Assert.Equal(0x00145D05u, placedRef.LeveledCreatureTemplateFormId);
     }
 
-    public void Dispose()
-    {
-        GC.SuppressFinalize(this);
-        _accessor?.Dispose();
-        _mmf?.Dispose();
-
-        if (_tempFilePath != null && File.Exists(_tempFilePath))
-        {
-            try
-            {
-                File.Delete(_tempFilePath);
-            }
-            catch
-            {
-                // Best-effort temp cleanup only.
-            }
-        }
-    }
-
     private RecordParser CreateParser(EsmRecordScanResult scanResult, byte[] data)
     {
         _tempFilePath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
         File.WriteAllBytes(_tempFilePath, data);
 
-        _mmf = MemoryMappedFile.CreateFromFile(_tempFilePath, FileMode.Open, null, data.Length, MemoryMappedFileAccess.Read);
+        _mmf = MemoryMappedFile.CreateFromFile(_tempFilePath, FileMode.Open, null, data.Length,
+            MemoryMappedFileAccess.Read);
         _accessor = _mmf.CreateViewAccessor(0, data.Length, MemoryMappedFileAccess.Read);
 
         var minidumpInfo = new MinidumpInfo
@@ -1948,7 +1995,8 @@ public sealed class RuntimeParityParserTests : IDisposable
         WriteUInt32BE(data, fileOffset + 12, formId);
     }
 
-    private static void WriteBSStringT(byte[] data, int bstFileOffset, uint stringVa, string text, int stringDataFileOffset)
+    private static void WriteBSStringT(byte[] data, int bstFileOffset, uint stringVa, string text,
+        int stringDataFileOffset)
     {
         WriteUInt32BE(data, bstFileOffset, stringVa);
         WriteUInt16BE(data, bstFileOffset + 4, (ushort)text.Length);
@@ -2148,20 +2196,4 @@ public sealed class RuntimeParityParserTests : IDisposable
     {
         return unchecked((uint)((gridX << 16) | (ushort)gridY));
     }
-
-    private const byte ExtraOwnershipType = 0x21;
-    private const byte ExtraPersistentCellType = 0x0C;
-    private const byte ExtraStartingPositionType = 0x0F;
-    private const byte ExtraPackageStartLocationType = 0x18;
-    private const byte ExtraLeveledCreatureType = 0x2E;
-    private const byte ExtraLockType = 0x2A;
-    private const byte ExtraTeleportType = 0x2B;
-    private const byte ExtraMapMarkerType = 0x2C;
-    private const byte ExtraMerchantContainerType = 0x3C;
-    private const byte ExtraEnableParentType = 0x37;
-    private const byte ExtraRadiusType = 0x5C;
-    private const byte ExtraStartingWorldOrCellType = 0x49;
-    private const byte ExtraEncounterZoneType = 0x74;
-    private const byte ExtraLinkedRefType = 0x51;
-    private const byte ExtraLinkedRefChildrenType = 0x52;
 }

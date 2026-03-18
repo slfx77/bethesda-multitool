@@ -16,7 +16,7 @@ public sealed class ArmorRecordScannerTests
         var recordBytes = EsmTestRecordBuilder.BuildRecordBytes(
             0x00012345,
             "ARMO",
-            bigEndian: false,
+            false,
             ("EDID", EsmTestRecordBuilder.NullTermString("ArmorBoomerWrist")),
             ("BMDT", bmdt),
             ("BIPL", BitConverter.GetBytes(0x00054321u)),
@@ -32,7 +32,7 @@ public sealed class ArmorRecordScannerTests
             TotalSize = (uint)recordBytes.Length
         };
 
-        var scanEntry = ArmorRecordScanner.Process(recordBytes, bigEndian: false, record);
+        var scanEntry = ArmorRecordScanner.Process(recordBytes, false, record);
 
         Assert.NotNull(scanEntry);
         Assert.Equal(0x04u, scanEntry!.BipedFlags);

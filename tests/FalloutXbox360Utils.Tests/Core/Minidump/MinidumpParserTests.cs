@@ -1,6 +1,6 @@
 using FalloutXbox360Utils.Core.Minidump;
-using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
 using Xunit;
+using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
 
 namespace FalloutXbox360Utils.Tests.Core.Minidump;
 

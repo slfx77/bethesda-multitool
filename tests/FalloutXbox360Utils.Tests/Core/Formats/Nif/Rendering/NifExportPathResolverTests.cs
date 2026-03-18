@@ -57,8 +57,8 @@ public sealed class NifExportPathResolverTests
 
         var sources = NifExportPathResolver.ResolveTextureSourcePaths(
             nifPath,
-            explicitDataRoots: null,
-            explicitTextureSourcePaths: null,
+            null,
+            null,
             out var error);
 
         Assert.Null(error);
@@ -82,7 +82,7 @@ public sealed class NifExportPathResolverTests
         {
             if (Directory.Exists(Path))
             {
-                Directory.Delete(Path, recursive: true);
+                Directory.Delete(Path, true);
             }
         }
     }

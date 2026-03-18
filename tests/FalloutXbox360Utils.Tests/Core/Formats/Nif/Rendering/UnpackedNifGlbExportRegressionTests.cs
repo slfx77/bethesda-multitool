@@ -1,5 +1,4 @@
 using FalloutXbox360Utils.CLI.Rendering.Nif;
-using FalloutXbox360Utils.Tests.Core;
 using SharpGLTF.Schema2;
 using Xunit;
 
@@ -50,7 +49,7 @@ public sealed class UnpackedNifGlbExportRegressionTests
         {
             if (Directory.Exists(Path))
             {
-                Directory.Delete(Path, recursive: true);
+                Directory.Delete(Path, true);
             }
         }
     }

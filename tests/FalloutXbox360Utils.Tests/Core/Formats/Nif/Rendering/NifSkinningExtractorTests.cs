@@ -14,11 +14,11 @@ public sealed class NifSkinningExtractorTests
         {
             Bones =
             [
-                new NifBoneSkinInfo { VertexWeights = [((ushort)0, 0.50f)] },
-                new NifBoneSkinInfo { VertexWeights = [((ushort)0, 0.25f)] },
-                new NifBoneSkinInfo { VertexWeights = [((ushort)0, 0.15f)] },
-                new NifBoneSkinInfo { VertexWeights = [((ushort)0, 0.05f)] },
-                new NifBoneSkinInfo { VertexWeights = [((ushort)0, 0.05f)] }
+                new NifBoneSkinInfo { VertexWeights = [(0, 0.50f)] },
+                new NifBoneSkinInfo { VertexWeights = [(0, 0.25f)] },
+                new NifBoneSkinInfo { VertexWeights = [(0, 0.15f)] },
+                new NifBoneSkinInfo { VertexWeights = [(0, 0.05f)] },
+                new NifBoneSkinInfo { VertexWeights = [(0, 0.05f)] }
             ]
         };
 

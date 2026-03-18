@@ -68,7 +68,7 @@ public sealed class RuntimeLayoutProbeEngineTests
             "Diag Probe",
             logs.Add,
             sample => sample,
-            logPerSampleDetails: true);
+            true);
 
         Assert.Equal("b", result.Winner.Layout);
         Assert.Contains(logs, line => line.Contains("[Diag Probe] Sample: sample-1", StringComparison.Ordinal));

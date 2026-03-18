@@ -2,7 +2,6 @@ using System.Numerics;
 using FalloutXbox360Utils.Core.Formats.Dds;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
-using SharpGLTF.Runtime;
 using SharpGLTF.Schema2;
 using Xunit;
 
@@ -79,9 +78,9 @@ public sealed class NpcExportHelperTests
             ],
             2,
             2,
-            generateMipChain: false);
+            false);
 
-        var png = NpcGlbTextureEncoder.EncodePng(texture, flipGreenChannel: true);
+        var png = NpcGlbTextureEncoder.EncodePng(texture, true);
 
         Assert.Equal(
             new byte[] { 0x89, 0x50, 0x4E, 0x47 },
@@ -98,7 +97,7 @@ public sealed class NpcExportHelperTests
             ],
             2,
             1,
-            generateMipChain: false);
+            false);
 
         var glossStrength = NpcGlbMaterialTuning.EstimateGlossStrength(texture);
 
@@ -117,7 +116,7 @@ public sealed class NpcExportHelperTests
             EnvMapScale = 1f
         };
 
-        var profile = NpcGlbMaterialTuning.Derive(submesh, normalTexture: null);
+        var profile = NpcGlbMaterialTuning.Derive(submesh, null);
 
         Assert.True(profile.RoughnessFactor <= 0.18f);
         Assert.True(profile.SpecularFactor >= 0.9f);
@@ -139,12 +138,13 @@ public sealed class NpcExportHelperTests
             ],
             2,
             1,
-            generateMipChain: false);
+            false);
 
         var profile = NpcGlbMaterialTuning.Derive(submesh, normalTexture);
 
         Assert.True(profile.RoughnessFactor >= 0.9f, $"Expected matte roughness, found {profile.RoughnessFactor}");
-        Assert.True(profile.SpecularFactor <= 0.3f, $"Expected conservative non-eye specular factor, found {profile.SpecularFactor}");
+        Assert.True(profile.SpecularFactor <= 0.3f,
+            $"Expected conservative non-eye specular factor, found {profile.SpecularFactor}");
     }
 
     [Fact]
@@ -177,12 +177,14 @@ public sealed class NpcExportHelperTests
             ],
             2,
             1,
-            generateMipChain: false);
+            false);
 
         var profile = NpcGlbMaterialTuning.Derive(submesh, normalTexture);
 
-        Assert.True(profile.RoughnessFactor < 0.45f, $"Expected tuned roughness under 0.45, found {profile.RoughnessFactor}");
-        Assert.True(profile.SpecularFactor > 0.45f, $"Expected elevated envmap specular factor, found {profile.SpecularFactor}");
+        Assert.True(profile.RoughnessFactor < 0.45f,
+            $"Expected tuned roughness under 0.45, found {profile.RoughnessFactor}");
+        Assert.True(profile.SpecularFactor > 0.45f,
+            $"Expected elevated envmap specular factor, found {profile.SpecularFactor}");
     }
 
     [Fact]
@@ -221,7 +223,7 @@ public sealed class NpcExportHelperTests
             ],
             2,
             1,
-            generateMipChain: false);
+            false);
         var specularTexture = DecodedTexture.FromBaseLevel(
             [
                 10, 1, 2, 3,
@@ -229,7 +231,7 @@ public sealed class NpcExportHelperTests
             ],
             2,
             1,
-            generateMipChain: false);
+            false);
 
         var merged = NpcGlbNormalMapPacker.MergeNormalAndSpecular(normalTexture, specularTexture);
 
@@ -252,7 +254,7 @@ public sealed class NpcExportHelperTests
             ],
             2,
             1,
-            generateMipChain: false);
+            false);
         var environmentMask = DecodedTexture.FromBaseLevel(
             [
                 255, 255, 255, 255,
@@ -260,16 +262,17 @@ public sealed class NpcExportHelperTests
             ],
             2,
             1,
-            generateMipChain: false);
+            false);
 
         var packed = NpcGlbMaterialTexturePacker.BuildMetallicRoughnessTexture(
             normalTexture,
-            hasGlossAlpha: true,
+            true,
             environmentMask,
-            hasEnvironmentMapping: true);
+            true);
 
         Assert.NotNull(packed);
-        Assert.True(packed!.Pixels[1] < packed.Pixels[5], "Masked glossy texel should be less rough than the matte texel.");
+        Assert.True(packed!.Pixels[1] < packed.Pixels[5],
+            "Masked glossy texel should be less rough than the matte texel.");
     }
 
     [Fact]
@@ -282,7 +285,7 @@ public sealed class NpcExportHelperTests
             ],
             2,
             1,
-            generateMipChain: false);
+            false);
         var environmentMask = DecodedTexture.FromBaseLevel(
             [
                 255, 255, 255, 255,
@@ -290,13 +293,13 @@ public sealed class NpcExportHelperTests
             ],
             2,
             1,
-            generateMipChain: false);
+            false);
 
         var packed = NpcGlbMaterialTexturePacker.BuildSpecularFactorTexture(
             normalTexture,
-            hasGlossAlpha: true,
+            true,
             environmentMask,
-            hasEnvironmentMapping: true);
+            true);
 
         Assert.NotNull(packed);
         Assert.Equal(255, packed!.Pixels[3]);
@@ -313,7 +316,7 @@ public sealed class NpcExportHelperTests
             ],
             2,
             1,
-            generateMipChain: false);
+            false);
 
         var occlusion = NpcGlbMaterialTexturePacker.BuildOcclusionTexture(heightTexture);
 
@@ -339,7 +342,7 @@ public sealed class NpcExportHelperTests
             ],
             1,
             1,
-            generateMipChain: false);
+            false);
 
         var prepared = NpcGlbAlphaTexturePacker.Prepare(submesh, diffuseTexture);
 
@@ -370,7 +373,7 @@ public sealed class NpcExportHelperTests
             ],
             2,
             1,
-            generateMipChain: false);
+            false);
 
         var prepared = NpcGlbAlphaTexturePacker.Prepare(submesh, diffuseTexture);
 
@@ -389,7 +392,7 @@ public sealed class NpcExportHelperTests
             TintColor = (0.25f, 0.35f, 0.45f)
         };
 
-        var baseColor = NpcGlbTintColorEncoder.BuildBaseColor(submesh, hasDiffuseTexture: true);
+        var baseColor = NpcGlbTintColorEncoder.BuildBaseColor(submesh, true);
 
         Assert.Equal(new Vector4(1f, 1f, 1f, 0.75f), baseColor);
     }
@@ -404,7 +407,7 @@ public sealed class NpcExportHelperTests
             TintColor = (0.30f, 0.25f, 0.20f)
         };
 
-        var baseColor = NpcGlbTintColorEncoder.BuildBaseColor(submesh, hasDiffuseTexture: false);
+        var baseColor = NpcGlbTintColorEncoder.BuildBaseColor(submesh, false);
 
         Assert.Equal(0.60f, baseColor.X, 2);
         Assert.Equal(0.50f, baseColor.Y, 2);
@@ -473,7 +476,7 @@ public sealed class NpcExportHelperTests
             ],
             1,
             1,
-            generateMipChain: false);
+            false);
 
         var tinted = NpcGlbTintColorEncoder.BakeDiffuseTexture(submesh, diffuseTexture);
 
@@ -601,7 +604,7 @@ public sealed class NpcExportHelperTests
                     0f, 1f, 0f,
                     0f, 0f, 1f
                 ],
-                Triangles = [(ushort)0, 1, 2],
+                Triangles = [0, 1, 2],
                 Normals =
                 [
                     1f, 0f, 0f,
@@ -644,7 +647,7 @@ public sealed class NpcExportHelperTests
                     xOffset + 1f, 0f, 0f,
                     xOffset + 0f, 1f, 0f
                 ],
-                Triangles = [(ushort)0, 1, 2],
+                Triangles = [0, 1, 2],
                 Normals =
                 [
                     0f, 0f, 1f,
@@ -664,21 +667,25 @@ public sealed class NpcExportHelperTests
                 InverseBindMatrices = [Matrix4x4.Identity, Matrix4x4.Identity],
                 PerVertexInfluences =
                 [
-                    [ (BoneIdx: 0, Weight: 1f) ],
-                    [ (BoneIdx: 1, Weight: 1f) ],
-                    [ (BoneIdx: 1, Weight: 1f) ]
+                    [(BoneIdx: 0, Weight: 1f)],
+                    [(BoneIdx: 1, Weight: 1f)],
+                    [(BoneIdx: 1, Weight: 1f)]
                 ]
             }
         };
     }
 
     private static void AssertVectorEquals(Vector3 expected, Vector3 actual, float tolerance = 0.0001f)
-        => Assert.True(
+    {
+        Assert.True(
             IsNearlyEqual(actual, expected, tolerance),
             $"Expected {expected} but found {actual}");
+    }
 
     private static bool IsNearlyEqual(Vector3 actual, Vector3 expected, float tolerance = 0.0001f)
-        => Vector3.Distance(actual, expected) <= tolerance;
+    {
+        return Vector3.Distance(actual, expected) <= tolerance;
+    }
 
     private sealed class TemporaryDirectory : IDisposable
     {
@@ -696,7 +703,7 @@ public sealed class NpcExportHelperTests
         {
             if (Directory.Exists(Path))
             {
-                Directory.Delete(Path, recursive: true);
+                Directory.Delete(Path, true);
             }
         }
     }

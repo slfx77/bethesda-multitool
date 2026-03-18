@@ -11,7 +11,7 @@ public sealed class NpcCameraDefaultsTests
     {
         var camera = new CameraConfig();
 
-        var views = camera.ResolveViews(defaultAzimuth: 90f, defaultElevation: 0f);
+        var views = camera.ResolveViews(90f, 0f);
 
         var view = Assert.Single(views);
         Assert.Equal(string.Empty, view.Suffix);
@@ -28,7 +28,7 @@ public sealed class NpcCameraDefaultsTests
             ElevationOverridden = true
         };
 
-        var views = camera.ResolveViews(defaultAzimuth: 90f, defaultElevation: 0f);
+        var views = camera.ResolveViews(90f, 0f);
 
         var view = Assert.Single(views);
         Assert.Equal(90f, view.Azimuth);

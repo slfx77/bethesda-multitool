@@ -5,8 +5,8 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using FalloutXbox360Utils.Core.Formats.Nif;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
@@ -59,8 +59,8 @@ public sealed class NpcAppearanceHelperTests
         index.Weapons[200] = BuildWeapon(
             @"weapons\rifle.nif",
             WeaponType.TwoHandRifle,
-            damage: 25,
-            shotsPerSec: 2.5f);
+            25,
+            2.5f);
 
         var npc = new NpcScanEntry
         {
@@ -231,13 +231,13 @@ public sealed class NpcAppearanceHelperTests
         index.Weapons[200] = BuildWeapon(
             @"weapons\pistol.nif",
             WeaponType.OneHandPistol,
-            damage: 12,
-            shotsPerSec: 1.5f);
+            12,
+            1.5f);
         index.Weapons[201] = BuildWeapon(
             @"weapons\rifleauto.nif",
             WeaponType.TwoHandAutomatic,
-            damage: 18,
-            shotsPerSec: 6f);
+            18,
+            6f);
         index.Npcs[0x99u] = new NpcScanEntry
         {
             InventoryItems = [new InventoryItem(200, 1)]
@@ -314,7 +314,7 @@ public sealed class NpcAppearanceHelperTests
 
         var equippedItems = resolver.Resolve(
             [new InventoryItem(1, 1), new InventoryItem(2, 1)],
-            isFemale: false);
+            false);
 
         Assert.NotNull(equippedItems);
         var item = Assert.Single(equippedItems);
@@ -326,7 +326,7 @@ public sealed class NpcAppearanceHelperTests
     public void WeaponResolver_UsesFirstUseWeaponPackageBeforeBestWeaponScoring()
     {
         var resolver = CreateWeaponResolver(
-            packages: new Dictionary<uint, PackageScanEntry>
+            new Dictionary<uint, PackageScanEntry>
             {
                 [10] = new()
                 {
@@ -334,10 +334,10 @@ public sealed class NpcAppearanceHelperTests
                     UseWeaponFormId = 2
                 }
             },
-            weapons: new Dictionary<uint, WeapScanEntry>
+            new Dictionary<uint, WeapScanEntry>
             {
-                [2] = BuildWeapon(@"weapons\pistol.nif", WeaponType.OneHandPistol, damage: 12, shotsPerSec: 3f),
-                [3] = BuildWeapon(@"weapons\rifle.nif", WeaponType.TwoHandRifle, damage: 40, shotsPerSec: 4f)
+                [2] = BuildWeapon(@"weapons\pistol.nif", WeaponType.OneHandPistol, 12, 3f),
+                [3] = BuildWeapon(@"weapons\rifle.nif", WeaponType.TwoHandRifle, 40, 4f)
             });
 
         var visual = resolver.Resolve(
@@ -358,14 +358,14 @@ public sealed class NpcAppearanceHelperTests
     public void WeaponResolver_UnanimousWeaponsUnequipped_OmitsWeapon()
     {
         var resolver = CreateWeaponResolver(
-            packages: new Dictionary<uint, PackageScanEntry>
+            new Dictionary<uint, PackageScanEntry>
             {
                 [10] = new() { GeneralFlags = 0x00200000 },
                 [11] = new() { GeneralFlags = 0x00200000 }
             },
-            weapons: new Dictionary<uint, WeapScanEntry>
+            new Dictionary<uint, WeapScanEntry>
             {
-                [2] = BuildWeapon(@"weapons\rifle.nif", WeaponType.TwoHandRifle, damage: 40, shotsPerSec: 3f)
+                [2] = BuildWeapon(@"weapons\rifle.nif", WeaponType.TwoHandRifle, 40, 3f)
             });
 
         var visual = resolver.Resolve(
@@ -386,8 +386,8 @@ public sealed class NpcAppearanceHelperTests
         var resolver = CreateWeaponResolver(
             weapons: new Dictionary<uint, WeapScanEntry>
             {
-                [2] = BuildWeapon(@"weapons\slowrifle.nif", WeaponType.TwoHandRifle, damage: 45, shotsPerSec: 1f),
-                [3] = BuildWeapon(@"weapons\autorifle.nif", WeaponType.TwoHandAutomatic, damage: 20, shotsPerSec: 4f)
+                [2] = BuildWeapon(@"weapons\slowrifle.nif", WeaponType.TwoHandRifle, 45, 1f),
+                [3] = BuildWeapon(@"weapons\autorifle.nif", WeaponType.TwoHandAutomatic, 20, 4f)
             });
 
         var visual = resolver.Resolve(
@@ -406,8 +406,8 @@ public sealed class NpcAppearanceHelperTests
         var resolver = CreateWeaponResolver(
             weapons: new Dictionary<uint, WeapScanEntry>
             {
-                [2] = BuildWeapon(@"weapons\first.nif", WeaponType.OneHandPistol, damage: 20, shotsPerSec: 2f),
-                [3] = BuildWeapon(@"weapons\second.nif", WeaponType.OneHandPistol, damage: 20, shotsPerSec: 2f)
+                [2] = BuildWeapon(@"weapons\first.nif", WeaponType.OneHandPistol, 20, 2f),
+                [3] = BuildWeapon(@"weapons\second.nif", WeaponType.OneHandPistol, 20, 2f)
             });
 
         var visual = resolver.Resolve(
@@ -424,8 +424,8 @@ public sealed class NpcAppearanceHelperTests
         var resolver = CreateWeaponResolver(
             weapons: new Dictionary<uint, WeapScanEntry>
             {
-                [2] = BuildWeapon(@"weapons\rifle.nif", WeaponType.TwoHandRifle, damage: 80, shotsPerSec: 5f, ammoFormId: 90),
-                [3] = BuildWeapon(@"weapons\pistol.nif", WeaponType.OneHandPistol, damage: 10, shotsPerSec: 2f)
+                [2] = BuildWeapon(@"weapons\rifle.nif", WeaponType.TwoHandRifle, 80, 5f, 90),
+                [3] = BuildWeapon(@"weapons\pistol.nif", WeaponType.OneHandPistol, 10, 2f)
             });
 
         var visual = resolver.Resolve(
@@ -441,7 +441,7 @@ public sealed class NpcAppearanceHelperTests
     public void WeaponResolver_NonRenderablePackageWeapon_OmitsInsteadOfGuessingFallback()
     {
         var resolver = CreateWeaponResolver(
-            packages: new Dictionary<uint, PackageScanEntry>
+            new Dictionary<uint, PackageScanEntry>
             {
                 [10] = new()
                 {
@@ -449,10 +449,10 @@ public sealed class NpcAppearanceHelperTests
                     UseWeaponFormId = 2
                 }
             },
-            weapons: new Dictionary<uint, WeapScanEntry>
+            new Dictionary<uint, WeapScanEntry>
             {
-                [2] = BuildWeapon(@"weapons\grenade.nif", WeaponType.OneHandGrenade, damage: 100, shotsPerSec: 1f),
-                [3] = BuildWeapon(@"weapons\rifle.nif", WeaponType.TwoHandRifle, damage: 35, shotsPerSec: 2f)
+                [2] = BuildWeapon(@"weapons\grenade.nif", WeaponType.OneHandGrenade, 100, 1f),
+                [3] = BuildWeapon(@"weapons\rifle.nif", WeaponType.TwoHandRifle, 35, 2f)
             });
 
         var visual = resolver.Resolve(
@@ -472,8 +472,8 @@ public sealed class NpcAppearanceHelperTests
         var resolver = CreateWeaponResolver(
             weapons: new Dictionary<uint, WeapScanEntry>
             {
-                [2] = BuildWeapon(@"weapons\pistol.nif", WeaponType.OneHandPistol, damage: 10, shotsPerSec: 2f),
-                [3] = BuildWeapon(@"weapons\rifle.nif", WeaponType.TwoHandRifle, damage: 50, shotsPerSec: 1f)
+                [2] = BuildWeapon(@"weapons\pistol.nif", WeaponType.OneHandPistol, 10, 2f),
+                [3] = BuildWeapon(@"weapons\rifle.nif", WeaponType.TwoHandRifle, 50, 1f)
             });
 
         var visual = resolver.Resolve(
@@ -507,8 +507,8 @@ public sealed class NpcAppearanceHelperTests
         var resolver = CreateWeaponResolver(
             weapons: new Dictionary<uint, WeapScanEntry>
             {
-                [2] = BuildWeapon(@"weapons\pistol.nif", WeaponType.OneHandPistol, damage: 10, shotsPerSec: 2f),
-                [3] = BuildWeapon(@"weapons\rifle.nif", WeaponType.TwoHandRifle, damage: 50, shotsPerSec: 1f)
+                [2] = BuildWeapon(@"weapons\pistol.nif", WeaponType.OneHandPistol, 10, 2f),
+                [3] = BuildWeapon(@"weapons\rifle.nif", WeaponType.TwoHandRifle, 50, 1f)
             });
 
         var visual = resolver.Resolve(
@@ -527,7 +527,7 @@ public sealed class NpcAppearanceHelperTests
         var resolver = CreateWeaponResolver(
             weapons: new Dictionary<uint, WeapScanEntry>
             {
-                [2] = BuildWeapon(@"weapons\\plasma.nif", WeaponType.OneHandPistolEnergy, damage: 22, shotsPerSec: 1.6f)
+                [2] = BuildWeapon(@"weapons\\plasma.nif", WeaponType.OneHandPistolEnergy, 22, 1.6f)
             });
 
         var visual = resolver.Resolve(
@@ -545,7 +545,7 @@ public sealed class NpcAppearanceHelperTests
         var resolver = CreateWeaponResolver(
             weapons: new Dictionary<uint, WeapScanEntry>
             {
-                [2] = BuildWeapon(@"weapons\\spear.nif", WeaponType.OneHandThrown, damage: 18, shotsPerSec: 1.2f)
+                [2] = BuildWeapon(@"weapons\\spear.nif", WeaponType.OneHandThrown, 18, 1.2f)
             });
 
         var visual = resolver.Resolve(
@@ -566,8 +566,8 @@ public sealed class NpcAppearanceHelperTests
                 [2] = BuildWeapon(
                     @"weapons\\embedded.nif",
                     WeaponType.TwoHandRifle,
-                    damage: 22,
-                    shotsPerSec: 1.5f,
+                    22,
+                    1.5f,
                     flags: 0x20,
                     embeddedWeaponNode: "Bip01 Spine2")
             });
@@ -589,8 +589,8 @@ public sealed class NpcAppearanceHelperTests
                 [2] = BuildWeapon(
                     @"weapons\hand2hand\powerfistrigid.nif",
                     WeaponType.HandToHandMelee,
-                    damage: 22,
-                    shotsPerSec: 1.5f)
+                    22,
+                    1.5f)
             },
             armorAddons: new Dictionary<uint, ArmaAddonScanEntry>
             {
@@ -621,8 +621,8 @@ public sealed class NpcAppearanceHelperTests
                 [2] = BuildWeapon(
                     @"weapons\hand2hand\powerfistrigid.nif",
                     WeaponType.HandToHandMelee,
-                    damage: 22,
-                    shotsPerSec: 1.5f)
+                    22,
+                    1.5f)
             },
             armorAddons: new Dictionary<uint, ArmaAddonScanEntry>
             {
@@ -650,8 +650,8 @@ public sealed class NpcAppearanceHelperTests
                 [2] = BuildWeapon(
                     @"weapons\hand2hand\boxinggoldlt.nif",
                     WeaponType.HandToHandMelee,
-                    damage: 18,
-                    shotsPerSec: 1.3f)
+                    18,
+                    1.3f)
             },
             armorAddons: new Dictionary<uint, ArmaAddonScanEntry>
             {
@@ -678,9 +678,13 @@ public sealed class NpcAppearanceHelperTests
         Assert.NotNull(visual.AddonMeshes);
         Assert.Equal(2, visual.AddonMeshes!.Count);
         Assert.Contains(visual.AddonMeshes, addon => addon.BipedFlags == 0x08u &&
-                                                     string.Equals(addon.MeshPath, @"meshes\weapons\hand2hand\boxinggoldlt.nif", StringComparison.OrdinalIgnoreCase));
+                                                     string.Equals(addon.MeshPath,
+                                                         @"meshes\weapons\hand2hand\boxinggoldlt.nif",
+                                                         StringComparison.OrdinalIgnoreCase));
         Assert.Contains(visual.AddonMeshes, addon => addon.BipedFlags == 0x10u &&
-                                                     string.Equals(addon.MeshPath, @"meshes\weapons\hand2hand\boxinggoldrt.nif", StringComparison.OrdinalIgnoreCase));
+                                                     string.Equals(addon.MeshPath,
+                                                         @"meshes\weapons\hand2hand\boxinggoldrt.nif",
+                                                         StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -692,8 +696,8 @@ public sealed class NpcAppearanceHelperTests
                 [2] = BuildWeapon(
                     @"weapons\hand2hand\powerfistrigid.nif",
                     WeaponType.HandToHandMelee,
-                    damage: 22,
-                    shotsPerSec: 1.5f)
+                    22,
+                    1.5f)
             });
 
         var visual = resolver.Resolve(
@@ -714,8 +718,8 @@ public sealed class NpcAppearanceHelperTests
                 [2] = BuildWeapon(
                     @"weapons\hand2hand\powerfistrigid.nif",
                     WeaponType.HandToHandMelee,
-                    damage: 22,
-                    shotsPerSec: 1.5f)
+                    22,
+                    1.5f)
             },
             idles: new Dictionary<uint, IdleScanEntry>
             {
@@ -744,8 +748,8 @@ public sealed class NpcAppearanceHelperTests
                 [2] = BuildWeapon(
                     @"weapons\hand2hand\ballisticfistrigid.nif",
                     WeaponType.HandToHandMelee,
-                    damage: 22,
-                    shotsPerSec: 1.5f)
+                    22,
+                    1.5f)
             },
             idles: new Dictionary<uint, IdleScanEntry>
             {
@@ -774,8 +778,8 @@ public sealed class NpcAppearanceHelperTests
                 [2] = BuildWeapon(
                     @"weapons\hand2hand\boxinggoldlt.nif",
                     WeaponType.HandToHandMelee,
-                    damage: 18,
-                    shotsPerSec: 1.3f)
+                    18,
+                    1.3f)
             },
             idles: new Dictionary<uint, IdleScanEntry>
             {
@@ -806,7 +810,7 @@ public sealed class NpcAppearanceHelperTests
         var resolver = CreateWeaponResolver(
             weapons: new Dictionary<uint, WeapScanEntry>
             {
-                [2] = BuildWeapon(@"weapons\melee.nif", weaponType, damage: 22, shotsPerSec: 1.5f)
+                [2] = BuildWeapon(@"weapons\melee.nif", weaponType, 22, 1.5f)
             });
 
         var visual = resolver.Resolve(
@@ -1128,8 +1132,8 @@ public sealed class NpcAppearanceHelperTests
             idleBoneTransforms,
             @"meshes\characters\_male\skeleton.nif",
             meshArchives,
-            preferProcessStyleRebuild: true,
-            preferEquippedForearmMount: false,
+            true,
+            false,
             out var attachmentNodeName,
             out var attachmentTransform,
             out var omitReason);
@@ -1158,8 +1162,8 @@ public sealed class NpcAppearanceHelperTests
             idleBoneTransforms,
             @"meshes\characters\_male\skeleton.nif",
             meshArchives,
-            preferProcessStyleRebuild: false,
-            preferEquippedForearmMount: false,
+            false,
+            false,
             out var attachmentNodeName,
             out var attachmentTransform,
             out var omitReason);
@@ -1188,8 +1192,8 @@ public sealed class NpcAppearanceHelperTests
             idleBoneTransforms,
             @"meshes\characters\_male\skeleton.nif",
             meshArchives,
-            preferProcessStyleRebuild: false,
-            preferEquippedForearmMount: true,
+            false,
+            true,
             out var attachmentNodeName,
             out var attachmentTransform,
             out var omitReason);
@@ -1232,7 +1236,7 @@ public sealed class NpcAppearanceHelperTests
         var equipOverrides = NifAnimationParser.ParseIdlePoseOverrides(
             equipKf.Value.Data,
             equipKf.Value.Info,
-            sampleLastKeyframe: true);
+            true);
         var idleOverrides = NifAnimationParser.ParseIdlePoseOverrides(
             idleKf.Value.Data,
             idleKf.Value.Info);
@@ -1240,7 +1244,8 @@ public sealed class NpcAppearanceHelperTests
         Assert.NotNull(equipOverrides);
         Assert.Contains(equipOverrides!.Keys, k => string.Equals(k, "Weapon", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(equipOverrides.Keys, k => string.Equals(k, "Bip01 R Hand", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(equipOverrides.Keys, k => string.Equals(k, "Bip01 R Forearm", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(equipOverrides.Keys,
+            k => string.Equals(k, "Bip01 R Forearm", StringComparison.OrdinalIgnoreCase));
         Assert.Null(idleOverrides);
     }
 
@@ -1278,7 +1283,7 @@ public sealed class NpcAppearanceHelperTests
         var equipOverrides = NifAnimationParser.ParseIdlePoseOverrides(
             equipKf.Value.Data,
             equipKf.Value.Info,
-            sampleLastKeyframe: true);
+            true);
         var parentOverride = NpcBodyBuilder.TryParseSequenceParentBoneName(equipKf.Value.Info);
         Assert.NotNull(equipOverrides);
         Assert.Equal("Bip01 R ForeTwist", parentOverride);
@@ -1314,7 +1319,7 @@ public sealed class NpcAppearanceHelperTests
         var equipOverrides = NifAnimationParser.ParseIdlePoseOverrides(
             equipKf.Value.Data,
             equipKf.Value.Info,
-            sampleLastKeyframe: true);
+            true);
         Assert.NotNull(equipOverrides);
         Assert.Contains("Weapon", equipOverrides!.Keys, StringComparer.OrdinalIgnoreCase);
 
@@ -1348,7 +1353,7 @@ public sealed class NpcAppearanceHelperTests
         var holsterOverrides = NifAnimationParser.ParseIdlePoseOverrides(
             holsterKf.Value.Data,
             holsterKf.Value.Info,
-            sampleLastKeyframe: true);
+            true);
         var parentOverride = NpcBodyBuilder.TryParseSequenceParentBoneName(holsterKf.Value.Info);
 
         Assert.NotNull(holsterOverrides);
@@ -1459,10 +1464,10 @@ public sealed class NpcAppearanceHelperTests
     {
         var handTexture = NpcAppearancePathDeriver.DeriveHandTexturePath(
             @"characters\ghoul\UpperBodyMale.dds",
-            isFemale: false);
+            false);
         var bodyEgtPaths = NpcAppearancePathDeriver.DeriveBodyEgtPaths(
             @"characters\ghoul\headghoul.nif",
-            isFemale: false);
+            false);
 
         Assert.Equal(@"textures\characters\ghoul\HandMale.dds", handTexture);
         Assert.Equal(@"meshes\characters\_male\upperbodyhumanghoul.egt", bodyEgtPaths.BodyEgt);

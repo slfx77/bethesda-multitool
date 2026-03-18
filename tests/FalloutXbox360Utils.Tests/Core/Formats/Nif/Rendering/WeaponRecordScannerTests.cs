@@ -20,7 +20,7 @@ public sealed class WeaponRecordScannerTests
         var recordBytes = EsmTestRecordBuilder.BuildRecordBytes(
             0x00001234,
             "WEAP",
-            bigEndian: false,
+            false,
             ("EDID", EsmTestRecordBuilder.NullTermString("TestWeapon")),
             ("MODL", EsmTestRecordBuilder.NullTermString(@"weapons\test.nif")),
             ("DNAM", dnam));
@@ -35,7 +35,7 @@ public sealed class WeaponRecordScannerTests
             TotalSize = (uint)recordBytes.Length
         };
 
-        var scanEntry = WeaponRecordScanner.Process(recordBytes, bigEndian: false, record);
+        var scanEntry = WeaponRecordScanner.Process(recordBytes, false, record);
 
         Assert.NotNull(scanEntry);
         Assert.Equal(expectedType, scanEntry!.WeaponType);
@@ -51,7 +51,7 @@ public sealed class WeaponRecordScannerTests
         var recordBytes = EsmTestRecordBuilder.BuildRecordBytes(
             0x00001235,
             "WEAP",
-            bigEndian: false,
+            false,
             ("EDID", EsmTestRecordBuilder.NullTermString("EmbeddedWeapon")),
             ("MODL", EsmTestRecordBuilder.NullTermString(@"weapons\embedded.nif")),
             ("NNAM", EsmTestRecordBuilder.NullTermString("Bip01 Spine2")),
@@ -67,7 +67,7 @@ public sealed class WeaponRecordScannerTests
             TotalSize = (uint)recordBytes.Length
         };
 
-        var scanEntry = WeaponRecordScanner.Process(recordBytes, bigEndian: false, record);
+        var scanEntry = WeaponRecordScanner.Process(recordBytes, false, record);
 
         Assert.NotNull(scanEntry);
         Assert.Equal("Bip01 Spine2", scanEntry!.EmbeddedWeaponNode);
@@ -83,7 +83,7 @@ public sealed class WeaponRecordScannerTests
         var recordBytes = EsmTestRecordBuilder.BuildRecordBytes(
             0x00001236,
             "WEAP",
-            bigEndian: false,
+            false,
             ("EDID", EsmTestRecordBuilder.NullTermString("WorldModelWeapon")),
             ("MODL", EsmTestRecordBuilder.NullTermString(@"weapons\firstperson.nif")),
             ("MOD2", EsmTestRecordBuilder.NullTermString(@"weapons\world.nif")),
@@ -99,7 +99,7 @@ public sealed class WeaponRecordScannerTests
             TotalSize = (uint)recordBytes.Length
         };
 
-        var scanEntry = WeaponRecordScanner.Process(recordBytes, bigEndian: false, record);
+        var scanEntry = WeaponRecordScanner.Process(recordBytes, false, record);
 
         Assert.NotNull(scanEntry);
         Assert.Equal(@"weapons\firstperson.nif", scanEntry!.ModelPath);

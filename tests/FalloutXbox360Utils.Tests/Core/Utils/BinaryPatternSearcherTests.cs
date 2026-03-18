@@ -23,7 +23,7 @@ public sealed class BinaryPatternSearcherTests
         var matches = BinaryPatternSearcher.FindTextMatches(
             data,
             "alpha",
-            ignoreCase: true);
+            true);
 
         Assert.Equal([0L, 6L, 12L], matches);
     }
@@ -42,7 +42,7 @@ public sealed class BinaryPatternSearcherTests
             var count = BinaryPatternSearcher.CountTextMatchesInFile(
                 tempFilePath,
                 "outfitf.ddx",
-                ignoreCase: true);
+                true);
 
             Assert.Equal(2, count);
         }

@@ -12,8 +12,10 @@ internal static class ScriptTestHelpers
     ///     Walk up from test bin directory to find a sample file relative to repo root.
     ///     Delegates to <see cref="SampleFileFixture.FindSamplePath" />.
     /// </summary>
-    public static string? FindSamplePath(string relativePath) =>
-        SampleFileFixture.FindSamplePath(relativePath);
+    public static string? FindSamplePath(string relativePath)
+    {
+        return SampleFileFixture.FindSamplePath(relativePath);
+    }
 
     /// <summary>
     ///     Extract flow-control keywords from script text for structural comparison.

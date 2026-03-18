@@ -4,7 +4,6 @@ using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using Xunit;
-using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
 using static FalloutXbox360Utils.Tests.Helpers.EsmTestRecordBuilder;
 
 namespace FalloutXbox360Utils.Tests.Core.Parsers;

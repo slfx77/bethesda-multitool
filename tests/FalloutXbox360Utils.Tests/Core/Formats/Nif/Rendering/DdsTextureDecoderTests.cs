@@ -18,10 +18,10 @@ public sealed class DdsTextureDecoderTests
         int bytesPerBlock)
     {
         var ddsData = CreateCompressedDds(
-            width: 8,
-            height: 8,
+            8,
+            8,
             fourCc,
-            mipCount: 4,
+            4,
             bytesPerBlock);
 
         var decoded = DdsTextureDecoder.Decode(ddsData);

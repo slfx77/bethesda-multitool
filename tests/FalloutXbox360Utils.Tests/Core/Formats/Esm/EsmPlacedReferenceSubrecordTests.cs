@@ -42,7 +42,7 @@ public sealed class EsmPlacedReferenceSubrecordTests
         };
 
         var scanResult = new EsmRecordScanResult();
-        EsmDataExtractor.ExtractRefrRecordsFromParsed(scanResult, [record], bigEndian: false);
+        EsmDataExtractor.ExtractRefrRecordsFromParsed(scanResult, [record], false);
 
         var refr = Assert.Single(scanResult.RefrRecords);
         Assert.Equal(baseFormId, refr.BaseFormId);
@@ -85,7 +85,7 @@ public sealed class EsmPlacedReferenceSubrecordTests
         };
 
         var scanResult = new EsmRecordScanResult();
-        EsmDataExtractor.ExtractRefrRecordsFromParsed(scanResult, [record], bigEndian: false);
+        EsmDataExtractor.ExtractRefrRecordsFromParsed(scanResult, [record], false);
 
         var refr = Assert.Single(scanResult.RefrRecords);
         Assert.Null(refr.LinkedRefKeywordFormId);
@@ -116,7 +116,7 @@ public sealed class EsmPlacedReferenceSubrecordTests
         };
 
         var scanResult = new EsmRecordScanResult();
-        EsmDataExtractor.ExtractRefrRecordsFromParsed(scanResult, [record], bigEndian: false);
+        EsmDataExtractor.ExtractRefrRecordsFromParsed(scanResult, [record], false);
 
         var refr = Assert.Single(scanResult.RefrRecords);
         Assert.Equal(192.5f, refr.Radius);
@@ -170,7 +170,7 @@ public sealed class EsmPlacedReferenceSubrecordTests
     private static ParsedSubrecord MakeEnableParentSubrecord(uint parentFormId, byte flags)
     {
         Span<byte> data = stackalloc byte[8];
-        BinaryPrimitives.WriteUInt32LittleEndian(data[0..4], parentFormId);
+        BinaryPrimitives.WriteUInt32LittleEndian(data[..4], parentFormId);
         data[4] = flags;
         return new ParsedSubrecord
         {
@@ -183,7 +183,7 @@ public sealed class EsmPlacedReferenceSubrecordTests
     private static ParsedSubrecord MakeEightByteLinkedRefSubrecord(uint keywordFormId, uint linkedRefFormId)
     {
         Span<byte> data = stackalloc byte[8];
-        BinaryPrimitives.WriteUInt32LittleEndian(data[0..4], keywordFormId);
+        BinaryPrimitives.WriteUInt32LittleEndian(data[..4], keywordFormId);
         BinaryPrimitives.WriteUInt32LittleEndian(data[4..8], linkedRefFormId);
         return new ParsedSubrecord
         {

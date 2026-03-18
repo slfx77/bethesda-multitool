@@ -1,9 +1,7 @@
-using System.Buffers.Binary;
-using System.Text;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
-using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
 using Xunit;
+using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
 
 namespace FalloutXbox360Utils.Tests.Core.Minidump;
 
@@ -263,7 +261,7 @@ public class RttiReaderTests
         var reader = new RttiReader(info, stream);
 
         // Act — scan the striped region
-        var results = reader.ScanRange(BaseVA + 0x200, BaseVA + 0x210, 4);
+        var results = reader.ScanRange(BaseVA + 0x200, BaseVA + 0x210);
 
         // Assert
         Assert.Equal(2, results.Count);
@@ -291,7 +289,7 @@ public class RttiReaderTests
         var reader = new RttiReader(info, stream);
 
         // Act
-        var results = reader.ScanRange(BaseVA + 0x100, BaseVA + 0x10C, 4);
+        var results = reader.ScanRange(BaseVA + 0x100, BaseVA + 0x10C);
 
         // Assert — should only return 1 result despite 3 occurrences
         Assert.Single(results);

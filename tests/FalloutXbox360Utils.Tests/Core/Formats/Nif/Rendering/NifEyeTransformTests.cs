@@ -54,14 +54,14 @@ public sealed class NifEyeTransformTests
     public void HumanEyes_DirectBonelessAttachment_PlacesEyesInSockets()
     {
         var head = LoadHeadReference();
-        var leftEye = AttachEye(EyeLeftPath, head.Bones, head.EyeAttachmentTransform, applyRootCompensation: true);
-        var rightEye = AttachEye(EyeRightPath, head.Bones, head.EyeAttachmentTransform, applyRootCompensation: true);
+        var leftEye = AttachEye(EyeLeftPath, head.Bones, head.EyeAttachmentTransform, true);
+        var rightEye = AttachEye(EyeRightPath, head.Bones, head.EyeAttachmentTransform, true);
 
         var leftBounds = GetBounds(leftEye);
         var rightBounds = GetBounds(rightEye);
 
-        Assert.True(IsEyeInsideHeadSocket(leftBounds, expectedSign: -1f, head.Bounds));
-        Assert.True(IsEyeInsideHeadSocket(rightBounds, expectedSign: 1f, head.Bounds));
+        Assert.True(IsEyeInsideHeadSocket(leftBounds, -1f, head.Bounds));
+        Assert.True(IsEyeInsideHeadSocket(rightBounds, 1f, head.Bounds));
 
         Assert.True(leftBounds.CenterX < 0f, $"Expected left eye center X < 0, got {leftBounds.CenterX:F3}");
         Assert.True(rightBounds.CenterX > 0f, $"Expected right eye center X > 0, got {rightBounds.CenterX:F3}");
@@ -77,25 +77,25 @@ public sealed class NifEyeTransformTests
             EyeLeftPath,
             head.Bones,
             head.EyeAttachmentTransform,
-            applyRootCompensation: true));
+            true));
         var rightCompensated = GetBounds(AttachEye(
             EyeRightPath,
             head.Bones,
             head.EyeAttachmentTransform,
-            applyRootCompensation: true));
+            true));
         var leftUncompensated = GetBounds(AttachEye(
             EyeLeftPath,
             head.Bones,
             head.EyeAttachmentTransform,
-            applyRootCompensation: false));
+            false));
         var rightUncompensated = GetBounds(AttachEye(
             EyeRightPath,
             head.Bones,
             head.EyeAttachmentTransform,
-            applyRootCompensation: false));
+            false));
 
-        Assert.False(IsEyeInsideHeadSocket(leftUncompensated, expectedSign: -1f, head.Bounds));
-        Assert.False(IsEyeInsideHeadSocket(rightUncompensated, expectedSign: 1f, head.Bounds));
+        Assert.False(IsEyeInsideHeadSocket(leftUncompensated, -1f, head.Bounds));
+        Assert.False(IsEyeInsideHeadSocket(rightUncompensated, 1f, head.Bounds));
 
         Assert.True(MathF.Abs(leftUncompensated.CenterX - leftCompensated.CenterX) > 4f);
         Assert.True(MathF.Abs(rightUncompensated.CenterX - rightCompensated.CenterX) > 4f);
@@ -124,7 +124,7 @@ public sealed class NifEyeTransformTests
         Assert.NotNull(headModel);
         Assert.True(headModel.HasGeometry);
 
-        var bonelessTransform = NpcRenderHelpers.BuildBonelessHeadAttachmentTransform(bones, poseDeltaCache: null);
+        var bonelessTransform = NpcRenderHelpers.BuildBonelessHeadAttachmentTransform(bones, null);
         var eyeAttachmentTransform = bonelessTransform ?? Matrix4x4.CreateTranslation(headBone.Translation);
 
         return new HeadReference(bones, GetBounds(headModel), eyeAttachmentTransform);

@@ -1,5 +1,3 @@
-using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm;
@@ -13,13 +11,14 @@ public sealed class RaceFaceGenSectionIntegrationTests(ITestOutputHelper output,
     [InlineData(0x0000424Au, "AfricanAmerican")]
     [InlineData(0x000038E5u, "Hispanic")]
     [Trait("Category", "Slow")]
-    public void PcFinalRuntimeMismatchRaces_HaveExplicitMaleAndFemaleFaceGenSections(uint formId, string expectedEditorId)
+    public void PcFinalRuntimeMismatchRaces_HaveExplicitMaleAndFemaleFaceGenSections(uint formId,
+        string expectedEditorId)
     {
         Assert.SkipWhen(samples.PcFinalEsm is null, "PC final ESM not available");
 
         var pipeline = PcFinalEsmPipelineCache.GetOrBuild(samples.PcFinalEsm!);
-        var parsedRace = pipeline.ParsedRecords.FirstOrDefault(
-            record => record.Header.Signature == "RACE" && record.Header.FormId == formId);
+        var parsedRace = pipeline.ParsedRecords.FirstOrDefault(record =>
+            record.Header.Signature == "RACE" && record.Header.FormId == formId);
         var semanticRace = pipeline.Collection.Races.FirstOrDefault(race => race.FormId == formId);
 
         Assert.NotNull(parsedRace);

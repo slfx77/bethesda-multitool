@@ -17,11 +17,11 @@ public class EsmEditorIdValidatorTests
     [InlineData("MS01")]
     [InlineData("DialogueTopic")]
     [InlineData("NVDLC01SomeQuest")]
-    [InlineData("ab")]           // Minimum length (2 chars)
-    [InlineData("Test_Name")]    // Underscore is valid
-    [InlineData("x_y")]          // Short with underscore
-    [InlineData("A1B2C3")]       // Mixed alphanumeric
-    [InlineData("9mmPistol")]    // Starts with digit
+    [InlineData("ab")] // Minimum length (2 chars)
+    [InlineData("Test_Name")] // Underscore is valid
+    [InlineData("x_y")] // Short with underscore
+    [InlineData("A1B2C3")] // Mixed alphanumeric
+    [InlineData("9mmPistol")] // Starts with digit
     public void IsValidEditorId_ValidNames_ReturnsTrue(string name)
     {
         Assert.True(EsmEditorIdValidator.IsValidEditorId(name));
@@ -56,15 +56,15 @@ public class EsmEditorIdValidatorTests
     public void IsValidEditorId_ExactlyMaxLength_ReturnsTrue()
     {
         // 200 chars should be accepted (use non-repeating pattern to avoid HasRepeatedPattern)
-        var maxName = string.Concat(Enumerable.Range(0, 20).Select(i => $"AbCdEfGhIj"));
+        var maxName = string.Concat(Enumerable.Range(0, 20).Select(i => "AbCdEfGhIj"));
         Assert.Equal(200, maxName.Length);
         Assert.True(EsmEditorIdValidator.IsValidEditorId(maxName));
     }
 
     [Theory]
-    [InlineData("_Leading")]     // Starts with underscore
-    [InlineData(".dotstart")]    // Starts with dot
-    [InlineData(" space")]       // Starts with space
+    [InlineData("_Leading")] // Starts with underscore
+    [InlineData(".dotstart")] // Starts with dot
+    [InlineData(" space")] // Starts with space
     public void IsValidEditorId_InvalidStartChar_ReturnsFalse(string name)
     {
         Assert.False(EsmEditorIdValidator.IsValidEditorId(name));
@@ -102,10 +102,10 @@ public class EsmEditorIdValidatorTests
     #region HasRepeatedPattern
 
     [Theory]
-    [InlineData("AAAAAAAAA")]       // Pattern "AA" repeats 4+ times
-    [InlineData("ABABABABAB")]      // Pattern "AB" repeats 5 times
-    [InlineData("katSkatSkatS")]    // Pattern "katS" repeats 3 times
-    [InlineData("xyzxyzxyz")]       // Pattern "xyz" repeats 3 times
+    [InlineData("AAAAAAAAA")] // Pattern "AA" repeats 4+ times
+    [InlineData("ABABABABAB")] // Pattern "AB" repeats 5 times
+    [InlineData("katSkatSkatS")] // Pattern "katS" repeats 3 times
+    [InlineData("xyzxyzxyz")] // Pattern "xyz" repeats 3 times
     [InlineData("abcdefabcdefabcdef")] // Pattern "abcdef" repeats 3 times
     public void HasRepeatedPattern_RepeatingStrings_ReturnsTrue(string s)
     {
@@ -116,8 +116,8 @@ public class EsmEditorIdValidatorTests
     [InlineData("Normal")]
     [InlineData("WeapPistol")]
     [InlineData("DialogueTopic01")]
-    [InlineData("ABCDEFGHIJ")]      // All different chars
-    [InlineData("TestName")]        // Real-looking editor ID
+    [InlineData("ABCDEFGHIJ")] // All different chars
+    [InlineData("TestName")] // Real-looking editor ID
     public void HasRepeatedPattern_NonRepeatingStrings_ReturnsFalse(string s)
     {
         Assert.False(EsmEditorIdValidator.HasRepeatedPattern(s));

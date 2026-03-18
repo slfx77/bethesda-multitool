@@ -1,7 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Dds;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
-using FalloutXbox360Utils.Tests.Core;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
@@ -18,8 +17,8 @@ public sealed class NifAlphaCompositionTests
     public void Classify_LeavesOpaqueSubmeshOpaqueWhenOnlyTextureHasAlpha()
     {
         var submesh = CreateQuadSubmesh(
-            y: 0f,
-            diffuseTexturePath: JacketTexturePath);
+            0f,
+            JacketTexturePath);
         var texture = CreateTexture(
             2,
             1,
@@ -37,9 +36,9 @@ public sealed class NifAlphaCompositionTests
     public void Classify_TintedHairFallbackUsesCutoutWhenTextureHasAlpha()
     {
         var submesh = CreateQuadSubmesh(
-            y: 0f,
-            diffuseTexturePath: @"textures\characters\hair\samplehair.dds",
-            shapeName: "HairStrands");
+            0f,
+            @"textures\characters\hair\samplehair.dds",
+            "HairStrands");
         submesh.TintColor = (0.5f, 0.4f, 0.3f);
         var texture = CreateTexture(
             2,
@@ -78,11 +77,11 @@ public sealed class NifAlphaCompositionTests
                 (0, 0, 0, 0)));
 
         var model = CreateModel(
-            CreateQuadSubmesh(y: -1f, diffuseTexturePath: BackTexturePath),
-            CreateQuadSubmesh(y: 0f, diffuseTexturePath: JacketTexturePath),
+            CreateQuadSubmesh(-1f, BackTexturePath),
+            CreateQuadSubmesh(0f, JacketTexturePath),
             CreateQuadSubmesh(
-                y: 1f,
-                diffuseTexturePath: GrimeTexturePath,
+                1f,
+                GrimeTexturePath,
                 hasAlphaBlend: true));
 
         var cpuSprite = RenderCpu(model, textureResolver);
@@ -95,12 +94,12 @@ public sealed class NifAlphaCompositionTests
         var gpuSprite = renderer.Render(
             model,
             textureResolver,
-            pixelsPerUnit: 1f,
-            minSize: 32,
-            maxSize: 64,
-            azimuthDeg: 90f,
-            elevationDeg: 0f,
-            fixedSize: 64);
+            1f,
+            32,
+            64,
+            90f,
+            0f,
+            64);
 
         AssertPairShowsOpaqueBaseAndTransparentGrime(gpuSprite);
         AssertVisiblePixelsRemainOpaque(gpuSprite!);
@@ -121,8 +120,8 @@ public sealed class NifAlphaCompositionTests
 
         var model = CreateModel(
             CreateQuadSubmesh(
-                y: 0f,
-                diffuseTexturePath: FrontBlendTexturePath,
+                0f,
+                FrontBlendTexturePath,
                 hasAlphaTest: true,
                 alphaTestThreshold: 0,
                 alphaTestFunction: 4));
@@ -134,12 +133,12 @@ public sealed class NifAlphaCompositionTests
         var gpuSprite = renderer.Render(
             model,
             textureResolver,
-            pixelsPerUnit: 1f,
-            minSize: 32,
-            maxSize: 64,
-            azimuthDeg: 90f,
-            elevationDeg: 0f,
-            fixedSize: 64);
+            1f,
+            32,
+            64,
+            90f,
+            0f,
+            64);
 
         Assert.NotNull(gpuSprite);
         AssertVisiblePixelsRemainOpaque(gpuSprite!);
@@ -161,10 +160,10 @@ public sealed class NifAlphaCompositionTests
             CreateTexture(1, 1, (0, 255, 0, 128)));
 
         var model = CreateModel(
-            CreateQuadSubmesh(y: 0f, diffuseTexturePath: BackTexturePath),
+            CreateQuadSubmesh(0f, BackTexturePath),
             CreateQuadSubmesh(
-                y: 1f,
-                diffuseTexturePath: FrontBlendTexturePath,
+                1f,
+                FrontBlendTexturePath,
                 hasAlphaBlend: true,
                 srcBlendMode: srcBlendMode,
                 dstBlendMode: dstBlendMode));
@@ -176,12 +175,12 @@ public sealed class NifAlphaCompositionTests
         var gpuSprite = renderer.Render(
             model,
             textureResolver,
-            pixelsPerUnit: 1f,
-            minSize: 32,
-            maxSize: 64,
-            azimuthDeg: 90f,
-            elevationDeg: 0f,
-            fixedSize: 64);
+            1f,
+            32,
+            64,
+            90f,
+            0f,
+            64);
         var gpuStats = SummarizeVisiblePixels(gpuSprite!);
 
         Assert.InRange(gpuStats.AvgR, 0f, 16f);
@@ -215,8 +214,8 @@ public sealed class NifAlphaCompositionTests
 
         var model = CreateModel(
             CreateQuadSubmesh(
-                y: 0f,
-                diffuseTexturePath: FrontBlendTexturePath,
+                0f,
+                FrontBlendTexturePath,
                 hasAlphaBlend: true,
                 vertexColors: vertexColors,
                 useVertexColors: false));
@@ -232,12 +231,12 @@ public sealed class NifAlphaCompositionTests
         var gpuSprite = renderer.Render(
             model,
             textureResolver,
-            pixelsPerUnit: 1f,
-            minSize: 32,
-            maxSize: 64,
-            azimuthDeg: 90f,
-            elevationDeg: 0f,
-            fixedSize: 64);
+            1f,
+            32,
+            64,
+            90f,
+            0f,
+            64);
 
         Assert.NotNull(gpuSprite);
         AssertPixelIsNearNeutralWhite(ReadPixel(gpuSprite!, gpuSprite.Width / 2, gpuSprite.Height / 2));
@@ -248,12 +247,12 @@ public sealed class NifAlphaCompositionTests
         return NifSpriteRenderer.Render(
             model,
             textureResolver,
-            pixelsPerUnit: 1f,
-            minSize: 32,
-            maxSize: 64,
-            azimuthDeg: 90f,
-            elevationDeg: 0f,
-            fixedSize: 64);
+            1f,
+            32,
+            64,
+            90f,
+            0f,
+            64);
     }
 
     private static NifRenderableModel CreateModel(params RenderableSubmesh[] submeshes)
@@ -287,9 +286,9 @@ public sealed class NifAlphaCompositionTests
             Positions =
             [
                 -1f, y, -1f,
-                 1f, y, -1f,
-                 1f, y,  1f,
-                -1f, y,  1f
+                1f, y, -1f,
+                1f, y, 1f,
+                -1f, y, 1f
             ],
             Triangles = [0, 1, 2, 0, 2, 3],
             UVs = [0f, 0f, 1f, 0f, 1f, 1f, 0f, 1f],
@@ -394,13 +393,19 @@ public sealed class NifAlphaCompositionTests
     }
 
     private static bool IsDark((byte R, byte G, byte B, byte A) pixel)
-        => pixel.R < 20 && pixel.G < 20 && pixel.B < 20 && pixel.A > 0;
+    {
+        return pixel.R < 20 && pixel.G < 20 && pixel.B < 20 && pixel.A > 0;
+    }
 
     private static bool IsRedDominant((byte R, byte G, byte B, byte A) pixel)
-        => pixel.R > 96 && pixel.R > pixel.G + 32 && pixel.R > pixel.B + 32 && pixel.A > 0;
+    {
+        return pixel.R > 96 && pixel.R > pixel.G + 32 && pixel.R > pixel.B + 32 && pixel.A > 0;
+    }
 
     private static bool IsBlueDominant((byte R, byte G, byte B, byte A) pixel)
-        => pixel.B > 96 && pixel.B > pixel.R + 32 && pixel.B > pixel.G + 32 && pixel.A > 0;
+    {
+        return pixel.B > 96 && pixel.B > pixel.R + 32 && pixel.B > pixel.G + 32 && pixel.A > 0;
+    }
 
     private static void AssertPixelIsNearNeutralWhite((byte R, byte G, byte B, byte A) pixel)
     {
@@ -414,10 +419,10 @@ public sealed class NifAlphaCompositionTests
 
     private sealed class RendererStateScope : IDisposable
     {
+        private readonly float _bumpStrength;
         private readonly bool _disableBilinear;
         private readonly bool _disableBumpMapping;
         private readonly bool _disableTextures;
-        private readonly float _bumpStrength;
 
         public RendererStateScope()
         {

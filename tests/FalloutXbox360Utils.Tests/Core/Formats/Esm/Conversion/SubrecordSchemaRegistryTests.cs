@@ -83,7 +83,7 @@ public class SubrecordSchemaRegistryTests
     [InlineData("XNAM", 16)]
     [InlineData("YNAM", 16)]
     [InlineData("NAM4", 16)]
-    [InlineData("AIAD", 8)]  // Keyed *IAD subrecord (first char is key, followed by "IAD")
+    [InlineData("AIAD", 8)] // Keyed *IAD subrecord (first char is key, followed by "IAD")
     [InlineData("QQQQ", 12)] // Unknown IMAD subrecords default to FloatArray
     public void GetSchema_ImadFloatArraySubrecord_ReturnsFloatArray(string signature, int size)
     {

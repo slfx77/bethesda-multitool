@@ -14,9 +14,44 @@ public sealed class RuntimeParityStructReaderTests : IDisposable
     private const int DataSize = 16 * 1024;
     private const uint HeapBaseVa = 0x40000000;
 
+    private const byte ExtraOwnershipType = 0x21;
+    private const byte ExtraPersistentCellType = 0x0C;
+    private const byte ExtraStartingPositionType = 0x0F;
+    private const byte ExtraPackageStartLocationType = 0x18;
+    private const byte ExtraLeveledCreatureType = 0x2E;
+    private const byte ExtraLockType = 0x2A;
+    private const byte ExtraTeleportType = 0x2B;
+    private const byte ExtraMapMarkerType = 0x2C;
+    private const byte ExtraMerchantContainerType = 0x3C;
+    private const byte ExtraEnableParentType = 0x37;
+    private const byte ExtraRadiusType = 0x5C;
+    private const byte ExtraStartingWorldOrCellType = 0x49;
+    private const byte ExtraEncounterZoneType = 0x74;
+    private const byte ExtraLinkedRefType = 0x51;
+    private const byte ExtraLinkedRefChildrenType = 0x52;
+
     private MemoryMappedViewAccessor? _accessor;
     private MemoryMappedFile? _mmf;
     private string? _tempFilePath;
+
+    public void Dispose()
+    {
+        GC.SuppressFinalize(this);
+        _accessor?.Dispose();
+        _mmf?.Dispose();
+
+        if (_tempFilePath != null && File.Exists(_tempFilePath))
+        {
+            try
+            {
+                File.Delete(_tempFilePath);
+            }
+            catch
+            {
+                // Best-effort temp cleanup only.
+            }
+        }
+    }
 
     [Fact]
     public void ReadRuntimeFormList_WithSimpleList_ReturnsOrderedFormIds()
@@ -79,7 +114,8 @@ public sealed class RuntimeParityStructReaderTests : IDisposable
         WriteUInt16BE(data, leveledObjectBOffset + 6, 20);
 
         var reader = CreateReader(data);
-        var result = reader.ReadRuntimeLeveledList(MakeEntry("LeveledItemsTest", leveledListFormId, 0x34, structOffset));
+        var result =
+            reader.ReadRuntimeLeveledList(MakeEntry("LeveledItemsTest", leveledListFormId, 0x34, structOffset));
 
         Assert.NotNull(result);
         Assert.Equal("LVLI", result.ListType);
@@ -275,8 +311,8 @@ public sealed class RuntimeParityStructReaderTests : IDisposable
             "Find the component",
             objectiveATextOffset,
             FileOffsetToVa(structOffset),
-            initialized: true,
-            state: 1);
+            true,
+            1);
         WriteSimpleListNode(data, objectiveNodeOffset, FileOffsetToVa(objectiveBOffset), 0);
         WriteQuestObjective(
             data,
@@ -285,8 +321,8 @@ public sealed class RuntimeParityStructReaderTests : IDisposable
             "Return to the engineer",
             objectiveBTextOffset,
             FileOffsetToVa(structOffset),
-            initialized: true,
-            state: 2);
+            true,
+            2);
 
         var reader = CreateReader(data);
         var result = reader.ReadRuntimeQuest(MakeEntry("QuestRuntime", questFormId, 0x47, structOffset));
@@ -331,8 +367,8 @@ public sealed class RuntimeParityStructReaderTests : IDisposable
         WriteSimpleListNode(data, stageNodeOffset, FileOffsetToVa(stageBOffset), 0);
         WriteQuestStage(data, stageBOffset, 20, FileOffsetToVa(stageBItemOffset));
 
-        WriteQuestStageItem(data, stageAItemOffset, 0x04, FileOffsetToVa(structOffset), hasLogEntry: true);
-        WriteQuestStageItem(data, stageBItemOffset, 0x08, FileOffsetToVa(structOffset), hasLogEntry: false);
+        WriteQuestStageItem(data, stageAItemOffset, 0x04, FileOffsetToVa(structOffset), true);
+        WriteQuestStageItem(data, stageBItemOffset, 0x08, FileOffsetToVa(structOffset), false);
 
         var reader = CreateReader(data);
         var result = reader.ReadRuntimeQuest(MakeEntry("QuestRuntimeStages", questFormId, 0x47, structOffset));
@@ -369,13 +405,14 @@ public sealed class RuntimeParityStructReaderTests : IDisposable
         WriteUInt32BE(data, structOffset + 88, FileOffsetToVa(invalidStageNodeOffset));
 
         WriteQuestStage(data, validStageOffset, 15, FileOffsetToVa(validStageItemOffset));
-        WriteQuestStageItem(data, validStageItemOffset, 0x01, FileOffsetToVa(structOffset), hasLogEntry: false);
+        WriteQuestStageItem(data, validStageItemOffset, 0x01, FileOffsetToVa(structOffset), false);
 
         WriteSimpleListNode(data, invalidStageNodeOffset, FileOffsetToVa(invalidStageOffset), 0);
         WriteQuestStage(data, invalidStageOffset, 25, 0);
 
         var reader = CreateReader(data);
-        var result = reader.ReadRuntimeQuest(MakeEntry("QuestRuntimeMissingStageItems", questFormId, 0x47, structOffset));
+        var result =
+            reader.ReadRuntimeQuest(MakeEntry("QuestRuntimeMissingStageItems", questFormId, 0x47, structOffset));
 
         Assert.NotNull(result);
         Assert.Collection(result.Stages,
@@ -415,8 +452,8 @@ public sealed class RuntimeParityStructReaderTests : IDisposable
             "Objective from the correct quest",
             validTextOffset,
             FileOffsetToVa(structOffset),
-            initialized: true,
-            state: 1);
+            true,
+            1);
         WriteSimpleListNode(data, invalidObjectiveNodeOffset, FileOffsetToVa(invalidObjectiveOffset), 0);
         WriteTesFormHeader(data, otherQuestOffset, 0x82010000, 0x47, 0x00002521);
         WriteQuestObjective(
@@ -426,8 +463,8 @@ public sealed class RuntimeParityStructReaderTests : IDisposable
             "Wrong owner objective",
             invalidTextOffset,
             FileOffsetToVa(otherQuestOffset),
-            initialized: true,
-            state: 99);
+            true,
+            99);
 
         var reader = CreateReader(data);
         var result = reader.ReadRuntimeQuest(MakeEntry("QuestRuntimeInvalid", questFormId, 0x47, structOffset));
@@ -454,7 +491,8 @@ public sealed class RuntimeParityStructReaderTests : IDisposable
         WriteTesFormHeader(data, structOffset, 0x82010000, 0x15, activatorFormId);
         WriteBounds(data, structOffset + 52, -8, -4, 0, 8, 4, 16);
         WriteBSStringT(data, structOffset + 68, FileOffsetToVa(nameOffset), "Campfire Switch", nameOffset);
-        WriteBSStringT(data, structOffset + 80, FileOffsetToVa(modelOffset), "meshes\\clutter\\switch.nif", modelOffset);
+        WriteBSStringT(data, structOffset + 80, FileOffsetToVa(modelOffset), "meshes\\clutter\\switch.nif",
+            modelOffset);
         WriteTesFormHeader(data, scriptOffset, 0x82010000, 0x11, 0x0000D001);
         WriteTesFormHeader(data, soundOffset, 0x82010000, 0x0D, 0x0000D002);
         WriteTesFormHeader(data, waterOffset, 0x82010000, 0x4E, 0x0000D003);
@@ -515,8 +553,8 @@ public sealed class RuntimeParityStructReaderTests : IDisposable
         WriteInt32BE(data, worldOffset + 144, 512);
         WriteInt32BE(data, worldOffset + 148, 256);
         WriteUInt16BE(data, worldOffset + 152, unchecked((ushort)-12));
-        WriteUInt16BE(data, worldOffset + 154, unchecked((ushort)8));
-        WriteUInt16BE(data, worldOffset + 156, unchecked((ushort)20));
+        WriteUInt16BE(data, worldOffset + 154, unchecked(8));
+        WriteUInt16BE(data, worldOffset + 156, unchecked(20));
         WriteUInt16BE(data, worldOffset + 158, unchecked((ushort)-4));
         WriteFloatBE(data, worldOffset + 176, -49152f);
         WriteFloatBE(data, worldOffset + 180, -32768f);
@@ -570,7 +608,7 @@ public sealed class RuntimeParityStructReaderTests : IDisposable
         Assert.Equal(-49152f, cellMap[worldspaceFormId].BoundsMinX);
         Assert.Equal(0x0000E003u, cellMap[worldspaceFormId].EncounterZoneFormId);
         var cellEntry = Assert.Single(cellMap[worldspaceFormId].Cells);
-        var cell = reader.ReadRuntimeCell(cellEntry, "CellHiddenValley", null);
+        var cell = reader.ReadRuntimeCell(cellEntry, "CellHiddenValley");
 
         Assert.Equal([cellRefAFormId, cellRefBFormId], cellEntry.ReferenceFormIds);
         Assert.NotNull(cell);
@@ -651,11 +689,16 @@ public sealed class RuntimeParityStructReaderTests : IDisposable
         WriteTesFormHeader(data, linkedRefOffset, 0x82010000, 0x3A, 0x00006014);
         WriteTesFormHeader(data, destinationDoorOffset, 0x82010000, 0x3A, 0x00006015);
 
-        WriteExtraPointerNode(data, extraOwnershipOffset, ExtraOwnershipType, FileOffsetToVa(extraLockOffset), FileOffsetToVa(ownerOffset));
-        WriteExtraPointerNode(data, extraLockOffset, ExtraLockType, FileOffsetToVa(extraEnableParentOffset), FileOffsetToVa(lockDataOffset));
-        WriteExtraEnableParentNode(data, extraEnableParentOffset, FileOffsetToVa(extraLinkedRefOffset), FileOffsetToVa(enableParentRefOffset), 0x01);
-        WriteExtraPointerNode(data, extraLinkedRefOffset, ExtraLinkedRefType, FileOffsetToVa(extraTeleportOffset), FileOffsetToVa(linkedRefOffset));
-        WriteExtraPointerNode(data, extraTeleportOffset, ExtraTeleportType, FileOffsetToVa(extraMapMarkerOffset), FileOffsetToVa(teleportDataOffset));
+        WriteExtraPointerNode(data, extraOwnershipOffset, ExtraOwnershipType, FileOffsetToVa(extraLockOffset),
+            FileOffsetToVa(ownerOffset));
+        WriteExtraPointerNode(data, extraLockOffset, ExtraLockType, FileOffsetToVa(extraEnableParentOffset),
+            FileOffsetToVa(lockDataOffset));
+        WriteExtraEnableParentNode(data, extraEnableParentOffset, FileOffsetToVa(extraLinkedRefOffset),
+            FileOffsetToVa(enableParentRefOffset), 0x01);
+        WriteExtraPointerNode(data, extraLinkedRefOffset, ExtraLinkedRefType, FileOffsetToVa(extraTeleportOffset),
+            FileOffsetToVa(linkedRefOffset));
+        WriteExtraPointerNode(data, extraTeleportOffset, ExtraTeleportType, FileOffsetToVa(extraMapMarkerOffset),
+            FileOffsetToVa(teleportDataOffset));
         WriteExtraPointerNode(data, extraMapMarkerOffset, ExtraMapMarkerType, 0, FileOffsetToVa(mapDataOffset));
 
         WriteRefrLockData(data, lockDataOffset, 75, FileOffsetToVa(lockKeyOffset), 0x05, 2, 1);
@@ -717,10 +760,14 @@ public sealed class RuntimeParityStructReaderTests : IDisposable
         WriteTesFormHeader(data, parentCellOffset, 0x82010000, 0x39, 0x00006111);
         WriteTesFormHeader(data, invalidTargetOffset, 0x82010000, 0x15, 0x00006112);
 
-        WriteExtraPointerNode(data, extraOwnershipOffset, ExtraOwnershipType, FileOffsetToVa(extraLockOffset), 0x7FFF0000);
-        WriteExtraPointerNode(data, extraLockOffset, ExtraLockType, FileOffsetToVa(extraEnableParentOffset), 0x7FFF0000);
-        WriteExtraEnableParentNode(data, extraEnableParentOffset, FileOffsetToVa(extraLinkedRefOffset), FileOffsetToVa(invalidTargetOffset), 0x03);
-        WriteExtraPointerNode(data, extraLinkedRefOffset, ExtraLinkedRefType, FileOffsetToVa(extraTeleportOffset), FileOffsetToVa(invalidTargetOffset));
+        WriteExtraPointerNode(data, extraOwnershipOffset, ExtraOwnershipType, FileOffsetToVa(extraLockOffset),
+            0x7FFF0000);
+        WriteExtraPointerNode(data, extraLockOffset, ExtraLockType, FileOffsetToVa(extraEnableParentOffset),
+            0x7FFF0000);
+        WriteExtraEnableParentNode(data, extraEnableParentOffset, FileOffsetToVa(extraLinkedRefOffset),
+            FileOffsetToVa(invalidTargetOffset), 0x03);
+        WriteExtraPointerNode(data, extraLinkedRefOffset, ExtraLinkedRefType, FileOffsetToVa(extraTeleportOffset),
+            FileOffsetToVa(invalidTargetOffset));
         WriteExtraPointerNode(data, extraTeleportOffset, ExtraTeleportType, 0, FileOffsetToVa(teleportDataOffset));
         WriteDoorTeleportData(data, teleportDataOffset, FileOffsetToVa(invalidTargetOffset));
 
@@ -776,8 +823,10 @@ public sealed class RuntimeParityStructReaderTests : IDisposable
         WriteTesFormHeader(data, childBOffset, 0x82010000, 0x3B, 0x00006194);
         WriteTesFormHeader(data, encounterZoneOffset, 0x82010000, 0x61, 0x00006195);
 
-        WriteExtraPointerNode(data, extraPersistentCellOffset, ExtraPersistentCellType, FileOffsetToVa(extraEncounterZoneOffset), FileOffsetToVa(persistentCellOffset));
-        WriteExtraPointerNode(data, extraEncounterZoneOffset, ExtraEncounterZoneType, FileOffsetToVa(extraLinkedRefChildrenOffset), FileOffsetToVa(encounterZoneOffset));
+        WriteExtraPointerNode(data, extraPersistentCellOffset, ExtraPersistentCellType,
+            FileOffsetToVa(extraEncounterZoneOffset), FileOffsetToVa(persistentCellOffset));
+        WriteExtraPointerNode(data, extraEncounterZoneOffset, ExtraEncounterZoneType,
+            FileOffsetToVa(extraLinkedRefChildrenOffset), FileOffsetToVa(encounterZoneOffset));
         WriteExtraLinkedRefChildrenNode(
             data,
             extraLinkedRefChildrenOffset,
@@ -818,7 +867,8 @@ public sealed class RuntimeParityStructReaderTests : IDisposable
         WriteTesFormHeader(data, baseObjectOffset, 0x82010000, 0x15, 0x000061B0);
         WriteTesFormHeader(data, invalidTargetOffset, 0x82010000, 0x15, 0x000061B1);
 
-        WriteExtraPointerNode(data, extraPersistentCellOffset, ExtraPersistentCellType, FileOffsetToVa(extraLinkedRefChildrenOffset), FileOffsetToVa(invalidTargetOffset));
+        WriteExtraPointerNode(data, extraPersistentCellOffset, ExtraPersistentCellType,
+            FileOffsetToVa(extraLinkedRefChildrenOffset), FileOffsetToVa(invalidTargetOffset));
         WriteExtraLinkedRefChildrenNode(
             data,
             extraLinkedRefChildrenOffset,
@@ -828,7 +878,8 @@ public sealed class RuntimeParityStructReaderTests : IDisposable
         WriteSimpleListNode(data, linkedRefChildNodeOffset, FileOffsetToVa(invalidTargetOffset), 0);
 
         var reader = CreateReader(data);
-        var result = reader.ReadRuntimeRefr(MakeEntry("PlacedRefRuntimeChildrenInvalid", refrFormId, 0x3A, structOffset));
+        var result =
+            reader.ReadRuntimeRefr(MakeEntry("PlacedRefRuntimeChildrenInvalid", refrFormId, 0x3A, structOffset));
 
         Assert.NotNull(result);
         Assert.Null(result.PersistentCellFormId);
@@ -954,7 +1005,8 @@ public sealed class RuntimeParityStructReaderTests : IDisposable
             invalidTargetVa);
 
         var reader = CreateReader(data);
-        var result = reader.ReadRuntimeRefr(MakeEntry("PlacedRefRuntimeStartStateInvalid", refrFormId, 0x3B, structOffset));
+        var result =
+            reader.ReadRuntimeRefr(MakeEntry("PlacedRefRuntimeStartStateInvalid", refrFormId, 0x3B, structOffset));
 
         Assert.NotNull(result);
         Assert.NotNull(result.StartingPosition);
@@ -1092,7 +1144,8 @@ public sealed class RuntimeParityStructReaderTests : IDisposable
             invalidTargetVa);
 
         var reader = CreateReader(data);
-        var result = reader.ReadRuntimeRefr(MakeEntry("PlacedRefRuntimeMerchantInvalid", refrFormId, 0x3B, structOffset));
+        var result =
+            reader.ReadRuntimeRefr(MakeEntry("PlacedRefRuntimeMerchantInvalid", refrFormId, 0x3B, structOffset));
 
         Assert.NotNull(result);
         Assert.Null(result.MerchantContainerFormId);
@@ -1139,9 +1192,12 @@ public sealed class RuntimeParityStructReaderTests : IDisposable
         WriteTesFormHeader(data, keyOffset, 0x82010000, 0x2D, 0x00006223);
         WriteTesFormHeader(data, destinationDoorOffset, 0x82010000, 0x3A, 0x00006224);
 
-        WriteExtraPointerNode(data, extraOwnershipOffset, ExtraOwnershipType, FileOffsetToVa(extraLockOffset), FileOffsetToVa(ownerOffset));
-        WriteExtraPointerNode(data, extraLockOffset, ExtraLockType, FileOffsetToVa(extraTeleportOffset), FileOffsetToVa(lockDataOffset));
-        WriteExtraPointerNode(data, extraTeleportOffset, ExtraTeleportType, FileOffsetToVa(extraRadiusOffset), FileOffsetToVa(teleportDataOffset));
+        WriteExtraPointerNode(data, extraOwnershipOffset, ExtraOwnershipType, FileOffsetToVa(extraLockOffset),
+            FileOffsetToVa(ownerOffset));
+        WriteExtraPointerNode(data, extraLockOffset, ExtraLockType, FileOffsetToVa(extraTeleportOffset),
+            FileOffsetToVa(lockDataOffset));
+        WriteExtraPointerNode(data, extraTeleportOffset, ExtraTeleportType, FileOffsetToVa(extraRadiusOffset),
+            FileOffsetToVa(teleportDataOffset));
         WriteExtraRadiusNode(data, extraRadiusOffset, 0, 256f);
         WriteRefrLockData(data, lockDataOffset, 50, FileOffsetToVa(keyOffset), 0x01, 3, 1);
         WriteDoorTeleportData(data, teleportDataOffset, FileOffsetToVa(destinationDoorOffset));
@@ -1152,7 +1208,7 @@ public sealed class RuntimeParityStructReaderTests : IDisposable
                 MakeEntry("PlacedRefA", 0x00006200, 0x3A, refrAOffset),
                 MakeEntry("PlacedRefB", 0x00006210, 0x3A, refrBOffset)
             ],
-            maxEntries: 8);
+            8);
 
         Assert.Equal(2, census.SampleCount);
         Assert.Equal(2, census.ValidRefrCount);
@@ -1177,31 +1233,13 @@ public sealed class RuntimeParityStructReaderTests : IDisposable
         Assert.Equal(1, census.TypeCounts[ExtraRadiusType]);
     }
 
-    public void Dispose()
-    {
-        GC.SuppressFinalize(this);
-        _accessor?.Dispose();
-        _mmf?.Dispose();
-
-        if (_tempFilePath != null && File.Exists(_tempFilePath))
-        {
-            try
-            {
-                File.Delete(_tempFilePath);
-            }
-            catch
-            {
-                // Best-effort temp cleanup only.
-            }
-        }
-    }
-
     private RuntimeStructReader CreateReader(byte[] data)
     {
         _tempFilePath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
         File.WriteAllBytes(_tempFilePath, data);
 
-        _mmf = MemoryMappedFile.CreateFromFile(_tempFilePath, FileMode.Open, null, data.Length, MemoryMappedFileAccess.Read);
+        _mmf = MemoryMappedFile.CreateFromFile(_tempFilePath, FileMode.Open, null, data.Length,
+            MemoryMappedFileAccess.Read);
         _accessor = _mmf.CreateViewAccessor(0, data.Length, MemoryMappedFileAccess.Read);
 
         var minidumpInfo = new MinidumpInfo
@@ -1246,7 +1284,8 @@ public sealed class RuntimeParityStructReaderTests : IDisposable
         WriteUInt32BE(data, fileOffset + 12, formId);
     }
 
-    private static void WriteBSStringT(byte[] data, int bstFileOffset, uint stringVa, string text, int stringDataFileOffset)
+    private static void WriteBSStringT(byte[] data, int bstFileOffset, uint stringVa, string text,
+        int stringDataFileOffset)
     {
         WriteUInt32BE(data, bstFileOffset, stringVa);
         WriteUInt16BE(data, bstFileOffset + 4, (ushort)text.Length);
@@ -1441,20 +1480,4 @@ public sealed class RuntimeParityStructReaderTests : IDisposable
     {
         return unchecked((uint)((gridX << 16) | (ushort)gridY));
     }
-
-    private const byte ExtraOwnershipType = 0x21;
-    private const byte ExtraPersistentCellType = 0x0C;
-    private const byte ExtraStartingPositionType = 0x0F;
-    private const byte ExtraPackageStartLocationType = 0x18;
-    private const byte ExtraLeveledCreatureType = 0x2E;
-    private const byte ExtraLockType = 0x2A;
-    private const byte ExtraTeleportType = 0x2B;
-    private const byte ExtraMapMarkerType = 0x2C;
-    private const byte ExtraMerchantContainerType = 0x3C;
-    private const byte ExtraEnableParentType = 0x37;
-    private const byte ExtraRadiusType = 0x5C;
-    private const byte ExtraStartingWorldOrCellType = 0x49;
-    private const byte ExtraEncounterZoneType = 0x74;
-    private const byte ExtraLinkedRefType = 0x51;
-    private const byte ExtraLinkedRefChildrenType = 0x52;
 }

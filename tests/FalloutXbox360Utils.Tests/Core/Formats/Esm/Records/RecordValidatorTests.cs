@@ -9,6 +9,23 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Records;
 /// </summary>
 public class RecordValidatorTests
 {
+    #region IsPrintableAscii
+
+    [Theory]
+    [InlineData(0x20, true)] // Space
+    [InlineData(0x41, true)] // 'A'
+    [InlineData(0x7E, true)] // '~'
+    [InlineData(0x7F, false)] // DEL
+    [InlineData(0x00, false)] // NUL
+    [InlineData(0x1F, false)] // Unit separator
+    [InlineData(0x80, false)] // Extended ASCII
+    public void IsPrintableAscii_ReturnsExpected(byte b, bool expected)
+    {
+        Assert.Equal(expected, RecordValidator.IsPrintableAscii(b));
+    }
+
+    #endregion
+
     #region IsValidRecordSignature
 
     [Theory]
@@ -25,22 +42,22 @@ public class RecordValidatorTests
     }
 
     [Theory]
-    [InlineData("ZZZZ")]   // Unknown but valid uppercase 4-char
+    [InlineData("ZZZZ")] // Unknown but valid uppercase 4-char
     [InlineData("ABCD")]
-    [InlineData("XX__")]   // Uppercase + underscore
+    [InlineData("XX__")] // Uppercase + underscore
     public void IsValidRecordSignature_UnknownButValidFormat_ReturnsTrue(string sig)
     {
         Assert.True(RecordValidator.IsValidRecordSignature(sig));
     }
 
     [Theory]
-    [InlineData("")]        // Empty
-    [InlineData("AB")]      // Too short
-    [InlineData("ABCDE")]   // Too long
-    [InlineData("npc_")]    // Lowercase
-    [InlineData("1234")]    // Digits (not uppercase letters or underscore)
-    [InlineData("Npc_")]    // Mixed case
-    [InlineData("AB C")]    // Space
+    [InlineData("")] // Empty
+    [InlineData("AB")] // Too short
+    [InlineData("ABCDE")] // Too long
+    [InlineData("npc_")] // Lowercase
+    [InlineData("1234")] // Digits (not uppercase letters or underscore)
+    [InlineData("Npc_")] // Mixed case
+    [InlineData("AB C")] // Space
     public void IsValidRecordSignature_Invalid_ReturnsFalse(string sig)
     {
         Assert.False(RecordValidator.IsValidRecordSignature(sig));
@@ -52,10 +69,10 @@ public class RecordValidatorTests
 
     public static TheoryData<byte[], int, string> KnownFalsePositiveTrueCases => new()
     {
-        { new byte[] { (byte)'V', (byte)'G', (byte)'T', (byte)'_' }, 0, "VGT_ GPU debug register" },
-        { new byte[] { (byte)'S', (byte)'P', (byte)'I', (byte)'_' }, 0, "SPI_ Shader Processor Interpolator" },
-        { new byte[] { (byte)'_', (byte)'T', (byte)'G', (byte)'V' }, 0, "VGT_ reversed for Xbox 360 big-endian" },
-        { new byte[] { 0x00, 0x00, 0x00, 0x00, (byte)'T', (byte)'C', (byte)'P', (byte)'_' }, 4, "TCP_ at offset 4" },
+        { new[] { (byte)'V', (byte)'G', (byte)'T', (byte)'_' }, 0, "VGT_ GPU debug register" },
+        { new[] { (byte)'S', (byte)'P', (byte)'I', (byte)'_' }, 0, "SPI_ Shader Processor Interpolator" },
+        { new[] { (byte)'_', (byte)'T', (byte)'G', (byte)'V' }, 0, "VGT_ reversed for Xbox 360 big-endian" },
+        { new byte[] { 0x00, 0x00, 0x00, 0x00, (byte)'T', (byte)'C', (byte)'P', (byte)'_' }, 4, "TCP_ at offset 4" }
     };
 
     [Theory]
@@ -156,23 +173,6 @@ public class RecordValidatorTests
 
     #endregion
 
-    #region IsPrintableAscii
-
-    [Theory]
-    [InlineData(0x20, true)]    // Space
-    [InlineData(0x41, true)]    // 'A'
-    [InlineData(0x7E, true)]    // '~'
-    [InlineData(0x7F, false)]   // DEL
-    [InlineData(0x00, false)]   // NUL
-    [InlineData(0x1F, false)]   // Unit separator
-    [InlineData(0x80, false)]   // Extended ASCII
-    public void IsPrintableAscii_ReturnsExpected(byte b, bool expected)
-    {
-        Assert.Equal(expected, RecordValidator.IsPrintableAscii(b));
-    }
-
-    #endregion
-
     #region IsFormIdAllPrintableAscii
 
     [Fact]
@@ -204,10 +204,10 @@ public class RecordValidatorTests
     #region IsInExcludedRange
 
     [Theory]
-    [InlineData(150, true)]   // Inside range
-    [InlineData(100, true)]   // At start (inclusive)
-    [InlineData(200, false)]  // At end (exclusive)
-    [InlineData(50, false)]   // Outside range
+    [InlineData(150, true)] // Inside range
+    [InlineData(100, true)] // At start (inclusive)
+    [InlineData(200, false)] // At end (exclusive)
+    [InlineData(50, false)] // Outside range
     public void IsInExcludedRange_SingleRange_ReturnsExpected(long offset, bool expected)
     {
         var ranges = new List<(long start, long end)> { (100, 200) };
@@ -274,7 +274,7 @@ public class RecordValidatorTests
         { "REFR", 100, 0u, 0u, false, "FormID zero" },
         { "REFR", 100, 0u, 0xFFFFFFFFu, false, "FormID all 0xFF" },
         { "REFR", 100, 0u, 0x4B434150u, false, "FormID all printable ASCII (PACK)" },
-        { "REFR", 100, 0x80000000u, 0x00010001u, false, "Upper flags without compressed flag" },
+        { "REFR", 100, 0x80000000u, 0x00010001u, false, "Upper flags without compressed flag" }
     };
 
     [Theory]

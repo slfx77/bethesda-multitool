@@ -12,24 +12,26 @@ public sealed class NifRenderPropertyTests
     {
         var data = new byte[128];
 
-        WriteNiObjectNetHeader(data, 0, be: true);
-        WriteUInt16(data, 12, (ushort)(3 << 10), be: true);
+        WriteNiObjectNetHeader(data, 0, true);
+        WriteUInt16(data, 12, 3 << 10, true);
 
-        WriteNiObjectNetHeader(data, 16, be: true);
-        WriteUInt16(data, 28, 4844, be: true);
+        WriteNiObjectNetHeader(data, 16, true);
+        WriteUInt16(data, 28, 4844, true);
         data[30] = 96;
 
-        WriteNiObjectNetHeader(data, 32, be: true);
-        WriteFloat(data, 68, 12f, be: true);
-        WriteFloat(data, 72, 0.35f, be: true);
+        WriteNiObjectNetHeader(data, 32, true);
+        WriteFloat(data, 68, 12f, true);
+        WriteFloat(data, 72, 0.35f, true);
 
         var nif = CreateNifInfo(
-            [("NiStencilProperty", 0, 14),
-             ("NiAlphaProperty", 16, 15),
-             ("NiMaterialProperty", 32, 48)],
-            binaryVersion: 0x14020007,
-            bsVersion: 34,
-            isBigEndian: true);
+            [
+                ("NiStencilProperty", 0, 14),
+                ("NiAlphaProperty", 16, 15),
+                ("NiMaterialProperty", 32, 48)
+            ],
+            0x14020007,
+            34,
+            true);
 
         var propertyRefs = new List<int> { 0, 1, 2 };
         var isDoubleSided = NifBlockParsers.ReadIsDoubleSided(data, nif, propertyRefs);
@@ -62,16 +64,16 @@ public sealed class NifRenderPropertyTests
     {
         var data = new byte[128];
 
-        WriteNiObjectNetHeader(data, 0, be: false);
-        WriteUInt16(data, 12, 0, be: false);
-        WriteFloat(data, 62, 24f, be: false);
-        WriteFloat(data, 66, 0.6f, be: false);
+        WriteNiObjectNetHeader(data, 0, false);
+        WriteUInt16(data, 12, 0, false);
+        WriteFloat(data, 62, 24f, false);
+        WriteFloat(data, 66, 0.6f, false);
 
         var nif = CreateNifInfo(
             [("NiMaterialProperty", 0, 70)],
-            binaryVersion: 0x0A000100,
-            bsVersion: 20,
-            isBigEndian: false);
+            0x0A000100,
+            20,
+            false);
 
         var materialAlpha = NifBlockParsers.ReadMaterialAlpha(data, nif, [0]);
         var materialGlossiness = NifBlockParsers.ReadMaterialGlossiness(data, nif, [0]);
@@ -148,5 +150,7 @@ public sealed class NifRenderPropertyTests
     }
 
     private static void WriteFloat(byte[] data, int offset, float value, bool be)
-        => WriteInt32(data, offset, BitConverter.SingleToInt32Bits(value), be);
+    {
+        WriteInt32(data, offset, BitConverter.SingleToInt32Bits(value), be);
+    }
 }

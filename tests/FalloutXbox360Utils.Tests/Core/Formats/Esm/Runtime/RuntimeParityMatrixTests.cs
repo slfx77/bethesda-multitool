@@ -49,7 +49,8 @@ public sealed class RuntimeParityMatrixTests
 
             Assert.Equal(JsonValueKind.Array, recordCodesElement.ValueKind);
             Assert.NotEmpty(recordCodesElement.EnumerateArray().ToList());
-            Assert.All(recordCodesElement.EnumerateArray(), element => Assert.False(string.IsNullOrWhiteSpace(element.GetString())));
+            Assert.All(recordCodesElement.EnumerateArray(),
+                element => Assert.False(string.IsNullOrWhiteSpace(element.GetString())));
 
             Assert.True(
                 typedRuntimeReaderElement.ValueKind is JsonValueKind.String or JsonValueKind.Null,

@@ -11,8 +11,8 @@ public sealed class GpuTextureCacheTests
     {
         var decoded = DecodedTexture.FromBaseLevel(
             new byte[8 * 4 * 4],
-            width: 8,
-            height: 4);
+            8,
+            4);
 
         var uploads = GpuTextureCache.DescribeMipUploads(decoded);
 

@@ -4,6 +4,7 @@ using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures;
 using Xunit;
+using Xunit.Sdk;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
 
@@ -45,10 +46,10 @@ public sealed class NifTextureAnimationEvaluatorTests
         var extracted = NifGeometryExtractor.Extract(data, nif);
         Assert.NotNull(extracted);
 
-        var extractedSubmesh = extracted!.Submeshes.FirstOrDefault(
-            submesh => string.Equals(submesh.ShapeName, animatedShape.ShapeName, StringComparison.OrdinalIgnoreCase) &&
-                       submesh.VertexCount == animatedShape.RawSubmesh.VertexCount &&
-                       submesh.UVs != null);
+        var extractedSubmesh = extracted!.Submeshes.FirstOrDefault(submesh =>
+            string.Equals(submesh.ShapeName, animatedShape.ShapeName, StringComparison.OrdinalIgnoreCase) &&
+            submesh.VertexCount == animatedShape.RawSubmesh.VertexCount &&
+            submesh.UVs != null);
 
         Assert.NotNull(extractedSubmesh);
         Assert.NotNull(extractedSubmesh!.UVs);
@@ -64,7 +65,8 @@ public sealed class NifTextureAnimationEvaluatorTests
     public void PowerFistRigid_ConvertedXboxSprayVertexColors_MatchPc()
     {
         var (pcData, pcNif) = LoadNif(@"Sample\Meshes\meshes_pc\meshes\weapons\hand2hand\powerfistrigid.nif");
-        var (xboxData, xboxNif) = LoadNif(@"Sample\Meshes\meshes_360_final\meshes\weapons\hand2hand\powerfistrigid.nif");
+        var (xboxData, xboxNif) =
+            LoadNif(@"Sample\Meshes\meshes_360_final\meshes\weapons\hand2hand\powerfistrigid.nif");
 
         var pcModel = Assert.IsType<NifRenderableModel>(NifGeometryExtractor.Extract(pcData, pcNif));
         var xboxModel = Assert.IsType<NifRenderableModel>(NifGeometryExtractor.Extract(xboxData, xboxNif));
@@ -83,7 +85,7 @@ public sealed class NifTextureAnimationEvaluatorTests
 
         for (var i = 0; i < pcSprays.Count; i++)
         {
-            Assert.Equal(pcSprays[i].ShapeName, xboxSprays[i].ShapeName, ignoreCase: true);
+            Assert.Equal(pcSprays[i].ShapeName, xboxSprays[i].ShapeName, true);
             Assert.Equal(pcSprays[i].VertexCount, xboxSprays[i].VertexCount);
             Assert.NotNull(pcSprays[i].VertexColors);
             Assert.NotNull(xboxSprays[i].VertexColors);
@@ -139,7 +141,7 @@ public sealed class NifTextureAnimationEvaluatorTests
                 shapeIndex,
                 dataIndex,
                 nodeTransforms,
-                shapeName: shapeName);
+                shapeName);
 
             if (rawSubmesh?.UVs == null || rawSubmesh.UVs.Length == 0)
             {
@@ -149,7 +151,7 @@ public sealed class NifTextureAnimationEvaluatorTests
             return new AnimatedShapeSample(shapeName ?? string.Empty, transform, rawSubmesh);
         }
 
-        throw new Xunit.Sdk.XunitException("No animated base-texture shape with UVs was found in powerfistrigid.nif.");
+        throw new XunitException("No animated base-texture shape with UVs was found in powerfistrigid.nif.");
     }
 
     private static (byte[] Data, NifInfo Info) LoadNif(string relativePath)
@@ -195,9 +197,11 @@ public sealed class NifTextureAnimationEvaluatorTests
         throw new FileNotFoundException($"Could not locate sample asset: {relativePath}");
     }
 
-    private static bool IsSprayMesh(RenderableSubmesh submesh) =>
-        submesh.ShapeName?.Contains("SprayMeshConnect", StringComparison.OrdinalIgnoreCase) == true &&
-        submesh.VertexColors is { Length: > 0 };
+    private static bool IsSprayMesh(RenderableSubmesh submesh)
+    {
+        return submesh.ShapeName?.Contains("SprayMeshConnect", StringComparison.OrdinalIgnoreCase) == true &&
+               submesh.VertexColors is { Length: > 0 };
+    }
 
     private sealed record AnimatedShapeSample(
         string ShapeName,

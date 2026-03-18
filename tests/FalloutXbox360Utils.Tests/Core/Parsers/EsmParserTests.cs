@@ -98,11 +98,11 @@ public class EsmParserTests
 
     public static TheoryData<byte[], bool> IsBigEndianCases => new()
     {
-        { new byte[] { (byte)'T', (byte)'E', (byte)'S', (byte)'4' }, false },     // "TES4" → LE
-        { new byte[] { (byte)'4', (byte)'S', (byte)'E', (byte)'T' }, true },      // "4SET" → BE
-        { new byte[] { (byte)'T', (byte)'E' }, false },                            // Too short
-        { Array.Empty<byte>(), false },                                             // Empty
-        { new byte[] { 0xDE, 0xAD, 0xBE, 0xEF }, false }                          // Random bytes
+        { new[] { (byte)'T', (byte)'E', (byte)'S', (byte)'4' }, false }, // "TES4" → LE
+        { new[] { (byte)'4', (byte)'S', (byte)'E', (byte)'T' }, true }, // "4SET" → BE
+        { new[] { (byte)'T', (byte)'E' }, false }, // Too short
+        { Array.Empty<byte>(), false }, // Empty
+        { new byte[] { 0xDE, 0xAD, 0xBE, 0xEF }, false } // Random bytes
     };
 
     [Theory]

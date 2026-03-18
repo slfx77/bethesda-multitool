@@ -3,7 +3,6 @@ using FalloutXbox360Utils.CLI.Rendering.Nif;
 using FalloutXbox360Utils.Core.Formats.Nif;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures;
-using FalloutXbox360Utils.Tests;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
@@ -161,14 +160,22 @@ public sealed class NifTextureResolverTests
     }
 
     private static void WriteUInt32(byte[] data, int offset, uint value)
-        => BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(offset, 4), value);
+    {
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(offset, 4), value);
+    }
 
     private static void WriteInt32(byte[] data, int offset, int value)
-        => BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(offset, 4), value);
+    {
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(offset, 4), value);
+    }
 
     private static void WriteUInt16(byte[] data, int offset, ushort value)
-        => BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(offset, 2), value);
+    {
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(offset, 2), value);
+    }
 
     private static void WriteFloat(byte[] data, int offset, float value)
-        => WriteInt32(data, offset, BitConverter.SingleToInt32Bits(value));
+    {
+        WriteInt32(data, offset, BitConverter.SingleToInt32Bits(value));
+    }
 }

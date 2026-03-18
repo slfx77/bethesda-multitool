@@ -1,7 +1,6 @@
 using System.Numerics;
 using FalloutXbox360Utils.CLI;
 using FalloutXbox360Utils.CLI.Rendering.Npc;
-using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
@@ -25,8 +24,8 @@ public sealed class NpcRenderSmokeTests(SampleFileFixture samples)
         var veronica = ResolveNpcAppearance(
             assets.AppearanceResolver,
             pluginName,
-            fullName: "Veronica",
-            editorIdFragment: "Veronica");
+            "Veronica",
+            "Veronica");
 
         Assert.NotNull(veronica);
 
@@ -44,7 +43,7 @@ public sealed class NpcRenderSmokeTests(SampleFileFixture samples)
             headMeshCache,
             egmCache,
             egtCache,
-            CreateSettings(headOnly: true));
+            CreateSettings(true));
 
         Assert.NotNull(model);
         Assert.True(model.HasGeometry);
@@ -53,12 +52,12 @@ public sealed class NpcRenderSmokeTests(SampleFileFixture samples)
         var cpuSprite = NifSpriteRenderer.Render(
             model,
             assets.TextureResolver,
-            pixelsPerUnit: 1.0f,
-            minSize: 32,
-            maxSize: 64,
-            azimuthDeg: 90f,
-            elevationDeg: 0f,
-            fixedSize: 48);
+            1.0f,
+            32,
+            64,
+            90f,
+            0f,
+            48);
 
         AssertSpriteHasVisiblePixels(cpuSprite);
         Assert.True(cpuSprite!.HasTexture);
@@ -70,12 +69,12 @@ public sealed class NpcRenderSmokeTests(SampleFileFixture samples)
         var gpuSprite = renderer.Render(
             model,
             assets.TextureResolver,
-            pixelsPerUnit: 1.0f,
-            minSize: 32,
-            maxSize: 64,
-            azimuthDeg: 90f,
-            elevationDeg: 0f,
-            fixedSize: 48);
+            1.0f,
+            32,
+            64,
+            90f,
+            0f,
+            48);
 
         AssertSpriteHasVisiblePixels(gpuSprite);
         Assert.True(gpuSprite!.HasTexture);
@@ -91,8 +90,8 @@ public sealed class NpcRenderSmokeTests(SampleFileFixture samples)
         var lucy = ResolveNpcAppearance(
             assets.AppearanceResolver,
             pluginName,
-            fullName: "Red Lucy",
-            editorIdFragment: "Lucy");
+            "Red Lucy",
+            "Lucy");
 
         Assert.NotNull(lucy);
 
@@ -114,7 +113,7 @@ public sealed class NpcRenderSmokeTests(SampleFileFixture samples)
             egtCache,
             ref skeletonBoneCache,
             ref poseDeltaCache,
-            CreateSettings(headOnly: false));
+            CreateSettings(false));
 
         Assert.NotNull(model);
         Assert.True(model.HasGeometry);
@@ -144,12 +143,12 @@ public sealed class NpcRenderSmokeTests(SampleFileFixture samples)
         var sprite = NifSpriteRenderer.Render(
             model,
             assets.TextureResolver,
-            pixelsPerUnit: 1.0f,
-            minSize: 32,
-            maxSize: 64,
-            azimuthDeg: 90f,
-            elevationDeg: 0f,
-            fixedSize: 48);
+            1.0f,
+            32,
+            64,
+            90f,
+            0f,
+            48);
 
         AssertSpriteHasVisiblePixels(sprite);
     }
@@ -182,15 +181,14 @@ public sealed class NpcRenderSmokeTests(SampleFileFixture samples)
         string fullName,
         string editorIdFragment)
     {
-        var match = resolver.GetAllNpcs().FirstOrDefault(
-            entry =>
-                string.Equals(
-                    entry.Value.FullName,
-                    fullName,
-                    StringComparison.OrdinalIgnoreCase) ||
-                (entry.Value.EditorId?.Contains(
-                    editorIdFragment,
-                    StringComparison.OrdinalIgnoreCase) ?? false));
+        var match = resolver.GetAllNpcs().FirstOrDefault(entry =>
+            string.Equals(
+                entry.Value.FullName,
+                fullName,
+                StringComparison.OrdinalIgnoreCase) ||
+            (entry.Value.EditorId?.Contains(
+                editorIdFragment,
+                StringComparison.OrdinalIgnoreCase) ?? false));
 
         return match.Value == null
             ? null

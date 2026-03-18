@@ -22,7 +22,7 @@ public sealed class ArmorAddonRecordScannerTests
         var recordBytes = EsmTestRecordBuilder.BuildRecordBytes(
             0x00044947,
             "ARMA",
-            bigEndian: false,
+            false,
             ("EDID", EsmTestRecordBuilder.NullTermString("ARMAPowerfist")),
             ("BMDT", bmdt),
             ("MODL", EsmTestRecordBuilder.NullTermString(@"weapons\hand2hand\powerfist.nif")),
@@ -38,7 +38,7 @@ public sealed class ArmorAddonRecordScannerTests
             TotalSize = (uint)recordBytes.Length
         };
 
-        var scanEntry = ArmorAddonRecordScanner.Process(recordBytes, bigEndian: false, record);
+        var scanEntry = ArmorAddonRecordScanner.Process(recordBytes, false, record);
 
         Assert.NotNull(scanEntry);
         Assert.Equal(0x10u, scanEntry!.BipedFlags);

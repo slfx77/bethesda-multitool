@@ -14,20 +14,20 @@ public sealed class NifAnimationParserTests
 
         WriteControllerSequence(
             data,
-            offset: 0,
-            nameIndex: 0,
-            numBlocks: 0,
-            interpolatorRef: -1,
-            nodeNameIndex: -1);
+            0,
+            0,
+            0,
+            -1,
+            -1);
         WriteControllerSequence(
             data,
-            offset: 48,
-            nameIndex: 1,
-            numBlocks: 1,
-            interpolatorRef: 2,
-            nodeNameIndex: 2);
+            48,
+            1,
+            1,
+            2,
+            2);
 
-        WriteSentinelTransformInterpolator(data, 128, dataRef: 3);
+        WriteSentinelTransformInterpolator(data, 128, 3);
         WriteTransformData(data, 168);
 
         var nif = new NifInfo
@@ -85,19 +85,19 @@ public sealed class NifAnimationParserTests
 
         WriteControllerSequence(
             data,
-            offset: 0,
-            nameIndex: 0,
-            numBlocks: 1,
-            interpolatorRef: 1,
-            nodeNameIndex: 2);
+            0,
+            0,
+            1,
+            1,
+            2);
 
         WriteMixedTransformInterpolator(
             data,
-            offset: 96,
-            dataRef: 2,
-            tx: 16.985f,
-            ty: -12.076f,
-            tz: 4.451f);
+            96,
+            2,
+            16.985f,
+            -12.076f,
+            4.451f);
         WriteRotationOnlyTransformData(data, 136);
 
         var nif = new NifInfo
@@ -231,8 +231,12 @@ public sealed class NifAnimationParserTests
     }
 
     private static void WriteInt32(byte[] data, int offset, int value)
-        => BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(offset, 4), value);
+    {
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(offset, 4), value);
+    }
 
     private static void WriteFloat(byte[] data, int offset, float value)
-        => WriteInt32(data, offset, BitConverter.SingleToInt32Bits(value));
+    {
+        WriteInt32(data, offset, BitConverter.SingleToInt32Bits(value));
+    }
 }

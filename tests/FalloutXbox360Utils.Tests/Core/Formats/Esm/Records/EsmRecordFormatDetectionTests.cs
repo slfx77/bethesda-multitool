@@ -87,7 +87,7 @@ public class EsmRecordFormatDetectionTests(ITestOutputHelper output)
         { 20_000_000, 0x00010001u, "Oversized dataSize (>10M)" },
         { 0, 0x00010001u, "Zero dataSize" },
         { 20, 0x00000000u, "Zero FormId" },
-        { 20, 0xFFFFFFFFu, "Max FormId (0xFFFFFFFF)" },
+        { 20, 0xFFFFFFFFu, "Max FormId (0xFFFFFFFF)" }
     };
 
     [Theory]
@@ -445,8 +445,8 @@ public class EsmRecordFormatDetectionTests(ITestOutputHelper output)
     {
         // BE signature for "TES4" on disk: bytes [0x34='4', 0x53='S', 0x45='E', 0x54='T']
         // The first byte '4' (0x34) must pass the fast-reject filter.
-        byte b = (byte)'4';
-        bool passesFilter = !(b is < (byte)'0' or (> (byte)'9' and < (byte)'A') or (> (byte)'Z' and not (byte)'_'));
+        var b = (byte)'4';
+        var passesFilter = !(b is < (byte)'0' or > (byte)'9' and < (byte)'A' or > (byte)'Z' and not (byte)'_');
         Assert.True(passesFilter, "Digit '4' must pass the fast-reject filter");
     }
 
@@ -463,11 +463,11 @@ public class EsmRecordFormatDetectionTests(ITestOutputHelper output)
         foreach (var type in RecordScannerDispatch.RuntimeRecordTypes)
         {
             // Big-endian signature is reversed: "NPC_" -> "_CPN", first byte = '_'
-            byte firstByteBE = (byte)type[3];
+            var firstByteBE = (byte)type[3];
 
-            bool passesFilter = !(firstByteBE is < (byte)'0'
-                or (> (byte)'9' and < (byte)'A')
-                or (> (byte)'Z' and not (byte)'_'));
+            var passesFilter = !(firstByteBE is < (byte)'0'
+                or > (byte)'9' and < (byte)'A'
+                or > (byte)'Z' and not (byte)'_');
 
             if (!passesFilter)
             {

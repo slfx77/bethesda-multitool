@@ -4,8 +4,8 @@ using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
-using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
 using Xunit;
+using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime;
 

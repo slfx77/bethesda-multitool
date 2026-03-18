@@ -1,9 +1,8 @@
-using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers;
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion;
-using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
 using FalloutXbox360Utils.Core.Formats.Nif;
+using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 using FalloutXbox360Utils.Core.Utils;
@@ -95,7 +94,7 @@ public sealed class RedLucyEvidenceTests(SampleFileFixture samples)
                 Assert.DoesNotContain(
                     submesh.TextureSlots,
                     slot => slot != null &&
-                        slot.Contains("outfitf_s", StringComparison.OrdinalIgnoreCase));
+                            slot.Contains("outfitf_s", StringComparison.OrdinalIgnoreCase));
             });
     }
 

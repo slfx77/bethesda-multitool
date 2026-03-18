@@ -388,7 +388,7 @@ internal static class EsmTestRecordBuilder
         Array.Copy(tes4Data, data, tes4Data.Length);
 
         var grupOffset = tes4Data.Length;
-        WriteBEGrupHeader(data, grupOffset, grupTotalSize, "ALCH", 0);
+        WriteBEGrupHeader(data, grupOffset, grupTotalSize, "ALCH");
 
         var recordOffset = grupOffset + 24;
         WriteBERecordHeader(data, recordOffset, "ALCH", (uint)recordDataSize, 0x00010001);
