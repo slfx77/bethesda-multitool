@@ -17,6 +17,11 @@ internal static class NpcAppearancePathDeriver
         return $"meshes\\characters\\facegendata\\facegeom\\{pluginName}\\{formId:X8}.nif";
     }
 
+    internal static string? DeriveHeadTriPath(string? headNifPath)
+    {
+        return headNifPath != null ? Path.ChangeExtension(headNifPath, ".tri") : null;
+    }
+
     internal static string? DeriveHandTexturePath(
         string? bodyTexturePath,
         bool isFemale)

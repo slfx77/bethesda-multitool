@@ -467,6 +467,23 @@ internal static class NpcRenderHelpers
         return EgtParser.Parse(data);
     }
 
+    internal static TriParser? LoadTriFromBsa(string bsaPath, NpcMeshArchiveSet meshArchives)
+    {
+        if (!meshArchives.TryExtractFile(bsaPath, out var data, out _))
+        {
+            Log.Warn("TRI not found in BSA: {0}", bsaPath);
+            return null;
+        }
+
+        if (data.Length == 0)
+        {
+            Log.Warn("TRI extracted but empty (0 bytes): {0}", bsaPath);
+            return null;
+        }
+
+        return TriParser.Parse(data);
+    }
+
     /// <summary>
     ///     Loads an EGM from BSA (with cache), applies FaceGen morphs to the model.
     ///     Consolidates the repeated cache-check → load → apply pattern.

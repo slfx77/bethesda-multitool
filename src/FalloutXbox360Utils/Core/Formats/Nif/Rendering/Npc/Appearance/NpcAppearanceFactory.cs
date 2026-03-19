@@ -111,6 +111,7 @@ internal sealed class NpcAppearanceFactory
         var bodyEgtPaths = NpcAppearancePathDeriver.DeriveBodyEgtPaths(
             headModelPath,
             npc.IsFemale);
+        var baseHeadNifPath = NpcAppearancePathDeriver.AsMeshPath(headModelPath);
 
         return new NpcAppearance
         {
@@ -118,7 +119,8 @@ internal sealed class NpcAppearanceFactory
             EditorId = npc.EditorId,
             FullName = npc.FullName,
             IsFemale = npc.IsFemale,
-            BaseHeadNifPath = NpcAppearancePathDeriver.AsMeshPath(headModelPath),
+            BaseHeadNifPath = baseHeadNifPath,
+            BaseHeadTriPath = NpcAppearancePathDeriver.DeriveHeadTriPath(baseHeadNifPath),
             HeadDiffuseOverride = headTexturePath,
             FaceGenNifPath = NpcAppearancePathDeriver.BuildFaceGenNifPath(
                 pluginName,
@@ -245,6 +247,7 @@ internal sealed class NpcAppearanceFactory
         var bodyEgtPaths = NpcAppearancePathDeriver.DeriveBodyEgtPaths(
             headModelPath,
             isFemale);
+        var baseHeadNifPath = NpcAppearancePathDeriver.AsMeshPath(headModelPath);
 
         return new NpcAppearance
         {
@@ -252,7 +255,8 @@ internal sealed class NpcAppearanceFactory
             EditorId = npcRecord.EditorId,
             FullName = npcRecord.FullName,
             IsFemale = isFemale,
-            BaseHeadNifPath = NpcAppearancePathDeriver.AsMeshPath(headModelPath),
+            BaseHeadNifPath = baseHeadNifPath,
+            BaseHeadTriPath = NpcAppearancePathDeriver.DeriveHeadTriPath(baseHeadNifPath),
             HeadDiffuseOverride = headTexturePath,
             FaceGenNifPath = NpcAppearancePathDeriver.BuildFaceGenNifPath(
                 pluginName,

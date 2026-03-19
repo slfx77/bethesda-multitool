@@ -11,7 +11,7 @@ public sealed class FormIdResolver
     ///     Actor value display names indexed by AV code (0-76+), built from AVIF records.
     ///     Null when no AVIF data is available (e.g., DMP-only analysis).
     /// </summary>
-    private readonly string[]? _actorValueNames;
+    private readonly string?[]? _actorValueNames;
 
     /// <summary>Backward-compatible constructor (no Ref→Base data).</summary>
     public FormIdResolver(
@@ -25,7 +25,7 @@ public sealed class FormIdResolver
         Dictionary<uint, string> editorIds,
         Dictionary<uint, string> displayNames,
         Dictionary<uint, uint> refToBase,
-        string[]? actorValueNames = null)
+        string?[]? actorValueNames = null)
     {
         EditorIds = editorIds;
         DisplayNames = displayNames;

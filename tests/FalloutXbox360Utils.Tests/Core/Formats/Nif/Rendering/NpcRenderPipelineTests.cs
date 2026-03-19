@@ -25,16 +25,16 @@ public sealed class NpcRenderPipelineTests
             npcOnly =>
             {
                 Assert.Equal("npc_only", npcOnly.RenderVariantLabel);
-                Assert.Equal([0.5f], npcOnly.FaceGenTextureCoeffs);
-                Assert.Equal([0.5f], npcOnly.NpcFaceGenTextureCoeffs);
-                Assert.Equal([0.25f], npcOnly.RaceFaceGenTextureCoeffs);
+                Assert.Equal([0.5f], npcOnly.FaceGenTextureCoeffs!);
+                Assert.Equal([0.5f], npcOnly.NpcFaceGenTextureCoeffs!);
+                Assert.Equal([0.25f], npcOnly.RaceFaceGenTextureCoeffs!);
             },
             npcPlusRace =>
             {
                 Assert.Equal("npc_plus_race", npcPlusRace.RenderVariantLabel);
-                Assert.Equal([0.75f], npcPlusRace.FaceGenTextureCoeffs);
-                Assert.Equal([0.5f], npcPlusRace.NpcFaceGenTextureCoeffs);
-                Assert.Equal([0.25f], npcPlusRace.RaceFaceGenTextureCoeffs);
+                Assert.Equal([0.75f], npcPlusRace.FaceGenTextureCoeffs!);
+                Assert.Equal([0.5f], npcPlusRace.NpcFaceGenTextureCoeffs!);
+                Assert.Equal([0.25f], npcPlusRace.RaceFaceGenTextureCoeffs!);
             });
     }
 }

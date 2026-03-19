@@ -15,7 +15,6 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
 /// </summary>
 internal sealed class GpuSpriteRenderer : IDisposable
 {
-    private static readonly Logger Log = Logger.Instance;
     private readonly Dictionary<BlendPipelineKey, Pipeline> _blendPipelines = [];
 
     private readonly GpuDevice _gpu;

@@ -6,6 +6,14 @@ using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Geometry;
 
+internal readonly record struct NifTriStripSectionInfo(
+    int DeclaredTriangleCount,
+    int StripCount,
+    ushort[] StripLengths,
+    int CandidateTriangleWindowCount,
+    int DegenerateTriangleCount,
+    int ExtractedTriangleCount);
+
 /// <summary>
 ///     Extracts and converts triangle strip data from NIF geometry blocks.
 ///     Handles NiTriStripsData parsing, strip-to-triangle conversion,
@@ -31,6 +39,25 @@ internal static class NifTriStripExtractor
 
         // NiTriStripsData-specific fields
         return ExtractStripsSection(data, pos, end, isBigEndian);
+    }
+
+    /// <summary>
+    ///     Reads the stable strip-topology metadata from a NiTriStripsData block without
+    ///     flattening it to render triangles. This keeps the declared strip triangle count
+    ///     separate from the post-degenerate filtered triangle list.
+    /// </summary>
+    internal static NifTriStripSectionInfo? ReadStripSectionInfo(byte[] data, BlockInfo block, bool isBigEndian)
+    {
+        var pos = block.DataOffset;
+        var end = block.DataOffset + block.Size;
+
+        pos = SkipGeometryDataFields(data, pos, end, isBigEndian);
+        if (pos < 0)
+        {
+            return null;
+        }
+
+        return ExtractStripsSectionInfo(data, pos, end, isBigEndian);
     }
 
     /// <summary>
@@ -222,5 +249,104 @@ internal static class NifTriStripExtractor
         }
 
         return ConvertStripsToTriangles(allStrips);
+    }
+
+    private static NifTriStripSectionInfo? ExtractStripsSectionInfo(byte[] data, int pos, int end, bool isBigEndian)
+    {
+        if (pos + 2 > end)
+        {
+            return null;
+        }
+
+        var declaredTriangleCount = BinaryUtils.ReadUInt16(data, pos, isBigEndian);
+        pos += 2;
+
+        if (pos + 2 > end)
+        {
+            return null;
+        }
+
+        var numStrips = BinaryUtils.ReadUInt16(data, pos, isBigEndian);
+        pos += 2;
+
+        if (numStrips == 0)
+        {
+            return new NifTriStripSectionInfo(
+                declaredTriangleCount,
+                0,
+                [],
+                0,
+                0,
+                0);
+        }
+
+        var stripLengths = new ushort[numStrips];
+        for (var i = 0; i < numStrips; i++)
+        {
+            if (pos + 2 > end)
+            {
+                return null;
+            }
+
+            stripLengths[i] = BinaryUtils.ReadUInt16(data, pos, isBigEndian);
+            pos += 2;
+        }
+
+        if (pos + 1 > end)
+        {
+            return null;
+        }
+
+        var hasPoints = data[pos++];
+        if (hasPoints == 0)
+        {
+            return null;
+        }
+
+        var candidateTriangleWindowCount = 0;
+        var degenerateTriangleCount = 0;
+
+        for (var i = 0; i < numStrips; i++)
+        {
+            var stripLength = stripLengths[i];
+            if (pos + stripLength * 2 > end)
+            {
+                return null;
+            }
+
+            if (stripLength >= 3)
+            {
+                candidateTriangleWindowCount += stripLength - 2;
+            }
+
+            ushort? a = null;
+            ushort? b = null;
+            for (var j = 0; j < stripLength; j++)
+            {
+                var c = BinaryUtils.ReadUInt16(data, pos, isBigEndian);
+                pos += 2;
+
+                if (a.HasValue && b.HasValue && IsDegenerateTriangle(a.Value, b.Value, c))
+                {
+                    degenerateTriangleCount++;
+                }
+
+                a = b;
+                b = c;
+            }
+        }
+
+        return new NifTriStripSectionInfo(
+            declaredTriangleCount,
+            numStrips,
+            stripLengths,
+            candidateTriangleWindowCount,
+            degenerateTriangleCount,
+            candidateTriangleWindowCount - degenerateTriangleCount);
+    }
+
+    private static bool IsDegenerateTriangle(ushort a, ushort b, ushort c)
+    {
+        return a == b || b == c || a == c;
     }
 }

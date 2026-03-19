@@ -384,7 +384,7 @@ internal sealed class BsaExtractionEngine
                 await foreach (var (entry, data, outputPath, conversionType) in reader.ReadAllAsync(cancellationToken))
                 {
                     var conversionSucceeded = false;
-                    var statusMessage = "Converted";
+                    string statusMessage;
 
                     try
                     {

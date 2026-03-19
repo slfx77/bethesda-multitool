@@ -80,6 +80,7 @@ public sealed class NpcAppearanceHelperTests
         var appearance = factory.Build(0x1234u, npc, "FalloutNV.esm");
 
         Assert.Equal(@"meshes\characters\female\headfemale.nif", appearance.BaseHeadNifPath);
+        Assert.Equal(@"meshes\characters\female\headfemale.tri", appearance.BaseHeadTriPath);
         Assert.Equal(@"characters\female\headfemale.dds", appearance.HeadDiffuseOverride);
         Assert.Equal(@"meshes\hair\femalehair.nif", appearance.HairNifPath);
         Assert.Equal(@"textures\hair\femalehair.dds", appearance.HairTexturePath);
@@ -1462,6 +1463,8 @@ public sealed class NpcAppearanceHelperTests
     [Fact]
     public void PathDeriver_DerivesHandTextureAndBodyEgtPaths()
     {
+        var headTriPath = NpcAppearancePathDeriver.DeriveHeadTriPath(
+            @"meshes\characters\ghoul\headghoul.nif");
         var handTexture = NpcAppearancePathDeriver.DeriveHandTexturePath(
             @"characters\ghoul\UpperBodyMale.dds",
             false);
@@ -1469,6 +1472,7 @@ public sealed class NpcAppearanceHelperTests
             @"characters\ghoul\headghoul.nif",
             false);
 
+        Assert.Equal(@"meshes\characters\ghoul\headghoul.tri", headTriPath);
         Assert.Equal(@"textures\characters\ghoul\HandMale.dds", handTexture);
         Assert.Equal(@"meshes\characters\_male\upperbodyhumanghoul.egt", bodyEgtPaths.BodyEgt);
         Assert.Equal(@"meshes\characters\_male\lefthandghoul.egt", bodyEgtPaths.LeftHandEgt);

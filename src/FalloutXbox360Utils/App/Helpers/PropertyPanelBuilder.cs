@@ -228,7 +228,7 @@ internal static class PropertyPanelBuilder
     }
 
     private static void AddMultiColumnSubItem(
-        Grid grid, EsmPropertyEntry sub, int row, EsmPropertyEntry parentProp, Callbacks callbacks)
+        Grid grid, EsmPropertyEntry sub, int row, EsmPropertyEntry _, Callbacks callbacks)
     {
         // Col1: cell navigation link, FormID link, or plain text
         if (sub.CellNavigationFormId is > 0)

@@ -14,6 +14,7 @@ internal sealed class NpcAppearance
 
     // Phase 1: Head mesh
     public string? BaseHeadNifPath { get; init; }
+    public string? BaseHeadTriPath { get; init; }
     public string? HeadDiffuseOverride { get; init; }
     public string? FaceGenNifPath { get; init; }
 
@@ -78,6 +79,7 @@ internal sealed class NpcAppearance
             IsFemale = IsFemale,
             RenderVariantLabel = renderVariantLabel,
             BaseHeadNifPath = BaseHeadNifPath,
+            BaseHeadTriPath = BaseHeadTriPath,
             HeadDiffuseOverride = HeadDiffuseOverride,
             FaceGenNifPath = FaceGenNifPath,
             FaceGenSymmetricCoeffs = FaceGenSymmetricCoeffs,

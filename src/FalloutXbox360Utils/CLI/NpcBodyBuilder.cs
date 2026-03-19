@@ -1675,16 +1675,6 @@ internal static class NpcBodyBuilder
             tx, ty, tz, 1);
     }
 
-    /// <summary>
-    ///     Find the world transform of a named NiNode in a weapon NIF's scene graph.
-    ///     Used to undo the NIF's own bone hierarchy when reparenting shapes to the character.
-    /// </summary>
-    private static Matrix4x4? FindNifNodeTransformByName(byte[] data, NifInfo nif, string boneName)
-    {
-        var transforms = NifGeometryExtractor.ExtractNamedBoneTransforms(data, nif);
-        return transforms.TryGetValue(boneName, out var transform) ? transform : null;
-    }
-
     private static string BuildHolsterKfRelPath(string holsterProfileKey, bool usePowerArmorHolster)
     {
         return usePowerArmorHolster

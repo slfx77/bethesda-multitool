@@ -1304,6 +1304,7 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
             FullName = source.FullName,
             IsFemale = source.IsFemale,
             BaseHeadNifPath = source.BaseHeadNifPath,
+            BaseHeadTriPath = source.BaseHeadTriPath,
             HeadDiffuseOverride = source.HeadDiffuseOverride,
             FaceGenNifPath = source.FaceGenNifPath,
             FaceGenSymmetricCoeffs = source.FaceGenSymmetricCoeffs,

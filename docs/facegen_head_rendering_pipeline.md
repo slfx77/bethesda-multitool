@@ -14,6 +14,7 @@ semantic conclusions were stronger than the raw evidence and are now called out 
 - `tools/GhidraProject/facegen_geck_texture_bake_candidates.txt` — 8 functions, GECK bake path
 - `tools/GhidraProject/facegen_geck_egt_generation_2.txt` — 8 functions, EGT generation orchestrator
 - `tools/GhidraProject/facegen_geck_egt_generation_3.txt` — 9 functions, morph generation + morph context
+- `tools/GhidraProject/facegen_geck_tri_record_helpers.txt` — 9 functions, TRI morph-record helper layer
 
 ---
 
@@ -574,19 +575,177 @@ Each channel sub-struct (0x18 bytes):
 - +0x0C from channel start: delta data begin pointer (accessed as entry + channel*0x18 + 0x1C)
 - +0x10 from channel start: delta data end pointer (accessed as entry + channel*0x18 + 0x20)
 
-### 8.3 Morph Generation Paths (FUN_00697a10)
+### 8.3 GECK Bake-Input Load Chain — partially verified
 
-The GECK's EGT generation orchestrator dispatches to two paths:
+Audit note (2026-03-18):
+- The actual GECK head-texture input load path is narrower than some earlier notes implied.
+- `FUN_0068cb60` derives the facemod source path by replacing the selected head mesh extension with
+  `.egt`.
+- `FUN_0068fe90` is the cache/load/generate orchestrator for the head FaceGen model package.
+- `FUN_0068d670` does cache lookup and post-load initialization for that package.
+- `FUN_00696280` lazily populates model `+0x0C` from its stored path string via
+  `FUN_00695ae0 -> FUN_00695a10 -> FUN_0085fb40`. This is the real `FREGT003` loader path used
+  by `FUN_00695b50`, which then iterates the loaded `0x58` texture morph entries during the bake.
+- `FUN_00695b50` consumes already-loaded EGT morph data; it does not resolve the `.egt` filename
+  itself.
+- The previously suspicious `FUN_00696750 -> FUN_00861d60` branch is a different loader. The
+  decompiled file header in `FUN_00861d60` is `FREGM002`, so that branch should not be treated as
+  the head texture EGT loader.
+- When the GECK generates data instead of reusing a cached package, `FUN_00697a10` also loads the
+  selected head mesh (`FUN_004c0040(param_2 + 7, ...)`) and loads coord data via `FUN_00865fb0`
+  (string ref `FRTRI003`) before morph generation.
+- Focused decompilation of `FUN_00865fb0` and its helper layer shows that `FRTRI003` is not a
+  single opaque coord blob. `FUN_00696680` first initializes a `0xF0` output object as nine
+  contiguous `0x18`-byte container slots, and `FUN_00865fb0` then populates those slots with
+  multiple typed sections using helper families whose container record widths are:
+  - `0x0C` vector arrays via `FUN_0086a9a0`
+  - `0x10` scalar/structured arrays via `FUN_0086ab90`
+  - `0x08` nested sections via `FUN_0086ae70`
+  - `0x20` name/metadata-like records via `FUN_0086b260`
+  - `0x2C` name-table-like records via `FUN_0086b4b0`
+  - `0x34` inline-vector morph records via `FUN_0086b7f0`
+  - `0x38` indexed morph records via `FUN_0086bbd0`
+- The main temp-wrapper helper `FUN_008647e0` clones mesh-aligned section data into that same
+  multi-section object before additional nested parsing, so this path is doing structured
+  generation-context assembly, not just file I/O.
+- A deeper pass on `FUN_008647e0` makes the section order more concrete. It clones the early
+  `+0x0C/+0x10`, `+0x24/+0x28`, `+0x3C/+0x40`, `+0x54/+0x58`, `+0x6C/+0x70`, and `+0x84/+0x88`
+  containers directly, then uses wrapper iterators to copy the later record families, including
+  string payloads and per-record arrays for the `0x2C`, `0x34`, and `0x38` sections.
+- The strongest current mapping is:
+  - `+0xB4/+0xB8`: `0x2C` named metadata records
+  - `+0xCC/+0xD0`: `0x34` inline-vector morph records
+  - `+0xE4/+0xE8`: `0x38` indexed morph records
+  - the earlier sections appear to support assembly, naming, and remapping, but are not consumed
+    directly by the final morph-generation functions we traced.
+
+Practical takeaway:
+- If the question is "what code loads the files used for the final facemod texture bake?", the
+  texture side is `mesh path -> FUN_0068cb60 (.egt) -> FUN_0068fe90/FUN_0068d670 ->
+  FUN_00696280 -> FUN_00695ae0 -> FUN_00695a10 -> FUN_0085fb40`, not
+  `FUN_00696750 -> FUN_00861d60`.
+- If the question is "what upstream data does the GECK assemble before morph generation?", the
+  answer now clearly includes `FRTRI003` plus mesh-derived structured section data, and we do not
+  currently mirror that path in our own codebase.
+
+### 8.4 Morph Generation Paths (FUN_00697a10)
+
+The GECK's EGT generation orchestrator now looks materially clearer:
+- `FUN_00697a10` allocates the `0xF0` morph/coord context via `FUN_00696680`, populates it via
+  `FUN_00865fb0`, and only then dispatches to one of the morph builders.
 - **`FUN_00698be0`** (4692 bytes): Full morph set — categorizes morphs by name
   (expressions: 15, modifiers: 17, phonemes: 16, vampire: 1) into `BSFaceGenMorphDataHead`.
-  Stores 0xC-byte entries (3 × uint32) per morph from statistical source (+0xCC/+0xD0 vectors).
-- **`FUN_00699e50`** (647 bytes): Filtered — extracts only "HairMorph" from first statistical entry.
+  Its direct inputs are:
+  - `+0xCC/+0xD0` `0x34` records with inline `float3` payloads
+  - `+0xE4/+0xE8` `0x38` records with indexed `uint32` payloads plus an extra field at `+0x1C`
+- **`FUN_00699e50`** (647 bytes): Filtered — extracts only "HairMorph" from the
+  `+0xCC/+0xD0` inline-vector family. In the current decompilation it does **not** read the
+  later `+0xE4/+0xE8` indexed family.
+
+Field-level shape from the current decompilation:
+- The earlier `0x20` family is now somewhat clearer. `FUN_00869fa0` / `FUN_0086b150` manage a
+  `0x20`-stride record array, and `FUN_0086b370` deep-copies one record by copying the first
+  scalar field directly and then delegating the remaining `0x1C` tail to `FUN_00417d90`. That
+  lower helper behaves like a short-string/range copy utility rather than a TRI-specific decoder,
+  and the follow-up `FUN_00695400 -> FUN_00694da0` path simply clears or resets the copied
+  small-string-style tail for each `0x20` record. So this family still looks like name/metadata
+  scaffolding, not the place where raw morph payload bytes get interpreted.
+- `0x2C` records carry a secondary name/metadata table at `+0xB4/+0xB8`. During `FUN_00865fb0`,
+  each record copies a string field rooted at `+0x14`; the string length/capacity checks land at
+  `+0x24/+0x28`, which looks like another small-string-style container.
+- A focused pass on the `0x2C` family makes that shape more concrete. `FUN_0086b4b0` manages a
+  `0x2C`-stride record array and `FUN_0086b6e0` deep-copies one record by copying the first four
+  dwords directly, then delegating the tail at `+0x10` to `FUN_00871180`, which in turn copies a
+  small-string-style object via `FUN_00417d90`. The cleanup side is the matching
+  `FUN_00695420 -> FUN_00694df0` path, which resets the copied tail for each `0x2C` record. The
+  grow/trim helpers (`FUN_0086eab0`, `FUN_008ce310`) mostly coordinate generic `0x2C` block
+  copy/append/relocate helpers (`FUN_00872c20`, `FUN_00871c20`, `FUN_00871670`, `FUN_008716f0`)
+  rather than introducing new TRI-specific per-element decoding. So this family also still looks
+  like a named metadata/name-table layer, not yet raw morph-payload interpretation.
+- `0x34` records are name-bearing inline-vector morph records. The name string lives at `+0x04`
+  (inline or heap-backed depending on the small-string discriminator at `+0x18`), and the payload
+  vector array lives at `+0x28/+0x2C` as `0x0C` entries. `FUN_00697f40`, which consumes them,
+  constructs an output object whose vtable is labeled `BSFaceGenMorphDifferential` and allocates
+  `count * 0x0C` bytes for the copied vectors.
+- The top-level `FUN_00865fb0` loader now shows more of the raw on-disk read order for `0x34`.
+  Each record is materialized by repeated `FUN_008752c0` reads rather than by one opaque block
+  copy: first a name/header read, then an optional string payload read into the small-string tail
+  at `+0x04`, then another record header read, then `FUN_0086a9a0` sizes the destination vector
+  array, and finally a loop reads compressed vector payload entries that expand into the
+  `float3` array. The current decompile strongly suggests each stored vector is encoded as three
+  signed byte-like components multiplied by a per-record scale factor before landing in the final
+  `float3` payload.
+- `0x38` records are name-bearing indexed morph records. They preserve an extra field at `+0x1C`,
+  and their payload array is copied from `+0x2C/+0x30` as `0x04` entries. `FUN_00697fd0`, which
+  consumes them, constructs an output object whose vtable is labeled `BSFaceGenMorphStatistical`
+  and stores both the element count and that extra `+0x1C` field.
+- `FUN_00865fb0` also makes the raw read order for `0x38` more concrete. Each record again starts
+  with a name/header read plus an optional string payload read into the small-string tail, then
+  the loader writes the record's `+0x1C` field from a running accumulator before reading the
+  record's index-count header, sizing the `uint32` payload array with `FUN_0086a7c0`, and finally
+  reading the index payload block. The current interpretation is that `+0x1C` is not read
+  directly from disk for each record; it is derived as a running base offset into the combined
+  statistical index stream.
+- Focused helper decompilation tightened one important boundary: the `+0x04`, `+0x1C`, `+0x28`,
+  and `+0x2C/+0x30` offsets above are **materialized generation-context object layout**, not yet
+  proven raw on-disk `FRTRI003` byte offsets. `FUN_0086ba20` and `FUN_0086be00` are copy helpers
+  over already-materialized `0x34` and `0x38` records, and they delegate the actual per-record
+  deep copy to lower helpers (`FUN_00871230` / `FUN_008712f0`).
+- The next helper layer is now partially confirmed. `FUN_00871230` walks `0x34` records, clears
+  each materialized record, and delegates nested payload copy to `FUN_00871fa0` rooted at `+0x1C`.
+  `FUN_008712f0` walks `0x38` records, preserves the extra scalar at `+0x1C`, and delegates nested
+  payload copy to `FUN_00872480` rooted at `+0x20`. Those two lower helpers are the next boundary
+  between confirmed generation-context layout and still-unknown raw `FRTRI003` byte interpretation.
+- One more layer is now confirmed inside those nested helpers. `FUN_00871fa0` treats the `0x34`
+  payload as a `0x0C`-stride dynamic array container with begin/end/capacity pointers at
+  `record + 0x28/+0x2C/+0x30` via the nested root at `record + 0x1C`. `FUN_00872480` treats the
+  `0x38` payload as a `0x04`-stride dynamic array container with begin/end/capacity pointers at
+  `record + 0x2C/+0x30/+0x34` via the nested root at `record + 0x20`, while still preserving the
+  separate scalar field at `record + 0x1C`. These are still materialized generation-context
+  offsets, not yet proven raw on-disk `FRTRI003` offsets.
+- The next range-copy layer is now also confirmed and is notably uninteresting from a file-format
+  perspective. `FUN_00872400` is just a direct contiguous copy of `float3` entries from
+  `[begin, end)` into the destination buffer, `FUN_00872d10` is the append variant for the same
+  `0x0C` differential payload entries, and `FUN_008c2940` / `FUN_008d9210` are the matching
+  contiguous copy helpers for `0x04` statistical payload entries using `_memmove_s`. So this
+  branch does **not** introduce any per-element transform, coefficient remap, or hidden
+  TRI-specific decoding step; it only confirms that the nested payloads are materialized as plain
+  contiguous typed arrays once the higher-level readers have decided what ranges to copy.
+- The allocator/reset layer is now also mostly explained and is similarly generic. `FUN_0071ea40`
+  allocates differential payload storage as `count * 0x0C` bytes and initializes the
+  begin/end/capacity triple at `+0x0C/+0x10/+0x14`. `FUN_0086c210` does the same for statistical
+  payload storage as `count * 0x04` bytes. `FUN_00870ca0` is just the differential prefix-copy
+  variant used when the destination already has enough capacity, and `FUN_008c04c0` is the
+  statistical clear/reset wrapper that delegates to `FUN_008c0960`. So these helpers still do not
+  expose any TRI-specific per-element semantics; they only narrow the remaining unknowns to the
+  higher-level readers/builders that choose which source ranges get copied into these containers.
+- The raw `FRTRI003` decode boundary is now much clearer. `FUN_00874a60` initializes the shared
+  `BSFaceGenBinaryFile` / `FutBinaryFileC` reader object, `FUN_00874b10` opens the underlying
+  stream, `FUN_008753d0` reads the fixed-size header block, and `FUN_008754d0` is the first
+  interpreted-header step above raw reads.
+- That `FUN_008754d0` step still is not TRI-specific section decoding. It first asks
+  `FUN_00870350` to allocate a bounded header-range buffer, then copies a validated subrange into
+  reader-owned storage via `FUN_008756d0`, with `FUN_008756a3` just unwinding the helper frame.
+  `FUN_008752c0` is the reusable lower-level primitive that reads typed element/block payloads from
+  the binary stream once the header stage has succeeded.
+- The call graph also matters here: `FUN_008754d0` is shared with `FUN_00873980` and
+  `FUN_008740d0`, not just the `FRTRI003` path. So the best current interpretation is that this is
+  a generic FaceGen binary-header decoder/materializer that sits underneath multiple FaceGen binary
+  families, while the later `FUN_0086a9a0` / `FUN_0086ab90` / `FUN_0086b4b0` / `FUN_0086b7f0` /
+  `FUN_0086bbd0` layer is where TRI-specific section materialization begins.
+
+Correction from the earlier notes:
+- The provisional `0x34 = statistical` / `0x38 = differential` naming appears to have been
+  inverted. The constructor vtables and overwrite behavior in `FUN_00698be0` point the other way:
+  the `0x34` pass builds `BSFaceGenMorphDifferential`-typed outputs first, then the `0x38` pass
+  logs `"Only statistical will be used."` and overwrites them with
+  `BSFaceGenMorphStatistical`-typed outputs when both exist for the same morph name.
 
 When both statistical and differential morphs exist for the same name, the GECK logs a warning
 and uses only statistical: `"MODELS: Statistical and Differential FaceGen morphs found for
 expression '%s'. Only statistical will be used."` (string at 0x00D96540).
 
-### 8.4 Our Implementation Match — CONFIRMED
+### 8.5 Our Implementation Match — CONFIRMED
 
 `FaceGenTextureMorpher.AccumulateNativeDeltasQuantized256` (lines 383-428):
 ```csharp
@@ -601,7 +760,7 @@ GECK uses `FMUL double ptr` (52-bit via x87 80-bit FPU). This could cause ±1 in
 for values near rounding boundaries, translating to at most ~0.001 per pixel aggregate error over
 50 morphs — far below the observed MAE.
 
-### 8.5 Verification Results
+### 8.6 Verification Results
 
 Earlier verifier passes supported the coefficient merge and bake accumulator strongly, but the
 older conclusion here was too strong.
@@ -664,7 +823,94 @@ Most NPCs appear to use the default path, and the default values look near-neutr
 the remaining mismatch, but this section should not be treated as proof that FaceGenMap1 is
 irrelevant in every path.
 
-### 9.4 RESOLVED: "Subsurface scattering" is actually distance fog
+### 9.4 Missing upstream `FRTRI003` / coord-context assembly
+
+**STATUS: Confirmed implementation gap**
+
+Our code starts from an already-existing `.egt` and merged FGTS coefficients. We do **not** have a
+source-side equivalent of the GECK path that:
+- loads `FRTRI003` via `FUN_00865fb0`
+- materializes a multi-section `0xF0` coord/generation context
+- copies mesh-aligned section data via `FUN_008647e0`
+- then feeds that context into `FUN_00697a10` before texture morph generation
+- specifically supplies the `+0xB4/+0xB8` named metadata records, the `+0xCC/+0xD0` inline-vector
+  morph records, and the `+0xE4/+0xE8` indexed morph records that
+  `FUN_00698be0` / `FUN_00699e50` consume directly
+
+External context note:
+- FaceGen's own documentation describes `.tri` as the **base mesh** for a model part, including
+  UVs and morph-target information, but **not** the statistical shape changes. In that same model
+  set layout, `.egm` carries statistical shape information and `.egt` carries statistical texture
+  information.
+- Their morph documentation also matches the two-morph-class split we are seeing in decompilation:
+  delta morphs are plain vertex displacements, while target/statistical morphs preserve specific
+  target positions for things like blinks, eye movement, and the `th` phoneme.
+- So, from the external FaceGen side, `.tri` is not just "the mesh file" in a generic sense; it is
+  the morph-bearing geometry input that FaceGen uses before applying statistical shape (`.egm`) and
+  texture (`.egt`) layers. That lines up well with the New Vegas decompilation path where
+  `FRTRI003` is assembled into the upstream FaceGen generation context rather than treated as a
+  runtime texture file.
+
+Local asset audit note (2026-03-18):
+- This is not just a decompilation hypothesis. The shipped sample assets contain real sibling
+  `.tri` files for the same head-adjacent meshes we use elsewhere: `headhuman.tri`,
+  `headold.tri`, `headghoul.tri`, eye `.tri`, mouth `.tri`, tongue `.tri`, teeth `.tri`, and many
+  hair / eyebrow / beard `.tri` files.
+- `headhuman.tri` begins with `FRTRI003`, and its first two `uint32` fields are `1211` and `2294`,
+  which match the vertex and triangle counts from `headhuman.nif`'s `NiTriShapeData`.
+- A broader local scan of the 28 sibling head/eye/mouth/tongue/teeth `.tri` files in the sample
+  PC mesh tree shows that vertex counts are stable against the sibling `.nif` geometry in all
+  sampled cases, but the important triangle comparison is **declared strip topology**, not the
+  post-conversion rendered triangle list.
+  - Render-exact TRI-vs-NIF geometry matches occurred for 11/28 sampled files (main head family
+    plus lower teeth), where the sibling `.nif` uses explicit triangles or strip topology that
+    survives conversion unchanged.
+  - The remaining 17/28 (eyes, mouth, tongue, upper teeth) were not arbitrary mismatches. In all
+    of those cases, the TRI header triangle count matched the sibling `NiTriStripsData` block's
+    declared `NumTriangles` field exactly, while the rendered triangle count was lower because the
+    strip-to-triangle conversion drops degenerate restart windows.
+  - Example: `eyelefthuman.tri` is `49 verts / 116 tris`; the sibling `eyelefthuman.nif`
+    `NiTriStripsData` block is also declared as `116` strip triangles, but only renders as `81`
+    explicit triangles after `35` degenerate windows are removed.
+- So the corrected assumption is: for strip-based assets, `.tri` appears to track the source strip
+  topology count, not the final degenerate-filtered render triangle list. Future investigation
+  should compare against `NiTriStripsData.NumTriangles` before assuming any TRI/NIF topology
+  mismatch.
+- A minimal local parser now confirms one stable cross-sample payload pattern: after the 64-byte
+  header, both `headhuman.tri` and `eyelefthuman.tri` begin with two contiguous `float3` blocks
+  whose counts are `header[0x08]` and `header[0x1C]`.
+- That local parser now also exposes the decomp-confirmed record families as **layout metadata**
+  only: `0x2C` named metadata, `0x34` differential morph, and `0x38` statistical morph. Those
+  counts and sizes are useful for integration planning, but they should still be treated as
+  generation-context layout facts rather than raw file-offset facts.
+- The next payload region is not yet uniform enough to label generically. `headhuman.tri` switches
+  into a large non-float tail immediately after those two blocks, but `eyelefthuman.tri` continues
+  with more float-like data there, so we should not assume a single "triangle block starts here"
+  rule yet.
+- So the on-disk sample assets strongly support the current interpretation: `.tri` is a real
+  mesh-linked FaceGen generation input, not a speculative side format.
+
+Current implementation audit:
+- `NpcAppearanceFactory` resolves the head path from race/body data, builds the fallback
+  `FaceGeom` NIF path, and merges FaceGen coefficients. It now also resolves and stores the
+  sibling head `.tri` path, but that path is still plumbing, not an active morph input.
+- `NpcHeadBuilder` and `NpcExportSceneBuilder` still do not consume `.tri` generation data in the
+  actual morph/render path. They continue to start from `BaseHeadNifPath`, optional `.egm`,
+  optional `.egt`, and optional prebuilt `FaceGenNifPath`.
+- There is now a minimal `FRTRI003` parser in `src` that reads the stable header, the first two
+  confirmed `float3` blocks, and the decomp-confirmed record-family layout metadata. Mesh archive
+  helpers can load sibling `.tri` files, but the pipeline still does not apply that data.
+- For base race head meshes specifically, the current pre-skin EGM path is probably not being hurt
+  by our "first skinned shape" shortcut: sampled heads such as `headhuman.nif` and `headold.nif`
+  contain a single skinned `NiTriShape`. So the larger mesh-side parity gap is not head-shape
+  splitting; it is the absence of **consumed** `.tri`/`FRTRI003` generation-context handling.
+
+That still does **not** prove this path explains the shipped `_0` texture mismatch, because it is
+editor / generation-side rather than the downstream `.egt` apply path. But it is no longer just
+adjacent infrastructure; it is a concrete missing upstream dependency in any claim of end-to-end
+GECK generation parity.
+
+### 9.5 RESOLVED: "Subsurface scattering" is actually distance fog
 
 **Previously**: Believed to be warm backlight/subsurface blend from `_sk` tint.
 **Actually**: Standard distance fog blending (FogColor, fogFactor) from vertex shader.
@@ -697,7 +943,18 @@ Irrelevant for sprite generation (camera distance → fog factor ≈ 0).
    shipped facemods decode differently, but that source-format gap is smaller than the remaining
    bake mismatch and does not remove the darker-delta pattern.
 
-5. **The remaining error is not yet localized.** The current best hypothesis is a difference in
+5. **Upstream GECK generation context is still only partially modeled.** The `FRTRI003` loader is
+   now confirmed to assemble multiple typed sections before morph generation, and the generated
+   morph builders directly consume the `+0xCC/+0xD0` (`0x34`) inline-vector family and the
+   `+0xE4/+0xE8` (`0x38`) indexed family from that context. We still do not know whether the
+   content of those sections materially changes the final baked texture values in the cases where
+   our output diverges from shipped facemods.
+
+6. **Our mesh/runtime path is still missing the shipped `.tri` family entirely.** The sample
+   assets confirm that `FRTRI003` files exist alongside the real head, eye, mouth, teeth, tongue,
+   and many hair/head-part NIFs, and our production code never loads them.
+
+7. **The remaining error is not yet localized.** The current best hypothesis is a difference in
    per-morph weighting or encode-side treatment of stronger negative deltas, not a broad channel
    swap, container-format issue, or NPC-specific lookup bug.
 

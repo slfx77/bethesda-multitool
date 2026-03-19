@@ -381,7 +381,7 @@ public static class ShowCommand
         return true;
     }
 
-    private static bool TryShowQuest(RecordCollection records, FormIdResolver resolver,
+    private static bool TryShowQuest(RecordCollection records, FormIdResolver _,
         uint? formId, string? editorId)
     {
         var quest = records.Quests.FirstOrDefault(r => Matches(r, formId, editorId, q => q.FormId, q => q.EditorId));
@@ -614,7 +614,7 @@ public static class ShowCommand
         return true;
     }
 
-    private static bool TryShowWeapon(RecordCollection records, FormIdResolver resolver,
+    private static bool TryShowWeapon(RecordCollection records, FormIdResolver _,
         uint? formId, string? editorId)
     {
         var weapon = records.Weapons.FirstOrDefault(r => Matches(r, formId, editorId, w => w.FormId, w => w.EditorId));
@@ -649,7 +649,7 @@ public static class ShowCommand
         return true;
     }
 
-    private static bool TryShowArmor(RecordCollection records, FormIdResolver resolver,
+    private static bool TryShowArmor(RecordCollection records, FormIdResolver _,
         uint? formId, string? editorId)
     {
         var armor = records.Armor.FirstOrDefault(r => Matches(r, formId, editorId, a => a.FormId, a => a.EditorId));
@@ -679,7 +679,7 @@ public static class ShowCommand
         return true;
     }
 
-    private static bool TryShowScript(RecordCollection records, FormIdResolver resolver,
+    private static bool TryShowScript(RecordCollection records, FormIdResolver _,
         uint? formId, string? editorId)
     {
         var script = records.Scripts.FirstOrDefault(r => Matches(r, formId, editorId, s => s.FormId, s => s.EditorId));
@@ -783,7 +783,7 @@ public static class ShowCommand
         return true;
     }
 
-    private static bool TryShowSound(RecordCollection records, FormIdResolver resolver,
+    private static bool TryShowSound(RecordCollection records, FormIdResolver _,
         uint? formId, string? editorId)
     {
         var snd = records.Sounds.FirstOrDefault(r => Matches(r, formId, editorId, s => s.FormId, s => s.EditorId));

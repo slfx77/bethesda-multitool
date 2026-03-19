@@ -336,7 +336,7 @@ public record RecordCollection
     ///     Uses the EditorID → AV code mapping to correctly position each record.
     ///     Returns null if no AVIF records are available.
     /// </summary>
-    private string[]? BuildActorValueNames()
+    private string?[]? BuildActorValueNames()
     {
         if (ActorValueInfos.Count == 0)
         {
@@ -370,7 +370,7 @@ public record RecordCollection
         }
 
         // Build array indexed by AV code using EditorID mapping
-        var result = new string[maxAvCode + 1];
+        var result = new string?[maxAvCode + 1];
         foreach (var avif in ActorValueInfos)
         {
             if (avif.EditorId != null &&

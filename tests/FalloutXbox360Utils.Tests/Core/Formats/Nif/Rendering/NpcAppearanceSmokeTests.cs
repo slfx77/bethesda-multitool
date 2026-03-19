@@ -3,6 +3,7 @@ using FalloutXbox360Utils.CLI.Rendering.Npc;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
@@ -27,10 +28,39 @@ public sealed class NpcAppearanceSmokeTests(SampleFileFixture samples)
         Assert.NotNull(boone);
         Assert.Equal("CraigBoone", boone.EditorId);
         Assert.NotNull(boone.BaseHeadNifPath);
+        Assert.NotNull(boone.BaseHeadTriPath);
         Assert.NotNull(boone.HairNifPath);
         Assert.NotNull(boone.LeftEyeNifPath);
         Assert.NotNull(boone.EquippedItems);
         Assert.True(boone.WeaponVisual?.IsVisible == true);
+    }
+
+    [Fact]
+    public void ResolveHeadOnly_BaseHeadTriLoadsFromSampleMeshesBsa()
+    {
+        Assert.SkipWhen(samples.PcFinalEsm is null, "PC final ESM not available");
+
+        var meshesBsa = SampleFileFixture.FindSamplePath(
+            @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa");
+        Assert.SkipWhen(meshesBsa is null, "PC final meshes BSA not available");
+
+        var esm = EsmFileLoader.Load(samples.PcFinalEsm!, false);
+        Assert.NotNull(esm);
+
+        var resolver = NpcAppearanceResolver.Build(esm.Data, esm.IsBigEndian);
+        var boone = resolver.ResolveHeadOnly(
+            BooneFormId,
+            Path.GetFileName(samples.PcFinalEsm!));
+
+        Assert.NotNull(boone);
+        Assert.NotNull(boone!.BaseHeadTriPath);
+
+        using var meshArchives = NpcMeshArchiveSet.Open(meshesBsa!, null);
+        var tri = NpcRenderHelpers.LoadTriFromBsa(boone.BaseHeadTriPath!, meshArchives);
+
+        Assert.NotNull(tri);
+        Assert.True(tri!.VertexCount > 0);
+        Assert.True(tri.TriangleCount > 0);
     }
 
     [Fact]
