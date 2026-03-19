@@ -7,14 +7,23 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 /// <summary>
 ///     Typed runtime reader for magic/effect structs: EffectSetting (MGEF, 192B),
 ///     SpellItem (SPEL, 84B), EnchantmentItem (ENCH, 84B), BGSPerk (PERK, 96B).
+///     Supports auto-detected layouts via <see cref="RuntimeMagicProbe" />.
+///     All 4 types share the same inheritance chain; the probed shift from MGEF
+///     applies uniformly to all post-TESForm fields across all types.
 /// </summary>
 internal sealed class RuntimeMagicReader
 {
     private readonly RuntimeMemoryContext _context;
 
-    public RuntimeMagicReader(RuntimeMemoryContext context)
+    // Uniform shift for all post-TESForm fields, probed from MGEF samples.
+    private readonly int _s;
+
+    public RuntimeMagicReader(RuntimeMemoryContext context, RuntimeLayoutProbeResult<int[]>? probeResult = null)
     {
         _context = context;
+        _s = probeResult is { Margin: >= MinProbeMargin } && probeResult.Winner.Layout.Length > 1
+            ? probeResult.Winner.Layout[1]
+            : 0;
     }
 
     #region MGEF — EffectSetting (192 bytes, FormType 0x10)
@@ -27,15 +36,16 @@ internal sealed class RuntimeMagicReader
         }
 
         var offset = entry.TesFormOffset.Value;
-        if (offset + MgefStructSize > _context.FileSize)
+        var structSize = MgefStructSize + _s;
+        if (offset + structSize > _context.FileSize)
         {
             return null;
         }
 
-        var buffer = new byte[MgefStructSize];
+        var buffer = new byte[structSize];
         try
         {
-            _context.Accessor.ReadArray(offset, buffer, 0, MgefStructSize);
+            _context.Accessor.ReadArray(offset, buffer, 0, structSize);
         }
         catch
         {
@@ -48,12 +58,12 @@ internal sealed class RuntimeMagicReader
             return null;
         }
 
-        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, MgefFullNameOffset);
-        var modelPath = _context.ReadBSStringT(offset, MgefModelOffset);
-        var icon = _context.ReadBSStringT(offset, MgefIconOffset);
+        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, MgefFullNameOffset + _s);
+        var modelPath = _context.ReadBSStringT(offset, MgefModelOffset + _s);
+        var icon = _context.ReadBSStringT(offset, MgefIconOffset + _s);
 
-        // EffectSettingData (72 bytes at +104)
-        var dataBase = MgefDataOffset;
+        // EffectSettingData (72 bytes)
+        var dataBase = MgefDataOffset + _s;
         var flags = BinaryUtils.ReadUInt32BE(buffer, dataBase);
         var baseCost = BinaryUtils.ReadFloatBE(buffer, dataBase + 4);
         var associatedItem = _context.FollowPointerToFormId(buffer, dataBase + 8);
@@ -72,8 +82,8 @@ internal sealed class RuntimeMagicReader
         var archetype = BinaryUtils.ReadUInt32BE(buffer, dataBase + 64);
         var actorValue = unchecked((int)BinaryUtils.ReadUInt32BE(buffer, dataBase + 68));
 
-        // counterEffects BSSimpleList at +176
-        var counterEffects = WalkFormIdSimpleList(buffer, offset, MgefCounterEffectsOffset);
+        // counterEffects BSSimpleList
+        var counterEffects = WalkFormIdSimpleList(buffer, MgefCounterEffectsOffset + _s);
 
         if (!RuntimeMemoryContext.IsNormalFloat(baseCost))
         {
@@ -122,15 +132,16 @@ internal sealed class RuntimeMagicReader
         }
 
         var offset = entry.TesFormOffset.Value;
-        if (offset + SpelStructSize > _context.FileSize)
+        var structSize = SpelStructSize + _s;
+        if (offset + structSize > _context.FileSize)
         {
             return null;
         }
 
-        var buffer = new byte[SpelStructSize];
+        var buffer = new byte[structSize];
         try
         {
-            _context.Accessor.ReadArray(offset, buffer, 0, SpelStructSize);
+            _context.Accessor.ReadArray(offset, buffer, 0, structSize);
         }
         catch
         {
@@ -143,16 +154,17 @@ internal sealed class RuntimeMagicReader
             return null;
         }
 
-        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, SpelFullNameOffset);
+        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, SpelFullNameOffset + _s);
 
-        // SpellItemData (16 bytes at +68)
-        var type = (SpellType)BinaryUtils.ReadUInt32BE(buffer, SpelDataOffset);
-        var cost = BinaryUtils.ReadUInt32BE(buffer, SpelDataOffset + 4);
-        var level = BinaryUtils.ReadUInt32BE(buffer, SpelDataOffset + 8);
-        var flags = buffer[SpelDataOffset + 12];
+        // SpellItemData (16 bytes)
+        var spelData = SpelDataOffset + _s;
+        var type = (SpellType)BinaryUtils.ReadUInt32BE(buffer, spelData);
+        var cost = BinaryUtils.ReadUInt32BE(buffer, spelData + 4);
+        var level = BinaryUtils.ReadUInt32BE(buffer, spelData + 8);
+        var flags = buffer[spelData + 12];
 
         // Walk EffectItem linked list for effect FormIDs
-        var effectFormIds = WalkEffectItemList(buffer, offset);
+        var effectFormIds = WalkEffectItemList(buffer);
 
         return new SpellRecord
         {
@@ -181,15 +193,16 @@ internal sealed class RuntimeMagicReader
         }
 
         var offset = entry.TesFormOffset.Value;
-        if (offset + EnchStructSize > _context.FileSize)
+        var structSize = EnchStructSize + _s;
+        if (offset + structSize > _context.FileSize)
         {
             return null;
         }
 
-        var buffer = new byte[EnchStructSize];
+        var buffer = new byte[structSize];
         try
         {
-            _context.Accessor.ReadArray(offset, buffer, 0, EnchStructSize);
+            _context.Accessor.ReadArray(offset, buffer, 0, structSize);
         }
         catch
         {
@@ -202,16 +215,17 @@ internal sealed class RuntimeMagicReader
             return null;
         }
 
-        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, EnchFullNameOffset);
+        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, EnchFullNameOffset + _s);
 
-        // EnchantmentItemData (16 bytes at +68)
-        var enchantType = BinaryUtils.ReadUInt32BE(buffer, EnchDataOffset);
-        var chargeAmount = BinaryUtils.ReadUInt32BE(buffer, EnchDataOffset + 4);
-        var enchantCost = BinaryUtils.ReadUInt32BE(buffer, EnchDataOffset + 8);
-        var flags = buffer[EnchDataOffset + 12];
+        // EnchantmentItemData (16 bytes)
+        var enchData = EnchDataOffset + _s;
+        var enchantType = BinaryUtils.ReadUInt32BE(buffer, enchData);
+        var chargeAmount = BinaryUtils.ReadUInt32BE(buffer, enchData + 4);
+        var enchantCost = BinaryUtils.ReadUInt32BE(buffer, enchData + 8);
+        var flags = buffer[enchData + 12];
 
         // Walk EffectItem linked list for effects
-        var effects = WalkEffectItemListWithData(buffer, offset);
+        var effects = WalkEffectItemListWithData(buffer);
 
         return new EnchantmentRecord
         {
@@ -240,15 +254,16 @@ internal sealed class RuntimeMagicReader
         }
 
         var offset = entry.TesFormOffset.Value;
-        if (offset + PerkStructSize > _context.FileSize)
+        var structSize = PerkStructSize + _s;
+        if (offset + structSize > _context.FileSize)
         {
             return null;
         }
 
-        var buffer = new byte[PerkStructSize];
+        var buffer = new byte[structSize];
         try
         {
-            _context.Accessor.ReadArray(offset, buffer, 0, PerkStructSize);
+            _context.Accessor.ReadArray(offset, buffer, 0, structSize);
         }
         catch
         {
@@ -261,14 +276,15 @@ internal sealed class RuntimeMagicReader
             return null;
         }
 
-        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, PerkFullNameOffset);
-        var iconPath = _context.ReadBSStringT(offset, PerkIconOffset);
+        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, PerkFullNameOffset + _s);
+        var iconPath = _context.ReadBSStringT(offset, PerkIconOffset + _s);
 
-        // PerkData (5 bytes at +72)
-        var trait = buffer[PerkDataOffset];
-        var minLevel = buffer[PerkDataOffset + 1];
-        var ranks = buffer[PerkDataOffset + 2];
-        var playable = buffer[PerkDataOffset + 3];
+        // PerkData (5 bytes)
+        var perkData = PerkDataOffset + _s;
+        var trait = buffer[perkData];
+        var minLevel = buffer[perkData + 1];
+        var ranks = buffer[perkData + 2];
+        var playable = buffer[perkData + 3];
 
         return new PerkRecord
         {
@@ -289,7 +305,7 @@ internal sealed class RuntimeMagicReader
 
     #region BSSimpleList Walking (for counterEffects)
 
-    private List<uint> WalkFormIdSimpleList(byte[] structBuffer, long structFileOffset, int listOffset)
+    private List<uint> WalkFormIdSimpleList(byte[] structBuffer, int listOffset)
     {
         var result = new List<uint>();
 
@@ -344,15 +360,15 @@ internal sealed class RuntimeMagicReader
     #region EffectItem List Walking
 
     /// <summary>
-    ///     Walk BSSimpleList&lt;EffectItem*&gt; at +56/+60 and collect base effect FormIDs.
+    ///     Walk BSSimpleList&lt;EffectItem*&gt; and collect base effect FormIDs.
     ///     EffectItem layout: pSetting(4) + fMagnitude(4) + iArea(4) + iDuration(4) + iType(4) + iActorValue(4) = 24 bytes.
     /// </summary>
-    private List<uint> WalkEffectItemList(byte[] structBuffer, long structFileOffset)
+    private List<uint> WalkEffectItemList(byte[] structBuffer)
     {
         var result = new List<uint>();
 
-        // BSSimpleList head pointer at +56
-        var headVa = BinaryUtils.ReadUInt32BE(structBuffer, EffectListOffset);
+        // BSSimpleList head pointer
+        var headVa = BinaryUtils.ReadUInt32BE(structBuffer, EffectListOffset + _s);
         if (headVa == 0 || !_context.IsValidPointer(headVa))
         {
             return result;
@@ -412,11 +428,11 @@ internal sealed class RuntimeMagicReader
     /// <summary>
     ///     Walk EffectItem list and return full EnchantmentEffect data per item.
     /// </summary>
-    private List<EnchantmentEffect> WalkEffectItemListWithData(byte[] structBuffer, long structFileOffset)
+    private List<EnchantmentEffect> WalkEffectItemListWithData(byte[] structBuffer)
     {
         var result = new List<EnchantmentEffect>();
 
-        var headVa = BinaryUtils.ReadUInt32BE(structBuffer, EffectListOffset);
+        var headVa = BinaryUtils.ReadUInt32BE(structBuffer, EffectListOffset + _s);
         if (headVa == 0 || !_context.IsValidPointer(headVa))
         {
             return result;
@@ -525,6 +541,7 @@ internal sealed class RuntimeMagicReader
     // EffectItem struct size (pSetting + magnitude + area + duration + type + actorValue)
     private const int EffectItemSize = 24;
     private const int MaxListNodes = 256;
+    private const int MinProbeMargin = 3;
 
     #endregion
 }

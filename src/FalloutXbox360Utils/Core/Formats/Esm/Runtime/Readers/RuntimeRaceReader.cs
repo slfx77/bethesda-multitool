@@ -4,18 +4,81 @@ using FalloutXbox360Utils.Core.Utils;
 namespace FalloutXbox360Utils.Core.Formats.Esm;
 
 /// <summary>
-///     Typed runtime reader for TESRace structs (FormType 0x0C, 1260 bytes).
+///     Layout for TESRace runtime struct. Offsets organized by inheritance group:
+///     Group 0: TESForm (anchored, never shifts)
+///     Group 1: TESFullName through FaceGen clamps (mid-chain)
+///     Group 2: Late TESRace-specific fields (voice types, age races)
+/// </summary>
+internal readonly record struct RuntimeRaceLayout(
+    int FullNameOffset,
+    int SpellListOffset,
+    int RaceDataOffset,
+    int HairListOffset,
+    int DefaultHairOffset,
+    int DefaultHairColorOffset,
+    int FaceGenClamp1Offset,
+    int FaceGenClamp2Offset,
+    int EyeListOffset,
+    int DefaultVoiceTypeOffset,
+    int OldRaceOffset,
+    int YoungRaceOffset,
+    int StructSize)
+{
+    public static RuntimeRaceLayout CreateDefault() => new(
+        FullNameOffset: 44,
+        SpellListOffset: 64,
+        RaceDataOffset: 96,
+        HairListOffset: 156,
+        DefaultHairOffset: 164,
+        DefaultHairColorOffset: 172,
+        FaceGenClamp1Offset: 176,
+        FaceGenClamp2Offset: 180,
+        EyeListOffset: 184,
+        DefaultVoiceTypeOffset: 1228,
+        OldRaceOffset: 1236,
+        YoungRaceOffset: 1240,
+        StructSize: 1260);
+
+    public static RuntimeRaceLayout FromShifts(int[] shifts)
+    {
+        var d = CreateDefault();
+        var s1 = shifts.Length > 1 ? shifts[1] : 0;
+        var s2 = shifts.Length > 2 ? shifts[2] : 0;
+        return new RuntimeRaceLayout(
+            FullNameOffset: d.FullNameOffset + s1,
+            SpellListOffset: d.SpellListOffset + s1,
+            RaceDataOffset: d.RaceDataOffset + s1,
+            HairListOffset: d.HairListOffset + s1,
+            DefaultHairOffset: d.DefaultHairOffset + s1,
+            DefaultHairColorOffset: d.DefaultHairColorOffset + s1,
+            FaceGenClamp1Offset: d.FaceGenClamp1Offset + s1,
+            FaceGenClamp2Offset: d.FaceGenClamp2Offset + s1,
+            EyeListOffset: d.EyeListOffset + s1,
+            DefaultVoiceTypeOffset: d.DefaultVoiceTypeOffset + s2,
+            OldRaceOffset: d.OldRaceOffset + s2,
+            YoungRaceOffset: d.YoungRaceOffset + s2,
+            StructSize: d.StructSize + Math.Max(s1, s2));
+    }
+}
+
+/// <summary>
+///     Typed runtime reader for TESRace structs (FormType 0x0C, ~1260 bytes).
 ///     Reads RACE_DATA (skill boosts, height/weight, flags), attributes,
 ///     FaceGen clamp values, voice types, default hair, age races, and
 ///     BSSimpleList-backed hair/eye/ability lists.
+///     Supports auto-detected layouts via <see cref="RuntimeRaceProbe" />.
 /// </summary>
 internal sealed class RuntimeRaceReader
 {
     private readonly RuntimeMemoryContext _context;
+    private readonly RuntimeRaceLayout _layout;
 
-    public RuntimeRaceReader(RuntimeMemoryContext context)
+    public RuntimeRaceReader(RuntimeMemoryContext context, RuntimeLayoutProbeResult<int[]>? probeResult = null)
     {
         _context = context;
+        _layout = probeResult is { Margin: >= MinProbeMargin }
+            ? RuntimeRaceLayout.FromShifts(probeResult.Winner.Layout)
+            : RuntimeRaceLayout.CreateDefault();
     }
 
     public RaceRecord? ReadRuntimeRace(RuntimeEditorIdEntry entry)
@@ -26,15 +89,15 @@ internal sealed class RuntimeRaceReader
         }
 
         var offset = entry.TesFormOffset.Value;
-        if (offset + StructSize > _context.FileSize)
+        if (offset + _layout.StructSize > _context.FileSize)
         {
             return null;
         }
 
-        var buffer = new byte[StructSize];
+        var buffer = new byte[_layout.StructSize];
         try
         {
-            _context.Accessor.ReadArray(offset, buffer, 0, StructSize);
+            _context.Accessor.ReadArray(offset, buffer, 0, _layout.StructSize);
         }
         catch
         {
@@ -48,44 +111,39 @@ internal sealed class RuntimeRaceReader
             return null;
         }
 
-        // cFullName (BSStringT at +44)
-        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, FullNameOffset);
+        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, _layout.FullNameOffset);
 
-        // RACE_DATA struct (36 bytes at +96)
+        // RACE_DATA struct (36 bytes)
         var skillBoosts = ReadSkillBoosts(buffer);
-        var maleHeight = BinaryUtils.ReadFloatBE(buffer, RaceDataOffset + 16);
-        var femaleHeight = BinaryUtils.ReadFloatBE(buffer, RaceDataOffset + 20);
-        var maleWeight = BinaryUtils.ReadFloatBE(buffer, RaceDataOffset + 24);
-        var femaleWeight = BinaryUtils.ReadFloatBE(buffer, RaceDataOffset + 28);
-        var dataFlags = BinaryUtils.ReadUInt32BE(buffer, RaceDataOffset + 32);
+        var maleHeight = BinaryUtils.ReadFloatBE(buffer, _layout.RaceDataOffset + 16);
+        var femaleHeight = BinaryUtils.ReadFloatBE(buffer, _layout.RaceDataOffset + 20);
+        var maleWeight = BinaryUtils.ReadFloatBE(buffer, _layout.RaceDataOffset + 24);
+        var femaleWeight = BinaryUtils.ReadFloatBE(buffer, _layout.RaceDataOffset + 28);
+        var dataFlags = BinaryUtils.ReadUInt32BE(buffer, _layout.RaceDataOffset + 32);
 
         // FaceGen clamp values
-        var faceGenMainClamp = BinaryUtils.ReadFloatBE(buffer, FaceGenClamp1Offset);
-        var faceGenFaceClamp = BinaryUtils.ReadFloatBE(buffer, FaceGenClamp2Offset);
+        var faceGenMainClamp = BinaryUtils.ReadFloatBE(buffer, _layout.FaceGenClamp1Offset);
+        var faceGenFaceClamp = BinaryUtils.ReadFloatBE(buffer, _layout.FaceGenClamp2Offset);
 
-        // sFaceCoordNum (uint16 at +1224)
-        var faceCoordNum = BinaryUtils.ReadUInt16BE(buffer, FaceCoordNumOffset);
+        // pDefaultHair — 2×pointer (male, female)
+        var defaultHairMale = _context.FollowPointerToFormId(buffer, _layout.DefaultHairOffset);
+        var defaultHairFemale = _context.FollowPointerToFormId(buffer, _layout.DefaultHairOffset + 4);
 
-        // pDefaultHair — 2×pointer at +164 (male at +164, female at +168)
-        var defaultHairMale = _context.FollowPointerToFormId(buffer, DefaultHairOffset);
-        var defaultHairFemale = _context.FollowPointerToFormId(buffer, DefaultHairOffset + 4);
+        // cDefaultHairColor — single byte color index
+        var defaultHairColor = buffer[_layout.DefaultHairColorOffset];
 
-        // cDefaultHairColor — at +172, this is a small struct. The color index is at +172 directly.
-        // From ESM CNAM it's a single byte. In runtime it's 4 bytes but the meaningful value is the first byte.
-        var defaultHairColor = buffer[DefaultHairColorOffset];
+        // pDefaultVoiceType — 2×pointer (male, female)
+        var maleVoice = _context.FollowPointerToFormId(buffer, _layout.DefaultVoiceTypeOffset);
+        var femaleVoice = _context.FollowPointerToFormId(buffer, _layout.DefaultVoiceTypeOffset + 4);
 
-        // pDefaultVoiceType — 2×pointer at +1228 (male at +1228, female at +1232)
-        var maleVoice = _context.FollowPointerToFormId(buffer, DefaultVoiceTypeOffset);
-        var femaleVoice = _context.FollowPointerToFormId(buffer, DefaultVoiceTypeOffset + 4);
+        // pOldRace / pYoungRace — pointer→TESRace
+        var olderRace = _context.FollowPointerToFormId(buffer, _layout.OldRaceOffset, RaceFormType);
+        var youngerRace = _context.FollowPointerToFormId(buffer, _layout.YoungRaceOffset, RaceFormType);
 
-        // pOldRace / pYoungRace — pointer→TESRace at +1236, +1240
-        var olderRace = _context.FollowPointerToFormId(buffer, OldRaceOffset, RaceFormType);
-        var youngerRace = _context.FollowPointerToFormId(buffer, YoungRaceOffset, RaceFormType);
-
-        // BSSimpleList walks: spellList at +64, HairList at +156, EyeList at +184
-        var abilities = WalkFormIdSimpleList(buffer, offset, SpellListOffset);
-        var hairStyles = WalkFormIdSimpleList(buffer, offset, HairListOffset);
-        var eyeColors = WalkFormIdSimpleList(buffer, offset, EyeListOffset);
+        // BSSimpleList walks
+        var abilities = WalkFormIdSimpleList(buffer, _layout.SpellListOffset);
+        var hairStyles = WalkFormIdSimpleList(buffer, _layout.HairListOffset);
+        var eyeColors = WalkFormIdSimpleList(buffer, _layout.EyeListOffset);
 
         // Validate floats — reject garbage data
         if (!RuntimeMemoryContext.IsNormalFloat(maleHeight) ||
@@ -125,13 +183,13 @@ internal sealed class RuntimeRaceReader
     /// <summary>
     ///     Parse RACE_DATA.eSkillBonus — 7 pairs of (skill AV code, boost value), each 2 bytes.
     /// </summary>
-    private static List<(int SkillIndex, sbyte Boost)> ReadSkillBoosts(byte[] buffer)
+    private List<(int SkillIndex, sbyte Boost)> ReadSkillBoosts(byte[] buffer)
     {
         var boosts = new List<(int, sbyte)>();
         for (var i = 0; i < 7; i++)
         {
-            var skillIndex = buffer[RaceDataOffset + i * 2];
-            var boost = unchecked((sbyte)buffer[RaceDataOffset + i * 2 + 1]);
+            var skillIndex = buffer[_layout.RaceDataOffset + i * 2];
+            var boost = unchecked((sbyte)buffer[_layout.RaceDataOffset + i * 2 + 1]);
             if (skillIndex != 0xFF && boost != 0)
             {
                 boosts.Add((skillIndex, boost));
@@ -146,7 +204,7 @@ internal sealed class RuntimeRaceReader
     ///     BSSimpleList layout: pHead(4) + padding(4) = 8 bytes.
     ///     Each node: pItem(4) + pNext(4) = 8 bytes.
     /// </summary>
-    private List<uint> WalkFormIdSimpleList(byte[] structBuffer, long structFileOffset, int listOffset)
+    private List<uint> WalkFormIdSimpleList(byte[] structBuffer, int listOffset)
     {
         var result = new List<uint>();
 
@@ -198,25 +256,8 @@ internal sealed class RuntimeRaceReader
         return result;
     }
 
-    #region Constants
-
     private const byte RaceFormType = 0x0C;
-    private const int StructSize = 1260;
     private const int FormIdOffset = 12;
-    private const int FullNameOffset = 44;
-    private const int SpellListOffset = 64;
-    private const int RaceDataOffset = 96;
-    private const int HairListOffset = 156;
-    private const int DefaultHairOffset = 164;
-    private const int DefaultHairColorOffset = 172;
-    private const int FaceGenClamp1Offset = 176;
-    private const int FaceGenClamp2Offset = 180;
-    private const int EyeListOffset = 184;
-    private const int FaceCoordNumOffset = 1224;
-    private const int DefaultVoiceTypeOffset = 1228;
-    private const int OldRaceOffset = 1236;
-    private const int YoungRaceOffset = 1240;
     private const int MaxListNodes = 256;
-
-    #endregion
+    private const int MinProbeMargin = 3;
 }

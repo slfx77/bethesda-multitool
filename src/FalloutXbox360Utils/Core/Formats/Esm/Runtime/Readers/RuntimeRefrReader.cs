@@ -1105,7 +1105,6 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
     private const int MapMarkerTypeOffset = 14;
 
     // DoorTeleportData: pLinkedDoor(0) + position/rotation/flags...
-    private const int DoorTeleportLinkedDoorPtrOffset = 0;
     private const int DoorTeleportLinkedDoorPtrSize = 4;
 
     // REFR_LOCK: cBaseLevel(0) + pKey(4) + cFlags(8) + uiNumTries(12) + uiTimesUnlocked(16)

@@ -50,7 +50,8 @@ public sealed class RecordParserContext
                 scanResult.RuntimeRefrFormEntries,
                 npcEntries,
                 worldEntries,
-                cellEntries);
+                cellEntries,
+                scanResult.RuntimeEditorIds);
         }
 
         // Build FormID lookup from main records

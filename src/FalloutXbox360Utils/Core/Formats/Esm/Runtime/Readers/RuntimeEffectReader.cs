@@ -7,14 +7,18 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 /// <summary>
 ///     Reader for BGSProjectile runtime structs from Xbox 360 memory dumps.
 ///     Extracts physics/sound data for projectile records.
+///     Supports auto-detected layouts via <see cref="RuntimeEffectProbe" />.
 /// </summary>
-internal sealed class RuntimeEffectReader(RuntimeMemoryContext context)
+internal sealed class RuntimeEffectReader(
+    RuntimeMemoryContext context,
+    RuntimeLayoutProbeResult<int[]>? probeResult = null)
 {
     private readonly RuntimeMemoryContext _context = context;
 
-    // Build-specific offset shift: Proto Debug PDB + _s = actual dump offset.
-    private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
-        MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
+    // Uniform shift for all post-TESForm fields: probed value if confident, else PDB default.
+    private readonly int _s = probeResult is { Margin: >= MinProbeMargin }
+        ? probeResult.Winner.Layout.Length > 1 ? probeResult.Winner.Layout[1] : 0
+        : RuntimeBuildOffsets.GetPdbShift(MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
 
     /// <summary>
     ///     Read BGSProjectile physics/sound data from a runtime struct at the given file offset.
@@ -184,6 +188,8 @@ internal sealed class RuntimeEffectReader(RuntimeMemoryContext context)
 
     /// <summary>fBounceMultiplier float (Data+80).</summary>
     private int ProjBounceMultiplierOffset => 176 + _s;
+
+    private const int MinProbeMargin = 3;
 
     #endregion
 }

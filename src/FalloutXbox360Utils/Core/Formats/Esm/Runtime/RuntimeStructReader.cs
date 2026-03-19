@@ -53,16 +53,17 @@ public sealed class RuntimeStructReader
         MinidumpInfo minidumpInfo,
         bool useProtoOffsets,
         RuntimeNpcLayoutProbeResult? npcLayoutProbe,
-        RuntimeWorldCellLayoutProbeResult? worldCellLayoutProbe = null)
+        RuntimeWorldCellLayoutProbeResult? worldCellLayoutProbe = null,
+        RuntimeProbeResults? probeResults = null)
     {
         IsEarlyBuild = useProtoOffsets;
         WorldCellLayoutProbe = worldCellLayoutProbe;
         _context = new RuntimeMemoryContext(accessor, fileSize, minidumpInfo);
         _actors = new RuntimeActorReader(_context, npcLayoutProbe);
-        _generic = new RuntimeGenericReader(_context);
+        _generic = new RuntimeGenericReader(_context, probeResults?.GenericTypeShifts);
         _items = new RuntimeItemReader(_context);
         _dialogue = new RuntimeDialogueReader(_context);
-        _effects = new RuntimeEffectReader(_context);
+        _effects = new RuntimeEffectReader(_context, probeResults?.EffectLayout);
         _scripts = new RuntimeScriptReader(_context);
         _world = new RuntimeWorldReader(_context);
         _refrs = new RuntimeRefrReader(_context, useProtoOffsets);
@@ -71,14 +72,14 @@ public sealed class RuntimeStructReader
         _cells = new RuntimeCellReader(_context, useProtoOffsets, worldCellLayoutProbe);
         _collections = new RuntimeCollectionReader(_context);
         _worldObjects = new RuntimeWorldObjectReader(_context);
-        _races = new RuntimeRaceReader(_context);
-        _magic = new RuntimeMagicReader(_context);
+        _races = new RuntimeRaceReader(_context, probeResults?.RaceLayout);
+        _magic = new RuntimeMagicReader(_context, probeResults?.MagicLayout);
         _globals = new RuntimeGlobalReader(_context);
         _classes = new RuntimeClassReader(_context);
         _appearance = new RuntimeCharacterAppearanceReader(_context);
         _reputations = new RuntimeReputationReader(_context);
         _sounds = new RuntimeSoundReader(_context);
-        _books = new RuntimeBookReader(_context);
+        _books = new RuntimeBookReader(_context, probeResults?.BookLayout);
         _weaponMods = new RuntimeWeaponModReader(_context);
         _recipes = new RuntimeRecipeReader(_context);
         _challenges = new RuntimeChallengeReader(_context);
@@ -101,7 +102,8 @@ public sealed class RuntimeStructReader
         IReadOnlyList<RuntimeEditorIdEntry> refrEntries,
         IReadOnlyList<RuntimeEditorIdEntry>? npcEntries = null,
         IReadOnlyList<RuntimeEditorIdEntry>? worldEntries = null,
-        IReadOnlyList<RuntimeEditorIdEntry>? cellEntries = null)
+        IReadOnlyList<RuntimeEditorIdEntry>? cellEntries = null,
+        IReadOnlyList<RuntimeEditorIdEntry>? allEntries = null)
     {
         var context = new RuntimeMemoryContext(accessor, fileSize, minidumpInfo);
         var isEarlyBuild = RuntimeRefrReader.ProbeIsEarlyBuild(context, refrEntries);
@@ -112,13 +114,31 @@ public sealed class RuntimeStructReader
             worldEntries is { Count: > 0 } || cellEntries is { Count: > 0 }
                 ? RuntimeWorldCellLayoutProbe.Probe(context, worldEntries, cellEntries)
                 : null;
+
+        // Run field probes for specialized readers using allEntries
+        RuntimeProbeResults? probeResults = null;
+        if (allEntries is { Count: > 0 })
+        {
+            probeResults = new RuntimeProbeResults
+            {
+                NpcLayout = npcLayoutProbe,
+                WorldCellLayout = worldCellLayoutProbe,
+                BookLayout = RuntimeBookProbe.Probe(context, allEntries),
+                RaceLayout = RuntimeRaceProbe.Probe(context, allEntries),
+                EffectLayout = RuntimeEffectProbe.Probe(context, allEntries),
+                MagicLayout = RuntimeMagicProbe.Probe(context, allEntries),
+                GenericTypeShifts = RuntimeGenericReader.ProbeAllTypeShifts(context, allEntries)
+            };
+        }
+
         return new RuntimeStructReader(
             accessor,
             fileSize,
             minidumpInfo,
             isEarlyBuild,
             npcLayoutProbe,
-            worldCellLayoutProbe);
+            worldCellLayoutProbe,
+            probeResults);
     }
 
     #region Effects
