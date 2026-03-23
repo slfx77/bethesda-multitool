@@ -77,4 +77,10 @@ public record RuntimeDialogueInfo
 
     /// <summary>Whether this INFO was already said by the player (runtime bSaidOnce flag).</summary>
     public bool SaidOnce { get; init; }
+
+    /// <summary>
+    ///     ESM file offset of this INFO record (from TESTopicInfo.iFileOffset at +92).
+    ///     Used to locate raw ESM subrecord data in the memory-mapped ESM within the dump.
+    /// </summary>
+    public uint EsmFileOffset { get; init; }
 }

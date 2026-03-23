@@ -11,9 +11,10 @@ internal static class RuntimeDialogueLayouts
     internal const int FormEditorIdOffset = 16;
 
     // TESTopicInfo Release Beta / Final layout:
-    // bSaidOnce at +50, m_listAddTopics at +64.
+    // bSaidOnce at +50, m_listAddTopics at +64, iFileOffset at +92.
     internal const int InfoSaidOnceOffset = 50;
     internal const int InfoAddTopicsOffset = 64;
+    internal const int InfoFileOffsetOffset = 92;
 
     // TESTopic layout — consistent across validated dump families (Debug, Release Beta variants,
     // MemDebug). Dump size is 88 bytes: FullName=+44, DataType=+52, Flags=+53, Priority=+56,

@@ -26,6 +26,7 @@ public sealed partial class SingleFileTab
         DialogueBrowseMode.SelectedIndex = 0;
         DialogueSearchBox.Text = "";
         _dialoguePickerByQuest = true;
+        _dialogueShowEditorIds = false;
         _visitedTopicFormIds.Clear();
         _currentDialogueTopic = null;
         _dialogueSpeakerFilter = null;
@@ -58,7 +59,10 @@ public sealed partial class SingleFileTab
 
         _dialogueSpeakerFilter = null;
         _dialogueQuestFilter = null;
-        NavigateToDialogueTopic(topic, pushToStack: _currentDialogueTopic != null);
+        var displayText = DialogueViewerHelper.ResolveTopicDisplayText(topic);
+        var firstInfo = topic.InfoChain.FirstOrDefault()?.Info;
+        NavigateToDialogueTopic(topic, pushToStack: _currentDialogueTopic != null,
+            promptText: displayText, promptSourceInfo: firstInfo);
         return true;
     }
 
@@ -69,7 +73,9 @@ public sealed partial class SingleFileTab
     private readonly HashSet<uint> _visitedTopicFormIds = new();
 
     private bool _dialoguePickerByQuest = true;
+    private bool _dialogueShowEditorIds;
     private TopicDialogueNode? _currentDialogueTopic;
+    private InfoDialogueNode? _selectedResponseNode;
     private uint? _dialogueSpeakerFilter;
     private uint? _dialogueQuestFilter;
     private CancellationTokenSource? _dialogueSearchDebounceToken;
@@ -138,6 +144,23 @@ public sealed partial class SingleFileTab
         return _session.EffectiveResolver?.GetBestNameWithRefChain(formId) ?? $"0x{formId:X8}";
     }
 
+    private string ResolveEditorId(uint formId)
+    {
+        return _session.EffectiveResolver?.ResolveEditorId(formId) ?? $"0x{formId:X8}";
+    }
+
+    private string? ResolveQuestVariable(uint questFormId, uint varIndex)
+    {
+        var quests = _session.SemanticResult?.Quests;
+        if (quests == null)
+        {
+            return null;
+        }
+
+        var quest = quests.FirstOrDefault(q => q.FormId == questFormId);
+        return quest?.Variables.FirstOrDefault(v => v.Index == varIndex)?.Name;
+    }
+
     #endregion
 
     #region Dialogue Picker Tree
@@ -150,12 +173,15 @@ public sealed partial class SingleFileTab
         List<TreeViewNode> nodes;
         if (byQuest)
         {
-            nodes = DialoguePickerTreeBuilder.BuildQuestPickerNodes(tree, searchQuery);
+            nodes = DialoguePickerTreeBuilder.BuildQuestPickerNodes(
+                tree, searchQuery, _dialogueShowEditorIds ? ResolveEditorId : ResolveFormName);
         }
         else if (_session.TopicsBySpeaker != null)
         {
             nodes = DialoguePickerTreeBuilder.BuildNpcPickerNodes(
-                _session.TopicsBySpeaker, ResolveFormName, searchQuery);
+                _session.TopicsBySpeaker,
+                _dialogueShowEditorIds ? ResolveEditorId : ResolveFormName,
+                searchQuery);
         }
         else
         {
@@ -174,8 +200,7 @@ public sealed partial class SingleFileTab
     {
         DialoguePickerTreeBuilder.ExpandCategoryNode(
             args, _dialoguePickerByQuest,
-            formId => _session.EffectiveSubtitles?.Lookup(formId),
-            ResolveFormName);
+            ResolveFormName, _dialogueShowEditorIds);
     }
 
     private void DialoguePickerTree_ItemInvoked(TreeView sender, TreeViewItemInvokedEventArgs args)
@@ -188,19 +213,43 @@ public sealed partial class SingleFileTab
         var (topic, speakerFilter, questFilter) = DialoguePickerTreeBuilder.ExtractTopicFromInvocation(browserNode);
         if (topic == null)
         {
+            // Auto-select GREETING topic when an NPC speaker node is clicked
+            if (browserNode.DataObject is DialoguePickerTreeBuilder.SpeakerPickerData speakerPicker
+                && _session.DialogueTree != null)
+            {
+                var greeting = DialogueViewerHelper.FindGreetingTopicForSpeaker(
+                    _session.DialogueTree, speakerPicker.SpeakerFormId);
+                if (greeting != null)
+                {
+                    _dialogueSpeakerFilter = speakerPicker.SpeakerFormId;
+                    _dialogueQuestFilter = null;
+                    var filteredChain = DialogueViewerHelper.FilterInfoChain(
+                        greeting.InfoChain, null, speakerPicker.SpeakerFormId);
+                    var greetingInfo = filteredChain.FirstOrDefault()?.Info;
+                    var greetingText = greetingInfo?.PromptText
+                                      ?? DialogueViewerHelper.ResolveTopicDisplayText(greeting);
+                    NavigateToDialogueTopic(greeting, pushToStack: false,
+                        promptText: greetingText, promptSourceInfo: greetingInfo);
+                }
+            }
+
             return;
         }
 
         _dialogueSpeakerFilter = speakerFilter;
         _dialogueQuestFilter = questFilter;
-        NavigateToDialogueTopic(topic, pushToStack: false);
+        var displayText = DialogueViewerHelper.ResolveTopicDisplayText(topic);
+        var firstInfo = topic.InfoChain.FirstOrDefault()?.Info;
+        NavigateToDialogueTopic(topic, pushToStack: false,
+            promptText: displayText, promptSourceInfo: firstInfo);
     }
 
     #endregion
 
     #region Dialogue Conversation Navigation
 
-    private void NavigateToDialogueTopic(TopicDialogueNode topic, bool pushToStack, string? promptText = null)
+    private void NavigateToDialogueTopic(TopicDialogueNode topic, bool pushToStack,
+        string? promptText = null, DialogueRecord? promptSourceInfo = null)
     {
         if (pushToStack && _currentDialogueTopic != null && !_isNavigating)
         {
@@ -208,13 +257,15 @@ public sealed partial class SingleFileTab
         }
 
         _currentDialogueTopic = topic;
+        _selectedResponseNode = null;
         _visitedTopicFormIds.Add(topic.TopicFormId);
 
         var filteredInfoChain = DialogueViewerHelper.FilterInfoChain(
-            topic.InfoChain, _dialogueQuestFilter, _dialogueSpeakerFilter);
+            topic.InfoChain, _dialogueQuestFilter, _dialogueSpeakerFilter,
+            strictQuestFilter: _dialogueQuestFilter != null);
 
         UpdateDialogueHeader(topic, filteredInfoChain);
-        PopulateConversationDisplay(filteredInfoChain, promptText);
+        PopulateConversationDisplay(topic, filteredInfoChain, promptText, promptSourceInfo);
         PopulatePlayerChoices(topic, filteredInfoChain);
 
         DialogueConversationScroller.ChangeView(null, 0, null, disableAnimation: true);
@@ -240,24 +291,54 @@ public sealed partial class SingleFileTab
                 rootNode.IsExpanded = true;
             }
 
+            if (TrySelectTopicInChildren(rootNode, topic.TopicFormId))
+            {
+                return;
+            }
+
+            // Search one level deeper (NPC → Category → Topic)
             foreach (var child in rootNode.Children)
             {
-                if (child.Content is not EsmBrowserNode topicNode)
+                if (child.Content is not EsmBrowserNode childNode ||
+                    !DialoguePickerTreeBuilder.CategoryContainsTopic(childNode, topic.TopicFormId))
                 {
                     continue;
                 }
 
-                if (DialoguePickerTreeBuilder.GetChildTopicFormId(topicNode) == topic.TopicFormId)
+                if (child.HasUnrealizedChildren)
                 {
-                    DialoguePickerTree.SelectedNode = child;
-                    var container = DialoguePickerTree.ContainerFromNode(child) as UIElement;
-                    container?.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = true });
+                    child.IsExpanded = true;
+                }
+
+                if (TrySelectTopicInChildren(child, topic.TopicFormId))
+                {
                     return;
                 }
             }
 
             return;
         }
+    }
+
+    private bool TrySelectTopicInChildren(TreeViewNode parentNode, uint topicFormId)
+    {
+        foreach (var child in parentNode.Children)
+        {
+            if (child.Content is not EsmBrowserNode topicNode)
+            {
+                continue;
+            }
+
+            if (DialoguePickerTreeBuilder.GetChildTopicFormId(topicNode) == topicFormId)
+            {
+                DialoguePickerTree.SelectedNode = child;
+                var container = DialoguePickerTree.ContainerFromNode(child) as UIElement;
+                container?.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = true });
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void UpdateDialogueHeader(TopicDialogueNode topic, List<InfoDialogueNode> filteredInfoChain)
@@ -272,7 +353,9 @@ public sealed partial class SingleFileTab
 
             if (questFormId is > 0)
             {
-                parts.Add(ResolveFormName(questFormId.Value));
+                parts.Add(_dialogueShowEditorIds
+                    ? ResolveEditorId(questFormId.Value)
+                    : ResolveFormName(questFormId.Value));
             }
         }
 
@@ -282,15 +365,42 @@ public sealed partial class SingleFileTab
         DialogueHeaderText.Text = string.Join(" \u203A ", parts);
     }
 
-    private void PopulateConversationDisplay(List<InfoDialogueNode> filteredInfoChain, string? promptText = null)
+    private void PopulateConversationDisplay(TopicDialogueNode topic,
+        List<InfoDialogueNode> filteredInfoChain,
+        string? promptText = null, DialogueRecord? promptSourceInfo = null)
     {
         DialogueConversationPanel.Children.Clear();
+
+        // When no INFO record is available for the prompt detail panel but we have a DIAL record,
+        // build a topic-level detail panel instead
+        Border? topicDetailPanel = null;
+        if (promptSourceInfo == null && topic.Topic != null)
+        {
+            var topicRows = DialogueRecordDetailBuilder.BuildDialTopicDetailRows(
+                topic.Topic, ResolveFormName);
+            topicDetailPanel = DialogueTreeRenderer.BuildDetailPanel(
+                topicRows,
+                gridMargin: new Thickness(22, 4, 0, 0),
+                toggleMargin: new Thickness(22, 4, 0, 0),
+                borderMargin: new Thickness(0, 2, 0, 0),
+                createLink: (text, formId, fontSize, monospace) =>
+                    CreateFormIdLink(text, formId, fontSize, monospace));
+        }
+
+        // When multiple responses exist, allow clicking to select one for follow-up choices
+        Action<InfoDialogueNode>? onResponseSelected = filteredInfoChain.Count > 1
+            ? OnResponseSelected
+            : null;
 
         var elements = DialogueConversationBuilder.BuildConversationElements(
             filteredInfoChain, promptText,
             ResolveSpeakerName,
             formId => _session.EffectiveSubtitles?.Lookup(formId),
-            BuildRecordDetailPanel);
+            BuildRecordDetailPanel,
+            promptSourceInfo,
+            onResponseSelected,
+            _selectedResponseNode,
+            topicDetailPanel);
 
         foreach (var element in elements)
         {
@@ -298,11 +408,34 @@ public sealed partial class SingleFileTab
         }
     }
 
+    private void OnResponseSelected(InfoDialogueNode selectedNode)
+    {
+        // Toggle selection — clicking same response again deselects it
+        _selectedResponseNode = _selectedResponseNode == selectedNode ? null : selectedNode;
+
+        if (_currentDialogueTopic == null)
+        {
+            return;
+        }
+
+        var filteredInfoChain = DialogueViewerHelper.FilterInfoChain(
+            _currentDialogueTopic.InfoChain, _dialogueQuestFilter, _dialogueSpeakerFilter,
+            strictQuestFilter: _dialogueQuestFilter != null);
+
+        // Re-render conversation to update selection styling
+        PopulateConversationDisplay(_currentDialogueTopic, filteredInfoChain);
+        PopulatePlayerChoices(_currentDialogueTopic, filteredInfoChain);
+    }
+
     private Border BuildRecordDetailPanel(DialogueRecord info)
     {
         var csvSubtitle = _session.EffectiveSubtitles?.Lookup(info.FormId);
+        var topicEditorId = info.TopicFormId is > 0
+            ? _session.EffectiveResolver?.EditorIds.GetValueOrDefault(info.TopicFormId.Value)
+            : null;
         var rows = DialogueRecordDetailBuilder.BuildRecordDetailRows(
-            info, csvSubtitle, ResolveFormName, ResolveSpeakerName);
+            info, csvSubtitle, ResolveFormName, ResolveSpeakerName, topicEditorId,
+            ResolveEditorId, ResolveQuestVariable);
 
         return DialogueTreeRenderer.BuildDetailPanel(
             rows,
@@ -316,19 +449,59 @@ public sealed partial class SingleFileTab
     {
         DialogueChoicesPanel.Children.Clear();
 
-        var choiceTopics = DialogueViewerHelper.CollectLinkedTopics(filteredInfoChain, topic.TopicFormId);
+        // Topics with 0 INFOs have no dialogue data — don't show misleading parent choices
+        if (filteredInfoChain.Count == 0)
+        {
+            AddEndOfDialogueLabel("No dialogue data available for this topic");
+            AddReturnToPickerLink();
+            return;
+        }
+
+        // Check Goodbye FIRST — if all filtered INFOs end the conversation,
+        // don't show TCLT-linked choices (which would pull in unrelated topics).
+        var allGoodbye = filteredInfoChain.Count > 0 && filteredInfoChain.All(i => i.Info.IsGoodbye);
+
+        // When a specific response is selected and there are multiple responses,
+        // only show that response's follow-up choices
+        var choiceChain = filteredInfoChain;
+        if (_selectedResponseNode != null && filteredInfoChain.Count > 1 &&
+            filteredInfoChain.Contains(_selectedResponseNode))
+        {
+            choiceChain = [_selectedResponseNode];
+        }
+
+        var choiceTopics = allGoodbye
+            ? new Dictionary<uint, (TopicDialogueNode Topic, InfoDialogueNode SourceInfo)>()
+            : DialogueViewerHelper.CollectLinkedTopics(choiceChain, topic.TopicFormId);
+
+        // When multiple responses exist and none is selected, show a hint instead of merging all choices
+        if (filteredInfoChain.Count > 1 && _selectedResponseNode == null && !allGoodbye)
+        {
+            // Check if any responses have choice topics at all
+            var anyHasChoices = DialogueViewerHelper.CollectLinkedTopics(filteredInfoChain, topic.TopicFormId).Count > 0;
+            if (anyHasChoices)
+            {
+                DialogueChoicesHeader.Visibility = Visibility.Visible;
+                DialogueChoicesPanel.Children.Add(
+                    DialogueTreeRenderer.CreateSecondaryLabel(
+                        "Select a response above to see its follow-up choices",
+                        new Thickness(0, 4, 0, 4)));
+                ShowAddedTopicsInfo(filteredInfoChain);
+                return;
+            }
+        }
 
         if (choiceTopics.Count > 0)
         {
             DialogueChoicesHeader.Visibility = Visibility.Visible;
-            foreach (var (_, (linked, sourceInfo)) in choiceTopics)
+            foreach (var (_, (linked, sourceInfo)) in choiceTopics
+                         .OrderByDescending(kv => kv.Value.Topic.Topic?.Priority ?? 0f))
             {
                 DialogueChoicesPanel.Children.Add(CreatePlayerChoiceWithDetails(linked, sourceInfo));
             }
         }
         else
         {
-            var allGoodbye = filteredInfoChain.Count > 0 && filteredInfoChain.All(i => i.Info.IsGoodbye);
             var hasResultScript = filteredInfoChain.Any(i => i.Info.HasResultScript);
 
             if (allGoodbye)
@@ -343,19 +516,33 @@ public sealed partial class SingleFileTab
             }
             else
             {
+                // In the game, when a dialogue branch ends without goodbye/script,
+                // it returns to the parent topic's choices (the previous choice list).
                 var parentTopic = _session.DialogueTree != null
                     ? DialogueViewerHelper.FindParentTopic(topic, _session.DialogueTree, _dialogueQuestFilter)
                     : null;
-                var parentChoices = parentTopic != null
-                    ? DialogueViewerHelper.CollectLinkedTopics(parentTopic.InfoChain, topic.TopicFormId)
-                    : [];
 
-                if (parentChoices.Count > 0)
+                if (parentTopic != null)
                 {
-                    DialogueChoicesHeader.Visibility = Visibility.Visible;
-                    foreach (var (_, (linked, sourceInfo)) in parentChoices)
+                    var parentFilteredChain = DialogueViewerHelper.FilterInfoChain(
+                        parentTopic.InfoChain, _dialogueQuestFilter, _dialogueSpeakerFilter);
+                    var parentChoices = DialogueViewerHelper.CollectLinkedTopics(
+                        parentFilteredChain, topic.TopicFormId);
+
+                    if (parentChoices.Count > 0)
                     {
-                        DialogueChoicesPanel.Children.Add(CreatePlayerChoiceWithDetails(linked, sourceInfo));
+                        DialogueChoicesHeader.Visibility = Visibility.Visible;
+                        foreach (var (_, (linked, sourceInfo)) in parentChoices
+                                     .OrderByDescending(kv => kv.Value.Topic.Topic?.Priority ?? 0f))
+                        {
+                            DialogueChoicesPanel.Children.Add(
+                                CreatePlayerChoiceWithDetails(linked, sourceInfo));
+                        }
+                    }
+                    else
+                    {
+                        AddEndOfDialogueLabel("Conversation returns to topic list");
+                        AddReturnToPickerLink();
                     }
                 }
                 else
@@ -387,13 +574,26 @@ public sealed partial class SingleFileTab
 
         foreach (var (_, addedTopic) in addedTopics)
         {
-            var displayText = DialogueViewerHelper.ResolveTopicDisplayText(addedTopic);
-            var button = DialogueConversationBuilder.CreateStyledChoiceButton(
-                displayText, addedTopic, _visitedTopicFormIds,
-                (t, prompt) => NavigateToDialogueTopic(t, pushToStack: true, promptText: prompt));
-            var container = new StackPanel();
-            container.Children.Add(button);
-            DialogueChoicesPanel.Children.Add(container);
+            var sourceInfo = filteredInfoChain.FirstOrDefault(i =>
+                i.AddedTopics.Any(a => a.TopicFormId == addedTopic.TopicFormId));
+            if (sourceInfo != null)
+            {
+                DialogueChoicesPanel.Children.Add(CreatePlayerChoiceWithDetails(addedTopic, sourceInfo));
+            }
+            else
+            {
+                var displayText = _dialogueShowEditorIds
+                    ? DialogueViewerHelper.ResolveEditorIdDisplay(addedTopic)
+                    : DialogueViewerHelper.ResolveTopicDisplayText(addedTopic);
+                var targetFirstInfo = addedTopic.InfoChain.FirstOrDefault()?.Info;
+                var button = DialogueConversationBuilder.CreateStyledChoiceButton(
+                    displayText, addedTopic, _visitedTopicFormIds,
+                    (t, prompt) => NavigateToDialogueTopic(t, pushToStack: true, promptText: prompt,
+                        promptSourceInfo: targetFirstInfo));
+                var container = new StackPanel();
+                container.Children.Add(button);
+                DialogueChoicesPanel.Children.Add(container);
+            }
         }
     }
 
@@ -402,7 +602,9 @@ public sealed partial class SingleFileTab
         var container = new StackPanel();
         var button = DialogueConversationBuilder.CreatePlayerChoiceButton(
             linkedTopic, sourceInfo, _visitedTopicFormIds,
-            (t, prompt) => NavigateToDialogueTopic(t, pushToStack: true, promptText: prompt));
+            (t, prompt) => NavigateToDialogueTopic(t, pushToStack: true, promptText: prompt,
+                promptSourceInfo: sourceInfo.Info),
+            _dialogueShowEditorIds);
         container.Children.Add(button);
         container.Children.Add(BuildTopicDetailPanel(linkedTopic, sourceInfo));
         return container;
@@ -411,7 +613,7 @@ public sealed partial class SingleFileTab
     private Border BuildTopicDetailPanel(TopicDialogueNode linkedTopic, InfoDialogueNode sourceInfo)
     {
         var rows = DialogueRecordDetailBuilder.BuildTopicDetailRows(
-            linkedTopic, sourceInfo, ResolveFormName);
+            linkedTopic, sourceInfo, ResolveFormName, ResolveEditorId);
 
         return DialogueTreeRenderer.BuildDetailPanel(
             rows,
@@ -463,6 +665,32 @@ public sealed partial class SingleFileTab
         var byQuest = DialogueBrowseMode.SelectedIndex == 0;
         var searchQuery = string.IsNullOrWhiteSpace(DialogueSearchBox.Text) ? null : DialogueSearchBox.Text.Trim();
         BuildDialoguePickerTree(_session.DialogueTree, byQuest, searchQuery);
+    }
+
+    private void DialogueShowEditorIdCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        _dialogueShowEditorIds = DialogueShowEditorIdCheckBox.IsChecked == true;
+
+        if (_session.DialogueTree == null)
+        {
+            return;
+        }
+
+        // Rebuild the picker tree with new display mode
+        var byQuest = DialogueBrowseMode.SelectedIndex == 0;
+        var searchQuery = string.IsNullOrWhiteSpace(DialogueSearchBox.Text) ? null : DialogueSearchBox.Text.Trim();
+        BuildDialoguePickerTree(_session.DialogueTree, byQuest, searchQuery);
+
+        // Re-render current conversation with new display mode and restore selection
+        if (_currentDialogueTopic != null)
+        {
+            var filteredInfoChain = DialogueViewerHelper.FilterInfoChain(
+                _currentDialogueTopic.InfoChain, _dialogueQuestFilter, _dialogueSpeakerFilter,
+                strictQuestFilter: _dialogueQuestFilter != null);
+            UpdateDialogueHeader(_currentDialogueTopic, filteredInfoChain);
+            PopulatePlayerChoices(_currentDialogueTopic, filteredInfoChain);
+            SyncDialogueTreeSelection(_currentDialogueTopic);
+        }
     }
 
     private async void DialogueSearchBox_TextChanged(object sender, TextChangedEventArgs e)

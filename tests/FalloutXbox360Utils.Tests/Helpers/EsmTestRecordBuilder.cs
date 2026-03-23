@@ -399,6 +399,62 @@ internal static class EsmTestRecordBuilder
 
     #endregion
 
+    #region Compressed Record Builders
+
+    /// <summary>
+    ///     Build a big-endian compressed ESM record. The subrecord payload is zlib-compressed
+    ///     and prepended with the 4-byte decompressed size (BE). The record header has
+    ///     flag 0x00040000 set to indicate compression.
+    /// </summary>
+    public static byte[] BuildCompressedRecordBE(string recSig, uint formId,
+        params (string sig, byte[] data)[] subrecords)
+    {
+        // Build uncompressed subrecord payload (BE)
+        var payloadSize = 0;
+        foreach (var (_, data) in subrecords)
+        {
+            payloadSize += 6 + data.Length;
+        }
+
+        var payload = new byte[payloadSize];
+        var offset = 0;
+        foreach (var (sig, data) in subrecords)
+        {
+            WriteSigBE(payload, offset, sig);
+            BinaryPrimitives.WriteUInt16BigEndian(payload.AsSpan(offset + 4), (ushort)data.Length);
+            Array.Copy(data, 0, payload, offset + 6, data.Length);
+            offset += 6 + data.Length;
+        }
+
+        // Compress with zlib
+        using var compressedStream = new MemoryStream();
+        using (var zlibStream = new System.IO.Compression.ZLibStream(
+            compressedStream, System.IO.Compression.CompressionLevel.Optimal, leaveOpen: true))
+        {
+            zlibStream.Write(payload);
+        }
+
+        var compressed = compressedStream.ToArray();
+
+        // Record data = [4B decompressed size BE] + [compressed bytes]
+        var recordDataSize = 4 + compressed.Length;
+        var totalSize = 24 + recordDataSize;
+        var buf = new byte[totalSize];
+
+        // Header with compressed flag 0x00040000
+        WriteBERecordHeader(buf, 0, recSig, (uint)recordDataSize, formId, 0x00040000);
+
+        // Decompressed size (BE)
+        BinaryPrimitives.WriteUInt32BigEndian(buf.AsSpan(24), (uint)payloadSize);
+
+        // Compressed data
+        Array.Copy(compressed, 0, buf, 28, compressed.Length);
+
+        return buf;
+    }
+
+    #endregion
+
     #region Scan Result Builders
 
     /// <summary>Creates a minimal EsmRecordScanResult with the given main records.</summary>

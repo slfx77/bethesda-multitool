@@ -69,6 +69,12 @@ public static partial class SubrecordSchemaRegistry
         // DATA - DIAL (2 bytes) - Dialog Topic Data (2 UInt8 flags, no swap needed)
         schemas[new SchemaKey("DATA", "DIAL", 2)] = SubrecordSchema.ByteArray;
 
+        // PNAM - DIAL (4 bytes) - Topic Priority (float)
+        schemas[new SchemaKey("PNAM", "DIAL", 4)] = new SubrecordSchema(F.Float("Priority"))
+        {
+            Description = "Topic Priority"
+        };
+
         // ========================================================================
         // NOTE SCHEMAS
         // ========================================================================

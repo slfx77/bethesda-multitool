@@ -225,6 +225,12 @@ public sealed partial class SingleFileTab
             PushUnifiedNav();
         }
 
+        // Switch to Data Browser tab FIRST so progress bar is visible during loading
+        if (!ReferenceEquals(SubTabView.SelectedItem, DataBrowserTab))
+        {
+            SubTabView.SelectedItem = DataBrowserTab;
+        }
+
         // Ensure Data Browser tree is populated before FormID lookup.
         // The tree lazily initializes on first tab visit via SelectionChanged,
         // but that handler is fire-and-forget — we must await it here.
@@ -235,12 +241,6 @@ public sealed partial class SingleFileTab
             {
                 await PopulateDataBrowserAsync();
             }
-        }
-
-        // Switch to Data Browser tab so the user can see the result
-        if (!ReferenceEquals(SubTabView.SelectedItem, DataBrowserTab))
-        {
-            SubTabView.SelectedItem = DataBrowserTab;
         }
 
         if (_formIdNodeIndex == null)
@@ -283,6 +283,12 @@ public sealed partial class SingleFileTab
     private bool IsFormIdNavigable(uint formId)
     {
         if (_formIdNodeIndex != null && _formIdNodeIndex.ContainsKey(formId))
+        {
+            return true;
+        }
+
+        // Dialogue topics and INFOs are navigable via the Dialogue Browser
+        if (_session.DialogueFormIdIndex?.ContainsKey(formId) == true)
         {
             return true;
         }

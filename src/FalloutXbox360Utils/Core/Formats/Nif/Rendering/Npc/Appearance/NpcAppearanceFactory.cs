@@ -80,7 +80,8 @@ internal sealed class NpcAppearanceFactory
             race?.MaleBodyTexturePath,
             race?.FemaleBodyTexturePath);
         var hair = ResolveHair(npc.HairFormId);
-        var eyeTexturePath = ResolveEyeTexture(npc.EyesFormId, race);
+        var eyeTexturePath = ResolveEyeTexture(
+            ResolveEffectiveEyesFormId(npc.EyesFormId, race, headModelPath), race);
         var inventoryItems = _inventoryResolver.ResolveInventoryItems(npc);
         var equippedItems = _equipmentResolver.Resolve(
             inventoryItems,
@@ -136,6 +137,7 @@ internal sealed class NpcAppearanceFactory
             TongueNifPath = NpcAppearancePathDeriver.AsMeshPath(tongueModelPath),
             HeadPartNifPaths = _headPartPathResolver.Resolve(npc.HeadPartFormIds),
             HairColor = npc.HairColor,
+            HairLength = npc.HairLength,
             FaceGenSymmetricCoeffs = symmetricCoefficients,
             FaceGenAsymmetricCoeffs = asymmetricCoefficients,
             FaceGenTextureCoeffs = textureCoefficients,
@@ -211,7 +213,8 @@ internal sealed class NpcAppearanceFactory
             race?.MaleBodyTexturePath,
             race?.FemaleBodyTexturePath);
         var hair = ResolveHair(npcRecord.HairFormId);
-        var eyeFormId = npcRecord.EyesFormId ?? race?.DefaultEyesFormId;
+        var eyeFormId = ResolveEffectiveEyesFormId(
+            npcRecord.EyesFormId ?? race?.DefaultEyesFormId, race, headModelPath);
         var eyeTexturePath = ResolveEyeTexture(eyeFormId, race, false);
         var (hairColor, headPartIds) = ResolveDmpFallbacks(npcRecord);
         _index.Npcs.TryGetValue(npcRecord.FormId, out var esmNpc);
@@ -272,6 +275,7 @@ internal sealed class NpcAppearanceFactory
             TongueNifPath = NpcAppearancePathDeriver.AsMeshPath(tongueModelPath),
             HeadPartNifPaths = _headPartPathResolver.Resolve(headPartIds),
             HairColor = hairColor,
+            HairLength = npcRecord.HairLength,
             FaceGenSymmetricCoeffs = symmetricCoefficients,
             FaceGenAsymmetricCoeffs = asymmetricCoefficients,
             FaceGenTextureCoeffs = textureCoefficients,
@@ -311,6 +315,27 @@ internal sealed class NpcAppearanceFactory
         }
 
         return null;
+    }
+
+    /// <summary>
+    ///     For non-human races (e.g. ghouls), always prefer the race's default EYES record.
+    ///     Many ghoul NPCs have a human-type EYES FormID in their NPC_ data, but at runtime
+    ///     the game renders race-appropriate eyes. Without this override, ghoul NPCs would
+    ///     get human iris textures applied to their eye meshes.
+    /// </summary>
+    private static uint? ResolveEffectiveEyesFormId(
+        uint? npcEyesFormId,
+        RaceScanEntry? race,
+        string? headModelPath)
+    {
+        if (race?.DefaultEyesFormId != null &&
+            headModelPath != null &&
+            headModelPath.Contains("ghoul", StringComparison.OrdinalIgnoreCase))
+        {
+            return race.DefaultEyesFormId;
+        }
+
+        return npcEyesFormId;
     }
 
     private string? ResolveEyeTexture(

@@ -189,6 +189,9 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
         // Read bSaidOnce (bool8)
         var saidOnce = buffer[InfoSaidOnceOffset] != 0;
 
+        // Read iFileOffset (uint32 BE) — ESM file offset of this INFO record
+        var esmFileOffset = BinaryUtils.ReadUInt32BE(buffer, InfoFileOffsetOffset);
+
         // Read objConditions (TESCondition -> BSSimpleList<TESConditionItem*>)
         var conditionData = ReadConditions(offset);
 
@@ -220,6 +223,7 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
             PromptText = entry.DialogueLine ?? _context.ReadBSStringT(offset, _info.PromptOffset),
             DumpOffset = offset,
             SaidOnce = saidOnce,
+            EsmFileOffset = esmFileOffset,
             AddTopicFormIds = addTopicFormIds,
             LinkFromTopicFormIds = conversationData.LinkFromTopicFormIds,
             LinkToTopicFormIds = conversationData.LinkToTopicFormIds,
@@ -304,6 +308,9 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
         // Read bSaidOnce (bool8)
         var saidOnce = buffer[InfoSaidOnceOffset] != 0;
 
+        // Read iFileOffset (uint32 BE) — ESM file offset of this INFO record
+        var esmFileOffset = BinaryUtils.ReadUInt32BE(buffer, InfoFileOffsetOffset);
+
         // Read objConditions (TESCondition -> BSSimpleList<TESConditionItem*>)
         var conditionData = ReadConditions(fileOffset.Value);
 
@@ -335,6 +342,7 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
             PromptText = promptText,
             DumpOffset = fileOffset.Value,
             SaidOnce = saidOnce,
+            EsmFileOffset = esmFileOffset,
             AddTopicFormIds = addTopicFormIds,
             LinkFromTopicFormIds = conversationData.LinkFromTopicFormIds,
             LinkToTopicFormIds = conversationData.LinkToTopicFormIds,
@@ -936,6 +944,7 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
     // bSaidOnce at +50, m_listAddTopics at +64.
     private const int InfoSaidOnceOffset = 50;
     private const int InfoAddTopicsOffset = 64;
+    private const int InfoFileOffsetOffset = 92;
     private const int InfoPerkSkillStatPtrOffset = 80;
     private const int ConversationDataSize = 24;
     private const int ConversationDataLinkFromOffset = 0;

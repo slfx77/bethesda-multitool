@@ -44,6 +44,17 @@ internal static class AnalysisExtractionHelper
                 result.EsmRecords!, result.FormIdMap, accessor, fileSize, result.MinidumpInfo);
             semanticResult = parser.ParseAll();
 
+            // Show BSStringT read diagnostics for DMP files
+            if (result.MinidumpInfo != null)
+            {
+                var bsReport = Core.Formats.Esm.BSStringDiagnostics.GetReport(includeSamples: true);
+                if (!bsReport.StartsWith("No BSStringT", StringComparison.Ordinal))
+                {
+                    AnsiConsole.MarkupLine("\n[bold]BSStringT Read Diagnostics:[/]");
+                    AnsiConsole.WriteLine(bsReport);
+                }
+            }
+
             // Extract string pool data to enrich the CSV exports
             stringPool = ExtractStringPool(result, accessor);
         }

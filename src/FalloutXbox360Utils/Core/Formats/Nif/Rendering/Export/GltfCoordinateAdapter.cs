@@ -29,6 +29,15 @@ internal static class GltfCoordinateAdapter
 
     internal static Matrix4x4 ConvertMatrix(Matrix4x4 transform)
     {
-        return BasisTransformInverse * transform * BasisTransform;
+        var m = BasisTransformInverse * transform * BasisTransform;
+
+        // Sanitize column 4 to guarantee affine validity for SharpGLTF.
+        // Matrix inversion + multiplication can drift these from exact [0,0,0,1].
+        m.M14 = 0;
+        m.M24 = 0;
+        m.M34 = 0;
+        m.M44 = 1;
+
+        return m;
     }
 }

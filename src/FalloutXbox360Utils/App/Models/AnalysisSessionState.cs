@@ -45,6 +45,10 @@ internal sealed class AnalysisSessionState : IDisposable
     public WorldViewData? WorldViewData { get; set; }
     public bool WorldMapPopulated { get; set; }
 
+    // ── NPC Browser derived data ──
+    public bool NpcBrowserPopulated { get; set; }
+    public string? NpcBsaDirectory { get; set; }
+
     // ── Coverage derived data ──
     public List<CoverageGapEntry> CoverageGaps { get; set; } = [];
     public bool CoveragePopulated { get; set; }
@@ -128,6 +132,10 @@ internal sealed class AnalysisSessionState : IDisposable
         // World Map
         WorldViewData = null;
         WorldMapPopulated = false;
+
+        // NPC Browser
+        NpcBrowserPopulated = false;
+        NpcBsaDirectory = null;
 
         // Coverage
         CoverageGaps = [];

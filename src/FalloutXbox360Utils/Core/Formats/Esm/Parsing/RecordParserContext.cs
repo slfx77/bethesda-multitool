@@ -25,15 +25,53 @@ public sealed class RecordParserContext
         MemoryMappedViewAccessor? accessor = null,
         long fileSize = 0,
         MinidumpInfo? minidumpInfo = null)
+        : this(scanResult, formIdCorrelations,
+            accessor != null ? new MmfMemoryAccessor(accessor) : null,
+            fileSize, minidumpInfo)
+    {
+    }
+
+    public RecordParserContext(
+        EsmRecordScanResult scanResult,
+        Dictionary<uint, string>? formIdCorrelations,
+        IMemoryAccessor? accessor,
+        long fileSize,
+        MinidumpInfo? minidumpInfo)
     {
         ScanResult = scanResult;
         Accessor = accessor;
         FileSize = fileSize;
+        MinidumpInfo = minidumpInfo;
 
         // Create runtime struct reader if we have both accessor and minidump info
         // Uses probe-based auto-detection of early vs final build struct layout
         if (accessor != null && minidumpInfo != null && fileSize > 0)
         {
+            // Detect and fix FormType code drift between builds.
+            // Early builds may have different ENUM_FORM_ID values due to types being
+            // inserted/removed during development. Remap to final-build codes so all
+            // readers see consistent FormType values.
+            var formTypeDrift = RuntimeBuildOffsets.DetectFormTypeDrift(
+                scanResult.RuntimeEditorIds, scanResult.MainRecords);
+            if (formTypeDrift != null)
+            {
+                foreach (var entry in scanResult.RuntimeEditorIds)
+                {
+                    if (formTypeDrift.TryGetValue(entry.FormType, out var corrected))
+                    {
+                        entry.FormType = corrected;
+                    }
+                }
+
+                foreach (var entry in scanResult.RuntimeRefrFormEntries)
+                {
+                    if (formTypeDrift.TryGetValue(entry.FormType, out var corrected))
+                    {
+                        entry.FormType = corrected;
+                    }
+                }
+            }
+
             var npcEntries = scanResult.RuntimeEditorIds
                 .Where(entry => entry.FormType == 0x2A)
                 .ToList();
@@ -43,6 +81,7 @@ public sealed class RecordParserContext
             var cellEntries = scanResult.RuntimeEditorIds
                 .Where(entry => entry.FormType == 0x39)
                 .ToList();
+            BSStringDiagnostics.Reset();
             RuntimeReader = RuntimeStructReader.CreateWithAutoDetect(
                 accessor,
                 fileSize,
@@ -102,9 +141,10 @@ public sealed class RecordParserContext
     }
 
     public EsmRecordScanResult ScanResult { get; }
-    public MemoryMappedViewAccessor? Accessor { get; }
+    public IMemoryAccessor? Accessor { get; }
     public long FileSize { get; }
     public RuntimeStructReader? RuntimeReader { get; }
+    public MinidumpInfo? MinidumpInfo { get; }
     public Dictionary<uint, DetectedMainRecord> RecordsByFormId { get; }
 
     /// <summary>

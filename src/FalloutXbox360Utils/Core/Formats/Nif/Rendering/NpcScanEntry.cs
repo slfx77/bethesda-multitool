@@ -15,6 +15,7 @@ internal sealed class NpcScanEntry
     public uint? EyesFormId { get; init; }
     public List<uint>? HeadPartFormIds { get; init; }
     public uint? HairColor { get; init; }
+    public float? HairLength { get; init; }
     public float[]? FaceGenSymmetric { get; init; }
     public float[]? FaceGenAsymmetric { get; init; }
     public float[]? FaceGenTexture { get; init; }

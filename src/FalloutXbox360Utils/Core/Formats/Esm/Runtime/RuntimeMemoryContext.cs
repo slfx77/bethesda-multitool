@@ -1,4 +1,3 @@
-using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
 
@@ -10,14 +9,14 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 ///     used by all domain-specific readers.
 /// </summary>
 internal sealed class RuntimeMemoryContext(
-    MemoryMappedViewAccessor accessor,
+    IMemoryAccessor accessor,
     long fileSize,
     MinidumpInfo minidumpInfo)
 {
     /// <summary>Maximum number of items to read from linked lists (cycle prevention).</summary>
     public const int MaxListItems = 50;
 
-    public MemoryMappedViewAccessor Accessor { get; } = accessor;
+    public IMemoryAccessor Accessor { get; } = accessor;
     public long FileSize { get; } = fileSize;
     public MinidumpInfo MinidumpInfo { get; } = minidumpInfo;
 
@@ -270,37 +269,110 @@ internal sealed class RuntimeMemoryContext(
     /// </summary>
     public string? ReadBSStringT(long tesFormFileOffset, int fieldOffset)
     {
+        return ReadBSStringTDiag(tesFormFileOffset, fieldOffset, out _);
+    }
+
+    /// <summary>
+    ///     Read a BSStringT with diagnostic failure reason.
+    /// </summary>
+    public string? ReadBSStringTDiag(long tesFormFileOffset, int fieldOffset, out BSStringFailure failureReason)
+    {
+        return ReadBSStringTDiag(tesFormFileOffset, fieldOffset, out failureReason,
+            out _, out _, out _, out _);
+    }
+
+    /// <summary>
+    ///     Read a BSStringT with diagnostic failure reason and raw field values for sampling.
+    /// </summary>
+    public string? ReadBSStringTDiag(long tesFormFileOffset, int fieldOffset, out BSStringFailure failureReason,
+        out uint rawPointer, out ushort rawLength, out string? rawHex, out string? partialData)
+    {
+        failureReason = BSStringFailure.None;
+        rawPointer = 0;
+        rawLength = 0;
+        rawHex = null;
+        partialData = null;
+
         var bstOffset = tesFormFileOffset + fieldOffset;
         if (bstOffset + 8 > FileSize)
         {
+            failureReason = BSStringFailure.StructOutOfBounds;
             return null;
         }
 
         var bstBuffer = new byte[8];
         Accessor.ReadArray(bstOffset, bstBuffer, 0, 8);
+        rawHex = Convert.ToHexString(bstBuffer);
 
         var pString = BinaryUtils.ReadUInt32BE(bstBuffer);
         var sLen = BinaryUtils.ReadUInt16BE(bstBuffer, 4);
+        rawPointer = pString;
+        rawLength = sLen;
 
-        if (pString == 0 || sLen == 0 || sLen > EsmStringUtils.MaxBSStringLength)
+        if (pString == 0)
         {
+            failureReason = BSStringFailure.NullPointer;
+            return null;
+        }
+
+        if (sLen == 0)
+        {
+            failureReason = BSStringFailure.ZeroLength;
+            return null;
+        }
+
+        if (sLen > EsmStringUtils.MaxBSStringLength)
+        {
+            failureReason = BSStringFailure.LengthTooLarge;
             return null;
         }
 
         if (!IsValidPointer(pString))
         {
+            failureReason = BSStringFailure.InvalidPointer;
             return null;
         }
 
         var strFileOffset = MinidumpInfo.VirtualAddressToFileOffset(Xbox360MemoryUtils.VaToLong(pString));
-        if (!strFileOffset.HasValue || strFileOffset.Value + sLen > FileSize)
+        if (!strFileOffset.HasValue)
         {
+            failureReason = BSStringFailure.VaNotMapped;
+            return null;
+        }
+
+        if (strFileOffset.Value + sLen > FileSize)
+        {
+            failureReason = BSStringFailure.DataBeyondFile;
             return null;
         }
 
         var strBuffer = new byte[sLen];
         Accessor.ReadArray(strFileOffset.Value, strBuffer, 0, sLen);
 
-        return EsmStringUtils.ValidateAndDecodeAscii(strBuffer, sLen);
+        var result = EsmStringUtils.ValidateAndDecodeAscii(strBuffer, sLen);
+        if (result == null)
+        {
+            failureReason = BSStringFailure.InvalidAscii;
+            // Capture first 32 bytes as hex for diagnostics
+            partialData = Convert.ToHexString(strBuffer, 0, Math.Min(strBuffer.Length, 32));
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    ///     Reasons a BSStringT read can fail.
+    /// </summary>
+    internal enum BSStringFailure
+    {
+        None,
+        StructOutOfBounds,
+        NullPointer,
+        ZeroLength,
+        LengthTooLarge,
+        InvalidPointer,
+        VaNotMapped,
+        DataBeyondFile,
+        InvalidAscii
     }
 }

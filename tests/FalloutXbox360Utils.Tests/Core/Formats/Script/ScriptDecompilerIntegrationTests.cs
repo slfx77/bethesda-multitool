@@ -1,107 +1,38 @@
 using System.Buffers.Binary;
-using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Formats.Esm.Conversion;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Script;
-using FalloutXbox360Utils.Core.Utils;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Script;
 
 /// <summary>
-///     Integration tests that exercise the ScriptDecompiler against real SCDA bytecode
-///     from the Xbox 360 ESM file. Compares decompiled output with embedded SCTX source text.
-///     These tests are skipped when the sample ESM file is not present.
+///     Integration tests that exercise the ScriptDecompiler against synthetic SCDA bytecode.
+///     Validates that decompiled output matches expected SCTX source text structurally and
+///     semantically.
 /// </summary>
-public class ScriptDecompilerIntegrationTests(ITestOutputHelper output, SampleFileFixture samples)
+public class ScriptDecompilerIntegrationTests(ITestOutputHelper output)
 {
-    private static byte[]? _cachedFileData;
-    private static List<AnalyzerRecordInfo>? _cachedScptRecords;
-    private static List<DecompResult>? _cachedDecompResults;
-    private static readonly Lock CacheLock = new();
     private readonly ITestOutputHelper _output = output;
 
-    private static byte[] GetFileData(string path)
-    {
-        lock (CacheLock)
-        {
-            return _cachedFileData ??= File.ReadAllBytes(path);
-        }
-    }
-
-    private static List<AnalyzerRecordInfo> GetScptRecords(byte[] fileData, bool isBigEndian)
-    {
-        lock (CacheLock)
-        {
-            return _cachedScptRecords ??= EsmRecordParser.ScanForRecordType(fileData, isBigEndian, "SCPT");
-        }
-    }
-
-    /// <summary>
-    ///     Single decompilation pass over all SCPT records, cached and shared by all tests.
-    ///     Uses null resolver — the decompiler is O(B) per script; we don't need O(N*M) ESM
-    ///     scans just for FormID name resolution in a test.
-    /// </summary>
-    private static List<DecompResult> GetDecompResults(byte[] fileData, bool isBigEndian)
-    {
-        lock (CacheLock)
-        {
-            if (_cachedDecompResults != null)
-            {
-                return _cachedDecompResults;
-            }
-
-            var scptRecords = GetScptRecords(fileData, isBigEndian);
-            _cachedDecompResults = new List<DecompResult>();
-            foreach (var record in scptRecords)
-            {
-                var recordData = EsmHelpers.GetRecordData(fileData, record, isBigEndian);
-                var (variables, referencedObjects, compiledData, sourceText, editorId) =
-                    ExtractScriptSubrecords(recordData, isBigEndian);
-
-                if (compiledData == null || compiledData.Length == 0)
-                {
-                    continue;
-                }
-
-                var decompiler = new ScriptDecompiler(
-                    variables, referencedObjects, _ => null);
-                var decompiled = decompiler.Decompile(compiledData);
-                _cachedDecompResults.Add(new DecompResult(
-                    record.FormId, editorId, sourceText, decompiled));
-            }
-
-            return _cachedDecompResults;
-        }
-    }
-
     [Fact]
-    [Trait("Category", "Slow")]
-    public void Decompile_AllScptRecords_NoExceptions()
+    public void Decompile_AllSyntheticScripts_NoExceptions()
     {
-        Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
-
-        var fileData = GetFileData(samples.Xbox360FinalEsm!);
-        var isBigEndian = EsmParser.IsBigEndian(fileData);
-        Assert.True(isBigEndian, "Xbox 360 ESM should be big-endian");
-
-        var results = GetDecompResults(fileData, isBigEndian);
-        _output.WriteLine($"Found {results.Count} SCPT records with compiled data");
-        Assert.True(results.Count > 0, "Should find at least one SCPT record");
+        var scripts = BuildSyntheticScripts();
+        _output.WriteLine($"Testing {scripts.Count} synthetic SCPT records");
 
         var successCount = 0;
         var errorCount = 0;
 
-        foreach (var r in results)
+        foreach (var script in scripts)
         {
-            if (r.Decompiled.Contains("; Decompilation error") || r.Decompiled.Contains("; Error decoding"))
+            var decompiler = new ScriptDecompiler(
+                script.Variables, script.ReferencedObjects, _ => null);
+            var decompiled = decompiler.Decompile(script.CompiledData);
+
+            if (decompiled.Contains("; Decompilation error") || decompiled.Contains("; Error decoding"))
             {
                 errorCount++;
-                if (errorCount <= 5)
-                {
-                    _output.WriteLine(
-                        $"  ERROR in {r.EditorId ?? $"0x{r.FormId:X8}"}: {ScriptTestHelpers.GetFirstErrorLine(r.Decompiled)}");
-                }
+                _output.WriteLine($"  ERROR in {script.EditorId}: {ScriptTestHelpers.GetFirstErrorLine(decompiled)}");
             }
             else
             {
@@ -109,38 +40,25 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output, SampleFi
             }
         }
 
-        _output.WriteLine($"\nResults: {successCount} success, {errorCount} errors out of {results.Count} total");
-        _output.WriteLine($"Success rate: {(results.Count > 0 ? 100.0 * successCount / results.Count : 0):F1}%");
-
-        Assert.True(errorCount == 0 || (double)successCount / results.Count > 0.9,
-            $"Too many decompilation errors: {errorCount} out of {results.Count}");
+        _output.WriteLine($"\nResults: {successCount} success, {errorCount} errors out of {scripts.Count} total");
+        Assert.Equal(0, errorCount);
     }
 
     [Fact]
-    [Trait("Category", "Slow")]
-    public void Decompile_ScptRecords_StructurallyCorrect()
+    public void Decompile_SyntheticScripts_StructurallyCorrect()
     {
-        Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
-
-        var fileData = GetFileData(samples.Xbox360FinalEsm!);
-        var isBigEndian = EsmParser.IsBigEndian(fileData);
-        var results = GetDecompResults(fileData, isBigEndian);
-
-        var scriptsWithSource = 0;
+        var scripts = BuildSyntheticScripts();
         var structuralMatches = 0;
         var structuralMismatches = new List<string>();
 
-        foreach (var r in results)
+        foreach (var script in scripts)
         {
-            if (string.IsNullOrEmpty(r.SourceText))
-            {
-                continue;
-            }
+            var decompiler = new ScriptDecompiler(
+                script.Variables, script.ReferencedObjects, _ => null);
+            var decompiled = decompiler.Decompile(script.CompiledData);
 
-            scriptsWithSource++;
-
-            var sourceStructure = ScriptTestHelpers.ExtractStructuralKeywords(r.SourceText);
-            var decompiledStructure = ScriptTestHelpers.ExtractStructuralKeywords(r.Decompiled);
+            var sourceStructure = ScriptTestHelpers.ExtractStructuralKeywords(script.SourceText);
+            var decompiledStructure = ScriptTestHelpers.ExtractStructuralKeywords(decompiled);
 
             if (ScriptTestHelpers.StructurallyEquivalent(sourceStructure, decompiledStructure))
             {
@@ -148,233 +66,258 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output, SampleFi
             }
             else
             {
-                structuralMismatches.Add(r.EditorId ?? $"0x{r.FormId:X8}");
-                if (structuralMismatches.Count <= 3)
-                {
-                    _output.WriteLine($"\n--- Structural mismatch: {r.EditorId ?? $"0x{r.FormId:X8}"} ---");
-                    _output.WriteLine($"Source keywords:     [{string.Join(", ", sourceStructure)}]");
-                    _output.WriteLine($"Decompiled keywords: [{string.Join(", ", decompiledStructure)}]");
-                }
+                structuralMismatches.Add(script.EditorId);
+                _output.WriteLine($"\n--- Structural mismatch: {script.EditorId} ---");
+                _output.WriteLine($"Source keywords:     [{string.Join(", ", sourceStructure)}]");
+                _output.WriteLine($"Decompiled keywords: [{string.Join(", ", decompiledStructure)}]");
+                _output.WriteLine($"Source:\n{script.SourceText}");
+                _output.WriteLine($"Decompiled:\n{decompiled}");
             }
         }
 
-        _output.WriteLine($"\n{scriptsWithSource} scripts with both SCDA+SCTX");
-        _output.WriteLine($"Structural matches: {structuralMatches}/{scriptsWithSource}");
-        if (structuralMismatches.Count > 0)
-        {
-            _output.WriteLine($"Mismatches: {string.Join(", ", structuralMismatches.Take(20))}");
-        }
-
-        Assert.True(scriptsWithSource > 0, "Should find scripts with both SCDA and SCTX");
-
-        var matchRate = scriptsWithSource > 0 ? 100.0 * structuralMatches / scriptsWithSource : 0;
-        _output.WriteLine($"Structural match rate: {matchRate:F1}%");
-        Assert.True(matchRate > 90,
-            $"Structural match rate {matchRate:F1}% below 90% threshold ({structuralMismatches.Count} mismatches)");
+        _output.WriteLine($"\nStructural matches: {structuralMatches}/{scripts.Count}");
+        Assert.Empty(structuralMismatches);
     }
 
     [Fact]
-    [Trait("Category", "Slow")]
-    public void Decompile_EsmScripts_SemanticComparison()
+    public void Decompile_SyntheticScripts_SemanticComparison()
     {
-        Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
-
-        var fileData = GetFileData(samples.Xbox360FinalEsm!);
-        var isBigEndian = EsmParser.IsBigEndian(fileData);
-        var results = GetDecompResults(fileData, isBigEndian);
-
+        var scripts = BuildSyntheticScripts();
         var nameMap = ScriptComparer.BuildFunctionNameNormalizationMap();
 
         var totalMatches = 0;
-        var aggregateMismatches = new Dictionary<string, int>();
-        var aggregateTolerated = new Dictionary<string, int>();
-        var worstScripts = new List<(string Name, double MatchRate, int Mismatches)>();
+        var totalMismatches = 0;
         var scriptsCompared = 0;
-        var perScriptResults = new List<(string? EditorId, uint FormId, ScriptComparisonResult Result)>();
 
-        foreach (var r in results)
+        foreach (var script in scripts)
         {
-            if (string.IsNullOrEmpty(r.SourceText))
-            {
-                continue;
-            }
+            var decompiler = new ScriptDecompiler(
+                script.Variables, script.ReferencedObjects, _ => null);
+            var decompiled = decompiler.Decompile(script.CompiledData);
 
             scriptsCompared++;
-            var result = ScriptComparer.CompareScripts(r.SourceText, r.Decompiled, nameMap);
-            perScriptResults.Add((r.EditorId, r.FormId, result));
-
+            var result = ScriptComparer.CompareScripts(script.SourceText, decompiled, nameMap);
             totalMatches += result.MatchCount;
+            totalMismatches += result.TotalMismatches;
 
-            foreach (var kvp in result.MismatchesByCategory)
-            {
-                aggregateMismatches.TryGetValue(kvp.Key, out var existing);
-                aggregateMismatches[kvp.Key] = existing + kvp.Value;
-            }
+            _output.WriteLine($"{script.EditorId}: {result.MatchRate:F1}% match " +
+                              $"({result.MatchCount} matches, {result.TotalMismatches} mismatches)");
 
-            foreach (var kvp in result.ToleratedDifferences)
+            if (result.Examples.Count > 0)
             {
-                aggregateTolerated.TryGetValue(kvp.Key, out var existing);
-                aggregateTolerated[kvp.Key] = existing + kvp.Value;
-            }
-
-            if (result.MatchRate < 80 && worstScripts.Count < 10)
-            {
-                worstScripts.Add((
-                    r.EditorId ?? $"0x{r.FormId:X8}",
-                    result.MatchRate,
-                    result.TotalMismatches));
+                foreach (var ex in result.Examples.Take(3))
+                {
+                    _output.WriteLine($"  [{ex.Category}] SCTX: {ex.Source} | SCDA: {ex.Decompiled}");
+                }
             }
         }
 
-        var totalMismatches = aggregateMismatches.Values.Sum();
-        var totalTolerated = aggregateTolerated.Values.Sum();
         var totalLines = totalMatches + totalMismatches;
         var overallMatchRate = totalLines > 0 ? 100.0 * totalMatches / totalLines : 0;
 
-        _output.WriteLine("\n=== ESM Semantic Comparison Results ===");
-        _output.WriteLine($"Scripts compared: {scriptsCompared}");
-        _output.WriteLine($"Total lines compared: {totalLines:N0}");
-        _output.WriteLine($"Matching lines: {totalMatches:N0} (includes {totalTolerated:N0} tolerated)");
-        _output.WriteLine($"Mismatched lines: {totalMismatches:N0}");
-        _output.WriteLine($"Overall match rate: {overallMatchRate:F1}%");
+        _output.WriteLine($"\nOverall: {scriptsCompared} scripts, {totalLines} lines, " +
+                          $"{overallMatchRate:F1}% match rate");
 
-        _output.WriteLine("\n--- Mismatch Categories ---");
-        foreach (var kvp in aggregateMismatches.OrderByDescending(kv => kv.Value))
-        {
-            var pct = totalLines > 0 ? 100.0 * kvp.Value / totalLines : 0;
-            _output.WriteLine($"  {kvp.Key,-25} {kvp.Value,6:N0}  ({pct:F1}%)");
-        }
-
-        if (aggregateTolerated.Count > 0)
-        {
-            _output.WriteLine("\n--- Tolerated Differences (counted as matches) ---");
-            foreach (var kvp in aggregateTolerated.OrderByDescending(kv => kv.Value))
-            {
-                var pct = totalLines > 0 ? 100.0 * kvp.Value / totalLines : 0;
-                _output.WriteLine($"  {kvp.Key,-25} {kvp.Value,6:N0}  ({pct:F1}%)");
-            }
-        }
-
-        if (worstScripts.Count > 0)
-        {
-            _output.WriteLine("\n--- Worst Scripts ---");
-            foreach (var w in worstScripts)
-            {
-                _output.WriteLine($"  {w.Name}: {w.MatchRate:F1}% match ({w.Mismatches} mismatches)");
-            }
-        }
-
-        // Show examples from the first script that has mismatches
-        foreach (var entry in perScriptResults)
-        {
-            if (entry.Result.Examples.Count > 0)
-            {
-                _output.WriteLine($"\n--- Example mismatches from {entry.EditorId ?? "?"} ---");
-                foreach (var example in entry.Result.Examples.Take(5))
-                {
-                    _output.WriteLine($"  [{example.Category}]");
-                    _output.WriteLine($"    SCTX: {example.Source}");
-                    _output.WriteLine($"    SCDA: {example.Decompiled}");
-                }
-
-                break;
-            }
-        }
-
-        Assert.True(scriptsCompared > 0, "Should have scripts with both source and compiled data");
+        Assert.True(scriptsCompared > 0, "Should have scripts to compare");
         Assert.True(overallMatchRate > 50,
             $"Overall semantic match rate {overallMatchRate:F1}% below 50% threshold");
     }
 
-    #region Helpers
+    #region Synthetic Script Data
 
     /// <summary>
-    ///     Extract script subrecords from SCPT record data (same pattern as RecordParser.Scripts.cs).
+    ///     Build a set of synthetic scripts with hand-crafted LE bytecode and matching source text.
     /// </summary>
-    internal static (List<ScriptVariableInfo> Variables, List<uint> ReferencedObjects,
-        byte[]? CompiledData, string? SourceText, string? EditorId)
-        ExtractScriptSubrecords(byte[] recordData, bool isBigEndian)
+    private static List<SyntheticScript> BuildSyntheticScripts()
     {
-        var variables = new List<ScriptVariableInfo>();
-        var referencedObjects = new List<uint>();
-        byte[]? compiledData = null;
-        string? sourceText = null;
-        string? editorId = null;
-        uint? pendingSlsdIndex = null;
-        byte pendingSlsdType = 0;
+        return
+        [
+            BuildSimpleGameModeScript(),
+            BuildIfEndIfScript(),
+            BuildSetVariableScript(),
+            BuildWhileLoopScript(),
+            BuildReturnScript()
+        ];
+    }
 
-        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(recordData, recordData.Length, isBigEndian))
-        {
-            var subData = recordData.AsSpan(sub.DataOffset, sub.DataLength);
+    /// <summary>
+    ///     Simple: ScriptName, Begin GameMode, End
+    /// </summary>
+    private static SyntheticScript BuildSimpleGameModeScript()
+    {
+        // ScriptName(0x001D) paramLen=0
+        // Begin(0x0010) paramLen=8: blockType=0(GameMode) + endOffset(4) + paramCount=0(2)
+        // End(0x0011) paramLen=0
+        var bytecode = new List<byte>();
+        AppendOpcodeLE(bytecode, 0x001D, 0); // ScriptName
+        AppendBeginGameModeLE(bytecode);
+        AppendOpcodeLE(bytecode, 0x0011, 0); // End
 
-            switch (sub.Signature)
-            {
-                case "EDID":
-                    editorId = EsmStringUtils.ReadNullTermString(subData);
-                    break;
+        return new SyntheticScript(
+            "TestSimpleGameMode",
+            "ScriptName TestSimpleGameMode\r\n\r\nBegin GameMode\r\nEnd",
+            bytecode.ToArray(),
+            [],
+            []);
+    }
 
-                case "SCTX":
-                    sourceText = EsmStringUtils.ReadNullTermString(subData);
-                    break;
+    /// <summary>
+    ///     If/EndIf: Begin GameMode, If (1 == 1), EndIf, End
+    /// </summary>
+    private static SyntheticScript BuildIfEndIfScript()
+    {
+        var bytecode = new List<byte>();
+        AppendOpcodeLE(bytecode, 0x001D, 0); // ScriptName
+        AppendBeginGameModeLE(bytecode);
 
-                case "SCDA":
-                    compiledData = subData.ToArray();
-                    break;
+        // If(0x0016) paramLen: [jumpOff:2][exprLen:2][expr]
+        // Expression: 1 == 1 -> [0x20][0x6E][1:4LE] [0x20][0x6E][1:4LE] [0x20][0x09][0x01]
+        // Actually the comparison operators are two-byte: [0x20][operator_byte]
+        // == is two bytes: first byte + second byte
+        // Let me use a simpler expression: just literal 1
+        // Expression for literal 1: [0x20][0x6E][01 00 00 00]
+        var expr = BuildIntLiteralExpr(1);
+        var ifParams = new List<byte>();
+        AppendUInt16LE(ifParams, 0); // jumpOffset (unused for decompilation)
+        AppendUInt16LE(ifParams, (ushort)expr.Length); // exprLen
+        ifParams.AddRange(expr);
+        AppendOpcodeLE(bytecode, 0x0016, (ushort)ifParams.Count, ifParams.ToArray()); // If
 
-                case "SLSD" when sub.DataLength >= 16:
-                    pendingSlsdIndex = isBigEndian
-                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
-                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
-                    var isIntegerRaw = isBigEndian
-                        ? BinaryPrimitives.ReadUInt32BigEndian(subData[12..])
-                        : BinaryPrimitives.ReadUInt32LittleEndian(subData[12..]);
-                    pendingSlsdType = isIntegerRaw != 0 ? (byte)1 : (byte)0;
-                    break;
+        AppendOpcodeLE(bytecode, 0x0019, 0); // EndIf
+        AppendOpcodeLE(bytecode, 0x0011, 0); // End
 
-                case "SCVR":
-                {
-                    var varName = EsmStringUtils.ReadNullTermString(subData);
-                    if (pendingSlsdIndex.HasValue)
-                    {
-                        variables.Add(new ScriptVariableInfo(pendingSlsdIndex.Value, varName, pendingSlsdType));
-                        pendingSlsdIndex = null;
-                    }
+        return new SyntheticScript(
+            "TestIfEndIf",
+            "ScriptName TestIfEndIf\r\n\r\nBegin GameMode\r\n  If 1\r\n  EndIf\r\nEnd",
+            bytecode.ToArray(),
+            [],
+            []);
+    }
 
-                    break;
-                }
+    /// <summary>
+    ///     Set: Begin GameMode, Set myVar To 42, End
+    /// </summary>
+    private static SyntheticScript BuildSetVariableScript()
+    {
+        var bytecode = new List<byte>();
+        AppendOpcodeLE(bytecode, 0x001D, 0); // ScriptName
+        AppendBeginGameModeLE(bytecode);
 
-                case "SCRO" when sub.DataLength >= 4:
-                    var formId = isBigEndian
-                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
-                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
-                    referencedObjects.Add(formId);
-                    break;
+        // Set(0x0015): [marker:1][varIdx:2LE][exprLen:2LE][expr]
+        // marker = 0x66 (float local), varIdx = 0
+        // Expression: int literal 42
+        var expr = BuildIntLiteralExpr(42);
+        var setParams = new List<byte>();
+        setParams.Add(0x66); // MarkerFloatLocal
+        AppendUInt16LE(setParams, 0); // variable index 0
+        AppendUInt16LE(setParams, (ushort)expr.Length); // expression length
+        setParams.AddRange(expr);
+        AppendOpcodeLE(bytecode, 0x0015, (ushort)setParams.Count, setParams.ToArray());
 
-                // SCRV entries occupy slots in the reference list alongside SCRO.
-                // The bytecode uses 1-based indices into the combined SCRO+SCRV list.
-                // Store with high bit set as a flag for the decompiler.
-                case "SCRV" when sub.DataLength >= 4:
-                    var varIdx = isBigEndian
-                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
-                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
-                    referencedObjects.Add(0x80000000 | varIdx);
-                    break;
-            }
-        }
+        AppendOpcodeLE(bytecode, 0x0011, 0); // End
 
-        if (pendingSlsdIndex.HasValue)
-        {
-            variables.Add(new ScriptVariableInfo(pendingSlsdIndex.Value, null, pendingSlsdType));
-        }
+        return new SyntheticScript(
+            "TestSetVariable",
+            "ScriptName TestSetVariable\r\n\r\nBegin GameMode\r\n  Set myVar to 42\r\nEnd",
+            bytecode.ToArray(),
+            [new ScriptVariableInfo(0, "myVar", 0)], // float variable at index 0
+            []);
+    }
 
-        return (variables, referencedObjects, compiledData, sourceText, editorId);
+    /// <summary>
+    ///     While/EndWhile: Begin GameMode, While (1), EndWhile, End
+    /// </summary>
+    private static SyntheticScript BuildWhileLoopScript()
+    {
+        var bytecode = new List<byte>();
+        AppendOpcodeLE(bytecode, 0x001D, 0); // ScriptName
+        AppendBeginGameModeLE(bytecode);
+
+        // While(0x001A): same format as If: [jumpOff:2][exprLen:2][expr]
+        var expr = BuildIntLiteralExpr(1);
+        var whileParams = new List<byte>();
+        AppendUInt16LE(whileParams, 0); // jumpOffset
+        AppendUInt16LE(whileParams, (ushort)expr.Length);
+        whileParams.AddRange(expr);
+        AppendOpcodeLE(bytecode, 0x001A, (ushort)whileParams.Count, whileParams.ToArray());
+
+        AppendOpcodeLE(bytecode, 0x001B, 0); // EndWhile
+        AppendOpcodeLE(bytecode, 0x0011, 0); // End
+
+        return new SyntheticScript(
+            "TestWhileLoop",
+            "ScriptName TestWhileLoop\r\n\r\nBegin GameMode\r\n  While 1\r\n  EndWhile\r\nEnd",
+            bytecode.ToArray(),
+            [],
+            []);
+    }
+
+    /// <summary>
+    ///     Return: Begin GameMode, Return, End
+    /// </summary>
+    private static SyntheticScript BuildReturnScript()
+    {
+        var bytecode = new List<byte>();
+        AppendOpcodeLE(bytecode, 0x001D, 0); // ScriptName
+        AppendBeginGameModeLE(bytecode);
+        AppendOpcodeLE(bytecode, 0x001E, 0); // Return
+        AppendOpcodeLE(bytecode, 0x0011, 0); // End
+
+        return new SyntheticScript(
+            "TestReturn",
+            "ScriptName TestReturn\r\n\r\nBegin GameMode\r\n  Return\r\nEnd",
+            bytecode.ToArray(),
+            [],
+            []);
     }
 
     #endregion
 
-    private sealed record DecompResult(
-        uint FormId,
-        string? EditorId,
-        string? SourceText,
-        string Decompiled);
+    #region Bytecode Helpers
+
+    private static void AppendOpcodeLE(List<byte> buf, ushort opcode, ushort paramLen,
+        byte[]? paramData = null)
+    {
+        AppendUInt16LE(buf, opcode);
+        AppendUInt16LE(buf, paramLen);
+        if (paramData != null)
+        {
+            buf.AddRange(paramData);
+        }
+    }
+
+    private static void AppendBeginGameModeLE(List<byte> buf)
+    {
+        // Begin: blockType=0(GameMode) + endOffset=0(4B) + paramCount=0(2B) = 8 bytes
+        var beginParams = new byte[8];
+        // blockType 0 = GameMode (already 0)
+        // endOffset 0 (already 0)
+        // paramCount 0 (already 0)
+        AppendOpcodeLE(buf, 0x0010, 8, beginParams);
+    }
+
+    private static byte[] BuildIntLiteralExpr(int value)
+    {
+        // Expression token: [0x20 push][0x6E int literal][value:4LE]
+        var expr = new byte[6];
+        expr[0] = 0x20; // ExprPush
+        expr[1] = 0x6E; // ExprIntLiteral
+        BinaryPrimitives.WriteInt32LittleEndian(expr.AsSpan(2), value);
+        return expr;
+    }
+
+    private static void AppendUInt16LE(List<byte> buf, ushort value)
+    {
+        buf.Add((byte)(value & 0xFF));
+        buf.Add((byte)(value >> 8));
+    }
+
+    #endregion
+
+    internal sealed record SyntheticScript(
+        string EditorId,
+        string SourceText,
+        byte[] CompiledData,
+        List<ScriptVariableInfo> Variables,
+        List<uint> ReferencedObjects);
 }

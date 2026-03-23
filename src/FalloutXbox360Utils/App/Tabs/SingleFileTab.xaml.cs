@@ -107,6 +107,14 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             _ = PopulateWorldMapAsync();
         }
 
+        // Auto-populate NPC Browser when first selected
+        if (ReferenceEquals(selected, NpcBrowserTab) &&
+            !_session.NpcBrowserPopulated &&
+            _session.HasEsmRecords)
+        {
+            _ = PopulateNpcBrowserAsync();
+        }
+
         // Auto-generate reports when first selected (ESM or save files)
         if (ReferenceEquals(selected, ReportsTab) &&
             _reportEntries.Count == 0 &&

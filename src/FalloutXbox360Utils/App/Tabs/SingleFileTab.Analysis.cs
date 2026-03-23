@@ -255,6 +255,10 @@ public sealed partial class SingleFileTab
                 SingleFileAnalysisHelper.AddRuntimeTerrainMeshRegions(_analysisResult!);
                 RefreshCarvedFilesList();
                 BuildResultsFilterCheckboxes();
+
+                // Emit BSStringT read diagnostics (visible in VS Output window)
+                var bsReport = Core.Formats.Esm.BSStringDiagnostics.GetReport();
+                System.Diagnostics.Debug.WriteLine("[BSStringT Diagnostics]\n" + bsReport);
             }
         }
         catch (Exception ex)
@@ -461,6 +465,10 @@ public sealed partial class SingleFileTab
         else if (ReferenceEquals(selected, WorldMapTab))
         {
             _ = PopulateWorldMapAsync();
+        }
+        else if (ReferenceEquals(selected, NpcBrowserTab))
+        {
+            _ = PopulateNpcBrowserAsync();
         }
         else if (ReferenceEquals(selected, ReportsTab))
         {

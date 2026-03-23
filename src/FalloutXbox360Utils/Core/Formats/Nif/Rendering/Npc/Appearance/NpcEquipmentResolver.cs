@@ -173,6 +173,15 @@ internal sealed class NpcEquipmentResolver
 
     private static EquipmentAttachmentMode ResolveAttachmentMode(uint bipedFlags)
     {
+        // Only classify as wrist-rigid when the item covers exclusively hand/wrist
+        // slots. Items that also cover body slots (chest, legs, etc.) get None.
+        const uint handSlotsMask = 0x08 | 0x10 | 0x40; // left hand, right hand, Pip-Boy
+        var nonHandSlots = bipedFlags & ~handSlotsMask;
+        if (nonHandSlots != 0)
+        {
+            return EquipmentAttachmentMode.None;
+        }
+
         if ((bipedFlags & 0x40) != 0)
         {
             return EquipmentAttachmentMode.LeftWristRigid;

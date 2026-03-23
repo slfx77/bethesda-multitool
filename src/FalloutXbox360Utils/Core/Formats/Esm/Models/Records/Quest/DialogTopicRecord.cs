@@ -46,7 +46,10 @@ public record DialogTopicRecord
     public bool IsBigEndian { get; init; }
 
     /// <summary>Human-readable topic type name.</summary>
-    public string TopicTypeName => TopicType switch
+    public string TopicTypeName => GetTopicTypeName(TopicType);
+
+    /// <summary>Human-readable topic type name for a given type code.</summary>
+    public static string GetTopicTypeName(byte topicType) => topicType switch
     {
         0 => "Topic",
         1 => "Conversation",
@@ -56,7 +59,7 @@ public record DialogTopicRecord
         5 => "Service",
         6 => "Miscellaneous",
         7 => "Radio",
-        _ => $"Unknown ({TopicType})"
+        _ => $"Unknown ({topicType})"
     };
 
     /// <summary>Whether this is a rumor topic.</summary>

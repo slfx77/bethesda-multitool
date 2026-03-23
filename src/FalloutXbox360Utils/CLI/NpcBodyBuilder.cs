@@ -907,7 +907,7 @@ internal static class NpcBodyBuilder
         }
     }
 
-    private static bool IsRigidEquipmentModel(byte[] data, NifInfo nif)
+    internal static bool IsRigidEquipmentModel(byte[] data, NifInfo nif)
     {
         var extracted = NifExportExtractor.Extract(data, nif);
         return extracted.MeshParts.Count > 0 &&

@@ -135,7 +135,7 @@ internal static class ConcurrentScanCoordinator
         // 4+5. Geometry and texture scanning (aligned heap scan, only for valid minidumps)
         if (minidumpInfo.IsValid)
         {
-            var context = new RuntimeMemoryContext(accessor, result.FileSize, minidumpInfo);
+            var context = new RuntimeMemoryContext(new MmfMemoryAccessor(accessor), result.FileSize, minidumpInfo);
             var geoScanner = new RuntimeGeometryScanner(context);
             var texScanner = new RuntimeTextureScanner(context);
 

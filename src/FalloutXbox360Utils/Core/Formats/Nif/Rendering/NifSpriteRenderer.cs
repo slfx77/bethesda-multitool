@@ -33,9 +33,10 @@ internal static class NifSpriteRenderer
     /// <summary>
     ///     Normal map bump strength (0 = flat, 1 = full).  The game's multi-light
     ///     environment naturally softens bump detail; our single key light exaggerates
-    ///     it.  Default 0.5 compensates for the missing fill lights.
+    ///     it.  Default 0.35 compensates for the missing fill lights and reduces
+    ///     FaceGen morph artifacts on head meshes (neck seams, ear splotches).
     /// </summary>
-    internal static float BumpStrength { get; set; } = 0.5f;
+    internal static float BumpStrength { get; set; } = 0.35f;
 
     public static SpriteResult? Render(NifRenderableModel model,
         NifTextureResolver? textureResolver = null,

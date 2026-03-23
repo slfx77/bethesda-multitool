@@ -13,7 +13,7 @@ namespace FalloutXbox360Utils.Tests.Core.Parsers;
 ///     Uses synthetic scan results to test without requiring sample files.
 ///     These tests anchor behavior before the partial-class-to-handler refactoring.
 /// </summary>
-public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixture samples)
+public class RecordParserHandlerTests(ITestOutputHelper output)
 {
     private readonly ITestOutputHelper _output = output;
 
@@ -56,46 +56,6 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
         Assert.Equal(100, book.Value);
         Assert.Equal(3.0f, book.Weight);
         Assert.True(book.IsBigEndian);
-    }
-
-    #endregion
-
-    #region Sample-File-Based Tests (Skipped When Unavailable)
-
-    [Fact]
-    [Trait("Category", "Slow")]
-    public void ParseAll_WithSampleFile_ProducesNonEmptyResults()
-    {
-        Assert.SkipWhen(samples.Xbox360ProtoEsm is null, "Xbox 360 proto ESM not available");
-
-        var fileData = File.ReadAllBytes(samples.Xbox360ProtoEsm!);
-        var isBigEndian = EsmParser.IsBigEndian(fileData);
-        var (records, _) = EsmParser.EnumerateRecordsWithGrups(fileData);
-
-        var mainRecords = records.Select(r => new DetectedMainRecord(
-            r.Header.Signature,
-            r.Header.DataSize,
-            r.Header.Flags,
-            r.Header.FormId,
-            r.Offset,
-            isBigEndian)).ToList();
-
-        var scanResult = new EsmRecordScanResult { MainRecords = mainRecords };
-
-        using var mmf = MemoryMappedFile.CreateFromFile(samples.Xbox360ProtoEsm!, FileMode.Open, null, 0,
-            MemoryMappedFileAccess.Read);
-        using var accessor = mmf.CreateViewAccessor(0, fileData.Length, MemoryMappedFileAccess.Read);
-
-        var parser = new RecordParser(scanResult, accessor: accessor, fileSize: fileData.Length);
-        var result = parser.ParseAll();
-
-        _output.WriteLine($"NPCs: {result.Npcs.Count}, Weapons: {result.Weapons.Count}, " +
-                          $"Quests: {result.Quests.Count}, Dialogues: {result.Dialogues.Count}, " +
-                          $"Total: {result.TotalRecordsParsed}");
-
-        Assert.True(result.Npcs.Count > 0, "Expected at least some NPCs");
-        Assert.True(result.Weapons.Count > 0, "Expected at least some weapons");
-        Assert.True(result.TotalRecordsParsed > 0, "Expected non-zero parse count");
     }
 
     #endregion

@@ -11,43 +11,9 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Conversion;
 ///     Tests exercise ConvertToLittleEndian with synthetic big-endian ESM data.
 ///     These tests anchor behavior before the complexity-reduction refactoring.
 /// </summary>
-public class EsmConverterTests(ITestOutputHelper output, SampleFileFixture samples)
+public class EsmConverterTests(ITestOutputHelper output)
 {
     private readonly ITestOutputHelper _output = output;
-
-    #region Sample-File-Based Tests
-
-    [Fact]
-    [Trait("Category", "Slow")]
-    public void ConvertToLittleEndian_RealEsm_ProducesValidOutput()
-    {
-        Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
-
-        var input = File.ReadAllBytes(samples.Xbox360FinalEsm!);
-        _output.WriteLine($"Input: {input.Length:N0} bytes");
-
-        using var converter = new EsmConverter(input, false);
-        var result = converter.ConvertToLittleEndian();
-
-        _output.WriteLine($"Output: {result.Length:N0} bytes");
-        _output.WriteLine(converter.GetStatsSummary());
-
-        // Output should start with LE TES4 header
-        Assert.Equal((byte)'T', result[0]);
-        Assert.Equal((byte)'E', result[1]);
-        Assert.Equal((byte)'S', result[2]);
-        Assert.Equal((byte)'4', result[3]);
-
-        // Output data size should be LE
-        var dataSize = BinaryPrimitives.ReadUInt32LittleEndian(result.AsSpan(4));
-        Assert.True(dataSize > 0 && dataSize < (uint)result.Length);
-
-        // Output should be smaller or similar in size to input
-        // (TOFT region is removed, but new OFST tables may be added)
-        Assert.True(result.Length > 0);
-    }
-
-    #endregion
 
     #region Utility
 

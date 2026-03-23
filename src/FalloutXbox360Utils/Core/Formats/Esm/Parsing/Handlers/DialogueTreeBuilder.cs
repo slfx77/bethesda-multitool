@@ -52,6 +52,8 @@ internal sealed class DialogueTreeBuilder(RecordParserContext context)
         // Sort topics within each quest by priority then name
         SortTopicsWithinQuests(questTrees);
 
+        LogTopicInfoCoverageStats(topicNodes);
+
         return new DialogueTreeResult
         {
             QuestTrees = questTrees,
@@ -371,5 +373,44 @@ internal sealed class DialogueTreeBuilder(RecordParserContext context)
                 return cmp != 0 ? cmp : string.Compare(a.TopicName, b.TopicName, StringComparison.OrdinalIgnoreCase);
             });
         }
+    }
+
+    /// <summary>
+    ///     Logs diagnostic stats about topics with expected responses but 0 INFOs.
+    /// </summary>
+    private static void LogTopicInfoCoverageStats(Dictionary<uint, TopicDialogueNode> topicNodes)
+    {
+        var emptyTopics = topicNodes.Values
+            .Where(t => t.InfoChain.Count == 0 && t.Topic is { ResponseCount: > 0 })
+            .ToList();
+
+        if (emptyTopics.Count == 0)
+        {
+            return;
+        }
+
+        var totalTopics = topicNodes.Count;
+        var totalWithInfos = topicNodes.Values.Count(t => t.InfoChain.Count > 0);
+
+        // Breakdown by FullName (top 10)
+        var byName = emptyTopics
+            .GroupBy(t => t.Topic?.FullName ?? "(no name)")
+            .OrderByDescending(g => g.Count())
+            .Take(10)
+            .Select(g => $"{g.Key} ({g.Count()})")
+            .ToList();
+
+        // Breakdown by TopicType
+        var byType = emptyTopics
+            .GroupBy(t => t.Topic?.TopicTypeName ?? "Unknown")
+            .OrderByDescending(g => g.Count())
+            .Select(g => $"{g.Key}: {g.Count()}")
+            .ToList();
+
+        Logger.Instance.Debug(
+            $"  [Semantic] Topic INFO coverage: {totalWithInfos}/{totalTopics} topics have INFOs, " +
+            $"{emptyTopics.Count} topics with expected responses but 0 INFOs " +
+            $"(by name: {string.Join(", ", byName)}) " +
+            $"(by type: {string.Join(", ", byType)})");
     }
 }

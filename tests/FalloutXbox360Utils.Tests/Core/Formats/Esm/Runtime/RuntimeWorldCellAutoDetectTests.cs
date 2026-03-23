@@ -70,7 +70,7 @@ public sealed class RuntimeWorldCellAutoDetectTests
 
         using var context = new SyntheticWorldCellDump(data);
         var reader = new RuntimeStructReader(
-            context.Accessor,
+            new MmfMemoryAccessor(context.Accessor),
             data.Length,
             context.MinidumpInfo,
             false,

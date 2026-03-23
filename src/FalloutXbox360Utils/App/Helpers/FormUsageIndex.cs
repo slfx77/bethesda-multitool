@@ -40,6 +40,8 @@ internal sealed class FormUsageIndex
         AddAttachedScriptUses(index, records.Furniture, f => f.FormId, f => f.Script, "Furniture", "Attached script");
         AddPackageUses(index, records.Packages);
         AddActorPackageUses(index, records.Npcs, records.Creatures, records.Packages);
+        AddDialogueConditionUses(index, records.Dialogues);
+        AddDialogueTopicUses(index, records.DialogTopics);
 
         return index;
     }
@@ -65,15 +67,77 @@ internal sealed class FormUsageIndex
     {
         foreach (var dialogue in dialogues)
         {
+            // Use TopicFormId as the source so Used By shows the topic EditorId
+            // and links navigate to the Dialogue Browser tab
+            var sourceFormId = dialogue.TopicFormId is > 0
+                ? dialogue.TopicFormId.Value
+                : dialogue.FormId;
+
             for (var i = 0; i < dialogue.ResultScripts.Count; i++)
             {
                 foreach (var referencedObject in dialogue.ResultScripts[i].ReferencedObjects)
                 {
                     index.Add(referencedObject,
-                        new FormUsageReference(dialogue.FormId, "Dialogue",
+                        new FormUsageReference(sourceFormId, "Dialogue",
                             $"Result script {i + 1}"));
                 }
             }
+        }
+    }
+
+    private static void AddDialogueConditionUses(FormUsageIndex index, IEnumerable<DialogueRecord> dialogues)
+    {
+        foreach (var dialogue in dialogues)
+        {
+            if (dialogue.Conditions.Count == 0)
+            {
+                continue;
+            }
+
+            var sourceFormId = dialogue.TopicFormId is > 0
+                ? dialogue.TopicFormId.Value
+                : dialogue.FormId;
+
+            foreach (var cond in dialogue.Conditions)
+            {
+                if (cond.Parameter1 != 0 && DialogueConditionDisplayFormatter.IsFormReference(cond, 0))
+                {
+                    index.Add(cond.Parameter1,
+                        new FormUsageReference(sourceFormId, "Dialogue", "Condition reference"));
+                }
+
+                if (cond.Parameter2 != 0 && DialogueConditionDisplayFormatter.IsFormReference(cond, 1))
+                {
+                    index.Add(cond.Parameter2,
+                        new FormUsageReference(sourceFormId, "Dialogue", "Condition reference"));
+                }
+
+                if (cond.Reference != 0)
+                {
+                    index.Add(cond.Reference,
+                        new FormUsageReference(sourceFormId, "Dialogue", "Condition reference"));
+                }
+            }
+        }
+    }
+
+    private static void AddDialogueTopicUses(FormUsageIndex index, IEnumerable<DialogTopicRecord> topics)
+    {
+        foreach (var topic in topics)
+        {
+            if (topic.QuestFormId is not > 0)
+            {
+                continue;
+            }
+
+            var context = DialogTopicRecord.GetTopicTypeName(topic.TopicType);
+            if (topic.ResponseCount > 0)
+            {
+                context += $" ({topic.ResponseCount} responses)";
+            }
+
+            index.Add(topic.QuestFormId.Value,
+                new FormUsageReference(topic.FormId, "Dialog Topic", context));
         }
     }
 

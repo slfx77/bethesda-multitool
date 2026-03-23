@@ -135,16 +135,19 @@ internal sealed class DialogueTopicMerger(RecordParserContext context)
     /// </summary>
     internal static void PropagateTopicSiblingSpeakers(List<DialogueRecord> dialogues)
     {
-        var byTopic = new Dictionary<uint, List<int>>();
+        // Group by (TopicFormId, QuestFormId) to prevent cross-quest contamination.
+        // Shared topics like GREETING contain lines from many quests — grouping by
+        // topic alone would propagate one quest's voice type to all other quests' lines.
+        var byTopicQuest = new Dictionary<(uint TopicId, uint QuestId), List<int>>();
         for (var i = 0; i < dialogues.Count; i++)
         {
             if (dialogues[i].TopicFormId is > 0)
             {
-                var topicId = dialogues[i].TopicFormId!.Value;
-                if (!byTopic.TryGetValue(topicId, out var list))
+                var key = (dialogues[i].TopicFormId!.Value, dialogues[i].QuestFormId ?? 0);
+                if (!byTopicQuest.TryGetValue(key, out var list))
                 {
                     list = [];
-                    byTopic[topicId] = list;
+                    byTopicQuest[key] = list;
                 }
 
                 list.Add(i);
@@ -152,7 +155,7 @@ internal sealed class DialogueTopicMerger(RecordParserContext context)
         }
 
         var propagated = 0;
-        foreach (var (_, indices) in byTopic)
+        foreach (var (_, indices) in byTopicQuest)
         {
             if (indices.Count < 2)
             {

@@ -375,39 +375,34 @@
                   <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <Grid Grid.Row="0" Margin="0,0,0,8">
-                  <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                  </Grid.RowDefinitions>
-                  <StackPanel Orientation="Horizontal" Grid.Row="0" Spacing="0">
-                    <TextBlock x:Name="SelectedRecordTitle" x:Uid="Empty_SelectRecord"
-                               Style="{StaticResource SubtitleTextBlockStyle}"
-                               VerticalAlignment="Center"
-                               TextWrapping="Wrap"
-                               MaxLines="2"
-                               TextTrimming="CharacterEllipsis" />
+                <StackPanel Grid.Row="0" Margin="0,0,0,8" Spacing="8">
+                  <TextBlock x:Name="SelectedRecordTitle" x:Uid="Empty_SelectRecord"
+                             Style="{StaticResource SubtitleTextBlockStyle}"
+                             VerticalAlignment="Center"
+                             TextWrapping="Wrap"
+                             MaxLines="2"
+                             TextTrimming="CharacterEllipsis" />
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button x:Name="ViewNpcButton"
+                            Content="View NPC"
+                            Click="ViewNpc_Click"
+                            Visibility="Collapsed"
+                            ToolTipService.ToolTip="View this NPC in the NPC Browser with 3D viewer" />
+                    <Button x:Name="ViewWorldspaceButton"
+                            Content="View Worldspace"
+                            Click="ViewWorldspace_Click"
+                            Visibility="Collapsed"
+                            ToolTipService.ToolTip="View this worldspace in the World tab" />
+                    <Button x:Name="ViewInWorldButton"
+                            Content="View in World"
+                            Click="ViewInWorld_Click"
+                            Visibility="Collapsed"
+                            ToolTipService.ToolTip="View this record's placement on the World Map" />
+                    <Button x:Name="GoToOffsetButton" x:Uid="Button_GoToOffset"
+                            Click="GoToRecordOffset_Click"
+                            Visibility="Collapsed" />
                   </StackPanel>
-                  <Button x:Name="GoToOffsetButton" x:Uid="Button_GoToOffset"
-                          Grid.Row="1"
-                          Margin="0,8,0,0"
-                          Click="GoToRecordOffset_Click"
-                          Visibility="Collapsed" />
-                  <Button x:Name="ViewWorldspaceButton" Grid.Row="2"
-                          Content="View Worldspace"
-                          Click="ViewWorldspace_Click"
-                          Visibility="Collapsed"
-                          Margin="0,8,0,0"
-                          ToolTipService.ToolTip="View this worldspace in the World tab" />
-                  <Button x:Name="ViewInWorldButton" Grid.Row="3"
-                          Content="View in World"
-                          Click="ViewInWorld_Click"
-                          Visibility="Collapsed"
-                          Margin="0,8,0,0"
-                          ToolTipService.ToolTip="View this record's placement on the World Map" />
-                </Grid>
+                </StackPanel>
 
                 <Border Grid.Row="1" CornerRadius="4"
                         Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
@@ -470,6 +465,11 @@
                     <ComboBoxItem Content="Quest" />
                     <ComboBoxItem Content="NPC" />
                   </ComboBox>
+                  <CheckBox x:Name="DialogueShowEditorIdCheckBox"
+                            Content="Show Editor ID" IsChecked="False"
+                            Checked="DialogueShowEditorIdCheckBox_Changed"
+                            Unchecked="DialogueShowEditorIdCheckBox_Changed"
+                            MinWidth="0" VerticalAlignment="Center" />
                 </StackPanel>
 
                 <!--  Picker tree  -->
@@ -618,7 +618,213 @@
           </Grid>
         </controls:TabViewItem>
 
-        <!--  Tab 5: Reports  -->
+        <!--  Tab 5: NPC Browser  -->
+        <controls:TabViewItem x:Name="NpcBrowserTab" Header="NPCs" IsClosable="False">
+          <Grid Padding="0,8,0,0">
+            <!--  Placeholder (shown before NPC data is loaded)  -->
+            <StackPanel x:Name="NpcBrowserPlaceholder"
+                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Spacing="12" MaxWidth="600">
+              <TextBlock x:Name="NpcBrowserStatusText"
+                         Text="Run analysis on an ESM to browse NPCs"
+                         HorizontalAlignment="Center"
+                         Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
+              <ProgressBar x:Name="NpcBrowserProgressBar"
+                           Width="300" Visibility="Collapsed"
+                           IsIndeterminate="True" />
+              <StackPanel x:Name="NpcBsaPathPanel" Visibility="Collapsed" Spacing="8">
+                <TextBlock Text="Game Data directory (folder containing BSA files):"
+                           FontSize="12"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <TextBox x:Name="NpcBsaPathTextBox" Grid.Column="0"
+                           PlaceholderText="e.g. Sample\Full_Builds\...\Data"
+                           KeyDown="NpcBsaPathTextBox_KeyDown" />
+                  <Button Grid.Column="1" Content="Browse..."
+                          Click="NpcBrowserConfigureBsa_Click"
+                          Margin="8,0,0,0" VerticalAlignment="Stretch" />
+                </Grid>
+                <Button x:Name="NpcBsaLoadButton" Content="Load NPCs"
+                        Click="NpcBsaLoadButton_Click"
+                        HorizontalAlignment="Center" />
+              </StackPanel>
+            </StackPanel>
+
+            <!--  Main NPC browser content  -->
+            <Grid x:Name="NpcBrowserContent" Visibility="Collapsed">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="280" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="300" />
+              </Grid.ColumnDefinitions>
+
+              <!--  Left: NPC list with search  -->
+              <Grid Grid.Column="0">
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="*" />
+                  <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <TextBox x:Name="NpcSearchBox" Grid.Row="0"
+                         PlaceholderText="Search NPCs..."
+                         TextChanged="NpcSearchBox_TextChanged"
+                         Margin="0,0,0,4" />
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,0,0,4">
+                  <CheckBox x:Name="NpcNamedOnlyCheckBox"
+                            Content="Named only" IsChecked="True"
+                            Checked="NpcNamedOnlyCheckBox_Changed"
+                            Unchecked="NpcNamedOnlyCheckBox_Changed"
+                            MinWidth="0" />
+                  <CheckBox x:Name="NpcShowEditorIdCheckBox"
+                            Content="Show Editor ID" IsChecked="False"
+                            Checked="NpcShowEditorIdCheckBox_Changed"
+                            Unchecked="NpcShowEditorIdCheckBox_Changed"
+                            MinWidth="0" />
+                </StackPanel>
+                <ListView x:Name="NpcListView" Grid.Row="2"
+                          SelectionChanged="NpcListView_SelectionChanged">
+                  <ListView.ItemTemplate>
+                    <DataTemplate>
+                      <Grid>
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="Auto" />
+                          <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                  MinWidth="0" Padding="0" Margin="0,0,4,0"
+                                  VerticalAlignment="Center"
+                                  Click="NpcItemCheckBox_Click" />
+                        <TextBlock Grid.Column="1" Text="{Binding DisplayName}"
+                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                      </Grid>
+                    </DataTemplate>
+                  </ListView.ItemTemplate>
+                </ListView>
+                <StackPanel Grid.Row="3" Spacing="4" Margin="0,4,0,0">
+                  <StackPanel Orientation="Horizontal" Spacing="4">
+                    <Button x:Name="NpcSelectAllButton" Content="Select All"
+                            Click="NpcSelectAll_Click" FontSize="11" Padding="6,2"
+                            MinWidth="0" />
+                    <Button x:Name="NpcDeselectAllButton" Content="Deselect All"
+                            Click="NpcDeselectAll_Click" FontSize="11" Padding="6,2"
+                            MinWidth="0" />
+                  </StackPanel>
+                  <TextBlock x:Name="NpcCountText"
+                             FontSize="11"
+                             Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+              </Grid>
+
+              <!--  Center: 3D model viewer (WebView2)  -->
+              <Grid Grid.Column="1" Margin="8,0"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    CornerRadius="4">
+                <WebView2 x:Name="NpcModelViewer" />
+                <ProgressRing x:Name="NpcModelLoadingRing"
+                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                              Margin="0,0,0,40"
+                              Visibility="Collapsed" />
+              </Grid>
+
+              <!--  Right: Controls panel  -->
+              <ScrollViewer Grid.Column="2"
+                            VerticalScrollBarVisibility="Auto"
+                            Padding="8,0,0,0">
+                <StackPanel Spacing="12">
+
+                  <!--  NPC info  -->
+                  <TextBlock x:Name="NpcDetailName"
+                             Style="{StaticResource SubtitleTextBlockStyle}"
+                             TextWrapping="Wrap" />
+                  <TextBlock x:Name="NpcDetailInfo" FontSize="12"
+                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                             TextWrapping="Wrap" />
+
+                  <!--  Display mode  -->
+                  <TextBlock Text="Display" FontWeight="SemiBold" FontSize="13"
+                             Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                  <CheckBox x:Name="NpcFullBodyCheckBox" Content="Full Body"
+                            IsChecked="True" MinWidth="0"
+                            Checked="NpcRenderOption_Changed"
+                            Unchecked="NpcRenderOption_Changed" />
+                  <CheckBox x:Name="NpcArmorCheckBox" Content="Armor"
+                            IsChecked="True" MinWidth="0"
+                            Checked="NpcRenderOption_Changed"
+                            Unchecked="NpcRenderOption_Changed" />
+                  <CheckBox x:Name="NpcWeaponCheckBox" Content="Weapon"
+                            IsChecked="True" MinWidth="0"
+                            Checked="NpcRenderOption_Changed"
+                            Unchecked="NpcRenderOption_Changed" />
+                  <CheckBox x:Name="NpcIdlePoseCheckBox" Content="Idle Pose"
+                            IsChecked="True" MinWidth="0"
+                            Checked="NpcRenderOption_Changed"
+                            Unchecked="NpcRenderOption_Changed" />
+
+                  <!--  Export  -->
+                  <TextBlock Text="Export" FontWeight="SemiBold" FontSize="13"
+                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                             Margin="0,8,0,0" />
+                  <Button x:Name="NpcExportGlbButton" Content="Export as GLB..."
+                          Click="NpcExportGlb_Click" IsEnabled="False" />
+
+                  <!--  Render PNG  -->
+                  <TextBlock Text="Render PNG" FontWeight="SemiBold" FontSize="13"
+                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                             Margin="0,8,0,0" />
+                  <ComboBox x:Name="NpcPerspectiveComboBox" MinWidth="200">
+                    <ComboBoxItem Content="Front (single view)" IsSelected="True" Tag="front" />
+                    <ComboBoxItem Content="Isometric (4 views)" Tag="iso" />
+                    <ComboBoxItem Content="Side (4 views)" Tag="side" />
+                    <ComboBoxItem Content="Trimetric (4 views)" Tag="trimetric" />
+                  </ComboBox>
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="Elevation:" VerticalAlignment="Center" FontSize="12" />
+                    <Slider x:Name="NpcElevationSlider" Minimum="-90" Maximum="90"
+                            Value="0" Width="120"
+                            ValueChanged="NpcElevationSlider_ValueChanged" />
+                    <TextBlock x:Name="NpcElevationLabel" Text="0" VerticalAlignment="Center"
+                               FontSize="12" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="Resolution (px):" VerticalAlignment="Center" FontSize="12" />
+                    <NumberBox x:Name="NpcSizeNumberBox"
+                               Value="512" Minimum="64" Maximum="4096"
+                               SmallChange="128" LargeChange="256"
+                               SpinButtonPlacementMode="Inline"
+                               MinWidth="140" />
+                  </StackPanel>
+                  <Button x:Name="NpcRenderPngButton" Content="Export as PNG..."
+                          Click="NpcRenderPng_Click" IsEnabled="False" />
+
+                  <!--  Batch operations  -->
+                  <TextBlock Text="Batch" FontWeight="SemiBold" FontSize="13"
+                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                             Margin="0,16,0,0" />
+                  <TextBlock Text="Uses display and render settings above"
+                             FontSize="11" FontStyle="Italic"
+                             Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                  <Button x:Name="NpcBatchExportGlbButton" Content="Export selected as GLB..."
+                          Click="NpcBatchExportGlb_Click" />
+                  <Button x:Name="NpcBatchRenderPngButton" Content="Export selected as PNG..."
+                          Click="NpcBatchRenderPng_Click" />
+                  <ProgressBar x:Name="NpcBatchProgressBar" Visibility="Collapsed"
+                               Minimum="0" Maximum="100" />
+                  <TextBlock x:Name="NpcBatchStatusText" FontSize="11" TextWrapping="Wrap"
+                             Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+
+                </StackPanel>
+              </ScrollViewer>
+            </Grid>
+          </Grid>
+        </controls:TabViewItem>
+
+        <!--  Tab 6: Reports  -->
         <controls:TabViewItem x:Name="ReportsTab" x:Uid="Tab_Reports"
                               IsClosable="False">
           <Grid Padding="16">

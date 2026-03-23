@@ -27,8 +27,8 @@ internal sealed class RuntimeWorldObjectReader(RuntimeMemoryContext context)
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
-            FullName = entry.DisplayName ?? _fields.ReadBsString(fileOffset, layout, "cFullName", "TESFullName"),
-            ModelPath = _fields.ReadBsString(fileOffset, layout, "cModel", "TESModel"),
+            FullName = entry.DisplayName ?? _fields.ReadBsString(fileOffset, layout, "cFullName", "TESFullName", entry),
+            ModelPath = _fields.ReadBsString(fileOffset, layout, "cModel", "TESModel", entry),
             Bounds = _fields.ReadBounds(buffer, layout),
             Script = _fields.ReadFormIdPointer(buffer, layout, "pFormScript", "TESScriptableForm", 0x11),
             ActivationSoundFormId = _fields.ReadFormIdPointer(buffer, layout, "pSoundActivate", "TESObjectACTI"),
@@ -63,8 +63,8 @@ internal sealed class RuntimeWorldObjectReader(RuntimeMemoryContext context)
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
-            FullName = entry.DisplayName ?? _fields.ReadBsString(fileOffset, layout, "cFullName", "TESFullName"),
-            ModelPath = _fields.ReadBsString(fileOffset, layout, "cModel", "TESModel"),
+            FullName = entry.DisplayName ?? _fields.ReadBsString(fileOffset, layout, "cFullName", "TESFullName", entry),
+            ModelPath = _fields.ReadBsString(fileOffset, layout, "cModel", "TESModel", entry),
             Bounds = _fields.ReadBounds(buffer, layout),
             Duration = RuntimePdbFieldAccessor.ReadInt32(buffer, lightDataOffset.Value),
             Radius = RuntimePdbFieldAccessor.ReadUInt32(buffer, lightDataOffset.Value + 4),
@@ -101,8 +101,8 @@ internal sealed class RuntimeWorldObjectReader(RuntimeMemoryContext context)
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
-            FullName = entry.DisplayName ?? _fields.ReadBsString(fileOffset, layout, "cFullName", "TESFullName"),
-            ModelPath = _fields.ReadBsString(fileOffset, layout, "cModel", "TESModel"),
+            FullName = entry.DisplayName ?? _fields.ReadBsString(fileOffset, layout, "cFullName", "TESFullName", entry),
+            ModelPath = _fields.ReadBsString(fileOffset, layout, "cModel", "TESModel", entry),
             Bounds = _fields.ReadBounds(buffer, layout),
             Script = _fields.ReadFormIdPointer(buffer, layout, "pFormScript", "TESScriptableForm", 0x11),
             OpenSoundFormId = _fields.ReadFormIdPointer(buffer, layout, "pOpenSound", "TESObjectDOOR"),
@@ -132,7 +132,7 @@ internal sealed class RuntimeWorldObjectReader(RuntimeMemoryContext context)
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
-            ModelPath = _fields.ReadBsString(fileOffset, layout, "cModel", "TESModel"),
+            ModelPath = _fields.ReadBsString(fileOffset, layout, "cModel", "TESModel", entry),
             Bounds = _fields.ReadBounds(buffer, layout),
             Offset = fileOffset,
             IsBigEndian = true
@@ -159,8 +159,8 @@ internal sealed class RuntimeWorldObjectReader(RuntimeMemoryContext context)
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
-            FullName = entry.DisplayName ?? _fields.ReadBsString(fileOffset, layout, "cFullName", "TESFullName"),
-            ModelPath = _fields.ReadBsString(fileOffset, layout, "cModel", "TESModel"),
+            FullName = entry.DisplayName ?? _fields.ReadBsString(fileOffset, layout, "cFullName", "TESFullName", entry),
+            ModelPath = _fields.ReadBsString(fileOffset, layout, "cModel", "TESModel", entry),
             Bounds = _fields.ReadBounds(buffer, layout),
             Script = _fields.ReadFormIdPointer(buffer, layout, "pFormScript", "TESScriptableForm", 0x11),
             MarkerFlags = markerFlagsOffset.HasValue

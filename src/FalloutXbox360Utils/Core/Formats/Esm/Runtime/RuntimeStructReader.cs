@@ -43,12 +43,12 @@ public sealed class RuntimeStructReader
         long fileSize,
         MinidumpInfo minidumpInfo,
         bool useProtoOffsets = false)
-        : this(accessor, fileSize, minidumpInfo, useProtoOffsets, null)
+        : this(new MmfMemoryAccessor(accessor), fileSize, minidumpInfo, useProtoOffsets, null)
     {
     }
 
     internal RuntimeStructReader(
-        MemoryMappedViewAccessor accessor,
+        IMemoryAccessor accessor,
         long fileSize,
         MinidumpInfo minidumpInfo,
         bool useProtoOffsets,
@@ -97,6 +97,20 @@ public sealed class RuntimeStructReader
     /// </summary>
     public static RuntimeStructReader CreateWithAutoDetect(
         MemoryMappedViewAccessor accessor,
+        long fileSize,
+        MinidumpInfo minidumpInfo,
+        IReadOnlyList<RuntimeEditorIdEntry> refrEntries,
+        IReadOnlyList<RuntimeEditorIdEntry>? npcEntries = null,
+        IReadOnlyList<RuntimeEditorIdEntry>? worldEntries = null,
+        IReadOnlyList<RuntimeEditorIdEntry>? cellEntries = null,
+        IReadOnlyList<RuntimeEditorIdEntry>? allEntries = null)
+    {
+        return CreateWithAutoDetect(new MmfMemoryAccessor(accessor), fileSize, minidumpInfo,
+            refrEntries, npcEntries, worldEntries, cellEntries, allEntries);
+    }
+
+    public static RuntimeStructReader CreateWithAutoDetect(
+        IMemoryAccessor accessor,
         long fileSize,
         MinidumpInfo minidumpInfo,
         IReadOnlyList<RuntimeEditorIdEntry> refrEntries,

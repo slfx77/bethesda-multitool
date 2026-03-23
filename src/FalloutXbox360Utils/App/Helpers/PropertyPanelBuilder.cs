@@ -239,11 +239,18 @@ internal static class PropertyPanelBuilder
                 {
                     Text = sub.Col1 ?? "",
                     FontSize = 11,
-                    TextDecorations = TextDecorations.Underline
+                    FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
+                    TextDecorations = TextDecorations.Underline,
+                    Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.CornflowerBlue),
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    MaxWidth = 350
                 },
-                Padding = new Thickness(0, 1, 12, 1),
-                Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.CornflowerBlue)
+                Padding = new Thickness(0),
+                MinWidth = 0,
+                MinHeight = 0,
+                Margin = new Thickness(0, 1, 12, 1)
             };
+            StripButtonChrome(cellLink);
             var capturedCellFormId = sub.CellNavigationFormId.Value;
             cellLink.Click += async (_, _) => await callbacks.NavigateToCellInWorldMap(capturedCellFormId);
             Grid.SetRow(cellLink, row);
@@ -252,8 +259,9 @@ internal static class PropertyPanelBuilder
         }
         else if (sub.LinkedFormId is > 0 && callbacks.IsFormIdNavigable(sub.LinkedFormId.Value))
         {
-            var col1Link = callbacks.CreateFormIdLink(sub.Col1 ?? "", sub.LinkedFormId.Value, 11, false);
+            var col1Link = callbacks.CreateFormIdLink(sub.Col1 ?? "", sub.LinkedFormId.Value, 11, true);
             col1Link.Margin = new Thickness(0, 0, 12, 0);
+            col1Link.MaxWidth = 350;
             Grid.SetRow(col1Link, row);
             Grid.SetColumn(col1Link, 0);
             grid.Children.Add(col1Link);
@@ -264,8 +272,11 @@ internal static class PropertyPanelBuilder
             {
                 Text = sub.Col1 ?? "",
                 FontSize = 11,
+                FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
                 Padding = new Thickness(0, 1, 12, 1),
-                IsTextSelectionEnabled = true
+                IsTextSelectionEnabled = true,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                MaxWidth = 350
             };
             Grid.SetRow(col1Text, row);
             Grid.SetColumn(col1Text, 0);
@@ -276,6 +287,7 @@ internal static class PropertyPanelBuilder
         {
             Text = sub.Col2 ?? "",
             FontSize = 11,
+            FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
             Padding = new Thickness(0, 1, 12, 1),
             IsTextSelectionEnabled = true
         };
@@ -556,6 +568,17 @@ internal static class PropertyPanelBuilder
         var foregroundBrush = (Microsoft.UI.Xaml.Media.SolidColorBrush)
             Application.Current.Resources["TextFillColorPrimaryBrush"];
         return new Microsoft.UI.Xaml.Media.SolidColorBrush(foregroundBrush.Color) { Opacity = 0.05 };
+    }
+
+    /// <summary>
+    ///     Strips button chrome from a HyperlinkButton so it renders as an inline text link.
+    /// </summary>
+    private static void StripButtonChrome(HyperlinkButton link)
+    {
+        link.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        link.BorderThickness = new Thickness(0);
+        link.MinWidth = 0;
+        link.MinHeight = 0;
     }
 
     #endregion

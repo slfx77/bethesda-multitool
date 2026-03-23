@@ -33,7 +33,8 @@ internal static class DialogueViewerHelper
     ///     if filters produce no results.
     /// </summary>
     public static List<InfoDialogueNode> FilterInfoChain(
-        List<InfoDialogueNode> chain, uint? questFilter, uint? speakerFilter)
+        List<InfoDialogueNode> chain, uint? questFilter, uint? speakerFilter,
+        bool strictQuestFilter = false)
     {
         var result = chain;
 
@@ -42,7 +43,10 @@ internal static class DialogueViewerHelper
             var questFiltered = result
                 .Where(i => i.Info.QuestFormId == questFilter.Value)
                 .ToList();
-            if (questFiltered.Count > 0)
+            // When strict, always apply the filter even if it produces no results.
+            // This prevents shared topics (GREETING, Hello) from showing thousands of
+            // unrelated INFOs when viewed under a specific quest.
+            if (questFiltered.Count > 0 || strictQuestFilter)
             {
                 result = questFiltered;
             }
@@ -87,16 +91,39 @@ internal static class DialogueViewerHelper
 
     /// <summary>
     ///     Resolves the best prompt text for a player choice button, using a priority chain:
-    ///     SourceInfo PromptText → shared topic chain → "[Continue]"
+    ///     Linked topic's own text (FullName → DummyPrompt → INFO PromptText) → sourceInfo PromptText → fallbacks → "[Continue]".
+    ///     The linked topic's own text takes priority over the source INFO's prompt to avoid
+    ///     duplicate display when multiple topics share the same source INFO prompt text.
     /// </summary>
     public static string ResolvePromptText(InfoDialogueNode sourceInfo, TopicDialogueNode linkedTopic)
     {
+        // Prefer the linked topic's own identifying text first — this distinguishes
+        // topics that share the same source INFO (e.g., VCasaJimmySexYes vs VCasaJimmySexNo).
+        var topicOwnText = ResolveTopicOwnText(linkedTopic);
+        if (topicOwnText != null)
+        {
+            return topicOwnText;
+        }
+
+        // Fall back to the source INFO's prompt text
         if (!string.IsNullOrEmpty(sourceInfo.Info.PromptText))
         {
             return sourceInfo.Info.PromptText;
         }
 
-        return ResolveTopicText(linkedTopic) ?? "[Continue]";
+        // Last resort: response text, TopicName, EditorId
+        return ResolveTopicFallbackText(linkedTopic) ?? "[Continue]";
+    }
+
+    /// <summary>
+    ///     Returns the topic's EditorID with FormID suffix for the "Show Editor ID" display mode.
+    /// </summary>
+    public static string ResolveEditorIdDisplay(TopicDialogueNode topic)
+    {
+        var editorId = topic.Topic?.EditorId;
+        return !string.IsNullOrEmpty(editorId)
+            ? $"{editorId} (0x{topic.TopicFormId:X8})"
+            : $"0x{topic.TopicFormId:X8}";
     }
 
     /// <summary>
@@ -110,17 +137,14 @@ internal static class DialogueViewerHelper
     }
 
     /// <summary>
-    ///     Core topic text resolution chain shared by ResolvePromptText and ResolveTopicDisplayText.
-    ///     Priority: INFO PromptText → DummyPrompt → FullName → Response text → TopicName → EditorId.
-    ///     Returns null if none match, letting the caller provide a final fallback.
+    ///     Resolves the topic's own identifying text: FullName → DummyPrompt → INFO PromptText.
+    ///     These are the topic's "proper" labels that distinguish it from sibling topics.
     /// </summary>
-    private static string? ResolveTopicText(TopicDialogueNode topic)
+    private static string? ResolveTopicOwnText(TopicDialogueNode topic)
     {
-        var firstWithPrompt = topic.InfoChain
-            .FirstOrDefault(i => !string.IsNullOrEmpty(i.Info.PromptText));
-        if (firstWithPrompt != null)
+        if (!string.IsNullOrEmpty(topic.Topic?.FullName))
         {
-            return firstWithPrompt.Info.PromptText!;
+            return topic.Topic.FullName;
         }
 
         if (!string.IsNullOrEmpty(topic.Topic?.DummyPrompt))
@@ -128,11 +152,22 @@ internal static class DialogueViewerHelper
             return topic.Topic.DummyPrompt;
         }
 
-        if (!string.IsNullOrEmpty(topic.Topic?.FullName))
+        var firstWithPrompt = topic.InfoChain
+            .FirstOrDefault(i => !string.IsNullOrEmpty(i.Info.PromptText));
+        if (firstWithPrompt != null)
         {
-            return topic.Topic.FullName;
+            return firstWithPrompt.Info.PromptText!;
         }
 
+        return null;
+    }
+
+    /// <summary>
+    ///     Fallback text resolution: response text → TopicName → EditorId.
+    ///     Used when neither the topic's own text nor the source INFO's prompt is available.
+    /// </summary>
+    private static string? ResolveTopicFallbackText(TopicDialogueNode topic)
+    {
         var firstResponseText = topic.InfoChain
             .SelectMany(i => i.Info.Responses)
             .Select(r => r.Text)
@@ -153,6 +188,52 @@ internal static class DialogueViewerHelper
         }
 
         return null;
+    }
+
+    /// <summary>
+    ///     Full topic text resolution chain used by ResolveTopicDisplayText.
+    ///     Priority: FullName → DummyPrompt → INFO PromptText → Response text → TopicName → EditorId.
+    /// </summary>
+    private static string? ResolveTopicText(TopicDialogueNode topic)
+    {
+        return ResolveTopicOwnText(topic) ?? ResolveTopicFallbackText(topic);
+    }
+
+    /// <summary>
+    ///     Searches the entire dialogue tree for a GREETING topic that has at least one INFO
+    ///     matching the given speaker. GREETING topics are shared across many NPCs, so they
+    ///     may not be in a specific speaker's topic list from BuildTopicsBySpeaker.
+    /// </summary>
+    public static TopicDialogueNode? FindGreetingTopicForSpeaker(DialogueTreeResult tree, uint speakerFormId)
+    {
+        TopicDialogueNode? bestMatch = null;
+        var bestInfoCount = 0;
+
+        void Search(IEnumerable<TopicDialogueNode> topics)
+        {
+            foreach (var topic in topics)
+            {
+                if (topic.Topic?.EditorId?.Contains("GREETING", StringComparison.OrdinalIgnoreCase) != true)
+                {
+                    continue;
+                }
+
+                var matchingInfos = topic.InfoChain.Count(i => i.Info.SpeakerFormId == speakerFormId);
+                if (matchingInfos > bestInfoCount)
+                {
+                    bestInfoCount = matchingInfos;
+                    bestMatch = topic;
+                }
+            }
+        }
+
+        foreach (var quest in tree.QuestTrees.Values)
+        {
+            Search(quest.Topics);
+        }
+
+        Search(tree.OrphanTopics);
+        return bestMatch;
     }
 
     /// <summary>

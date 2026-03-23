@@ -1,19 +1,30 @@
-using System.IO.MemoryMappedFiles;
 using System.Text.Json;
-using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Minidump;
-using FalloutXbox360Utils.Tests.Core;
+using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime;
 
-[Collection(DumpSerialTestGroup.Name)]
 public sealed class RuntimeRefrExtraDataBaselineTests
 {
+    private static readonly string SnippetDir = Path.Combine(
+        AppContext.BaseDirectory, "..", "..", "..", "TestData", "Dmp");
+
     private static readonly JsonSerializerOptions BaselineJsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
+    };
+
+    /// <summary>
+    ///     Maps baseline samplePath values to snippet names used by DmpSnippetReader.
+    /// </summary>
+    private static readonly Dictionary<string, string> SamplePathToSnippet = new(StringComparer.OrdinalIgnoreCase)
+    {
+        [@"Sample\MemoryDump\Fallout_Debug.xex.dmp"] = "debug_dump",
+        [@"Sample\MemoryDump\Fallout_Release_Beta.xex.dmp"] = "release_dump",
+        [@"Sample\MemoryDump\Fallout_Release_Beta.xex4.dmp"] = "xex4_dump",
+        [@"Sample\MemoryDump\Fallout_Release_Beta.xex44.dmp"] = "xex44_dump",
+        [@"Sample\MemoryDump\Fallout_Release_MemDebug.xex.dmp"] = "memdebug_dump"
     };
 
     [Fact]
@@ -99,7 +110,6 @@ public sealed class RuntimeRefrExtraDataBaselineTests
     }
 
     [Fact]
-    [Trait("Category", "Slow")]
     public async Task RuntimeRefrExtraBaselines_MatchObservedDumpResults()
     {
         var baselines = LoadBaselines();
@@ -107,11 +117,11 @@ public sealed class RuntimeRefrExtraDataBaselineTests
 
         foreach (var baseline in baselines)
         {
-            var samplePath = SampleFileFixture.FindSamplePath(baseline.SamplePath);
-            Assert.True(samplePath is not null,
-                $"Sample dump not found for baseline '{baseline.Label}': {baseline.SamplePath}");
+            Assert.True(SamplePathToSnippet.TryGetValue(baseline.SamplePath, out var snippetName),
+                $"No snippet mapping for baseline '{baseline.Label}': {baseline.SamplePath}");
 
-            var observed = await ObserveDumpAsync(samplePath!, baseline.SampleLimit);
+            var snippet = await DmpSnippetReader.LoadAsync(SnippetDir, snippetName);
+            var observed = ObserveSnippet(snippet, baseline.SampleLimit);
             var mismatch = BuildMismatchMessage(baseline, observed);
 
             Assert.True(observed.IsEarlyBuild == baseline.IsEarlyBuild, mismatch);
@@ -136,6 +146,42 @@ public sealed class RuntimeRefrExtraDataBaselineTests
             Assert.True(observed.EditorIdCount == baseline.EditorIdCount, mismatch);
             Assert.True(TypeCountsEqual(observed.TypeCounts, baseline.TypeCounts), mismatch);
         }
+    }
+
+    private static RuntimeRefrExtraObservation ObserveSnippet(DmpSnippetReader snippet, int sampleLimit)
+    {
+        var reader = RuntimeStructReader.CreateWithAutoDetect(
+            snippet.Accessor,
+            snippet.FileSize,
+            snippet.MinidumpInfo,
+            snippet.RuntimeRefrFormEntries);
+
+        var census = reader.BuildRuntimeRefrExtraDataCensus(
+            snippet.RuntimeRefrFormEntries,
+            sampleLimit);
+
+        return new RuntimeRefrExtraObservation(
+            reader.IsEarlyBuild,
+            census.SampleCount,
+            census.ValidRefrCount,
+            census.RefsWithExtraData,
+            census.VisitedNodeCount,
+            census.OwnershipCount,
+            census.LockCount,
+            census.TeleportCount,
+            census.MapMarkerCount,
+            census.EnableParentCount,
+            census.LinkedRefCount,
+            census.EncounterZoneCount,
+            census.StartingPositionCount,
+            census.StartingWorldOrCellCount,
+            census.PackageStartLocationCount,
+            census.MerchantContainerCount,
+            census.LeveledCreatureCount,
+            census.RadiusCount,
+            census.CountCount,
+            census.EditorIdCount,
+            census.TypeCounts);
     }
 
     private static bool TypeCountsEqual(IReadOnlyDictionary<byte, int> observed,
@@ -179,59 +225,6 @@ public sealed class RuntimeRefrExtraDataBaselineTests
             $"merchantContainer={observed.MerchantContainerCount}, leveledCreature={observed.LeveledCreatureCount}, radius={observed.RadiusCount}, " +
             $"count={observed.CountCount}, editorId={observed.EditorIdCount}, " +
             $"typeCounts={JsonSerializer.Serialize(observed.TypeCounts.OrderBy(pair => pair.Key).ToDictionary(pair => pair.Key.ToString(), pair => pair.Value))}.";
-    }
-
-    private static async Task<RuntimeRefrExtraObservation> ObserveDumpAsync(string dumpPath, int sampleLimit)
-    {
-        var analysisResult = await AnalyzeDumpAsync(dumpPath);
-        Assert.NotNull(analysisResult.EsmRecords);
-        Assert.NotNull(analysisResult.MinidumpInfo);
-
-        var fileInfo = new FileInfo(dumpPath);
-        using var mmf = MemoryMappedFile.CreateFromFile(dumpPath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-        using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
-
-        var reader = RuntimeStructReader.CreateWithAutoDetect(
-            accessor,
-            fileInfo.Length,
-            analysisResult.MinidumpInfo!,
-            analysisResult.EsmRecords!.RuntimeRefrFormEntries);
-
-        var census = reader.BuildRuntimeRefrExtraDataCensus(
-            analysisResult.EsmRecords.RuntimeRefrFormEntries,
-            sampleLimit);
-
-        return new RuntimeRefrExtraObservation(
-            reader.IsEarlyBuild,
-            census.SampleCount,
-            census.ValidRefrCount,
-            census.RefsWithExtraData,
-            census.VisitedNodeCount,
-            census.OwnershipCount,
-            census.LockCount,
-            census.TeleportCount,
-            census.MapMarkerCount,
-            census.EnableParentCount,
-            census.LinkedRefCount,
-            census.EncounterZoneCount,
-            census.StartingPositionCount,
-            census.StartingWorldOrCellCount,
-            census.PackageStartLocationCount,
-            census.MerchantContainerCount,
-            census.LeveledCreatureCount,
-            census.RadiusCount,
-            census.CountCount,
-            census.EditorIdCount,
-            census.TypeCounts);
-    }
-
-    private static async Task<AnalysisResult> AnalyzeDumpAsync(string dumpPath)
-    {
-        var analyzer = new MinidumpAnalyzer();
-        return await analyzer.AnalyzeAsync(
-            dumpPath,
-            includeMetadata: true,
-            cancellationToken: TestContext.Current.CancellationToken);
     }
 
     private static List<RuntimeRefrExtraBaselineRow> LoadBaselines()

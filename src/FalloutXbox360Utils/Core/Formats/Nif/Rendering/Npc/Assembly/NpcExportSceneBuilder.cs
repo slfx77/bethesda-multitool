@@ -117,6 +117,7 @@ internal static class NpcExportSceneBuilder
             npc,
             meshArchives,
             skeletonContext.NodeIndicesByBoneName,
+            skeletonContext.BoneTransforms,
             effectiveBodyTex,
             effectiveHandTex,
             settings);
@@ -285,6 +286,7 @@ internal static class NpcExportSceneBuilder
         NpcAppearance npc,
         NpcMeshArchiveSet meshArchives,
         Dictionary<string, int> nodeIndicesByBoneName,
+        Dictionary<string, Matrix4x4> boneTransforms,
         string? effectiveBodyTex,
         string? effectiveHandTex,
         NpcExportSettings settings)
@@ -301,21 +303,51 @@ internal static class NpcExportSceneBuilder
                 continue;
             }
 
+            if (item.AttachmentMode != EquipmentAttachmentMode.None)
+            {
+                var raw = NpcRenderHelpers.LoadNifRawFromBsa(item.MeshPath, meshArchives);
+                if (raw != null && NpcBodyBuilder.IsRigidEquipmentModel(raw.Value.Data, raw.Value.Info))
+                {
+                    if (NpcBodyBuilder.TryResolveEquipmentAttachmentTransform(
+                            item, boneTransforms, out _, out var attachmentTransform, out _))
+                    {
+                        var extracted = LoadExtractedNif(item.MeshPath, meshArchives);
+                        if (extracted != null && extracted.MeshParts.Count > 0)
+                        {
+                            foreach (var part in extracted.MeshParts)
+                            {
+                                var submesh = CloneSubmesh(part.Submesh);
+                                NpcRenderHelpers.TransformSubmesh(submesh, attachmentTransform);
+                                ApplyEquipmentTextureOverride(submesh, effectiveBodyTex, effectiveHandTex);
+                                AddRigidSubmesh(scene, item.MeshPath, submesh);
+                            }
+
+                            continue;
+                        }
+                    }
+                }
+            }
+
             AddSkinnedNif(
                 scene,
                 item.MeshPath,
                 meshArchives,
                 nodeIndicesByBoneName,
-                submesh =>
-                {
-                    if (effectiveBodyTex != null && NpcRenderHelpers.IsEquipmentSkinSubmesh(submesh.DiffuseTexturePath))
-                    {
-                        submesh.DiffuseTexturePath =
-                            submesh.DiffuseTexturePath?.Contains("hand", StringComparison.OrdinalIgnoreCase) == true
-                                ? effectiveHandTex ?? effectiveBodyTex
-                                : effectiveBodyTex;
-                    }
-                });
+                submesh => ApplyEquipmentTextureOverride(submesh, effectiveBodyTex, effectiveHandTex));
+        }
+    }
+
+    private static void ApplyEquipmentTextureOverride(
+        RenderableSubmesh submesh,
+        string? effectiveBodyTex,
+        string? effectiveHandTex)
+    {
+        if (effectiveBodyTex != null && NpcRenderHelpers.IsEquipmentSkinSubmesh(submesh.DiffuseTexturePath))
+        {
+            submesh.DiffuseTexturePath =
+                submesh.DiffuseTexturePath?.Contains("hand", StringComparison.OrdinalIgnoreCase) == true
+                    ? effectiveHandTex ?? effectiveBodyTex
+                    : effectiveBodyTex;
         }
     }
 
@@ -627,6 +659,7 @@ internal static class NpcExportSceneBuilder
         foreach (var submesh in hairModel.Submeshes)
         {
             submesh.TintColor = tint;
+            submesh.IsDoubleSided = true;
             if (npc.HairTexturePath != null)
             {
                 submesh.DiffuseTexturePath = npc.HairTexturePath;
@@ -681,6 +714,25 @@ internal static class NpcExportSceneBuilder
                     npc.FaceGenAsymmetricCoeffs,
                     meshArchives,
                     egmCache);
+            }
+
+            // Push mouth/teeth inward when FaceGen morphs are active to reduce clipping.
+            if (usedBaseRaceMesh && npc.FaceGenSymmetricCoeffs != null &&
+                NpcHeadBuilder.IsMouthPart(facePartPath))
+            {
+                var morphMagnitude =
+                    NpcHeadBuilder.EstimateFaceGenMorphMagnitude(npc.FaceGenSymmetricCoeffs);
+                if (morphMagnitude > 0.01f)
+                {
+                    var yOffset = -morphMagnitude * 0.15f;
+                    foreach (var sub in partModel.Submeshes)
+                    {
+                        for (var i = 1; i < sub.Positions.Length; i += 3)
+                        {
+                            sub.Positions[i] += yOffset;
+                        }
+                    }
+                }
             }
 
             if (attachmentBoneTransforms != null &&
@@ -757,6 +809,7 @@ internal static class NpcExportSceneBuilder
             foreach (var submesh in partModel.Submeshes)
             {
                 submesh.TintColor = tint;
+                submesh.IsDoubleSided = true;
             }
 
             AddRigidModel(scene, headPartPath, partModel);

@@ -11,7 +11,8 @@ public sealed class RuntimeParityMatrixTests
         "typed-runtime",
         "partial-runtime",
         "generic-only",
-        "esm-only"
+        "esm-only",
+        "esm-sufficient"
     ];
 
     private static readonly HashSet<string> AllowedConfidence =

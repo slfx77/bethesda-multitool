@@ -366,7 +366,7 @@ internal static class DmpDiagCommand
             else if (scanResult.RuntimeRefrFormEntries.Count > 0)
             {
                 useProtoOffsets = RuntimeRefrReader.ProbeIsEarlyBuild(
-                    new RuntimeMemoryContext(accessor, fileInfo.Length, minidumpInfo),
+                    new RuntimeMemoryContext(new MmfMemoryAccessor(accessor), fileInfo.Length, minidumpInfo),
                     scanResult.RuntimeRefrFormEntries);
             }
 

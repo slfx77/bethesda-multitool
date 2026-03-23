@@ -296,6 +296,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         _mode = ViewMode.WorldOverview;
         _activeBrowser = BrowserMode.None;
         _selectedCell = null;
+        _selectedObject = null;
         _worldHeightmapBitmap?.Dispose();
         _worldHeightmapBitmap = null;
         _worldHeightmapDirty = true;
@@ -657,6 +658,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         _selectedCell = cell;
         _mode = ViewMode.CellDetail;
         _hoveredObject = null;
+        _selectedObject = null;
         SetCanvasMode(true);
 
         _cellHeightmapBitmap?.Dispose();

@@ -81,6 +81,7 @@
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.4654" />
     <PackageReference Include="CommunityToolkit.WinUI.Controls.Primitives" Version="8.2.250402" />
     <PackageReference Include="Microsoft.Graphics.Win2D" Version="1.3.2" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3856.49" />
   </ItemGroup>
 
   <!-- DDXConv library (compiled-in, no subprocess needed) -->
@@ -91,8 +92,7 @@
   <!-- Embedded resources -->
   <ItemGroup>
     <EmbeddedResource Include="Core\Formats\Nif\nif.xml" LogicalName="FalloutXbox360Utils.nif.xml" />
-    <EmbeddedResource Include="Core\Formats\Esm\Runtime\pdb_layouts.json"
-                      LogicalName="FalloutXbox360Utils.pdb_layouts.json" />
+    <EmbeddedResource Include="Core\Formats\Esm\Runtime\pdb_layouts.json" LogicalName="FalloutXbox360Utils.pdb_layouts.json" />
     <EmbeddedResource Include="Core\Formats\Nif\Rendering\Gpu\Shaders\*.glsl" />
     <EmbeddedResource Include="Assets\MapMarkers\*.png" />
   </ItemGroup>
@@ -100,6 +100,8 @@
   <!-- App icon for title bar (unpackaged apps need explicit Content inclusion) -->
   <ItemGroup Condition="$(TargetFramework.Contains('windows'))">
     <Content Include="Assets\AppIcon.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="App\Assets\npc-viewer.html" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="App\Assets\model-viewer.min.js" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- Exclude GUI code from cross-platform build -->
@@ -107,6 +109,7 @@
     <!-- All GUI code is in App/ folder -->
     <Compile Remove="App\**\*.cs" />
     <!-- Keep non-UI helpers that are shared with tests and analysis code -->
+    <Compile Include="App\Helpers\DialogueConditionDisplayFormatter.cs" />
     <Compile Include="App\Helpers\FormUsageIndex.cs" />
     <Compile Include="App\Helpers\FormUsageReference.cs" />
     <!-- XAML files in App/ -->

@@ -67,7 +67,31 @@ internal sealed class RuntimePdbFieldAccessor(RuntimeMemoryContext context)
     internal string? ReadBsString(long fileOffset, PdbTypeLayout layout, string name, string? owner = null)
     {
         var fieldOffset = FindFieldOffset(layout, name, owner);
-        return fieldOffset.HasValue ? _context.ReadBSStringT(fileOffset, fieldOffset.Value) : null;
+        if (!fieldOffset.HasValue)
+        {
+            return null;
+        }
+
+        var result = _context.ReadBSStringTDiag(fileOffset, fieldOffset.Value, out var failure);
+        BSStringDiagnostics.Record(name, failure);
+        return result;
+    }
+
+    internal string? ReadBsString(long fileOffset, PdbTypeLayout layout, string name, string? owner,
+        RuntimeEditorIdEntry entry)
+    {
+        var fieldOffset = FindFieldOffset(layout, name, owner);
+        if (!fieldOffset.HasValue)
+        {
+            return null;
+        }
+
+        var result = _context.ReadBSStringTDiag(fileOffset, fieldOffset.Value, out var failure,
+            out var ptr, out var len, out var hex, out var partial);
+        BSStringDiagnostics.RecordWithSample(name, failure,
+            new BSStringDiagnostics.DiagSample(entry.FormId, entry.EditorId, entry.FormType,
+                fileOffset, fieldOffset.Value, ptr, len, hex, partial));
+        return result;
     }
 
     internal uint? ReadFormIdPointer(

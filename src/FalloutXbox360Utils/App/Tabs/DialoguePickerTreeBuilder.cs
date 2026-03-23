@@ -1,5 +1,4 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
-using FalloutXbox360Utils.Core.Formats.Subtitles;
 using Microsoft.UI.Xaml.Controls;
 
 namespace FalloutXbox360Utils;
@@ -13,7 +12,9 @@ internal static class DialoguePickerTreeBuilder
     /// <summary>
     ///     Builds quest-grouped root nodes for the dialogue picker tree.
     /// </summary>
-    public static List<TreeViewNode> BuildQuestPickerNodes(DialogueTreeResult tree, string? searchQuery)
+    public static List<TreeViewNode> BuildQuestPickerNodes(
+        DialogueTreeResult tree, string? searchQuery,
+        Func<uint, string>? resolveFormName = null)
     {
         var nodes = new List<TreeViewNode>();
 
@@ -30,7 +31,9 @@ internal static class DialoguePickerTreeBuilder
                 continue;
             }
 
-            var questName = quest.QuestName ?? $"0x{quest.QuestFormId:X8}";
+            var questName = resolveFormName != null
+                ? resolveFormName(quest.QuestFormId)
+                : quest.QuestName ?? $"0x{quest.QuestFormId:X8}";
             var questNode = new EsmBrowserNode
             {
                 DisplayName = questName,
@@ -106,23 +109,34 @@ internal static class DialoguePickerTreeBuilder
     public static void ExpandCategoryNode(
         TreeViewExpandingEventArgs args,
         bool pickerByQuest,
-        Func<uint, SubtitleEntry?>? subtitleLookup,
-        Func<uint, string> resolveFormName)
+        Func<uint, string> resolveFormName,
+        bool showEditorIds = false)
     {
         if (!args.Node.HasUnrealizedChildren || args.Node.Content is not EsmBrowserNode node)
         {
             return;
         }
 
-        List<TopicDialogueNode> topics;
-        uint? speakerFormId = null;
-        uint? questFormId = null;
+        // NPC mode: speaker root → category sub-nodes (Topic, Conversation, Combat, etc.)
         if (node.DataObject is SpeakerPickerData speakerData)
         {
-            topics = speakerData.Topics;
-            speakerFormId = speakerData.SpeakerFormId;
+            ExpandSpeakerIntoCategoryNodes(args.Node, speakerData);
+            args.Node.HasUnrealizedChildren = false;
+            return;
         }
-        else if (node.DataObject is QuestPickerData questData)
+
+        // NPC mode: category sub-node → individual topics
+        if (node.DataObject is SpeakerCategoryPickerData categoryData)
+        {
+            ExpandTopicList(args.Node, categoryData.Topics,
+                categoryData.SpeakerFormId, null, showEditorIds);
+            args.Node.HasUnrealizedChildren = false;
+            return;
+        }
+
+        List<TopicDialogueNode> topics;
+        uint? questFormId = null;
+        if (node.DataObject is QuestPickerData questData)
         {
             topics = questData.Topics;
             questFormId = questData.QuestFormId;
@@ -136,9 +150,71 @@ internal static class DialoguePickerTreeBuilder
             return;
         }
 
-        foreach (var topic in topics.OrderBy(t => t.TopicName ?? "", StringComparer.OrdinalIgnoreCase))
+        ExpandTopicList(args.Node, topics, null, questFormId, showEditorIds);
+        args.Node.HasUnrealizedChildren = false;
+    }
+
+    /// <summary>
+    ///     Expands a speaker root node into category sub-nodes grouped by TopicType,
+    ///     matching the GECK's dialogue tree organization (Topic, Conversation, Combat, etc.).
+    /// </summary>
+    private static void ExpandSpeakerIntoCategoryNodes(TreeViewNode parentNode, SpeakerPickerData speakerData)
+    {
+        // GECK display order for topic types
+        ReadOnlySpan<byte> categoryOrder = [0, 1, 2, 3, 4, 5, 6, 7];
+
+        var topicsByType = new Dictionary<byte, List<TopicDialogueNode>>();
+        foreach (var topic in speakerData.Topics)
         {
-            var displayName = ResolveTopicDisplayName(topic, pickerByQuest, subtitleLookup);
+            var topicType = topic.Topic?.TopicType ?? 0;
+            if (!topicsByType.TryGetValue(topicType, out var list))
+            {
+                list = [];
+                topicsByType[topicType] = list;
+            }
+
+            list.Add(topic);
+        }
+
+        foreach (var typeCode in categoryOrder)
+        {
+            if (!topicsByType.TryGetValue(typeCode, out var topics) || topics.Count == 0)
+            {
+                continue;
+            }
+
+            var typeName = DialogTopicRecord.GetTopicTypeName(typeCode);
+            var categoryNode = new EsmBrowserNode
+            {
+                DisplayName = typeName,
+                Detail = $"({topics.Count})",
+                NodeType = "Category",
+                IconGlyph = DialogueMetadataBuilder.GetTopicTypeIcon(typeCode),
+                HasUnrealizedChildren = true,
+                DataObject = new SpeakerCategoryPickerData(speakerData.SpeakerFormId, typeCode, topics)
+            };
+
+            parentNode.Children.Add(new TreeViewNode { Content = categoryNode, HasUnrealizedChildren = true });
+        }
+    }
+
+    /// <summary>
+    ///     Expands a node by adding individual topic children.
+    /// </summary>
+    private static void ExpandTopicList(
+        TreeViewNode parentNode,
+        List<TopicDialogueNode> topics,
+        uint? speakerFormId,
+        uint? questFormId,
+        bool showEditorIds = false)
+    {
+        foreach (var topic in topics
+                     .OrderByDescending(t => t.Topic?.Priority ?? 0f)
+                     .ThenBy(t => t.TopicName ?? "", StringComparer.OrdinalIgnoreCase))
+        {
+            var displayName = showEditorIds
+                ? DialogueViewerHelper.ResolveEditorIdDisplay(topic)
+                : ResolveTopicDisplayName(topic);
             var detail = BuildTopicDetail(topic);
             var topicDataObject = WrapTopicData(topic, speakerFormId, questFormId);
 
@@ -151,10 +227,8 @@ internal static class DialoguePickerTreeBuilder
                 DataObject = topicDataObject
             };
 
-            args.Node.Children.Add(new TreeViewNode { Content = topicNode });
+            parentNode.Children.Add(new TreeViewNode { Content = topicNode });
         }
-
-        args.Node.HasUnrealizedChildren = false;
     }
 
     /// <summary>
@@ -190,6 +264,7 @@ internal static class DialoguePickerTreeBuilder
         {
             QuestPickerData qd => qd.Topics.Any(t => t.TopicFormId == topicFormId),
             SpeakerPickerData sd => sd.Topics.Any(t => t.TopicFormId == topicFormId),
+            SpeakerCategoryPickerData sc => sc.Topics.Any(t => t.TopicFormId == topicFormId),
             List<TopicDialogueNode> list => list.Any(t => t.TopicFormId == topicFormId),
             _ => false
         };
@@ -209,36 +284,21 @@ internal static class DialoguePickerTreeBuilder
         };
     }
 
-    private static string ResolveTopicDisplayName(
-        TopicDialogueNode topic, bool pickerByQuest, Func<uint, SubtitleEntry?>? subtitleLookup)
+    private static string ResolveTopicDisplayName(TopicDialogueNode topic)
     {
-        var topicName = topic.TopicName ?? topic.Topic?.EditorId ?? $"0x{topic.TopicFormId:X8}";
+        // Use topic name for both quest and NPC browse modes — consistent with GECK's tree view.
+        // FullName is preferred (player-visible prompt text), then TopicName, EditorId, FormID.
+        var fullName = topic.Topic?.FullName ?? topic.TopicName;
+        var editorId = topic.Topic?.EditorId;
 
-        if (pickerByQuest)
+        // For topics with 0 INFOs (failed reads from DMP), append EditorId to disambiguate
+        // duplicates like "Goodbye." that all share the same FullName
+        if (fullName != null && editorId != null && topic.InfoChain.Count == 0)
         {
-            return topicName;
+            return $"{fullName} ({editorId})";
         }
 
-        // NPC view: show first response text
-        var firstText = topic.InfoChain
-            .SelectMany(info => info.Info.Responses)
-            .Select(r => r.Text)
-            .FirstOrDefault(t => !string.IsNullOrEmpty(t));
-
-        // Subtitle fallback for picker display
-        if (firstText == null && subtitleLookup != null)
-        {
-            firstText = topic.InfoChain
-                .Select(info => subtitleLookup(info.Info.FormId)?.Text)
-                .FirstOrDefault(t => !string.IsNullOrEmpty(t));
-        }
-
-        if (firstText != null && !DialogueMetadataBuilder.IsSimilarText(firstText, topicName))
-        {
-            return firstText.Length > 80 ? firstText[..77] + "..." : firstText;
-        }
-
-        return topicName;
+        return fullName ?? editorId ?? $"0x{topic.TopicFormId:X8}";
     }
 
     private static string BuildTopicDetail(TopicDialogueNode topic)
@@ -267,6 +327,8 @@ internal static class DialoguePickerTreeBuilder
     internal sealed record QuestPickerData(uint QuestFormId, List<TopicDialogueNode> Topics);
 
     internal sealed record SpeakerPickerData(uint SpeakerFormId, List<TopicDialogueNode> Topics);
+
+    internal sealed record SpeakerCategoryPickerData(uint SpeakerFormId, byte TopicType, List<TopicDialogueNode> Topics);
 
     internal sealed record QuestTopicPickerData(uint QuestFormId, TopicDialogueNode Topic);
 

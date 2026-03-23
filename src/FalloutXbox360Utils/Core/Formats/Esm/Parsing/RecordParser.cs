@@ -41,8 +41,23 @@ public sealed class RecordParser
         MemoryMappedViewAccessor? accessor = null,
         long fileSize = 0,
         MinidumpInfo? minidumpInfo = null)
+        : this(new RecordParserContext(scanResult, formIdCorrelations, accessor, fileSize, minidumpInfo))
     {
-        _context = new RecordParserContext(scanResult, formIdCorrelations, accessor, fileSize, minidumpInfo);
+    }
+
+    public RecordParser(
+        EsmRecordScanResult scanResult,
+        Dictionary<uint, string>? formIdCorrelations,
+        IMemoryAccessor? accessor,
+        long fileSize,
+        MinidumpInfo? minidumpInfo)
+        : this(new RecordParserContext(scanResult, formIdCorrelations, accessor, fileSize, minidumpInfo))
+    {
+    }
+
+    internal RecordParser(RecordParserContext context)
+    {
+        _context = context;
 
         _actors = new ActorRecordHandler(_context);
         _items = new ItemRecordHandler(_context);

@@ -1,3 +1,5 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
+
 namespace FalloutXbox360Utils.Core.Formats.Esm;
 
 /// <summary>
@@ -305,5 +307,206 @@ internal static class RuntimeBuildOffsets
             0x78 => "SLPD",
             _ => null
         };
+    }
+
+    /// <summary>
+    ///     Reverse map: ESM 4-letter signature → final-build FormType byte.
+    ///     Built lazily from <see cref="GetRecordTypeCode" />.
+    /// </summary>
+    private static Dictionary<string, byte>? _signatureToFormType;
+
+    private static Dictionary<string, byte> SignatureToFormType
+    {
+        get
+        {
+            if (_signatureToFormType != null) return _signatureToFormType;
+            var map = new Dictionary<string, byte>();
+            for (var i = 0; i <= 0x78; i++)
+            {
+                var code = GetRecordTypeCode((byte)i);
+                if (code != null)
+                {
+                    map[code] = (byte)i;
+                }
+            }
+
+            _signatureToFormType = map;
+            return map;
+        }
+    }
+
+    /// <summary>
+    ///     Detect FormType code drift by cross-referencing runtime EditorID entries
+    ///     (which carry the FormType byte read from memory) against ESM-scanned records
+    ///     (which carry the 4-letter record signature). If a type was inserted or removed
+    ///     in the ENUM_FORM_ID during development, all types after the insertion point
+    ///     shift by ±1. Returns a remap dictionary (dmpFormType → finalFormType) or null
+    ///     if no drift is detected.
+    /// </summary>
+    public static Dictionary<byte, byte>? DetectFormTypeDrift(
+        IReadOnlyList<RuntimeEditorIdEntry> runtimeEntries,
+        IReadOnlyList<DetectedMainRecord> esmRecords)
+    {
+        // Build ESM lookup: FormId → ESM signature
+        var esmFormIdToSignature = new Dictionary<uint, string>();
+        foreach (var rec in esmRecords)
+        {
+            esmFormIdToSignature.TryAdd(rec.FormId, rec.RecordType);
+        }
+
+        // For each runtime entry that has a matching ESM record, compare FormType vs expected
+        // Collect (dmpFormType, expectedFormType) pairs
+        var mismatches = new Dictionary<byte, Dictionary<byte, int>>(); // dmpType → { expectedType → count }
+        var matches = 0;
+
+        foreach (var entry in runtimeEntries)
+        {
+            if (!esmFormIdToSignature.TryGetValue(entry.FormId, out var esmSig))
+            {
+                continue;
+            }
+
+            if (!SignatureToFormType.TryGetValue(esmSig, out var expectedFormType))
+            {
+                continue;
+            }
+
+            if (entry.FormType == expectedFormType)
+            {
+                matches++;
+                continue;
+            }
+
+            if (!mismatches.TryGetValue(entry.FormType, out var targets))
+            {
+                targets = new Dictionary<byte, int>();
+                mismatches[entry.FormType] = targets;
+            }
+
+            targets.TryGetValue(expectedFormType, out var count);
+            targets[expectedFormType] = count + 1;
+        }
+
+        var totalMismatched = mismatches.Values.Sum(d => d.Values.Sum());
+        Logger.Instance.Info(
+            $"[FormType Drift] Cross-ref: {runtimeEntries.Count} runtime, " +
+            $"{esmFormIdToSignature.Count} ESM, {matches} match, {totalMismatched} mismatch");
+
+        if (mismatches.Count == 0)
+        {
+            return null;
+        }
+
+        // Build confirmed remaps: for each mismatched dmpType, pick the most common expected type.
+        // A mismatch with ≥2 agreeing records is considered a candidate.
+        var candidates = new Dictionary<byte, (byte FinalType, int Count)>();
+        foreach (var (dmpType, targets) in mismatches)
+        {
+            var best = targets.MaxBy(kv => kv.Value);
+            if (best.Value >= 2)
+            {
+                candidates[dmpType] = (best.Key, best.Value);
+            }
+        }
+
+        // Detect systematic shift pattern: if all candidates share a small delta (±1 or ±2),
+        // and all matches are for types BELOW the drift point (consistent with partial shift),
+        // extrapolate to all types >= the lowest candidate code.
+        var remap = new Dictionary<byte, byte>();
+        if (candidates.Count > 0)
+        {
+            var deltas = candidates.Select(kv => (int)kv.Value.FinalType - kv.Key).Distinct().ToList();
+            if (deltas.Count == 1 && Math.Abs(deltas[0]) <= 2)
+            {
+                var delta = deltas[0];
+                var lowestDmpCode = candidates.Keys.Min();
+                var totalCandidateRecords = candidates.Values.Sum(c => c.Count);
+
+                // Verify matches are consistent: all matches should be for types below the drift point.
+                // Types below the insertion point have the same codes in both builds.
+                var matchesAboveDriftPoint = CountMatchesAtOrAbove(
+                    runtimeEntries, esmFormIdToSignature, lowestDmpCode);
+
+                if (totalCandidateRecords >= 2 && matchesAboveDriftPoint == 0)
+                {
+                    Logger.Instance.Info(
+                        $"[FormType Drift] Systematic shift detected: delta={delta:+0;-0;0} " +
+                        $"starting at DMP code 0x{lowestDmpCode:X2} " +
+                        $"({candidates.Count} types, {totalCandidateRecords} records confirmed, " +
+                        $"{matches} unaffected matches below drift point)");
+
+                    for (var code = lowestDmpCode; code <= 0x78; code++)
+                    {
+                        var target = (byte)(code + delta);
+                        if (target <= 0x78 && GetRecordTypeCode(target) != null)
+                        {
+                            remap[code] = target;
+                        }
+                    }
+                }
+            }
+
+            // Fallback: if systematic detection didn't fire, use individually confirmed remaps
+            // with a stronger threshold (≥5 records) and reasonable delta (±2)
+            if (remap.Count == 0)
+            {
+                foreach (var (dmpType, (finalType, count)) in candidates)
+                {
+                    if (count >= 5 && Math.Abs((int)finalType - dmpType) <= 2)
+                    {
+                        remap[dmpType] = finalType;
+                    }
+                }
+            }
+        }
+
+        if (remap.Count > 0)
+        {
+            var candidateStr = string.Join(", ",
+                candidates.Select(kv => $"0x{kv.Key:X2}→0x{kv.Value.FinalType:X2} ({GetRecordTypeCode(kv.Value.FinalType)})"));
+            Logger.Instance.Info(
+                $"[FormType Drift] Applying {remap.Count} remapped codes. " +
+                $"Evidence: [{candidateStr}]. " +
+                $"Range: 0x{remap.Keys.Min():X2}–0x{remap.Keys.Max():X2}");
+        }
+
+        return remap.Count > 0 ? remap : null;
+    }
+
+    /// <summary>
+    ///     Count how many exact matches (runtime FormType == final expected FormType) exist
+    ///     for runtime entries with FormType >= threshold. If this is non-zero, it contradicts
+    ///     a systematic shift starting at that threshold.
+    /// </summary>
+    private static int CountMatchesAtOrAbove(
+        IReadOnlyList<RuntimeEditorIdEntry> runtimeEntries,
+        Dictionary<uint, string> esmFormIdToSignature,
+        byte threshold)
+    {
+        var count = 0;
+        foreach (var entry in runtimeEntries)
+        {
+            if (entry.FormType < threshold)
+            {
+                continue;
+            }
+
+            if (!esmFormIdToSignature.TryGetValue(entry.FormId, out var esmSig))
+            {
+                continue;
+            }
+
+            if (!SignatureToFormType.TryGetValue(esmSig, out var expectedFormType))
+            {
+                continue;
+            }
+
+            if (entry.FormType == expectedFormType)
+            {
+                count++;
+            }
+        }
+
+        return count;
     }
 }

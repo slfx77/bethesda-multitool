@@ -21,7 +21,10 @@ internal static class DialogueRecordDetailBuilder
         DialogueRecord info,
         SubtitleEntry? csvSubtitle,
         Func<uint, string> resolveFormName,
-        Func<uint?, string> resolveSpeakerName)
+        Func<uint?, string> resolveSpeakerName,
+        string? topicEditorId = null,
+        Func<uint, string>? resolveEditorId = null,
+        Func<uint, uint, string?>? resolveQuestVariable = null)
     {
         var rows = new List<DetailRow>();
 
@@ -45,6 +48,8 @@ internal static class DialogueRecordDetailBuilder
             var topicDisplay = resolveFormName(info.TopicFormId.Value);
             rows.Add(new DetailRow("Topic", topicDisplay, info.TopicFormId.Value));
         }
+
+        AddIfNotEmpty(rows, "Topic EditorID", topicEditorId);
 
         if (info.QuestFormId is > 0)
         {
@@ -93,7 +98,25 @@ internal static class DialogueRecordDetailBuilder
             {
                 rows.Add(new DetailRow(
                     info.Conditions.Count > 1 ? $"Condition {i + 1}" : "Condition",
-                    DialogueConditionDisplayFormatter.FormatCondition(info.Conditions[i], resolveFormName)));
+                    DialogueConditionDisplayFormatter.FormatCondition(
+                        info.Conditions[i], resolveFormName, resolveEditorId)));
+            }
+
+            // Condition Refs — one per line with navigable links
+            var conditionRefs = CollectConditionFormRefs(info.Conditions);
+            var refIndex = 0;
+            foreach (var formId in conditionRefs)
+            {
+                refIndex++;
+                var refLabel = conditionRefs.Count > 1 ? $"Condition Ref {refIndex}" : "Condition Ref";
+                rows.Add(new DetailRow(refLabel, $"{resolveFormName(formId)} (0x{formId:X8})", formId));
+            }
+
+            // Quest Variable resolution for GetQuestVariable conditions
+            if (resolveQuestVariable != null)
+            {
+                AddQuestVariableRows(rows, info.Conditions, resolveEditorId ?? resolveFormName,
+                    resolveQuestVariable);
             }
         }
 
@@ -155,7 +178,13 @@ internal static class DialogueRecordDetailBuilder
             for (var i = 0; i < info.ResultScripts.Count; i++)
             {
                 var script = info.ResultScripts[i];
-                var label = info.ResultScripts.Count > 1 ? $"Result Script {i + 1}" : "Result Script";
+                string label;
+                if (info.ResultScripts.Count == 1 && !script.HasNextSeparator)
+                    label = "Result Script";
+                else if (i == 0)
+                    label = "Result Script Start";
+                else
+                    label = "Result Script End";
                 var scriptText = script.SourceText ?? script.DecompiledText;
                 if (!string.IsNullOrWhiteSpace(scriptText))
                 {
@@ -166,11 +195,14 @@ internal static class DialogueRecordDetailBuilder
                     rows.Add(new DetailRow(label, $"Compiled only ({script.CompiledData.Length} bytes)"));
                 }
 
-                if (script.ReferencedObjects.Count > 0)
+                for (var r = 0; r < script.ReferencedObjects.Count; r++)
                 {
-                    rows.Add(new DetailRow(
-                        $"{label} Refs",
-                        DialogueConditionDisplayFormatter.FormatResultScriptReferences(script, resolveFormName)));
+                    var refFormId = script.ReferencedObjects[r];
+                    var refLabel = script.ReferencedObjects.Count > 1
+                        ? $"{label} Ref {r + 1}"
+                        : $"{label} Ref";
+                    rows.Add(new DetailRow(refLabel,
+                        $"{resolveFormName(refFormId)} (0x{refFormId:X8})", refFormId));
                 }
             }
         }
@@ -201,7 +233,8 @@ internal static class DialogueRecordDetailBuilder
     public static List<DetailRow> BuildTopicDetailRows(
         TopicDialogueNode linkedTopic,
         InfoDialogueNode sourceInfo,
-        Func<uint, string> resolveFormName)
+        Func<uint, string> resolveFormName,
+        Func<uint, string>? resolveEditorId = null)
     {
         var rows = new List<DetailRow>();
 
@@ -210,6 +243,11 @@ internal static class DialogueRecordDetailBuilder
         AddIfNotEmpty(rows, "Topic EditorID", linkedTopic.Topic?.EditorId);
         AddIfNotEmpty(rows, "Topic Name", linkedTopic.Topic?.FullName);
         AddIfNotEmpty(rows, "Topic Type", linkedTopic.Topic?.TopicTypeName);
+        if (linkedTopic.Topic != null)
+        {
+            rows.Add(new DetailRow("Priority", linkedTopic.Topic.Priority.ToString("F0")));
+        }
+
         if (linkedTopic.Topic is { JournalIndex: not 0 })
         {
             rows.Add(new DetailRow("Journal Index", linkedTopic.Topic.JournalIndex.ToString()));
@@ -227,6 +265,67 @@ internal static class DialogueRecordDetailBuilder
         // Source INFO that leads here
         rows.Add(new DetailRow("Source INFO", $"0x{sourceInfo.Info.FormId:X8}"));
         AddIfNotEmpty(rows, "Source EditorID", sourceInfo.Info.EditorId);
+
+        // Conditions from the linked topic's INFO records
+        var allConditions = linkedTopic.InfoChain
+            .SelectMany(i => i.Info.Conditions)
+            .ToList();
+        if (allConditions.Count > 0)
+        {
+            for (var i = 0; i < allConditions.Count; i++)
+            {
+                rows.Add(new DetailRow(
+                    allConditions.Count > 1 ? $"Condition {i + 1}" : "Condition",
+                    DialogueConditionDisplayFormatter.FormatCondition(
+                        allConditions[i], resolveFormName, resolveEditorId)));
+            }
+        }
+
+        return rows;
+    }
+
+    /// <summary>
+    ///     Builds detail rows for a DIAL topic record itself (used when no INFO records are available).
+    /// </summary>
+    public static List<DetailRow> BuildDialTopicDetailRows(
+        DialogTopicRecord topic, Func<uint, string> resolveFormName)
+    {
+        var rows = new List<DetailRow>();
+        rows.Add(new DetailRow("FormID", $"0x{topic.FormId:X8}"));
+        AddIfNotEmpty(rows, "EditorID", topic.EditorId);
+        AddIfNotEmpty(rows, "Full Name", topic.FullName);
+        rows.Add(new DetailRow("Topic Type", topic.TopicTypeName));
+
+        if (topic.QuestFormId is > 0)
+        {
+            var questName = resolveFormName(topic.QuestFormId.Value);
+            rows.Add(new DetailRow("Quest", questName, topic.QuestFormId.Value));
+        }
+
+        if (topic.ResponseCount > 0)
+        {
+            rows.Add(new DetailRow("Expected Responses", topic.ResponseCount.ToString()));
+        }
+
+        if (topic.Priority != 0f)
+        {
+            rows.Add(new DetailRow("Priority", topic.Priority.ToString("F0")));
+        }
+
+        if (topic.JournalIndex != 0)
+        {
+            rows.Add(new DetailRow("Journal Index", topic.JournalIndex.ToString()));
+        }
+
+        AddIfNotEmpty(rows, "Dummy Prompt", topic.DummyPrompt);
+
+        var flags = new List<string>();
+        if (topic.IsRumors) flags.Add("Rumors");
+        if (topic.IsTopLevel) flags.Add("TopLevel");
+        if (flags.Count > 0)
+        {
+            rows.Add(new DetailRow("Flags", string.Join(", ", flags)));
+        }
 
         return rows;
     }
@@ -263,6 +362,65 @@ internal static class DialogueRecordDetailBuilder
         }
 
         return tags;
+    }
+
+    /// <summary>
+    ///     Collects unique FormID references from condition parameters and references.
+    /// </summary>
+    private static HashSet<uint> CollectConditionFormRefs(List<DialogueCondition> conditions)
+    {
+        var refs = new HashSet<uint>();
+        foreach (var cond in conditions)
+        {
+            if (cond.Parameter1 != 0 && DialogueConditionDisplayFormatter.IsFormReference(cond, 0))
+            {
+                refs.Add(cond.Parameter1);
+            }
+
+            if (cond.Parameter2 != 0 && DialogueConditionDisplayFormatter.IsFormReference(cond, 1))
+            {
+                refs.Add(cond.Parameter2);
+            }
+
+            if (cond.Reference != 0)
+            {
+                refs.Add(cond.Reference);
+            }
+        }
+
+        return refs;
+    }
+
+    /// <summary>
+    ///     Adds "Condition Variable" rows for GetQuestVariable conditions with resolved variable names.
+    /// </summary>
+    private static void AddQuestVariableRows(
+        List<DetailRow> rows,
+        List<DialogueCondition> conditions,
+        Func<uint, string> resolveEditorId,
+        Func<uint, uint, string?> resolveQuestVariable)
+    {
+        const ushort getQuestVariableFunctionIndex = 0x004F;
+        var questVarRefs = new List<(uint QuestFormId, uint VarIndex, string? VarName)>();
+
+        foreach (var cond in conditions)
+        {
+            if (cond.FunctionIndex == getQuestVariableFunctionIndex && cond.Parameter1 != 0)
+            {
+                var varName = resolveQuestVariable(cond.Parameter1, cond.Parameter2);
+                questVarRefs.Add((cond.Parameter1, cond.Parameter2, varName));
+            }
+        }
+
+        for (var i = 0; i < questVarRefs.Count; i++)
+        {
+            var (questId, varIdx, varName) = questVarRefs[i];
+            var label = questVarRefs.Count > 1 ? $"Condition Variable {i + 1}" : "Condition Variable";
+            var display = varName != null
+                ? $"{resolveEditorId(questId)}.{varName} (index {varIdx})"
+                : $"{resolveEditorId(questId)}[{varIdx}]";
+            rows.Add(new DetailRow(label, display, questId));
+        }
     }
 
     private static void AddIfNotEmpty(List<DetailRow> rows, string label, string? value)

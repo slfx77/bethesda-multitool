@@ -76,6 +76,7 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
                     uint? questFormId = null;
                     byte topicType = 0;
                     byte topicFlags = 0;
+                    float priority = 0f;
 
                     foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
                     {
@@ -98,6 +99,11 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
                             case "QSTI" when sub.DataLength == 4:
                                 questFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                                 break;
+                            case "PNAM" when sub.DataLength == 4:
+                                priority = record.IsBigEndian
+                                    ? BinaryPrimitives.ReadSingleBigEndian(subData)
+                                    : BinaryPrimitives.ReadSingleLittleEndian(subData);
+                                break;
                             case "DATA" when sub.DataLength >= 2:
                                 // Topic type and flags -- raw bytes, no endian swap needed
                                 topicType = subData[0];
@@ -115,6 +121,7 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
                         QuestFormId = questFormId,
                         TopicType = topicType,
                         Flags = topicFlags,
+                        Priority = priority,
                         Offset = record.Offset,
                         IsBigEndian = record.IsBigEndian
                     });

@@ -178,6 +178,208 @@ internal static class FaceGenMeshMorpher
                 normals[v + 2] = nz / len;
             }
         }
+
+        WeldSeamNormals(positions, normals);
+    }
+
+    /// <summary>
+    ///     Averages normals of vertices that share the same position (within epsilon).
+    ///     EGM morphing breaks seam-vertex normal sharing, causing visible hard edges
+    ///     at mesh boundaries (neck, ears). This restores smooth normals at those seams.
+    /// </summary>
+    private static void WeldSeamNormals(float[] positions, float[] normals)
+    {
+        const float epsilon = 0.001f;
+        const float epsilonSq = epsilon * epsilon;
+
+        var vertexCount = positions.Length / 3;
+        if (vertexCount <= 1)
+        {
+            return;
+        }
+
+        // Build spatial buckets keyed by quantized position for O(n) average-case lookup.
+        // Bucket size is larger than epsilon so co-located vertices land in the same or
+        // adjacent buckets.
+        const float bucketSize = 0.01f;
+        var buckets = new Dictionary<(int, int, int), List<int>>();
+
+        for (var i = 0; i < vertexCount; i++)
+        {
+            var bx = (int)MathF.Floor(positions[i * 3] / bucketSize);
+            var by = (int)MathF.Floor(positions[i * 3 + 1] / bucketSize);
+            var bz = (int)MathF.Floor(positions[i * 3 + 2] / bucketSize);
+            var key = (bx, by, bz);
+            if (!buckets.TryGetValue(key, out var list))
+            {
+                list = [];
+                buckets[key] = list;
+            }
+
+            list.Add(i);
+        }
+
+        // For each vertex, check its bucket and the 26 neighbors for co-located vertices.
+        var welded = new bool[vertexCount];
+        foreach (var (bucketKey, indices) in buckets)
+        {
+            for (var ai = 0; ai < indices.Count; ai++)
+            {
+                var a = indices[ai];
+                if (welded[a])
+                {
+                    continue;
+                }
+
+                // Collect all vertices at the same position (including from neighbor buckets).
+                var ax = positions[a * 3];
+                var ay = positions[a * 3 + 1];
+                var az = positions[a * 3 + 2];
+
+                var sumNx = normals[a * 3];
+                var sumNy = normals[a * 3 + 1];
+                var sumNz = normals[a * 3 + 2];
+                var count = 1;
+
+                // Check same bucket (remaining vertices after a).
+                for (var bi = ai + 1; bi < indices.Count; bi++)
+                {
+                    var b = indices[bi];
+                    if (welded[b])
+                    {
+                        continue;
+                    }
+
+                    var dx = positions[b * 3] - ax;
+                    var dy = positions[b * 3 + 1] - ay;
+                    var dz = positions[b * 3 + 2] - az;
+                    if (dx * dx + dy * dy + dz * dz > epsilonSq)
+                    {
+                        continue;
+                    }
+
+                    sumNx += normals[b * 3];
+                    sumNy += normals[b * 3 + 1];
+                    sumNz += normals[b * 3 + 2];
+                    count++;
+                }
+
+                // Check 26 neighbor buckets for boundary cases.
+                for (var ox = -1; ox <= 1; ox++)
+                for (var oy = -1; oy <= 1; oy++)
+                for (var oz = -1; oz <= 1; oz++)
+                {
+                    if (ox == 0 && oy == 0 && oz == 0)
+                    {
+                        continue;
+                    }
+
+                    var neighborKey = (bucketKey.Item1 + ox, bucketKey.Item2 + oy, bucketKey.Item3 + oz);
+                    if (!buckets.TryGetValue(neighborKey, out var neighborList))
+                    {
+                        continue;
+                    }
+
+                    foreach (var b in neighborList)
+                    {
+                        if (welded[b])
+                        {
+                            continue;
+                        }
+
+                        var dx = positions[b * 3] - ax;
+                        var dy = positions[b * 3 + 1] - ay;
+                        var dz = positions[b * 3 + 2] - az;
+                        if (dx * dx + dy * dy + dz * dz > epsilonSq)
+                        {
+                            continue;
+                        }
+
+                        sumNx += normals[b * 3];
+                        sumNy += normals[b * 3 + 1];
+                        sumNz += normals[b * 3 + 2];
+                        count++;
+                    }
+                }
+
+                if (count <= 1)
+                {
+                    continue;
+                }
+
+                // Normalize the averaged normal.
+                var len = MathF.Sqrt(sumNx * sumNx + sumNy * sumNy + sumNz * sumNz);
+                if (len <= 1e-7f)
+                {
+                    continue;
+                }
+
+                var wnx = sumNx / len;
+                var wny = sumNy / len;
+                var wnz = sumNz / len;
+
+                // Apply to all co-located vertices (re-scan to find them).
+                for (var bi = ai; bi < indices.Count; bi++)
+                {
+                    var b = indices[bi];
+                    if (bi != ai && welded[b])
+                    {
+                        continue;
+                    }
+
+                    var dx = positions[b * 3] - ax;
+                    var dy = positions[b * 3 + 1] - ay;
+                    var dz = positions[b * 3 + 2] - az;
+                    if (bi != ai && dx * dx + dy * dy + dz * dz > epsilonSq)
+                    {
+                        continue;
+                    }
+
+                    normals[b * 3] = wnx;
+                    normals[b * 3 + 1] = wny;
+                    normals[b * 3 + 2] = wnz;
+                    welded[b] = true;
+                }
+
+                // Apply to neighbor bucket vertices too.
+                for (var ox = -1; ox <= 1; ox++)
+                for (var oy = -1; oy <= 1; oy++)
+                for (var oz = -1; oz <= 1; oz++)
+                {
+                    if (ox == 0 && oy == 0 && oz == 0)
+                    {
+                        continue;
+                    }
+
+                    var neighborKey = (bucketKey.Item1 + ox, bucketKey.Item2 + oy, bucketKey.Item3 + oz);
+                    if (!buckets.TryGetValue(neighborKey, out var neighborList))
+                    {
+                        continue;
+                    }
+
+                    foreach (var b in neighborList)
+                    {
+                        if (welded[b])
+                        {
+                            continue;
+                        }
+
+                        var dx = positions[b * 3] - ax;
+                        var dy = positions[b * 3 + 1] - ay;
+                        var dz = positions[b * 3 + 2] - az;
+                        if (dx * dx + dy * dy + dz * dz > epsilonSq)
+                        {
+                            continue;
+                        }
+
+                        normals[b * 3] = wnx;
+                        normals[b * 3 + 1] = wny;
+                        normals[b * 3 + 2] = wnz;
+                        welded[b] = true;
+                    }
+                }
+            }
+        }
     }
 
     internal static void RecalculateBounds(NifRenderableModel model)

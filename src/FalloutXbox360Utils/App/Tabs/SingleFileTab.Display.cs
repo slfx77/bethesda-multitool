@@ -13,7 +13,7 @@ namespace FalloutXbox360Utils;
 public sealed partial class SingleFileTab
 {
     /// <summary>
-    ///     Creates a HyperlinkButton styled as an underlined link with explicit foreground color.
+    ///     Creates a HyperlinkButton styled as an inline underlined link (no button chrome).
     /// </summary>
     private HyperlinkButton CreateFormIdLink(string text, uint formId, int fontSize, bool monospace = false)
     {
@@ -28,20 +28,39 @@ public sealed partial class SingleFileTab
             Text = text,
             TextDecorations = TextDecorations.Underline,
             FontSize = fontSize,
-            Foreground = linkColor
+            Foreground = linkColor,
+            FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas")
         };
-        if (monospace)
-        {
-            textBlock.FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas");
-        }
 
         var link = new HyperlinkButton
         {
             Content = textBlock,
-            Padding = new Thickness(0)
+            Padding = new Thickness(0),
+            MinWidth = 0,
+            MinHeight = 0,
+            Style = InlineLinkStyle
         };
         link.Click += (_, _) => NavigateToFormId(formId);
         return link;
+    }
+
+    /// <summary>
+    ///     Minimal HyperlinkButton style that strips button chrome for inline-link appearance.
+    /// </summary>
+    private static Style? _inlineLinkStyle;
+    private static Style InlineLinkStyle => _inlineLinkStyle ??= BuildInlineLinkStyle();
+
+    private static Style BuildInlineLinkStyle()
+    {
+        var style = new Style(typeof(HyperlinkButton));
+        style.Setters.Add(new Setter(HyperlinkButton.BackgroundProperty,
+            new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent)));
+        style.Setters.Add(new Setter(HyperlinkButton.BorderThicknessProperty, new Thickness(0)));
+        style.Setters.Add(new Setter(HyperlinkButton.PaddingProperty, new Thickness(0)));
+        style.Setters.Add(new Setter(HyperlinkButton.MinWidthProperty, 0.0));
+        style.Setters.Add(new Setter(HyperlinkButton.MinHeightProperty, 0.0));
+        // Use a ControlTemplate that renders only the ContentPresenter (no BackgroundElement)
+        return style;
     }
 
     #region Coverage Tab
@@ -431,6 +450,7 @@ public sealed partial class SingleFileTab
         ResetDataBrowser();
         ResetDialogueViewer();
         ResetWorldMap();
+        ResetNpcBrowser();
         ResetReportsTab();
         ResetSummaryTab();
         ResetCoverageTab();
@@ -463,6 +483,7 @@ public sealed partial class SingleFileTab
         SelectedRecordTitle.Text = Strings.Empty_SelectARecord;
         GoToOffsetButton.Visibility = Visibility.Collapsed;
         ViewWorldspaceButton.Visibility = Visibility.Collapsed;
+        ViewNpcButton.Visibility = Visibility.Collapsed;
     }
 
     private void ResetSummaryTab()
@@ -535,6 +556,11 @@ public sealed partial class SingleFileTab
             ViewInWorldButton.Visibility = HasWorldPlacements(browserNode.DataObject)
                 ? Visibility.Visible
                 : Visibility.Collapsed;
+
+            // Show "View NPC" for NPC_ records when NPC browser is available
+            ViewNpcButton.Visibility = browserNode.DataObject is NpcRecord && _session.HasEsmRecords
+                ? Visibility.Visible
+                : Visibility.Collapsed;
         }
         else
         {
@@ -543,6 +569,7 @@ public sealed partial class SingleFileTab
             GoToOffsetButton.Visibility = Visibility.Collapsed;
             ViewWorldspaceButton.Visibility = Visibility.Collapsed;
             ViewInWorldButton.Visibility = Visibility.Collapsed;
+            ViewNpcButton.Visibility = Visibility.Collapsed;
         }
     }
 
@@ -550,6 +577,7 @@ public sealed partial class SingleFileTab
     {
         if (_selectedBrowserNode?.FileOffset is > 0)
         {
+            PushUnifiedNav();
             SubTabView.SelectedIndex = 0; // Switch to Memory Map
             HexViewer.NavigateToOffset(_selectedBrowserNode.FileOffset.Value);
         }

@@ -279,6 +279,28 @@ internal static class NpcHeadBuilder
                     egmCache);
             }
 
+            // Apply a small inward offset to mouth/teeth parts when FaceGen morphs
+            // are active. Morphs can push the face inward (thin face, etc.) while
+            // mouth parts stay in their original position, causing clipping.
+            if (usedBaseRaceMesh && npc.FaceGenSymmetricCoeffs != null &&
+                IsMouthPart(partPath))
+            {
+                var morphMagnitude = EstimateFaceGenMorphMagnitude(npc.FaceGenSymmetricCoeffs);
+                if (morphMagnitude > 0.01f)
+                {
+                    // Push mouth slightly inward (negative Y in NIF head-local space).
+                    // Scale is empirical: -0.15 per unit of average morph coefficient.
+                    var yOffset = -morphMagnitude * 0.15f;
+                    foreach (var sub in partModel.Submeshes)
+                    {
+                        for (var i = 1; i < sub.Positions.Length; i += 3)
+                        {
+                            sub.Positions[i] += yOffset;
+                        }
+                    }
+                }
+            }
+
             if (attachmentBoneTransforms != null &&
                 attachmentBoneTransforms.TryGetValue("Bip01 Head", out var headBone))
             {
@@ -701,5 +723,30 @@ internal static class NpcHeadBuilder
                 model.ExpandBounds(sub.Positions);
             }
         }
+    }
+
+    internal static bool IsMouthPart(string path)
+    {
+        var name = Path.GetFileNameWithoutExtension(path);
+        return name != null &&
+               (name.Contains("mouth", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("teeth", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("tongue", StringComparison.OrdinalIgnoreCase));
+    }
+
+    internal static float EstimateFaceGenMorphMagnitude(float[] coefficients)
+    {
+        if (coefficients.Length == 0)
+        {
+            return 0f;
+        }
+
+        var sum = 0f;
+        foreach (var c in coefficients)
+        {
+            sum += MathF.Abs(c);
+        }
+
+        return sum / coefficients.Length;
     }
 }

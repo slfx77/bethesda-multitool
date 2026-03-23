@@ -12,7 +12,7 @@ internal sealed class CameraConfig
         [("_ne", 45f), ("_nw", 135f), ("_sw", 225f), ("_se", 315f)];
 
     private static readonly (string Suffix, float Azimuth)[] SideViews =
-        [("_front", 0f), ("_back", 180f), ("_left", 90f), ("_right", 270f)];
+        [("_front", 90f), ("_back", 270f), ("_left", 0f), ("_right", 180f)];
 
     private static readonly (string Suffix, float Azimuth)[] TrimetricViews =
         [("_tri_ne", 30f), ("_tri_nw", 120f), ("_tri_sw", 210f), ("_tri_se", 300f)];

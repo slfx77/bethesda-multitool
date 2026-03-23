@@ -85,7 +85,7 @@ internal static class MinidumpMetadataExtractor
             progress?.Report(new AnalysisProgress
                 { Phase = "Scene Graph", FilesFound = result.CarvedFiles.Count, PercentComplete = 90 });
 
-            var context = new RuntimeMemoryContext(accessor, result.FileSize, minidumpInfo);
+            var context = new RuntimeMemoryContext(new MmfMemoryAccessor(accessor), result.FileSize, minidumpInfo);
             var walker = new RuntimeSceneGraphWalker(context);
             result.SceneGraphMap = await Task.Run(
                 () => walker.WalkSceneGraph(meshes), cancellationToken);

@@ -600,11 +600,11 @@ internal static class EsmBrowserTreeBuilder
         }
 
         var subItems = usages
-            .OrderBy(u => resolver?.GetBestNameWithRefChain(u.SourceFormId) ?? "", StringComparer.OrdinalIgnoreCase)
+            .OrderBy(u => ResolveUsageSourceName(u, resolver), StringComparer.OrdinalIgnoreCase)
             .ThenBy(u => u.Context, StringComparer.OrdinalIgnoreCase)
             .Select(u =>
             {
-                var sourceName = resolver?.GetBestNameWithRefChain(u.SourceFormId) ?? $"0x{u.SourceFormId:X8}";
+                var sourceName = ResolveUsageSourceName(u, resolver);
                 return new EsmPropertyEntry
                 {
                     Col1 = sourceName,
@@ -624,6 +624,23 @@ internal static class EsmBrowserTreeBuilder
             IsExpandable = true,
             SubItems = subItems
         });
+    }
+
+    /// <summary>
+    ///     Resolves the display name for a usage reference source.
+    ///     Dialog topics and dialogue result scripts prefer EditorId over FullName
+    ///     to avoid showing long dialogue line text.
+    /// </summary>
+    private static string ResolveUsageSourceName(FormUsageReference u, FormIdResolver? resolver)
+    {
+        if (resolver != null && u.SourceKind is "Dialog Topic" or "Dialogue")
+        {
+            return resolver.EditorIds.GetValueOrDefault(u.SourceFormId)
+                   ?? resolver.GetBestNameWithRefChain(u.SourceFormId)
+                   ?? $"0x{u.SourceFormId:X8}";
+        }
+
+        return resolver?.GetBestNameWithRefChain(u.SourceFormId) ?? $"0x{u.SourceFormId:X8}";
     }
 
     /// <summary>

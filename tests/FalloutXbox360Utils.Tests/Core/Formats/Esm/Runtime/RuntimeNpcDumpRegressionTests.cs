@@ -1,25 +1,20 @@
-using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
-using FalloutXbox360Utils.Core.Minidump;
-using FalloutXbox360Utils.Tests.Core;
+using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime;
 
-[Collection(DumpSerialTestGroup.Name)]
-public sealed class RuntimeNpcDumpRegressionTests(SampleFileFixture samples)
+public sealed class RuntimeNpcDumpRegressionTests
 {
-    [Fact]
-    [Trait("Category", "Slow")]
-    public void FortVulpesInculta_DebugDump_ResolvesFaceGenLikeMemDebug()
-    {
-        Assert.SkipWhen(samples.DebugDump is null, "Debug memory dump not available");
-        var memDebugDump = SampleFileFixture.FindSamplePath(@"Sample\MemoryDump\Fallout_Release_MemDebug.xex.dmp");
-        Assert.SkipWhen(memDebugDump is null, "MemDebug memory dump not available");
+    private static readonly string SnippetDir = Path.Combine(
+        AppContext.BaseDirectory, "..", "..", "..", "TestData", "Dmp");
 
-        var debugNpc = LoadNpc(samples.DebugDump!, "FortVulpesInculta");
-        var memDebugNpc = LoadNpc(memDebugDump!, "FortVulpesInculta");
+    [Fact]
+    public async Task FortVulpesInculta_DebugDump_ResolvesFaceGenLikeMemDebug()
+    {
+        var debugNpc = await LoadNpcAsync("debug_dump", "FortVulpesInculta");
+        var memDebugNpc = await LoadNpcAsync("memdebug_dump", "FortVulpesInculta");
 
         Assert.NotNull(debugNpc);
         Assert.NotNull(memDebugNpc);
@@ -41,29 +36,23 @@ public sealed class RuntimeNpcDumpRegressionTests(SampleFileFixture samples)
         Assert.Equal(memDebugNpc.CombatStyleFormId, debugNpc.CombatStyleFormId);
     }
 
-    private static NpcRecord? LoadNpc(string dumpPath, string editorId)
+    private static async Task<NpcRecord?> LoadNpcAsync(string snippetName, string editorId)
     {
-        var fileInfo = new FileInfo(dumpPath);
-        using var mmf = MemoryMappedFile.CreateFromFile(dumpPath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-        using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
+        var snippet = await DmpSnippetReader.LoadAsync(SnippetDir, snippetName);
 
-        var minidumpInfo = MinidumpParser.Parse(dumpPath);
-        var scanResult = EsmRecordScanner.ScanForRecordsMemoryMapped(accessor, fileInfo.Length);
-        EsmEditorIdExtractor.ExtractRuntimeEditorIds(accessor, fileInfo.Length, minidumpInfo, scanResult);
-
-        var npcEntries = scanResult.RuntimeEditorIds
+        var npcEntries = snippet.RuntimeEditorIds
             .Where(entry => entry.FormType == 0x2A)
             .ToList();
 
-        var entry = npcEntries.FirstOrDefault(entry =>
-            string.Equals(entry.EditorId, editorId, StringComparison.OrdinalIgnoreCase));
+        var entry = npcEntries.FirstOrDefault(e =>
+            string.Equals(e.EditorId, editorId, StringComparison.OrdinalIgnoreCase));
         Assert.NotNull(entry);
 
         var reader = RuntimeStructReader.CreateWithAutoDetect(
-            accessor,
-            fileInfo.Length,
-            minidumpInfo,
-            scanResult.RuntimeRefrFormEntries,
+            snippet.Accessor,
+            snippet.FileSize,
+            snippet.MinidumpInfo,
+            snippet.RuntimeRefrFormEntries,
             npcEntries);
 
         return reader.ReadRuntimeNpc(entry!);

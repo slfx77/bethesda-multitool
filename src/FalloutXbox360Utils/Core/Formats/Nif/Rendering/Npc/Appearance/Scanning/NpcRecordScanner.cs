@@ -27,6 +27,7 @@ internal static class NpcRecordScanner
         uint? hairFormId = null;
         uint? eyesFormId = null;
         uint? hairColor = null;
+        float? hairLength = null;
         var isFemale = false;
         ushort templateFlags = 0;
         uint? templateFormId = null;
@@ -76,6 +77,9 @@ internal static class NpcRecordScanner
                         subrecord.Data,
                         0,
                         bigEndian);
+                    break;
+                case "LNAM" when subrecord.Data.Length == 4:
+                    hairLength = BinaryUtils.ReadFloat(subrecord.Data, 0, bigEndian);
                     break;
                 case "ACBS" when subrecord.Data.Length >= 24:
                 {
@@ -171,6 +175,7 @@ internal static class NpcRecordScanner
             Skills = skills,
             HeadPartFormIds = headPartFormIds.Count > 0 ? headPartFormIds : null,
             HairColor = hairColor,
+            HairLength = hairLength,
             InventoryItems = inventoryItems.Count > 0 ? inventoryItems : null,
             PackageFormIds = packageFormIds.Count > 0 ? packageFormIds : null,
             TemplateFormId = templateFormId,

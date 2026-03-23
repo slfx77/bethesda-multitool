@@ -119,17 +119,28 @@ internal static class NifExportExtractor
             var displayName = string.IsNullOrWhiteSpace(lookupName)
                 ? $"Node_{blockIndex}"
                 : lookupName;
-            var localTransform = NifBlockParsers.ParseNiAVObjectTransform(
-                data,
-                block,
-                nif.BsVersion,
-                nif.IsBigEndian);
+
+            // Derive local transform from the world transform hierarchy so that animation
+            // overrides (idle pose) are reflected in the exported nodes.  Reading the local
+            // transform directly from the NIF block would give the bind-pose value, causing
+            // the GLB skeleton to ignore idle animation.
+            Matrix4x4 localTransform;
+            if (childToParent.TryGetValue(blockIndex, out var parentIndex) &&
+                worldTransforms.TryGetValue(parentIndex, out var parentWorld) &&
+                Matrix4x4.Invert(parentWorld, out var invParentWorld))
+            {
+                localTransform = worldTransform * invParentWorld;
+            }
+            else
+            {
+                localTransform = worldTransform;
+            }
 
             nodes.Add(new ExtractedNode(
                 blockIndex,
                 displayName,
                 lookupName,
-                childToParent.TryGetValue(blockIndex, out var parentIndex) ? parentIndex : null,
+                childToParent.ContainsKey(blockIndex) ? parentIndex : null,
                 localTransform,
                 worldTransform));
         }

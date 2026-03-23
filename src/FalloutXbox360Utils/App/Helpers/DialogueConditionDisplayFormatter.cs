@@ -8,7 +8,10 @@ namespace FalloutXbox360Utils;
 /// </summary>
 internal static class DialogueConditionDisplayFormatter
 {
-    public static string FormatCondition(DialogueCondition condition, Func<uint, string> resolveFormName)
+    public static string FormatCondition(
+        DialogueCondition condition,
+        Func<uint, string> resolveFormName,
+        Func<uint, string>? resolveEditorId = null)
     {
         var opcode = (ushort)(0x1000 | condition.FunctionIndex);
         var function = ScriptFunctionTable.Get(opcode);
@@ -20,13 +23,16 @@ internal static class DialogueConditionDisplayFormatter
             ? function.Params[1].Type
             : null;
 
+        // Use EditorID for scripting-style display (bare identifier), fall back to full name
+        var resolveParamName = resolveEditorId ?? resolveFormName;
+
         var parameterParts = new List<string>();
         if (condition.Parameter1 != 0)
         {
             parameterParts.Add(FormatParameter(
                 firstParamType,
                 condition.Parameter1,
-                resolveFormName));
+                resolveParamName));
         }
 
         if (condition.Parameter2 != 0)
@@ -34,7 +40,7 @@ internal static class DialogueConditionDisplayFormatter
             parameterParts.Add(FormatParameter(
                 secondParamType,
                 condition.Parameter2,
-                resolveFormName));
+                resolveParamName));
         }
 
         var expression = parameterParts.Count > 0
@@ -67,6 +73,40 @@ internal static class DialogueConditionDisplayFormatter
             : expression;
     }
 
+    /// <summary>
+    ///     Determines whether a condition parameter at the given index (0 or 1) is a FormID reference
+    ///     rather than a numeric value.
+    /// </summary>
+    public static bool IsFormReference(DialogueCondition condition, int paramIndex)
+    {
+        var opcode = (ushort)(0x1000 | condition.FunctionIndex);
+        var function = ScriptFunctionTable.Get(opcode);
+        if (function == null || paramIndex >= function.Params.Length)
+        {
+            return false;
+        }
+
+        return function.Params[paramIndex].Type switch
+        {
+            ScriptParamType.Char or
+                ScriptParamType.Int or
+                ScriptParamType.Float or
+                ScriptParamType.Axis or
+                ScriptParamType.AnimGroup or
+                ScriptParamType.Sex or
+                ScriptParamType.ScriptVar or
+                ScriptParamType.Stage or
+                ScriptParamType.CrimeType or
+                ScriptParamType.FormType or
+                ScriptParamType.MiscStat or
+                ScriptParamType.VatsValue or
+                ScriptParamType.VatsValueData or
+                ScriptParamType.Alignment or
+                ScriptParamType.CritStage => false,
+            _ => true
+        };
+    }
+
     public static string FormatResultScriptReferences(
         DialogueResultScript resultScript,
         Func<uint, string> resolveFormName)
@@ -86,7 +126,7 @@ internal static class DialogueConditionDisplayFormatter
     private static string FormatParameter(
         ScriptParamType? paramType,
         uint value,
-        Func<uint, string> resolveFormName)
+        Func<uint, string> resolveName)
     {
         if (value == 0)
         {
@@ -110,7 +150,7 @@ internal static class DialogueConditionDisplayFormatter
                 ScriptParamType.VatsValueData or
                 ScriptParamType.Alignment or
                 ScriptParamType.CritStage => value.ToString(),
-            _ => $"{resolveFormName(value)} (0x{value:X8})"
+            _ => resolveName(value)
         };
     }
 }

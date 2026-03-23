@@ -20,6 +20,8 @@ internal static class NpcGlbAlphaTexturePacker
             alphaState.HasAlphaTest &&
             diffuseTexture != null &&
             UsesStandardAlphaBlend(alphaState) &&
+            !IsGlassLikeShape(submesh) &&
+            !IsHairShape(submesh) &&
             HasMostlyBinaryAlpha(diffuseTexture))
         {
             renderMode = NifAlphaRenderMode.Cutout;
@@ -52,6 +54,48 @@ internal static class NpcGlbAlphaTexturePacker
         }
 
         return new PreparedAlphaTexture(texture, renderMode, threshold, hasTextureTransform);
+    }
+
+    private static bool IsGlassLikeShape(RenderableSubmesh submesh)
+    {
+        return ContainsGlassHint(submesh.ShapeName) ||
+               ContainsGlassHint(submesh.DiffuseTexturePath);
+
+        static bool ContainsGlassHint(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            return value.Contains("glass", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("lens", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    private static bool IsHairShape(RenderableSubmesh submesh)
+    {
+        if (submesh.TintColor.HasValue)
+        {
+            return true;
+        }
+
+        return ContainsHairHint(submesh.ShapeName) || ContainsHairHint(submesh.DiffuseTexturePath);
+
+        static bool ContainsHairHint(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            return value.Contains("hair", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("brow", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("lash", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("beard", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("mustache", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("goatee", StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     private static bool UsesStandardAlphaBlend(NifAlphaRenderState alphaState)

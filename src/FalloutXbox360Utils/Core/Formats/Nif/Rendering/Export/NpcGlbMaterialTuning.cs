@@ -6,6 +6,8 @@ internal static class NpcGlbMaterialTuning
 {
     private const float DefaultRoughness = 0.92f;
     private const float EyeRoughness = 0.18f;
+    private const float HairMinimumRoughness = 0.95f;
+    private const float HairMaxSpecular = 0.08f;
     private const float MinimumRoughness = 0.12f;
     private const float GlossyMaterialRoughness = 0.78f;
     private const float EnvironmentGlossyMaterialRoughness = 0.48f;
@@ -43,6 +45,12 @@ internal static class NpcGlbMaterialTuning
             roughness = MathF.Min(roughness, EyeRoughness);
         }
 
+        var isHair = IsHairSubmesh(submesh);
+        if (isHair)
+        {
+            roughness = MathF.Max(roughness, HairMinimumRoughness);
+        }
+
         var specularFactor = submesh.IsEyeEnvmap
             ? 1f
             : hasEnvironmentMapping
@@ -56,6 +64,11 @@ internal static class NpcGlbMaterialTuning
         if (glossStrength > 0f)
         {
             specularFactor *= Math.Clamp(0.4f + glossStrength * 0.6f, 0.25f, 1f);
+        }
+
+        if (isHair)
+        {
+            specularFactor = MathF.Min(specularFactor, HairMaxSpecular);
         }
 
         return new NpcGlbMaterialProfile(
@@ -122,6 +135,31 @@ internal static class NpcGlbMaterialTuning
             0f,
             1f);
         return DefaultRoughness - normalized * (DefaultRoughness - glossyMaterialRoughness);
+    }
+
+    private static bool IsHairSubmesh(RenderableSubmesh submesh)
+    {
+        if (submesh.TintColor.HasValue)
+        {
+            return true;
+        }
+
+        return ContainsHairHint(submesh.ShapeName) || ContainsHairHint(submesh.DiffuseTexturePath);
+
+        static bool ContainsHairHint(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            return value.Contains("hair", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("brow", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("lash", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("beard", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("mustache", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("goatee", StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     internal readonly record struct NpcGlbMaterialProfile(

@@ -20,19 +20,28 @@ internal static class DialogueConversationBuilder
         string? promptText,
         Func<uint?, string> resolveSpeakerName,
         Func<uint, SubtitleEntry?> subtitleLookup,
-        Func<DialogueRecord, Border> buildRecordDetailPanel)
+        Func<DialogueRecord, Border> buildRecordDetailPanel,
+        DialogueRecord? promptSourceInfo = null,
+        Action<InfoDialogueNode>? onResponseSelected = null,
+        InfoDialogueNode? selectedResponse = null,
+        Border? topicDetailPanel = null)
     {
         var elements = new List<UIElement>();
+
+        // Show player prompt before the empty check so topics with no responses
+        // still display the prompt text and record details
+        if (!string.IsNullOrEmpty(promptText))
+        {
+            var detailPanel = promptSourceInfo != null
+                ? buildRecordDetailPanel(promptSourceInfo)
+                : topicDetailPanel;
+            elements.Add(DialogueTreeRenderer.CreatePlayerPromptBlock(promptText, detailPanel));
+        }
 
         if (filteredInfoChain.Count == 0)
         {
             elements.Add(DialogueTreeRenderer.CreateEmptyTopicPlaceholder());
             return elements;
-        }
-
-        if (!string.IsNullOrEmpty(promptText))
-        {
-            elements.Add(DialogueTreeRenderer.CreatePlayerPromptBlock(promptText));
         }
 
         var challengeInfo = filteredInfoChain.FirstOrDefault(i => i.Info.IsSpeechChallenge);
@@ -42,14 +51,26 @@ internal static class DialogueConversationBuilder
                 DialogueTreeRenderer.CreateSpeechChallengeBanner(challengeInfo.Info.DifficultyName));
         }
 
-        if (filteredInfoChain.Count > 1)
+        // Cap display to prevent crash on shared topics (GREETING, Hello) with thousands of INFOs
+        const int maxDisplayedResponses = 25;
+        var displayChain = filteredInfoChain;
+        var wasTruncated = false;
+        if (filteredInfoChain.Count > maxDisplayedResponses)
+        {
+            displayChain = filteredInfoChain.Take(maxDisplayedResponses).ToList();
+            wasTruncated = true;
+        }
+
+        if (displayChain.Count > 1)
         {
             elements.Add(DialogueTreeRenderer.CreateSecondaryLabel(
-                $"{filteredInfoChain.Count} possible responses (game selects based on conditions):",
+                wasTruncated
+                    ? $"{filteredInfoChain.Count} possible responses (showing first {maxDisplayedResponses}):"
+                    : $"{filteredInfoChain.Count} possible responses (game selects based on conditions):",
                 new Thickness(0, 0, 0, 4)));
         }
 
-        for (var i = 0; i < filteredInfoChain.Count; i++)
+        for (var i = 0; i < displayChain.Count; i++)
         {
             if (i > 0)
             {
@@ -58,8 +79,18 @@ internal static class DialogueConversationBuilder
                     $"Alternative response {i + 1}:", new Thickness(0, 0, 0, 4)));
             }
 
-            elements.Add(BuildNpcResponseBlock(
-                filteredInfoChain[i], resolveSpeakerName, subtitleLookup, buildRecordDetailPanel));
+            var isSelected = selectedResponse == displayChain[i];
+            var responseElement = BuildNpcResponseBlock(
+                displayChain[i], resolveSpeakerName, subtitleLookup, buildRecordDetailPanel,
+                onResponseSelected, isSelected);
+            elements.Add(responseElement);
+        }
+
+        if (wasTruncated)
+        {
+            elements.Add(DialogueTreeRenderer.CreateSecondaryLabel(
+                $"Showing {maxDisplayedResponses} of {filteredInfoChain.Count} responses",
+                new Thickness(0, 4, 0, 0)));
         }
 
         return elements;
@@ -68,11 +99,13 @@ internal static class DialogueConversationBuilder
     /// <summary>
     ///     Creates the NPC response card for a single INFO node.
     /// </summary>
-    public static Border BuildNpcResponseBlock(
+    public static UIElement BuildNpcResponseBlock(
         InfoDialogueNode infoNode,
         Func<uint?, string> resolveSpeakerName,
         Func<uint, SubtitleEntry?> subtitleLookup,
-        Func<DialogueRecord, Border> buildRecordDetailPanel)
+        Func<DialogueRecord, Border> buildRecordDetailPanel,
+        Action<InfoDialogueNode>? onResponseSelected = null,
+        bool isSelected = false)
     {
         var info = infoNode.Info;
         var content = new StackPanel { Spacing = 4 };
@@ -84,7 +117,13 @@ internal static class DialogueConversationBuilder
         foreach (var response in info.Responses.Where(r => !string.IsNullOrEmpty(r.Text)))
         {
             hasResponseText = true;
-            content.Children.Add(DialogueTreeRenderer.CreateResponseText(response.Text!));
+            var textBlock = DialogueTreeRenderer.CreateResponseText(response.Text!);
+            if (onResponseSelected != null)
+            {
+                textBlock.Tapped += (_, e) => { onResponseSelected(infoNode); e.Handled = true; };
+            }
+
+            content.Children.Add(textBlock);
         }
 
         if (!hasResponseText)
@@ -92,8 +131,22 @@ internal static class DialogueConversationBuilder
             var subtitle = subtitleLookup(info.FormId);
             if (subtitle?.Text != null)
             {
-                content.Children.Add(DialogueTreeRenderer.CreateResponseText(subtitle.Text, isSubtitleFallback: true));
+                var textBlock = DialogueTreeRenderer.CreateResponseText(subtitle.Text, isSubtitleFallback: true);
+                if (onResponseSelected != null)
+                {
+                    textBlock.Tapped += (_, e) => { onResponseSelected(infoNode); e.Handled = true; };
+                }
+
+                content.Children.Add(textBlock);
                 content.Children.Add(DialogueTreeRenderer.CreateSubtitleSourceLabel());
+            }
+            else if (onResponseSelected != null)
+            {
+                // DMP files often lack response text — show placeholder
+                var textBlock = DialogueTreeRenderer.CreateResponseText(
+                    "[Response not present in file]", isSubtitleFallback: true);
+                textBlock.Tapped += (_, e) => { onResponseSelected(infoNode); e.Handled = true; };
+                content.Children.Add(textBlock);
             }
         }
 
@@ -105,7 +158,7 @@ internal static class DialogueConversationBuilder
         }
 
         content.Children.Add(buildRecordDetailPanel(info));
-        return DialogueTreeRenderer.WrapInResponseCard(content);
+        return DialogueTreeRenderer.WrapInResponseCard(content, isSelected, onResponseSelected != null);
     }
 
     /// <summary>
@@ -115,9 +168,12 @@ internal static class DialogueConversationBuilder
         TopicDialogueNode linkedTopic,
         InfoDialogueNode sourceInfo,
         HashSet<uint> visitedTopicFormIds,
-        Action<TopicDialogueNode, string> onNavigate)
+        Action<TopicDialogueNode, string> onNavigate,
+        bool showEditorId = false)
     {
-        var promptText = DialogueViewerHelper.ResolvePromptText(sourceInfo, linkedTopic);
+        var promptText = showEditorId
+            ? DialogueViewerHelper.ResolveEditorIdDisplay(linkedTopic)
+            : DialogueViewerHelper.ResolvePromptText(sourceInfo, linkedTopic);
         var challengeOutcome = DialogueMetadataBuilder.DetectChallengeOutcome(ref promptText);
         var speechInfo = linkedTopic.InfoChain.FirstOrDefault(i => i.Info.IsSpeechChallenge);
         var isGoodbyeTopic = linkedTopic.InfoChain.Count > 0 && linkedTopic.InfoChain.All(i => i.Info.IsGoodbye);

@@ -14,7 +14,7 @@ internal static class DialogueTreeRenderer
     /// <summary>
     ///     Creates the styled player prompt block (blue "Player" header + quoted text).
     /// </summary>
-    public static Border CreatePlayerPromptBlock(string promptText)
+    public static Border CreatePlayerPromptBlock(string promptText, Border? recordDetailPanel = null)
     {
         var content = new StackPanel { Spacing = 4 };
 
@@ -39,12 +39,17 @@ internal static class DialogueTreeRenderer
         // Prompt text
         content.Children.Add(new TextBlock
         {
-            Text = $"\u201C{promptText}\u201D",
+            Text = promptText,
             FontSize = 13,
             TextWrapping = TextWrapping.Wrap,
             IsTextSelectionEnabled = true,
             Margin = new Thickness(22, 2, 0, 2)
         });
+
+        if (recordDetailPanel != null)
+        {
+            content.Children.Add(recordDetailPanel);
+        }
 
         return new Border
         {
@@ -260,7 +265,7 @@ internal static class DialogueTreeRenderer
     {
         var block = new TextBlock
         {
-            Text = $"\u201C{text}\u201D",
+            Text = text,
             FontSize = 13,
             TextWrapping = TextWrapping.Wrap,
             IsTextSelectionEnabled = true,
@@ -370,15 +375,27 @@ internal static class DialogueTreeRenderer
     /// <summary>
     ///     Wraps NPC response content in a card-style border.
     /// </summary>
-    public static Border WrapInResponseCard(StackPanel content)
+    public static Border WrapInResponseCard(StackPanel content, bool isSelected = false, bool isClickable = false)
     {
-        return new Border
+        var border = new Border
         {
             Child = content,
             Background = (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"],
             CornerRadius = new CornerRadius(4),
             Padding = new Thickness(12, 8, 12, 8)
         };
+
+        if (isSelected)
+        {
+            border.BorderBrush = (Brush)Application.Current.Resources["AccentFillColorDefaultBrush"];
+            border.BorderThickness = new Thickness(2);
+        }
+        else if (isClickable)
+        {
+            border.Opacity = 0.7;
+        }
+
+        return border;
     }
 
     /// <summary>

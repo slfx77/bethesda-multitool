@@ -15,8 +15,6 @@ internal static class NpcGlbWriter
         NifTextureResolver textureResolver,
         string outputPath)
     {
-        ArgumentNullException.ThrowIfNull(scene);
-        ArgumentNullException.ThrowIfNull(textureResolver);
         ArgumentNullException.ThrowIfNull(outputPath);
 
         var outputDirectory = Path.GetDirectoryName(outputPath);
@@ -24,6 +22,25 @@ internal static class NpcGlbWriter
         {
             Directory.CreateDirectory(outputDirectory);
         }
+
+        BuildGltfScene(scene, textureResolver).SaveGLB(outputPath);
+    }
+
+    internal static byte[] WriteToBytes(
+        NpcExportScene scene,
+        NifTextureResolver textureResolver)
+    {
+        using var ms = new MemoryStream();
+        BuildGltfScene(scene, textureResolver).WriteGLB(ms);
+        return ms.ToArray();
+    }
+
+    private static SharpGLTF.Schema2.ModelRoot BuildGltfScene(
+        NpcExportScene scene,
+        NifTextureResolver textureResolver)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        ArgumentNullException.ThrowIfNull(textureResolver);
 
         var sceneBuilder = new SceneBuilder();
         var nodeBuilders = BuildNodeBuilders(scene);
@@ -64,7 +81,7 @@ internal static class NpcGlbWriter
             }
         }
 
-        sceneBuilder.ToGltf2().SaveGLB(outputPath);
+        return sceneBuilder.ToGltf2();
     }
 
     private static Dictionary<int, NodeBuilder> BuildNodeBuilders(NpcExportScene scene)
@@ -473,6 +490,15 @@ internal static class NpcGlbWriter
         return string.IsNullOrWhiteSpace(fileName)
             ? suffix + ".png"
             : fileName + "." + suffix + ".png";
+    }
+
+    private static Matrix4x4 SanitizeAffine(Matrix4x4 m)
+    {
+        m.M14 = 0;
+        m.M24 = 0;
+        m.M34 = 0;
+        m.M44 = 1;
+        return m;
     }
 
     private readonly record struct MaterialCacheKey(

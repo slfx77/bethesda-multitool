@@ -70,7 +70,11 @@ internal static class DialogueMetadataBuilder
 
         if (speakerCounts.Count == 0)
         {
-            return null;
+            // Last resort: use voice type FormID from GetIsVoiceType conditions
+            var voiceType = topic.InfoChain
+                .Select(i => i.Info.SpeakerVoiceTypeFormId)
+                .FirstOrDefault(id => id is > 0);
+            return voiceType;
         }
 
         // Prefer speakers with FullName (real named NPCs) over marker/template NPCs

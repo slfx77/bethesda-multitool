@@ -45,7 +45,7 @@ internal static class NifRenderPropertyReader
             return drawMode == 3;
         }
 
-        return true;
+        return false;
     }
 
     /// <summary>

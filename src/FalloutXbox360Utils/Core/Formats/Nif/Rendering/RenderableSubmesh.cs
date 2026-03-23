@@ -45,7 +45,7 @@ internal sealed class RenderableSubmesh
     public bool UseVertexColors { get; init; }
 
     /// <summary>True if NiStencilProperty DrawMode is DRAW_BOTH (3), meaning both sides should be rendered.</summary>
-    public bool IsDoubleSided { get; init; }
+    public bool IsDoubleSided { get; set; }
 
     /// <summary>True if NiAlphaProperty flags bit 0 is set (alpha blending enabled).</summary>
     public bool HasAlphaBlend { get; set; }

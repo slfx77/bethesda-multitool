@@ -1,40 +1,36 @@
-using System.IO.MemoryMappedFiles;
-using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
-using FalloutXbox360Utils.Core.Minidump;
-using FalloutXbox360Utils.Tests.Core;
+using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime;
 
 /// <summary>
-///     Cross-DMP probe consistency tests. Runs the new field probes across multiple dumps
-///     spanning different build dates to verify that probed layouts produce equal or better
-///     read success rates compared to hardcoded defaults.
+///     Cross-DMP probe consistency tests. Runs the new field probes across snippet-captured dumps
+///     to verify that probed layouts produce equal or better read success rates compared to
+///     hardcoded defaults.
 /// </summary>
-[Collection(DumpSerialTestGroup.Name)]
-public sealed class RuntimeProbeConsistencyTests(SampleFileFixture samples)
+public sealed class RuntimeProbeConsistencyTests
 {
+    private static readonly string SnippetDir = Path.Combine(
+        AppContext.BaseDirectory, "..", "..", "..", "TestData", "Dmp");
+
+    private static readonly string[] SnippetNames =
+    [
+        "debug_dump",
+        "release_dump",
+        "xex4_dump",
+        "xex44_dump",
+        "memdebug_dump"
+    ];
+
     /// <summary>
-    ///     For each available DMP, creates two RuntimeStructReaders (probed vs default),
+    ///     For each available snippet, creates two RuntimeStructReaders (probed vs default),
     ///     reads Race/Effect/Magic/Book entries, and reports per-type success rates.
     /// </summary>
     [Fact]
-    [Trait("Category", "Slow")]
     public async Task ProbeConsistency_AcrossAllAvailableDumps_ProbedMatchesOrBeatsDefault()
     {
-        var dmpDir = SampleFileFixture.FindSamplePath(@"Sample\MemoryDump\Fallout_Release_Beta.xex.dmp");
-        Assert.SkipWhen(dmpDir is null, "Memory dump directory not available");
-
-        var dir = Path.GetDirectoryName(dmpDir)!;
-        var dmpFiles = Directory.GetFiles(dir, "*.dmp")
-            .Where(f => !Path.GetFileName(f).Contains("hangdump", StringComparison.OrdinalIgnoreCase))
-            .OrderBy(f => f)
-            .ToList();
-
-        Assert.SkipWhen(dmpFiles.Count == 0, "No DMP files found");
-
         var output = TestContext.Current.TestOutputHelper!;
         var reportPath = Path.Combine(Path.GetTempPath(), "probe_consistency_report.txt");
         using var reportWriter = new StreamWriter(reportPath);
@@ -45,26 +41,17 @@ public sealed class RuntimeProbeConsistencyTests(SampleFileFixture samples)
             reportWriter.WriteLine(line);
         }
 
-        Log($"Found {dmpFiles.Count} DMP files\n");
-        Log($"{"File",-42} {"Date",-12} {"RACE",10} {"PROJ",10} {"MGEF",10} {"SPEL",10} {"ENCH",10} {"PERK",10} {"BOOK",10}");
-        Log(new string('-', 42 + 12 + 7 * 11));
+        Log($"Testing {SnippetNames.Length} snippet dumps\n");
+        Log($"{"Snippet",-20} {"RACE",10} {"PROJ",10} {"MGEF",10} {"SPEL",10} {"ENCH",10} {"PERK",10} {"BOOK",10}");
+        Log(new string('-', 20 + 7 * 11));
 
         var allResults = new List<DmpProbeResult>();
 
-        foreach (var dmpFile in dmpFiles)
+        foreach (var snippetName in SnippetNames)
         {
-            try
-            {
-                var result = await TestSingleDumpAsync(dmpFile, Log);
-                if (result != null)
-                {
-                    allResults.Add(result);
-                }
-            }
-            catch (Exception ex)
-            {
-                Log($"  ERROR: {Path.GetFileName(dmpFile)}: {ex.Message}");
-            }
+            var snippet = await DmpSnippetReader.LoadAsync(SnippetDir, snippetName);
+            var result = TestSnippet(snippet, snippetName, Log);
+            allResults.Add(result);
         }
 
         Log($"\n=== Summary: {allResults.Count} dumps processed ===\n");
@@ -96,7 +83,7 @@ public sealed class RuntimeProbeConsistencyTests(SampleFileFixture samples)
         Log("\n=== Probe Shift Results ===\n");
         foreach (var result in allResults)
         {
-            Log($"  {result.FileName,-42} {result.FileDate,-12}");
+            Log($"  {result.SnippetName,-20}");
             foreach (var (name, shift, margin) in result.ProbeShifts)
             {
                 Log($"    {name,-12}: shift={shift}, margin={margin}");
@@ -107,28 +94,9 @@ public sealed class RuntimeProbeConsistencyTests(SampleFileFixture samples)
         Log($"\nReport saved to: {reportPath}");
     }
 
-    private async Task<DmpProbeResult?> TestSingleDumpAsync(string dmpPath, Action<string> log)
+    private static DmpProbeResult TestSnippet(DmpSnippetReader snippet, string snippetName, Action<string> log)
     {
-        var fileName = Path.GetFileName(dmpPath);
-        var fileDate = new FileInfo(dmpPath).LastWriteTimeUtc.ToString("yyyy-MM-dd");
-
-        var analyzer = new MinidumpAnalyzer();
-        var analysisResult = await analyzer.AnalyzeAsync(
-            dmpPath,
-            includeMetadata: true,
-            cancellationToken: TestContext.Current.CancellationToken);
-
-        if (analysisResult.EsmRecords?.RuntimeEditorIds is not { Count: > 0 } allEntries)
-        {
-            return null;
-        }
-
-        var minidumpInfo = analysisResult.MinidumpInfo!;
-        var fileSize = new FileInfo(dmpPath).Length;
-
-        using var mmf = MemoryMappedFile.CreateFromFile(dmpPath, FileMode.Open, null, 0,
-            MemoryMappedFileAccess.Read);
-        using var accessor = mmf.CreateViewAccessor(0, fileSize, MemoryMappedFileAccess.Read);
+        var allEntries = snippet.RuntimeEditorIds;
 
         var refrEntries = allEntries.Where(e => e.FormType is >= 0x3A and <= 0x3C).ToList();
         var npcEntries = allEntries.Where(e => e.FormType == 0x2A).ToList();
@@ -137,15 +105,17 @@ public sealed class RuntimeProbeConsistencyTests(SampleFileFixture samples)
 
         // Create probed reader (with allEntries to trigger probing)
         var probedReader = RuntimeStructReader.CreateWithAutoDetect(
-            accessor, fileSize, minidumpInfo, refrEntries, npcEntries, worldEntries, cellEntries,
+            snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo,
+            refrEntries, npcEntries, worldEntries, cellEntries,
             allEntries: allEntries);
 
         // Create default reader (without allEntries — no probing)
         var defaultReader = RuntimeStructReader.CreateWithAutoDetect(
-            accessor, fileSize, minidumpInfo, refrEntries, npcEntries, worldEntries, cellEntries);
+            snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo,
+            refrEntries, npcEntries, worldEntries, cellEntries);
 
         // Collect probe shift info
-        var context = new RuntimeMemoryContext(accessor, fileSize, minidumpInfo);
+        var context = snippet.CreateMemoryContext();
         var probeShifts = new List<(string Name, string Shift, int Margin)>();
 
         var raceProbe = RuntimeRaceProbe.Probe(context, allEntries);
@@ -175,43 +145,36 @@ public sealed class RuntimeProbeConsistencyTests(SampleFileFixture samples)
         // Test each reader type
         var typeResults = new Dictionary<string, TypeReadResult>();
 
-        // RACE (0x0C)
         var raceEntries = allEntries.Where(e => e.FormType == 0x0C && e.TesFormOffset.HasValue).ToList();
         typeResults["RACE"] = CompareReads(raceEntries,
             e => probedReader.ReadRuntimeRace(e),
             e => defaultReader.ReadRuntimeRace(e));
 
-        // PROJ (0x33) — via ProjectilePhysics, which needs fileOffset + formId
         var projEntries = allEntries.Where(e => e.FormType == 0x33 && e.TesFormOffset.HasValue).ToList();
         typeResults["PROJ"] = CompareReads(projEntries,
             e => probedReader.ReadProjectilePhysics(e.TesFormOffset!.Value, e.FormId),
             e => defaultReader.ReadProjectilePhysics(e.TesFormOffset!.Value, e.FormId));
 
-        // MGEF (0x10)
         var mgefEntries = allEntries.Where(e => e.FormType == 0x10 && e.TesFormOffset.HasValue).ToList();
         typeResults["MGEF"] = CompareReads(mgefEntries,
             e => probedReader.ReadRuntimeBaseEffect(e),
             e => defaultReader.ReadRuntimeBaseEffect(e));
 
-        // SPEL (0x14)
         var spelEntries = allEntries.Where(e => e.FormType == 0x14 && e.TesFormOffset.HasValue).ToList();
         typeResults["SPEL"] = CompareReads(spelEntries,
             e => probedReader.ReadRuntimeSpell(e),
             e => defaultReader.ReadRuntimeSpell(e));
 
-        // ENCH (0x13)
         var enchEntries = allEntries.Where(e => e.FormType == 0x13 && e.TesFormOffset.HasValue).ToList();
         typeResults["ENCH"] = CompareReads(enchEntries,
             e => probedReader.ReadRuntimeEnchantment(e),
             e => defaultReader.ReadRuntimeEnchantment(e));
 
-        // PERK (0x56)
         var perkEntries = allEntries.Where(e => e.FormType == 0x56 && e.TesFormOffset.HasValue).ToList();
         typeResults["PERK"] = CompareReads(perkEntries,
             e => probedReader.ReadRuntimePerk(e),
             e => defaultReader.ReadRuntimePerk(e));
 
-        // BOOK (0x19)
         var bookEntries = allEntries.Where(e => e.FormType == 0x19 && e.TesFormOffset.HasValue).ToList();
         typeResults["BOOK"] = CompareReads(bookEntries,
             e => probedReader.ReadRuntimeBook(e),
@@ -232,9 +195,9 @@ public sealed class RuntimeProbeConsistencyTests(SampleFileFixture samples)
                 return $"{r.ProbedSuccess}/{r.TotalEntries} {deltaStr}";
             });
 
-        log($"{fileName,-42} {fileDate,-12} {string.Join(" ", parts.Select(p => $"{p,10}"))}");
+        log($"{snippetName,-20} {string.Join(" ", parts.Select(p => $"{p,10}"))}");
 
-        return new DmpProbeResult(fileName, fileDate, typeResults, probeShifts);
+        return new DmpProbeResult(snippetName, typeResults, probeShifts);
     }
 
     private static TypeReadResult CompareReads<T>(
@@ -276,8 +239,7 @@ public sealed class RuntimeProbeConsistencyTests(SampleFileFixture samples)
     }
 
     private record DmpProbeResult(
-        string FileName,
-        string FileDate,
+        string SnippetName,
         Dictionary<string, TypeReadResult> TypeResults,
         List<(string Name, string Shift, int Margin)> ProbeShifts);
 

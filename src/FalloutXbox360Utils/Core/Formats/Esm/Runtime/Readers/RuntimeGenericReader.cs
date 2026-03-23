@@ -41,9 +41,11 @@ internal sealed class RuntimeGenericReader(
             return null;
         }
 
-        // Apply per-type shift if probed
+        // Apply per-type shift if probed, then try per-record correction via BSStringT validation
         var shift = _typeShifts.TryGetValue(formType, out var s) ? s : 0;
-        var effectiveSize = layout.StructSize + Math.Max(shift, 0);
+        shift = TryCorrectShift(entry, layout, shift);
+
+        var effectiveSize = layout.StructSize + Math.Max(shift, 0) + 8; // +8 headroom for shift correction
         var structData = _context.ReadBytes(entry.TesFormOffset.Value, effectiveSize);
         if (structData == null)
         {
@@ -58,7 +60,11 @@ internal sealed class RuntimeGenericReader(
         if (fullNameField != null)
         {
             var nameOffset = ApplyFieldShift(fullNameField, shift);
-            fullName = _context.ReadBSStringT(entry.TesFormOffset.Value, nameOffset);
+            fullName = _context.ReadBSStringTDiag(entry.TesFormOffset.Value, nameOffset, out var nameFailure,
+                out var namePtr, out var nameLen, out var nameHex, out var namePartial);
+            BSStringDiagnostics.RecordWithSample("cFullName", nameFailure,
+                new BSStringDiagnostics.DiagSample(entry.FormId, entry.EditorId, entry.FormType,
+                    entry.TesFormOffset.Value, nameOffset, namePtr, nameLen, nameHex, namePartial));
         }
 
         // Extract model path from TESModel.cModel (BSStringT) if present
@@ -67,7 +73,11 @@ internal sealed class RuntimeGenericReader(
         if (modelField != null)
         {
             var modelOffset = ApplyFieldShift(modelField, shift);
-            modelPath = _context.ReadBSStringT(entry.TesFormOffset.Value, modelOffset);
+            modelPath = _context.ReadBSStringTDiag(entry.TesFormOffset.Value, modelOffset, out var modelFailure,
+                out var modelPtr, out var modelLen, out var modelHex, out var modelPartial);
+            BSStringDiagnostics.RecordWithSample("cModel", modelFailure,
+                new BSStringDiagnostics.DiagSample(entry.FormId, entry.EditorId, entry.FormType,
+                    entry.TesFormOffset.Value, modelOffset, modelPtr, modelLen, modelHex, modelPartial));
         }
 
         // Extract bounds from TESBoundObject.BoundData (12 bytes = 6 × int16) if present
@@ -129,6 +139,51 @@ internal sealed class RuntimeGenericReader(
         }
 
         return result;
+    }
+
+    /// <summary>
+    ///     Use BSStringT fields as validators to detect per-record shift misalignment.
+    ///     If the type-level shift produces LengthTooLarge on a BSStringT field, try ±4
+    ///     and return the corrected shift. This fixes ~5% of records where the uniform
+    ///     per-type shift is wrong for an individual record.
+    /// </summary>
+    private int TryCorrectShift(RuntimeEditorIdEntry entry, PdbTypeLayout layout, int typeShift)
+    {
+        // Find a BSStringT field to use as a validator (prefer cModel — higher success rate)
+        var probeField = layout.Fields.FirstOrDefault(f => f is { Name: "cModel", Owner: "TESModel" })
+                         ?? layout.Fields.FirstOrDefault(f => f is { Name: "cFullName", Owner: "TESFullName" });
+        if (probeField == null)
+        {
+            return typeShift;
+        }
+
+        // Test the type-level shift first
+        var baseOffset = ApplyFieldShift(probeField, typeShift);
+        _context.ReadBSStringTDiag(entry.TesFormOffset!.Value, baseOffset, out var baseFailure);
+
+        // Only attempt correction for shift-related failures
+        if (baseFailure is not (RuntimeMemoryContext.BSStringFailure.LengthTooLarge
+            or RuntimeMemoryContext.BSStringFailure.InvalidPointer
+            or RuntimeMemoryContext.BSStringFailure.InvalidAscii))
+        {
+            return typeShift;
+        }
+
+        // Try ±4 from type shift
+        int[] corrections = [typeShift - 4, typeShift + 4];
+        foreach (var candidateShift in corrections)
+        {
+            var candidateOffset = ApplyFieldShift(probeField, candidateShift);
+            if (candidateOffset < 0) continue;
+
+            var result = _context.ReadBSStringTDiag(entry.TesFormOffset.Value, candidateOffset, out var failure);
+            if (result != null && failure == RuntimeMemoryContext.BSStringFailure.None)
+            {
+                return candidateShift;
+            }
+        }
+
+        return typeShift;
     }
 
     /// <summary>

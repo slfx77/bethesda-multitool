@@ -48,6 +48,9 @@ internal sealed class NpcAppearance
     // Hair color tint (packed 0x00BBGGRR from HCLR subrecord)
     public uint? HairColor { get; init; }
 
+    // Hair length scaling factor (from LNAM subrecord, typically 0.0–1.0)
+    public float? HairLength { get; init; }
+
     // Phase 8: Equipment (resolved from NPC_ CNTO inventory → ARMO biped models)
     public List<EquippedItem>? EquippedItems { get; init; }
 
@@ -98,6 +101,7 @@ internal sealed class NpcAppearance
             TongueNifPath = TongueNifPath,
             HeadPartNifPaths = HeadPartNifPaths,
             HairColor = HairColor,
+            HairLength = HairLength,
             EquippedItems = EquippedItems,
             WeaponVisual = WeaponVisual,
             UpperBodyNifPath = UpperBodyNifPath,

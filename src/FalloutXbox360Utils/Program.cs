@@ -89,6 +89,7 @@ public static class Program
         rootCommand.Subcommands.Add(DmpCommand.Create());
         rootCommand.Subcommands.Add(RenderCommand.Create());
         rootCommand.Subcommands.Add(ExportCommand.Create());
+        rootCommand.Subcommands.Add(AnalyzeCommand.Create());
 
         return rootCommand.Parse(args).Invoke();
     }
