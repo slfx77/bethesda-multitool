@@ -2,7 +2,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 
 /// <summary>
 ///     Struct offset constants for item-related runtime types (weapons, armor, ammo, etc.)
-///     derived from the Proto Debug PDB, adjusted by build-specific shift <paramref name="_s" />.
+///     derived from the Proto Debug PDB, adjusted by build-specific shift passed to the constructor.
 /// </summary>
 internal sealed class RuntimeItemLayouts
 {

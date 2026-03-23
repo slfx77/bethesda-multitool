@@ -7,35 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-03-22
+
 ### Added
 
-- **FaceGen Format Detection**: New format module for Bethesda FaceGen files
-  - Detects EGM (face morphs), EGT (face tints), and TRI (triangle morphs) files
-  - Magic signatures: `FREGM`, `FREGT`, `FRTRI`
-  - Used for character face customization data
-- **Bink Video Format Detection**: New format module for RAD Game Tools Bink video
-  - Detects Bink 2.x video files (BIKi, BIKh, BIKb variants)
-  - Validates dimensions, frame count, and file size from header
-  - Used for pre-rendered cinematics and logo videos
-- **Video File Category**: New category for video file formats (purple-pink color)
-- Tests for DDX GPU format validation covering unknown format rejection and known format acceptance
-- Tests for new FaceGen and Bink signature detection
+- **Dialogue Viewer**: Full dialogue tree visualization in the GUI
+  - Conversation builder with topic merging and runtime dialogue info
+  - Dialogue tree renderer with condition display formatting
+  - Dialogue picker tree builder for browsing quest dialogue
+  - Dialogue condition parser with expanded operator and function support
+  - Dialogue runtime merger for combining split Xbox 360 INFO records
+- **NPC Browser**: Interactive NPC browsing with 3D model preview
+  - BSA discovery for automatic mesh/texture archive detection
+  - NPC list with filtering and selection
+  - WebView2-based model viewer with embedded viewer HTML
+- **Memory-Mapped File Access**: `IMemoryAccessor` abstraction with `MmfMemoryAccessor` implementation
+  - Enables efficient random-access reads of large DMP files without loading into memory
+  - `RecordingMemoryAccessor` and `SparseMemoryAccessor` test helpers for unit testing
+- **Data-Driven Field Probes**: Runtime DMP struct reading via PDB-derived field layouts
+  - Typed runtime readers for 14+ record types
+  - Runtime probe consistency tests with baseline verification
+  - Runtime world cell auto-detection and probing
+  - BSStringT diagnostics for string field validation
+- **NPC Export Pipeline**: Full-body NPC scene assembly with equipment resolution
+  - `NpcExportSceneBuilder` for compositing head, body, and equipment meshes
+  - `NpcEquipmentResolver` for armor addon and weapon mesh lookup
+  - `NpcRecordScanner` for batch NPC appearance extraction
+  - glTF export with alpha texture packing and material tuning
+- **DMP Diagnostics**: `dmp dmp-diag` command for scanning persistent refs and map markers across dump directories
+- **World Map Control**: Interactive world map display in the GUI
+- **ESM Record Expansion**: Eyes (EYES), Hair (HAIR), and expanded effect data parsing
+- **DMP Snippet Test Framework**: `DmpSnippetExtractor`, `DmpSnippetReader`, and `EsmTestFileBuilder` for self-contained test data
 
 ### Changed
 
-- **DDX Format Validation**: Stricter GPU format validation to reduce false positives during memory dump carving
-  - DDX headers with unknown/invalid GPU format bytes are now rejected
-  - Only known Xbox 360 texture formats (DXT1, DXT3, DXT5, ATI1, ATI2) are accepted
-  - Prevents random data matching "3XDO"/"3XDR" magic from being incorrectly identified as textures
+- **NIF Rendering Pipeline**: Refactored sprite renderer, FaceGen mesh morpher, and NPC appearance factory
+  - Deduplicated lighting constants across rendering code
+  - Split large rendering files for maintainability
+- **Runtime Struct Readers**: Expanded for broader DMP analysis coverage
+  - Enhanced `RuntimeGenericReader` and `RuntimePdbFieldAccessor` for more field types
+  - Expanded `RuntimeBuildOffsets` with additional build-specific offset tables
+  - Updated `RuntimeMemoryContext` for memory-mapped accessor support
+- **App UI**: Updated analysis views, record data display, and world map integration
+  - Expanded `PropertyPanelBuilder` and `EsmBrowserTreeBuilder` for new record types
+  - `FormUsageIndex` expanded for cross-reference tracking
+- **Analysis Infrastructure**: Refactored `AnalysisExtractionHelper` and reporting layers
+  - Semantic formatting added to export, report, and CLI output
+- **ESM Parsing**: Expanded `RecordParser` and `RecordParserContext` for dialogue and new record types
+  - `SubrecordSchemaRegistry.Dialogue` extended with new field definitions
+- **DDXConv Submodule**: Updated with partial decompression, sequential mips, DDS header fixes, and 3XDR block-size-dependent untiling fix
+- **Test Suite**: Refactored for expanded record types, runtime parity baselines, and DMP serialization
+  - Improved test performance
+  - Updated probe and regression baselines
 
 ### Fixed
 
-- **LIP Format Detection Removed**: The "LIPS" signature was matching asset path strings in memory
-  (e.g., "sound/voice/.../filename.lip"), not actual LIP files
-  - Real LIP files have no magic header - they start with version/data bytes
-  - Across 50+ crash dumps analyzed, 0 valid LIP files were found
-  - LIP scanning is now disabled (`EnableSignatureScanning = false`)
-  - The format module remains for potential future use with known file offsets
+- **NPC Head Attachment**: Fixed eye transform positioning for correct NPC head rendering
+- **NPC Eye Rendering**: Stabilized eye mesh placement and orientation
+- **Xbox NPC Attachment Posing**: Fixed holster and weapon attachment transforms
+- **Holstered Baseball Bat**: Corrected attachment pose for baseball bat holster position
+
+### Removed
+
+- EGT verification and runtime capture comparison pipeline (superseded by probe-based testing)
+- Obsolete test files: `PackageComparisonTests`, `XboxNpcGlbExportRegressionTests`, `XboxNpcRenderRegressionTests`, `ScriptDecompilerMemoryDumpTests`, `ScriptEnableDisablePatternTests`, `DumpAnalysisHelper`
 
 ## [1.0.0] - 2026-01-17
 
@@ -130,6 +165,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **DDX Conversion**: Xbox 360 DDX textures to standard DDS format
 - **Minidump Parsing**: Extract module information from Xbox 360 minidumps
 
+[Unreleased]: https://github.com/slfx77/fallout-xbox-360-utils/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/slfx77/fallout-xbox-360-utils/compare/v2.2.0-pre1...v2.3.0
 [1.0.0]: https://github.com/slfx77/fallout-xbox-360-utils/compare/v0.2.0-alpha.1...v1.0.0
 [0.2.0-alpha.1]: https://github.com/slfx77/fallout-xbox-360-utils/compare/v0.1.0-alpha.1...v0.2.0-alpha.1
 [0.1.0-alpha.1]: https://github.com/slfx77/fallout-xbox-360-utils/releases/tag/v0.1.0-alpha.1
