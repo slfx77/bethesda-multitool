@@ -347,7 +347,7 @@ internal sealed class NpcBrowserService : IDisposable
                 }
                 finally
                 {
-                    _textureResolver.EvictTexture(NpcRenderHelpers.BuildNpcFaceEgtTextureKey(npc));
+                    _textureResolver.EvictTexture(NpcTextureHelpers.BuildNpcFaceEgtTextureKey(npc));
                 }
 
                 done++;
@@ -423,7 +423,7 @@ internal sealed class NpcBrowserService : IDisposable
                             continue;
                         }
 
-                        var name = NpcRenderHelpers.BuildNpcRenderName(npc);
+                        var name = NpcTextureHelpers.BuildNpcRenderName(npc);
                         var fileName = $"{name}{suffix}.png";
                         PngWriter.SaveRgba(result.Pixels, result.Width, result.Height,
                             Path.Combine(outputDir, fileName));
@@ -435,7 +435,7 @@ internal sealed class NpcBrowserService : IDisposable
                 }
                 finally
                 {
-                    _textureResolver.EvictTexture(NpcRenderHelpers.BuildNpcFaceEgtTextureKey(npc));
+                    _textureResolver.EvictTexture(NpcTextureHelpers.BuildNpcFaceEgtTextureKey(npc));
                 }
 
                 done++;

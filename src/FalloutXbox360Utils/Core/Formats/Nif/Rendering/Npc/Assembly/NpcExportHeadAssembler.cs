@@ -9,9 +9,9 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
 /// <summary>
 ///     Head, hair, eyes, and face part assembly methods for NPC export scene construction.
 /// </summary>
-internal static partial class NpcExportSceneBuilder
+internal static class NpcExportHeadAssembler
 {
-    private static void AddHeadContent(
+    internal static void AddHeadContent(
         NpcExportScene scene,
         NpcAppearance npc,
         NpcMeshArchiveSet meshArchives,
@@ -31,7 +31,7 @@ internal static partial class NpcExportSceneBuilder
         if (npc.BaseHeadNifPath != null)
         {
             var headPreSkinDeltas = ComputeHeadPreSkinDeltas(npc, meshArchives, egmCache, settings);
-            var extracted = LoadExtractedNif(
+            var extracted = NpcExportSceneBuilder.LoadExtractedNif(
                 npc.BaseHeadNifPath,
                 meshArchives,
                 preSkinMorphDeltas: headPreSkinDeltas);
@@ -50,11 +50,11 @@ internal static partial class NpcExportSceneBuilder
 
                     if (part.Skin != null && nodeIndicesByBoneName != null)
                     {
-                        AddSkinnedPart(scene, part, nodeIndicesByBoneName);
+                        NpcExportSceneBuilder.AddSkinnedPart(scene, part, nodeIndicesByBoneName);
                     }
                     else
                     {
-                        AddExtractedRigidPart(scene, part, part.ShapeWorldTransform, npc.BaseHeadNifPath);
+                        NpcExportSceneBuilder.AddExtractedRigidPart(scene, part, part.ShapeWorldTransform, npc.BaseHeadNifPath);
                     }
                 }
 
@@ -92,7 +92,7 @@ internal static partial class NpcExportSceneBuilder
         }
 
         string? hairFilter = null;
-        if (!settings.NoEquip && NpcRenderHelpers.HasHatEquipment(npc.EquippedItems))
+        if (!settings.NoEquip && NpcTextureHelpers.HasHatEquipment(npc.EquippedItems))
         {
             hairFilter = "Hat";
         }
@@ -124,7 +124,7 @@ internal static partial class NpcExportSceneBuilder
             return;
         }
 
-        var hairRaw = NpcRenderHelpers.LoadNifRawFromBsa(npc.HairNifPath, meshArchives);
+        var hairRaw = NpcMeshHelpers.LoadNifRawFromBsa(npc.HairNifPath, meshArchives);
         if (hairRaw == null)
         {
             return;
@@ -147,7 +147,7 @@ internal static partial class NpcExportSceneBuilder
             var hairDir = Path.GetDirectoryName(npc.HairNifPath) ?? string.Empty;
             var egmSuffix = hairFilter == "Hat" ? "hat.egm" : "nohat.egm";
             var hairEgmPath = Path.Combine(hairDir, hairBaseName + egmSuffix);
-            NpcRenderHelpers.LoadAndApplyEgm(
+            NpcMeshHelpers.LoadAndApplyEgm(
                 hairEgmPath,
                 hairModel,
                 npc.FaceGenSymmetricCoeffs,
@@ -168,7 +168,7 @@ internal static partial class NpcExportSceneBuilder
                 npc.HairNifPath);
         }
 
-        var tint = NpcRenderHelpers.UnpackHairColor(npc.HairColor);
+        var tint = NpcTextureHelpers.UnpackHairColor(npc.HairColor);
         foreach (var submesh in hairModel.Submeshes)
         {
             submesh.TintColor = tint;
@@ -183,7 +183,7 @@ internal static partial class NpcExportSceneBuilder
             }
         }
 
-        AddRigidModel(scene, npc.HairNifPath, hairModel);
+        NpcExportSceneBuilder.AddRigidModel(scene, npc.HairNifPath, hairModel);
     }
 
     private static void AddRaceFaceParts(
@@ -209,7 +209,7 @@ internal static partial class NpcExportSceneBuilder
                 continue;
             }
 
-            var partRaw = NpcRenderHelpers.LoadNifRawFromBsa(facePartPath, meshArchives);
+            var partRaw = NpcMeshHelpers.LoadNifRawFromBsa(facePartPath, meshArchives);
             if (partRaw == null)
             {
                 continue;
@@ -224,7 +224,7 @@ internal static partial class NpcExportSceneBuilder
             if (usedBaseRaceMesh &&
                 (npc.FaceGenSymmetricCoeffs != null || npc.FaceGenAsymmetricCoeffs != null))
             {
-                NpcRenderHelpers.LoadAndApplyEgm(
+                NpcMeshHelpers.LoadAndApplyEgm(
                     Path.ChangeExtension(facePartPath, ".egm"),
                     partModel,
                     npc.FaceGenSymmetricCoeffs,
@@ -265,7 +265,7 @@ internal static partial class NpcExportSceneBuilder
                     NpcRenderHelpers.HeadAttachmentRootPolicy.CompensateRotatedRoot);
             }
 
-            AddRigidModel(scene, facePartPath, partModel);
+            NpcExportSceneBuilder.AddRigidModel(scene, facePartPath, partModel);
         }
     }
 
@@ -286,7 +286,7 @@ internal static partial class NpcExportSceneBuilder
 
         foreach (var headPartPath in npc.HeadPartNifPaths)
         {
-            var partRaw = NpcRenderHelpers.LoadNifRawFromBsa(headPartPath, meshArchives);
+            var partRaw = NpcMeshHelpers.LoadNifRawFromBsa(headPartPath, meshArchives);
             if (partRaw == null)
             {
                 continue;
@@ -301,7 +301,7 @@ internal static partial class NpcExportSceneBuilder
             if (usedBaseRaceMesh &&
                 (npc.FaceGenSymmetricCoeffs != null || npc.FaceGenAsymmetricCoeffs != null))
             {
-                NpcRenderHelpers.LoadAndApplyEgm(
+                NpcMeshHelpers.LoadAndApplyEgm(
                     Path.ChangeExtension(headPartPath, ".egm"),
                     partModel,
                     npc.FaceGenSymmetricCoeffs,
@@ -322,14 +322,14 @@ internal static partial class NpcExportSceneBuilder
                     headPartPath);
             }
 
-            var tint = NpcRenderHelpers.UnpackHairColor(npc.HairColor);
+            var tint = NpcTextureHelpers.UnpackHairColor(npc.HairColor);
             foreach (var submesh in partModel.Submeshes)
             {
                 submesh.TintColor = tint;
                 submesh.IsDoubleSided = true;
             }
 
-            AddRigidModel(scene, headPartPath, partModel);
+            NpcExportSceneBuilder.AddRigidModel(scene, headPartPath, partModel);
         }
     }
 
@@ -358,7 +358,7 @@ internal static partial class NpcExportSceneBuilder
                 continue;
             }
 
-            var eyeRaw = NpcRenderHelpers.LoadNifRawFromBsa(eyePath, meshArchives);
+            var eyeRaw = NpcMeshHelpers.LoadNifRawFromBsa(eyePath, meshArchives);
             if (eyeRaw == null)
             {
                 continue;
@@ -379,7 +379,7 @@ internal static partial class NpcExportSceneBuilder
             if (usedBaseRaceMesh &&
                 (npc.FaceGenSymmetricCoeffs != null || npc.FaceGenAsymmetricCoeffs != null))
             {
-                NpcRenderHelpers.LoadAndApplyEgm(
+                NpcMeshHelpers.LoadAndApplyEgm(
                     Path.ChangeExtension(eyePath, ".egm"),
                     eyeModel,
                     npc.FaceGenSymmetricCoeffs,
@@ -401,7 +401,7 @@ internal static partial class NpcExportSceneBuilder
                 }
             }
 
-            AddRigidModel(scene, eyePath, eyeModel);
+            NpcExportSceneBuilder.AddRigidModel(scene, eyePath, eyeModel);
         }
     }
 
@@ -422,9 +422,9 @@ internal static partial class NpcExportSceneBuilder
             return;
         }
 
-        foreach (var item in npc.EquippedItems.Where(item => NpcRenderHelpers.IsHeadEquipment(item.BipedFlags)))
+        foreach (var item in npc.EquippedItems.Where(item => NpcTextureHelpers.IsHeadEquipment(item.BipedFlags)))
         {
-            var raw = NpcRenderHelpers.LoadNifRawFromBsa(item.MeshPath, meshArchives);
+            var raw = NpcMeshHelpers.LoadNifRawFromBsa(item.MeshPath, meshArchives);
             if (raw == null)
             {
                 continue;
@@ -434,7 +434,7 @@ internal static partial class NpcExportSceneBuilder
                 raw.Value.Info.Blocks.Any(block => block.TypeName is "NiSkinInstance" or "BSDismemberSkinInstance");
             if (hasSkinning && nodeIndicesByBoneName != null)
             {
-                AddSkinnedNif(scene, item.MeshPath, meshArchives, nodeIndicesByBoneName);
+                NpcExportSceneBuilder.AddSkinnedNif(scene, item.MeshPath, meshArchives, nodeIndicesByBoneName);
                 continue;
             }
 
@@ -447,7 +447,7 @@ internal static partial class NpcExportSceneBuilder
             if (usedBaseRaceMesh &&
                 (npc.FaceGenSymmetricCoeffs != null || npc.FaceGenAsymmetricCoeffs != null))
             {
-                NpcRenderHelpers.LoadAndApplyEgm(
+                NpcMeshHelpers.LoadAndApplyEgm(
                     Path.ChangeExtension(item.MeshPath, ".egm"),
                     model,
                     npc.FaceGenSymmetricCoeffs,
@@ -469,7 +469,7 @@ internal static partial class NpcExportSceneBuilder
                     NpcRenderHelpers.HeadAttachmentRootPolicy.CompensateRotatedRoot);
             }
 
-            AddRigidModel(scene, item.MeshPath, model);
+            NpcExportSceneBuilder.AddRigidModel(scene, item.MeshPath, model);
         }
     }
 
@@ -487,7 +487,7 @@ internal static partial class NpcExportSceneBuilder
         }
 
         var egmPath = Path.ChangeExtension(npc.BaseHeadNifPath, ".egm");
-        var egm = NpcRenderHelpers.LoadAndCacheEgm(egmPath, meshArchives, egmCache);
+        var egm = NpcMeshHelpers.LoadAndCacheEgm(egmPath, meshArchives, egmCache);
         return egm == null
             ? null
             : FaceGenMeshMorpher.ComputeAccumulatedDeltas(
@@ -512,7 +512,7 @@ internal static partial class NpcExportSceneBuilder
         var egtPath = Path.ChangeExtension(npc.BaseHeadNifPath, ".egt");
         if (!egtCache.TryGetValue(egtPath, out var egt))
         {
-            egt = NpcRenderHelpers.LoadEgtFromBsa(egtPath, meshArchives);
+            egt = NpcMeshHelpers.LoadEgtFromBsa(egtPath, meshArchives);
             egtCache[egtPath] = egt;
         }
 
@@ -528,7 +528,7 @@ internal static partial class NpcExportSceneBuilder
             return null;
         }
 
-        var textureKey = NpcRenderHelpers.BuildNpcFaceEgtTextureKey(npc);
+        var textureKey = NpcTextureHelpers.BuildNpcFaceEgtTextureKey(npc);
         textureResolver.InjectTexture(textureKey, morphedTexture);
         return textureKey;
     }

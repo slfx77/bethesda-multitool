@@ -150,9 +150,9 @@ internal static class NifGeometryExtractor
         }
 
         // Filter shapes by name if requested (e.g., "NoHat" for hair NIFs to exclude "Hat" variant).
-        // Hair NIFs may contain both "NoHat" (full hair) and "Hat" (trimmed for headgear) shapes;
-        // the engine only attaches one based on equipment state.
-        // Some hair NIFs have only one shape with no hat/nohat naming — keep all shapes in that case.
+        // Hair NIFs may contain both "NoHat" (full hair) and "Hat" (trimmed for headgear) shapes,
+        // and the engine only attaches one based on equipment state.
+        // Some hair NIFs have only one shape with no hat/nohat naming, so keep all shapes in that case.
         if (filterShapeName != null)
         {
             var shapeNames = shapeDataMap.Keys

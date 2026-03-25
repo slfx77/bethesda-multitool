@@ -1,4 +1,3 @@
-using System.Buffers;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using FalloutXbox360Utils.Core.Utils;
@@ -15,31 +14,9 @@ internal sealed class CreatureRecordHandler(RecordParserContext context) : Recor
     /// </summary>
     internal List<CreatureRecord> ParseCreatures()
     {
-        var creatures = new List<CreatureRecord>();
-        var creatureRecords = Context.GetRecordsByType("CREA").ToList();
-
-        if (Context.Accessor == null)
-        {
-            foreach (var record in creatureRecords)
-            {
-                creatures.Add(ParseCreatureFromScanResult(record));
-            }
-        }
-        else
-        {
-            var buffer = ArrayPool<byte>.Shared.Rent(16384);
-            try
-            {
-                foreach (var record in creatureRecords)
-                {
-                    creatures.Add(ParseCreatureFromAccessor(record, buffer));
-                }
-            }
-            finally
-            {
-                ArrayPool<byte>.Shared.Return(buffer);
-            }
-        }
+        var creatures = ParseRecordList("CREA", 16384,
+            (record, buffer) => ParseCreatureFromAccessor(record, buffer),
+            (record) => ParseCreatureFromScanResult(record));
 
         Context.MergeRuntimeRecords(creatures, 0x2B, c => c.FormId,
             (reader, entry) => reader.ReadRuntimeCreature(entry), "creatures");

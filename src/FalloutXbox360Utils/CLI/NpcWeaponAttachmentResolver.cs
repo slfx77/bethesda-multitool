@@ -177,7 +177,7 @@ internal static class NpcWeaponAttachmentResolver
             return false;
         }
 
-        var skelRaw = NpcRenderHelpers.LoadNifRawFromBsa(skeletonNifPath, meshArchives);
+        var skelRaw = NpcMeshHelpers.LoadNifRawFromBsa(skeletonNifPath, meshArchives);
         if (skelRaw == null)
         {
             omitReason = $"failed to load skeleton '{skeletonNifPath}' for hand-to-hand attachment";
@@ -409,13 +409,13 @@ internal static class NpcWeaponAttachmentResolver
         var skelDir = skeletonNifPath.Replace("skeleton.nif", "", StringComparison.OrdinalIgnoreCase);
         var kfPath = skelDir + kfRelPath;
 
-        var kfRaw = NpcRenderHelpers.LoadNifRawFromBsa(kfPath, meshArchives, true);
+        var kfRaw = NpcMeshHelpers.LoadNifRawFromBsa(kfPath, meshArchives, true);
 
         // Female-to-male fallback (same pattern as base idle loading)
         if (kfRaw == null && skelDir.Contains("_female", StringComparison.OrdinalIgnoreCase))
         {
             var malePath = skelDir.Replace("_female", "_male", StringComparison.OrdinalIgnoreCase) + kfRelPath;
-            kfRaw = NpcRenderHelpers.LoadNifRawFromBsa(malePath, meshArchives, true);
+            kfRaw = NpcMeshHelpers.LoadNifRawFromBsa(malePath, meshArchives, true);
         }
 
         if (kfRaw == null)
@@ -429,7 +429,7 @@ internal static class NpcWeaponAttachmentResolver
             return null;
 
         // Load skeleton and base idle overrides, then layer holster overrides on top.
-        var skelRaw = NpcRenderHelpers.LoadNifRawFromBsa(skeletonNifPath, meshArchives);
+        var skelRaw = NpcMeshHelpers.LoadNifRawFromBsa(skeletonNifPath, meshArchives);
         if (skelRaw == null)
             return null;
 

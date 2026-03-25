@@ -1,4 +1,3 @@
-using System.Buffers;
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Utils;
@@ -15,108 +14,16 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context) : Reco
     /// </summary>
     internal List<ActivatorRecord> ParseActivators()
     {
-        var activators = new List<ActivatorRecord>();
-
-        if (Context.Accessor == null)
-        {
-            foreach (var record in Context.GetRecordsByType("ACTI"))
+        var activators = ParseRecordList("ACTI", 4096,
+            ParseActivatorFromAccessor,
+            record => new ActivatorRecord
             {
-                activators.Add(new ActivatorRecord
-                {
-                    FormId = record.FormId,
-                    EditorId = Context.GetEditorId(record.FormId),
-                    FullName = Context.FindFullNameNear(record.Offset),
-                    Offset = record.Offset,
-                    IsBigEndian = record.IsBigEndian
-                });
-            }
-
-            return activators;
-        }
-
-        var buffer = ArrayPool<byte>.Shared.Rent(4096);
-        try
-        {
-            foreach (var record in Context.GetRecordsByType("ACTI"))
-            {
-                var recordData = Context.ReadRecordData(record, buffer);
-                if (recordData == null)
-                {
-                    activators.Add(new ActivatorRecord
-                    {
-                        FormId = record.FormId,
-                        EditorId = Context.GetEditorId(record.FormId),
-                        FullName = Context.FindFullNameNear(record.Offset),
-                        Offset = record.Offset,
-                        IsBigEndian = record.IsBigEndian
-                    });
-                    continue;
-                }
-
-                var (data, dataSize) = recordData.Value;
-
-                string? editorId = null;
-                string? fullName = null;
-                string? modelPath = null;
-                ObjectBounds? bounds = null;
-                uint? script = null;
-                uint? activationSound = null;
-                uint? radioStation = null;
-                uint? waterType = null;
-
-                foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
-                {
-                    var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
-
-                    switch (sub.Signature)
-                    {
-                        case "EDID":
-                            editorId = EsmStringUtils.ReadNullTermString(subData);
-                            break;
-                        case "FULL":
-                            fullName = EsmStringUtils.ReadNullTermString(subData);
-                            break;
-                        case "MODL":
-                            modelPath = EsmStringUtils.ReadNullTermString(subData);
-                            break;
-                        case "OBND" when sub.DataLength == 12:
-                            bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
-                            break;
-                        case "SCRI" when sub.DataLength == 4:
-                            script = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
-                            break;
-                        case "SNAM" when sub.DataLength == 4:
-                            activationSound = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
-                            break;
-                        case "RNAM" when sub.DataLength == 4:
-                            radioStation = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
-                            break;
-                        case "WNAM" when sub.DataLength == 4:
-                            waterType = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
-                            break;
-                    }
-                }
-
-                activators.Add(new ActivatorRecord
-                {
-                    FormId = record.FormId,
-                    EditorId = editorId ?? Context.GetEditorId(record.FormId),
-                    FullName = fullName,
-                    ModelPath = modelPath,
-                    Bounds = bounds,
-                    Script = script != 0 ? script : null,
-                    ActivationSoundFormId = activationSound != 0 ? activationSound : null,
-                    RadioStationFormId = radioStation != 0 ? radioStation : null,
-                    WaterTypeFormId = waterType != 0 ? waterType : null,
-                    Offset = record.Offset,
-                    IsBigEndian = record.IsBigEndian
-                });
-            }
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer);
-        }
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
 
         Context.MergeRuntimeOverlayRecords(
             activators,
@@ -129,6 +36,81 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context) : Reco
         return activators;
     }
 
+    private ActivatorRecord? ParseActivatorFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return new ActivatorRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            };
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        string? fullName = null;
+        string? modelPath = null;
+        ObjectBounds? bounds = null;
+        uint? script = null;
+        uint? activationSound = null;
+        uint? radioStation = null;
+        uint? waterType = null;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "FULL":
+                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODL":
+                    modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "OBND" when sub.DataLength == 12:
+                    bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
+                    break;
+                case "SCRI" when sub.DataLength == 4:
+                    script = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "SNAM" when sub.DataLength == 4:
+                    activationSound = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "RNAM" when sub.DataLength == 4:
+                    radioStation = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "WNAM" when sub.DataLength == 4:
+                    waterType = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+            }
+        }
+
+        return new ActivatorRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            FullName = fullName,
+            ModelPath = modelPath,
+            Bounds = bounds,
+            Script = script != 0 ? script : null,
+            ActivationSoundFormId = activationSound != 0 ? activationSound : null,
+            RadioStationFormId = radioStation != 0 ? radioStation : null,
+            WaterTypeFormId = waterType != 0 ? waterType : null,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
     #endregion
 
     #region Lights
@@ -138,134 +120,16 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context) : Reco
     /// </summary>
     internal List<LightRecord> ParseLights()
     {
-        var lights = new List<LightRecord>();
-
-        if (Context.Accessor == null)
-        {
-            foreach (var record in Context.GetRecordsByType("LIGH"))
+        var lights = ParseRecordList("LIGH", 2048,
+            ParseLightFromAccessor,
+            record => new LightRecord
             {
-                lights.Add(new LightRecord
-                {
-                    FormId = record.FormId,
-                    EditorId = Context.GetEditorId(record.FormId),
-                    FullName = Context.FindFullNameNear(record.Offset),
-                    Offset = record.Offset,
-                    IsBigEndian = record.IsBigEndian
-                });
-            }
-
-            return lights;
-        }
-
-        var buffer = ArrayPool<byte>.Shared.Rent(2048);
-        try
-        {
-            foreach (var record in Context.GetRecordsByType("LIGH"))
-            {
-                var recordData = Context.ReadRecordData(record, buffer);
-                if (recordData == null)
-                {
-                    lights.Add(new LightRecord
-                    {
-                        FormId = record.FormId,
-                        EditorId = Context.GetEditorId(record.FormId),
-                        FullName = Context.FindFullNameNear(record.Offset),
-                        Offset = record.Offset,
-                        IsBigEndian = record.IsBigEndian
-                    });
-                    continue;
-                }
-
-                var (data, dataSize) = recordData.Value;
-
-                string? editorId = null;
-                string? fullName = null;
-                string? modelPath = null;
-                ObjectBounds? bounds = null;
-                var duration = 0;
-                uint radius = 0, color = 0, flags = 0;
-                float falloffExponent = 0, fov = 0, weight = 0;
-                var value = 0;
-
-                foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
-                {
-                    var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
-
-                    switch (sub.Signature)
-                    {
-                        case "EDID":
-                            editorId = EsmStringUtils.ReadNullTermString(subData);
-                            if (!string.IsNullOrEmpty(editorId))
-                            {
-                                Context.FormIdToEditorId[record.FormId] = editorId;
-                            }
-
-                            break;
-                        case "FULL":
-                            fullName = EsmStringUtils.ReadNullTermString(subData);
-                            break;
-                        case "MODL":
-                            modelPath = EsmStringUtils.ReadNullTermString(subData);
-                            break;
-                        case "OBND" when sub.DataLength == 12:
-                            bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
-                            break;
-                        case "DATA" when sub.DataLength >= 32:
-                        {
-                            // LIGH DATA: Duration(int32) + Radius(uint32) + Color(RGBA uint32) +
-                            // Flags(uint32) + FalloffExponent(float) + FOV(float) + Value(int32) + Weight(float)
-                            if (record.IsBigEndian)
-                            {
-                                duration = BinaryPrimitives.ReadInt32BigEndian(subData);
-                                radius = BinaryPrimitives.ReadUInt32BigEndian(subData[4..]);
-                                color = BinaryPrimitives.ReadUInt32BigEndian(subData[8..]);
-                                flags = BinaryPrimitives.ReadUInt32BigEndian(subData[12..]);
-                                falloffExponent = BinaryPrimitives.ReadSingleBigEndian(subData[16..]);
-                                fov = BinaryPrimitives.ReadSingleBigEndian(subData[20..]);
-                                value = BinaryPrimitives.ReadInt32BigEndian(subData[24..]);
-                                weight = BinaryPrimitives.ReadSingleBigEndian(subData[28..]);
-                            }
-                            else
-                            {
-                                duration = BinaryPrimitives.ReadInt32LittleEndian(subData);
-                                radius = BinaryPrimitives.ReadUInt32LittleEndian(subData[4..]);
-                                color = BinaryPrimitives.ReadUInt32LittleEndian(subData[8..]);
-                                flags = BinaryPrimitives.ReadUInt32LittleEndian(subData[12..]);
-                                falloffExponent = BinaryPrimitives.ReadSingleLittleEndian(subData[16..]);
-                                fov = BinaryPrimitives.ReadSingleLittleEndian(subData[20..]);
-                                value = BinaryPrimitives.ReadInt32LittleEndian(subData[24..]);
-                                weight = BinaryPrimitives.ReadSingleLittleEndian(subData[28..]);
-                            }
-
-                            break;
-                        }
-                    }
-                }
-
-                lights.Add(new LightRecord
-                {
-                    FormId = record.FormId,
-                    EditorId = editorId ?? Context.GetEditorId(record.FormId),
-                    FullName = fullName,
-                    ModelPath = modelPath,
-                    Bounds = bounds,
-                    Duration = duration,
-                    Radius = radius,
-                    Color = color,
-                    Flags = flags,
-                    FalloffExponent = falloffExponent,
-                    FOV = fov,
-                    Value = value,
-                    Weight = weight,
-                    Offset = record.Offset,
-                    IsBigEndian = record.IsBigEndian
-                });
-            }
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer);
-        }
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
 
         Context.MergeRuntimeOverlayRecords(
             lights,
@@ -278,6 +142,107 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context) : Reco
         return lights;
     }
 
+    private LightRecord? ParseLightFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return new LightRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            };
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        string? fullName = null;
+        string? modelPath = null;
+        ObjectBounds? bounds = null;
+        var duration = 0;
+        uint radius = 0, color = 0, flags = 0;
+        float falloffExponent = 0, fov = 0, weight = 0;
+        var value = 0;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "FULL":
+                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODL":
+                    modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "OBND" when sub.DataLength == 12:
+                    bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
+                    break;
+                case "DATA" when sub.DataLength >= 32:
+                {
+                    // LIGH DATA: Duration(int32) + Radius(uint32) + Color(RGBA uint32) +
+                    // Flags(uint32) + FalloffExponent(float) + FOV(float) + Value(int32) + Weight(float)
+                    if (record.IsBigEndian)
+                    {
+                        duration = BinaryPrimitives.ReadInt32BigEndian(subData);
+                        radius = BinaryPrimitives.ReadUInt32BigEndian(subData[4..]);
+                        color = BinaryPrimitives.ReadUInt32BigEndian(subData[8..]);
+                        flags = BinaryPrimitives.ReadUInt32BigEndian(subData[12..]);
+                        falloffExponent = BinaryPrimitives.ReadSingleBigEndian(subData[16..]);
+                        fov = BinaryPrimitives.ReadSingleBigEndian(subData[20..]);
+                        value = BinaryPrimitives.ReadInt32BigEndian(subData[24..]);
+                        weight = BinaryPrimitives.ReadSingleBigEndian(subData[28..]);
+                    }
+                    else
+                    {
+                        duration = BinaryPrimitives.ReadInt32LittleEndian(subData);
+                        radius = BinaryPrimitives.ReadUInt32LittleEndian(subData[4..]);
+                        color = BinaryPrimitives.ReadUInt32LittleEndian(subData[8..]);
+                        flags = BinaryPrimitives.ReadUInt32LittleEndian(subData[12..]);
+                        falloffExponent = BinaryPrimitives.ReadSingleLittleEndian(subData[16..]);
+                        fov = BinaryPrimitives.ReadSingleLittleEndian(subData[20..]);
+                        value = BinaryPrimitives.ReadInt32LittleEndian(subData[24..]);
+                        weight = BinaryPrimitives.ReadSingleLittleEndian(subData[28..]);
+                    }
+
+                    break;
+                }
+            }
+        }
+
+        return new LightRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            FullName = fullName,
+            ModelPath = modelPath,
+            Bounds = bounds,
+            Duration = duration,
+            Radius = radius,
+            Color = color,
+            Flags = flags,
+            FalloffExponent = falloffExponent,
+            FOV = fov,
+            Value = value,
+            Weight = weight,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
     #endregion
 
     #region Doors
@@ -287,118 +252,16 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context) : Reco
     /// </summary>
     internal List<DoorRecord> ParseDoors()
     {
-        var doors = new List<DoorRecord>();
-
-        if (Context.Accessor == null)
-        {
-            foreach (var record in Context.GetRecordsByType("DOOR"))
+        var doors = ParseRecordList("DOOR", 2048,
+            ParseDoorFromAccessor,
+            record => new DoorRecord
             {
-                doors.Add(new DoorRecord
-                {
-                    FormId = record.FormId,
-                    EditorId = Context.GetEditorId(record.FormId),
-                    FullName = Context.FindFullNameNear(record.Offset),
-                    Offset = record.Offset,
-                    IsBigEndian = record.IsBigEndian
-                });
-            }
-
-            return doors;
-        }
-
-        var buffer = ArrayPool<byte>.Shared.Rent(2048);
-        try
-        {
-            foreach (var record in Context.GetRecordsByType("DOOR"))
-            {
-                var recordData = Context.ReadRecordData(record, buffer);
-                if (recordData == null)
-                {
-                    doors.Add(new DoorRecord
-                    {
-                        FormId = record.FormId,
-                        EditorId = Context.GetEditorId(record.FormId),
-                        FullName = Context.FindFullNameNear(record.Offset),
-                        Offset = record.Offset,
-                        IsBigEndian = record.IsBigEndian
-                    });
-                    continue;
-                }
-
-                var (data, dataSize) = recordData.Value;
-
-                string? editorId = null;
-                string? fullName = null;
-                string? modelPath = null;
-                ObjectBounds? bounds = null;
-                uint? script = null;
-                uint? openSound = null;
-                uint? closeSound = null;
-                uint? loopSound = null;
-                byte flags = 0;
-
-                foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
-                {
-                    var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
-
-                    switch (sub.Signature)
-                    {
-                        case "EDID":
-                            editorId = EsmStringUtils.ReadNullTermString(subData);
-                            if (!string.IsNullOrEmpty(editorId))
-                            {
-                                Context.FormIdToEditorId[record.FormId] = editorId;
-                            }
-
-                            break;
-                        case "FULL":
-                            fullName = EsmStringUtils.ReadNullTermString(subData);
-                            break;
-                        case "MODL":
-                            modelPath = EsmStringUtils.ReadNullTermString(subData);
-                            break;
-                        case "OBND" when sub.DataLength == 12:
-                            bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
-                            break;
-                        case "SCRI" when sub.DataLength == 4:
-                            script = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
-                            break;
-                        case "SNAM" when sub.DataLength == 4:
-                            openSound = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
-                            break;
-                        case "ANAM" when sub.DataLength == 4:
-                            closeSound = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
-                            break;
-                        case "BNAM" when sub.DataLength == 4:
-                            loopSound = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
-                            break;
-                        case "FNAM" when sub.DataLength == 1:
-                            flags = subData[0];
-                            break;
-                    }
-                }
-
-                doors.Add(new DoorRecord
-                {
-                    FormId = record.FormId,
-                    EditorId = editorId ?? Context.GetEditorId(record.FormId),
-                    FullName = fullName,
-                    ModelPath = modelPath,
-                    Bounds = bounds,
-                    Script = script != 0 ? script : null,
-                    OpenSoundFormId = openSound != 0 ? openSound : null,
-                    CloseSoundFormId = closeSound != 0 ? closeSound : null,
-                    LoopSoundFormId = loopSound != 0 ? loopSound : null,
-                    Flags = flags,
-                    Offset = record.Offset,
-                    IsBigEndian = record.IsBigEndian
-                });
-            }
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer);
-        }
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
 
         Context.MergeRuntimeOverlayRecords(
             doors,
@@ -409,6 +272,91 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context) : Reco
             "doors");
 
         return doors;
+    }
+
+    private DoorRecord? ParseDoorFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return new DoorRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            };
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        string? fullName = null;
+        string? modelPath = null;
+        ObjectBounds? bounds = null;
+        uint? script = null;
+        uint? openSound = null;
+        uint? closeSound = null;
+        uint? loopSound = null;
+        byte flags = 0;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "FULL":
+                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODL":
+                    modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "OBND" when sub.DataLength == 12:
+                    bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
+                    break;
+                case "SCRI" when sub.DataLength == 4:
+                    script = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "SNAM" when sub.DataLength == 4:
+                    openSound = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "ANAM" when sub.DataLength == 4:
+                    closeSound = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "BNAM" when sub.DataLength == 4:
+                    loopSound = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "FNAM" when sub.DataLength == 1:
+                    flags = subData[0];
+                    break;
+            }
+        }
+
+        return new DoorRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            FullName = fullName,
+            ModelPath = modelPath,
+            Bounds = bounds,
+            Script = script != 0 ? script : null,
+            OpenSoundFormId = openSound != 0 ? openSound : null,
+            CloseSoundFormId = closeSound != 0 ? closeSound : null,
+            LoopSoundFormId = loopSound != 0 ? loopSound : null,
+            Flags = flags,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
     }
 
     private static ActivatorRecord MergeActivator(ActivatorRecord esm, ActivatorRecord runtime)

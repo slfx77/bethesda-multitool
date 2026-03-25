@@ -14,80 +14,15 @@ internal sealed class MiscCollectionHandler(RecordParserContext context) : Recor
     /// </summary>
     internal List<FormListRecord> ParseFormLists()
     {
-        var formLists = new List<FormListRecord>();
-
-        if (Context.Accessor == null)
-        {
-            foreach (var record in Context.GetRecordsByType("FLST"))
+        var formLists = ParseRecordList("FLST", 8192,
+            ParseFormListFromAccessor,
+            record => new FormListRecord
             {
-                formLists.Add(new FormListRecord
-                {
-                    FormId = record.FormId,
-                    EditorId = Context.GetEditorId(record.FormId),
-                    Offset = record.Offset,
-                    IsBigEndian = record.IsBigEndian
-                });
-            }
-
-            return formLists;
-        }
-
-        var buffer = ArrayPool<byte>.Shared.Rent(8192);
-        try
-        {
-            foreach (var record in Context.GetRecordsByType("FLST"))
-            {
-                var recordData = Context.ReadRecordData(record, buffer);
-                if (recordData == null)
-                {
-                    formLists.Add(new FormListRecord
-                    {
-                        FormId = record.FormId,
-                        EditorId = Context.GetEditorId(record.FormId),
-                        Offset = record.Offset,
-                        IsBigEndian = record.IsBigEndian
-                    });
-                    continue;
-                }
-
-                var (data, dataSize) = recordData.Value;
-
-                string? editorId = null;
-                var formIds = new List<uint>();
-
-                foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
-                {
-                    switch (sub.Signature)
-                    {
-                        case "EDID":
-                            editorId = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
-                            if (!string.IsNullOrEmpty(editorId))
-                            {
-                                Context.FormIdToEditorId[record.FormId] = editorId;
-                            }
-
-                            break;
-                        case "LNAM" when sub.DataLength == 4:
-                            formIds.Add(RecordParserContext.ReadFormId(data.AsSpan(sub.DataOffset, sub.DataLength),
-                                record.IsBigEndian));
-                            break;
-                    }
-                }
-
-                formLists.Add(new FormListRecord
-                {
-                    FormId = record.FormId,
-                    EditorId = editorId ?? Context.GetEditorId(record.FormId),
-                    FormIds = formIds,
-                    Offset = record.Offset,
-                    IsBigEndian = record.IsBigEndian
-                });
-            }
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer);
-        }
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
 
         Context.MergeRuntimeOverlayRecords(
             formLists,
@@ -98,6 +33,54 @@ internal sealed class MiscCollectionHandler(RecordParserContext context) : Recor
             "form lists");
 
         return formLists;
+    }
+
+    private FormListRecord? ParseFormListFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return new FormListRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            };
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        var formIds = new List<uint>();
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "LNAM" when sub.DataLength == 4:
+                    formIds.Add(RecordParserContext.ReadFormId(data.AsSpan(sub.DataOffset, sub.DataLength),
+                        record.IsBigEndian));
+                    break;
+            }
+        }
+
+        return new FormListRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            FormIds = formIds,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
     }
 
     #endregion

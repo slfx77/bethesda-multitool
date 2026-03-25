@@ -148,7 +148,7 @@ internal static class NpcBodyBuilder
         Dictionary<string, Matrix4x4>? idleBoneTransforms,
         NifRenderableModel targetModel)
     {
-        var raw = NpcRenderHelpers.LoadNifRawFromBsa(nifPath, meshArchives);
+        var raw = NpcMeshHelpers.LoadNifRawFromBsa(nifPath, meshArchives);
         if (raw == null)
         {
             Log.Warn("Body part NIF failed to load: {0}", nifPath);
@@ -172,7 +172,7 @@ internal static class NpcBodyBuilder
         foreach (var sub in partModel.Submeshes)
         {
             if (textureOverride != null &&
-                NpcRenderHelpers.ShouldApplyBodyTextureOverride(sub.DiffuseTexturePath, textureOverride))
+                NpcTextureHelpers.ShouldApplyBodyTextureOverride(sub.DiffuseTexturePath, textureOverride))
                 sub.DiffuseTexturePath = textureOverride;
             sub.RenderOrder = renderOrder;
             targetModel.Submeshes.Add(sub);
@@ -189,7 +189,7 @@ internal static class NpcBodyBuilder
     {
         if (npc.BodyEgtPath != null && npc.BodyTexturePath != null)
         {
-            var key = NpcRenderHelpers.ApplyBodyEgtMorph(npc.BodyEgtPath, npc.BodyTexturePath,
+            var key = NpcMeshHelpers.ApplyBodyEgtMorph(npc.BodyEgtPath, npc.BodyTexturePath,
                 npc.FaceGenTextureCoeffs!, npc.NpcFormId, "upperbody", npc.RenderVariantLabel,
                 meshArchives, textureResolver, egtCache);
             if (key != null) effectiveBodyTex = key;
@@ -197,7 +197,7 @@ internal static class NpcBodyBuilder
 
         if (npc.LeftHandEgtPath != null && npc.HandTexturePath != null)
         {
-            var key = NpcRenderHelpers.ApplyBodyEgtMorph(npc.LeftHandEgtPath, npc.HandTexturePath,
+            var key = NpcMeshHelpers.ApplyBodyEgtMorph(npc.LeftHandEgtPath, npc.HandTexturePath,
                 npc.FaceGenTextureCoeffs!, npc.NpcFormId, "lefthand", npc.RenderVariantLabel,
                 meshArchives, textureResolver, egtCache);
             if (key != null) effectiveHandTex = key;
@@ -205,7 +205,7 @@ internal static class NpcBodyBuilder
 
         if (npc.RightHandEgtPath != null && npc.HandTexturePath != null)
         {
-            NpcRenderHelpers.ApplyBodyEgtMorph(npc.RightHandEgtPath, npc.HandTexturePath,
+            NpcMeshHelpers.ApplyBodyEgtMorph(npc.RightHandEgtPath, npc.HandTexturePath,
                 npc.FaceGenTextureCoeffs!, npc.NpcFormId, "righthand", npc.RenderVariantLabel,
                 meshArchives, textureResolver, egtCache);
         }

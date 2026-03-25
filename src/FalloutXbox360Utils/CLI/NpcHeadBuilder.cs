@@ -51,7 +51,7 @@ internal static class NpcHeadBuilder
             (npc.FaceGenSymmetricCoeffs != null || npc.FaceGenAsymmetricCoeffs != null))
         {
             var egmPath = Path.ChangeExtension(npc.BaseHeadNifPath, ".egm");
-            var egm = NpcRenderHelpers.LoadAndCacheEgm(egmPath, meshArchives, egmCache);
+            var egm = NpcMeshHelpers.LoadAndCacheEgm(egmPath, meshArchives, egmCache);
             if (egm != null && egm.VertexCount > 0)
             {
                 // Use EGM vertex count as upper bound; the delta application in
@@ -79,7 +79,7 @@ internal static class NpcHeadBuilder
             {
                 // Head-only mode: extract bones from the head NIF, then use them for
                 // both skinning and attachment correction ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â same pattern as full-body.
-                var headRaw = NpcRenderHelpers.LoadNifRawFromBsa(npc.BaseHeadNifPath, meshArchives);
+                var headRaw = NpcMeshHelpers.LoadNifRawFromBsa(npc.BaseHeadNifPath, meshArchives);
                 if (headRaw != null)
                 {
                     attachmentBoneTransforms = NifGeometryExtractor.ExtractNamedBoneTransforms(
@@ -101,14 +101,14 @@ internal static class NpcHeadBuilder
                     // No EGM morphs ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â use cache
                     if (!headMeshCache.TryGetValue(npc.BaseHeadNifPath, out var cached))
                     {
-                        cached = NpcRenderHelpers.LoadNifFromBsa(npc.BaseHeadNifPath, meshArchives, textureResolver,
+                        cached = NpcMeshHelpers.LoadNifFromBsa(npc.BaseHeadNifPath, meshArchives, textureResolver,
                             attachmentBoneTransforms,
                             useDualQuaternionSkinning: true);
                         headMeshCache[npc.BaseHeadNifPath] = cached;
                     }
 
                     if (cached != null)
-                        model = NpcRenderHelpers.DeepCloneModel(cached);
+                        model = NpcMeshHelpers.DeepCloneModel(cached);
                 }
 
                 if (model != null)
@@ -118,7 +118,7 @@ internal static class NpcHeadBuilder
 
         // Fallback: try per-NPC FaceGen mesh (already pre-morphed, skip EGM)
         if (model == null && npc.FaceGenNifPath != null)
-            model = NpcRenderHelpers.LoadNifFromBsa(npc.FaceGenNifPath, meshArchives, textureResolver);
+            model = NpcMeshHelpers.LoadNifFromBsa(npc.FaceGenNifPath, meshArchives, textureResolver);
 
         if (model == null || !model.HasGeometry)
             return null;
@@ -202,7 +202,7 @@ internal static class NpcHeadBuilder
         Dictionary<string, Matrix4x4>? boneTransforms,
         float[]? preSkinMorphDeltas)
     {
-        var result = NpcRenderHelpers.LoadNifRawFromBsa(headNifPath, meshArchives);
+        var result = NpcMeshHelpers.LoadNifRawFromBsa(headNifPath, meshArchives);
         if (result == null)
             return null;
 
@@ -227,7 +227,7 @@ internal static class NpcHeadBuilder
         if (settings.NoEquip)
             return null;
 
-        return NpcRenderHelpers.HasHatEquipment(npc.EquippedItems) ? "Hat" : null;
+        return NpcTextureHelpers.HasHatEquipment(npc.EquippedItems) ? "Hat" : null;
     }
 
     private static void AttachRaceFaceParts(
@@ -253,7 +253,7 @@ internal static class NpcHeadBuilder
                 continue;
             }
 
-            var partRaw = NpcRenderHelpers.LoadNifRawFromBsa(partPath, meshArchives);
+            var partRaw = NpcMeshHelpers.LoadNifRawFromBsa(partPath, meshArchives);
             if (partRaw == null)
             {
                 Log.Warn("Race face part NIF failed to load: {0}", partPath);
@@ -270,7 +270,7 @@ internal static class NpcHeadBuilder
             if (usedBaseRaceMesh &&
                 (npc.FaceGenSymmetricCoeffs != null || npc.FaceGenAsymmetricCoeffs != null))
             {
-                NpcRenderHelpers.LoadAndApplyEgm(
+                NpcMeshHelpers.LoadAndApplyEgm(
                     Path.ChangeExtension(partPath, ".egm"),
                     partModel,
                     npc.FaceGenSymmetricCoeffs,
@@ -334,14 +334,14 @@ internal static class NpcHeadBuilder
 
         if (!egtCache.TryGetValue(egtPath, out var egt))
         {
-            egt = NpcRenderHelpers.LoadEgtFromBsa(egtPath, meshArchives);
+            egt = NpcMeshHelpers.LoadEgtFromBsa(egtPath, meshArchives);
             egtCache[egtPath] = egt;
         }
 
         if (egt == null)
             return;
 
-        FaceGenTextureMorpher.DebugLabel = NpcRenderHelpers.BuildNpcRenderName(npc);
+        FaceGenTextureMorpher.DebugLabel = NpcTextureHelpers.BuildNpcRenderName(npc);
 
         var baseTexture = textureResolver.GetTexture(fullTexPath);
         if (baseTexture == null)
@@ -361,14 +361,14 @@ internal static class NpcHeadBuilder
         if (s.ExportEgt)
         {
             var egtDir = Path.Combine(s.OutputDir, "egt_debug");
-            var label = NpcRenderHelpers.BuildNpcRenderName(npc);
+            var label = NpcTextureHelpers.BuildNpcRenderName(npc);
             PngWriter.SaveRgba(baseTexture.Pixels, baseTexture.Width, baseTexture.Height,
                 Path.Combine(egtDir, $"{label}_base_{baseTexture.Width}x{baseTexture.Height}.png"));
             PngWriter.SaveRgba(morphed.Pixels, morphed.Width, morphed.Height,
                 Path.Combine(egtDir, $"{label}_morphed_{morphed.Width}x{morphed.Height}.png"));
         }
 
-        var npcTexKey = NpcRenderHelpers.BuildNpcFaceEgtTextureKey(npc);
+        var npcTexKey = NpcTextureHelpers.BuildNpcFaceEgtTextureKey(npc);
         textureResolver.InjectTexture(npcTexKey, morphed);
         foreach (var submesh in model.Submeshes)
         {
@@ -394,7 +394,7 @@ internal static class NpcHeadBuilder
         var hairBaseName = Path.GetFileNameWithoutExtension(hairNifPath);
         var hairDir = Path.GetDirectoryName(hairNifPath) ?? "";
 
-        var hairRaw = NpcRenderHelpers.LoadNifRawFromBsa(
+        var hairRaw = NpcMeshHelpers.LoadNifRawFromBsa(
             hairNifPath,
             meshArchives);
         if (hairRaw == null)
@@ -420,7 +420,7 @@ internal static class NpcHeadBuilder
         {
             var egmSuffix = hairFilterOverride == "Hat" ? "hat.egm" : "nohat.egm";
             var hairEgmPath = Path.Combine(hairDir, hairBaseName + egmSuffix);
-            NpcRenderHelpers.LoadAndApplyEgm(hairEgmPath, hairModel,
+            NpcMeshHelpers.LoadAndApplyEgm(hairEgmPath, hairModel,
                 npc.FaceGenSymmetricCoeffs, npc.FaceGenAsymmetricCoeffs,
                 meshArchives, egmCache);
         }
@@ -447,7 +447,7 @@ internal static class NpcHeadBuilder
         }
 
         // Merge hair submeshes into head model
-        var hairTint = NpcRenderHelpers.UnpackHairColor(npc.HairColor);
+        var hairTint = NpcTextureHelpers.UnpackHairColor(npc.HairColor);
         foreach (var sub in hairModel.Submeshes)
         {
             sub.TintColor = hairTint;
@@ -491,7 +491,7 @@ internal static class NpcHeadBuilder
             if (eyeNifPath == null)
                 continue;
 
-            var eyeRaw = NpcRenderHelpers.LoadNifRawFromBsa(eyeNifPath, meshArchives);
+            var eyeRaw = NpcMeshHelpers.LoadNifRawFromBsa(eyeNifPath, meshArchives);
             if (eyeRaw == null)
             {
                 Log.Warn("Eye NIF failed to load: {0}", eyeNifPath);
@@ -525,7 +525,7 @@ internal static class NpcHeadBuilder
                 (npc.FaceGenSymmetricCoeffs != null || npc.FaceGenAsymmetricCoeffs != null))
             {
                 var eyeEgmPath = Path.ChangeExtension(eyeNifPath, ".egm");
-                NpcRenderHelpers.LoadAndApplyEgm(eyeEgmPath, eyeModel,
+                NpcMeshHelpers.LoadAndApplyEgm(eyeEgmPath, eyeModel,
                     npc.FaceGenSymmetricCoeffs, npc.FaceGenAsymmetricCoeffs,
                     meshArchives, egmCache);
             }
@@ -560,7 +560,7 @@ internal static class NpcHeadBuilder
                 foreach (var sub in eyeModel.Submeshes)
                 {
                     if (sub.DiffuseTexturePath == null) continue;
-                    var morphedKey = NpcRenderHelpers.ApplyBodyEgtMorph(
+                    var morphedKey = NpcMeshHelpers.ApplyBodyEgtMorph(
                         eyeEgtPath, sub.DiffuseTexturePath, npc.FaceGenTextureCoeffs,
                         npc.NpcFormId, eyeBaseName!, npc.RenderVariantLabel,
                         meshArchives, textureResolver, egtCache);
@@ -590,7 +590,7 @@ internal static class NpcHeadBuilder
     {
         foreach (var partPath in npc.HeadPartNifPaths!)
         {
-            var partRaw = NpcRenderHelpers.LoadNifRawFromBsa(partPath, meshArchives);
+            var partRaw = NpcMeshHelpers.LoadNifRawFromBsa(partPath, meshArchives);
             if (partRaw == null)
             {
                 Log.Warn("Head part NIF failed to load: {0}", partPath);
@@ -609,7 +609,7 @@ internal static class NpcHeadBuilder
                 (npc.FaceGenSymmetricCoeffs != null || npc.FaceGenAsymmetricCoeffs != null))
             {
                 var egmPath = Path.ChangeExtension(partPath, ".egm");
-                NpcRenderHelpers.LoadAndApplyEgm(egmPath, partModel,
+                NpcMeshHelpers.LoadAndApplyEgm(egmPath, partModel,
                     npc.FaceGenSymmetricCoeffs, npc.FaceGenAsymmetricCoeffs,
                     meshArchives, egmCache);
             }
@@ -628,7 +628,7 @@ internal static class NpcHeadBuilder
             }
 
             // Merge into head model. RenderOrder=0 (before hair).
-            var partTint = NpcRenderHelpers.UnpackHairColor(npc.HairColor);
+            var partTint = NpcTextureHelpers.UnpackHairColor(npc.HairColor);
             foreach (var sub in partModel.Submeshes)
             {
                 Log.Info("HeadPart '{0}' sub: tex={1}, alphaTest={2} func={3} thresh={4}, " +
@@ -657,10 +657,10 @@ internal static class NpcHeadBuilder
     {
         foreach (var item in npc.EquippedItems!)
         {
-            if (!NpcRenderHelpers.IsHeadEquipment(item.BipedFlags))
+            if (!NpcTextureHelpers.IsHeadEquipment(item.BipedFlags))
                 continue;
 
-            var equipRaw = NpcRenderHelpers.LoadNifRawFromBsa(item.MeshPath, meshArchives);
+            var equipRaw = NpcMeshHelpers.LoadNifRawFromBsa(item.MeshPath, meshArchives);
             if (equipRaw == null)
             {
                 Log.Warn("Head equipment NIF failed to load: {0}", item.MeshPath);
@@ -687,7 +687,7 @@ internal static class NpcHeadBuilder
                 (npc.FaceGenSymmetricCoeffs != null || npc.FaceGenAsymmetricCoeffs != null))
             {
                 var egmPath = Path.ChangeExtension(item.MeshPath, ".egm");
-                NpcRenderHelpers.LoadAndApplyEgm(
+                NpcMeshHelpers.LoadAndApplyEgm(
                     egmPath,
                     equipModel,
                     npc.FaceGenSymmetricCoeffs,

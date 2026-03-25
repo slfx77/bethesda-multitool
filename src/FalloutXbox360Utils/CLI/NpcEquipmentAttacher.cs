@@ -42,7 +42,7 @@ internal static class NpcEquipmentAttacher
 
         foreach (var item in npc.EquippedItems)
         {
-            if (NpcRenderHelpers.IsHeadEquipment(item.BipedFlags))
+            if (NpcTextureHelpers.IsHeadEquipment(item.BipedFlags))
                 continue;
 
             if ((item.BipedFlags & suppressedEquipmentSlots) != 0)
@@ -53,7 +53,7 @@ internal static class NpcEquipmentAttacher
                 continue;
             }
 
-            var equipRaw = NpcRenderHelpers.LoadNifRawFromBsa(item.MeshPath, meshArchives);
+            var equipRaw = NpcMeshHelpers.LoadNifRawFromBsa(item.MeshPath, meshArchives);
             if (equipRaw == null)
             {
                 Log.Warn("Equipment NIF failed to load: {0}", item.MeshPath);
@@ -112,7 +112,7 @@ internal static class NpcEquipmentAttacher
                     sub.MaterialAlpha, sub.IsDoubleSided, sub.Positions.Length / 3);
 
                 if (effectiveBodyTex != null &&
-                    NpcRenderHelpers.IsEquipmentSkinSubmesh(sub.DiffuseTexturePath))
+                    NpcTextureHelpers.IsEquipmentSkinSubmesh(sub.DiffuseTexturePath))
                 {
                     sub.DiffuseTexturePath =
                         sub.DiffuseTexturePath!.Contains("hand", StringComparison.OrdinalIgnoreCase)
@@ -242,7 +242,7 @@ internal static class NpcEquipmentAttacher
                 return;
         }
 
-        var weaponRaw = NpcRenderHelpers.LoadNifRawFromBsa(
+        var weaponRaw = NpcMeshHelpers.LoadNifRawFromBsa(
             npc.WeaponVisual.MeshPath, meshArchives);
         if (weaponRaw == null)
         {
@@ -471,7 +471,7 @@ internal static class NpcEquipmentAttacher
 
         foreach (var addon in npc.WeaponVisual.AddonMeshes)
         {
-            var addonRaw = NpcRenderHelpers.LoadNifRawFromBsa(addon.MeshPath, meshArchives);
+            var addonRaw = NpcMeshHelpers.LoadNifRawFromBsa(addon.MeshPath, meshArchives);
             if (addonRaw == null)
             {
                 Log.Warn("Weapon addon NIF failed to load: {0}", addon.MeshPath);

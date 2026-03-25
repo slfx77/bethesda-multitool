@@ -170,44 +170,14 @@ internal sealed class MiscRecordHandler(RecordParserContext context) : RecordHan
     /// </summary>
     internal List<GameSettingRecord> ParseGameSettings()
     {
-        var settings = new List<GameSettingRecord>();
-        var gmstRecords = Context.GetRecordsByType("GMST").ToList();
-
-        if (Context.Accessor == null)
-        {
-            // Without accessor, just return basic info
-            foreach (var record in gmstRecords)
+        return ParseRecordList("GMST", 512, ParseGameSettingFromAccessor,
+            record => new GameSettingRecord
             {
-                settings.Add(new GameSettingRecord
-                {
-                    FormId = record.FormId,
-                    EditorId = Context.GetEditorId(record.FormId),
-                    Offset = record.Offset,
-                    IsBigEndian = record.IsBigEndian
-                });
-            }
-
-            return settings;
-        }
-
-        var buffer = ArrayPool<byte>.Shared.Rent(512);
-        try
-        {
-            foreach (var record in gmstRecords)
-            {
-                var setting = ParseGameSettingFromAccessor(record, buffer);
-                if (setting != null)
-                {
-                    settings.Add(setting);
-                }
-            }
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer);
-        }
-
-        return settings;
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
     }
 
     private GameSettingRecord? ParseGameSettingFromAccessor(DetectedMainRecord record, byte[] buffer)

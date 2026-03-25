@@ -1,4 +1,3 @@
-using System.Buffers;
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Utils;
@@ -19,42 +18,15 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
     /// </summary>
     internal List<AmmoRecord> ParseAmmo()
     {
-        var ammo = new List<AmmoRecord>();
-        var ammoRecords = Context.GetRecordsByType("AMMO").ToList();
-
-        if (Context.Accessor == null)
-        {
-            foreach (var record in ammoRecords)
+        var ammo = ParseRecordList("AMMO", 4096, ParseAmmoFromAccessor,
+            record => new AmmoRecord
             {
-                ammo.Add(new AmmoRecord
-                {
-                    FormId = record.FormId,
-                    EditorId = Context.GetEditorId(record.FormId),
-                    FullName = Context.FindFullNameNear(record.Offset),
-                    Offset = record.Offset,
-                    IsBigEndian = record.IsBigEndian
-                });
-            }
-        }
-        else
-        {
-            var buffer = ArrayPool<byte>.Shared.Rent(4096);
-            try
-            {
-                foreach (var record in ammoRecords)
-                {
-                    var item = ParseAmmoFromAccessor(record, buffer);
-                    if (item != null)
-                    {
-                        ammo.Add(item);
-                    }
-                }
-            }
-            finally
-            {
-                ArrayPool<byte>.Shared.Return(buffer);
-            }
-        }
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
 
         Context.MergeRuntimeRecords(ammo, 0x29, a => a.FormId,
             (reader, entry) => reader.ReadRuntimeAmmo(entry), "ammo");
@@ -242,42 +214,15 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
     /// </summary>
     internal List<ConsumableRecord> ParseConsumables()
     {
-        var consumables = new List<ConsumableRecord>();
-        var alchRecords = Context.GetRecordsByType("ALCH").ToList();
-
-        if (Context.Accessor == null)
-        {
-            foreach (var record in alchRecords)
+        var consumables = ParseRecordList("ALCH", 4096, ParseConsumableFromAccessor,
+            record => new ConsumableRecord
             {
-                consumables.Add(new ConsumableRecord
-                {
-                    FormId = record.FormId,
-                    EditorId = Context.GetEditorId(record.FormId),
-                    FullName = Context.FindFullNameNear(record.Offset),
-                    Offset = record.Offset,
-                    IsBigEndian = record.IsBigEndian
-                });
-            }
-        }
-        else
-        {
-            var buffer = ArrayPool<byte>.Shared.Rent(4096);
-            try
-            {
-                foreach (var record in alchRecords)
-                {
-                    var item = ParseConsumableFromAccessor(record, buffer);
-                    if (item != null)
-                    {
-                        consumables.Add(item);
-                    }
-                }
-            }
-            finally
-            {
-                ArrayPool<byte>.Shared.Return(buffer);
-            }
-        }
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
 
         Context.MergeRuntimeRecords(consumables, 0x2F, c => c.FormId,
             (reader, entry) => reader.ReadRuntimeConsumable(entry), "consumables");

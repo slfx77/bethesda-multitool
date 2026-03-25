@@ -15,6 +15,29 @@ namespace FalloutXbox360Utils.CLI.Commands.Analysis;
 /// </summary>
 public static class ShowCommand
 {
+    private static readonly IRecordDisplayRenderer[] Renderers =
+    [
+        // Actor domain
+        new NpcShowAdapter(),
+        new RaceShowAdapter(),
+        new FactionShowAdapter(),
+        new ScriptShowAdapter(),
+        // Quest domain
+        new QuestShowAdapter(),
+        new DialogTopicShowAdapter(),
+        // Item domain
+        new WeaponShowAdapter(),
+        new ArmorShowAdapter(),
+        new RecipeShowAdapter(),
+        new BookShowAdapter(),
+        // Misc domain
+        new SoundShowAdapter(),
+        new ExplosionShowAdapter(),
+        new MessageShowAdapter(),
+        new ChallengeShowAdapter(),
+        new GenericShowAdapter(),
+    ];
+
     public static Command Create()
     {
         var command = new Command("show", "Inspect a specific record from any supported file");
@@ -76,28 +99,10 @@ public static class ShowCommand
             var resolver = result.Resolver;
             var found = false;
 
-            // Actor domain
-            found |= ActorShowRenderer.TryShowNpc(records, resolver, targetFormId, targetEditorId);
-            found |= ActorShowRenderer.TryShowRace(records, resolver, targetFormId, targetEditorId);
-            found |= ActorShowRenderer.TryShowFaction(records, resolver, targetFormId, targetEditorId);
-            found |= ActorShowRenderer.TryShowScript(records, resolver, targetFormId, targetEditorId);
-
-            // Quest domain
-            found |= QuestShowRenderer.TryShowQuest(records, resolver, targetFormId, targetEditorId);
-            found |= QuestShowRenderer.TryShowDialogTopic(records, resolver, targetFormId, targetEditorId);
-
-            // Item domain
-            found |= ItemShowRenderer.TryShowWeapon(records, resolver, targetFormId, targetEditorId);
-            found |= ItemShowRenderer.TryShowArmor(records, resolver, targetFormId, targetEditorId);
-            found |= ItemShowRenderer.TryShowRecipe(records, resolver, targetFormId, targetEditorId);
-            found |= ItemShowRenderer.TryShowBook(records, resolver, targetFormId, targetEditorId);
-
-            // Misc domain
-            found |= MiscShowRenderer.TryShowSound(records, resolver, targetFormId, targetEditorId);
-            found |= MiscShowRenderer.TryShowExplosion(records, resolver, targetFormId, targetEditorId);
-            found |= MiscShowRenderer.TryShowMessage(records, resolver, targetFormId, targetEditorId);
-            found |= MiscShowRenderer.TryShowChallenge(records, resolver, targetFormId, targetEditorId);
-            found |= MiscShowRenderer.TryShowGeneric(records, resolver, targetFormId, targetEditorId);
+            foreach (var renderer in Renderers)
+            {
+                found |= renderer.TryShow(records, resolver, targetFormId, targetEditorId);
+            }
 
             if (!found)
             {

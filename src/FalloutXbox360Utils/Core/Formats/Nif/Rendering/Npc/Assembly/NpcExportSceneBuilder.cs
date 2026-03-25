@@ -8,10 +8,10 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
 
 /// <summary>
 ///     Orchestrates NPC export scene construction. Body assembly lives in
-///     <see cref="NpcExportSceneBuilder"/> (NpcExportBodyAssembler.cs) and head assembly
-///     in NpcExportHeadAssembler.cs, both as partial class extensions.
+///     <see cref="NpcExportBodyAssembler"/> and head assembly in
+///     <see cref="NpcExportHeadAssembler"/>.
 /// </summary>
-internal static partial class NpcExportSceneBuilder
+internal static class NpcExportSceneBuilder
 {
     private static readonly Logger Log = Logger.Instance;
 
@@ -56,7 +56,7 @@ internal static partial class NpcExportSceneBuilder
         var effectiveHandTex = npc.HandTexturePath;
         if (!settings.NoEgt && npc.FaceGenTextureCoeffs != null)
         {
-            ApplyBodyEgtMorphs(
+            NpcExportBodyAssembler.ApplyBodyEgtMorphs(
                 npc,
                 meshArchives,
                 textureResolver,
@@ -75,7 +75,7 @@ internal static partial class NpcExportSceneBuilder
                 submesh =>
                 {
                     if (effectiveBodyTex != null &&
-                        NpcRenderHelpers.ShouldApplyBodyTextureOverride(submesh.DiffuseTexturePath, effectiveBodyTex))
+                        NpcTextureHelpers.ShouldApplyBodyTextureOverride(submesh.DiffuseTexturePath, effectiveBodyTex))
                     {
                         submesh.DiffuseTexturePath = effectiveBodyTex;
                     }
@@ -92,7 +92,7 @@ internal static partial class NpcExportSceneBuilder
                 submesh =>
                 {
                     if (effectiveHandTex != null &&
-                        NpcRenderHelpers.ShouldApplyBodyTextureOverride(submesh.DiffuseTexturePath, effectiveHandTex))
+                        NpcTextureHelpers.ShouldApplyBodyTextureOverride(submesh.DiffuseTexturePath, effectiveHandTex))
                     {
                         submesh.DiffuseTexturePath = effectiveHandTex;
                     }
@@ -109,14 +109,14 @@ internal static partial class NpcExportSceneBuilder
                 submesh =>
                 {
                     if (effectiveHandTex != null &&
-                        NpcRenderHelpers.ShouldApplyBodyTextureOverride(submesh.DiffuseTexturePath, effectiveHandTex))
+                        NpcTextureHelpers.ShouldApplyBodyTextureOverride(submesh.DiffuseTexturePath, effectiveHandTex))
                     {
                         submesh.DiffuseTexturePath = effectiveHandTex;
                     }
                 });
         }
 
-        AddBodyEquipment(
+        NpcExportBodyAssembler.AddBodyEquipment(
             scene,
             npc,
             meshArchives,
@@ -125,12 +125,12 @@ internal static partial class NpcExportSceneBuilder
             effectiveBodyTex,
             effectiveHandTex,
             settings);
-        AddWeapon(scene, npc, meshArchives, textureResolver, skeletonContext, settings);
+        NpcExportBodyAssembler.AddWeapon(scene, npc, meshArchives, textureResolver, skeletonContext, settings);
 
         var bonelessAttachmentTransform = NpcRenderHelpers.BuildBonelessHeadAttachmentTransform(
             skeletonContext.BoneTransforms,
             skeletonContext.PoseDeltas);
-        AddHeadContent(
+        NpcExportHeadAssembler.AddHeadContent(
             scene,
             npc,
             meshArchives,
@@ -165,7 +165,7 @@ internal static partial class NpcExportSceneBuilder
 
         if (npc.BaseHeadNifPath != null)
         {
-            var headRaw = NpcRenderHelpers.LoadNifRawFromBsa(npc.BaseHeadNifPath, meshArchives);
+            var headRaw = NpcMeshHelpers.LoadNifRawFromBsa(npc.BaseHeadNifPath, meshArchives);
             if (headRaw != null)
             {
                 var headNodes = NifExportExtractor.Extract(headRaw.Value.Data, headRaw.Value.Info);
@@ -177,7 +177,7 @@ internal static partial class NpcExportSceneBuilder
             }
         }
 
-        AddHeadContent(
+        NpcExportHeadAssembler.AddHeadContent(
             scene,
             npc,
             meshArchives,
@@ -191,7 +191,7 @@ internal static partial class NpcExportSceneBuilder
 
         if (scene.MeshParts.Count == 0 && npc.FaceGenNifPath != null)
         {
-            var faceGenModel = NpcRenderHelpers.LoadNifFromBsa(
+            var faceGenModel = NpcMeshHelpers.LoadNifFromBsa(
                 npc.FaceGenNifPath,
                 meshArchives,
                 textureResolver);
@@ -214,7 +214,7 @@ internal static partial class NpcExportSceneBuilder
             return null;
         }
 
-        var skeletonRaw = NpcRenderHelpers.LoadNifRawFromBsa(npc.SkeletonNifPath, meshArchives);
+        var skeletonRaw = NpcMeshHelpers.LoadNifRawFromBsa(npc.SkeletonNifPath, meshArchives);
         if (skeletonRaw == null)
         {
             return null;
@@ -222,7 +222,7 @@ internal static partial class NpcExportSceneBuilder
 
         var animOverrides = settings.BindPose
             ? null
-            : LoadAnimationOverrides(npc.SkeletonNifPath, meshArchives, skeletonRaw.Value, settings.AnimOverride);
+            : NpcExportBodyAssembler.LoadAnimationOverrides(npc.SkeletonNifPath, meshArchives, skeletonRaw.Value, settings.AnimOverride);
         var boneTransforms = NifGeometryExtractor.ExtractNamedBoneTransforms(
             skeletonRaw.Value.Data,
             skeletonRaw.Value.Info,
@@ -255,7 +255,7 @@ internal static partial class NpcExportSceneBuilder
         return new SkeletonContext(scene, boneTransforms, poseDeltas, nodeIndicesByBoneName);
     }
 
-    private static Dictionary<string, int> AddNodes(
+    internal static Dictionary<string, int> AddNodes(
         NpcExportScene scene,
         IEnumerable<NifExportExtractor.ExtractedNode> nodes,
         NpcExportNodeKind kind)
@@ -285,7 +285,7 @@ internal static partial class NpcExportSceneBuilder
                 StringComparer.OrdinalIgnoreCase);
     }
 
-    private static void AddSkinnedNif(
+    internal static void AddSkinnedNif(
         NpcExportScene scene,
         string nifPath,
         NpcMeshArchiveSet meshArchives,
@@ -318,7 +318,7 @@ internal static partial class NpcExportSceneBuilder
         }
     }
 
-    private static void AddSkinnedPart(
+    internal static void AddSkinnedPart(
         NpcExportScene scene,
         NifExportExtractor.ExtractedMeshPart part,
         Dictionary<string, int> nodeIndicesByBoneName)
@@ -348,7 +348,7 @@ internal static partial class NpcExportSceneBuilder
         });
     }
 
-    private static void AddExtractedRigidPart(
+    internal static void AddExtractedRigidPart(
         NpcExportScene scene,
         NifExportExtractor.ExtractedMeshPart part,
         Matrix4x4 worldTransform,
@@ -359,7 +359,7 @@ internal static partial class NpcExportSceneBuilder
         AddRigidSubmesh(scene, label, rigidSubmesh);
     }
 
-    private static void AddRigidModel(NpcExportScene scene, string label, NifRenderableModel model)
+    internal static void AddRigidModel(NpcExportScene scene, string label, NifRenderableModel model)
     {
         foreach (var submesh in model.Submeshes)
         {
@@ -367,7 +367,7 @@ internal static partial class NpcExportSceneBuilder
         }
     }
 
-    private static void AddRigidSubmesh(NpcExportScene scene, string label, RenderableSubmesh submesh)
+    internal static void AddRigidSubmesh(NpcExportScene scene, string label, RenderableSubmesh submesh)
     {
         var nodeIndex = scene.AddNode(
             $"{Path.GetFileNameWithoutExtension(label)}_{scene.MeshParts.Count}",
@@ -383,20 +383,20 @@ internal static partial class NpcExportSceneBuilder
         });
     }
 
-    private static NifExportExtractor.ExtractedScene? LoadExtractedNif(
+    internal static NifExportExtractor.ExtractedScene? LoadExtractedNif(
         string nifPath,
         NpcMeshArchiveSet meshArchives,
         string? filterShapeName = null,
         float[]? preSkinMorphDeltas = null)
     {
-        var raw = NpcRenderHelpers.LoadNifRawFromBsa(nifPath, meshArchives);
+        var raw = NpcMeshHelpers.LoadNifRawFromBsa(nifPath, meshArchives);
         return raw == null
             ? null
             : NifExportExtractor.Extract(raw.Value.Data, raw.Value.Info, filterShapeName: filterShapeName,
                 preSkinMorphDeltas: preSkinMorphDeltas);
     }
 
-    private static RenderableSubmesh CloneSubmesh(RenderableSubmesh submesh)
+    internal static RenderableSubmesh CloneSubmesh(RenderableSubmesh submesh)
     {
         return new RenderableSubmesh
         {
@@ -428,7 +428,7 @@ internal static partial class NpcExportSceneBuilder
         };
     }
 
-    private sealed record SkeletonContext(
+    internal sealed record SkeletonContext(
         NpcExportScene Scene,
         Dictionary<string, Matrix4x4> BoneTransforms,
         Dictionary<string, Matrix4x4>? PoseDeltas,

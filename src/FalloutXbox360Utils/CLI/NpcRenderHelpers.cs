@@ -11,10 +11,10 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
 
 /// <summary>
 ///     Geometry transform utilities, head bone correction, and DMP NPC resolution.
-///     BSA loading lives in NpcMeshHelpers.cs, texture/classification utilities in
-///     NpcTextureHelpers.cs — both as partial class extensions.
+///     BSA loading lives in <see cref="NpcMeshHelpers"/>, texture/classification utilities in
+///     <see cref="NpcTextureHelpers"/>.
 /// </summary>
-internal static partial class NpcRenderHelpers
+internal static class NpcRenderHelpers
 {
     private static readonly Logger Log = Logger.Instance;
 
@@ -467,7 +467,7 @@ internal static partial class NpcRenderHelpers
 
         foreach (var filter in filters)
         {
-            var formId = ParseFormId(filter);
+            var formId = NpcTextureHelpers.ParseFormId(filter);
             if (formId.HasValue)
             {
                 if (actorInfosByFormId.TryGetValue(formId.Value, out var actorInfo) &&

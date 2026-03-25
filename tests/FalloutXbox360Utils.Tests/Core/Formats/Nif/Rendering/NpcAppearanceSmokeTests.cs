@@ -56,7 +56,7 @@ public sealed class NpcAppearanceSmokeTests(SampleFileFixture samples)
         Assert.NotNull(boone!.BaseHeadTriPath);
 
         using var meshArchives = NpcMeshArchiveSet.Open(meshesBsa!, null);
-        var tri = NpcRenderHelpers.LoadTriFromBsa(boone.BaseHeadTriPath!, meshArchives);
+        var tri = NpcMeshHelpers.LoadTriFromBsa(boone.BaseHeadTriPath!, meshArchives);
 
         Assert.NotNull(tri);
         Assert.True(tri!.VertexCount > 0);

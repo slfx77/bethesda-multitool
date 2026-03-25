@@ -1,4 +1,3 @@
-using System.Buffers;
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Utils;
@@ -14,39 +13,15 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
     /// </summary>
     internal List<PackageRecord> ParsePackages()
     {
-        var packages = new List<PackageRecord>();
-        var packRecords = Context.GetRecordsByType("PACK").ToList();
-
-        if (Context.Accessor == null)
-        {
-            // Without accessor, only basic scan result data is available
-            foreach (var record in packRecords)
+        var packages = ParseRecordList("PACK", 16384,
+            (record, buffer) => ParsePackageFromAccessor(record, buffer),
+            record => new PackageRecord
             {
-                packages.Add(new PackageRecord
-                {
-                    FormId = record.FormId,
-                    EditorId = Context.GetEditorId(record.FormId),
-                    Offset = record.Offset,
-                    IsBigEndian = record.IsBigEndian
-                });
-            }
-        }
-        else
-        {
-            var buffer = ArrayPool<byte>.Shared.Rent(16384);
-            try
-            {
-                foreach (var record in packRecords)
-                {
-                    var package = ParsePackageFromAccessor(record, buffer);
-                    packages.Add(package);
-                }
-            }
-            finally
-            {
-                ArrayPool<byte>.Shared.Return(buffer);
-            }
-        }
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
 
         Context.MergeRuntimeRecords(packages, 0x49, p => p.FormId,
             (reader, entry) => reader.ReadRuntimePackage(entry), "packages");

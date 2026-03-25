@@ -6,8 +6,10 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
 /// <summary>
 ///     BSA mesh/EGM/EGT/TRI loading and model cloning utilities.
 /// </summary>
-internal static partial class NpcRenderHelpers
+internal static class NpcMeshHelpers
 {
+    private static readonly Logger Log = Logger.Instance;
+
     /// <summary>
     ///     Loads a NIF from BSA, converts BE->LE if needed, and extracts renderable geometry.
     /// </summary>
@@ -211,7 +213,7 @@ internal static partial class NpcRenderHelpers
             return null;
         }
 
-        var morphedKey = BuildNpcBodyEgtTextureKey(npcFormId, partLabel, renderVariantLabel);
+        var morphedKey = NpcTextureHelpers.BuildNpcBodyEgtTextureKey(npcFormId, partLabel, renderVariantLabel);
         textureResolver.InjectTexture(morphedKey, morphed);
         Log.Debug("Body EGT morph applied: NPC 0x{0:X8} {1} -> {2}", npcFormId, partLabel, egtPath);
         return morphedKey;

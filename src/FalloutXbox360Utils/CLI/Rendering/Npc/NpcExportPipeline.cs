@@ -77,7 +77,7 @@ internal static class NpcExportPipeline
                     NpcExportFileNaming.BuildFileName(npc));
                 NpcGlbWriter.Write(scene, textureResolver, outputPath);
                 GltfValidatorRunner.ValidateOrThrow(outputPath);
-                textureResolver.EvictTexture(NpcRenderHelpers.BuildNpcFaceEgtTextureKey(npc));
+                textureResolver.EvictTexture(NpcTextureHelpers.BuildNpcFaceEgtTextureKey(npc));
                 exported++;
 
                 if (settings.NpcFilters != null || appearances.Count <= 20)
@@ -100,7 +100,7 @@ internal static class NpcExportPipeline
             }
             finally
             {
-                textureResolver.EvictTexture(NpcRenderHelpers.BuildNpcFaceEgtTextureKey(npc));
+                textureResolver.EvictTexture(NpcTextureHelpers.BuildNpcFaceEgtTextureKey(npc));
             }
         }
 
@@ -141,7 +141,7 @@ internal static class NpcExportPipeline
             return false;
         }
 
-        texturesBsaPaths = NpcRenderHelpers.ResolveTexturesBsaPaths(
+        texturesBsaPaths = NpcTextureHelpers.ResolveTexturesBsaPaths(
             settings.MeshesBsaPath,
             settings.ExplicitTexturesBsaPaths);
         if (texturesBsaPaths.Length == 0)
@@ -182,7 +182,7 @@ internal static class NpcExportPipeline
 
             foreach (var filter in settings.NpcFilters)
             {
-                var formId = NpcRenderHelpers.ParseFormId(filter);
+                var formId = NpcTextureHelpers.ParseFormId(filter);
                 if (formId.HasValue)
                 {
                     formIdSet.Add(formId.Value);

@@ -29,7 +29,7 @@ internal static class NpcSkeletonLoader
         boneCache = null;
         poseDeltaCache = null;
 
-        var skelRaw = NpcRenderHelpers.LoadNifRawFromBsa(skeletonNifPath, meshArchives);
+        var skelRaw = NpcMeshHelpers.LoadNifRawFromBsa(skeletonNifPath, meshArchives);
         if (skelRaw == null)
         {
             Log.Warn("Failed to load skeleton: {0}", skeletonNifPath);
@@ -77,7 +77,7 @@ internal static class NpcSkeletonLoader
         if (animOverride != null)
         {
             var customPath = skelDir + animOverride;
-            var customRaw = NpcRenderHelpers.LoadNifRawFromBsa(customPath, meshArchives, true);
+            var customRaw = NpcMeshHelpers.LoadNifRawFromBsa(customPath, meshArchives, true);
             if (customRaw != null)
             {
                 Log.Debug("Using custom animation: {0}", customPath);
@@ -88,14 +88,14 @@ internal static class NpcSkeletonLoader
         }
 
         var idleKfPath = skelDir + "locomotion\\mtidle.kf";
-        var idleRaw = NpcRenderHelpers.LoadNifRawFromBsa(idleKfPath, meshArchives, true);
+        var idleRaw = NpcMeshHelpers.LoadNifRawFromBsa(idleKfPath, meshArchives, true);
 
         // Female skeletons share male locomotion animations
         if (idleRaw == null && skelDir.Contains("_female", StringComparison.OrdinalIgnoreCase))
         {
             var maleKfPath = skelDir.Replace("_female", "_male", StringComparison.OrdinalIgnoreCase)
                              + "locomotion\\mtidle.kf";
-            idleRaw = NpcRenderHelpers.LoadNifRawFromBsa(maleKfPath, meshArchives, true);
+            idleRaw = NpcMeshHelpers.LoadNifRawFromBsa(maleKfPath, meshArchives, true);
         }
 
         Dictionary<string, NifAnimationParser.AnimPoseOverride>? overrides = null;
@@ -126,7 +126,7 @@ internal static class NpcSkeletonLoader
         Dictionary<string, Matrix4x4> fallbackIdleBones,
         WeaponVisual? weaponVisual)
     {
-        var skelRaw = NpcRenderHelpers.LoadNifRawFromBsa(skeletonNifPath, meshArchives);
+        var skelRaw = NpcMeshHelpers.LoadNifRawFromBsa(skeletonNifPath, meshArchives);
         if (skelRaw == null)
         {
             return fallbackIdleBones;
@@ -207,7 +207,7 @@ internal static class NpcSkeletonLoader
         bool sampleLastKeyframe = false)
     {
         var kfPath = ResolveAnimationAssetPath(skeletonNifPath, kfRelPath);
-        var raw = NpcRenderHelpers.LoadNifRawFromBsa(kfPath, meshArchives, true);
+        var raw = NpcMeshHelpers.LoadNifRawFromBsa(kfPath, meshArchives, true);
 
         if (raw == null &&
             kfPath.Contains(@"characters\_female\", StringComparison.OrdinalIgnoreCase))
@@ -216,7 +216,7 @@ internal static class NpcSkeletonLoader
                 @"characters\_female\",
                 @"characters\_male\",
                 StringComparison.OrdinalIgnoreCase);
-            raw = NpcRenderHelpers.LoadNifRawFromBsa(malePath, meshArchives, true);
+            raw = NpcMeshHelpers.LoadNifRawFromBsa(malePath, meshArchives, true);
         }
 
         return raw != null
@@ -253,12 +253,12 @@ internal static class NpcSkeletonLoader
 
         var skelDir = skeletonNifPath.Replace("skeleton.nif", "", StringComparison.OrdinalIgnoreCase);
         var kfPath = skelDir + kfRelPath;
-        var raw = NpcRenderHelpers.LoadNifRawFromBsa(kfPath, meshArchives, true);
+        var raw = NpcMeshHelpers.LoadNifRawFromBsa(kfPath, meshArchives, true);
 
         if (raw == null && skelDir.Contains("_female", StringComparison.OrdinalIgnoreCase))
         {
             var malePath = skelDir.Replace("_female", "_male", StringComparison.OrdinalIgnoreCase) + kfRelPath;
-            raw = NpcRenderHelpers.LoadNifRawFromBsa(malePath, meshArchives, true);
+            raw = NpcMeshHelpers.LoadNifRawFromBsa(malePath, meshArchives, true);
         }
 
         return raw != null
@@ -363,7 +363,7 @@ internal static class NpcSkeletonLoader
         NpcMeshArchiveSet meshArchives,
         bool bindPose)
     {
-        var skelRaw = NpcRenderHelpers.LoadNifRawFromBsa(skeletonNifPath, meshArchives);
+        var skelRaw = NpcMeshHelpers.LoadNifRawFromBsa(skeletonNifPath, meshArchives);
         if (skelRaw == null)
             return null;
 

@@ -38,11 +38,13 @@ dotnet_diagnostic.S3267.severity = none  # Loop should be simplified using LINQ
 dotnet_diagnostic.S1155.severity = none  # Use .Any() instead of .Count()
 dotnet_diagnostic.S6608.severity = none  # Use indexing instead of First()/Last()
 
-# Code quality (enable as warnings for cleanup tracking)
-dotnet_diagnostic.S3776.severity = warning   # Cognitive complexity of methods should not be too high
-dotnet_diagnostic.CA1502.severity = warning  # Avoid excessive complexity (cyclomatic)
-dotnet_diagnostic.S1200.severity = warning   # Classes should not be coupled to too many other classes
-dotnet_diagnostic.IDE0060.severity = warning # Remove unused parameter
+# Code quality — these are inherent to binary format parsing (large switch statements,
+# many record types, orchestrator classes referencing dozens of handlers).
+# Kept as suggestions so they remain visible in IDE but don't pollute build output.
+dotnet_diagnostic.S3776.severity = suggestion   # Cognitive complexity — irreducible in binary parsers
+dotnet_diagnostic.CA1502.severity = suggestion  # Cyclomatic complexity — large switch statements
+dotnet_diagnostic.S1200.severity = suggestion   # Class coupling — orchestrators legitimately reference many types
+dotnet_diagnostic.IDE0060.severity = suggestion # Unused parameters — project uses _ discard convention
 
 # Unused code detection (enable as warnings)
 dotnet_diagnostic.ide0051.severity = warning # Unused private member

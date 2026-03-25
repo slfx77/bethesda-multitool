@@ -205,7 +205,7 @@ internal sealed class RuntimeBufferPointerAnalyzer
                 continue;
             }
 
-            var regionOffset = (long)alignDelta;
+            var regionOffset = alignDelta;
             while (regionOffset + 4 <= region.Size)
             {
                 var remaining = region.Size - regionOffset;

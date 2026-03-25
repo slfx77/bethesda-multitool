@@ -18,12 +18,16 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
     /// </summary>
     internal List<KeyRecord> ParseKeys()
     {
-        var keys = new List<KeyRecord>();
-        var keyRecords = Context.GetRecordsByType("KEYM").ToList();
-
-        foreach (var record in keyRecords)
-        {
-            keys.Add(new KeyRecord
+        var keys = ParseRecordList<KeyRecord>("KEYM", 256,
+            (record, _) => new KeyRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            },
+            record => new KeyRecord
             {
                 FormId = record.FormId,
                 EditorId = Context.GetEditorId(record.FormId),
@@ -31,7 +35,6 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
                 Offset = record.Offset,
                 IsBigEndian = record.IsBigEndian
             });
-        }
 
         Context.MergeRuntimeRecords(keys, 0x2E, k => k.FormId,
             (reader, entry) => reader.ReadRuntimeKey(entry), "keys");
@@ -44,42 +47,15 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
     /// </summary>
     internal List<ArmorRecord> ParseArmor()
     {
-        var armor = new List<ArmorRecord>();
-        var armorRecords = Context.GetRecordsByType("ARMO").ToList();
-
-        if (Context.Accessor == null)
-        {
-            foreach (var record in armorRecords)
+        var armor = ParseRecordList("ARMO", 4096, ParseArmorFromAccessor,
+            record => new ArmorRecord
             {
-                armor.Add(new ArmorRecord
-                {
-                    FormId = record.FormId,
-                    EditorId = Context.GetEditorId(record.FormId),
-                    FullName = Context.FindFullNameNear(record.Offset),
-                    Offset = record.Offset,
-                    IsBigEndian = record.IsBigEndian
-                });
-            }
-        }
-        else
-        {
-            var buffer = ArrayPool<byte>.Shared.Rent(4096);
-            try
-            {
-                foreach (var record in armorRecords)
-                {
-                    var item = ParseArmorFromAccessor(record, buffer);
-                    if (item != null)
-                    {
-                        armor.Add(item);
-                    }
-                }
-            }
-            finally
-            {
-                ArrayPool<byte>.Shared.Return(buffer);
-            }
-        }
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
 
         Context.MergeRuntimeRecords(armor, 0x18, a => a.FormId,
             (reader, entry) => reader.ReadRuntimeArmor(entry), "armor");
@@ -209,42 +185,15 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
     /// </summary>
     internal List<MiscItemRecord> ParseMiscItems()
     {
-        var miscItems = new List<MiscItemRecord>();
-        var miscRecords = Context.GetRecordsByType("MISC").ToList();
-
-        if (Context.Accessor == null)
-        {
-            foreach (var record in miscRecords)
+        var miscItems = ParseRecordList("MISC", 4096, ParseMiscItemFromAccessor,
+            record => new MiscItemRecord
             {
-                miscItems.Add(new MiscItemRecord
-                {
-                    FormId = record.FormId,
-                    EditorId = Context.GetEditorId(record.FormId),
-                    FullName = Context.FindFullNameNear(record.Offset),
-                    Offset = record.Offset,
-                    IsBigEndian = record.IsBigEndian
-                });
-            }
-        }
-        else
-        {
-            var buffer = ArrayPool<byte>.Shared.Rent(4096);
-            try
-            {
-                foreach (var record in miscRecords)
-                {
-                    var item = ParseMiscItemFromAccessor(record, buffer);
-                    if (item != null)
-                    {
-                        miscItems.Add(item);
-                    }
-                }
-            }
-            finally
-            {
-                ArrayPool<byte>.Shared.Return(buffer);
-            }
-        }
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
 
         Context.MergeRuntimeRecords(miscItems, 0x1F, m => m.FormId,
             (reader, entry) => reader.ReadRuntimeMiscItem(entry), "misc items");

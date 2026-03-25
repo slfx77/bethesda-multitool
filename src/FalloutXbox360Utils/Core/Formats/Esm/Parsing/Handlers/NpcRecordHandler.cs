@@ -1,4 +1,3 @@
-using System.Buffers;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using FalloutXbox360Utils.Core.Utils;
@@ -15,39 +14,7 @@ internal sealed class NpcRecordHandler(RecordParserContext context) : RecordHand
     /// </summary>
     internal List<NpcRecord> ParseNpcs()
     {
-        var npcs = new List<NpcRecord>();
-        var npcRecords = Context.GetRecordsByType("NPC_").ToList();
-
-        if (Context.Accessor == null)
-        {
-            foreach (var record in npcRecords)
-            {
-                var npc = ParseNpcFromScanResult(record);
-                if (npc != null)
-                {
-                    npcs.Add(npc);
-                }
-            }
-        }
-        else
-        {
-            var buffer = ArrayPool<byte>.Shared.Rent(16384);
-            try
-            {
-                foreach (var record in npcRecords)
-                {
-                    var npc = ParseNpcFromAccessor(record, buffer);
-                    if (npc != null)
-                    {
-                        npcs.Add(npc);
-                    }
-                }
-            }
-            finally
-            {
-                ArrayPool<byte>.Shared.Return(buffer);
-            }
-        }
+        var npcs = ParseRecordList("NPC_", 16384, ParseNpcFromAccessor, ParseNpcFromScanResult);
 
         Context.MergeRuntimeRecords(npcs, 0x2A, n => n.FormId,
             (reader, entry) => reader.ReadRuntimeNpc(entry), "NPCs");

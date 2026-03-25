@@ -7,7 +7,7 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
 /// <summary>
 ///     Texture key building, texture resolution, equipment classification, and color utilities.
 /// </summary>
-internal static partial class NpcRenderHelpers
+internal static class NpcTextureHelpers
 {
     internal const uint HeadEquipmentFlags = 0x01 | 0x02 | 0x200 | 0x400 | 0x800 | 0x4000;
     internal const uint HatEquipmentFlags = 0x01 | 0x400 | 0x4000;

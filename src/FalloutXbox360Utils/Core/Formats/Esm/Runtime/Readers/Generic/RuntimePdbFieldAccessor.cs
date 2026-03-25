@@ -52,7 +52,7 @@ internal sealed class RuntimePdbFieldAccessor(RuntimeMemoryContext context)
         return field?.Offset;
     }
 
-    internal ObjectBounds? ReadBounds(byte[] buffer, PdbTypeLayout layout)
+    internal static ObjectBounds? ReadBounds(byte[] buffer, PdbTypeLayout layout)
     {
         var boundsOffset = FindFieldOffset(layout, "BoundData", "TESBoundObject");
         if (!boundsOffset.HasValue || boundsOffset.Value + 12 > buffer.Length)

@@ -68,7 +68,6 @@ internal sealed class DataStreamInfo
     ///     actual unit-length normals are at offset 20. The data at offset 8 has
     ///     avg length ~0.82-0.90 and its purpose is not yet fully understood.
     /// </summary>
-    /// <param name="half4Index">Index of this stream among all type=16 half4 streams (sorted by offset).</param>
     public StreamSemantic GetSemantic(int _half4Index = -1)
     {
         return (Type, UnitSize) switch

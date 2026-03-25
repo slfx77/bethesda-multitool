@@ -151,7 +151,7 @@ internal static class NpcRenderPipeline
             return false;
         }
 
-        texturesBsaPaths = NpcRenderHelpers.ResolveTexturesBsaPaths(
+        texturesBsaPaths = NpcTextureHelpers.ResolveTexturesBsaPaths(
             settings.MeshesBsaPath,
             settings.ExplicitTexturesBsaPaths);
         if (texturesBsaPaths.Length == 0)
@@ -317,7 +317,7 @@ internal static class NpcRenderPipeline
 
             foreach (var filter in settings.NpcFilters)
             {
-                var formId = NpcRenderHelpers.ParseFormId(filter);
+                var formId = NpcTextureHelpers.ParseFormId(filter);
                 if (formId.HasValue)
                 {
                     formIdSet.Add(formId.Value);
@@ -447,16 +447,16 @@ internal static class NpcRenderPipeline
             finally
             {
                 EvictNpcTextures(textureResolver, npc);
-                gpuRenderer.EvictTexture(NpcRenderHelpers.BuildNpcFaceEgtTextureKey(npc));
-                gpuRenderer.EvictTexture(NpcRenderHelpers.BuildNpcBodyEgtTextureKey(
+                gpuRenderer.EvictTexture(NpcTextureHelpers.BuildNpcFaceEgtTextureKey(npc));
+                gpuRenderer.EvictTexture(NpcTextureHelpers.BuildNpcBodyEgtTextureKey(
                     npc.NpcFormId,
                     "upperbody",
                     npc.RenderVariantLabel));
-                gpuRenderer.EvictTexture(NpcRenderHelpers.BuildNpcBodyEgtTextureKey(
+                gpuRenderer.EvictTexture(NpcTextureHelpers.BuildNpcBodyEgtTextureKey(
                     npc.NpcFormId,
                     "lefthand",
                     npc.RenderVariantLabel));
-                gpuRenderer.EvictTexture(NpcRenderHelpers.BuildNpcBodyEgtTextureKey(
+                gpuRenderer.EvictTexture(NpcTextureHelpers.BuildNpcBodyEgtTextureKey(
                     npc.NpcFormId,
                     "righthand",
                     npc.RenderVariantLabel));
@@ -500,7 +500,7 @@ internal static class NpcRenderPipeline
         NifRenderableModel model,
         bool cloneForRender)
     {
-        var renderModel = cloneForRender ? NpcRenderHelpers.DeepCloneModel(model) : model;
+        var renderModel = cloneForRender ? NpcMeshHelpers.DeepCloneModel(model) : model;
         return renderModel;
     }
 
@@ -596,7 +596,7 @@ internal static class NpcRenderPipeline
             return;
         }
 
-        var name = NpcRenderHelpers.BuildNpcRenderName(npc);
+        var name = NpcTextureHelpers.BuildNpcRenderName(npc);
         var fileName = $"{name}{viewSuffix}.png";
         var outputPath = Path.Combine(settings.OutputDir, fileName);
         var expectedLength = result.Width * result.Height * 4;
@@ -657,16 +657,16 @@ internal static class NpcRenderPipeline
         NifTextureResolver textureResolver,
         NpcAppearance npc)
     {
-        textureResolver.EvictTexture(NpcRenderHelpers.BuildNpcFaceEgtTextureKey(npc));
-        textureResolver.EvictTexture(NpcRenderHelpers.BuildNpcBodyEgtTextureKey(
+        textureResolver.EvictTexture(NpcTextureHelpers.BuildNpcFaceEgtTextureKey(npc));
+        textureResolver.EvictTexture(NpcTextureHelpers.BuildNpcBodyEgtTextureKey(
             npc.NpcFormId,
             "upperbody",
             npc.RenderVariantLabel));
-        textureResolver.EvictTexture(NpcRenderHelpers.BuildNpcBodyEgtTextureKey(
+        textureResolver.EvictTexture(NpcTextureHelpers.BuildNpcBodyEgtTextureKey(
             npc.NpcFormId,
             "lefthand",
             npc.RenderVariantLabel));
-        textureResolver.EvictTexture(NpcRenderHelpers.BuildNpcBodyEgtTextureKey(
+        textureResolver.EvictTexture(NpcTextureHelpers.BuildNpcBodyEgtTextureKey(
             npc.NpcFormId,
             "righthand",
             npc.RenderVariantLabel));

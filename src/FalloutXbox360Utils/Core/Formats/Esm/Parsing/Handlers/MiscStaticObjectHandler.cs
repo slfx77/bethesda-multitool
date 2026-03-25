@@ -1,4 +1,3 @@
-using System.Buffers;
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Utils;
@@ -13,86 +12,15 @@ internal sealed class MiscStaticObjectHandler(RecordParserContext context) : Rec
     /// </summary>
     internal List<StaticRecord> ParseStatics()
     {
-        var statics = new List<StaticRecord>();
-
-        if (Context.Accessor == null)
-        {
-            foreach (var record in Context.GetRecordsByType("STAT"))
+        var statics = ParseRecordList("STAT", 2048,
+            ParseStaticFromAccessor,
+            record => new StaticRecord
             {
-                statics.Add(new StaticRecord
-                {
-                    FormId = record.FormId,
-                    EditorId = Context.GetEditorId(record.FormId),
-                    Offset = record.Offset,
-                    IsBigEndian = record.IsBigEndian
-                });
-            }
-
-            return statics;
-        }
-
-        var buffer = ArrayPool<byte>.Shared.Rent(2048);
-        try
-        {
-            foreach (var record in Context.GetRecordsByType("STAT"))
-            {
-                var recordData = Context.ReadRecordData(record, buffer);
-                if (recordData == null)
-                {
-                    statics.Add(new StaticRecord
-                    {
-                        FormId = record.FormId,
-                        EditorId = Context.GetEditorId(record.FormId),
-                        Offset = record.Offset,
-                        IsBigEndian = record.IsBigEndian
-                    });
-                    continue;
-                }
-
-                var (data, dataSize) = recordData.Value;
-
-                string? editorId = null;
-                string? modelPath = null;
-                ObjectBounds? bounds = null;
-
-                foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
-                {
-                    var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
-
-                    switch (sub.Signature)
-                    {
-                        case "EDID":
-                            editorId = EsmStringUtils.ReadNullTermString(subData);
-                            if (!string.IsNullOrEmpty(editorId))
-                            {
-                                Context.FormIdToEditorId[record.FormId] = editorId;
-                            }
-
-                            break;
-                        case "MODL":
-                            modelPath = EsmStringUtils.ReadNullTermString(subData);
-                            break;
-                        case "OBND" when sub.DataLength == 12:
-                            bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
-                            break;
-                    }
-                }
-
-                statics.Add(new StaticRecord
-                {
-                    FormId = record.FormId,
-                    EditorId = editorId ?? Context.GetEditorId(record.FormId),
-                    ModelPath = modelPath,
-                    Bounds = bounds,
-                    Offset = record.Offset,
-                    IsBigEndian = record.IsBigEndian
-                });
-            }
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer);
-        }
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
 
         Context.MergeRuntimeOverlayRecords(
             statics,
@@ -105,110 +33,75 @@ internal sealed class MiscStaticObjectHandler(RecordParserContext context) : Rec
         return statics;
     }
 
+    private StaticRecord? ParseStaticFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return new StaticRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            };
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        string? modelPath = null;
+        ObjectBounds? bounds = null;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "MODL":
+                    modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "OBND" when sub.DataLength == 12:
+                    bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
+                    break;
+            }
+        }
+
+        return new StaticRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            ModelPath = modelPath,
+            Bounds = bounds,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
     /// <summary>
     ///     Parse all Furniture (FURN) records.
     /// </summary>
     internal List<FurnitureRecord> ParseFurniture()
     {
-        var furniture = new List<FurnitureRecord>();
-
-        if (Context.Accessor == null)
-        {
-            foreach (var record in Context.GetRecordsByType("FURN"))
+        var furniture = ParseRecordList("FURN", 2048,
+            ParseFurnitureFromAccessor,
+            record => new FurnitureRecord
             {
-                furniture.Add(new FurnitureRecord
-                {
-                    FormId = record.FormId,
-                    EditorId = Context.GetEditorId(record.FormId),
-                    FullName = Context.FindFullNameNear(record.Offset),
-                    Offset = record.Offset,
-                    IsBigEndian = record.IsBigEndian
-                });
-            }
-
-            return furniture;
-        }
-
-        var buffer = ArrayPool<byte>.Shared.Rent(2048);
-        try
-        {
-            foreach (var record in Context.GetRecordsByType("FURN"))
-            {
-                var recordData = Context.ReadRecordData(record, buffer);
-                if (recordData == null)
-                {
-                    furniture.Add(new FurnitureRecord
-                    {
-                        FormId = record.FormId,
-                        EditorId = Context.GetEditorId(record.FormId),
-                        FullName = Context.FindFullNameNear(record.Offset),
-                        Offset = record.Offset,
-                        IsBigEndian = record.IsBigEndian
-                    });
-                    continue;
-                }
-
-                var (data, dataSize) = recordData.Value;
-
-                string? editorId = null;
-                string? fullName = null;
-                string? modelPath = null;
-                ObjectBounds? bounds = null;
-                uint? script = null;
-                uint markerFlags = 0;
-
-                foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
-                {
-                    var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
-
-                    switch (sub.Signature)
-                    {
-                        case "EDID":
-                            editorId = EsmStringUtils.ReadNullTermString(subData);
-                            if (!string.IsNullOrEmpty(editorId))
-                            {
-                                Context.FormIdToEditorId[record.FormId] = editorId;
-                            }
-
-                            break;
-                        case "FULL":
-                            fullName = EsmStringUtils.ReadNullTermString(subData);
-                            break;
-                        case "MODL":
-                            modelPath = EsmStringUtils.ReadNullTermString(subData);
-                            break;
-                        case "OBND" when sub.DataLength == 12:
-                            bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
-                            break;
-                        case "SCRI" when sub.DataLength == 4:
-                            script = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
-                            break;
-                        case "MNAM" when sub.DataLength == 4:
-                            markerFlags = record.IsBigEndian
-                                ? BinaryPrimitives.ReadUInt32BigEndian(subData)
-                                : BinaryPrimitives.ReadUInt32LittleEndian(subData);
-                            break;
-                    }
-                }
-
-                furniture.Add(new FurnitureRecord
-                {
-                    FormId = record.FormId,
-                    EditorId = editorId ?? Context.GetEditorId(record.FormId),
-                    FullName = fullName,
-                    ModelPath = modelPath,
-                    Bounds = bounds,
-                    Script = script != 0 ? script : null,
-                    MarkerFlags = markerFlags,
-                    Offset = record.Offset,
-                    IsBigEndian = record.IsBigEndian
-                });
-            }
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer);
-        }
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
 
         Context.MergeRuntimeOverlayRecords(
             furniture,
@@ -219,6 +112,78 @@ internal sealed class MiscStaticObjectHandler(RecordParserContext context) : Rec
             "furniture");
 
         return furniture;
+    }
+
+    private FurnitureRecord? ParseFurnitureFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return new FurnitureRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            };
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        string? fullName = null;
+        string? modelPath = null;
+        ObjectBounds? bounds = null;
+        uint? script = null;
+        uint markerFlags = 0;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "FULL":
+                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODL":
+                    modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "OBND" when sub.DataLength == 12:
+                    bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
+                    break;
+                case "SCRI" when sub.DataLength == 4:
+                    script = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "MNAM" when sub.DataLength == 4:
+                    markerFlags = record.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
+                    break;
+            }
+        }
+
+        return new FurnitureRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            FullName = fullName,
+            ModelPath = modelPath,
+            Bounds = bounds,
+            Script = script != 0 ? script : null,
+            MarkerFlags = markerFlags,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
     }
 
     private static StaticRecord MergeStatic(StaticRecord esm, StaticRecord runtime)

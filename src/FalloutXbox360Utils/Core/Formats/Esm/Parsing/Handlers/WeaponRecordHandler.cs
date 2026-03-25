@@ -1,4 +1,3 @@
-using System.Buffers;
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
@@ -19,42 +18,15 @@ internal sealed class WeaponRecordHandler(RecordParserContext context) : RecordH
     /// </summary>
     internal List<WeaponRecord> ParseWeapons()
     {
-        var weapons = new List<WeaponRecord>();
-        var weaponRecords = Context.GetRecordsByType("WEAP").ToList();
-
-        if (Context.Accessor == null)
-        {
-            foreach (var record in weaponRecords)
+        var weapons = ParseRecordList("WEAP", 4096, ParseWeaponFromAccessor,
+            record => new WeaponRecord
             {
-                weapons.Add(new WeaponRecord
-                {
-                    FormId = record.FormId,
-                    EditorId = Context.GetEditorId(record.FormId),
-                    FullName = Context.FindFullNameNear(record.Offset),
-                    Offset = record.Offset,
-                    IsBigEndian = record.IsBigEndian
-                });
-            }
-        }
-        else
-        {
-            var buffer = ArrayPool<byte>.Shared.Rent(4096);
-            try
-            {
-                foreach (var record in weaponRecords)
-                {
-                    var weapon = ParseWeaponFromAccessor(record, buffer);
-                    if (weapon != null)
-                    {
-                        weapons.Add(weapon);
-                    }
-                }
-            }
-            finally
-            {
-                ArrayPool<byte>.Shared.Return(buffer);
-            }
-        }
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
 
         Context.MergeRuntimeRecords(weapons, 0x28, w => w.FormId,
             (reader, entry) => reader.ReadRuntimeWeapon(entry), "weapons");

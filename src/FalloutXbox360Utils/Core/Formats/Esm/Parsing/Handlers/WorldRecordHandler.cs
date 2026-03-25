@@ -1,4 +1,3 @@
-using System.Buffers;
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
@@ -277,39 +276,8 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
     /// </summary>
     internal List<WorldspaceRecord> ParseWorldspaces()
     {
-        var worldspaces = new List<WorldspaceRecord>();
-        var wrldRecords = Context.GetRecordsByType("WRLD").ToList();
-
-        if (Context.Accessor == null)
-        {
-            foreach (var record in wrldRecords)
-            {
-                var worldspace = ParseWorldspaceFromScanResult(record);
-                if (worldspace != null)
-                {
-                    worldspaces.Add(worldspace);
-                }
-            }
-        }
-        else
-        {
-            var buffer = ArrayPool<byte>.Shared.Rent(4096);
-            try
-            {
-                foreach (var record in wrldRecords)
-                {
-                    var worldspace = ParseWorldspaceFromAccessor(record, buffer);
-                    if (worldspace != null)
-                    {
-                        worldspaces.Add(worldspace);
-                    }
-                }
-            }
-            finally
-            {
-                ArrayPool<byte>.Shared.Return(buffer);
-            }
-        }
+        var worldspaces = ParseRecordList("WRLD", 4096,
+            ParseWorldspaceFromAccessor, ParseWorldspaceFromScanResult);
 
         Context.MergeRuntimeOverlayRecords(
             worldspaces,
