@@ -1,4 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.RuntimeBuffer;
 using FalloutXbox360Utils.Core.Strings;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
@@ -12,7 +13,8 @@ public record ReportDataSources(
     Dictionary<uint, string>? FormIdMap = null,
     List<DetectedAssetString>? AssetStrings = null,
     List<RuntimeEditorIdEntry>? RuntimeEditorIds = null,
-    StringPoolSummary? StringPool = null)
+    StringPoolSummary? StringPool = null,
+    RuntimeStringOwnershipAnalysis? StringOwnership = null)
 {
     private FormIdResolver? _resolver;
 

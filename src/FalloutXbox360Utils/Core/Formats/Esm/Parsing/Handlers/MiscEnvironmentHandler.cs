@@ -5,9 +5,8 @@ using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
-internal sealed class MiscEnvironmentHandler(RecordParserContext context)
+internal sealed class MiscEnvironmentHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
-    private readonly RecordParserContext _context = context;
 
     #region Water
 
@@ -18,15 +17,15 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context)
     {
         var water = new List<WaterRecord>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
-            foreach (var record in _context.GetRecordsByType("WATR"))
+            foreach (var record in Context.GetRecordsByType("WATR"))
             {
                 water.Add(new WaterRecord
                 {
                     FormId = record.FormId,
-                    EditorId = _context.GetEditorId(record.FormId),
-                    FullName = _context.FormIdToFullName.GetValueOrDefault(record.FormId),
+                    EditorId = Context.GetEditorId(record.FormId),
+                    FullName = Context.FormIdToFullName.GetValueOrDefault(record.FormId),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
@@ -38,16 +37,16 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context)
         var buffer = ArrayPool<byte>.Shared.Rent(4096);
         try
         {
-            foreach (var record in _context.GetRecordsByType("WATR"))
+            foreach (var record in Context.GetRecordsByType("WATR"))
             {
-                var recordData = _context.ReadRecordData(record, buffer);
+                var recordData = Context.ReadRecordData(record, buffer);
                 if (recordData == null)
                 {
                     water.Add(new WaterRecord
                     {
                         FormId = record.FormId,
-                        EditorId = _context.GetEditorId(record.FormId),
-                        FullName = _context.FormIdToFullName.GetValueOrDefault(record.FormId),
+                        EditorId = Context.GetEditorId(record.FormId),
+                        FullName = Context.FormIdToFullName.GetValueOrDefault(record.FormId),
                         Offset = record.Offset,
                         IsBigEndian = record.IsBigEndian
                     });
@@ -74,7 +73,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context)
                             editorId = EsmStringUtils.ReadNullTermString(subData);
                             if (!string.IsNullOrEmpty(editorId))
                             {
-                                _context.FormIdToEditorId[record.FormId] = editorId;
+                                Context.FormIdToEditorId[record.FormId] = editorId;
                             }
 
                             break;
@@ -127,7 +126,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context)
                 water.Add(new WaterRecord
                 {
                     FormId = record.FormId,
-                    EditorId = editorId ?? _context.GetEditorId(record.FormId),
+                    EditorId = editorId ?? Context.GetEditorId(record.FormId),
                     FullName = fullName,
                     NoiseTexture = noiseTexture,
                     Opacity = opacity,
@@ -160,14 +159,14 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context)
     {
         var weather = new List<WeatherRecord>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
-            foreach (var record in _context.GetRecordsByType("WTHR"))
+            foreach (var record in Context.GetRecordsByType("WTHR"))
             {
                 weather.Add(new WeatherRecord
                 {
                     FormId = record.FormId,
-                    EditorId = _context.GetEditorId(record.FormId),
+                    EditorId = Context.GetEditorId(record.FormId),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
@@ -179,15 +178,15 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context)
         var buffer = ArrayPool<byte>.Shared.Rent(4096);
         try
         {
-            foreach (var record in _context.GetRecordsByType("WTHR"))
+            foreach (var record in Context.GetRecordsByType("WTHR"))
             {
-                var recordData = _context.ReadRecordData(record, buffer);
+                var recordData = Context.ReadRecordData(record, buffer);
                 if (recordData == null)
                 {
                     weather.Add(new WeatherRecord
                     {
                         FormId = record.FormId,
-                        EditorId = _context.GetEditorId(record.FormId),
+                        EditorId = Context.GetEditorId(record.FormId),
                         Offset = record.Offset,
                         IsBigEndian = record.IsBigEndian
                     });
@@ -210,7 +209,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context)
                             editorId = EsmStringUtils.ReadNullTermString(subData);
                             if (!string.IsNullOrEmpty(editorId))
                             {
-                                _context.FormIdToEditorId[record.FormId] = editorId;
+                                Context.FormIdToEditorId[record.FormId] = editorId;
                             }
 
                             break;
@@ -237,7 +236,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context)
                 weather.Add(new WeatherRecord
                 {
                     FormId = record.FormId,
-                    EditorId = editorId ?? _context.GetEditorId(record.FormId),
+                    EditorId = editorId ?? Context.GetEditorId(record.FormId),
                     ImageSpaceModifier = imageSpaceMod != 0 ? imageSpaceMod : null,
                     Sounds = sounds,
                     Offset = record.Offset,
@@ -264,14 +263,14 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context)
     {
         var sounds = new List<SoundRecord>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
-            foreach (var record in _context.GetRecordsByType("SOUN"))
+            foreach (var record in Context.GetRecordsByType("SOUN"))
             {
                 sounds.Add(new SoundRecord
                 {
                     FormId = record.FormId,
-                    EditorId = _context.GetEditorId(record.FormId),
+                    EditorId = Context.GetEditorId(record.FormId),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
@@ -283,15 +282,15 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context)
         var buffer = ArrayPool<byte>.Shared.Rent(2048);
         try
         {
-            foreach (var record in _context.GetRecordsByType("SOUN"))
+            foreach (var record in Context.GetRecordsByType("SOUN"))
             {
-                var recordData = _context.ReadRecordData(record, buffer);
+                var recordData = Context.ReadRecordData(record, buffer);
                 if (recordData == null)
                 {
                     sounds.Add(new SoundRecord
                     {
                         FormId = record.FormId,
-                        EditorId = _context.GetEditorId(record.FormId),
+                        EditorId = Context.GetEditorId(record.FormId),
                         Offset = record.Offset,
                         IsBigEndian = record.IsBigEndian
                     });
@@ -318,7 +317,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context)
                             editorId = EsmStringUtils.ReadNullTermString(subData);
                             if (!string.IsNullOrEmpty(editorId))
                             {
-                                _context.FormIdToEditorId[record.FormId] = editorId;
+                                Context.FormIdToEditorId[record.FormId] = editorId;
                             }
 
                             break;
@@ -349,7 +348,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context)
                 sounds.Add(new SoundRecord
                 {
                     FormId = record.FormId,
-                    EditorId = editorId ?? _context.GetEditorId(record.FormId),
+                    EditorId = editorId ?? Context.GetEditorId(record.FormId),
                     Bounds = bounds,
                     FileName = fileName,
                     MinAttenuationDistance = minAtten,
@@ -368,7 +367,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        _context.MergeRuntimeRecords(sounds, 0x0D, s => s.FormId,
+        Context.MergeRuntimeRecords(sounds, 0x0D, s => s.FormId,
             (reader, entry) => reader.ReadRuntimeSound(entry), "sounds");
 
         return sounds;
@@ -385,14 +384,14 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context)
     {
         var textureSets = new List<TextureSetRecord>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
-            foreach (var record in _context.GetRecordsByType("TXST"))
+            foreach (var record in Context.GetRecordsByType("TXST"))
             {
                 textureSets.Add(new TextureSetRecord
                 {
                     FormId = record.FormId,
-                    EditorId = _context.GetEditorId(record.FormId),
+                    EditorId = Context.GetEditorId(record.FormId),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
@@ -404,15 +403,15 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context)
         var buffer = ArrayPool<byte>.Shared.Rent(2048);
         try
         {
-            foreach (var record in _context.GetRecordsByType("TXST"))
+            foreach (var record in Context.GetRecordsByType("TXST"))
             {
-                var recordData = _context.ReadRecordData(record, buffer);
+                var recordData = Context.ReadRecordData(record, buffer);
                 if (recordData == null)
                 {
                     textureSets.Add(new TextureSetRecord
                     {
                         FormId = record.FormId,
-                        EditorId = _context.GetEditorId(record.FormId),
+                        EditorId = Context.GetEditorId(record.FormId),
                         Offset = record.Offset,
                         IsBigEndian = record.IsBigEndian
                     });
@@ -436,7 +435,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context)
                             editorId = EsmStringUtils.ReadNullTermString(subData);
                             if (!string.IsNullOrEmpty(editorId))
                             {
-                                _context.FormIdToEditorId[record.FormId] = editorId;
+                                Context.FormIdToEditorId[record.FormId] = editorId;
                             }
 
                             break;
@@ -472,7 +471,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context)
                 textureSets.Add(new TextureSetRecord
                 {
                     FormId = record.FormId,
-                    EditorId = editorId ?? _context.GetEditorId(record.FormId),
+                    EditorId = editorId ?? Context.GetEditorId(record.FormId),
                     Bounds = bounds,
                     DiffuseTexture = tx00,
                     NormalTexture = tx01,

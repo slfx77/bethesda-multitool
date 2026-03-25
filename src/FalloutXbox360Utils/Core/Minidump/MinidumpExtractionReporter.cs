@@ -4,6 +4,7 @@ using FalloutXbox360Utils.Core.Extraction;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.RuntimeBuffer;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Minidump;
@@ -62,6 +63,7 @@ internal static class MinidumpExtractionReporter
                 fileInfo.Length,
                 analysisResult.MinidumpInfo);
             var semanticResult = parser.ParseAll();
+            var stringData = RuntimeStringReportHelper.Extract(analysisResult, accessor);
 
             // Merge supplementary records (load order) for name enrichment
             if (supplementaryRecords != null)
@@ -71,7 +73,9 @@ internal static class MinidumpExtractionReporter
             var sources = new ReportDataSources(
                 semanticResult, analysisResult.FormIdMap,
                 analysisResult.EsmRecords.AssetStrings,
-                analysisResult.EsmRecords.RuntimeEditorIds);
+                analysisResult.EsmRecords.RuntimeEditorIds,
+                stringData?.StringPool,
+                stringData?.OwnershipAnalysis);
             var allReports = GeckReportGenerator.GenerateAllReports(sources);
             var esmDir = Path.Combine(extractDir, "esm_data");
             Directory.CreateDirectory(esmDir);

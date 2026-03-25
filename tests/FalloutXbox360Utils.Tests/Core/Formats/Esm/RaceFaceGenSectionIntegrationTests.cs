@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Text;
 using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 
@@ -87,17 +88,17 @@ public sealed class RaceFaceGenSectionIntegrationTests(ITestOutputHelper output)
             ("EDID", NullTermBytes(editorId)),
             ("FULL", NullTermBytes(editorId)),
             ("DATA", data),
-            ("NAM2", []),       // Marker: FaceGen data section follows
-            ("MNAM", []),       // Male section marker
+            ("NAM2", []), // Marker: FaceGen data section follows
+            ("MNAM", []), // Male section marker
             ("FGGS", maleFggs),
             ("FGGA", maleFgga),
             ("FGTS", maleFgts),
-            ("SNAM", []),       // End male FaceGen
-            ("FNAM", []),       // Female section marker
+            ("SNAM", []), // End male FaceGen
+            ("FNAM", []), // Female section marker
             ("FGGS", femaleFggs),
             ("FGGA", femaleFgga),
             ("FGTS", femaleFgts),
-            ("SNAM", []));      // End female FaceGen
+            ("SNAM", [])); // End female FaceGen
     }
 
     private static byte[] MakeFaceGenFloats(int count, float seed)
@@ -114,7 +115,7 @@ public sealed class RaceFaceGenSectionIntegrationTests(ITestOutputHelper output)
     private static byte[] NullTermBytes(string s)
     {
         var bytes = new byte[s.Length + 1];
-        System.Text.Encoding.ASCII.GetBytes(s, bytes);
+        Encoding.ASCII.GetBytes(s, bytes);
         return bytes;
     }
 

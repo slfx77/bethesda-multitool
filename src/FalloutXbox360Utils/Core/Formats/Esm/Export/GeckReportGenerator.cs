@@ -456,6 +456,18 @@ public static class GeckReportGenerator
             }
         }
 
+        if (sources.StringOwnership != null)
+        {
+            files["string_ownership_summary.txt"] =
+                GeckMiscWriter.GenerateStringOwnershipSummaryReport(sources.StringOwnership);
+
+            foreach (var (filename, content) in CsvSupplementalWriter.GenerateStringOwnershipCsvs(
+                         sources.StringOwnership))
+            {
+                files[filename] = content;
+            }
+        }
+
         return files;
     }
 }

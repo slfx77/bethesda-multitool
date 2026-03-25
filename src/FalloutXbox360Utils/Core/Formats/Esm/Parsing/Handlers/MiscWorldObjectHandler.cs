@@ -5,9 +5,8 @@ using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
-internal sealed class MiscWorldObjectHandler(RecordParserContext context)
+internal sealed class MiscWorldObjectHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
-    private readonly RecordParserContext _context = context;
 
     #region Activators
 
@@ -18,15 +17,15 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context)
     {
         var activators = new List<ActivatorRecord>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
-            foreach (var record in _context.GetRecordsByType("ACTI"))
+            foreach (var record in Context.GetRecordsByType("ACTI"))
             {
                 activators.Add(new ActivatorRecord
                 {
                     FormId = record.FormId,
-                    EditorId = _context.GetEditorId(record.FormId),
-                    FullName = _context.FindFullNameNear(record.Offset),
+                    EditorId = Context.GetEditorId(record.FormId),
+                    FullName = Context.FindFullNameNear(record.Offset),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
@@ -38,16 +37,16 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context)
         var buffer = ArrayPool<byte>.Shared.Rent(4096);
         try
         {
-            foreach (var record in _context.GetRecordsByType("ACTI"))
+            foreach (var record in Context.GetRecordsByType("ACTI"))
             {
-                var recordData = _context.ReadRecordData(record, buffer);
+                var recordData = Context.ReadRecordData(record, buffer);
                 if (recordData == null)
                 {
                     activators.Add(new ActivatorRecord
                     {
                         FormId = record.FormId,
-                        EditorId = _context.GetEditorId(record.FormId),
-                        FullName = _context.FindFullNameNear(record.Offset),
+                        EditorId = Context.GetEditorId(record.FormId),
+                        FullName = Context.FindFullNameNear(record.Offset),
                         Offset = record.Offset,
                         IsBigEndian = record.IsBigEndian
                     });
@@ -101,7 +100,7 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context)
                 activators.Add(new ActivatorRecord
                 {
                     FormId = record.FormId,
-                    EditorId = editorId ?? _context.GetEditorId(record.FormId),
+                    EditorId = editorId ?? Context.GetEditorId(record.FormId),
                     FullName = fullName,
                     ModelPath = modelPath,
                     Bounds = bounds,
@@ -119,7 +118,7 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        _context.MergeRuntimeOverlayRecords(
+        Context.MergeRuntimeOverlayRecords(
             activators,
             [0x15],
             record => record.FormId,
@@ -141,15 +140,15 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context)
     {
         var lights = new List<LightRecord>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
-            foreach (var record in _context.GetRecordsByType("LIGH"))
+            foreach (var record in Context.GetRecordsByType("LIGH"))
             {
                 lights.Add(new LightRecord
                 {
                     FormId = record.FormId,
-                    EditorId = _context.GetEditorId(record.FormId),
-                    FullName = _context.FindFullNameNear(record.Offset),
+                    EditorId = Context.GetEditorId(record.FormId),
+                    FullName = Context.FindFullNameNear(record.Offset),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
@@ -161,16 +160,16 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context)
         var buffer = ArrayPool<byte>.Shared.Rent(2048);
         try
         {
-            foreach (var record in _context.GetRecordsByType("LIGH"))
+            foreach (var record in Context.GetRecordsByType("LIGH"))
             {
-                var recordData = _context.ReadRecordData(record, buffer);
+                var recordData = Context.ReadRecordData(record, buffer);
                 if (recordData == null)
                 {
                     lights.Add(new LightRecord
                     {
                         FormId = record.FormId,
-                        EditorId = _context.GetEditorId(record.FormId),
-                        FullName = _context.FindFullNameNear(record.Offset),
+                        EditorId = Context.GetEditorId(record.FormId),
+                        FullName = Context.FindFullNameNear(record.Offset),
                         Offset = record.Offset,
                         IsBigEndian = record.IsBigEndian
                     });
@@ -198,7 +197,7 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context)
                             editorId = EsmStringUtils.ReadNullTermString(subData);
                             if (!string.IsNullOrEmpty(editorId))
                             {
-                                _context.FormIdToEditorId[record.FormId] = editorId;
+                                Context.FormIdToEditorId[record.FormId] = editorId;
                             }
 
                             break;
@@ -246,7 +245,7 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context)
                 lights.Add(new LightRecord
                 {
                     FormId = record.FormId,
-                    EditorId = editorId ?? _context.GetEditorId(record.FormId),
+                    EditorId = editorId ?? Context.GetEditorId(record.FormId),
                     FullName = fullName,
                     ModelPath = modelPath,
                     Bounds = bounds,
@@ -268,7 +267,7 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        _context.MergeRuntimeOverlayRecords(
+        Context.MergeRuntimeOverlayRecords(
             lights,
             [0x1E],
             record => record.FormId,
@@ -290,15 +289,15 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context)
     {
         var doors = new List<DoorRecord>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
-            foreach (var record in _context.GetRecordsByType("DOOR"))
+            foreach (var record in Context.GetRecordsByType("DOOR"))
             {
                 doors.Add(new DoorRecord
                 {
                     FormId = record.FormId,
-                    EditorId = _context.GetEditorId(record.FormId),
-                    FullName = _context.FindFullNameNear(record.Offset),
+                    EditorId = Context.GetEditorId(record.FormId),
+                    FullName = Context.FindFullNameNear(record.Offset),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
@@ -310,16 +309,16 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context)
         var buffer = ArrayPool<byte>.Shared.Rent(2048);
         try
         {
-            foreach (var record in _context.GetRecordsByType("DOOR"))
+            foreach (var record in Context.GetRecordsByType("DOOR"))
             {
-                var recordData = _context.ReadRecordData(record, buffer);
+                var recordData = Context.ReadRecordData(record, buffer);
                 if (recordData == null)
                 {
                     doors.Add(new DoorRecord
                     {
                         FormId = record.FormId,
-                        EditorId = _context.GetEditorId(record.FormId),
-                        FullName = _context.FindFullNameNear(record.Offset),
+                        EditorId = Context.GetEditorId(record.FormId),
+                        FullName = Context.FindFullNameNear(record.Offset),
                         Offset = record.Offset,
                         IsBigEndian = record.IsBigEndian
                     });
@@ -348,7 +347,7 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context)
                             editorId = EsmStringUtils.ReadNullTermString(subData);
                             if (!string.IsNullOrEmpty(editorId))
                             {
-                                _context.FormIdToEditorId[record.FormId] = editorId;
+                                Context.FormIdToEditorId[record.FormId] = editorId;
                             }
 
                             break;
@@ -382,7 +381,7 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context)
                 doors.Add(new DoorRecord
                 {
                     FormId = record.FormId,
-                    EditorId = editorId ?? _context.GetEditorId(record.FormId),
+                    EditorId = editorId ?? Context.GetEditorId(record.FormId),
                     FullName = fullName,
                     ModelPath = modelPath,
                     Bounds = bounds,
@@ -401,7 +400,7 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        _context.MergeRuntimeOverlayRecords(
+        Context.MergeRuntimeOverlayRecords(
             doors,
             [0x1C],
             record => record.FormId,

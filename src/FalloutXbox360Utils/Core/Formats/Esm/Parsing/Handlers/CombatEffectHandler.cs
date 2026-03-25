@@ -8,9 +8,8 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 ///     Handles parsing of combat-related effect records: Projectiles (PROJ) and Explosions (EXPL).
 ///     Extracted from <see cref="EffectRecordHandler" /> to keep file sizes manageable.
 /// </summary>
-internal sealed class CombatEffectHandler(RecordParserContext context)
+internal sealed class CombatEffectHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
-    private readonly RecordParserContext _context = context;
 
     #region Explosions
 
@@ -21,7 +20,7 @@ internal sealed class CombatEffectHandler(RecordParserContext context)
     {
         var explosions = new List<ExplosionRecord>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             return explosions;
         }
@@ -29,9 +28,9 @@ internal sealed class CombatEffectHandler(RecordParserContext context)
         var buffer = ArrayPool<byte>.Shared.Rent(2048);
         try
         {
-            foreach (var record in _context.GetRecordsByType("EXPL"))
+            foreach (var record in Context.GetRecordsByType("EXPL"))
             {
-                var recordData = _context.ReadRecordData(record, buffer);
+                var recordData = Context.ReadRecordData(record, buffer);
                 if (recordData == null)
                 {
                     continue;
@@ -51,7 +50,7 @@ internal sealed class CombatEffectHandler(RecordParserContext context)
                             editorId = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
                             if (!string.IsNullOrEmpty(editorId))
                             {
-                                _context.FormIdToEditorId[record.FormId] = editorId;
+                                Context.FormIdToEditorId[record.FormId] = editorId;
                             }
 
                             break;
@@ -114,7 +113,7 @@ internal sealed class CombatEffectHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        _context.MergeRuntimeRecords(explosions, 0x51, e => e.FormId,
+        Context.MergeRuntimeRecords(explosions, 0x51, e => e.FormId,
             (reader, entry) => reader.ReadRuntimeExplosion(entry), "explosions");
 
         return explosions;
@@ -131,7 +130,7 @@ internal sealed class CombatEffectHandler(RecordParserContext context)
     {
         var projectiles = new List<ProjectileRecord>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             return projectiles;
         }
@@ -139,9 +138,9 @@ internal sealed class CombatEffectHandler(RecordParserContext context)
         var buffer = ArrayPool<byte>.Shared.Rent(2048);
         try
         {
-            foreach (var record in _context.GetRecordsByType("PROJ"))
+            foreach (var record in Context.GetRecordsByType("PROJ"))
             {
-                var recordData = _context.ReadRecordData(record, buffer);
+                var recordData = Context.ReadRecordData(record, buffer);
                 if (recordData == null)
                 {
                     continue;
@@ -167,7 +166,7 @@ internal sealed class CombatEffectHandler(RecordParserContext context)
                             editorId = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
                             if (!string.IsNullOrEmpty(editorId))
                             {
-                                _context.FormIdToEditorId[record.FormId] = editorId;
+                                Context.FormIdToEditorId[record.FormId] = editorId;
                             }
 
                             break;
@@ -266,14 +265,14 @@ internal sealed class CombatEffectHandler(RecordParserContext context)
     /// </summary>
     internal void EnrichProjectilesWithRuntime(List<ProjectileRecord> projectiles)
     {
-        if (_context.RuntimeReader == null)
+        if (Context.RuntimeReader == null)
         {
             return;
         }
 
         // Build FormID → RuntimeEditorIdEntry lookup for PROJ (FormType 0x33)
         var projectileEntries = new Dictionary<uint, RuntimeEditorIdEntry>();
-        foreach (var entry in _context.ScanResult.RuntimeEditorIds)
+        foreach (var entry in Context.ScanResult.RuntimeEditorIds)
         {
             if (entry.FormType == 0x33 && entry.TesFormOffset.HasValue)
             {
@@ -295,7 +294,7 @@ internal sealed class CombatEffectHandler(RecordParserContext context)
                 continue;
             }
 
-            var runtimeData = _context.RuntimeReader.ReadProjectilePhysics(
+            var runtimeData = Context.RuntimeReader.ReadProjectilePhysics(
                 entry.TesFormOffset!.Value, entry.FormId);
             if (runtimeData == null)
             {

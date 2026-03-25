@@ -6,9 +6,8 @@ using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
-internal sealed class ActorRecordHandler(RecordParserContext context)
+internal sealed class ActorRecordHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
-    private readonly RecordParserContext _context = context;
     private readonly CreatureRecordHandler _creatures = new(context);
     private readonly NpcRecordHandler _npcs = new(context);
 
@@ -91,17 +90,17 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
     internal List<FactionRecord> ParseFactions()
     {
         var factions = new List<FactionRecord>();
-        var factionRecords = _context.GetRecordsByType("FACT").ToList();
+        var factionRecords = Context.GetRecordsByType("FACT").ToList();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             foreach (var record in factionRecords)
             {
                 factions.Add(new FactionRecord
                 {
                     FormId = record.FormId,
-                    EditorId = _context.GetEditorId(record.FormId),
-                    FullName = _context.FindFullNameInRecordBounds(record),
+                    EditorId = Context.GetEditorId(record.FormId),
+                    FullName = Context.FindFullNameInRecordBounds(record),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
@@ -127,7 +126,7 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
             }
         }
 
-        _context.MergeRuntimeRecords(factions, 0x08, f => f.FormId,
+        Context.MergeRuntimeRecords(factions, 0x08, f => f.FormId,
             (reader, entry) => reader.ReadRuntimeFaction(entry), "factions");
 
         return factions;
@@ -135,14 +134,14 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
 
     private FactionRecord? ParseFactionFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
-        var recordData = _context.ReadRecordData(record, buffer);
+        var recordData = Context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
             return new FactionRecord
             {
                 FormId = record.FormId,
-                EditorId = _context.GetEditorId(record.FormId),
-                FullName = _context.FindFullNameInRecordBounds(record),
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameInRecordBounds(record),
                 Offset = record.Offset,
                 IsBigEndian = record.IsBigEndian
             };
@@ -241,7 +240,7 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
         return new FactionRecord
         {
             FormId = record.FormId,
-            EditorId = editorId ?? _context.GetEditorId(record.FormId),
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
             Flags = flags,
             CrimeGoldMultiplier = crimeGoldMultiplier,
@@ -262,17 +261,17 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
     internal List<RaceRecord> ParseRaces()
     {
         var races = new List<RaceRecord>();
-        var raceRecords = _context.GetRecordsByType("RACE").ToList();
+        var raceRecords = Context.GetRecordsByType("RACE").ToList();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             foreach (var record in raceRecords)
             {
                 races.Add(new RaceRecord
                 {
                     FormId = record.FormId,
-                    EditorId = _context.GetEditorId(record.FormId),
-                    FullName = _context.FindFullNameNear(record.Offset),
+                    EditorId = Context.GetEditorId(record.FormId),
+                    FullName = Context.FindFullNameNear(record.Offset),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
@@ -298,7 +297,7 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
             }
         }
 
-        _context.MergeRuntimeRecords(races, 0x0C, r => r.FormId,
+        Context.MergeRuntimeRecords(races, 0x0C, r => r.FormId,
             (reader, entry) => reader.ReadRuntimeRace(entry), "races");
 
         return races;
@@ -306,14 +305,14 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
 
     private RaceRecord? ParseRaceFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
-        var recordData = _context.ReadRecordData(record, buffer);
+        var recordData = Context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
             return new RaceRecord
             {
                 FormId = record.FormId,
-                EditorId = _context.GetEditorId(record.FormId),
-                FullName = _context.FindFullNameNear(record.Offset),
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
                 Offset = record.Offset,
                 IsBigEndian = record.IsBigEndian
             };
@@ -630,7 +629,7 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
         return new RaceRecord
         {
             FormId = record.FormId,
-            EditorId = editorId ?? _context.GetEditorId(record.FormId),
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
             Description = description,
             SkillBoosts = skillBoosts,

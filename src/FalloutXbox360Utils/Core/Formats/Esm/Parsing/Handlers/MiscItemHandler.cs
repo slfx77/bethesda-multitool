@@ -4,9 +4,8 @@ using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
-internal sealed class MiscItemHandler(RecordParserContext context)
+internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
-    private readonly RecordParserContext _context = context;
 
     #region Weapon Mods
 
@@ -17,7 +16,7 @@ internal sealed class MiscItemHandler(RecordParserContext context)
     {
         var mods = new List<WeaponModRecord>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             return mods;
         }
@@ -25,9 +24,9 @@ internal sealed class MiscItemHandler(RecordParserContext context)
         var buffer = ArrayPool<byte>.Shared.Rent(1024);
         try
         {
-            foreach (var record in _context.GetRecordsByType("IMOD"))
+            foreach (var record in Context.GetRecordsByType("IMOD"))
             {
-                var recordData = _context.ReadRecordData(record, buffer);
+                var recordData = Context.ReadRecordData(record, buffer);
                 if (recordData == null)
                 {
                     continue;
@@ -48,7 +47,7 @@ internal sealed class MiscItemHandler(RecordParserContext context)
                             editorId = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
                             if (!string.IsNullOrEmpty(editorId))
                             {
-                                _context.FormIdToEditorId[record.FormId] = editorId;
+                                Context.FormIdToEditorId[record.FormId] = editorId;
                             }
 
                             break;
@@ -101,7 +100,7 @@ internal sealed class MiscItemHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        _context.MergeRuntimeRecords(mods, 0x67, m => m.FormId,
+        Context.MergeRuntimeRecords(mods, 0x67, m => m.FormId,
             (reader, entry) => reader.ReadRuntimeWeaponMod(entry), "weapon mods");
 
         return mods;
@@ -118,7 +117,7 @@ internal sealed class MiscItemHandler(RecordParserContext context)
     {
         var recipes = new List<RecipeRecord>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             return recipes;
         }
@@ -126,9 +125,9 @@ internal sealed class MiscItemHandler(RecordParserContext context)
         var buffer = ArrayPool<byte>.Shared.Rent(2048);
         try
         {
-            foreach (var record in _context.GetRecordsByType("RCPE"))
+            foreach (var record in Context.GetRecordsByType("RCPE"))
             {
-                var recordData = _context.ReadRecordData(record, buffer);
+                var recordData = Context.ReadRecordData(record, buffer);
                 if (recordData == null)
                 {
                     continue;
@@ -150,7 +149,7 @@ internal sealed class MiscItemHandler(RecordParserContext context)
                             editorId = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
                             if (!string.IsNullOrEmpty(editorId))
                             {
-                                _context.FormIdToEditorId[record.FormId] = editorId;
+                                Context.FormIdToEditorId[record.FormId] = editorId;
                             }
 
                             break;
@@ -221,7 +220,7 @@ internal sealed class MiscItemHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        _context.MergeRuntimeRecords(recipes, 0x6A, r => r.FormId,
+        Context.MergeRuntimeRecords(recipes, 0x6A, r => r.FormId,
             (reader, entry) => reader.ReadRuntimeRecipe(entry), "recipes");
 
         return recipes;
@@ -238,15 +237,15 @@ internal sealed class MiscItemHandler(RecordParserContext context)
     {
         var addons = new List<ArmaRecord>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
-            foreach (var record in _context.GetRecordsByType("ARMA"))
+            foreach (var record in Context.GetRecordsByType("ARMA"))
             {
                 addons.Add(new ArmaRecord
                 {
                     FormId = record.FormId,
-                    EditorId = _context.GetEditorId(record.FormId),
-                    FullName = _context.FormIdToFullName.GetValueOrDefault(record.FormId),
+                    EditorId = Context.GetEditorId(record.FormId),
+                    FullName = Context.FormIdToFullName.GetValueOrDefault(record.FormId),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
@@ -258,16 +257,16 @@ internal sealed class MiscItemHandler(RecordParserContext context)
         var buffer = ArrayPool<byte>.Shared.Rent(4096);
         try
         {
-            foreach (var record in _context.GetRecordsByType("ARMA"))
+            foreach (var record in Context.GetRecordsByType("ARMA"))
             {
-                var recordData = _context.ReadRecordData(record, buffer);
+                var recordData = Context.ReadRecordData(record, buffer);
                 if (recordData == null)
                 {
                     addons.Add(new ArmaRecord
                     {
                         FormId = record.FormId,
-                        EditorId = _context.GetEditorId(record.FormId),
-                        FullName = _context.FormIdToFullName.GetValueOrDefault(record.FormId),
+                        EditorId = Context.GetEditorId(record.FormId),
+                        FullName = Context.FormIdToFullName.GetValueOrDefault(record.FormId),
                         Offset = record.Offset,
                         IsBigEndian = record.IsBigEndian
                     });
@@ -291,7 +290,7 @@ internal sealed class MiscItemHandler(RecordParserContext context)
                             editorId = EsmStringUtils.ReadNullTermString(subData);
                             if (!string.IsNullOrEmpty(editorId))
                             {
-                                _context.FormIdToEditorId[record.FormId] = editorId;
+                                Context.FormIdToEditorId[record.FormId] = editorId;
                             }
 
                             break;
@@ -330,7 +329,7 @@ internal sealed class MiscItemHandler(RecordParserContext context)
                 addons.Add(new ArmaRecord
                 {
                     FormId = record.FormId,
-                    EditorId = editorId ?? _context.GetEditorId(record.FormId),
+                    EditorId = editorId ?? Context.GetEditorId(record.FormId),
                     FullName = fullName,
                     Bounds = bounds,
                     MaleModelPath = maleModel,
@@ -363,14 +362,14 @@ internal sealed class MiscItemHandler(RecordParserContext context)
     {
         var parts = new List<BodyPartDataRecord>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
-            foreach (var record in _context.GetRecordsByType("BPTD"))
+            foreach (var record in Context.GetRecordsByType("BPTD"))
             {
                 parts.Add(new BodyPartDataRecord
                 {
                     FormId = record.FormId,
-                    EditorId = _context.GetEditorId(record.FormId),
+                    EditorId = Context.GetEditorId(record.FormId),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
@@ -382,15 +381,15 @@ internal sealed class MiscItemHandler(RecordParserContext context)
         var buffer = ArrayPool<byte>.Shared.Rent(4096);
         try
         {
-            foreach (var record in _context.GetRecordsByType("BPTD"))
+            foreach (var record in Context.GetRecordsByType("BPTD"))
             {
-                var recordData = _context.ReadRecordData(record, buffer);
+                var recordData = Context.ReadRecordData(record, buffer);
                 if (recordData == null)
                 {
                     parts.Add(new BodyPartDataRecord
                     {
                         FormId = record.FormId,
-                        EditorId = _context.GetEditorId(record.FormId),
+                        EditorId = Context.GetEditorId(record.FormId),
                         Offset = record.Offset,
                         IsBigEndian = record.IsBigEndian
                     });
@@ -414,7 +413,7 @@ internal sealed class MiscItemHandler(RecordParserContext context)
                             editorId = EsmStringUtils.ReadNullTermString(subData);
                             if (!string.IsNullOrEmpty(editorId))
                             {
-                                _context.FormIdToEditorId[record.FormId] = editorId;
+                                Context.FormIdToEditorId[record.FormId] = editorId;
                             }
 
                             break;
@@ -457,7 +456,7 @@ internal sealed class MiscItemHandler(RecordParserContext context)
                 parts.Add(new BodyPartDataRecord
                 {
                     FormId = record.FormId,
-                    EditorId = editorId ?? _context.GetEditorId(record.FormId),
+                    EditorId = editorId ?? Context.GetEditorId(record.FormId),
                     ModelPath = modelPath,
                     PartNames = partNames,
                     NodeNames = nodeNames,

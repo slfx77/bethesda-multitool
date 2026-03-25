@@ -91,8 +91,8 @@ public sealed class Logger
     {
         _logFileWriter?.Dispose();
         _logFileWriter = new StreamWriter(
-            new FileStream(filePath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
-        { AutoFlush = true };
+                new FileStream(filePath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
+            { AutoFlush = true };
     }
 
     /// <summary>

@@ -7,9 +7,8 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 ///     Uses TopicFormId, QuestFormId, and linking subrecords (TCLT/TCLF/AddTopics) to build
 ///     a navigable tree structure.
 /// </summary>
-internal sealed class DialogueTreeBuilder(RecordParserContext context)
+internal sealed class DialogueTreeBuilder(RecordParserContext context) : RecordHandlerBase(context)
 {
-    private readonly RecordParserContext _context = context;
 
     /// <summary>
     ///     Build hierarchical dialogue trees from dialogue, topic, and quest records.
@@ -111,7 +110,7 @@ internal sealed class DialogueTreeBuilder(RecordParserContext context)
         foreach (var topicId in allTopicIds)
         {
             topicById.TryGetValue(topicId, out var topic);
-            var topicName = topic?.FullName ?? topic?.EditorId ?? _context.ResolveFormName(topicId);
+            var topicName = topic?.FullName ?? topic?.EditorId ?? Context.ResolveFormName(topicId);
 
             var infos = infosByTopic.GetValueOrDefault(topicId, []);
             var infoNodes = infos.Select(info => new InfoDialogueNode
@@ -290,7 +289,7 @@ internal sealed class DialogueTreeBuilder(RecordParserContext context)
             questNode = new QuestDialogueNode
             {
                 QuestFormId = questId,
-                QuestName = quest?.FullName ?? quest?.EditorId ?? _context.ResolveFormName(questId),
+                QuestName = quest?.FullName ?? quest?.EditorId ?? Context.ResolveFormName(questId),
                 Topics = []
             };
             questTrees[questId] = questNode;

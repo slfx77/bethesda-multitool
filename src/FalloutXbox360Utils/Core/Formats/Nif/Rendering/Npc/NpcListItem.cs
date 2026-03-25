@@ -56,5 +56,8 @@ internal sealed class NpcListItem : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public override string ToString() => DisplayName;
+    public override string ToString()
+    {
+        return DisplayName;
+    }
 }

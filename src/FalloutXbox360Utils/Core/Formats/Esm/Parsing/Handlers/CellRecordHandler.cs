@@ -5,12 +5,11 @@ using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
-internal sealed class CellRecordHandler(RecordParserContext context)
+internal sealed class CellRecordHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
     private const string AssignmentSourceCellGrup = "CellGrup";
     private const string AssignmentSourceRuntimeCellList = "RuntimeCellList";
     private const string AssignmentSourceProximity = "Proximity";
-    private readonly RecordParserContext _context = context;
 
     #region Cells
 
@@ -20,11 +19,11 @@ internal sealed class CellRecordHandler(RecordParserContext context)
     internal List<CellRecord> ParseCells()
     {
         var cells = new List<CellRecord>();
-        var cellRecords = _context.GetRecordsByType("CELL").ToList();
+        var cellRecords = Context.GetRecordsByType("CELL").ToList();
 
-        var refrRecords = _context.ScanResult.RefrRecords;
-        var cellWorldMap = _context.ScanResult.CellToWorldspaceMap;
-        var cellToRefrMap = _context.ScanResult.CellToRefrMap;
+        var refrRecords = Context.ScanResult.RefrRecords;
+        var cellWorldMap = Context.ScanResult.CellToWorldspaceMap;
+        var cellToRefrMap = Context.ScanResult.CellToRefrMap;
         var runtimeCellMapEntries = BuildRuntimeCellMapIndex();
 
         // Pre-build REFR FormID -> ExtractedRefrRecord lookup for O(1) access
@@ -49,10 +48,10 @@ internal sealed class CellRecordHandler(RecordParserContext context)
         // Pre-build heightmap lookup by cell grid coordinates for O(1) access.
         // Key includes worldspace FormID to prevent cross-worldspace pollution
         // (different worldspaces can share the same cell grid coordinates).
-        var landWorldMap = _context.ScanResult.LandToWorldspaceMap;
+        var landWorldMap = Context.ScanResult.LandToWorldspaceMap;
         var heightmapByGrid = new Dictionary<(uint, int, int), LandHeightmap>();
         var terrainMeshByGrid = new Dictionary<(uint, int, int), RuntimeTerrainMesh>();
-        foreach (var land in _context.ScanResult.LandRecords)
+        foreach (var land in Context.ScanResult.LandRecords)
         {
             if (land.BestCellX.HasValue && land.BestCellY.HasValue)
             {
@@ -70,7 +69,7 @@ internal sealed class CellRecordHandler(RecordParserContext context)
             }
         }
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             foreach (var record in cellRecords)
             {
@@ -242,7 +241,7 @@ internal sealed class CellRecordHandler(RecordParserContext context)
         byte[] buffer,
         RuntimeCellMapEntry? runtimeCellMapEntry)
     {
-        var recordData = _context.ReadRecordData(record, buffer);
+        var recordData = Context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
             return ParseCellFromScanResult(record, refrByFormId, cellToRefrMap,
@@ -343,7 +342,7 @@ internal sealed class CellRecordHandler(RecordParserContext context)
         return new CellRecord
         {
             FormId = record.FormId,
-            EditorId = editorId ?? _context.GetEditorId(record.FormId),
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
             GridX = gridX,
             GridY = gridY,
@@ -372,7 +371,7 @@ internal sealed class CellRecordHandler(RecordParserContext context)
         RuntimeCellMapEntry? runtimeCellMapEntry)
     {
         // Find XCLC near this CELL record
-        var cellGrid = _context.ScanResult.CellGrids
+        var cellGrid = Context.ScanResult.CellGrids
             .FirstOrDefault(g => Math.Abs(g.Offset - record.Offset) < 200);
 
         var cellRefs = ResolveCellRefs(record, refrByFormId, cellToRefrMap,
@@ -381,7 +380,7 @@ internal sealed class CellRecordHandler(RecordParserContext context)
         return new CellRecord
         {
             FormId = record.FormId,
-            EditorId = _context.GetEditorId(record.FormId),
+            EditorId = Context.GetEditorId(record.FormId),
             GridX = cellGrid?.GridX,
             GridY = cellGrid?.GridY,
             PlacedObjects = cellRefs,
@@ -398,12 +397,12 @@ internal sealed class CellRecordHandler(RecordParserContext context)
         Dictionary<uint, RuntimeCellMapEntry> runtimeCellMapEntries,
         Dictionary<uint, ExtractedRefrRecord> refrByFormId)
     {
-        if (_context.RuntimeReader == null)
+        if (Context.RuntimeReader == null)
         {
             return;
         }
 
-        _context.MergeRuntimeOverlayRecords(
+        Context.MergeRuntimeOverlayRecords(
             cells,
             [0x39],
             record => record.FormId,
@@ -436,12 +435,12 @@ internal sealed class CellRecordHandler(RecordParserContext context)
             var mapOnlyAdded = 0;
             foreach (var (cellFormId, mapEntry) in runtimeCellMapEntries)
             {
-                var displayName = _context.FormIdToFullName.GetValueOrDefault(cellFormId);
+                var displayName = Context.FormIdToFullName.GetValueOrDefault(cellFormId);
                 var mapRuntimeCell = BuildRuntimeCellRecord(
-                    _context.RuntimeReader,
+                    Context.RuntimeReader,
                     mapEntry,
                     refrByFormId,
-                    _context.GetEditorId(cellFormId),
+                    Context.GetEditorId(cellFormId),
                     displayName);
                 if (mapRuntimeCell == null)
                 {
@@ -476,12 +475,12 @@ internal sealed class CellRecordHandler(RecordParserContext context)
     private Dictionary<uint, RuntimeCellMapEntry> BuildRuntimeCellMapIndex()
     {
         var entries = new Dictionary<uint, RuntimeCellMapEntry>();
-        if (_context.RuntimeWorldspaceCellMaps is not { Count: > 0 })
+        if (Context.RuntimeWorldspaceCellMaps is not { Count: > 0 })
         {
             return entries;
         }
 
-        foreach (var (_, worldData) in _context.RuntimeWorldspaceCellMaps)
+        foreach (var (_, worldData) in Context.RuntimeWorldspaceCellMaps)
         {
             foreach (var entry in worldData.Cells)
             {
@@ -604,7 +603,7 @@ internal sealed class CellRecordHandler(RecordParserContext context)
         string assignmentSource)
     {
         return sourceRefs
-            .Select(r => CellLinkageHandler.ToPlacedReference(r, _context, assignmentSource))
+            .Select(r => CellLinkageHandler.ToPlacedReference(r, Context, assignmentSource))
             .ToList();
     }
 

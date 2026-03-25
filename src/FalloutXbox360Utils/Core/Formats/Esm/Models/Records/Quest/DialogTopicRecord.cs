@@ -42,29 +42,38 @@ public record DialogTopicRecord
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }
 
+    /// <summary>Offset of the carved raw DIAL record in the dump, when present.</summary>
+    public long RawRecordOffset { get; init; }
+
+    /// <summary>Offset of the runtime TESTopic struct in the dump, when present.</summary>
+    public long RuntimeStructOffset { get; init; }
+
     /// <summary>Whether the record was detected as big-endian (Xbox 360).</summary>
     public bool IsBigEndian { get; init; }
 
     /// <summary>Human-readable topic type name.</summary>
     public string TopicTypeName => GetTopicTypeName(TopicType);
 
-    /// <summary>Human-readable topic type name for a given type code.</summary>
-    public static string GetTopicTypeName(byte topicType) => topicType switch
-    {
-        0 => "Topic",
-        1 => "Conversation",
-        2 => "Combat",
-        3 => "Persuasion",
-        4 => "Detection",
-        5 => "Service",
-        6 => "Miscellaneous",
-        7 => "Radio",
-        _ => $"Unknown ({topicType})"
-    };
-
     /// <summary>Whether this is a rumor topic.</summary>
     public bool IsRumors => (Flags & 0x01) != 0;
 
     /// <summary>Whether this is a top-level topic.</summary>
     public bool IsTopLevel => (Flags & 0x02) != 0;
+
+    /// <summary>Human-readable topic type name for a given type code.</summary>
+    public static string GetTopicTypeName(byte topicType)
+    {
+        return topicType switch
+        {
+            0 => "Topic",
+            1 => "Conversation",
+            2 => "Combat",
+            3 => "Persuasion",
+            4 => "Detection",
+            5 => "Service",
+            6 => "Miscellaneous",
+            7 => "Radio",
+            _ => $"Unknown ({topicType})"
+        };
+    }
 }

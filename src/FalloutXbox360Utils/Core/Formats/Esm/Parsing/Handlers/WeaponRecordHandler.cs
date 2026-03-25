@@ -9,9 +9,8 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 /// <summary>
 ///     Handles parsing of WEAP records from ESM data and runtime structs.
 /// </summary>
-internal sealed class WeaponRecordHandler(RecordParserContext context)
+internal sealed class WeaponRecordHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
-    private readonly RecordParserContext _context = context;
 
     /// <summary>
     ///     Parse all Weapon records from the scan result.
@@ -21,17 +20,17 @@ internal sealed class WeaponRecordHandler(RecordParserContext context)
     internal List<WeaponRecord> ParseWeapons()
     {
         var weapons = new List<WeaponRecord>();
-        var weaponRecords = _context.GetRecordsByType("WEAP").ToList();
+        var weaponRecords = Context.GetRecordsByType("WEAP").ToList();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             foreach (var record in weaponRecords)
             {
                 weapons.Add(new WeaponRecord
                 {
                     FormId = record.FormId,
-                    EditorId = _context.GetEditorId(record.FormId),
-                    FullName = _context.FindFullNameNear(record.Offset),
+                    EditorId = Context.GetEditorId(record.FormId),
+                    FullName = Context.FindFullNameNear(record.Offset),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
@@ -57,7 +56,7 @@ internal sealed class WeaponRecordHandler(RecordParserContext context)
             }
         }
 
-        _context.MergeRuntimeRecords(weapons, 0x28, w => w.FormId,
+        Context.MergeRuntimeRecords(weapons, 0x28, w => w.FormId,
             (reader, entry) => reader.ReadRuntimeWeapon(entry), "weapons");
 
         return weapons;
@@ -65,14 +64,14 @@ internal sealed class WeaponRecordHandler(RecordParserContext context)
 
     private WeaponRecord? ParseWeaponFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
-        var recordData = _context.ReadRecordData(record, buffer);
+        var recordData = Context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
             return new WeaponRecord
             {
                 FormId = record.FormId,
-                EditorId = _context.GetEditorId(record.FormId),
-                FullName = _context.FindFullNameNear(record.Offset),
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
                 Offset = record.Offset,
                 IsBigEndian = record.IsBigEndian
             };
@@ -292,7 +291,7 @@ internal sealed class WeaponRecordHandler(RecordParserContext context)
         return new WeaponRecord
         {
             FormId = record.FormId,
-            EditorId = editorId ?? _context.GetEditorId(record.FormId),
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
             ModelPath = modelPath,
             EmbeddedWeaponNode = embeddedWeaponNode,
@@ -354,14 +353,14 @@ internal sealed class WeaponRecordHandler(RecordParserContext context)
     /// </summary>
     internal void EnrichWeaponsWithProjectileData(List<WeaponRecord> weapons)
     {
-        if (_context.RuntimeReader == null || weapons.Count == 0)
+        if (Context.RuntimeReader == null || weapons.Count == 0)
         {
             return;
         }
 
         // Build: projectile FormID -> TesFormOffset (from runtime EditorID hash table)
         var projectileEntries = new Dictionary<uint, RuntimeEditorIdEntry>();
-        foreach (var entry in _context.ScanResult.RuntimeEditorIds)
+        foreach (var entry in Context.ScanResult.RuntimeEditorIds)
         {
             if (entry.FormType == 0x33 && entry.TesFormOffset.HasValue)
             {
@@ -388,7 +387,7 @@ internal sealed class WeaponRecordHandler(RecordParserContext context)
                 continue;
             }
 
-            var projData = _context.RuntimeReader.ReadProjectilePhysics(
+            var projData = Context.RuntimeReader.ReadProjectilePhysics(
                 projEntry.TesFormOffset!.Value, projEntry.FormId);
 
             if (projData != null)

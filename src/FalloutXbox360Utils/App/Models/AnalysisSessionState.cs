@@ -5,6 +5,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.SaveGame;
 using FalloutXbox360Utils.Core.Formats.Subtitles;
+using FalloutXbox360Utils.Core.RuntimeBuffer;
 using FalloutXbox360Utils.Core.Strings;
 
 namespace FalloutXbox360Utils;
@@ -55,11 +56,12 @@ internal sealed class AnalysisSessionState : IDisposable
 
     // ── Reports derived data ──
     public StringPoolSummary? StringPool { get; set; }
+    public RuntimeStringOwnershipAnalysis? StringOwnership { get; set; }
 
     // ── Runtime asset data ──
     public List<ExtractedMesh>? RuntimeMeshes { get; set; }
     public List<ExtractedTexture>? RuntimeTextures { get; set; }
-    public Dictionary<long, Core.Formats.Esm.SceneGraphInfo>? SceneGraphMap { get; set; }
+    public Dictionary<long, Core.Formats.Esm.Runtime.Readers.Scanning.SceneGraphInfo>? SceneGraphMap { get; set; }
 
     // ── Summary derived data ──
     public bool RecordBreakdownPopulated { get; set; }
@@ -143,6 +145,7 @@ internal sealed class AnalysisSessionState : IDisposable
 
         // Reports
         StringPool = null;
+        StringOwnership = null;
 
         // Runtime assets
         RuntimeMeshes = null;

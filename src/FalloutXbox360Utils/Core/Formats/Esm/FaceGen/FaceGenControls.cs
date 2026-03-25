@@ -8,7 +8,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 ///     The GECK's Face Advanced slider values are projections of
 ///     NPC face coordinates onto these control directions.
 /// </summary>
-public static partial class FaceGenControls
+public static class FaceGenControls
 {
     /// <summary>
     ///     Compute control projection values from FGGS basis coefficients.
@@ -19,17 +19,17 @@ public static partial class FaceGenControls
     public static (string Name, float Value)[] ComputeGeometrySymmetric(float[] fggs, float[]? raceBase = null)
     {
         if (fggs.Length != 50) return [];
-        var results = new (string Name, float Value)[GeometrySymmetricNames.Length];
-        for (var j = 0; j < GeometrySymmetricNames.Length; j++)
+        var results = new (string Name, float Value)[FaceGenGeometrySymmetricData.GeometrySymmetricNames.Length];
+        for (var j = 0; j < FaceGenGeometrySymmetricData.GeometrySymmetricNames.Length; j++)
         {
             float dot = 0;
             for (var i = 0; i < 50; i++)
             {
                 var merged = fggs[i] + (raceBase is { Length: 50 } ? raceBase[i] : 0f);
-                dot += GeometrySymmetricCoeffs[j][i] * merged;
+                dot += FaceGenGeometrySymmetricData.GeometrySymmetricCoeffs[j][i] * merged;
             }
 
-            results[j] = (GeometrySymmetricNames[j], dot);
+            results[j] = (FaceGenGeometrySymmetricData.GeometrySymmetricNames[j], dot);
         }
 
         return results;
@@ -38,17 +38,17 @@ public static partial class FaceGenControls
     public static (string Name, float Value)[] ComputeGeometryAsymmetric(float[] fgga, float[]? raceBase = null)
     {
         if (fgga.Length != 30) return [];
-        var results = new (string Name, float Value)[GeometryAsymmetricNames.Length];
-        for (var j = 0; j < GeometryAsymmetricNames.Length; j++)
+        var results = new (string Name, float Value)[FaceGenGeometryAsymmetricData.GeometryAsymmetricNames.Length];
+        for (var j = 0; j < FaceGenGeometryAsymmetricData.GeometryAsymmetricNames.Length; j++)
         {
             float dot = 0;
             for (var i = 0; i < 30; i++)
             {
                 var merged = fgga[i] + (raceBase is { Length: 30 } ? raceBase[i] : 0f);
-                dot += GeometryAsymmetricCoeffs[j][i] * merged;
+                dot += FaceGenGeometryAsymmetricData.GeometryAsymmetricCoeffs[j][i] * merged;
             }
 
-            results[j] = (GeometryAsymmetricNames[j], dot);
+            results[j] = (FaceGenGeometryAsymmetricData.GeometryAsymmetricNames[j], dot);
         }
 
         return results;
@@ -57,17 +57,17 @@ public static partial class FaceGenControls
     public static (string Name, float Value)[] ComputeTextureSymmetric(float[] fgts, float[]? raceBase = null)
     {
         if (fgts.Length != 50) return [];
-        var results = new (string Name, float Value)[TextureSymmetricNames.Length];
-        for (var j = 0; j < TextureSymmetricNames.Length; j++)
+        var results = new (string Name, float Value)[FaceGenTextureSymmetricData.TextureSymmetricNames.Length];
+        for (var j = 0; j < FaceGenTextureSymmetricData.TextureSymmetricNames.Length; j++)
         {
             float dot = 0;
             for (var i = 0; i < 50; i++)
             {
                 var merged = fgts[i] + (raceBase is { Length: 50 } ? raceBase[i] : 0f);
-                dot += TextureSymmetricCoeffs[j][i] * merged;
+                dot += FaceGenTextureSymmetricData.TextureSymmetricCoeffs[j][i] * merged;
             }
 
-            results[j] = (TextureSymmetricNames[j], dot);
+            results[j] = (FaceGenTextureSymmetricData.TextureSymmetricNames[j], dot);
         }
 
         return results;

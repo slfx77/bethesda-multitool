@@ -1,6 +1,4 @@
-using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
-using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
@@ -8,15 +6,10 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 ///     Merges runtime DMP data into dialogue and topic records. Handles runtime hash table
 ///     probing, TESTopicInfo struct reading, and TESTopic quest-info list walking.
 /// </summary>
-internal sealed class DialogueRuntimeMerger(RecordParserContext context)
+internal sealed class DialogueRuntimeMerger(RecordParserContext context) : RecordHandlerBase(context)
 {
-    private readonly RecordParserContext _context = context;
 
-    /// <summary>
-    ///     Calibrated base virtual address of the memory-mapped ESM file in the dump.
-    ///     Computed by matching a carved ESM record's dump offset to its runtime iFileOffset.
-    /// </summary>
-    private long? _esmBaseVA;
+    private IReadOnlyList<DialogueTesFileMappingSegment> _tesFileSegments = [];
 
     /// <summary>
     ///     Detect DIAL FormType from RuntimeEditorIds by cross-referencing known ESM DIAL FormIDs,
@@ -30,7 +23,7 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
         // Detect DIAL FormType by finding RuntimeEditorId entries matching known DIAL FormIDs
         byte? dialFormType = null;
         var formTypeCounts = new Dictionary<byte, int>();
-        foreach (var formType in _context.ScanResult.RuntimeEditorIds
+        foreach (var formType in Context.ScanResult.RuntimeEditorIds
                      .Where(entry => knownDialFormIds.Contains(entry.FormId))
                      .Select(entry => entry.FormType))
         {
@@ -54,7 +47,7 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
             const byte candidateFormType = 0x45;
             var validCount = 0;
             var testedCount = 0;
-            foreach (var entry in _context.ScanResult.RuntimeEditorIds)
+            foreach (var entry in Context.ScanResult.RuntimeEditorIds)
             {
                 if (entry.FormType != candidateFormType || !entry.TesFormOffset.HasValue)
                 {
@@ -66,7 +59,7 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
                     break;
                 }
 
-                var probe = _context.RuntimeReader!.ReadRuntimeDialogTopic(entry);
+                var probe = Context.RuntimeReader!.ReadRuntimeDialogTopic(entry);
                 if (probe != null)
                 {
                     validCount++;
@@ -102,14 +95,14 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
         var mergedCount = 0;
         var newCount = 0;
 
-        foreach (var entry in _context.ScanResult.RuntimeEditorIds)
+        foreach (var entry in Context.ScanResult.RuntimeEditorIds)
         {
             if (entry.FormType != dialFormType.Value || !entry.TesFormOffset.HasValue)
             {
                 continue;
             }
 
-            var runtimeTopic = _context.RuntimeReader!.ReadRuntimeDialogTopic(entry);
+            var runtimeTopic = Context.RuntimeReader!.ReadRuntimeDialogTopic(entry);
             if (runtimeTopic == null)
             {
                 continue;
@@ -132,7 +125,10 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
                     JournalIndex = existing.JournalIndex != 0
                         ? existing.JournalIndex
                         : runtimeTopic.JournalIndex,
-                    DummyPrompt = existing.DummyPrompt ?? runtimeTopic.DummyPrompt
+                    DummyPrompt = existing.DummyPrompt ?? runtimeTopic.DummyPrompt,
+                    RuntimeStructOffset = existing.RuntimeStructOffset > 0
+                        ? existing.RuntimeStructOffset
+                        : entry.TesFormOffset.Value
                 };
                 mergedCount++;
             }
@@ -151,6 +147,7 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
                     JournalIndex = runtimeTopic.JournalIndex,
                     DummyPrompt = runtimeTopic.DummyPrompt,
                     Offset = entry.TesFormOffset.Value,
+                    RuntimeStructOffset = entry.TesFormOffset.Value,
                     IsBigEndian = true
                 });
                 newCount++;
@@ -172,7 +169,7 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
     {
         // Build FormID -> runtime entry lookup from hash table
         var runtimeByFormId = new Dictionary<uint, RuntimeEditorIdEntry>();
-        foreach (var entry in _context.ScanResult.RuntimeEditorIds)
+        foreach (var entry in Context.ScanResult.RuntimeEditorIds)
         {
             if (entry.TesFormOffset.HasValue)
             {
@@ -181,7 +178,6 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
         }
 
         var mergedCount = 0;
-        var esmScriptEnrichedCount = 0;
 
         for (var i = 0; i < dialogues.Count; i++)
         {
@@ -192,46 +188,22 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
                 continue;
             }
 
-            var runtimeInfo = _context.RuntimeReader!.ReadRuntimeDialogueInfo(entry);
+            var runtimeInfo = Context.RuntimeReader!.ReadRuntimeDialogueInfo(entry);
             if (runtimeInfo == null)
             {
                 continue;
             }
 
-            // Calibrate ESM base VA from the first successful match between carved and runtime
-            if (!_esmBaseVA.HasValue && runtimeInfo.EsmFileOffset > 0)
-            {
-                TryCalibrateEsmBaseVA(dialogue.Offset, runtimeInfo.EsmFileOffset);
-            }
-
             dialogues[i] = MergeDialogueWithRuntimeInfo(dialogue, runtimeInfo, entry.EditorId);
             mergedCount++;
-
-            // Enrich carved records that have empty ResultScripts (scan-only fallback path)
-            if (dialogues[i].ResultScripts.Count == 0 && _esmBaseVA.HasValue &&
-                runtimeInfo.EsmFileOffset > 0)
-            {
-                var scripts = TryReadResultScriptsFromEsm(
-                    runtimeInfo.EsmFileOffset, dialogue.FormId,
-                    dialogues[i].EditorId);
-                if (scripts.Count > 0)
-                {
-                    dialogues[i] = dialogues[i] with
-                    {
-                        ResultScripts = scripts,
-                        HasResultScript = true
-                    };
-                    esmScriptEnrichedCount++;
-                }
-            }
         }
+
+        var tesFileScriptEnrichedCount = BackfillResultScriptsFromTesFilePages(dialogues);
 
         Logger.Instance.Debug(
             $"  [Semantic] Runtime INFO enrich: {mergedCount}/{dialogues.Count} enriched " +
-            $"(hashEntries={runtimeByFormId.Count})" +
-            (_esmBaseVA.HasValue
-                ? $", ESM base VA=0x{_esmBaseVA.Value:X}, scripts enriched={esmScriptEnrichedCount}"
-                : ", ESM base VA not calibrated"));
+            $"(hashEntries={runtimeByFormId.Count}, TES-file segments={_tesFileSegments.Count}, " +
+            $"scripts enriched={tesFileScriptEnrichedCount})");
     }
 
     /// <summary>
@@ -253,17 +225,14 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
         var topicByFormId = BuildTopicFormIdIndex(topics);
         var stats = new TopicLinkStats();
 
-        // Calibrate ESM base VA early so TryCreateNewDialogue can use it
-        CalibrateEsmBaseVAFromCarvedDialogues(dialogues);
-
-        foreach (var entry in _context.ScanResult.RuntimeEditorIds)
+        foreach (var entry in Context.ScanResult.RuntimeEditorIds)
         {
             if (entry.FormType != dialFormType.Value || !entry.TesFormOffset.HasValue)
             {
                 continue;
             }
 
-            var questLinks = _context.RuntimeReader!.WalkTopicQuestInfoList(entry);
+            var questLinks = Context.RuntimeReader!.WalkTopicQuestInfoList(entry);
             if (questLinks.Count == 0)
             {
                 continue;
@@ -296,7 +265,7 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
         var knownDialFormIds = new HashSet<uint>(topics.Select(t => t.FormId));
         var formTypeCounts = new Dictionary<byte, int>();
 
-        foreach (var formType in _context.ScanResult.RuntimeEditorIds
+        foreach (var formType in Context.ScanResult.RuntimeEditorIds
                      .Where(entry => knownDialFormIds.Contains(entry.FormId))
                      .Select(entry => entry.FormType))
         {
@@ -315,7 +284,7 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
 
         // Fallback: use 0x45 (empirically verified shared DIAL+INFO FormType)
         const byte candidateFormType = 0x45;
-        var hasEntries = _context.ScanResult.RuntimeEditorIds
+        var hasEntries = Context.ScanResult.RuntimeEditorIds
             .Any(e => e.FormType == candidateFormType && e.TesFormOffset.HasValue);
 
         return hasEntries ? candidateFormType : null;
@@ -497,7 +466,7 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
             stats.QuestLinked++;
         }
 
-        var runtimeInfo = _context.RuntimeReader!.ReadRuntimeDialogueInfoFromVA(infoEntry.VirtualAddress);
+        var runtimeInfo = Context.RuntimeReader!.ReadRuntimeDialogueInfoFromVA(infoEntry.VirtualAddress);
         if (runtimeInfo != null)
         {
             updated = MergeDialogueWithRuntimeInfo(updated, runtimeInfo);
@@ -521,20 +490,10 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
         uint questFormId,
         TopicLinkStats stats)
     {
-        var runtimeInfo = _context.RuntimeReader!.ReadRuntimeDialogueInfoFromVA(infoEntry.VirtualAddress);
+        var runtimeInfo = Context.RuntimeReader!.ReadRuntimeDialogueInfoFromVA(infoEntry.VirtualAddress);
         if (runtimeInfo == null)
         {
             return;
-        }
-
-        // Try to read result scripts from memory-mapped ESM data
-        var resultScripts = new List<DialogueResultScript>();
-        var hasResultScript = false;
-        if (_esmBaseVA.HasValue && runtimeInfo.EsmFileOffset > 0)
-        {
-            resultScripts = TryReadResultScriptsFromEsm(
-                runtimeInfo.EsmFileOffset, infoEntry.FormId, runtimeInfo.FormEditorId);
-            hasResultScript = resultScripts.Count > 0;
         }
 
         var newDialogue = new DialogueRecord
@@ -560,9 +519,9 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
             LinkFromTopics = runtimeInfo.LinkFromTopicFormIds,
             AddTopics = runtimeInfo.AddTopicFormIds,
             FollowUpInfos = runtimeInfo.FollowUpInfoFormIds,
-            HasResultScript = hasResultScript,
-            ResultScripts = resultScripts,
             Offset = runtimeInfo.DumpOffset,
+            RuntimeStructOffset = runtimeInfo.DumpOffset,
+            TesFileOffset = runtimeInfo.TesFileOffset,
             IsBigEndian = true
         };
 
@@ -598,6 +557,12 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
             SpeakerRaceFormId = dialogue.SpeakerRaceFormId ?? runtimeInfo.SpeakerRaceFormId,
             SpeakerVoiceTypeFormId = dialogue.SpeakerVoiceTypeFormId ?? runtimeInfo.SpeakerVoiceTypeFormId,
             QuestFormId = runtimeInfo.QuestFormId ?? dialogue.QuestFormId,
+            RuntimeStructOffset = dialogue.RuntimeStructOffset > 0
+                ? dialogue.RuntimeStructOffset
+                : runtimeInfo.DumpOffset,
+            TesFileOffset = dialogue.TesFileOffset != 0
+                ? dialogue.TesFileOffset
+                : runtimeInfo.TesFileOffset,
             ConditionFunctions = dialogue.ConditionFunctions.Count > 0
                 ? dialogue.ConditionFunctions
                 : runtimeInfo.ConditionFunctions,
@@ -621,149 +586,49 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context)
     }
 
     /// <summary>
-    ///     Pre-calibrate ESM base VA from existing carved dialogue records before the topic walk.
-    ///     This ensures _esmBaseVA is available when TryCreateNewDialogue runs.
+    ///     Recover dump-resident INFO result scripts after runtime linking has populated
+    ///     explicit TES-file offsets and raw/runtime provenance.
     /// </summary>
-    private void CalibrateEsmBaseVAFromCarvedDialogues(List<DialogueRecord> dialogues)
+    private int BackfillResultScriptsFromTesFilePages(List<DialogueRecord> dialogues)
     {
-        if (_esmBaseVA.HasValue || _context.RuntimeReader == null)
+        _tesFileSegments = DialogueTesFileScriptRecovery.CalibrateSegments(
+            dialogues,
+            Context.MinidumpInfo);
+
+        if (_tesFileSegments.Count == 0)
         {
-            return;
+            return 0;
         }
 
-        // Build FormID -> runtime entry lookup
-        var runtimeByFormId = new Dictionary<uint, RuntimeEditorIdEntry>();
-        foreach (var entry in _context.ScanResult.RuntimeEditorIds)
+        var enrichedCount = 0;
+        for (var i = 0; i < dialogues.Count; i++)
         {
-            if (entry.TesFormOffset.HasValue)
-            {
-                runtimeByFormId.TryAdd(entry.FormId, entry);
-            }
-        }
-
-        foreach (var dialogue in dialogues)
-        {
-            if (dialogue.Offset <= 0 || !runtimeByFormId.TryGetValue(dialogue.FormId, out var entry))
+            var dialogue = dialogues[i];
+            if (dialogue.ResultScripts.Count > 0 || dialogue.TesFileOffset == 0)
             {
                 continue;
             }
 
-            var runtimeInfo = _context.RuntimeReader.ReadRuntimeDialogueInfo(entry);
-            if (runtimeInfo?.EsmFileOffset > 0)
+            var recovery = DialogueTesFileScriptRecovery.TryRecover(
+                Context,
+                _tesFileSegments,
+                dialogue.TesFileOffset,
+                dialogue.FormId,
+                dialogue.EditorId);
+            if (recovery.Status != DialogueTesFileScriptRecoveryStatus.Recovered)
             {
-                TryCalibrateEsmBaseVA(dialogue.Offset, runtimeInfo.EsmFileOffset);
-                if (_esmBaseVA.HasValue)
-                {
-                    return;
-                }
+                continue;
             }
-        }
-    }
 
-    /// <summary>
-    ///     Calibrate the ESM base virtual address by comparing a carved record's dump offset
-    ///     to its runtime iFileOffset (ESM file position).
-    /// </summary>
-    private void TryCalibrateEsmBaseVA(long carvedDmpOffset, uint esmFileOffset)
-    {
-        var carvedVA = _context.MinidumpInfo?.FileOffsetToVirtualAddress(carvedDmpOffset);
-        if (carvedVA == null)
-        {
-            return;
+            dialogues[i] = dialogue with
+            {
+                ResultScripts = recovery.Scripts,
+                HasResultScript = true
+            };
+            enrichedCount++;
         }
 
-        _esmBaseVA = carvedVA.Value - esmFileOffset;
-        Logger.Instance.Debug(
-            $"  [Semantic] ESM base VA calibrated: 0x{_esmBaseVA.Value:X} " +
-            $"(carved VA=0x{carvedVA.Value:X}, esmOffset=0x{esmFileOffset:X})");
-    }
-
-    /// <summary>
-    ///     Try to read result scripts from the memory-mapped ESM data in the dump.
-    ///     Uses the calibrated ESM base VA + iFileOffset to locate the raw INFO record.
-    /// </summary>
-    private List<DialogueResultScript> TryReadResultScriptsFromEsm(
-        uint esmOffset, uint expectedFormId, string? editorId)
-    {
-        if (!_esmBaseVA.HasValue || _context.Accessor == null)
-        {
-            return [];
-        }
-
-        // Compute the virtual address of this INFO record in the dump
-        var targetVA = _esmBaseVA.Value + esmOffset;
-        var dmpOffset = _context.MinidumpInfo?.VirtualAddressToFileOffset(targetVA);
-        if (dmpOffset == null)
-        {
-            return []; // Page not captured in dump
-        }
-
-        // Read the 24-byte ESM record header
-        const int headerSize = 24;
-        if (dmpOffset.Value + headerSize > _context.FileSize)
-        {
-            return [];
-        }
-
-        var header = new byte[headerSize];
-        try
-        {
-            _context.Accessor.ReadArray(dmpOffset.Value, header, 0, headerSize);
-        }
-        catch
-        {
-            return [];
-        }
-
-        // Validate: 4-byte signature should be "INFO" (big-endian ASCII)
-        var sig = System.Text.Encoding.ASCII.GetString(header, 0, 4);
-        if (sig != "INFO")
-        {
-            return [];
-        }
-
-        // Read DataSize (big-endian for Xbox ESM)
-        var dataSize = BinaryPrimitives.ReadUInt32BigEndian(header.AsSpan(4));
-        if (dataSize == 0 || dataSize > 65536)
-        {
-            return []; // Sanity check
-        }
-
-        // Read and validate FormID from header (offset 12 in record header, big-endian)
-        var recordFormId = BinaryPrimitives.ReadUInt32BigEndian(header.AsSpan(12));
-        if (recordFormId != expectedFormId)
-        {
-            return []; // FormID mismatch — calibration may be off
-        }
-
-        // Check for compression (flags at offset 8)
-        var flags = BinaryPrimitives.ReadUInt32BigEndian(header.AsSpan(8));
-        if ((flags & 0x00040000) != 0)
-        {
-            return []; // Compressed record — skip for now
-        }
-
-        // Read record data
-        var dataStart = dmpOffset.Value + headerSize;
-        if (dataStart + dataSize > _context.FileSize)
-        {
-            return [];
-        }
-
-        var recordData = new byte[dataSize];
-        try
-        {
-            _context.Accessor.ReadArray(dataStart, recordData, 0, (int)dataSize);
-        }
-        catch
-        {
-            return [];
-        }
-
-        // Parse result scripts from the raw subrecord data
-        return DialogueConditionParser.ParseResultScriptsFromSubrecords(
-            recordData, (int)dataSize, true,
-            editorId, expectedFormId, _context.ResolveFormName);
+        return enrichedCount;
     }
 
     /// <summary>

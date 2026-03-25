@@ -1,17 +1,98 @@
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Coverage;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Pdb;
 using FalloutXbox360Utils.Core.Strings;
+using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.RuntimeBuffer;
+
+/// <summary>
+///     Shared context for all buffer analysis collaborators.
+/// </summary>
+internal sealed class BufferAnalysisContext
+{
+    public BufferAnalysisContext(
+        MemoryMappedViewAccessor accessor,
+        long fileSize,
+        MinidumpInfo minidumpInfo,
+        CoverageResult coverage,
+        PdbAnalysisResult? pdbAnalysis,
+        IReadOnlyList<RuntimeEditorIdEntry>? runtimeEditorIds,
+        uint moduleStart,
+        uint moduleEnd)
+    {
+        Accessor = accessor;
+        FileSize = fileSize;
+        MinidumpInfo = minidumpInfo;
+        Coverage = coverage;
+        PdbAnalysis = pdbAnalysis;
+        RuntimeEditorIds = runtimeEditorIds;
+        ModuleStart = moduleStart;
+        ModuleEnd = moduleEnd;
+    }
+
+    public MemoryMappedViewAccessor Accessor { get; }
+    public long FileSize { get; }
+    public MinidumpInfo MinidumpInfo { get; }
+    public CoverageResult Coverage { get; }
+    public PdbAnalysisResult? PdbAnalysis { get; }
+    public IReadOnlyList<RuntimeEditorIdEntry>? RuntimeEditorIds { get; }
+    public uint ModuleStart { get; }
+    public uint ModuleEnd { get; }
+
+    /// <summary>
+    ///     Check if a 32-bit value is a valid pointer in the minidump.
+    /// </summary>
+    public bool IsValidPointer(uint va)
+    {
+        return va != 0 && Xbox360MemoryUtils.IsValidPointerInDump(va, MinidumpInfo);
+    }
+
+    /// <summary>
+    ///     Convert a 32-bit Xbox 360 virtual address to file offset.
+    /// </summary>
+    public long? VaToFileOffset(uint va)
+    {
+        if (va == 0)
+        {
+            return null;
+        }
+
+        return MinidumpInfo.VirtualAddressToFileOffset(Xbox360MemoryUtils.VaToLong(va));
+    }
+
+    /// <summary>
+    ///     Count valid pointers in a buffer (for structure analysis).
+    /// </summary>
+    public int CountValidPointers(byte[] buffer)
+    {
+        var count = 0;
+        for (var i = 0; i <= buffer.Length - 4; i += 4)
+        {
+            var ptr = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(buffer.AsSpan(i, 4));
+            if (ptr != 0 && IsValidPointer(ptr))
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+}
 
 /// <summary>
 ///     Analyzes unmatched gaps in memory dumps to identify runtime buffers,
 ///     string pools, and data structures.
 /// </summary>
-internal sealed partial class RuntimeBufferAnalyzer
+internal sealed class RuntimeBufferAnalyzer
 {
+    private readonly BufferAnalysisContext _ctx;
+    private readonly RuntimeBufferScanner _scanner;
+    private readonly RuntimeBufferStringExtractor _stringExtractor;
+    private readonly RuntimeBufferPointerAnalyzer _pointerAnalyzer;
+
     #region Constructor
 
     public RuntimeBufferAnalyzer(
@@ -19,67 +100,27 @@ internal sealed partial class RuntimeBufferAnalyzer
         long fileSize,
         MinidumpInfo minidumpInfo,
         CoverageResult coverage,
-        PdbAnalysisResult? pdbAnalysis)
+        PdbAnalysisResult? pdbAnalysis,
+        IReadOnlyList<RuntimeEditorIdEntry>? runtimeEditorIds = null)
     {
-        _accessor = accessor;
-        _fileSize = fileSize;
-        _minidumpInfo = minidumpInfo;
-        _coverage = coverage;
-        _pdbAnalysis = pdbAnalysis;
-
         var gameModule = MinidumpAnalyzer.FindGameModule(minidumpInfo);
+        uint moduleStart = 0;
+        uint moduleEnd = 0;
         if (gameModule != null)
         {
-            _moduleStart = gameModule.BaseAddress32;
-            _moduleEnd = (uint)(gameModule.BaseAddress + gameModule.Size);
+            moduleStart = gameModule.BaseAddress32;
+            moduleEnd = (uint)(gameModule.BaseAddress + gameModule.Size);
         }
+
+        _ctx = new BufferAnalysisContext(
+            accessor, fileSize, minidumpInfo, coverage, pdbAnalysis, runtimeEditorIds,
+            moduleStart, moduleEnd);
+
+        _stringExtractor = new RuntimeBufferStringExtractor(_ctx);
+        _pointerAnalyzer = new RuntimeBufferPointerAnalyzer(_ctx);
+        var niTMapReader = new RuntimeBufferNiTMapReader(_ctx, _stringExtractor);
+        _scanner = new RuntimeBufferScanner(_ctx, _stringExtractor, niTMapReader);
     }
-
-    #endregion
-
-    #region Constants
-
-    private const int MinStringLength = 4;
-
-    private const int MaxStringLength = 512;
-
-    private const int MaxSampleStrings = 20;
-
-    private const int SignatureScanBytes = 512;
-
-    private static readonly HashSet<string> KnownFileExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".nif", ".dds", ".ddx", ".kf", ".wav", ".lip", ".psc", ".txt",
-        ".esm", ".esp", ".bsa", ".xml", ".ini", ".fuz", ".xwm", ".bik",
-        ".mp3", ".ogg", ".xur", ".xui", ".scda"
-    };
-
-    private static readonly HashSet<string> GameAssetPrefixes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "meshes", "textures", "sound", "interface", "menus", "scripts",
-        "shaders", "music", "video", "strings", "grass", "trees",
-        "landscape", "actors", "characters", "creatures", "effects",
-        "clutter", "architecture", "weapons", "armor", "lodsettings",
-        "data", "bsa", "esm", "esp"
-    };
-
-    #endregion
-
-    #region Fields
-
-    private readonly MemoryMappedViewAccessor _accessor;
-
-    private readonly CoverageResult _coverage;
-
-    private readonly long _fileSize;
-
-    private readonly MinidumpInfo _minidumpInfo;
-
-    private readonly uint _moduleEnd;
-
-    private readonly uint _moduleStart;
-
-    private readonly PdbAnalysisResult? _pdbAnalysis;
 
     #endregion
 
@@ -92,14 +133,15 @@ internal sealed partial class RuntimeBufferAnalyzer
     {
         var result = new BufferExplorationResult();
 
-        if (_pdbAnalysis != null)
+        if (_ctx.PdbAnalysis != null)
         {
-            RunManagerWalk(result);
+            _scanner.RunManagerWalk(result);
         }
 
-        RunStringPoolExtraction(result);
-        RunBinarySignatureScan(result);
-        RunPointerGraphAnalysis(result);
+        _scanner.RunStringPoolExtraction(result);
+        _pointerAnalyzer.RunStringOwnershipAnalysis(result);
+        _scanner.RunBinarySignatureScan(result);
+        _pointerAnalyzer.RunPointerGraphAnalysis(result);
 
         return result;
     }
@@ -110,9 +152,23 @@ internal sealed partial class RuntimeBufferAnalyzer
     /// </summary>
     public StringPoolSummary ExtractStringPoolOnly()
     {
+        return ExtractStringDataOnly().StringPool;
+    }
+
+    /// <summary>
+    ///     Run only the runtime string extraction and ownership passes.
+    /// </summary>
+    public RuntimeStringReportData ExtractStringDataOnly()
+    {
         var result = new BufferExplorationResult();
-        RunStringPoolExtraction(result);
-        return result.StringPools!;
+        if (_ctx.PdbAnalysis != null)
+        {
+            _scanner.RunManagerWalk(result);
+        }
+
+        _scanner.RunStringPoolExtraction(result);
+        _pointerAnalyzer.RunStringOwnershipAnalysis(result);
+        return new RuntimeStringReportData(result.StringPools!, result.StringOwnership!);
     }
 
     /// <summary>

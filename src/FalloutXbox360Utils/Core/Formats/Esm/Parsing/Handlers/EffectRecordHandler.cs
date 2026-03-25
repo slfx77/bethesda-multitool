@@ -5,9 +5,8 @@ using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
-internal sealed class EffectRecordHandler(RecordParserContext context)
+internal sealed class EffectRecordHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
-    private readonly RecordParserContext _context = context;
 
     #region Enchantments
 
@@ -18,7 +17,7 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
     {
         var enchantments = new List<EnchantmentRecord>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             return enchantments;
         }
@@ -26,9 +25,9 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
         var buffer = ArrayPool<byte>.Shared.Rent(2048);
         try
         {
-            foreach (var record in _context.GetRecordsByType("ENCH"))
+            foreach (var record in Context.GetRecordsByType("ENCH"))
             {
-                var recordData = _context.ReadRecordData(record, buffer);
+                var recordData = Context.ReadRecordData(record, buffer);
                 if (recordData == null)
                 {
                     continue;
@@ -51,7 +50,7 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
                             editorId = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
                             if (!string.IsNullOrEmpty(editorId))
                             {
-                                _context.FormIdToEditorId[record.FormId] = editorId;
+                                Context.FormIdToEditorId[record.FormId] = editorId;
                             }
 
                             break;
@@ -118,7 +117,7 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        _context.MergeRuntimeRecords(enchantments, 0x13, e => e.FormId,
+        Context.MergeRuntimeRecords(enchantments, 0x13, e => e.FormId,
             (reader, entry) => reader.ReadRuntimeEnchantment(entry), "enchantments");
 
         return enchantments;
@@ -135,7 +134,7 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
     {
         var effects = new List<BaseEffectRecord>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             return effects;
         }
@@ -143,9 +142,9 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
         var buffer = ArrayPool<byte>.Shared.Rent(4096);
         try
         {
-            foreach (var record in _context.GetRecordsByType("MGEF"))
+            foreach (var record in Context.GetRecordsByType("MGEF"))
             {
-                var recordData = _context.ReadRecordData(record, buffer);
+                var recordData = Context.ReadRecordData(record, buffer);
                 if (recordData == null)
                 {
                     continue;
@@ -170,7 +169,7 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
                             editorId = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
                             if (!string.IsNullOrEmpty(editorId))
                             {
-                                _context.FormIdToEditorId[record.FormId] = editorId;
+                                Context.FormIdToEditorId[record.FormId] = editorId;
                             }
 
                             break;
@@ -263,7 +262,7 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        _context.MergeRuntimeRecords(effects, 0x10, e => e.FormId,
+        Context.MergeRuntimeRecords(effects, 0x10, e => e.FormId,
             (reader, entry) => reader.ReadRuntimeBaseEffect(entry), "base effects");
 
         return effects;
@@ -279,17 +278,17 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
     internal List<PerkRecord> ParsePerks()
     {
         var perks = new List<PerkRecord>();
-        var perkRecords = _context.GetRecordsByType("PERK").ToList();
+        var perkRecords = Context.GetRecordsByType("PERK").ToList();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             foreach (var record in perkRecords)
             {
                 perks.Add(new PerkRecord
                 {
                     FormId = record.FormId,
-                    EditorId = _context.GetEditorId(record.FormId),
-                    FullName = _context.FindFullNameNear(record.Offset),
+                    EditorId = Context.GetEditorId(record.FormId),
+                    FullName = Context.FindFullNameNear(record.Offset),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
@@ -315,7 +314,7 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
             }
         }
 
-        _context.MergeRuntimeRecords(perks, 0x56, p => p.FormId,
+        Context.MergeRuntimeRecords(perks, 0x56, p => p.FormId,
             (reader, entry) => reader.ReadRuntimePerk(entry), "perks");
 
         return perks;
@@ -323,14 +322,14 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
 
     private PerkRecord? ParsePerkFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
-        var recordData = _context.ReadRecordData(record, buffer);
+        var recordData = Context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
             return new PerkRecord
             {
                 FormId = record.FormId,
-                EditorId = _context.GetEditorId(record.FormId),
-                FullName = _context.FindFullNameNear(record.Offset),
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
                 Offset = record.Offset,
                 IsBigEndian = record.IsBigEndian
             };
@@ -399,7 +398,7 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
         return new PerkRecord
         {
             FormId = record.FormId,
-            EditorId = editorId ?? _context.GetEditorId(record.FormId),
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
             Description = description,
             IconPath = iconPath,
@@ -423,17 +422,17 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
     internal List<SpellRecord> ParseSpells()
     {
         var spells = new List<SpellRecord>();
-        var spellRecords = _context.GetRecordsByType("SPEL").ToList();
+        var spellRecords = Context.GetRecordsByType("SPEL").ToList();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             foreach (var record in spellRecords)
             {
                 spells.Add(new SpellRecord
                 {
                     FormId = record.FormId,
-                    EditorId = _context.GetEditorId(record.FormId),
-                    FullName = _context.FindFullNameNear(record.Offset),
+                    EditorId = Context.GetEditorId(record.FormId),
+                    FullName = Context.FindFullNameNear(record.Offset),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
@@ -459,7 +458,7 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
             }
         }
 
-        _context.MergeRuntimeRecords(spells, 0x14, s => s.FormId,
+        Context.MergeRuntimeRecords(spells, 0x14, s => s.FormId,
             (reader, entry) => reader.ReadRuntimeSpell(entry), "spells");
 
         return spells;
@@ -467,14 +466,14 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
 
     private SpellRecord? ParseSpellFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
-        var recordData = _context.ReadRecordData(record, buffer);
+        var recordData = Context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
             return new SpellRecord
             {
                 FormId = record.FormId,
-                EditorId = _context.GetEditorId(record.FormId),
-                FullName = _context.FindFullNameNear(record.Offset),
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
                 Offset = record.Offset,
                 IsBigEndian = record.IsBigEndian
             };
@@ -524,7 +523,7 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
         return new SpellRecord
         {
             FormId = record.FormId,
-            EditorId = editorId ?? _context.GetEditorId(record.FormId),
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
             Type = type,
             Cost = cost,

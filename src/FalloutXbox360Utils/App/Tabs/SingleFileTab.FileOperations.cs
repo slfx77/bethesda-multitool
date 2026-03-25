@@ -58,21 +58,22 @@ public sealed partial class SingleFileTab
             StatusTextBlock.Text = Strings.Status_GeneratingReports;
 
             // Extract string pool data for minidump files (requires coverage + accessor)
-            if (_session.StringPool == null && !_session.IsEsmFile
-                                            && _session.CoverageResult != null
-                                            && _session.Accessor != null
-                                            && _session.AnalysisResult?.MinidumpInfo != null)
+            if ((_session.StringPool == null || _session.StringOwnership == null) && !_session.IsEsmFile
+                                                                             && _session.CoverageResult != null
+                                                                             && _session.Accessor != null
+                                                                             && _session.AnalysisResult != null
+                                                                             && _session.AnalysisResult.MinidumpInfo != null)
             {
-                _session.StringPool = await Task.Run(() =>
+                var stringData = await Task.Run(() =>
                 {
-                    var bufferAnalyzer = new RuntimeBufferAnalyzer(
-                        _session.Accessor, _session.FileSize,
-                        _session.AnalysisResult.MinidumpInfo, _session.CoverageResult, null);
-                    var sp = bufferAnalyzer.ExtractStringPoolOnly();
-                    RuntimeBufferAnalyzer.CrossReferenceWithCarvedFiles(
-                        sp, _session.AnalysisResult.CarvedFiles);
-                    return sp;
+                    return RuntimeStringReportHelper.Extract(
+                        _session.AnalysisResult,
+                        _session.Accessor,
+                        _session.CoverageResult);
                 });
+
+                _session.StringPool = stringData?.StringPool;
+                _session.StringOwnership = stringData?.OwnershipAnalysis;
             }
 
             var sources = new ReportDataSources(
@@ -80,7 +81,8 @@ public sealed partial class SingleFileTab
                 _session.AnalysisResult?.FormIdMap,
                 _session.AnalysisResult?.EsmRecords?.AssetStrings,
                 _session.AnalysisResult?.EsmRecords?.RuntimeEditorIds,
-                _session.StringPool);
+                _session.StringPool,
+                _session.StringOwnership);
 
             var reports = await Task.Run(() =>
                 GeckReportGenerator.GenerateAllReports(sources));

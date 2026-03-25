@@ -6,10 +6,9 @@ using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
-internal sealed class WorldRecordHandler(RecordParserContext context)
+internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
     private readonly CellRecordHandler _cellHandler = new(context);
-    private readonly RecordParserContext _context = context;
 
     #region Map Markers
 
@@ -21,7 +20,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
         var markers = new List<PlacedReference>();
 
         // Map markers come from REFR records with XMRK subrecord
-        foreach (var refr in _context.ScanResult.RefrRecords)
+        foreach (var refr in Context.ScanResult.RefrRecords)
         {
             if (!refr.IsMapMarker)
             {
@@ -32,7 +31,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
             {
                 FormId = refr.Header.FormId,
                 BaseFormId = refr.BaseFormId,
-                BaseEditorId = refr.BaseEditorId ?? _context.GetEditorId(refr.BaseFormId),
+                BaseEditorId = refr.BaseEditorId ?? Context.GetEditorId(refr.BaseFormId),
                 RecordType = refr.Header.RecordType,
                 X = refr.Position?.X ?? 0,
                 Y = refr.Position?.Y ?? 0,
@@ -276,9 +275,9 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
     internal List<WorldspaceRecord> ParseWorldspaces()
     {
         var worldspaces = new List<WorldspaceRecord>();
-        var wrldRecords = _context.GetRecordsByType("WRLD").ToList();
+        var wrldRecords = Context.GetRecordsByType("WRLD").ToList();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             foreach (var record in wrldRecords)
             {
@@ -309,7 +308,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
             }
         }
 
-        _context.MergeRuntimeOverlayRecords(
+        Context.MergeRuntimeOverlayRecords(
             worldspaces,
             [0x41],
             record => record.FormId,
@@ -317,7 +316,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
             MergeWorldspace,
             "worldspaces");
 
-        if (_context.RuntimeWorldspaceCellMaps is { Count: > 0 })
+        if (Context.RuntimeWorldspaceCellMaps is { Count: > 0 })
         {
             var indexedWorldspaces = new Dictionary<uint, int>(worldspaces.Count);
             for (var i = 0; i < worldspaces.Count; i++)
@@ -326,9 +325,9 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
             }
 
             var cellMapOnlyAdded = 0;
-            foreach (var (worldspaceFormId, worldData) in _context.RuntimeWorldspaceCellMaps)
+            foreach (var (worldspaceFormId, worldData) in Context.RuntimeWorldspaceCellMaps)
             {
-                var runtimeFallback = BuildRuntimeCellMapWorldspace(worldData, _context);
+                var runtimeFallback = BuildRuntimeCellMapWorldspace(worldData, Context);
 
                 if (indexedWorldspaces.TryGetValue(worldspaceFormId, out var existingIndex))
                 {
@@ -354,7 +353,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
 
     private WorldspaceRecord? ParseWorldspaceFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
-        var recordData = _context.ReadRecordData(record, buffer);
+        var recordData = Context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
             return ParseWorldspaceFromScanResult(record);
@@ -487,7 +486,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
         return new WorldspaceRecord
         {
             FormId = record.FormId,
-            EditorId = editorId ?? _context.GetEditorId(record.FormId),
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
             ParentWorldspaceFormId = parentWorldspace,
             ClimateFormId = climate,
@@ -522,8 +521,8 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
         return new WorldspaceRecord
         {
             FormId = record.FormId,
-            EditorId = _context.GetEditorId(record.FormId),
-            FullName = _context.FindFullNameNear(record.Offset),
+            EditorId = Context.GetEditorId(record.FormId),
+            FullName = Context.FindFullNameNear(record.Offset),
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };

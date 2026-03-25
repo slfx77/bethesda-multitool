@@ -76,7 +76,8 @@ public sealed class RuntimeNpcAutoDetectTests
         var entry2 = WritePrimitiveArrayNpcRecord(data, 0x700, 0x0012A112, 16);
 
         using var context = new SyntheticNpcDump(data);
-        var runtimeContext = new RuntimeMemoryContext(new MmfMemoryAccessor(context.Accessor), data.Length, context.MinidumpInfo);
+        var runtimeContext =
+            new RuntimeMemoryContext(new MmfMemoryAccessor(context.Accessor), data.Length, context.MinidumpInfo);
         var probe = RuntimeNpcLayoutProbe.Probe(runtimeContext, [entry, entry2]);
         var reader = new RuntimeStructReader(
             new MmfMemoryAccessor(context.Accessor),

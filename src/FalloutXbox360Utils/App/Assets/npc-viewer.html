@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8">
-  <script type="module" src="model-viewer.min.js"></script>
-  <style>
+    <meta charset="utf-8">
+    <script type="module" src="model-viewer.min.js"></script>
+    <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #1a1a2e; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
     model-viewer {
@@ -29,16 +29,16 @@
   </style>
 </head>
 <body>
-  <model-viewer id="viewer"
-    camera-controls
-    camera-orbit="180deg 90deg auto"
-    shadow-intensity="0.6"
-    exposure="1.2"
-    environment-image="neutral"
-    interaction-prompt="none">
-  </model-viewer>
-  <div id="status">Select an NPC to view</div>
-  <script>
+<model-viewer id="viewer"
+              camera-controls
+              camera-orbit="180deg 90deg auto"
+              shadow-intensity="0.6"
+              exposure="1.2"
+              environment-image="neutral"
+              interaction-prompt="none">
+</model-viewer>
+<div id="status">Select an NPC to view</div>
+<script>
     const viewer = document.getElementById('viewer');
     const status = document.getElementById('status');
     let currentBlobUrl = null;

@@ -826,7 +826,7 @@ public sealed class NpcAppearanceHelperTests
     [Fact]
     public void WeaponAttachmentNode_UsesExplicitEmbeddedNodeWhenPresent()
     {
-        var result = NpcBodyBuilder.TryResolveWeaponAttachmentNode(
+        var result = NpcWeaponAttachmentResolver.TryResolveWeaponAttachmentNode(
             new WeaponVisual
             {
                 IsVisible = true,
@@ -844,7 +844,7 @@ public sealed class NpcAppearanceHelperTests
     [Fact]
     public void WeaponAttachmentNode_EmbeddedWeaponWithoutNode_IsRejected()
     {
-        var result = NpcBodyBuilder.TryResolveWeaponAttachmentNode(
+        var result = NpcWeaponAttachmentResolver.TryResolveWeaponAttachmentNode(
             new WeaponVisual
             {
                 IsVisible = true,
@@ -870,7 +870,7 @@ public sealed class NpcAppearanceHelperTests
             ["Weapon"] = Matrix4x4.CreateTranslation(44f, 0f, 0f)
         };
 
-        var result = NpcBodyBuilder.TryResolveEquippedWeaponAttachmentTransform(
+        var result = NpcWeaponAttachmentResolver.TryResolveEquippedWeaponAttachmentTransform(
             new WeaponVisual
             {
                 IsVisible = true,
@@ -898,7 +898,7 @@ public sealed class NpcAppearanceHelperTests
             ["Bip01 R ForeTwist"] = Matrix4x4.CreateTranslation(22f, 0f, 0f)
         };
 
-        var result = NpcBodyBuilder.TryResolveEquippedWeaponAttachmentTransform(
+        var result = NpcWeaponAttachmentResolver.TryResolveEquippedWeaponAttachmentTransform(
             new WeaponVisual
             {
                 IsVisible = true,
@@ -924,7 +924,7 @@ public sealed class NpcAppearanceHelperTests
             ["Bip01 R ForeTwist"] = Matrix4x4.CreateTranslation(22f, 0f, 0f)
         };
 
-        var handResult = NpcBodyBuilder.TryResolveEquippedWeaponAttachmentTransform(
+        var handResult = NpcWeaponAttachmentResolver.TryResolveEquippedWeaponAttachmentTransform(
             new WeaponVisual
             {
                 IsVisible = true,
@@ -945,7 +945,7 @@ public sealed class NpcAppearanceHelperTests
             ["Bip01 R ForeTwist"] = Matrix4x4.CreateTranslation(22f, 0f, 0f)
         };
 
-        var foreTwistResult = NpcBodyBuilder.TryResolveEquippedWeaponAttachmentTransform(
+        var foreTwistResult = NpcWeaponAttachmentResolver.TryResolveEquippedWeaponAttachmentTransform(
             new WeaponVisual
             {
                 IsVisible = true,
@@ -965,7 +965,7 @@ public sealed class NpcAppearanceHelperTests
     [Fact]
     public void EquippedWeaponAttachment_OmitsWhenNoCandidateBoneExists()
     {
-        var result = NpcBodyBuilder.TryResolveEquippedWeaponAttachmentTransform(
+        var result = NpcWeaponAttachmentResolver.TryResolveEquippedWeaponAttachmentTransform(
             new WeaponVisual
             {
                 IsVisible = true,
@@ -992,7 +992,7 @@ public sealed class NpcAppearanceHelperTests
             ["Bip01 L Hand"] = Matrix4x4.CreateTranslation(-18f, 1f, 54f)
         };
 
-        var foreTwistResult = NpcBodyBuilder.TryResolveEquipmentAttachmentTransform(
+        var foreTwistResult = NpcWeaponAttachmentResolver.TryResolveEquipmentAttachmentTransform(
             new EquippedItem
             {
                 MeshPath = @"meshes\pipboy3000\pipboyarmnpc.nif",
@@ -1015,7 +1015,7 @@ public sealed class NpcAppearanceHelperTests
             ["Bip01 L Hand"] = Matrix4x4.CreateTranslation(-18f, 1f, 54f)
         };
 
-        var handResult = NpcBodyBuilder.TryResolveEquipmentAttachmentTransform(
+        var handResult = NpcWeaponAttachmentResolver.TryResolveEquipmentAttachmentTransform(
             new EquippedItem
             {
                 MeshPath = @"meshes\pipboy3000\pipboyarmnpc.nif",
@@ -1043,7 +1043,7 @@ public sealed class NpcAppearanceHelperTests
             ["Bip01 R ForeTwist"] = Matrix4x4.CreateTranslation(22f, 0f, 0f)
         };
 
-        var result = NpcBodyBuilder.TryResolveProcessStyleWeaponAttachmentTransform(
+        var result = NpcWeaponAttachmentResolver.TryResolveProcessStyleWeaponAttachmentTransform(
             Matrix4x4.CreateTranslation(1f, 0f, 0f),
             idleBoneTransforms,
             ["Bip01 R Hand", "Bip01 R ForeTwist"],
@@ -1063,7 +1063,7 @@ public sealed class NpcAppearanceHelperTests
             ["Bip01 R ForeTwist"] = Matrix4x4.CreateTranslation(22f, 0f, 0f)
         };
 
-        var result = NpcBodyBuilder.TryResolveProcessStyleWeaponAttachmentTransform(
+        var result = NpcWeaponAttachmentResolver.TryResolveProcessStyleWeaponAttachmentTransform(
             Matrix4x4.CreateTranslation(1f, 0f, 0f),
             idleBoneTransforms,
             ["Bip01 R Hand", "Bip01 R ForeTwist"],
@@ -1078,7 +1078,7 @@ public sealed class NpcAppearanceHelperTests
     [Fact]
     public void HandToHandProcessAttachment_OmitsWhenNoProcessParentBoneExists()
     {
-        var result = NpcBodyBuilder.TryResolveProcessStyleWeaponAttachmentTransform(
+        var result = NpcWeaponAttachmentResolver.TryResolveProcessStyleWeaponAttachmentTransform(
             Matrix4x4.Identity,
             new Dictionary<string, Matrix4x4>(StringComparer.OrdinalIgnoreCase),
             ["Bip01 R Hand", "Bip01 R ForeTwist"],
@@ -1098,7 +1098,7 @@ public sealed class NpcAppearanceHelperTests
             ["Bip01 R ForeTwist"] = Matrix4x4.CreateTranslation(22f, 0f, 0f)
         };
 
-        var result = NpcBodyBuilder.TryResolveHandToHandProcessStyleWeaponAttachmentTransform(
+        var result = NpcWeaponAttachmentResolver.TryResolveHandToHandProcessStyleWeaponAttachmentTransform(
             Matrix4x4.CreateTranslation(1f, 0f, 0f),
             idleBoneTransforms,
             ["Bip01 R Hand", "Bip01 R ForeTwist"],
@@ -1129,7 +1129,7 @@ public sealed class NpcAppearanceHelperTests
             ["Bip01 R ForeTwist"] = Matrix4x4.CreateTranslation(22f, 0f, 0f)
         };
 
-        var result = NpcBodyBuilder.TryResolveHandToHandProcessWeaponAttachmentTransform(
+        var result = NpcWeaponAttachmentResolver.TryResolveHandToHandProcessWeaponAttachmentTransform(
             idleBoneTransforms,
             @"meshes\characters\_male\skeleton.nif",
             meshArchives,
@@ -1159,7 +1159,7 @@ public sealed class NpcAppearanceHelperTests
             ["Bip01 R ForeTwist"] = Matrix4x4.CreateTranslation(22f, 0f, 0f)
         };
 
-        var result = NpcBodyBuilder.TryResolveHandToHandProcessWeaponAttachmentTransform(
+        var result = NpcWeaponAttachmentResolver.TryResolveHandToHandProcessWeaponAttachmentTransform(
             idleBoneTransforms,
             @"meshes\characters\_male\skeleton.nif",
             meshArchives,
@@ -1189,7 +1189,7 @@ public sealed class NpcAppearanceHelperTests
             ["Bip01 R ForeTwist"] = Matrix4x4.CreateTranslation(22f, 0f, 0f)
         };
 
-        var result = NpcBodyBuilder.TryResolveHandToHandProcessWeaponAttachmentTransform(
+        var result = NpcWeaponAttachmentResolver.TryResolveHandToHandProcessWeaponAttachmentTransform(
             idleBoneTransforms,
             @"meshes\characters\_male\skeleton.nif",
             meshArchives,
@@ -1210,7 +1210,7 @@ public sealed class NpcAppearanceHelperTests
         var idleKf = LoadNif(Path.Combine(MaleSampleCharacterRoot, "h2hidle.kf"));
         Assert.NotNull(idleKf);
 
-        var parentOverride = NpcBodyBuilder.TryParseSequenceParentBoneName(idleKf.Value.Info);
+        var parentOverride = NpcSkeletonLoader.TryParseSequenceParentBoneName(idleKf.Value.Info);
 
         Assert.Equal("Bip01 R Hand", parentOverride);
     }
@@ -1221,7 +1221,7 @@ public sealed class NpcAppearanceHelperTests
         var equipKf = LoadNif(Path.Combine(MaleSampleCharacterRoot, "h2hequip.kf"));
         Assert.NotNull(equipKf);
 
-        var parentOverride = NpcBodyBuilder.TryParseSequenceParentBoneName(equipKf.Value.Info);
+        var parentOverride = NpcSkeletonLoader.TryParseSequenceParentBoneName(equipKf.Value.Info);
 
         Assert.Equal("Bip01 R ForeTwist", parentOverride);
     }
@@ -1253,7 +1253,7 @@ public sealed class NpcAppearanceHelperTests
     [Fact]
     public void ResolveAnimationAssetPath_UsesMeshesRootForFullIdleAssetPaths()
     {
-        var resolved = NpcBodyBuilder.ResolveAnimationAssetPath(
+        var resolved = NpcSkeletonLoader.ResolveAnimationAssetPath(
             @"meshes\characters\_male\skeleton.nif",
             @"Characters\_Male\IdleAnims\VATSH2HAttackPower_PowerFistLow.kf");
 
@@ -1265,7 +1265,7 @@ public sealed class NpcAppearanceHelperTests
     [Fact]
     public void ResolveAnimationAssetPath_UsesSkeletonDirectoryForRelativeKfNames()
     {
-        var resolved = NpcBodyBuilder.ResolveAnimationAssetPath(
+        var resolved = NpcSkeletonLoader.ResolveAnimationAssetPath(
             @"meshes\characters\_male\skeleton.nif",
             "h2hequip.kf");
 
@@ -1285,7 +1285,7 @@ public sealed class NpcAppearanceHelperTests
             equipKf.Value.Data,
             equipKf.Value.Info,
             true);
-        var parentOverride = NpcBodyBuilder.TryParseSequenceParentBoneName(equipKf.Value.Info);
+        var parentOverride = NpcSkeletonLoader.TryParseSequenceParentBoneName(equipKf.Value.Info);
         Assert.NotNull(equipOverrides);
         Assert.Equal("Bip01 R ForeTwist", parentOverride);
 
@@ -1296,7 +1296,7 @@ public sealed class NpcAppearanceHelperTests
         Assert.True(naiveWorldTransforms.TryGetValue("Weapon", out var naiveWeaponWorld));
         Assert.True(naiveWorldTransforms.ContainsKey(parentOverride!));
 
-        var resolvedWeaponWorld = NpcBodyBuilder.ResolveWeaponHolsterAttachmentTransform(
+        var resolvedWeaponWorld = NpcWeaponAttachmentResolver.ResolveWeaponHolsterAttachmentTransform(
             naiveWorldTransforms,
             equipOverrides!,
             skeleton.Value.Data,
@@ -1329,7 +1329,7 @@ public sealed class NpcAppearanceHelperTests
             ["Bip01 R ForeTwist"] = Matrix4x4.CreateTranslation(22f, 0f, 0f)
         };
 
-        var result = NpcBodyBuilder.TryResolveHandToHandProcessStyleWeaponAttachmentTransform(
+        var result = NpcWeaponAttachmentResolver.TryResolveHandToHandProcessStyleWeaponAttachmentTransform(
             Matrix4x4.CreateTranslation(1f, 0f, 0f),
             foreTwistWorldTransforms,
             ["Bip01 R Hand", "Bip01 R ForeTwist"],
@@ -1355,7 +1355,7 @@ public sealed class NpcAppearanceHelperTests
             holsterKf.Value.Data,
             holsterKf.Value.Info,
             true);
-        var parentOverride = NpcBodyBuilder.TryParseSequenceParentBoneName(holsterKf.Value.Info);
+        var parentOverride = NpcSkeletonLoader.TryParseSequenceParentBoneName(holsterKf.Value.Info);
 
         Assert.NotNull(holsterOverrides);
         Assert.Equal("Bip01 Spine2", parentOverride);
@@ -1378,7 +1378,7 @@ public sealed class NpcAppearanceHelperTests
             rigid.Value.Info);
         Assert.False(namedTransforms.ContainsKey("Weapon"));
 
-        var result = NpcBodyBuilder.TryResolveModelAttachmentCompensation(
+        var result = NpcSkinningResolver.TryResolveModelAttachmentCompensation(
             rigid.Value.Data,
             rigid.Value.Info,
             "Weapon",
@@ -1393,7 +1393,7 @@ public sealed class NpcAppearanceHelperTests
         var bat = LoadNif(FindBaseballBatPath());
         Assert.NotNull(bat);
 
-        var result = NpcBodyBuilder.TryResolveModelAttachmentCompensation(
+        var result = NpcSkinningResolver.TryResolveModelAttachmentCompensation(
             bat.Value.Data,
             bat.Value.Info,
             "Weapon",
@@ -1401,16 +1401,16 @@ public sealed class NpcAppearanceHelperTests
             out var compensationKind);
 
         Assert.True(result);
-        Assert.Equal(NpcBodyBuilder.ModelAttachmentCompensationKind.RootFallback, compensationKind);
+        Assert.Equal(NpcSkinningResolver.ModelAttachmentCompensationKind.RootFallback, compensationKind);
         Assert.False(compensation.Equals(Matrix4x4.Identity));
     }
 
     [Fact]
     public void RootFallbackWeaponCompensation_IsSkippedForHolsterPoseWeapons()
     {
-        var shouldApply = NpcBodyBuilder.ShouldApplyWeaponModelAttachmentCompensation(
+        var shouldApply = NpcSkinningResolver.ShouldApplyWeaponModelAttachmentCompensation(
             WeaponAttachmentMode.HolsterPose,
-            NpcBodyBuilder.ModelAttachmentCompensationKind.RootFallback);
+            NpcSkinningResolver.ModelAttachmentCompensationKind.RootFallback);
 
         Assert.False(shouldApply);
     }
@@ -1418,9 +1418,9 @@ public sealed class NpcAppearanceHelperTests
     [Fact]
     public void ExplicitWeaponNodeCompensation_IsPreservedForHolsterPoseWeapons()
     {
-        var shouldApply = NpcBodyBuilder.ShouldApplyWeaponModelAttachmentCompensation(
+        var shouldApply = NpcSkinningResolver.ShouldApplyWeaponModelAttachmentCompensation(
             WeaponAttachmentMode.HolsterPose,
-            NpcBodyBuilder.ModelAttachmentCompensationKind.ExplicitAttachmentNode);
+            NpcSkinningResolver.ModelAttachmentCompensationKind.ExplicitAttachmentNode);
 
         Assert.True(shouldApply);
     }

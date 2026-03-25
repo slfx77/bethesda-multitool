@@ -9,9 +9,8 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 ///     Handles parsing of ALCH (consumable/aid/food) and AMMO records
 ///     from ESM data and runtime structs.
 /// </summary>
-internal sealed class ConsumableRecordHandler(RecordParserContext context)
+internal sealed class ConsumableRecordHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
-    private readonly RecordParserContext _context = context;
 
     #region ParseAmmo
 
@@ -21,17 +20,17 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context)
     internal List<AmmoRecord> ParseAmmo()
     {
         var ammo = new List<AmmoRecord>();
-        var ammoRecords = _context.GetRecordsByType("AMMO").ToList();
+        var ammoRecords = Context.GetRecordsByType("AMMO").ToList();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             foreach (var record in ammoRecords)
             {
                 ammo.Add(new AmmoRecord
                 {
                     FormId = record.FormId,
-                    EditorId = _context.GetEditorId(record.FormId),
-                    FullName = _context.FindFullNameNear(record.Offset),
+                    EditorId = Context.GetEditorId(record.FormId),
+                    FullName = Context.FindFullNameNear(record.Offset),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
@@ -57,7 +56,7 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context)
             }
         }
 
-        _context.MergeRuntimeRecords(ammo, 0x29, a => a.FormId,
+        Context.MergeRuntimeRecords(ammo, 0x29, a => a.FormId,
             (reader, entry) => reader.ReadRuntimeAmmo(entry), "ammo");
 
         return ammo;
@@ -65,14 +64,14 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context)
 
     private AmmoRecord? ParseAmmoFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
-        var recordData = _context.ReadRecordData(record, buffer);
+        var recordData = Context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
             return new AmmoRecord
             {
                 FormId = record.FormId,
-                EditorId = _context.GetEditorId(record.FormId),
-                FullName = _context.FindFullNameNear(record.Offset),
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
                 Offset = record.Offset,
                 IsBigEndian = record.IsBigEndian
             };
@@ -144,7 +143,7 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context)
         return new AmmoRecord
         {
             FormId = record.FormId,
-            EditorId = editorId ?? _context.GetEditorId(record.FormId),
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
             ModelPath = modelPath,
             Bounds = bounds,
@@ -168,7 +167,7 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context)
         List<WeaponRecord> weapons,
         List<AmmoRecord> ammo)
     {
-        if (_context.RuntimeReader == null || ammo.Count == 0)
+        if (Context.RuntimeReader == null || ammo.Count == 0)
         {
             return;
         }
@@ -191,7 +190,7 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context)
         // Build: projectile FormID -> TesFormOffset (from runtime EditorID hash table)
         // PROJ = FormType 0x33
         var projectileOffsets = new Dictionary<uint, long>();
-        foreach (var entry in _context.ScanResult.RuntimeEditorIds)
+        foreach (var entry in Context.ScanResult.RuntimeEditorIds)
         {
             if (entry.FormType == 0x33 && entry.TesFormOffset.HasValue)
             {
@@ -213,7 +212,7 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context)
             if (projectileOffsets.TryGetValue(projFormId, out var projFileOffset))
             {
                 // Read model path BSStringT at dump offset +80 (TESModel.cModel in BGSProjectile)
-                projModelPath = _context.RuntimeReader.ReadBSStringT(projFileOffset, 80);
+                projModelPath = Context.RuntimeReader.ReadBSStringT(projFileOffset, 80);
             }
 
             // Create updated record with projectile data
@@ -244,17 +243,17 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context)
     internal List<ConsumableRecord> ParseConsumables()
     {
         var consumables = new List<ConsumableRecord>();
-        var alchRecords = _context.GetRecordsByType("ALCH").ToList();
+        var alchRecords = Context.GetRecordsByType("ALCH").ToList();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             foreach (var record in alchRecords)
             {
                 consumables.Add(new ConsumableRecord
                 {
                     FormId = record.FormId,
-                    EditorId = _context.GetEditorId(record.FormId),
-                    FullName = _context.FindFullNameNear(record.Offset),
+                    EditorId = Context.GetEditorId(record.FormId),
+                    FullName = Context.FindFullNameNear(record.Offset),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
@@ -280,7 +279,7 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context)
             }
         }
 
-        _context.MergeRuntimeRecords(consumables, 0x2F, c => c.FormId,
+        Context.MergeRuntimeRecords(consumables, 0x2F, c => c.FormId,
             (reader, entry) => reader.ReadRuntimeConsumable(entry), "consumables");
 
         return consumables;
@@ -288,14 +287,14 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context)
 
     private ConsumableRecord? ParseConsumableFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
-        var recordData = _context.ReadRecordData(record, buffer);
+        var recordData = Context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
             return new ConsumableRecord
             {
                 FormId = record.FormId,
-                EditorId = _context.GetEditorId(record.FormId),
-                FullName = _context.FindFullNameNear(record.Offset),
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
                 Offset = record.Offset,
                 IsBigEndian = record.IsBigEndian
             };
@@ -382,7 +381,7 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context)
         return new ConsumableRecord
         {
             FormId = record.FormId,
-            EditorId = editorId ?? _context.GetEditorId(record.FormId),
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
             ModelPath = modelPath,
             Bounds = bounds,

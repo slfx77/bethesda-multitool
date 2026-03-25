@@ -6,18 +6,51 @@ This document traces the engine's head rendering pipeline from decompiled Xbox 3
 Most low-level claims cite a specific decompiled function and line range. Some higher-level
 semantic conclusions were stronger than the raw evidence and are now called out explicitly.
 
-**Decompilation sources** (regenerated 2026-03-19):
+**Decompilation sources** (regenerated 2026-03-25):
+
 - `tools/GhidraProject/facegen_texture_bake_decompiled.txt` — 12 functions, texture bake path (Xbox 360)
 - `tools/GhidraProject/facegen_textures_decompiled2.txt` — 16 functions, shader binding + orchestrator (Xbox 360)
 - `tools/GhidraProject/facegen_memdebug_decompiled.txt` — 65 functions, comprehensive FaceGen pipeline (Xbox 360)
 - `tools/GhidraProject/facegen_geck_bake_assembly.txt` — Full ASM of bake accumulator + FREGT003 parser (GECK x86)
 - `tools/GhidraProject/facegen_geck_texture_bake_candidates.txt` — 8 functions, GECK bake path
+- `tools/GhidraProject/facegen_geck_face_mod_upstream.txt` — 10 functions, GECK FaceMod export helpers immediately upstream of the shared bake
 - `tools/GhidraProject/facegen_geck_egt_generation_2.txt` — 8 functions, EGT generation orchestrator
 - `tools/GhidraProject/facegen_geck_egt_generation_3.txt` — 9 functions, morph generation + morph context
 - `tools/GhidraProject/facegen_geck_binary_reader.txt` — 12 functions, shared FaceGen reader + stream openers
 - `tools/GhidraProject/facegen_geck_tri_section_order.txt` — 12 functions, FRTRI003 post-header section order
 - `tools/GhidraProject/facegen_geck_tri_early_sections.txt` — 13 functions, FRTRI003 early section families + optional branch
 - `tools/GhidraProject/facegen_geck_tri_early_record_helpers.txt` — 18 functions, early `0x08` / `0x10` record storage helpers
+- `tools/GhidraProject/facegen_geck_tri_front_tail_layout.txt` — focused internal GECK disassembly for the still-unparsed `0x20` / `0x2C` / `0x34` / `0x38` front-tail read loops
+- `TestOutput/codex_tri_mixed_pre_differential_region.txt` — raw anchor probe of the now-stronger mixed early fixed-width `0x0C` region that overlaps the parser's provisional second block
+- `TestOutput/codex_tri_support_topology_probe.txt` — sibling NIF topology comparison for the mixed early `u32x3` table, including the narrowed `teethlowerhuman.tri` outlier
+- `TestOutput/codex_tri_support_topology_runtime_bridge.txt` — GECK/runtime bridge summary for the mixed early support-topology family and the current runtime-use boundary
+- `TestOutput/codex_tri_support_topology_caller_resolution.txt` — focused runtime caller resolution for `TRI_Helper_GetVector3At`, showing the remaining direct owners collapse to bridge-local load/copy helpers
+- `tools/GhidraProject/facegen_support_topology_getvector3_callscan_pdb_xenon.txt` — direct-call scan for `TRI_Helper_GetVector3At`, used to narrow the runtime owner set for the base early TRI family
+- `tools/GhidraProject/facegen_support_topology_callers_decompiled_pdb_xenon.txt` — focused Xbox MemDebug decompile of the direct `TRI_Helper_GetVector3At` caller set
+- `tools/GhidraProject/facegen_support_topology_loadintoobject_callscan_pdb_xenon.txt` — caller scan for `TRI_Helper_LoadIntoObject`, used to pin the named owner chain for the base early TRI family
+- `tools/GhidraProject/facegen_support_topology_buildextended_callscan_pdb_xenon.txt` — caller scan for `TRI_Helper_BuildExtendedMorphObject`, confirming the same named owner chain on the runtime morph-builder side
+- `tools/GhidraProject/facegen_support_topology_vectorcount_callscan_pdb_xenon.txt` — raw caller scan for the neighboring base-family `float3` count helper, used to find broader bridge-local fanout
+- `tools/GhidraProject/facegen_support_topology_vectorcount_callers_decompiled_pdb_xenon.txt` — representative local decompile around the wider `TRI_Helper_GetVector3Count` caller set
+- `TestOutput/codex_tri_support_topology_vectorcount_resolution.txt` — summary of the broader vector-count helper fanout and what it implies for the mixed early support-topology family
+- `tools/GhidraProject/facegen_tri_plus60_family_decompiled_pdb_xenon.txt` — focused Xbox MemDebug decompile of the TRI runtime `+0x60` family helper cluster
+- `TestOutput/codex_tri_plus60_family_bridge.txt` — summary of the `+0x60` runtime family and its bridge back to the raw/materialized `0x20` family plus mixed early base vectors
+- `tools/GhidraProject/facegen_tri_plus70_family_decompiled_pdb_xenon.txt` — focused Xbox MemDebug decompile of the TRI runtime `+0x70` family helper cluster
+- `TestOutput/codex_tri_plus70_family_bridge.txt` — summary of the `+0x70` runtime family and its bridge back to the raw/materialized `0x2C` family
+- `tools/GhidraProject/facegen_tri_plus70_usage_callscan_pdb_xenon.txt` — direct-call scan for `TRI_Plus70_GetRecord` / `TRI_Plus70_CopyRecord`, used to check whether the `+0x70` family escapes the bridge-local load/copy neighborhood
+- `TestOutput/codex_tri_plus70_prefix_semantics.txt` — summary of the follow-up `+0x70` pass, including the `uint32 + Vector3 + string` layout read for the old 12-byte fixed prefix
+- `tools/GhidraProject/facegen_tri_tail_helper_cluster_decompiled_pdb_xenon.txt` — focused Xbox MemDebug decompile of the shared tail/string/span helper cluster under the TRI `+0x60` / `+0x70` families
+- `tools/GhidraProject/facegen_tri_tail_helper_callscan_pdb_xenon.txt` — direct-call scan for the shared TRI tail/string/span helper set, used to check whether the helpers stay bridge-local or widen into a broader runtime subsystem
+- `tools/GhidraProject/facegen_tri_tail_fallback_strings_raw.txt` — raw MemDebug probe of the TRI tail fallback literals, confirming that the loader's short-name defaults are empty strings
+- `tools/GhidraProject/facegen_tri_support_span_callers_decompiled_pdb_xenon.txt` — focused Xbox MemDebug decompile of the widened caller set for the top-level TRI support spans (`+0x30` / `+0x40` / `+0x50`)
+- `tools/GhidraProject/facegen_tri_support_span30_callscan_pdb_xenon.txt` — raw caller scan for the `+0x30` (`0x08`-stride) support-span accessors
+- `tools/GhidraProject/facegen_tri_support_span40_callscan_pdb_xenon.txt` — raw caller scan for the `+0x40` (`0x0C`-stride) support-span accessors
+- `tools/GhidraProject/facegen_tri_support_span50_callscan_pdb_xenon.txt` — raw caller scan for the `+0x50` (`0x10`-stride) support-span accessors
+- `tools/GhidraProject/facegen_tri_support_span_strings_raw.txt` — raw MemDebug probe of the widened `+0x50` caller’s CSV-style string literals
+- `tools/GhidraProject/facegen_tri_structured_span_orphans_decompiled_pdb_xenon.txt` — focused Xbox MemDebug decompile of the remaining out-of-cluster `+0x30` / `+0x50` support-span caller sites
+- `TestOutput/codex_tri_tail_helper_semantics.txt` — summary of the tail-helper pass, including the small-string result for the dynamic tails and the fixed-stride span result for the neighboring helper families
+- `TestOutput/codex_tri_tail_string_semantics.txt` — summary of the follow-up tail semantics pass, including the empty-string fallback probe and the current best read on the `+0x60` / `+0x70` names
+- `TestOutput/codex_tri_support_span_semantics.txt` — summary of the widened `+0x30` / `+0x40` / `+0x50` caller pass and why those families now look more like support-data storage/validation than runtime morph application
+- `TestOutput/codex_tri_structured_span_orphan_resolution.txt` — summary of the out-of-cluster `+0x30` / `+0x50` caller pass and why those sites still look like export/serialization helpers rather than runtime morph consumers
 - `tools/GhidraProject/facegen_geck_tri_context_lifecycle.txt` — 5 functions, coord-context ctor/dtor + follow-up helper
 - `tools/GhidraProject/facegen_geck_tri_followup_caller.txt` — 2 functions, caller classification for `FUN_00696ab0`
 - `tools/GhidraProject/facegen_geck_bsfacegenmodel_helpers.txt` — 5 functions, BSFaceGenModel-side loader + cleanup helpers
@@ -32,6 +65,11 @@ semantic conclusions were stronger than the raw evidence and are now called out 
 - `tools/GhidraProject/facegen_geck_additional_geom_data.txt` — AdditionalGeometryData field-string pass, AGD serializer identification
 - `tools/GhidraProject/facegen_geck_additional_geom_data_vtable.txt` — attempted AGD vtable reconstruction from serializer DATA refs
 - `tools/GhidraProject/facegen_runtime_agd_decompiled_pdb_xenon.txt` — Xbox MemDebug raw-PDB pass for AGD + runtime FaceGen bridge
+- `tools/GhidraProject/facegen_prepare_head_followup_helpers_decompiled_pdb_xenon.txt` — raw-PDB/manual-address pass for `BSFaceGenManager::PrepareHeadForShaders` plus the two sibling-path helpers directly under `ResolveFaceGenShaderTexture`
+- `TestOutput/codex_prepare_head_followup_helper_resolution.txt` — summary of the resolved `"%s_n.dds"` / `"%s_s.dds"` helper pair under `PrepareHeadForShaders`
+- `TestOutput/codex_geck_generation_bake_join.txt` — summary of the GECK generation-to-bake join and the narrowed remaining handoff gap
+- `tools/GhidraProject/facegen_geck_generation_install_bridge.txt` — focused GECK decompile of the remaining generation/install bridge from `FUN_00697a10` through the bake-visible `FREGT003` lazy-load path
+- `TestOutput/codex_geck_install_bridge_resolution.txt` — summary of the focused GECK install-bridge pass, including the split between durable model-side overflow storage and the separate bake-visible package chain
 - `tools/GhidraProject/facegen_tri_runtime_bridge.txt` — Xbox MemDebug raw-address pass for TRI runtime container + morph builders
 - `tools/GhidraProject/facegen_tri_runtime_tables.txt` — raw Xbox table dump for the runtime morph-builder globals
 - `tools/GhidraProject/facegen_tri_runtime_table_initializers.txt` — xref scan for the runtime morph-builder globals
@@ -56,6 +94,19 @@ semantic conclusions were stronger than the raw evidence and are now called out 
 - `tools/GhidraProject/facegen_model_cache_bridge_decompiled_pdb_xenon.txt` — raw-PDB pass for the `BSFaceGenModelMap` cache bridge under `LoadModel`
 - `tools/GhidraProject/facegen_model_cache_lazy_loaders_decompiled_pdb_xenon.txt` — raw-PDB pass for the cache-side `LoadEGMData` / `LoadEGTData` and size/budget helpers
 - `tools/GhidraProject/facegen_model_cache_loader_callscan_pdb_xenon.txt` — raw PPC call scan for the cache-side EGM/EGT loader helpers and size helpers
+- `tools/GhidraProject/facegen_apply_coordinate_inner_bridge_decompiled_pdb_xenon.txt` — raw-PDB pass for the inner `ApplyCoordinateToExistingMesh` bridge (`GetFaceGenCoord`, `Lock/UnlockFaceGenAccess`, `LoadEGMData`, `EGMData::EGMData`, `LoadModel`, and `BSFaceGenMorphDataHead::ApplyMorph`)
+- `tools/GhidraProject/facegen_apply_coordinate_inner_callscan_pdb_xenon.txt` — point-in-time raw-PPC call scan of the inner coord/apply helpers and the bucketed `ApplyMorph` owners
+- `tools/GhidraProject/facegen_count_validation_bridge_decompiled_pdb_xenon.txt` — raw-PDB pass for `LoadModelMesh`, TRI vertex-count validation, `BSFaceGenBaseMorphExtraData::GetVertexCount`, and `RefreshMeshFromBaseMorphExtraData`
+- `tools/GhidraProject/facegen_count_validation_callscan_pdb_xenon.txt` — point-in-time raw-PPC call scan of `TRI_Helper_GetVertexCount` and `BSFaceGenBaseMorphExtraData::GetVertexCount`
+- `tools/GhidraProject/facegen_packed_morph_apply_bridge_decompiled_pdb_xenon.txt` — raw-PDB pass for the packed runtime seam under `BSFaceGenMorphDifferential::ApplyMorph`, `BSFaceGenMorphStatistical::ApplyMorph`, and the small packed-scratch helper family
+- `tools/GhidraProject/facegen_packed_morph_apply_callscan_pdb_xenon.txt` — point-in-time raw-PPC call scan of `BSFaceGenMorphDifferential::ApplyMorph`, `BSFaceGenMorphStatistical::ApplyMorph`, and `TRI_Helper_GetVertexCount`
+- `tools/GhidraProject/facegen_packed_morph_tail_callscan_pdb_xenon.txt` — point-in-time raw-PPC call scan of the packed statistical tail helper set (`BSFaceGenBaseMorphExtraData::GetVertexCount` plus the packed-scratch helpers)
+- `tools/GhidraProject/facegen_packed_vertex_rw_helper_search_raw.txt` — raw MemDebug PDB search output showing the packed write helper at `0x82483850` resolves to `XMConvertFloatToHalfStream`
+- `tools/GhidraProject/facegen_packed_half_stream_symbol_search_raw.txt` — companion raw MemDebug PDB search output for the paired half/float stream conversion helpers
+- `tools/GhidraProject/facegen_packed_vertex_rw_helper_callscan_pdb_xenon.txt` — point-in-time raw-PPC call scan of the packed write helper at `0x82483850`
+- `TestOutput/codex_packed_vertex_rw_helper_semantics.txt` — summary of the packed vertex read/write helper pass under runtime morph apply
+- `tools/GhidraProject/facegen_iterator_mutation_bridge_decompiled_pdb_xenon.txt` — raw-PDB pass for the named FaceGen iterator/mutability owner set (`ApplyCoordinateToExistingMesh`, `ApplyHairMorph`, `UpdateAllChildrenMorphData`, `ReplaceFaceMeshLOD`, `PrecacheFaceGeometry`, `LoadModelMesh`, and the small `NiGeometryData` helper family)
+- `tools/GhidraProject/facegen_iterator_mutation_callscan_pdb_xenon.txt` — point-in-time raw-PPC call scan of the iterator/mutability helper family (`LockPackedVertexData`, `UnlockPackedVertexData`, `GetVerticesIterator`, `SetConsistency`, `MarkAsChanged`, `XMConvertHalfToFloatStream`)
 - `tools/GhidraProject/facegen_child_morph_invocation_decompiled_pdb_xenon.txt` — raw-PDB pass for the remaining `UpdateAllChildrenMorphData` owner set (`UpdateMorphing` and `PlayerCharacter::CloneInventory3D`)
 - `tools/GhidraProject/facegen_child_fallback_predicates_decompiled_pdb_xenon.txt` — raw-PDB pass resolving the remaining child-loop helper trio (`UpdateEyeTracking`, `IsInMenuMode`, `IsActorNCloseToPlayer`)
 - `tools/GhidraProject/facegen_ninode_layout_decompiled_pdb_xenon.txt` — raw-PDB pass for the small `BSFaceGenNiNode` constructor/getter/setter family to pin down local member layout
@@ -119,6 +170,10 @@ semantic conclusions were stronger than the raw evidence and are now called out 
 - `TestOutput/codex_tri_nonhair_name_semantics.txt` — local `inspect-tri` probe of head/eye/mouth/tongue/teeth TRI identifier strings
 - `TestOutput/codex_tri_hair_name_probe.txt` — local `inspect-tri` probe of beard/eyebrow TRI identifier strings
 - `TestOutput/codex_tri_sparse_bucket_mapping.txt` — local sparse-TRI bucket/slot mapping report derived from the shared runtime tables plus the `inspect-tri` name probes
+- `TestOutput/codex_tri_sparse_application_bridge.txt` — local runtime-bridge summary for how `TRI_Helper_BuildExtendedMorphObject` matches sparse TRI records into the shared head buckets and replaces differential slots with indexed/statistical ones
+- `TestOutput/codex_tri_child_edge_cases.txt` — local follow-up on the remaining sparse-child application edges: upper-teeth runtime fit and the concrete child-loop fallback gating
+- `TestOutput/codex_tri_header_word_probe.txt` — local anchor-sample header dump used to test whether the early `0x10` / `0x20` / `0x2C` loader loops are actually populated in shipped TRI samples
+- `TestOutput/codex_tri_remaining_tail_accounting.txt` — local summary closing the conceptual bridge from the raw post-vector TRI tail into the runtime statistical packed-tail apply path
 - `TestOutput/codex_skeleton_root_types.txt` — local `NifAnalyzer blocks` comparison for the shipped third-person vs first-person human skeleton roots
 - `TestOutput/codex_headanims_skeleton_map.txt` — local `NifAnalyzer block` map of the shipped third-person `HeadAnims` / `HeadAnims:0` controller branch
 - `TestOutput/codex_headanims_static_path_crosscheck.txt` — local negative cross-check showing no `HeadAnims:0` / `SetAnim*Value` references in the current named static head-build/apply artifacts
@@ -131,6 +186,7 @@ semantic conclusions were stronger than the raw evidence and are now called out 
 ## Audit Note (2026-03-18)
 
 The strongest parts of this document are still Sections 4.1, 4.2, 6, 8.1, and 8.2:
+
 - the Xbox bake accumulator structure
 - the encode-side floor behavior in `GetCompressedImage`
 - the shader slot copy behavior in `SetFaceGenMaps`
@@ -146,6 +202,7 @@ the remaining texture differences.
 ## 1. Overview
 
 FaceGen gives each NPC a unique face through two morph systems:
+
 - **Mesh morphing (EGM)**: Deforms base head geometry vertices
 - **Texture morphing (EGT)**: Creates a per-NPC **delta texture** from morph bases
 
@@ -161,6 +218,7 @@ which composites them at render time. Our current implementation composites on t
 ## 2. Data Files
 
 ### EGM (FaceGen Geometry Morph) — ASSUMED (high confidence from ApplyMorph decompilation)
+
 - Magic: `FREGM002`
 - 64-byte header: vertex_count at [8-11], sym_count at [12-15], asym_count at [16-19]
 - 50 symmetric morphs + 30 asymmetric morphs
@@ -169,6 +227,7 @@ which composites them at render time. Our current implementation composites on t
 - Parser decompilation (`EGMData::EGMData` at PDB [0004:00242428]) added to script but not yet run
 
 ### EGT (FaceGen Texture Morph) — VERIFIED
+
 - Magic: `FREGT003`
 - 64-byte header: **rows at [8-11], cols at [12-15]**, sym_count at [16-19], asym_count at [20-23]
   - Citation: `FgEgtFileIO_ParseEgtFile` (`egt_parser_decompiled.txt:620-646`)
@@ -180,16 +239,19 @@ which composites them at render time. Our current implementation composites on t
 - Source: `EgtParser.cs` — **FIXED**: header fields swapped to match decompilation
 
 ### Base Head NIF + DDS
+
 - Per-race, per-gender head mesh (e.g., `headhuman.nif`)
 - Base diffuse texture (e.g., `headhuman.dds`) referenced by NiTexturingProperty
 - This base texture is passed to the shader as a SEPARATE input from the facemod delta
 
 ### Face Tint Texture (`_sk`)
+
 - Per-race, per-gender skin tint (e.g., `headhuman_sk.dds`)
 - Bound to shader slot 2 in `PrepareHeadForShaders`
 - Fallback: `BSFaceGenManager::GetDefaultDetailModulationTexture` (singleton at offset 0xDB8)
 
 ### Shipped Facemods (`_0.dds`)
+
 - Pre-baked per-NPC face textures at `textures/characters/facemods/{plugin}/{formid}_0.dds`
 - Created by GECK "Export FaceGen" or at runtime via `ApplyCoordinateTexturingToMesh`
 - **Format: DELTA texture** — neutral value = **127** (byte encoding of float 0.0)
@@ -206,6 +268,7 @@ Decompiled in `facegen_texture_bake_decompiled.txt`. Uses same coefficient syste
 **This path is verified working correctly in our implementation.**
 
 ### Coefficient Merge — VERIFIED
+
 - `BSFaceGenManager::MergeFaceGenCoord` (`egt_parser_decompiled.txt:2094-2097`): `fadds f12, f0, f13`
 - Formula: `merged[i] = npc_coeff[i] + race_coeff[i]` (element-wise float addition)
 - RMS clamping (`egt_parser_decompiled.txt:2048-2072`): `rms = sqrt(sum_sq / count)`, if `rms > threshold`: `coeff[i] *= threshold / rms`
@@ -221,14 +284,17 @@ Decompiled in `facegen_texture_bake_decompiled.txt`. Uses same coefficient syste
 **PDB**: [0004:00241970], VA 0x82491970, 1668 bytes
 
 #### Initial setup (lines 524-525)
+
 ```c
 uVar8 = GetDefaultBaseModulationTexture();  // func_0x8243e3c8
 assign(param_3, uVar8);  // Set output to base texture as fallback
 ```
+
 The output parameter is initially set to the base modulation texture.
 This is overwritten on success (line 718-719) but serves as fallback if the function returns early.
 
 #### Accumulation loop (lines 612-661)
+
 ```c
 dVar34 = 256.0;
 for (each morph basis, uVar30 = 0..param_4) {
@@ -251,6 +317,7 @@ for (each morph basis, uVar30 = 0..param_4) {
 ```
 
 **Key details** (VERIFIED — matches `AccumulateNativeDeltasQuantized256` in `FaceGenTextureMorpher.cs:383-428`):
+
 - Accumulates from ZERO (buffer is memset to 0 at line 598)
 - NOT from the base texture — pure morph delta accumulation
 - Coefficient and scale are truncated to int via `(int)(float * 256.0)` — NOT rounded
@@ -261,6 +328,7 @@ for (each morph basis, uVar30 = 0..param_4) {
 - `BSFaceGenMorphStatistical::ApplyMorph` (`facegen_texture_bake_decompiled.txt:4583-4704`) confirms same formula at runtime
 
 #### Float conversion (lines 663-716)
+
 ```c
 for (channel = 0; channel < 3; channel++) {
     for (each pixel) {
@@ -270,6 +338,7 @@ for (channel = 0; channel < 3; channel++) {
 ```
 
 #### Encoding (line 718)
+
 ```c
 uVar8 = GetCompressedImage(-255.0, 255.0, 0.5, float_image);  // func_0x8247f6a0
 assign(param_3, uVar8);  // Overwrite output with encoded delta texture
@@ -282,6 +351,7 @@ assign(param_3, uVar8);  // Overwrite output with encoded delta texture
 **Called as**: `GetCompressedImage(-255.0, 255.0, 0.5)`
 
 #### Per-pixel encoding (lines 1662-1704)
+
 ```c
 for (each pixel, 3 channels) {
     // Clamp to [min, max]
@@ -299,13 +369,16 @@ for (each pixel, 3 channels) {
 ```
 
 #### Neutral value derivation
+
 For zero delta (float = 0.0):
+
 - `floor(0.0) = 0.0`
 - `(0.0 + 255.0) * 0.5 = 127.5`
 - `(long)127.5 = 127` (truncate toward zero)
 - **Neutral = 127, NOT 128**
 
 #### Output format
+
 - RGB, 3 bytes per pixel (tightly packed, no alpha)
 - Stored as NiPixelData, then DXT1-compressed and saved as `_0.dds`
 - Float channel 0 → byte R, channel 1 → byte G, channel 2 → byte B (no swapping)
@@ -313,6 +386,7 @@ For zero delta (float = 0.0):
 ### 4.3 Output Summary
 
 `ApplyCoordinateTexturingToMesh` produces a **pure delta texture**:
+
 - Byte 127 = zero delta (no change from base)
 - Byte 0 = maximum negative delta (-255 float → -254 after floor → 0 byte)
 - Byte 255 = maximum positive delta (+255 float → 255 byte)
@@ -342,6 +416,7 @@ Two paths depending on whether `BSFaceGenManager::ResolveFaceGenShaderTexture`
 (`0x824881c8`) resolves an alternate texture path:
 
 **Path A** (lines 1730-1745): alternate path resolves
+
 - `ResolveFaceGenShaderTexture` takes the existing head diffuse path, strips the extension, and
   formats candidate sibling paths using a template at `0x82066648`
 - It selects `'M'` or `'F'` based on the second argument (`param_2 + 0x70` at the call site) and
@@ -350,11 +425,16 @@ Two paths depending on whether `BSFaceGenManager::ResolveFaceGenShaderTexture`
   `-10`, `-20`, ...) until `0`; each candidate is existence-checked through `func_0x82937230`
 - If no shipped facemod exists: calls `ApplyCoordinateTexturingToMesh` (line 1739) to create runtime delta → `apiStack_4a0`
 - Loads the resolved alternate texture into `piStack_484` from `uStack_478`
-- Extracts two more path-derived textures from the same resolved path into `iStack_498` and `iStack_490`
-- This path is about resolving a secondary FaceGen texture family from the base diffuse stem, not
-  about `LoadModelTexture` success and not a direct “shipped facemod exists” predicate
+- Derives two more sibling paths from that same resolved path:
+  - `0x822DF198` → `"%s_n.dds"` into `iStack_498`
+  - `0x822DF238` → `"%s_s.dds"` into `iStack_490`
+- The resolved path itself is the texture later copied into `property[0x2E]` / `FaceGenMap1`;
+  the helper pair is now just sibling-path derivation, not another hidden texture-processing stage
+- This path is about resolving a secondary FaceGen texture family, not about `LoadModelTexture`
+  success and not a direct “shipped facemod exists” predicate
 
 **Path B** (lines 1746-1769): alternate path does not resolve (LAB_8248d78c)
+
 - If no shipped facemod exists: calls `ApplyCoordinateTexturingToMesh` (line 1750) → `apiStack_4a0`
 - Extracts diffuse and normal from the model's existing NiTexturingProperty
 - `vtable+0x14` call → `iStack_498` (diffuse)
@@ -363,17 +443,24 @@ Two paths depending on whether `BSFaceGenManager::ResolveFaceGenShaderTexture`
 #### Related helper semantics
 
 These helpers are adjacent in the decompilation and matter for interpretation:
+
 - `BSFaceGenManager::ResolveFaceGenShaderTexture` (`0x824881c8`) is now decompiled. It is a path
   resolver, not a texture loader: it formats and existence-checks candidate sibling texture paths,
   writes the winning path into the output string object, and returns nonzero only when a candidate
   exists.
+- The two anonymous follow-up helpers are now also resolved. They only copy the resolved path,
+  strip the extension at `'.'`, and format sibling texture names:
+  - `0x822DF198` → `"%s_n.dds"`
+  - `0x822DF238` → `"%s_s.dds"`
+- `_sk` remains a separate later branch under `PrepareHeadForShaders`; it is not one of these two
+  helpers.
 - `BSFaceGenModel::LoadModelTexture` (`0x82490648`) is a narrow lazy-load wrapper. It allocates a
   small object at `param_1 + 0x0C` and copies in a path/object reference. It is **not** the same
   function as `ResolveFaceGenShaderTexture`.
 - `BSFaceGenModel::ForceLoadModelTexture` (`0x824921B0`) strips at byte `0x2E` (`'.'`) in a
   0x104 buffer, appends a constant suffix, then calls `LoadModelTexture` plus a follow-up helper.
-  This strongly suggests sibling-texture derivation, but the exact suffix meaning is not resolved
-  from the checked-in artifacts alone.
+  This fits the now-confirmed sibling-texture derivation pattern rather than introducing a new
+  unresolved texture family.
 - `TESNPC::GetHeadPartModTexture` resolves a head-part-specific texture path, tries to load it,
   and falls back to `GetDefaultBaseModulationTexture()` if the load fails.
 - `TESRace::GetBodyModTextureFileName` walks the race inheritance chain and formats a path from
@@ -454,6 +541,7 @@ void SetFaceGenMaps(shader, param_2, shaderProperty, hasThirdTexture) {
 | +0x18 | `_sk` face tint | vtable+0xF0 at index 2 (line 1810) |
 
 **Note**: The base diffuse texture is set SEPARATELY on slot 0 (lines 1770-1777) and is NOT one of the 3 FaceGen-specific maps. The FaceGen shader receives **4 texture inputs** total:
+
 1. Base diffuse (standard slot 0)
 2. Facemod delta (FaceGen slot at +0x10)
 3. Secondary FaceGen texture (FaceGen slot at +0x14)
@@ -468,6 +556,7 @@ void SetFaceGenMaps(shader, param_2, shaderProperty, hasThirdTexture) {
 ### 7.1 SDP File Format
 
 Bethesda packages compiled shaders in `.sdp` (Shader Package Data) files:
+
 - **Header**: 12 bytes — `uint32 name_field_size(=100)`, `uint32 shader_count`, `uint32 data_size`
 - **Entries**: 256-byte name (null-terminated + 0xFD padding on PC, 0x00 on Xbox), 4-byte LE size, then raw bytecode
 - PC shaders are DirectX 9 SM 2.x/3.x bytecode; Xbox shaders are Xenon microcode
@@ -477,15 +566,15 @@ Bethesda packages compiled shaders in `.sdp` (Shader Package Data) files:
 
 13 SKIN pixel shaders (SKIN2000–SKIN2012). Only 8 have FaceGen support:
 
-| Variant | FaceGen | Shadows | Lights | Size |
-|---------|---------|---------|--------|------|
-| SKIN2000 | Yes | No | 1 dir | 1136B |
-| SKIN2001 | Yes | Yes | 1 dir | 1320B |
-| SKIN2002 | Yes | No | 2 (dir+atten) | 1672B |
-| SKIN2003 | Yes | Yes | 2 | 1868B |
-| SKIN2010 | Yes | No | 5 (dir+4 point) | 2920B |
-| SKIN2011 | Yes | No | 4 (dir+3 point) | 2468B |
-| SKIN2012 | Yes | No | 2 (dir+1 point) | 1980B |
+| Variant  | FaceGen | Shadows | Lights          | Size  |
+| -------- | ------- | ------- | --------------- | ----- |
+| SKIN2000 | Yes     | No      | 1 dir           | 1136B |
+| SKIN2001 | Yes     | Yes     | 1 dir           | 1320B |
+| SKIN2002 | Yes     | No      | 2 (dir+atten)   | 1672B |
+| SKIN2003 | Yes     | Yes     | 2               | 1868B |
+| SKIN2010 | Yes     | No      | 5 (dir+4 point) | 2920B |
+| SKIN2011 | Yes     | No      | 4 (dir+3 point) | 2468B |
+| SKIN2012 | Yes     | No      | 2 (dir+1 point) | 1980B |
 
 Non-FaceGen variants (SKIN2004–2009) lack `FaceGenMap0`/`FaceGenMap1` samplers
 and are used for non-head skin meshes (hands, body).
@@ -494,12 +583,12 @@ and are used for non-head skin meshes (hands, body).
 
 CTAB (Constant Table) embedded in the shader bytecode provides HLSL variable names:
 
-| Sampler | CTAB Name | Content | Source in PrepareHeadForShaders |
-|---------|-----------|---------|-------------------------------|
-| s0 | `BaseMap` | Base diffuse texture | vtable+0x100 at index 0 (line 1770) |
-| s1 | `NormalMap` | Normal map | vtable+0x104 at index 0 (line 1778) |
-| s2 | `FaceGenMap0` | Facemod delta texture (_0.dds) | vtable+0xFC at index 1 (line 1787) |
-| s3 | `FaceGenMap1` | Secondary FaceGen texture from `property[0x2E]` | vtable+0x100 at index 1 (line 1792) |
+| Sampler | CTAB Name     | Content                                         | Source in PrepareHeadForShaders     |
+| ------- | ------------- | ----------------------------------------------- | ----------------------------------- |
+| s0      | `BaseMap`     | Base diffuse texture                            | vtable+0x100 at index 0 (line 1770) |
+| s1      | `NormalMap`   | Normal map                                      | vtable+0x104 at index 0 (line 1778) |
+| s2      | `FaceGenMap0` | Facemod delta texture (\_0.dds)                 | vtable+0xFC at index 1 (line 1787)  |
+| s3      | `FaceGenMap1` | Secondary FaceGen texture from `property[0x2E]` | vtable+0x100 at index 1 (line 1792) |
 
 **Constants**: `AmbientColor` (c1), `PSLightColor` (c3), `Toggles` (c27)
 
@@ -516,6 +605,7 @@ float3 diffuse = BaseMap.Sample(uv).rgb + delta;
 ```
 
 **Assembly**:
+
 ```
 texld r3, t0, s2          ; r3 = sample(FaceGenMap0, uv)
 add r3.xyz, r3, c2.x      ; r3 = facemod - 0.5       (c2.x = -0.5)
@@ -525,6 +615,7 @@ mad r1.xyz, r3, c2.y, r1  ; r1 = base + (facemod - 0.5) * 2.0  (c2.y = 2.0)
 **In byte-space**: `result = base_byte + (facemod_byte * 2 - 255)`, clamped to [0, 255]
 
 **Neutral verification**: For facemod byte 127 (from GetCompressedImage):
+
 - `127/255 = 0.498`, `(0.498 - 0.5) * 2 = -0.004` → effectively zero
 - The -0.004 bias is within DXT1 compression noise
 
@@ -539,6 +630,7 @@ float3 textured = diffuse * modulation * 4.0;
 ```
 
 **Assembly**:
+
 ```
 texld r2, t0, s3          ; r2 = sample(FaceGenMap1, uv)
 add r2.xyz, r2, r2        ; r2 = modulation * 2
@@ -557,6 +649,7 @@ It is not the slot-2 `_sk` texture in the audited SKIN2000 binding path.
 
 Previously identified as "subsurface scattering" — **actually distance fog blending**.
 Vertex shader (SKIN2000.vso) output `aout1` maps to PS `v1`:
+
 - `v1.xyz` = `FogColor` (constant c15 in VS, passed through as color interpolant)
 - `v1.w` = fog factor (exponential distance fog: `exp(-(dist - FogParam.x) / FogParam.y * FogParam.z)`)
 
@@ -568,6 +661,7 @@ float3 result = (Toggles.y >= 0) ? lit : fogged;
 ```
 
 **Assembly**:
+
 ```
 mad r2.xyz, r0, -r1, v1    ; r2 = FogColor - shade * textured
 mul r0.xyz, r0, r1          ; r0 = shade * textured (standard lit)
@@ -579,9 +673,9 @@ cmp r3.xyz, -c27.y, r0, r1 ; r3 = select based on Toggles.y (fog toggle)
 | VS Output | Content | PS Register |
 |-----------|---------|-------------|
 | `o0.xy` | UV texcoord | `a0` (t0) |
-| `o1.xyz` | light dir in tangent space (TBN * LightData) | `a1` (t1) |
+| `o1.xyz` | light dir in tangent space (TBN _ LightData) | `a1` (t1) |
 | `o1.w` | 1.0 (constant) | `a1.w` |
-| `o6.xyz` | view dir in tangent space (TBN * (Eye - pos)) | `a6` (t6) |
+| `o6.xyz` | view dir in tangent space (TBN _ (Eye - pos)) | `a6` (t6) |
 | `aout0` | vertex color (pass-through) | `v0` |
 | `aout1.xyz` | FogColor (c15) | `v1.xyz` |
 | `aout1.w` | fog factor (exponential) | `v1.w` |
@@ -632,7 +726,8 @@ runtime fallback output, and shipped game assets.
 **Source**: GECK.exe `FUN_00695b50` (1684 bytes), decompiled via PyGhidra from `GeckProject`.
 Full disassembly in `tools/GhidraProject/facegen_geck_bake_assembly.txt`.
 
-**Bake accumulator assembly (confirmed from FLD → FMUL → __ftol2_sse chain)**:
+**Bake accumulator assembly (confirmed from FLD → FMUL → \_\_ftol2_sse chain)**:
+
 ```
 For each morph (0x58-byte entries at this->0xC->0x8->0x10 vector):
   coeff_int = __ftol2_sse(coefficient * double[0xd77048])   // FLD [coeff_array + stride*morph_idx*4]
@@ -649,6 +744,7 @@ Final normalization — For each channel:
 ```
 
 **Key assembly evidence** (from `facegen_geck_bake_assembly.txt`):
+
 - **0x695EAB**: `FLD float ptr [EAX + EDX*4]` — loads coefficient from model vector at +0x4C
 - **0x695EAE**: `FMUL double ptr [0x00d77048]` — multiply by scaling constant (256.0)
 - **0x695EB7**: `CALL 0x00c5d220` — `__ftol2_sse` truncation → `coeff_int`
@@ -682,12 +778,14 @@ Total: 0x10 + 3×0x18 = 0x58 ✓
 ```
 
 Each channel sub-struct (0x18 bytes):
-- +0x0C from channel start: delta data begin pointer (accessed as entry + channel*0x18 + 0x1C)
-- +0x10 from channel start: delta data end pointer (accessed as entry + channel*0x18 + 0x20)
+
+- +0x0C from channel start: delta data begin pointer (accessed as entry + channel\*0x18 + 0x1C)
+- +0x10 from channel start: delta data end pointer (accessed as entry + channel\*0x18 + 0x20)
 
 ### 8.3 GECK Bake-Input Load Chain — partially verified
 
 Audit note (2026-03-18):
+
 - The actual GECK head-texture input load path is narrower than some earlier notes implied.
 - `FUN_0068cb60` derives the facemod source path by replacing the selected head mesh extension with
   `.egt`.
@@ -710,6 +808,23 @@ Audit note (2026-03-18):
 - When the GECK generates data instead of reusing a cached package, `FUN_00697a10` also loads the
   selected head mesh (`FUN_004c0040(param_2 + 7, ...)`) and loads coord data via `FUN_00865fb0`
   (string ref `FRTRI003`) before morph generation.
+- The upstream/export caller chain is now clearer too. `FUN_00587b20` resolves the output family
+  via `FUN_00584e10`, falls back through `FUN_0068cb60` and `FUN_0068fe90` when it needs to
+  create a new FaceGen package, prepares the local bake descriptor through `FUN_0068e960` /
+  `FUN_0068ea20`, and then calls `FUN_00695b50(local_4a0, param_2, DAT_00f05da4)`. Because
+  `FUN_0068fe90` is the cache/generate orchestrator that calls `FUN_00697ee0 -> FUN_00697a10` on
+  a miss, the `FRTRI003`-derived `0x34` / `0x38` morph families now have a concrete caller-side
+  path into the shared export/bake flow rather than only an inferred upstream relationship.
+- A later focused install-bridge pass narrows the remaining handoff more precisely. `FUN_00697ee0`
+  still only dispatches `FUN_00697a10` and then calls `FUN_00694880(param_4)`. `FUN_00694880`
+  only ensures the metadata holder at `this + 0x0C` exists and populates it from the caller's
+  NPC/model input through `FUN_00405b40(param_1, 0)`. The separate bake-visible lazy-load path is
+  `FUN_00696280 -> FUN_00695ae0 -> FUN_00695a10`, which stores the loaded `FREGT003` package at
+  `[this + 0x0C] + 0x08` before `FUN_00695b50` iterates it. By contrast, the generated/model-side
+  overflow vectors copied out of the temporary `0xF0` generation context in `FUN_00697a10` land at
+  `[this + 0x08] + 0x14/+0x18`. So the remaining gap is no longer "where does install happen?" but
+  specifically whether that durable model-side overflow storage ever feeds the separate bake-visible
+  package chain.
 - Focused decompilation of `FUN_00865fb0` and its helper layer shows that `FRTRI003` is not a
   single opaque coord blob. `FUN_00696680` first initializes a `0xF0` output object as nine
   contiguous `0x18`-byte container slots, and `FUN_00865fb0` then populates those slots with
@@ -730,9 +845,9 @@ Audit note (2026-03-18):
   - `param_2 + 0xA8`: `0x2C` named metadata family via `FUN_0086b4b0`
   - `param_2 + 0xC0`: `0x34` differential morph family via `FUN_0086b7f0`
   - `param_2 + 0xE4`: `0x38` statistical morph family via `FUN_0086bbd0`
-  There is also an optional mid-structure branch controlled by `local_34/local_38` that appears
-  to materialize a nested `0x08` family plus another late `0x0C` / `0x10` pair before the later
-  record families are consumed.
+    There is also an optional mid-structure branch controlled by `local_34/local_38` that appears
+    to materialize a nested `0x08` family plus another late `0x0C` / `0x10` pair before the later
+    record families are consumed.
 - The main temp-wrapper helper `FUN_008647e0` clones mesh-aligned section data into that same
   multi-section object before additional nested parsing, so this path is doing structured
   generation-context assembly, not just file I/O.
@@ -748,9 +863,10 @@ Audit note (2026-03-18):
     directly by the final morph-generation functions we traced.
 
 Practical takeaway:
+
 - If the question is "what code loads the files used for the final facemod texture bake?", the
   texture side is `mesh path -> FUN_0068cb60 (.egt) -> FUN_0068fe90/FUN_0068d670 ->
-  FUN_00696280 -> FUN_00695ae0 -> FUN_00695a10 -> FUN_0085fb40`, not
+FUN_00696280 -> FUN_00695ae0 -> FUN_00695a10 -> FUN_0085fb40`, not
   `FUN_00696750 -> FUN_00861d60`.
 - If the question is "what upstream data does the GECK assemble before morph generation?", the
   answer now clearly includes `FRTRI003` plus mesh-derived structured section data, and we do not
@@ -759,6 +875,7 @@ Practical takeaway:
 ### 8.4 Morph Generation Paths (FUN_00697a10)
 
 The GECK's EGT generation orchestrator now looks materially clearer:
+
 - `FUN_00697a10` allocates the `0xF0` morph/coord context via `FUN_00696680`, populates it via
   `FUN_00865fb0`, and only then dispatches to one of the morph builders.
 - **`FUN_00698be0`** (4692 bytes): Full morph set — categorizes morphs by name
@@ -769,8 +886,17 @@ The GECK's EGT generation orchestrator now looks materially clearer:
 - **`FUN_00699e50`** (647 bytes): Filtered — extracts only "HairMorph" from the
   `+0xCC/+0xD0` inline-vector family. In the current decompilation it does **not** read the
   later `+0xE4/+0xE8` indexed family.
+- A later install-bridge pass narrows the durable side of this path too. The temporary `0xF0`
+  generation context is destroyed by `FUN_006969e0`, and `FUN_00693fb0` / `FUN_00693c40` are just
+  the generated base-vector count getter and indexed `0x0C` `float3` accessor over that temporary
+  span. When the generated vector count exceeds the loaded mesh vertex count, `FUN_00697a10`
+  copies those overflow `float3` records into durable model-side storage at `[this + 0x08] + 0x14`
+  with count at `[this + 0x08] + 0x18`. That proves a real install into model-side state, but it
+  still does not directly prove the later handoff into the separate bake-visible package at
+  `[this + 0x0C] + 0x08`.
 
 Field-level shape from the current decompilation:
+
 - The post-header `FRTRI003` order is now explicit. `FUN_00865fb0` materializes two early
   `0x0C` families, then a `0x10` family, then `0x20`, `0x2C`, `0x34`, and `0x38`. A guarded
   mid-structure branch can also inject an additional `0x08` family and, on one side of that
@@ -970,15 +1096,28 @@ Field-level shape from the current decompilation:
     (`Fear`, `CombatAnger`)
   - `teethupperhuman.tri` -> no recognized runtime slot names; current best fit is
     geometry/topology support data rather than named morph-slot data
+- The extended/head builder's match order is also concrete now, not just inferred from the final
+  slot counts. In `TRI_Helper_BuildExtendedMorphObject`, the differential `+0x80` / `0x2C`
+  pass walks each named record and searches the shared head tables in this fixed order:
+  expressions (`0x832451d0`), modifiers (`0x83245210`), phonemes (`0x83245258`), then the custom
+  singleton (`0x8324520c`). On the first match it allocates a vector-payload morph object and
+  writes it directly into that bucket/slot; unmatched names simply leave the slot null.
 - The constructor's second pass narrows that further. The `+0x80` / `0x34` family builds
   `BSFaceGenMorphDifferential` objects against those same shared tables, while the `+0x90` /
-  `0x38` family builds `BSFaceGenMorphStatistical` objects against the same slots and replaces any
-  previously-populated slot on collision. That means the current sparse non-hair families are now
-  best read as:
+  `0x38` family repeats the same category search order, builds `BSFaceGenMorphStatistical`
+  objects against the same slots, explicitly releases any pre-existing differential payload in
+  that slot, and then stores the indexed/statistical replacement. That matches the GECK-side
+  `"Only statistical will be used."` warning and means the current sparse non-hair families are
+  now best read as:
   - eyes: **statistical-only** modifier subset (`0x34 = 0`, `0x38 = 4`)
   - mouth / tongue / lower teeth: **differential-only** mixed phoneme/expression subsets
     (`0x34 > 0`, `0x38 = 0`)
   - upper teeth: no recognized named morph-slot payloads
+- A later edge-case pass weakens the upper-teeth path further. `teethupperhuman.tri` validates in
+  the same `14`-vertex domain as its sibling mesh, exposes no `0x2C` / `0x34` / `0x38`
+  morph-bearing families, and does not hit the extra tail-vector copy path in
+  `LoadModelMesh`. So the current best fit is no longer "possibly sparse but unnamed"; it is
+  support/topology-alignment data rather than a live morph-bearing runtime child path.
 - That does not fully explain how the extended/head builder treats missing slots or empty families
   at apply time, but it retires the older uncertainty about whether sparse non-hair TRIs needed
   their own part-local naming scheme. They do not; they are now best read as partial population of
@@ -1019,9 +1158,9 @@ Field-level shape from the current decompilation:
   only side-loads EGM and EGT afterwards by calling `BSFaceGenModel::LoadEGMData` and
   `BSFaceGenModel::LoadEGTData`. The companion call scan shows the ordinary runtime apply owners
   line up with that: `ApplyCoordinateToExistingMesh -> BSFaceGenManager::LoadEGMData ->
-  BSFaceGenModelMap::LoadEGMData -> BSFaceGenModel::LoadEGMData`, and
+BSFaceGenModelMap::LoadEGMData -> BSFaceGenModel::LoadEGMData`, and
   `ApplyCoordinateTexturingToMesh -> BSFaceGenManager::LoadEGTData ->
-  BSFaceGenModelMap::LoadEGTData -> BSFaceGenModel::LoadEGTData`. The loader bodies themselves are
+BSFaceGenModelMap::LoadEGTData -> BSFaceGenModel::LoadEGTData`. The loader bodies themselves are
   narrow: `LoadModelTexture` lazily allocates the texture-side wrapper, `LoadEGTData` lazily fills
   the texture payload object at `model + 0x0C`, `LoadEGMData` lazily fills the morph payload object
   at `model + 0x08`, and `GetEGMDataSize` / `GetEGTDataSize` only compute those payload sizes for
@@ -1057,15 +1196,17 @@ Field-level shape from the current decompilation:
   materialized into `BSFaceGenMorphDataHead` slots.
 - The loop also now explains the main live LOD behavior more concretely. On the broader gate it
   applies phonemes, and on the tighter gate it additionally applies expressions, modifiers, and the
-  singleton custom morph. Outside that tighter gate there is still one extra fallback: a secondary
-  predicate can trigger `ApplyFacialModifiers` alone without the full expression/custom path. That
-  fallback is now much better bounded than before. A focused helper pass resolved the surrounding
+  singleton custom morph. Outside that tighter gate there is still one extra fallback, but it is
+  narrower than the earlier broad “eye-style upkeep” read suggested. The same child-loop pass now
+  shows that this modifiers-only branch sits under `GetAnimationData()`, a non-zero
+  `BSFaceGenAnimationData::GetDead()` result, active animation-data state at `+0xB4/+0xB8`, and a
+  parent-side `NiObject::IsFadeNode()` test. A focused helper pass resolved the surrounding
   unnamed calls to `BSFaceGenAnimationData::UpdateEyeTracking`, `Interface::IsInMenuMode`, and
   `ProcessLists::IsActorNCloseToPlayer`. The companion call scans show that
   `UpdateEyeTracking` is only directly called from `UpdateMorphing`, while the latter two are a
   broad global UI helper and a local-player-relevance check respectively, not hidden FaceGen-
-  specific subsystems. So this modifiers-only path now looks much more like upkeep for
-  eye-style sparse modifier subsets than a secret expression/custom side path.
+  specific subsystems. So the remaining modifiers-only path now looks more like dead/fade-node
+  maintenance than a secret alternate sparse-part morph owner.
 - The second owner, `PlayerCharacter::CloneInventory3D`, is now best read as a clone-side/preview
   path rather than a third live animation owner. It resolves named child nodes from the cloned
   inventory/head graph and explicitly forces `UpdateAllChildrenMorphData(..., 1)` on them, so the
@@ -1283,10 +1424,10 @@ Field-level shape from the current decompilation:
   - `uRam8328ad10 -> BSFaceGenNiNodeBiped`
   - `uRam8328ad14 -> BSFaceGenNiNodeSkinned`
   - `uRam8328ad18 -> HeadAnims:0`
-  with the nearby fixed-string probe also showing the next literals in the same cluster
-  (`EntryPoint`, `ArrowBone`, `Arrow:0`, `grabRight`). That means the lazy process-side cache is
-  no longer “some unnamed runtime lookup table”; it is explicitly keyed by the named FaceGen
-  biped node, the named FaceGen skinned node, and the sibling `HeadAnims:0` owner node.
+    with the nearby fixed-string probe also showing the next literals in the same cluster
+    (`EntryPoint`, `ArrowBone`, `Arrow:0`, `grabRight`). That means the lazy process-side cache is
+    no longer “some unnamed runtime lookup table”; it is explicitly keyed by the named FaceGen
+    biped node, the named FaceGen skinned node, and the sibling `HeadAnims:0` owner node.
 - That means the “first nonzero process population” question is now mostly answered for the normal
   NPC runtime path: the process-side face-node cache is populated lazily from the live actor 3D in
   `Character::Update` / `Character::PrecacheData`, not during process copy/revert.
@@ -1490,7 +1631,7 @@ Field-level shape from the current decompilation:
   globals; it loads `FACEGEN\SI.CTL` through the anonymous helper at `0x8293ffd0`, and that helper
   instantiates a dedicated `FRCTL001` reader. The startup sequence is:
   `std::string("FACEGEN\\SI.CTL") -> FrctlReaderCtor -> FrctlReaderOpen -> FrctlHeaderFixup ->
-  FrctlDecodePrimarySections -> FrctlDecodeSecondarySections`.
+FrctlDecodePrimarySections -> FrctlDecodeSecondarySections`.
 - `FrctlHeaderFixup` endian-fixes a small header consisting of two leading scalars plus a `2x2`
   scalar block. `FrctlDecodePrimarySections` then uses that `2x2` block to populate the manager's
   primary control arrays at `+0x88`: for each `2x2` bucket, it reads a variable-length array of
@@ -1639,7 +1780,7 @@ Field-level shape from the current decompilation:
   - one integer at `+0x1C8`
   - one face flag byte from `func_0x8242dc08`
 - The manager-side value path now lines up with those four saved buckets. `BSFaceGenManager::
-  GetFaceCoordValue` / `SetFaceCoordValue` index a `2 x 2` selector grid with
+GetFaceCoordValue` / `SetFaceCoordValue` index a `2 x 2` selector grid with
   `group = selector0 * 2 + selector1`, query the CTL-loaded `0x34` control records for that
   group, and then resolve the live value storage from `coordBase + group * 0x18`. That is the
   first clean bridge between the CTL primary buckets and the generic `2 x 2` save/load loops.
@@ -1717,6 +1858,22 @@ Field-level shape from the current decompilation:
   buffer before the final image object is created.
 - In the mesh path, the same coord buckets are dimension-checked against the loaded morph records
   and then consumed as weights while morph deltas are accumulated back into vertex XYZ storage.
+- A later inner-bridge pass makes that mesh side much less hand-wavy. `ApplyCoordinateToExistingMesh`
+  now clearly does four things in order: resolve/fallback to the live coord blob through
+  `GetFaceGenCoord`, enter the manager lock through `LockFaceGenAccess`, lazy-load the model's EGM
+  payload through `LoadEGMData`, and lazily build the `EGMData` wrapper object only if the model
+  still has a filename/path but no parsed morph payload at `model + 0x08`. After that it locks the
+  live `NiGeometryData` vertex source (or a clone from attached morph extra data), captures the
+  iterator through `GetVerticesIterator`, dimension-checks the active coord buckets against the
+  loaded morph-record families, and accumulates weighted signed-short deltas directly back into the
+  iterator-backed XYZ stream. If any write actually occurs it calls
+  `RefreshMeshFromBaseMorphExtraData`, marks the geometry data dirty, and then unwinds the packed
+  vertex lock and manager lock on all exits.
+- That same pass also retires one possible hidden-remap theory on the runtime side.
+  `BSFaceGenMorphDataHead::ApplyMorph` is only a guarded bucket/slot dispatcher: it picks one of
+  the four head-bucket arrays (phonemes, expressions, modifiers, custom), range-checks the slot,
+  null-checks the pointer, and then jumps through the matched morph object's vtable. There is no
+  additional table remap or coord reinterpretation in that function itself.
 - The named head-part attach pass extends that conclusion one step farther downstream.
   `BSFaceGenModel::ApplyCoordinateToNewMesh` is now exposed as a thin wrapper that first creates a
   new mesh object and then forwards into `ApplyCoordinateToExistingMesh(..., newMesh = 1)`. The
@@ -1755,7 +1912,7 @@ Field-level shape from the current decompilation:
   `NiGeometryData::LockPackedVertexData`, `NiGeometryData::GetVerticesIterator`, and
   `NiGeometryData::UnlockPackedVertexData`.
 - That accessor layer is now much less mysterious. `GetVerticesIterator` returns a `(ptr, stride,
-  packedFlag)` view of the current vertex stream, and when no packed stream is exposed it falls
+packedFlag)` view of the current vertex stream, and when no packed stream is exposed it falls
   back directly to `NiGeometryData + 0x20` with count from `+0x08` and stride `0x0C`. So the
   constructor is consuming ordinary geometry-data vertex storage, not a hidden FaceGen-only buffer
   format.
@@ -1802,7 +1959,7 @@ Field-level shape from the current decompilation:
 - The shipped sample meshes now also make the subtype question much less abstract. On the Xbox
   base head meshes `headhuman.nif` and `headold.nif`, the block order is
   `NiTriShapeData -> BSPackedAdditionalGeometryData -> BSDismemberSkinInstance -> NiSkinData ->
-  NiSkinPartition`, while the adjacent eye mesh `eyelefthuman.nif` has no skin-instance block at
+NiSkinPartition`, while the adjacent eye mesh `eyelefthuman.nif` has no skin-instance block at
   all. So for the main head path we are no longer choosing blindly between generic
   `NiSkinInstance` and a Bethesda subtype: the shipped base head assets we care about are using
   `BSDismemberSkinInstance`, and the FaceGen-only runtime question is now how that skinned branch
@@ -1849,6 +2006,25 @@ Field-level shape from the current decompilation:
   `NiSkinPartition` record `NumVertices` values (`1086 + 152`) and not the base
   `NiTriShapeData` vertex count (`1211`). So the runtime is not synthesizing that larger count in
   a later FaceGen-only step; it is reading it from the packed head-mesh vertex stream itself.
+- A later count-validation bridge now closes the seam between that packed iterator path and the
+  earlier TRI load path. `TRI_Helper_GetVertexCount` does not consult the packed head stream at
+  all; it derives its result from the raw TRI helper object by taking the first `float3` block
+  count and then raising that floor against maxima stored in the `0x30` record family. On the
+  shipped `headhuman.tri` sample that keeps the validation domain aligned with the mesh-order
+  `1211`-vertex head shape, not the partition-expanded `1238`-vertex packed stream.
+- `BSFaceGenModel::LoadModelMesh` now makes that split explicit. The named raw-PDB pass shows it
+  calling `TRI_Helper_GetVertexCount` and comparing that result against the loaded mesh's
+  `NiGeometryData.NumVertices` field, i.e. the ordinary base `NiTriShapeData` vertex count. For
+  the Xbox base head that means the TRI/runtime validation step is still happening in the
+  mesh-order `1211`-vertex domain even though the later packed iterator path can expose `1238`
+  positions.
+- The bridge under `BSFaceGenBaseMorphExtraData` preserves that dual-count model instead of hiding
+  it. `BSFaceGenBaseMorphExtraData::GetVertexCount` returns `+0x14` for the plain mesh-order path
+  and `+0x18` for the packed/alternate path, and `RefreshMeshFromBaseMorphExtraData` switches
+  between those two counts using the iterator's packed-flag byte. So the current best runtime read
+  is no longer "maybe the engine picks one count everywhere"; it is "validate TRI against the
+  mesh-order head, then refresh/apply against the packed partition-ordered stream whenever the
+  live iterator says packed."
 - That narrows the refresh path too. `BSFaceGenManager::RefreshMeshFromBaseMorphExtraData` takes
   the same iterator-shaped stack object and branches on that packed flag byte: when clear, it
   copies exactly `NiGeometryData.NumVertices` positions from the base morph buffer; when set, it
@@ -1868,6 +2044,66 @@ Field-level shape from the current decompilation:
   `NiGeometryData::GetVerticesIterator`, then branch on the returned packed-flag byte instead of
   flattening back to a plain mesh-order iterator. The unpacked side walks the iterator directly,
   while the packed side switches into the alternate head-data branch under `param_3 + 0xE0`.
+- A later packed-apply bridge finally closes the last remap question under that branch. The packed
+  path is **not** treating TRI/EGM payloads as already packed-order arrays. In
+  `BSFaceGenMorphDifferential::ApplyMorph`, the packed branch walks the `NiSkinPartition`
+  `0x2C` records under `param_2 + 0xE0`, uses `partition.NumVertices` at `+0x1C`, and remaps each
+  packed vertex index back through `partition.VertexMap` at `+0x0C` before indexing the
+  mesh-order differential payload. `BSFaceGenMorphStatistical::ApplyMorph` now shows the same
+  model through a packed-scratch helper family: it iterates the packed partition records, feeds
+  `VertexMap`-resolved mesh-order indices into that scratch builder, and only then applies the
+  statistical payload to the live packed iterator.
+- That materially changes the packed/runtime interpretation. The runtime no longer looks like
+  "mesh-order TRI validation followed by an unexplained packed-order morph domain." It now looks
+  like "validate/load TRI in the mesh-order domain, then remap the resulting morph payloads onto
+  the packed head stream at apply time through `NiSkinPartition.VertexMap`." `TRI_Helper_GetVertexCount`
+  still stays mesh-order-oriented in that later pass, so the split is explicit rather than
+  accidental.
+- The statistical packed branch is also less opaque than it first looked. The tiny helper family
+  now has a readable role: `MorphApply_PackedScratchInit_824940D0` allocates and zeroes one
+  4-byte head bucket per plain mesh-order vertex, `MorphApply_PackedScratchAddVertex_824941C8`
+  inserts 8-byte `(next, packedIndex)` nodes into those buckets keyed by the `VertexMap`-resolved
+  mesh-order index, and `MorphApply_PackedScratchDestroy_82494140` tears those per-bucket chains
+  down afterward. So the first packed statistical phase is a mesh-order-to-packed fanout table,
+  not another hidden reorder step.
+- A final disassembly cross-check then tightens the remaining tail branch. The helper at
+  `0x82485638` is just `BSFaceGenBaseMorphExtraData::GetVertexCount`, but the raw disassembly in
+  `facegen_texture_bake_decompiled.txt` shows its return is **not** ignored in the statistical
+  packed path. Once the current statistical record index crosses the plain mesh-order count, the
+  routine biases its source lookup into an alternate tail region with
+  `packedCount + (currentIndex - meshCount)` before loading the packed-side source delta. Below
+  that threshold it resolves destinations through the `VertexMap`-built linked lists instead. So
+  the packed statistical path is now best read as two subregions: a base mesh-order fanout region
+  that reaches packed vertices through `VertexMap`, plus a direct packed-tail region for records
+  beyond the plain mesh count.
+- The small vertex IO helpers under that same branch are now materially clearer too. The raw PDB
+  search identifies `0x82483850` as `XMConvertFloatToHalfStream`, pairing cleanly with the already
+  identified packed-side reader `XMConvertHalfToFloatStream` at `0x82481AD8`. The FaceGen apply
+  sites are therefore not hiding another accumulator under the final store: they read the current
+  destination vertex into float scratch, accumulate the signed delta there, and then either write
+  the three floats back directly for unpacked iterators or call `XMConvertFloatToHalfStream` to
+  overwrite the packed half-float destination. The helper pair `MorphApply_ReadVertexIntoScratch_82485568`
+  and `MorphApply_ReadVertexIntoScratch_82485B68` now fit that model as the current-pointer and
+  indexed packed-aware readers feeding that read-modify-write path. Under the differential path
+  that reduces cleanly to `currentVertex + delta * weight`; under the statistical path it becomes
+  `currentVertex + (targetVertex - baseVertex) * weight` after the earlier `VertexMap`-based
+  destination remap.
+- That also sharpens the duplicate-handling rule on the packed differential side. The runtime is
+  not deduping mesh-order `VertexMap` hits into one shared destination slot; it walks the packed
+  partition records and applies the same remapped mesh-order delta once into each packed
+  destination occurrence. So if a mesh-order vertex appears multiple times in the packed stream,
+  the engine updates each of those packed slots independently rather than collapsing them first.
+- That tightens the runtime interpretation again. The packed FaceGen seam is not "compute in one
+  domain, then hand off to an opaque packed writer." It is "read the live packed destination,
+  remap mesh-order payloads onto it, accumulate in float scratch, and convert the final result
+  straight back into the packed half-float geometry stream." That makes the implementation risk
+  even more specific: preserving the packed iterator plus the same read/remap/write behavior now
+  matters more than finding another hidden reorder layer.
+- The owner scan keeps that tail seam narrow too. The only ordinary direct owners of the small
+  helper set in this branch are `BSFaceGenMorphStatistical::ApplyMorph` itself and the already
+  known `BSFaceGenModel::ApplyCoordinateToExistingMesh` path that consults
+  `BSFaceGenBaseMorphExtraData::GetVertexCount` while blending coord-driven deltas. So this still
+  does not reopen a wider hidden packed-normalization subsystem elsewhere in FaceGen.
 - The symbol-level names make that cleaner still. The repeated refresh callsites in the older
   `body_tint_decompiled.txt` and `facegen_texture_bake_decompiled.txt` artifacts are not separate
   body-only or texture-only branches; they sit inside the same raw-PDB-named
@@ -1894,6 +2130,27 @@ Field-level shape from the current decompilation:
   whether to call `UpdateAllChildrenMorphData`, but it does not construct or normalize a separate
   iterator blob before the `ApplyFacial*` helpers run. So it does not currently restore a hidden
   mesh-order-only branch above the named refresh owners either.
+- A later iterator-mutation bridge now pushes that negative result further. The only named
+  FaceGen-adjacent runtime owners of the small helper family are `ApplyHairMorph`,
+  `ReplaceFaceMeshLOD`, `ApplyCoordinateToExistingMesh`, `LoadModelMesh`, `UpdateAllChildrenMorphData`,
+  `PrecacheFaceGeometry`, and the already-known base-morph constructor / bound path. Within that
+  owner set, `LoadModelMesh` only touches `NiGeometryData::SetConsistency`, `PrecacheFaceGeometry`
+  only updates a geometry-side flag byte and calls `SetConsistency(0)`, and the live apply paths
+  follow the same basic pattern: `LockPackedVertexData -> GetVerticesIterator -> refresh/apply ->
+MarkAsChanged -> UnlockPackedVertexData`.
+- That makes the helper semantics much less suspicious. `NiGeometryData::SetConsistency` and
+  `MarkAsChanged` only adjust geometry state bits, with an early-out through `m_spAdditionalGeomData`
+  when the packed helper owns the state transition; they do not rewrite vertex payloads or reorder
+  the iterator. `XMConvertHalfToFloatStream` still appears only on the packed read side, where it
+  expands half-float positions for `ApplyCoordinateToExistingMesh`, `ComputeModelBound`, and the
+  base-morph constructor, not as a separate mesh-order staging pass.
+- `ApplyHairMorph` now looks especially clean under that lens: it locks the live geometry data,
+  captures the iterator, refreshes from base morph extra data using that same iterator, applies the
+  hair morph, and then unlocks. `UpdateAllChildrenMorphData` follows the same lock/get/unlock
+  discipline around child-mesh refresh and facial morph application. `ReplaceFaceMeshLOD` remains
+  a consumer of the live iterator for bound/LOD work rather than a normalizer. So after
+  `LoadModelMesh` succeeds, the named runtime owner set still does not expose a hidden
+  "flatten packed head stream back to mesh order" stage.
 - The remaining sibling path under `ReplaceFaceMeshLOD` now looks non-mysterious too. The unnamed
   iterator consumer at `0x824861E8` resolves to `BSFaceGenManager::ComputeModelBound`, and it also
   branches on the iterator's packed-flag byte: unpacked iterators are read directly as `float3`
@@ -1947,9 +2204,9 @@ Field-level shape from the current decompilation:
   order through `NiSkinPartition.VertexMap` before normal rendering: `NifSkinPartitionParser`,
   `NifSkinDataExpander`, and `NifGeometryWriter` all document or implement that remap, and
   `NpcHeadBuilder` ultimately consumes the extracted/renderable mesh through `NifGeometryExtractor`.
-  So if the real FaceGen runtime path is intentionally operating on the packed partition-ordered
-  head stream during morph refresh, our current renderer is likely normalizing that distinction
-  away too early.
+  So if the real FaceGen runtime path is intentionally keeping the packed partition-ordered
+  head stream alive while remapping mesh-order morph payloads onto it at apply time, our current
+  renderer is likely normalizing that distinction away too early.
 - That makes the runtime split cleaner. `CreateNewMesh` is responsible for cloning and
   FaceGen-specific mesh setup, while `ApplyCoordinateToExistingMesh` remains the place where the
   coord buckets are actually consumed for vertex morph accumulation.
@@ -1987,6 +2244,22 @@ Field-level shape from the current decompilation:
   layout more concrete: variable bytes are copied into storage rooted at `+0x08`, with the
   length/capacity checks at `+0x18/+0x1C`. So this family still looks like name/metadata
   scaffolding, not the place where raw morph payload bytes get interpreted.
+- A focused internal loop dump on `FUN_00865fb0` narrows the **raw on-disk** `0x20` shape too.
+  The front-tail `0x20` reader is variable-length rather than a fixed-width raw block:
+  - `uint32 scalar0`
+  - `uint32 byteCount`
+  - optional `byte[byteCount]`
+    In other words, the later `0x20` materialized stride is a container layout fact, not the raw
+    file layout. The still-open question for this family is now semantic naming of `scalar0`, not
+    whether the raw bytes are fixed-width.
+- There is now an important caveat on top of that raw shape. `FUN_008753d0` is the generic fixed
+  block reader used immediately after `_memset(&local_4c, 0, 0x38)`, and it is called from the TRI
+  loader with a `0x38`-byte block size. That strongly suggests the contiguous `local_4c..local_14`
+  stack block is just the post-magic `FRTRI003` header words `0x08..0x3C`. Under that mapping, the
+  `0x20` loop bound `local_40` lines up with header word `0x14`. On the current anchor samples
+  (`headhuman`, `eyelefthuman`, `mouthhuman`, `tonguehuman`, `teethlowerhuman`, `teethupperhuman`)
+  header word `0x14` is always zero, so the variable-length `0x20` loop now looks like a real
+  loader capability but probably a **dormant** one for the currently sampled shipped assets.
 - `0x2C` records carry a secondary name/metadata table at `+0xB4/+0xB8`. During `FUN_00865fb0`,
   each record copies a string field rooted at `+0x14`; the string length/capacity checks land at
   `+0x24/+0x28`, which looks like another small-string-style container.
@@ -1999,6 +2272,21 @@ Field-level shape from the current decompilation:
   copy/append/relocate helpers (`FUN_00872c20`, `FUN_00871c20`, `FUN_00871670`, `FUN_008716f0`)
   rather than introducing new TRI-specific per-element decoding. So this family also still looks
   like a named metadata/name-table layer, not yet raw morph-payload interpretation.
+- The same internal `FUN_00865fb0` loop dump now makes the raw `0x2C` prefix materially less
+  vague. On disk, each front-tail `0x2C` record is variable-length with a fixed 12-byte middle
+  block:
+  - `uint32 scalar0`
+  - `byte[12] fixedPrefix`
+  - `uint32 byteCount`
+  - optional `byte[byteCount]`
+    The later materialized `0x2C` stride is still `0x2C`, but that stride is not the raw record
+    width. The remaining uncertainty here is the semantic meaning of `scalar0` and the 12-byte
+    fixed prefix, not whether the raw bytes form a fixed-stride table.
+- The same header/block mapping adds the same caution here. Under the current best-fit mapping of
+  `local_4c..local_14` onto header words `0x08..0x3C`, the `0x2C` loop bound `local_3c` lines up
+  with header word `0x18`. On all current anchor samples that word is also zero, so the
+  variable-length front-tail `0x2C` reader now looks like another generic `FRTRI003` loader
+  capability that may be inactive for the currently sampled head/eye/mouth/tongue/teeth assets.
 - `0x34` records are name-bearing inline-vector morph records. The name string lives at `+0x04`
   (inline or heap-backed depending on the small-string discriminator at `+0x18`), and the payload
   vector array lives at `+0x28/+0x2C` as `0x0C` entries. `FUN_00697f40`, which consumes them,
@@ -2109,6 +2397,7 @@ Field-level shape from the current decompilation:
   `FUN_0086bbd0` layer is where TRI-specific section materialization begins.
 
 Correction from the earlier notes:
+
 - The provisional `0x34 = statistical` / `0x38 = differential` naming appears to have been
   inverted. The constructor vtables and overwrite behavior in `FUN_00698be0` point the other way:
   the `0x34` pass builds `BSFaceGenMorphDifferential`-typed outputs first, then the `0x38` pass
@@ -2122,6 +2411,7 @@ expression '%s'. Only statistical will be used."` (string at 0x00D96540).
 ### 8.5 Our Implementation Match — CONFIRMED
 
 `FaceGenTextureMorpher.AccumulateNativeDeltasQuantized256` (lines 383-428):
+
 ```csharp
 coeff256 = (int)(textureCoeffs[morphIndex] * 256f);  // matches FLD + FMUL + __ftol2_sse
 scale256 = (int)(morph.Scale * 256f);                 // matches (same formula)
@@ -2140,6 +2430,7 @@ Earlier verifier passes supported the coefficient merge and bake accumulator str
 older conclusion here was too strong.
 
 Audit note (2026-03-18):
+
 - Recent `EgtAnalyzer` runs against sample shipped assets still show residual mismatch above the
   earlier "DXT1 noise only" explanation.
 - The strongest remaining signals are bake-amplitude / saturation differences and occasional
@@ -2162,6 +2453,7 @@ level, but the remaining texture discrepancy is still unexplained.
 **Now**: `delta = byte * 2 - 255` → matches shader's `(sample - 0.5) * 2.0`
 
 Fixed 2026-03-17. The encode/decode is now symmetric with `EncodeEngineCompressedChannel`:
+
 - Encode: `byte = (delta + 255) * 0.5`
 - Decode: `delta = byte * 2 - 255`
 
@@ -2176,6 +2468,7 @@ the encode/decode cycle. The round-trip `encode → texture → shader decode` i
 **STATUS: Binding chain is supported by decompilation; practical impact is still under review**
 
 **Binding chain (verified 2026-03-17 from decompilation)**:
+
 - `PrepareHeadForShaders` line 1792: sets property[0x2E] = secondary FaceGen texture
   - Fallback: `GetDefaultDetailModulationTexture()` (BSFaceGenManager +0xdb8) when NULL
 - `SetFaceGenMaps` copies property[0x2E] → shader texture array +0x14
@@ -2183,9 +2476,10 @@ the encode/decode cycle. The round-trip `encode → texture → shader decode` i
 - `SetupGeometryTextures` returns immediately for pass 0x0E (no texture remapping)
 
 The `_sk` face tint is a **separate** third slot (+0x18), bound via vtable+0xF0 at index 2.
-SKIN2000.pso only uses s0–s3 (4 samplers); the _sk tint at +0x18 is not consumed by this shader.
+SKIN2000.pso only uses s0–s3 (4 samplers); the \_sk tint at +0x18 is not consumed by this shader.
 
 **Default texture content** (from `BSFaceGenManager::BSFaceGenManager` decompilation, 2026-03-17):
+
 - `+0xdb4` (base modulation, FaceGenMap0 default): 32×32, all pixels `0x80` (128).
   At shader's `×2.0` multiplier: 128/255 × 2.0 ≈ 1.004 → **neutral**.
 - `+0xdb8` (detail modulation, FaceGenMap1 default): 32×32, all pixels `{R:62, G:65, B:62, A:64}`.
@@ -2197,12 +2491,41 @@ Most NPCs appear to use the default path, and the default values look near-neutr
 the remaining mismatch, but this section should not be treated as proof that FaceGenMap1 is
 irrelevant in every path.
 
+**PrepareHeadForShaders follow-up helper semantics** (verified 2026-03-25):
+
+- `ResolveFaceGenShaderTexture` returns the alternate path that is later bound through
+  `property[0x2E]` / FaceGenMap1.
+- The two direct follow-up helpers are now resolved as sibling-path builders, not texture
+  processors:
+  - `0x822DF198` formats `"%s_n.dds"`
+  - `0x822DF238` formats `"%s_s.dds"`
+- `_sk` is still derived later through its own branch and remains separate from the helper pair.
+
+**Sampled NPC asset alignment** (verified 2026-03-25):
+
+- In the sampled NPC texture trees, the authored head families present are the plain
+  diffuse/normal/tint sets such as `headhuman.dds`, `headhuman_n.dds`, `headhuman_sk.dds`, plus
+  old variants like `headhumanold.dds` / `headhumanold_n.dds` / `headhumanold_sk.dds`.
+- No sampled `Textures\\%s%c%d.dds`-style head-detail files or `headhuman_s.dds` /
+  `headhumanold_s.dds` siblings were found in the sampled texture packs.
+- That makes the sampled NPC path line up with the authored material-slot fallback more strongly
+  than with the alternate detail-family path:
+  - resolved-family `_n` / `_s` correspond to the same locals later filled from the material
+    getters at vslots `+0x14` / `+0x18`
+  - the resolved path itself still feeds `property[0x2E]` / `FaceGenMap1`
+  - `_sk` remains the separate later slot-2 family
+
+This retires the sibling/fallback alignment question for sampled NPC assets. The remaining
+uncertainty is narrower: whether unsampled assets or other runtime cases ever make non-default
+FaceGenMap1 materially live, not how the branch is wired.
+
 ### 9.4 Missing upstream `FRTRI003` / coord-context assembly
 
 **STATUS: Confirmed implementation gap**
 
 Our code starts from an already-existing `.egt` and merged FGTS coefficients. We do **not** have a
 source-side equivalent of the GECK path that:
+
 - loads `FRTRI003` via `FUN_00865fb0`
 - materializes a multi-section `0xF0` coord/generation context
 - copies mesh-aligned section data via `FUN_008647e0`
@@ -2210,8 +2533,16 @@ source-side equivalent of the GECK path that:
 - specifically supplies the `+0xB4/+0xB8` named metadata records, the `+0xCC/+0xD0` inline-vector
   morph records, and the `+0xE4/+0xE8` indexed morph records that
   `FUN_00698be0` / `FUN_00699e50` consume directly
+- reaches the shared export flow through `FUN_00587b20 -> FUN_0068fe90 -> FUN_00695b50` at the
+  caller level
+- now also shows a real durable/model-side install in `FUN_00697a10`, where overflow generated
+  `0x0C` `float3` records are copied into `[this + 0x08] + 0x14/+0x18` before the temporary
+  `0xF0` generation context is destroyed
+- but still does **not** prove the final copy/install step from that durable model-side overflow
+  storage into the separate bake-visible `FREGT003` package chain at `[this + 0x0C] + 0x08`
 
 External context note:
+
 - FaceGen's own documentation describes `.tri` as the **base mesh** for a model part, including
   UVs and morph-target information, but **not** the statistical shape changes. In that same model
   set layout, `.egm` carries statistical shape information and `.egt` carries statistical texture
@@ -2226,6 +2557,7 @@ External context note:
   runtime texture file.
 
 Local asset audit note (2026-03-18):
+
 - This is not just a decompilation hypothesis. The shipped sample assets contain real sibling
   `.tri` files for the same head-adjacent meshes we use elsewhere: `headhuman.tri`,
   `headold.tri`, `headghoul.tri`, eye `.tri`, mouth `.tri`, tongue `.tri`, teeth `.tri`, and many
@@ -2250,21 +2582,296 @@ Local asset audit note (2026-03-18):
   topology count, not the final degenerate-filtered render triangle list. Future investigation
   should compare against `NiTriStripsData.NumTriangles` before assuming any TRI/NIF topology
   mismatch.
-- A minimal local parser now confirms one stable cross-sample payload pattern: after the 64-byte
-  header, both `headhuman.tri` and `eyelefthuman.tri` begin with two contiguous `float3` blocks
-  whose counts are `header[0x08]` and `header[0x1C]`.
+- A minimal local parser still confirms one stable payload fact: after the 64-byte header, the
+  first confirmed payload block is a `float3[header[0x08]]` region.
+- The older "second contiguous `float3[header[0x1C]]` block" interpretation is now weaker.
+  Current anchor probes show that the next active fixed-width region behaves like a mixed raw
+  `0x0C` region rather than a uniformly trustworthy float3 block:
+  - `headhuman.tri`: `238` plausible float3 records, then `1211` `u32x3` triplets
+  - `eyelefthuman.tri`: `196` plausible float3 records, then `49` `u32x3` triplets
+  - `mouthhuman.tri` / `tonguehuman.tri`: immediate `u32x3` triplet tables with no leading float3
+    prefix
+  - `teethlowerhuman.tri`: the first `12` rows behave like clean mesh-domain triplets, then the
+    next `2` rows are already float-like and align better with the following region
+- Those triplet tables are now narrower than "unknown ints." On the current anchors, the valid
+  triplet rows live in mesh-vertex space rather than the shared statistical-index pool:
+  - `headhuman`: `1211 / 1211` contiguous rows stay below `vertexCount`
+  - `eyelefthuman`: `49 / 49`
+  - `mouthhuman`: `27 / 27`
+  - `tonguehuman`: `27 / 27`
+  - `teethupperhuman`: `14 / 14`
+  - `teethlowerhuman`: `12 / 14`
+- The sibling NIF comparison tightens that again. The mixed-region `u32x3` rows are mesh-domain
+  support topology, not arbitrary metadata:
+  - `headhuman.tri`: all `1211` valid rows are actual mesh triangles from the remapped
+    `NiSkinPartition` topology, with no degenerate rows
+  - `eyelefthuman.tri`, `mouthhuman.tri`, `tonguehuman.tri`, and `teethupperhuman.tri` stay in the
+    same topology domain, but some rows are degenerate strip-style windows rather than final render
+    triangles
+  - `teethlowerhuman.tri` is now a narrower outlier: the first `12` rows match the sibling mesh's
+    `12` triangles exactly, and the last `2` rows appear to be the start of the following float
+    payload region
+- Successive rows also very often share two vertex ids (`headhuman`: `627 / 1210`;
+  `eyelefthuman`: `44 / 48`), which fits triangle/strip-support topology much better than generic
+  metadata.
+- The runtime bridge narrows the semantic question further. The GECK loader reads this mixed early
+  family before the later named `0x20` / `0x2C` / `0x34` / `0x38` record loops, and the Xbox
+  runtime mirrors that in `TRI_Helper_LoadIntoObject`: it reads the base TRI-object family
+  through `TRI_Helper_GetVector3At(obj, 0)` with count `header[0x08] + header[0x2C]` equivalent
+  state, before building the later `+0x80` differential and `+0x90` statistical record families.
+- But the named runtime morph builders still only materialize morph objects from the later
+  record-local payloads:
+  - `+0x80` differential records with inline `float3` payloads
+  - `+0x90` statistical records with inline `u32` index payloads
+- A direct-call scan for `TRI_Helper_GetVector3At` found only four bridge-local callers, with the
+  explicit base-family read in `TRI_Helper_LoadIntoObject` and the remaining uses staying in the
+  same TRI bridge neighborhood. So the current best read is that the mixed early support-topology
+  family is auxiliary TRI object state, possibly used by unnamed bridge-local helpers, rather
+  than a direct named morph payload in the runtime head/hair apply path.
+- A focused caller decompile narrows that further. The four direct callsites collapse to two
+  containing functions:
+  - `0x829469E4` / `0x82946E90` are the same broad TRI object clone/copy helper. One
+    `TRI_Helper_GetVector3At` use copies the base early family itself; the other copies
+    record-local `+0x80` differential `float3` payloads.
+  - `0x82947568` / `0x82947EC0` are the same bridge-local TRI load/materialization helper. One
+    `TRI_Helper_GetVector3At` use reads the base early family from file; the other reads
+    record-local differential payload vectors later in the same loader.
+- So the direct-owner question is mostly retired now: those remaining callers do not currently
+  look like later semantic consumers of the mixed early support-topology family. They reinforce
+  the current interpretation that this family is carried as bridge-local auxiliary TRI state
+  rather than fed into a separate named runtime morph-apply stage.
+- The named owner chain now narrows the same way. `TRI_Helper_LoadIntoObject` at `0x82947400`
+  and `TRI_Helper_BuildExtendedMorphObject` at `0x82495210` both currently show one named owner:
+  `BSFaceGenModel::LoadModelMesh`. That means the support-topology family is still not escaping
+  into a separate named runtime subsystem after load; it stays under the same main TRI
+  materialization path we were already tracing.
+- The broader neighboring helper fanout is more nuanced, but still local. A raw caller scan for
+  the base-family `float3` count helper (`TRI_Helper_GetVector3Count = (end - begin) / 0x0C`)
+  finds a wider bridge-local fanout, and representative local decomp shows:
+  - one clone/copy fragment that mirrors the already-known base-family copy plus record-local
+    `+0x80` differential payload copy
+  - one `+0x60`-neighborhood fragment that range-checks records against the base-family count and
+    then fetches vectors from the base family by index
+  - several generic `float3` span/container helpers that reserve, compare, append, or copy vector
+    payload storage without being support-topology-specific
+- So the best current refinement is: the mixed early family does appear to have a second
+  **bridge-local indexed structural role** in the `+0x60` neighborhood, but it still does not
+  look like a later named morph-apply input or a separate runtime subsystem. This point is based
+  on representative local fragments rather than clean PDB-named full functions, so it should be
+  treated as strong but still local evidence.
+- A later focused `+0x60` helper pass makes that bridge much more concrete. The runtime
+  `+0x60` family is now structurally pinned down:
+  - `TRI_Plus60_GetCount` / `TRI_Plus60_GetRecord` show it is a `0x20`-stride record array
+  - `TRI_Plus60_CopyRecord` copies a leading scalar field plus a nested dynamic tail rooted at
+    `record + 0x04`
+  - `TRI_Helper_LoadIntoObject` reads each record as:
+    - `uint32 scalar0`
+    - `uint32 byteCount`
+    - optional `byte[byteCount]` copied into the nested tail at `+0x04`
+- That runtime shape matches the GECK-side raw/materialized `0x20` family much better than the
+  earlier weaker guesswork did. So the current best cross-bridge read is that runtime `+0x60`
+  is the materialized `0x20` family.
+- The same focused pass also clarifies the second structural role. `TRI_Plus60_ResolveVector`
+  and the representative `+0x60` neighborhood fragment use `record.scalar0` to resolve a vector
+  from the mixed early base family and append/cache it in a local `float3` span. So the current
+  best read is:
+  - runtime `+0x60` = materialized `0x20` family
+  - `scalar0` = base-family vector index
+  - nested tail at `+0x04` = generic small-string payload, not an opaque byte vector
+- That narrows the remaining question again. The support-topology family no longer just looks
+  "maybe auxiliary"; it now looks like the base vector table that the `+0x60` family indexes.
+  What is still open is the semantic meaning of the `+0x60` string payloads and how much of that
+  indexed bridge is parity-critical for NPC rendering versus only broader TRI object completeness.
+- The sibling `+0x70` family is now structurally pinned down too. A focused helper pass shows:
+  - `TRI_Plus70_GetCount` / `TRI_Plus70_GetRecord` make it a `0x2C`-stride record array
+  - `TRI_Plus70_CopyRecord` copies:
+    - `uint32 scalar0`
+    - `byte[12] fixedPrefix`
+    - nested dynamic tail rooted at `record + 0x10`
+  - `TRI_Helper_LoadIntoObject` reads each record as:
+    - `uint32 scalar0`
+    - `byte[12] fixedPrefix`
+    - `uint32 byteCount`
+    - optional `byte[byteCount]` copied into the nested tail at `+0x10`
+- That runtime shape matches the GECK-side raw/materialized `0x2C` family very closely. So the
+  current cross-bridge read is now:
+  - runtime `+0x60` = materialized `0x20`
+  - runtime `+0x70` = materialized `0x2C`
+  - the remaining uncertainty on both families is semantic payload meaning, not family identity
+    or raw-vs-runtime correspondence.
+- A later shared tail-helper pass retires most of the remaining container-level ambiguity:
+  - `0x829443F8`, `0x82942ED0`, and `0x82949340` operate on a generic small-string container,
+    not on a TRI-specific raw byte vector
+  - the runtime `byteCount` fields on the `0x20` / `0x2C` families are therefore best read as
+    string byte counts, likely including the trailing NUL
+  - the neighboring helper set is now structurally pinned down as fixed-width span machinery:
+    - `0x82949508` = `0x0C`-stride span helper tied to `TRI_Helper_GetVector3Count` /
+      `TRI_Helper_GetVector3At`, so best fit is `float3` span storage
+    - `0x82949770` = `0x04`-stride span helper, so best fit is `uint32` index storage
+    - `0x829498B0` / `0x829499F8` = second `0x0C`-stride span family
+    - `0x82949A78` / `0x82949B98` = `0x10`-stride structured-record span family
+    - `0x82949C18` / `0x82949D58` = `0x08`-stride structured-record span family
+    - `0x82949D78` = `0x20`-stride span helper for the runtime `+0x60` family itself
+- So the remaining semantic gap under the early TRI seam is now narrower than before:
+  - we no longer need to ask what container type the `+0x60` / `+0x70` tails use
+  - we still need to ask what the early string payloads mean semantically
+  - and we still need to label the actual TRI semantics of the `0x08` / `0x10` structured span
+    families
+- A follow-up raw probe against the MemDebug image tightens the string side further: the loader's
+  fallback literals at `0x820D6F8A`, `0x820D6F8B`, `0x820D6FC9`, and `0x820D6FCA` are all empty
+  strings. That upgrades the early dynamic tails from "probably strings" to "definitely optional
+  NUL-terminated string payloads", because the loader reads a byte count, assigns the empty string
+  when the count is `< 2`, and otherwise truncates the destination to `count - 1` before copying
+  bytes.
+- That follow-up also narrows the semantic read on the families themselves:
+  - runtime `+0x60` still looks like an auxiliary indexed-record family whose `scalar0` resolves
+    into the mixed early base-vector table and whose tail is best treated as a bridge-local
+    per-record tag/identifier
+  - runtime `+0x70` still looks like a richer auxiliary metadata family
+    (`scalar0 + 12-byte fixed prefix + string tag`), not like the canonical shared morph-slot
+    name table
+  - the later `+0x80` / `+0x90` families remain the strongest fit for the actual live morph-name
+    path, because the extended/head builder does its shared expressions/modifiers/phonemes/custom
+    matching there rather than on `+0x60` / `+0x70`
+- A final focused pass tightens that `+0x70` layout materially. The old `12-byte fixed prefix`
+  is now best read as a `Vector3` that sits after one leading `uint32`, not as an opaque blob:
+  - the GECK-side `0x2C` helper zero-initializes three floats at `record + 0x04/+0x08/+0x0C`
+    before initializing the small-string tail at `record + 0x10`
+  - the runtime `TRI_Plus70_CopyRecord` copies exactly four 32-bit words before delegating only
+    the tail at `record + 0x10` to the small-string helper
+  - `TRI_Helper_LoadIntoObject` reads each `+0x70` record as `4` bytes into `record + 0`, `12`
+    bytes into `record + 4`, then a string-byte-count and optional string bytes into `record + 0x10`
+  - the follow-up direct-call scan for `TRI_Plus70_GetRecord` / `TRI_Plus70_CopyRecord` still
+    stays in the same bridge-local load/copy neighborhood, so there is still no evidence of a
+    later named runtime subsystem that interprets those three floats semantically
+- So the current best read is now:
+  - runtime `+0x70` = `uint32 scalar0 + Vector3 + optional string tag`
+  - the `Vector3` layout is much firmer than the semantic meaning of either `scalar0` or the vector
+  - the family still looks auxiliary/metadata-like rather than part of the canonical live
+    morph-slot naming path
+- So the remaining open question under this branch is no longer "are the early tails really
+  names?" It is "what do those auxiliary tagged support families mean, and what exact TRI role do
+  the unresolved `0x08` / `0x10` structured spans play?"
+- A follow-up widened-caller pass now demotes most of that structured-support branch too:
+  - the top-level `+0x30`, `+0x40`, and `+0x50` families widen beyond the immediate load/copy
+    helpers, but the widened owners still look like container reserve/reset/serialization code,
+    not like a second named runtime morph/apply subsystem
+  - `+0x30` remains an `0x08`-stride support span with only the expected count/get/reserve/reset
+    fanout
+  - `+0x40` remains a second `0x0C`-stride support span with the same style of reserve/reset
+    fanout
+  - `+0x50` does widen further, but the strongest decompiled owner around `0x829551A0` is a
+    CSV-like validation/serialization path rather than a morph builder: it iterates `+0x50`
+    records and nested elements, and the associated raw string literals are
+    `"CSV input is empty."`, `"\""`, and `","`
+- So the current best read is that `+0x30` / `+0x40` / `+0x50` are auxiliary support-data
+  families carried by the TRI object for completeness/validation, while the live high-value
+  runtime morph families remain `+0x80` and `+0x90`. That demotes the structured support spans as
+  implementation blockers and leaves the main unresolved support-family question on the `+0x70`
+  12-byte fixed prefix rather than on a broad second support-span consumer path.
+- The remaining out-of-cluster `+0x30` / `+0x50` sites now narrow the same way rather than
+  reopening the branch:
+  - the `+0x30` orphan sites at `0x82948994` / `0x829489E4` begin by writing `+0x30` data through
+    an abstract writer callback, then continue into the same export-style loops over `+0x80`
+    differential vectors and `+0x90` statistical payloads, including per-record max-component
+    scans and signed-16-bit quantization of float3 deltas
+  - the `+0x50` orphan sites at `0x82948574` / `0x82948A7C` write `+0x50` records and then walk
+    `+0x60`, `+0x70`, optional `+0x30/+0x40/+0x50`, `+0x80`, and `+0x90` in structured order
+    through the same writer callback
+  - so these sites now look like TRI export/serialization helpers over the whole object, not like
+    a hidden renderer- or morph-relevant consumer path
+- That means the structured support-span branch can be demoted again. The stronger remaining
+  parity risk is back on the packed base-head / TRI application seam, not on any evidence that
+  `+0x30` / `+0x40` / `+0x50` hide a second runtime morph system.
+- So the current parser's `VertexBlock1` should now be treated as a provisional overlapping view
+  of that larger mixed region, not as a semantically closed second vector block.
 - That local parser now also exposes the decomp-confirmed record families as **layout metadata**
   only: `0x2C` named metadata, `0x34` differential morph, and `0x38` statistical morph. Those
   counts and sizes are useful for integration planning, but they should still be treated as
   generation-context layout facts rather than raw file-offset facts.
-- The next payload region is not yet uniform enough to label generically. `headhuman.tri` switches
-  into a large non-float tail immediately after those two blocks, but `eyelefthuman.tri` continues
-  with more float-like data there, so we should not assume a single "triangle block starts here"
-  rule yet.
+- The next payload region is no longer completely opaque semantically, even though it is still not
+  byte-parsed end to end. The combined GECK/runtime bridge now accounts for the post-vector tail
+  as a conceptual `0x2C -> 0x34 -> 0x38` family region:
+  - `0x2C` name-bearing metadata records
+  - `0x34` name-bearing differential records that expand into `float3` payloads
+  - `0x38` name-bearing statistical records that preserve a running base offset into one shared
+    statistical index stream
+- The trailing `0x38` region is now also partially pinned down at the raw-byte level in the two
+  current anchor samples. In both `headhuman.tri` and `eyelefthuman.tri`, the file ends with a
+  contiguous EOF-aligned chain of `0x38` statistical records shaped like:
+  - `uint32 nameLenIncludingNull`
+  - `char name[nameLenIncludingNull]`
+  - `uint32 payloadCount`
+  - `uint32 indices[payloadCount]`
+- The late `0x34` differential region is also less opaque now. In `headhuman.tri`, the 38
+  pre-EOF name-bearing differential records immediately before that trailing `0x38` chain now fit
+  one raw layout exactly:
+  - `uint32 nameLenIncludingNull`
+  - `char name[nameLenIncludingNull]`
+  - `float scale`
+  - `int16 packedDeltas[vertexCount * 3]`
+- The same differential record shape also cross-checks cleanly on smaller non-head samples with
+  live differential families (`mouthhuman.tri`, `tonguehuman.tri`, `teethlowerhuman.tri`): once
+  the short phoneme names are included, adjacent name-bearing records differ by
+  `nameLen + 8 + (vertexCount * 6)` bytes exactly.
+- The current anchor offsets are:
+  - `headhuman.tri`: trailing region at `0x579DD`, length `0x447`, `8` records, aggregate payload
+    count `238`
+  - `eyelefthuman.tri`: trailing region at `0x1824`, length `0x353`, `4` records, aggregate
+    payload count `196`
+- On the head sample specifically, that means the last parsed raw tail layers now look like:
+  - differential region at `0x14114..0x579DD` (`38` records)
+  - trailing statistical region at `0x579DD..EOF` (`8` records)
+- The 38-name head differential chain is now also semantically coherent rather than just
+  byte-regular. It covers phonemes, brow modifiers, and mood/expression-style slots, while the
+  trailing 8 statistical records cover blink/squint/look slots.
+- In both cases, that aggregate payload count matches header word `0x2C`. So the old provisional
+  `NamedMetadataRecordCountHint` naming in the parser is now best treated as conservative legacy
+  wording, not a settled semantic claim about that header field.
+- That `0x38` running-offset model is now the important bridge to the packed runtime seam. GECK
+  `FUN_00865fb0` writes each materialized `0x38` record's `+0x1C` field from a running
+  accumulator before reading that record's `uint32` payload, and the runtime
+  `TRI_Helper_BuildExtendedMorphObject` passes that same preserved value directly into
+  `BSFaceGenMorphStatistical`. The later packed statistical apply tail is therefore no longer best
+  read as a second hidden format region; it is an apply-time consequence of the shared-index
+  model already loaded from the raw tail.
+- What is still missing is the byte-exact segmentation of the still-earlier raw region that sits
+  between the first confirmed vertex block and the now-accounted late `0x34` differential chain /
+  trailing `0x38` EOF region. The remaining parser uncertainty is now concentrated much more on
+  that early mixed fixed-width seam than on the end of the file.
+- That front-of-tail uncertainty is no longer best described as "maybe active `0x20` / `0x2C`
+  variable-length records." The GECK front-tail loop bodies still show that `0x20` and `0x2C` are
+  real variable-length loader capability, but the current anchor samples make them look dormant.
+  The stronger active seam is the earlier fixed-width `0x0C` region:
+  - `FUN_00865fb0` reads it with count `local_4c + local_28`
+  - the same function later reuses `local_4c` as the per-record vertex-count bound for `0x34`
+    differential payload expansion
+  - so the active count now looks like `vertexCount + header[0x2C]`
+- The still-unresolved raw questions are now:
+  - whether any non-direct or otherwise unnamed bridge path still gives that mixed early `0x0C`
+    support-topology family a second runtime structural role, even though:
+    - the direct-call set now collapses to bridge-local load/copy helpers
+    - the named owner chain for both `TRI_Helper_LoadIntoObject` and
+      `TRI_Helper_BuildExtendedMorphObject` stays under `BSFaceGenModel::LoadModelMesh`
+    - the broader base-family count-helper fanout only adds a bridge-local `+0x60`
+      index-resolution role plus generic vector-span container helpers
+    - the focused `+0x60` helper pass now ties that bridge-local index-resolution role
+      concretely to the materialized `0x20` family and the mixed early base vector table
+    - the focused `+0x70` helper pass now ties the sibling runtime `+0x70` family cleanly to the
+      materialized `0x2C` family
+    - the shared tail-helper pass now reduces that remaining issue further from
+      "unknown blob containers" to "small-string payload meaning plus unlabeled `0x08` / `0x10`
+      structured span semantics"
+  - whether the `teethlowerhuman.tri` short overrun is a real format variant or just the first
+    anchor where the following float region begins before the provisional `vertexCount`-row
+    boundary
+  - and only after that, whether any dormant `0x20` / `0x2C` family bytes matter in other TRI
+    variants
 - So the on-disk sample assets strongly support the current interpretation: `.tri` is a real
   mesh-linked FaceGen generation input, not a speculative side format.
 
 Current implementation audit:
+
 - `NpcAppearanceFactory` resolves the head path from race/body data, builds the fallback
   `FaceGeom` NIF path, and merges FaceGen coefficients. It now also resolves and stores the
   sibling head `.tri` path, but that path is still plumbing, not an active morph input.
@@ -2272,8 +2879,9 @@ Current implementation audit:
   actual morph/render path. They continue to start from `BaseHeadNifPath`, optional `.egm`,
   optional `.egt`, and optional prebuilt `FaceGenNifPath`.
 - There is now a minimal `FRTRI003` parser in `src` that reads the stable header, the first two
-  confirmed `float3` blocks, and the decomp-confirmed record-family layout metadata. Mesh archive
-  helpers can load sibling `.tri` files, but the pipeline still does not apply that data.
+  confirmed `float3` blocks, and conservative metadata about the remaining raw-tail families.
+  Mesh archive helpers can load sibling `.tri` files, but the pipeline still does not apply that
+  data.
 - For base race head meshes specifically, the current pre-skin EGM path is probably not being hurt
   by our "first skinned shape" shortcut: sampled heads such as `headhuman.nif` and `headold.nif`
   contain a single skinned `NiTriShape`. So the larger mesh-side parity gap is not head-shape
@@ -2290,6 +2898,7 @@ GECK generation parity.
 **Actually**: Standard distance fog blending (FogColor, fogFactor) from vertex shader.
 
 SKIN2000.vso `aout1` (→ PS `v1`):
+
 - `v1.xyz` = FogColor (VS constant c15, passed through)
 - `v1.w` = exponential fog factor
 
@@ -2304,11 +2913,15 @@ Irrelevant for sprite generation (camera distance → fog factor ≈ 0).
    structurally correct, but live verification still shows residual mismatch that is too large
    and too patterned to dismiss as simple DXT1 noise.
 
-2. **`PrepareHeadForShaders` still needs a narrower semantic audit, but the branch helper itself is
-   no longer the main unknown.** `ResolveFaceGenShaderTexture` is now clearly a path resolver with
-   `'M'/'F'` plus numeric-bucket fallback behavior. The remaining uncertainty is what the resolved
-   path family semantically represents, and what the follow-up helpers (`func_0x822df198`,
-   `func_0x822df238`) derive from it before the texture is bound as FaceGenMap1.
+2. **`PrepareHeadForShaders` is mostly closed for sampled NPC assets.**
+   `ResolveFaceGenShaderTexture` / `GetAsNearestDetailDDSFile` is a sexed numeric path resolver,
+   and its follow-up helpers are just `"%s_n.dds"` / `"%s_s.dds"` builders. The fallback alignment
+   is no longer unknown: those siblings map onto the same diffuse/normal locals that Path B fills
+   from the authored material slots, while the resolved path itself feeds `property[0x2E]` /
+   FaceGenMap1 and `_sk` stays separate. In the sampled NPC texture packs, no concrete `%c%d`
+   head-detail files or `_s` siblings were found; sampled assets instead expose the authored
+   `headhuman` / `_n` / `_sk` family. The remaining question is only whether unsampled assets or
+   runtime-only cases ever make that alternate family live.
 
 3. **Darker / stronger-negative deltas remain a real signal.** Alternate encode-side rounding
    modes fit darker facemods better in many cases, but no single global mode fixes the full batch.
@@ -2317,12 +2930,18 @@ Irrelevant for sprite generation (camera distance → fog factor ≈ 0).
    shipped facemods decode differently, but that source-format gap is smaller than the remaining
    bake mismatch and does not remove the darker-delta pattern.
 
-5. **Upstream GECK generation context is still only partially modeled.** The `FRTRI003` loader is
-   now confirmed to assemble multiple typed sections before morph generation, and the generated
-   morph builders directly consume the `+0xCC/+0xD0` (`0x34`) inline-vector family and the
-   `+0xE4/+0xE8` (`0x38`) indexed family from that context. We still do not know whether the
-   content of those sections materially changes the final baked texture values in the cases where
-   our output diverges from shipped facemods.
+5. **Upstream GECK generation context now has a concrete path into the shared export flow, but the
+   final package handoff is still incomplete.** The `FRTRI003` loader is confirmed to assemble
+   multiple typed sections before morph generation, the generated morph builders directly consume
+   the `+0xCC/+0xD0` (`0x34`) inline-vector family and the `+0xE4/+0xE8` (`0x38`) indexed family
+   from that context, and the export-side caller `FUN_00587b20` now shows a real
+   `FUN_0068fe90 -> FUN_00697ee0 -> FUN_00697a10` generation path before it falls into the shared
+   bake routine `FUN_00695b50`. The install bridge is also narrower now: `FUN_00697a10` does
+   perform a durable model-side install of overflow generated `0x0C` `float3` records at
+   `[this + 0x08] + 0x14/+0x18`, while `FUN_00694880` and `FUN_00696280` manage the separate
+   metadata-holder / bake-visible `FREGT003` package chain at `[this + 0x0C] + 0x08`. The
+   remaining gap is the exact copy/install step, if any, from that durable model-side overflow
+   state into the texture-morph package entries later iterated by `FUN_00695b50`.
 
 6. **Our mesh/runtime path still does not consume the shipped `.tri` family semantically.** The
    sample assets confirm that `FRTRI003` files exist alongside the real head, eye, mouth, teeth,
@@ -2331,8 +2950,11 @@ Irrelevant for sprite generation (camera distance → fog factor ≈ 0).
    non-negative selectors for the compact/hair path, with eyes still going through the extended
    path. The sparse non-hair subset mapping is also now mostly understood: eyes populate modifier
    slots, mouth/tongue/lower teeth populate sparse phoneme/expression subsets, and upper teeth
-   still look closest to geometry/topology support data. Missing slots are now also understood as
-   simple null/no-op entries at apply time. The main live owner path is now also mostly pinned
+   now look closest to geometry/topology support data rather than a live sparse morph source. The runtime builder-side category search
+   order is also explicit now: expressions first, then modifiers, phonemes, and the custom
+   singleton, with statistical/indexed payloads replacing prior differential payloads slot-by-slot
+   on collision. Missing slots are now also understood as simple null/no-op entries at apply time.
+   The main live owner path is now also mostly pinned
    down: `UpdateMorphing -> UpdateAllChildrenMorphData` is the regular runtime child-morph
    invocation path, while `PlayerCharacter::CloneInventory3D` reuses the same child loop on
    clone/preview graphs. The fallback-helper side is now also mostly resolved:
@@ -2340,90 +2962,102 @@ Irrelevant for sprite generation (camera distance → fog factor ≈ 0).
    gate around that child path. A follow-up `BSFaceGenNiNode` layout pass ruled out the obvious
    local-field guess, and the next inherited-object pass resolved the remaining field identity:
    `piVar5[6]` is the inherited parent pointer at `NiAVObject + 0x18`, not the controller chain
-  and not a hidden FaceGen-owned object. A final DIA-backed slot pass then retired the last
-  anonymous-call question: the child branch now resolves to
-  `BSFaceGenNiNode::GetAnimationData` (`+0x100`), `BSFaceGenAnimationData::GetDead` (`+0xD4`),
-  and a parent-side `NiObject::IsFadeNode` family test (`+0x10`). A later runtime
-  name/attachment bridge pass also ruled out the two nearest anonymous helpers as parent-assembly
-  clues: `0x82E213C8` is `NiGlobalStringTable::AddString`, and `0x822A52C8` is
-  `TES::CreateTextureImage`. A later outer-owner pass then resolved the immediate post-head helper
-  chain too: `0x8243F290 = TESNPC::AttachHead`, `0x8243EA68 = TESNPC::InitDefaultWorn`,
-  `0x82441B00 = TESNPC::InitWorn`, `0x8243EF30 = TESNPC::FixDisplayedHeadParts`, and
-  `0x82444018 = TESNPC::FixNPCNormals`. That same pass also showed the apparent
-  `NiPointer<BSFadeNode>::operator=` clue is not reliable type evidence, because the identical
-  helper is used to store direct `BSFaceGenNiNode*` outputs from `TESNPC::InitHead`. So the
-  remaining Wave 2 unknown is no longer any unnamed local helper or folded refcount helper
-  boundary. A later biped bridge pass then closed the `AttachHead` semantics too:
-  `0x822F8AF0 = BipedAnim::GetParentBone`, and the remaining virtuals under `AttachHead`
-  resolve to ordinary `NiNode::AttachChild` plus `BSFaceGenNiNode` flag/fixup methods
-  (`SetAnimationUpdate`, `SetApplyRotToParent`, `FixSkinInstances`). So the remaining Wave 2
-  unknown is now the higher-level runtime meaning of the dead/fade-node modifiers-only fallback.
-  The identity question for the secondary branch is now mostly retired: `CreateHead` names the
-  two nodes `BSFaceGenNiNodeBiped` and `BSFaceGenNiNodeSkinned`, the owner-side accessors expose
-  the same split, and the process-side runtime layout mirrors it with `pFaceNode` and
-  `pFaceNodeSkinned` on `MiddleHighProcess`. The actor runtime path is also clearer now:
-  `Actor::GetFaceAnimationData -> MiddleHighProcess::GetFaceAnimationData ->
-  TESObjectREFR::GetFaceAnimationData`, so the live NPC path still depends on the owner-side
-  lookup rather than bypassing it. In the base owner accessor family, generic `GetFaceNode()`
-  currently forwards to `GetFaceNodeSkinned()`, but the process layout keeps a separate
-  `pFaceNode` / `pFaceNodeSkinned` split, and the attachment path still marks the primary node as
-  `AnimationUpdate=true` while the skinned node gets `false`. A later owner-role pass narrowed the
-  secondary branch much further: `TESNPC::FixDisplayedHeadParts` explicitly locates **both**
-  `BSFaceGenNiNodeBiped` and `BSFaceGenNiNodeSkinned` and toggles their visibility together,
-  `SurgeryMenu::UpdateFace` explicitly searches for the **skinned** node only, and the
-  dismemberment path (`HideDismemberedLimb` / `DismemberLimb`) also touches the skinned node
-  directly as part of the clone/hide/detach flow. The direct-call scan for the accessor layer is
-  also now informative by omission: there are ordinary direct callers of `Actor::GetFaceAnimationData`
-  and the expected `MiddleHighProcess -> TESObjectREFR::GetFaceAnimationData` bridge, but no
-  ordinary direct calls to `GetFaceNodeBiped` or `GetFaceNodeSkinned`, which fits the current read
-  that those are mostly virtual/name-probe helpers rather than stable external APIs. So the
-  remaining Wave 2 uncertainty is now narrower than before. The process-side cache population is
-  no longer mysterious at a structural level: a later raw slot-scan plus owner decompile shows
-  that `Character::Update` and `Character::PrecacheData` lazily populate `pFaceNode`,
-  `pFaceNodeSkinned`, and the sibling `+0x7A0` slot from the live actor 3D when they are null,
-  while `TESObjectREFR::Set3D`, `Script::ModifyFaceGen`, and `RaceSexMenu::UpdatePlayerHead` are
-  the corresponding clear/rebuild-side owners. `FixedStrings::InitSDM` then closes the key-name
-  gap: the lazy process path is keyed by `BSFaceGenNiNodeBiped`, `BSFaceGenNiNodeSkinned`, and
-  `HeadAnims:0`. A later focused bridge pass plus shipped-skeleton inspection now ties the
-  `HeadAnims:0` branch back to the owner-side animation-data family: it is the cached
-  skeleton-side facial animation `NiTriShape` under the `HeadAnims` node, and `Character::Update`
-  uses its live `NiGeomMorpherController` / `NiMorphData` state to feed
-  `SetAnimHeadCulled`, `SetAnimExpressionValue`, `SetAnimModifierValue`, and
-  `SetAnimPhonemeValue` on both FaceGen animation-data objects. That retires the old
-  “what is the `+0x7A0` object?” question. A later visibility pass also tightens the parent-side
-  flag semantics: the branch now lines up with `NiVisController` state on the parent `HeadAnims`
-  node, and the direct-call scans show `SetAnimHeadCulled` is owned only by `Character::Update`
-  while the three per-category setters have no ordinary direct callers, which is consistent with a
-  virtual-only live animation bridge rather than a static head-build path. The skinned node still
-  looks more strongly tied to visibility/edit/dismember maintenance than to the main
-  process-owned face node, so the
-  remaining reconciliation question is now mostly about the biped/skinned split rather than the
-  `HeadAnims:0` branch. A later process-lifecycle pass also rules out one tempting branch:
-  `MiddleHighProcess::MiddleHighCopy` preserves `pFaceNode` / `pFaceNodeSkinned`, but the
-  constructor and `Revert` just clear them, so initial population still belongs to the live
-  update path rather than lifecycle copy/revert. A later attach-helper/asset pass narrowed the
-  parentage side too:
-  `AttachHead` uses `GetParentBone(param_3, 0)`, the shipped third-person human skeleton root is
-  already `BSFadeNode`, and the traced local biped attach helpers do not construct a separate
-  fade-node wrapper. So the remaining gap is no longer “where is the fade parent introduced?” in
-  the normal third-person path; it is the exact relationship between the skinned-node branch, the
-  owner-side generic face-node lookup, the process-side `pFaceNode` / `pFaceNodeSkinned` split,
-  and the modifiers-only child fallback. A final flag-accessor pass also ruled one local candidate
-  down: `GetFixedNormals` (`+0x111`) has only unrelated debug/weapon direct owners, so it is a
-  poor fit for this FaceGen fallback. The production head/runtime path still does not use
-  TRI-backed semantics when assembling or applying FaceGen. A later `HeadAnims:0` cross-check also
-  now makes one negative conclusion stronger: the cached skeleton-side animation bridge looks much
-  more like live facial animation playback than static head construction, so it is probably a
-  lower-priority parity gap for our NPC renderer than the packed base-head stream and TRI-backed
-  morph application.
+   and not a hidden FaceGen-owned object. A final DIA-backed slot pass then retired the last
+   anonymous-call question: the child branch now resolves to
+   `BSFaceGenNiNode::GetAnimationData` (`+0x100`), `BSFaceGenAnimationData::GetDead` (`+0xD4`),
+   and a parent-side `NiObject::IsFadeNode` family test (`+0x10`). A later runtime
+   name/attachment bridge pass also ruled out the two nearest anonymous helpers as parent-assembly
+   clues: `0x82E213C8` is `NiGlobalStringTable::AddString`, and `0x822A52C8` is
+   `TES::CreateTextureImage`. A later outer-owner pass then resolved the immediate post-head helper
+   chain too: `0x8243F290 = TESNPC::AttachHead`, `0x8243EA68 = TESNPC::InitDefaultWorn`,
+   `0x82441B00 = TESNPC::InitWorn`, `0x8243EF30 = TESNPC::FixDisplayedHeadParts`, and
+   `0x82444018 = TESNPC::FixNPCNormals`. That same pass also showed the apparent
+   `NiPointer<BSFadeNode>::operator=` clue is not reliable type evidence, because the identical
+   helper is used to store direct `BSFaceGenNiNode*` outputs from `TESNPC::InitHead`. So the
+   remaining Wave 2 unknown is no longer any unnamed local helper or folded refcount helper
+   boundary. A later biped bridge pass then closed the `AttachHead` semantics too:
+   `0x822F8AF0 = BipedAnim::GetParentBone`, and the remaining virtuals under `AttachHead`
+   resolve to ordinary `NiNode::AttachChild` plus `BSFaceGenNiNode` flag/fixup methods
+   (`SetAnimationUpdate`, `SetApplyRotToParent`, `FixSkinInstances`). So the remaining Wave 2
+   unknown is now the higher-level runtime meaning of the dead/fade-node modifiers-only fallback and
+   any still-unrecovered animation-data virtual immediately around it.
+   The identity question for the secondary branch is now mostly retired: `CreateHead` names the
+   two nodes `BSFaceGenNiNodeBiped` and `BSFaceGenNiNodeSkinned`, the owner-side accessors expose
+   the same split, and the process-side runtime layout mirrors it with `pFaceNode` and
+   `pFaceNodeSkinned` on `MiddleHighProcess`. The actor runtime path is also clearer now:
+   `Actor::GetFaceAnimationData -> MiddleHighProcess::GetFaceAnimationData ->
+TESObjectREFR::GetFaceAnimationData`, so the live NPC path still depends on the owner-side
+   lookup rather than bypassing it. In the base owner accessor family, generic `GetFaceNode()`
+   currently forwards to `GetFaceNodeSkinned()`, but the process layout keeps a separate
+   `pFaceNode` / `pFaceNodeSkinned` split, and the attachment path still marks the primary node as
+   `AnimationUpdate=true` while the skinned node gets `false`. A later owner-role pass narrowed the
+   secondary branch much further: `TESNPC::FixDisplayedHeadParts` explicitly locates **both**
+   `BSFaceGenNiNodeBiped` and `BSFaceGenNiNodeSkinned` and toggles their visibility together,
+   `SurgeryMenu::UpdateFace` explicitly searches for the **skinned** node only, and the
+   dismemberment path (`HideDismemberedLimb` / `DismemberLimb`) also touches the skinned node
+   directly as part of the clone/hide/detach flow. The direct-call scan for the accessor layer is
+   also now informative by omission: there are ordinary direct callers of `Actor::GetFaceAnimationData`
+   and the expected `MiddleHighProcess -> TESObjectREFR::GetFaceAnimationData` bridge, but no
+   ordinary direct calls to `GetFaceNodeBiped` or `GetFaceNodeSkinned`, which fits the current read
+   that those are mostly virtual/name-probe helpers rather than stable external APIs. So the
+   remaining Wave 2 uncertainty is now narrower than before. The process-side cache population is
+   no longer mysterious at a structural level: a later raw slot-scan plus owner decompile shows
+   that `Character::Update` and `Character::PrecacheData` lazily populate `pFaceNode`,
+   `pFaceNodeSkinned`, and the sibling `+0x7A0` slot from the live actor 3D when they are null,
+   while `TESObjectREFR::Set3D`, `Script::ModifyFaceGen`, and `RaceSexMenu::UpdatePlayerHead` are
+   the corresponding clear/rebuild-side owners. `FixedStrings::InitSDM` then closes the key-name
+   gap: the lazy process path is keyed by `BSFaceGenNiNodeBiped`, `BSFaceGenNiNodeSkinned`, and
+   `HeadAnims:0`. A later focused bridge pass plus shipped-skeleton inspection now ties the
+   `HeadAnims:0` branch back to the owner-side animation-data family: it is the cached
+   skeleton-side facial animation `NiTriShape` under the `HeadAnims` node, and `Character::Update`
+   uses its live `NiGeomMorpherController` / `NiMorphData` state to feed
+   `SetAnimHeadCulled`, `SetAnimExpressionValue`, `SetAnimModifierValue`, and
+   `SetAnimPhonemeValue` on both FaceGen animation-data objects. That retires the old
+   “what is the `+0x7A0` object?” question. A later visibility pass also tightens the parent-side
+   flag semantics: the branch now lines up with `NiVisController` state on the parent `HeadAnims`
+   node, and the direct-call scans show `SetAnimHeadCulled` is owned only by `Character::Update`
+   while the three per-category setters have no ordinary direct callers, which is consistent with a
+   virtual-only live animation bridge rather than a static head-build path. The skinned node still
+   looks more strongly tied to visibility/edit/dismember maintenance than to the main
+   process-owned face node, so the
+   remaining reconciliation question is now mostly about the biped/skinned split rather than the
+   `HeadAnims:0` branch. A later process-lifecycle pass also rules out one tempting branch:
+   `MiddleHighProcess::MiddleHighCopy` preserves `pFaceNode` / `pFaceNodeSkinned`, but the
+   constructor and `Revert` just clear them, so initial population still belongs to the live
+   update path rather than lifecycle copy/revert. A later attach-helper/asset pass narrowed the
+   parentage side too:
+   `AttachHead` uses `GetParentBone(param_3, 0)`, the shipped third-person human skeleton root is
+   already `BSFadeNode`, and the traced local biped attach helpers do not construct a separate
+   fade-node wrapper. So the remaining gap is no longer “where is the fade parent introduced?” in
+   the normal third-person path; it is the exact relationship between the skinned-node branch, the
+   owner-side generic face-node lookup, the process-side `pFaceNode` / `pFaceNodeSkinned` split,
+   and the modifiers-only child fallback. A final flag-accessor pass also ruled one local candidate
+   down: `GetFixedNormals` (`+0x111`) has only unrelated debug/weapon direct owners, so it is a
+   poor fit for this FaceGen fallback. The production head/runtime path still does not use
+   TRI-backed semantics when assembling or applying FaceGen. A later `HeadAnims:0` cross-check also
+   now makes one negative conclusion stronger: the cached skeleton-side animation bridge looks much
+   more like live facial animation playback than static head construction, so it is probably a
+   lower-priority parity gap for our NPC renderer than the packed base-head stream and TRI-backed
+   morph application.
 
 7. **The packed Xbox base-head stream now looks canonical on the runtime side.** The remaining
-   runtime question is no longer provenance; it is parity. The named engine path appears to preserve
-   the packed, partition-ordered head iterator sourced from `BSPackedAdditionalGeometryData`, while
-   our renderer normalizes that distinction away by remapping back to mesh order before FaceGen. A
-   later cache-side loader pass strengthens that prioritization: the runtime cache now looks like it
-   treats the mesh/TRI-backed `BSFaceGenModel` as the core object and EGM/EGT as lazy supplementary
-   payloads layered onto it, not the other way around.
+   runtime question is no longer provenance; it is parity. The named engine path now appears to
+   validate TRI against the mesh-order head count first, then preserve the packed,
+   partition-ordered head iterator sourced from `BSPackedAdditionalGeometryData` for later
+   refresh/apply. Our renderer normalizes that distinction away by remapping back to mesh order
+   before FaceGen. A later cache-side loader pass strengthens that prioritization: the runtime
+   cache now looks like it treats the mesh/TRI-backed `BSFaceGenModel` as the core object and
+   EGM/EGT as lazy supplementary payloads layered onto it, not the other way around. A later
+   iterator-mutation pass also narrows the last "maybe there is a hidden normalizer" escape hatch:
+   the named FaceGen owner set after `LoadModelMesh` now looks like lock/get/apply/mark/unlock
+   over the live iterator, not a second-stage flatten-to-mesh-order pipeline. The latest
+   `ApplyCoordinateToExistingMesh` inner-bridge pass tightens that one step further: the runtime
+   still does its coord-to-geometry accumulation under manager lock with lazy EGM loading, but the
+   later per-category head morph stage is just bucket/slot dispatch on already materialized morph
+   objects, not another hidden remap layer. The new packed statistical tail pass narrows the seam
+   one step farther still: the engine is not hiding a second packed-order morph domain, it is
+   explicitly combining a `VertexMap`-based fanout over the mesh-order range with a later direct
+   packed-tail lookup for records beyond the plain mesh count.
 
 8. **The remaining error is not yet localized.** The current best hypothesis is a difference in
    per-morph weighting or encode-side treatment of stronger negative deltas, not a broad channel

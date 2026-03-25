@@ -5,9 +5,8 @@ using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
-internal sealed class AiRecordHandler(RecordParserContext context)
+internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
-    private readonly RecordParserContext _context = context;
 
     /// <summary>
     ///     Parse all AI Package (PACK) records from the scan result.
@@ -16,9 +15,9 @@ internal sealed class AiRecordHandler(RecordParserContext context)
     internal List<PackageRecord> ParsePackages()
     {
         var packages = new List<PackageRecord>();
-        var packRecords = _context.GetRecordsByType("PACK").ToList();
+        var packRecords = Context.GetRecordsByType("PACK").ToList();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             // Without accessor, only basic scan result data is available
             foreach (var record in packRecords)
@@ -26,7 +25,7 @@ internal sealed class AiRecordHandler(RecordParserContext context)
                 packages.Add(new PackageRecord
                 {
                     FormId = record.FormId,
-                    EditorId = _context.GetEditorId(record.FormId),
+                    EditorId = Context.GetEditorId(record.FormId),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
@@ -49,7 +48,7 @@ internal sealed class AiRecordHandler(RecordParserContext context)
             }
         }
 
-        _context.MergeRuntimeRecords(packages, 0x49, p => p.FormId,
+        Context.MergeRuntimeRecords(packages, 0x49, p => p.FormId,
             (reader, entry) => reader.ReadRuntimePackage(entry), "packages");
 
         return packages;
@@ -57,13 +56,13 @@ internal sealed class AiRecordHandler(RecordParserContext context)
 
     private PackageRecord ParsePackageFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
-        var recordData = _context.ReadRecordData(record, buffer);
+        var recordData = Context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
             return new PackageRecord
             {
                 FormId = record.FormId,
-                EditorId = _context.GetEditorId(record.FormId),
+                EditorId = Context.GetEditorId(record.FormId),
                 Offset = record.Offset,
                 IsBigEndian = record.IsBigEndian
             };
@@ -121,7 +120,7 @@ internal sealed class AiRecordHandler(RecordParserContext context)
         return new PackageRecord
         {
             FormId = record.FormId,
-            EditorId = editorId ?? _context.GetEditorId(record.FormId),
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
             Data = packageData,
             Schedule = schedule,
             UseWeaponData = useWeaponData,

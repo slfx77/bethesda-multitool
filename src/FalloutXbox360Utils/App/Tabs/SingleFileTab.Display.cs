@@ -13,6 +13,13 @@ namespace FalloutXbox360Utils;
 public sealed partial class SingleFileTab
 {
     /// <summary>
+    ///     Minimal HyperlinkButton style that strips button chrome for inline-link appearance.
+    /// </summary>
+    private static Style? _inlineLinkStyle;
+
+    private static Style InlineLinkStyle => _inlineLinkStyle ??= BuildInlineLinkStyle();
+
+    /// <summary>
     ///     Creates a HyperlinkButton styled as an inline underlined link (no button chrome).
     /// </summary>
     private HyperlinkButton CreateFormIdLink(string text, uint formId, int fontSize, bool monospace = false)
@@ -43,12 +50,6 @@ public sealed partial class SingleFileTab
         link.Click += (_, _) => NavigateToFormId(formId);
         return link;
     }
-
-    /// <summary>
-    ///     Minimal HyperlinkButton style that strips button chrome for inline-link appearance.
-    /// </summary>
-    private static Style? _inlineLinkStyle;
-    private static Style InlineLinkStyle => _inlineLinkStyle ??= BuildInlineLinkStyle();
 
     private static Style BuildInlineLinkStyle()
     {

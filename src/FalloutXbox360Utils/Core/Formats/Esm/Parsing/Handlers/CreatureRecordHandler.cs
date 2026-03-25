@@ -5,9 +5,8 @@ using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
-internal sealed class CreatureRecordHandler(RecordParserContext context)
+internal sealed class CreatureRecordHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
-    private readonly RecordParserContext _context = context;
 
     /// <summary>
     ///     Parse all Creature records from the scan result.
@@ -17,9 +16,9 @@ internal sealed class CreatureRecordHandler(RecordParserContext context)
     internal List<CreatureRecord> ParseCreatures()
     {
         var creatures = new List<CreatureRecord>();
-        var creatureRecords = _context.GetRecordsByType("CREA").ToList();
+        var creatureRecords = Context.GetRecordsByType("CREA").ToList();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             foreach (var record in creatureRecords)
             {
@@ -42,7 +41,7 @@ internal sealed class CreatureRecordHandler(RecordParserContext context)
             }
         }
 
-        _context.MergeRuntimeRecords(creatures, 0x2B, c => c.FormId,
+        Context.MergeRuntimeRecords(creatures, 0x2B, c => c.FormId,
             (reader, entry) => reader.ReadRuntimeCreature(entry), "creatures");
 
         return creatures;
@@ -53,9 +52,9 @@ internal sealed class CreatureRecordHandler(RecordParserContext context)
         return new CreatureRecord
         {
             FormId = record.FormId,
-            EditorId = _context.GetEditorId(record.FormId),
-            FullName = _context.FindFullNameNear(record.Offset),
-            Stats = _context.FindActorBaseNear(record.Offset),
+            EditorId = Context.GetEditorId(record.FormId),
+            FullName = Context.FindFullNameNear(record.Offset),
+            Stats = Context.FindActorBaseNear(record.Offset),
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
@@ -63,7 +62,7 @@ internal sealed class CreatureRecordHandler(RecordParserContext context)
 
     private CreatureRecord ParseCreatureFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
-        var recordData = _context.ReadRecordData(record, buffer);
+        var recordData = Context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
             return ParseCreatureFromScanResult(record);
@@ -150,7 +149,7 @@ internal sealed class CreatureRecordHandler(RecordParserContext context)
         return new CreatureRecord
         {
             FormId = record.FormId,
-            EditorId = editorId ?? _context.GetEditorId(record.FormId),
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
             Stats = stats,
             CreatureType = creatureType,

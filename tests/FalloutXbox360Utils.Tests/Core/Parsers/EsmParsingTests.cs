@@ -94,7 +94,7 @@ public class EsmParsingTests(ITestOutputHelper output)
             BinaryPrimitives.WriteInt32BigEndian(data.AsSpan(4), damage); // attack damage
             BinaryPrimitives.WriteInt16BigEndian(data.AsSpan(8), 100); // health
 
-            var recordBytes = BuildRecordBytes(formId, "CREA", bigEndian: true,
+            var recordBytes = BuildRecordBytes(formId, "CREA", true,
                 ("EDID", NullTermString(edid)),
                 ("FULL", NullTermString(full)),
                 ("ACBS", acbs),

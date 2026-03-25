@@ -12,28 +12,28 @@ public sealed class RuntimeStructReader
 {
     private readonly RuntimeActorReader _actors;
     private readonly RuntimeActorWeaponReader _actorWeapons;
+    private readonly RuntimeCharacterAppearanceReader _appearance;
+    private readonly RuntimeBookReader _books;
     private readonly RuntimeCellReader _cells;
+    private readonly RuntimeChallengeReader _challenges;
+    private readonly RuntimeClassReader _classes;
     private readonly RuntimeCollectionReader _collections;
     private readonly RuntimeMemoryContext _context;
     private readonly RuntimeDialogueReader _dialogue;
     private readonly RuntimeEffectReader _effects;
-    private readonly RuntimeCharacterAppearanceReader _appearance;
-    private readonly RuntimeClassReader _classes;
+    private readonly RuntimeExplosionReader _explosions;
     private readonly RuntimeGenericReader _generic;
     private readonly RuntimeGlobalReader _globals;
     private readonly RuntimeItemReader _items;
     private readonly RuntimeMagicReader _magic;
+    private readonly RuntimeMessageReader _messages;
     private readonly RuntimePackageReader _packages;
     private readonly RuntimeRaceReader _races;
-    private readonly RuntimeBookReader _books;
-    private readonly RuntimeChallengeReader _challenges;
-    private readonly RuntimeExplosionReader _explosions;
-    private readonly RuntimeMessageReader _messages;
+    private readonly RuntimeRecipeReader _recipes;
     private readonly RuntimeRefrReader _refrs;
     private readonly RuntimeReputationReader _reputations;
     private readonly RuntimeScriptReader _scripts;
     private readonly RuntimeSoundReader _sounds;
-    private readonly RuntimeRecipeReader _recipes;
     private readonly RuntimeWeaponModReader _weaponMods;
     private readonly RuntimeWorldReader _world;
     private readonly RuntimeWorldObjectReader _worldObjects;
@@ -200,6 +200,42 @@ public sealed class RuntimeStructReader
 
     #endregion
 
+    #region Globals
+
+    public GlobalRecord? ReadRuntimeGlobal(RuntimeEditorIdEntry entry)
+    {
+        return _globals.ReadRuntimeGlobal(entry);
+    }
+
+    #endregion
+
+    #region Classes
+
+    public ClassRecord? ReadRuntimeClass(RuntimeEditorIdEntry entry)
+    {
+        return _classes.ReadRuntimeClass(entry);
+    }
+
+    #endregion
+
+    #region Reputations
+
+    public ReputationRecord? ReadRuntimeReputation(RuntimeEditorIdEntry entry)
+    {
+        return _reputations.ReadRuntimeReputation(entry);
+    }
+
+    #endregion
+
+    #region Sounds
+
+    public SoundRecord? ReadRuntimeSound(RuntimeEditorIdEntry entry)
+    {
+        return _sounds.ReadRuntimeSound(entry);
+    }
+
+    #endregion
+
     #region Actors
 
     public NpcRecord? ReadRuntimeNpc(RuntimeEditorIdEntry entry)
@@ -258,24 +294,6 @@ public sealed class RuntimeStructReader
 
     #endregion
 
-    #region Globals
-
-    public GlobalRecord? ReadRuntimeGlobal(RuntimeEditorIdEntry entry)
-    {
-        return _globals.ReadRuntimeGlobal(entry);
-    }
-
-    #endregion
-
-    #region Classes
-
-    public ClassRecord? ReadRuntimeClass(RuntimeEditorIdEntry entry)
-    {
-        return _classes.ReadRuntimeClass(entry);
-    }
-
-    #endregion
-
     #region Character Appearance
 
     public EyesRecord? ReadRuntimeEyes(RuntimeEditorIdEntry entry)
@@ -286,24 +304,6 @@ public sealed class RuntimeStructReader
     public HairRecord? ReadRuntimeHair(RuntimeEditorIdEntry entry)
     {
         return _appearance.ReadRuntimeHair(entry);
-    }
-
-    #endregion
-
-    #region Reputations
-
-    public ReputationRecord? ReadRuntimeReputation(RuntimeEditorIdEntry entry)
-    {
-        return _reputations.ReadRuntimeReputation(entry);
-    }
-
-    #endregion
-
-    #region Sounds
-
-    public SoundRecord? ReadRuntimeSound(RuntimeEditorIdEntry entry)
-    {
-        return _sounds.ReadRuntimeSound(entry);
     }
 
     #endregion

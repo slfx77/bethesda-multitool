@@ -92,6 +92,15 @@ public record DialogueRecord
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }
 
+    /// <summary>Offset of the carved raw INFO record in the dump, when present.</summary>
+    public long RawRecordOffset { get; init; }
+
+    /// <summary>Offset of the runtime TESTopicInfo struct in the dump, when present.</summary>
+    public long RuntimeStructOffset { get; init; }
+
+    /// <summary>Runtime TESTopicInfo logical TES-file offset (iFileOffset), when present.</summary>
+    public uint TesFileOffset { get; init; }
+
     /// <summary>Whether the record was detected as big-endian (Xbox 360).</summary>
     public bool IsBigEndian { get; init; }
 

@@ -10,9 +10,8 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 ///     Parses INFO records from ESM data, handling CTDA conditions, subrecord iteration,
 ///     and split INFO record merging (Xbox 360 splits INFO into Base + Response records).
 /// </summary>
-internal sealed class DialogueConditionParser(RecordParserContext context)
+internal sealed class DialogueConditionParser(RecordParserContext context) : RecordHandlerBase(context)
 {
-    private readonly RecordParserContext _context = context;
 
     /// <summary>
     ///     Parse all INFO records into DialogueRecord instances.
@@ -21,10 +20,10 @@ internal sealed class DialogueConditionParser(RecordParserContext context)
     internal List<DialogueRecord> ParseAllInfoRecords()
     {
         var dialogues = new List<DialogueRecord>();
-        var infoRecords = _context.GetRecordsByType("INFO").ToList();
+        var infoRecords = Context.GetRecordsByType("INFO").ToList();
         var log = Logger.Instance;
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             foreach (var record in infoRecords)
             {
@@ -183,6 +182,29 @@ internal sealed class DialogueConditionParser(RecordParserContext context)
                     }
                 }
 
+                var rawRecordOffset = g
+                    .Select(dialogue => dialogue.RawRecordOffset)
+                    .Where(offset => offset > 0)
+                    .DefaultIfEmpty(best.RawRecordOffset)
+                    .Min();
+                var runtimeStructOffset = g
+                    .Select(dialogue => dialogue.RuntimeStructOffset)
+                    .FirstOrDefault(offset => offset > 0);
+                var tesFileOffset = g
+                    .Select(dialogue => dialogue.TesFileOffset)
+                    .FirstOrDefault(offset => offset > 0);
+
+                best = best with
+                {
+                    RawRecordOffset = rawRecordOffset > 0 ? rawRecordOffset : best.RawRecordOffset,
+                    RuntimeStructOffset = best.RuntimeStructOffset > 0
+                        ? best.RuntimeStructOffset
+                        : runtimeStructOffset,
+                    TesFileOffset = best.TesFileOffset != 0
+                        ? best.TesFileOffset
+                        : tesFileOffset
+                };
+
                 return best;
             })
             .ToList();
@@ -193,7 +215,7 @@ internal sealed class DialogueConditionParser(RecordParserContext context)
         // Find response texts strictly within this INFO record's data bounds
         var dataStart = record.Offset + 24; // Skip main record header
         var dataEnd = dataStart + record.DataSize;
-        var responseTexts = _context.ScanResult.ResponseTexts
+        var responseTexts = Context.ScanResult.ResponseTexts
             .Where(r => r.Offset >= dataStart && r.Offset < dataEnd)
             .ToList();
 
@@ -205,16 +227,17 @@ internal sealed class DialogueConditionParser(RecordParserContext context)
         return new DialogueRecord
         {
             FormId = record.FormId,
-            EditorId = _context.GetEditorId(record.FormId),
+            EditorId = Context.GetEditorId(record.FormId),
             Responses = responses,
             Offset = record.Offset,
+            RawRecordOffset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
     }
 
     private DialogueRecord? ParseDialogueFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
-        var recordData = _context.ReadRecordData(record, buffer);
+        var recordData = Context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
             return ParseDialogueFromScanResult(record);
@@ -265,7 +288,7 @@ internal sealed class DialogueConditionParser(RecordParserContext context)
                 case "EDID":
                     editorId = EsmStringUtils.ReadNullTermString(subData);
                     if (!string.IsNullOrEmpty(editorId))
-                        _context.FormIdToEditorId[record.FormId] = editorId;
+                        Context.FormIdToEditorId[record.FormId] = editorId;
                     break;
                 case "QSTI" when sub.DataLength == 4:
                     questFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
@@ -440,7 +463,7 @@ internal sealed class DialogueConditionParser(RecordParserContext context)
         var resultScripts = BuildResultScripts(
             resultSourceTexts,
             resultScriptBlocks,
-            editorId ?? _context.GetEditorId(record.FormId),
+            editorId ?? Context.GetEditorId(record.FormId),
             record.FormId);
         if (resultScripts.Count > 0)
         {
@@ -450,7 +473,7 @@ internal sealed class DialogueConditionParser(RecordParserContext context)
         return new DialogueRecord
         {
             FormId = record.FormId,
-            EditorId = editorId ?? _context.GetEditorId(record.FormId),
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
             TopicFormId = topicFormId,
             QuestFormId = questFormId,
             // Speaker priority: ANAM > CTDA GetIsID > (topic TNAM propagated later)
@@ -471,6 +494,7 @@ internal sealed class DialogueConditionParser(RecordParserContext context)
             HasResultScript = hasResultScript,
             ResultScripts = resultScripts,
             Offset = record.Offset,
+            RawRecordOffset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
     }
@@ -645,7 +669,7 @@ internal sealed class DialogueConditionParser(RecordParserContext context)
             var decompiler = new ScriptDecompiler(
                 block.Variables,
                 block.ReferencedObjects,
-                _context.ResolveFormName,
+                Context.ResolveFormName,
                 false,
                 scriptName);
             return decompiler.Decompile(block.CompiledData);
@@ -729,15 +753,6 @@ internal sealed class DialogueConditionParser(RecordParserContext context)
         return merged
             .Where(script => script.HasContent)
             .ToList();
-    }
-
-    internal sealed class DialogueResultScriptBuilder
-    {
-        public string? SourceText { get; set; }
-        public byte[]? CompiledData { get; set; }
-        public List<uint> ReferencedObjects { get; } = [];
-        public List<ScriptVariableInfo> Variables { get; } = [];
-        public bool HasNextSeparator { get; set; }
     }
 
     /// <summary>
@@ -910,5 +925,14 @@ internal sealed class DialogueConditionParser(RecordParserContext context)
         {
             return $"; Decompilation failed: {ex.Message}";
         }
+    }
+
+    internal sealed class DialogueResultScriptBuilder
+    {
+        public string? SourceText { get; set; }
+        public byte[]? CompiledData { get; set; }
+        public List<uint> ReferencedObjects { get; } = [];
+        public List<ScriptVariableInfo> Variables { get; } = [];
+        public bool HasNextSeparator { get; set; }
     }
 }

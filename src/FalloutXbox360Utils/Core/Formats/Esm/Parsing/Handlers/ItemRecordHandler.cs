@@ -10,9 +10,8 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 ///     Handles parsing of KEYM, ARMO, MISC, and CONT records
 ///     from ESM data and runtime structs.
 /// </summary>
-internal sealed class ItemRecordHandler(RecordParserContext context)
+internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
-    private readonly RecordParserContext _context = context;
 
     /// <summary>
     ///     Parse all Key records from the scan result.
@@ -20,21 +19,21 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
     internal List<KeyRecord> ParseKeys()
     {
         var keys = new List<KeyRecord>();
-        var keyRecords = _context.GetRecordsByType("KEYM").ToList();
+        var keyRecords = Context.GetRecordsByType("KEYM").ToList();
 
         foreach (var record in keyRecords)
         {
             keys.Add(new KeyRecord
             {
                 FormId = record.FormId,
-                EditorId = _context.GetEditorId(record.FormId),
-                FullName = _context.FindFullNameNear(record.Offset),
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
                 Offset = record.Offset,
                 IsBigEndian = record.IsBigEndian
             });
         }
 
-        _context.MergeRuntimeRecords(keys, 0x2E, k => k.FormId,
+        Context.MergeRuntimeRecords(keys, 0x2E, k => k.FormId,
             (reader, entry) => reader.ReadRuntimeKey(entry), "keys");
 
         return keys;
@@ -46,17 +45,17 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
     internal List<ArmorRecord> ParseArmor()
     {
         var armor = new List<ArmorRecord>();
-        var armorRecords = _context.GetRecordsByType("ARMO").ToList();
+        var armorRecords = Context.GetRecordsByType("ARMO").ToList();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             foreach (var record in armorRecords)
             {
                 armor.Add(new ArmorRecord
                 {
                     FormId = record.FormId,
-                    EditorId = _context.GetEditorId(record.FormId),
-                    FullName = _context.FindFullNameNear(record.Offset),
+                    EditorId = Context.GetEditorId(record.FormId),
+                    FullName = Context.FindFullNameNear(record.Offset),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
@@ -82,7 +81,7 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
             }
         }
 
-        _context.MergeRuntimeRecords(armor, 0x18, a => a.FormId,
+        Context.MergeRuntimeRecords(armor, 0x18, a => a.FormId,
             (reader, entry) => reader.ReadRuntimeArmor(entry), "armor");
 
         return armor;
@@ -90,14 +89,14 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
 
     private ArmorRecord? ParseArmorFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
-        var recordData = _context.ReadRecordData(record, buffer);
+        var recordData = Context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
             return new ArmorRecord
             {
                 FormId = record.FormId,
-                EditorId = _context.GetEditorId(record.FormId),
-                FullName = _context.FindFullNameNear(record.Offset),
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
                 Offset = record.Offset,
                 IsBigEndian = record.IsBigEndian
             };
@@ -188,7 +187,7 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
         return new ArmorRecord
         {
             FormId = record.FormId,
-            EditorId = editorId ?? _context.GetEditorId(record.FormId),
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
             ModelPath = modelPath,
             Bounds = bounds,
@@ -211,17 +210,17 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
     internal List<MiscItemRecord> ParseMiscItems()
     {
         var miscItems = new List<MiscItemRecord>();
-        var miscRecords = _context.GetRecordsByType("MISC").ToList();
+        var miscRecords = Context.GetRecordsByType("MISC").ToList();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             foreach (var record in miscRecords)
             {
                 miscItems.Add(new MiscItemRecord
                 {
                     FormId = record.FormId,
-                    EditorId = _context.GetEditorId(record.FormId),
-                    FullName = _context.FindFullNameNear(record.Offset),
+                    EditorId = Context.GetEditorId(record.FormId),
+                    FullName = Context.FindFullNameNear(record.Offset),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
@@ -247,7 +246,7 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
             }
         }
 
-        _context.MergeRuntimeRecords(miscItems, 0x1F, m => m.FormId,
+        Context.MergeRuntimeRecords(miscItems, 0x1F, m => m.FormId,
             (reader, entry) => reader.ReadRuntimeMiscItem(entry), "misc items");
 
         return miscItems;
@@ -255,14 +254,14 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
 
     private MiscItemRecord? ParseMiscItemFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
-        var recordData = _context.ReadRecordData(record, buffer);
+        var recordData = Context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
             return new MiscItemRecord
             {
                 FormId = record.FormId,
-                EditorId = _context.GetEditorId(record.FormId),
-                FullName = _context.FindFullNameNear(record.Offset),
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
                 Offset = record.Offset,
                 IsBigEndian = record.IsBigEndian
             };
@@ -312,7 +311,7 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
         return new MiscItemRecord
         {
             FormId = record.FormId,
-            EditorId = editorId ?? _context.GetEditorId(record.FormId),
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
             ModelPath = modelPath,
             Bounds = bounds,
@@ -329,12 +328,12 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
     internal List<ContainerRecord> ParseContainers()
     {
         var containers = new List<ContainerRecord>();
-        var containerRecords = _context.GetRecordsByType("CONT").ToList();
+        var containerRecords = Context.GetRecordsByType("CONT").ToList();
 
         // Track FormIDs from ESM records to avoid duplicates when merging runtime data
         var esmFormIds = new HashSet<uint>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             // Without accessor, use basic parsing (no CNTO parsing)
             foreach (var record in containerRecords)
@@ -342,8 +341,8 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
                 containers.Add(new ContainerRecord
                 {
                     FormId = record.FormId,
-                    EditorId = _context.GetEditorId(record.FormId),
-                    FullName = _context.FindFullNameNear(record.Offset),
+                    EditorId = Context.GetEditorId(record.FormId),
+                    FullName = Context.FindFullNameNear(record.Offset),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
@@ -373,18 +372,18 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
         }
 
         // Merge containers from runtime struct reading
-        if (_context.RuntimeReader != null)
+        if (Context.RuntimeReader != null)
         {
             // Enrich ESM containers with runtime contents (current game state)
             var runtimeEnrichments = new Dictionary<uint, ContainerRecord>();
-            foreach (var entry in _context.ScanResult.RuntimeEditorIds)
+            foreach (var entry in Context.ScanResult.RuntimeEditorIds)
             {
                 if (entry.FormType != 0x1B || !esmFormIds.Contains(entry.FormId))
                 {
                     continue;
                 }
 
-                var rtc = _context.RuntimeReader.ReadRuntimeContainer(entry);
+                var rtc = Context.RuntimeReader.ReadRuntimeContainer(entry);
                 if (rtc != null && rtc.Contents.Count > 0)
                 {
                     runtimeEnrichments[entry.FormId] = rtc;
@@ -413,14 +412,14 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
 
             // Add runtime-only containers (not in ESM)
             var runtimeCount = 0;
-            foreach (var entry in _context.ScanResult.RuntimeEditorIds)
+            foreach (var entry in Context.ScanResult.RuntimeEditorIds)
             {
                 if (entry.FormType != 0x1B || esmFormIds.Contains(entry.FormId))
                 {
                     continue;
                 }
 
-                var container = _context.RuntimeReader.ReadRuntimeContainer(entry);
+                var container = Context.RuntimeReader.ReadRuntimeContainer(entry);
                 if (container != null)
                 {
                     containers.Add(container);
@@ -441,14 +440,14 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
 
     private ContainerRecord? ParseContainerFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
-        var recordData = _context.ReadRecordData(record, buffer);
+        var recordData = Context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
             return new ContainerRecord
             {
                 FormId = record.FormId,
-                EditorId = _context.GetEditorId(record.FormId),
-                FullName = _context.FindFullNameNear(record.Offset),
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
                 Offset = record.Offset,
                 IsBigEndian = record.IsBigEndian
             };
@@ -498,7 +497,7 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
         return new ContainerRecord
         {
             FormId = record.FormId,
-            EditorId = editorId ?? _context.GetEditorId(record.FormId),
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
             ModelPath = modelPath,
             Script = script,

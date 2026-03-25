@@ -1,6 +1,7 @@
 using System.CommandLine;
 using System.IO.MemoryMappedFiles;
 using System.Text.Json;
+using FalloutXbox360Utils.CLI.Shared;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
@@ -73,23 +74,10 @@ public static class PackagesCommand
 
         AnsiConsole.MarkupLine("[blue]Loading:[/] {0}", Path.GetFileName(input));
 
-        var analysisResult = await AnsiConsole.Progress()
-            .Columns(
-                new TaskDescriptionColumn(),
-                new ProgressBarColumn(),
-                new PercentageColumn(),
-                new SpinnerColumn())
-            .StartAsync(async ctx =>
-            {
-                var task = ctx.AddTask("Analyzing file...", maxValue: 100);
-                var progress = new Progress<AnalysisProgress>(p =>
-                {
-                    task.Description = p.Phase;
-                    task.Value = p.PercentComplete;
-                });
-
-                return await EsmFileAnalyzer.AnalyzeAsync(input, progress, cancellationToken);
-            });
+        var analysisResult = await CliProgressRunner.RunWithProgressAsync(
+            "Analyzing file...",
+            (progress, ct) => EsmFileAnalyzer.AnalyzeAsync(input, progress, ct),
+            cancellationToken);
 
         if (analysisResult.EsmRecords == null)
         {

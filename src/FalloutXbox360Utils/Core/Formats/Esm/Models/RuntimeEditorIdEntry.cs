@@ -12,8 +12,10 @@ public record RuntimeEditorIdEntry
     /// <summary>Associated FormID from TESForm object.</summary>
     public uint FormId { get; init; }
 
-    /// <summary>Form type code (record type) from TESForm object. May be remapped from
-    ///     early-build ENUM_FORM_ID values to final-build codes during drift detection.</summary>
+    /// <summary>
+    ///     Form type code (record type) from TESForm object. May be remapped from
+    ///     early-build ENUM_FORM_ID values to final-build codes during drift detection.
+    /// </summary>
     public byte FormType { get; set; }
 
     /// <summary>File offset where the Editor ID string was found.</summary>

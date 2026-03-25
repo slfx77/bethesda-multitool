@@ -1,12 +1,9 @@
 using System.IO.MemoryMappedFiles;
-using System.Numerics;
 using FalloutXbox360Utils.CLI;
 using FalloutXbox360Utils.CLI.Rendering.Npc;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
 using FalloutXbox360Utils.Core.Minidump;
@@ -21,18 +18,18 @@ internal sealed class NpcBrowserService : IDisposable
 {
     private static readonly Logger Log = Logger.Instance;
 
-    private readonly NpcAppearanceResolver _resolver;
-    private readonly NpcMeshArchiveSet _meshArchives;
-    private readonly NifTextureResolver _textureResolver;
-    private readonly string _pluginName;
-
     // Pre-resolved appearances from DMP (null for ESM-only mode)
     private readonly Dictionary<uint, NpcAppearance>? _dmpAppearances;
 
     // Shared caches (same as CLI pipelines)
     private readonly Dictionary<string, EgmParser?> _egmCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, EgtParser?> _egtCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly NpcMeshArchiveSet _meshArchives;
+    private readonly string _pluginName;
     private readonly NpcRenderCaches _renderCaches = new();
+
+    private readonly NpcAppearanceResolver _resolver;
+    private readonly NifTextureResolver _textureResolver;
 
     private NpcBrowserService(
         NpcAppearanceResolver resolver,
@@ -51,6 +48,12 @@ internal sealed class NpcBrowserService : IDisposable
     public int NpcCount => _dmpAppearances?.Count ?? _resolver.NpcCount;
     public int RaceCount => _resolver.RaceCount;
     public bool IsDmpMode => _dmpAppearances != null;
+
+    public void Dispose()
+    {
+        _meshArchives.Dispose();
+        _textureResolver.Dispose();
+    }
 
     public static NpcBrowserService? TryCreate(
         byte[] esmData,
@@ -160,7 +163,7 @@ internal sealed class NpcBrowserService : IDisposable
 
         // TES4 header: bytes 0-3 = "TES4", bytes 4-7 = data size
         var sizeLE = BitConverter.ToUInt32(esmData, 4);
-        var sizeBE = (uint)(esmData[4] << 24 | esmData[5] << 16 | esmData[6] << 8 | esmData[7]);
+        var sizeBE = (uint)((esmData[4] << 24) | (esmData[5] << 16) | (esmData[6] << 8) | esmData[7]);
 
         // TES4 data size is typically < 1 KB; never > 1 MB
         if (sizeBE < sizeLE && sizeBE < 0x100000)
@@ -366,7 +369,7 @@ internal sealed class NpcBrowserService : IDisposable
     {
         var appearances = FilterBySelection(GetAllAppearances(), selectedFormIds);
         var total = appearances.Count;
-        var views = camera.ResolveViews(defaultAzimuth: 90f);
+        var views = camera.ResolveViews(90f);
 
         var settings = new NpcRenderSettings
         {
@@ -441,12 +444,6 @@ internal sealed class NpcBrowserService : IDisposable
         }, ct);
     }
 
-    public void Dispose()
-    {
-        _meshArchives.Dispose();
-        _textureResolver.Dispose();
-    }
-
     private NpcAppearance? ResolveAppearance(uint npcFormId)
     {
         if (_dmpAppearances != null)
@@ -478,7 +475,7 @@ internal sealed class NpcBrowserService : IDisposable
                 continue;
             }
 
-            list.Add(new NpcListItem(formId, npc.EditorId, npc.FullName, npc.IsFemale, raceFormId: null));
+            list.Add(new NpcListItem(formId, npc.EditorId, npc.FullName, npc.IsFemale, null));
         }
 
         list.Sort((a, b) =>

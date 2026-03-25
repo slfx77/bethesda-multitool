@@ -328,7 +328,10 @@ internal static class DialoguePickerTreeBuilder
 
     internal sealed record SpeakerPickerData(uint SpeakerFormId, List<TopicDialogueNode> Topics);
 
-    internal sealed record SpeakerCategoryPickerData(uint SpeakerFormId, byte TopicType, List<TopicDialogueNode> Topics);
+    internal sealed record SpeakerCategoryPickerData(
+        uint SpeakerFormId,
+        byte TopicType,
+        List<TopicDialogueNode> Topics);
 
     internal sealed record QuestTopicPickerData(uint QuestFormId, TopicDialogueNode Topic);
 

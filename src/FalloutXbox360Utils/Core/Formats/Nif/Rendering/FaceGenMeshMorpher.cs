@@ -180,6 +180,11 @@ internal static class FaceGenMeshMorpher
         }
 
         WeldSeamNormals(positions, normals);
+
+        // Tangents/bitangents are stale after positions changed; clear so
+        // downstream consumers (GLB tangent builder) recompute from geometry.
+        submesh.Tangents = null;
+        submesh.Bitangents = null;
     }
 
     /// <summary>

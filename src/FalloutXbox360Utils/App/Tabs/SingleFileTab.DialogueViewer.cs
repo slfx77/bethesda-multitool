@@ -227,7 +227,7 @@ public sealed partial class SingleFileTab
                         greeting.InfoChain, null, speakerPicker.SpeakerFormId);
                     var greetingInfo = filteredChain.FirstOrDefault()?.Info;
                     var greetingText = greetingInfo?.PromptText
-                                      ?? DialogueViewerHelper.ResolveTopicDisplayText(greeting);
+                                       ?? DialogueViewerHelper.ResolveTopicDisplayText(greeting);
                     NavigateToDialogueTopic(greeting, pushToStack: false,
                         promptText: greetingText, promptSourceInfo: greetingInfo);
                 }
@@ -478,7 +478,8 @@ public sealed partial class SingleFileTab
         if (filteredInfoChain.Count > 1 && _selectedResponseNode == null && !allGoodbye)
         {
             // Check if any responses have choice topics at all
-            var anyHasChoices = DialogueViewerHelper.CollectLinkedTopics(filteredInfoChain, topic.TopicFormId).Count > 0;
+            var anyHasChoices = DialogueViewerHelper.CollectLinkedTopics(filteredInfoChain, topic.TopicFormId).Count >
+                                0;
             if (anyHasChoices)
             {
                 DialogueChoicesHeader.Visibility = Visibility.Visible;

@@ -12,10 +12,9 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 ///     <see cref="DialogueTopicMerger" /> for speaker propagation and linking,
 ///     <see cref="DialogueTreeBuilder" /> for building hierarchical dialogue trees.
 /// </summary>
-internal sealed class DialogueRecordHandler(RecordParserContext context)
+internal sealed class DialogueRecordHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
     private readonly DialogueConditionParser _conditionParser = new(context);
-    private readonly RecordParserContext _context = context;
     private readonly DialogueRuntimeMerger _runtimeMerger = new(context);
     private readonly DialogueTopicMerger _topicMerger = new(context);
     private readonly DialogueTreeBuilder _treeBuilder = new(context);
@@ -44,9 +43,9 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
     internal List<DialogTopicRecord> ParseDialogTopics()
     {
         var topics = new List<DialogTopicRecord>();
-        var topicRecords = _context.GetRecordsByType("DIAL").ToList();
+        var topicRecords = Context.GetRecordsByType("DIAL").ToList();
 
-        if (_context.Accessor != null)
+        if (Context.Accessor != null)
         {
             // Single-pass subrecord parsing for FULL, TNAM, QSTI, and DATA
             var buffer = ArrayPool<byte>.Shared.Rent(4096);
@@ -54,16 +53,17 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
             {
                 foreach (var record in topicRecords)
                 {
-                    var recordData = _context.ReadRecordData(record, buffer);
+                    var recordData = Context.ReadRecordData(record, buffer);
                     if (recordData == null)
                     {
                         // Fallback for unreadable records
                         topics.Add(new DialogTopicRecord
                         {
                             FormId = record.FormId,
-                            EditorId = _context.GetEditorId(record.FormId),
-                            FullName = _context.FindFullNameInRecordBounds(record),
+                            EditorId = Context.GetEditorId(record.FormId),
+                            FullName = Context.FindFullNameInRecordBounds(record),
                             Offset = record.Offset,
+                            RawRecordOffset = record.Offset,
                             IsBigEndian = record.IsBigEndian
                         });
                         continue;
@@ -76,7 +76,7 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
                     uint? questFormId = null;
                     byte topicType = 0;
                     byte topicFlags = 0;
-                    float priority = 0f;
+                    var priority = 0f;
 
                     foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
                     {
@@ -87,7 +87,7 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
                             {
                                 var edid = EsmStringUtils.ReadNullTermString(subData);
                                 if (!string.IsNullOrEmpty(edid))
-                                    _context.FormIdToEditorId[record.FormId] = edid;
+                                    Context.FormIdToEditorId[record.FormId] = edid;
                                 break;
                             }
                             case "FULL":
@@ -115,7 +115,7 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
                     topics.Add(new DialogTopicRecord
                     {
                         FormId = record.FormId,
-                        EditorId = _context.GetEditorId(record.FormId),
+                        EditorId = Context.GetEditorId(record.FormId),
                         FullName = fullName,
                         SpeakerFormId = speakerFormId,
                         QuestFormId = questFormId,
@@ -123,6 +123,7 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
                         Flags = topicFlags,
                         Priority = priority,
                         Offset = record.Offset,
+                        RawRecordOffset = record.Offset,
                         IsBigEndian = record.IsBigEndian
                     });
                 }
@@ -137,13 +138,14 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
             foreach (var record in topicRecords)
             {
                 // Fallback: only accept FULL subrecords strictly within the DIAL record's data
-                var fullName = _context.FindFullNameInRecordBounds(record);
+                var fullName = Context.FindFullNameInRecordBounds(record);
                 topics.Add(new DialogTopicRecord
                 {
                     FormId = record.FormId,
-                    EditorId = _context.GetEditorId(record.FormId),
+                    EditorId = Context.GetEditorId(record.FormId),
                     FullName = fullName,
                     Offset = record.Offset,
+                    RawRecordOffset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
             }
@@ -153,15 +155,35 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
         // Keep the version with the most data (prefer one with FullName, SpeakerFormId, and EditorId).
         var deduped = topics
             .GroupBy(t => t.FormId)
-            .Select(g => g
-                .OrderByDescending(t => t.SpeakerFormId.HasValue ? 1 : 0)
-                .ThenByDescending(t => t.FullName?.Length ?? 0)
-                .ThenByDescending(t => t.EditorId?.Length ?? 0)
-                .First())
+            .Select(g =>
+            {
+                var best = g
+                    .OrderByDescending(t => t.SpeakerFormId.HasValue ? 1 : 0)
+                    .ThenByDescending(t => t.FullName?.Length ?? 0)
+                    .ThenByDescending(t => t.EditorId?.Length ?? 0)
+                    .First();
+
+                var rawRecordOffset = g
+                    .Select(topic => topic.RawRecordOffset)
+                    .Where(offset => offset > 0)
+                    .DefaultIfEmpty(best.RawRecordOffset)
+                    .Min();
+                var runtimeStructOffset = g
+                    .Select(topic => topic.RuntimeStructOffset)
+                    .FirstOrDefault(offset => offset > 0);
+
+                return best with
+                {
+                    RawRecordOffset = rawRecordOffset > 0 ? rawRecordOffset : best.RawRecordOffset,
+                    RuntimeStructOffset = best.RuntimeStructOffset > 0
+                        ? best.RuntimeStructOffset
+                        : runtimeStructOffset
+                };
+            })
             .ToList();
 
         // Probe DIAL runtime struct layout and merge runtime data if reader available
-        if (_context.RuntimeReader != null)
+        if (Context.RuntimeReader != null)
         {
             _runtimeMerger.MergeRuntimeDialogTopicData(deduped);
         }
@@ -194,9 +216,9 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
     internal List<QuestRecord> ParseQuests()
     {
         var quests = new List<QuestRecord>();
-        var questRecords = _context.GetRecordsByType("QUST").ToList();
+        var questRecords = Context.GetRecordsByType("QUST").ToList();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             foreach (var record in questRecords)
             {
@@ -228,14 +250,14 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
         }
 
         // Merge quests from runtime struct reading
-        if (_context.RuntimeReader != null)
+        if (Context.RuntimeReader != null)
         {
             var questByFormId = quests.ToDictionary(q => q.FormId);
             var runtimeCount = 0;
             var stubCount = 0;
             var enrichedCount = 0;
             var questEntryCount = 0;
-            foreach (var entry in _context.ScanResult.RuntimeEditorIds)
+            foreach (var entry in Context.ScanResult.RuntimeEditorIds)
             {
                 if (entry.FormType != 0x47)
                 {
@@ -250,7 +272,7 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
                     var needsEnrichment = NeedsRuntimeQuestEnrichment(existing);
                     if (needsEnrichment)
                     {
-                        var runtimeQuest = _context.RuntimeReader.ReadRuntimeQuest(entry);
+                        var runtimeQuest = Context.RuntimeReader.ReadRuntimeQuest(entry);
                         if (runtimeQuest != null)
                         {
                             var idx = quests.IndexOf(existing);
@@ -263,7 +285,7 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
                     continue;
                 }
 
-                var quest = _context.RuntimeReader.ReadRuntimeQuest(entry);
+                var quest = Context.RuntimeReader.ReadRuntimeQuest(entry);
                 if (quest != null)
                 {
                     quests.Add(quest);
@@ -277,7 +299,7 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
                     {
                         FormId = entry.FormId,
                         EditorId = entry.EditorId,
-                        FullName = _context.FormIdToFullName.GetValueOrDefault(entry.FormId),
+                        FullName = Context.FormIdToFullName.GetValueOrDefault(entry.FormId),
                         Offset = 0,
                         IsBigEndian = true
                     });
@@ -299,9 +321,9 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
         return new QuestRecord
         {
             FormId = record.FormId,
-            EditorId = _context.GetEditorId(record.FormId),
-            FullName = _context.FindFullNameNear(record.Offset)
-                       ?? _context.FormIdToFullName.GetValueOrDefault(record.FormId),
+            EditorId = Context.GetEditorId(record.FormId),
+            FullName = Context.FindFullNameNear(record.Offset)
+                       ?? Context.FormIdToFullName.GetValueOrDefault(record.FormId),
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
@@ -309,7 +331,7 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
 
     private QuestRecord? ParseQuestFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
-        var recordData = _context.ReadRecordData(record, buffer);
+        var recordData = Context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
             return ParseQuestFromScanResult(record);
@@ -435,7 +457,7 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
         return new QuestRecord
         {
             FormId = record.FormId,
-            EditorId = editorId ?? _context.GetEditorId(record.FormId),
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
             Flags = flags,
             Priority = priority,

@@ -7,32 +7,11 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 ///     Reusable probe builder for runtime struct readers. Readers declare their probeable
 ///     fields with validation rules, and this class generates candidates, scores samples,
 ///     and returns the best-matching layout shift per field group.
-///
 ///     Field groups correspond to C++ inheritance boundaries — fields from the same base
 ///     class shift together when parent class sizes change between builds.
 /// </summary>
 internal static class RuntimeReaderFieldProbe
 {
-    /// <summary>
-    ///     A probeable field with its baseline PDB offset, group assignment, and validation rule.
-    /// </summary>
-    /// <param name="Name">Human-readable field name for diagnostics.</param>
-    /// <param name="BaseOffset">Offset from MemDebug PDB (July 2010 baseline).</param>
-    /// <param name="Group">
-    ///     Inheritance group index. Group 0 = TESForm (always shift 0, anchor).
-    ///     Higher groups = deeper inheritance levels that shift independently.
-    /// </param>
-    /// <param name="Check">Validation rule to apply when scoring.</param>
-    /// <param name="Weight">Score weight for a successful check (default 1).</param>
-    /// <param name="CheckArg">Optional argument for the check (e.g., expected FormType byte, float range).</param>
-    public readonly record struct FieldSpec(
-        string Name,
-        int BaseOffset,
-        int Group,
-        FieldCheck Check,
-        int Weight = 1,
-        object? CheckArg = null);
-
     /// <summary>Validation rules for probe fields.</summary>
     public enum FieldCheck
     {
@@ -336,4 +315,24 @@ internal static class RuntimeReaderFieldProbe
     {
         return group < shifts.Length ? baseOffset + shifts[group] : baseOffset;
     }
+
+    /// <summary>
+    ///     A probeable field with its baseline PDB offset, group assignment, and validation rule.
+    /// </summary>
+    /// <param name="Name">Human-readable field name for diagnostics.</param>
+    /// <param name="BaseOffset">Offset from MemDebug PDB (July 2010 baseline).</param>
+    /// <param name="Group">
+    ///     Inheritance group index. Group 0 = TESForm (always shift 0, anchor).
+    ///     Higher groups = deeper inheritance levels that shift independently.
+    /// </param>
+    /// <param name="Check">Validation rule to apply when scoring.</param>
+    /// <param name="Weight">Score weight for a successful check (default 1).</param>
+    /// <param name="CheckArg">Optional argument for the check (e.g., expected FormType byte, float range).</param>
+    public readonly record struct FieldSpec(
+        string Name,
+        int BaseOffset,
+        int Group,
+        FieldCheck Check,
+        int Weight = 1,
+        object? CheckArg = null);
 }

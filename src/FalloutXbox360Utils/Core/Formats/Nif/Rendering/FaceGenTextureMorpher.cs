@@ -344,9 +344,12 @@ internal static class FaceGenTextureMorpher
         {
             TextureAccumulationMode.CurrentFloat => AccumulateNativeDeltasFloat(egt, textureCoeffs),
             TextureAccumulationMode.EngineQuantized256 => AccumulateNativeDeltasQuantized256(egt, textureCoeffs),
-            TextureAccumulationMode.EngineQuantized256Double => AccumulateNativeDeltasQuantized256Double(egt, textureCoeffs),
-            TextureAccumulationMode.EngineQuantizedCombined256 => AccumulateNativeDeltasQuantizedCombined(egt, textureCoeffs, 256),
-            TextureAccumulationMode.EngineQuantizedCombined65536 => AccumulateNativeDeltasQuantizedCombined(egt, textureCoeffs, 65536),
+            TextureAccumulationMode.EngineQuantized256Double => AccumulateNativeDeltasQuantized256Double(egt,
+                textureCoeffs),
+            TextureAccumulationMode.EngineQuantizedCombined256 => AccumulateNativeDeltasQuantizedCombined(egt,
+                textureCoeffs, 256),
+            TextureAccumulationMode.EngineQuantizedCombined65536 => AccumulateNativeDeltasQuantizedCombined(egt,
+                textureCoeffs, 65536),
             _ => throw new ArgumentOutOfRangeException(nameof(accumulationMode), accumulationMode, null)
         };
     }
@@ -442,14 +445,14 @@ internal static class FaceGenTextureMorpher
         var count = Math.Min(textureCoeffs.Length, egt.SymmetricMorphs.Length);
         for (var morphIndex = 0; morphIndex < count; morphIndex++)
         {
-            var coeff256 = (int)((double)textureCoeffs[morphIndex] * 256.0);
+            var coeff256 = (int)(textureCoeffs[morphIndex] * 256.0);
             if (coeff256 == 0)
             {
                 continue;
             }
 
             var morph = egt.SymmetricMorphs[morphIndex];
-            var scale256 = (int)((double)morph.Scale * 256.0);
+            var scale256 = (int)(morph.Scale * 256.0);
             if (scale256 == 0)
             {
                 continue;

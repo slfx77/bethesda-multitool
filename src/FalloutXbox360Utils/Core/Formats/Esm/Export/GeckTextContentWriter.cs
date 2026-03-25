@@ -71,7 +71,8 @@ internal static class GeckTextContentWriter
 
             if (book.TeachesSkill)
             {
-                sb.AppendLine($"Teaches Skill:  {resolver.GetSkillName(book.SkillTaught) ?? $"Skill#{book.SkillTaught}"}");
+                sb.AppendLine(
+                    $"Teaches Skill:  {resolver.GetSkillName(book.SkillTaught) ?? $"Skill#{book.SkillTaught}"}");
             }
 
             if (book.EnchantmentFormId is > 0)

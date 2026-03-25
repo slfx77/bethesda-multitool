@@ -1,6 +1,7 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.RuntimeBuffer;
 using FalloutXbox360Utils.Core.Strings;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
@@ -102,6 +103,37 @@ internal static class GeckMiscWriter
         sb.AppendLine("  Includes perk descriptions, skill descriptions, loading screen text,");
         sb.AppendLine("  and other game text not found in the dump's ESM data.");
         sb.AppendLine("  See string_pool_*.csv files for full datasets.");
+    }
+
+    internal static string GenerateStringOwnershipSummaryReport(RuntimeStringOwnershipAnalysis analysis)
+    {
+        var sb = new StringBuilder();
+        GeckReportHelpers.AppendHeader(sb, "Runtime String Ownership Summary");
+        sb.AppendLine();
+        sb.AppendLine($"Analyzed String Hits: {analysis.AllHits.Count:N0}");
+        sb.AppendLine($"  Owned:                    {analysis.OwnedHits.Count:N0}");
+        sb.AppendLine($"  Referenced, owner unknown:{analysis.ReferencedOwnerUnknownHits.Count,8:N0}");
+        sb.AppendLine($"  Unreferenced:             {analysis.UnreferencedHits.Count:N0}");
+        sb.AppendLine();
+        sb.AppendLine("By Category:");
+
+        foreach (var category in analysis.CategoryCounts.Keys.OrderBy(c => c.ToString(), StringComparer.Ordinal))
+        {
+            var total = analysis.CategoryCounts.GetValueOrDefault(category);
+            var owned = analysis.OwnedHits.Count(h => h.Category == category);
+            var referencedUnknown = analysis.ReferencedOwnerUnknownHits.Count(h => h.Category == category);
+            var unreferenced = analysis.UnreferencedHits.Count(h => h.Category == category);
+
+            sb.AppendLine(
+                $"  {category,-16} total {total,8:N0} | owned {owned,8:N0} | unknown {referencedUnknown,8:N0} | unreferenced {unreferenced,8:N0}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("Notes:");
+        sb.AppendLine("  Owned strings require direct typed evidence from runtime EditorID tables or manager/global walkers.");
+        sb.AppendLine("  ReferencedOwnerUnknown strings have live inbound pointers, but no conservative owner match.");
+        sb.AppendLine("  Unreferenced strings have no 4-byte-aligned inbound pointer to the exact string start.");
+        return sb.ToString();
     }
 
     internal static void AppendGlobalsSection(StringBuilder sb, List<GlobalRecord> globals)

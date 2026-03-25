@@ -79,8 +79,18 @@ public record RuntimeDialogueInfo
     public bool SaidOnce { get; init; }
 
     /// <summary>
-    ///     ESM file offset of this INFO record (from TESTopicInfo.iFileOffset at +92).
-    ///     Used to locate raw ESM subrecord data in the memory-mapped ESM within the dump.
+    ///     TES-file logical offset of this INFO record (from TESTopicInfo.iFileOffset at +92).
+    ///     Used to locate serialized INFO data inside dump-resident TES-file pages.
     /// </summary>
-    public uint EsmFileOffset { get; init; }
+    public uint TesFileOffset { get; init; }
+
+    /// <summary>
+    ///     Compatibility alias for older code that still refers to the runtime TESTopicInfo
+    ///     logical source offset as an ESM offset.
+    /// </summary>
+    public uint EsmFileOffset
+    {
+        get => TesFileOffset;
+        init => TesFileOffset = value;
+    }
 }

@@ -24,16 +24,16 @@ internal sealed class RenderableSubmesh
     public byte[]? VertexColors { get; init; }
 
     /// <summary>Tangent X, Y, Z per vertex (optional, for bump mapping). Same length as Positions.</summary>
-    public float[]? Tangents { get; init; }
+    public float[]? Tangents { get; set; }
 
     /// <summary>Bitangent X, Y, Z per vertex (optional, for bump mapping). Same length as Positions.</summary>
-    public float[]? Bitangents { get; init; }
+    public float[]? Bitangents { get; set; }
 
     /// <summary>Diffuse texture path resolved from shader properties (e.g., "textures\architecture\foo.dds").</summary>
     public string? DiffuseTexturePath { get; set; }
 
     /// <summary>Normal map texture path resolved from shader properties (slot 1).</summary>
-    public string? NormalMapTexturePath { get; init; }
+    public string? NormalMapTexturePath { get; set; }
 
     /// <summary>Shader property metadata resolved from the source NIF.</summary>
     public NifShaderTextureMetadata? ShaderMetadata { get; init; }

@@ -5,9 +5,8 @@ using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
-internal sealed class TextRecordHandler(RecordParserContext context)
+internal sealed class TextRecordHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
-    private readonly RecordParserContext _context = context;
 
     #region Terminals
 
@@ -17,21 +16,21 @@ internal sealed class TextRecordHandler(RecordParserContext context)
     internal List<TerminalRecord> ParseTerminals()
     {
         var terminals = new List<TerminalRecord>();
-        var terminalRecords = _context.GetRecordsByType("TERM").ToList();
+        var terminalRecords = Context.GetRecordsByType("TERM").ToList();
 
         foreach (var record in terminalRecords)
         {
             terminals.Add(new TerminalRecord
             {
                 FormId = record.FormId,
-                EditorId = _context.GetEditorId(record.FormId),
-                FullName = _context.FindFullNameNear(record.Offset),
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
                 Offset = record.Offset,
                 IsBigEndian = record.IsBigEndian
             });
         }
 
-        _context.MergeRuntimeRecords(terminals, 0x17, t => t.FormId,
+        Context.MergeRuntimeRecords(terminals, 0x17, t => t.FormId,
             (reader, entry) => reader.ReadRuntimeTerminal(entry), "terminals");
 
         return terminals;
@@ -48,7 +47,7 @@ internal sealed class TextRecordHandler(RecordParserContext context)
     {
         var messages = new List<MessageRecord>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             return messages;
         }
@@ -56,9 +55,9 @@ internal sealed class TextRecordHandler(RecordParserContext context)
         var buffer = ArrayPool<byte>.Shared.Rent(2048);
         try
         {
-            foreach (var record in _context.GetRecordsByType("MESG"))
+            foreach (var record in Context.GetRecordsByType("MESG"))
             {
-                var recordData = _context.ReadRecordData(record, buffer);
+                var recordData = Context.ReadRecordData(record, buffer);
                 if (recordData == null)
                 {
                     continue;
@@ -78,7 +77,7 @@ internal sealed class TextRecordHandler(RecordParserContext context)
                             editorId = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
                             if (!string.IsNullOrEmpty(editorId))
                             {
-                                _context.FormIdToEditorId[record.FormId] = editorId;
+                                Context.FormIdToEditorId[record.FormId] = editorId;
                             }
 
                             break;
@@ -139,7 +138,7 @@ internal sealed class TextRecordHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        _context.MergeRuntimeRecords(messages, 0x62, m => m.FormId,
+        Context.MergeRuntimeRecords(messages, 0x62, m => m.FormId,
             (reader, entry) => reader.ReadRuntimeMessage(entry), "messages");
 
         return messages;
@@ -155,17 +154,17 @@ internal sealed class TextRecordHandler(RecordParserContext context)
     internal List<BookRecord> ParseBooks()
     {
         var books = new List<BookRecord>();
-        var bookRecords = _context.GetRecordsByType("BOOK").ToList();
+        var bookRecords = Context.GetRecordsByType("BOOK").ToList();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             foreach (var record in bookRecords)
             {
                 books.Add(new BookRecord
                 {
                     FormId = record.FormId,
-                    EditorId = _context.GetEditorId(record.FormId),
-                    FullName = _context.FindFullNameNear(record.Offset),
+                    EditorId = Context.GetEditorId(record.FormId),
+                    FullName = Context.FindFullNameNear(record.Offset),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
@@ -191,7 +190,7 @@ internal sealed class TextRecordHandler(RecordParserContext context)
             }
         }
 
-        _context.MergeRuntimeRecords(books, 0x19, b => b.FormId,
+        Context.MergeRuntimeRecords(books, 0x19, b => b.FormId,
             (reader, entry) => reader.ReadRuntimeBook(entry), "books");
 
         return books;
@@ -199,14 +198,14 @@ internal sealed class TextRecordHandler(RecordParserContext context)
 
     private BookRecord? ParseBookFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
-        var recordData = _context.ReadRecordData(record, buffer);
+        var recordData = Context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
             return new BookRecord
             {
                 FormId = record.FormId,
-                EditorId = _context.GetEditorId(record.FormId),
-                FullName = _context.FindFullNameNear(record.Offset),
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
                 Offset = record.Offset,
                 IsBigEndian = record.IsBigEndian
             };
@@ -264,7 +263,7 @@ internal sealed class TextRecordHandler(RecordParserContext context)
         return new BookRecord
         {
             FormId = record.FormId,
-            EditorId = editorId ?? _context.GetEditorId(record.FormId),
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
             Text = text,
             ModelPath = modelPath,
@@ -288,9 +287,9 @@ internal sealed class TextRecordHandler(RecordParserContext context)
     internal List<NoteRecord> ParseNotes()
     {
         var notes = new List<NoteRecord>();
-        var noteRecords = _context.GetRecordsByType("NOTE").ToList();
+        var noteRecords = Context.GetRecordsByType("NOTE").ToList();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             foreach (var record in noteRecords)
             {
@@ -321,7 +320,7 @@ internal sealed class TextRecordHandler(RecordParserContext context)
             }
         }
 
-        _context.MergeRuntimeRecords(notes, 0x31, n => n.FormId,
+        Context.MergeRuntimeRecords(notes, 0x31, n => n.FormId,
             (reader, entry) => reader.ReadRuntimeNote(entry), "notes");
 
         return notes;
@@ -329,7 +328,7 @@ internal sealed class TextRecordHandler(RecordParserContext context)
 
     private NoteRecord? ParseNoteFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
-        var recordData = _context.ReadRecordData(record, buffer);
+        var recordData = Context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
             return ParseNoteFromScanResult(record);
@@ -373,7 +372,7 @@ internal sealed class TextRecordHandler(RecordParserContext context)
         return new NoteRecord
         {
             FormId = record.FormId,
-            EditorId = editorId ?? _context.GetEditorId(record.FormId),
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
             NoteType = noteType,
             Text = text,
@@ -387,8 +386,8 @@ internal sealed class TextRecordHandler(RecordParserContext context)
         return new NoteRecord
         {
             FormId = record.FormId,
-            EditorId = _context.GetEditorId(record.FormId),
-            FullName = _context.FindFullNameNear(record.Offset),
+            EditorId = Context.GetEditorId(record.FormId),
+            FullName = Context.FindFullNameNear(record.Offset),
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };

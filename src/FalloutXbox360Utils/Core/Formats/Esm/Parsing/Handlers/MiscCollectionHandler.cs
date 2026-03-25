@@ -4,9 +4,8 @@ using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
-internal sealed class MiscCollectionHandler(RecordParserContext context)
+internal sealed class MiscCollectionHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
-    private readonly RecordParserContext _context = context;
 
     #region Form Lists
 
@@ -17,14 +16,14 @@ internal sealed class MiscCollectionHandler(RecordParserContext context)
     {
         var formLists = new List<FormListRecord>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
-            foreach (var record in _context.GetRecordsByType("FLST"))
+            foreach (var record in Context.GetRecordsByType("FLST"))
             {
                 formLists.Add(new FormListRecord
                 {
                     FormId = record.FormId,
-                    EditorId = _context.GetEditorId(record.FormId),
+                    EditorId = Context.GetEditorId(record.FormId),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
@@ -36,15 +35,15 @@ internal sealed class MiscCollectionHandler(RecordParserContext context)
         var buffer = ArrayPool<byte>.Shared.Rent(8192);
         try
         {
-            foreach (var record in _context.GetRecordsByType("FLST"))
+            foreach (var record in Context.GetRecordsByType("FLST"))
             {
-                var recordData = _context.ReadRecordData(record, buffer);
+                var recordData = Context.ReadRecordData(record, buffer);
                 if (recordData == null)
                 {
                     formLists.Add(new FormListRecord
                     {
                         FormId = record.FormId,
-                        EditorId = _context.GetEditorId(record.FormId),
+                        EditorId = Context.GetEditorId(record.FormId),
                         Offset = record.Offset,
                         IsBigEndian = record.IsBigEndian
                     });
@@ -64,7 +63,7 @@ internal sealed class MiscCollectionHandler(RecordParserContext context)
                             editorId = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
                             if (!string.IsNullOrEmpty(editorId))
                             {
-                                _context.FormIdToEditorId[record.FormId] = editorId;
+                                Context.FormIdToEditorId[record.FormId] = editorId;
                             }
 
                             break;
@@ -78,7 +77,7 @@ internal sealed class MiscCollectionHandler(RecordParserContext context)
                 formLists.Add(new FormListRecord
                 {
                     FormId = record.FormId,
-                    EditorId = editorId ?? _context.GetEditorId(record.FormId),
+                    EditorId = editorId ?? Context.GetEditorId(record.FormId),
                     FormIds = formIds,
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
@@ -90,7 +89,7 @@ internal sealed class MiscCollectionHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        _context.MergeRuntimeOverlayRecords(
+        Context.MergeRuntimeOverlayRecords(
             formLists,
             [0x55],
             record => record.FormId,
@@ -111,9 +110,9 @@ internal sealed class MiscCollectionHandler(RecordParserContext context)
     internal List<LeveledListRecord> ParseLeveledLists()
     {
         var lists = new List<LeveledListRecord>();
-        var lvliRecords = _context.GetRecordsByType("LVLI").ToList();
-        var lvlnRecords = _context.GetRecordsByType("LVLN").ToList();
-        var lvlcRecords = _context.GetRecordsByType("LVLC").ToList();
+        var lvliRecords = Context.GetRecordsByType("LVLI").ToList();
+        var lvlnRecords = Context.GetRecordsByType("LVLN").ToList();
+        var lvlcRecords = Context.GetRecordsByType("LVLC").ToList();
 
         // Combine all leveled list records
         var allRecords = lvliRecords
@@ -121,7 +120,7 @@ internal sealed class MiscCollectionHandler(RecordParserContext context)
             .Concat(lvlcRecords)
             .ToList();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             foreach (var record in allRecords)
             {
@@ -152,7 +151,7 @@ internal sealed class MiscCollectionHandler(RecordParserContext context)
             }
         }
 
-        _context.MergeRuntimeOverlayRecords(
+        Context.MergeRuntimeOverlayRecords(
             lists,
             [0x2C, 0x2D, 0x34],
             record => record.FormId,
@@ -165,7 +164,7 @@ internal sealed class MiscCollectionHandler(RecordParserContext context)
 
     private LeveledListRecord? ParseLeveledListFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
-        var recordData = _context.ReadRecordData(record, buffer);
+        var recordData = Context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
             return ParseLeveledListFromScanResult(record);
@@ -190,7 +189,7 @@ internal sealed class MiscCollectionHandler(RecordParserContext context)
                     editorId = EsmStringUtils.ReadNullTermString(subData);
                     if (!string.IsNullOrEmpty(editorId))
                     {
-                        _context.FormIdToEditorId[record.FormId] = editorId;
+                        Context.FormIdToEditorId[record.FormId] = editorId;
                     }
 
                     break;
@@ -226,7 +225,7 @@ internal sealed class MiscCollectionHandler(RecordParserContext context)
         return new LeveledListRecord
         {
             FormId = record.FormId,
-            EditorId = editorId ?? _context.GetEditorId(record.FormId),
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
             ListType = record.RecordType,
             ChanceNone = chanceNone,
             Flags = flags,
@@ -242,7 +241,7 @@ internal sealed class MiscCollectionHandler(RecordParserContext context)
         return new LeveledListRecord
         {
             FormId = record.FormId,
-            EditorId = _context.GetEditorId(record.FormId),
+            EditorId = Context.GetEditorId(record.FormId),
             ListType = record.RecordType,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian

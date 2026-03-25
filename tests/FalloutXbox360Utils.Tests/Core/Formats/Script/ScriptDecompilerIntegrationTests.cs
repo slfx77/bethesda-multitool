@@ -123,6 +123,13 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output)
             $"Overall semantic match rate {overallMatchRate:F1}% below 50% threshold");
     }
 
+    internal sealed record SyntheticScript(
+        string EditorId,
+        string SourceText,
+        byte[] CompiledData,
+        List<ScriptVariableInfo> Variables,
+        List<uint> ReferencedObjects);
+
     #region Synthetic Script Data
 
     /// <summary>
@@ -313,11 +320,4 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output)
     }
 
     #endregion
-
-    internal sealed record SyntheticScript(
-        string EditorId,
-        string SourceText,
-        byte[] CompiledData,
-        List<ScriptVariableInfo> Variables,
-        List<uint> ReferencedObjects);
 }

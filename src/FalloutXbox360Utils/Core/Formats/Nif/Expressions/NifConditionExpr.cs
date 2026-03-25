@@ -20,7 +20,7 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Expressions;
 ///     bitop_expr -> value ('#BITAND#' | '#BITOR#') value
 ///     op       -> '#GT#' | '#GTE#' | '#LT#' | '#LTE#' | '#EQ#' | '#NEQ#' | '!=' | '==' | etc.
 /// </summary>
-public sealed partial class NifConditionExpr
+public sealed class NifConditionExpr
 {
     // Static caches for compiled expressions - expressions are constant strings from nif.xml
     private static readonly ConcurrentDictionary<string, Func<IReadOnlyDictionary<string, object>, bool>>
@@ -495,36 +495,36 @@ public sealed partial class NifConditionExpr
         return string.Empty;
     }
 
-    private CompareOp ReadOperator()
+    private ConditionCompareOp ReadOperator()
     {
         if (Match("#GT#") || Match(">"))
         {
-            return CompareOp.Gt;
+            return ConditionCompareOp.Gt;
         }
 
         if (Match("#GTE#") || Match(">="))
         {
-            return CompareOp.Gte;
+            return ConditionCompareOp.Gte;
         }
 
         if (Match("#LT#") || Match("<"))
         {
-            return CompareOp.Lt;
+            return ConditionCompareOp.Lt;
         }
 
         if (Match("#LTE#") || Match("<="))
         {
-            return CompareOp.Lte;
+            return ConditionCompareOp.Lte;
         }
 
         if (Match("#EQ#") || Match("=="))
         {
-            return CompareOp.Eq;
+            return ConditionCompareOp.Eq;
         }
 
         if (Match("#NEQ#") || Match("!="))
         {
-            return CompareOp.Neq;
+            return ConditionCompareOp.Neq;
         }
 
         throw new FormatException($"Expected operator at position {_pos}");

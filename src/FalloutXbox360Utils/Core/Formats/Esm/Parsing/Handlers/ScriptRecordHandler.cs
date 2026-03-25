@@ -6,9 +6,8 @@ using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
-internal sealed class ScriptRecordHandler(RecordParserContext context)
+internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
-    private readonly RecordParserContext _context = context;
     private Dictionary<uint, uint>? _runtimeObjectToScript;
 
     /// <summary>
@@ -29,15 +28,15 @@ internal sealed class ScriptRecordHandler(RecordParserContext context)
     {
         var scripts = new List<ScriptRecord>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             // Without accessor, create stub records from scan data
-            foreach (var record in _context.GetRecordsByType("SCPT"))
+            foreach (var record in Context.GetRecordsByType("SCPT"))
             {
                 scripts.Add(new ScriptRecord
                 {
                     FormId = record.FormId,
-                    EditorId = _context.GetEditorId(record.FormId),
+                    EditorId = Context.GetEditorId(record.FormId),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
@@ -50,7 +49,7 @@ internal sealed class ScriptRecordHandler(RecordParserContext context)
         var buffer = ArrayPool<byte>.Shared.Rent(65536); // Scripts can be large
         try
         {
-            foreach (var record in _context.GetRecordsByType("SCPT"))
+            foreach (var record in Context.GetRecordsByType("SCPT"))
             {
                 var script = ParseScriptFromAccessor(record, buffer);
                 if (script != null)
@@ -66,7 +65,7 @@ internal sealed class ScriptRecordHandler(RecordParserContext context)
 
         // Merge runtime struct data (Script C++ objects from hash table walk)
         // Runtime merging also skips decompilation — that happens in pass 2
-        if (_context.RuntimeReader != null)
+        if (Context.RuntimeReader != null)
         {
             MergeRuntimeScriptData(scripts);
         }
@@ -93,7 +92,7 @@ internal sealed class ScriptRecordHandler(RecordParserContext context)
         // Quest fallback: for quest scripts with no OwnerQuestFormId, scan SCRO list
         // for QUST FormIDs and map those to the script's variables.
         // RuntimeEditorIds is only populated for DMP files (runtime hash table walk).
-        var questFormIds = _context.ScanResult.RuntimeEditorIds
+        var questFormIds = Context.ScanResult.RuntimeEditorIds
             .Where(e => e.FormType is 0x47)
             .Select(e => e.FormId)
             .ToHashSet();
@@ -137,7 +136,7 @@ internal sealed class ScriptRecordHandler(RecordParserContext context)
         // or a base object (NPC_/CREA) rather than a script. These mappings enable the chain:
         // placed ref → base object → script → variables
         var objectToScript = new Dictionary<uint, uint>();
-        if (_context.Accessor != null)
+        if (Context.Accessor != null)
         {
             BuildObjectToScriptMap(objectToScript);
         }
@@ -165,7 +164,7 @@ internal sealed class ScriptRecordHandler(RecordParserContext context)
         }
 
         // Extend variableDb with ref→base→variables mappings
-        foreach (var (refFormId, baseFormId) in _context.RefToBase)
+        foreach (var (refFormId, baseFormId) in Context.RefToBase)
         {
             if (variableDb.TryGetValue(baseFormId, out var vars))
             {
@@ -178,7 +177,7 @@ internal sealed class ScriptRecordHandler(RecordParserContext context)
         // the base form "CraigBoone" and chain to its script's variables.
         // Note: Build a fresh reverse lookup from FormIdToEditorId (which is mutable and includes
         // parse-added entries) rather than using the stale EditorIdToFormId dictionary.
-        var editorIdToFormId = _context.FormIdToEditorId
+        var editorIdToFormId = Context.FormIdToEditorId
             .GroupBy(kv => kv.Value, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First().Key, StringComparer.OrdinalIgnoreCase);
         var refHeuristicCount = 0;
@@ -192,7 +191,7 @@ internal sealed class ScriptRecordHandler(RecordParserContext context)
                     continue;
                 }
 
-                var editorId = _context.ResolveFormName(refFormId);
+                var editorId = Context.ResolveFormName(refFormId);
                 if (editorId == null || !editorId.EndsWith("REF", StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
@@ -218,7 +217,7 @@ internal sealed class ScriptRecordHandler(RecordParserContext context)
 
         Logger.Instance.Debug(
             $"  [Semantic] Cross-ref chains: {objectToScript.Count} obj→script, " +
-            $"{_context.RefToBase.Count} ref→base, {refHeuristicCount} REF→base, " +
+            $"{Context.RefToBase.Count} ref→base, {refHeuristicCount} REF→base, " +
             $"{questFallbackCount} quest→script, variableDb {dbSizeBefore}→{variableDb.Count}");
 
         // PASS 2: Decompile all scripts with the full cross-script variable database
@@ -283,7 +282,7 @@ internal sealed class ScriptRecordHandler(RecordParserContext context)
             // Runtime bytecode (from memory dumps) is big-endian (byte-swapped at load time).
             var isBigEndian = script.FromRuntime;
             var decompiler = new ScriptDecompiler(
-                script.Variables, script.ReferencedObjects, _context.ResolveFormName,
+                script.Variables, script.ReferencedObjects, Context.ResolveFormName,
                 isBigEndian,
                 script.EditorId,
                 ResolveExternalVariable);
@@ -302,7 +301,7 @@ internal sealed class ScriptRecordHandler(RecordParserContext context)
     /// </summary>
     private void BuildObjectToScriptMap(Dictionary<uint, uint> objectToScript)
     {
-        ScriptRuntimeMerger.BuildObjectToScriptMap(_context, objectToScript);
+        ScriptRuntimeMerger.BuildObjectToScriptMap(Context, objectToScript);
     }
 
     /// <summary>
@@ -310,18 +309,18 @@ internal sealed class ScriptRecordHandler(RecordParserContext context)
     /// </summary>
     private void MergeRuntimeScriptData(List<ScriptRecord> scripts)
     {
-        ScriptRuntimeMerger.MergeRuntimeScriptData(_context, scripts);
+        ScriptRuntimeMerger.MergeRuntimeScriptData(Context, scripts);
     }
 
     internal ScriptRecord? ParseScriptFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
-        var recordData = _context.ReadRecordData(record, buffer);
+        var recordData = Context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
             return new ScriptRecord
             {
                 FormId = record.FormId,
-                EditorId = _context.GetEditorId(record.FormId),
+                EditorId = Context.GetEditorId(record.FormId),
                 Offset = record.Offset,
                 IsBigEndian = record.IsBigEndian
             };
@@ -355,7 +354,7 @@ internal sealed class ScriptRecordHandler(RecordParserContext context)
                     editorId = EsmStringUtils.ReadNullTermString(subData);
                     if (!string.IsNullOrEmpty(editorId))
                     {
-                        _context.FormIdToEditorId[record.FormId] = editorId;
+                        Context.FormIdToEditorId[record.FormId] = editorId;
                     }
 
                     break;
@@ -445,7 +444,7 @@ internal sealed class ScriptRecordHandler(RecordParserContext context)
         return new ScriptRecord
         {
             FormId = record.FormId,
-            EditorId = editorId ?? _context.GetEditorId(record.FormId),
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
             VariableCount = variableCount,
             RefObjectCount = refObjectCount,
             CompiledSize = compiledSize,

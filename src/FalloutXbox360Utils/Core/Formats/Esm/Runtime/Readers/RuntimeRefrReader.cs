@@ -15,6 +15,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool useProtoOffsets = false)
 {
     private readonly RuntimeMemoryContext _context = context;
+    private readonly RuntimeExtraDataParser _extraParser = new(context);
     private readonly int _shift = RuntimeBuildOffsets.GetRefrFieldShift(useProtoOffsets);
 
     /// <summary>
@@ -56,7 +57,7 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
             return null;
         }
 
-        // Follow pObjectReference → base FormID (required)
+        // Follow pObjectReference -> base FormID (required)
         var baseFormId = _context.FollowPointerToFormId(buffer, BaseObjectPtrOffset);
         if (baseFormId == null)
         {
@@ -92,12 +93,12 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
             scale = 1.0f;
         }
 
-        // Follow pParentCell → cell FormID + interior flag (expected type 0x39 = CELL)
+        // Follow pParentCell -> cell FormID + interior flag (expected type 0x39 = CELL)
         var (parentCellFormId, parentCellIsInterior) = FollowPointerToCellInfo(buffer, ParentCellPtrOffset);
 
         // Walk the ExtraDataList once and extract placement semantics we can map into REFR fields.
         var pHead = BinaryUtils.ReadUInt32BE(buffer, ExtraListHeadOffset);
-        var extraData = ReadExtraData(pHead);
+        var extraData = _extraParser.ReadExtraData(pHead);
 
         // Determine record type from FormType
         var recordType = RuntimeBuildOffsets.GetRecordTypeCode(formType) ?? "REFR";
@@ -141,25 +142,6 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
     }
 
     /// <summary>
-    ///     Read the TESObjectREFR struct (120 bytes final, 116 bytes early) using VA-based region validation.
-    ///     Prevents reading garbage data when a struct spans a gap between non-contiguous memory regions.
-    /// </summary>
-    private byte[]? ReadRefrStructBuffer(RuntimeEditorIdEntry entry, long fileOffset)
-    {
-        if (entry.TesFormPointer.HasValue)
-        {
-            return _context.ReadBytesAtVa(entry.TesFormPointer.Value, RefrStructSize);
-        }
-
-        if (fileOffset + RefrStructSize > _context.FileSize)
-        {
-            return null;
-        }
-
-        return _context.ReadBytes(fileOffset, RefrStructSize);
-    }
-
-    /// <summary>
     ///     Probes a sample of REFR entries to determine whether the DMP uses early-era
     ///     struct offsets (TESChildCell=4B, REFR=116) or final (TESChildCell=8B, REFR=120).
     ///     Tries reading with both layouts; the one producing more valid REFRs wins.
@@ -177,7 +159,7 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
 
         if (samples.Count == 0)
         {
-            return false; // No REFRs to probe → default to final layout
+            return false; // No REFRs to probe -> default to final layout
         }
 
         var earlyReader = new RuntimeRefrReader(context, true);
@@ -379,15 +361,9 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
     }
 
     /// <summary>
-    ///     Walk the BSExtraData linked list once and extract the subset of placement semantics
-    ///     that map cleanly onto REFR/XESP/XTEL/XLKR/XOWN-style fields.
+    ///     Inspect extra data for a single REFR entry (validates the REFR first).
     /// </summary>
-    private RuntimeRefrExtraData ReadExtraData(uint pHead)
-    {
-        return ReadExtraDataInspection(pHead).Data;
-    }
-
-    private RuntimeRefrExtraDataInspection? InspectExtraData(RuntimeEditorIdEntry entry)
+    private RuntimeExtraDataParser.RuntimeRefrExtraDataInspection? InspectExtraData(RuntimeEditorIdEntry entry)
     {
         if (entry.TesFormOffset == null)
         {
@@ -425,562 +401,29 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
         }
 
         var pHead = BinaryUtils.ReadUInt32BE(buffer, ExtraListHeadOffset);
-        return ReadExtraDataInspection(pHead);
-    }
-
-    private RuntimeRefrExtraDataInspection ReadExtraDataInspection(uint pHead)
-    {
-        var result = new RuntimeRefrExtraData();
-        var typeCounts = new Dictionary<byte, int>();
-        if (pHead == 0 || !_context.IsValidPointer(pHead))
-        {
-            return new RuntimeRefrExtraDataInspection(false, 0, typeCounts, result);
-        }
-
-        var visited = new HashSet<uint>();
-        var currentVa = pHead;
-        var visitedNodeCount = 0;
-
-        for (var i = 0; i < MaxExtraListNodes; i++)
-        {
-            if (currentVa == 0 || !visited.Add(currentVa))
-            {
-                break;
-            }
-
-            var nodeFileOffset = _context.VaToFileOffset(currentVa);
-            if (nodeFileOffset == null)
-            {
-                break;
-            }
-
-            // Read the BSExtraData header first: vfptr(4) + cEtype(1) + pad(3) + pNext(4).
-            var nodeBuffer = _context.ReadBytes(nodeFileOffset.Value, ExtraNodeSize);
-            if (nodeBuffer == null)
-            {
-                break;
-            }
-
-            var eType = nodeBuffer[ExtraEtypeOffset];
-            var nextVa = BinaryUtils.ReadUInt32BE(nodeBuffer, ExtraNextOffset);
-            visitedNodeCount++;
-            typeCounts[eType] = typeCounts.GetValueOrDefault(eType) + 1;
-
-            switch (eType)
-            {
-                case ExtraMapMarkerType:
-                {
-                    var mapMarker = ReadMapMarkerExtra(nodeFileOffset.Value);
-                    if (mapMarker.IsMapMarker)
-                    {
-                        result.IsMapMarker = true;
-                        result.MarkerType ??= mapMarker.MarkerType;
-                        result.MarkerName ??= mapMarker.MarkerName;
-                    }
-
-                    break;
-                }
-                case ExtraStartingPositionType:
-                    result.StartingPosition ??= ReadStartingPosition(nodeFileOffset.Value);
-                    break;
-                case ExtraOwnershipType:
-                    result.OwnerFormId ??= ReadOwnerFormId(nodeFileOffset.Value);
-                    break;
-                case ExtraPackageStartLocationType:
-                    result.PackageStartLocation ??= ReadPackageStartLocation(nodeFileOffset.Value);
-                    break;
-                case ExtraMerchantContainerType:
-                    result.MerchantContainerFormId ??= ReadMerchantContainerFormId(nodeFileOffset.Value);
-                    break;
-                case ExtraPersistentCellType:
-                    result.PersistentCellFormId ??= ReadPersistentCellFormId(nodeFileOffset.Value);
-                    break;
-                case ExtraEncounterZoneType:
-                    result.EncounterZoneFormId ??= ReadEncounterZoneFormId(nodeFileOffset.Value);
-                    break;
-                case ExtraLockType:
-                {
-                    var lockData = ReadLockData(nodeFileOffset.Value);
-                    result.LockLevel ??= lockData.LockLevel;
-                    result.LockKeyFormId ??= lockData.LockKeyFormId;
-                    result.LockFlags ??= lockData.LockFlags;
-                    result.LockNumTries ??= lockData.LockNumTries;
-                    result.LockTimesUnlocked ??= lockData.LockTimesUnlocked;
-                    break;
-                }
-                case ExtraTeleportType:
-                    result.DestinationDoorFormId ??= ReadTeleportDestinationDoorFormId(nodeFileOffset.Value);
-                    break;
-                case ExtraEnableStateParentType:
-                {
-                    var (enableParentFormId, enableParentFlags) = ReadEnableStateParent(nodeFileOffset.Value);
-                    if (!result.EnableParentFormId.HasValue && enableParentFormId.HasValue)
-                    {
-                        result.EnableParentFormId = enableParentFormId;
-                        result.EnableParentFlags = enableParentFlags;
-                    }
-
-                    break;
-                }
-                case ExtraStartingWorldOrCellType:
-                    result.StartingWorldOrCellFormId ??= ReadStartingWorldOrCellFormId(nodeFileOffset.Value);
-                    break;
-                case ExtraLinkedRefType:
-                    result.LinkedRefFormId ??= ReadLinkedRefFormId(nodeFileOffset.Value);
-                    break;
-                case ExtraLinkedRefChildrenType:
-                {
-                    var childFormIds = ReadLinkedRefChildrenFormIds(nodeFileOffset.Value);
-                    if (result.LinkedRefChildrenFormIds == null && childFormIds.Count > 0)
-                    {
-                        result.LinkedRefChildrenFormIds = childFormIds;
-                    }
-
-                    break;
-                }
-                case ExtraLeveledCreatureType:
-                {
-                    var leveledCreatureData = ReadLeveledCreatureData(nodeFileOffset.Value);
-                    result.LeveledCreatureOriginalBaseFormId ??= leveledCreatureData.OriginalBaseFormId;
-                    result.LeveledCreatureTemplateFormId ??= leveledCreatureData.TemplateFormId;
-                    break;
-                }
-                case ExtraRadiusType:
-                    result.Radius ??= ReadRadius(nodeFileOffset.Value);
-                    break;
-                case ExtraCountType:
-                    result.Count ??= ReadCount(nodeFileOffset.Value);
-                    break;
-                case ExtraEditorIDType:
-                    result.EditorId ??= ReadEditorId(nodeFileOffset.Value);
-                    break;
-            }
-
-            currentVa = nextVa;
-        }
-
-        return new RuntimeRefrExtraDataInspection(true, visitedNodeCount, typeCounts, result);
-    }
-
-    private (bool IsMapMarker, ushort? MarkerType, string? MarkerName) ReadMapMarkerExtra(long nodeFileOffset)
-    {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraPointerNodeSize);
-        if (nodeBuffer == null)
-        {
-            return (true, null, null);
-        }
-
-        var pMapData = BinaryUtils.ReadUInt32BE(nodeBuffer, ExtraPayloadPtrOffset);
-        if (pMapData == 0 || !_context.IsValidPointer(pMapData))
-        {
-            return (true, null, null);
-        }
-
-        var mapDataFileOffset = _context.VaToFileOffset(pMapData);
-        return mapDataFileOffset == null
-            ? (true, null, null)
-            : ReadMapMarkerData(mapDataFileOffset.Value);
-    }
-
-    private uint? ReadOwnerFormId(long nodeFileOffset)
-    {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraPointerNodeSize);
-        if (nodeBuffer == null)
-        {
-            return null;
-        }
-
-        var ownerVa = BinaryUtils.ReadUInt32BE(nodeBuffer, ExtraPayloadPtrOffset);
-        return _context.FollowPointerVaToFormId(ownerVa);
-    }
-
-    private PositionSubrecord? ReadStartingPosition(long nodeFileOffset)
-    {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraStartingPositionNodeSize);
-        if (nodeBuffer == null)
-        {
-            return null;
-        }
-
-        var x = ReadValidatedWorldCoord(nodeBuffer, ExtraPayloadPtrOffset);
-        var y = ReadValidatedWorldCoord(nodeBuffer, ExtraPayloadPtrOffset + 4);
-        var z = ReadValidatedWorldCoord(nodeBuffer, ExtraPayloadPtrOffset + 8);
-        var rotX = ReadValidatedRotation(nodeBuffer, ExtraPayloadPtrOffset + 12);
-        var rotY = ReadValidatedRotation(nodeBuffer, ExtraPayloadPtrOffset + 16);
-        var rotZ = ReadValidatedRotation(nodeBuffer, ExtraPayloadPtrOffset + 20);
-        if (x == null || y == null || z == null || rotX == null || rotY == null || rotZ == null)
-        {
-            return null;
-        }
-
-        return new PositionSubrecord(
-            x.Value,
-            y.Value,
-            z.Value,
-            rotX.Value,
-            rotY.Value,
-            rotZ.Value,
-            nodeFileOffset + ExtraPayloadPtrOffset,
-            true);
-    }
-
-    private RuntimePackageStartLocation? ReadPackageStartLocation(long nodeFileOffset)
-    {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraPackageStartLocationNodeSize);
-        if (nodeBuffer == null)
-        {
-            return null;
-        }
-
-        var locationVa = BinaryUtils.ReadUInt32BE(nodeBuffer, ExtraPayloadPtrOffset);
-        var locationFormId = _context.FollowPointerVaToFormId(locationVa);
-        if (locationFormId is not > 0)
-        {
-            return null;
-        }
-
-        var x = ReadValidatedWorldCoord(nodeBuffer, ExtraPayloadPtrOffset + 4);
-        var y = ReadValidatedWorldCoord(nodeBuffer, ExtraPayloadPtrOffset + 8);
-        var z = ReadValidatedWorldCoord(nodeBuffer, ExtraPayloadPtrOffset + 12);
-        var rotZ = ReadValidatedRotation(nodeBuffer, ExtraPayloadPtrOffset + 16);
-        if (x == null || y == null || z == null || rotZ == null)
-        {
-            return null;
-        }
-
-        return new RuntimePackageStartLocation(locationFormId, x.Value, y.Value, z.Value, rotZ.Value);
-    }
-
-    private uint? ReadMerchantContainerFormId(long nodeFileOffset)
-    {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraPointerNodeSize);
-        if (nodeBuffer == null)
-        {
-            return null;
-        }
-
-        var containerVa = BinaryUtils.ReadUInt32BE(nodeBuffer, ExtraPayloadPtrOffset);
-        return ReadPlacedRefFormId(containerVa);
-    }
-
-    private uint? ReadPersistentCellFormId(long nodeFileOffset)
-    {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraPointerNodeSize);
-        if (nodeBuffer == null)
-        {
-            return null;
-        }
-
-        var cellVa = BinaryUtils.ReadUInt32BE(nodeBuffer, ExtraPayloadPtrOffset);
-        return _context.FollowPointerVaToFormId(cellVa, 0x39);
-    }
-
-    private uint? ReadStartingWorldOrCellFormId(long nodeFileOffset)
-    {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraStartingWorldOrCellNodeSize);
-        if (nodeBuffer == null)
-        {
-            return null;
-        }
-
-        var formVa = BinaryUtils.ReadUInt32BE(nodeBuffer, ExtraPayloadPtrOffset);
-        return _context.FollowPointerVaToFormId(formVa);
-    }
-
-    private uint? ReadEncounterZoneFormId(long nodeFileOffset)
-    {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraPointerNodeSize);
-        if (nodeBuffer == null)
-        {
-            return null;
-        }
-
-        var zoneVa = BinaryUtils.ReadUInt32BE(nodeBuffer, ExtraPayloadPtrOffset);
-        return _context.FollowPointerVaToFormId(zoneVa, 0x61);
-    }
-
-    private RuntimeLeveledCreatureData ReadLeveledCreatureData(long nodeFileOffset)
-    {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraLeveledCreatureNodeSize);
-        if (nodeBuffer == null)
-        {
-            return new RuntimeLeveledCreatureData();
-        }
-
-        return new RuntimeLeveledCreatureData
-        {
-            OriginalBaseFormId = _context.FollowPointerVaToFormId(
-                BinaryUtils.ReadUInt32BE(nodeBuffer, ExtraPayloadPtrOffset)),
-            TemplateFormId = _context.FollowPointerVaToFormId(
-                BinaryUtils.ReadUInt32BE(nodeBuffer, ExtraPayloadPtrOffset + 4))
-        };
-    }
-
-    private float? ReadRadius(long nodeFileOffset)
-    {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraPointerNodeSize);
-        if (nodeBuffer == null)
-        {
-            return null;
-        }
-
-        var radius = BinaryUtils.ReadFloatBE(nodeBuffer, ExtraPayloadPtrOffset);
-        return RuntimeMemoryContext.IsNormalFloat(radius) && radius > 0f && radius <= 500_000f
-            ? radius
-            : null;
-    }
-
-    private short? ReadCount(long nodeFileOffset)
-    {
-        // ExtraCount: BSExtraData(12) + iCount(int16 at +12) = 16 bytes total.
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraPointerNodeSize);
-        if (nodeBuffer == null)
-        {
-            return null;
-        }
-
-        return BinaryUtils.ReadInt16BE(nodeBuffer, ExtraPayloadPtrOffset);
-    }
-
-    private string? ReadEditorId(long nodeFileOffset)
-    {
-        // ExtraEditorID: BSExtraData(12) + BSStringT<char>(8) at +12 = 20 bytes total.
-        // BSStringT layout: char* pString(4) + uint16 sLen(2) + uint16 maxLen(2).
-        return _context.ReadBSStringT(nodeFileOffset, ExtraPayloadPtrOffset);
-    }
-
-    private uint? ReadTeleportDestinationDoorFormId(long nodeFileOffset)
-    {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraPointerNodeSize);
-        if (nodeBuffer == null)
-        {
-            return null;
-        }
-
-        var teleportDataVa = BinaryUtils.ReadUInt32BE(nodeBuffer, ExtraPayloadPtrOffset);
-        if (teleportDataVa == 0 || !_context.IsValidPointer(teleportDataVa))
-        {
-            return null;
-        }
-
-        var teleportDataFileOffset = _context.VaToFileOffset(teleportDataVa);
-        if (teleportDataFileOffset == null)
-        {
-            return null;
-        }
-
-        var teleportBuffer = _context.ReadBytes(teleportDataFileOffset.Value, DoorTeleportLinkedDoorPtrSize);
-        if (teleportBuffer == null)
-        {
-            return null;
-        }
-
-        var linkedDoorVa = BinaryUtils.ReadUInt32BE(teleportBuffer);
-        return ReadPlacedRefFormId(linkedDoorVa);
-    }
-
-    private (uint? ParentFormId, byte? Flags) ReadEnableStateParent(long nodeFileOffset)
-    {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraEnableStateParentNodeSize);
-        if (nodeBuffer == null)
-        {
-            return (null, null);
-        }
-
-        var parentVa = BinaryUtils.ReadUInt32BE(nodeBuffer, ExtraPayloadPtrOffset);
-        var parentFormId = ReadPlacedRefFormId(parentVa);
-        return parentFormId.HasValue
-            ? (parentFormId, nodeBuffer[ExtraEnableParentFlagsOffset])
-            : (null, null);
-    }
-
-    private uint? ReadLinkedRefFormId(long nodeFileOffset)
-    {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraPointerNodeSize);
-        if (nodeBuffer == null)
-        {
-            return null;
-        }
-
-        var linkedRefVa = BinaryUtils.ReadUInt32BE(nodeBuffer, ExtraPayloadPtrOffset);
-        return ReadPlacedRefFormId(linkedRefVa);
-    }
-
-    private List<uint> ReadLinkedRefChildrenFormIds(long nodeFileOffset)
-    {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraLinkedRefChildrenNodeSize);
-        if (nodeBuffer == null)
-        {
-            return [];
-        }
-
-        return ReadPlacedRefSimpleList(nodeBuffer, ExtraPayloadPtrOffset);
-    }
-
-    private RuntimeRefrLockData ReadLockData(long nodeFileOffset)
-    {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraPointerNodeSize);
-        if (nodeBuffer == null)
-        {
-            return new RuntimeRefrLockData();
-        }
-
-        var lockVa = BinaryUtils.ReadUInt32BE(nodeBuffer, ExtraPayloadPtrOffset);
-        if (lockVa == 0 || !_context.IsValidPointer(lockVa))
-        {
-            return new RuntimeRefrLockData();
-        }
-
-        var lockFileOffset = _context.VaToFileOffset(lockVa);
-        if (lockFileOffset == null)
-        {
-            return new RuntimeRefrLockData();
-        }
-
-        var lockBuffer = _context.ReadBytes(lockFileOffset.Value, RefrLockSize);
-        if (lockBuffer == null)
-        {
-            return new RuntimeRefrLockData();
-        }
-
-        return new RuntimeRefrLockData
-        {
-            LockLevel = lockBuffer[RefrLockLevelOffset],
-            LockKeyFormId = _context.FollowPointerVaToFormId(
-                BinaryUtils.ReadUInt32BE(lockBuffer, RefrLockKeyOffset)),
-            LockFlags = lockBuffer[RefrLockFlagsOffset],
-            LockNumTries = BinaryUtils.ReadUInt32BE(lockBuffer, RefrLockNumTriesOffset),
-            LockTimesUnlocked = BinaryUtils.ReadUInt32BE(lockBuffer, RefrLockTimesUnlockedOffset)
-        };
-    }
-
-    private uint? ReadPlacedRefFormId(uint va)
-    {
-        if (va == 0)
-        {
-            return null;
-        }
-
-        var fileOffset = _context.VaToFileOffset(va);
-        if (fileOffset == null)
-        {
-            return null;
-        }
-
-        var formBuffer = _context.ReadBytes(fileOffset.Value, 16);
-        if (formBuffer == null)
-        {
-            return null;
-        }
-
-        var formType = formBuffer[4];
-        if (formType < 0x3A || formType > 0x3C)
-        {
-            return null;
-        }
-
-        var formId = BinaryUtils.ReadUInt32BE(formBuffer, 12);
-        return formId is 0 or 0xFFFFFFFF ? null : formId;
-    }
-
-    private static float? ReadValidatedWorldCoord(byte[] buffer, int offset)
-    {
-        if (offset + 4 > buffer.Length)
-        {
-            return null;
-        }
-
-        var value = BinaryUtils.ReadFloatBE(buffer, offset);
-        return RuntimeMemoryContext.IsNormalFloat(value) && Math.Abs(value) <= 500_000f
-            ? value
-            : null;
-    }
-
-    private static float? ReadValidatedRotation(byte[] buffer, int offset)
-    {
-        if (offset + 4 > buffer.Length)
-        {
-            return null;
-        }
-
-        var value = BinaryUtils.ReadFloatBE(buffer, offset);
-        return RuntimeMemoryContext.IsNormalFloat(value) && value >= -10f && value <= 10f
-            ? value
-            : null;
-    }
-
-    private List<uint> ReadPlacedRefSimpleList(byte[] buffer, int listHeadOffset)
-    {
-        var formIds = new List<uint>();
-        if (listHeadOffset + 8 > buffer.Length)
-        {
-            return formIds;
-        }
-
-        var itemPtr = BinaryUtils.ReadUInt32BE(buffer, listHeadOffset);
-        var nextPtr = BinaryUtils.ReadUInt32BE(buffer, listHeadOffset + 4);
-
-        AddPlacedRefFormId(formIds, itemPtr);
-
-        var visited = new HashSet<uint>();
-        while (nextPtr != 0 &&
-               formIds.Count < RuntimeMemoryContext.MaxListItems &&
-               _context.IsValidPointer(nextPtr) &&
-               visited.Add(nextPtr))
-        {
-            var nodeFileOffset = _context.VaToFileOffset(nextPtr);
-            if (nodeFileOffset == null)
-            {
-                break;
-            }
-
-            var nodeBuffer = _context.ReadBytes(nodeFileOffset.Value, 8);
-            if (nodeBuffer == null)
-            {
-                break;
-            }
-
-            itemPtr = BinaryUtils.ReadUInt32BE(nodeBuffer);
-            nextPtr = BinaryUtils.ReadUInt32BE(nodeBuffer, 4);
-            AddPlacedRefFormId(formIds, itemPtr);
-        }
-
-        return formIds;
-    }
-
-    private void AddPlacedRefFormId(List<uint> formIds, uint itemPtr)
-    {
-        var formId = ReadPlacedRefFormId(itemPtr);
-        if (formId is > 0 && !formIds.Contains(formId.Value))
-        {
-            formIds.Add(formId.Value);
-        }
+        return _extraParser.ReadExtraDataInspection(pHead);
     }
 
     /// <summary>
-    ///     Read MapMarkerData struct at the given file offset.
-    ///     Layout: TESFullName(0-11) + cFlags(12) + cOriginalFlags(13) + sType(14, uint16) + pReputation(16)
+    ///     Read the TESObjectREFR struct (120 bytes final, 116 bytes early) using VA-based region validation.
     /// </summary>
-    private (bool IsMapMarker, ushort? MarkerType, string? MarkerName) ReadMapMarkerData(long mapDataFileOffset)
+    private byte[]? ReadRefrStructBuffer(RuntimeEditorIdEntry entry, long fileOffset)
     {
-        // Read enough for the MapMarkerData struct (20 bytes)
-        var mapBuffer = _context.ReadBytes(mapDataFileOffset, 20);
-        if (mapBuffer == null)
+        if (entry.TesFormPointer.HasValue)
         {
-            return (true, null, null);
+            return _context.ReadBytesAtVa(entry.TesFormPointer.Value, RefrStructSize);
         }
 
-        var markerType = BinaryUtils.ReadUInt16BE(mapBuffer, MapMarkerTypeOffset);
+        if (fileOffset + RefrStructSize > _context.FileSize)
+        {
+            return null;
+        }
 
-        // Read marker name via BSFixedString at TESFullName+4 (same layout as BSStringT)
-        var markerName = _context.ReadBSStringT(mapDataFileOffset, MapMarkerNameFieldOffset);
-
-        return (true, markerType, markerName);
+        return _context.ReadBytes(fileOffset, RefrStructSize);
     }
 
     /// <summary>
     ///     Follow a pointer to a TESObjectCELL and return both FormID and IsInterior flag.
-    ///     Reads 53 bytes of the cell struct: TESForm header (24B) + enough for cCellFlags at offset 52.
     /// </summary>
     private (uint? FormId, bool? IsInterior) FollowPointerToCellInfo(byte[] buffer, int pointerOffset)
     {
@@ -1028,7 +471,6 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
 
     // Final: TESObjectREFR = 120 bytes. TESForm(40) + TESChildCell(8) + OBJ_REFR(28) + more.
     // Early: TESObjectREFR = 116 bytes. TESForm(40) + TESChildCell(4) + OBJ_REFR(28) + more.
-    // Shift is -4 for all fields after offset 40 (TESChildCell data field absent in early builds).
     private const int FinalRefrStructSize = 120;
     private const int EarlyRefrStructSize = 116;
     private const int FormFlagsOffset = 8;
@@ -1063,138 +505,6 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
 
     // TESForm flags
     private const uint DeletedFlag = 0x20;
-
-    // BSExtraData node layout (12 bytes): vfptr(0) + cEtype(4) + pad(5-7) + pNext(8)
-    private const int ExtraNodeSize = 12;
-    private const int ExtraEtypeOffset = 4;
-    private const int ExtraNextOffset = 8;
-
-    // Common extra-data node shapes.
-    private const int ExtraPointerNodeSize = 16;
-    private const int ExtraEnableStateParentNodeSize = 20;
-    private const int ExtraPayloadPtrOffset = 12;
-    private const int ExtraEnableParentFlagsOffset = 16;
-
-    // Extra data type IDs from EXTRA_DATA_TYPE in the final debug PDB.
-    private const byte ExtraPersistentCellType = 0x0C; // 12 decimal
-    private const byte ExtraStartingPositionType = 0x0F; // 15 decimal
-    private const byte ExtraOwnershipType = 0x21; // 33 decimal
-    private const byte ExtraPackageStartLocationType = 0x18; // 24 decimal
-    private const byte ExtraMerchantContainerType = 0x3C; // 60 decimal
-    private const byte ExtraLockType = 0x2A; // 42 decimal
-    private const byte ExtraTeleportType = 0x2B; // 43 decimal
-    private const byte ExtraMapMarkerType = 0x2C; // 44 decimal
-    private const byte ExtraLeveledCreatureType = 0x2E; // 46 decimal
-    private const byte ExtraEnableStateParentType = 0x37; // 55 decimal
-    private const byte ExtraRadiusType = 0x5C; // 92 decimal
-    private const byte ExtraStartingWorldOrCellType = 0x49; // 73 decimal
-    private const byte ExtraEncounterZoneType = 0x74; // 116 decimal
-    private const byte ExtraCountType = 0x15; // 21 decimal
-    private const byte ExtraLinkedRefType = 0x51; // 81 decimal
-    private const byte ExtraLinkedRefChildrenType = 0x52; // 82 decimal
-    private const byte ExtraEditorIDType = 0x62; // 98 decimal
-    private const int ExtraLinkedRefChildrenNodeSize = 20;
-    private const int ExtraStartingPositionNodeSize = 36;
-    private const int ExtraPackageStartLocationNodeSize = 32;
-    private const int ExtraStartingWorldOrCellNodeSize = 16;
-    private const int ExtraLeveledCreatureNodeSize = 20;
-
-    // MapMarkerData (20 bytes): TESFullName(0-11) + cFlags(12) + cOriginalFlags(13) + sType(14, uint16) + pReputation(16)
-    // TESFullName: vfptr(0) + cFullName(4, BSFixedString 8B)
-    private const int MapMarkerNameFieldOffset = 4; // BSFixedString at TESFullName+4
-    private const int MapMarkerTypeOffset = 14;
-
-    // DoorTeleportData: pLinkedDoor(0) + position/rotation/flags...
-    private const int DoorTeleportLinkedDoorPtrSize = 4;
-
-    // REFR_LOCK: cBaseLevel(0) + pKey(4) + cFlags(8) + uiNumTries(12) + uiTimesUnlocked(16)
-    private const int RefrLockSize = 20;
-    private const int RefrLockLevelOffset = 0;
-    private const int RefrLockKeyOffset = 4;
-    private const int RefrLockFlagsOffset = 8;
-    private const int RefrLockNumTriesOffset = 12;
-    private const int RefrLockTimesUnlockedOffset = 16;
-
-    private const int MaxExtraListNodes = 100;
-
-    private struct RuntimeRefrExtraData
-    {
-        public bool IsMapMarker { get; set; }
-
-        public ushort? MarkerType { get; set; }
-
-        public string? MarkerName { get; set; }
-
-        public uint? OwnerFormId { get; set; }
-
-        public uint? EncounterZoneFormId { get; set; }
-
-        public PositionSubrecord? StartingPosition { get; set; }
-
-        public uint? StartingWorldOrCellFormId { get; set; }
-
-        public RuntimePackageStartLocation? PackageStartLocation { get; set; }
-
-        public uint? MerchantContainerFormId { get; set; }
-
-        public uint? LeveledCreatureOriginalBaseFormId { get; set; }
-
-        public uint? LeveledCreatureTemplateFormId { get; set; }
-
-        public float? Radius { get; set; }
-
-        public byte? LockLevel { get; set; }
-
-        public uint? LockKeyFormId { get; set; }
-
-        public byte? LockFlags { get; set; }
-
-        public uint? LockNumTries { get; set; }
-
-        public uint? LockTimesUnlocked { get; set; }
-
-        public uint? DestinationDoorFormId { get; set; }
-
-        public uint? EnableParentFormId { get; set; }
-
-        public byte? EnableParentFlags { get; set; }
-
-        public uint? PersistentCellFormId { get; set; }
-
-        public uint? LinkedRefFormId { get; set; }
-
-        public List<uint>? LinkedRefChildrenFormIds { get; set; }
-
-        public short? Count { get; set; }
-
-        public string? EditorId { get; set; }
-    }
-
-    private readonly record struct RuntimeRefrLockData
-    {
-        public byte? LockLevel { get; init; }
-
-        public uint? LockKeyFormId { get; init; }
-
-        public byte? LockFlags { get; init; }
-
-        public uint? LockNumTries { get; init; }
-
-        public uint? LockTimesUnlocked { get; init; }
-    }
-
-    private readonly record struct RuntimeLeveledCreatureData
-    {
-        public uint? OriginalBaseFormId { get; init; }
-
-        public uint? TemplateFormId { get; init; }
-    }
-
-    private sealed record RuntimeRefrExtraDataInspection(
-        bool HasExtraData,
-        int VisitedNodeCount,
-        IReadOnlyDictionary<byte, int> TypeCounts,
-        RuntimeRefrExtraData Data);
 
     #endregion
 }

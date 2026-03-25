@@ -120,7 +120,11 @@ internal static class DialogueConversationBuilder
             var textBlock = DialogueTreeRenderer.CreateResponseText(response.Text!);
             if (onResponseSelected != null)
             {
-                textBlock.Tapped += (_, e) => { onResponseSelected(infoNode); e.Handled = true; };
+                textBlock.Tapped += (_, e) =>
+                {
+                    onResponseSelected(infoNode);
+                    e.Handled = true;
+                };
             }
 
             content.Children.Add(textBlock);
@@ -134,7 +138,11 @@ internal static class DialogueConversationBuilder
                 var textBlock = DialogueTreeRenderer.CreateResponseText(subtitle.Text, isSubtitleFallback: true);
                 if (onResponseSelected != null)
                 {
-                    textBlock.Tapped += (_, e) => { onResponseSelected(infoNode); e.Handled = true; };
+                    textBlock.Tapped += (_, e) =>
+                    {
+                        onResponseSelected(infoNode);
+                        e.Handled = true;
+                    };
                 }
 
                 content.Children.Add(textBlock);
@@ -145,7 +153,11 @@ internal static class DialogueConversationBuilder
                 // DMP files often lack response text — show placeholder
                 var textBlock = DialogueTreeRenderer.CreateResponseText(
                     "[Response not present in file]", isSubtitleFallback: true);
-                textBlock.Tapped += (_, e) => { onResponseSelected(infoNode); e.Handled = true; };
+                textBlock.Tapped += (_, e) =>
+                {
+                    onResponseSelected(infoNode);
+                    e.Handled = true;
+                };
                 content.Children.Add(textBlock);
             }
         }

@@ -27,20 +27,9 @@ internal static class BsaDiscovery
         }
 
         return new BsaDiscoveryResult(
-            MeshesBsaPath: meshesBsas[0],
-            ExtraMeshesBsaPaths: meshesBsas.Length > 1 ? meshesBsas[1..] : null,
-            TexturesBsaPaths: texturesBsas,
-            AutoDetected: true);
+            meshesBsas[0],
+            meshesBsas.Length > 1 ? meshesBsas[1..] : null,
+            texturesBsas,
+            true);
     }
-}
-
-internal sealed record BsaDiscoveryResult(
-    string? MeshesBsaPath,
-    string[]? ExtraMeshesBsaPaths,
-    string[] TexturesBsaPaths,
-    bool AutoDetected)
-{
-    public static readonly BsaDiscoveryResult Empty = new(null, null, [], false);
-
-    public bool HasMeshes => MeshesBsaPath != null;
 }

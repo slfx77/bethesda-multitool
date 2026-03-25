@@ -91,7 +91,8 @@ internal static class DialogueViewerHelper
 
     /// <summary>
     ///     Resolves the best prompt text for a player choice button, using a priority chain:
-    ///     Linked topic's own text (FullName → DummyPrompt → INFO PromptText) → sourceInfo PromptText → fallbacks → "[Continue]".
+    ///     Linked topic's own text (FullName → DummyPrompt → INFO PromptText) → sourceInfo PromptText → fallbacks →
+    ///     "[Continue]".
     ///     The linked topic's own text takes priority over the source INFO's prompt to avoid
     ///     duplicate display when multiple topics share the same source INFO prompt text.
     /// </summary>

@@ -1,5 +1,6 @@
 using System.Text;
 using FalloutXbox360Utils.CLI;
+using FalloutXbox360Utils.CLI.Formatters;
 using Xunit;
 using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
 using static FalloutXbox360Utils.Tests.Helpers.EsmTestRecordBuilder;

@@ -6,9 +6,8 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 ///     Handles dialogue-to-topic linking, speaker propagation, EditorID convention matching,
 ///     and GRUP-based INFO-to-DIAL linking.
 /// </summary>
-internal sealed class DialogueTopicMerger(RecordParserContext context)
+internal sealed class DialogueTopicMerger(RecordParserContext context) : RecordHandlerBase(context)
 {
-    private readonly RecordParserContext _context = context;
 
     /// <summary>
     ///     Link dialogue records to quests by matching EditorID naming conventions.
@@ -275,7 +274,7 @@ internal sealed class DialogueTopicMerger(RecordParserContext context)
         List<DialogueRecord> dialogues,
         List<DialogTopicRecord> topics)
     {
-        var topicToInfoMap = _context.ScanResult.TopicToInfoMap;
+        var topicToInfoMap = Context.ScanResult.TopicToInfoMap;
         if (topicToInfoMap.Count == 0)
         {
             Logger.Instance.Debug("  [Semantic] No TopicToInfoMap available -- skipping GRUP-based linking");

@@ -1,4 +1,3 @@
-using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 
@@ -202,7 +201,7 @@ public sealed class RuntimeParityDumpIntegrationTests
 
         Assert.True(
             allDiagnostics.Any(d => d.ValidPtrs > 0),
-            $"Expected valid TESConversationData pointers in at least one dump.");
+            "Expected valid TESConversationData pointers in at least one dump.");
     }
 
     [Fact]
@@ -285,5 +284,4 @@ public sealed class RuntimeParityDumpIntegrationTests
             $"Expected majority of decoded projectiles to have non-zero speed. " +
             $"Decoded: {totalDecoded}, With speed: {totalWithSpeed}");
     }
-
 }

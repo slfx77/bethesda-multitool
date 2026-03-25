@@ -6,14 +6,6 @@ using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Geometry;
 
-internal readonly record struct NifTriStripSectionInfo(
-    int DeclaredTriangleCount,
-    int StripCount,
-    ushort[] StripLengths,
-    int CandidateTriangleWindowCount,
-    int DegenerateTriangleCount,
-    int ExtractedTriangleCount);
-
 /// <summary>
 ///     Extracts and converts triangle strip data from NIF geometry blocks.
 ///     Handles NiTriStripsData parsing, strip-to-triangle conversion,

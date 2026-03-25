@@ -1,0 +1,10 @@
+global using FalloutXbox360Utils.CLI.Commands.Analysis;
+global using FalloutXbox360Utils.CLI.Commands.Bsa;
+global using FalloutXbox360Utils.CLI.Commands.Dialogue;
+global using FalloutXbox360Utils.CLI.Commands.Dmp;
+global using FalloutXbox360Utils.CLI.Commands.Esm;
+global using FalloutXbox360Utils.CLI.Commands.Export;
+global using FalloutXbox360Utils.CLI.Commands.Save;
+global using FalloutXbox360Utils.CLI.Commands.Version;
+global using FalloutXbox360Utils.CLI.Formatters;
+global using FalloutXbox360Utils.CLI.Shared;

@@ -1,6 +1,7 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.RuntimeBuffer;
 using FalloutXbox360Utils.Core.Strings;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
@@ -330,6 +331,65 @@ internal static class CsvSupplementalWriter
         }
 
         return files;
+    }
+
+    public static Dictionary<string, string> GenerateStringOwnershipCsvs(RuntimeStringOwnershipAnalysis analysis)
+    {
+        var files = new Dictionary<string, string>();
+
+        if (analysis.ReferencedOwnerUnknownHits.Count > 0)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine(
+                "Text,Category,Length,StringFileOffset,StringVA,InboundPointerCount,FirstReferrerFileOffset,FirstReferrerVA,FirstReferrerContext");
+
+            foreach (var hit in analysis.ReferencedOwnerUnknownHits
+                         .OrderBy(h => h.Category.ToString(), StringComparer.Ordinal)
+                         .ThenBy(h => h.Text, StringComparer.Ordinal)
+                         .ThenBy(h => h.FileOffset))
+            {
+                sb.AppendLine(string.Join(",",
+                    Fmt.CsvEscape(hit.Text),
+                    hit.Category.ToString(),
+                    hit.Length.ToString(),
+                    FormatOffset(hit.FileOffset),
+                    FormatOffset(hit.VirtualAddress),
+                    hit.InboundPointerCount.ToString(),
+                    FormatOffset(hit.OwnerResolution?.ReferrerFileOffset),
+                    FormatOffset(hit.OwnerResolution?.ReferrerVa),
+                    Fmt.CsvEscape(hit.OwnerResolution?.ReferrerContext)));
+            }
+
+            files["string_unknown_owners.csv"] = sb.ToString();
+        }
+
+        if (analysis.UnreferencedHits.Count > 0)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("Text,Category,Length,StringFileOffset,StringVA");
+
+            foreach (var hit in analysis.UnreferencedHits
+                         .OrderBy(h => h.Category.ToString(), StringComparer.Ordinal)
+                         .ThenBy(h => h.Text, StringComparer.Ordinal)
+                         .ThenBy(h => h.FileOffset))
+            {
+                sb.AppendLine(string.Join(",",
+                    Fmt.CsvEscape(hit.Text),
+                    hit.Category.ToString(),
+                    hit.Length.ToString(),
+                    FormatOffset(hit.FileOffset),
+                    FormatOffset(hit.VirtualAddress)));
+            }
+
+            files["string_unreferenced.csv"] = sb.ToString();
+        }
+
+        return files;
+
+        static string FormatOffset(long? value)
+        {
+            return value.HasValue ? $"0x{value.Value:X}" : "";
+        }
     }
 
     public static string GenerateTerminalsCsv(List<TerminalRecord> terminals, FormIdResolver resolver)

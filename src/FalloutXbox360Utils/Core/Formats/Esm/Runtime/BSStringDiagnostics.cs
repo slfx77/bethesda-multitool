@@ -9,6 +9,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 /// </summary>
 internal static class BSStringDiagnostics
 {
+    private const int MaxSamplesPerBucket = 3;
     private static readonly ConcurrentDictionary<(string FieldName, BSStringFailure Reason), int> _counts = new();
 
     /// <summary>
@@ -17,11 +18,6 @@ internal static class BSStringDiagnostics
     /// </summary>
     private static readonly ConcurrentDictionary<(string FieldName, BSStringFailure Reason), ConcurrentBag<DiagSample>>
         _samples = new();
-
-    private const int MaxSamplesPerBucket = 3;
-
-    internal record DiagSample(uint FormId, string? EditorId, byte FormType, long TesFormOffset, int FieldOffset,
-        uint Pointer, ushort Length, string? RawHex, string? PartialData);
 
     public static void Record(string fieldName, BSStringFailure failure)
     {
@@ -87,7 +83,9 @@ internal static class BSStringDiagnostics
                     foreach (var s in bag)
                     {
                         var typeCode = RuntimeBuildOffsets.GetRecordTypeCode(s.FormType) ?? $"0x{s.FormType:X2}";
-                        var id = s.EditorId != null ? $"[{typeCode}] {s.EditorId} (0x{s.FormId:X8})" : $"[{typeCode}] 0x{s.FormId:X8}";
+                        var id = s.EditorId != null
+                            ? $"[{typeCode}] {s.EditorId} (0x{s.FormId:X8})"
+                            : $"[{typeCode}] 0x{s.FormId:X8}";
                         var detail = kv.Key.Reason switch
                         {
                             BSStringFailure.LengthTooLarge =>
@@ -112,4 +110,15 @@ internal static class BSStringDiagnostics
 
         return string.Join("\n", lines);
     }
+
+    internal record DiagSample(
+        uint FormId,
+        string? EditorId,
+        byte FormType,
+        long TesFormOffset,
+        int FieldOffset,
+        uint Pointer,
+        ushort Length,
+        string? RawHex,
+        string? PartialData);
 }

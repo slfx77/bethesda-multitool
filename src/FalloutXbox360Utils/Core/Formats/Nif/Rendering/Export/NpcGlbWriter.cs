@@ -4,6 +4,7 @@ using SharpGLTF.Geometry.VertexTypes;
 using SharpGLTF.Materials;
 using SharpGLTF.Memory;
 using SharpGLTF.Scenes;
+using SharpGLTF.Schema2;
 using AlphaMode = SharpGLTF.Materials.AlphaMode;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
@@ -35,7 +36,7 @@ internal static class NpcGlbWriter
         return ms.ToArray();
     }
 
-    private static SharpGLTF.Schema2.ModelRoot BuildGltfScene(
+    private static ModelRoot BuildGltfScene(
         NpcExportScene scene,
         NifTextureResolver textureResolver)
     {

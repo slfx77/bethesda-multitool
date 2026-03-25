@@ -1,6 +1,9 @@
+using FalloutXbox360Utils.Core.Coverage;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.RuntimeBuffer;
+using FalloutXbox360Utils.Core.Strings;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using Xunit;
 
@@ -152,6 +155,66 @@ public class ReportGeneratorTests
 
         Assert.Single(files);
         Assert.True(files.ContainsKey("summary.txt"));
+    }
+
+    [Fact]
+    public void GenerateAllReports_WithStringOwnership_EmitsOwnershipFiles()
+    {
+        var ownership = new RuntimeStringOwnershipAnalysis();
+        var unknown = new RuntimeStringHit
+        {
+            Text = @"meshes\props\crate01.nif",
+            Category = StringCategory.FilePath,
+            GapClassification = GapClassification.StringPool,
+            FileOffset = 0x120,
+            VirtualAddress = 0x40120,
+            Length = 24,
+            OwnershipStatus = RuntimeStringOwnershipStatus.ReferencedOwnerUnknown,
+            InboundPointerCount = 2,
+            OwnerResolution = new RuntimeStringOwnerResolution
+            {
+                ReferrerFileOffset = 0x200,
+                ReferrerVa = 0x40200,
+                ReferrerContext = "PointerDense:synthetic"
+            }
+        };
+        var unreferenced = new RuntimeStringHit
+        {
+            Text = "TestEditor_One",
+            Category = StringCategory.EditorId,
+            GapClassification = GapClassification.AsciiText,
+            FileOffset = 0x160,
+            VirtualAddress = 0x40160,
+            Length = 14,
+            OwnershipStatus = RuntimeStringOwnershipStatus.Unreferenced
+        };
+
+        ownership.AllHits.Add(unknown);
+        ownership.AllHits.Add(unreferenced);
+        ownership.ReferencedOwnerUnknownHits.Add(unknown);
+        ownership.UnreferencedHits.Add(unreferenced);
+        ownership.CategoryCounts[StringCategory.FilePath] = 1;
+        ownership.CategoryCounts[StringCategory.EditorId] = 1;
+        ownership.StatusCounts[RuntimeStringOwnershipStatus.ReferencedOwnerUnknown] = 1;
+        ownership.StatusCounts[RuntimeStringOwnershipStatus.Unreferenced] = 1;
+
+        var files = GeckReportGenerator.GenerateAllReports(
+            new ReportDataSources(EmptyRecords(), StringOwnership: ownership));
+
+        Assert.Contains("string_ownership_summary.txt", files.Keys);
+        Assert.Contains("string_unknown_owners.csv", files.Keys);
+        Assert.Contains("string_unreferenced.csv", files.Keys);
+        Assert.Contains("Referenced, owner unknown", files["string_ownership_summary.txt"]);
+    }
+
+    [Fact]
+    public void GenerateAllReports_WithoutStringOwnership_DoesNotEmitOwnershipFiles()
+    {
+        var files = GeckReportGenerator.GenerateAllReports(new ReportDataSources(EmptyRecords()));
+
+        Assert.DoesNotContain("string_ownership_summary.txt", files.Keys);
+        Assert.DoesNotContain("string_unknown_owners.csv", files.Keys);
+        Assert.DoesNotContain("string_unreferenced.csv", files.Keys);
     }
 
     #endregion

@@ -52,6 +52,17 @@ internal static class NifBlockParsers
                name.Contains("EditorMarker", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    ///     Pip-Boy screen/glare shapes that show dynamic UI in-game but render as
+    ///     flat untextured surfaces in static exports.
+    /// </summary>
+    internal static bool IsPipBoyScreenShape(string? name)
+    {
+        return name != null &&
+               (name.Equals("ScreenLit", StringComparison.OrdinalIgnoreCase) ||
+                name.Equals("glare", StringComparison.OrdinalIgnoreCase));
+    }
+
     internal static int ParseShapeSkinInstanceRef(
         byte[] data,
         BlockInfo block,

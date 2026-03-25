@@ -14,6 +14,32 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 internal static class RuntimeBuildOffsets
 {
     /// <summary>
+    ///     Reverse map: ESM 4-letter signature → final-build FormType byte.
+    ///     Built lazily from <see cref="GetRecordTypeCode" />.
+    /// </summary>
+    private static Dictionary<string, byte>? _signatureToFormType;
+
+    private static Dictionary<string, byte> SignatureToFormType
+    {
+        get
+        {
+            if (_signatureToFormType != null) return _signatureToFormType;
+            var map = new Dictionary<string, byte>();
+            for (var i = 0; i <= 0x78; i++)
+            {
+                var code = GetRecordTypeCode((byte)i);
+                if (code != null)
+                {
+                    map[code] = (byte)i;
+                }
+            }
+
+            _signatureToFormType = map;
+            return map;
+        }
+    }
+
+    /// <summary>
     ///     Returns the field offset shift from Proto Debug PDB values to actual dump values.
     ///     Currently +16 for all known builds. The mechanism is retained for future extensibility
     ///     in case a Proto Debug era dump is ever encountered (would need +4 shift).
@@ -310,32 +336,6 @@ internal static class RuntimeBuildOffsets
     }
 
     /// <summary>
-    ///     Reverse map: ESM 4-letter signature → final-build FormType byte.
-    ///     Built lazily from <see cref="GetRecordTypeCode" />.
-    /// </summary>
-    private static Dictionary<string, byte>? _signatureToFormType;
-
-    private static Dictionary<string, byte> SignatureToFormType
-    {
-        get
-        {
-            if (_signatureToFormType != null) return _signatureToFormType;
-            var map = new Dictionary<string, byte>();
-            for (var i = 0; i <= 0x78; i++)
-            {
-                var code = GetRecordTypeCode((byte)i);
-                if (code != null)
-                {
-                    map[code] = (byte)i;
-                }
-            }
-
-            _signatureToFormType = map;
-            return map;
-        }
-    }
-
-    /// <summary>
     ///     Detect FormType code drift by cross-referencing runtime EditorID entries
     ///     (which carry the FormType byte read from memory) against ESM-scanned records
     ///     (which carry the 4-letter record signature). If a type was inserted or removed
@@ -415,7 +415,7 @@ internal static class RuntimeBuildOffsets
         var remap = new Dictionary<byte, byte>();
         if (candidates.Count > 0)
         {
-            var deltas = candidates.Select(kv => (int)kv.Value.FinalType - kv.Key).Distinct().ToList();
+            var deltas = candidates.Select(kv => kv.Value.FinalType - kv.Key).Distinct().ToList();
             if (deltas.Count == 1 && Math.Abs(deltas[0]) <= 2)
             {
                 var delta = deltas[0];
@@ -452,7 +452,7 @@ internal static class RuntimeBuildOffsets
             {
                 foreach (var (dmpType, (finalType, count)) in candidates)
                 {
-                    if (count >= 5 && Math.Abs((int)finalType - dmpType) <= 2)
+                    if (count >= 5 && Math.Abs(finalType - dmpType) <= 2)
                     {
                         remap[dmpType] = finalType;
                     }
@@ -463,7 +463,8 @@ internal static class RuntimeBuildOffsets
         if (remap.Count > 0)
         {
             var candidateStr = string.Join(", ",
-                candidates.Select(kv => $"0x{kv.Key:X2}→0x{kv.Value.FinalType:X2} ({GetRecordTypeCode(kv.Value.FinalType)})"));
+                candidates.Select(kv =>
+                    $"0x{kv.Key:X2}→0x{kv.Value.FinalType:X2} ({GetRecordTypeCode(kv.Value.FinalType)})"));
             Logger.Instance.Info(
                 $"[FormType Drift] Applying {remap.Count} remapped codes. " +
                 $"Evidence: [{candidateStr}]. " +

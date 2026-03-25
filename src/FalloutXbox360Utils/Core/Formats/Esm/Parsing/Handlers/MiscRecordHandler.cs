@@ -6,9 +6,8 @@ using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
-internal sealed class MiscRecordHandler(RecordParserContext context)
+internal sealed class MiscRecordHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
-    private readonly RecordParserContext _context = context;
 
     #region Generic Records
 
@@ -21,16 +20,16 @@ internal sealed class MiscRecordHandler(RecordParserContext context)
     {
         var records = new List<GenericEsmRecord>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
-            foreach (var record in _context.GetRecordsByType(recordType))
+            foreach (var record in Context.GetRecordsByType(recordType))
             {
                 records.Add(new GenericEsmRecord
                 {
                     FormId = record.FormId,
                     RecordType = recordType,
-                    EditorId = _context.GetEditorId(record.FormId),
-                    FullName = _context.FormIdToFullName.GetValueOrDefault(record.FormId),
+                    EditorId = Context.GetEditorId(record.FormId),
+                    FullName = Context.FormIdToFullName.GetValueOrDefault(record.FormId),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
@@ -42,17 +41,17 @@ internal sealed class MiscRecordHandler(RecordParserContext context)
         var buffer = ArrayPool<byte>.Shared.Rent(4096);
         try
         {
-            foreach (var record in _context.GetRecordsByType(recordType))
+            foreach (var record in Context.GetRecordsByType(recordType))
             {
-                var recordData = _context.ReadRecordData(record, buffer);
+                var recordData = Context.ReadRecordData(record, buffer);
                 if (recordData == null)
                 {
                     records.Add(new GenericEsmRecord
                     {
                         FormId = record.FormId,
                         RecordType = recordType,
-                        EditorId = _context.GetEditorId(record.FormId),
-                        FullName = _context.FormIdToFullName.GetValueOrDefault(record.FormId),
+                        EditorId = Context.GetEditorId(record.FormId),
+                        FullName = Context.FormIdToFullName.GetValueOrDefault(record.FormId),
                         Offset = record.Offset,
                         IsBigEndian = record.IsBigEndian
                     });
@@ -77,7 +76,7 @@ internal sealed class MiscRecordHandler(RecordParserContext context)
                             editorId = EsmStringUtils.ReadNullTermString(subData);
                             if (!string.IsNullOrEmpty(editorId))
                             {
-                                _context.FormIdToEditorId[record.FormId] = editorId;
+                                Context.FormIdToEditorId[record.FormId] = editorId;
                             }
 
                             break;
@@ -144,7 +143,7 @@ internal sealed class MiscRecordHandler(RecordParserContext context)
                 {
                     FormId = record.FormId,
                     RecordType = recordType,
-                    EditorId = editorId ?? _context.GetEditorId(record.FormId),
+                    EditorId = editorId ?? Context.GetEditorId(record.FormId),
                     FullName = fullName,
                     ModelPath = modelPath,
                     Bounds = bounds,
@@ -172,9 +171,9 @@ internal sealed class MiscRecordHandler(RecordParserContext context)
     internal List<GameSettingRecord> ParseGameSettings()
     {
         var settings = new List<GameSettingRecord>();
-        var gmstRecords = _context.GetRecordsByType("GMST").ToList();
+        var gmstRecords = Context.GetRecordsByType("GMST").ToList();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             // Without accessor, just return basic info
             foreach (var record in gmstRecords)
@@ -182,7 +181,7 @@ internal sealed class MiscRecordHandler(RecordParserContext context)
                 settings.Add(new GameSettingRecord
                 {
                     FormId = record.FormId,
-                    EditorId = _context.GetEditorId(record.FormId),
+                    EditorId = Context.GetEditorId(record.FormId),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
@@ -213,13 +212,13 @@ internal sealed class MiscRecordHandler(RecordParserContext context)
 
     private GameSettingRecord? ParseGameSettingFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
-        var recordData = _context.ReadRecordData(record, buffer);
+        var recordData = Context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
             return new GameSettingRecord
             {
                 FormId = record.FormId,
-                EditorId = _context.GetEditorId(record.FormId),
+                EditorId = Context.GetEditorId(record.FormId),
                 Offset = record.Offset,
                 IsBigEndian = record.IsBigEndian
             };
@@ -238,7 +237,7 @@ internal sealed class MiscRecordHandler(RecordParserContext context)
                     editorId = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
                     if (!string.IsNullOrEmpty(editorId))
                     {
-                        _context.FormIdToEditorId[record.FormId] = editorId;
+                        Context.FormIdToEditorId[record.FormId] = editorId;
                     }
 
                     break;

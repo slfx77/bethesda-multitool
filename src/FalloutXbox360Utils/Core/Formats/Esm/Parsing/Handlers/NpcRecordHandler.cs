@@ -5,9 +5,8 @@ using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
-internal sealed class NpcRecordHandler(RecordParserContext context)
+internal sealed class NpcRecordHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
-    private readonly RecordParserContext _context = context;
 
     /// <summary>
     ///     Parse all NPC records from the scan result.
@@ -17,9 +16,9 @@ internal sealed class NpcRecordHandler(RecordParserContext context)
     internal List<NpcRecord> ParseNpcs()
     {
         var npcs = new List<NpcRecord>();
-        var npcRecords = _context.GetRecordsByType("NPC_").ToList();
+        var npcRecords = Context.GetRecordsByType("NPC_").ToList();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             foreach (var record in npcRecords)
             {
@@ -50,7 +49,7 @@ internal sealed class NpcRecordHandler(RecordParserContext context)
             }
         }
 
-        _context.MergeRuntimeRecords(npcs, 0x2A, n => n.FormId,
+        Context.MergeRuntimeRecords(npcs, 0x2A, n => n.FormId,
             (reader, entry) => reader.ReadRuntimeNpc(entry), "NPCs");
 
         return npcs;
@@ -59,9 +58,9 @@ internal sealed class NpcRecordHandler(RecordParserContext context)
     private NpcRecord? ParseNpcFromScanResult(DetectedMainRecord record)
     {
         // Find matching subrecords from scan result
-        var editorId = _context.GetEditorId(record.FormId);
-        var fullName = _context.FindFullNameNear(record.Offset);
-        var stats = _context.FindActorBaseNear(record.Offset);
+        var editorId = Context.GetEditorId(record.FormId);
+        var fullName = Context.FindFullNameNear(record.Offset);
+        var stats = Context.FindActorBaseNear(record.Offset);
 
         return new NpcRecord
         {
@@ -76,7 +75,7 @@ internal sealed class NpcRecordHandler(RecordParserContext context)
 
     private NpcRecord? ParseNpcFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
-        var recordData = _context.ReadRecordData(record, buffer);
+        var recordData = Context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
             return ParseNpcFromScanResult(record);
@@ -220,7 +219,7 @@ internal sealed class NpcRecordHandler(RecordParserContext context)
         return new NpcRecord
         {
             FormId = record.FormId,
-            EditorId = editorId ?? _context.GetEditorId(record.FormId),
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
             Stats = stats,
             SpecialStats = specialStats,

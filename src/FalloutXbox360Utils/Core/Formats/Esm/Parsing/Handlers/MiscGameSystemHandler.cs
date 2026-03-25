@@ -4,9 +4,8 @@ using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
-internal sealed class MiscGameSystemHandler(RecordParserContext context)
+internal sealed class MiscGameSystemHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
-    private readonly RecordParserContext _context = context;
 
     #region Actor Value Infos
 
@@ -17,15 +16,15 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context)
     {
         var infos = new List<ActorValueInfoRecord>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
-            foreach (var record in _context.GetRecordsByType("AVIF"))
+            foreach (var record in Context.GetRecordsByType("AVIF"))
             {
                 infos.Add(new ActorValueInfoRecord
                 {
                     FormId = record.FormId,
-                    EditorId = _context.GetEditorId(record.FormId),
-                    FullName = _context.FormIdToFullName.GetValueOrDefault(record.FormId),
+                    EditorId = Context.GetEditorId(record.FormId),
+                    FullName = Context.FormIdToFullName.GetValueOrDefault(record.FormId),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
@@ -37,16 +36,16 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context)
         var buffer = ArrayPool<byte>.Shared.Rent(2048);
         try
         {
-            foreach (var record in _context.GetRecordsByType("AVIF"))
+            foreach (var record in Context.GetRecordsByType("AVIF"))
             {
-                var recordData = _context.ReadRecordData(record, buffer);
+                var recordData = Context.ReadRecordData(record, buffer);
                 if (recordData == null)
                 {
                     infos.Add(new ActorValueInfoRecord
                     {
                         FormId = record.FormId,
-                        EditorId = _context.GetEditorId(record.FormId),
-                        FullName = _context.FormIdToFullName.GetValueOrDefault(record.FormId),
+                        EditorId = Context.GetEditorId(record.FormId),
+                        FullName = Context.FormIdToFullName.GetValueOrDefault(record.FormId),
                         Offset = record.Offset,
                         IsBigEndian = record.IsBigEndian
                     });
@@ -67,7 +66,7 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context)
                             editorId = EsmStringUtils.ReadNullTermString(subData);
                             if (!string.IsNullOrEmpty(editorId))
                             {
-                                _context.FormIdToEditorId[record.FormId] = editorId;
+                                Context.FormIdToEditorId[record.FormId] = editorId;
                             }
 
                             break;
@@ -89,7 +88,7 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context)
                 infos.Add(new ActorValueInfoRecord
                 {
                     FormId = record.FormId,
-                    EditorId = editorId ?? _context.GetEditorId(record.FormId),
+                    EditorId = editorId ?? Context.GetEditorId(record.FormId),
                     FullName = fullName,
                     Description = description,
                     Icon = icon,
@@ -104,7 +103,7 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        _context.MergeRuntimeRecords(infos, 0x59, r => r.FormId,
+        Context.MergeRuntimeRecords(infos, 0x59, r => r.FormId,
             (reader, entry) => reader.ReadRuntimeAvif(entry), "Actor Value Infos");
 
         return infos;
@@ -121,14 +120,14 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context)
     {
         var styles = new List<CombatStyleRecord>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
-            foreach (var record in _context.GetRecordsByType("CSTY"))
+            foreach (var record in Context.GetRecordsByType("CSTY"))
             {
                 styles.Add(new CombatStyleRecord
                 {
                     FormId = record.FormId,
-                    EditorId = _context.GetEditorId(record.FormId),
+                    EditorId = Context.GetEditorId(record.FormId),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
@@ -140,15 +139,15 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context)
         var buffer = ArrayPool<byte>.Shared.Rent(2048);
         try
         {
-            foreach (var record in _context.GetRecordsByType("CSTY"))
+            foreach (var record in Context.GetRecordsByType("CSTY"))
             {
-                var recordData = _context.ReadRecordData(record, buffer);
+                var recordData = Context.ReadRecordData(record, buffer);
                 if (recordData == null)
                 {
                     styles.Add(new CombatStyleRecord
                     {
                         FormId = record.FormId,
-                        EditorId = _context.GetEditorId(record.FormId),
+                        EditorId = Context.GetEditorId(record.FormId),
                         Offset = record.Offset,
                         IsBigEndian = record.IsBigEndian
                     });
@@ -172,7 +171,7 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context)
                             editorId = EsmStringUtils.ReadNullTermString(subData);
                             if (!string.IsNullOrEmpty(editorId))
                             {
-                                _context.FormIdToEditorId[record.FormId] = editorId;
+                                Context.FormIdToEditorId[record.FormId] = editorId;
                             }
 
                             break;
@@ -212,7 +211,7 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context)
                 styles.Add(new CombatStyleRecord
                 {
                     FormId = record.FormId,
-                    EditorId = editorId ?? _context.GetEditorId(record.FormId),
+                    EditorId = editorId ?? Context.GetEditorId(record.FormId),
                     StyleData = styleData,
                     AdvancedData = advancedData,
                     SimpleData = simpleData,
@@ -240,14 +239,14 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context)
     {
         var templates = new List<LightingTemplateRecord>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
-            foreach (var record in _context.GetRecordsByType("LGTM"))
+            foreach (var record in Context.GetRecordsByType("LGTM"))
             {
                 templates.Add(new LightingTemplateRecord
                 {
                     FormId = record.FormId,
-                    EditorId = _context.GetEditorId(record.FormId),
+                    EditorId = Context.GetEditorId(record.FormId),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
@@ -259,15 +258,15 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context)
         var buffer = ArrayPool<byte>.Shared.Rent(1024);
         try
         {
-            foreach (var record in _context.GetRecordsByType("LGTM"))
+            foreach (var record in Context.GetRecordsByType("LGTM"))
             {
-                var recordData = _context.ReadRecordData(record, buffer);
+                var recordData = Context.ReadRecordData(record, buffer);
                 if (recordData == null)
                 {
                     templates.Add(new LightingTemplateRecord
                     {
                         FormId = record.FormId,
-                        EditorId = _context.GetEditorId(record.FormId),
+                        EditorId = Context.GetEditorId(record.FormId),
                         Offset = record.Offset,
                         IsBigEndian = record.IsBigEndian
                     });
@@ -289,7 +288,7 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context)
                             editorId = EsmStringUtils.ReadNullTermString(subData);
                             if (!string.IsNullOrEmpty(editorId))
                             {
-                                _context.FormIdToEditorId[record.FormId] = editorId;
+                                Context.FormIdToEditorId[record.FormId] = editorId;
                             }
 
                             break;
@@ -309,7 +308,7 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context)
                 templates.Add(new LightingTemplateRecord
                 {
                     FormId = record.FormId,
-                    EditorId = editorId ?? _context.GetEditorId(record.FormId),
+                    EditorId = editorId ?? Context.GetEditorId(record.FormId),
                     LightingData = lightingData,
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
@@ -335,14 +334,14 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context)
     {
         var meshes = new List<NavMeshRecord>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
-            foreach (var record in _context.GetRecordsByType("NAVM"))
+            foreach (var record in Context.GetRecordsByType("NAVM"))
             {
                 meshes.Add(new NavMeshRecord
                 {
                     FormId = record.FormId,
-                    EditorId = _context.GetEditorId(record.FormId),
+                    EditorId = Context.GetEditorId(record.FormId),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
                 });
@@ -354,15 +353,15 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context)
         var buffer = ArrayPool<byte>.Shared.Rent(8192);
         try
         {
-            foreach (var record in _context.GetRecordsByType("NAVM"))
+            foreach (var record in Context.GetRecordsByType("NAVM"))
             {
-                var recordData = _context.ReadRecordData(record, buffer);
+                var recordData = Context.ReadRecordData(record, buffer);
                 if (recordData == null)
                 {
                     meshes.Add(new NavMeshRecord
                     {
                         FormId = record.FormId,
-                        EditorId = _context.GetEditorId(record.FormId),
+                        EditorId = Context.GetEditorId(record.FormId),
                         Offset = record.Offset,
                         IsBigEndian = record.IsBigEndian
                     });
@@ -385,7 +384,7 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context)
                             editorId = EsmStringUtils.ReadNullTermString(subData);
                             if (!string.IsNullOrEmpty(editorId))
                             {
-                                _context.FormIdToEditorId[record.FormId] = editorId;
+                                Context.FormIdToEditorId[record.FormId] = editorId;
                             }
 
                             break;
@@ -415,7 +414,7 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context)
                 meshes.Add(new NavMeshRecord
                 {
                     FormId = record.FormId,
-                    EditorId = editorId ?? _context.GetEditorId(record.FormId),
+                    EditorId = editorId ?? Context.GetEditorId(record.FormId),
                     CellFormId = cellFormId,
                     VertexCount = vertexCount,
                     TriangleCount = triangleCount,

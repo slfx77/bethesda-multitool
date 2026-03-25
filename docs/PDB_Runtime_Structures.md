@@ -3,9 +3,10 @@
 Comprehensive documentation of all C++ runtime structures identified from the Fallout: New Vegas Xbox 360 PDB symbols and implemented in the memory dump analyzer.
 
 **PDB Sources:**
+
 - **Proto Debug PDB:** `Sample/PDB/Fallout_Debug/types_full.txt` (Jul 2010, TESForm = 24 bytes) — used for base object types (NPC, WEAP, etc.)
 - **Final Debug PDB:** `Sample/PDB/Final/Fallout_Debug_Final/types_full.txt` (TESForm = 40 bytes) — used for TESObjectREFR and related types
-**Key Files:** `RuntimeStructReader.cs`, `RecordParser.cs`, `Models/`
+  **Key Files:** `RuntimeStructReader.cs`, `RecordParser.cs`, `Models/`
 
 ---
 
@@ -13,13 +14,13 @@ Comprehensive documentation of all C++ runtime structures identified from the Fa
 
 Xbox 360 crash dumps exhibit consistent offset shifts between PDB-defined offsets and actual dump offsets:
 
-| Struct Category                                | PDB Size | Dump Size | Shift                            | Cause                                                  |
-| ---------------------------------------------- | -------- | --------- | -------------------------------- | ------------------------------------------------------ |
-| TESBoundObject-derived (NPC, WEAP, ARMO, etc.) | varies   | +16       | **+16**                          | Extra vtable/debug data at struct start                |
-| TESTopicInfo (INFO, Release Beta/Final layout) | 96       | 96        | **0**                            | Current runtime INFO reader uses the direct 96-byte Release Beta / Final layout |
-| TESTopic (DIAL)                                | 72       | 88        | **+16**                          | Same as TESBoundObject pattern                         |
-| TESForm base                                   | 24       | 24        | **0**                            | No shift on base class                                 |
-| TESObjectREFR (Final PDB)                      | 120      | 120       | **0**                            | Final PDB offsets = dump offsets directly               |
+| Struct Category                                | PDB Size | Dump Size | Shift   | Cause                                                                           |
+| ---------------------------------------------- | -------- | --------- | ------- | ------------------------------------------------------------------------------- |
+| TESBoundObject-derived (NPC, WEAP, ARMO, etc.) | varies   | +16       | **+16** | Extra vtable/debug data at struct start                                         |
+| TESTopicInfo (INFO, Release Beta/Final layout) | 96       | 96        | **0**   | Current runtime INFO reader uses the direct 96-byte Release Beta / Final layout |
+| TESTopic (DIAL)                                | 72       | 88        | **+16** | Same as TESBoundObject pattern                                                  |
+| TESForm base                                   | 24       | 24        | **0**   | No shift on base class                                                          |
+| TESObjectREFR (Final PDB)                      | 120      | 120       | **0**   | Final PDB offsets = dump offsets directly                                       |
 
 ### VA-to-Offset Conversion
 
@@ -438,21 +439,21 @@ Topic-level default speaker (`TNAM` in ESM) is not represented in the validated 
 
 Individual dialogue response entries. Each belongs to a TESTopic.
 
-| PDB Offset | Dump Offset | Type                 | Field               | Description                                                   |
-| ---------- | ----------- | -------------------- | ------------------- | ------------------------------------------------------------- |
-| 0-39       | 0-39        | TESForm (40)         | (base)              | Inherited TESForm including `cFormEditorID` in Release builds |
-| 40         | 40          | TESCondition (8)     | objConditions       | Condition list                                                |
-| 48         | 48          | uint16               | iInfoIndex          | Ordering index within topic                                   |
-| 50         | 50          | bool                 | bSaidOnce           | Said-once state flag                                          |
-| 51         | 51          | TOPIC_INFO_DATA (4)  | m_Data              | Type, next speaker, flags                                     |
-| 56         | 56          | BSStringT (8)        | cPrompt             | Player-visible prompt text                                    |
-| 64         | 64          | BSSimpleList (8)     | m_listAddTopics     | Additional topics list                                        |
-| 72         | 72          | ptr                  | m_pConversationData | Conversation link data                                        |
-| 76         | 76          | ptr                  | pSpeaker            | Speaker NPC (TESActorBase\*)                                  |
-| 80         | 80          | ptr                  | pPerkSkillStat      | Perk/skill stat pointer                                       |
-| 84         | 84          | uint32               | eDifficulty         | Speech challenge difficulty (0-5)                             |
-| 88         | 88          | ptr                  | pOwnerQuest         | Parent quest (TESQuest\*)                                     |
-| 92         | 92          | uint32               | iFileOffset         | Temp/source offset metadata; not a reliable ESM file offset   |
+| PDB Offset | Dump Offset | Type                | Field               | Description                                                   |
+| ---------- | ----------- | ------------------- | ------------------- | ------------------------------------------------------------- |
+| 0-39       | 0-39        | TESForm (40)        | (base)              | Inherited TESForm including `cFormEditorID` in Release builds |
+| 40         | 40          | TESCondition (8)    | objConditions       | Condition list                                                |
+| 48         | 48          | uint16              | iInfoIndex          | Ordering index within topic                                   |
+| 50         | 50          | bool                | bSaidOnce           | Said-once state flag                                          |
+| 51         | 51          | TOPIC_INFO_DATA (4) | m_Data              | Type, next speaker, flags                                     |
+| 56         | 56          | BSStringT (8)       | cPrompt             | Player-visible prompt text                                    |
+| 64         | 64          | BSSimpleList (8)    | m_listAddTopics     | Additional topics list                                        |
+| 72         | 72          | ptr                 | m_pConversationData | Conversation link data                                        |
+| 76         | 76          | ptr                 | pSpeaker            | Speaker NPC (TESActorBase\*)                                  |
+| 80         | 80          | ptr                 | pPerkSkillStat      | Perk/skill stat pointer                                       |
+| 84         | 84          | uint32              | eDifficulty         | Speech challenge difficulty (0-5)                             |
+| 88         | 88          | ptr                 | pOwnerQuest         | Parent quest (TESQuest\*)                                     |
+| 92         | 92          | uint32              | iFileOffset         | Temp/source offset metadata; not a reliable ESM file offset   |
 
 **PDB Type:** `0x0001E2F9` — Size: 96 bytes
 **Layout Note:** Current runtime INFO reading uses the direct 96-byte Release Beta / Final layout. The older Proto Debug `80 -> 84` shifted layout remains historical reference only.
@@ -575,17 +576,17 @@ Quest definitions with stages and objectives.
 
 Runtime stage-item helper hanging off `TESQuest.m_listStages -> TESQuestStage -> BSSimpleList<TESQuestStageItem*>`.
 
-| PDB Offset | Type          | Field          | Description                                   |
-| ---------- | ------------- | -------------- | --------------------------------------------- |
-| 0          | struct(1)     | m_Data         | Stage-item flags block (`QUEST_STAGE_ITEM_DATA`) |
-| 4          | TESCondition  | objConditions  | Stage-item conditions                         |
-| 12         | Script\*      | cResultScript  | Stage-item result script                      |
-| 112        | uint32        | m_fileOffset   | Source file offset metadata                   |
-| 116        | uint8         | ucIndex        | Stage item index                              |
-| 117        | bool          | m_bHasLogEntry | Whether the stage item has an associated log entry |
-| 120        | Date\*        | m_pLogDate     | Optional log date                             |
-| 124        | TESQuest\*    | m_pOwner       | Owning quest                                  |
-| 128        | TESQuest\*    | m_pNextQuest   | Linked quest pointer                          |
+| PDB Offset | Type         | Field          | Description                                        |
+| ---------- | ------------ | -------------- | -------------------------------------------------- |
+| 0          | struct(1)    | m_Data         | Stage-item flags block (`QUEST_STAGE_ITEM_DATA`)   |
+| 4          | TESCondition | objConditions  | Stage-item conditions                              |
+| 12         | Script\*     | cResultScript  | Stage-item result script                           |
+| 112        | uint32       | m_fileOffset   | Source file offset metadata                        |
+| 116        | uint8        | ucIndex        | Stage item index                                   |
+| 117        | bool         | m_bHasLogEntry | Whether the stage item has an associated log entry |
+| 120        | Date\*       | m_pLogDate     | Optional log date                                  |
+| 124        | TESQuest\*   | m_pOwner       | Owning quest                                       |
+| 128        | TESQuest\*   | m_pNextQuest   | Linked quest pointer                               |
 
 Relevant methods from the Final Debug PDB:
 
@@ -617,39 +618,40 @@ The placed reference type for all objects in the game world. Every placed NPC, c
 
 **Inheritance:** TESForm (offset 0, 40 bytes) + TESChildCell (offset 40, 4 bytes)
 
-| Offset | Type             | Size | Field                  | Description                                         |
-| ------ | ---------------- | ---- | ---------------------- | --------------------------------------------------- |
-| 0      | ptr              | 4    | vfptr                  | TESForm virtual function table                      |
-| 4      | uint8            | 1    | cFormType              | Form type (0x40 for REFR)                           |
-| 8      | uint32           | 4    | iFormFlags             | Form flags (0x0400=Persistent, 0x0020=Deleted)      |
-| 12     | uint32           | 4    | iFormID                | Unique FormID                                       |
-| 16     | BSFixedString    | 8    | cFormEditorID          | Editor ID string                                    |
-| 24     | uint32           | 4    | iVersionControl        | Version control info                                |
-| 28     | uint8            | 1    | cVCVersion             | Version control version                             |
-| 32     | ptr              | ~8   | pSourceFiles           | Source ESM file list                                |
-| 40     | ptr              | 4    | (TESChildCell vfptr)   | TESChildCell vtable                                 |
-| 44     | ptr              | 4    | pRandomSound           | Random sound pointer                                |
-| 48     | TESBoundObject\* | 4    | data.pObjectReference  | Base object (the "template" form)                   |
-| 52     | NiPoint3         | 12   | data.Angle             | Rotation (X, Y, Z radians)                          |
-| 64     | NiPoint3         | 12   | data.Location          | World position (X, Y, Z game units)                 |
-| 76     | float            | 4    | fRefScale              | Scale factor (1.0 = normal)                         |
-| 80     | TESObjectCELL\*  | 4    | pParentCell            | Parent cell pointer                                 |
-| 84     | ExtraDataList    | 32   | m_Extra                | Extra data container (see below)                    |
-| 116    | ptr              | 4    | pLoadedData            | Loaded 3D data (null when unloaded)                 |
+| Offset | Type             | Size | Field                 | Description                                    |
+| ------ | ---------------- | ---- | --------------------- | ---------------------------------------------- |
+| 0      | ptr              | 4    | vfptr                 | TESForm virtual function table                 |
+| 4      | uint8            | 1    | cFormType             | Form type (0x40 for REFR)                      |
+| 8      | uint32           | 4    | iFormFlags            | Form flags (0x0400=Persistent, 0x0020=Deleted) |
+| 12     | uint32           | 4    | iFormID               | Unique FormID                                  |
+| 16     | BSFixedString    | 8    | cFormEditorID         | Editor ID string                               |
+| 24     | uint32           | 4    | iVersionControl       | Version control info                           |
+| 28     | uint8            | 1    | cVCVersion            | Version control version                        |
+| 32     | ptr              | ~8   | pSourceFiles          | Source ESM file list                           |
+| 40     | ptr              | 4    | (TESChildCell vfptr)  | TESChildCell vtable                            |
+| 44     | ptr              | 4    | pRandomSound          | Random sound pointer                           |
+| 48     | TESBoundObject\* | 4    | data.pObjectReference | Base object (the "template" form)              |
+| 52     | NiPoint3         | 12   | data.Angle            | Rotation (X, Y, Z radians)                     |
+| 64     | NiPoint3         | 12   | data.Location         | World position (X, Y, Z game units)            |
+| 76     | float            | 4    | fRefScale             | Scale factor (1.0 = normal)                    |
+| 80     | TESObjectCELL\*  | 4    | pParentCell           | Parent cell pointer                            |
+| 84     | ExtraDataList    | 32   | m_Extra               | Extra data container (see below)               |
+| 116    | ptr              | 4    | pLoadedData           | Loaded 3D data (null when unloaded)            |
 
 **PDB Type:** `0x0001196D` (Final PDB) — Size: 120 bytes — 517 members
 **RTTI Census:** Instances confirmed in all 50 crash dumps (class name `TESObjectREFR`).
 **Ghidra Cross-Reference:**
+
 - `r31+0x4C` (offset 76) confirmed as `fRefScale` — float load/store in SaveGame_v2
 - `r31+0x54` (offset 84) confirmed as `m_Extra` — ExtraDataList Save/Load calls
 - `r31+0x74` (offset 116) confirmed as `pLoadedData` — pointer dereference in SaveGame_v2
-**Validation:** TESForm base fields (+4/+8/+12) proven across 17 form types. TESObjectREFR-specific offsets validated by 3 independent Ghidra confirmations. Full DMP struct read validation pending for RuntimeRefrReader implementation.
+  **Validation:** TESForm base fields (+4/+8/+12) proven across 17 form types. TESObjectREFR-specific offsets validated by 3 independent Ghidra confirmations. Full DMP struct read validation pending for RuntimeRefrReader implementation.
 
 #### OBJ_REFR — Embedded data sub-struct at offset +48
 
-| Relative Offset | Type             | Size | Field            | Description                    |
-| --------------- | ---------------- | ---- | ---------------- | ------------------------------ |
-| +0              | TESBoundObject\* | 4    | pObjectReference | Base form (follow for FormID)  |
+| Relative Offset | Type             | Size | Field            | Description                   |
+| --------------- | ---------------- | ---- | ---------------- | ----------------------------- |
+| +0              | TESBoundObject\* | 4    | pObjectReference | Base form (follow for FormID) |
 | +4              | NiPoint3         | 12   | Angle            | Rotation (X, Y, Z as float32) |
 | +16             | NiPoint3         | 12   | Location         | Position (X, Y, Z as float32) |
 
@@ -669,12 +671,12 @@ The placed reference type for all objects in the game world. Every placed NPC, c
 
 Container for all extra data attached to a reference. Inherits from BaseExtraList. Stores a linked list of BSExtraData entries and a bitfield indicating which extra types are present.
 
-| Offset (within REFR) | Type        | Size | Field  | Description                              |
-| --------------------- | ----------- | ---- | ------ | ---------------------------------------- |
-| +84                   | ptr         | 4    | vfptr  | ExtraDataList vtable                     |
-| +88                   | BSExtraData\* | 4  | pHead  | Head of linked list of extra data entries|
-| +92                   | uint8[21]   | 21   | iFlags | Bitfield: bit N set = extra type N present |
-| +113                  | —           | 3    | (pad)  | Alignment padding                        |
+| Offset (within REFR) | Type          | Size | Field  | Description                                |
+| -------------------- | ------------- | ---- | ------ | ------------------------------------------ |
+| +84                  | ptr           | 4    | vfptr  | ExtraDataList vtable                       |
+| +88                  | BSExtraData\* | 4    | pHead  | Head of linked list of extra data entries  |
+| +92                  | uint8[21]     | 21   | iFlags | Bitfield: bit N set = extra type N present |
+| +113                 | —             | 3    | (pad)  | Alignment padding                          |
 
 **PDB Type:** `0x00010B8F` (ExtraDataList, 32 bytes) inherits `0x000186E0` (BaseExtraList, 32 bytes)
 **Usage:** To find a specific extra type, check `iFlags[type/8] & (1 << (type%8))`. If set, walk the linked list from `pHead` until `cEtype` matches.
@@ -683,11 +685,11 @@ Container for all extra data attached to a reference. Inherits from BaseExtraLis
 
 Each entry in the ExtraDataList linked list. Subclasses add type-specific data after the base fields.
 
-| Offset | Type          | Size | Field  | Description                               |
-| ------ | ------------- | ---- | ------ | ----------------------------------------- |
-| 0      | ptr           | 4    | vfptr  | Virtual function table                    |
-| 4      | uint8         | 1    | cEtype | Extra data type code                      |
-| 8      | BSExtraData\* | 4    | pNext  | Next entry in linked list (null = end)    |
+| Offset | Type          | Size | Field  | Description                            |
+| ------ | ------------- | ---- | ------ | -------------------------------------- |
+| 0      | ptr           | 4    | vfptr  | Virtual function table                 |
+| 4      | uint8         | 1    | cEtype | Extra data type code                   |
+| 8      | BSExtraData\* | 4    | pNext  | Next entry in linked list (null = end) |
 
 **PDB Type:** `0x00014279` — Size: 12 bytes
 
@@ -695,10 +697,10 @@ Each entry in the ExtraDataList linked list. Subclasses add type-specific data a
 
 Attached to REFR instances that are map markers. Contains a pointer to the MapMarkerData struct.
 
-| Offset | Type            | Size | Field    | Description                   |
-| ------ | --------------- | ---- | -------- | ----------------------------- |
-| 0-11   | —               | 12   | (BSExtraData) | Inherited base class     |
-| 12     | MapMarkerData\* | 4    | pMapData | Pointer to marker data struct |
+| Offset | Type            | Size | Field         | Description                   |
+| ------ | --------------- | ---- | ------------- | ----------------------------- |
+| 0-11   | —               | 12   | (BSExtraData) | Inherited base class          |
+| 12     | MapMarkerData\* | 4    | pMapData      | Pointer to marker data struct |
 
 **PDB Type:** `0x0001745A` — Size: 16 bytes
 **Detection:** Check `cEtype == 0x2C` in the ExtraDataList linked list, or check bit 44 in `iFlags`.
@@ -707,22 +709,22 @@ Attached to REFR instances that are map markers. Contains a pointer to the MapMa
 
 Contains the marker's display name, type icon, and visibility flags.
 
-| Offset | Type         | Size | Field          | Description                              |
-| ------ | ------------ | ---- | -------------- | ---------------------------------------- |
-| 0      | TESFullName  | 12   | LocationName   | Marker display name (see below)          |
-| 12     | uint8        | 1    | cFlags         | Visibility flags (bit 0=Visible, bit 1=CanTravel, bit 2=Hidden) |
-| 13     | uint8        | 1    | cOriginalFlags | Original flags at creation               |
-| 14     | uint16       | 2    | sType          | Marker type (icon index on game map)     |
-| 16     | ptr          | 4    | pReputation    | Reputation form pointer (or null)        |
+| Offset | Type        | Size | Field          | Description                                                     |
+| ------ | ----------- | ---- | -------------- | --------------------------------------------------------------- |
+| 0      | TESFullName | 12   | LocationName   | Marker display name (see below)                                 |
+| 12     | uint8       | 1    | cFlags         | Visibility flags (bit 0=Visible, bit 1=CanTravel, bit 2=Hidden) |
+| 13     | uint8       | 1    | cOriginalFlags | Original flags at creation                                      |
+| 14     | uint16      | 2    | sType          | Marker type (icon index on game map)                            |
+| 16     | ptr         | 4    | pReputation    | Reputation form pointer (or null)                               |
 
 **PDB Type:** `0x0002C0AD` — Size: 20 bytes
 
 #### TESFullName — Embedded at MapMarkerData +0
 
-| Offset | Type          | Size | Field     | Description                       |
-| ------ | ------------- | ---- | --------- | --------------------------------- |
-| 0      | ptr           | 4    | vfptr     | TESFullName vtable                |
-| 4      | BSFixedString | 8    | cFullName | The display name string           |
+| Offset | Type          | Size | Field     | Description             |
+| ------ | ------------- | ---- | --------- | ----------------------- |
+| 0      | ptr           | 4    | vfptr     | TESFullName vtable      |
+| 4      | BSFixedString | 8    | cFullName | The display name string |
 
 **PDB Type:** `0x00015FAA` — Size: 12 bytes
 
@@ -751,8 +753,8 @@ TESObjectREFR (+120 bytes)
 
 ## Implementation Cross-Reference
 
-| PDB Struct    | PDB Size | Dump Size | RuntimeStructReader Method  | Model File                                          | RecordParser Integration   |
-| ------------- | -------- | --------- | --------------------------- | --------------------------------------------------- | ----------------------------------- |
+| PDB Struct    | PDB Size | Dump Size | RuntimeStructReader Method  | Model File                                   | RecordParser Integration            |
+| ------------- | -------- | --------- | --------------------------- | -------------------------------------------- | ----------------------------------- |
 | TESNPC        | 492      | 508       | `ReadRuntimeNpc()`          | `NpcRecord.cs`                               | `ReconstructNpcs()`                 |
 | TESCreature   | 352      | 440       | `ReadRuntimeCreature()`     | `CreatureRecord.cs`                          | `ReconstructCreatures()`            |
 | TESObjectWEAP | 908      | 924       | `ReadRuntimeWeapon()`       | `WeaponRecord.cs`                            | `ReconstructWeapons()`              |
@@ -767,9 +769,9 @@ TESObjectREFR (+120 bytes)
 | BGSProjectile | 208      | 224       | `ReadProjectilePhysics()`   | `ProjectilePhysicsData` (in WeaponRecord.cs) | `EnrichWeaponsWithProjectileData()` |
 | TESFaction    | 76       | 108       | `ReadRuntimeFaction()`      | `FactionRecord.cs`                           | `ReconstructFactions()`             |
 | TESQuest      | 108      | 140       | `ReadRuntimeQuest()`        | `QuestRecord.cs`                             | `ReconstructQuests()`               |
-| TESTopic      | 72       | 88        | `ReadRuntimeDialogTopic()`  | `RuntimeDialogTopicInfo.cs`                         | `MergeRuntimeDialogTopicData()`     |
-| TESTopicInfo  | 96       | 96        | `ReadRuntimeDialogueInfo()` | `RuntimeDialogueInfo.cs`                            | `MergeRuntimeDialogueData()`        |
-| TESObjectLAND | 44       | 60        | `ReadRuntimeLandData()`     | `RuntimeLoadedLandData.cs`                          | `ReadAllRuntimeLandData()`          |
+| TESTopic      | 72       | 88        | `ReadRuntimeDialogTopic()`  | `RuntimeDialogTopicInfo.cs`                  | `MergeRuntimeDialogTopicData()`     |
+| TESTopicInfo  | 96       | 96        | `ReadRuntimeDialogueInfo()` | `RuntimeDialogueInfo.cs`                     | `MergeRuntimeDialogueData()`        |
+| TESObjectLAND | 44       | 60        | `ReadRuntimeLandData()`     | `RuntimeLoadedLandData.cs`                   | `ReadAllRuntimeLandData()`          |
 
 ---
 

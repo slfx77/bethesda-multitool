@@ -19,7 +19,7 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Expressions;
 ///     op       -> '#GT#' | '#GTE#' | '#LT#' | '#LTE#' | '#EQ#' | '#NEQ#'
 ///     value    -> number | hex_number
 /// </summary>
-public sealed partial class NifVersionExpr
+public sealed class NifVersionExpr
 {
     /// <summary>
     ///     Token mappings from nif.xml verexpr definitions.
@@ -382,27 +382,27 @@ public sealed partial class NifVersionExpr
         return new CompareNode(variable, cmp, value);
     }
 
-    private static VariableType ParseVariable(string token)
+    private static VersionVariableType ParseVariable(string token)
     {
         return token.ToUpperInvariant() switch
         {
-            "#VER#" or "#VERSION#" => VariableType.Version,
-            "#BSVER#" or "#BS_VERSION#" => VariableType.BsVersion,
-            "#USER#" or "#USER_VERSION#" => VariableType.UserVersion,
+            "#VER#" or "#VERSION#" => VersionVariableType.Version,
+            "#BSVER#" or "#BS_VERSION#" => VersionVariableType.BsVersion,
+            "#USER#" or "#USER_VERSION#" => VersionVariableType.UserVersion,
             _ => throw new FormatException($"Unknown variable: {token}")
         };
     }
 
-    private static CompareOp ParseCompareOp(string token)
+    private static VersionCompareOp ParseCompareOp(string token)
     {
         return token.ToUpperInvariant() switch
         {
-            "#GT#" or ">" => CompareOp.Gt,
-            "#GTE#" or ">=" => CompareOp.Gte,
-            "#LT#" or "<" => CompareOp.Lt,
-            "#LTE#" or "<=" => CompareOp.Lte,
-            "#EQ#" or "==" or "=" => CompareOp.Eq,
-            "#NEQ#" or "!=" => CompareOp.Neq,
+            "#GT#" or ">" => VersionCompareOp.Gt,
+            "#GTE#" or ">=" => VersionCompareOp.Gte,
+            "#LT#" or "<" => VersionCompareOp.Lt,
+            "#LTE#" or "<=" => VersionCompareOp.Lte,
+            "#EQ#" or "==" or "=" => VersionCompareOp.Eq,
+            "#NEQ#" or "!=" => VersionCompareOp.Neq,
             _ => throw new FormatException($"Unknown operator: {token}")
         };
     }

@@ -5,9 +5,8 @@ using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
-internal sealed class MiscBasicTypeHandler(RecordParserContext context)
+internal sealed class MiscBasicTypeHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
-    private readonly RecordParserContext _context = context;
 
     #region Globals
 
@@ -18,7 +17,7 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
     {
         var globals = new List<GlobalRecord>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             return globals;
         }
@@ -26,9 +25,9 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
         var buffer = ArrayPool<byte>.Shared.Rent(256);
         try
         {
-            foreach (var record in _context.GetRecordsByType("GLOB"))
+            foreach (var record in Context.GetRecordsByType("GLOB"))
             {
-                var recordData = _context.ReadRecordData(record, buffer);
+                var recordData = Context.ReadRecordData(record, buffer);
                 if (recordData == null)
                 {
                     continue;
@@ -48,7 +47,7 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
                             editorId = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
                             if (!string.IsNullOrEmpty(editorId))
                             {
-                                _context.FormIdToEditorId[record.FormId] = editorId;
+                                Context.FormIdToEditorId[record.FormId] = editorId;
                             }
 
                             break;
@@ -79,7 +78,7 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        _context.MergeRuntimeRecords(globals, 0x06, g => g.FormId,
+        Context.MergeRuntimeRecords(globals, 0x06, g => g.FormId,
             (reader, entry) => reader.ReadRuntimeGlobal(entry), "globals");
 
         return globals;
@@ -96,7 +95,7 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
     {
         var classes = new List<ClassRecord>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             return classes;
         }
@@ -104,9 +103,9 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
         var buffer = ArrayPool<byte>.Shared.Rent(1024);
         try
         {
-            foreach (var record in _context.GetRecordsByType("CLAS"))
+            foreach (var record in Context.GetRecordsByType("CLAS"))
             {
-                var recordData = _context.ReadRecordData(record, buffer);
+                var recordData = Context.ReadRecordData(record, buffer);
                 if (recordData == null)
                 {
                     continue;
@@ -128,7 +127,7 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
                             editorId = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
                             if (!string.IsNullOrEmpty(editorId))
                             {
-                                _context.FormIdToEditorId[record.FormId] = editorId;
+                                Context.FormIdToEditorId[record.FormId] = editorId;
                             }
 
                             break;
@@ -197,7 +196,7 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        _context.MergeRuntimeRecords(classes, 0x07, c => c.FormId,
+        Context.MergeRuntimeRecords(classes, 0x07, c => c.FormId,
             (reader, entry) => reader.ReadRuntimeClass(entry), "classes");
 
         return classes;
@@ -214,7 +213,7 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
     {
         var eyes = new List<EyesRecord>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             return eyes;
         }
@@ -222,9 +221,9 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
         var buffer = ArrayPool<byte>.Shared.Rent(512);
         try
         {
-            foreach (var record in _context.GetRecordsByType("EYES"))
+            foreach (var record in Context.GetRecordsByType("EYES"))
             {
-                var recordData = _context.ReadRecordData(record, buffer);
+                var recordData = Context.ReadRecordData(record, buffer);
                 if (recordData == null)
                 {
                     continue;
@@ -243,7 +242,7 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
                             editorId = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
                             if (!string.IsNullOrEmpty(editorId))
                             {
-                                _context.FormIdToEditorId[record.FormId] = editorId;
+                                Context.FormIdToEditorId[record.FormId] = editorId;
                             }
 
                             break;
@@ -251,7 +250,8 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
                             fullName = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
                             break;
                         case "ICON":
-                            texturePath = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                            texturePath =
+                                EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
                             break;
                         case "DATA" when sub.DataLength >= 1:
                             flags = data[sub.DataOffset];
@@ -276,7 +276,7 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        _context.MergeRuntimeRecords(eyes, 0x0B, e => e.FormId,
+        Context.MergeRuntimeRecords(eyes, 0x0B, e => e.FormId,
             (reader, entry) => reader.ReadRuntimeEyes(entry), "eyes");
 
         return eyes;
@@ -293,7 +293,7 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
     {
         var hair = new List<HairRecord>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             return hair;
         }
@@ -301,9 +301,9 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
         var buffer = ArrayPool<byte>.Shared.Rent(512);
         try
         {
-            foreach (var record in _context.GetRecordsByType("HAIR"))
+            foreach (var record in Context.GetRecordsByType("HAIR"))
             {
-                var recordData = _context.ReadRecordData(record, buffer);
+                var recordData = Context.ReadRecordData(record, buffer);
                 if (recordData == null)
                 {
                     continue;
@@ -322,7 +322,7 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
                             editorId = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
                             if (!string.IsNullOrEmpty(editorId))
                             {
-                                _context.FormIdToEditorId[record.FormId] = editorId;
+                                Context.FormIdToEditorId[record.FormId] = editorId;
                             }
 
                             break;
@@ -333,7 +333,8 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
                             modelPath = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
                             break;
                         case "ICON":
-                            texturePath = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                            texturePath =
+                                EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
                             break;
                         case "DATA" when sub.DataLength >= 1:
                             flags = data[sub.DataOffset];
@@ -359,7 +360,7 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        _context.MergeRuntimeRecords(hair, 0x0A, h => h.FormId,
+        Context.MergeRuntimeRecords(hair, 0x0A, h => h.FormId,
             (reader, entry) => reader.ReadRuntimeHair(entry), "hair");
 
         return hair;
@@ -376,7 +377,7 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
     {
         var challenges = new List<ChallengeRecord>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             return challenges;
         }
@@ -384,9 +385,9 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
         var buffer = ArrayPool<byte>.Shared.Rent(2048);
         try
         {
-            foreach (var record in _context.GetRecordsByType("CHAL"))
+            foreach (var record in Context.GetRecordsByType("CHAL"))
             {
-                var recordData = _context.ReadRecordData(record, buffer);
+                var recordData = Context.ReadRecordData(record, buffer);
                 if (recordData == null)
                 {
                     continue;
@@ -406,7 +407,7 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
                             editorId = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
                             if (!string.IsNullOrEmpty(editorId))
                             {
-                                _context.FormIdToEditorId[record.FormId] = editorId;
+                                Context.FormIdToEditorId[record.FormId] = editorId;
                             }
 
                             break;
@@ -469,7 +470,7 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        _context.MergeRuntimeRecords(challenges, 0x71, c => c.FormId,
+        Context.MergeRuntimeRecords(challenges, 0x71, c => c.FormId,
             (reader, entry) => reader.ReadRuntimeChallenge(entry), "challenges");
 
         return challenges;
@@ -486,7 +487,7 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
     {
         var reputations = new List<ReputationRecord>();
 
-        if (_context.Accessor == null)
+        if (Context.Accessor == null)
         {
             return reputations;
         }
@@ -494,9 +495,9 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
         var buffer = ArrayPool<byte>.Shared.Rent(256);
         try
         {
-            foreach (var record in _context.GetRecordsByType("REPU"))
+            foreach (var record in Context.GetRecordsByType("REPU"))
             {
-                var recordData = _context.ReadRecordData(record, buffer);
+                var recordData = Context.ReadRecordData(record, buffer);
                 if (recordData == null)
                 {
                     continue;
@@ -515,7 +516,7 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
                             editorId = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
                             if (!string.IsNullOrEmpty(editorId))
                             {
-                                _context.FormIdToEditorId[record.FormId] = editorId;
+                                Context.FormIdToEditorId[record.FormId] = editorId;
                             }
 
                             break;
@@ -554,7 +555,7 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        _context.MergeRuntimeRecords(reputations, 0x68, r => r.FormId,
+        Context.MergeRuntimeRecords(reputations, 0x68, r => r.FormId,
             (reader, entry) => reader.ReadRuntimeReputation(entry), "reputations");
 
         return reputations;

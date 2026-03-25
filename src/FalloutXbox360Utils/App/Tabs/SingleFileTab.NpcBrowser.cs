@@ -16,13 +16,54 @@ namespace FalloutXbox360Utils;
 /// </summary>
 public sealed partial class SingleFileTab
 {
+    private CancellationTokenSource? _npcBatchCts;
     private NpcBrowserService? _npcBrowserService;
-    private List<NpcListItem>? _npcFullList;
     private List<NpcListItem>? _npcFilteredList;
+    private List<NpcListItem>? _npcFullList;
+    private CancellationTokenSource? _npcRenderOptionDebounce;
     private uint? _selectedNpcFormId;
     private bool _webViewInitialized;
-    private CancellationTokenSource? _npcBatchCts;
-    private CancellationTokenSource? _npcRenderOptionDebounce;
+
+    #region Cross-Tab Navigation
+
+    private async void ViewNpc_Click(object sender, RoutedEventArgs e)
+    {
+        if (_selectedBrowserNode?.DataObject is not NpcRecord npc)
+        {
+            return;
+        }
+
+        // Switch to NPC Browser tab
+        SubTabView.SelectedItem = NpcBrowserTab;
+
+        // Ensure the NPC browser is populated
+        if (!_session.NpcBrowserPopulated)
+        {
+            await PopulateNpcBrowserAsync();
+        }
+
+        // Select the NPC in the list
+        if (_npcFilteredList != null)
+        {
+            var match = _npcFilteredList.FirstOrDefault(n => n.FormId == npc.FormId);
+            if (match == null && _npcFullList != null)
+            {
+                // NPC may be filtered out — clear filters and refresh
+                NpcNamedOnlyCheckBox.IsChecked = false;
+                NpcSearchBox.Text = "";
+                RefreshNpcList();
+                match = _npcFilteredList?.FirstOrDefault(n => n.FormId == npc.FormId);
+            }
+
+            if (match != null)
+            {
+                NpcListView.SelectedItem = match;
+                NpcListView.ScrollIntoView(match);
+            }
+        }
+    }
+
+    #endregion
 
     #region Initialization
 
@@ -712,47 +753,6 @@ public sealed partial class SingleFileTab
         NpcBsaPathPanel.Visibility = Visibility.Collapsed;
         _session.NpcBrowserPopulated = false;
         await PopulateNpcBrowserAsync();
-    }
-
-    #endregion
-
-    #region Cross-Tab Navigation
-
-    private async void ViewNpc_Click(object sender, RoutedEventArgs e)
-    {
-        if (_selectedBrowserNode?.DataObject is not NpcRecord npc)
-        {
-            return;
-        }
-
-        // Switch to NPC Browser tab
-        SubTabView.SelectedItem = NpcBrowserTab;
-
-        // Ensure the NPC browser is populated
-        if (!_session.NpcBrowserPopulated)
-        {
-            await PopulateNpcBrowserAsync();
-        }
-
-        // Select the NPC in the list
-        if (_npcFilteredList != null)
-        {
-            var match = _npcFilteredList.FirstOrDefault(n => n.FormId == npc.FormId);
-            if (match == null && _npcFullList != null)
-            {
-                // NPC may be filtered out — clear filters and refresh
-                NpcNamedOnlyCheckBox.IsChecked = false;
-                NpcSearchBox.Text = "";
-                RefreshNpcList();
-                match = _npcFilteredList?.FirstOrDefault(n => n.FormId == npc.FormId);
-            }
-
-            if (match != null)
-            {
-                NpcListView.SelectedItem = match;
-                NpcListView.ScrollIntoView(match);
-            }
-        }
     }
 
     #endregion

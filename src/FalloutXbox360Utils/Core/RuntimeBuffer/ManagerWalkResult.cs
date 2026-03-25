@@ -8,5 +8,6 @@ public sealed class ManagerWalkResult
     public int ChildPointers { get; set; }
     public int WalkableEntries { get; set; }
     public List<string> ExtractedStrings { get; } = [];
+    internal List<RuntimeStringOwnershipClaim> OwnedStringClaims { get; } = [];
     public string Summary { get; set; } = "";
 }
