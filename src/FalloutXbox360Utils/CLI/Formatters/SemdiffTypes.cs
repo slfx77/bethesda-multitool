@@ -1,4 +1,4 @@
-namespace FalloutXbox360Utils.CLI;
+namespace FalloutXbox360Utils.CLI.Formatters;
 
 /// <summary>
 ///     Data types used by the semantic diff command.

@@ -4,7 +4,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Schema;
 using FalloutXbox360Utils.Core.Utils;
 using Spectre.Console;
 
-namespace FalloutXbox360Utils.CLI;
+namespace FalloutXbox360Utils.CLI.Formatters;
 
 /// <summary>
 ///     Field formatting and display logic for the semantic diff command.

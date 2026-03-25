@@ -1,6 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 
-namespace FalloutXbox360Utils.CLI;
+namespace FalloutXbox360Utils.CLI.Formatters;
 
 /// <summary>
 ///     Flattens a RecordCollection into a uniform list of (FormId, Type, EditorId, DisplayName)

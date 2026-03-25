@@ -1,4 +1,4 @@
-namespace FalloutXbox360Utils.CLI;
+namespace FalloutXbox360Utils.CLI.Formatters;
 
 /// <summary>
 ///     Holds FormID -> EditorID maps for all three ESM files in a diff.
