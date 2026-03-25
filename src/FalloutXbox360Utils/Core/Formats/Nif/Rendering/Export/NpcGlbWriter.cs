@@ -77,7 +77,7 @@ internal static class NpcGlbWriter
                     continue;
                 }
 
-                var nodeIndex = meshPart.NodeIndex ?? scene.RootNodeIndex;
+                var nodeIndex = meshPart.NodeIndex ?? NpcExportScene.RootNodeIndex;
                 sceneBuilder.AddRigidMesh(rigidMesh, nodeBuilders[nodeIndex]);
             }
         }
@@ -109,7 +109,7 @@ internal static class NpcGlbWriter
 
     private static HashSet<int> CollectUsedNodeIndices(NpcExportScene scene)
     {
-        var used = new HashSet<int> { scene.RootNodeIndex };
+        var used = new HashSet<int> { NpcExportScene.RootNodeIndex };
 
         foreach (var meshPart in scene.MeshParts)
         {
@@ -122,7 +122,7 @@ internal static class NpcGlbWriter
             }
             else
             {
-                AddNodeAndAncestors(scene, meshPart.NodeIndex ?? scene.RootNodeIndex, used);
+                AddNodeAndAncestors(scene, meshPart.NodeIndex ?? NpcExportScene.RootNodeIndex, used);
             }
         }
 
@@ -134,7 +134,8 @@ internal static class NpcGlbWriter
         int nodeIndex,
         HashSet<int> used)
     {
-        for (var current = nodeIndex; current >= 0 && used.Add(current);)
+        var current = nodeIndex;
+        while (current >= 0 && used.Add(current))
         {
             var parentIndex = scene.Nodes[current].ParentIndex;
             if (!parentIndex.HasValue)
@@ -271,7 +272,7 @@ internal static class NpcGlbWriter
             direction = direction.LengthSquared() > 0.0001f
                 ? GltfCoordinateAdapter.ConvertDirection(Vector3.Normalize(direction))
                 : Vector3.UnitX;
-            return new Vector4(direction, tangent.W == 0f ? 1f : tangent.W);
+            return new Vector4(direction, tangent.W is 0f ? 1f : tangent.W);
         }
 
         var normal = ReadNormal(submesh, vertexIndex);
@@ -491,15 +492,6 @@ internal static class NpcGlbWriter
         return string.IsNullOrWhiteSpace(fileName)
             ? suffix + ".png"
             : fileName + "." + suffix + ".png";
-    }
-
-    private static Matrix4x4 SanitizeAffine(Matrix4x4 m)
-    {
-        m.M14 = 0;
-        m.M24 = 0;
-        m.M34 = 0;
-        m.M44 = 1;
-        return m;
     }
 
     private readonly record struct MaterialCacheKey(

@@ -307,7 +307,7 @@ internal static class DialogueRecordDetailBuilder
             rows.Add(new DetailRow("Expected Responses", topic.ResponseCount.ToString()));
         }
 
-        if (topic.Priority != 0f)
+        if (topic.Priority is not 0f)
         {
             rows.Add(new DetailRow("Priority", topic.Priority.ToString("F0")));
         }

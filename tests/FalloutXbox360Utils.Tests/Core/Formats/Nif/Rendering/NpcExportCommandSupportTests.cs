@@ -218,7 +218,7 @@ public sealed class NpcExportCommandSupportTests
     [Fact]
     public void TryLoadNpcFilters_MergesInlineAndFileFilters()
     {
-        var tempFile = Path.GetTempFileName();
+        var tempFile = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
         try
         {
             File.WriteAllLines(tempFile, [

@@ -13,10 +13,8 @@ namespace FalloutXbox360Utils.Tests.Core.Parsers;
 ///     Uses synthetic scan results to test without requiring sample files.
 ///     These tests anchor behavior before the partial-class-to-handler refactoring.
 /// </summary>
-public class RecordParserHandlerTests(ITestOutputHelper output)
+public class RecordParserHandlerTests
 {
-    private readonly ITestOutputHelper _output = output;
-
     #region Big-Endian Tests
 
     [Fact]

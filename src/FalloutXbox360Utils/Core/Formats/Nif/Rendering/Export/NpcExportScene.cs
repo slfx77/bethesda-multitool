@@ -23,7 +23,7 @@ internal sealed class NpcExportScene
 
     public List<NpcExportMeshPart> MeshParts { get; } = [];
 
-    public int RootNodeIndex => 0;
+    public static int RootNodeIndex => 0;
 
     public int AddNode(
         string name,

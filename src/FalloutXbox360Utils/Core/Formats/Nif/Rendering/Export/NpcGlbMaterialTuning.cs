@@ -51,11 +51,19 @@ internal static class NpcGlbMaterialTuning
             roughness = MathF.Max(roughness, HairMinimumRoughness);
         }
 
-        var specularFactor = submesh.IsEyeEnvmap
-            ? 1f
-            : hasEnvironmentMapping
-                ? EnvironmentSpecularFactor
-                : DefaultSpecularFactor;
+        float specularFactor;
+        if (submesh.IsEyeEnvmap)
+        {
+            specularFactor = 1f;
+        }
+        else if (hasEnvironmentMapping)
+        {
+            specularFactor = EnvironmentSpecularFactor;
+        }
+        else
+        {
+            specularFactor = DefaultSpecularFactor;
+        }
         if (hasEnvironmentMapping && submesh.EnvMapScale > 0f)
         {
             specularFactor = MathF.Min(1f, specularFactor + Math.Clamp(submesh.EnvMapScale, 0f, 1.5f) * 0.15f);

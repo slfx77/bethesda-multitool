@@ -43,7 +43,7 @@ public static class MediaWikiTimelineWriter
         VersionSnapshot targetBuild,
         VersionSnapshot baselineBuild,
         VersionDiffResult diff,
-        string pageTitle,
+        string _pageTitle,
         string introText,
         bool isDmpPage,
         HashSet<uint>? fo3LeftoverFormIds = null)

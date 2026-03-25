@@ -99,7 +99,7 @@ internal static partial class NpcRenderHelpers
     /// <summary>
     ///     Determines whether the RACE body texture override should replace a submesh's texture.
     /// </summary>
-    internal static bool ShouldApplyBodyTextureOverride(string? existingPath, string overridePath)
+    internal static bool ShouldApplyBodyTextureOverride(string? existingPath, string _overridePath)
     {
         if (string.IsNullOrEmpty(existingPath))
             return true;

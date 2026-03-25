@@ -227,9 +227,12 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
                     : runtimeCellMapWorldspace;
             }
 
-            worldspace = cellBackedWorldspace != null
-                ? worldspace != null ? MergeWorldspace(worldspace, cellBackedWorldspace) : cellBackedWorldspace
-                : worldspace;
+            if (cellBackedWorldspace != null)
+            {
+                worldspace = worldspace != null
+                    ? MergeWorldspace(worldspace, cellBackedWorldspace)
+                    : cellBackedWorldspace;
+            }
             if (worldspace == null)
             {
                 continue;

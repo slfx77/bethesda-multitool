@@ -266,9 +266,8 @@ internal sealed class DialogueRecordHandler(RecordParserContext context) : Recor
 
                 questEntryCount++;
 
-                if (questByFormId.ContainsKey(entry.FormId))
+                if (questByFormId.TryGetValue(entry.FormId, out var existing))
                 {
-                    var existing = questByFormId[entry.FormId];
                     var needsEnrichment = NeedsRuntimeQuestEnrichment(existing);
                     if (needsEnrichment)
                     {
@@ -505,8 +504,8 @@ internal sealed class DialogueRecordHandler(RecordParserContext context) : Recor
     }
 
     private static List<QuestStage> MergeQuestStages(
-        IReadOnlyList<QuestStage> esmStages,
-        IReadOnlyList<QuestStage> runtimeStages)
+        List<QuestStage> esmStages,
+        List<QuestStage> runtimeStages)
     {
         if (runtimeStages.Count == 0)
         {
@@ -562,8 +561,8 @@ internal sealed class DialogueRecordHandler(RecordParserContext context) : Recor
     }
 
     private static List<QuestObjective> MergeQuestObjectives(
-        IReadOnlyList<QuestObjective> esmObjectives,
-        IReadOnlyList<QuestObjective> runtimeObjectives)
+        List<QuestObjective> esmObjectives,
+        List<QuestObjective> runtimeObjectives)
     {
         if (runtimeObjectives.Count == 0)
         {

@@ -271,39 +271,43 @@ internal static class FaceGenMeshMorpher
 
                 // Check 26 neighbor buckets for boundary cases.
                 for (var ox = -1; ox <= 1; ox++)
-                for (var oy = -1; oy <= 1; oy++)
-                for (var oz = -1; oz <= 1; oz++)
                 {
-                    if (ox == 0 && oy == 0 && oz == 0)
+                    for (var oy = -1; oy <= 1; oy++)
                     {
-                        continue;
-                    }
-
-                    var neighborKey = (bucketKey.Item1 + ox, bucketKey.Item2 + oy, bucketKey.Item3 + oz);
-                    if (!buckets.TryGetValue(neighborKey, out var neighborList))
-                    {
-                        continue;
-                    }
-
-                    foreach (var b in neighborList)
-                    {
-                        if (welded[b])
+                        for (var oz = -1; oz <= 1; oz++)
                         {
-                            continue;
-                        }
+                            if (ox == 0 && oy == 0 && oz == 0)
+                            {
+                                continue;
+                            }
 
-                        var dx = positions[b * 3] - ax;
-                        var dy = positions[b * 3 + 1] - ay;
-                        var dz = positions[b * 3 + 2] - az;
-                        if (dx * dx + dy * dy + dz * dz > epsilonSq)
-                        {
-                            continue;
-                        }
+                            var neighborKey = (bucketKey.Item1 + ox, bucketKey.Item2 + oy, bucketKey.Item3 + oz);
+                            if (!buckets.TryGetValue(neighborKey, out var neighborList))
+                            {
+                                continue;
+                            }
 
-                        sumNx += normals[b * 3];
-                        sumNy += normals[b * 3 + 1];
-                        sumNz += normals[b * 3 + 2];
-                        count++;
+                            foreach (var b in neighborList)
+                            {
+                                if (welded[b])
+                                {
+                                    continue;
+                                }
+
+                                var dx = positions[b * 3] - ax;
+                                var dy = positions[b * 3 + 1] - ay;
+                                var dz = positions[b * 3 + 2] - az;
+                                if (dx * dx + dy * dy + dz * dz > epsilonSq)
+                                {
+                                    continue;
+                                }
+
+                                sumNx += normals[b * 3];
+                                sumNy += normals[b * 3 + 1];
+                                sumNz += normals[b * 3 + 2];
+                                count++;
+                            }
+                        }
                     }
                 }
 
@@ -348,39 +352,43 @@ internal static class FaceGenMeshMorpher
 
                 // Apply to neighbor bucket vertices too.
                 for (var ox = -1; ox <= 1; ox++)
-                for (var oy = -1; oy <= 1; oy++)
-                for (var oz = -1; oz <= 1; oz++)
                 {
-                    if (ox == 0 && oy == 0 && oz == 0)
+                    for (var oy = -1; oy <= 1; oy++)
                     {
-                        continue;
-                    }
-
-                    var neighborKey = (bucketKey.Item1 + ox, bucketKey.Item2 + oy, bucketKey.Item3 + oz);
-                    if (!buckets.TryGetValue(neighborKey, out var neighborList))
-                    {
-                        continue;
-                    }
-
-                    foreach (var b in neighborList)
-                    {
-                        if (welded[b])
+                        for (var oz = -1; oz <= 1; oz++)
                         {
-                            continue;
-                        }
+                            if (ox == 0 && oy == 0 && oz == 0)
+                            {
+                                continue;
+                            }
 
-                        var dx = positions[b * 3] - ax;
-                        var dy = positions[b * 3 + 1] - ay;
-                        var dz = positions[b * 3 + 2] - az;
-                        if (dx * dx + dy * dy + dz * dz > epsilonSq)
-                        {
-                            continue;
-                        }
+                            var neighborKey = (bucketKey.Item1 + ox, bucketKey.Item2 + oy, bucketKey.Item3 + oz);
+                            if (!buckets.TryGetValue(neighborKey, out var neighborList))
+                            {
+                                continue;
+                            }
 
-                        normals[b * 3] = wnx;
-                        normals[b * 3 + 1] = wny;
-                        normals[b * 3 + 2] = wnz;
-                        welded[b] = true;
+                            foreach (var b in neighborList)
+                            {
+                                if (welded[b])
+                                {
+                                    continue;
+                                }
+
+                                var dx = positions[b * 3] - ax;
+                                var dy = positions[b * 3 + 1] - ay;
+                                var dz = positions[b * 3 + 2] - az;
+                                if (dx * dx + dy * dy + dz * dz > epsilonSq)
+                                {
+                                    continue;
+                                }
+
+                                normals[b * 3] = wnx;
+                                normals[b * 3 + 1] = wny;
+                                normals[b * 3 + 2] = wnz;
+                                welded[b] = true;
+                            }
+                        }
                     }
                 }
             }

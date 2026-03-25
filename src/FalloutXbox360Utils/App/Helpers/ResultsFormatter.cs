@@ -141,7 +141,7 @@ internal static class ResultsFormatter
     }
 
     /// <summary>
-    ///     Builds the record breakdown category definitions from a <see cref="RecordCollection" />.
+    ///     Builds the record breakdown category definitions from a <see cref="Core.Formats.Esm.Models.RecordCollection" />.
     ///     Returns an array of (category name, record label/count pairs).
     /// </summary>
     internal static (string Name, (string Label, int Count)[] Records)[] BuildRecordBreakdownCategories(

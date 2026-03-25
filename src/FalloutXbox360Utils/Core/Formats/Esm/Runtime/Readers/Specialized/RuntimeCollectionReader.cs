@@ -1,4 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
@@ -20,7 +21,7 @@ internal sealed class RuntimeCollectionReader(RuntimeMemoryContext context)
         }
 
         var (layout, buffer, fileOffset) = structData.Value;
-        var listHeadOffset = _fields.FindFieldOffset(layout, "ListOfForms", "BGSListForm");
+        var listHeadOffset = RuntimePdbFieldAccessor.FindFieldOffset(layout, "ListOfForms", "BGSListForm");
         if (!listHeadOffset.HasValue)
         {
             return null;
@@ -50,10 +51,10 @@ internal sealed class RuntimeCollectionReader(RuntimeMemoryContext context)
         }
 
         var (layout, buffer, fileOffset) = structData.Value;
-        var listHeadOffset = _fields.FindFieldOffset(layout, "leveledList", "TESLeveledList");
-        var chanceOffset = _fields.FindFieldOffset(layout, "cChanceNone", "TESLeveledList");
-        var flagsOffset = _fields.FindFieldOffset(layout, "cLLFlags", "TESLeveledList");
-        var globalOffset = _fields.FindFieldOffset(layout, "pChanceGlobal", "TESLeveledList");
+        var listHeadOffset = RuntimePdbFieldAccessor.FindFieldOffset(layout, "leveledList", "TESLeveledList");
+        var chanceOffset = RuntimePdbFieldAccessor.FindFieldOffset(layout, "cChanceNone", "TESLeveledList");
+        var flagsOffset = RuntimePdbFieldAccessor.FindFieldOffset(layout, "cLLFlags", "TESLeveledList");
+        var globalOffset = RuntimePdbFieldAccessor.FindFieldOffset(layout, "pChanceGlobal", "TESLeveledList");
 
         if (!listHeadOffset.HasValue || !chanceOffset.HasValue || !flagsOffset.HasValue)
         {

@@ -375,7 +375,7 @@ internal sealed class NpcAppearanceFactory
         return (hairColor, headPartIds);
     }
 
-    private NpcScanEntry BuildWeaponResolutionNpc(
+    private static NpcScanEntry BuildWeaponResolutionNpc(
         NpcRecord npcRecord,
         NpcScanEntry? esmNpc,
         bool isFemale)

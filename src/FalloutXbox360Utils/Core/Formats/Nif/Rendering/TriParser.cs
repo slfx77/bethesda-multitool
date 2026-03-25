@@ -399,16 +399,16 @@ internal sealed class TriParser
 
     private static TriTrailingStatisticalRegionCandidate? TryInferTrailingStatisticalRegionCandidate(
         byte[] data,
-        IReadOnlyList<TriStringInfo> tailStrings,
+        TriStringInfo[] tailStrings,
         int statisticalRecordCountHint,
         int headerWord2CHint)
     {
-        if (statisticalRecordCountHint <= 0 || tailStrings.Count < statisticalRecordCountHint)
+        if (statisticalRecordCountHint <= 0 || tailStrings.Length < statisticalRecordCountHint)
         {
             return null;
         }
 
-        var candidates = tailStrings.Skip(tailStrings.Count - statisticalRecordCountHint).ToArray();
+        var candidates = tailStrings.Skip(tailStrings.Length - statisticalRecordCountHint).ToArray();
         var records = new TriTrailingStatisticalRecordCandidate[candidates.Length];
         var aggregatePayloadCount = 0;
         var previousEnd = -1;
@@ -586,10 +586,12 @@ internal sealed class TriParser
     private static TriStringInfo[] ExtractTailStrings(byte[] data, int startOffset)
     {
         var results = new List<TriStringInfo>();
-        for (var i = startOffset; i < data.Length; i++)
+        var i = startOffset;
+        while (i < data.Length)
         {
             if (!IsPrintableAscii(data[i]))
             {
+                i++;
                 continue;
             }
 
@@ -601,6 +603,7 @@ internal sealed class TriParser
 
             if (end >= data.Length || data[end] != 0 || end - i < 3)
             {
+                i++;
                 continue;
             }
 
@@ -610,7 +613,7 @@ internal sealed class TriParser
                 i,
                 end - i,
                 LooksIdentifierLike(value)));
-            i = end;
+            i = end + 1;
         }
 
         return [.. results];

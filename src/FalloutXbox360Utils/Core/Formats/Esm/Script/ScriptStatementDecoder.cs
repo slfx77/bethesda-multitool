@@ -46,7 +46,7 @@ internal sealed class ScriptStatementDecoder
 
             case ScriptOpcodes.ExprIntLiteral: // 0x6E 'n' — integer literal (4 bytes)
                 reader.ReadByte();
-                return _varReader.ReadIntLiteral(reader);
+                return ScriptVariableReader.ReadIntLiteral(reader);
 
             case ScriptOpcodes.ExprDoubleLiteral: // 0x7A 'z' — double literal (8 bytes)
                 reader.ReadByte();

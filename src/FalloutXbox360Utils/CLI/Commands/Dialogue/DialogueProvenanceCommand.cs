@@ -268,7 +268,7 @@ internal static class DialogueProvenanceCommand
     }
 
     private static string FormatFormList(
-        IReadOnlyList<uint> formIds,
+        List<uint> formIds,
         RecordCollection parsed,
         Dictionary<uint, string> formIdMap)
     {

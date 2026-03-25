@@ -267,7 +267,7 @@ internal static partial class NpcExportSceneBuilder
             var parentSceneNode = node.ParentBlockIndex is int parentBlockIndex &&
                                   blockToSceneNode.TryGetValue(parentBlockIndex, out var existingParent)
                 ? existingParent
-                : scene.RootNodeIndex;
+                : NpcExportScene.RootNodeIndex;
             blockToSceneNode[node.BlockIndex] = scene.AddNode(
                 $"{node.Name}_{node.BlockIndex}",
                 parentSceneNode,
@@ -371,7 +371,7 @@ internal static partial class NpcExportSceneBuilder
     {
         var nodeIndex = scene.AddNode(
             $"{Path.GetFileNameWithoutExtension(label)}_{scene.MeshParts.Count}",
-            scene.RootNodeIndex,
+            NpcExportScene.RootNodeIndex,
             Matrix4x4.Identity,
             Matrix4x4.Identity,
             NpcExportNodeKind.Attachment);

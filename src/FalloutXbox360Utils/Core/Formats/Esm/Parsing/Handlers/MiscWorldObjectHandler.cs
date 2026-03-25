@@ -440,10 +440,10 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context) : Reco
             Radius = esm.Radius != 0 ? esm.Radius : runtime.Radius,
             Color = esm.Color != 0 ? esm.Color : runtime.Color,
             Flags = esm.Flags != 0 ? esm.Flags : runtime.Flags,
-            FalloffExponent = esm.FalloffExponent != 0 ? esm.FalloffExponent : runtime.FalloffExponent,
-            FOV = esm.FOV != 0 ? esm.FOV : runtime.FOV,
+            FalloffExponent = esm.FalloffExponent is not 0f ? esm.FalloffExponent : runtime.FalloffExponent,
+            FOV = esm.FOV is not 0f ? esm.FOV : runtime.FOV,
             Value = esm.Value != 0 ? esm.Value : runtime.Value,
-            Weight = esm.Weight != 0 ? esm.Weight : runtime.Weight,
+            Weight = esm.Weight is not 0f ? esm.Weight : runtime.Weight,
             Offset = esm.Offset != 0 ? esm.Offset : runtime.Offset,
             IsBigEndian = esm.IsBigEndian || runtime.IsBigEndian
         };

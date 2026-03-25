@@ -20,6 +20,7 @@ namespace FalloutXbox360Utils.Tests.Helpers;
 /// </remarks>
 internal static class DmpSnippetExtractor
 {
+    private static readonly JsonSerializerOptions s_jsonOptions = new() { WriteIndented = false };
     /// <summary>
     ///     Extract a snippet from a real DMP file by running <paramref name="testAction" />.
     ///     Saves the snippet binary and JSON manifest to <paramref name="outputDir" />.
@@ -83,10 +84,9 @@ internal static class DmpSnippetExtractor
         };
 
         var jsonPath = Path.Combine(outputDir, $"{snippetName}.json.gz");
-        var options = new JsonSerializerOptions { WriteIndented = false };
         await using var gzFs = File.Create(jsonPath);
         await using var gzStream = new GZipStream(gzFs, CompressionLevel.Optimal);
-        await JsonSerializer.SerializeAsync(gzStream, manifest, options);
+        await JsonSerializer.SerializeAsync(gzStream, manifest, s_jsonOptions);
 
         var totalCaptured = ranges.Sum(r => (long)r.Length);
         Console.WriteLine($"Snippet '{snippetName}': {ranges.Count} ranges, " +

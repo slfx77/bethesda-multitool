@@ -1,4 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 
@@ -53,7 +54,7 @@ internal sealed class RuntimeWorldObjectReader(RuntimeMemoryContext context)
         }
 
         var (layout, buffer, fileOffset) = structData.Value;
-        var lightDataOffset = _fields.FindFieldOffset(layout, "data", "TESObjectLIGH");
+        var lightDataOffset = RuntimePdbFieldAccessor.FindFieldOffset(layout, "data", "TESObjectLIGH");
         if (!lightDataOffset.HasValue || lightDataOffset.Value + 24 > buffer.Length)
         {
             return null;
@@ -73,9 +74,9 @@ internal sealed class RuntimeWorldObjectReader(RuntimeMemoryContext context)
             FalloffExponent = RuntimePdbFieldAccessor.ReadFloat(buffer, lightDataOffset.Value + 16),
             FOV = RuntimePdbFieldAccessor.ReadFloat(buffer, lightDataOffset.Value + 20),
             Value = (int)RuntimePdbFieldAccessor.ReadUInt32(buffer,
-                _fields.FindFieldOffset(layout, "iValue", "TESValueForm") ?? lightDataOffset.Value),
+                RuntimePdbFieldAccessor.FindFieldOffset(layout, "iValue", "TESValueForm") ?? lightDataOffset.Value),
             Weight = RuntimePdbFieldAccessor.ReadFloat(buffer,
-                _fields.FindFieldOffset(layout, "fWeight", "TESWeightForm") ?? lightDataOffset.Value),
+                RuntimePdbFieldAccessor.FindFieldOffset(layout, "fWeight", "TESWeightForm") ?? lightDataOffset.Value),
             Offset = fileOffset,
             IsBigEndian = true
         };
@@ -95,7 +96,7 @@ internal sealed class RuntimeWorldObjectReader(RuntimeMemoryContext context)
         }
 
         var (layout, buffer, fileOffset) = structData.Value;
-        var flagsOffset = _fields.FindFieldOffset(layout, "cFlags", "TESObjectDOOR");
+        var flagsOffset = RuntimePdbFieldAccessor.FindFieldOffset(layout, "cFlags", "TESObjectDOOR");
 
         return new DoorRecord
         {
@@ -153,7 +154,7 @@ internal sealed class RuntimeWorldObjectReader(RuntimeMemoryContext context)
         }
 
         var (layout, buffer, fileOffset) = structData.Value;
-        var markerFlagsOffset = _fields.FindFieldOffset(layout, "iFurnFlags", "TESFurniture");
+        var markerFlagsOffset = RuntimePdbFieldAccessor.FindFieldOffset(layout, "iFurnFlags", "TESFurniture");
 
         return new FurnitureRecord
         {

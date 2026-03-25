@@ -192,7 +192,7 @@ internal static class GeckActorWriter
     ///     Generate a report for Creatures only.
     /// </summary>
     public static string GenerateCreaturesReport(List<CreatureRecord> creatures,
-        FormIdResolver? resolver = null)
+        FormIdResolver? _resolver = null)
     {
         var sb = new StringBuilder();
         AppendCreaturesSection(sb, creatures);

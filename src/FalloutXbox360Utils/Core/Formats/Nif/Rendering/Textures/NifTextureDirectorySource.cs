@@ -14,11 +14,19 @@ internal sealed class NifTextureDirectorySource(string rootPath) : INifTextureSo
         var primaryPath = Path.Combine(
             _rootPath,
             path.Replace('\\', Path.DirectorySeparatorChar));
-        var alternatePath = path.EndsWith(".dds", StringComparison.OrdinalIgnoreCase)
-            ? Path.ChangeExtension(primaryPath, ".ddx")
-            : path.EndsWith(".ddx", StringComparison.OrdinalIgnoreCase)
-                ? Path.ChangeExtension(primaryPath, ".dds")
-                : null;
+        string? alternatePath;
+        if (path.EndsWith(".dds", StringComparison.OrdinalIgnoreCase))
+        {
+            alternatePath = Path.ChangeExtension(primaryPath, ".ddx");
+        }
+        else if (path.EndsWith(".ddx", StringComparison.OrdinalIgnoreCase))
+        {
+            alternatePath = Path.ChangeExtension(primaryPath, ".dds");
+        }
+        else
+        {
+            alternatePath = null;
+        }
 
         foreach (var candidate in new[] { primaryPath, alternatePath })
         {

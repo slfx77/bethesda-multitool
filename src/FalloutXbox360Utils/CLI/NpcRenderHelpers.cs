@@ -446,8 +446,8 @@ internal static partial class NpcRenderHelpers
     private static List<DmpNpcTarget> BuildDmpTargets(
         string[]? filters,
         IReadOnlyList<RuntimeEditorIdEntry> npcEntries,
-        IReadOnlyDictionary<uint, RuntimeEditorIdEntry> npcEntriesByFormId,
-        IReadOnlyDictionary<string, RuntimeEditorIdEntry> npcEntriesByEditorId,
+        Dictionary<uint, RuntimeEditorIdEntry> npcEntriesByFormId,
+        Dictionary<string, RuntimeEditorIdEntry> npcEntriesByEditorId,
         IReadOnlyDictionary<uint, DmpActorRuntimeInfo> actorInfosByFormId,
         IReadOnlyDictionary<uint, List<DmpActorRuntimeInfo>> actorInfosByBaseNpcFormId)
     {

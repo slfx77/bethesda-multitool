@@ -407,7 +407,11 @@ public sealed partial class SingleFileTab
         }
 
         // Debounce rapid toggling
-        _npcRenderOptionDebounce?.Cancel();
+        if (_npcRenderOptionDebounce != null)
+        {
+            await _npcRenderOptionDebounce.CancelAsync();
+        }
+
         _npcRenderOptionDebounce = new CancellationTokenSource();
         var token = _npcRenderOptionDebounce.Token;
 
@@ -796,7 +800,7 @@ public sealed partial class SingleFileTab
         };
     }
 
-    private async Task<string?> PickOutputFolderAsync()
+    private static async Task<string?> PickOutputFolderAsync()
     {
         var picker = new FolderPicker();
         picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;

@@ -1,4 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm;
@@ -260,11 +261,11 @@ internal sealed class RuntimeCellReader
             return null;
         }
 
-        var mapDataOffset = AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "WorldMapData", "TESWorldSpace"));
+        var mapDataOffset = AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "WorldMapData", "TESWorldSpace"));
         var minimumCoordsOffset =
-            AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "MinimumCoords", "TESWorldSpace"));
+            AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "MinimumCoords", "TESWorldSpace"));
         var maximumCoordsOffset =
-            AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "MaximumCoords", "TESWorldSpace"));
+            AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "MaximumCoords", "TESWorldSpace"));
 
         int? mapUsableWidth = null;
         int? mapUsableHeight = null;
@@ -311,7 +312,7 @@ internal sealed class RuntimeCellReader
             boundsMaxY = RuntimeCellObjectEnumerator.ReadNormalFloat(buffer, maximumCoordsOffset.Value + 4);
         }
 
-        if (boundsMinX == 0 && boundsMinY == 0 && boundsMaxX == 0 && boundsMaxY == 0)
+        if (boundsMinX is 0f && boundsMinY is 0f && boundsMaxX is 0f && boundsMaxY is 0f)
         {
             boundsMinX = null;
             boundsMinY = null;
@@ -353,9 +354,9 @@ internal sealed class RuntimeCellReader
             ClimateFormId = ReadWorldFormIdPointer(buffer, layout, "pClimate", "TESWorldSpace", 0x36),
             WaterFormId = ReadWorldFormIdPointer(buffer, layout, "pWorldWater", "TESWorldSpace", 0x4E),
             DefaultLandHeight = RuntimeCellObjectEnumerator.ReadNormalFloat(buffer,
-                AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "fDefaultLandHeight", "TESWorldSpace"))),
+                AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "fDefaultLandHeight", "TESWorldSpace"))),
             DefaultWaterHeight = RuntimeCellObjectEnumerator.ReadNormalFloat(buffer,
-                AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "fDefaultWaterHeight", "TESWorldSpace"))),
+                AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "fDefaultWaterHeight", "TESWorldSpace"))),
             MapUsableWidth = mapUsableWidth,
             MapUsableHeight = mapUsableHeight,
             MapNWCellX = mapNWCellX,
@@ -384,11 +385,11 @@ internal sealed class RuntimeCellReader
         byte[] buffer,
         PdbTypeLayout layout)
     {
-        var mapDataOffset = AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "WorldMapData", "TESWorldSpace"));
+        var mapDataOffset = AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "WorldMapData", "TESWorldSpace"));
         var minimumCoordsOffset =
-            AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "MinimumCoords", "TESWorldSpace"));
+            AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "MinimumCoords", "TESWorldSpace"));
         var maximumCoordsOffset =
-            AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "MaximumCoords", "TESWorldSpace"));
+            AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "MaximumCoords", "TESWorldSpace"));
 
         int? mapUsableWidth = null;
         int? mapUsableHeight = null;
@@ -435,7 +436,7 @@ internal sealed class RuntimeCellReader
             boundsMaxY = RuntimeCellObjectEnumerator.ReadNormalFloat(buffer, maximumCoordsOffset.Value + 4);
         }
 
-        if (boundsMinX == 0 && boundsMinY == 0 && boundsMaxX == 0 && boundsMaxY == 0)
+        if (boundsMinX is 0f && boundsMinY is 0f && boundsMaxX is 0f && boundsMaxY is 0f)
         {
             boundsMinX = null;
             boundsMinY = null;
@@ -520,13 +521,13 @@ internal sealed class RuntimeCellReader
         float? MapOffsetScaleX, float? MapOffsetScaleY, float? MapOffsetZ) ReadWorldExtendedFields(
             byte[] buffer, PdbTypeLayout layout)
     {
-        var flagsOffset = AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "cFlags", "TESWorldSpace"));
+        var flagsOffset = AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "cFlags", "TESWorldSpace"));
         byte? flags = flagsOffset.HasValue && flagsOffset.Value < buffer.Length
             ? buffer[flagsOffset.Value]
             : null;
 
         var parentUseFlagsOffset =
-            AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "sParentUseFlags", "TESWorldSpace"));
+            AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "sParentUseFlags", "TESWorldSpace"));
         ushort? parentUseFlags = parentUseFlagsOffset.HasValue && parentUseFlagsOffset.Value + 2 <= buffer.Length
             ? RuntimePdbFieldAccessor.ReadUInt16(buffer, parentUseFlagsOffset.Value)
             : null;
@@ -535,7 +536,7 @@ internal sealed class RuntimeCellReader
         var musicTypeFormId = ReadWorldFormIdPointer(buffer, layout, "pMusicType", "TESWorldSpace", 0x6B);
 
         var offsetDataOffset =
-            AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, "WorldMapOffsetData", "TESWorldSpace"));
+            AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "WorldMapOffsetData", "TESWorldSpace"));
         float? mapOffsetScaleX = null;
         float? mapOffsetScaleY = null;
         float? mapOffsetZ = null;
@@ -546,7 +547,7 @@ internal sealed class RuntimeCellReader
             mapOffsetScaleY = BinaryUtils.ReadFloatBE(buffer, offsetDataOffset.Value + 4);
             mapOffsetZ = BinaryUtils.ReadFloatBE(buffer, offsetDataOffset.Value + 8);
 
-            if (mapOffsetScaleX == 0 && mapOffsetScaleY == 0 && mapOffsetZ == 0)
+            if (mapOffsetScaleX is 0f && mapOffsetScaleY is 0f && mapOffsetZ is 0f)
             {
                 mapOffsetScaleX = null;
                 mapOffsetScaleY = null;
@@ -565,7 +566,7 @@ internal sealed class RuntimeCellReader
         string? owner = null,
         byte? expectedFormType = null)
     {
-        var fieldOffset = AdjustWorldFieldOffset(_fields.FindFieldOffset(layout, name, owner));
+        var fieldOffset = AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, name, owner));
         return fieldOffset.HasValue
             ? _fields.ReadPointerToFormId(buffer, fieldOffset.Value, expectedFormType)
             : null;

@@ -8,7 +8,6 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion;
 public sealed class EsmConverter : IDisposable
 {
     private readonly EsmConverterGrupHandler _grupHandler;
-    private readonly EsmGrupWriter _grupWriter;
     private readonly byte[] _input;
     private readonly MemoryStream _output;
     private readonly EsmRecordWriter _recordWriter;
@@ -24,8 +23,8 @@ public sealed class EsmConverter : IDisposable
         _output = new MemoryStream(input.Length);
         _writer = new BinaryWriter(_output);
         _recordWriter = new EsmRecordWriter(input, _stats);
-        _grupWriter = new EsmGrupWriter(input, _recordWriter, _stats);
-        _grupHandler = new EsmConverterGrupHandler(input, _grupWriter, _stats, verbose);
+        var grupWriter = new EsmGrupWriter(input, _recordWriter, _stats);
+        _grupHandler = new EsmConverterGrupHandler(input, grupWriter, _stats, verbose);
     }
 
     public void Dispose()

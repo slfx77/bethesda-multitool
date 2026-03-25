@@ -70,6 +70,22 @@ semantic conclusions were stronger than the raw evidence and are now called out 
 - `TestOutput/codex_geck_generation_bake_join.txt` — summary of the GECK generation-to-bake join and the narrowed remaining handoff gap
 - `tools/GhidraProject/facegen_geck_generation_install_bridge.txt` — focused GECK decompile of the remaining generation/install bridge from `FUN_00697a10` through the bake-visible `FREGT003` lazy-load path
 - `TestOutput/codex_geck_install_bridge_resolution.txt` — summary of the focused GECK install-bridge pass, including the split between durable model-side overflow storage and the separate bake-visible package chain
+- `tools/GhidraProject/facegen_geck_model_overflow_consumer_bridge.txt` — focused GECK decompile of the first known downstream consumer of the durable model-side overflow vectors at `[this + 0x08] + 0x14/+0x18`
+- `TestOutput/codex_geck_model_overflow_consumer_resolution.txt` — summary of the geometry-side overflow-consumer pass and the remaining bake-visible handoff gap
+- `tools/GhidraProject/facegen_geck_generated_package_cache_bridge.txt` — focused GECK decompile of the post-generation cache/install helper `FUN_0068D510` and the matching resolve path `FUN_0068D670`
+- `TestOutput/codex_geck_generated_package_cache_bridge_resolution.txt` — summary of the cache/install pass, including the `BSFaceGenModelMap::Entry` read and why it still does not prove an overflow-to-package copy
+- `tools/GhidraProject/facegen_geck_metadata_holder_bridge.txt` — focused GECK decompile of `FUN_00405B40`, `FUN_00694880`, and the `[this + 0x0C]` metadata-holder path
+- `TestOutput/codex_geck_metadata_holder_resolution.txt` — summary of the metadata-holder pass, including the `path + length/state + lazy package ptr` layout read for `[this + 0x0C]`
+- `tools/GhidraProject/facegen_geck_bake_direct_read_bridge.txt` — focused GECK decompile of `FUN_00695B50`, `FUN_0068DA70`, `FUN_00C5D220`, and representative non-bake callers of the numeric helper
+- `TestOutput/codex_geck_bake_direct_read_bridge_resolution.txt` — summary of the direct bake-side helper pass, including the cache/package read for `FUN_0068DA70` and the generic round-to-int read for `FUN_00C5D220`
+- `tools/GhidraProject/facegen_geck_egt_package_object_bridge.txt` — focused GECK decompile of the bake-visible `0x34` `FREGT003` package object family plus parser-entry helpers
+- `TestOutput/codex_geck_egt_package_object_bridge_resolution.txt` — summary of the package-object pass, including the two `0x18` child spans and the narrowed file-derived parser read
+- `tools/GhidraProject/facegen_geck_fregt_writer_bridge.txt` — focused GECK decompile of the higher-level writer/export owners above the shared FaceGen binary/schema helpers
+- `TestOutput/codex_geck_fregt_writer_bridge_resolution.txt` — summary of the writer-side pass, including the `FRTRI003` save-path result and the lack of a comparable `FREGT003` magic-bearing writer
+- `tools/GhidraProject/facegen_geck_export_staging_bridge.txt` — focused GECK decompile of the `FUN_00587B20 -> FUN_0068CB60 -> FUN_0068FE90 -> FUN_00695B50` export-staging path plus the holder/lazy-load siblings beside it
+- `TestOutput/codex_geck_export_staging_bridge_resolution.txt` — summary of the export-staging pass, including the cache-hit/generate split in `FUN_0068FE90` and the remaining on-demand lazy package load inside `FUN_00695B50`
+- `tools/GhidraProject/facegen_geck_export_owner_bridge.txt` — focused GECK decompile of the concrete FaceMods writer lane, the sibling BodyMods lane, and the shared pre-save texture application stage under them
+- `TestOutput/codex_geck_export_owner_bridge_resolution.txt` — summary of the GECK export-owner split, including why `FUN_00574500` is the real FaceMods writer and why `FUN_00691B10` is a shared application step rather than a writer
 - `tools/GhidraProject/facegen_tri_runtime_bridge.txt` — Xbox MemDebug raw-address pass for TRI runtime container + morph builders
 - `tools/GhidraProject/facegen_tri_runtime_tables.txt` — raw Xbox table dump for the runtime morph-builder globals
 - `tools/GhidraProject/facegen_tri_runtime_table_initializers.txt` — xref scan for the runtime morph-builder globals
@@ -782,6 +798,17 @@ Each channel sub-struct (0x18 bytes):
 - +0x0C from channel start: delta data begin pointer (accessed as entry + channel\*0x18 + 0x1C)
 - +0x10 from channel start: delta data end pointer (accessed as entry + channel\*0x18 + 0x20)
 
+Later focused decompilation tightens the object-family context around that layout:
+
+- the bake-visible package object allocated by `FUN_00695AE0` is a `0x34` wrapper with:
+  - `+0x00`: scalar/header field written by `FUN_0085FB40`
+  - `+0x04`: first `0x18` entry span
+  - `+0x1C`: second `0x18` entry span
+- `FUN_00695A10` is just the loader constructor for that object: it builds the two child spans,
+  copies the input path into a temporary small-string, and calls `FUN_0085FB40`
+- `FUN_00696820`, `FUN_00696340`, `FUN_00696390`, and `FUN_00694CD0` now read cleanly as the
+  corresponding package/span cleanup and slice helpers, not a generation-side install bridge
+
 ### 8.3 GECK Bake-Input Load Chain — partially verified
 
 Audit note (2026-03-18):
@@ -825,6 +852,44 @@ Audit note (2026-03-18):
   `[this + 0x08] + 0x14/+0x18`. So the remaining gap is no longer "where does install happen?" but
   specifically whether that durable model-side overflow storage ever feeds the separate bake-visible
   package chain.
+- A follow-up consumer pass narrows that durable side again. The first known downstream chain is
+  `FUN_00697910 -> FUN_006941c0 -> FUN_006989b0`: `FUN_006941c0` reads `[this + 0x08]`, passes
+  `model->+0x14` and `model->+0x18` into `FUN_006989b0`, and then attaches the returned object via
+  `FUN_00818480`. `FUN_006989b0` itself builds a base vector buffer from source data rooted at
+  `param_1 + 0xB8`, copies the base `float3` span, and appends the optional overflow tail from
+  `[this + 0x08] + 0x14/+0x18`. A later class-identity read tightens that further: the constructed
+  object is explicit `BSFaceGenBaseMorphExtraData`. So the known consumer is geometry-side, not the
+  bake-visible `FREGT003` package chain.
+- The post-generation cache/install edge is also clearer now. `FUN_0068d510` is a
+  `BSFaceGenModelMap::Entry`-style cache insert/update helper: it stores the generated package
+  object pointer, timestamps the entry, and updates the global FaceGen model cache under a lock.
+  The matching resolve path `FUN_0068d670` pulls that cached object back out, returns the same
+  object pointer to the caller, then lazy-loads model-side payloads through `FUN_006975c0` and the
+  bake-visible `FREGT003` package through `FUN_00696280`. So this success edge still does not show
+  a copy/install path from `[this + 0x08] + 0x14/+0x18` into `[this + 0x0C] + 0x08`.
+- The holder path under `[this + 0x0C]` is also mostly retired now. `FUN_00694880` allocates a
+  tiny `0x0C` holder, zeroes `+0x00`, `+0x04/+0x06`, and `+0x08`, then calls `FUN_00405b40` on
+  it. `FUN_00405b40` is just a generic small-string/path assign helper: it copies a path into the
+  holder, stores length/state at `+0x04/+0x06`, and does not install generated morph payloads.
+  `FUN_00696280` later uses that same holder exactly as `path + lazy package ptr`: if
+  `[holder + 0x08] == 0`, it reads the path from `+0x00/+0x04`, falls back to `strlen` on the
+  `0xFFFF` sentinel, calls `FUN_00695ae0(*holder)`, and stores the loaded `FREGT003` package at
+  `[holder + 0x08]`.
+- The helper seam directly under `FUN_00695b50` is also mostly retired now. `FUN_0068da70` is just
+  a thread-state wrapper around `FUN_0068d8b0`, which stays in the shared FaceGen package/cache
+  lane, refreshes the cached entry, then lazy-loads model-side state through `FUN_006975c0` and
+  the bake-visible `FREGT003` package through `FUN_00696280`. `FUN_00c5d220` is a generic x87
+  float-to-int rounding helper, and the bake assembly feeds it with `FLD`/`FMUL` before using the
+  returned integer as a coefficient/fanout scalar. So this helper layer does not expose a hidden
+  geometry-side direct read path under `FUN_00695b50`; it stays in package/cache/math territory.
+- The `FREGT003` package-object family is also much tighter now. `FUN_00695ae0` allocates a
+  `0x34` object, `FUN_00695a10` constructs two `0x18` child spans at `+0x04` and `+0x1C`, and
+  `FUN_0085fb40` then validates the on-disk `FREGT003` header, resets the two entry-array headers
+  with `FUN_00696640`, sizes them with `FUN_00860630`, and fills two independent `0x58` entry
+  arrays from file data. The sibling helpers `FUN_00696340`, `FUN_00696390`, `FUN_00694cd0`, and
+  `FUN_00696820` all stay in cleanup/slice/destructor territory, while `FUN_00860340`,
+  `FUN_00860450`, and `FUN_00860630` stay in parser temp/reserve/population territory. So this
+  object family now looks purely file-derived, not like the missing generation/install bridge.
 - Focused decompilation of `FUN_00865fb0` and its helper layer shows that `FRTRI003` is not a
   single opaque coord blob. `FUN_00696680` first initializes a `0xF0` output object as nine
   contiguous `0x18`-byte container slots, and `FUN_00865fb0` then populates those slots with
@@ -894,6 +959,21 @@ The GECK's EGT generation orchestrator now looks materially clearer:
   with count at `[this + 0x08] + 0x18`. That proves a real install into model-side state, but it
   still does not directly prove the later handoff into the separate bake-visible package at
   `[this + 0x0C] + 0x08`.
+- The first concrete downstream consumer of that durable storage is now identified too.
+  `FUN_006941c0` passes `[this + 0x08] + 0x14/+0x18` into `FUN_006989b0`, which appends those
+  overflow `float3` records onto a base vector buffer sourced from `param_1 + 0xB8` before the
+  result is attached through `FUN_00818480`. That makes the known consumer geometry-side rather
+  than bake-visible, and sharpens the remaining question to whether any separate package/install
+  path mirrors this into `[this + 0x0C] + 0x08`.
+- The later cache edge is no longer a plausible hidden handoff either. `FUN_0068d510` only stores
+  the generated object in the global FaceGen model map, and `FUN_0068d670` later resolves that
+  same cached object before lazily calling `FUN_006975c0` and `FUN_00696280`. That means the
+  observed post-generation cache/install path is still object-level caching plus lazy loading, not
+  a proven copy from the durable overflow vectors into the bake-visible package.
+- The metadata-holder branch is no longer a plausible hidden payload bridge either. `[this + 0x0C]`
+  now reads as a tiny `path + length/state + lazy package ptr` wrapper, and `FUN_00405b40` just
+  assigns the path string into that holder. So the missing generation-to-package handoff, if it
+  still exists, is not inside the holder layout or the generic string-assign helper.
 
 Field-level shape from the current decompilation:
 
@@ -2939,9 +3019,64 @@ Irrelevant for sprite generation (camera distance → fog factor ≈ 0).
    bake routine `FUN_00695b50`. The install bridge is also narrower now: `FUN_00697a10` does
    perform a durable model-side install of overflow generated `0x0C` `float3` records at
    `[this + 0x08] + 0x14/+0x18`, while `FUN_00694880` and `FUN_00696280` manage the separate
-   metadata-holder / bake-visible `FREGT003` package chain at `[this + 0x0C] + 0x08`. The
-   remaining gap is the exact copy/install step, if any, from that durable model-side overflow
-   state into the texture-morph package entries later iterated by `FUN_00695b50`.
+   metadata-holder / bake-visible `FREGT003` package chain at `[this + 0x0C] + 0x08`. The first
+   known downstream consumer of the durable overflow state is now `FUN_006941c0 -> FUN_006989b0`,
+   which appends those vectors onto a geometry-side base vector buffer before attaching the result
+   through `FUN_00818480`. The post-generation cache/install edge is also clearer: `FUN_0068d510`
+   only caches the generated package object in a `BSFaceGenModelMap::Entry`, and `FUN_0068d670`
+   later resolves that same object before lazily loading its model-side and bake-visible payloads.
+   The `[this + 0x0C]` holder itself is now demoted too: it stores only path metadata plus the
+   lazy-loaded package pointer, and `FUN_00405b40` is just the string/path assign helper that
+   populates it. The direct helper seam under `FUN_00695b50` is now demoted too:
+   `FUN_0068da70` stays in the package/cache lane and `FUN_00c5d220` is a generic rounding helper.
+   The bake-visible package object itself is now mostly retired as a mystery too:
+   `FUN_00695ae0 -> FUN_00695a10 -> FUN_0085fb40` allocates a `0x34` wrapper, builds two `0x18`
+   child spans, and fills two independent `0x58` entry arrays from on-disk `FREGT003` data via
+   parser-side temp/reserve/population helpers. A distinct writer-side pass demotes the next
+   obvious candidate too: `FUN_00867f20 -> FUN_00873ee0 -> FUN_00868030` is a concrete
+   `FRTRI003` save path, not an `FREGT003` export path, and `FUN_00868030` carries the explicit
+   literal `Invalid morph data during TRI file save.` while serializing the TRI section families
+   from the materialized generation object. The export-staging pass narrows the late handoff again:
+   `FUN_00587b20` only derives the `.egt` path via `FUN_0068cb60`, calls the cache/generate
+   orchestrator `FUN_0068fe90`, and then enters `FUN_00695b50`; `FUN_0068fe90` either resolves a
+   cached entry through `FUN_0068d670` or generates one through `FUN_00697ee0`, with
+   `FUN_00694880` merely backfilling the small holder/path lane when needed. `FUN_0068d670` then
+   resolves the cached entry and explicitly calls `FUN_006975c0` and `FUN_00696280`, while
+   `FUN_00695b50` still performs its own on-demand `FUN_00695ae0(*holderPath)` package load when
+   `[holder+0x08]` is empty. So the remaining gap is narrower still: not a hidden in-memory
+   package-entry staging pass immediately before `FUN_00695b50`, but whatever earlier
+   orchestration-side influence determines what bake-visible package state exists on disk and later
+   re-enters through the lazy `FREGT003` loader.
+- The concrete GECK writer split is now clearer too. `FUN_00449e50` is not just another helper; it
+  is the recovered Object Window dialog/message handler, with only a callback-style DATA xref and
+  explicit `Object Window` / `Object Tree` / `Object List` strings in its body. The FaceGen export
+  path sits inside its selected-object `WM_NOTIFY`-style branch under notify code `0xFFFFFF65`,
+  key case `0x73`, and `GetAsyncKeyState(0x11)`, which makes the practical trigger
+  Object Window + selected Object List rows + Ctrl+F4. The real state gate is the current
+  object-type index `DAT_00ed0770`: when it equals `0x0C`, the handler resolves the current
+  form/object, calls `FUN_004657a0(2, ...)`, then invokes both `FUN_00574500` and `FUN_00570a20`
+  back-to-back. `FUN_00574500` is the real FaceMods writer, with the explicit output family
+  `data\Textures\Characters\FaceMods\%s\F%08X_%08X_%i.dds/.tga` and
+  `...M%08X_%08X_%i.dds/.tga`; `FUN_00570a20` is the sibling BodyMods writer using
+  `data\Textures\Characters\BodyMods\...ModBody%s.dds/.tga`. That demotes another ambiguity:
+  `FUN_00587b20` is still an important shared bake helper, but it is not the concrete top-level
+  FaceMods file writer, and there is no later chooser between the FaceMods and BodyMods branches
+  inside this recovered owner path.
+- The shared pre-save stage under the concrete writer is also narrower now. `FUN_00691b10` is used
+  by the direct FaceMods writer (`FUN_00574500`) and by the other export/build helpers
+  `FUN_00575730` and `FUN_00587880`, not just by the narrower `FUN_00587b20` lane. Inside
+  `FUN_00691b10`, the editor/runtime state it consumes is now much clearer: it recognizes the
+  named part buckets `FaceGenEyeLeft`, `FaceGenEyeRight`, `FaceGenAccessory`, and `FaceGenHair`,
+  ensures global default base/detail state through `FUN_0068fda0`, iterates eight part slots on
+  the descriptor rooted at `param_2`, lazily loads the bake-visible package via `FUN_00695b50`
+  when needed, applies part-local texture state and overlay/material toggles, and only then hands
+  the final image objects back to the concrete save/export callers. The descriptor-side read is
+  now narrower too: the main inputs are `param_2 + 0x84` (RGB tint), `+0x90` (base texture
+  stem/path), `+0x98/+0xA8` (per-slot provider arrays), and `+0xCE/+0xD4` (feature/bake flags),
+  while the head-node pair and shared descriptor are assembled earlier by `FUN_00586ea0` and
+  `FUN_00692ca0`. So `FUN_00691b10` now reads much more like the shared head-texture application
+  stage than another hidden writer or package install bridge, and the remaining GECK-side input
+  seam has moved back to descriptor assembly rather than later package reads.
 
 6. **Our mesh/runtime path still does not consume the shipped `.tri` family semantically.** The
    sample assets confirm that `FRTRI003` files exist alongside the real head, eye, mouth, teeth,

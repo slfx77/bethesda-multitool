@@ -15,6 +15,8 @@ public sealed class RuntimeProbeConsistencyTests
     private static readonly string SnippetDir = Path.Combine(
         AppContext.BaseDirectory, "..", "..", "..", "TestData", "Dmp");
 
+    private static readonly string[] TypeNames = ["RACE", "PROJ", "MGEF", "SPEL", "ENCH", "PERK", "BOOK"];
+
     private static readonly string[] SnippetNames =
     [
         "debug_dump",
@@ -57,7 +59,7 @@ public sealed class RuntimeProbeConsistencyTests
         Log($"\n=== Summary: {allResults.Count} dumps processed ===\n");
 
         // Aggregate and report
-        var typeNames = new[] { "RACE", "PROJ", "MGEF", "SPEL", "ENCH", "PERK", "BOOK" };
+        var typeNames = TypeNames;
         foreach (var typeName in typeNames)
         {
             var entries = allResults
@@ -90,7 +92,7 @@ public sealed class RuntimeProbeConsistencyTests
             }
         }
 
-        reportWriter.Flush();
+        await reportWriter.FlushAsync();
         Log($"\nReport saved to: {reportPath}");
     }
 
@@ -181,7 +183,7 @@ public sealed class RuntimeProbeConsistencyTests
             e => defaultReader.ReadRuntimeBook(e));
 
         // Format output line
-        var parts = new[] { "RACE", "PROJ", "MGEF", "SPEL", "ENCH", "PERK", "BOOK" }
+        var parts = TypeNames
             .Select(t =>
             {
                 var r = typeResults[t];
@@ -191,7 +193,12 @@ public sealed class RuntimeProbeConsistencyTests
                 }
 
                 var delta = r.ProbedSuccess - r.DefaultSuccess;
-                var deltaStr = delta > 0 ? $"+{delta}" : delta < 0 ? $"{delta}" : "=";
+                var deltaStr = delta switch
+                {
+                    > 0 => $"+{delta}",
+                    < 0 => $"{delta}",
+                    _ => "="
+                };
                 return $"{r.ProbedSuccess}/{r.TotalEntries} {deltaStr}";
             });
 
@@ -201,7 +208,7 @@ public sealed class RuntimeProbeConsistencyTests
     }
 
     private static TypeReadResult CompareReads<T>(
-        IReadOnlyList<RuntimeEditorIdEntry> entries,
+        List<RuntimeEditorIdEntry> entries,
         Func<RuntimeEditorIdEntry, T?> probedRead,
         Func<RuntimeEditorIdEntry, T?> defaultRead) where T : class
     {
@@ -238,10 +245,10 @@ public sealed class RuntimeProbeConsistencyTests
         return parts.Count == 0 ? "0" : string.Join(",", parts);
     }
 
-    private record DmpProbeResult(
+    private sealed record DmpProbeResult(
         string SnippetName,
         Dictionary<string, TypeReadResult> TypeResults,
         List<(string Name, string Shift, int Margin)> ProbeShifts);
 
-    private record TypeReadResult(int TotalEntries, int ProbedSuccess, int DefaultSuccess);
+    private sealed record TypeReadResult(int TotalEntries, int ProbedSuccess, int DefaultSuccess);
 }

@@ -14,11 +14,12 @@ internal sealed class NpcMeshArchiveSet : IDisposable
     private NpcMeshArchiveSet(List<MeshArchiveSource> sources)
     {
         _sources = sources;
+        ArchivePaths = sources.Select(source => source.ArchivePath).ToArray();
     }
 
     public string PrimaryPath => _sources[0].ArchivePath;
 
-    public IReadOnlyList<string> ArchivePaths => _sources.Select(source => source.ArchivePath).ToArray();
+    public IReadOnlyList<string> ArchivePaths { get; }
 
     public void Dispose()
     {

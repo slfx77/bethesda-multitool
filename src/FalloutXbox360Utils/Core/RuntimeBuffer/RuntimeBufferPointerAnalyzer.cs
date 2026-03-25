@@ -205,7 +205,8 @@ internal sealed class RuntimeBufferPointerAnalyzer
                 continue;
             }
 
-            for (long regionOffset = alignDelta; regionOffset + 4 <= region.Size;)
+            var regionOffset = (long)alignDelta;
+            while (regionOffset + 4 <= region.Size)
             {
                 var remaining = region.Size - regionOffset;
                 var readSize = (int)Math.Min(PointerScanChunkSize, remaining);
@@ -252,7 +253,7 @@ internal sealed class RuntimeBufferPointerAnalyzer
 
     private Dictionary<long, RuntimeStringOwnershipClaim> BuildDirectOwnerClaims(
         BufferExplorationResult result,
-        IReadOnlyDictionary<long, RuntimeStringHit> hitsByFileOffset)
+        Dictionary<long, RuntimeStringHit> hitsByFileOffset)
     {
         var claims = new Dictionary<long, RuntimeStringOwnershipClaim>();
 

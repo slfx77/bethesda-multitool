@@ -37,10 +37,24 @@ internal sealed class CameraConfig
     {
         if (IsMultiView)
         {
-            var views = Trimetric ? TrimetricViews : SideProfile ? SideViews : IsoViews;
-            var elevation = SideProfile ? 0f
-                : Trimetric && !ElevationOverridden ? TrimetricDefaultElevation
-                : ElevationDeg;
+            var views = Trimetric switch
+            {
+                true => TrimetricViews,
+                _ => SideProfile ? SideViews : IsoViews
+            };
+            float elevation;
+            if (SideProfile)
+            {
+                elevation = 0f;
+            }
+            else if (Trimetric && !ElevationOverridden)
+            {
+                elevation = TrimetricDefaultElevation;
+            }
+            else
+            {
+                elevation = ElevationDeg;
+            }
             return views.Select(v => (v.Suffix, v.Azimuth + defaultAzimuth, elevation)).ToArray();
         }
 

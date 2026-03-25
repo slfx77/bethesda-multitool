@@ -348,12 +348,10 @@ public record RecordCollection
         foreach (var avif in ActorValueInfos)
         {
             if (avif.EditorId != null &&
-                FormIdResolver.AvifEditorIdToAvCode.TryGetValue(avif.EditorId, out var code))
+                FormIdResolver.AvifEditorIdToAvCode.TryGetValue(avif.EditorId, out var code) &&
+                code > maxAvCode)
             {
-                if (code > maxAvCode)
-                {
-                    maxAvCode = code;
-                }
+                maxAvCode = code;
             }
         }
 

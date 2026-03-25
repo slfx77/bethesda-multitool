@@ -151,7 +151,7 @@ internal static class RenderNifHelpers
 
     internal static void WriteIndexAndSummary(string outputDir,
         ConcurrentDictionary<string, SpriteIndexEntry> index,
-        ProcessingStats stats, NifTextureResolver? textureResolver, CancellationToken ct)
+        ProcessingStats stats, NifTextureResolver? textureResolver, CancellationToken _ct)
     {
         // Write index file
         var indexPath = Path.Combine(outputDir, "sprite-index.json");

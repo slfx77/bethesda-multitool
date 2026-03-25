@@ -40,7 +40,7 @@ internal static class EsmEditorIdExtractor
         long fileSize,
         MinidumpInfo? minidumpInfo,
         EsmRecordScanResult scanResult,
-        bool verbose = false)
+        bool _verbose = false)
     {
         var sw = Stopwatch.StartNew();
         var log = Logger.Instance;

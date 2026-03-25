@@ -540,7 +540,7 @@ public sealed class NpcExportHelperTests
         var scene = new NpcExportScene();
         var pelvisNode = scene.AddNode(
             "Bip01 Pelvis",
-            scene.RootNodeIndex,
+            NpcExportScene.RootNodeIndex,
             Matrix4x4.Identity,
             Matrix4x4.Identity,
             NpcExportNodeKind.Skeleton,
@@ -587,7 +587,7 @@ public sealed class NpcExportHelperTests
         var scene = new NpcExportScene();
         var nodeIndex = scene.AddNode(
             "Rigid",
-            scene.RootNodeIndex,
+            NpcExportScene.RootNodeIndex,
             Matrix4x4.Identity,
             Matrix4x4.Identity,
             NpcExportNodeKind.Attachment);

@@ -14,7 +14,7 @@ internal static class EsmBrowserTreeBuilder
 {
     public static ObservableCollection<EsmBrowserNode> BuildTree(
         RecordCollection result,
-        FormIdResolver? resolver = null)
+        FormIdResolver? _resolver = null)
     {
         var root = new ObservableCollection<EsmBrowserNode>();
 

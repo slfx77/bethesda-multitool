@@ -269,7 +269,7 @@ public sealed class RuntimeParityDumpIntegrationTests
                 var data = runtimeReader.ReadProjectilePhysics(entry.TesFormOffset!.Value, entry.FormId);
                 if (data == null) continue;
                 decoded++;
-                if (data.Speed != 0) withSpeed++;
+                if (data.Speed is not 0f) withSpeed++;
             }
 
             allResults.Add((snippetName, projEntries.Count, decoded, withSpeed));

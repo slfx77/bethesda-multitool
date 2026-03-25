@@ -205,7 +205,7 @@ internal static class GeckItemWriter
     /// <summary>
     ///     Generate a report for Armor only.
     /// </summary>
-    public static string GenerateArmorReport(List<ArmorRecord> armor, Dictionary<uint, string>? lookup = null)
+    public static string GenerateArmorReport(List<ArmorRecord> armor, Dictionary<uint, string>? _lookup = null)
     {
         var sb = new StringBuilder();
         AppendArmorSection(sb, armor);
@@ -340,7 +340,7 @@ internal static class GeckItemWriter
     ///     Generate a report for Misc Items only.
     /// </summary>
     public static string GenerateMiscItemsReport(List<MiscItemRecord> miscItems,
-        Dictionary<uint, string>? lookup = null)
+        Dictionary<uint, string>? _lookup = null)
     {
         var sb = new StringBuilder();
         AppendMiscItemsSection(sb, miscItems);
@@ -368,7 +368,7 @@ internal static class GeckItemWriter
     /// <summary>
     ///     Generate a report for Keys only.
     /// </summary>
-    public static string GenerateKeysReport(List<KeyRecord> keys, Dictionary<uint, string>? lookup = null)
+    public static string GenerateKeysReport(List<KeyRecord> keys, Dictionary<uint, string>? _lookup = null)
     {
         var sb = new StringBuilder();
         AppendKeysSection(sb, keys);

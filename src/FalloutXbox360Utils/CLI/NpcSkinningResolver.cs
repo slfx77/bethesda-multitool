@@ -22,18 +22,16 @@ internal static class NpcSkinningResolver
         compensationKind = ModelAttachmentCompensationKind.ExplicitAttachmentNode;
 
         var namedTransforms = NifGeometryExtractor.ExtractNamedBoneTransforms(data, nif, animOverrides);
-        if (!namedTransforms.TryGetValue(nodeName, out var attachmentWorldTransform))
+        if (!namedTransforms.TryGetValue(nodeName, out var attachmentWorldTransform) &&
+            !NpcSkeletonLoader.TryReadNodeLocalTransform(data, nif, nodeName, out attachmentWorldTransform))
         {
-            if (!NpcSkeletonLoader.TryReadNodeLocalTransform(data, nif, nodeName, out attachmentWorldTransform))
+            if (!namedTransforms.TryGetValue(NifGeometryExtractor.RootTransformKey, out attachmentWorldTransform) ||
+                IsNearlyIdentityTransform(attachmentWorldTransform))
             {
-                if (!namedTransforms.TryGetValue(NifGeometryExtractor.RootTransformKey, out attachmentWorldTransform) ||
-                    IsNearlyIdentityTransform(attachmentWorldTransform))
-                {
-                    return false;
-                }
-
-                compensationKind = ModelAttachmentCompensationKind.RootFallback;
+                return false;
             }
+
+            compensationKind = ModelAttachmentCompensationKind.RootFallback;
         }
 
         return Matrix4x4.Invert(attachmentWorldTransform, out compensationTransform);

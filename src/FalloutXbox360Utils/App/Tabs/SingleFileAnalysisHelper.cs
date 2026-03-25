@@ -158,7 +158,7 @@ internal static class SingleFileAnalysisHelper
     /// <summary>
     ///     Resolves a human-readable status phase string from analysis progress data.
     /// </summary>
-    public static string ResolvePhaseText(AnalysisProgress p, AnalysisFileType fileType)
+    public static string ResolvePhaseText(AnalysisProgress p, AnalysisFileType _fileType)
     {
         return p.Phase switch
         {

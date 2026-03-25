@@ -21,7 +21,7 @@ internal static class EsmStringDetector
     internal static List<DetectedAssetString> ScanForAssetStrings(
         MemoryMappedViewAccessor accessor,
         long fileSize,
-        bool verbose = false)
+        bool _verbose = false)
     {
         var sw = Stopwatch.StartNew();
 

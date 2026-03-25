@@ -1,4 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm;
@@ -98,14 +99,14 @@ internal sealed class RuntimeCellObjectEnumerator
             return null;
         }
 
-        var flagsOffset = _adjustCellFieldOffset(_fields.FindFieldOffset(layout, "cCellFlags", "TESObjectCELL"));
+        var flagsOffset = _adjustCellFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "cCellFlags", "TESObjectCELL"));
         var waterHeightOffset =
-            _adjustCellFieldOffset(_fields.FindFieldOffset(layout, "fWaterHeight", "TESObjectCELL"));
+            _adjustCellFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "fWaterHeight", "TESObjectCELL"));
         var worldspaceOffset =
-            _adjustCellFieldOffset(_fields.FindFieldOffset(layout, "pWorldSpace", "TESObjectCELL"));
-        var landOffset = _adjustCellFieldOffset(_fields.FindFieldOffset(layout, "pCellLand", "TESObjectCELL"));
+            _adjustCellFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "pWorldSpace", "TESObjectCELL"));
+        var landOffset = _adjustCellFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "pCellLand", "TESObjectCELL"));
         var referenceListOffset =
-            _adjustCellFieldOffset(_fields.FindFieldOffset(layout, "listReferences", "TESObjectCELL"));
+            _adjustCellFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "listReferences", "TESObjectCELL"));
 
         var flags = flagsOffset.HasValue && flagsOffset.Value < buffer.Length
             ? buffer[flagsOffset.Value]
@@ -113,14 +114,14 @@ internal sealed class RuntimeCellObjectEnumerator
 
         // pLightingTemplate — BGSLightingTemplate pointer (FormType 0x67)
         var lightingTemplateOffset =
-            _adjustCellFieldOffset(_fields.FindFieldOffset(layout, "pLightingTemplate", "TESObjectCELL"));
+            _adjustCellFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "pLightingTemplate", "TESObjectCELL"));
         var lightingTemplateFormId = lightingTemplateOffset.HasValue
             ? _fields.ReadPointerToFormId(buffer, lightingTemplateOffset.Value, 0x67)
             : null;
 
         // iLightingTemplateInheritanceFlags (uint32)
         var inheritFlagsOffset = _adjustCellFieldOffset(
-            _fields.FindFieldOffset(layout, "iLightingTemplateInheritanceFlags", "TESObjectCELL"));
+            RuntimePdbFieldAccessor.FindFieldOffset(layout, "iLightingTemplateInheritanceFlags", "TESObjectCELL"));
         uint? lightingInheritanceFlags = inheritFlagsOffset.HasValue && inheritFlagsOffset.Value + 4 <= buffer.Length
             ? RuntimePdbFieldAccessor.ReadUInt32(buffer, inheritFlagsOffset.Value)
             : null;
@@ -216,7 +217,7 @@ internal sealed class RuntimeCellObjectEnumerator
     {
         // ExtraDataList is an embedded struct in TESObjectCELL; pHead is at +4 within it.
         var extraDataOffset = _adjustCellFieldOffset(
-            _fields.FindFieldOffset(layout, "ExtraData", "TESObjectCELL"));
+            RuntimePdbFieldAccessor.FindFieldOffset(layout, "ExtraData", "TESObjectCELL"));
         if (!extraDataOffset.HasValue || extraDataOffset.Value + 8 > cellBuffer.Length)
         {
             return (null, null, null, null);

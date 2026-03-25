@@ -91,11 +91,11 @@ internal static partial class NpcExportSceneBuilder
             }
         }
 
-        var hairFilter = settings.NoEquip
-            ? null
-            : NpcRenderHelpers.HasHatEquipment(npc.EquippedItems)
-                ? "Hat"
-                : null;
+        string? hairFilter = null;
+        if (!settings.NoEquip && NpcRenderHelpers.HasHatEquipment(npc.EquippedItems))
+        {
+            hairFilter = "Hat";
+        }
         AddRaceFaceParts(scene, npc, meshArchives, textureResolver, egmCache, usedBaseRaceMesh,
             attachmentBoneTransforms, bonelessAttachmentTransform);
         AddHair(scene, npc, meshArchives, textureResolver, egmCache, usedBaseRaceMesh,

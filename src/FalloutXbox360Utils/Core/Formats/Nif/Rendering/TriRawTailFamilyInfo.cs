@@ -1,6 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 
-///     packed statistical apply path.
+/// <summary>
+///     Describes a family of raw-tail tri records for the packed statistical apply path.
 /// </summary>
 internal readonly record struct TriRawTailFamilyInfo(
     string Name,

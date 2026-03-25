@@ -6,7 +6,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
 internal static class CsvMiscWriter
 {
-    public static string GenerateQuestsCsv(List<QuestRecord> quests, FormIdResolver resolver)
+    public static string GenerateQuestsCsv(List<QuestRecord> quests, FormIdResolver _resolver)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
@@ -219,7 +219,7 @@ internal static class CsvMiscWriter
     }
 
     public static string GenerateWorldspacesCsv(List<WorldspaceRecord> worldspaces,
-        FormIdResolver resolver)
+        FormIdResolver _resolver)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
@@ -337,7 +337,7 @@ internal static class CsvMiscWriter
     }
 
     public static string GenerateEnchantmentsCsv(List<EnchantmentRecord> enchantments,
-        FormIdResolver resolver)
+        FormIdResolver _resolver)
     {
         var sb = new StringBuilder();
         sb.AppendLine("RowType,FormID,EditorID,Name,Type,ChargeAmount,EnchantCost,EffectCount,Endianness,Offset");

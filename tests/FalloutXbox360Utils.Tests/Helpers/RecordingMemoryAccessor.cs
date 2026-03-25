@@ -13,14 +13,11 @@ internal sealed class RecordingMemoryAccessor(MemoryMappedViewAccessor inner) : 
     private readonly Lock _lock = new();
     private readonly List<(long Offset, int Count)> _reads = [];
 
-    public IReadOnlyList<(long Offset, int Count)> RecordedReads
+    public IReadOnlyList<(long Offset, int Count)> GetRecordedReads()
     {
-        get
+        lock (_lock)
         {
-            lock (_lock)
-            {
-                return _reads.ToList();
-            }
+            return _reads.ToList();
         }
     }
 

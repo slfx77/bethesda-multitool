@@ -9,7 +9,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 internal sealed class DialogueRuntimeMerger(RecordParserContext context) : RecordHandlerBase(context)
 {
 
-    private IReadOnlyList<DialogueTesFileMappingSegment> _tesFileSegments = [];
+    private List<DialogueTesFileMappingSegment> _tesFileSegments = [];
 
     /// <summary>
     ///     Detect DIAL FormType from RuntimeEditorIds by cross-referencing known ESM DIAL FormIDs,
@@ -121,7 +121,7 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context) : Recor
                     ResponseCount = existing.ResponseCount != 0
                         ? existing.ResponseCount
                         : (int)runtimeTopic.TopicCount,
-                    Priority = existing.Priority != 0f ? existing.Priority : runtimeTopic.Priority,
+                    Priority = existing.Priority is not 0f ? existing.Priority : runtimeTopic.Priority,
                     JournalIndex = existing.JournalIndex != 0
                         ? existing.JournalIndex
                         : runtimeTopic.JournalIndex,

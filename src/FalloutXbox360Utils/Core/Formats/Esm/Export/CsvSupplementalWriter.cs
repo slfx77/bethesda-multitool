@@ -392,7 +392,7 @@ internal static class CsvSupplementalWriter
         }
     }
 
-    public static string GenerateTerminalsCsv(List<TerminalRecord> terminals, FormIdResolver resolver)
+    public static string GenerateTerminalsCsv(List<TerminalRecord> terminals, FormIdResolver _resolver)
     {
         var sb = new StringBuilder();
         sb.AppendLine(

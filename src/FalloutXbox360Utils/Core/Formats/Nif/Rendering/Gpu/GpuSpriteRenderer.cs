@@ -145,7 +145,7 @@ internal sealed class GpuSpriteRenderer : IDisposable
     }
 
     /// <summary>
-    ///     Renders a model to a sprite, matching the API of <see cref="NifSpriteRenderer.Render" />.
+    ///     Renders a model to a sprite, matching the API of <see cref="NifSpriteRenderer.Render(NifRenderableModel, NifTextureResolver?, float, int, int, float, float, int?)" />.
     ///     Convenience wrapper around <see cref="SubmitRender" /> + <see cref="CompleteRender" />.
     /// </summary>
     public SpriteResult? Render(NifRenderableModel model,
@@ -157,6 +157,20 @@ internal sealed class GpuSpriteRenderer : IDisposable
         var pending = SubmitRender(model, textureResolver, pixelsPerUnit, minSize, maxSize,
             azimuthDeg, elevationDeg, fixedSize);
         return pending == null ? null : CompleteRender(pending);
+    }
+
+    /// <summary>
+    ///     Convenience overload for top-down rendering (no view rotation).
+    /// </summary>
+    public SpriteResult? Render(NifRenderableModel model,
+        NifTextureResolver? textureResolver = null,
+        float pixelsPerUnit = 1.0f, int minSize = 32, int maxSize = 1024,
+        int? fixedSize = null)
+    {
+        if (!model.HasGeometry) return null;
+
+        return Render(model, textureResolver, pixelsPerUnit, minSize, maxSize,
+            0f, 90f, fixedSize);
     }
 
     /// <summary>
@@ -358,11 +372,15 @@ internal sealed class GpuSpriteRenderer : IDisposable
                 _textureLayout, diffuseTex, _linearSampler, normalMapTex, _linearSampler));
 
             // Select pipeline variant
-            var pipeline = alphaState.RenderMode == NifAlphaRenderMode.Blend
-                ? GetBlendPipeline(alphaState.SrcBlendMode, alphaState.DstBlendMode, sub.IsDoubleSided)
-                : sub.IsDoubleSided
-                    ? _opaqueDoubleSidedPipeline
-                    : _opaquePipeline;
+            Pipeline pipeline;
+            if (alphaState.RenderMode == NifAlphaRenderMode.Blend)
+            {
+                pipeline = GetBlendPipeline(alphaState.SrcBlendMode, alphaState.DstBlendMode, sub.IsDoubleSided);
+            }
+            else
+            {
+                pipeline = sub.IsDoubleSided ? _opaqueDoubleSidedPipeline : _opaquePipeline;
+            }
 
             cl.SetPipeline(pipeline);
             cl.SetGraphicsResourceSet(0, subUniformSet);
@@ -445,20 +463,6 @@ internal sealed class GpuSpriteRenderer : IDisposable
             BoundsHeight = pending.BoundsHeight,
             HasTexture = pending.HasTexture
         };
-    }
-
-    /// <summary>
-    ///     Convenience overload for top-down rendering (no view rotation).
-    /// </summary>
-    public SpriteResult? Render(NifRenderableModel model,
-        NifTextureResolver? textureResolver = null,
-        float pixelsPerUnit = 1.0f, int minSize = 32, int maxSize = 1024,
-        int? fixedSize = null)
-    {
-        if (!model.HasGeometry) return null;
-
-        return Render(model, textureResolver, pixelsPerUnit, minSize, maxSize,
-            0f, 90f, fixedSize);
     }
 
     /// <summary>

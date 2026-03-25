@@ -582,6 +582,7 @@ public sealed class NpcAppearanceHelperTests
         Assert.Equal("Bip01 Spine2", visual.EmbeddedWeaponNode);
     }
 
+    [Fact]
     public void WeaponResolver_HandToHandRigidWeapon_UsesMatchingArmorAddonMesh()
     {
         var resolver = CreateWeaponResolver(
@@ -1274,6 +1275,7 @@ public sealed class NpcAppearanceHelperTests
             resolved);
     }
 
+    [Fact]
     public void H2hEquipSequence_ParentOverrideChangesWeaponWorldTransform()
     {
         var skeleton = LoadNif(Path.Combine(MaleSampleCharacterRoot, "skeleton.nif"));

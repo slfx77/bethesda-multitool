@@ -784,7 +784,7 @@ internal static class NifScanlineRasterizer
             }
         }
 
-        return maxDepth == float.MinValue || z >= maxDepth - WireframeDepthEpsilon;
+        return maxDepth is float.MinValue || z >= maxDepth - WireframeDepthEpsilon;
     }
 
     private static void BlendWireframePixel(

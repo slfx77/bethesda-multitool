@@ -90,7 +90,6 @@ internal sealed class RuntimeBufferAnalyzer
 {
     private readonly BufferAnalysisContext _ctx;
     private readonly RuntimeBufferScanner _scanner;
-    private readonly RuntimeBufferStringExtractor _stringExtractor;
     private readonly RuntimeBufferPointerAnalyzer _pointerAnalyzer;
 
     #region Constructor
@@ -116,10 +115,10 @@ internal sealed class RuntimeBufferAnalyzer
             accessor, fileSize, minidumpInfo, coverage, pdbAnalysis, runtimeEditorIds,
             moduleStart, moduleEnd);
 
-        _stringExtractor = new RuntimeBufferStringExtractor(_ctx);
+        var stringExtractor = new RuntimeBufferStringExtractor(_ctx);
         _pointerAnalyzer = new RuntimeBufferPointerAnalyzer(_ctx);
-        var niTMapReader = new RuntimeBufferNiTMapReader(_ctx, _stringExtractor);
-        _scanner = new RuntimeBufferScanner(_ctx, _stringExtractor, niTMapReader);
+        var niTMapReader = new RuntimeBufferNiTMapReader(_ctx, stringExtractor);
+        _scanner = new RuntimeBufferScanner(_ctx, stringExtractor, niTMapReader);
     }
 
     #endregion

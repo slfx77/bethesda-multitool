@@ -145,7 +145,7 @@ internal sealed class ScriptVariableReader
         return ResolveScroReference(reader.ReadUInt16());
     }
 
-    internal string ReadIntLiteral(BytecodeReader reader)
+    internal static string ReadIntLiteral(BytecodeReader reader)
     {
         return reader.CanRead(4) ? reader.ReadInt32().ToString() : "<truncated int>";
     }

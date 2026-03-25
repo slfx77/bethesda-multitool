@@ -504,6 +504,16 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         return entries;
     }
 
+    private static List<PlacedReference> ResolvePlacedObjects(CellRecord esm, CellRecord runtime)
+    {
+        if (ShouldUseRuntimePlacedObjects(esm, runtime))
+        {
+            return runtime.PlacedObjects;
+        }
+
+        return esm.PlacedObjects.Count > 0 ? esm.PlacedObjects : runtime.PlacedObjects;
+    }
+
     private static CellRecord MergeCell(CellRecord esm, CellRecord runtime)
     {
         return esm with
@@ -522,11 +532,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             LightingTemplateFormId = esm.LightingTemplateFormId ?? runtime.LightingTemplateFormId,
             LightingTemplateInheritanceFlags =
             esm.LightingTemplateInheritanceFlags ?? runtime.LightingTemplateInheritanceFlags,
-            PlacedObjects = ShouldUseRuntimePlacedObjects(esm, runtime)
-                ? runtime.PlacedObjects
-                : esm.PlacedObjects.Count > 0
-                    ? esm.PlacedObjects
-                    : runtime.PlacedObjects,
+            PlacedObjects = ResolvePlacedObjects(esm, runtime),
             LinkedCellFormIds = esm.LinkedCellFormIds.Count > 0 ? esm.LinkedCellFormIds : runtime.LinkedCellFormIds,
             Heightmap = esm.Heightmap ?? runtime.Heightmap,
             RuntimeTerrainMesh = esm.RuntimeTerrainMesh ?? runtime.RuntimeTerrainMesh,
@@ -550,9 +556,15 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             ? reader.ReadRuntimeCell(runtimeEntry)
             : null;
 
-        var mergedCell = runtimeCell != null
-            ? mapCell != null ? MergeCell(runtimeCell, mapCell) : runtimeCell
-            : mapCell;
+        CellRecord? mergedCell;
+        if (runtimeCell != null)
+        {
+            mergedCell = mapCell != null ? MergeCell(runtimeCell, mapCell) : runtimeCell;
+        }
+        else
+        {
+            mergedCell = mapCell;
+        }
         if (mergedCell == null)
         {
             return null;
@@ -638,20 +650,16 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
 
         var worldspaceFormId = cell.WorldspaceFormId ?? 0;
         var key = (worldspaceFormId, cell.GridX.Value, cell.GridY.Value);
-        if (heightmap == null)
+        if (heightmap == null &&
+            !heightmapByGrid.TryGetValue(key, out heightmap) && worldspaceFormId != 0)
         {
-            if (!heightmapByGrid.TryGetValue(key, out heightmap) && worldspaceFormId != 0)
-            {
-                heightmapByGrid.TryGetValue((0u, cell.GridX.Value, cell.GridY.Value), out heightmap);
-            }
+            heightmapByGrid.TryGetValue((0u, cell.GridX.Value, cell.GridY.Value), out heightmap);
         }
 
-        if (terrainMesh == null)
+        if (terrainMesh == null &&
+            !terrainMeshByGrid.TryGetValue(key, out terrainMesh) && worldspaceFormId != 0)
         {
-            if (!terrainMeshByGrid.TryGetValue(key, out terrainMesh) && worldspaceFormId != 0)
-            {
-                terrainMeshByGrid.TryGetValue((0u, cell.GridX.Value, cell.GridY.Value), out terrainMesh);
-            }
+            terrainMeshByGrid.TryGetValue((0u, cell.GridX.Value, cell.GridY.Value), out terrainMesh);
         }
 
         if (heightmap == null && terrainMesh == null)

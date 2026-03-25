@@ -46,7 +46,7 @@ internal sealed class RuntimePdbFieldAccessor(RuntimeMemoryContext context)
         return (layout, buffer, entry.TesFormOffset.Value);
     }
 
-    internal int? FindFieldOffset(PdbTypeLayout layout, string name, string? owner = null)
+    internal static int? FindFieldOffset(PdbTypeLayout layout, string name, string? owner = null)
     {
         var field = layout.Fields.FirstOrDefault(f => f.Name == name && (owner == null || f.Owner == owner));
         return field?.Offset;

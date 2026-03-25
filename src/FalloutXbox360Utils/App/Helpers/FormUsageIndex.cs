@@ -240,7 +240,7 @@ internal sealed class FormUsageIndex
     private static void AddActorPackageUses(
         FormUsageIndex index,
         IEnumerable<NpcRecord> actors,
-        IReadOnlyDictionary<uint, PackageRecord> packagesByFormId,
+        Dictionary<uint, PackageRecord> packagesByFormId,
         string actorKind)
     {
         foreach (var actor in actors)
@@ -268,7 +268,7 @@ internal sealed class FormUsageIndex
     private static void AddActorPackageUses(
         FormUsageIndex index,
         IEnumerable<CreatureRecord> actors,
-        IReadOnlyDictionary<uint, PackageRecord> packagesByFormId,
+        Dictionary<uint, PackageRecord> packagesByFormId,
         string actorKind)
     {
         foreach (var actor in actors)

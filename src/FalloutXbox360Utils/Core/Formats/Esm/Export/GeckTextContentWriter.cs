@@ -41,7 +41,7 @@ internal static class GeckTextContentWriter
     /// <summary>
     ///     Generate a report for Notes only.
     /// </summary>
-    internal static string GenerateNotesReport(List<NoteRecord> notes, Dictionary<uint, string>? lookup = null)
+    internal static string GenerateNotesReport(List<NoteRecord> notes, Dictionary<uint, string>? _lookup = null)
     {
         var sb = new StringBuilder();
         AppendNotesSection(sb, notes);
@@ -150,7 +150,7 @@ internal static class GeckTextContentWriter
     ///     Generate a report for Terminals only.
     /// </summary>
     internal static string GenerateTerminalsReport(List<TerminalRecord> terminals,
-        Dictionary<uint, string>? lookup = null)
+        Dictionary<uint, string>? _lookup = null)
     {
         var sb = new StringBuilder();
         AppendTerminalsSection(sb, terminals);

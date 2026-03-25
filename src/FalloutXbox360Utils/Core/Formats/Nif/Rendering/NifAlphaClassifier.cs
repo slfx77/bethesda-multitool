@@ -22,11 +22,12 @@ internal static class NifAlphaClassifier
             alphaTestFunction = 4;
         }
 
-        var renderMode = hasAlphaBlend
-            ? NifAlphaRenderMode.Blend
-            : hasAlphaTest
-                ? NifAlphaRenderMode.Cutout
-                : NifAlphaRenderMode.Opaque;
+        var renderMode = (hasAlphaBlend, hasAlphaTest) switch
+        {
+            (true, _) => NifAlphaRenderMode.Blend,
+            (_, true) => NifAlphaRenderMode.Cutout,
+            _ => NifAlphaRenderMode.Opaque
+        };
 
         return new NifAlphaRenderState(
             renderMode,

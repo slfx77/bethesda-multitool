@@ -203,14 +203,11 @@ public static class DiffCommand
                 AnsiConsole.MarkupLine($"  [red]Changed:[/] {changed.Count}");
 
                 // Show details
-                var shown = 0;
-
                 if (onlyInA.Count > 0)
                 {
                     AnsiConsole.WriteLine();
                     AnsiConsole.MarkupLine($"[yellow bold]Only in {Path.GetFileName(fileA)}:[/]");
                     CliTableBuilder.WriteRecordTable(onlyInA, limit);
-                    shown += Math.Min(onlyInA.Count, limit);
                 }
 
                 if (onlyInB.Count > 0)
@@ -257,22 +254,22 @@ public static class DiffCommand
 
                 foreach (var r in flatA)
                 {
-                    if (!typeSummary.ContainsKey(r.Type))
+                    if (!typeSummary.TryGetValue(r.Type, out var existing))
                     {
-                        typeSummary[r.Type] = (0, 0);
+                        existing = (0, 0);
                     }
 
-                    typeSummary[r.Type] = (typeSummary[r.Type].countA + 1, typeSummary[r.Type].countB);
+                    typeSummary[r.Type] = (existing.countA + 1, existing.countB);
                 }
 
                 foreach (var r in flatB)
                 {
-                    if (!typeSummary.ContainsKey(r.Type))
+                    if (!typeSummary.TryGetValue(r.Type, out var existing))
                     {
-                        typeSummary[r.Type] = (0, 0);
+                        existing = (0, 0);
                     }
 
-                    typeSummary[r.Type] = (typeSummary[r.Type].countA, typeSummary[r.Type].countB + 1);
+                    typeSummary[r.Type] = (existing.countA, existing.countB + 1);
                 }
 
                 var typeTable = new Table();

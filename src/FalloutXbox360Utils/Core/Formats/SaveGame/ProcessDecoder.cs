@@ -40,7 +40,7 @@ internal static class ProcessDecoder
     ///     Decompilation: 3 × uint32 + ActorPackage::SaveGame.
     /// </summary>
 #pragma warning disable S1172 // flags reserved for future conditional decoding
-    internal static bool DecodeBaseProcess(ref FormDataReader r, DecodedFormData result, uint flags)
+    internal static bool DecodeBaseProcess(ref FormDataReader r, DecodedFormData result, uint _flags)
 #pragma warning restore S1172
     {
         // 3 × uint32 (at struct offsets +0x1C, +0x20, +0x24)

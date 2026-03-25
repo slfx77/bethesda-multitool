@@ -28,8 +28,8 @@ internal sealed class NpcWeaponResolver
         ("rt", "lt")
     ];
 
-    private readonly IReadOnlyDictionary<string, List<ArmaAddonScanEntry>> _handToHandAddonsByPath;
-    private readonly IReadOnlyDictionary<string, IdleScanEntry> _idlesByEditorId;
+    private readonly Dictionary<string, List<ArmaAddonScanEntry>> _handToHandAddonsByPath;
+    private readonly Dictionary<string, IdleScanEntry> _idlesByEditorId;
     private readonly IReadOnlyDictionary<uint, List<uint>> _leveledItems;
 
     private readonly IReadOnlyDictionary<uint, PackageScanEntry> _packages;
@@ -406,7 +406,7 @@ internal sealed class NpcWeaponResolver
         }
     }
 
-    private static IReadOnlyDictionary<string, List<ArmaAddonScanEntry>> BuildHandToHandAddonLookup(
+    private static Dictionary<string, List<ArmaAddonScanEntry>> BuildHandToHandAddonLookup(
         IReadOnlyDictionary<uint, ArmaAddonScanEntry> armorAddons)
     {
         var lookup = new Dictionary<string, List<ArmaAddonScanEntry>>(StringComparer.OrdinalIgnoreCase);
@@ -437,7 +437,7 @@ internal sealed class NpcWeaponResolver
         }
     }
 
-    private static IReadOnlyDictionary<string, IdleScanEntry> BuildIdleEditorLookup(
+    private static Dictionary<string, IdleScanEntry> BuildIdleEditorLookup(
         IReadOnlyDictionary<uint, IdleScanEntry> idles)
     {
         var lookup = new Dictionary<string, IdleScanEntry>(StringComparer.OrdinalIgnoreCase);
@@ -566,7 +566,7 @@ internal sealed class NpcWeaponResolver
                (weapon.FlagsEx & WeaponNotUsedInNormalCombatFlag) == 0;
     }
 
-    private static bool HasAmmo(WeapScanEntry weapon, IReadOnlyDictionary<uint, int> ammoCounts)
+    private static bool HasAmmo(WeapScanEntry weapon, Dictionary<uint, int> ammoCounts)
     {
         if (!weapon.AmmoFormId.HasValue)
         {

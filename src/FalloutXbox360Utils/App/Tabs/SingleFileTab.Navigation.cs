@@ -126,7 +126,7 @@ public sealed partial class SingleFileTab
         UpdateUnifiedNavButtons();
     }
 
-    internal async void UnifiedBack_Click(object sender, RoutedEventArgs e)
+    internal async void UnifiedBack_Click(object _, RoutedEventArgs _e)
     {
         if (_unifiedBackStack.Count == 0)
         {
@@ -144,7 +144,7 @@ public sealed partial class SingleFileTab
         UpdateUnifiedNavButtons();
     }
 
-    internal async void UnifiedForward_Click(object sender, RoutedEventArgs e)
+    internal async void UnifiedForward_Click(object _, RoutedEventArgs _e)
     {
         if (_unifiedForwardStack.Count == 0)
         {

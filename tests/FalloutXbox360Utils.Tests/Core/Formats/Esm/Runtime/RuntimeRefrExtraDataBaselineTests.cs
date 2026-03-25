@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Tests.Helpers;
@@ -194,7 +195,7 @@ public sealed class RuntimeRefrExtraDataBaselineTests
 
         foreach (var (type, count) in observed)
         {
-            if (!baseline.TryGetValue(type.ToString(), out var expected) || expected != count)
+            if (!baseline.TryGetValue(type.ToString(CultureInfo.InvariantCulture), out var expected) || expected != count)
             {
                 return false;
             }
@@ -224,7 +225,7 @@ public sealed class RuntimeRefrExtraDataBaselineTests
             $"startingPosition={observed.StartingPositionCount}, startingWorldOrCell={observed.StartingWorldOrCellCount}, packageStart={observed.PackageStartLocationCount}, " +
             $"merchantContainer={observed.MerchantContainerCount}, leveledCreature={observed.LeveledCreatureCount}, radius={observed.RadiusCount}, " +
             $"count={observed.CountCount}, editorId={observed.EditorIdCount}, " +
-            $"typeCounts={JsonSerializer.Serialize(observed.TypeCounts.OrderBy(pair => pair.Key).ToDictionary(pair => pair.Key.ToString(), pair => pair.Value))}.";
+            $"typeCounts={JsonSerializer.Serialize(observed.TypeCounts.OrderBy(pair => pair.Key).ToDictionary(pair => pair.Key.ToString(CultureInfo.InvariantCulture), pair => pair.Value))}.";
     }
 
     private static List<RuntimeRefrExtraBaselineRow> LoadBaselines()

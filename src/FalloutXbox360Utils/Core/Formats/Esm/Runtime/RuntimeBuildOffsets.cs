@@ -44,7 +44,7 @@ internal static class RuntimeBuildOffsets
     ///     Currently +16 for all known builds. The mechanism is retained for future extensibility
     ///     in case a Proto Debug era dump is ever encountered (would need +4 shift).
     /// </summary>
-    public static int GetPdbShift(string? buildType)
+    public static int GetPdbShift(string? _buildType)
     {
         return 16;
     }
@@ -66,7 +66,7 @@ internal static class RuntimeBuildOffsets
     ///     Empirically, early-era WRLD cell maps still resolve with some shift — TBD via Ghidra.
     ///     For now, returns 0 (use final offsets) since the exact early WRLD/CELL layout is unknown.
     /// </summary>
-    public static int GetWorldCellFieldShift(bool isEarlyBuild)
+    public static int GetWorldCellFieldShift(bool _isEarlyBuild)
     {
         return 0;
     }

@@ -37,30 +37,28 @@ internal static partial class NpcExportSceneBuilder
             if (item.AttachmentMode != EquipmentAttachmentMode.None)
             {
                 var raw = NpcRenderHelpers.LoadNifRawFromBsa(item.MeshPath, meshArchives);
-                if (raw != null && NpcEquipmentAttacher.IsRigidEquipmentModel(raw.Value.Data, raw.Value.Info))
+                if (raw != null && NpcEquipmentAttacher.IsRigidEquipmentModel(raw.Value.Data, raw.Value.Info) &&
+                    NpcWeaponAttachmentResolver.TryResolveEquipmentAttachmentTransform(
+                        item, boneTransforms, out _, out var attachmentTransform, out _))
                 {
-                    if (NpcWeaponAttachmentResolver.TryResolveEquipmentAttachmentTransform(
-                            item, boneTransforms, out _, out var attachmentTransform, out _))
+                    var extracted = LoadExtractedNif(item.MeshPath, meshArchives);
+                    if (extracted != null && extracted.MeshParts.Count > 0)
                     {
-                        var extracted = LoadExtractedNif(item.MeshPath, meshArchives);
-                        if (extracted != null && extracted.MeshParts.Count > 0)
+                        foreach (var part in extracted.MeshParts)
                         {
-                            foreach (var part in extracted.MeshParts)
+                            if (NifBlockParsers.IsPipBoyScreenShape(part.Name))
                             {
-                                if (NifBlockParsers.IsPipBoyScreenShape(part.Name))
-                                {
-                                    continue;
-                                }
-
-                                var submesh = CloneSubmesh(part.Submesh);
-                                var composedTransform = part.ShapeWorldTransform * attachmentTransform;
-                                NpcRenderHelpers.TransformSubmesh(submesh, composedTransform);
-                                ApplyEquipmentTextureOverride(submesh, effectiveBodyTex, effectiveHandTex);
-                                AddRigidSubmesh(scene, item.MeshPath, submesh);
+                                continue;
                             }
 
-                            continue;
+                            var submesh = CloneSubmesh(part.Submesh);
+                            var composedTransform = part.ShapeWorldTransform * attachmentTransform;
+                            NpcRenderHelpers.TransformSubmesh(submesh, composedTransform);
+                            ApplyEquipmentTextureOverride(submesh, effectiveBodyTex, effectiveHandTex);
+                            AddRigidSubmesh(scene, item.MeshPath, submesh);
                         }
+
+                        continue;
                     }
                 }
             }

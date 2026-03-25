@@ -16,9 +16,17 @@ internal sealed class RuntimeEffectReader(
     private readonly RuntimeMemoryContext _context = context;
 
     // Uniform shift for all post-TESForm fields: probed value if confident, else PDB default.
-    private readonly int _s = probeResult is { Margin: >= MinProbeMargin }
-        ? probeResult.Winner.Layout.Length > 1 ? probeResult.Winner.Layout[1] : 0
-        : RuntimeBuildOffsets.GetPdbShift(MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
+    private readonly int _s = ComputeShift(probeResult, context);
+
+    private static int ComputeShift(RuntimeLayoutProbeResult<int[]>? probeResult, RuntimeMemoryContext context)
+    {
+        if (probeResult is { Margin: >= MinProbeMargin })
+        {
+            return probeResult.Winner.Layout.Length > 1 ? probeResult.Winner.Layout[1] : 0;
+        }
+
+        return RuntimeBuildOffsets.GetPdbShift(MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
+    }
 
     /// <summary>
     ///     Read BGSProjectile physics/sound data from a runtime struct at the given file offset.

@@ -109,8 +109,8 @@ internal sealed class WorldMapSpriteRegistry : IDisposable
 
     private sealed class SpriteIndexEntry
     {
-        public string File { get; set; } = "";
-        public float BoundsWidth { get; set; }
-        public float BoundsHeight { get; set; }
+        public string File { get; init; } = "";
+        public float BoundsWidth { get; init; }
+        public float BoundsHeight { get; init; }
     }
 }

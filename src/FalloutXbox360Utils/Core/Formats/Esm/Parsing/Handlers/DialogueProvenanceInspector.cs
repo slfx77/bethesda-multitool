@@ -57,7 +57,7 @@ internal sealed class DialogueProvenanceInspector : RecordHandlerBase
         };
     }
 
-    internal DialogTopicProvenanceReport InspectTopic(DialogTopicRecord topic, bool includeHex = false)
+    internal DialogTopicProvenanceReport InspectTopic(DialogTopicRecord topic, bool _includeHex = false)
     {
         var runtimeStructBytes = ReadBytes(
             topic.RuntimeStructOffset > 0 ? topic.RuntimeStructOffset : null,

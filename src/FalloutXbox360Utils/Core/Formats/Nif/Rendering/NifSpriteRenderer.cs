@@ -337,7 +337,7 @@ internal static class NifSpriteRenderer
         z = f0 * ox + f1 * oy + f2 * oz;
     }
 
-    private static IReadOnlyList<RenderLayer> BuildRenderLayers(List<TriangleData> triangles)
+    private static RenderLayer[] BuildRenderLayers(List<TriangleData> triangles)
     {
         return triangles
             .GroupBy(tri => tri.RenderOrder)

@@ -108,8 +108,8 @@ internal static class DialoguePickerTreeBuilder
     /// </summary>
     public static void ExpandCategoryNode(
         TreeViewExpandingEventArgs args,
-        bool pickerByQuest,
-        Func<uint, string> resolveFormName,
+        bool _pickerByQuest,
+        Func<uint, string> _resolveFormName,
         bool showEditorIds = false)
     {
         if (!args.Node.HasUnrealizedChildren || args.Node.Content is not EsmBrowserNode node)

@@ -102,7 +102,7 @@ internal static class NpcInventoryCommand
     }
 
     private static void WriteEntries(
-        IReadOnlyList<NpcInventoryEntry> entries,
+        List<NpcInventoryEntry> entries,
         string format,
         string sourceName,
         string sourceType)

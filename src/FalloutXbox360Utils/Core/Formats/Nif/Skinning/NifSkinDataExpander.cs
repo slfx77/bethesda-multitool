@@ -4,6 +4,7 @@
 // animation to work.
 
 using System.Buffers.Binary;
+using System.Text;
 using FalloutXbox360Utils.Core.Formats.Nif.Geometry;
 using FalloutXbox360Utils.Core.Utils;
 
@@ -185,7 +186,7 @@ internal static class NifSkinDataExpander
         for (var checkV = 0; checkV < Math.Min(5, (int)packedData.NumVertices); checkV++)
         {
             var weightSum = 0f;
-            var boneList = "";
+            var boneList = new StringBuilder();
             for (var w = 0; w < 4; w++)
             {
                 var idx = checkV * 4 + w;
@@ -194,7 +195,7 @@ internal static class NifSkinDataExpander
                     weightSum += packedData.BoneWeights[idx];
                     var globalB = MapToGlobalBoneIndex(packedData.BoneIndices[idx], checkV, partitionForVertex,
                         partitions);
-                    boneList += $" local{packedData.BoneIndices[idx]}→global{globalB}={packedData.BoneWeights[idx]:F3}";
+                    boneList.Append($" local{packedData.BoneIndices[idx]}→global{globalB}={packedData.BoneWeights[idx]:F3}");
                 }
             }
 

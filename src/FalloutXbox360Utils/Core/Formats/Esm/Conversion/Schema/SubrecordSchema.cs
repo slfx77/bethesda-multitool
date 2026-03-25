@@ -93,7 +93,7 @@ public sealed class SubrecordSchema(params SubrecordField[] fields)
     /// <summary>
     ///     Creates a schema that matches any data length (repeating element).
     /// </summary>
-    public static SubrecordSchema Repeating(int elementSize, SubrecordField[] elementFields, string? description = null)
+    public static SubrecordSchema Repeating(int _elementSize, SubrecordField[] elementFields, string? description = null)
     {
         return new SubrecordSchema(elementFields)
         {

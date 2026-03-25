@@ -201,7 +201,19 @@ internal static class DmpFormTypeCensusCommand
             var sampleStr = allSamples.Count > 0 ? string.Join(", ", allSamples) : "";
 
             var nameColor = isDrift ? "yellow" : "white";
-            var countColor = isDrift ? "yellow" : isUniversal ? "green" : "grey";
+            string countColor;
+            if (isDrift)
+            {
+                countColor = "yellow";
+            }
+            else if (isUniversal)
+            {
+                countColor = "green";
+            }
+            else
+            {
+                countColor = "grey";
+            }
 
             table.AddRow(
                 $"0x{ft:X2}",
@@ -440,7 +452,7 @@ internal static class DmpFormTypeCensusCommand
         return name;
     }
 
-    private record CensusEntry(
+    private sealed record CensusEntry(
         string FileName,
         DateTime FileDate,
         int TotalEditorIds,

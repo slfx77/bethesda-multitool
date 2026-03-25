@@ -300,7 +300,7 @@ internal static class WorldMapOverviewRenderer
 
     internal static void DrawActorDots(
         CanvasDrawingSession ds,
-        WorldViewData data,
+        WorldViewData _data,
         List<CellRecord> activeCells,
         HashSet<PlacedObjectCategory> hiddenCategories,
         bool hideDisabledActors,

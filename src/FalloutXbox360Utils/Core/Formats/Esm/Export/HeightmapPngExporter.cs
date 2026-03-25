@@ -96,7 +96,7 @@ public static class HeightmapPngExporter
     /// </summary>
     public static async Task ExportLandRecordAsync(
         ExtractedLandRecord land,
-        int index,
+        int _index,
         string outputDir,
         bool useColorGradient = true)
     {

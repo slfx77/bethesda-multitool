@@ -305,7 +305,7 @@ internal sealed class RuntimeGenericReader(
     /// <summary>
     ///     Read a float field, returning null for NaN/Infinity values (likely garbage data).
     /// </summary>
-    private static object? ReadValidatedFloat(byte[] data, int offset)
+    private static float? ReadValidatedFloat(byte[] data, int offset)
     {
         var value = BinaryUtils.ReadFloatBE(data, offset);
         if (float.IsNaN(value) || float.IsInfinity(value))
@@ -320,7 +320,7 @@ internal sealed class RuntimeGenericReader(
     ///     Read a pointer field. For pointers to TESForm-derived types, follow the pointer
     ///     and return the target FormID. For other pointers, return the raw VA.
     /// </summary>
-    private object? ReadPointerField(byte[] data, PdbFieldLayout field, int effectiveOffset)
+    private uint? ReadPointerField(byte[] data, PdbFieldLayout field, int effectiveOffset)
     {
         var va = BinaryUtils.ReadUInt32BE(data, effectiveOffset);
         if (va == 0)
@@ -350,7 +350,7 @@ internal sealed class RuntimeGenericReader(
     ///     For small embedded structs, read as a formatted hex string.
     ///     For larger ones, just note the type name and size.
     /// </summary>
-    private object? ReadEmbeddedStruct(byte[] data, PdbFieldLayout field, long tesFormFileOffset,
+    private string? ReadEmbeddedStruct(byte[] data, PdbFieldLayout field, long tesFormFileOffset,
         int effectiveOffset)
     {
         if (field.Size <= 0 || effectiveOffset + field.Size > data.Length)

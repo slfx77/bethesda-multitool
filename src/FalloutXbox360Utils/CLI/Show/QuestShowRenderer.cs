@@ -143,11 +143,18 @@ internal static class QuestShowRenderer
                     ? resolver.FormatWithEditorId(info.SpeakerFormId.Value)
                     : "(unknown)";
                 var firstResponse = info.Responses.FirstOrDefault()?.Text;
-                var responseText = !string.IsNullOrEmpty(firstResponse)
-                    ? Markup.Escape(firstResponse.Length > 80
+                string responseText;
+                if (!string.IsNullOrEmpty(firstResponse))
+                {
+                    var truncated = firstResponse.Length > 80
                         ? firstResponse[..80] + "..."
-                        : firstResponse)
-                    : "(no text)";
+                        : firstResponse;
+                    responseText = Markup.Escape(truncated);
+                }
+                else
+                {
+                    responseText = "(no text)";
+                }
                 lines.Add($"  0x{info.FormId:X8} [[{Markup.Escape(speaker)}]]: {responseText}");
             }
         }

@@ -145,7 +145,7 @@ internal sealed class ScriptExpressionDecoder
 
             case ScriptOpcodes.ExprIntLiteral:
                 reader.ReadByte();
-                return _varReader.ReadIntLiteral(reader);
+                return ScriptVariableReader.ReadIntLiteral(reader);
 
             case ScriptOpcodes.ExprDoubleLiteral:
                 reader.ReadByte();
@@ -209,7 +209,7 @@ internal sealed class ScriptExpressionDecoder
 
             case ScriptOpcodes.ExprIntLiteral:
                 reader.ReadByte();
-                return _varReader.ReadIntLiteral(reader);
+                return ScriptVariableReader.ReadIntLiteral(reader);
 
             case ScriptOpcodes.ExprDoubleLiteral:
                 reader.ReadByte();

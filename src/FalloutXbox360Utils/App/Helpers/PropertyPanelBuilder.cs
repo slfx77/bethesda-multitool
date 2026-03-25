@@ -202,7 +202,7 @@ internal static class PropertyPanelBuilder
 
             if (sub.Col1 != null || sub.Col2 != null || sub.Col3 != null || sub.Col4 != null)
             {
-                AddMultiColumnSubItem(subItemsGrid, sub, subRow, prop, callbacks);
+                AddMultiColumnSubItem(subItemsGrid, sub, subRow, callbacks);
             }
             else if (string.IsNullOrEmpty(sub.Name) && sub.LinkedFormId == null)
             {
@@ -228,7 +228,7 @@ internal static class PropertyPanelBuilder
     }
 
     private static void AddMultiColumnSubItem(
-        Grid grid, EsmPropertyEntry sub, int row, EsmPropertyEntry _, Callbacks callbacks)
+        Grid grid, EsmPropertyEntry sub, int row, Callbacks callbacks)
     {
         // Col1: cell navigation link, FormID link, or plain text
         if (sub.CellNavigationFormId is > 0)

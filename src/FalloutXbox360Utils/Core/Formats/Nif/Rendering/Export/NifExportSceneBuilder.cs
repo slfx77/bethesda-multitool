@@ -32,7 +32,7 @@ internal static class NifExportSceneBuilder
             ApplyWorldTransform(rigidSubmesh, part.ShapeWorldTransform);
             var nodeIndex = scene.AddNode(
                 $"{Path.GetFileNameWithoutExtension(sourceLabel)}_{scene.MeshParts.Count}",
-                scene.RootNodeIndex,
+                NpcExportScene.RootNodeIndex,
                 Matrix4x4.Identity,
                 Matrix4x4.Identity,
                 NpcExportNodeKind.Attachment);
@@ -60,7 +60,7 @@ internal static class NifExportSceneBuilder
             var parentSceneNode = node.ParentBlockIndex is int parentBlockIndex &&
                                   blockToSceneNode.TryGetValue(parentBlockIndex, out var existingParent)
                 ? existingParent
-                : scene.RootNodeIndex;
+                : NpcExportScene.RootNodeIndex;
 
             var sceneNodeIndex = scene.AddNode(
                 $"{node.Name}_{node.BlockIndex}",

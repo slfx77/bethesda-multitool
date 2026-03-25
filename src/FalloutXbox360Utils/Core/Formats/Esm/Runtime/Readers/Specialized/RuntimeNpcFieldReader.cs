@@ -414,7 +414,7 @@ internal sealed class RuntimeNpcFieldReader
     ///     Read NPC inventory items from TESContainer tList at +120/+124.
     ///     Returns a list of (ItemFormId, Count) pairs.
     /// </summary>
-    public List<InventoryItem> ReadNpcInventory(byte[] npcBuffer, long npcFileOffset)
+    public List<InventoryItem> ReadNpcInventory(byte[] npcBuffer, long _npcFileOffset)
     {
         var items = new List<InventoryItem>();
 
