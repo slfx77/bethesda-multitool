@@ -355,8 +355,9 @@ public static class AnalyzeCommand
         AnsiConsole.MarkupLine("[blue]Terrain mesh data quality diagnostic[/]");
 
         var diagnostics = cellsWithMesh
-            .Select(l => l.RuntimeTerrainMesh!.DiagnoseQuality(
-                l.BestCellX!.Value, l.BestCellY!.Value, l.Header.FormId))
+            .Select(l => l.PreSanitizationDiagnostic
+                         ?? l.RuntimeTerrainMesh!.DiagnoseQuality(
+                             l.BestCellX!.Value, l.BestCellY!.Value, l.Header.FormId))
             .OrderBy(d => d.CellX)
             .ThenBy(d => d.CellY)
             .ToList();
@@ -382,6 +383,7 @@ public static class AnalyzeCommand
                 "Partial" => "yellow",
                 "Flat" => "red",
                 "FewPixels" => "red",
+                "Corrupt" => "red",
                 _ => "grey"
             };
 
@@ -407,9 +409,10 @@ public static class AnalyzeCommand
         var partial = diagnostics.Count(d => d.Classification == "Partial");
         var flat = diagnostics.Count(d => d.Classification == "Flat");
         var fewPixels = diagnostics.Count(d => d.Classification == "FewPixels");
+        var corrupt = diagnostics.Count(d => d.Classification == "Corrupt");
         AnsiConsole.MarkupLine(
             $"  [green]Complete: {complete}[/]  [yellow]Partial: {partial}[/]  " +
-            $"[red]Flat: {flat}  FewPixels: {fewPixels}[/]  Total: {diagnostics.Count}");
+            $"[red]Flat: {flat}  FewPixels: {fewPixels}  Corrupt: {corrupt}[/]  Total: {diagnostics.Count}");
 
         // Export CSV
         var csvPath = Path.Combine(outputDir, "terrain_diagnostics.csv");

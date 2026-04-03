@@ -93,9 +93,15 @@ internal static class MinidumpMetadataExtractor
                 result.SceneGraphMap.Count, meshes.Count);
         }
 
-        // Create CarvedFileInfo entries for meshes and textures
+        // Create CarvedFileInfo entries for all recognized runtime data in one place,
+        // so every consumer (CLI and GUI) gets complete coverage automatically.
         AddMeshCarvedFiles(result, meshes);
         AddTextureCarvedFiles(result, textures);
+        AddSceneGraphNodeCarvedFiles(result);
+        AddTesFormStructRegions(result);
+        // Note: AddRuntimeTerrainMeshRegions is NOT called here because it depends on
+        // terrain mesh enrichment from the semantic parse pipeline, which runs later.
+        // The GUI calls it after semantic parsing; the CLI skips it (small footprint).
 
         progress?.Report(new AnalysisProgress
             { Phase = "Post-Processing", FilesFound = result.CarvedFiles.Count, PercentComplete = 98 });
@@ -123,6 +129,62 @@ internal static class MinidumpMetadataExtractor
                 SignatureId = "runtime_mesh",
                 Category = FileCategory.Model
             });
+
+            // Add vertex position buffer
+            if (mesh.VertexDataFileOffset > 0 && mesh.VertexDataSize > 0)
+            {
+                result.CarvedFiles.Add(new CarvedFileInfo
+                {
+                    Offset = mesh.VertexDataFileOffset,
+                    Length = mesh.VertexDataSize,
+                    FileType = "Vertex Data",
+                    FileName = sceneInfo?.ModelName,
+                    SignatureId = "runtime_mesh_vertices",
+                    Category = FileCategory.Model
+                });
+            }
+
+            // Add normal buffer
+            if (mesh.NormalDataFileOffset > 0 && mesh.Normals != null)
+            {
+                result.CarvedFiles.Add(new CarvedFileInfo
+                {
+                    Offset = mesh.NormalDataFileOffset,
+                    Length = mesh.Normals.Length * 4,
+                    FileType = "Normal Data",
+                    FileName = sceneInfo?.ModelName,
+                    SignatureId = "runtime_mesh_normals",
+                    Category = FileCategory.Model
+                });
+            }
+
+            // Add UV buffer
+            if (mesh.UVDataFileOffset > 0 && mesh.UVs != null)
+            {
+                result.CarvedFiles.Add(new CarvedFileInfo
+                {
+                    Offset = mesh.UVDataFileOffset,
+                    Length = mesh.UVs.Length * 4,
+                    FileType = "UV Data",
+                    FileName = sceneInfo?.ModelName,
+                    SignatureId = "runtime_mesh_uvs",
+                    Category = FileCategory.Model
+                });
+            }
+
+            // Add index buffer
+            if (mesh.IndexDataFileOffset > 0 && mesh.IndexDataSize > 0)
+            {
+                result.CarvedFiles.Add(new CarvedFileInfo
+                {
+                    Offset = mesh.IndexDataFileOffset,
+                    Length = mesh.IndexDataSize,
+                    FileType = "Index Data",
+                    FileName = sceneInfo?.ModelName,
+                    SignatureId = "runtime_mesh_indices",
+                    Category = FileCategory.Model
+                });
+            }
         }
     }
 
@@ -144,6 +206,49 @@ internal static class MinidumpMetadataExtractor
                 SignatureId = "runtime_texture",
                 Category = FileCategory.Texture
             });
+
+            // Add the pixel data buffer region (the actual texture content)
+            if (texture.PixelDataFileOffset > 0 && texture.DataSize > 0)
+            {
+                result.CarvedFiles.Add(new CarvedFileInfo
+                {
+                    Offset = texture.PixelDataFileOffset,
+                    Length = texture.DataSize,
+                    FileType = "Texture Data",
+                    FileName = texture.Filename,
+                    SignatureId = "runtime_texture_data",
+                    Category = FileCategory.Texture
+                });
+            }
+        }
+    }
+
+    private static void AddSceneGraphNodeCarvedFiles(AnalysisResult result)
+    {
+        if (result.SceneGraphMap == null || result.SceneGraphMap.Count == 0)
+        {
+            return;
+        }
+
+        // Deduplicate NiTriShape offsets (each mesh maps to one NiTriShape)
+        // and collect unique parent NiNode offsets from parent chains
+        var addedOffsets = new HashSet<long>();
+
+        foreach (var (_, info) in result.SceneGraphMap)
+        {
+            // Add NiTriShape struct (240 bytes)
+            if (info.NiTriShapeFileOffset > 0 && addedOffsets.Add(info.NiTriShapeFileOffset))
+            {
+                result.CarvedFiles.Add(new CarvedFileInfo
+                {
+                    Offset = info.NiTriShapeFileOffset,
+                    Length = 240, // NiTriShape struct size
+                    FileType = "NiTriShape",
+                    FileName = info.NodeName,
+                    SignatureId = "runtime_scene_node",
+                    Category = FileCategory.Struct
+                });
+            }
         }
     }
 
@@ -190,6 +295,63 @@ internal static class MinidumpMetadataExtractor
         }
 
         return merged.OrderBy(t => t.SourceOffset).ToList();
+    }
+
+    /// <summary>
+    ///     Adds TESForm struct regions from runtime EditorID data to the carved files list.
+    /// </summary>
+    internal static void AddTesFormStructRegions(AnalysisResult result)
+    {
+        if (result.EsmRecords == null)
+        {
+            return;
+        }
+
+        foreach (var entry in result.EsmRecords.RuntimeEditorIds)
+        {
+            if (entry.TesFormOffset is not > 0)
+            {
+                continue;
+            }
+
+            var typeCode = RuntimeBuildOffsets.GetRecordTypeCode(entry.FormType);
+            var structSize = RuntimeBuildOffsets.GetStructSize(entry.FormType);
+
+            result.CarvedFiles.Add(new CarvedFileInfo
+            {
+                Offset = entry.TesFormOffset.Value,
+                Length = structSize,
+                FileType = typeCode != null ? $"TESForm: {typeCode}" : $"TESForm: 0x{entry.FormType:X2}",
+                FileName = entry.EditorId,
+                SignatureId = "tesform_struct",
+                Category = FileCategory.Struct
+            });
+        }
+    }
+
+    /// <summary>
+    ///     Adds runtime terrain mesh regions from enriched LAND records to the carved files list.
+    /// </summary>
+    internal static void AddRuntimeTerrainMeshRegions(AnalysisResult result)
+    {
+        if (result.EsmRecords == null)
+        {
+            return;
+        }
+
+        foreach (var land in result.EsmRecords.LandRecords
+                     .Where(l => l.RuntimeTerrainMesh is { VertexDataOffset: > 0 }))
+        {
+            result.CarvedFiles.Add(new CarvedFileInfo
+            {
+                Offset = land.RuntimeTerrainMesh!.VertexDataOffset,
+                Length = 33 * 33 * 3 * 4, // 33x33 grid, 3 floats (x,y,z) each
+                FileType = "Terrain Mesh",
+                FileName = land.Header.FormId > 0 ? $"LAND {land.Header.FormId:X8}" : null,
+                SignatureId = "terrain_mesh",
+                Category = FileCategory.Model
+            });
+        }
     }
 
     /// <summary>

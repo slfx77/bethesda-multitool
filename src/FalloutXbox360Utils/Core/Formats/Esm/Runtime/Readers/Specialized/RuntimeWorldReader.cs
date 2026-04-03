@@ -136,10 +136,12 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
     /// </summary>
     private RuntimeTerrainMesh? ReadTerrainMesh(byte[] loadedDataBuffer)
     {
-        // Vertices are required — normals and colors are optional
+        // Vertices are required — normals and colors are optional.
+        // Use 90% valid-float threshold for terrain vertices (stricter than the 70% default)
+        // because random floats in unrelated heap data frequently pass 70% by chance.
         var (vertices, vertexOffset) = ReadDoubleIndirectedFloatArray(
             loadedDataBuffer, LoadedDataVerticesPtrOffset,
-            3, RuntimeTerrainMesh.VertexCount, 200_000);
+            3, RuntimeTerrainMesh.VertexCount, 200_000, minValidFraction: 0.9);
 
         if (vertices == null)
         {
@@ -149,10 +151,14 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
         // Reject degenerate meshes by checking vertex coordinate ranges.
         // Real Gamebryo terrain cells span exactly 4096×4096 world units.
         // If the X or Y range is far from ~4096, the data is garbage.
+        // Also track what fraction of X/Y values are valid — if only a handful
+        // of coincidentally-ranged floats pass, the range check is meaningless.
         var minX = float.MaxValue;
         var maxX = float.MinValue;
         var minY = float.MaxValue;
         var maxY = float.MinValue;
+        var validXCount = 0;
+        var validYCount = 0;
         for (var i = 0; i < RuntimeTerrainMesh.VertexCount; i++)
         {
             var x = vertices[i * 3];
@@ -161,13 +167,23 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
             {
                 minX = Math.Min(minX, x);
                 maxX = Math.Max(maxX, x);
+                validXCount++;
             }
 
             if (RuntimeMemoryContext.IsNormalFloat(y) && Math.Abs(y) <= 200_000)
             {
                 minY = Math.Min(minY, y);
                 maxY = Math.Max(maxY, y);
+                validYCount++;
             }
+        }
+
+        // Require 90% valid X and Y coordinates — prevents a few coincidentally-ranged
+        // floats from passing the range check when the rest are NaN/garbage.
+        if (validXCount < RuntimeTerrainMesh.VertexCount * 0.9
+            || validYCount < RuntimeTerrainMesh.VertexCount * 0.9)
+        {
+            return null;
         }
 
         var rangeX = maxX - minX;
@@ -206,7 +222,8 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
     ///     Step 3: Read elementCount × floatsPerElement floats from the array.
     /// </summary>
     private (float[]? Data, long FileOffset) ReadDoubleIndirectedFloatArray(
-        byte[] loadedDataBuffer, int ptrOffset, int floatsPerElement, int elementCount, float maxAbsValue)
+        byte[] loadedDataBuffer, int ptrOffset, int floatsPerElement, int elementCount, float maxAbsValue,
+        double minValidFraction = 0.7)
     {
         if (ptrOffset + 4 > loadedDataBuffer.Length)
         {
@@ -266,9 +283,9 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
             }
         }
 
-        // Require at least 70% valid floats to reject garbage terrain data.
-        // FaceGen uses 50% but terrain is more sensitive to corruption.
-        if (validCount < totalFloats * 0.7)
+        // Require a minimum fraction of valid floats to reject garbage data.
+        // Default 70% for normals/colors; 90% for terrain vertices (passed by caller).
+        if (validCount < totalFloats * minValidFraction)
         {
             return (null, 0);
         }

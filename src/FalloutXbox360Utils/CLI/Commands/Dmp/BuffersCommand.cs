@@ -115,7 +115,8 @@ public static class BuffersCommand
                 result.MinidumpInfo!,
                 coverage,
                 pdbAnalysis,
-                result.EsmRecords?.RuntimeEditorIds);
+                result.EsmRecords?.RuntimeEditorIds,
+                result.EsmRecords?.GameSettings);
             exploration = bufferAnalyzer.Analyze();
         }
 

@@ -2,6 +2,7 @@ using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.SaveGame;
+using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Localization;
 
 namespace FalloutXbox360Utils;
@@ -13,61 +14,12 @@ namespace FalloutXbox360Utils;
 internal static class SingleFileAnalysisHelper
 {
     /// <summary>
-    ///     Adds TESForm struct regions from runtime EditorID data to the carved files list.
-    /// </summary>
-    public static void AddTesFormStructRegions(AnalysisResult result)
-    {
-        if (result.EsmRecords == null)
-        {
-            return;
-        }
-
-        foreach (var entry in result.EsmRecords.RuntimeEditorIds)
-        {
-            if (entry.TesFormOffset is not > 0)
-            {
-                continue;
-            }
-
-            var typeCode = RuntimeBuildOffsets.GetRecordTypeCode(entry.FormType);
-            var structSize = RuntimeBuildOffsets.GetStructSize(entry.FormType);
-
-            result.CarvedFiles.Add(new CarvedFileInfo
-            {
-                Offset = entry.TesFormOffset.Value,
-                Length = structSize,
-                FileType = typeCode != null ? $"TESForm: {typeCode}" : $"TESForm: 0x{entry.FormType:X2}",
-                FileName = entry.EditorId,
-                SignatureId = "tesform_struct",
-                Category = FileCategory.Struct
-            });
-        }
-    }
-
-    /// <summary>
     ///     Adds runtime terrain mesh regions from enriched LAND records to the carved files list.
+    ///     Called after semantic parsing enriches LAND records with terrain mesh data.
+    ///     Delegates to <see cref="MinidumpMetadataExtractor.AddRuntimeTerrainMeshRegions" />.
     /// </summary>
     public static void AddRuntimeTerrainMeshRegions(AnalysisResult result)
-    {
-        if (result.EsmRecords == null)
-        {
-            return;
-        }
-
-        foreach (var land in result.EsmRecords.LandRecords
-                     .Where(l => l.RuntimeTerrainMesh is { VertexDataOffset: > 0 }))
-        {
-            result.CarvedFiles.Add(new CarvedFileInfo
-            {
-                Offset = land.RuntimeTerrainMesh!.VertexDataOffset,
-                Length = 33 * 33 * 3 * 4, // 33x33 grid, 3 floats (x,y,z) each
-                FileType = "Terrain Mesh",
-                FileName = land.Header.FormId > 0 ? $"LAND {land.Header.FormId:X8}" : null,
-                SignatureId = "terrain_mesh",
-                Category = FileCategory.Model
-            });
-        }
-    }
+        => MinidumpMetadataExtractor.AddRuntimeTerrainMeshRegions(result);
 
     /// <summary>
     ///     Builds a list of CarvedFileEntry from analysis results and ESM records.

@@ -190,6 +190,7 @@ internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
 
         // Read vertex positions
         var vertexPtr = BinaryUtils.ReadUInt32BE(chunk, offset + VertexPtrOffset);
+        var vertexDataFo = _context.VaToFileOffset(vertexPtr) ?? 0;
         var vertices = ReadFloatArray(vertexPtr, vertexCount * 3, MaxCoordinate);
         if (vertices == null)
         {
@@ -204,9 +205,11 @@ internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
 
         // Read optional arrays
         var normalPtr = BinaryUtils.ReadUInt32BE(chunk, offset + NormalPtrOffset);
+        var normalDataFo = normalPtr != 0 ? _context.VaToFileOffset(normalPtr) ?? 0 : 0;
         var normals = normalPtr != 0 ? ReadFloatArray(normalPtr, vertexCount * 3, 2.0f) : null;
 
         var uvPtr = BinaryUtils.ReadUInt32BE(chunk, offset + UVPtrOffset);
+        var uvDataFo = uvPtr != 0 ? _context.VaToFileOffset(uvPtr) ?? 0 : 0;
         var uvs = uvPtr != 0 ? ReadFloatArray(uvPtr, vertexCount * 2, 100.0f) : null;
 
         var colorPtr = BinaryUtils.ReadUInt32BE(chunk, offset + ColorPtrOffset);
@@ -218,6 +221,8 @@ internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
         // Try to identify as NiTriShapeData first (more common than strips)
         ushort[]? triangleIndices = null;
         var meshType = MeshType.TriShape;
+        long indexDataFo = 0;
+        var indexDataSize = 0;
 
         if (offset + TriShapeStructSize <= chunk.Length)
         {
@@ -235,16 +240,28 @@ internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
                 _context.IsValidPointer(triListPtr))
             {
                 triangleIndices = ReadIndexArray(triListPtr, (int)triListLength, vertexCount);
+                if (triangleIndices != null)
+                {
+                    indexDataFo = _context.VaToFileOffset(triListPtr) ?? 0;
+                    indexDataSize = (int)triListLength * 2;
+                }
             }
         }
 
         // If not NiTriShapeData, try NiTriStripsData
         if (triangleIndices == null && offset + TriStripsStructSize <= chunk.Length)
         {
+            var stripListsPtr = BinaryUtils.ReadUInt32BE(chunk, offset + StripListsPtrOffset);
             triangleIndices = TryReadTriStrips(chunk, offset, vertexCount);
             if (triangleIndices != null)
             {
                 meshType = MeshType.TriStrips;
+                // For strips, the raw index data is the strip lists buffer
+                indexDataFo = _context.IsValidPointer(stripListsPtr)
+                    ? _context.VaToFileOffset(stripListsPtr) ?? 0
+                    : 0;
+                // Compute raw strip index total from strip lengths
+                indexDataSize = ComputeStripIndexDataSize(chunk, offset);
             }
         }
 
@@ -268,6 +285,11 @@ internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
             VertexColors = colors,
             TriangleIndices = triangleIndices,
             SourceOffset = fileOffset,
+            VertexDataFileOffset = vertexDataFo,
+            NormalDataFileOffset = normals != null ? normalDataFo : 0,
+            UVDataFileOffset = uvs != null ? uvDataFo : 0,
+            IndexDataFileOffset = indexDataFo,
+            IndexDataSize = indexDataSize,
             VertexHash = hash,
             BoundCenterX = RuntimeMemoryContext.IsNormalFloat(boundCx) ? boundCx : 0,
             BoundCenterY = RuntimeMemoryContext.IsNormalFloat(boundCy) ? boundCy : 0,
@@ -483,6 +505,44 @@ internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
         // At least one dimension must have reasonable extent
         var maxRange = MathF.Max(rangeX, MathF.Max(rangeY, rangeZ));
         return maxRange >= MinSpatialExtent && maxRange <= MaxSpatialExtent;
+    }
+
+    /// <summary>
+    ///     Compute the total raw index data size for NiTriStripsData from strip lengths.
+    /// </summary>
+    private int ComputeStripIndexDataSize(byte[] chunk, int offset)
+    {
+        var stripCount = BinaryUtils.ReadUInt16BE(chunk, offset + StripCountOffset);
+        if (stripCount == 0 || stripCount > 1000)
+        {
+            return 0;
+        }
+
+        var stripLengthsPtr = BinaryUtils.ReadUInt32BE(chunk, offset + StripLengthsPtrOffset);
+        if (!_context.IsValidPointer(stripLengthsPtr))
+        {
+            return 0;
+        }
+
+        var lengthsOffset = _context.VaToFileOffset(stripLengthsPtr);
+        if (lengthsOffset == null)
+        {
+            return 0;
+        }
+
+        var lengthsData = _context.ReadBytes(lengthsOffset.Value, stripCount * 2);
+        if (lengthsData == null)
+        {
+            return 0;
+        }
+
+        var totalIndices = 0;
+        for (var i = 0; i < stripCount; i++)
+        {
+            totalIndices += BinaryUtils.ReadUInt16BE(lengthsData, i * 2);
+        }
+
+        return totalIndices * 2; // uint16 per index
     }
 
     /// <summary>

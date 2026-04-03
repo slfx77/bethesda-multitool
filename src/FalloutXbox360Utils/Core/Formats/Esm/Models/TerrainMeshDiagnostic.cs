@@ -28,6 +28,9 @@ public record TerrainMeshDiagnostic
     /// <summary>Number of vertices with garbage Z values (|Z| > 100k, NaN, or Infinity) before sanitization.</summary>
     public int GarbageZCount { get; init; }
 
-    /// <summary>Complete, Partial, Flat, or FewPixels.</summary>
+    /// <summary>Percentage of vertices that were sanitized (replaced by interpolation), 0-100.</summary>
+    public float SanitizedPercent { get; init; }
+
+    /// <summary>Complete, Partial, Flat, FewPixels, or Corrupt.</summary>
     public required string Classification { get; init; }
 }

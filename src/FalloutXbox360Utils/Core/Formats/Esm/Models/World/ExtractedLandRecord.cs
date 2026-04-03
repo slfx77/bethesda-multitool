@@ -33,6 +33,9 @@ public record ExtractedLandRecord
     /// <summary>Terrain mesh extracted from runtime heap pointers.</summary>
     public RuntimeTerrainMesh? RuntimeTerrainMesh { get; init; }
 
+    /// <summary>Quality diagnostic captured BEFORE sanitization, reflecting true data quality.</summary>
+    public TerrainMeshDiagnostic? PreSanitizationDiagnostic { get; init; }
+
     /// <summary>
     ///     Get the best available cell X coordinate, preferring runtime data.
     /// </summary>

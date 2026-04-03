@@ -70,6 +70,19 @@ internal static class EsmLandEnricher
             }
         }
 
+        // Diagnose quality BEFORE sanitization to capture true data state.
+        // After sanitization, garbage vertices are interpolated and corruption is hidden.
+        for (var i = 0; i < scanResult.LandRecords.Count; i++)
+        {
+            var record = scanResult.LandRecords[i];
+            if (record.RuntimeTerrainMesh != null)
+            {
+                var diag = record.RuntimeTerrainMesh.DiagnoseQuality(
+                    record.BestCellX ?? 0, record.BestCellY ?? 0, record.Header.FormId);
+                scanResult.LandRecords[i] = record with { PreSanitizationDiagnostic = diag };
+            }
+        }
+
         // Sanitize runtime terrain mesh vertex data (replace garbage Z values with
         // neighbor interpolation or zeros) before any downstream processing.
         for (var i = 0; i < scanResult.LandRecords.Count; i++)

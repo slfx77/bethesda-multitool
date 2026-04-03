@@ -491,16 +491,25 @@ internal static class EsmWorldExtractor
 
         var len = isBigEndian ? BinaryUtils.ReadUInt16BE(data, i + 4) : BinaryUtils.ReadUInt16LE(data, i + 4);
 
-        // VHGT is 1089 bytes (4 byte offset + 33x33 height deltas + 3 padding)
-        if (len != 1089 || i + 6 + len > dataLength)
+        // VHGT data = HeightOffset (4 bytes) + HeightDeltas (1089 sbytes) + padding (0-3 bytes)
+        // Minimum valid size: 1093 (4 + 1089), maximum: 1096 (with 3 padding bytes)
+        if (len < 1093 || len > 1096 || i + 6 + len > dataLength)
         {
             return;
         }
 
         var heightOffset = isBigEndian ? BinaryUtils.ReadFloatBE(data, i + 6) : BinaryUtils.ReadFloatLE(data, i + 6);
-        if (float.IsNaN(heightOffset) || float.IsInfinity(heightOffset))
+        if (float.IsNaN(heightOffset) || float.IsInfinity(heightOffset) || Math.Abs(heightOffset) > 100_000f)
         {
             return;
+        }
+
+        // Deltas start at i+10 (after 6-byte subrecord header + 4-byte HeightOffset)
+        var deltaCount = Math.Min(1089, len - 4);
+        var deltas = new sbyte[1089];
+        for (var d = 0; d < deltaCount; d++)
+        {
+            deltas[d] = (sbyte)data[i + 10 + d];
         }
 
         records.Add(new DetectedVhgtHeightmap
@@ -508,7 +517,7 @@ internal static class EsmWorldExtractor
             HeightOffset = heightOffset,
             Offset = baseOffset + i,
             IsBigEndian = isBigEndian,
-            HeightDeltas = data.Skip(i + 10).Take(1089).Select(b => (sbyte)b).ToArray()
+            HeightDeltas = deltas
         });
     }
 

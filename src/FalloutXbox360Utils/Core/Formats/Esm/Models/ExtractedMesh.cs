@@ -34,6 +34,24 @@ public record ExtractedMesh
     /// <summary>File offset where the NiGeometryData struct was found.</summary>
     public long SourceOffset { get; init; }
 
+    /// <summary>File offset of the vertex position array in the dump.</summary>
+    public long VertexDataFileOffset { get; init; }
+
+    /// <summary>Size of the vertex position array in bytes (VertexCount * 3 * 4).</summary>
+    public int VertexDataSize => VertexCount * 3 * 4;
+
+    /// <summary>File offset of the normal array in the dump, or 0 if not present.</summary>
+    public long NormalDataFileOffset { get; init; }
+
+    /// <summary>File offset of the UV array in the dump, or 0 if not present.</summary>
+    public long UVDataFileOffset { get; init; }
+
+    /// <summary>File offset of the triangle index array in the dump, or 0 if not present.</summary>
+    public long IndexDataFileOffset { get; init; }
+
+    /// <summary>Size of the raw index array in bytes (before strip-to-trilist conversion).</summary>
+    public int IndexDataSize { get; init; }
+
     /// <summary>Hash of vertex data for deduplication.</summary>
     public long VertexHash { get; init; }
 

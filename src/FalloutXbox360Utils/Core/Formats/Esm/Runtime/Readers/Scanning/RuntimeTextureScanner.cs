@@ -324,6 +324,12 @@ internal sealed class RuntimeTextureScanner(RuntimeMemoryContext context)
 
         // Read pixel data
         var pixelsPtr = BinaryUtils.ReadUInt32BE(chunk, offset + PixelsPtrOffset);
+        var pixelDataFo = _context.VaToFileOffset(pixelsPtr);
+        if (pixelDataFo == null)
+        {
+            return null;
+        }
+
         var pixelData = ReadPixelData(pixelsPtr, expectedSize);
         if (pixelData == null)
         {
@@ -333,6 +339,7 @@ internal sealed class RuntimeTextureScanner(RuntimeMemoryContext context)
         return new ExtractedTexture
         {
             SourceOffset = fileOffset,
+            PixelDataFileOffset = pixelDataFo.Value,
             Width = width,
             Height = height,
             MipmapLevels = mipLevels,

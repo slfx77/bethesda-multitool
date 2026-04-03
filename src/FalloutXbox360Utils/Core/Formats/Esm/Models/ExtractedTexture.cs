@@ -9,6 +9,9 @@ public record ExtractedTexture
     /// <summary>File offset of the NiPixelData struct in the dump.</summary>
     public long SourceOffset { get; init; }
 
+    /// <summary>File offset of the raw pixel data buffer in the dump (resolved from m_pucPixels pointer).</summary>
+    public long PixelDataFileOffset { get; init; }
+
     /// <summary>Texture width in pixels (mip level 0).</summary>
     public int Width { get; init; }
 

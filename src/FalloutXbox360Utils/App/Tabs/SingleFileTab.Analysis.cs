@@ -251,7 +251,8 @@ public sealed partial class SingleFileTab
             if (_session.SemanticResult != null)
             {
                 _session.Resolver = _session.SemanticResult.CreateResolver();
-                SingleFileAnalysisHelper.AddTesFormStructRegions(_analysisResult!);
+                // TESForm struct regions are added by the core pipeline (PostProcessMetadataAsync).
+                // Terrain mesh regions depend on semantic parse enrichment, so add them here.
                 SingleFileAnalysisHelper.AddRuntimeTerrainMeshRegions(_analysisResult!);
                 RefreshCarvedFilesList();
                 BuildResultsFilterCheckboxes();

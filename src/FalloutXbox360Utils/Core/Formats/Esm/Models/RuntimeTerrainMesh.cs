@@ -372,11 +372,27 @@ public record RuntimeTerrainMesh
             }
         }
 
-        // Classification
+        // Use pre-sanitization count if available, otherwise count current garbage
+        var garbageZCount = SanitizedZCount > 0
+            ? SanitizedZCount
+            : zValues.Count(z => MathF.Abs(z) > 100_000f || float.IsNaN(z) || float.IsInfinity(z));
+        var sanitizedPercent = SanitizedZCount * 100.0f / VertexCount;
+
+        // Classification — check corruption first, then quality categories.
+        // "Corrupt" means significant sanitization was needed, indicating the raw data was garbage.
+        // "Flat" only applies to genuinely flat terrain (low sanitization).
         string classification;
-        if (zRange < 0.1f)
+        if (sanitizedPercent > 30.0f)
         {
-            classification = "Flat";
+            classification = "Corrupt";
+        }
+        else if (zRange < 0.1f && sanitizedPercent < 5.0f)
+        {
+            classification = "Flat"; // Genuinely flat terrain (rare but valid)
+        }
+        else if (zRange < 0.1f)
+        {
+            classification = "Corrupt"; // Garbage data flattened by sanitization
         }
         else if (dominantZPercent > 95.0f)
         {
@@ -395,11 +411,6 @@ public record RuntimeTerrainMesh
             classification = "Partial";
         }
 
-        // Use pre-sanitization count if available, otherwise count current garbage
-        var garbageZCount = SanitizedZCount > 0
-            ? SanitizedZCount
-            : zValues.Count(z => MathF.Abs(z) > 100_000f || float.IsNaN(z) || float.IsInfinity(z));
-
         return new TerrainMeshDiagnostic
         {
             CellX = cellX,
@@ -415,6 +426,7 @@ public record RuntimeTerrainMesh
             LastActiveRow = lastActiveRow,
             RowDiscontinuities = discontinuities,
             GarbageZCount = garbageZCount,
+            SanitizedPercent = sanitizedPercent,
             Classification = classification
         };
     }
