@@ -41,7 +41,8 @@ internal static class EsmPropertyFormatter
     /// </summary>
     internal static readonly string[] CategoryOrder =
     [
-        "Identity", "Attributes", "Derived Stats", "Characteristics", "AI", "Associations", "References",
+        "Identity", "Placement", "Flags", "Map Marker", "Lock",
+        "Attributes", "Derived Stats", "Characteristics", "AI", "Associations", "References",
         "Statistics", "General", "Metadata"
     ];
 
@@ -158,6 +159,7 @@ internal static class EsmPropertyFormatter
         [typeof(ScriptRecord)] = "SCPT",
         [typeof(PackageRecord)] = "PACK",
         [typeof(SoundRecord)] = "SOUN",
+        [typeof(MusicTypeRecord)] = "MUSC",
         [typeof(TextureSetRecord)] = "TXST",
         [typeof(ArmaRecord)] = "ARMA",
         [typeof(WaterRecord)] = "WATR",
@@ -423,10 +425,27 @@ internal static class EsmPropertyFormatter
                 or "Responsibility" or "CombatStyle" or "CombatStyleFormId"
                 => "AI",
 
+            // Placement (position, rotation, scale for placed references)
+            "X" or "Y" or "Z" or "RotX" or "RotY" or "RotZ" or "Scale" or "Radius"
+                => "Placement",
+
+            // Flags & State (placed reference flags)
+            "IsPersistent" or "IsInitiallyDisabled" or "IsMapMarker"
+                or "RecordType" or "AssignmentSource"
+                => "Flags",
+
+            // Map Marker
+            "MarkerType" or "MarkerName" => "Map Marker",
+
+            // Lock
+            "LockLevel" or "LockFlags" or "LockNumTries" or "LockTimesUnlocked"
+                => "Lock",
+
             // Associations (references to other records)
             "Factions" or "Spells" or "Inventory" or "Packages" or "Ranks" or "Relations"
                 or "AbilityFormIds" or "HairStyleFormIds" or "EyeColorFormIds"
                 or "RelatedNpcFormIds" or "Variables" or "FaceNpc"
+                or "LinkedRefChildrenFormIds"
                 => "Associations",
 
             // References (other FormID fields)

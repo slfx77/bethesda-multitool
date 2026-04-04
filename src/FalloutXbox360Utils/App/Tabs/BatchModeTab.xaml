@@ -74,6 +74,12 @@
               x:Uid="Checkbox_GenerateReports"
               MinWidth="0"
               IsChecked="True" />
+            <CheckBox
+              x:Name="BatchCrossDumpCompareCheckBox"
+              Content="Cross-dump comparison"
+              ToolTipService.ToolTip="After batch processing, generate comparison CSVs showing field changes across all dumps"
+              MinWidth="0"
+              IsChecked="False" />
           </StackPanel>
         </StackPanel>
       </ScrollViewer>

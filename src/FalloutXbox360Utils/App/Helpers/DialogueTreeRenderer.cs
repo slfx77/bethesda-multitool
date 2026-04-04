@@ -280,6 +280,34 @@ internal static class DialogueTreeRenderer
     }
 
     /// <summary>
+    ///     Creates a clickable response text wrapped in a transparent Button for hover/press states.
+    /// </summary>
+    public static Button CreateClickableResponseText(string text, bool isSubtitleFallback = false)
+    {
+        var textBlock = new TextBlock
+        {
+            Text = text,
+            FontSize = 13,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(22, 2, 0, 2)
+        };
+        if (isSubtitleFallback)
+        {
+            textBlock.FontStyle = Windows.UI.Text.FontStyle.Italic;
+        }
+
+        return new Button
+        {
+            Content = textBlock,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            Padding = new Thickness(0),
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            BorderThickness = new Thickness(0)
+        };
+    }
+
+    /// <summary>
     ///     Creates the small "(from subtitles CSV)" attribution label.
     /// </summary>
     public static TextBlock CreateSubtitleSourceLabel()

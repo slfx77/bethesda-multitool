@@ -84,7 +84,6 @@
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
         <RowDefinition Height="*" />
-        <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
       <TextBox x:Name="CellSearchBox" Grid.Row="0" PlaceholderText="Search cells..."
                TextChanged="CellSearchBox_TextChanged" Margin="0,0,0,4" />
@@ -126,10 +125,6 @@
           </DataTemplate>
         </ListView.ItemTemplate>
       </ListView>
-      <Button x:Name="ViewCellButton" Grid.Row="3" Content="View Cell"
-              Click="ViewCellButton_Click" Visibility="Collapsed"
-              Margin="0,4,0,0"
-              ToolTipService.ToolTip="View this cell in detail mode" />
     </Grid>
 
     <!-- Status bar -->
@@ -146,7 +141,7 @@
 
     <!-- Filter checkboxes -->
     <StackPanel x:Name="FilterCheckboxPanel" Grid.Row="3" Orientation="Horizontal"
-                Spacing="16" Padding="0,4,0,0">
+                Spacing="8" Padding="0,4,0,0">
       <CheckBox x:Name="WaterCheckBox" Content="Water" IsChecked="True"
                 Checked="WaterCheckBox_Changed" Unchecked="WaterCheckBox_Changed" />
       <CheckBox x:Name="DisabledCheckBox" Content="Initially Disabled" IsChecked="False"

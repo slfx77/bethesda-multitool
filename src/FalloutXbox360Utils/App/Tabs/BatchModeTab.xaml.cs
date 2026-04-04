@@ -5,6 +5,7 @@ using Windows.Storage.Pickers;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Extraction;
 using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Minidump;
 using Microsoft.UI.Xaml;
@@ -255,6 +256,14 @@ public sealed partial class BatchModeTab : UserControl, IDisposable, IHasSetting
                 supplementaryRecords, token));
 
             await Task.WhenAll(tasks);
+
+            // Cross-dump comparison report (if enabled)
+            if (BatchCrossDumpCompareCheckBox.IsChecked is true)
+            {
+                StatusTextBlock.Text = "Generating cross-dump comparison...";
+                await GenerateCrossDumpComparisonAsync(selectedFiles, options.OutputPath, token);
+            }
+
             StatusTextBlock.Text = $"Completed processing {processed} file(s)";
         }
         catch (OperationCanceledException)
@@ -272,6 +281,59 @@ public sealed partial class BatchModeTab : UserControl, IDisposable, IHasSetting
             _cts?.Dispose();
             _cts = null;
             semaphore.Dispose();
+        }
+    }
+
+    private async Task GenerateCrossDumpComparisonAsync(
+        List<DumpFileEntry> selectedFiles, string outputPath, CancellationToken ct)
+    {
+        var dmpFiles = selectedFiles
+            .Where(f => f.FilePath.EndsWith(".dmp", StringComparison.OrdinalIgnoreCase))
+            .Select(f => f.FilePath)
+            .OrderBy(f => new FileInfo(f).LastWriteTimeUtc)
+            .ToList();
+
+        if (dmpFiles.Count < 2) return;
+
+        var dumpData =
+            new List<(string FilePath, RecordCollection Records, FormIdResolver Resolver, MinidumpInfo? Info)>();
+
+        foreach (var dmpFile in dmpFiles)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                var analyzer = new MinidumpAnalyzer();
+                var result = await analyzer.AnalyzeAsync(dmpFile, includeMetadata: true, verbose: false);
+                if (result.EsmRecords == null || result.EsmRecords.MainRecords.Count == 0) continue;
+
+                var fileSize = new FileInfo(dmpFile).Length;
+                using var mmf = MemoryMappedFile.CreateFromFile(
+                    dmpFile, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+                using var accessor = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
+
+                var parser = new RecordParser(
+                    result.EsmRecords, result.FormIdMap, accessor, fileSize, result.MinidumpInfo);
+                var records = parser.ParseAll();
+                var resolver = records.CreateResolver(result.FormIdMap);
+                dumpData.Add((dmpFile, records, resolver, result.MinidumpInfo));
+            }
+            catch
+            {
+                // Skip dumps that fail to parse
+            }
+        }
+
+        if (dumpData.Count < 2) return;
+
+        var index = CrossDumpAggregator.Aggregate(dumpData);
+        var htmlFiles = CrossDumpHtmlWriter.GenerateAll(index);
+
+        var comparisonDir = Path.Combine(outputPath, "comparison");
+        Directory.CreateDirectory(comparisonDir);
+        foreach (var (filename, content) in htmlFiles)
+        {
+            await File.WriteAllTextAsync(Path.Combine(comparisonDir, filename), content, ct);
         }
     }
 

@@ -302,7 +302,7 @@ public sealed partial class SingleFileTab
             }
         }
 
-        NpcCountText.Text = $"{_npcFilteredList.Count} NPCs" +
+        NpcCountText.Text = $"{_npcFilteredList.Count} actors" +
                             (_npcFullList.Count != _npcFilteredList.Count
                                 ? $" (of {_npcFullList.Count})"
                                 : "");
@@ -337,20 +337,40 @@ public sealed partial class SingleFileTab
 
         _selectedNpcFormId = npc.FormId;
         NpcDetailName.Text = npc.DisplayName;
-        NpcDetailInfo.Text = $"FormID: 0x{npc.FormId:X8}\n" +
-                             $"Editor ID: {npc.EditorId ?? "(none)"}\n" +
-                             $"Gender: {(npc.IsFemale ? "Female" : "Male")}";
-        NpcExportGlbButton.IsEnabled = true;
-        NpcRenderPngButton.IsEnabled = true;
 
-        await LoadNpcIntoViewerAsync(npc.FormId);
+        if (npc.IsCreature)
+        {
+            NpcDetailInfo.Text = $"FormID: 0x{npc.FormId:X8}\n" +
+                                 $"Editor ID: {npc.EditorId ?? "(none)"}\n" +
+                                 $"Type: {npc.CreatureTypeName}\n" +
+                                 $"Model: {npc.ModelPath ?? "(none)"}";
+            NpcFullBodyCheckBox.IsEnabled = false;
+            NpcArmorCheckBox.IsEnabled = false;
+            NpcWeaponCheckBox.IsEnabled = false;
+            NpcIdlePoseCheckBox.IsEnabled = false;
+        }
+        else
+        {
+            NpcDetailInfo.Text = $"FormID: 0x{npc.FormId:X8}\n" +
+                                 $"Editor ID: {npc.EditorId ?? "(none)"}\n" +
+                                 $"Gender: {(npc.IsFemale ? "Female" : "Male")}";
+            NpcFullBodyCheckBox.IsEnabled = true;
+            NpcArmorCheckBox.IsEnabled = true;
+            NpcWeaponCheckBox.IsEnabled = true;
+            NpcIdlePoseCheckBox.IsEnabled = true;
+        }
+
+        NpcExportGlbButton.IsEnabled = true;
+        NpcRenderPngButton.IsEnabled = !npc.IsCreature; // PNG render not yet supported for creatures
+
+        await LoadNpcIntoViewerAsync(npc);
     }
 
     #endregion
 
     #region 3D Viewer
 
-    private async Task LoadNpcIntoViewerAsync(uint formId)
+    private async Task LoadNpcIntoViewerAsync(NpcListItem npc)
     {
         if (_npcBrowserService == null || !_webViewInitialized)
         {
@@ -363,17 +383,27 @@ public sealed partial class SingleFileTab
         {
             await NpcModelViewer.ExecuteScriptAsync("setStatus('Building model...')");
 
-            var headOnly = NpcFullBodyCheckBox.IsChecked != true;
-            var noEquip = NpcArmorCheckBox.IsChecked != true;
-            var noWeapon = NpcWeaponCheckBox.IsChecked != true;
-            var bindPose = NpcIdlePoseCheckBox.IsChecked != true;
+            byte[]? glbBytes;
+            if (npc.IsCreature)
+            {
+                glbBytes = await Task.Run(() =>
+                    _npcBrowserService.BuildCreatureGlb(npc.FormId));
+            }
+            else
+            {
+                var headOnly = NpcFullBodyCheckBox.IsChecked != true;
+                var noEquip = NpcArmorCheckBox.IsChecked != true;
+                var noWeapon = NpcWeaponCheckBox.IsChecked != true;
+                var bindPose = NpcIdlePoseCheckBox.IsChecked != true;
 
-            var glbBytes = await Task.Run(() =>
-                _npcBrowserService.BuildGlb(formId, headOnly, noEquip, noWeapon, bindPose));
+                glbBytes = await Task.Run(() =>
+                    _npcBrowserService.BuildGlb(npc.FormId, headOnly, noEquip, noWeapon, bindPose));
+            }
 
             if (glbBytes == null)
             {
-                await NpcModelViewer.ExecuteScriptAsync("setStatus('No geometry for this NPC')");
+                var label = npc.IsCreature ? "creature" : "NPC";
+                await NpcModelViewer.ExecuteScriptAsync($"setStatus('No geometry for this {label}')");
                 NpcModelLoadingRing.Visibility = Visibility.Collapsed;
                 return;
             }
@@ -401,7 +431,7 @@ public sealed partial class SingleFileTab
 
     private async void NpcRenderOption_Changed(object sender, RoutedEventArgs e)
     {
-        if (_selectedNpcFormId == null || _npcBrowserService == null)
+        if (NpcListView.SelectedItem is not NpcListItem npc || _npcBrowserService == null)
         {
             return;
         }
@@ -420,7 +450,7 @@ public sealed partial class SingleFileTab
             await Task.Delay(300, token);
             if (!token.IsCancellationRequested)
             {
-                await LoadNpcIntoViewerAsync(_selectedNpcFormId.Value);
+                await LoadNpcIntoViewerAsync(npc);
             }
         }
         catch (TaskCanceledException)
@@ -458,13 +488,22 @@ public sealed partial class SingleFileTab
         NpcExportGlbButton.IsEnabled = false;
         try
         {
-            var headOnly = NpcFullBodyCheckBox.IsChecked != true;
-            var noEquip = NpcArmorCheckBox.IsChecked != true;
-            var noWeapon = NpcWeaponCheckBox.IsChecked != true;
-            var bindPose = NpcIdlePoseCheckBox.IsChecked != true;
+            byte[]? glbBytes;
+            if (npc is { IsCreature: true })
+            {
+                glbBytes = await Task.Run(() =>
+                    _npcBrowserService.BuildCreatureGlb(npc.FormId));
+            }
+            else
+            {
+                var headOnly = NpcFullBodyCheckBox.IsChecked != true;
+                var noEquip = NpcArmorCheckBox.IsChecked != true;
+                var noWeapon = NpcWeaponCheckBox.IsChecked != true;
+                var bindPose = NpcIdlePoseCheckBox.IsChecked != true;
 
-            var glbBytes = await Task.Run(() =>
-                _npcBrowserService.BuildGlb(_selectedNpcFormId.Value, headOnly, noEquip, noWeapon, bindPose));
+                glbBytes = await Task.Run(() =>
+                    _npcBrowserService.BuildGlb(_selectedNpcFormId.Value, headOnly, noEquip, noWeapon, bindPose));
+            }
 
             if (glbBytes != null)
             {
@@ -473,7 +512,7 @@ public sealed partial class SingleFileTab
             }
             else
             {
-                StatusTextBlock.Text = "No geometry for this NPC";
+                StatusTextBlock.Text = $"No geometry for this {(npc?.IsCreature == true ? "creature" : "NPC")}";
             }
         }
         catch (Exception ex)
@@ -696,8 +735,8 @@ public sealed partial class SingleFileTab
             ? $" (of {_npcFullList.Count})"
             : "";
         NpcCountText.Text = selectedCount > 0
-            ? $"{_npcFilteredList.Count} NPCs{filterNote} — {selectedCount} selected"
-            : $"{_npcFilteredList.Count} NPCs{filterNote}";
+            ? $"{_npcFilteredList.Count} actors{filterNote} — {selectedCount} selected"
+            : $"{_npcFilteredList.Count} actors{filterNote}";
     }
 
     #endregion

@@ -1,6 +1,6 @@
 # FaceGen Head Rendering Pipeline
 
-## Status: PARTIALLY VERIFIED — core decompilation claims audited, conclusions still under review (2026-03-19)
+## Status: PARTIALLY VERIFIED — core decompilation claims audited; use the current authoritative summary below for the latest reranked conclusions (2026-04-02)
 
 This document traces the engine's head rendering pipeline from decompiled Xbox 360 code.
 Most low-level claims cite a specific decompiled function and line range. Some higher-level
@@ -86,6 +86,10 @@ semantic conclusions were stronger than the raw evidence and are now called out 
 - `TestOutput/codex_geck_export_staging_bridge_resolution.txt` — summary of the export-staging pass, including the cache-hit/generate split in `FUN_0068FE90` and the remaining on-demand lazy package load inside `FUN_00695B50`
 - `tools/GhidraProject/facegen_geck_export_owner_bridge.txt` — focused GECK decompile of the concrete FaceMods writer lane, the sibling BodyMods lane, and the shared pre-save texture application stage under them
 - `TestOutput/codex_geck_export_owner_bridge_resolution.txt` — summary of the GECK export-owner split, including why `FUN_00574500` is the real FaceMods writer and why `FUN_00691B10` is a shared application step rather than a writer
+- `tools/GhidraProject/facegen_geck_bake_selector_bridge.txt` — focused GECK decompile of the ordinary export descriptor builder, the page-8 shade owner, the staging owner, the descriptor merge/materializer helpers, and the shared bake loop
+- `tools/GhidraProject/facegen_geck_bake_selector_callers.txt` — focused GECK decompile of the immediate `FUN_00695B50` callers, especially `FUN_00587B20` and `FUN_00691B10`, to pin where the bake selector records become concrete
+- `TestOutput/codex_geck_bake_selector_callers_resolution.txt` — summary of the selector-bridge/caller passes, including the 4 x `0x20` descriptor-buffer result and the narrowed next target
+- `TestOutput/codex_geck_selector_record_layout_resolution.txt` — summary of the next selector-layout pass, including the recovered `0x20` lane-record body, the concrete `record + 0x00` bake-entry selector read, and why the `+0x1C/+0x20` raster-span pair belongs to `FREGT003` channel subrecords rather than the selector records themselves
 - `tools/GhidraProject/facegen_tri_runtime_bridge.txt` — Xbox MemDebug raw-address pass for TRI runtime container + morph builders
 - `tools/GhidraProject/facegen_tri_runtime_tables.txt` — raw Xbox table dump for the runtime morph-builder globals
 - `tools/GhidraProject/facegen_tri_runtime_table_initializers.txt` — xref scan for the runtime morph-builder globals
@@ -215,6 +219,80 @@ the remaining texture differences.
 
 ---
 
+## Current Authoritative Summary (2026-04-02)
+
+This document now contains both maintained reference sections and a long
+chronological investigation trail. When older notes conflict with this summary,
+prefer this summary and the newest dated note.
+
+### Stable conclusions
+
+- The broad low-level pipeline shape is still sound:
+  - shipped head texture morphs come from `FREGT003`
+  - GECK/editor-side bake and runtime-side apply paths are structurally traced
+  - the renderer/shader binding path is substantially understood
+- For shipped head EGTs relevant to the current `_0` work, the active first span
+  is the important one:
+  - `rows=256`
+  - `cols=256`
+  - `sym=50`
+  - `asym=0`
+  - full-frame payload, not cropped/subrect
+- The current parser orientation is not the main bug:
+  hotspot inspection confirmed the expected top/bottom mapping, and broad
+  row-flip / simple signed-byte parser theories are now weak suspects.
+- Inside `FUN_00575D70`, the shared `FGGS / FGGA / FGTS` materialization path is
+  just span resize, raw read, endian handling, and direct float copy into the
+  inline descriptor family. The common copy loop itself is now demoted as a
+  major `_0` suspect.
+- `MAN*` in `FUN_00575D70` is mostly ordinary shipped `*NAM` schema plus remap /
+  fixup, not a dedicated hidden FaceGen provenance channel.
+- `DATA / DNAM` in `FUN_00575D70` is also mostly demoted. `FUN_004F8A80` and
+  `FUN_004F8D60` are handling a generic optional-form bundle and compatibility
+  tail, not a FaceGen-specific texture-control payload.
+
+### Strongest remaining shipped `_0` seams
+
+- The remaining importer-side seam is no longer generic `DATA` or shared `FGTS`
+  copy math. It is the NPC-vs-race/default bank split:
+  - `FUN_00575D70` imports one active NPC current-source `FGTS` bank at `+0x1A8`
+  - `FUN_00588520` can materialize paired race/default banks at `+0x1A8` and
+    `+0x1C8`
+- The remaining texture mismatch is still mixed:
+  - part coefficient/source-state provenance
+  - part first-span hotspot-family content/materialization fidelity
+- The strongest residual family remains localized in the late first-span hotspot
+  set rather than in a single global shade lane.
+
+### Demoted theories
+
+- “It is just BC1/DDX/DDS noise.”
+- Broad row-flip / parser-layout / simple sign-load theories.
+- Coarse `npc_only` vs `race_only` `FGTS` source selection.
+- `MAN*` as a dedicated `_0` provenance side channel.
+- `DATA / DNAM` as a FaceGen-specific current-source payload.
+- `FUN_0085CEE0` as the best immediate upstream provenance target.
+
+### Current next targets
+
+1. The semantic role and later consumer path of the secondary `+0x1C8`
+   race/default bank.
+2. The selection logic between imported NPC current-source `+0x1A8` state and
+   paired race/default banks during ordinary export/current-source assembly.
+3. If importer payload provenance is still unclear after that, the generic chunk
+   producer `FUN_004E0740` that seeds the active token/length/offset parser
+   state consumed by `FUN_00575D70`.
+
+### Reader guidance
+
+- Sections 1-9 are the most reference-like parts of this document.
+- Section 10 and the long tail after it contain chronological reranks and should
+  be read as an investigation log, not as a uniformly current spec.
+- When a note says “next target,” use the newest dated note or this summary,
+  not the oldest occurrence of that phrase.
+
+---
+
 ## 1. Overview
 
 FaceGen gives each NPC a unique face through two morph systems:
@@ -242,7 +320,7 @@ which composites them at render time. Our current implementation composites on t
 - Source: `EgmParser.cs`
 - Parser decompilation (`EGMData::EGMData` at PDB [0004:00242428]) added to script but not yet run
 
-### EGT (FaceGen Texture Morph) — VERIFIED
+### EGT (FaceGen Texture Morph) — VERIFIED AT SCHEMA/PARSER LEVEL
 
 - Magic: `FREGT003`
 - 64-byte header: **rows at [8-11], cols at [12-15]**, sym_count at [16-19], asym_count at [20-23]
@@ -292,7 +370,7 @@ Decompiled in `facegen_texture_bake_decompiled.txt`. Uses same coefficient syste
 
 ---
 
-## 4. Texture Morphing Path (EGT → Delta Texture) — VERIFIED
+## 4. Texture Morphing Path (EGT → Delta Texture) — VERIFIED AT STRUCTURE LEVEL
 
 ### 4.1 Entry: `BSFaceGenModel::ApplyCoordinateTexturingToMesh`
 
@@ -2989,6 +3067,11 @@ Irrelevant for sprite generation (camera distance → fog factor ≈ 0).
 
 ## 10. Remaining Open Questions
 
+Documentation note (2026-04-02): this section has accreted chronological
+investigation notes. When an older branch here conflicts with the current
+authoritative summary near the top, prefer the summary and the newest dated
+note.
+
 1. **End-to-end parity is still unresolved.** The bake accumulator and encoder behavior look
    structurally correct, but live verification still shows residual mismatch that is too large
    and too patterned to dismiss as simple DXT1 noise.
@@ -3198,6 +3281,2176 @@ TESObjectREFR::GetFaceAnimationData`, so the live NPC path still depends on the 
    per-morph weighting or encode-side treatment of stronger negative deltas, not a broad channel
    swap, container-format issue, or NPC-specific lookup bug.
 
+   Follow-up implementation work on 2026-03-26 closed one more fidelity gap in our own path:
+   `FaceGenTextureMorpher` now defaults to the truncating 256-step accumulation plus truncating
+   engine-compressed delta encoding that had already been winning in the verifier diagnostics, and
+   the runtime `Apply(...)` path now routes through the same native encoded facemod semantics
+   instead of bypassing them with a direct float add. Re-running `verify-egt` on the two darker
+   presets after that change improved the summary from `Mean MAE(RGB) = 1.5887` / `Worst MAE = 1.7025`
+   to `Mean MAE(RGB) = 1.5217` / `Worst MAE = 1.6095`
+   (`TestOutput/egt_postfix_status_after_trunc_apply_fix.log`). That is a real improvement, but it
+   does not close the gap: morph lane `[00]` still dominates both failures, and the mouth/lip
+   region remains the strongest visible mismatch. A follow-up targeted sweep
+   (`TestOutput/egt_top_sweeps.log`) also narrows the remaining fault split:
+   for both darker presets the dominant lane `[00]` still wants an exact factor of `1.0`, which
+   argues against a simple coefficient-merge bug for the shade/base-color lane itself; but the
+   second preset (`0x000181D2`) still improves materially when several smaller lanes are reweighted
+   (`[01] -> 0.90625x`, `[11] -> 0.53125x`, `[12] -> 1.46875x`). So the next texture-parity target
+  is no longer row orientation or default quantization mode. It is now split between:
+  - the remaining lane-0 baked shade/base-color content
+  - the descriptor-side coefficient provenance for a smaller set of nonzero auxiliary lanes
+  A refreshed decomp pass on the source-selector + post-loop consumer side now sharpens that second
+  branch. `FUN_0056F390` still just merges a sex-selected template half (`+0x714` or `+0x694`)
+  with a live source half (`+0x1E8` or fallback `+0x168`) through `FUN_0068EA20(..., 0, 0)`, so
+  the normal export path is still **not** injecting a hidden per-lane bake strength table there.
+  The actual choice point is `FUN_00586EA0`: after building the temporary descriptor, it keeps the
+  current head export source state from `+0x1EC` only if `FUN_0056A310` says it is compatible;
+  otherwise it falls back to the sex-selected default source state. The rerun of
+  `facegen_geck_postloop_descriptor_consumers.txt` then confirms that `descriptor + 0x80` is
+  consumed as downstream source/variant/package state, not as a per-lane scalar. So the remaining
+  small-lane mismatch now looks more like source-state/descriptor provenance before bake than a
+  hidden late-stage strength multiplier.
+  A second refreshed pass on the current-head-source-state family narrows that further:
+  `FUN_0056F450` is not itself a writer for `+0x168`, `+0x1E8`, or `+0x1EC`; it recomputes
+  downstream derived owner state from the currently selected sources. The concrete field owners sit
+  in the reset/copy/snapshot helpers instead: `FUN_005721B0` clears `+0x1EC`, clears `+0x1E8`, and
+  rebuilds the inline fallback descriptor at `+0x168`; `FUN_005736B0` frees/clears the optional
+  live descriptor pointer; `FUN_00571CC0` copies the current source-state triplet and deep-copies
+  the live-or-inline descriptor through `FUN_0068E960`; and `FUN_00573790` / `FUN_00575BF0`
+  restore/snapshot whole descriptor pairs into undo-state storage. So the remaining descriptor-side
+  texture mismatch now looks more like a whole-source-state provenance/fallback issue than a hidden
+  per-lane math issue in the updater itself.
+  A follow-up on the donor side sharpens that again. In the refreshed
+  `facegen_geck_current_head_source_state.txt` pass, `FUN_00575290` is the concrete donor selector:
+  it resets transient state through `FUN_00573EF0()`, then chooses the donor object from either an
+  explicit incoming form, the current global selection, or a hard fallback buffer seeded from
+  `DAT_00ED3B0C + 0x60/+0x80`. Under the `FUN_004EA550(6)` branch it then calls
+  `FUN_00571CC0(donor)` to copy the whole current source-state/descriptor block. So the remaining
+  descriptor-side `_0` mismatch is now best read as a donor-selection / whole-state import problem,
+  not as independent hidden strength tweaks for the individual smaller lanes.
+  A second upstream pass on the current-selection owner cluster now makes that
+  donor source more concrete. `facegen_geck_current_selection_owner.txt`
+  shows a small selection-manager family where `FUN_0077B870` returns the
+  manager object from `this + 0x10`, `FUN_00A5C3C0` returns a sibling baseline
+  pointer from `manager + 0x0C`, and `FUN_00BF67B0` returns the current
+  selected object from `manager + 0x24`. The nearby owner methods
+  `FUN_00BF6E80` / `FUN_00BF6EF0` compare those two manager-held pointers
+  directly through the same helper cluster, while the higher-level callers
+  `FUN_00439880`, `FUN_0055E100`, `FUN_0055E510`, and `FUN_005727E0` all read
+  that same current selection in generic Object Window / type-dispatch /
+  object-consumer roles. So the remaining descriptor-side `_0` mismatch now
+  looks even less like hidden lane-specific bake math and even more like
+  whole-object provenance: GECK is importing from the generic current-selection
+  hierarchy, not from a FaceGen-only donor table.
+  A follow-up writer chase now demotes one tempting branch. The
+  `facegen_geck_selection_manager_writers.txt` pass shows `FUN_00BF61F0` and
+  `FUN_00BF62F0` are just thin wrappers that build temporary index spans before
+  handing control to `FUN_00BF5D40`, and `FUN_00BF6420` / `FUN_00BF6720` are
+  just higher-level scratch/solver adapters around the same machinery. The
+  first non-trivial owner above that chain, `FUN_00BD0260`, is clearly an
+  animation/spline compression routine with strings like `Compression`,
+  `Number of blocks:`, `Original Size:`, `Compressed Size:`, and
+  `Compression Ratio:` plus a path to
+  `.\Animation\SplineCompressed\hkaSplineCompressedAnimationCtor.cpp`.
+  So this newer writer branch is now a false lead for the `_0` donor problem:
+  it does not identify a persistent `manager + 0x24` selection writer, and it
+  should not be treated as FaceGen-specific current-source mutation logic.
+  A tighter helper pass on the real donor path now resolves two important
+  pieces. `FUN_004EA580` is the current-selection donor eligibility check: it
+  only accepts the current `manager + 0x24` object when that pointer is non-null
+  and its type byte at `+4` is one of two adjacent values (`0x2C`/`0x2D`), so
+  current selection is not always an eligible donor. Inside `FUN_00575290`, the
+  precedence is now concrete: use the eligible current selection first, override
+  it with an explicit incoming donor only when `param_1 != 0` and
+  `((char)param_1[1] == '*')`, and otherwise fall back to the hard buffer seeded
+  from `DAT_00ED3B0C + 0x60/+0x80`. The same pass also shows gate `6` is the
+  strongest whole-state import seam: before `FUN_00571CC0(piVar8)` does the full
+  current source-state/descriptor copy, `FUN_005EF850(piVar8)` copies three
+  donor dwords from `+0x44/+0x48/+0x4C`, then the donor virtual `+0x78` callback
+  is forwarded into the current owner, followed by a post-copy `FUN_004E5740`
+  step. So the remaining `_0` mismatch still looks more like wrong donor
+  provenance or wrong whole-state import than hidden per-lane bake weighting.
+  Decompiling the sibling interactive owner `FUN_00566BB0` sharpens that point.
+  It follows the same broad donor-selection skeleton as `FUN_00575290` but is
+  clearly not identical: current selection is still gated by `FUN_004EA580()`,
+  but explicit donor override now requires `((char)param_1[1] == '+')` instead
+  of `'*'`, the reset path goes through `FUN_00566A30()` instead of
+  `FUN_00573EF0()`, and the fallback donor comes from `FUN_005E34B0()` / local
+  stack state instead of the `DAT_00ED3B0C + 0x60/+0x80` buffer. Its gate `6`
+  path is also materially wider than the export-side one: before and around the
+  same `FUN_005EF850` three-dword sync it imports additional slices
+  (`+0x41`, `+0x52`, `+0x39`), forwards a donor virtual `+0x1C8` callback into
+  an owner virtual `+0x1CC`, copies more scalar fields (`in_ECX[0x4B]`,
+  `in_ECX[0x4D]`), and branches on donor flags / `piVar7[0x57]` into
+  `FUN_00561AF0`, `FUN_00561B70`, and `FUN_0055D8A0`. So the decomp now
+  distinguishes two donor/import owners with similar structure but different
+  override markers, fallback sources, and whole-state side effects. That still
+  points at donor provenance / imported source-state as the remaining `_0`
+  suspect, not hidden per-lane bake weights.
+  The fallback source on the interactive side is now demoted too. The targeted
+  pass on `FUN_005E34B0` shows it is not a rich synthetic donor builder at all;
+  its recovered body is just a single call to `FUN_004F9620(0x3D)`, and in the
+  recovered `FUN_00566BB0` body there is no large donor materialization step
+  hanging directly off that result before the later page-gated imports run. So
+  the interactive fallback path is no longer a strong standalone suspect. If it
+  still matters, the next useful question is the semantics of
+  `FUN_004F9620(0x3D)`, not `FUN_005E34B0` itself. That follow-up pass is now
+  also narrowed: `FUN_004F9620` is only a thin wrapper around `DAT_00ED56CC`
+  and `FUN_00922810`, while `FUN_00922810` itself decompiles as a generic
+  bucketed resolver. It hashes the selector through a vtable `+0x04` callback,
+  walks a chained bucket list from `this[2]`, tests candidate keys through a
+  vtable `+0x08` callback, and on success writes back the matched payload pointer
+  before returning a success flag. So `0x3D` now looks like just another generic
+  registry token, not a special FaceGen donor-builder mode.
+  A separate export-side baseline pass demotes another suspected helper too:
+  `FUN_00485690`, which looked like a possible resolver for
+  `DAT_00ED3B0C + 0x48`, is only a typed chooser dialog helper. It checks
+  whether the explicit object or fallback pointer already has type byte `'H'`
+  and then opens one of two chooser dialogs (`0xBD` / `0xCEE`) to fill the
+  pointer. That makes it a UI/type-selection helper, not the missing resolver
+  for the export-side fallback donor state. So the actual remaining export-side
+  provenance gap stays exactly where the narrower donor pass already pointed:
+  the hard fallback buffer copied from `DAT_00ED3B0C + 0x60/+0x80`, not the
+  interactive `0x3D` token path and not the `+0x48` chooser helper. A direct
+  write-xref pass on `DAT_00ED3B0C` narrows that further: the global itself is
+  now concretely allocated in `FUN_004CB590`, a large TES-style startup/init
+  owner that does `DAT_00ED3B0C = FUN_004DB160()` after other singleton
+  allocations, and it is later torn down in `FUN_004CC540`. So the remaining
+  export-side question is no longer who owns the baseline global at all. It is
+  specifically which later owner path materializes or overwrites the
+  `DAT_00ED3B0C + 0x60/+0x80` fallback slices that `FUN_00575290` copies into
+  the local donor when current selection and explicit donor both fail. The ctor
+  pass confirms that too: `FUN_004DB160` zero-initializes the whole object,
+  including `+0x48`, `+0x58`, `+0x60`, `+0x70`, and `+0x80`, while the dtor
+  `FUN_004DA1E0` later releases the object-owned spans and side objects before
+  freeing the global. So the `+0x60/+0x80` fallback pair is real object state,
+  but it is not seeded as a built-in constructor default. It must be populated
+  later by some separate runtime/editor owner path.
+  Two tighter follow-up passes retire another tempting source-family suspect.
+  First, the refreshed baseline/global pass shows `FUN_004D8B80` is not the
+  missing export fallback materializer; it is a broad startup/plugin/NAM/update
+  initializer that only zeroes `DAT_00ED3B0C + 0x60/+0x80` along that path.
+  Second, the current-state copy helper `FUN_00571CC0` does **not** copy the
+  owner-side export source arrays at `+0xB0/+0xB8/...`; it only copies the
+  current source-state triplet (`+0x1EC/+0x1F0/+0x1F4/500/+0x20C`) and the
+  live-or-inline descriptor (`+0x1E8` fallback to `+0x168`). That moves the
+  remaining export-side `_0` provenance seam away from the donor-copy helper
+  and toward the source-array materialization directly inside `FUN_00586EA0`.
+  A dedicated slot-builder pass now sharpens that source-array story. The
+  temporary export-state container initialized by `FUN_00573C70` is concrete:
+  `+0x94` is a `NiTPrimitiveArray<TESModel*>`, `+0xA4` is a
+  `NiTPrimitiveArray<TESTexture*>`, `+0xB4` is a `NiTPrimitiveArray<const char*>`,
+  and `+0xC4` is a `NiTObjectArray<NiPointer<NiTexture>>`, with the feature flag
+  pair at `+0xD4/+0xE0` and the trailing linked accessory chain at `+0xE4/+0xE8`.
+  The helper identities are now narrow too: `FUN_00520480` is just the generic
+  capacity grower for the `+0xC4` `NiPointer` array, `FUN_00571B00` is the
+  refcounted store primitive, `FUN_005709A0` is only the reset/release stub for
+  one temporary auxiliary slot object, and `FUN_005732A0` is the matching
+  append/store wrapper that grows the array then calls `FUN_00571B00`.
+  That last point is the useful closure: on the ordinary export path inside
+  `FUN_00586EA0`, the guarded `DAT_00ED8264` branch still calls
+  `FUN_005709A0(param_2,&local_14)` with `local_14 = 0`, then appends/stores
+  that still-null pointer into the `+0xC4` array. By contrast, the interactive
+  preview owner `FUN_00575730` follows the same reset call with a real
+  `FUN_005732A0(&piStack_104)` append. So the optional `+0xC4/+0xD4` family is
+  now best read as a preview/optional auxiliary texture-object lane, **not** as
+  the missing ordinary export texture-morph provenance. That retires one more
+  candidate `_0` culprit: the remaining mismatch is more likely in the earlier
+  owner-side source arrays (`+0x80`, `+0x98`, `+0xA8`, `+0xB8`) and the donor /
+  current-source provenance that feeds them than in the dormant `+0xC4` family.
+  A follow-up provider pass makes those earlier families more concrete too.
+  `FUN_005844C0` and `FUN_00584520` are not real semantic resolvers; they are
+  just bounds-checked accessors that return owner-held table entries at
+  `this + 0xCC + (slot + sex * 8) * 0x24` and
+  `this + 0x30C + (slot + sex * 8) * 0x1C`. So the model-side and texture-side
+  provider families copied into the temporary descriptor are simply views onto
+  current owner state, not something computed inside those helpers. The same
+  pass also narrows the owner-default side: `FUN_0068F910` is a broad FaceGen
+  default base/detail texture initializer, not a per-export lane selector. It
+  loads `FACEGEN\\SI.CTL`, initializes long-lived default texture state, and
+  resolves names like `DefaultBaseModFaceGenTexture` and its detail sibling into
+  persistent owner fields around `+0x119C/+0x11A0`. So the accessor/default
+  layer is now largely retired as an `_0` suspect too. The remaining export-side
+  gap points more directly at the writers/materializers of the owner-held slot
+  tables (`+0xCC`, `+0x30C`) and source arrays (`+0xB0/+0xB8`) than at the
+  accessors that merely copy them into the temporary descriptor.
+
+- The owner-field scan and follow-up cluster decomp finally made that writer side
+  concrete. `FUN_00585630` is the owner-state reset/default seeder: it zeroes
+  `+0xB0/+0xB4/+0xB8/+0xB9`, seeds `+0x798/+0x79C` from
+  `DAT_00ED7C9C / DAT_00ED7CA0`, clears `+0x7A0/+0x7A4`, and constructs the
+  in-place provider families at `+0xCC` and `+0x30C` with authored defaults like
+  `Characters\\Head\\HeadHuman.nif` and `Characters\\Head\\HeadHuman.dds`.
+  `FUN_00586740` is the whole-owner copy/import helper: it copies the same scalar
+  cluster from donor to current owner, clamps invalid `+0xBC/+0xC0`, deep-copies
+  the `+0xCC/+0x30C` provider tables, and clones the linked `+0xA8/+0xC4`
+  families. `FUN_00584700` is the live slot updater that writes
+  `+0x798/+0x79C/+0x7A0/+0x7A4/+0xB0/+0xB8` and forwards page edits into the
+  provider objects through the per-entry `+0x28` callback. `FUN_005858F0`
+  remains only the comparator. The strongest remaining export-side provenance seam
+  is now `FUN_00588520`, which parses/materializes structured source content into
+  this owner state and definitely writes parts of the same cluster; there is still
+  no evidence of a hidden late bake-time per-lane strength table.
+  The focused helper pass on `FUN_00588520` closes most of the ambiguity under
+  that seam. `FUN_004E1600`, `FUN_004E10B0`, `FUN_004E10E0`, `FUN_004E1130`,
+  and `FUN_004E0470` are generic record-stream helpers: they discriminate the
+  current record family, expose the current token, read endian-aware `u32` /
+  `u16` payloads, and copy raw subrecord spans. `FUN_004DE510` is not a second
+  semantic parser; it is the byte-swap/endian gate consulted after those raw
+  reads. The owner-specific work stays in `FUN_00588520` itself. `DNAM`
+  (`0x4D414E44`) writes the owner scalar pair at `+0x2C/+0x2D`, `ENAM`
+  resolves eyes forms and inserts them through `FUN_00585CF0` into the linked
+  family rooted at `+0xC4`, and `HNAM` does the same for hair through
+  `FUN_00585CA0` into the family rooted at `+0xA8`. The `FGGA` / `FGTS`
+  subtrees plus their `INDX` / `DATA` children do not reveal hidden per-lane
+  bake weights either: `FUN_00573BA0` is only a span resize/materialization
+  helper, and `FUN_00588520` uses it to resize and fill variable-length owner
+  float tables before copying parsed data into the selected owner slots. So this
+  branch now reads as structured source-state import, not hidden bake-time lane
+  scaling. The remaining `_0` mismatch still points at which source records are
+  imported and how that imported owner state later feeds bake, not at secret
+  per-morph multipliers inside the parser helper cluster.
+  A tighter sibling pass now says the same thing for `FUN_00575D70`. It is not
+  a separate weighting stage; it is another structured owner importer that logs
+  `MASTERFILE: Found face texture for NPC ...` and materializes owner state from
+  the current record family. The small callee cluster is concrete now:
+  `FUN_004F8D60` computes the expected `DATA` payload size by summing the
+  optional typed fields present on the current owner-side form interface set;
+  `FUN_004F8A80` then copies that `DATA` payload into the owner span at `+0x52`
+  and decodes the optional typed fields through RTTI-gated writes for
+  uses/value/health/weight/quality/attack/attributes/clip-rounds;
+  `FUN_0050A110` is a script-source resolver and `GetSelf` warning helper, not
+  texture math; `FUN_004EE180` is just a compact typed scalar-struct unpacker;
+  and `FUN_004EC720` maintains a deduped linked `(pointer, char)` family. Most
+  importantly, the three FaceGen coefficient families still materialize as raw
+  imported owner spans, not reweighted bake lanes:
+  `FGGS -> (iVar4=0,iVar5=0)`, `FGGA -> (iVar4=0,iVar5=1)`,
+  `FGTS -> (iVar4=1,iVar5=0)`, all stored through
+  `local_20 = in_ECX + (iVar5 + iVar4 * 2) * 8 + 0x5A`, with `FUN_00573BA0`
+  only allocating/resizing the span before raw element copy and endian-swap.
+  So this sibling branch also argues against hidden per-lane bake weighting.
+  The follow-up consumer pass makes that next stage concrete too. The imported
+  owner-side `FGTS` slot at `+0x1A8` is consumed as part of the normal
+  live-or-inline source descriptor, not by a separate weighting stage.
+  `FUN_0056F2E0` simply selects `+0x1E8` when present or falls back to inline
+  `+0x168`; `FUN_0056F390` is the ordinary export-side consumer that picks the
+  sex-selected template base (`owner[0x144] + 0x714` or `+0x694`), selects the
+  current source descriptor, and calls `FUN_0068EA20(template, source, out, 0, 0)`.
+  `FUN_0068E960` is only the 2x2 lane copy helper, and `FUN_0068EA20` is still
+  just the template/live merge helper. On the normal export path its extra
+  normalization/scaling branch is not active because `param_4` and `param_5`
+  are both zero. The interactive page-8 shade owner `FUN_00574080` then reads
+  those descriptor lanes through `FUN_00690470`, updates them through
+  `FUN_00692C20`, and when accepted copies the edited 2x2 lane family back into
+  the selected source descriptor via `FUN_0068E960`. So this consumer side also
+  argues against hidden per-lane weighting. The remaining `_0` gap now points
+  more directly at the actual imported `FGTS` content/provenance or the later
+  bake-visible package content, not another descriptor-consumer mystery. A
+  follow-up pass on the generation-side helper cluster under `FUN_00697A10`
+  closed another adjacent false lead: the internal builder family there is
+  still model/morph construction, not the missing `_0` texture-content writer.
+  `FUN_00693C40` is only a bounds-checked accessor into a `0x0C`-stride float3
+  span, `FUN_00693FB0` only computes the minimum generated/statistical-count
+  bound from the `0x38` family and the local `0x0C` span count, `FUN_00696680`
+  and `FUN_006969E0` are ctor/dtor-style payload helpers, `FUN_00698BE0`
+  builds `BSFaceGenMorphDataHead` from the named differential/statistical
+  morph families (expressions/modifiers/phonemes/custom) with the already-known
+  statistical-wins-on-collision rule, and `FUN_00699E50` builds
+  `BSFaceGenMorphDataHair` from `HairMorph`. So this branch does not reopen a
+  hidden bake-weighting theory either; it pushes the remaining `_0` gap back to
+  imported `FGTS` provenance or the actual bake-visible `FREGT003` content path.
+  A new focused provider/path-helper pass demotes another adjacent branch. The
+  small `FUN_00584D00` / `FUN_00584D60` / `FUN_00584DB0` / `FUN_00584DE0` /
+  `FUN_00584E10` cluster is not a hidden texture-content transform layer. `FUN_00584D00`
+  only returns the current/default face texture variant pointer from the global
+  defaults object at `DAT_00F05D54 + 0x119C`, `FUN_00584D60` only stores the
+  current face-texture-set pointer at `owner + 0x200` with ordinary refcount
+  maintenance, `FUN_00584DB0` and `FUN_00584DE0` only walk the linked `+0xA8`
+  hair and `+0xC4` eye source families by matching payload `+0x0C`, and
+  `FUN_00584E10` builds an output path by concatenating `"Textures\\"` with the
+  already-materialized inline string slots rooted at `owner + 0x4CC`. This fits
+  the earlier owner-table copy result too: the model-side provider family at
+  `+0xCC` goes through virtual getter/setter callbacks for mesh paths, while the
+  texture-side family at `+0x30C` still looks like a thin inline string-holder
+  family whose content is copied directly through `FUN_00405B40`. So this layer
+  now reads as source/path selection and bookkeeping, not hidden bake-time lane
+  shaping, and the remaining `_0` gap points back to bake-visible texture
+  content or parse/apply fidelity rather than these provider/path helpers.
+  The new selector-bridge passes tighten that again. The old “later hidden
+  selector materializer” theory is now much weaker. `FUN_0056F390`,
+  `FUN_0068EA20`, and `FUN_0068ED20` still only build the shared `2 x 2`
+  descriptor/lane family, but the immediate caller pass shows that this family
+  is already the bake input shape. In `FUN_00587B20`, the local `local_4A0`
+  buffer is explicitly `4 x 0x20` bytes and is passed directly to
+  `FUN_00695B50`; the bake loop’s selector reads at `param_1 + 0x58` and
+  `param_1 + 0x78` therefore land inside the third and fourth `0x20` records of
+  that same buffer, more precisely at their `+0x18` fields rather than at
+  separate record bases. `FUN_00691B10` shows the same higher-level pattern from the
+  shared head-texture application side: it pushes `EBX` directly into
+  `FUN_00695B50` while selector-relevant fields are already resident on the same
+  object. So the remaining `_0` gap is no longer best framed as “find the later
+  caller that writes separate selector blocks.” The stronger target is now the
+  exact subfield mapping/semantics inside the last two `0x20` descriptor records
+  that the bake loop consumes, especially the selector-bearing subrecords rooted
+  at those `+0x58` / `+0x78` offsets.
+  A follow-up record-layout pass closes part of that seam. The low-level
+  `FUN_0068E960` copy helper now makes it clear that each `0x20` record carries
+  a small header/tail rooted at `+0x18/+0x1C`, while the rest of the record is
+  managed through helper-mediated storage rooted earlier in the record. That is
+  important because the selector roots at `param_1 + 0x58` / `+0x78` are exactly
+  the `+0x18` fields of the last two `0x20` records. Just as importantly, the
+  bake loop in `FUN_00695B50` now only shows one direct read from those
+  selector-bearing tails themselves: `tail + 0x00` is the baked-entry index
+  selector for the chosen `0x58` `FREGT003` entry. The pointer/offset pair at
+  `+0x1C/+0x20` belongs to the chosen `FREGT003` entry’s three `0x18` channel
+  subrecords, which the bake loop walks after selection by advancing
+  `uStack_3c` through the `0x48` channel block. So the remaining `_0` target is
+  narrower again: not a hidden raster-span payload embedded in the selector
+  tails, but the exact semantics of the `+0x18/+0x1C` tail fields in the last
+  two records and their lane-to-entry correspondence for the page-8 `Shade`
+  path.
+  A final helper-cluster pass demotes the accessor layer further. The small
+  `FUN_0068C100` / `FUN_0068DB80` / `FUN_0068E360` / `FUN_0068E480` /
+  `FUN_0068E790` / `FUN_00694A70` family is still generic SDK matrix/control
+  plumbing, not the missing selector-tail schema. `FUN_0068C100` is only a
+  span accessor over `[this + 0x0C]` with stride `[this + 0x1C]`,
+  `FUN_0068E790` is only a matrix/span copy helper, `FUN_0068E360` is a
+  scalar-times-matrix builder, `FUN_0068DB80` is matrix/span accumulation, and
+  `FUN_00694A70` is only the release/reset stub for the temporary adopted
+  payload holder. `FUN_0068E480` is the only materially interesting helper in
+  that cluster, but it still behaves like generic `matrixVT`-style control
+  metadata math: it validates dimensions, multiplies a control/weight matrix by
+  another matrix-shaped payload, and writes the result into a caller-owned
+  span. So the helper side no longer looks like a strong `_0` target. The best
+  remaining read is that page-8 `Shade` lands in the selector-bearing sibling
+  pair formed by the third and fourth `0x20` bake records, with the strongest
+  current inference being `Shade = outer group 1, lane 0 -> third record ->
+  selector tail rooted at descriptor + 0x58`, while the fourth record is the
+  sibling selector-bearing lane. That is still inference rather than direct
+  write-side proof, so the next high-value target is now the producer path that
+  populates those third/fourth record tails before bake, not more
+  `matrixVT` / `FanControls` helper archaeology.
+  The producer-side pass now narrows that seam again. In ordinary export,
+  `FUN_0068EA20` writes the `+0x18/+0x1C` tail fields uniformly for all four
+  records in the same nested `2 x 2` loop; there is no separate selector-only
+  producer for records 3/4. The only special branch for the last two records is
+  gated by `param_4 != 0`, and that branch is inactive on the normal export
+  path because `FUN_0056F390` calls `FUN_0068EA20(template, live, out, 0, 0)`.
+  `FUN_0068ED20` then gives the cleanest record-order bridge: it materializes
+  the same `2 x 2` family in group-major order, so outer group `0` maps to
+  records 1/2 and outer group `1` maps to records 3/4. That means
+  `group 1, lane 0 -> record 3` and `group 1, lane 1 -> record 4`. The
+  caller-side staging pass also demotes the last remaining late-patch theory:
+  `FUN_00587B20` fills `local_4A0` through `FUN_0068E960` or `FUN_0068EA20`
+  and then passes it directly into `FUN_00695B50`, while `FUN_00691B10` shows
+  the same higher-level “already populated, then baked” pattern. So the next
+  clean `_0` target is no longer later staging. It is the upstream provenance
+  of records 3/4 themselves: where their template/live `+0x18/+0x1C` values
+  come from before `FUN_0068EA20`, and whether the page-8 `Shade` selector is
+  already encoded there rather than introduced during bake.
+  The new descriptor-origin pass makes that upstream seam much more concrete.
+  `FUN_00690240` is not a rich builder; it simply returns the global default
+  descriptor-family pointer `DAT_00F05D54 + 8`. `FUN_0068E8F0` is the small
+  reset/seed helper for one such family, and it only seeds three tail records:
+  record 1 gets `0x32 / 1`, record 2 gets `0x1E / 1`, and record 3 gets
+  `0x32 / 1`. There is no matching fourth-tail seed in that helper, which means
+  the fourth record stays in constructor/default state until a later writer
+  touches it. The first real direct control writer into the family is also
+  resolved now: `FUN_006904F0` is only a wrapper, while `FUN_0085CEE0` reads
+  the current control value through `FUN_0085CD50`, computes the delta to the
+  requested target, scales that delta through a control-specific coefficient
+  table rooted at `DAT_00F05D54 + 0x118 + 0x684 + param2 * 0x48 + param1 * 0x168`,
+  and materializes the result through the generic control/matrix payload
+  helpers. So the remaining `_0` provenance question is no longer “who builds
+  the descriptor family at all?” It is now the narrower control-index problem:
+  which `(param1, param2)` pair corresponds to page-8 `Shade`, how that pair
+  drives the third-record selector-bearing tail at `+0x58`, and whether the
+  unseeded fourth record is just the sibling auxiliary lane or a second true
+  selector lane.
+  A focused control-reader pass narrows that again and partly splits the
+  question in two. The page-8 owner path does not go through `FUN_0085CD50`
+  directly. `FUN_00574080` first materializes a live `2 x 2` lane family with
+  `FUN_00690590`, then edits one outer group at a time through
+  `FUN_00692C20`. That helper preserves the sibling sub-lane by reading the
+  current value through `FUN_0085BD50(0, siblingLane, outerGroup, descriptor)`
+  and writes the pair back through `FUN_0085C110(0, outerGroup, pairValues, descriptor)`.
+  So page-8 uses control-pair index `0` across two outer groups, not the
+  direct `(param1,param2)` control-pair writer path. The direct path is now
+  cleaner too: `FUN_0085CD50` reads one current control-pair value from the
+  global control metadata rooted at `DAT_00F05D54 + 0x118 + 0x644`, while
+  `FUN_0085C110` writes one lane back through the companion coefficient table
+  at `DAT_00F05D54 + 0x118 + 0xFCC`. `FUN_0085D650`, which `FUN_00690590`
+  calls before any page-8 edit, does not assign selector indices directly; it
+  copies the `+0x18/+0x1C` dimensions from the source family into the four
+  `0x20` records, fills the first sub-lane of each outer group from the source
+  payload plus a small random offset, and zeroes the sibling sub-lane. That
+  makes the page-8 bridge stronger: the whole page-8 family still maps most
+  naturally to the third/fourth bake records via `FUN_0068ED20` group-major
+  order, but the remaining unresolved seam is now the selector-bearing tail
+  semantics inside those already-materialized records, not a hidden later
+  control writer.
+  A follow-up wrapper pass mostly closes the cheap control-side false leads.
+  `FUN_00690530` is just the direct current control-pair value wrapper over
+  `FUN_0085CD50`, while `FUN_00690560` is the matching direct target writer
+  over `FUN_0085D0E0`; neither exposes a separate selector-to-entry bridge.
+  `FUN_006904B0` is similarly just a direct writer wrapper into the same global
+  control family. The most useful new result is `FUN_006905D0`: it is a UI-side
+  enumerator over the global metadata family rooted at `DAT_00F05D54 + 0xB8`,
+  computing one `(outerGroup, subLane)` slot as
+  `DAT_00F05D54 + 0xB8 + (param_3 + param_2 * 2) * 0x18`, deriving its option
+  count from `((end - begin) / 0x3C) - 1`, and formatting list items through
+  `FUN_006901C0`. `FUN_00690330` stays in that same metadata/options lane: it
+  reads one selected option payload from the same `+0xB8/+0xC4` family and
+  accumulates its scaled control payload into one descriptor record. So the
+  wrapper family no longer looks like a strong `_0` target. It helps on naming
+  and control metadata layout, but it does not reopen a hidden direct
+  selector-entry mapping. The remaining high-value target is still the
+  selector-bearing tail semantics in the already-materialized third/fourth bake
+  records, or the exact lane-to-entry mapping that turns page-8 outer group `1`
+  into the chosen `FREGT003` entry index.
+  The option-payload pass tightens that again and closes another plausible
+  detour. The global metadata family behind `DAT_00F05D54 + 0xB8/+0xC4` is now
+  concrete: each slot owns a span of `0x3C` option records. `FUN_0068B670`
+  simply indexes one selected option record from that span. `FUN_006901C0`
+  formats the option label by returning either the inline string at
+  `record + 0x24` or the heap pointer stored there, depending on the length
+  word at `record + 0x38`. `FUN_00690260` does not return a selector index; it
+  reads the selected option’s numeric contribution by multiplying the selected
+  `0x3C` payload against one descriptor record and returning the first float of
+  the resulting temporary span. `FUN_00690330` then uses that numeric
+  contribution only to scale-and-accumulate the selected option payload into one
+  descriptor record. So the `+0xB8/+0xC4` option family now looks like labeled
+  control metadata plus payload matrices, not the missing direct bake-entry
+  selector. That pushes the remaining `_0` target back where it belongs: the
+  selector-bearing tail semantics in the already-materialized third/fourth bake
+  records themselves, or the exact field that `FUN_00695B50` later reads as the
+  chosen `FREGT003` entry index.
+  The follow-up consumer pass demotes one more promising branch. `FUN_006926C0`
+  is not a direct selector-tail consumer; it is a higher-level texture
+  application helper that builds a temporary descriptor with `FUN_00586EA0`,
+  samples only the shared lane family through `FUN_0085BD50(0,0,0,local_50c)`,
+  rounds that single value through `FUN_00C5E370` / `FUN_00C5D220`, and then
+  uses the resulting small integer only as a `%c%d` texture-family variant
+  selector when calling `FUN_0068CE90`. `FUN_0068CE20` is also retired as a
+  generic descriptor-family compare helper, and `FUN_0068CE90` is just the
+  `Textures\\%s%c%d.ddx/.dds` path resolver already seen under the runtime-ish
+  head-texture application branch. So this cluster does not explain how page-8
+  outer group `1` becomes the bake loop’s chosen `FREGT003` entry. It points
+  back to the same remaining seam: the final field-level semantics of the
+  selector-bearing third/fourth record tails as read directly inside
+  `FUN_00695B50`.
+  A final direct read of that validation loop upgrades the claim. The
+  `FUN_00695B50` preflight does not merely touch those tails abstractly: it
+  sets `puVar21 = (uint *)((int)param_1 + 0x58)` and
+  `piVar12 = (int *)(*(int *)(*(int *)(in_ECX + 0xc) + 8) + 0x10)`, then
+  iterates twice, checking `*puVar21 < (uint)((piVar12[1] - *piVar12) / 0x58)`
+  before advancing `puVar21 += 8` and `piVar12 += 6`. That makes the field role
+  materially clearer than before:
+  `descriptor + 0x58` is the selected `0x58` bake-entry index for the first
+  loaded `FREGT003` entry span, and `descriptor + 0x78` is the selected
+  `0x58` bake-entry index for the second loaded `FREGT003` entry span. The
+  third and fourth `0x20` records are therefore not just “selector-bearing”
+  tails; they are a pair of package-entry selector records. The remaining
+  uncertainty on this branch is now narrower and mostly semantic: which of
+  those two package spans corresponds to page-8 `Shade` in user-facing terms,
+  rather than whether records 3/4 are selectors at all.
+  A focused follow-up on the older Xbox `FgEgtFileIO_ParseEgtFile` parser
+  tightens the package-span semantics. `FgEgtFileIO_ParseHeader` is just a tiny
+  five-dword header reader; the main parser then uses the third and fourth
+  parsed dwords as the counts for its first and second output `0x58` entry
+  arrays respectively. That lines up with the repo-side `FREGT003` schema we
+  already use for shipped head EGTs, where the two count fields are the
+  symmetric and asymmetric texture-morph counts. A direct sample check over the
+  shipped `headhuman/headfemale/headghoul/headghoulfemale.egt` files in the
+  Xbox and PC sample meshes confirms the practical split for current `_0`
+  investigation: all of those headers are `rows=256, cols=256, sym=50, asym=0`.
+  So for the head EGTs we actually care about, the first loaded package span is
+  the active `50`-entry texture-morph family and the second loaded span is
+  empty. That also explains the apparent contradiction in `FUN_00695B50`: the
+  `descriptor + 0x58/+0x78` check is a pre-bake reuse gate, not proof that both
+  spans are populated on shipped heads. With `asym=0`, the second-span check
+  fails and the function falls through into the bake/materialization path.
+  This narrows the semantic branch again: the current darker-preset `_0`
+  mismatch is overwhelmingly about the first package span / active symmetric
+  texture-morph family, not about a hidden second-span selector path.
+  A direct repo-side fidelity pass tightens that further. Every sampled
+  `headhuman/headfemale/headghoul/headghoulfemale.egt` across the PC, 360
+  final, 360 proto, and unpacked-PC sample sets has the exact same structural
+  header and file-size shape:
+  `rows=256, cols=256, sym=50, asym=0, header5=0x51, length=9,830,664`. That
+  length matches `64 + 50 * (4 + 3 * 256 * 256)` exactly, so for the shipped
+  head EGTs we currently care about, a cropped/subrect entry-parser theory is
+  now weak. The fifth post-magic header dword is real and the loader preserves
+  it into `EGTData + 0x1C`, but no recovered `GetEGTDataSize`, lazy-load, or
+  bake-entry path uses it yet, so `header5=0x51` is only a tertiary suspect for
+  the remaining `_0` gap. The strongest remaining repo-side target is now the
+  first-span accumulation and encoded-delta path in `FaceGenTextureMorpher.cs`
+  (`AccumulateNativeDeltasQuantized256`, `EncodeEngineCompressedChannelTruncate`,
+  `ApplyEncodedDeltaTexture`, and `BilinearSampleEncodedDeltaTexture`), with
+  secondary-lane coefficient/source-state provenance still a separate follow-up
+  branch if those changes do not move the verifier enough.
+  A direct verifier-path inspection tightens that one step further. For the
+  current shipped head facemod comparisons, `verify-egt` stays on the
+  `native_egt` branch because the sampled shipped `_0` textures are already
+  `256 x 256`. In that path, the tool compares shipped facemods directly
+  against `FaceGenTextureMorpher.BuildNativeDeltaTexture(...)`; it does not call
+  `ApplyEncodedDeltaTexture(...)`, `Apply(...)`, or
+  `BuildUpscaledDeltaTexture(...)`. So for the current darker-preset failures,
+  the remaining repo-side gap is not in the later bilinear/apply path. It is in
+  the native delta builder itself:
+  `AccumulateNativeDeltasQuantized256`,
+  `EncodeEngineCompressedChannelTruncate`, and any coefficient/source-state
+  provenance feeding those functions. The coefficient merge path is also
+  narrower than a runtime-like provenance theory would suggest: by default
+  `NpcFaceGenCoefficientMerger.Merge(...)` is just `npc[i] + race[i]`, and the
+  optional RMS clamp is inactive unless `RmsClampThreshold > 0` is explicitly
+  set in `verify-egt`.
+  A follow-up raw native-delta probe closes the remaining broad “maybe the wrong
+  math family” branch. Comparing the accumulated native float buffers directly
+  against the shipped `_0` textures decoded back into delta space shows the gap
+  is still overwhelmingly pre-encode:
+  `0x0001816A = RAWDELTA 3.3268 vs RAWDELTA-ENCODELOSS 0.4701`,
+  `0x000181D2 = RAWDELTA 2.9462 vs RAWDELTA-ENCODELOSS 0.4957`. So final byte
+  packing is only a secondary effect; most of the error is already present in
+  the native float delta buffers before encoding. The mode ranking also
+  tightens the repo-side hypothesis list. On both darker anchors,
+  `Truncated256` and `Quantized256Double` tie for best raw native match, while
+  `Combined256`, `Combined65536`, and `CurrentFloat` are consistently worse.
+  That means the current truncating/separately-quantized native builder is
+  already the best-matching accumulation family among the tested variants. The
+  next high-value target is therefore no longer generic accumulation math. It
+  is either the first-span symmetric raster interpretation/sign/zero-point
+  details, or the coefficient/source-state provenance feeding the dominant
+  first-span lanes.
+  A direct interpretation sweep and control-space projection tighten that split
+  further. The new `RAWDELTA-INTERP` probe does not materially improve the
+  native-vs-shipped gap: on `0x0001816A` the baseline `RAWDELTA` result
+  (`3.3268`) stays best among the meaningful variants, and on `0x000181D2` the
+  best alternate decode bias (`254` instead of `255`) only improves the raw
+  delta MAE from `2.9462` to `2.9340`. `FlipY`, `FlipXY`, and sign inversion
+  all fail badly. That makes a simple row-orientation or sign bug a weak
+  suspect for the current darker shipped `_0` failures. A control-space pass
+  using the current merged FGTS coefficients and the shipped `si.ctl`
+  projection tables also makes the secondary-lane picture clearer. The
+  dominant lane `[00]` is now confirmed as pure `Skin Shade Dark / Light` on
+  both darker anchors, matching the merged coefficient exactly
+  (`-3.5773` / `-3.2864`). The remaining secondary sweep winners are not random
+  either: for the darker template, basis `[01]` loads most strongly into
+  `Skin Tint Orange / Blue` and `Skin Tint Red / Green`, basis `[11]` into
+  `Skin Tint Purple / Yellow` and `Skin Tint Orange / Blue`, and basis `[12]`
+  into `Eye Sockets Dark / Light`, `Skin Flushed / Pale`, and
+  `Lips Flushed / Pale`. That matches the observed mouth/eye residuals better
+  than a pure shade-only theory. So the highest-value remaining branch is now
+  coefficient/source-state provenance for the first-span symmetric texture
+  controls, not more broad raster decode experimentation. A follow-up
+  provenance split tightens that again. The curated selector `(1,0)`
+  appearance subset exposed by `RaceSexMenu::AddFaceSliders` does include
+  `Flushed`, `Shade`, `Blue Tint`, `Yellow Tint`, `Eye Sockets`, and `Lips`,
+  but the concrete page plumbing is now cleaner than that broad subset
+  suggests. In `FUN_00577B40`, `local_3fc == 8` is the real compact tone/tint
+  page: its `0x41A,0` handler rebuilds the live `2 x 2` lane family directly,
+  reads the committed slider cluster (`0x845`, `0x84D`, `0x84F`) plus toggles
+  (`0x3EE`, `0x3EF`, `0x3F0`), clamps them into the already-known `[15,65]`,
+  `[-2,2]`, and `[0,1]` ranges, and writes both outer groups back through
+  `FUN_00692C20` before materializing via `FUN_0068ED20`. The direct
+  widget-side handlers at `0x3F8/0x3F9/0x3FA/0x3FB` still go through
+  `FUN_00574080`, which matches that same compact family.
+
+  A tighter page-8 provenance pass closes most of the widget/owner bridge. The
+  compact numeric edits are not all equivalent. `0x845` and `0x84D` are now best
+  read as descriptor-hydrated page controls rather than proven dedicated owner
+  scalars: `FUN_00576CE0(case 8)` only seeds their UI ranges, while
+  `FUN_00577B40(0x41A, case 1/3)` repopulates their visible values from the
+  active source descriptor through `FUN_0056F2E0 -> FUN_0056F2A0 -> FUN_0068EA20`
+  and `FUN_00690470`, then pushes them back to the widgets with
+  `FUN_0041B630`. By contrast, `0x84F` is a real owner-backed scalar: page
+  setup seeds it directly from `in_ECX[0x7C]` (`owner + 0x1F0`), and edits in
+  `FUN_00577B40(0x41A, case 2)` clamp/store that same `+0x1F0` value before
+  updating the preview/helper object. The checkbox side is also split. `0x3EE`
+  is owner-backed through the compact control object at `in_ECX[0x15]`
+  (`owner + 0x54`): `FUN_00576CE0(case 8)` initializes it via the virtual
+  `+0x70` getter, and `FUN_0056FB30(...)` writes it back through the virtual
+  `+0x74` setter. `0x3F0` is separate again: it is seeded from the owner flag
+  word at `in_ECX[0x16]` (`owner + 0x58`) bit `0x08000000`, written back
+  through `FUN_004EA640(0x08000000, ...)`, and only feeds the randomization
+  selector path into `FUN_00574080`; it is not part of the
+  `FUN_00692C20 -> FUN_0068ED20` compact descriptor-lane materialization. That
+  demotes the old “all six page-8 controls are one provenance family” theory.
+  The strongest remaining page-8 ambiguity is now just `0x3EF`: commit logic
+  definitely consumes it for the second compact pair, but no page-local
+  owner-backed initializer has been recovered yet. The only explicit init seen
+  so far is the neighboring `FUN_00576CE0(case 7)` branch, which forces
+  `0x3EF` checked and disables it. The next best function is therefore
+  `FUN_00574A70`, since it is the common refresh path repeatedly called after
+  compact page mutations and is the likeliest remaining place for any implicit
+  page-8 reseeding of `0x3EF`.
+  
+  By contrast, `local_3fc == 9` is a sibling option-driven appearance page.
+  Its `0x41A,0` handler reads checkbox flags from `0x409` and `0x44C`, a
+  selected option index from combo `0x3FC`, and slider `0x843`, then calls
+  `FUN_00690330` to scale-and-accumulate one selected option payload into the
+  temporary descriptor before the same `FUN_0068ED20` materialization step.
+  Its follow-up path reads the current contribution back through
+  `FUN_00690260`, clamps that contribution to `[-10,10]`, and pushes it back
+  to `0x843`. So page 8 is no longer ambiguous: `local_3fc == 8` is the
+  compact `Shade` / tint owner, while `local_3fc == 9` is the stronger
+  sibling-page candidate for the eye/lip residual branch.
+
+  The page-9 slot plumbing is now explicit enough to retire another layer of
+  ambiguity. `FUN_006905D0`, `FUN_00690260`, and `FUN_00690330` all index the
+  same four option families through `DAT_00F05D54 + 0xB8/+0xC4` using the slot
+  expression `(param3 + param2 * 2) * 0x18`. In the concrete
+  `local_3fc == 9` handler, `param2` is the first checkbox pair
+  (`0x40A -> 0`, `0x409 -> 1`) and `param3` is the second pair
+  (`1099 -> 0`, `0x44C -> 1`), so page 9 is a true `2 x 2` option family,
+  not a loose catch-all appearance bucket. The initializer in `FUN_00576CE0`
+  also makes the default state concrete: it checks `0x40A` and `1099`, clears
+  combo `0x3FC`, and populates it through `FUN_006905D0(..., 0, 0)`, so the
+  default page-9 source is slot `(0,0)`. The remaining semantic gap is now
+  narrow: which of those four slots correspond to the concrete eye/lip/flush
+  controls visible in the residual `lane[12]` branch.
+
+  That slot-identity gap is now closed by the `SI.CTL` loader path. A focused
+  GECK pass on `FUN_0085A770` and `FUN_0085ABB0` shows that page 9's four slots
+  are not separate appearance-only buckets; they are the four primary
+  `FRCTL001` control families themselves. `FUN_0085ABB0` is the direct `2 x 2`
+  slot reader rooted at `in_ECX + local_10 * 0x30 + local_14 * 0x18`, and it
+  fills each slot with `0x3C` control records whose payload block and label
+  string are read straight from `SI.CTL`. On shipped `SI.CTL`, that concrete
+  mapping is:
+  - slot `(0,0)` = geometry-symmetric / `FGGS` (`56 x 50`)
+  - slot `(0,1)` = geometry-asymmetric / `FGGA` (`26 x 30`)
+  - slot `(1,0)` = texture-symmetric / `FGTS` (`33 x 50`)
+  - slot `(1,1)` = texture-asymmetric (`0` records on sampled heads)
+  So the page-9 branch relevant to the current `_0` mismatch is no longer
+  ambiguous: `Eye Sockets`, `Skin Flushed`, `Lips Flushed`, and the other
+  texture controls all live inside the shared `slot (1,0)` `FGTS` family, not
+  in separate page-9 buckets. A direct dump of the shipped `FGTS` labels makes
+  that concrete: slot `(1,0)` contains `Eye Sockets Bruised / Bright`,
+  `Eye Sockets Dark / Light`, `Lips Flushed / Pale`, `Skin Flushed / Pale`,
+  `Skin Shade Dark / Light`, `Skin Tint Orange / Blue`,
+  `Skin Tint Purple / Yellow`, and the rest of the 33 texture controls. The
+  remaining provenance question on this branch is therefore narrower: which
+  option index inside slot `(1,0)` is selected in the failing cases, and how
+  that selected `FGTS` contribution feeds the later descriptor/bake path.
+  A focused pass on the owner-tag helper then retires the strongest remaining
+  persistence theory on this branch. `FUN_004FEF00`, whose return value is
+  stored into owner field `+0x794`, is not a page-9 option-index reader or
+  `FGTS` selector helper. Its recovered body is only
+  `FUN_0040B6A0(); FUN_008555D0(0xFFFFFFFF);`, which matches the same global
+  random-source wrapper shape already used in the page-8 tone/tint branch.
+  `FUN_00589F50` writes that value into `+0x794` after page-9 edits, but also
+  after broader reseed/reset paths like `0x3F8` and `0x3F9`. The later
+  descriptor rebuild logic only uses `+0x794` as a compatibility/discriminator
+  check against the current live state before deciding whether a rebuilt
+  descriptor can be reused. So `+0x794` is no longer a credible hidden FGTS
+  option-selector field, and the remaining `_0` provenance gap shifts back to
+  the actual imported/materialized `FGTS` control content used by ordinary
+  export rather than page-9 selection persistence.
+  
+  A follow-up pass on the small export-side staging helper retires one more
+  candidate bridge. `FUN_0056F380`, reached only from `FUN_00585130`, is just a
+  one-field source seed helper:
+  `*(staging + 0x164) = *(DAT_00ED3B0C + 0x80)`. The surrounding caller
+  `FUN_00585130` still constructs the `0x234` staging object through
+  `FUN_00573EF0`, writes that same object’s owner back-pointer at `+0x144`, and
+  then enters the broader update/render path, but this specific sub-branch is
+  no longer a credible `FGTS` or ordinary-export descriptor materializer.
+  `FUN_00585F80` is only the small owner-side bridge that ensures dialog slot
+  `0x87F` exists and then calls `FUN_00585130(param_1,1,1)`. So the
+  `00585130 -> 0056F380` branch should now be treated as staging/source-seed
+  glue, not the missing `_0` provenance seam.
+  
+  A direct accessor-cluster pass closes the semantics of that seeded field too.
+  `FUN_0056F2C0` is not a descriptor accessor; it reads the seeded object
+  pointer at `+0x164` and, when non-null, returns the result of that object's
+  virtual `+0xFC` getter. Otherwise it returns a fixed default string at
+  `DAT_00D2B781`. Combined with `FUN_0056F380`
+  (`*(this + 0x164) = param_1`), that makes `+0x164` source-object
+  naming/label glue rather than a hidden ordinary-export `FGTS` bridge. The
+  actual ordinary-export content path stays where the earlier resolver work
+  already pointed: `FUN_0056F2E0` still chooses between the live descriptor
+  pointer at `+0x1E8` and the inline fallback descriptor at `+0x168`,
+  `FUN_0056F2A0` still selects the sex-specific template at `+0x694/+0x714`,
+  and `FUN_0056F390` still feeds those directly into `FUN_0068EA20`.
+  
+  A follow-up owner scan demotes the optional live descriptor pointer itself as
+  the main `_0` provenance seam. The direct owner cluster is now:
+  `FUN_005721B0` full reset/reseed, `FUN_005736B0` explicit clear,
+  `FUN_00573790` undo restore, and `FUN_00571CC0` donor copy/import. That last
+  one is the key narrowing: it copies the donor's active descriptor lane
+  (`donor +0x1E8` when present, else donor +0x168`) into the current active
+  slot (`this +0x1E8` when present, else this +0x168`) via `FUN_0068E960`, but
+  it does not allocate or force a non-null live override pointer. Combined with
+  the earlier parser/import scan, the only direct non-clear write to `+0x1E8`
+  still looks like the `MANO` import branch. So the practical provenance target
+  shifts again: for ordinary export, the remaining `_0` seam is more likely the
+  inline descriptor contents at `+0x168` than the optional override pointer at
+  `+0x1E8`.
+  
+  A follow-up pass closes the write-side shape of that inline/current slot too.
+  There is no later hidden ordinary-export materializer after the page
+  handlers. The compact tone/tint branch builds a temporary descriptor from the
+  current source/template state, materializes it through `FUN_0068ED20`,
+  compares it against the current active slot, and commits through
+  `FUN_0068E960(localTemp, FUN_0056F2E0())`. The option-driven `FGTS` branch
+  does the same in one extra step: it seeds a local descriptor from the active
+  current source through `FUN_0056F2E0 -> FUN_0056F2A0 -> FUN_0068EA20`, applies
+  the selected option payload through `FUN_00690330`, materializes through
+  `FUN_0068ED20`, and then commits through that same
+  `FUN_0068E960(localTemp, FUN_0056F2E0())` path. So the remaining `_0`
+  provenance seam is upstream of those commit calls: the page-8/page-9 widget
+  and owner state that feed them, not another descriptor writer.
+  
+  That makes the remaining residual split stronger: lane `[00]`, lane `[01]`,
+  and most of lane `[11]` still point at the compact `local_3fc == 8`
+  tone/tint provenance, while lane `[12]` is now more likely to sit on the
+  sibling `local_3fc == 9` option-driven branch, which fits its stronger
+  `Eye Sockets` / `Lips Flushed / Pale` flavor better than the compact page.
+  The next provenance work should therefore stay split: keep `local_3fc == 8`
+  for `Shade` / tint drift, and follow `local_3fc == 9` for the remaining
+  mouth-eye residuals.
+
+  A multi-agent provenance pass closes most of the remaining page-level structure
+  and shifts the `_0` target again. The shared conclusion is that the strongest
+  remaining seam is no longer later commit math; it is widget seeding / reload
+  from owner state and the active descriptor. On the compact page, `FUN_00576CE0`
+  seeds the page-8 controls, but `0x845` and `0x84D` are still hydrated from the
+  active descriptor during the `0x41A` refresh path rather than from dedicated
+  owner scalar fields. `0x84F` is a real owner-backed scalar at `owner + 0x1F0`,
+  `0x3EE` is backed through the compact control object at `owner + 0x54`, and
+  `0x3F0` is a packed owner flag at `owner + 0x58`, bit `0x08000000`; only
+  `0x3EF` remains structurally open on the compact side. On the option-driven
+  page, `FUN_00576CE0(case 9)` does not restore a persisted FGTS selection; it
+  hard-resets `0x40A`, `1099`, `0x843`, and combo `0x3FC`, repopulates that
+  combo from global CTL slot metadata through `FUN_006905D0`, and then derives
+  the live value from the active descriptor through `0x41A`. The page-9 controls
+  therefore reconstruct slot `(1,0) = FGTS` from CTL metadata plus the active
+  descriptor rather than from a dedicated owner field. That makes `FUN_00589F50`,
+  the strongest known non-`FUN_00577B40` caller of both `FUN_00690260` and
+  `FUN_00690330`, the first place to check for a non-UI FGTS bridge.
+  
+  A follow-up pass demotes that candidate and the companion refresh branch.
+  `FUN_00589F50` is not a clean non-dialog export materializer after all; it is
+  another full `HWND/message` owner that directly handles `0x40A`, `0x41A`,
+  `0x3FC`, `0x843`, `0x409`, `0x44C`, `1099`, and compact controls while
+  reusing the same descriptor/control helper family already seen on the page
+  handlers. `FUN_00574A70(HWND,char)` is likewise broader than the remaining
+  compact-page ambiguity: its body is dominated by preview/export-facing refresh,
+  mesh/package reload, and repeated `0x41A` kicks after mutations, which makes
+  it look downstream and amplifying rather than causal. So the next provenance
+  target shifts upstream again: the strongest remaining seams are the owner-state
+  helpers that seed the active descriptor before reload, especially
+  `FUN_00571CC0` donor copy/import, with `FUN_005721B0` reset/reseed and
+  `FUN_00573790` undo restore as siblings.
+
+  A direct follow-up on `FUN_00589F50` demotes that branch again. Although it
+  shares `FUN_00690260` and `FUN_00690330` with the known page-9 option path,
+  it is not a clean non-UI export/materialization helper; it is another large
+  `HWND/message` dialog owner with a DATA-only caller, direct handling of UI
+  controls like `0x409/0x40A/0x44C/1099/0x3FC/0x843`, and the string
+  `DIALOGUE: Failed to create tab window.` It therefore looks like a sibling
+  interactive consumer that reuses the same option-family machinery rather than
+  the missing ordinary-export bridge. That weakens the late non-UI `FGTS`
+  option-materializer theory. The next provenance target should shift back to
+  the owner-state feeders that poison the active descriptor before reload/export
+  uses it: `FUN_005721B0` reset/reseed, `FUN_00571CC0` donor copy/import,
+  `FUN_00573790` undo restore, and the already-narrowed donor chooser path
+  around `FUN_00575290`. `FUN_00574A70` remains the secondary compact-page
+  refresh target for the still-open `0x3EF` ambiguity, but the broader `_0`
+  mismatch now looks more like an active-descriptor provenance problem than a
+  compact-page-only reseed problem.
+
+  A focused upstream-seed cluster pass closes `FUN_00571CC0` enough to demote
+  it as the primary unknown. It is a copy/import helper, not the provenance
+  source: it detaches current source/state, copies donor owner fields
+  `+0x1EC/+0x1F0/+0x1F4/+0x20C`, clones the linked family rooted at `+0x210`,
+  and copies the donor active descriptor slot into the current active slot via
+  `FUN_0068E960(donor +0x1E8/+0x168, current +0x1E8/+0x168, 0, 0)` before
+  reattaching current state. The sibling caller `FUN_005726D0` is likewise
+  demoted as root cause: it is a compact explicit-donor import path gated by
+  `((char)param_1[1] == '*')`, copying a smaller owner slice and then invoking
+  `FUN_00571CC0`. That shifts the remaining `_0` provenance seam one level
+  higher again. `FUN_00575290` is now the strongest active target because it
+  actually chooses the donor `piVar8` and feeds gate `6` into
+  `FUN_00571CC0`: after transient reset it chooses between current selection,
+  explicit donor override, and the fallback buffer seeded from
+  `DAT_00ED3B0C + 0x60/+0x80`, then under `FUN_004EA550(6)` it imports
+  `piVar8 + 0x39`, copies extra donor dwords through `FUN_005EF850(piVar8)`,
+  forwards the donor callback at `piVar8[0x15] + 0x78`, calls
+  `FUN_00571CC0(piVar8)`, and then calls `FUN_004E5740(piVar8 + 0x4E)`.
+  So the best next function is no longer `FUN_00571CC0`; it is `FUN_00575290`,
+  and the strongest concrete sub-question is who materializes the fallback pair
+  at `DAT_00ED3B0C + 0x60/+0x80`.
+
+The new baseline-family pass materially demotes that fallback-pair question.
+`facegen_geck_baseline_family_helpers.txt` shows the surrounding
+`DAT_00ED3B0C` low-offset cluster is generic plugin/masterfile state, not a
+FaceGen-specific source cache. `FUN_004DB160` zeroes a regular family at
+`+0x58/+0x60/+0x68/+0x70/+0x78/+0x80/+0x88`; `FUN_004D8B80` then scans
+`*.esm/*.esp`, handles `Update.bsa`, and builds file/plugin entries; and the
+helper cluster confirms the same interpretation: `FUN_004DEDC0` rebuilds a
+masterfile-resolution array from the name list at `+0x3EC/+0x3FC/+0x400`,
+logging `MASTERFILE: Missing Masterfile: %s`, while `FUN_004E2990` parses TES
+files and logs `MASTERFILE: File '%s' is not a valid TES file.` on failure.
+That means `DAT_00ED3B0C + 0x60` is being consumed as an embedded linked-family
+head in the export path, and the old sub-question "who seeds
+`DAT_00ED3B0C + 0x60/+0x80`?" is now a weaker `_0` suspect. The strongest
+remaining provenance seam stays under `FUN_00575290`, but it shifts back to the
+live donor side: current selection / explicit donor eligibility and the gate-6
+imports (`FUN_005EF850`, donor callback, `FUN_004E5740`), not more baseline
+object archaeology.
+
+The new gate-6 live-donor pass demotes that branch too. In
+`facegen_geck_gate6_live_donor_cluster.txt`, the helpers around
+`FUN_00575290`/`FUN_00566BB0` resolve as generic donor-side component import,
+not FGTS/tint/shade provenance: `FUN_005EF850` is only a three-dword sync from
+donor `+0x44/+0x48/+0x4C`; `FUN_00501A60` imports `TESModel` from donor slice
+`+0x41`; `FUN_00504890` imports `TESModelList` from donor slice `+0x52`;
+`FUN_004F0F80` imports `TESAnimation` from donor slice `+0x39`; and
+`FUN_004E5740` imports `BGSDestructibleObjectForm` from donor slice `+0x4E`.
+So gate `6` now reads as generic model/animation/destructible sideband import,
+not the missing `_0` seam. The strongest remaining live-donor targets are the
+gate `0` / gate `1` imports in `FUN_00575290`, especially donor fields
+`+0x51`, `+0x58..+0x5C`, `+0x62`, the callback-backed values from donor object
+`+0x15` virtuals `+0x78/+0x80/+0x84/+0x88`, and the base donor virtual
+`+0x1D0`.
+
+The gate-0 / gate-1 donor-state pass narrows that further. In
+`facegen_geck_gate01_donor_state_cluster.txt`, most of the gate `0` / `1`
+helpers resolve as thin setters into one live state object, not semantic
+transform steps: `FUN_004EA630/640/660/670/680/740/750/7C0/810` just write or
+toggle fields at `+0x04/+0x08/+0x0C/+0x0E/+0x10/+0x12/+0x14/+0x18`, with
+`FUN_004EA7C0` adding only a min/max clamp on the float at `+0x14`. The
+gate-0 float getters are also owner-state accessors, not donor-specific bake
+math: `FUN_0056F900` reads current override `+0x21C` or sex-selected owner
+float `+0x7C/+0x80`, and `FUN_0056F950` does the same for `+0x220` or owner
+float `+0x84/+0x88`. Gate `1` now looks especially weak for `_0`: its slice
+helpers are generic form-component imports, with `FUN_004F16D0` importing
+`TESAttributes`, `FUN_004FE610` importing `TESHealthForm`, and the sibling
+interactive-only `FUN_004F12D0` importing `TESAttackDamageForm`. That shifts
+the strongest remaining live-donor seam almost entirely into gate `0`:
+donor fields `+0x51`, `+0x58..+0x5C`, `+0x62`, plus the donor base virtual
+`+0x1D0` and donor object `+0x15` callback virtuals `+0x84/+0x88`.
+
+One more focused synthesis pass materially demotes that remaining gate-0
+virtual seam too. The strongest evidence comes from
+`facegen_geck_current_head_source_state.txt`: `FUN_005704E0` resolves the
+return from `(**(code **)(*in_ECX + 0x1D0))()` via
+`FUN_004F9960 -> FUN_004F8680 -> FUN_004F9620(..., &TESForm::RTTI,
+&TESCombatStyle::RTTI, 0)` and logs
+`MASTERFILE: Combat Style (%08X) not found in InitItem for NPC (%08X) '%s'.`
+The same owner neighborhood resolves `in_ECX[0x59]` as `TESClass` and emits
+the class/autocalc masterfile warnings, so this branch is now much more
+coherently generic NPC actor state than FaceGen texture provenance. The
+matching setter at `vtable + 0x1D4` is also ordinary form-state UI/import
+plumbing: `facegen_geck_current_head_descriptor_writers.txt` shows combo
+`0x43C` feeding `(**(code **)(iVar5 + 0x1D4))(uVar4)`, and the donor path in
+`FUN_00575290` mirrors that same getter/setter pair with
+`uVar6 = (**(code **)(*piVar8 + 0x1D0))();
+(**(code **)(iVar5 + 0x1D4))(uVar6);`. So gate `0` now reads as class/combat /
+actor-state donor import, not the missing `_0` FaceGen texture seam. That
+demotes the whole gate-0 virtual/callback branch and pushes the remaining
+provenance question back toward the actual texture-control side. The remaining
+gate-0 callbacks line up with that same demotion: `piVar8[0x15] + 0x88` behaves
+like a source/variant object handle reused by UI/list paths, `piVar8[0x15] +
+0x84` is only a float getter into the clamped live-state setter
+`FUN_004EA7C0`, and the raw donor family `+0x58..+0x5C` now looks like a small
+appearance-adjacent state bundle rather than hidden `FGTS` lane math.
+
+The new shared page-bootstrap pass demotes the `0x3F6/0x3EF` branch further.
+`facegen_geck_page_mode_seed_helper.txt` shows `FUN_00576810` is only a small
+pre-initializer for the compact/option page family: it forces
+`CheckDlgButton(..., 0x3F6, 1)`, checks whether dialog item `0x87F` already
+exists, and if it does not, it seeds that child/preview path from the current
+active descriptor (`+0x1E8` else `+0x168`) plus the sex-selected template
+(`owner + 0x714` vs `owner + 0x694`) through `FUN_0047EA70(...)`. It then
+always delegates to `FUN_00574A70(param_1, 1)`. So `0x3F6` is now best read as
+the shared bootstrap/materialized-state flag for this page family, not as a
+tone/tint backing control, and `FUN_00576810` does not write `0x3EF`. That
+means the remaining `0x3EF` ambiguity stays in the later page-specific
+setup/reload path after bootstrap, not in the shared pre-step.
+
+The compact-page `0x3EF` branch is now materially narrower too.
+`facegen_geck_current_head_descriptor_writers.txt` shows the three compact-page
+checkboxes `0x3EE`, `0x3EF`, and `0x3F0` are the three boolean inputs to the
+`0x3F9` randomize/preserve path: the handler reads all three and passes them
+straight into `FUN_00574080(...)`. The body of `FUN_00574080` then makes the
+meaning concrete: `param_1 == 0` randomizes the first bounded pair in
+`[15, 65]`, `param_2 == 0` randomizes the second bounded pair in `[-2, 2]`,
+and `param_3 == 0` randomizes the scalar at `+0x1F0`; otherwise it preserves
+the current live values and rematerializes the descriptor through
+`FUN_0068ED20(...)`. The page-8 `0x41A` rebuild path matches that same read:
+`0x3EE` only gates whether `0x845` is authoritative versus being hydrated from
+the descriptor pair, and `0x3EF` does the same for `0x84D`. So `0x3EF` is now
+best read as the compact-page preserve/randomize toggle for the second bounded
+pair, not a hidden persisted tone/tint source. That largely closes the old
+`0x3EF` provenance branch and pushes the remaining `_0` question back toward
+the true `FGTS` / page-9 texture-control side.
+
+The page-9 `FGTS` branch is now concrete enough to stop treating it as an
+anonymous option-family too. The decompiled handler at `local_3fc == 9`
+already showed that the radio/check family chooses one `2 x 2` slot, combo
+`0x3FC` provides the selected option index, `FUN_00690330(...)` applies that
+selected option payload, and `FUN_00690260(...)` reads back the current numeric
+contribution. Combined with the shipped `FGTS` control order already carried in
+`FaceGenTextureSymmetricData.TextureSymmetricNames`, the `_0`-relevant page-9
+controls are now concrete option indices inside slot `(1,0) = FGTS`:
+`[8] = Eye Sockets Dark / Light`, `[22] = Lips Flushed / Pale`,
+`[28] = Skin Flushed / Pale`, `[29] = Skin Shade Dark / Light`,
+`[30] = Skin Tint Orange / Blue`, `[31] = Skin Tint Purple / Yellow`, and
+`[32] = Skin Tint Red / Green`. So the residual lane split is no longer just
+qualitative: lane `[00]` points cleanly at `Skin Shade`; `[01]/[11]` point at
+the tint cluster; and `[12]` points at the eye/lip/flush cluster. That largely
+closes the page-9 UI identity branch and pushes the remaining `_0` provenance
+question back to the non-UI / ordinary-export path that materializes those
+known `FGTS` control contributions into the active descriptor used for bake.
+
+One more focused pass demotes the most recent non-UI candidate too.
+`facegen_geck_export_owner_commit_path.txt` shows `FUN_00585070` is only a
+65-byte dialog wrapper around control `0x6F1`: it reads the current selection
+with `SendDlgItemMessageA(..., 0x130B, ...)`, maps it through
+`FUN_0041AA50(...)`, and immediately calls `FUN_00584700(param_1,
+mappedSelection)`. So `FUN_00585070` does not bridge `FGTS` state into
+ordinary export; it just re-enters the already-known live owner-state updater.
+The same pass keeps `FUN_00585130` on the staging/preview side too: it still
+anchors on dialog child `0x87F`, allocates the `0x234` staging object through
+`FUN_00573EF0()`, seeds it via `FUN_0056F380(*(DAT_00ED3B0C + 0x80))`, and
+drives the visible `"Updating..."` refresh path. So this branch is now another
+false lead for the missing `_0` export provenance seam. The strongest
+remaining ordinary-export target moves back to `FUN_00586EA0`, especially the
+`FUN_0056A310` compatibility gate that decides whether export keeps current
+source state or falls back to the sex-selected default before calling
+`FUN_0056F390(...)`.
+
+One more focused pass resolves the `FUN_0056A310` parameter ambiguity and
+shrinks that branch further. The call windows in
+`facegen_geck_source_compatibility_gate.txt` show the gate is called as
+`FUN_0056A310(candidateSource, owner)`, not the other way around: ordinary
+export `FUN_00586EA0` does `CALL FUN_0056F440`, then `PUSH ESI` (owner),
+`MOV ECX,EAX` (current source from `+0x1EC`), and only then
+`CALL FUN_0056A310`; `FUN_005711F0` does the same shape while populating the
+current-head-source combo; and `FUN_005704E0` does it again when validating the
+current source state. So the gate semantics are now concrete: the candidate
+source object must appear in the owner-linked family at
+`owner->(+0x144)+0xA8`, and its flags at `candidate + 0x78` must be compatible
+with the current sex/index from `FUN_0055D9E0` (bit `0x2` for sex `0`,
+bit `0x4` for sex `1`, with the bit being clear meaning compatible). That
+means the ordinary-export branch itself is now structurally clear: keep the
+current source from `+0x1EC` only if this compatibility check passes, otherwise
+fall back to the sex-selected defaults at owner `+0xB0/+0xB8`. So the
+remaining `_0` provenance seam is no longer the gate logic; it is the code that
+seeds, clamps, or clears owner field `+0x1EC` before export ever reaches
+`FUN_00586EA0`.
+
+The next lifecycle-focused pass makes that `+0x1EC` branch concrete. In
+`facegen_geck_current_source_selection_lifecycle.txt`, `FUN_005721B0` is the
+hard reset that clears `+0x1EC`, `+0x1F0`, `+0x1F4`, the related pointer family
+at `+0x1FC/+0x1F8/+0x200`, zeroes `+0x164/+0x208`, clears `+0x1E8`, and
+reseeds inline descriptor `+0x168` from `FUN_00690240(...)`. `FUN_00571CC0` is
+the donor copy that seeds `+0x1EC` from another owner and clones the linked
+family at `+0x210` while copying the donor active descriptor into the current
+slot. `FUN_005711F0` is the clamp step: it enumerates candidate sources from
+`owner->(+0x144)+0xA8`, filters them through
+`FUN_0056A310(candidateSource, owner)`, and if the current `+0x1EC` is not in
+the resulting combo, it rewrites `+0x1EC` to the first compatible entry.
+`FUN_005726D0` is the explicit `'*'` donor-copy sibling that calls
+`FUN_00571CC0(param_1)`, and `FUN_00575290` is the broader donor-selector/import
+owner where the actual `+0x1EC` seed happens under gate `6` via
+`FUN_00571CC0(piVar8)`. Crucially, `FUN_0056F450` does not touch `+0x1EC` at
+all; it is only sideband current-source recomputation. So the remaining `_0`
+provenance seam is no longer the meaning of `+0x1EC`, and no longer the gate or
+updater logic in isolation. It is the export-adjacent owner path that last
+writes or clamps `+0x1EC` before `FUN_00586EA0` reaches for it.
+
+That export-adjacent branch is now much narrower too. The focused comparison in
+`facegen_geck_export_current_source_dispatch.txt` shows ordinary export owners
+`FUN_00574500` (FaceMods) and `FUN_00570A20` (BodyMods) do not perform current
+source maintenance themselves: both test `FUN_004EA550(6)` and then proceed
+straight into `FUN_00586EA0(...)` or `FUN_00587B20(...)`, but neither one calls
+`FUN_005711F0`, `FUN_00571CC0`, `FUN_005721B0`, or `FUN_00575290`. By
+contrast, the page/UI family does call the clamp step:
+`FUN_00576CE0 -> FUN_005711F0` at `0x0057711A`, and
+`FUN_00577B40 -> FUN_005711F0` at `0x0057AD79`. So ordinary export now reads as
+an already-materialized owner-state consumer, not the place where current
+source state gets refreshed right before bake. That reranks the remaining `_0`
+provenance seam again: the next real target is the load/import/persistence path
+that establishes owner `+0x1EC` and the inline active descriptor before the
+page family and Ctrl+F4 export ever run.
+
+That load/import side is now much more concrete too. The raw field scan in
+`facegen_geck_current_source_write_site_scan.txt` surfaces the first meaningful
+non-page, non-export owner write to `+0x1EC` inside
+`FUN_00575D70`, the NPC face-texture source parser / owner importer. In the
+recovered decomp, `MANH` resolves hair and writes `in_ECX[0x7B]`
+(`+0x1EC`), `MANL` reads a clamped `[0,1]` float and writes `in_ECX[0x7C]`
+(`+0x1F0`), and `MANE` resolves eyes and writes `in_ECX[0x7D]`
+(`+0x1F4`). The same importer also materializes the texture-control spans
+`FGGS -> +0x168`, `FGGA -> +0x188`, and `FGTS -> +0x1A8`. So the remaining
+ordinary-export provenance seam is no longer “what dispatcher refreshes current
+source right before bake?” It is whether the repo-side NPC/race import path is
+actually matching this GECK split between imported current source triplet
+`MANH/MANL/MANE`, imported `FGTS` control content, and the fallback/default
+source families on the race side.
+
+The repo-side follow-up now points to a stronger texture-source omission too.
+`NpcRecordScanner`, `NpcRecordHandler`, and `RuntimeActorReader` all expose the
+raw NPC-side equivalents of that imported triplet and `FGTS`, but
+`NpcAppearanceFactory` still collapses final texture provenance to
+`npc.FaceGenTexture + one sex-selected race FGTS` via
+`NpcFaceGenCoefficientMerger.Merge(...)`. That flattening is now suspicious
+because the repo's own runtime probe tooling already models two runtime race
+texture pages (`a` / `b`) plus older/younger-race relationships.
+`tools/NvseFaceGenProbe/README.md` records the current empirical result that the
+selected runtime page is `a` for female NPCs and `b` for male NPCs, while
+`NpcRuntimeFaceGenProbeCaptureComparer` is explicitly built to compare runtime
+page `a` / `b` against candidate races, candidate sex, and older/younger-race
+relations. The active probe implementation in `FaceGenProbe.cpp` narrows that
+again: it now treats page `a` as the runtime female race texture page and page
+`b` as the runtime male race texture page, so the repo's current
+sex-selected direct-race `FGTS` merge is no longer obviously wrong by itself.
+That moves the remaining suspect to race-record selection rather than page
+labeling. `RaceScanEntry` preserves `OlderRaceFormId` / `YoungerRaceFormId`,
+but `NpcAppearanceFactory` still ignores them when resolving texture
+coefficients. So the remaining `_0` mismatch may now be better explained by
+choosing the wrong race record for the selected male/female texture page,
+especially when older/younger race links are involved, than by more low-level
+EGT parser math alone. One caution: `RuntimeFaceGenTypes.h` still contains an
+unused stale helper that reverses the page mapping; the active `FaceGenProbe.cpp`
+capture path should be treated as authoritative here. A direct repo scan makes
+that practical gap concrete: `OlderRaceFormId` / `YoungerRaceFormId` currently
+show up only in `RaceScanEntry`, `RaceRecordScanner`, and display/debug output
+(`ActorShowRenderer`), while `NpcAppearanceFactory` still resolves texture
+coefficients only from `ResolveRace(npc.RaceFormId)` followed by the direct
+sex-selected `MaleFaceGenTexture` / `FemaleFaceGenTexture` pair.
+
+The runtime-aware selector branch is now better bounded, and weaker as an
+explanation for the two AfricanAmerican anchor `_0` failures than it first
+looked. `RuntimeActorReader.ReadRuntimeNpc(...)` already preserves
+`OriginalRace`, `FaceNpc`, and `RaceFacePreset` on `NpcRecord`, and
+`NpcAppearanceFactory.BuildFromDmpRecord(...)` still ignores all three. But a
+direct DMP scan over `Jacobstown.dmp` and
+`Fallout_Release_MemDebug.xex.dmp` changes the ranking:
+
+- `OriginalRace` is absent in both sampled dumps (`0 / 2917`, `0 / 2911`)
+- `FaceNpc` is present on `114` NPCs in each dump
+- `RaceFacePreset` is nonzero on almost every NPC, but overwhelmingly as the
+  same value `255`
+- the two AfricanAmerican anchors (`0x0001816A`, `0x000181D2`) have
+  `OriginalRace=null`, `FaceNpc=null`, and `RaceFacePreset=255`
+
+So `OriginalRace` and `RaceFacePreset` are now weak suspects for the anchor
+cases. `FaceNpc` is real, but its semantics are narrower too: for all
+comparable `FaceNpc` pairs in `Jacobstown.dmp`, the child runtime `FGTS`
+matches the donor `FaceNpc` runtime `FGTS` exactly. That means the repo-side
+selector omission is still a correctness gap for some DMP NPCs, but it no
+longer looks like the strongest explanation for the current anchor `_0`
+failures.
+
+The stronger remaining runtime branch is now upstream face-state/materialization
+itself: runtime `FGTS` can diverge materially from static ESM `FGTS` even when
+`OriginalRace` and `FaceNpc` are not active. So the next best target is no
+longer broad selector precedence in the abstract, but the path that produces
+that runtime `FGTS` divergence for loaded NPCs.
+
+A direct runtime-vs-ESM comparison on the two anchor NPCs now sharpens that
+again. For `0x0001816A`, runtime `FGTS` is not closest to either its own static
+ESM record or the same-race female race default; it is closer to other authored
+AfricanAmerican-female-family `FGTS` states (for example
+`Enclave4OfficerAAFTEMPLATE`) than to its own authored coefficients. For
+`0x000181D2`, the runtime state is still fairly close to its own authored ESM
+record, but it is even closer to other authored AfricanAmerican-female-family
+states than to the race default. So the remaining runtime branch is now best
+read as intra-family face-state materialization or reseeding:
+
+- runtime preset/randomization/current-face state
+- materialized template/current `FGTS` state
+- or another same-race/same-sex authored source becoming active at runtime
+
+That is a better fit for the current anchor `_0` cases than broad selector
+precedence, cross-race fallback, or direct race-default substitution alone.
+
+A direct runtime-cluster scan over both `Jacobstown.dmp` and
+`Fallout_Release_MemDebug.xex.dmp` narrows that one more step. The two dumps
+agree on the anchor neighborhood rankings, but neither anchor has an exact or
+near-exact runtime `FGTS` match, and neither has an exact combined
+`FGGS+FGTS` match either. For `0x0001816A`, the nearest runtime `FGTS`
+neighbor remains `Enclave4OfficerAAFTEMPLATE`, but still at
+`meanAbsDiff=0.8069`, `maxAbsDiff=2.7930`; exact runtime `FGTS` matches are
+`0`, near runtime `FGTS` matches (`max<=0.001`) are `0`, and exact combined
+`FGGS+FGTS` matches are `0`. For `0x000181D2`, the nearest runtime `FGTS`
+neighbors remain `BrotherhoodOfSteel1GunAAM` and
+`BrotherhoodOfSteel1FlamerAAFTEMPLATE` at `meanAbsDiff=0.0366`,
+`maxAbsDiff=1.8294`, and the nearest combined neighbor remains
+`BrotherhoodOfSteel1FlamerAAFTEMPLATE` at `combined=0.4451`, but exact runtime
+`FGTS` matches are still `0`, near runtime `FGTS` matches are `0`, and exact
+combined `FGGS+FGTS` matches are `0`. So the "shared live donor copy" theory
+is materially weaker now. The anchors still sit inside same-family runtime
+face-state clusters, but they are not exact copied runtime states. The better
+remaining fit is continuous same-family face-state materialization or reseeding
+that lands nearby, not identically, across NPCs.
+
+I also instrumented the temporary `RaceFaceOffsetCoord` probe directly, and
+that demotes the "inline current-face coord blob" theory for these sampled
+final-era dumps. The raw candidate windows at `308/324/340/356` do start from
+the right TESNPC base, but they do not decode as four clean inline
+`FR2MatrixVTC<float>` headers. Instead, the only structured-looking values are
+the already-known FaceGen array signals: `50 x 1`, `30 x 1`, and another
+`50 x 1`, lining up with the existing live `FGGS / FGGA / FGTS` family inside
+the same 96-byte region. So the current best read is that the sampled dump
+layout does not expose a separate standalone `RaceFaceOffsetCoord` blob there;
+the stronger remaining runtime branch stays on live face-state
+materialization/reseeding of the `FGGS / FGGA / FGTS` arrays we already read,
+not on a new direct inline coord parser.
+
+A direct pointer-identity scan over the live runtime FaceGen arrays sharpens
+that again. In both `Jacobstown.dmp` and
+`Fallout_Release_MemDebug.xex.dmp`, every parsed NPC has its own distinct live
+`FGGS`, `FGGA`, and `FGTS` pointer, and every combined
+`(FGGS, FGGA, FGTS)` tuple is unique too. So the remaining runtime branch is
+not "shared live FaceGen buffers" either. The anchors still sit in same-family
+runtime neighborhoods, but as separate allocations: for example, in the
+MemDebug `.xex` dump, `0x000181D2` and `0x000181DA` differ by only `400` bytes
+for both live `FGGS` and `FGTS`, and by `120` bytes for `FGGA`, while still
+holding distinct buffers. That is a better fit for per-NPC runtime
+materialization / reseeding of FaceGen state from same-family inputs than for
+exact donor-copy reuse or one shared default buffer family.
+
+A focused runtime-state materialization pass now makes that writer/importer side
+much less abstract. `TESNPC::LoadFaceGen` is not just a passive persistence
+reader: it actively imports the serialized `2 x 2` FaceGen float family back
+into the live NPC coord buckets, then resolves and stores the selected/source
+state at `+0x120`, `+0x1A8`, `+0x1B0`, `+0x1AC`, and `+0x1C8`, plus the face
+flag bit under `+0x40`. If anything changed, it triggers downstream refresh
+work instead of quietly returning. The manager-side helpers line up with that:
+`BSFaceGenManager::InitFaceGenCoord` seeds the canonical runtime family as
+`50 x 1`, `30 x 1`, `50 x 1`; `CopyFaceGenCoord` deep-copies that family;
+`MergeFaceGenCoord` is the additive sibling; and `OffsetFaceGenCoord` is the
+subtractive sibling, both with the already-known outer-family-`1` direct-copy
+fast path.
+
+`TESNPC::RandomizeFaceCoord` is now the clean runtime reseed partner to
+`LoadFaceGen`. It selects the race/sex base family at `+0x408` vs `+0x468`,
+edits the same compact bounded page shape we already recovered on the GECK
+side (`[15, 65]`, `[-2, 2]`, plus the scalar at `+0x1AC`), builds a new
+differential/current family through `OffsetFaceGenCoord`, compares that result
+against active storage at `+0x1A4` or fallback `+0x144`, and only copies it
+back when the rebuilt family actually changed. So the remaining runtime branch
+is now better ranked as: per-NPC `LoadFaceGen` import followed by same-family
+runtime reseeding/materialization, not shared live buffers, not a separate
+inline coord blob, and not another hidden selector-only path.
+
+A raw PPC direct-call scan reranks that one more step. `TESNPC::LoadFaceGen`
+and `TESNPC::RandomizeFaceCoord` are still real runtime importer/reseed
+functions, but their direct owners in the MemDebug image are now explicit:
+`PlayerCharacter::LoadGame` calls `TESNPC::LoadFaceGen`, and
+`RaceSexMenu::Randomize` calls `TESNPC::RandomizeFaceCoord`. That makes both
+functions much weaker as the *generic* source of the live runtime `FGTS` drift
+for the two non-player AfricanAmerican anchor NPCs. So the remaining branch is
+no longer best ranked as player savegame restore or RaceSexMenu randomization.
+The stronger remaining suspect is another generic per-NPC runtime
+initialization/materialization path for live `FGGS / FGGA / FGTS`, likely one
+that runs before or around ordinary NPC head/parts setup rather than only in
+player loadgame or menu flows.
+
+A second raw callscan closes the visible 3D consumer side too. The generic
+`TESNPC::InitParts` owners are now concrete:
+`QueuedCharacter::QueueModels`, `TESNPC::ReplaceRefModel`,
+`LowProcess::ProcessRemoveWorn`, and a few refresh-style incidental owners like
+`ContainerMenu::Close` and script-driven reequip/update calls. But
+`TESNPC::InitParts` still decompiles as the ordinary late consumer path:
+optional `InitDefaultWorn`, then `LinearFaceGenHeadLoad`, then `InitWorn`, and
+finally `FixDisplayedHeadParts` when needed. Combined with the earlier
+`HighProcess::Update3dModel -> InitHead` chain, that makes the generic visible
+runtime 3D setup look like a consumer of already-existing FaceGen state rather
+than the writer that first materializes live `FGGS / FGGA / FGTS`. So the
+remaining runtime branch should move earlier than `InitParts` /
+`Update3dModel`, toward generic NPC/runtime construction, cloning,
+template-application, or other non-visual initialization that happens before
+model queuing and head attachment.
+
+That earlier runtime branch is now concrete. A focused candidate-writer pass on
+`TESNPC::InitializeData`, `TESNPC::Load`, `TESNPC::CopyHeadData`, and
+`TESNPC::CopyFromTemplateForm` shows the split cleanly. `InitializeData` is
+only the hard default/reset seed for the live FaceGen cluster: it clears
+selector fields like `+0x1A8/+0x1B0/+0x1AC`, clears `+0x1A4/+0x1E4/+0x1E8`,
+seeds `+0x1C8 = 0x19324B`, initializes fallback coord storage at `+0x144`, and
+zero-fills the current `2 x 2` coord family. By contrast, `TESNPC::Load` is a
+real generic importer of serialized live FaceGen state for ordinary NPCs. It
+reads tagged record chunks directly from the load stream, including the `MAN*`
+selector/state family and the shared `FG*` loader path for `FGGS`, `FGGA`, and
+`FGTS`, allocating the lane and copying the serialized float payload into the
+live runtime buffers rather than leaving that to later 3D setup.
+
+The clone side is concrete too. `TESNPC::CopyHeadData` is the shared live
+head-state copy primitive: it copies `+0x1A8`, `+0x1AC`, `+0x1B0`, `+0x1C8`,
+clones the linked family at `+0x1CC`, copies active-vs-fallback coord storage
+through `+0x1A4` else `+0x144`, and writes donor provenance at `+0x1E0`; if
+donor `+0x1DC` is set it remaps through donor `+0x120`. `CopyFromTemplateForm`
+then unconditionally uses `CopyHeadData` before copying more head/template
+state. So the remaining anchor `_0` runtime branch is no longer "mystery
+materialization before `InitParts`." It is now much better ranked as generic
+`TESNPC::Load` import plus template/donor head-state cloning, both of which are
+stronger parity candidates than more late consumer-chain archaeology.
+
+The repo-side split is now clear enough that it should stop being mixed into
+the shipped `_0` bake branch. The DMP render/export path already consumes the
+live runtime float arrays: `RuntimeActorReader::ReadRuntimeNpc` preserves
+runtime `FGGS / FGGA / FGTS` into `NpcRecord`, `NpcRenderHelpers::ResolveFromDmp`
+uses that runtime record, and `NpcAppearanceFactory::BuildFromDmpRecord`
+merges those live arrays with race defaults instead of falling back to the
+static ESM coefficients. But the verifier/probe tooling is still separate:
+`verify-egt` and `compare-runtime-capture` both stay on
+`NpcAppearanceResolver::ResolveHeadOnly`, i.e. the static ESM resolver. So the
+remaining runtime omission is no longer "DMP rendering ignores live FGTS."
+Instead it is the selector/source-state family outside the float arrays that
+the engine carries through `TESNPC::Load` / `CopyHeadData`
+(`+0x120/+0x1A8/+0x1AC/+0x1B0/+0x1C8/+0x1DC/+0x1E0`), which the repo does not
+currently preserve in `NpcRecord`. That means the next target depends on the
+ goal: shipped `_0` parity should stay on the static GECK/editor branch, while
+ loaded in-game NPC parity should move to modeling those runtime selector/source
+ fields rather than re-proving the live `FGGS / FGGA / FGTS` arrays themselves.
+ 
+The static shipped `_0` parser branch is narrower than it first looked. The
+repo's static ESM parser and render scanner do reduce NPC FaceGen state to raw
+`FGGS / FGGA / FGTS` plus ordinary appearance forms like
+`RNAM/HNAM/ENAM/PNAM/HCLR/LNAM/TPLT`, and there are still no repo-side
+`MANH`, `MANL`, or `MANE` parser hits in `src/`, `tests/`, or `tools/`. But a
+direct authored-record check changes the ranking: `find-formid` dumps for the
+two anchor NPCs `0x0001816A` and `0x000181D2` in both the Xbox 360 and PC
+`FalloutNV.esm` files show only the ordinary authored subrecord set, including
+`FGGS / FGGA / FGTS`, and no `MANH/MANL/MANE`. So the repo's lack of
+`MANH/MANL/MANE` parsing is not, by itself, proof of a shipped static `_0`
+parity bug on ordinary authored `NPC_` records. `verify-egt` still stays on
+the simple static model through `ResolveHeadOnly(...)`, but the stronger
+remaining static suspects shift back to the GECK/editor export-side
+current-source/default selection path and the repo-side first-span EGT apply /
+content fidelity, not a missing `MAN*` parser for authored NPC records.
+
+The raw Xbox dumps also expose an endian-label trap that should downgrade some
+older `MAN*` note fragments. In the big-endian record bytes, reversed-looking
+tags like `MANS`, `MANR`, `TMAE`, and `OTNC` are just ordinary displayed
+subrecords `SNAM`, `RNAM`, `EAMT`, and `CNTO` once normalized. So any older
+decomp claim that treats a `MAN*` label as a separate semantic subrecord family
+should be treated cautiously until the signature has been byte-order
+normalized.
+
+Template inheritance is now split cleanly from that parser question. A
+parser-backed authored-NPC scan over the shipped Xbox `FalloutNV.esm` finds
+`3816` parsed `NPC_` records, `2573` templated records, and `631` templated
+records missing both local `FGGS` and local `FGTS`. Of those `631`, `595` have
+`Use Traits` set in `ACBS.TemplateFlags`, so missing template face inheritance
+is a real general static appearance gap in the repo. But it does not explain
+the two `_0` anchor cases directly: `0x0001816A` and `0x000181D2` are both
+non-templated authored records with full local `FGGS/FGGA/FGTS` payloads. The
+anchor ACBS flags also split them usefully: `0x0001816A`
+(`CGPresetAfricanAmericanF01`) carries `ActorBaseFlags=0x00000005`, so it is a
+female authored CharGen face preset, while `0x000181D2` carries
+`ActorBaseFlags=0x00000219` and does not have the CharGen preset bit set.
+`0x000181D2` is more important as a donor template for many Brotherhood
+variants than as a templated consumer itself. So template inheritance should
+stay on the repo parity backlog, but the strongest remaining lead for the
+AfricanAmerican female shipped `_0` mismatch is now slightly split:
+`0x0001816A` still leaves more room for a CharGen/GECK current-source or
+preset-default branch, while `0x000181D2` points more directly back to the
+ordinary authored `FGTS`/race-merge assumption or the first-span EGT
+content/apply branch, not missing `TPLT` handling on the anchors.
+
+A direct static coefficient-source probe sharpens that split further. Running
+`verify-egt` on the two anchors with its existing `merged / npc_only /
+race_only` diagnostics shows that the current high-level static source model is
+decisively better than either source alone on both anchors:
+
+- `0x0001816A`: `merged=1.6095`, `npc_only=26.6867`, `race_only=11.0191`
+- `0x000181D2`: `merged=1.4340`, `npc_only=26.8224`, `race_only=7.0922`
+
+So the remaining shipped `_0` gap is no longer well explained by a coarse
+"use NPC-only FGTS" or "use race-only FGTS" mistake, and it weakens the broad
+theory that static source/default selection is grossly wrong. Some subtler
+same-family current-source/default behavior may still matter, especially for
+the CharGen preset anchor `0x0001816A`, but the ordinary-authored anchor
+`0x000181D2` now points more strongly back to first-span EGT content/apply
+fidelity. The earlier lane results still hold there: lane `[00]` already wants
+`1.0x`, while `[01]`, `[11]`, and `[12]` remain the only meaningful secondary
+retune directions.
+
+A direct raw-fit probe now shows the shipped `_0` gap is mixed, not purely one
+branch. An opt-in `verify-egt --raw-fit-coeffs` diagnostic solves a
+least-squares fit against the shipped native delta texture under the repo's
+current quantized first-span EGT basis. That fit improves both anchors
+materially:
+
+- `0x0001816A`: raw `3.3268 -> 2.2061`, RGB `1.6095 -> 1.0925`
+- `0x000181D2`: raw `2.9462 -> 1.9213`, RGB `1.4340 -> 0.9369`
+
+So coefficient/source-state provenance is still a real part of the mismatch:
+the current EGT basis can explain shipped `_0` much better than the authored
+merged coefficient vector does. But the fitted raw delta still remains far
+above the encode-loss floor on both anchors, so first-span EGT content/apply
+fidelity is still also a real part of the mismatch. The fitted vector also
+wants broader movement than the earlier named-lane story suggested. The biggest
+fit deltas are concentrated in higher `FGTS` basis indices such as
+`[35]`, `[36]`, `[37]`, `[40]`, `[42]`, `[46]`, and `[49]`, not just the
+earlier highlighted `[00]`, `[01]`, `[11]`, and `[12]`. So the remaining
+source/provenance branch is no longer well described as only a few named
+tint/shade controls; it looks more like broader same-family current-source or
+preset-family drift across the 50-dim `FGTS` basis.
+
+A follow-up raw-fit neighbor scan reranks that source/provenance half. Extending
+`verify-egt --raw-fit-coeffs` to rank authored same-race/same-sex
+`ResolveHeadOnly(...)` appearances by coefficient distance to the fitted vector
+shows that both anchors still sit closest to themselves inside the authored
+AfricanAmerican female family. For `0x0001816A`, the fitted vector ranks the
+anchor `1 / 139` with coefficient `MAE=0.8454`; the nearest non-self authored
+state is `VNCRWastelandFemaleTrooperD` at `1.1965`. For `0x000181D2`, the
+fitted vector also ranks the anchor `1 / 139` with `MAE=0.5905`; the nearest
+non-self authored state is `BrotherhoodOfSteel1FlamerAAFTEMPLATE` at `0.7734`.
+So the fitted vector still drifts within the authored AfricanAmerican female
+family, but it does not converge on some alternate same-family donor/default
+state more strongly than on the anchors' own authored merged `FGTS`. That
+weakens the coarse donor/default substitution theory again. The remaining
+shipped `_0` mismatch is still mixed, but the stronger half moves back toward
+first-span EGT content/apply fidelity, with only a subtler current-source
+drift still left on the source/provenance side.
+
+An RGB-free raw-fit probe weakens one more false lead under that first-span
+branch. Letting the fit solve independent quantized coefficient vectors for the
+R, G, and B channels improves the anchors only modestly:
+
+- `0x0001816A`: ordinary fit `1.0925` RGB MAE, RGB-free `1.0216`, encode-loss floor `0.4701`
+- `0x000181D2`: ordinary fit `0.9369` RGB MAE, RGB-free `0.8197`, encode-loss floor `0.4957`
+
+So shared RGB coupling is not the dominant residual error. Freeing RGB helps,
+but not enough to explain the remaining gap. That pushes the next target back
+to first-span EGT content/raster fidelity itself: the actual spatial delta
+fields or their upstream materialization, not just channel-order or per-channel
+weighting.
+
+An opt-in hotspot morph-inspection probe weakens one more broad parser theory
+under that first-span branch. Extending `verify-egt` with
+`--inspect-morph ...` now extracts the raw EGT bytes from the meshes archive
+and dumps, for selected symmetric morph indices, the raw file top/bottom rows,
+the parsed top/bottom rows, explicit row-mapping checks, and native
+contribution magnitudes in the whole face versus the `eyes` and `mouth`
+regions. Running that probe on the current hotspot set
+`[35]`, `[37]`, `[40]`, `[42]`, `[49]` for both anchors shows that every
+inspected channel reports
+`rawTop->parsedBottom=True` and `rawBottom->parsedTop=True`, and the parsed
+`Scale` matches the raw file float exactly. So the current `EgtParser`
+row-flip and simple signed-byte load are behaving exactly as intended on the
+first-span hotspot indices we care about. That makes a broad top/bottom
+inversion, row-stride, or basic signed-byte parser bug a weak explanation for
+the remaining shipped `_0` mismatch. At the same time, the same probe confirms
+that the hotspot basis content itself is genuinely eye / mouth heavy. For
+example, on `0x0001816A`, morph `[37]` has whole-image RGB abs-means around
+`(1.2055, 1.4157, 1.1010)` but `eyesAbsMean=3.5141` and
+`mouthAbsMean=3.0395`; on `0x000181D2`, morph `[40]` has whole-image RGB
+abs-means around `(0.3266, 0.3823, 0.5400)` but `eyesAbsMean=1.1786` and
+`mouthAbsMean=1.0053`. So the remaining first-span branch should now focus on
+finer spatial content/materialization parity upstream of the loaded raster, or
+sharper per-hotspot residual analysis inside the current native-delta path,
+not more broad row-orientation/parser-layout theories.
+
+That repo-side branch is now ranked more cleanly too. The strongest remaining
+repo-side suspect is the static coefficient/source path feeding the native
+builder, especially `NpcAppearanceFactory.Build(...)` plus
+`NpcFaceGenCoefficientMerger.Merge(...)`, because `RAWFIT` still improves both
+anchors materially under the repo's own current first-span basis and the fitted
+vectors continue to demand large movement on the hotspot family
+(`0x0001816A`: `[37] 1294 -> 27`, `[42] 1178 -> 58`, `[35] -1033 -> 24`,
+`[49] 639 -> -45`; `0x000181D2`: `[37] 842 -> -3`, `[40] -669 -> 149`,
+`[49] 934 -> 117`, `[42] 756 -> 173`, `[35] -558 -> 24`). The second
+remaining repo-side suspect is still
+`FaceGenTextureMorpher.AccumulateNativeDeltasQuantized256(...)`, because even
+after fitted coefficients the native raw residual stays far above the
+encode-loss floor, and that loop still owns the exact independent
+`coeff256/scale256` truncation-plus-normalization semantics that produce the
+current best shipped `_0` path. `EgtParser.ReadMorph(...)` /
+`ReadChannel(...)` remain only as a narrower third-tier suspect: the broad
+row-flip/sign-load theory is now weak, but those methods are still the only
+repo-side point where first-span raster bytes become the in-memory basis. So
+the next best repo-side diagnostic was residual projection of the shipped raw
+delta onto the hotspot morph vectors, especially in `eyes` and `mouth`, to
+separate "basis content is directionally right but misweighted" from "basis
+content itself is still spatially wrong even after coefficient fit."
+
+That residual-projection pass is now in, and it tilts the hotspot branch back
+toward provenance/materialization rather than gross hotspot-basis-shape error.
+Running `verify-egt --residual-projection --inspect-morph` on the same anchors
+shows that the strongest current native raw residuals still live in the higher
+hotspot family and are mostly mouth-dominant with eyes as the secondary
+concentration. For `0x0001816A`, the top residual-projection rows are
+`[35] (+863 / +769 / +1771)`, `[36] (+884 / +538 / +1697)`,
+`[37] (-1268 / -1021 / -1652)`, `[30] (-617 / -406 / -1373)`, and
+`[49] (-533 / -9 / -1277)` in `(whole / eyes / mouth)` `Δ256` units. For
+`0x000181D2`, they are `[40] (+1373 / +874 / +998)`,
+`[49] (-754 / -810 / -1207)`, `[37] (-829 / -713 / -1028)`,
+`[35] (+337 / +544 / +979)`, and `[42] (-799 / -525 / -796)`. More
+importantly, the single-morph projection signs and rough magnitudes line up
+closely with the earlier global raw-fit direction for the same hotspot family:
+`0x0001816A [37]` projects at `-1268` vs raw-fit `-1267`,
+`0x0001816A [42]` at `-1103` vs `-1120`, `0x000181D2 [37]` at `-829` vs
+`-845`, and `0x000181D2 [49]` at `-754` vs `-817`. So for these inspected
+hotspots, the basis direction is not wildly wrong; the current residual already
+points along the same morph directions the global fit wants. That weakens
+"wrong hotspot spatial field" as the main explanation for the inspected family,
+even though it does not eliminate broader first-span content/materialization
+problems. The next high-value branch should therefore tilt back toward upstream
+first-span coefficient/materialization provenance for the mouth/eye-heavy
+hotspot family, or toward multi-morph hotspot-subspace diagnostics, not back
+toward broad parser-layout or simple sign/load theories.
+  
 This pipeline is much better understood than it was before the decompilation work, but it should
-not be treated as fully closed. Any claim that the remaining mismatch is "just DXT1 noise" is
+ not be treated as fully closed. Any claim that the remaining mismatch is "just DXT1 noise" is
 stale.
+
+A narrower importer-side pass now demotes another branch. Inside
+`FUN_00575D70`, the `DATA` / `DNAM` path no longer looks like a dedicated
+FaceGen provenance seam: `FUN_004F8A80` unpacks a generic optional-form bundle,
+and `FUN_004F8D60` sizes it exactly from `TESUsesForm`, `TESValueForm`,
+`TESHealthForm`, `TESWeightForm`, `TESQualityForm`, `TESAttackDamageForm`,
+`TESAttributes`, and `BGSClipRoundsForm`. So the shared `DATA` copy math is
+best read as ordinary NPC schema/import compatibility, not shipped `_0`
+texture-current-source logic. The stronger remaining importer-side split is now
+between the NPC and race/default `FGTS` banks: `FUN_00575D70` imports one
+active NPC current-source bank at `+0x1A8` alongside the resolved
+`MANH / MANL / MANE` triplet at `+0x1EC / +0x1F0 / +0x1F4`, while
+`FUN_00588520` can materialize paired race/default banks at `+0x1A8` and
+`+0x1C8`, gated by `MAN0 / MAN1 / MAN2`, and carries different sideband state
+such as `MANO / MANY / MANX`. That reranks the next target again: not generic
+`DATA / DNAM`, but the semantic role and later consumer path of the secondary
+`+0x1C8` bank and the selection logic between imported NPC `+0x1A8` state and
+the paired race/default banks.
+
+The new residual-subspace split probe narrows the hotspot branch further and
+keeps the focus away from broad parser-layout theories. Running
+`verify-egt --raw-fit-coeffs --residual-projection --residual-subspace` on the
+two darker anchors with three explicit subsets:
+
+- full late hotspot family: `[35,36,37,38,39,40,41,42,43,45,46,49]`
+- mouth-heavy subset: `[35,36,37,38,39,41,43,49]`
+- whole-face / eye-support subset: `[40,42,45,46]`
+
+shows that the full family beats either split subset on both anchors, but the
+two anchors do not weight the split the same way. For `0x0001816A`, the
+mouth-heavy subset already captures most of the gain (`fitRawMAE=2.8049`,
+`fitRgbMAE=1.3922`, `eyes Δ=-0.6629`, `mouth Δ=-1.2853`), while the
+support-only subset is weak (`fitRawMAE=3.1572`, `fitRgbMAE=1.5538`) and even
+slightly worsens eyes (`eyes Δ=+0.0321`). For `0x000181D2`, the support subset
+matters materially (`fitRawMAE=2.5385`, `fitRgbMAE=1.2957`), but the mouth
+subset still helps too (`2.7006`, `1.3155`), and the combined family is best
+(`2.3450`, `1.1548`, `eyes Δ=-0.6597`, `mouth Δ=-0.8192`).
+
+So the remaining shipped `_0` error is not one clean “global shade” lane and
+not one clean mouth-only bug either. It is better described as late first-span
+provenance/materialization drift inside a localized cosmetic/tint hotspot
+family with two modes:
+
+- mouth-heavy
+- whole-face / eye-support
+
+That result keeps row-orientation / simple sign-load theories demoted and
+strengthens the upstream GECK-side provenance ranking recovered in decomp:
+`FUN_00575D70` first, then `FUN_0085CEE0`, with `FUN_00588520` behind them as a
+broader owner-state importer. If those still do not explain the split, the next
+remaining GECK-side unknown is the unresolved writer/materializer that creates
+the first-span `FREGT003` entry scales and signed-byte channel rasters before
+the loader sees them.
+
+The focused importer-detail bridge now closes the helper-side ambiguity under
+`FUN_00575D70`. `FUN_004F8D60` is only a typed `DATA` payload sizer based on
+optional form interfaces; `FUN_004F8A80` is only the matching typed `DATA`
+payload copier into owner state; and `FUN_00573BA0` is only the float-span
+resize/materialization helper used by `FGGS/FGGA/FGTS` imports and several
+later descriptor helpers. So the remaining seam is not hidden in helper
+plumbing. It stays upstream of the importer: `FUN_00575D70` is still the first
+real materializer of `FGTS -> owner + 0x1A8`, while the shipped late-hotspot
+family still maps most cleanly to the shared page-9 `slot (1,0) = FGTS`
+control family rather than to `MANH/MANL/MANE` or a pure page-8 shade-only
+branch.
+
+That reranks the next GECK-side target slightly. `FUN_0085CEE0` is now better
+understood as a downstream control writer that consumes already-loaded control
+metadata rooted at `DAT_00F05D54 + 0x118 + 0x644/+0x684/+0xFCC`; it is no
+longer the best immediate next target. The higher-value seam is now the loaded
+control-family owner itself, especially the `SI.CTL` reader path in
+`FUN_0085AEB0`. That loader populates the global control payload family at
+`+0x644` in `5 x 2 x 2` groups and writes the paired normalization scales at
+`+0x684`, so it sits between the imported `FGTS` owner state and the later
+control-writer path. The updated ranking is:
+
+- `FUN_00575D70` upstream source/provider provenance for imported `FGTS`
+- the `DAT_00F05D54 + 0x118` control-family owner, especially `FUN_0085AEB0`
+- `FUN_0085CEE0` only as a downstream follow-up
+
+The dedicated `FGTS` control-owner bridge tightens that further. `FUN_0085AEB0`
+does not merely sit near the later control path; it populates the exact global
+family later consumed by it. In the recovered loader, one family rooted at
+`+0x324` is built in `5 x 2 x 2` groups with payload spans and inverse scales,
+while a second family rooted at `+0x644` is built in `5 x 5 x 2` groups with
+payload rows at `+0x644 + local_18 * 0x168 + local_24 * 0x48 + local_2c * 0x20`
+and normalization scales at `+0x684 + local_18 * 0x168 + local_24 * 0x48`.
+`FUN_0085CD50` then reads current control values directly from that `+0x644`
+family, and `FUN_0085CEE0` multiplies its `(target - current)` delta by the
+paired scale at `+0x684`; `FUN_0085C110` writes companion deltas through the
+family at `+0xFCC`. So there is no longer a missing owner layer between the
+`SI.CTL` loader and the later control writer path. The remaining unresolved
+question has moved upstream again: how the imported `FGTS -> owner + 0x1A8`
+state is paired or selected against those loaded `SI.CTL` family-B controls
+before ordinary export/bake uses them.
+
+The consumer-side bridge tightens that further. `+0x168`, `+0x188`, `+0x1A8`,
+and `+0x1C8` are not unrelated owner fields; they are consecutive `0x20`
+records inside the same inline `0x80` source descriptor family. In
+`FUN_00575D70`, the imported `FGGS / FGGA / FGTS` branches land in those
+consecutive records through `local_20 = in_ECX + (iVar5 + iVar4 * 2) * 8 + 0x5A`.
+Then ordinary export simply selects `+0x1E8` or inline `+0x168` through
+`FUN_0056F2E0`, and `FUN_0056F390` merges that whole family through
+`FUN_0068EA20`. So the imported `FGTS` branch is already the third record of
+the same inline source descriptor ordinary export consumes.
+
+The helper side also now looks structurally shared rather than divergent.
+Imported records, merged source descriptors, and loaded `SI.CTL` family-B
+controls all flow through the same descriptor math helpers, especially
+`FUN_0068CC10`, `FUN_0068E480`, and `FUN_0068E360`. That further weakens any
+remaining theory that the imported `FGTS` branch and the loaded control family
+use different record layouts. The remaining unresolved branch is therefore
+upstream content/provenance: what source semantics `FUN_00575D70` parses into
+that third record, and how those semantics correspond to the loaded `SI.CTL`
+family-B rows, not whether the two sides use incompatible descriptor shapes.
+
+The dedicated inline-descriptor seed bridge closes the transient owner lifecycle
+as a false lead. `FUN_005739D0` is not an upstream seed/copy helper; it is the
+matching finalizer for the transient `0x234` owner, calling `FUN_005736B0` to
+clear `+0x1E8`, releasing side state, and running
+`_eh_vector_destructor_iterator_(in_ECX + 0x5A, 0x20, 4, FUN_0068DDD0)` over
+the inline `+0x168` descriptor family. `FUN_00573EF0` is the constructor/reset
+partner, building that same `4 x 0x20` family and then deferring to
+`FUN_005721B0` for the actual hard reset/reseed of `+0x1EC/+0x1F0/+0x1F4`,
+`+0x1E8`, and inline `+0x168`. So the transient lifecycle is now structurally
+`FUN_00573EF0 -> FUN_00571CC0 -> FUN_005739D0`, where only `FUN_00571CC0`
+still carries meaningful donor-copy semantics. That reranks the next target
+back to the upstream tagged-stream/provider path feeding `FUN_00575D70` and
+`FUN_00588520`, not more work on the transient owner constructor/destructor.
+
+The parser-root bridge narrows that upstream path again. The functions above the
+FaceGen importers now look generic rather than FaceGen-specific:
+`FUN_00404E40`, `FUN_0048F510`, and `FUN_00490310` are small tagged-record
+parsers keyed by one-byte family discriminators (`'v'`, `'w'`, `'x'`) and
+handling the same generic `DATA / EDID / OBND` pattern; `FUN_00561270` is a
+class parser; `FUN_00563380` is a creature parser. That makes `FUN_00575D70`
+and `FUN_00588520` themselves the concrete form-level FaceGen importers rather
+than intermediate callbacks under a richer hidden dispatch owner.
+`FUN_00575D70` remains the tighter shipped `_0` seam because it is the NPC /
+current-source importer and carries the stronger `DATA` size/provenance checks,
+while `FUN_00588520` stays the race/default sibling for comparison rather than
+the primary active-source path.
+
+The shared `FGGS / FGGA / FGTS` import math inside `FUN_00575D70` is now also
+largely closed. The common block at `LAB_0057650E` simply:
+- maps `FGGA -> (group 0, lane 1)`, `FGGS -> (group 0, lane 0)`,
+  `FGTS -> (group 1, lane 0)`
+- selects the target record as `in_ECX + (lane + group * 2) * 8 + 0x5A`
+- computes the float count from `param_1 + 0x25C`
+- uses `FUN_00573BA0` to resize/materialize the span
+- reads the raw payload through `FUN_004E0470`
+- applies only per-dword endian swap under `FUN_004DE510`
+- then copies the raw float dwords directly into the target span
+
+So the common `FGGS / FGGA / FGTS` materialization path no longer looks like a
+strong hidden-weighting seam. The remaining active branch shifts toward
+`MANC` / `DATA` current-source semantics and the later selection/copy path
+between imported NPC current-source state and the race/default banks, not the
+shared span import math itself.
+
+The next focused pass closes the downstream half of that bank split and makes
+the importer-side mirror rule concrete. `FUN_00588520` always writes the
+primary race/default `FGTS` record, but it mirrors the same payload into the
+sibling `+0x1C8` record only when the recovered importer-local guard
+`(local_20 == 0) || (local_9 != 0)` holds. `MAN2` participates directly by
+clearing `local_9`; `MAN0 / MAN1` do not appear to drive the mirror guard
+directly and instead flip the separate `local_11` flag used later in the
+`INDX` / owner-object sideband branch. On the consumer side, the export path is
+now cleaner too: `FUN_00586EA0` only carries the paired source-bank pointers
+forward (`temp + 0xD8 = source + 0x1A4`, `temp + 0xDC = source + 0x1C8`) and
+then switches over to descriptor-level merge/state. No later pre-bake step is
+currently known to reinterpret `+0x1A8` vs `+0x1C8` with a different semantic
+meaning. That reranks the next target again: the strongest remaining shipped
+`_0` seam is now the meaning of the importer-side mode flags in `FUN_00588520`
+and their interaction with current-source/fallback object selection, not
+`FUN_004E0740` and not another late export-bank selector.
+
+The next refinement makes those importer-side flags less abstract. `local_20`
+is now best read as the `FNAM/MNAM` sex-section selector, not a generic bank
+mode flag: `0x4d414e46` sets `local_20 = 1` and `0x4d414e4d` sets
+`local_20 = 0`, and the later `INDX` branch uses that same value as a section /
+subtable selector through expressions like `local_20 * 3`, `local_20 * 9`, and
+`local_20 * 8 - iVar3`. At the same time, the `MAN0 / MAN1 -> local_11 ->
+INDX` branch looks increasingly like a neighboring selector/object family
+rather than a texture-bank selector: it computes indices into other owner
+families and dispatches virtual calls, while the actual texture-bank writes
+remain isolated in the earlier `FGTS` copy loop where `+0x1A8` is always
+written and `+0x1C8` is only conditionally mirrored. So the active seam tightens
+again: the remaining shipped `_0` question is now source-object type and
+current-source/fallback selection, plus how the chosen source object's
+`FNAM/MNAM` section interacts with the paired race/default bank family and
+`MAN2` mirror-disable behavior, not another hidden `INDX`-driven bank picker.
+
+The next source-object pass makes the fallback side less abstract too. The
+current-source lifecycle artifacts still show `+0x1EC` as a whole selected
+source-object handle that is reset, copied, and clamped as a unit through
+`FUN_005721B0`, `FUN_00571CC0`, and `FUN_005711F0`. The new useful closure is
+on the fallback side: `FUN_00586740` first proves its donor is `TESRace` by
+RTTI and then copies `+0xB0/+0xB4/+0xB8/+0xB9` from that race object into the
+owner, while `FUN_00585630` seeds those same slots to zero/default during owner
+reset. `FUN_00584700` then updates `+0xB0 + sex*4` from `FUN_00419D10(...)`
+and stores the companion byte at `+0xB8 + sex`. In ordinary export,
+`FUN_00586EA0` chooses either current source `+0x1EC` or the sex-selected
+fallback handle from `+0xB0/+0xB8`, and only then forwards paired source-bank
+pointers from the chosen handle into the temporary export object. So the active
+seam tightens again: the next exact target is the concrete handle/class family
+behind `FUN_00419D10`, `FUN_00419CE0`, and `FUN_0056A310`, not another bank
+selector and not `INDX`.
+
+The next focused helper pass closes that trio structurally. `FUN_00419C80`,
+`FUN_00419CE0`, and `FUN_00419D10` are not the missing source-object layer at
+all; they are generic combo-box item-data helpers. `FUN_00419C80` scans combo
+item data for a matching existing handle, `FUN_00419CE0` returns combo item
+data for an explicit index, and `FUN_00419D10` returns combo item data for the
+current selection. That matches their concrete callsites: `FUN_005711F0` builds
+the current-source combo, finds the existing `+0x1EC` handle by item data, and
+if needed rewrites `+0x1EC` from the first combo item's data; `FUN_00584700`
+reads current combo item data and stores it into the fallback handle slot
+`+0xB0 + sex*4`, while the companion value stored into `+0xB8 + sex` is only a
+sideband byte/token. The compatibility side tightens too: `FUN_0056A310` does
+not do RTTI or class-name testing on candidates, it only checks membership in
+the owner's candidate list and then applies sex/index flag bits from
+`candidate + 0x78`. So the active seam moves one level deeper again: current
+`+0x1EC` and fallback `+0xB0` are now best read as the same abstract
+provider/source-object handle family, and the next exact target is the concrete
+object family behind those combo item-data handles and the owner-side candidate
+list at `owner->(+0x144)+0xA8`, not the helper trio that reads them from UI
+state.
+
+The next source-object identity pass materially reranks that branch. The helper
+side still stands, but the newly recovered object-family evidence shows the
+current/fallback source objects are primarily hair/eye wrapper families, not
+the strongest remaining shipped `_0` `FGTS` seam. `FUN_005704E0` now ties the
+fields down directly: current `+0x1EC` is validated through `FUN_0056A310` and
+logs `MASTERFILE: Hair '%s' ... is invalid ...` on failure, while current
+`+0x1F4` is validated through `FUN_00567420` and logs the parallel invalid eye
+color message. The compatibility gates are also concrete now: `FUN_0056A310`
+walks the owner-side candidate list at `owner->(+0x144)+0xA8` and applies sex
+bits at `candidate + 0x78`, while `FUN_00567420` walks the sibling
+`owner->(+0x144)+0xC4` family and applies bits at `candidate + 0x54`.
+Together with the combo helper path, that means the current/fallback source
+handles are best read as richer wrapper/provider objects used for hair/eye
+selection and validation, not as the core unresolved `FGTS` bank selector.
+
+This pass also corrects one of the larger assumptions in the earlier write-up.
+The ordinary export staging pointers at `temp + 0xD8` and `temp + 0xDC` are not
+clean proof that the chosen current/fallback handle carries the active
+`FGTS` banks. In `FUN_00586EA0`, the recovered decompile keeps `local_10 =
+owner`, and the later writes are `temp + 0xD8 = owner + sex * 0x120 + 0x1A4`
+and `temp + 0xDC = owner + sex * 0x120 + 0x1C8`. So the paired-bank pointers
+are owner sex-slice state, not a direct forwarding of bank payloads off the
+chosen handle. That materially demotes the whole current/fallback source-handle
+branch as the main shipped `_0` target and pushes the investigation back to the
+stronger seam: the race/default paired-bank importer and owner sex-slice bank
+routing around `FUN_00588520` and `FUN_00586EA0`, especially the exact meaning
+of the secondary `+0x1C8` bank and the effect of `MAN2`, `MANF/MNAM`, and the
+mirror guard.
+
+The next comparison pass makes that bank split more concrete. `FUN_00575D70`
+and `FUN_00588520` are no longer interchangeable “FGTS importers” in practice.
+`FUN_00575D70` is the NPC/current-source importer and only materializes the
+direct bank it is told to fill. `FUN_00588520` is the race/default importer and
+is the branch that conditionally mirrors into the sibling `+0x1C8` bank under
+`(local_20 == 0) || (local_9 != 0)`. So the secondary bank is still not a
+late export invention; it belongs to the race/default importer path itself.
+The export-side half is now consistent with that read too: `FUN_00586EA0`
+consumes owner-carried, sex-sliced bank pointers directly through
+`owner + sex * 0x120 + 0x1A4/+0x1C8`. That materially strengthens the current
+ranking: the leading shipped `_0` seam is now the race/default paired-bank
+import and owner sex-slice routing, not the current/fallback hair/eye wrapper
+family and not the plain NPC importer.
+
+The importer split is now strong enough to state explicitly. `FUN_00575D70`
+and `FUN_00588520` are not symmetric importers. `FUN_00575D70` only owns the
+primary NPC/current-source bank family: its recovered `FGGS/FGTS` path writes
+one target span family through `local_20 = in_ECX + (iVar5 + iVar4 * 2) * 8 +
+0x5a` with `iVar5 = 0`, and no mirrored sibling bank write appears in that
+branch. `FUN_00588520` is the only recovered importer that owns the secondary
+`+0x1C8` family at all: it always writes the primary bank and conditionally
+mirrors the same payload into the sibling bank when `(local_20 == 0) ||
+(local_9 != 0)` holds. That keeps the flag story aligned with the earlier
+rerank too: `MAN2` is still the strongest direct mirror-disable input through
+`local_9 = 0`, `MANF/MNAM` still behave like section/sex selector state through
+`local_20`, and `MAN0/MAN1` still look like `INDX` sideband inputs rather than
+direct texture-bank selectors.
+
+So the active shipped `_0` seam is tighter again. The remaining question is no
+longer whether the NPC importer secretly owns the second bank; it does not. The
+live branch is the race/default paired-bank family plus owner sex-slice
+forwarding: what the mirrored `+0x1C8` bank semantically represents, when
+`MAN2` suppresses it, and how that race/default bank family is later consumed
+through the owner sex-slice pointers that `FUN_00586EA0` forwards into the
+export staging object.
+
+The next semantic pass narrows that companion bank further. `+0x1C8` is now
+best read as an optional mirrored companion bank inside the race/default
+importer path, not an independently authored second `FGTS` payload. The reason
+is structural: in `FUN_00588520`, the primary bank is always written and the
+sibling bank is only written under the same float-payload loop when
+`(local_20 == 0) || (local_9 != 0)` holds. There is no second parse of a
+distinct `FGTS` payload before the sibling write. That keeps the flag story
+consistent too: `MAN2` remains the strongest mirror-suppression input through
+`local_9 = 0`, while `MANF/MNAM` still behave like section/sex selector state
+through `local_20`, and `MAN0/MAN1` still look like `INDX` sideband inputs
+rather than direct bank selectors.
+
+There is also a useful downstream clue now. The owner-span consumer artifact
+shows that the owner `sex * 0x120` slice contains a regular ladder of peer
+`0x24`-spaced span records, with `+0x1A4` and `+0x1C8` as neighboring late
+entries in that family, and `+0x1C8` is reached through its own peer case
+(`0x9E6`). So the companion bank is not dead redundant state even though it is
+born as a conditional mirror. That shifts the next exact target again: the
+best remaining question is no longer whether `+0x1C8` is “real,” but what
+downstream owner/export consumer gives that companion slot a distinct role
+after `FUN_00588520` has mirrored it.
+
+The next pass tightens that downstream clue into a structural correction.
+`FUN_00589F50` makes the owner `sex * 0x120` slice look like a complete
+eight-slot peer family rather than a loose pile of raw bank pointers. The
+message-to-slot mapping now reads:
+
+- `0x9E8 -> owner + sex * 0x120 + 0x0CC`
+- `0x9CA -> owner + sex * 0x120 + 0x0F0`
+- `0x9CE -> owner + sex * 0x120 + 0x114`
+- `0x9D0 -> owner + sex * 0x120 + 0x138`
+- `0x9D2 -> owner + sex * 0x120 + 0x15C`
+- `0x9D4 -> owner + sex * 0x120 + 0x180`
+- `0x9D6 -> owner + sex * 0x120 + 0x1A4`
+- `0x9E6 -> owner + sex * 0x120 + 0x1C8`
+
+and all of those peer slots dispatch through the same virtual message handler
+shape, `(**(code **)(*piVar8 + 0x1c))(param_1,0x111,param_3,param_4,param_5)`.
+That means the export-side writes in `FUN_00586EA0`:
+
+- `temp + 0xD8 = owner + sex * 0x120 + 0x1A4`
+- `temp + 0xDC = owner + sex * 0x120 + 0x1C8`
+
+are best read as forwarding addresses of peer slot objects from the owner sex
+slice, not raw float-bank payload pointers. So the remaining semantic split is
+now less likely to be a late export-time raw-bank switch and more likely to
+live in the slot-object contents or the shared downstream consumer of
+`temp + 0xD8/+0xDC`. That reranks the next target again: the cleanest branch is
+now the shared consumer side of those forwarded slot objects, with
+`FUN_00588520` still providing the importer-side provenance for how the
+companion `+0x1C8` slot gets mirrored in the first place.
+
+The next downstream pass narrows that again. I still do not have recovered
+evidence that ordinary export or the later owner-slice dispatch gives
+`+0x1C8` a distinct semantic handler from `+0x1A4`. In the later `case 2`
+owner-slice branch of `FUN_00589F50`, both land in the same peer-slot dispatch
+shape:
+
+- `0x9D6 -> owner + sex * 0x120 + 0x1A4`
+- `0x9E6 -> owner + sex * 0x120 + 0x1C8`
+- both then call `(**(code **)(*piVar8 + 0x1c))(param_1,0x111,param_3,param_4,param_5)`
+
+The first recovered asymmetry is earlier in the same function. In the
+non-`case 2` transient-provider branch, only:
+
+- `0x9D2`
+- `0x9D4`
+- `0x9D6`
+
+map into `in_ECX + 0x574 + (...) * 0x24`, while `0x9E6` has no recovered peer
+there. So the companion branch is now best read as a first-class owner-level
+peer slot with a stable control identity, but not one that currently has a
+recovered twin in the transient `0x574` provider family. The write-site scan
+also reinforces that identity: `FUN_00589420` seeds literal control ids into
+the sex slice, including `... + 0x1E8 = 0x9E6` beside `... + 0x1E4 = 0x9E5`.
+
+That changes the next target again. The best remaining question is no longer
+“which later export consumer treats `+0x1C8` specially?” It is “why does the
+companion slot exist as a full owner-level peer with its own control id, yet
+currently lack the recovered transient/provider twin that exists for the
+primary late slot at `+0x1A4`?” The cleanest next branch is now the
+constructor/producer side for those owner sex-slice slot objects, especially
+`FUN_00589420` and immediate neighboring setup code.
+
+The post-loop consumer reread corrects that rerank. `FUN_00690FF0` does give
+the forwarded owner-slot pair a concrete downstream meaning:
+
+- `temp + 0xD8 = owner + sex * 0x120 + 0x1A4`
+  - resolves a mesh path through provider `vfunc + 0x34`
+  - loads and attaches it under `FaceGenEyeLeft`
+- `temp + 0xDC = owner + sex * 0x120 + 0x1C8`
+  - resolves a mesh path through the same provider interface
+  - loads and attaches it under `FaceGenEyeRight`
+
+So the owner sex-slice `+0x1A4/+0x1C8` pair is best read as a left-eye /
+right-eye provider pair inside the model-provider family, not as a direct
+readout of raw importer-side `FGTS` bank semantics. The earlier
+`FUN_00589F50` asymmetry still matters as supporting structure:
+
+- `0x9D6 -> +0x1A4` currently has a recovered transient/provider-side twin in
+  the `0x574` family
+- `0x9E6 -> +0x1C8` currently does not
+
+But the stronger correction is that the real unresolved seam is now one level
+earlier again: the bridge, if any, from the importer-side race/default
+paired-bank state in `FUN_00588520` to these later eye-provider slots.
+
+The next pass sharpens that gap instead of reopening the downstream side.
+Subagent rereads over the owner/provider cluster show the per-sex `+0xCC`
+model-provider family is built, copied, and refreshed uniformly across all
+eight slots:
+
+- `FUN_00585630` seeds all eight slots through the same constructor/default
+  loop
+- `FUN_00586740` copies all eight slots through the same donor/provider copy
+  loop
+- `FUN_00584700` refreshes all eight slots through the same live update loop
+
+So there is still no recovered constructor/copy/update special case for late
+slots `6` or `7` that would explain the later `+0x1A4/+0x1C8` eye split by
+itself. That leaves the importer-side paired-bank family and the later
+eye-provider pair as two separate proven structures with an unresolved bridge
+between them. The best current local bridge candidate is `FUN_00589420`,
+because it seeds the late owner-side control ids (`0x9E5/0x9E6`) and then
+immediately takes `LEA ... +0x1C8`, but this still falls short of direct proof
+that it performs the importer-to-provider copy. The next exact target is now
+the first writer of owner sex-slice `+0x1A4/+0x1C8`, with `FUN_00589420` and
+its immediate neighboring setup code at the top of the list.
+
+The focused writer pass demotes that local candidate. `FUN_00589420` now
+decompiles cleanly as a late UI/provider refresh helper, not the missing
+importer bridge. In particular:
+
+- `FUN_00589050` is only the immediate late refresh helper:
+  ensure child `0x87F` exists if needed, force checkbox `0x3F6`, then call
+  `FUN_005880A0`
+- `FUN_00589420` `case 2` stamps late control ids into already-existing owner
+  slot records:
+  - `... + 0x1C0/0x1C4 = 0x9D5/0x9D6`
+  - `... + 0x1E4/0x1E8 = 0x9E5/0x9E6`
+- it also stamps ids into the transient `0x4CC/0x574/0x64C` families and the
+  `0x30C` peer family
+- after that it only refreshes existing slot objects through `vfunc + 0x24`
+  and repaints the dialog
+
+So this branch is now weaker as a shipped `_0` explanation. It was worth
+chasing because ordinary export really does consume the later owner sex-slice
+pair, but `FUN_00589420` itself only labels and refreshes that pair; it does
+not yet show how importer-side paired-bank source state would seed it. The
+next exact target therefore moves one level earlier again: the first
+writer/copy-import helper that populates owner `+0x1A4/+0x1C8` before this late
+refresh path runs.
+
+The next focused pass corrected another xref mistake around the earlier
+whole-owner copy helper. The previously-attributed `FUN_00586740` “caller”
+addresses `0x00586A2C`, `0x00586ABA`, `0x00586B8A`, and `0x00586BF5` are not
+recovered external callers at all. The new focused audit in
+`facegen_geck_provider_family_copy_callers.txt` shows they are ordinary
+internal calls inside `FUN_00586740` itself:
+
+- `0x00586A2C/0x00586ABA -> FUN_00405B40`
+- `0x00586B8A/0x00586BF5 -> FUN_008540A0(8)`
+
+So the old rerank “follow callers of `FUN_00586740`” is now demoted as another
+false lead. What remains solid is that `FUN_00586740` still RTTI-casts its
+donor to `TESRace` and still copies the full per-sex `+0xCC/+0x30C` provider
+family that contains the later eye-provider slots ordinary export consumes.
+The stronger next target is therefore earlier again: the seed path for those
+late `+0xCC` slots before `FUN_00586740` copies them, with the internal
+`FUN_00405B40` metadata-holder/path-copy subpath as the best current local
+bridge to inspect.
+
+The next narrowing pass held that line. The surrounding seed/copy/update
+helpers are still structurally uniform:
+
+- `FUN_00585630` seeds all eight `+0xCC` slots uniformly
+- `FUN_00586740` copies all eight slots uniformly from `TESRace`
+- `FUN_00584700` refreshes all eight slots uniformly and mainly updates
+  fallback selector state at `+0xB0/+0xB8`
+
+So there is still no recovered slot-6/7-specific constructor, copy, or update
+path for the later eye-provider pair. The only recovered slot-leaning
+distinction nearby is late UI/provider typing: `FUN_00584680` maps provider
+type `6 -> 0x646` and type `7 -> 0x645`. That is useful, but it is still not
+an earlier seed/copy split. So the branch tightens again: the best next target
+is now the concrete late slot-object family behind the inline `+0xCC` entries,
+or the still-missing bridge from importer-side paired-bank state in
+`FUN_00588520` into that provider family.
+
+The next writer-side scan tightened that branch by exclusion. There is still
+no recovered slot-6/7-specific seed path in the nearby owner-side helpers:
+
+- `FUN_00585630` stays a uniform default seeder for the per-sex `+0xCC` and
+  paired `+0x30C` families, while its visible hardcoded path defaults live in
+  the separate `0x4CC/0x574/0x64C` auxiliary families
+- `FUN_00584700` stays a uniform live updater, refreshing all eight
+  `+0xCC/+0x30C` entries through the same loop and then writing only the
+  fallback selector state at `+0xB0/+0xB8`
+
+So the local writer-side question is now much cleaner: we do not currently
+have a recovered hidden slot-6/7 special case in the obvious owner refresh
+layer. The stronger remaining branch is still earlier: importer-side
+paired-bank semantics in `FUN_00588520`, then the first bridge from that state
+into the copied `+0xCC/+0x30C` provider family.
+
+The write-side symmetry question around `FUN_00586000` is now also materially
+clearer. The recovered body is a real serializer for the same broad
+owner/provider record neighborhood that `FUN_00588520` parses: it emits
+`MANO`, `MANY`, `MAN2`, `VCTK`, `MAND`, `MANC`, `MANP`, `MANU`, `ATTR`,
+`MAN0`, `MAN1`, and `MANH`, and its two main table loops serialize per-sex
+`MANM/MANF` sections over `+0x30C` and `+0x4CC` using repeated `INDX` plus
+`MODL/MODT/MODD/ICON` style helpers. That establishes real write/read symmetry
+at the broad owner/provider serialization level. But it still does not recover
+the missing bridge we care about for shipped `_0`: the visible write-side loops
+do not show an explicit paired-bank float write at importer-side
+`+0x1A8/+0x1C8`, and they do not expose a slot-6/7-specific branch inside the
+`+0x30C` family. So `FUN_00586000` is best treated as partial serializer
+symmetry for the same record family, not as the direct write-side proof of how
+paired-bank importer state seeds the later provider family.
+
+The next symmetry pass closes more of that gap than the previous write-up gave
+it credit for. `FUN_00586000` and `FUN_00588520` now line up directly on the
+provider-table branch:
+
+- `FUN_00586000` writes `MAN0`, and inside each `MANM/MANF` sex subsection it
+  iterates the per-sex `+0x30C` peer table across `8` indexed slots, emitting
+  `INDX / MODL / MODT / MODD / ICON`
+- then it writes `MAN1`, and inside each `MANM/MANF` sex subsection it
+  serializes the auxiliary `+0x4CC/+0x574/+0x64C` families with the same broad
+  tagged asset pattern
+
+On the parse side, `FUN_00588520` now shows the matching switch/control state:
+
+- `MAN2 -> local_9 = 0`
+- `MAN0 -> local_11 = 1`
+- `MAN1 -> local_11 = 0`
+- `MANM / MANF -> local_20 = 0 / 1`
+
+And on `INDX` the parser now cleanly splits by that `MAN0/MAN1` selector:
+
+- if `local_11 != 0` (`MAN0`), it materializes the generic per-sex
+  `+0xCC/+0x30C` provider family directly through indexed expressions rooted at
+  `in_ECX[(...) * 9 + 0x33]` and `in_ECX[(...) * 7 + 0xC3]`, including
+  `FUN_00405B40(...)` on the `+0x30C` peer table
+- if `local_11 == 0` (`MAN1`), it instead targets the auxiliary
+  `+0x4CC/+0x574/+0x64C` families through the matching indexed expressions
+
+So the old “missing bridge from parsed state into the later provider family” is
+now mostly closed for the provider tables themselves: the bridge is the
+`MAN0/MAN1/INDX` parser path inside `FUN_00588520`, and the write-side
+counterpart is `FUN_00586000`. That reranks the branch again. Slots `6/7` are
+now best read as ordinary members of the generic `MAN0` provider family, only
+distinguished later by provider typing (`FUN_00584680`) and downstream eye
+consumption (`FUN_00690FF0 -> FaceGenEyeLeft / FaceGenEyeRight`), not by a
+recovered special importer-side copy path. The stronger remaining shipped `_0`
+seams move back toward importer-side `FGTS` / paired-bank provenance and
+first-span `FREGT003` content/apply fidelity.
+
+The next read tightens the importer-side paired-bank branch itself. The mirror
+guard in `FUN_00588520` is not just a generic enable/disable flag:
+
+- `MANM -> local_20 = 0`
+- `MANF -> local_20 = 1`
+- `MAN2 -> local_9 = 0`
+- default state before those tags is `local_20 = 0`, `local_9 = 1`
+
+So the recovered guard
+
+`(local_20 == 0) || (local_9 != 0)`
+
+behaves as:
+
+- the `MANM/MNAM` section always mirrors into the sibling `+0x1C8` bank
+- the `MANF/FNAM` section mirrors into `+0x1C8` only when `MAN2` did not clear
+  the side flag
+
+That is tighter than the earlier “sex-section selector plus mirror-disable
+flag” summary. The behavior is section-asymmetric, not just globally enabled or
+disabled.
+
+The surrounding race/default sideband tags also look cleaner now. Comparing the
+`FUN_00586000` serializer against the `FUN_00588520` parser shows:
+
+- `MANO -> +0x7A0`
+- `MANY -> +0x7A4`
+- `VCTK -> +0x798/+0x79C`
+- `MAND -> +0xB0/+0xB4`
+- `MANC -> +0xB8/+0xB9`
+- `MANP -> +0xBC`
+- `MANU -> +0xC0`
+
+So those tags are still important source/default selector state, but they are
+no longer good candidates for hidden paired-bank selection logic.
+
+What still holds is that importer-side `+0x1C8` remains a real float-bank
+sibling of `+0x1A8`, not generic provider metadata: it is allocated through the
+same `FUN_00573BA0` span path and written from the same decoded float payload
+loop before the separate `MAN0/MAN1/INDX` provider-table branch takes over. So
+the next exact decomp target, if this branch stays primary, is now the exact
+file/section ordering around `MANM/MANF` and `MAN2` in the race/default records
+that feed `FUN_00588520`, plus any recovered consumer that still uses
+source-object `+0x1A8/+0x1C8` directly before the later provider/eye plumbing
+takes over.
+
+One more reconciliation pass against the already-generated artifacts makes that
+branch slightly tighter without changing the overall ranking. `MAN2` still
+clearly clears `local_9`, but `local_9` now looks broader than a pure
+mirror-enable bit because the same flag also participates in the later
+`MAN0/INDX` remap path. So the safest wording is now:
+
+- `local_20` = per-sex subsection selector (`MANM -> 0`, `MANF -> 1`)
+- `local_9` = companion-side / subsection-layout flag with a direct
+  mirror-suppression effect on subsection `MANF`
+- importer-side `source + 0x1C8` still looks texture-bank-like because it is
+  allocated through the same `FUN_00573BA0` span path and written from the same
+  decoded float payload loop as `+0x1A8`
+
+That should also stay sharply separated from the later owner/provider
+`owner + sex * 0x120 + 0x1C8` slot, which existing downstream artifacts still
+place on the eye-provider path (`temp + 0xDC -> FaceGenEyeRight`). So if this
+paired-bank branch remains primary, the best next decomp target is the
+write-side record emitter adjacent to `FUN_00586000` that places the
+race/default float-bank payloads relative to `MAN2` and `MANM/MANF`, because
+that is now the cleanest way to resolve whether `MAN2` is suppressing only the
+subsection-1 mirror or a broader later layout mode.
+## 2026-04-03 writer-family slot map update
+
+- The raw pointer-table scan now confirms the current-source and race/default
+  neighborhoods are mirrored function tables rather than loose clusters.
+- The concrete mirrored slots are:
+  - current-source:
+    - `0x00D55184 -> FUN_00575D70` importer
+    - `0x00D55190 -> FUN_00572360` writer
+    - `0x00D551AC -> FUN_005704E0` trailing updater
+  - race/default:
+    - `0x00D56B7C -> FUN_00588520` importer
+    - `0x00D56B88 -> FUN_00586000` writer
+    - `0x00D56BA4 -> FUN_00584180` trailing updater
+- Newly resolved helper slots:
+  - `FUN_00573C50` is the current-source wrapper/destructor around
+    `FUN_005739D0`
+  - `FUN_005875D0` is the race/default wrapper/destructor around
+    `FUN_005873D0`
+  - `FUN_00585820` is the race/default provider-family destructor/release
+    helper
+  - `FUN_00584180` validates race defaults such as voice types and default hair
+    rather than writing `FGGS/FGGA/FGTS`
+  - `FUN_004FA790` and `FUN_004FCC20` are race-only dialog populate/apply
+    slots, not strong shipped `_0` write-side candidates
+- This materially strengthens the prior structural read that `FUN_00586000`
+  is the mirrored writer-slot peer to `FUN_00572360`.
+- So the strongest next write-side target remains `FUN_00586000` itself, or an
+  adjacent continuation in the same mirrored writer slot, not the race-only
+  trailing helper family.
+
+## 2026-04-03 mirrored writer tail note
+
+- The `FUN_008542C0` no-return warning is now effectively ruled out as the main
+  explanation for the missing race/default tail.
+- The updated raw caller audit now gives three direct pieces of evidence:
+  - `FUN_008542C0` itself ends with ordinary `RET 0x4`
+  - `FUN_00572360` continues after each `FUN_008542C0` free at:
+    - `0x00572578 -> 0x0057257D`
+    - `0x005725F8 -> 0x005725FD`
+    - `0x00572678 -> 0x0057267D`
+  - distinct caller `FUN_00694A70` also continues after its free at
+    `0x00694A80 -> 0x00694A85`
+- The same raw audit also shows the opposite result for `FUN_00586000`:
+  - its only `FUN_008542C0` callsite is `0x005863B3`
+  - the final instruction scan stops there
+  - no later instructions appear in the recovered function body
+- So the surviving write-side gap is no longer “maybe the rest of
+  `FUN_00586000` is hidden behind a fake no-return edge”.
+- It is now better ranked as:
+  - an adjacent continuation stage in the mirrored writer-slot neighborhood
+  - or a different race/default writer/helper path entirely
+
+## 2026-04-03 shared tail slot rerank and raw writer correction
+
+- The earlier “raw `FUN_00586000` really ends at `MANH`” read is now
+  superseded.
+- Local raw PE recheck confirms `FUN_00586000` itself continues past the
+  truncated Ghidra tail and emits:
+  - `ENAM`
+  - `MNAM/FNAM`
+  - `FGGS`
+  - `FGGA`
+  - `FGTS`
+  - `SNAM`
+- That materially demotes the shared tail slots after `FUN_00572360` /
+  `FUN_00586000` as primary candidates for a deferred `FGGS/FGGA/FGTS`
+  continuation.
+- The focused shared-tail slot pass now ranks them as:
+  - `FUN_004052D0`: weak generic virtual hook only (`vfunc + 0x40`)
+  - `FUN_004F7AF0`: weak generic guarded virtual hook only (`vfunc + 0x48`)
+  - `FUN_004F9760`, `FUN_004F7B70`: typed order/compatibility predicates
+  - `FUN_004FCA20`: metadata/copy-name helper
+  - `FUN_00405300`, `FUN_00405310`: race-only bit/flag accessors
+- So the stronger remaining write-side seam is back to importer-side paired-bank
+  population/selection around `FUN_00588520`, not the shared writer-tail slot
+  cluster.
+
+## 2026-04-03 writer/parser order symmetry rerank
+
+- Continuing from the maintained post-tail-correction state, the cleanest
+  comparison is now:
+  - writer-side `FUN_00586000` tail:
+    `ENAM -> MNAM/FNAM -> FGGS -> FGGA -> FGTS -> SNAM`
+  - parser-side `FUN_00588520` order-sensitive window:
+    - `ENAM` imports the eye list/family
+    - `MNAM/FNAM` set subsection selector `local_20`
+    - `FGGS/FGGA/FGTS` all route into `LAB_00588C06`
+    - `SNAM` is only a weak `FUN_004E1130()` tail read with no recovered
+      destination
+- That makes the remaining ambiguity parser-side, not writer-side:
+  - `MAN2` remains the strongest unresolved tag because it directly mutates
+    `local_9`
+  - `MNAM/FNAM` remain the active subsection/sex selectors
+  - `ENAM` is now structurally resolved enough to treat as orthogonal to the
+    bank-routing question
+  - `MANP/MANU` are still unresolved, but weaker than the
+    `MAN2 / MNAM-FNAM / SNAM` window because they currently look like sideband
+    scalar state
+- So the best next exact target is no longer an adjacent writer stage beside
+  `FUN_00586000`.
+- It is the parser-side flag lifetime and post-bank tail inside `FUN_00588520`,
+  specifically:
+  - `case MAN2`
+  - `case MNAM/FNAM`
+  - `LAB_00588C06`
+  - `case SNAM`
+
+## 2026-04-03 parser-side flag lifetime refinement
+
+The `FUN_00588520` flag split is tighter now. The maintained docs already had
+the broad read that `local_20` is the `MNAM/FNAM` sex selector and that
+`MAN2 -> local_9` controls the subsection-1 companion mirror. The new useful
+closure is the role of `local_11`: it is the separate `MAN0/MAN1` family/mode
+flag for the later `INDX` path.
+
+That matters because `local_9` does not globally affect every later indexed
+operation. The decompiled control flow only reuses it in the `local_11 != 0`
+branch, where the code first collapses `iVar3` through
+`(local_9 == 0) || (local_18 < 2)` and then remaps with `local_20 * 8 - iVar3`.
+By contrast, when `local_11 == 0`, the `INDX` path uses direct subsection
+expressions like `local_20 * 3` and `local_20 * 9` without that extra
+`local_9`-driven collapse.
+
+So the safest current interpretation is:
+- `local_20` = sex subsection selector
+- `local_11` = `MAN0/MAN1` family selector
+- `local_9` = companion-side / subsection-layout flag from `MAN2`
+
+The remaining exact seam in this window is now narrower than before:
+- what `SNAM` means after the bank writes
+- and whether the `local_11 != 0` remap path matters to shipped `_0`, or if
+  the shipped `_0` branch is mostly just the subsection-1 mirror suppression

@@ -105,6 +105,7 @@ internal static class EsmBrowserTreeBuilder
 
         var audioSubs = new List<(string Name, IList Records)>();
         if (result.Sounds.Count > 0) audioSubs.Add(("Sounds", result.Sounds));
+        if (result.MusicTypes.Count > 0) audioSubs.Add(("Music Types", result.MusicTypes));
         audioSubs.AddRange(BuildGenericSubcategories(byType,
             ("Acoustic Spaces", "ASPC"),
             ("Media Sets", "MSET")));
@@ -520,6 +521,12 @@ internal static class EsmBrowserTreeBuilder
 
             // Skip Cells list for WorldspaceRecord (shown as summary instead)
             if (record is WorldspaceRecord && prop.Name == "Cells")
+            {
+                continue;
+            }
+
+            // Skip complex sub-objects on PlacedReference that don't render well as flat properties
+            if (record is PlacedReference && prop.Name is "Bounds" or "StartingPosition" or "PackageStartLocation")
             {
                 continue;
             }

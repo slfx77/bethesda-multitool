@@ -225,6 +225,13 @@ public sealed partial class SingleFileTab
             PushUnifiedNav();
         }
 
+        // Dialogue records (DIAL/INFO) are only meaningfully viewable in the Dialogue Viewer —
+        // route there before falling through to the Data Browser tree.
+        if (TryNavigateToDialogueRecord(formId))
+        {
+            return;
+        }
+
         // Switch to Data Browser tab FIRST so progress bar is visible during loading
         if (!ReferenceEquals(SubTabView.SelectedItem, DataBrowserTab))
         {
@@ -260,12 +267,6 @@ public sealed partial class SingleFileTab
 
         if (_formIdNodeIndex == null || !_formIdNodeIndex.TryGetValue(formId, out var targetNode))
         {
-            // Try navigating to Dialogue Viewer if this is a dialogue record
-            if (TryNavigateToDialogueRecord(formId))
-            {
-                return;
-            }
-
             // Show brief status for records not in the data browser tree
             SelectedRecordTitle.Text = $"Record 0x{formId:X8} is not available in the Data Browser";
             return;

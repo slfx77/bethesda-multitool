@@ -618,8 +618,8 @@
           </Grid>
         </controls:TabViewItem>
 
-        <!--  Tab 5: NPC Browser  -->
-        <controls:TabViewItem x:Name="NpcBrowserTab" Header="NPCs" IsClosable="False">
+        <!--  Tab 5: NPC / Creature Browser  -->
+        <controls:TabViewItem x:Name="NpcBrowserTab" Header="Actors" IsClosable="False">
           <Grid Padding="0,8,0,0">
             <!--  Placeholder (shown before NPC data is loaded)  -->
             <StackPanel x:Name="NpcBrowserPlaceholder"

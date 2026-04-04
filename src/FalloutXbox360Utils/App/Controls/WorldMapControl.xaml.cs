@@ -577,7 +577,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                     : null;
                 HoverInfoText.Text = hitObj != null
                     ? $"{hitObj.RecordType}: {hoverName} at ({hitObj.X:F0}, {hitObj.Y:F0}, {hitObj.Z:F0})"
-                    : "";
+                    : FormatCellDisplayName(_selectedCell);
                 MapCanvas.Invalidate();
             }
 
@@ -661,6 +661,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         _selectedObject = null;
         SetCanvasMode(true);
 
+        HoverInfoText.Text = FormatCellDisplayName(cell);
+
         _cellHeightmapBitmap?.Dispose();
         _cellHeightmapBitmap = WorldMapCellDetailRenderer.BuildCellHeightmapBitmap(
             MapCanvas, cell, _currentDefaultWaterHeight, _currentColorScheme, _showWater);
@@ -670,6 +672,9 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             out _zoom, out _panOffset);
         MapCanvas.Invalidate();
     }
+
+    private static string FormatCellDisplayName(CellRecord cell) =>
+        cell.FullName ?? cell.EditorId ?? $"0x{cell.FormId:X8}";
 
     internal void NavigateToCellPublic(CellRecord cell) => NavigateToCell(cell);
 
@@ -770,17 +775,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         if (CellListView.SelectedItem is CellListItem item)
         {
             InspectCell?.Invoke(this, item.Cell);
-            ViewCellButton.Visibility = Visibility.Visible;
         }
-        else
-        {
-            ViewCellButton.Visibility = Visibility.Collapsed;
-        }
-    }
-
-    private void ViewCellButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (CellListView.SelectedItem is CellListItem item) NavigateToCell(item.Cell);
     }
 
     // ========================================================================

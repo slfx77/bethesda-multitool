@@ -25,9 +25,11 @@
     <!-- Enable deterministic builds -->
     <Deterministic>true</Deterministic>
 
-    <!-- Enable continuous analysis -->
-    <RunAnalyzersDuringBuild>true</RunAnalyzersDuringBuild>
+    <!-- Enable continuous analysis (use -p:SkipAnalyzers=true to disable for fast builds) -->
+    <RunAnalyzersDuringBuild Condition="'$(SkipAnalyzers)' != 'true'">true</RunAnalyzersDuringBuild>
+    <RunAnalyzersDuringBuild Condition="'$(SkipAnalyzers)' == 'true'">false</RunAnalyzersDuringBuild>
     <RunAnalyzersDuringLiveAnalysis>true</RunAnalyzersDuringLiveAnalysis>
+    <EnforceCodeStyleInBuild Condition="'$(SkipAnalyzers)' == 'true'">false</EnforceCodeStyleInBuild>
 
     <!-- Disable NuGet audit to avoid offline restore failures -->
     <NuGetAuditMode>None</NuGetAuditMode>

@@ -407,7 +407,7 @@ internal static class WorldMapHitTester
         var cellY = (int)Math.Floor(-worldPos.Y / CellWorldSize);
         if (cellGridLookup?.TryGetValue((cellX, cellY), out var cell) == true)
         {
-            var cellName = cell.EditorId ?? cell.FullName ?? "";
+            var cellName = cell.FullName ?? cell.EditorId ?? $"0x{cell.FormId:X8}";
             return new HoverResult(
                 $"Cell [{cellX}, {cellY}] {cellName} \u2014 {cell.PlacedObjects.Count} objects",
                 null, true);

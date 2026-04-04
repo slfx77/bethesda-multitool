@@ -117,17 +117,16 @@ internal static class DialogueConversationBuilder
         foreach (var response in info.Responses.Where(r => !string.IsNullOrEmpty(r.Text)))
         {
             hasResponseText = true;
-            var textBlock = DialogueTreeRenderer.CreateResponseText(response.Text!);
             if (onResponseSelected != null)
             {
-                textBlock.Tapped += (_, e) =>
-                {
-                    onResponseSelected(infoNode);
-                    e.Handled = true;
-                };
+                var button = DialogueTreeRenderer.CreateClickableResponseText(response.Text!);
+                button.Click += (_, _) => onResponseSelected(infoNode);
+                content.Children.Add(button);
             }
-
-            content.Children.Add(textBlock);
+            else
+            {
+                content.Children.Add(DialogueTreeRenderer.CreateResponseText(response.Text!));
+            }
         }
 
         if (!hasResponseText)
@@ -135,30 +134,28 @@ internal static class DialogueConversationBuilder
             var subtitle = subtitleLookup(info.FormId);
             if (subtitle?.Text != null)
             {
-                var textBlock = DialogueTreeRenderer.CreateResponseText(subtitle.Text, isSubtitleFallback: true);
                 if (onResponseSelected != null)
                 {
-                    textBlock.Tapped += (_, e) =>
-                    {
-                        onResponseSelected(infoNode);
-                        e.Handled = true;
-                    };
+                    var button = DialogueTreeRenderer.CreateClickableResponseText(
+                        subtitle.Text, isSubtitleFallback: true);
+                    button.Click += (_, _) => onResponseSelected(infoNode);
+                    content.Children.Add(button);
+                }
+                else
+                {
+                    content.Children.Add(
+                        DialogueTreeRenderer.CreateResponseText(subtitle.Text, isSubtitleFallback: true));
                 }
 
-                content.Children.Add(textBlock);
                 content.Children.Add(DialogueTreeRenderer.CreateSubtitleSourceLabel());
             }
             else if (onResponseSelected != null)
             {
                 // DMP files often lack response text — show placeholder
-                var textBlock = DialogueTreeRenderer.CreateResponseText(
+                var button = DialogueTreeRenderer.CreateClickableResponseText(
                     "[Response not present in file]", isSubtitleFallback: true);
-                textBlock.Tapped += (_, e) =>
-                {
-                    onResponseSelected(infoNode);
-                    e.Handled = true;
-                };
-                content.Children.Add(textBlock);
+                button.Click += (_, _) => onResponseSelected(infoNode);
+                content.Children.Add(button);
             }
         }
 
