@@ -1,7 +1,10 @@
+using System.Numerics;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Animation;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
 using Spectre.Console;
@@ -30,11 +33,12 @@ internal static class NpcRenderPipeline
             return;
         }
 
-        AnsiConsole.MarkupLine("Scanning NPC_ and RACE records...");
+        AnsiConsole.MarkupLine("Scanning NPC_, CREA, and RACE records...");
         var resolver = NpcAppearanceResolver.Build(esm.Data, esm.IsBigEndian);
         AnsiConsole.MarkupLine(
-            "Found [green]{0}[/] NPCs, [green]{1}[/] races",
+            "Found [green]{0}[/] NPCs, [green]{1}[/] creatures, [green]{2}[/] races",
             resolver.NpcCount,
+            resolver.CreatureCount,
             resolver.RaceCount);
 
         AnsiConsole.MarkupLine(
@@ -58,12 +62,25 @@ internal static class NpcRenderPipeline
         using var textureResolver = new NifTextureResolver(texturesBsaPaths);
         var pluginName = Path.GetFileName(settings.EsmPath);
         var appearances = ResolveAppearances(settings, resolver, pluginName);
-        if (appearances == null)
+        var creatures = ResolveCreatures(settings, resolver);
+
+        var npcCount = appearances?.Count ?? 0;
+        var creatureCount = creatures?.Count ?? 0;
+        if (npcCount == 0 && creatureCount == 0)
         {
+            if (settings.NpcFilters is { Length: > 0 })
+            {
+                AnsiConsole.MarkupLine(
+                    "[red]Error:[/] None of the specified NPCs or creatures found in ESM");
+                AnsiConsole.MarkupLine(
+                    "  Filters: {0}",
+                    string.Join(", ", settings.NpcFilters));
+            }
+
             return;
         }
 
-        if (settings.CompareRaceTextureFgts)
+        if (appearances != null && settings.CompareRaceTextureFgts)
         {
             appearances = BuildTextureComparisonVariants(appearances);
             AnsiConsole.MarkupLine(
@@ -82,26 +99,44 @@ internal static class NpcRenderPipeline
             return;
         }
 
-        if (gpuResources.Renderer != null)
+        // Render NPCs
+        if (appearances is { Count: > 0 })
         {
-            RenderNpcsPipelinedGpu(
-                appearances,
-                gpuResources.Renderer,
-                meshArchives,
-                textureResolver,
-                caches,
-                settings,
-                ref rendered,
-                ref skipped,
-                ref failed);
+            if (gpuResources.Renderer != null)
+            {
+                RenderNpcsPipelinedGpu(
+                    appearances,
+                    gpuResources.Renderer,
+                    meshArchives,
+                    textureResolver,
+                    caches,
+                    settings,
+                    ref rendered,
+                    ref skipped,
+                    ref failed);
+            }
+            else
+            {
+                RenderNpcsCpu(
+                    appearances,
+                    meshArchives,
+                    textureResolver,
+                    caches,
+                    settings,
+                    ref rendered,
+                    ref skipped,
+                    ref failed);
+            }
         }
-        else
+
+        // Render creatures
+        if (creatures is { Count: > 0 })
         {
-            RenderNpcsCpu(
-                appearances,
+            RenderCreaturesCpu(
+                creatures,
                 meshArchives,
                 textureResolver,
-                caches,
+                resolver,
                 settings,
                 ref rendered,
                 ref skipped,
@@ -336,12 +371,8 @@ internal static class NpcRenderPipeline
 
             if (filtered.Count == 0)
             {
-                AnsiConsole.MarkupLine(
-                    "[red]Error:[/] None of the specified NPCs found in ESM");
-                AnsiConsole.MarkupLine(
-                    "  Filters: {0}",
-                    string.Join(", ", settings.NpcFilters));
-                return null;
+                // Don't error — filters may match creatures instead
+                return new List<NpcAppearance>();
             }
 
             AnsiConsole.MarkupLine(
@@ -356,6 +387,396 @@ internal static class NpcRenderPipeline
             "Resolved [green]{0}[/] named NPCs",
             allNamed.Count);
         return allNamed;
+    }
+
+    private static List<(uint FormId, CreatureScanEntry Creature)>? ResolveCreatures(
+        NpcRenderSettings settings,
+        NpcAppearanceResolver resolver)
+    {
+        if (settings.DmpPath != null)
+        {
+            return null; // DMP mode doesn't support creatures yet
+        }
+
+        var allCreatures = resolver.GetAllCreatures();
+        if (allCreatures.Count == 0)
+        {
+            return null;
+        }
+
+        if (settings.NpcFilters is { Length: > 0 })
+        {
+            var formIdSet = new HashSet<uint>();
+            var editorIdSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var filter in settings.NpcFilters)
+            {
+                var formId = NpcTextureHelpers.ParseFormId(filter);
+                if (formId.HasValue)
+                {
+                    formIdSet.Add(formId.Value);
+                    continue;
+                }
+
+                editorIdSet.Add(filter.Trim());
+            }
+
+            var filtered = allCreatures
+                .Where(kvp =>
+                    formIdSet.Contains(kvp.Key) ||
+                    (kvp.Value.EditorId != null && editorIdSet.Contains(kvp.Value.EditorId)))
+                .Select(kvp => (kvp.Key, kvp.Value))
+                .ToList();
+
+            if (filtered.Count > 0)
+            {
+                AnsiConsole.MarkupLine(
+                    "Matched [green]{0}[/] creatures from filter(s)",
+                    filtered.Count);
+            }
+
+            return filtered.Count > 0 ? filtered : null;
+        }
+
+        // No filters: include all named creatures
+        var allNamed = allCreatures
+            .Where(kvp => !string.IsNullOrEmpty(kvp.Value.FullName))
+            .Select(kvp => (kvp.Key, kvp.Value))
+            .ToList();
+        if (allNamed.Count > 0)
+        {
+            AnsiConsole.MarkupLine(
+                "Resolved [green]{0}[/] named creatures",
+                allNamed.Count);
+        }
+
+        return allNamed.Count > 0 ? allNamed : null;
+    }
+
+    private static void RenderCreaturesCpu(
+        List<(uint FormId, CreatureScanEntry Creature)> creatures,
+        NpcMeshArchiveSet meshArchives,
+        NifTextureResolver textureResolver,
+        NpcAppearanceResolver resolver,
+        NpcRenderSettings settings,
+        ref int rendered,
+        ref int skipped,
+        ref int failed)
+    {
+        var views = settings.Camera.ResolveViews(90f);
+
+        foreach (var (formId, creature) in creatures)
+        {
+            try
+            {
+                var model = BuildCreatureModel(creature, meshArchives, textureResolver, resolver, settings);
+                foreach (var (suffix, azimuth, elevation) in views)
+                {
+                    SpriteResult? result = null;
+                    if (model is { HasGeometry: true })
+                    {
+                        var renderModel = views.Length > 1
+                            ? NpcMeshHelpers.DeepCloneModel(model)
+                            : model;
+                        result = NifSpriteRenderer.Render(
+                            renderModel,
+                            textureResolver,
+                            1.0f,
+                            32,
+                            settings.SpriteSize,
+                            azimuth,
+                            elevation,
+                            settings.SpriteSize);
+                    }
+
+                    SaveCreatureResult(
+                        formId,
+                        creature,
+                        result,
+                        settings,
+                        creatures.Count,
+                        ref rendered,
+                        ref skipped,
+                        ref failed,
+                        suffix);
+                }
+            }
+            catch (Exception ex)
+            {
+                failed++;
+                AnsiConsole.MarkupLine(
+                    "[red]FAIL:[/] 0x{0:X8} {1}: {2}",
+                    formId,
+                    creature.EditorId ?? "?",
+                    Markup.Escape(ex.Message));
+            }
+        }
+    }
+
+    private static NifRenderableModel? BuildCreatureModel(
+        CreatureScanEntry creature,
+        NpcMeshArchiveSet meshArchives,
+        NifTextureResolver textureResolver,
+        NpcAppearanceResolver resolver,
+        NpcRenderSettings settings)
+    {
+        if (creature.SkeletonPath == null || creature.BodyModelPaths is not { Length: > 0 })
+        {
+            return null;
+        }
+
+        var skeletonNifPath = creature.SkeletonPath.StartsWith("meshes\\", StringComparison.OrdinalIgnoreCase)
+            ? creature.SkeletonPath
+            : "meshes\\" + creature.SkeletonPath;
+
+        // Load skeleton with idle animation. Fallback chain:
+        // 1. KFFZ from ESM → 2. locomotion/mtidle.kf → 3. skeleton embedded sequences
+        // 4. per-node NiTransformControllers → 5. idleanims/ directory
+        var idleAnimPath = settings.AnimOverride ?? creature.ResolveIdleAnimationPath();
+        NpcSkeletonLoader.LoadSkeletonBones(
+            skeletonNifPath,
+            meshArchives,
+            settings.BindPose,
+            out var boneCache,
+            out _,
+            idleAnimPath);
+
+        // If still in bind pose, try additional fallbacks
+        if (boneCache != null && !settings.BindPose)
+        {
+            var skelRaw = NpcMeshHelpers.LoadNifRawFromBsa(skeletonNifPath, meshArchives);
+            if (skelRaw != null)
+            {
+                var bindPoseBones = NifGeometryExtractor.ExtractNamedBoneTransforms(
+                    skelRaw.Value.Data, skelRaw.Value.Info);
+                // Check if skeleton loader actually applied idle overrides.
+                // Use threshold comparison since re-extraction can have float imprecision.
+                var hasIdlePose = false;
+                foreach (var (name, idleTransform) in boneCache)
+                {
+                    if (bindPoseBones.TryGetValue(name, out var bindTransform))
+                    {
+                        var diff = (idleTransform.Translation - bindTransform.Translation).Length();
+                        if (diff > 0.1f)
+                        {
+                            hasIdlePose = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!hasIdlePose)
+                {
+                    // No idle from skeleton loader — try additional fallbacks
+                    // Fallback 4: per-node NiTransformControllers
+                    var nodeOverrides = NifNodeControllerPoseReader.Parse(
+                        skelRaw.Value.Data, skelRaw.Value.Info);
+                    if (nodeOverrides is { Count: > 0 })
+                    {
+                        boneCache = NifGeometryExtractor.ExtractNamedBoneTransforms(
+                            skelRaw.Value.Data, skelRaw.Value.Info, nodeOverrides);
+                    }
+
+                    // Fallback 5: try candidate KFs in skeleton directory.
+                    // Some creatures have no KFFZ and no mtidle.kf, but have
+                    // special idle or locomotion animations that give an upright pose.
+                    var skelDir = skeletonNifPath.Replace(
+                        "skeleton.nif", "", StringComparison.OrdinalIgnoreCase);
+                    string[] candidateIdleKfs =
+                    [
+                        "idleanims\\specialidle_toungehang.kf",
+                        "idleanims\\specialidle_sniff.kf",
+                        "idleanims\\mtidle.kf",
+                        "locomotion\\mtforward.kf" // walking pose — upright at least
+                    ];
+                    foreach (var candidateKf in candidateIdleKfs)
+                    {
+                        var kfPath = skelDir + candidateKf;
+                        var idleAnimsKf = NpcMeshHelpers.LoadNifRawFromBsa(
+                            kfPath, meshArchives, skipConversion: true);
+                        if (idleAnimsKf != null)
+                        {
+                            var animOverrides = NifAnimationParser.ParseIdlePoseOverrides(
+                                idleAnimsKf.Value.Data, idleAnimsKf.Value.Info);
+                            if (animOverrides is { Count: > 0 })
+                            {
+                                boneCache = NifGeometryExtractor.ExtractNamedBoneTransforms(
+                                    skelRaw.Value.Data, skelRaw.Value.Info, animOverrides);
+                                    break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        var skeletonDirectory = Path.GetDirectoryName(skeletonNifPath);
+        var bodyModel = new NifRenderableModel();
+
+        // Get head bone world transform for rigid mesh attachment (eyes, brain, etc.)
+        // Use full transform (rotation + translation) since rigid meshes are authored
+        // in head-local space and need the head's orientation applied.
+        Matrix4x4? headBoneTransform = null;
+        if (boneCache != null && boneCache.TryGetValue("Bip01 Head", out var headBoneWorld))
+        {
+            headBoneTransform = headBoneWorld;
+        }
+
+        foreach (var bodyPath in creature.BodyModelPaths)
+        {
+            string fullBodyPath;
+            if (bodyPath.Contains('\\') || bodyPath.Contains('/'))
+            {
+                fullBodyPath = bodyPath.StartsWith("meshes\\", StringComparison.OrdinalIgnoreCase)
+                    ? bodyPath
+                    : "meshes\\" + bodyPath;
+            }
+            else if (!string.IsNullOrEmpty(skeletonDirectory))
+            {
+                fullBodyPath = Path.Combine(skeletonDirectory, bodyPath);
+            }
+            else
+            {
+                fullBodyPath = "meshes\\" + bodyPath;
+            }
+
+            var raw = NpcMeshHelpers.LoadNifRawFromBsa(fullBodyPath, meshArchives);
+            if (raw == null)
+            {
+                continue;
+            }
+
+            var partModel = NifGeometryExtractor.Extract(
+                raw.Value.Data,
+                raw.Value.Info,
+                textureResolver,
+                externalBoneTransforms: boneCache,
+                useDualQuaternionSkinning: true);
+            if (partModel == null || !partModel.HasGeometry)
+            {
+                continue;
+            }
+
+            // Rigid (unskinned) meshes are likely authored in head-local space
+            // (eyes, brain dome, etc.). Attach to Bip01 Head using translation only
+            // (matches NifExportSceneBuilder.BuildCreature logic).
+            var attachRigidToHead = !partModel.WasSkinned && headBoneTransform.HasValue;
+
+            foreach (var sub in partModel.Submeshes)
+            {
+                if (attachRigidToHead)
+                {
+                    NpcRenderHelpers.TransformSubmesh(sub, headBoneTransform!.Value);
+                }
+
+                bodyModel.Submeshes.Add(sub);
+                bodyModel.ExpandBounds(sub.Positions);
+            }
+
+            if (partModel.WasSkinned)
+            {
+                bodyModel.WasSkinned = true;
+            }
+        }
+
+        // Attach weapon if creature has one in inventory
+        if (!settings.NoWeapon && creature.InventoryItems != null && boneCache != null)
+        {
+            string? weaponMeshPath = null;
+            foreach (var item in creature.InventoryItems)
+            {
+                weaponMeshPath = resolver.ResolveWeaponMeshPath(item.ItemFormId);
+                if (weaponMeshPath != null) break;
+            }
+
+            if (weaponMeshPath != null && boneCache.TryGetValue("Weapon", out var weaponBoneTransform))
+            {
+                var weaponNifPath = weaponMeshPath.StartsWith("meshes\\", StringComparison.OrdinalIgnoreCase)
+                    ? weaponMeshPath
+                    : "meshes\\" + weaponMeshPath;
+                var weaponRaw = NpcMeshHelpers.LoadNifRawFromBsa(weaponNifPath, meshArchives);
+                if (weaponRaw != null)
+                {
+                    var weaponModel = NifGeometryExtractor.Extract(
+                        weaponRaw.Value.Data, weaponRaw.Value.Info, textureResolver);
+                    if (weaponModel is { HasGeometry: true })
+                    {
+                        foreach (var sub in weaponModel.Submeshes)
+                        {
+                            NpcRenderHelpers.TransformSubmesh(sub, weaponBoneTransform);
+                            bodyModel.Submeshes.Add(sub);
+                            bodyModel.ExpandBounds(sub.Positions);
+                        }
+                    }
+                }
+            }
+        }
+
+        return bodyModel.HasGeometry ? bodyModel : null;
+    }
+
+    private static void SaveCreatureResult(
+        uint formId,
+        CreatureScanEntry creature,
+        SpriteResult? result,
+        NpcRenderSettings settings,
+        int totalCount,
+        ref int rendered,
+        ref int skipped,
+        ref int failed,
+        string viewSuffix = "")
+    {
+        if (result == null)
+        {
+            skipped++;
+            if (settings.NpcFilters != null)
+            {
+                AnsiConsole.MarkupLine(
+                    "[yellow]Skipped:[/] 0x{0:X8} {1} -- no geometry",
+                    formId,
+                    creature.FullName ?? creature.EditorId ?? "unknown");
+            }
+
+            return;
+        }
+
+        var name = creature.EditorId ?? $"{formId:X8}";
+        var fileName = $"{name}{viewSuffix}.png";
+        var outputPath = Path.Combine(settings.OutputDir, fileName);
+        var expectedLength = result.Width * result.Height * 4;
+
+        if (result.Pixels.Length != expectedLength)
+        {
+            failed++;
+            AnsiConsole.MarkupLine(
+                "[red]FAIL:[/] 0x{0:X8} {1}: pixel buffer mismatch ({2} bytes, expected {3} for {4}x{5})",
+                formId,
+                creature.EditorId ?? "?",
+                result.Pixels.Length,
+                expectedLength,
+                result.Width,
+                result.Height);
+            return;
+        }
+
+        PngWriter.SaveRgba(
+            result.Pixels,
+            result.Width,
+            result.Height,
+            outputPath);
+        rendered++;
+
+        if (settings.NpcFilters != null || totalCount <= 20)
+        {
+            AnsiConsole.MarkupLine(
+                "[green]OK:[/] 0x{0:X8} {1} ({2}) -> {3} ({4}x{5})",
+                formId,
+                Markup.Escape(creature.FullName ?? "?"),
+                Markup.Escape(creature.CreatureTypeName),
+                fileName,
+                result.Width,
+                result.Height);
+        }
     }
 
     private static void RenderNpcsPipelinedGpu(

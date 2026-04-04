@@ -2,6 +2,7 @@ using FalloutXbox360Utils.CLI.Rendering.Gltf;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
 using Spectre.Console;
@@ -34,8 +35,16 @@ internal static class NpcExportPipeline
         var resolver = NpcAppearanceResolver.Build(esm.Data, esm.IsBigEndian);
         var pluginName = Path.GetFileName(settings.EsmPath);
         var appearances = ResolveAppearances(settings, resolver, pluginName);
-        if (appearances == null)
+        var creatures = ResolveCreatures(settings, resolver);
+
+        if ((appearances == null || appearances.Count == 0) &&
+            (creatures == null || creatures.Count == 0))
         {
+            if (settings.NpcFilters is { Length: > 0 })
+            {
+                AnsiConsole.MarkupLine("[red]Error:[/] None of the specified NPCs or creatures found in ESM");
+            }
+
             return;
         }
 
@@ -55,52 +64,111 @@ internal static class NpcExportPipeline
         var skipped = 0;
         var failed = 0;
 
-        foreach (var npc in appearances)
+        // Export NPCs
+        if (appearances != null)
         {
-            try
+            foreach (var npc in appearances)
             {
-                var scene = NpcExportSceneBuilder.Build(
-                    npc,
-                    meshArchives,
-                    textureResolver,
-                    egmCache,
-                    egtCache,
-                    settings);
-                if (scene == null || scene.MeshParts.Count == 0)
+                try
                 {
-                    skipped++;
-                    continue;
+                    var scene = NpcExportSceneBuilder.Build(
+                        npc,
+                        meshArchives,
+                        textureResolver,
+                        egmCache,
+                        egtCache,
+                        settings);
+                    if (scene == null || scene.MeshParts.Count == 0)
+                    {
+                        skipped++;
+                        continue;
+                    }
+
+                    var outputPath = Path.Combine(
+                        settings.OutputDir,
+                        NpcExportFileNaming.BuildFileName(npc));
+                    NpcGlbWriter.Write(scene, textureResolver, outputPath);
+                    GltfValidatorRunner.ValidateOrThrow(outputPath);
+                    textureResolver.EvictTexture(NpcTextureHelpers.BuildNpcFaceEgtTextureKey(npc));
+                    exported++;
+
+                    if (settings.NpcFilters != null || appearances.Count <= 20)
+                    {
+                        AnsiConsole.MarkupLine(
+                            "[green]OK:[/] 0x{0:X8} {1} -> {2}",
+                            npc.NpcFormId,
+                            npc.FullName ?? npc.EditorId ?? "?",
+                            Path.GetFileName(outputPath));
+                    }
                 }
-
-                var outputPath = Path.Combine(
-                    settings.OutputDir,
-                    NpcExportFileNaming.BuildFileName(npc));
-                NpcGlbWriter.Write(scene, textureResolver, outputPath);
-                GltfValidatorRunner.ValidateOrThrow(outputPath);
-                textureResolver.EvictTexture(NpcTextureHelpers.BuildNpcFaceEgtTextureKey(npc));
-                exported++;
-
-                if (settings.NpcFilters != null || appearances.Count <= 20)
+                catch (Exception ex)
                 {
+                    failed++;
                     AnsiConsole.MarkupLine(
-                        "[green]OK:[/] 0x{0:X8} {1} -> {2}",
+                        "[red]FAIL:[/] 0x{0:X8} {1}: {2}",
                         npc.NpcFormId,
-                        npc.FullName ?? npc.EditorId ?? "?",
+                        npc.EditorId ?? "?",
+                        Markup.Escape(ex.Message));
+                }
+                finally
+                {
+                    textureResolver.EvictTexture(NpcTextureHelpers.BuildNpcFaceEgtTextureKey(npc));
+                }
+            }
+        }
+
+        // Export creatures
+        if (creatures != null)
+        {
+            foreach (var (formId, creature) in creatures)
+            {
+                try
+                {
+                    string? weaponMeshPath = null;
+                    if (creature.InventoryItems != null)
+                    {
+                        foreach (var item in creature.InventoryItems)
+                        {
+                            weaponMeshPath = resolver.ResolveWeaponMeshPath(item.ItemFormId);
+                            if (weaponMeshPath != null) break;
+                        }
+                    }
+
+                    var scene = NifExportSceneBuilder.BuildCreature(
+                        creature.SkeletonPath!,
+                        creature.BodyModelPaths!,
+                        meshArchives,
+                        settings.BindPose,
+                        creature.ResolveIdleAnimationPath(),
+                        weaponMeshPath);
+                    if (scene == null || scene.MeshParts.Count == 0)
+                    {
+                        skipped++;
+                        continue;
+                    }
+
+                    var name = creature.EditorId ?? $"{formId:X8}";
+                    var outputPath = Path.Combine(settings.OutputDir, $"{name}.glb");
+                    NpcGlbWriter.Write(scene, textureResolver, outputPath);
+                    GltfValidatorRunner.ValidateOrThrow(outputPath);
+                    exported++;
+
+                    AnsiConsole.MarkupLine(
+                        "[green]OK:[/] 0x{0:X8} {1} [{2}] -> {3}",
+                        formId,
+                        creature.FullName ?? "?",
+                        creature.CreatureTypeName,
                         Path.GetFileName(outputPath));
                 }
-            }
-            catch (Exception ex)
-            {
-                failed++;
-                AnsiConsole.MarkupLine(
-                    "[red]FAIL:[/] 0x{0:X8} {1}: {2}",
-                    npc.NpcFormId,
-                    npc.EditorId ?? "?",
-                    Markup.Escape(ex.Message));
-            }
-            finally
-            {
-                textureResolver.EvictTexture(NpcTextureHelpers.BuildNpcFaceEgtTextureKey(npc));
+                catch (Exception ex)
+                {
+                    failed++;
+                    AnsiConsole.MarkupLine(
+                        "[red]FAIL:[/] 0x{0:X8} {1}: {2}",
+                        formId,
+                        creature.EditorId ?? "?",
+                        Markup.Escape(ex.Message));
+                }
             }
         }
 
@@ -198,15 +266,59 @@ internal static class NpcExportPipeline
                     formIdSet.Contains(appearance.NpcFormId) ||
                     (appearance.EditorId != null && editorIdSet.Contains(appearance.EditorId)))
                 .ToList();
-            if (filtered.Count == 0)
-            {
-                AnsiConsole.MarkupLine("[red]Error:[/] None of the specified NPCs found in ESM");
-                return null;
-            }
-
+            // Don't error if no NPCs — filters may match creatures instead
             return filtered;
         }
 
         return resolver.ResolveAllHeadOnly(pluginName, true);
+    }
+
+    private static List<(uint FormId, CreatureScanEntry Creature)>? ResolveCreatures(
+        NpcExportSettings settings,
+        NpcAppearanceResolver resolver)
+    {
+        if (settings.DmpPath != null)
+        {
+            return null;
+        }
+
+        var allCreatures = resolver.GetAllCreatures();
+        if (allCreatures.Count == 0)
+        {
+            return null;
+        }
+
+        if (settings.NpcFilters is { Length: > 0 })
+        {
+            var formIdSet = new HashSet<uint>();
+            var editorIdSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var filter in settings.NpcFilters)
+            {
+                var formId = NpcTextureHelpers.ParseFormId(filter);
+                if (formId.HasValue)
+                {
+                    formIdSet.Add(formId.Value);
+                    continue;
+                }
+
+                editorIdSet.Add(filter.Trim());
+            }
+
+            var filtered = allCreatures
+                .Where(kvp =>
+                    formIdSet.Contains(kvp.Key) ||
+                    (kvp.Value.EditorId != null && editorIdSet.Contains(kvp.Value.EditorId)))
+                .Select(kvp => (kvp.Key, kvp.Value))
+                .ToList();
+
+            return filtered.Count > 0 ? filtered : null;
+        }
+
+        // No filters: include all named creatures
+        return allCreatures
+            .Where(kvp => !string.IsNullOrEmpty(kvp.Value.FullName))
+            .Select(kvp => (kvp.Key, kvp.Value))
+            .ToList();
     }
 }
