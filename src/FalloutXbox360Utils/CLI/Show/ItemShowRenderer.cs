@@ -5,12 +5,9 @@ using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI.Show;
 
-/// <summary>
-///     Show renderers for item record types: WEAP, ARMO, RCPE, BOOK.
-/// </summary>
-internal static class ItemShowRenderer
+internal sealed class WeaponShowRenderer : IRecordDisplayRenderer
 {
-    internal static bool TryShowWeapon(RecordCollection records, FormIdResolver _,
+    public bool TryShow(RecordCollection records, FormIdResolver resolver,
         uint? formId, string? editorId)
     {
         var weapon = records.Weapons.FirstOrDefault(r =>
@@ -28,6 +25,7 @@ internal static class ItemShowRenderer
             $"[cyan]Name:[/]      {Markup.Escape(weapon.FullName ?? "(none)")}",
             $"[cyan]Type:[/]      {weapon.WeaponTypeName}",
             $"[cyan]Equip:[/]     {weapon.EquipmentTypeName}",
+            $"[cyan]Skill:[/]     {resolver.GetActorValueName((int)weapon.Skill) ?? $"AV#{weapon.Skill}"}",
             $"[cyan]Damage:[/]    {weapon.Damage}",
             $"[cyan]Crit %:[/]    {weapon.CriticalChance:P0}",
             $"[cyan]Crit Dmg:[/]  {weapon.CriticalDamage}",
@@ -36,6 +34,16 @@ internal static class ItemShowRenderer
             $"[cyan]Value:[/]     {weapon.Value}",
             $"[cyan]Health:[/]    {weapon.Health}"
         };
+
+        if (weapon.StrengthRequirement > 0)
+        {
+            lines.Add($"[cyan]Str Req:[/]   {weapon.StrengthRequirement}");
+        }
+
+        if (weapon.SkillRequirement > 0)
+        {
+            lines.Add($"[cyan]Skill Req:[/] {weapon.SkillRequirement}");
+        }
 
         var panel = new Panel(string.Join("\n", lines))
         {
@@ -46,7 +54,11 @@ internal static class ItemShowRenderer
         return true;
     }
 
-    internal static bool TryShowArmor(RecordCollection records, FormIdResolver _,
+}
+
+internal sealed class ArmorShowRenderer : IRecordDisplayRenderer
+{
+    public bool TryShow(RecordCollection records, FormIdResolver _,
         uint? formId, string? editorId)
     {
         var armor = records.Armor.FirstOrDefault(r =>
@@ -77,7 +89,11 @@ internal static class ItemShowRenderer
         return true;
     }
 
-    internal static bool TryShowRecipe(RecordCollection records, FormIdResolver resolver,
+}
+
+internal sealed class RecipeShowRenderer : IRecordDisplayRenderer
+{
+    public bool TryShow(RecordCollection records, FormIdResolver resolver,
         uint? formId, string? editorId)
     {
         var recipe = records.Recipes.FirstOrDefault(r =>
@@ -140,7 +156,11 @@ internal static class ItemShowRenderer
         return true;
     }
 
-    internal static bool TryShowBook(RecordCollection records, FormIdResolver resolver,
+}
+
+internal sealed class BookShowRenderer : IRecordDisplayRenderer
+{
+    public bool TryShow(RecordCollection records, FormIdResolver resolver,
         uint? formId, string? editorId)
     {
         var book = records.Books.FirstOrDefault(r =>

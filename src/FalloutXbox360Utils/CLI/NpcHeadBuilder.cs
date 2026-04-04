@@ -552,23 +552,6 @@ internal static class NpcHeadBuilder
                     sub.DiffuseTexturePath = npc.EyeTexturePath;
             }
 
-            // Apply EGT texture morphs to eye meshes.
-            if (!s.NoEgt && usedBaseRaceMesh && npc.FaceGenTextureCoeffs != null)
-            {
-                var eyeEgtPath = Path.ChangeExtension(eyeNifPath, ".egt");
-                var eyeBaseName = Path.GetFileNameWithoutExtension(eyeNifPath);
-                foreach (var sub in eyeModel.Submeshes)
-                {
-                    if (sub.DiffuseTexturePath == null) continue;
-                    var morphedKey = NpcMeshHelpers.ApplyBodyEgtMorph(
-                        eyeEgtPath, sub.DiffuseTexturePath, npc.FaceGenTextureCoeffs,
-                        npc.NpcFormId, eyeBaseName!, npc.RenderVariantLabel,
-                        meshArchives, textureResolver, egtCache);
-                    if (morphedKey != null)
-                        sub.DiffuseTexturePath = morphedKey;
-                }
-            }
-
             // Merge eye submeshes into head model.
             foreach (var sub in eyeModel.Submeshes)
             {

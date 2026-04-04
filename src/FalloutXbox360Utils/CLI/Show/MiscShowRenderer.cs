@@ -5,12 +5,9 @@ using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI.Show;
 
-/// <summary>
-///     Show renderers for miscellaneous record types: SOUN, EXPL, MESG, CHAL, and generic fallback.
-/// </summary>
-internal static class MiscShowRenderer
+internal sealed class SoundShowRenderer : IRecordDisplayRenderer
 {
-    internal static bool TryShowSound(RecordCollection records, FormIdResolver _,
+    public bool TryShow(RecordCollection records, FormIdResolver _,
         uint? formId, string? editorId)
     {
         var snd = records.Sounds.FirstOrDefault(r =>
@@ -58,8 +55,45 @@ internal static class MiscShowRenderer
         AnsiConsole.Write(panel);
         return true;
     }
+}
 
-    internal static bool TryShowExplosion(RecordCollection records, FormIdResolver resolver,
+internal sealed class MusicTypeShowRenderer : IRecordDisplayRenderer
+{
+    public bool TryShow(RecordCollection records, FormIdResolver _,
+        uint? formId, string? editorId)
+    {
+        var musc = records.MusicTypes.FirstOrDefault(r =>
+            ShowHelpers.Matches(r, formId, editorId, m => m.FormId, m => m.EditorId));
+        if (musc == null)
+        {
+            return false;
+        }
+
+        AnsiConsole.WriteLine();
+        var lines = new List<string>
+        {
+            $"[cyan]FormID:[/]       0x{musc.FormId:X8}",
+            $"[cyan]EditorID:[/]     {Markup.Escape(musc.EditorId ?? "(none)")}",
+            $"[cyan]File:[/]         {Markup.Escape(musc.FileName ?? "(none)")}"
+        };
+
+        if (musc.Attenuation != 0)
+        {
+            lines.Add($"[cyan]Attenuation:[/]  {musc.Attenuation:F2} dB");
+        }
+
+        var panel = new Panel(string.Join("\n", lines))
+        {
+            Header = new PanelHeader($"[bold]MUSC[/] {Markup.Escape(musc.EditorId ?? "")}")
+        };
+        AnsiConsole.Write(panel);
+        return true;
+    }
+}
+
+internal sealed class ExplosionShowRenderer : IRecordDisplayRenderer
+{
+    public bool TryShow(RecordCollection records, FormIdResolver resolver,
         uint? formId, string? editorId)
     {
         var expl = records.Explosions.FirstOrDefault(r =>
@@ -89,7 +123,6 @@ internal static class MiscShowRenderer
                 $"  [cyan]Flags:[/]     {FlagRegistry.DecodeFlagNamesWithHex(expl.Flags, FlagRegistry.ExplosionFlags)}");
         }
 
-        // FormID references
         void AddRef(string label, uint fid)
         {
             if (fid != 0)
@@ -119,8 +152,11 @@ internal static class MiscShowRenderer
         AnsiConsole.Write(panel);
         return true;
     }
+}
 
-    internal static bool TryShowMessage(RecordCollection records, FormIdResolver resolver,
+internal sealed class MessageShowRenderer : IRecordDisplayRenderer
+{
+    public bool TryShow(RecordCollection records, FormIdResolver resolver,
         uint? formId, string? editorId)
     {
         var msg = records.Messages.FirstOrDefault(r =>
@@ -197,8 +233,11 @@ internal static class MiscShowRenderer
         AnsiConsole.Write(panel);
         return true;
     }
+}
 
-    internal static bool TryShowChallenge(RecordCollection records, FormIdResolver resolver,
+internal sealed class ChallengeShowRenderer : IRecordDisplayRenderer
+{
+    public bool TryShow(RecordCollection records, FormIdResolver resolver,
         uint? formId, string? editorId)
     {
         var chal = records.Challenges.FirstOrDefault(r =>
@@ -260,61 +299,6 @@ internal static class MiscShowRenderer
         {
             Header = new PanelHeader(
                 $"[bold]CHAL[/] {Markup.Escape(chal.EditorId ?? "")} — {Markup.Escape(chal.FullName ?? "")}")
-        };
-        AnsiConsole.Write(panel);
-        return true;
-    }
-
-    internal static bool TryShowGeneric(RecordCollection records, FormIdResolver resolver,
-        uint? formId, string? editorId)
-    {
-        // Try all remaining types via flat list
-        var flat = RecordFlattener.Flatten(records);
-        var match = flat.FirstOrDefault(r =>
-            (formId.HasValue && r.FormId == formId.Value) ||
-            (editorId != null && (r.EditorId?.Equals(editorId, StringComparison.OrdinalIgnoreCase) ?? false)));
-
-        if (match == null)
-        {
-            return false;
-        }
-
-        // Already shown by a specialized TryShow* method above?
-        if (match.Type is "NPC_" or "RACE" or "QUST" or "FACT" or "DIAL" or "WEAP" or "ARMO" or "SCPT"
-            or "BOOK" or "SOUN" or "EXPL" or "MESG" or "CHAL" or "RCPE")
-        {
-            return false;
-        }
-
-        // Try to find the full GenericEsmRecord for PDB field data
-        var genericRecord = records.GenericRecords
-            .FirstOrDefault(r => r.FormId == match.FormId);
-
-        AnsiConsole.WriteLine();
-        var lines = new List<string>
-        {
-            $"[cyan]FormID:[/]    0x{match.FormId:X8}",
-            $"[cyan]Type:[/]      {Markup.Escape(match.Type)}",
-            $"[cyan]EditorID:[/]  {Markup.Escape(match.EditorId ?? "(none)")}",
-            $"[cyan]Name:[/]      {Markup.Escape(match.DisplayName ?? "(none)")}"
-        };
-
-        if (genericRecord?.ModelPath != null)
-        {
-            lines.Add($"[cyan]Model:[/]     {Markup.Escape(genericRecord.ModelPath)}");
-        }
-
-        // Display PDB-derived runtime fields grouped by owner class
-        if (genericRecord?.Fields is { Count: > 0 })
-        {
-            lines.Add("");
-            ShowHelpers.AppendPdbFields(lines, genericRecord.Fields, resolver);
-        }
-
-        var panel = new Panel(string.Join("\n", lines))
-        {
-            Header = new PanelHeader(
-                $"[bold]{Markup.Escape(match.Type)}[/] {Markup.Escape(match.EditorId ?? $"0x{match.FormId:X8}")}")
         };
         AnsiConsole.Write(panel);
         return true;

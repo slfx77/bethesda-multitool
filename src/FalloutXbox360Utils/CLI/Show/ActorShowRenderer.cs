@@ -1,16 +1,12 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI.Show;
 
-/// <summary>
-///     Show renderers for actor-related record types: NPC_, RACE, FACT, SCPT.
-/// </summary>
-internal static class ActorShowRenderer
+internal sealed class NpcShowRenderer : IRecordDisplayRenderer
 {
-    internal static bool TryShowNpc(RecordCollection records, FormIdResolver resolver,
+    public bool TryShow(RecordCollection records, FormIdResolver resolver,
         uint? formId, string? editorId)
     {
         var npc = records.Npcs.FirstOrDefault(r =>
@@ -21,7 +17,7 @@ internal static class ActorShowRenderer
         }
 
         AnsiConsole.WriteLine();
-        var panel = new Panel(BuildNpcContent(npc, resolver))
+        var panel = new Panel(BuildContent(npc, resolver))
         {
             Header = new PanelHeader(
                 $"[bold]NPC_[/] {Markup.Escape(npc.EditorId ?? "")} — {Markup.Escape(npc.FullName ?? "")}")
@@ -30,7 +26,7 @@ internal static class ActorShowRenderer
         return true;
     }
 
-    private static string BuildNpcContent(NpcRecord npc, FormIdResolver resolver)
+    private static string BuildContent(NpcRecord npc, FormIdResolver resolver)
     {
         var isFemale = (npc.Stats?.Flags & 1) != 0;
         var lines = new List<string>
@@ -87,6 +83,11 @@ internal static class ActorShowRenderer
             lines.Add($"[cyan]Face NPC:[/]   {resolver.FormatWithEditorId(npc.FaceNpc.Value)}");
         }
 
+        if (npc.RaceFacePreset.HasValue)
+        {
+            lines.Add($"[cyan]Race Preset:[/] {npc.RaceFacePreset.Value}");
+        }
+
         if (npc.SpecialStats is { Length: >= 7 })
         {
             var names = new[] { "ST", "PE", "EN", "CH", "IN", "AG", "LK" };
@@ -102,11 +103,12 @@ internal static class ActorShowRenderer
         {
             lines.Add("");
             lines.Add("[bold]Skills:[/]");
+            var hasBigGuns = resolver.SkillEra?.BigGunsActive ?? false;
             for (var i = 0; i < npc.Skills.Length && i < 14; i++)
             {
-                if (i == 1)
+                if (i == 1 && !hasBigGuns)
                 {
-                    continue; // Skip Big Guns (unused in FNV)
+                    continue; // Skip Big Guns slot when merged into Guns
                 }
 
                 var skillName = resolver.GetSkillName(i) ?? $"Skill#{i}";
@@ -157,8 +159,126 @@ internal static class ActorShowRenderer
 
         return string.Join("\n", lines);
     }
+}
 
-    internal static bool TryShowRace(RecordCollection records, FormIdResolver resolver,
+internal sealed class CreatureShowRenderer : IRecordDisplayRenderer
+{
+    public bool TryShow(RecordCollection records, FormIdResolver resolver,
+        uint? formId, string? editorId)
+    {
+        var creature = records.Creatures.FirstOrDefault(r =>
+            ShowHelpers.Matches(r, formId, editorId, c => c.FormId, c => c.EditorId));
+        if (creature == null)
+        {
+            return false;
+        }
+
+        AnsiConsole.WriteLine();
+        var panel = new Panel(BuildContent(creature, resolver))
+        {
+            Header = new PanelHeader(
+                $"[bold]CREA[/] {Markup.Escape(creature.EditorId ?? "")} — {Markup.Escape(creature.FullName ?? "")}")
+        };
+        AnsiConsole.Write(panel);
+        return true;
+    }
+
+    private static string BuildContent(CreatureRecord creature, FormIdResolver resolver)
+    {
+        var lines = new List<string>
+        {
+            $"[cyan]FormID:[/]       0x{creature.FormId:X8}",
+            $"[cyan]EditorID:[/]     {Markup.Escape(creature.EditorId ?? "(none)")}",
+            $"[cyan]Name:[/]         {Markup.Escape(creature.FullName ?? "(none)")}",
+            $"[cyan]Type:[/]         {creature.CreatureTypeName}",
+            $"[cyan]Level:[/]        {creature.Stats?.Level.ToString() ?? "(unknown)"}"
+        };
+
+        lines.Add("");
+        lines.Add("[bold]Combat:[/]");
+        lines.Add($"  Attack Damage:  {creature.AttackDamage}");
+        lines.Add($"  Combat Skill:   {creature.CombatSkill}");
+        lines.Add($"  Magic Skill:    {creature.MagicSkill}");
+        lines.Add($"  Stealth Skill:  {creature.StealthSkill}");
+
+        if (creature.Stats != null)
+        {
+            lines.Add("");
+            lines.Add("[bold]Stats (ACBS):[/]");
+            lines.Add($"  Fatigue:    {creature.Stats.FatigueBase}");
+            lines.Add($"  Speed Mult: {creature.Stats.SpeedMultiplier}");
+            lines.Add($"  Calc Range: {creature.Stats.CalcMin} - {creature.Stats.CalcMax}");
+            if (creature.Stats.Flags != 0)
+            {
+                lines.Add($"  Flags:      0x{creature.Stats.Flags:X8}");
+            }
+        }
+
+        if (creature.AiData != null)
+        {
+            var ai = creature.AiData;
+            lines.Add("");
+            lines.Add("[bold]AI Data:[/]");
+            lines.Add($"  Aggression:     {ai.AggressionName}");
+            lines.Add($"  Confidence:     {ai.ConfidenceName}");
+            lines.Add($"  Assistance:     {ai.AssistanceName}");
+            lines.Add($"  Mood:           {ai.MoodName}");
+            lines.Add($"  Energy:         {ai.EnergyLevel}");
+            lines.Add($"  Responsibility: {ai.ResponsibilityName}");
+        }
+
+        if (creature.Script.HasValue)
+        {
+            lines.Add($"[cyan]Script:[/]       {resolver.FormatWithEditorId(creature.Script.Value)}");
+        }
+
+        if (creature.DeathItem.HasValue)
+        {
+            lines.Add($"[cyan]Death Item:[/]   {resolver.FormatWithEditorId(creature.DeathItem.Value)}");
+        }
+
+        if (creature.Factions is { Count: > 0 })
+        {
+            lines.Add("");
+            lines.Add("[bold]Factions:[/]");
+            foreach (var faction in creature.Factions)
+            {
+                lines.Add($"  {resolver.FormatWithEditorId(faction.FactionFormId)} (rank {faction.Rank})");
+            }
+        }
+
+        if (creature.Spells is { Count: > 0 })
+        {
+            lines.Add("");
+            lines.Add("[bold]Spells/Abilities:[/]");
+            foreach (var spell in creature.Spells)
+            {
+                lines.Add($"  {resolver.FormatWithEditorId(spell)}");
+            }
+        }
+
+        if (creature.Packages is { Count: > 0 })
+        {
+            lines.Add("");
+            lines.Add("[bold]AI Packages:[/]");
+            foreach (var package in creature.Packages)
+            {
+                lines.Add($"  {resolver.FormatWithEditorId(package)}");
+            }
+        }
+
+        if (!string.IsNullOrEmpty(creature.ModelPath))
+        {
+            lines.Add($"[cyan]Model:[/]        {Markup.Escape(creature.ModelPath)}");
+        }
+
+        return string.Join("\n", lines);
+    }
+}
+
+internal sealed class RaceShowRenderer : IRecordDisplayRenderer
+{
+    public bool TryShow(RecordCollection records, FormIdResolver resolver,
         uint? formId, string? editorId)
     {
         var race = records.Races.FirstOrDefault(r =>
@@ -183,7 +303,6 @@ internal static class ActorShowRenderer
         if (race.YoungerRaceFormId.HasValue)
             lines.Add($"[cyan]Younger Race:[/] {resolver.FormatWithEditorId(race.YoungerRaceFormId.Value)}");
 
-        // Head meshes
         lines.Add("");
         lines.Add("[bold]Head Parts (NAM0):[/]");
         lines.Add($"  [cyan]Male Head Mesh:[/]    {Markup.Escape(race.MaleHeadModelPath ?? "(none)")}");
@@ -199,7 +318,6 @@ internal static class ActorShowRenderer
         lines.Add($"  [cyan]Male Tongue:[/]       {Markup.Escape(race.MaleTongueModelPath ?? "(none)")}");
         lines.Add($"  [cyan]Female Tongue:[/]     {Markup.Escape(race.FemaleTongueModelPath ?? "(none)")}");
 
-        // Body meshes
         lines.Add("");
         lines.Add("[bold]Body Parts (NAM1):[/]");
         lines.Add($"  [cyan]Male Upper Body:[/]   {Markup.Escape(race.MaleUpperBodyPath ?? "(none)")}");
@@ -211,7 +329,6 @@ internal static class ActorShowRenderer
         lines.Add($"  [cyan]Male Body Tex:[/]     {Markup.Escape(race.MaleBodyTexturePath ?? "(none)")}");
         lines.Add($"  [cyan]Female Body Tex:[/]   {Markup.Escape(race.FemaleBodyTexturePath ?? "(none)")}");
 
-        // Abilities
         if (race.AbilityFormIds.Count > 0)
         {
             lines.Add("");
@@ -220,7 +337,6 @@ internal static class ActorShowRenderer
                 lines.Add($"  {resolver.FormatWithEditorId(abilId)}");
         }
 
-        // Skill Boosts
         if (race.SkillBoosts.Count > 0)
         {
             lines.Add("");
@@ -237,8 +353,11 @@ internal static class ActorShowRenderer
         AnsiConsole.Write(panel);
         return true;
     }
+}
 
-    internal static bool TryShowFaction(RecordCollection records, FormIdResolver resolver,
+internal sealed class FactionShowRenderer : IRecordDisplayRenderer
+{
+    public bool TryShow(RecordCollection records, FormIdResolver resolver,
         uint? formId, string? editorId)
     {
         var faction =
@@ -280,7 +399,6 @@ internal static class ActorShowRenderer
             }
         }
 
-        // Reverse lookup: find all NPCs and Creatures that belong to this faction
         var members = new List<(string type, string label, sbyte rank)>();
         foreach (var npc in records.Npcs)
         {
@@ -320,8 +438,11 @@ internal static class ActorShowRenderer
         AnsiConsole.Write(panel);
         return true;
     }
+}
 
-    internal static bool TryShowScript(RecordCollection records, FormIdResolver _,
+internal sealed class ScriptShowRenderer : IRecordDisplayRenderer
+{
+    public bool TryShow(RecordCollection records, FormIdResolver _,
         uint? formId, string? editorId)
     {
         var script = records.Scripts.FirstOrDefault(r =>
@@ -346,7 +467,6 @@ internal static class ActorShowRenderer
         {
             lines.Add("");
             lines.Add("[bold]Source (SCTX):[/]");
-            // Truncate long scripts
             var source = script.SourceText;
             if (source.Length > 2000)
             {

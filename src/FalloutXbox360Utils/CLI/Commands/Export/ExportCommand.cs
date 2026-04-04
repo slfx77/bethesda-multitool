@@ -9,6 +9,7 @@ internal static class ExportCommand
         var command = new Command("export", "Export game assets to interchange formats");
         command.Subcommands.Add(ExportNifCommand.Create());
         command.Subcommands.Add(ExportNpcCommand.Create());
+        command.Subcommands.Add(ExportCreatureCommand.Create());
         return command;
     }
 }

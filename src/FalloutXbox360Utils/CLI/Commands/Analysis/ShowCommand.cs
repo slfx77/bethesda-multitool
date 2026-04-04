@@ -18,24 +18,38 @@ public static class ShowCommand
     private static readonly IRecordDisplayRenderer[] Renderers =
     [
         // Actor domain
-        new NpcShowAdapter(),
-        new RaceShowAdapter(),
-        new FactionShowAdapter(),
-        new ScriptShowAdapter(),
+        new NpcShowRenderer(),
+        new CreatureShowRenderer(),
+        new RaceShowRenderer(),
+        new FactionShowRenderer(),
+        new ScriptShowRenderer(),
         // Quest domain
-        new QuestShowAdapter(),
-        new DialogTopicShowAdapter(),
+        new QuestShowRenderer(),
+        new DialogTopicShowRenderer(),
         // Item domain
-        new WeaponShowAdapter(),
-        new ArmorShowAdapter(),
-        new RecipeShowAdapter(),
-        new BookShowAdapter(),
+        new WeaponShowRenderer(),
+        new ArmorShowRenderer(),
+        new RecipeShowRenderer(),
+        new BookShowRenderer(),
+        // Magic / effects
+        new EnchantmentShowRenderer(),
+        new BaseEffectShowRenderer(),
+        new PerkShowRenderer(),
+        new ProjectileShowRenderer(),
+        // World objects
+        new DoorShowRenderer(),
+        new LightShowRenderer(),
+        new FurnitureShowRenderer(),
+        new ActivatorShowRenderer(),
+        new StaticShowRenderer(),
         // Misc domain
-        new SoundShowAdapter(),
-        new ExplosionShowAdapter(),
-        new MessageShowAdapter(),
-        new ChallengeShowAdapter(),
-        new GenericShowAdapter(),
+        new SoundShowRenderer(),
+        new MusicTypeShowRenderer(),
+        new ExplosionShowRenderer(),
+        new MessageShowRenderer(),
+        new ChallengeShowRenderer(),
+        // Generic fallback (must be last)
+        new GenericShowRenderer(),
     ];
 
     public static Command Create()
@@ -101,7 +115,11 @@ public static class ShowCommand
 
             foreach (var renderer in Renderers)
             {
-                found |= renderer.TryShow(records, resolver, targetFormId, targetEditorId);
+                if (renderer.TryShow(records, resolver, targetFormId, targetEditorId))
+                {
+                    found = true;
+                    break;
+                }
             }
 
             if (!found)

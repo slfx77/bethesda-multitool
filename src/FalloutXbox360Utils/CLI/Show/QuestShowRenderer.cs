@@ -4,12 +4,9 @@ using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI.Show;
 
-/// <summary>
-///     Show renderers for quest and dialogue record types: QUST, DIAL.
-/// </summary>
-internal static class QuestShowRenderer
+internal sealed class QuestShowRenderer : IRecordDisplayRenderer
 {
-    internal static bool TryShowQuest(RecordCollection records, FormIdResolver _,
+    public bool TryShow(RecordCollection records, FormIdResolver _,
         uint? formId, string? editorId)
     {
         var quest = records.Quests.FirstOrDefault(r =>
@@ -101,7 +98,11 @@ internal static class QuestShowRenderer
         return true;
     }
 
-    internal static bool TryShowDialogTopic(RecordCollection records, FormIdResolver resolver,
+}
+
+internal sealed class DialogTopicShowRenderer : IRecordDisplayRenderer
+{
+    public bool TryShow(RecordCollection records, FormIdResolver resolver,
         uint? formId, string? editorId)
     {
         var topic = records.DialogTopics.FirstOrDefault(r =>
