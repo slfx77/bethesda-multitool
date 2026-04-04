@@ -119,9 +119,9 @@ public sealed class RaceFaceGenSectionIntegrationTests(ITestOutputHelper output)
         return bytes;
     }
 
-    private static bool HasExplicitFaceGenTail(IReadOnlyList<string> signatures)
+    private static bool HasExplicitFaceGenTail(string[] signatures)
     {
-        for (var index = 0; index <= signatures.Count - 10; index++)
+        for (var index = 0; index <= signatures.Length - 10; index++)
         {
             if (signatures[index] != "MNAM")
             {
