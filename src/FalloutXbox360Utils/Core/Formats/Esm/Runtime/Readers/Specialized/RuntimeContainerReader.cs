@@ -1,6 +1,7 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
+using Logger = FalloutXbox360Utils.Core.Logger;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 
@@ -155,6 +156,7 @@ internal sealed class RuntimeContainerReader(RuntimeMemoryContext context)
         // Validate count (reasonable range for inventory)
         if (count <= 0 || count > 100000)
         {
+            Logger.Instance.Debug("[CONT] Rejected inventory item: count={0} (range 1-100000)", count);
             return null;
         }
 

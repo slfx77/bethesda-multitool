@@ -149,11 +149,27 @@ internal static class RuntimeWorldCellLayoutProbe
             }
         }
 
+        // Pointer-plausibility scoring: check if pointer fields at shifted offsets look
+        // like real pointer slots (null or valid VA) vs garbage (non-zero, not a valid VA).
+        // Correct shifts produce null/valid pointers; wrong shifts read misaligned bytes.
+        var (plausible, garbage) = reader.ProbeWorldPointerPlausibility(entry);
+        if (plausible > 0)
+        {
+            score += plausible;
+            details.Append($"PtrOk={plausible}, ");
+        }
+
+        if (garbage > 0)
+        {
+            score -= garbage;
+            details.Append($"PtrGarbage={garbage}, ");
+        }
+
         var detailText = details.Length > 2
             ? details.ToString(0, details.Length - 2)
             : "no signals";
 
-        return new RuntimeLayoutProbeScore(score, 16, detailText);
+        return new RuntimeLayoutProbeScore(score, 21, detailText);
     }
 
     private static RuntimeLayoutProbeScore ScoreCellSample(RuntimeEditorIdEntry entry, RuntimeCellReader reader)

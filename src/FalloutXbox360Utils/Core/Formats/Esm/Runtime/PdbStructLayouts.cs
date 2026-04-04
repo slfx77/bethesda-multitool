@@ -49,7 +49,8 @@ internal static class PdbStructLayouts
         0x47, // QUST — RuntimeDialogueReader
         0x49, // PACK — RuntimePackageReader
         0x55, // FLST — RuntimeCollectionReader
-        0x59 // AVIF — RuntimeActorReader
+        0x59, // AVIF — RuntimeActorReader
+        0x66 // MUSC — RuntimeMusicTypeReader
     ];
 
     /// <summary>
@@ -97,6 +98,24 @@ internal static class PdbStructLayouts
                         // Skip BSStringT fields already resolved as top-level Name/Model/EditorID
                         f is not { Name: "cFullName", Owner: "TESFullName" } &&
                         f is not { Name: "cModel", Owner: "TESModel" })
+            .ToList();
+    }
+
+    /// <summary>
+    ///     Returns BSStringT fields for a FormType — used by string claim extractors
+    ///     to identify char* pointer fields within runtime TESForm structs.
+    /// </summary>
+    public static IReadOnlyList<PdbFieldLayout> GetBSStringTFields(byte formType)
+    {
+        var layout = Get(formType);
+        if (layout == null)
+        {
+            return [];
+        }
+
+        return layout.Fields
+            .Where(f => f.Kind == "struct" && f.TypeDetail != null &&
+                        f.TypeDetail.Contains("BSStringT", StringComparison.Ordinal))
             .ToList();
     }
 

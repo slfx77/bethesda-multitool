@@ -18,6 +18,14 @@ public record RuntimeEditorIdEntry
     /// </summary>
     public byte FormType { get; set; }
 
+    /// <summary>
+    ///     Original FormType byte from the raw dump buffer, before drift correction.
+    ///     Set only when drift remapping changes FormType; null when no drift applies.
+    ///     Used by runtime struct readers to validate buffer[4] in early builds where
+    ///     the raw byte differs from the final-build code.
+    /// </summary>
+    public byte? OriginalFormType { get; set; }
+
     /// <summary>File offset where the Editor ID string was found.</summary>
     public long StringOffset { get; init; }
 
@@ -30,6 +38,12 @@ public record RuntimeEditorIdEntry
     /// <summary>Display name from TESFullName.cFullName (e.g., "Boone's Beret").</summary>
     public string? DisplayName { get; init; }
 
+    /// <summary>File offset of the display name string in the dump (for string ownership claims).</summary>
+    public long? DisplayNameStringOffset { get; init; }
+
     /// <summary>Dialogue prompt from TESTopicInfo.cPrompt (INFO records only, FormType auto-detected).</summary>
     public string? DialogueLine { get; set; }
+
+    /// <summary>File offset of the dialogue line string in the dump (for string ownership claims).</summary>
+    public long? DialogueLineStringOffset { get; set; }
 }

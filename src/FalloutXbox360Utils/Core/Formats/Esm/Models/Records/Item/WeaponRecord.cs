@@ -119,6 +119,9 @@ public record WeaponRecord
     /// <summary>Strength requirement to use effectively.</summary>
     public uint StrengthRequirement { get; init; }
 
+    /// <summary>Governing skill ActorValue code (e.g., 41=Guns, 34=Energy Weapons, 33=Big Guns).</summary>
+    public uint Skill { get; init; }
+
     /// <summary>Skill requirement to use effectively.</summary>
     public uint SkillRequirement { get; init; }
 

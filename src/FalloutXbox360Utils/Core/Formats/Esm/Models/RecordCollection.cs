@@ -160,6 +160,9 @@ public record RecordCollection
     /// <summary>Parsed Sound (SOUN) records.</summary>
     public List<SoundRecord> Sounds { get; init; } = [];
 
+    /// <summary>Parsed Music Type (MUSC) records.</summary>
+    public List<MusicTypeRecord> MusicTypes { get; init; } = [];
+
     /// <summary>Parsed Texture Set (TXST) records.</summary>
     public List<TextureSetRecord> TextureSets { get; init; } = [];
 
@@ -217,7 +220,7 @@ public record RecordCollection
         Lights.Count + Doors.Count + Statics.Count + Furniture.Count +
         Packages.Count +
         GenericRecords.Count +
-        Sounds.Count + TextureSets.Count + ArmorAddons.Count + Water.Count +
+        Sounds.Count + MusicTypes.Count + TextureSets.Count + ArmorAddons.Count + Water.Count +
         BodyPartData.Count + ActorValueInfos.Count + CombatStyles.Count +
         LightingTemplates.Count + NavMeshes.Count + Weather.Count;
 
@@ -299,6 +302,7 @@ public record RecordCollection
 
             // Specialized
             Sounds = MergeList(Sounds, overlay.Sounds, r => r.FormId),
+            MusicTypes = MergeList(MusicTypes, overlay.MusicTypes, r => r.FormId),
             TextureSets = MergeList(TextureSets, overlay.TextureSets, r => r.FormId),
             ArmorAddons = MergeList(ArmorAddons, overlay.ArmorAddons, r => r.FormId),
             Water = MergeList(Water, overlay.Water, r => r.FormId),
@@ -322,11 +326,19 @@ public record RecordCollection
     /// <summary>Creates a FormIdResolver from this collection's dictionaries.</summary>
     public FormIdResolver CreateResolver(Dictionary<uint, string>? overrideEditorIds = null)
     {
-        return new FormIdResolver(
+        var resolver = new FormIdResolver(
             overrideEditorIds ?? FormIdToEditorId,
             FormIdToDisplayName,
             BuildRefToBaseMap(),
             BuildActorValueNames());
+
+        // Detect skill era from AVIF records and weapon Skill field values.
+        if (ActorValueInfos.Count > 0 || Weapons.Count > 0)
+        {
+            resolver.SkillEra = SkillEraDetector.Detect(this);
+        }
+
+        return resolver;
     }
 
     /// <summary>

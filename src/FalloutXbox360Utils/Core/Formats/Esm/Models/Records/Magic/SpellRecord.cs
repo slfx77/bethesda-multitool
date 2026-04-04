@@ -4,7 +4,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
 ///     Parsed Spell record.
-///     Aggregates data from SPEL main record header, SPIT (16 bytes), EFID subrecords.
+///     Aggregates data from SPEL main record header, SPIT (16 bytes), EFID/EFIT subrecords.
 /// </summary>
 public record SpellRecord
 {
@@ -30,8 +30,8 @@ public record SpellRecord
     /// <summary>Spell flags.</summary>
     public byte Flags { get; init; }
 
-    /// <summary>Effect FormIDs (EFID subrecords).</summary>
-    public List<uint> EffectFormIds { get; init; } = [];
+    /// <summary>Effects with magnitude, area, duration (EFID + EFIT subrecords).</summary>
+    public List<EnchantmentEffect> Effects { get; init; } = [];
 
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }

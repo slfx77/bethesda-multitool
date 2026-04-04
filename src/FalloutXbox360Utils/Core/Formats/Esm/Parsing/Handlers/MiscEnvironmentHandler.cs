@@ -319,6 +319,87 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
 
     #endregion
 
+    #region Music Types
+
+    /// <summary>
+    ///     Parse all Music Type (MUSC) records.
+    /// </summary>
+    internal List<MusicTypeRecord> ParseMusicTypes()
+    {
+        var musicTypes = ParseRecordList("MUSC", 512,
+            ParseMusicTypeFromAccessor,
+            record => new MusicTypeRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
+
+        Context.MergeRuntimeRecords(musicTypes, 0x66, m => m.FormId,
+            (reader, entry) => reader.ReadRuntimeMusicType(entry), "music types");
+
+        return musicTypes;
+    }
+
+    private MusicTypeRecord? ParseMusicTypeFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return new MusicTypeRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            };
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        string? fileName = null;
+        float attenuation = 0;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "FNAM":
+                    fileName = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "ANAM" when sub.DataLength >= 4:
+                    attenuation = record.IsBigEndian
+                        ? BinaryUtils.ReadFloatBE(subData)
+                        : BitConverter.ToSingle(subData);
+                    break;
+            }
+        }
+
+        return new MusicTypeRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            FileName = fileName,
+            Attenuation = attenuation,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
     #region Texture Sets
 
     /// <summary>

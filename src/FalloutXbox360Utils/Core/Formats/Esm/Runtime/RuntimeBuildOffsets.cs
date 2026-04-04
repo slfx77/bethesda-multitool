@@ -61,14 +61,16 @@ internal static class RuntimeBuildOffsets
     }
 
     /// <summary>
-    ///     Returns the field offset delta for WRLD and CELL forms in early-era builds.
-    ///     These forms do NOT inherit from TESChildCell, so the shift mechanism differs.
-    ///     Empirically, early-era WRLD cell maps still resolve with some shift — TBD via Ghidra.
-    ///     For now, returns 0 (use final offsets) since the exact early WRLD/CELL layout is unknown.
+    ///     Returns the field offset delta for TESWorldSpace forms in early-era builds.
+    ///     RTTI analysis of the Nov 2009 module binary shows TESWorldSpace = 240 bytes
+    ///     vs 244 bytes in MemDebug PDB (July 2010). The 4-byte difference shifts all
+    ///     post-base-class fields by -4 in early builds.
+    ///     TESObjectCELL (192 bytes) is the same size in both eras; CELL field drift
+    ///     is handled separately by the layout probe.
     /// </summary>
-    public static int GetWorldCellFieldShift(bool _isEarlyBuild)
+    public static int GetWorldCellFieldShift(bool isEarlyBuild)
     {
-        return 0;
+        return isEarlyBuild ? -4 : 0;
     }
 
     /// <summary>
@@ -392,6 +394,21 @@ internal static class RuntimeBuildOffsets
             $"[FormType Drift] Cross-ref: {runtimeEntries.Count} runtime, " +
             $"{esmFormIdToSignature.Count} ESM, {matches} match, {totalMismatched} mismatch");
 
+        if (mismatches.Count == 0 && matches > 0)
+        {
+            // No ESM cross-reference mismatches. Try distribution-based heuristic:
+            // If all ESM records are for types below a certain threshold, a shift above
+            // that threshold would be invisible to cross-reference. Detect by finding
+            // "displaced" high-entry-count types in the runtime EditorID distribution.
+            var heuristicRemap = DetectDriftFromDistribution(runtimeEntries, matches);
+            if (heuristicRemap != null)
+            {
+                return heuristicRemap;
+            }
+
+            return null;
+        }
+
         if (mismatches.Count == 0)
         {
             return null;
@@ -429,13 +446,45 @@ internal static class RuntimeBuildOffsets
 
                 if (totalCandidateRecords >= 2 && matchesAboveDriftPoint == 0)
                 {
+                    // Extend the shift range downward using distribution analysis.
+                    // The ESM cross-reference may not cover types like WRLD, LAND, NAVM
+                    // that rarely appear as embedded ESM records in DMP files.
+                    // Check for displaced anchor types below the confirmed range.
+                    var extendedStart = lowestDmpCode;
+                    if (delta == -1)
+                    {
+                        // Build per-FormType entry counts
+                        var entryCounts = new Dictionary<byte, int>();
+                        foreach (var entry in runtimeEntries)
+                        {
+                            entryCounts.TryGetValue(entry.FormType, out var c);
+                            entryCounts[entry.FormType] = c + 1;
+                        }
+
+                        // Check anchor types below the confirmed range:
+                        // If code (X+1) has entries but code X has 0, and X is a known type,
+                        // the data at (X+1) is likely X shifted by +1.
+                        var anchors = new byte[] { 0x41, 0x39 }; // WRLD, CELL
+                        foreach (var expected in anchors)
+                        {
+                            if (expected >= lowestDmpCode) continue;
+                            var displaced = (byte)(expected + 1); // where it would be with +1 shift
+                            entryCounts.TryGetValue(expected, out var expectedCount);
+                            entryCounts.TryGetValue(displaced, out var displacedCount);
+                            if (expectedCount == 0 && displacedCount >= 5 && displaced < extendedStart)
+                            {
+                                extendedStart = displaced;
+                            }
+                        }
+                    }
+
                     Logger.Instance.Info(
                         $"[FormType Drift] Systematic shift detected: delta={delta:+0;-0;0} " +
-                        $"starting at DMP code 0x{lowestDmpCode:X2} " +
-                        $"({candidates.Count} types, {totalCandidateRecords} records confirmed, " +
-                        $"{matches} unaffected matches below drift point)");
+                        $"starting at DMP code 0x{extendedStart:X2} " +
+                        $"(confirmed at 0x{lowestDmpCode:X2}, {candidates.Count} types, " +
+                        $"{totalCandidateRecords} records, {matches} unaffected matches below)");
 
-                    for (var code = lowestDmpCode; code <= 0x78; code++)
+                    for (var code = extendedStart; code <= 0x78; code++)
                     {
                         var target = (byte)(code + delta);
                         if (target <= 0x78 && GetRecordTypeCode(target) != null)
@@ -468,6 +517,118 @@ internal static class RuntimeBuildOffsets
             Logger.Instance.Info(
                 $"[FormType Drift] Applying {remap.Count} remapped codes. " +
                 $"Evidence: [{candidateStr}]. " +
+                $"Range: 0x{remap.Keys.Min():X2}–0x{remap.Keys.Max():X2}");
+        }
+
+        return remap.Count > 0 ? remap : null;
+    }
+
+    /// <summary>
+    ///     Detect FormType drift using runtime EditorID distribution when ESM cross-references
+    ///     are insufficient (all ESM records below drift point). Looks for a contiguous block of
+    ///     displaced types: codes that have entries but where the PREVIOUS code (delta -1) is the
+    ///     expected final type, suggesting a +1 shift from an inserted enum value.
+    ///     Requires: (1) a well-known high-count anchor type (DIAL/INFO) is displaced,
+    ///     (2) shift is consistent across all displaced codes, (3) gap at each expected code.
+    /// </summary>
+    private static Dictionary<byte, byte>? DetectDriftFromDistribution(
+        IReadOnlyList<RuntimeEditorIdEntry> runtimeEntries,
+        int confirmedMatchesBelow)
+    {
+        // Build per-FormType entry counts from the runtime EditorID table
+        var counts = new Dictionary<byte, int>();
+        foreach (var entry in runtimeEntries)
+        {
+            counts.TryGetValue(entry.FormType, out var c);
+            counts[entry.FormType] = c + 1;
+        }
+
+        // Anchor types: high-count types whose expected code should have many entries.
+        // DIAL (0x45) typically has 5K-15K entries in FNV. If code 0x46 has that many
+        // but 0x45 has 0, that's strong evidence of +1 shift starting at or before 0x46.
+        // Similarly check INFO (0x46→0x47) and QUST (0x47→0x48).
+        var anchorChecks = new (byte ExpectedCode, byte DisplacedCode, string Name)[]
+        {
+            (0x45, 0x46, "DIAL"), // DIAL normally at 0x45; if shifted, at 0x46
+            (0x46, 0x47, "INFO"), // INFO normally at 0x46; if shifted, at 0x47
+            (0x41, 0x42, "WRLD"), // WRLD normally at 0x41; if shifted, at 0x42
+        };
+
+        var displacedAnchors = 0;
+        byte lowestDisplaced = 0xFF;
+        foreach (var (expected, displaced, name) in anchorChecks)
+        {
+            counts.TryGetValue(expected, out var expectedCount);
+            counts.TryGetValue(displaced, out var displacedCount);
+
+            // The expected code should be empty (or near-empty) and the displaced code
+            // should have significant entries (≥10)
+            if (expectedCount == 0 && displacedCount >= 10)
+            {
+                displacedAnchors++;
+                if (displaced < lowestDisplaced)
+                {
+                    lowestDisplaced = displaced;
+                }
+            }
+        }
+
+        if (displacedAnchors < 2)
+        {
+            return null; // Need at least 2 displaced anchors for confidence
+        }
+
+        // Determine shift start: walk downward from lowestDisplaced to find where shift begins.
+        // A code C is shifted if: C has entries, and (C-1) is a valid final type with 0 entries at code (C-1).
+        var shiftStart = lowestDisplaced;
+        for (var code = (byte)(lowestDisplaced - 1); code >= 0x03; code--)
+        {
+            counts.TryGetValue(code, out var codeCount);
+            counts.TryGetValue((byte)(code - 1), out var prevCount);
+
+            // If this code has no entries, stop — the shift doesn't extend here
+            if (codeCount == 0)
+            {
+                break;
+            }
+
+            // If the code below also has entries and is a valid type that matches,
+            // we've found the boundary where the shift stops
+            var codeMinusOneType = GetRecordTypeCode((byte)(code - 1));
+            if (codeMinusOneType == null)
+            {
+                break;
+            }
+
+            // Check: does code C look displaced? Code (C-1) should be empty if shifted.
+            if (prevCount == 0)
+            {
+                shiftStart = code;
+            }
+            else
+            {
+                break; // Code (C-1) has entries — shift doesn't extend this far down
+            }
+        }
+
+        // Build remap: delta = -1 (runtime code is +1 from final)
+        var remap = new Dictionary<byte, byte>();
+        for (var code = shiftStart; code <= 0x78; code++)
+        {
+            var target = (byte)(code - 1);
+            if (GetRecordTypeCode(target) != null)
+            {
+                remap[code] = target;
+            }
+        }
+
+        if (remap.Count > 0)
+        {
+            Logger.Instance.Info(
+                $"[FormType Drift] Distribution-based shift detected: delta=-1 " +
+                $"starting at DMP code 0x{shiftStart:X2} " +
+                $"({displacedAnchors} anchor types displaced, " +
+                $"{confirmedMatchesBelow} unaffected matches below drift point). " +
                 $"Range: 0x{remap.Keys.Min():X2}–0x{remap.Keys.Max():X2}");
         }
 

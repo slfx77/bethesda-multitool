@@ -59,6 +59,7 @@ public sealed class RecordParserContext
                 {
                     if (formTypeDrift.TryGetValue(entry.FormType, out var corrected))
                     {
+                        entry.OriginalFormType = entry.FormType;
                         entry.FormType = corrected;
                     }
                 }
@@ -138,6 +139,15 @@ public sealed class RecordParserContext
                 FormIdToFullName.TryAdd(entry.FormId, entry.DisplayName);
             }
         }
+
+        // Auto-detect game version from TES4/HEDR if present
+        Game = scanResult.Game != FalloutGame.Unknown
+            ? scanResult.Game
+            : DetectGameFromTes4();
+        if (Game != FalloutGame.Unknown)
+        {
+            Logger.Instance.Debug("  [Context] Detected game: {0}", Game);
+        }
     }
 
     public EsmRecordScanResult ScanResult { get; }
@@ -146,6 +156,9 @@ public sealed class RecordParserContext
     public RuntimeStructReader? RuntimeReader { get; }
     public MinidumpInfo? MinidumpInfo { get; }
     public Dictionary<uint, DetectedMainRecord> RecordsByFormId { get; }
+
+    /// <summary>Detected game version (FO3 vs FNV), auto-detected from TES4/HEDR.</summary>
+    public FalloutGame Game { get; }
 
     /// <summary>
     ///     Mutable: handlers write to this during parsing (e.g., EDID subrecord enrichment).
@@ -673,6 +686,72 @@ public sealed class RecordParserContext
         }
 
         return map;
+    }
+
+    /// <summary>
+    ///     Detect game version by finding TES4 record in scan results and reading the HEDR
+    ///     version float. Returns Unknown if TES4/HEDR is not found or not readable.
+    /// </summary>
+    private FalloutGame DetectGameFromTes4()
+    {
+        if (Accessor == null)
+        {
+            return FalloutGame.Unknown;
+        }
+
+        // Find TES4 main record (always the first record in an ESM file)
+        DetectedMainRecord? tes4 = null;
+        foreach (var record in ScanResult.MainRecords)
+        {
+            if (record.RecordType == "TES4")
+            {
+                tes4 = record;
+                break;
+            }
+        }
+
+        if (tes4 == null)
+        {
+            return FalloutGame.Unknown;
+        }
+
+        // Read TES4 record data and look for HEDR subrecord
+        var buffer = new byte[Math.Min(tes4.DataSize + 24, 4096)];
+        var readSize = Math.Min(buffer.Length, (int)(FileSize - tes4.Offset));
+        if (readSize < 36) // minimum: 24-byte record header + 6-byte HEDR header + 4-byte version + 2 padding
+        {
+            return FalloutGame.Unknown;
+        }
+
+        try
+        {
+            Accessor.ReadArray(tes4.Offset + 24, buffer, 0, readSize - 24);
+        }
+        catch
+        {
+            return FalloutGame.Unknown;
+        }
+
+        // Iterate subrecords within TES4 to find HEDR
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(buffer, readSize - 24, tes4.IsBigEndian))
+        {
+            if (sub.Signature != "HEDR" || sub.DataLength < 4)
+            {
+                continue;
+            }
+
+            var versionBytes = buffer.AsSpan(sub.DataOffset, 4);
+            var version = BinaryUtils.ReadFloat(versionBytes, 0, tes4.IsBigEndian);
+
+            return version switch
+            {
+                >= 0.93f and <= 0.95f => FalloutGame.Fallout3,
+                >= 1.0f => FalloutGame.FalloutNewVegas,
+                _ => FalloutGame.Unknown
+            };
+        }
+
+        return FalloutGame.Unknown;
     }
 
     #endregion

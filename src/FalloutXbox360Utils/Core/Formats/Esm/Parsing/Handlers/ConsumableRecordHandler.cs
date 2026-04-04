@@ -257,7 +257,8 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
         uint? addictionFormId = null;
         float addictionChance = 0;
         uint? withdrawalEffectFormId = null;
-        var effectFormIds = new List<uint>();
+        var effects = new List<EnchantmentEffect>();
+        uint currentEffectId = 0;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -317,9 +318,27 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
 
                     break;
                 }
-                case "EFID" when sub.DataLength == 4:
-                    effectFormIds.Add(RecordParserContext.ReadFormId(subData, record.IsBigEndian));
+                case "EFID" when sub.DataLength >= 4:
+                    currentEffectId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
+                case "EFIT" when sub.DataLength >= 12:
+                {
+                    var fields = SubrecordDataReader.ReadFields("EFIT", null, subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        effects.Add(new EnchantmentEffect
+                        {
+                            EffectFormId = currentEffectId,
+                            Magnitude = SubrecordDataReader.GetFloat(fields, "Magnitude"),
+                            Area = SubrecordDataReader.GetUInt32(fields, "Area"),
+                            Duration = SubrecordDataReader.GetUInt32(fields, "Duration"),
+                            Type = SubrecordDataReader.GetUInt32(fields, "Type"),
+                            ActorValue = SubrecordDataReader.GetInt32(fields, "ActorValue", -1)
+                        });
+                    }
+
+                    break;
+                }
             }
         }
 
@@ -336,7 +355,7 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
             AddictionFormId = addictionFormId != 0 ? addictionFormId : null,
             AddictionChance = addictionChance,
             WithdrawalEffectFormId = withdrawalEffectFormId,
-            EffectFormIds = effectFormIds,
+            Effects = effects,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };

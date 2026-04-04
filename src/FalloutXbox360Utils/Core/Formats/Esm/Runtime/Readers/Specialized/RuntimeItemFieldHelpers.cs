@@ -1,6 +1,7 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Utils;
+using Logger = FalloutXbox360Utils.Core.Logger;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 
@@ -32,21 +33,25 @@ internal sealed class RuntimeItemFieldHelpers
 
         if (value < 0 || value > 1000000)
         {
+            Logger.Instance.Debug("[WEAP] Clamped value={0} to 0 (range 0-1000000)", value);
             value = 0;
         }
 
         if (health < 0 || health > 100000)
         {
+            Logger.Instance.Debug("[WEAP] Clamped health={0} to 0 (range 0-100000)", health);
             health = 0;
         }
 
         if (!RuntimeMemoryContext.IsNormalFloat(weight) || weight < 0 || weight > 500)
         {
+            Logger.Instance.Debug("[WEAP] Clamped weight={0} to 0 (range 0-500)", weight);
             weight = 0;
         }
 
         if (damage < 0 || damage > 10000)
         {
+            Logger.Instance.Debug("[WEAP] Clamped damage={0} to 0 (range 0-10000)", damage);
             damage = 0;
         }
 
@@ -55,7 +60,8 @@ internal sealed class RuntimeItemFieldHelpers
 
     internal (WeaponType WeaponType, uint AnimationType, float Speed, float Reach,
         float MinSpread, float Spread, float MinRange, float MaxRange,
-        byte VatsChance, float ActionPoints, float ShotsPerSec) ReadWeaponCombatFields(byte[] buffer)
+        byte VatsChance, float ActionPoints, float ShotsPerSec,
+        byte NumProjectiles, byte AmmoPerShot, uint Skill) ReadWeaponCombatFields(byte[] buffer)
     {
         // animationType is stored as uint8 at the first byte of a 4-byte aligned field
         var animTypeByte = buffer[_layouts.WeapAnimTypeOffset];
@@ -103,11 +109,21 @@ internal sealed class RuntimeItemFieldHelpers
             vatsChance = 0;
         }
 
+        var numProjectiles = buffer[dataStart + RuntimeItemLayouts.DnamNumProjectilesRelOffset];
+        var ammoPerShot = buffer[dataStart + RuntimeItemLayouts.DnamAmmoPerShotRelOffset];
+
+        var skill = BinaryUtils.ReadUInt32BE(buffer, dataStart + RuntimeItemLayouts.DnamSkillRelOffset);
+        if (skill > 76)
+        {
+            skill = 0;
+        }
+
         return (weaponType, animationType, speed, reach, minSpread, spread,
-            minRange, maxRange, vatsChance, actionPoints, shotsPerSec);
+            minRange, maxRange, vatsChance, actionPoints, shotsPerSec,
+            numProjectiles, ammoPerShot, skill);
     }
 
-    internal (short Damage, float Chance) ReadWeaponCriticalFields(byte[] buffer)
+    internal (short Damage, float Chance, uint? EffectFormId) ReadWeaponCriticalFields(byte[] buffer)
     {
         var damage = (short)BinaryUtils.ReadUInt16BE(buffer, _layouts.WeapCritDamageOffset);
         var chance = BinaryUtils.ReadFloatBE(buffer, _layouts.WeapCritChanceOffset);
@@ -122,7 +138,10 @@ internal sealed class RuntimeItemFieldHelpers
             damage = 0;
         }
 
-        return (damage, chance);
+        // Follow SpellItem* pointer at OBJ_WEAP_CRITICAL+12 to get critical effect FormID
+        var effectFormId = _context.FollowPointerToFormId(buffer, _layouts.WeapCritEffectPtrOffset);
+
+        return (damage, chance, effectFormId);
     }
 
     #endregion
@@ -210,6 +229,7 @@ internal sealed class RuntimeItemFieldHelpers
         // Validate count (reasonable range for inventory)
         if (count <= 0 || count > 100000)
         {
+            Logger.Instance.Debug("[CONT] Rejected inventory item: count={0} (range 1-100000)", count);
             return null;
         }
 

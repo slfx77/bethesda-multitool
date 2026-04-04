@@ -2,6 +2,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
+using Logger = FalloutXbox360Utils.Core.Logger;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 
@@ -114,6 +115,11 @@ internal sealed class RuntimeActorReader
 
         if (!_npcLayoutProbe.IsHighConfidence)
         {
+            if (fggs != null || fgga != null || fgts != null)
+            {
+                Logger.Instance.Debug("[NPC] FaceGen data discarded for 0x{0:X8}: layout probe not high-confidence", entry.FormId);
+            }
+
             fggs = null;
             fgga = null;
             fgts = null;
@@ -121,6 +127,9 @@ internal sealed class RuntimeActorReader
 
         // Read AI package list (BSSimpleList<TESPackage*> at TESAIForm+24)
         var packages = NpcFields.ReadPackageList(buffer);
+
+        // Read spell/ability list (BSSimpleList<SpellItem*> at TESSpellList)
+        var spells = NpcFields.ReadSpellList(buffer);
 
         return new NpcRecord
         {
@@ -135,6 +144,7 @@ internal sealed class RuntimeActorReader
             Template = template,
             Inventory = inventory,
             Factions = factions,
+            Spells = spells,
             SpecialStats = special,
             Skills = skills,
             AiData = aiData,
@@ -338,12 +348,14 @@ internal sealed class RuntimeActorReader
         // Fatigue: 0-5000 (most NPCs 0-200)
         if (fatigueBase > 5000)
         {
+            Logger.Instance.Debug("[ACBS] Rejected at offset 0x{0:X}: fatigue={1}", structOffset + acbsStart, fatigueBase);
             return null;
         }
 
         // Barter gold: 0-50000
         if (barterGold > 50000)
         {
+            Logger.Instance.Debug("[ACBS] Rejected at offset 0x{0:X}: barterGold={1}", structOffset + acbsStart, barterGold);
             return null;
         }
 
@@ -354,24 +366,28 @@ internal sealed class RuntimeActorReader
         var maxLevel = isPcLevelMult ? 1000 : 100;
         if (level < -128 || level > maxLevel)
         {
+            Logger.Instance.Debug("[ACBS] Rejected at offset 0x{0:X}: level={1} (max={2})", structOffset + acbsStart, level, maxLevel);
             return null;
         }
 
         // Speed multiplier: typically 70-200 (100 = normal)
         if (speedMultiplier > 500)
         {
+            Logger.Instance.Debug("[ACBS] Rejected at offset 0x{0:X}: speedMult={1}", structOffset + acbsStart, speedMultiplier);
             return null;
         }
 
         // Karma: should be a normal float
         if (!RuntimeMemoryContext.IsNormalFloat(karma))
         {
+            Logger.Instance.Debug("[ACBS] Rejected at offset 0x{0:X}: karma={1} (not normal float)", structOffset + acbsStart, karma);
             return null;
         }
 
         // CalcMin/CalcMax: 0-100
         if (calcMin > 100 || calcMax > 100)
         {
+            Logger.Instance.Debug("[ACBS] Rejected at offset 0x{0:X}: calcMin={1}, calcMax={2}", structOffset + acbsStart, calcMin, calcMax);
             return null;
         }
 
@@ -470,10 +486,10 @@ internal sealed class RuntimeActorReader
 
     // ActorValueInfo: PDB size 212
     // Key fields for skill name resolution: FullName, Abbreviation, Icon
-    private int AvifStructSize => 212 + _s;
-    private int AvifFullNameOffset => 44 + _s; // TESFullName.cFullName (BSStringT)
-    private int AvifTextureOffset => 64 + _s; // TESTexture.TextureName (BSStringT) — icon path
-    private int AvifAbbreviationOffset => 76 + _s; // ActorValueInfo.sAbbreviation (BSStringT)
+    private const int AvifStructSize = 212;
+    private const int AvifFullNameOffset = 44; // TESFullName.cFullName (BSStringT)
+    private const int AvifTextureOffset = 64; // TESTexture.TextureName (BSStringT) — icon path
+    private const int AvifAbbreviationOffset = 76; // ActorValueInfo.sAbbreviation (BSStringT)
 
     /// <summary>
     ///     Read an ActorValueInfo record from a runtime C++ struct.
@@ -509,7 +525,7 @@ internal sealed class RuntimeActorReader
             return null;
         }
 
-        var fullName = _context.ReadBSStringT(offset, AvifFullNameOffset);
+        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, AvifFullNameOffset);
         var icon = _context.ReadBSStringT(offset, AvifTextureOffset);
         var abbreviation = _context.ReadBSStringT(offset, AvifAbbreviationOffset);
 

@@ -2,7 +2,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
 ///     Parsed Consumable (ALCH) record.
-///     Aggregates data from ALCH main record header, DATA, ENIT, EFID subrecords.
+///     Aggregates data from ALCH main record header, DATA, ENIT, EFID/EFIT subrecords.
 /// </summary>
 public record ConsumableRecord
 {
@@ -35,8 +35,8 @@ public record ConsumableRecord
     /// <summary>Use sound or withdrawal effect FormID (ENIT bytes 16-19).</summary>
     public uint? WithdrawalEffectFormId { get; init; }
 
-    /// <summary>Effect FormIDs (EFID subrecords).</summary>
-    public List<uint> EffectFormIds { get; init; } = [];
+    /// <summary>Effects with magnitude, area, duration (EFID + EFIT subrecords).</summary>
+    public List<EnchantmentEffect> Effects { get; init; } = [];
 
     /// <summary>Model file path (MODL subrecord).</summary>
     public string? ModelPath { get; init; }

@@ -406,7 +406,8 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
         uint cost = 0;
         uint level = 0;
         byte flags = 0;
-        var effectFormIds = new List<uint>();
+        var effects = new List<EnchantmentEffect>();
+        uint currentEffectId = 0;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -433,9 +434,27 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
 
                     break;
                 }
-                case "EFID" when sub.DataLength == 4:
-                    effectFormIds.Add(RecordParserContext.ReadFormId(subData, record.IsBigEndian));
+                case "EFID" when sub.DataLength >= 4:
+                    currentEffectId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
+                case "EFIT" when sub.DataLength >= 12:
+                {
+                    var fields = SubrecordDataReader.ReadFields("EFIT", null, subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        effects.Add(new EnchantmentEffect
+                        {
+                            EffectFormId = currentEffectId,
+                            Magnitude = SubrecordDataReader.GetFloat(fields, "Magnitude"),
+                            Area = SubrecordDataReader.GetUInt32(fields, "Area"),
+                            Duration = SubrecordDataReader.GetUInt32(fields, "Duration"),
+                            Type = SubrecordDataReader.GetUInt32(fields, "Type"),
+                            ActorValue = SubrecordDataReader.GetInt32(fields, "ActorValue", -1)
+                        });
+                    }
+
+                    break;
+                }
             }
         }
 
@@ -448,7 +467,7 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
             Cost = cost,
             Level = level,
             Flags = flags,
-            EffectFormIds = effectFormIds,
+            Effects = effects,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };

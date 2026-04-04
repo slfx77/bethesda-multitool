@@ -114,7 +114,12 @@ internal sealed class CombatEffectHandler(RecordParserContext context) : RecordH
     /// </summary>
     internal List<ProjectileRecord> ParseProjectiles()
     {
-        return ParseAccessorOnly("PROJ", 2048, ParseProjectileFromAccessor);
+        var projectiles = ParseAccessorOnly("PROJ", 2048, ParseProjectileFromAccessor);
+
+        Context.MergeRuntimeRecords(projectiles, 0x33, p => p.FormId,
+            (reader, entry) => reader.ReadRuntimeProjectile(entry), "projectiles");
+
+        return projectiles;
     }
 
     private ProjectileRecord? ParseProjectileFromAccessor(DetectedMainRecord record, byte[] buffer)

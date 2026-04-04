@@ -91,6 +91,7 @@ internal sealed class WeaponRecordHandler(RecordParserContext context) : RecordH
         float actionPoints = 0;
         float aimArc = 0;
         float limbDamageMult = 1;
+        uint skill = 0;
         uint strengthRequirement = 0;
         uint skillRequirement = 0;
         var equipmentType = EquipmentType.None;
@@ -133,7 +134,12 @@ internal sealed class WeaponRecordHandler(RecordParserContext context) : RecordH
                     bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
                     break;
                 case "ENAM" when sub.DataLength == 4:
+                    // FNV: ENAM = Ammo FormID (4 bytes)
                     ammoFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "NAM0" when sub.DataLength == 4:
+                    // FO3: NAM0 = Ammo FormID (4 bytes) — FO3 uses NAM0 instead of ENAM for ammo
+                    ammoFormId ??= RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
                 case "DATA" when sub.DataLength >= 15:
                 {
@@ -196,6 +202,7 @@ internal sealed class WeaponRecordHandler(RecordParserContext context) : RecordH
                         actionPoints = SubrecordDataReader.GetFloat(fields, "ActionPoints");
                         aimArc = SubrecordDataReader.GetFloat(fields, "AimArc");
                         limbDamageMult = SubrecordDataReader.GetFloat(fields, "LimbDamageMult");
+                        skill = SubrecordDataReader.GetUInt32(fields, "Skill");
                         strengthRequirement = SubrecordDataReader.GetUInt32(fields, "StrengthRequirement");
                         skillRequirement = SubrecordDataReader.GetUInt32(fields, "SkillRequirement");
                     }
@@ -299,6 +306,7 @@ internal sealed class WeaponRecordHandler(RecordParserContext context) : RecordH
             ActionPoints = actionPoints,
             AimArc = aimArc,
             LimbDamageMult = limbDamageMult,
+            Skill = skill,
             StrengthRequirement = strengthRequirement,
             SkillRequirement = skillRequirement,
             EquipmentType = equipmentType,
@@ -318,6 +326,155 @@ internal sealed class WeaponRecordHandler(RecordParserContext context) : RecordH
             IsBigEndian = record.IsBigEndian
         };
     }
+
+    /// <summary>
+    ///     Enrich weapon records with projectile physics data parsed from PROJ ESM records.
+    ///     This is the ESM-only path — no DMP required. Parses the PROJ DATA subrecord
+    ///     using the existing schema to extract speed, gravity, range, etc.
+    /// </summary>
+    internal void EnrichWeaponsWithEsmProjectileData(List<WeaponRecord> weapons)
+    {
+        if (Context.Accessor == null || weapons.Count == 0)
+        {
+            return;
+        }
+
+        // Collect unique projectile FormIDs that need enrichment
+        var neededProjIds = new HashSet<uint>();
+        foreach (var weapon in weapons)
+        {
+            if (weapon.ProjectileFormId.HasValue && weapon.ProjectileData == null)
+            {
+                neededProjIds.Add(weapon.ProjectileFormId.Value);
+            }
+        }
+
+        if (neededProjIds.Count == 0)
+        {
+            return;
+        }
+
+        // Parse PROJ records from ESM and build lookup
+        var projDataLookup = new Dictionary<uint, ProjectilePhysicsData>();
+        var buffer = new byte[4096];
+
+        foreach (var projRecord in Context.GetRecordsByType("PROJ"))
+        {
+            if (!neededProjIds.Contains(projRecord.FormId))
+            {
+                continue;
+            }
+
+            var recordData = Context.ReadRecordData(projRecord, buffer);
+            if (recordData == null)
+            {
+                continue;
+            }
+
+            var (data, dataSize) = recordData.Value;
+            string? modelPath = null;
+            string? fullName = null;
+            ProjectilePhysicsData? projPhysics = null;
+
+            foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, projRecord.IsBigEndian))
+            {
+                var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+                switch (sub.Signature)
+                {
+                    case "MODL":
+                        modelPath = EsmStringUtils.ReadNullTermString(subData);
+                        break;
+                    case "FULL":
+                        fullName = EsmStringUtils.ReadNullTermString(subData);
+                        break;
+                    case "DATA" when sub.DataLength >= 64:
+                    {
+                        var fields =
+                            SubrecordDataReader.ReadFields("DATA", "PROJ", subData, projRecord.IsBigEndian);
+                        if (fields.Count > 0)
+                        {
+                            projPhysics = new ProjectilePhysicsData
+                            {
+                                Flags = SubrecordDataReader.GetUInt32(fields, "FlagsAndType"),
+                                Gravity = SubrecordDataReader.GetFloat(fields, "Gravity"),
+                                Speed = SubrecordDataReader.GetFloat(fields, "Speed"),
+                                Range = SubrecordDataReader.GetFloat(fields, "Range"),
+                                LightFormId = NullIfZero(SubrecordDataReader.GetUInt32(fields, "Light")),
+                                MuzzleFlashLightFormId =
+                                    NullIfZero(SubrecordDataReader.GetUInt32(fields, "MuzzleFlashLight")),
+                                TracerChance = SubrecordDataReader.GetFloat(fields, "TracerChance"),
+                                ExplosionProximity =
+                                    SubrecordDataReader.GetFloat(fields, "ExplosionAltTriggerProximity"),
+                                ExplosionTimer =
+                                    SubrecordDataReader.GetFloat(fields, "ExplosionAltTriggerTimer"),
+                                ExplosionFormId =
+                                    NullIfZero(SubrecordDataReader.GetUInt32(fields, "Explosion")),
+                                ActiveSoundLoopFormId =
+                                    NullIfZero(SubrecordDataReader.GetUInt32(fields, "Sound")),
+                                MuzzleFlashDuration =
+                                    SubrecordDataReader.GetFloat(fields, "MuzzleFlashDuration"),
+                                FadeOutTime = SubrecordDataReader.GetFloat(fields, "FadeDuration"),
+                                Force = SubrecordDataReader.GetFloat(fields, "ImpactForce"),
+                                CountdownSoundFormId =
+                                    NullIfZero(SubrecordDataReader.GetUInt32(fields, "SoundCountdown")),
+                                DeactivateSoundFormId =
+                                    NullIfZero(SubrecordDataReader.GetUInt32(fields, "SoundDisable")),
+                                DefaultWeaponSourceFormId =
+                                    NullIfZero(SubrecordDataReader.GetUInt32(fields, "DefaultWeaponSource")),
+                                RotationX = SubrecordDataReader.GetFloat(fields, "RotationX"),
+                                RotationY = SubrecordDataReader.GetFloat(fields, "RotationY"),
+                                RotationZ = SubrecordDataReader.GetFloat(fields, "RotationZ"),
+                                BounceMultiplier = SubrecordDataReader.GetFloat(fields, "BouncyMult")
+                            };
+                        }
+
+                        break;
+                    }
+                }
+            }
+
+            if (projPhysics != null)
+            {
+                projDataLookup[projRecord.FormId] = projPhysics with
+                {
+                    ModelPath = modelPath ?? projPhysics.ModelPath,
+                    FullName = fullName ?? projPhysics.FullName
+                };
+            }
+        }
+
+        if (projDataLookup.Count == 0)
+        {
+            return;
+        }
+
+        // Merge into weapons
+        var enrichedCount = 0;
+        for (var i = 0; i < weapons.Count; i++)
+        {
+            var weapon = weapons[i];
+            if (weapon.ProjectileData != null || !weapon.ProjectileFormId.HasValue)
+            {
+                continue;
+            }
+
+            if (projDataLookup.TryGetValue(weapon.ProjectileFormId.Value, out var projData))
+            {
+                weapons[i] = weapon with { ProjectileData = projData };
+                enrichedCount++;
+            }
+        }
+
+        if (enrichedCount > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] Enriched {enrichedCount}/{weapons.Count} weapons with ESM projectile data " +
+                $"({projDataLookup.Count} PROJ records parsed)");
+        }
+    }
+
+    private static uint? NullIfZero(uint value) => value == 0 ? null : value;
 
     /// <summary>
     ///     Enrich weapon records with projectile physics data (gravity, speed, range,

@@ -262,6 +262,38 @@ internal sealed class RuntimeMemoryContext(
     }
 
     /// <summary>
+    ///     Read BSStringT header to extract the string file offset and VA.
+    ///     Returns null if the BSStringT pointer is invalid or unmapped.
+    /// </summary>
+    public (long StringFileOffset, uint StringVa)? ReadBSStringTInfo(long tesFormFileOffset, int fieldOffset)
+    {
+        var bstOffset = tesFormFileOffset + fieldOffset;
+        if (bstOffset + 8 > FileSize)
+        {
+            return null;
+        }
+
+        var bstBuffer = new byte[8];
+        Accessor.ReadArray(bstOffset, bstBuffer, 0, 8);
+
+        var pString = BinaryUtils.ReadUInt32BE(bstBuffer);
+        var sLen = BinaryUtils.ReadUInt16BE(bstBuffer, 4);
+
+        if (pString == 0 || sLen == 0 || sLen > EsmStringUtils.MaxBSStringLength || !IsValidPointer(pString))
+        {
+            return null;
+        }
+
+        var strFileOffset = MinidumpInfo.VirtualAddressToFileOffset(Xbox360MemoryUtils.VaToLong(pString));
+        if (!strFileOffset.HasValue || strFileOffset.Value + sLen > FileSize)
+        {
+            return null;
+        }
+
+        return (strFileOffset.Value, pString);
+    }
+
+    /// <summary>
     ///     Read a BSStringT string from a TESForm object.
     ///     BSStringT layout (8 bytes, big-endian):
     ///     Offset 0: pString (char* pointer, 4 bytes BE)

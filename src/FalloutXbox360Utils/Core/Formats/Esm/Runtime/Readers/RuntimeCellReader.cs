@@ -24,11 +24,64 @@ internal sealed class RuntimeCellReader
         RuntimeWorldCellLayoutProbeResult? layoutProbe = null)
         : this(
             context,
-            layoutProbe is { IsHighConfidence: true }
-                ? layoutProbe.Layout
-                : RuntimeWorldCellLayout.CreateDefault(useProtoOffsets),
-            layoutProbe?.IsHighConfidence != false)
+            ResolveLayout(useProtoOffsets, layoutProbe),
+            ResolveAllowStructuralReads(useProtoOffsets, layoutProbe))
     {
+    }
+
+    /// <summary>
+    ///     Resolves the world/cell layout from probe results and build-era knowledge.
+    ///     High-confidence probes win outright. For low-confidence probes on early builds,
+    ///     uses the RTTI-derived worldShift (-4) while keeping the probe's cellShift
+    ///     (which the probe determines reliably even at low confidence).
+    /// </summary>
+    private static RuntimeWorldCellLayout ResolveLayout(
+        bool useProtoOffsets, RuntimeWorldCellLayoutProbeResult? probe)
+    {
+        if (probe is not { WinnerScore: > 0 })
+        {
+            return RuntimeWorldCellLayout.CreateDefault(useProtoOffsets);
+        }
+
+        if (probe.IsHighConfidence)
+        {
+            return probe.Layout;
+        }
+
+        // Low-confidence probe on early build: the probe can't reliably determine worldShift
+        // (all pointer fields null in sparse memory), but RTTI confirms TESWorldSpace is
+        // 240 bytes in Nov 2009 vs 244 in final → worldShift = -4.
+        // Keep probe's cellShift, which has clear differentiation even at low confidence.
+        if (useProtoOffsets)
+        {
+            var rttiWorldShift = RuntimeBuildOffsets.GetWorldCellFieldShift(true);
+            return new RuntimeWorldCellLayout(rttiWorldShift, probe.Layout.CellShift);
+        }
+
+        return probe.Layout;
+    }
+
+    /// <summary>
+    ///     Structural reads (cell map walking) require either high-confidence probe results
+    ///     or RTTI-backed knowledge of the correct layout (early builds).
+    ///     Low-confidence probes on non-early builds disable structural reads to avoid
+    ///     walking memory with potentially wrong offsets.
+    /// </summary>
+    private static bool ResolveAllowStructuralReads(
+        bool useProtoOffsets, RuntimeWorldCellLayoutProbeResult? probe)
+    {
+        if (probe is { IsHighConfidence: true })
+        {
+            return true;
+        }
+
+        // Early builds: RTTI provides the correct worldShift, so structural reads are safe
+        if (useProtoOffsets && probe is { WinnerScore: > 0 })
+        {
+            return true;
+        }
+
+        return probe?.IsHighConfidence != false;
     }
 
     internal RuntimeCellReader(RuntimeMemoryContext context, RuntimeWorldCellLayout layout)
@@ -170,9 +223,9 @@ internal sealed class RuntimeCellReader
             return null;
         }
 
-        // Validate FormType byte (0x41 = WRLD)
+        // Validate FormType byte (0x41 = WRLD, or original pre-drift value)
         var formType = buffer[4];
-        if (formType != 0x41)
+        if (formType != 0x41 && formType != (entry.OriginalFormType ?? 0x41))
         {
             return null;
         }
@@ -256,7 +309,7 @@ internal sealed class RuntimeCellReader
         }
 
         var buffer = ReadStructBuffer(entry, layout.StructSize);
-        if (buffer == null || !IsExpectedForm(buffer, 0x41, entry.FormId))
+        if (buffer == null || !IsExpectedForm(buffer, 0x41, entry.FormId, entry.OriginalFormType))
         {
             return null;
         }
@@ -616,9 +669,16 @@ internal sealed class RuntimeCellReader
             : offset.Value;
     }
 
-    private static bool IsExpectedForm(byte[] buffer, byte expectedFormType, uint expectedFormId)
+    private static bool IsExpectedForm(byte[] buffer, byte expectedFormType, uint expectedFormId,
+        byte? originalFormType = null)
     {
-        if (buffer.Length < 16 || buffer[4] != expectedFormType)
+        if (buffer.Length < 16)
+        {
+            return false;
+        }
+
+        // Accept both the final-build FormType and the original pre-drift value
+        if (buffer[4] != expectedFormType && buffer[4] != (originalFormType ?? expectedFormType))
         {
             return false;
         }
@@ -627,6 +687,55 @@ internal sealed class RuntimeCellReader
     }
 
     #endregion
+
+    /// <summary>
+    ///     Score how well pointer fields at shifted offsets look like real pointer slots.
+    ///     Used by the layout probe to discriminate correct vs wrong world shifts.
+    ///     <para>
+    ///     Returns (plausible, garbage): plausible = count of valid VAs or nulls (expected for
+    ///     pointer fields), garbage = count of non-zero values that are NOT valid VAs (strong
+    ///     signal of misaligned read — correct shifts don't produce garbage in pointer slots).
+    ///     </para>
+    /// </summary>
+    internal (int Plausible, int Garbage) ProbeWorldPointerPlausibility(RuntimeEditorIdEntry entry)
+    {
+        var buffer = ReadStructBuffer(entry, WorldStructSize);
+        if (buffer == null || !IsExpectedForm(buffer, 0x41, entry.FormId))
+        {
+            return (0, 0);
+        }
+
+        // PDB offsets for key pointer fields (all >= WorldShiftStartOffset, so shift applies)
+        ReadOnlySpan<int> pdbPointerOffsets = [64, 68, 80, 128, 132]; // pCellMap, pPersistentCell, pClimate, pParentWorld, pWorldWater
+
+        var plausible = 0;
+        var garbage = 0;
+
+        foreach (var pdbOffset in pdbPointerOffsets)
+        {
+            var adjusted = pdbOffset + _layout.WorldShift;
+            if (adjusted < 0 || adjusted + 4 > buffer.Length)
+            {
+                continue;
+            }
+
+            var ptrValue = BinaryUtils.ReadUInt32BE(buffer, adjusted);
+            if (ptrValue == 0)
+            {
+                plausible++; // Null pointer — expected for unloaded data
+            }
+            else if (_context.IsValidPointer(ptrValue))
+            {
+                plausible++; // Valid VA — strong positive signal
+            }
+            else
+            {
+                garbage++; // Non-zero, not a valid VA — likely misaligned read
+            }
+        }
+
+        return (plausible, garbage);
+    }
 
     #region TESWorldSpace Struct Layout
 

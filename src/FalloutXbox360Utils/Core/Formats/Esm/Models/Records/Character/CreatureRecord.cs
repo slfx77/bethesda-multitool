@@ -44,6 +44,9 @@ public record CreatureRecord
     /// <summary>Model path.</summary>
     public string? ModelPath { get; init; }
 
+    /// <summary>AI behavior data from AIDT subrecord.</summary>
+    public NpcAiData? AiData { get; init; }
+
     /// <summary>Faction memberships.</summary>
     public List<FactionMembership> Factions { get; init; } = [];
 

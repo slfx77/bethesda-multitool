@@ -163,8 +163,8 @@ internal sealed class RuntimeMagicReader
         var level = BinaryUtils.ReadUInt32BE(buffer, spelData + 8);
         var flags = buffer[spelData + 12];
 
-        // Walk EffectItem linked list for effect FormIDs
-        var effectFormIds = WalkEffectItemList(buffer);
+        // Walk EffectItem linked list for full effect data
+        var effects = WalkEffectItemListWithData(buffer);
 
         return new SpellRecord
         {
@@ -175,7 +175,7 @@ internal sealed class RuntimeMagicReader
             Cost = cost,
             Level = level,
             Flags = flags,
-            EffectFormIds = effectFormIds,
+            Effects = effects,
             Offset = offset,
             IsBigEndian = true
         };
@@ -358,72 +358,6 @@ internal sealed class RuntimeMagicReader
     #endregion
 
     #region EffectItem List Walking
-
-    /// <summary>
-    ///     Walk BSSimpleList&lt;EffectItem*&gt; and collect base effect FormIDs.
-    ///     EffectItem layout: pSetting(4) + fMagnitude(4) + iArea(4) + iDuration(4) + iType(4) + iActorValue(4) = 24 bytes.
-    /// </summary>
-    private List<uint> WalkEffectItemList(byte[] structBuffer)
-    {
-        var result = new List<uint>();
-
-        // BSSimpleList head pointer
-        var headVa = BinaryUtils.ReadUInt32BE(structBuffer, EffectListOffset + _s);
-        if (headVa == 0 || !_context.IsValidPointer(headVa))
-        {
-            return result;
-        }
-
-        var visited = new HashSet<uint>();
-        var currentVa = headVa;
-
-        for (var i = 0; i < MaxListNodes; i++)
-        {
-            if (currentVa == 0 || !visited.Add(currentVa))
-            {
-                break;
-            }
-
-            var nodeFileOffset = _context.VaToFileOffset(currentVa);
-            if (nodeFileOffset == null)
-            {
-                break;
-            }
-
-            // BSSimpleList node: pItem(4) + pNext(4) = 8 bytes
-            var nodeBuffer = _context.ReadBytes(nodeFileOffset.Value, 8);
-            if (nodeBuffer == null)
-            {
-                break;
-            }
-
-            var itemVa = BinaryUtils.ReadUInt32BE(nodeBuffer);
-            var nextVa = BinaryUtils.ReadUInt32BE(nodeBuffer, 4);
-
-            if (itemVa != 0)
-            {
-                // EffectItem: pSetting (EffectSetting*) at +0
-                var itemOffset = _context.VaToFileOffset(itemVa);
-                if (itemOffset != null)
-                {
-                    var effectItemBuffer = _context.ReadBytes(itemOffset.Value, 4);
-                    if (effectItemBuffer != null)
-                    {
-                        var settingFormId = _context.FollowPointerVaToFormId(
-                            BinaryUtils.ReadUInt32BE(effectItemBuffer));
-                        if (settingFormId is > 0)
-                        {
-                            result.Add(settingFormId.Value);
-                        }
-                    }
-                }
-            }
-
-            currentVa = nextVa;
-        }
-
-        return result;
-    }
 
     /// <summary>
     ///     Walk EffectItem list and return full EnchantmentEffect data per item.

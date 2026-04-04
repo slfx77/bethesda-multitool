@@ -131,6 +131,59 @@ internal sealed class RuntimeEffectReader(
         };
     }
 
+    /// <summary>
+    ///     Read a full ProjectileRecord from a runtime BGSProjectile struct.
+    ///     Used by MergeRuntimeRecords to create projectile records from DMP data.
+    /// </summary>
+    public ProjectileRecord? ReadRuntimeProjectile(RuntimeEditorIdEntry entry)
+    {
+        if (entry.TesFormOffset == null || entry.FormType != 0x33)
+        {
+            return null;
+        }
+
+        var physics = ReadProjectilePhysics(entry.TesFormOffset.Value, entry.FormId);
+        if (physics == null)
+        {
+            return null;
+        }
+
+        // BGSProjectileData.iFlags is a uint32 where low 16 bits = flags, high 16 bits = type
+        var flags = (ushort)(physics.Flags & 0xFFFF);
+        var projType = (ushort)((physics.Flags >> 16) & 0xFFFF);
+
+        return new ProjectileRecord
+        {
+            FormId = entry.FormId,
+            EditorId = entry.EditorId,
+            FullName = physics.FullName,
+            ModelPath = physics.ModelPath,
+            Flags = flags,
+            ProjectileType = projType,
+            Gravity = physics.Gravity,
+            Speed = physics.Speed,
+            Range = physics.Range,
+            Light = physics.LightFormId ?? 0,
+            MuzzleFlashLight = physics.MuzzleFlashLightFormId ?? 0,
+            TracerChance = physics.TracerChance,
+            ExplosionProximity = physics.ExplosionProximity,
+            ExplosionTimer = physics.ExplosionTimer,
+            Explosion = physics.ExplosionFormId ?? 0,
+            Sound = physics.ActiveSoundLoopFormId ?? 0,
+            MuzzleFlashDuration = physics.MuzzleFlashDuration,
+            FadeDuration = physics.FadeOutTime,
+            ImpactForce = physics.Force,
+            CountdownSound = physics.CountdownSoundFormId ?? 0,
+            DeactivateSound = physics.DeactivateSoundFormId ?? 0,
+            DefaultWeaponSource = physics.DefaultWeaponSourceFormId ?? 0,
+            RotationX = physics.RotationX,
+            RotationY = physics.RotationY,
+            RotationZ = physics.RotationZ,
+            BounceMultiplier = physics.BounceMultiplier,
+            SoundLevel = physics.SoundLevel
+        };
+    }
+
     #region Projectile Struct Layout (Proto Debug PDB base + _s)
 
     // BGSProjectile: PDB size 208, Debug dump 212, Release dump 224

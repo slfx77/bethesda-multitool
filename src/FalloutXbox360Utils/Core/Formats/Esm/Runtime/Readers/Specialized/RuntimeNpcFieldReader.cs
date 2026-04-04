@@ -1,5 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Utils;
+using Logger = FalloutXbox360Utils.Core.Logger;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 
@@ -50,6 +51,7 @@ internal sealed class RuntimeNpcFieldReader
         // Validate ranges
         if (aggression > 3 || confidence > 4 || assistance > 2)
         {
+            Logger.Instance.Debug("[AI] Rejected: aggression={0}, confidence={1}, assistance={2}", aggression, confidence, assistance);
             return null;
         }
 
@@ -234,6 +236,63 @@ internal sealed class RuntimeNpcFieldReader
         }
 
         return packages;
+    }
+
+    /// <summary>
+    ///     Read spell/ability list from BSSimpleList&lt;SpellItem*&gt; at NpcSpellListOffset.
+    ///     Same linked list pattern as ReadPackageList. Returns a list of SPEL FormIDs.
+    /// </summary>
+    public List<uint> ReadSpellList(byte[] buffer)
+    {
+        var spells = new List<uint>();
+
+        if (NpcSpellListOffset + 8 > buffer.Length)
+        {
+            return spells;
+        }
+
+        var itemPtr = BinaryUtils.ReadUInt32BE(buffer, NpcSpellListOffset);
+        var nextPtr = BinaryUtils.ReadUInt32BE(buffer, NpcSpellListOffset + 4);
+
+        if (itemPtr != 0 && _context.IsValidPointer(itemPtr))
+        {
+            var formId = _context.FollowPointerVaToFormId(itemPtr);
+            if (formId is > 0 and < 0x01000000)
+            {
+                spells.Add(formId.Value);
+            }
+        }
+
+        var visited = new HashSet<uint>();
+        for (var i = 0; i < 50 && nextPtr != 0 && _context.IsValidPointer(nextPtr) && !visited.Contains(nextPtr); i++)
+        {
+            visited.Add(nextPtr);
+            var nodeFileOffset = _context.VaToFileOffset(nextPtr);
+            if (nodeFileOffset == null)
+            {
+                break;
+            }
+
+            var nodeBuf = _context.ReadBytes(nodeFileOffset.Value, 8);
+            if (nodeBuf == null)
+            {
+                break;
+            }
+
+            var nodeItemPtr = BinaryUtils.ReadUInt32BE(nodeBuf);
+            nextPtr = BinaryUtils.ReadUInt32BE(nodeBuf, 4);
+
+            if (nodeItemPtr != 0 && _context.IsValidPointer(nodeItemPtr))
+            {
+                var formId = _context.FollowPointerVaToFormId(nodeItemPtr);
+                if (formId is > 0 and < 0x01000000)
+                {
+                    spells.Add(formId.Value);
+                }
+            }
+        }
+
+        return spells;
     }
 
     /// <summary>
@@ -655,6 +714,7 @@ internal sealed class RuntimeNpcFieldReader
         // Validate count (reasonable range for inventory)
         if (count <= 0 || count > 100000)
         {
+            Logger.Instance.Debug("[NPC] Rejected inventory item: count={0} (range 1-100000)", count);
             return null;
         }
 
@@ -703,6 +763,9 @@ internal sealed class RuntimeNpcFieldReader
     private int NpcContainerNextOffset => 108 + _coreShift;
 
     private int NpcFactionListHeadOffset => 92 + _coreShift;
+
+    // TESSpellList.spellList (BSSimpleList<SpellItem*>, 8B inline head)
+    private int NpcSpellListOffset => 128 + _coreShift;
 
     // TESAIForm at offset 144 in TESActorBase; AIPackList (BSSimpleList<TESPackage*>) at +24 within TESAIForm
     private int PackageListOffset => 168 + _coreShift;

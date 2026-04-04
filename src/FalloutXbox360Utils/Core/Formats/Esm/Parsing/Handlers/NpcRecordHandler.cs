@@ -61,6 +61,7 @@ internal sealed class NpcRecordHandler(RecordParserContext context) : RecordHand
         uint? deathItem = null;
         uint? voiceType = null;
         uint? template = null;
+        NpcAiData? aiData = null;
         uint? hairFormId = null;
         float? hairLength = null;
         uint? eyesFormId = null;
@@ -127,6 +128,9 @@ internal sealed class NpcRecordHandler(RecordParserContext context) : RecordHand
                 case "HCLR" when sub.DataLength == 4:
                     hairColor = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
+                case "AIDT" when sub.DataLength >= 12:
+                    aiData = ActorRecordHandler.ParseAiData(subData, record.IsBigEndian);
+                    break;
                 case "SNAM" when sub.DataLength >= 5:
                     var factionFormId = RecordParserContext.ReadFormId(subData[..4], record.IsBigEndian);
                     var rank = (sbyte)subData[4];
@@ -191,6 +195,7 @@ internal sealed class NpcRecordHandler(RecordParserContext context) : RecordHand
             Stats = stats,
             SpecialStats = specialStats,
             Skills = skills,
+            AiData = aiData,
             Race = race,
             Script = script,
             Class = classFormId,

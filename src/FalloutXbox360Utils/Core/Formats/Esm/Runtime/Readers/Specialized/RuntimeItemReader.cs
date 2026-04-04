@@ -11,13 +11,21 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 ///     <see cref="RuntimeContainerReader" />. Weapon field parsing is delegated to
 ///     <see cref="RuntimeItemFieldHelpers" />.
 /// </summary>
-internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
+internal sealed class RuntimeItemReader(
+    RuntimeMemoryContext context,
+    RuntimeLayoutProbeResult<int[]>? weaponSoundProbe = null)
 {
+    private const int MinProbeMargin = 3;
     private readonly RuntimeMemoryContext _context = context;
 
     // Build-specific offset shift: Proto Debug PDB + _s = actual dump offset.
     private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
         MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
+
+    // Weapon sound shift from probe (e.g., -4 for builds missing a field before IdleSound).
+    private readonly int _weaponSoundShift = weaponSoundProbe is { Margin: >= MinProbeMargin }
+        ? weaponSoundProbe.Winner.Layout[1]
+        : 0;
 
     // Delegate container reading to dedicated class.
     private RuntimeContainerReader? _containerReader;
@@ -27,7 +35,7 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
 
     // Shared layouts for field reading.
     private RuntimeItemLayouts? _layouts;
-    private RuntimeItemLayouts Layouts => _layouts ??= new RuntimeItemLayouts(_s);
+    private RuntimeItemLayouts Layouts => _layouts ??= new RuntimeItemLayouts(_s, _weaponSoundShift);
     private RuntimeItemFieldHelpers FieldHelpers => _fieldHelpers ??= new RuntimeItemFieldHelpers(_context, Layouts);
     private RuntimeContainerReader ContainerReader => _containerReader ??= new RuntimeContainerReader(_context);
 
@@ -110,11 +118,15 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
             ActionPoints = combatFields.ActionPoints,
             ShotsPerSec = combatFields.ShotsPerSec,
             VatsToHitChance = combatFields.VatsChance,
+            NumProjectiles = combatFields.NumProjectiles,
+            AmmoPerShot = combatFields.AmmoPerShot,
+            Skill = combatFields.Skill,
             AmmoFormId = ammoFormId,
             ProjectileFormId = _context.FollowPointerToFormId(buffer,
                 Layouts.WeapDataStart + RuntimeItemLayouts.DnamProjectileRelOffset),
             CriticalDamage = critFields.Damage,
             CriticalChance = critFields.Chance,
+            CriticalEffectFormId = critFields.EffectFormId,
             ModelPath = modelPath,
             EmbeddedWeaponNode = embeddedWeaponNode,
             Bounds = ReadBounds(buffer),
@@ -190,6 +202,12 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
         var damageThreshold =
             RuntimeMemoryContext.ReadValidatedFloat(buffer, Layouts.ArmoDamageThresholdOffset, 0, 100);
 
+        // EquipmentType: BGSEquipType.eEquipType (int32 enum at offset 344)
+        var equipTypeValue = RuntimeMemoryContext.ReadInt32BE(buffer, Layouts.ArmoEquipTypeOffset);
+        var equipmentType = equipTypeValue >= -1 && equipTypeValue <= 13
+            ? (Enums.EquipmentType)equipTypeValue
+            : Enums.EquipmentType.None;
+
         return new ArmorRecord
         {
             FormId = entry.FormId,
@@ -201,6 +219,7 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
             BipedFlags = bipedFlags,
             DamageResistance = damageResistance,
             DamageThreshold = damageThreshold,
+            EquipmentType = equipmentType,
             Bounds = ReadBounds(buffer),
             Offset = offset,
             IsBigEndian = true
@@ -249,12 +268,24 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
         // Read world model path via BSStringT at TESModel offset (+80)
         var modelPath = _context.ReadBSStringT(offset, Layouts.WeapModelPathOffset);
 
+        // AMMO_DATA: speed (float) + flags (uint32)
+        var speed = RuntimeMemoryContext.ReadValidatedFloat(buffer, Layouts.AmmoSpeedOffset, 0, 100000);
+        var flags = BinaryUtils.ReadUInt32BE(buffer, Layouts.AmmoFlagsOffset);
+        var clipRounds = buffer[Layouts.AmmoClipRoundsOffset];
+
+        // AMMO_DATA_NV: pProjectile (BGSProjectile*)
+        var projectileFormId = _context.FollowPointerToFormId(buffer, Layouts.AmmoProjectilePtrOffset);
+
         return new AmmoRecord
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
             FullName = entry.DisplayName,
             Value = (uint)value,
+            Speed = speed,
+            Flags = (byte)flags,
+            ClipRounds = clipRounds,
+            ProjectileFormId = projectileFormId,
             ModelPath = modelPath,
             Bounds = ReadBounds(buffer),
             Offset = offset,
@@ -430,6 +461,11 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
         // ENIT flags: AlchemyItemData.iFlags (byte at offset 188)
         var flags = (uint)buffer[Layouts.AlchFlagsOffset];
 
+        // Addiction: SpellItem* pointer → follow to FormID
+        var addictionFormId = _context.FollowPointerToFormId(buffer, Layouts.AlchAddictionPtrOffset);
+        var addictionChance = RuntimeMemoryContext.ReadValidatedFloat(
+            buffer, Layouts.AlchAddictionChanceOffset, 0, 1);
+
         return new ConsumableRecord
         {
             FormId = entry.FormId,
@@ -438,6 +474,8 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
             Value = (uint)value,
             Weight = weight,
             Flags = flags,
+            AddictionFormId = addictionFormId,
+            AddictionChance = addictionChance,
             Bounds = ReadBounds(buffer),
             Offset = offset,
             IsBigEndian = true

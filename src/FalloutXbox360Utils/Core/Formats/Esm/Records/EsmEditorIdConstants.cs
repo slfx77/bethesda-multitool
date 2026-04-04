@@ -34,6 +34,7 @@ internal static class EsmEditorIdConstants
         [0x2E] = 68, // KEYM - TESKey
         [0x2F] = 68, // ALCH - AlchemyItem
         [0x33] = 68, // PROJ - BGSProjectile
-        [0x47] = 68 // QUST - TESQuest (ENUM_FORM_ID value 71)
+        [0x47] = 68, // QUST - TESQuest (ENUM_FORM_ID value 71)
+        [0x59] = 44 // AVIF - ActorValueInfo
     };
 }

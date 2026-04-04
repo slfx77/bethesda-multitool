@@ -80,6 +80,31 @@ internal sealed class ActorRecordHandler(RecordParserContext context) : RecordHa
         return result;
     }
 
+    /// <summary>
+    ///     Parse AIDT subrecord (AI Data, 12–20 bytes) into NpcAiData.
+    ///     Layout: Aggression(1) Confidence(1) Energy(1) Responsibility(1) Mood(1) pad(3) ServiceFlags(4) ...
+    /// </summary>
+    internal static NpcAiData? ParseAiData(ReadOnlySpan<byte> data, bool bigEndian)
+    {
+        if (data.Length < 12)
+        {
+            return null;
+        }
+
+        var aggression = data[0];
+        var confidence = data[1];
+        var energy = data[2];
+        var responsibility = data[3];
+        var mood = data[4];
+        // bytes 5-7: padding
+        var flags = bigEndian
+            ? BinaryPrimitives.ReadUInt32BigEndian(data[8..])
+            : BinaryPrimitives.ReadUInt32LittleEndian(data[8..]);
+        var assistance = data.Length >= 19 ? data[18] : (byte)0;
+
+        return new NpcAiData(aggression, confidence, energy, responsibility, mood, flags, assistance);
+    }
+
     #endregion
 
     #region ParseFactions

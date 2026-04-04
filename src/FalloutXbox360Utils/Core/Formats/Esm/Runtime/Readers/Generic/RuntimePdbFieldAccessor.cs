@@ -32,7 +32,8 @@ internal sealed class RuntimePdbFieldAccessor(RuntimeMemoryContext context)
             return null;
         }
 
-        if (buffer.Length < 16 || buffer[4] != entry.FormType)
+        if (buffer.Length < 16 ||
+            (buffer[4] != entry.FormType && buffer[4] != (entry.OriginalFormType ?? entry.FormType)))
         {
             return null;
         }

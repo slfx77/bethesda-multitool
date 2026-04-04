@@ -16,7 +16,7 @@ internal static class SubrecordItemSchemas
         // WEAP-SPECIFIC SCHEMAS
         // ========================================================================
 
-        // DNAM - WEAP (204 bytes)
+        // DNAM - WEAP (204 bytes for FNV; size-agnostic fallback handles FO3's shorter DNAM)
         schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "WEAP", 204)] = new SubrecordSchema(
             F.Int8("WeaponType"),
             F.Padding(3),
@@ -82,6 +82,75 @@ internal static class SubrecordItemSchemas
             F.UInt32("SkillRequirement"))
         {
             Description = "Weapon Data"
+        };
+
+        // DNAM - WEAP (size-agnostic fallback for FO3's shorter DNAM — same fields, reader
+        // stops at data boundary so this safely handles any DNAM length ≥ 64)
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "WEAP")] = new SubrecordSchema(
+            F.Int8("WeaponType"),
+            F.Padding(3),
+            F.Float("Speed"),
+            F.Float("Reach"),
+            F.UInt8("Flags"),
+            F.UInt8("HandGripAnim"),
+            F.UInt8("AmmoPerShot"),
+            F.UInt8("ReloadAnim"),
+            F.Float("MinSpread"),
+            F.Float("Spread"),
+            F.Float("Drift"),
+            F.Float("IronFov"),
+            F.UInt8("ConditionLevel"),
+            F.Padding(3),
+            F.FormIdLittleEndian("Projectile"),
+            F.UInt8("VatToHitChance"),
+            F.UInt8("AttackAnim"),
+            F.UInt8("NumProjectiles"),
+            F.UInt8("EmbeddedConditionValue"),
+            F.Float("MinRange"),
+            F.Float("MaxRange"),
+            F.UInt32("HitBehavior"),
+            F.UInt32("FlagsEx"),
+            F.Float("AttackMult"),
+            F.Float("ShotsPerSec"),
+            F.Float("ActionPoints"),
+            F.Float("RumbleLeftMotor"),
+            F.Float("RumbleRightMotor"),
+            F.Float("RumbleDuration"),
+            F.Float("DamageToWeaponMult"),
+            F.Float("AnimShotsPerSecond"),
+            F.Float("AnimReloadTime"),
+            F.Float("AnimJamTime"),
+            F.Float("AimArc"),
+            F.UInt32("Skill"),
+            F.UInt32("RumblePattern"),
+            F.Float("RumbleWavelength"),
+            F.Float("LimbDamageMult"),
+            F.UInt32("Resistance"),
+            F.Float("IronSightUseMult"),
+            F.Float("SemiAutoDelayMin"),
+            F.Float("SemiAutoDelayMax"),
+            F.Float("CookTimer"),
+            F.UInt32("ModActionOne"),
+            F.UInt32("ModActionTwo"),
+            F.UInt32("ModActionThree"),
+            F.Float("ModActionOneValue"),
+            F.Float("ModActionTwoValue"),
+            F.Float("ModActionThreeValue"),
+            F.UInt8("PowerAttackOverrideAnim"),
+            F.Padding(3),
+            F.UInt32("StrengthRequirement"),
+            F.Int8("ModReloadClipAnimation"),
+            F.Int8("ModFireAnimation"),
+            F.Padding(2),
+            F.Float("AmmoRegenRate"),
+            F.Float("KillImpulse"),
+            F.Float("ModActionOneValueTwo"),
+            F.Float("ModActionTwoValueTwo"),
+            F.Float("ModActionThreeValueTwo"),
+            F.Float("KillImpulseDistance"),
+            F.UInt32("SkillRequirement"))
+        {
+            Description = "Weapon Data (size-agnostic fallback)"
         };
 
         // DATA - WEAP (15 bytes)
@@ -321,6 +390,30 @@ internal static class SubrecordItemSchemas
             F.Float("BouncyMult"))
         {
             Description = "Projectile Data"
+        };
+
+        // DATA - PROJ (68 bytes, Fallout 3 — lacks SoundCountdown, SoundDisable,
+        // DefaultWeaponSource, BouncyMult fields added in New Vegas)
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "PROJ", 68)] = new SubrecordSchema(
+            F.UInt32("FlagsAndType"),
+            F.Float("Gravity"),
+            F.Float("Speed"),
+            F.Float("Range"),
+            F.FormIdLittleEndian("Light"),
+            F.FormIdLittleEndian("MuzzleFlashLight"),
+            F.Float("TracerChance"),
+            F.Float("ExplosionAltTriggerProximity"),
+            F.Float("ExplosionAltTriggerTimer"),
+            F.FormIdLittleEndian("Explosion"),
+            F.FormIdLittleEndian("Sound"),
+            F.Float("MuzzleFlashDuration"),
+            F.Float("FadeDuration"),
+            F.Float("ImpactForce"),
+            F.Float("RotationX"),
+            F.Float("RotationY"),
+            F.Float("RotationZ"))
+        {
+            Description = "Projectile Data (Fallout 3)"
         };
 
         // NAM2 - Model Info in PROJ

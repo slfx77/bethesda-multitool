@@ -58,6 +58,7 @@ internal sealed class CreatureRecordHandler(RecordParserContext context) : Recor
         short attackDamage = 0;
         uint? script = null;
         uint? deathItem = null;
+        NpcAiData? aiData = null;
         var factions = new List<FactionMembership>();
         var spells = new List<uint>();
         var packages = new List<uint>();
@@ -120,6 +121,9 @@ internal sealed class CreatureRecordHandler(RecordParserContext context) : Recor
                 case "PKID" when sub.DataLength == 4:
                     packages.Add(RecordParserContext.ReadFormId(subData, record.IsBigEndian));
                     break;
+                case "AIDT" when sub.DataLength >= 12:
+                    aiData = ActorRecordHandler.ParseAiData(subData, record.IsBigEndian);
+                    break;
             }
         }
 
@@ -136,6 +140,7 @@ internal sealed class CreatureRecordHandler(RecordParserContext context) : Recor
             AttackDamage = attackDamage,
             Script = script,
             DeathItem = deathItem,
+            AiData = aiData,
             ModelPath = modelPath,
             Factions = factions,
             Spells = spells,

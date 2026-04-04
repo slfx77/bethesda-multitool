@@ -9,6 +9,9 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 /// </summary>
 public record EsmRecordScanResult
 {
+    /// <summary>Detected game version (FO3 vs FNV), auto-detected from TES4/HEDR if available.</summary>
+    public FalloutGame Game { get; set; } = FalloutGame.Unknown;
+
     // Subrecord detections (original)
     public List<GmstRecord> GameSettings { get; init; } = [];
     public List<EdidRecord> EditorIds { get; init; } = [];

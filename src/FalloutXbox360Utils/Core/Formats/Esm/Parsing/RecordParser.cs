@@ -104,7 +104,7 @@ public sealed class RecordParser
             "ASPC", "MSET", "CHIP", "CSNO", "DOBJ", "ADDN", "TREE", "IMAD",
             "IDLM", "SCOL", "PWAT",
             // Specialized record types (Phase 2)
-            "SOUN", "TXST", "ARMA", "WATR", "BPTD", "AVIF", "CSTY", "LGTM", "NAVM", "WTHR"
+            "SOUN", "MUSC", "TXST", "ARMA", "WATR", "BPTD", "AVIF", "CSTY", "LGTM", "NAVM", "WTHR"
         };
 
         // Count all record types and compute unparsed counts
@@ -145,6 +145,7 @@ public sealed class RecordParser
         var ammo = _consumables.ParseAmmo();
         _consumables.EnrichAmmoWithProjectileModels(weapons, ammo);
         _weapons.EnrichWeaponsWithProjectileData(weapons);
+        _weapons.EnrichWeaponsWithEsmProjectileData(weapons);
         var armor = _items.ParseArmor();
         var consumables = _consumables.ParseConsumables();
         var miscItems = _items.ParseMiscItems();
@@ -317,6 +318,7 @@ public sealed class RecordParser
         progress?.Report((88, "Parseing specialized records..."));
         phaseSw.Restart();
         var sounds = _miscEnvironment.ParseSounds();
+        var musicTypes = _miscEnvironment.ParseMusicTypes();
         var textureSets = _miscEnvironment.ParseTextureSets();
         var armorAddons = _miscItems.ParseArmorAddons();
         var water = _miscEnvironment.ParseWater();
@@ -328,7 +330,7 @@ public sealed class RecordParser
         var weather = _miscEnvironment.ParseWeather();
         Logger.Instance.Debug(
             $"  [Semantic] Specialized records: {phaseSw.Elapsed} " +
-            $"(SOUN: {sounds.Count}, TXST: {textureSets.Count}, ARMA: {armorAddons.Count}, " +
+            $"(SOUN: {sounds.Count}, MUSC: {musicTypes.Count}, TXST: {textureSets.Count}, ARMA: {armorAddons.Count}, " +
             $"WATR: {water.Count}, BPTD: {bodyPartData.Count}, AVIF: {actorValueInfos.Count}, " +
             $"CSTY: {combatStyles.Count}, LGTM: {lightingTemplates.Count}, " +
             $"NAVM: {navMeshes.Count}, WTHR: {weather.Count})");
@@ -410,6 +412,7 @@ public sealed class RecordParser
 
             // Specialized Phase 2
             Sounds = sounds,
+            MusicTypes = musicTypes,
             TextureSets = textureSets,
             ArmorAddons = armorAddons,
             Water = water,

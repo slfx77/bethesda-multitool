@@ -8,9 +8,17 @@ internal sealed class RuntimeItemLayouts
 {
     private readonly int _s;
 
-    internal RuntimeItemLayouts(int pdbShift)
+    /// <summary>
+    ///     Sound field shift detected by <see cref="Probes.RuntimeWeaponSoundProbe" />.
+    ///     Some builds are missing a 4-byte field between DryFireSound and IdleSound,
+    ///     shifting Idle/Equip/Unequip/ImpactDataSet and later weapon fields.
+    /// </summary>
+    private readonly int _weapSoundShift;
+
+    internal RuntimeItemLayouts(int pdbShift, int weaponSoundShift = 0)
     {
         _s = pdbShift;
+        _weapSoundShift = weaponSoundShift;
     }
 
     /// <summary>
@@ -35,28 +43,32 @@ internal sealed class RuntimeItemLayouts
     internal int WeapReachOffset => 252 + _s;
 
     // DNAM relative offsets — fixed within the DNAM data block, not TESForm-derived
+    internal const int DnamAmmoPerShotRelOffset = 14;
     internal const int DnamMinSpreadRelOffset = 16;
     internal const int DnamSpreadRelOffset = 20;
     internal const int DnamProjectileRelOffset = 36;
     internal const int DnamVatsChanceRelOffset = 40;
+    internal const int DnamNumProjectilesRelOffset = 42;
     internal const int DnamMinRangeRelOffset = 44;
     internal const int DnamMaxRangeRelOffset = 48;
     internal const int DnamActionPointsRelOffset = 68;
     internal const int DnamShotsPerSecRelOffset = 88;
+    internal const int DnamSkillRelOffset = 104;
 
     internal int WeapCritDamageOffset => 440 + _s;
     internal int WeapCritChanceOffset => 444 + _s;
+    internal int WeapCritEffectPtrOffset => 452 + _s;
     internal int WeapPickupSoundOffset => 236 + _s;
     internal int WeapPutdownSoundOffset => 240 + _s;
     internal int WeapFireSound3DOffset => 532 + _s;
     internal int WeapFireSoundDistOffset => 536 + _s;
     internal int WeapFireSound2DOffset => 540 + _s;
     internal int WeapDryFireSoundOffset => 548 + _s;
-    internal int WeapIdleSoundOffset => 556 + _s;
-    internal int WeapEquipSoundOffset => 560 + _s;
-    internal int WeapUnequipSoundOffset => 564 + _s;
-    internal int WeapImpactDataSetOffset => 568 + _s;
-    internal int WeapEmbeddedWeaponNodeOffset => 876 + _s;
+    internal int WeapIdleSoundOffset => 556 + _s + _weapSoundShift;
+    internal int WeapEquipSoundOffset => 560 + _s + _weapSoundShift;
+    internal int WeapUnequipSoundOffset => 564 + _s + _weapSoundShift;
+    internal int WeapImpactDataSetOffset => 568 + _s + _weapSoundShift;
+    internal int WeapEmbeddedWeaponNodeOffset => 876 + _s + _weapSoundShift;
 
     #endregion
 
@@ -67,6 +79,7 @@ internal sealed class RuntimeItemLayouts
     internal int ArmoWeightOffset => 100 + _s;
     internal int ArmoHealthOffset => 108 + _s;
     internal int ArmoBipedFlagsOffset => 116 + _s; // TESBipedModelForm.iBipedObjectSlots
+    internal int ArmoEquipTypeOffset => 344 + _s; // BGSEquipType.eEquipType (Int32 enum)
     internal int ArmoRatingOffset => 376 + _s; // OBJ_ARMO.sRating (DamageResistance, UInt16)
     internal int ArmoDamageThresholdOffset => 380 + _s; // OBJ_ARMO.fDamageThreshold (Float32)
 
@@ -76,6 +89,10 @@ internal sealed class RuntimeItemLayouts
 
     internal int AmmoStructSize => 220 + _s;
     internal int AmmoValueOffset => 124 + _s;
+    internal int AmmoClipRoundsOffset => 132 + _s; // TESAmmo.cClipRounds (uint8)
+    internal int AmmoSpeedOffset => 168 + _s; // AMMO_DATA.fSpeed (float32, first field)
+    internal int AmmoFlagsOffset => 172 + _s; // AMMO_DATA.iFlags (uint32, after speed)
+    internal int AmmoProjectilePtrOffset => 176 + _s; // AMMO_DATA_NV.pProjectile (BGSProjectile*)
 
     #endregion
 
@@ -85,6 +102,8 @@ internal sealed class RuntimeItemLayouts
     internal int AlchWeightOffset => 152 + _s;
     internal int AlchValueOffset => 184 + _s;
     internal int AlchFlagsOffset => 188 + _s; // AlchemyItemData.iFlags (byte)
+    internal int AlchAddictionPtrOffset => 192 + _s; // AlchemyItemData.pAddiction (SpellItem*)
+    internal int AlchAddictionChanceOffset => 196 + _s; // AlchemyItemData.fAddictionChance (float32)
 
     #endregion
 
