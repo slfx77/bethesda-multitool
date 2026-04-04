@@ -65,7 +65,7 @@ public sealed class FaceGenTextureMorpherTests
     [Fact]
     public void EgtParser_Parse_UsesAlignedRowsAndParseTimeRowFlip()
     {
-        var bytes = new byte[64 + 4 + (8 * 2 * 3)];
+        var bytes = new byte[64 + 4 + 8 * 2 * 3];
         Encoding.ASCII.GetBytes("FREGT003").CopyTo(bytes, 0);
         BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(8), 2);
         BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(12), 3);

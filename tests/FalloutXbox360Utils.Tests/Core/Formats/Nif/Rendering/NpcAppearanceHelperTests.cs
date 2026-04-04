@@ -2,6 +2,7 @@ using System.Numerics;
 using FalloutXbox360Utils.CLI;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using FalloutXbox360Utils.Core.Formats.Nif;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;

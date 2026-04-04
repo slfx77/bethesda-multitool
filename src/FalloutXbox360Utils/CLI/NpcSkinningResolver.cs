@@ -1,9 +1,8 @@
 using System.Numerics;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Animation;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
+using FalloutXbox360Utils.Core.Formats.Nif;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 
-namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
+namespace FalloutXbox360Utils.CLI;
 
 /// <summary>
 ///     Skinning matrix computation, model attachment compensation, and transform utilities.

@@ -1,6 +1,8 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers;
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion;
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Processing;
 using FalloutXbox360Utils.Core.Formats.Nif;
 using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;

@@ -1,7 +1,10 @@
-using FalloutXbox360Utils.CLI;
+using System.Numerics;
+using FalloutXbox360Utils.Core;
+using FalloutXbox360Utils.Core.Formats.Nif;
 using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 
-namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
+namespace FalloutXbox360Utils.CLI;
 
 /// <summary>
 ///     BSA mesh/EGM/EGT/TRI loading and model cloning utilities.
@@ -17,9 +20,9 @@ internal static class NpcMeshHelpers
         string bsaPath,
         NpcMeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
-        Dictionary<string, System.Numerics.Matrix4x4>? externalBoneTransforms = null,
+        Dictionary<string, Matrix4x4>? externalBoneTransforms = null,
         string? filterShapeName = null,
-        Dictionary<string, System.Numerics.Matrix4x4>? externalPoseDeltas = null,
+        Dictionary<string, Matrix4x4>? externalPoseDeltas = null,
         bool useDualQuaternionSkinning = false)
     {
         var result = LoadNifRawFromBsa(bsaPath, meshArchives);

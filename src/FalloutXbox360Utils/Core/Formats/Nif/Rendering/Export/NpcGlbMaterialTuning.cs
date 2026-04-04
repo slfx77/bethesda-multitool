@@ -64,6 +64,7 @@ internal static class NpcGlbMaterialTuning
         {
             specularFactor = DefaultSpecularFactor;
         }
+
         if (hasEnvironmentMapping && submesh.EnvMapScale > 0f)
         {
             specularFactor = MathF.Min(1f, specularFactor + Math.Clamp(submesh.EnvMapScale, 0f, 1.5f) * 0.15f);

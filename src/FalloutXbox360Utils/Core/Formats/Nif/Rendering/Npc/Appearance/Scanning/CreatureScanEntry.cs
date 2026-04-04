@@ -1,6 +1,6 @@
-namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
-
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+
+namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 
 internal sealed record CreatureScanEntry(
     string? EditorId,

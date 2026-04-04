@@ -1,8 +1,8 @@
 using System.Globalization;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using Spectre.Console;
 
-namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
+namespace FalloutXbox360Utils.CLI;
 
 /// <summary>
 ///     Texture key building, texture resolution, equipment classification, and color utilities.

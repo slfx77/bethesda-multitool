@@ -5,7 +5,6 @@ using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI.Commands.Export;
@@ -44,7 +43,8 @@ internal static class ExportCreatureCommand
         };
         var creatureOption = new Option<string[]?>("--creature")
         {
-            Description = "Export specific creatures by FormID or EditorID (e.g., --creature 0x00104E38 --creature CrDeathclaw)",
+            Description =
+                "Export specific creatures by FormID or EditorID (e.g., --creature 0x00104E38 --creature CrDeathclaw)",
             AllowMultipleArgumentsPerToken = true
         };
         var verboseOption = new Option<bool>("-v", "--verbose")

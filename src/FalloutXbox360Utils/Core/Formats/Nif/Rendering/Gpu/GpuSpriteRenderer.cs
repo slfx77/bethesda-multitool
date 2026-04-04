@@ -145,7 +145,9 @@ internal sealed class GpuSpriteRenderer : IDisposable
     }
 
     /// <summary>
-    ///     Renders a model to a sprite, matching the API of <see cref="NifSpriteRenderer.Render(NifRenderableModel, NifTextureResolver?, float, int, int, float, float, int?)" />.
+    ///     Renders a model to a sprite, matching the API of
+    ///     <see cref="NifSpriteRenderer.Render(NifRenderableModel, NifTextureResolver?, float, int, int, float, float, int?)" />
+    ///     .
     ///     Convenience wrapper around <see cref="SubmitRender" /> + <see cref="CompleteRender" />.
     /// </summary>
     public SpriteResult? Render(NifRenderableModel model,

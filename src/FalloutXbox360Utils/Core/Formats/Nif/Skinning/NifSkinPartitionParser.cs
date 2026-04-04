@@ -386,7 +386,8 @@ internal static class NifSkinPartitionParser
     /// <summary>
     ///     Skips vertex weights if present.
     /// </summary>
-    private static bool TrySkipTriangleVertexWeights(ref TriangleReader reader, ushort numVertices, ushort numWeightsPerVertex)
+    private static bool TrySkipTriangleVertexWeights(ref TriangleReader reader, ushort numVertices,
+        ushort numWeightsPerVertex)
     {
         if (!reader.CanRead(1))
         {
@@ -409,7 +410,8 @@ internal static class NifSkinPartitionParser
     /// <summary>
     ///     Reads strip lengths array.
     /// </summary>
-    private static bool TryReadTriangleStripLengths(ref TriangleReader reader, ushort numStrips, out ushort[] stripLengths)
+    private static bool TryReadTriangleStripLengths(ref TriangleReader reader, ushort numStrips,
+        out ushort[] stripLengths)
     {
         stripLengths = new ushort[numStrips];
         for (var i = 0; i < numStrips; i++)
@@ -544,7 +546,8 @@ internal static class NifSkinPartitionParser
     /// <summary>
     ///     Skips bone indices if present.
     /// </summary>
-    private static bool TrySkipTriangleBoneIndices(ref TriangleReader reader, ushort numVertices, ushort numWeightsPerVertex)
+    private static bool TrySkipTriangleBoneIndices(ref TriangleReader reader, ushort numVertices,
+        ushort numWeightsPerVertex)
     {
         if (!reader.CanRead(1))
         {

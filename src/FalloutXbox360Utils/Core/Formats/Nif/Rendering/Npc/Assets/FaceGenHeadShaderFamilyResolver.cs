@@ -2,15 +2,10 @@ using FalloutXbox360Utils.Core.Formats.Dds;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
 
-internal readonly record struct FaceGenHeadShaderFamilyResult(
-    string DiffuseTexturePath,
-    string? NormalMapTexturePath,
-    string? SubsurfaceTexturePath,
-    (float R, float G, float B) SubsurfaceColor);
-
 internal static class FaceGenHeadShaderFamilyResolver
 {
     private static readonly DecodedTexture DefaultFaceGenMap1Texture = CreateDefaultFaceGenMap1Texture();
+
     private static readonly (float R, float G, float B) DefaultSubsurfaceColor =
         (24f / 255f, 8f / 255f, 8f / 255f);
 

@@ -235,6 +235,7 @@ internal static class NifGeometryExtractor
             byte dstBlendMode = 7; // INV_SRC_ALPHA
             var materialAlpha = 1f;
             var materialGlossiness = 10f;
+            var specularColor = (R: 0f, G: 0f, B: 0f);
             var isEyeEnvmap = false;
             var envMapScale = 0f;
             List<int>? propRefs = null;
@@ -299,7 +300,7 @@ internal static class NifGeometryExtractor
                 isDoubleSided,
                 hasAlphaBlend, hasAlphaTest, alphaTestThreshold, alphaTestFunction,
                 isEyeEnvmap, envMapScale, srcBlendMode, dstBlendMode, materialAlpha, materialGlossiness,
-                useDualQuaternionSkinning, shapeMorphDeltas);
+                specularColor, useDualQuaternionSkinning, shapeMorphDeltas);
             if (submesh != null)
             {
                 if (propRefs != null &&

@@ -126,7 +126,8 @@ internal static class NifRenderPropertyReader
     /// <summary>
     ///     Read material specular color from NiMaterialProperty (3 floats: R, G, B).
     /// </summary>
-    internal static (float R, float G, float B) ReadMaterialSpecularColor(byte[] data, NifInfo nif, List<int> propertyRefs)
+    internal static (float R, float G, float B) ReadMaterialSpecularColor(byte[] data, NifInfo nif,
+        List<int> propertyRefs)
     {
         var info = ReadMaterialProperty(data, nif, propertyRefs);
         return (info.SpecularR, info.SpecularG, info.SpecularB);

@@ -29,15 +29,15 @@ public sealed class FaceGenSparseTriMorpherTests
 
         var tri = Assert.IsType<TriParser>(TriParser.Parse(File.ReadAllBytes(triPath!)));
         var record = (tri.DifferentialRegionCandidate?.Records.Where(candidate =>
+        {
+            if (MathF.Abs(candidate.Scale) < 1e-7f)
             {
-                if (MathF.Abs(candidate.Scale) < 1e-7f)
-                {
-                    return false;
-                }
+                return false;
+            }
 
-                var deltas = tri.ReadDifferentialRecordDeltas(candidate);
-                return deltas != null && deltas.Any(static delta => delta != 0);
-            }) ?? []).First();
+            var deltas = tri.ReadDifferentialRecordDeltas(candidate);
+            return deltas != null && deltas.Any(static delta => delta != 0);
+        }) ?? []).First();
 
         var model = new NifRenderableModel();
         var targetSubmesh = new RenderableSubmesh

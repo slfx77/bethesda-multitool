@@ -15,26 +15,19 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 /// </summary>
 internal sealed class TriParser
 {
-    private readonly record struct LengthPrefixedIdentifierInfo(
-        string Value,
-        int Offset,
-        int NameLengthWithTerminator);
-
     internal const string ExpectedMagic = "FRTRI003";
     internal const int HeaderSize = 64;
     private const int HeaderWordCount = (HeaderSize - 8) / 4;
+    private TriDifferentialRegionCandidate? _differentialRegionCandidate;
 
     private uint[] _headerWords = [];
+    private TriStringInfo[] _identifierLikeTailStrings = [];
+    private TriRawTailFamilyInfo[] _rawTailFamilies = [];
+    private TriRecordFamilyInfo[] _recordFamilies = [];
     private TriSectionInfo[] _sections = [];
+    private TriStringInfo[] _tailStrings = [];
     private Vector3[] _vertexBlock0 = [];
     private Vector3[] _vertexBlock1 = [];
-    private TriStringInfo[] _tailStrings = [];
-    private TriStringInfo[] _identifierLikeTailStrings = [];
-    private TriRecordFamilyInfo[] _recordFamilies = [];
-    private TriRawTailFamilyInfo[] _rawTailFamilies = [];
-    private TriEarlyMixedRegionCandidate? _earlyMixedRegionCandidate;
-    private TriTrailingStatisticalRegionCandidate? _trailingStatisticalRegionCandidate;
-    private TriDifferentialRegionCandidate? _differentialRegionCandidate;
 
     public string Magic { get; private init; } = ExpectedMagic;
     public int VertexCount { get; private init; }
@@ -47,9 +40,10 @@ internal sealed class TriParser
     public IReadOnlyList<TriStringInfo> IdentifierLikeTailStrings => _identifierLikeTailStrings;
     public IReadOnlyList<TriRecordFamilyInfo> RecordFamilies => _recordFamilies;
     public IReadOnlyList<TriRawTailFamilyInfo> RawTailFamilies => _rawTailFamilies;
-    public TriEarlyMixedRegionCandidate? EarlyMixedRegionCandidate => _earlyMixedRegionCandidate;
-    public TriTrailingStatisticalRegionCandidate? TrailingStatisticalRegionCandidate =>
-        _trailingStatisticalRegionCandidate;
+    public TriEarlyMixedRegionCandidate? EarlyMixedRegionCandidate { get; private set; }
+
+    public TriTrailingStatisticalRegionCandidate? TrailingStatisticalRegionCandidate { get; private set; }
+
     public TriDifferentialRegionCandidate? DifferentialRegionCandidate => _differentialRegionCandidate;
     public int VertexBlock1Count => checked((int)GetHeaderWord(0x1C));
     public int StructuredSectionGroupCountHint => checked((int)GetHeaderWord(0x20));
@@ -290,8 +284,8 @@ internal sealed class TriParser
             _identifierLikeTailStrings = [.. tailStrings.Where(static info => info.IsIdentifierLike)],
             _recordFamilies = recordFamilies,
             _rawTailFamilies = rawTailFamilies,
-            _earlyMixedRegionCandidate = earlyMixedRegionCandidate,
-            _trailingStatisticalRegionCandidate = trailingStatisticalRegionCandidate,
+            EarlyMixedRegionCandidate = earlyMixedRegionCandidate,
+            TrailingStatisticalRegionCandidate = trailingStatisticalRegionCandidate,
             _differentialRegionCandidate = differentialRegionCandidate,
             Payload = payload,
             RemainingPayload = remainingPayload
@@ -743,4 +737,9 @@ internal sealed class TriParser
 
         return hasLetter;
     }
+
+    private readonly record struct LengthPrefixedIdentifierInfo(
+        string Value,
+        int Offset,
+        int NameLengthWithTerminator);
 }

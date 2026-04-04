@@ -292,7 +292,7 @@ public sealed class NifAlphaCompositionTests
             Triangles = [0, 1, 2, 0, 2, 3],
             UVs = [0f, 0f, 1f, 0f, 1f, 1f, 0f, 1f],
             DiffuseTexturePath = diffuseTexturePath,
-            IsEmissive = true,
+            IsEmissive = !hasAlphaBlend,
             IsDoubleSided = true,
             HasAlphaBlend = hasAlphaBlend,
             HasAlphaTest = hasAlphaTest,

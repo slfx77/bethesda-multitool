@@ -1,18 +1,23 @@
 using System.IO.MemoryMappedFiles;
 using System.Numerics;
-using FalloutXbox360Utils.CLI;
-using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Records;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
+using FalloutXbox360Utils.Core.Formats.Nif;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance;
 using FalloutXbox360Utils.Core.Minidump;
 using Spectre.Console;
 
-namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
+namespace FalloutXbox360Utils.CLI;
 
 /// <summary>
 ///     Geometry transform utilities, head bone correction, and DMP NPC resolution.
-///     BSA loading lives in <see cref="NpcMeshHelpers"/>, texture/classification utilities in
-///     <see cref="NpcTextureHelpers"/>.
+///     BSA loading lives in <see cref="NpcMeshHelpers" />, texture/classification utilities in
+///     <see cref="NpcTextureHelpers" />.
 /// </summary>
 internal static class NpcRenderHelpers
 {

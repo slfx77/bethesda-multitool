@@ -1,12 +1,11 @@
 using System.Numerics;
-using FalloutXbox360Utils.CLI;
 using FalloutXbox360Utils.CLI.Rendering.Npc;
+using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Animation;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
+using FalloutXbox360Utils.Core.Formats.Nif;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 
-namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
+namespace FalloutXbox360Utils.CLI;
 
 /// <summary>
 ///     Skeleton bone loading, idle animation overrides, pose building, and skeleton visualization.
@@ -139,7 +138,7 @@ internal static class NpcSkeletonLoader
         var equippedPoseKfPath = weaponVisual?.EquippedPoseKfPath;
         if (string.IsNullOrWhiteSpace(equippedPoseKfPath))
         {
-            return fallbackIdleBones;
+            equippedPoseKfPath = "h2hequip.kf";
         }
 
         var relativeEquippedPoseKfPath =

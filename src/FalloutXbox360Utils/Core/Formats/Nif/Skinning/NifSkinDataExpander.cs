@@ -195,7 +195,8 @@ internal static class NifSkinDataExpander
                     weightSum += packedData.BoneWeights[idx];
                     var globalB = MapToGlobalBoneIndex(packedData.BoneIndices[idx], checkV, partitionForVertex,
                         partitions);
-                    boneList.Append($" local{packedData.BoneIndices[idx]}→global{globalB}={packedData.BoneWeights[idx]:F3}");
+                    boneList.Append(
+                        $" local{packedData.BoneIndices[idx]}→global{globalB}={packedData.BoneWeights[idx]:F3}");
                 }
             }
 

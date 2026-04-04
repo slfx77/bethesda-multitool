@@ -61,6 +61,33 @@ internal sealed class NifSchemaConverter
         }
     }
 
+    #region Types
+
+    private sealed class ConversionContext(
+        byte[] buffer,
+        int position,
+        int end,
+        int[] blockRemap,
+        Dictionary<string, object> fieldValues,
+        string blockType)
+    {
+        public byte[] Buffer { get; } = buffer;
+        public int Position { get; set; } = position;
+        public int End { get; } = end;
+        public int[] BlockRemap { get; } = blockRemap;
+        public Dictionary<string, object> FieldValues { get; } = fieldValues;
+        public string BlockType { get; } = blockType;
+
+        /// <summary>
+        ///     Current template type parameter (#T#) for generic structs like KeyGroup&lt;float&gt;.
+        ///     This is set when processing a field with a template attribute and propagates
+        ///     to nested structs.
+        /// </summary>
+        public string? TemplateType { get; set; }
+    }
+
+    #endregion
+
     #region Field Processing
 
     private void ConvertFields(ConversionContext ctx, IReadOnlyList<NifFieldDef> fields, int depth = 0)
@@ -810,33 +837,6 @@ internal sealed class NifSchemaConverter
         {
             BinaryPrimitives.WriteInt32LittleEndian(buf.AsSpan(pos, 4), blockRemap[idx]);
         }
-    }
-
-    #endregion
-
-    #region Types
-
-    private sealed class ConversionContext(
-        byte[] buffer,
-        int position,
-        int end,
-        int[] blockRemap,
-        Dictionary<string, object> fieldValues,
-        string blockType)
-    {
-        public byte[] Buffer { get; } = buffer;
-        public int Position { get; set; } = position;
-        public int End { get; } = end;
-        public int[] BlockRemap { get; } = blockRemap;
-        public Dictionary<string, object> FieldValues { get; } = fieldValues;
-        public string BlockType { get; } = blockType;
-
-        /// <summary>
-        ///     Current template type parameter (#T#) for generic structs like KeyGroup&lt;float&gt;.
-        ///     This is set when processing a field with a template attribute and propagates
-        ///     to nested structs.
-        /// </summary>
-        public string? TemplateType { get; set; }
     }
 
     #endregion

@@ -120,11 +120,15 @@ internal static class NpcCompositionPlanner
         var weaponBones = bodyBones;
         if (ShouldUseHandToHandEquippedArmPose(npc, options))
         {
-            weaponBones = NpcSkeletonLoader.BuildHandToHandEquippedArmBones(
+            var h2hBones = NpcSkeletonLoader.BuildHandToHandEquippedArmBones(
                 cached.SkeletonNifPath,
                 meshArchives,
                 bodyBones,
                 npc.WeaponVisual);
+            // Use h2h arm bones for ALL consumers (body, outfit, addon, weapon)
+            // so the sleeve, arm, and weapon share the same equipped arm pose.
+            bodyBones = h2hBones;
+            weaponBones = h2hBones;
         }
 
         return new NpcSkeletonComposition

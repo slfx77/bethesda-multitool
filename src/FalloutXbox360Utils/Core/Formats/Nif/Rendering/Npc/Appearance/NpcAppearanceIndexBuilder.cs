@@ -1,4 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion;
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Processing;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance;

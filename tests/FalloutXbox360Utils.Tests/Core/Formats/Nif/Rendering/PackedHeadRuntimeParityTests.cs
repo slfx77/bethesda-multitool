@@ -11,8 +11,7 @@ public sealed class PackedHeadRuntimeParityTests
     public void FaceGenPackedHeadMorpher_FansOutMeshOrderDeltasToDuplicatePackedVertices()
     {
         var egm = ParseSyntheticEgm(
-            vertexCount: 2,
-            symmetricMorphs:
+            2,
             [
                 new EgmMorph
                 {
@@ -24,7 +23,7 @@ public sealed class PackedHeadRuntimeParityTests
                     ]
                 }
             ],
-            asymmetricMorphs: []);
+            []);
 
         var packedPositions = new float[9];
         var topology = new PackedTopologyData
@@ -39,8 +38,8 @@ public sealed class PackedHeadRuntimeParityTests
             packedPositions,
             topology,
             egm,
-            symmetricCoeffs: [0.5f],
-            asymmetricCoeffs: null);
+            [0.5f],
+            null);
 
         Assert.Equal(5f, packedPositions[0], 3);
         Assert.Equal(5f, packedPositions[3], 3);
@@ -51,8 +50,7 @@ public sealed class PackedHeadRuntimeParityTests
     public void FaceGenPackedHeadMorpher_SkipsVertexMapEntriesOutsideMeshRange()
     {
         var egm = ParseSyntheticEgm(
-            vertexCount: 1,
-            symmetricMorphs:
+            1,
             [
                 new EgmMorph
                 {
@@ -60,7 +58,7 @@ public sealed class PackedHeadRuntimeParityTests
                     Deltas = [4, 5, 6]
                 }
             ],
-            asymmetricMorphs: []);
+            []);
 
         var packedPositions = new float[6];
         var topology = new PackedTopologyData
@@ -75,8 +73,8 @@ public sealed class PackedHeadRuntimeParityTests
             packedPositions,
             topology,
             egm,
-            symmetricCoeffs: [1f],
-            asymmetricCoeffs: null);
+            [1f],
+            null);
 
         Assert.Equal([4f, 5f, 6f, 0f, 0f, 0f], packedPositions);
     }

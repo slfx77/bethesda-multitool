@@ -143,6 +143,7 @@ internal static class NifBlockParsers
         byte dstBlendMode = 7,
         float materialAlpha = 1f,
         float materialGlossiness = 10f,
+        (float R, float G, float B) specularColor = default,
         bool useDualQuaternionSkinning = false,
         float[]? preSkinMorphDeltas = null)
     {
@@ -170,6 +171,7 @@ internal static class NifBlockParsers
             dstBlendMode,
             materialAlpha,
             materialGlossiness,
+            specularColor,
             useDualQuaternionSkinning,
             preSkinMorphDeltas);
     }
@@ -257,7 +259,8 @@ internal static class NifBlockParsers
         return NifRenderPropertyReader.ReadMaterialGlossiness(data, nif, propertyRefs);
     }
 
-    internal static (float R, float G, float B) ReadMaterialSpecularColor(byte[] data, NifInfo nif, List<int> propertyRefs)
+    internal static (float R, float G, float B) ReadMaterialSpecularColor(byte[] data, NifInfo nif,
+        List<int> propertyRefs)
     {
         return NifRenderPropertyReader.ReadMaterialSpecularColor(data, nif, propertyRefs);
     }

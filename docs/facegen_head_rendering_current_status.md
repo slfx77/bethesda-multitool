@@ -1,6 +1,6 @@
 # FaceGen Head Rendering Current Status
 
-Last updated: 2026-04-03
+Last updated: 2026-04-04
 
 This is the short maintained status page for the FaceGen investigation.
 
@@ -50,32 +50,90 @@ Recommended read order:
   - raw read
   - endian swap if needed
   - direct float copy
+- The structural bridge between imported primary race/default `FGTS` content
+  and the loaded family-B control owner is now mostly closed:
+  - `FUN_00588520` always writes the decoded primary race/default payload to
+    `+0x1A8`
+  - `+0x168/+0x188/+0x1A8/+0x1C8` are four consecutive `0x20` records in the
+    same inline `0x80` descriptor family
+  - ordinary export consumes that whole family through
+    `FUN_0056F2E0 -> FUN_0056F390 -> FUN_0068EA20`
+  - `FUN_0085AEB0` loads the `SI.CTL` family-B control owner at
+    `DAT_00F05D54 + 0x118`, including payload rows at `+0x644`, scales at
+    `+0x684`, and writeback coefficients at `+0xFCC`
+  - so the remaining GECK-side gap is semantic pairing/alignment, not a
+    missing structural bridge
+- That semantic gap is narrower than it looked:
+  - the shipped `SI.CTL` texture-symmetric family is a `33 x 50` control matrix
+  - repo-generated `FaceGenTextureSymmetricData` already treats those rows as
+    projections over 50 `FGTS` basis coefficients
+  - `ComputeTextureSymmetric(...)` explicitly computes named control values as
+    dot products against a 50-wide `FGTS` vector
+  - so imported primary `+0x1A8` content and loaded family-B rows already look
+    like the same 50-dimensional `FGTS` basis space
+  - the remaining GECK-side question is now more specifically the upstream
+    population of the sex-selected template families at `+0x694/+0x714` that
+    `FUN_00586000` later serializes through temp buffers
 - `MAN*` in `FUN_00575D70` is mostly ordinary `*NAM` schema and remap/fixup.
 - `DATA / DNAM` in `FUN_00575D70` is generic schema/import compatibility, not a
   dedicated FaceGen provenance payload.
 - Write-side symmetry around `FUN_00586000` is now partially pinned down:
   - it serializes the same broad owner/provider neighborhood as
     `FUN_00588520` reads from
-  - but the visible serializer loops are over `+0x30C`, `+0x4CC`, and `+0xA8`,
-    not an explicit paired-bank float write at `+0x1A8/+0x1C8`
+  - the late recovered `FGGS/FGGA/FGTS` tail is now sharper:
+    it allocates temp float buffers, copies from template-family spans, emits
+    the tag, and frees the temp buffer again
+  - the raw copy sources match the sex-selected template-family record layout:
+    - `FGGS` from `+0x6A0/+0x6B0`
+    - `FGGA` from `+0x6C0/+0x6D0`
+    - `FGTS` from `+0x6E0/+0x6F0`
+  - those offsets are the exact first/second/third `0x20` records under the
+    race/default template family rooted at `+0x694`, with subsection selection
+    also showing the matching `+0x714` half through counts like
+    `+0x74C/+0x76C`
   - there is still no recovered slot-6/7-specific asymmetry inside that
     write-side path
+- The template-family population ladder is now clearer too:
+  - `FUN_00585630` is still only reset/default seed for `+0x694/+0x714`
+  - `FUN_00588520` is the direct parser/materializer into those template
+    families, using `FUN_00573BA0` only as a span-resize helper
+    and `param_1` there now looks closed as the generic tagged-form parser
+    stream context, with `+0x25C` as the current subrecord payload byte length
+    while the owning `0x00D56B60-0x00D56BB8` table still looks like a
+    TESRace-backed helper-family slice rather than a hidden FaceGen-only
+    provider layer
+  - `FUN_005875F0` is the first recovered targeted overwrite/copy path for the
+    active sex-selected half:
+    it copies one selected family from `+0x7AC` into `+0x694` or `+0x714`
+    through `FUN_0068E960`
+    but the only recovered caller is `FUN_00589F50`, a dialog/UI owner already
+    demoted elsewhere, and the stash starts zeroed in `FUN_00587670`
+  - `FUN_00586740` is the broader donor copy path that copies both template
+    halves wholesale from a donor owner
+  - so the next exact upstream GECK question is no longer whether
+    `FUN_00588520` directly materializes `+0x694/+0x714`; it does
+  - the `+0x7AC/+0x7B2` stash branch now looks weaker as an ordinary export
+    seam unless a non-UI filler is recovered
+  - no stronger recovered non-UI overwrite of `+0x694/+0x714` has surfaced
+    after `FUN_00588520`
 - The surrounding race/default sideband tags are now more sharply split:
   - exact or near-exact write/read offset pairs:
-    - `MANO <-> +0x7A0`
-    - `MANY <-> +0x7A4`
+    - `ONAM <-> +0x7A0`
+    - `YNAM <-> +0x7A4`
     - `VTCK <-> +0x798/+0x79C`
     - `MAND <-> +0xB0/+0xB4`
     - `MANC <-> +0xB8/+0xB9`
-  - still-open read-side destinations:
-    - `MANP` write source is `+0xBC`
-    - `MANU` write source is `+0xC0`
-    - but `FUN_00588520` still only shows a raw `FUN_004E10E0()` path for
-      those two tags, without a recovered destination field
-- So the `MANO/MANY/VTCK/MAND/MANC` cluster is now best read as ordinary
+  - exact or near-exact write/read offset pairs now also include:
+    - `PNAM <-> +0xBC`
+    - `UNAM <-> +0xC0`
+- Historical note:
+  older chronology often used the raw-immediate aliases
+  `MANO/MANY/MANP/MANU`; the normalized little-endian subrecord names are
+  `ONAM/YNAM/PNAM/UNAM`.
+- So the `ONAM/YNAM/VTCK/MAND/MANC` cluster is now best read as ordinary
   source/provider sideband state around the importer neighborhood, not another
-  hidden float-bank family, while `MANP/MANU` remain structurally open but
-  lower-signal than `MAN2`.
+  hidden float-bank family. `PNAM/UNAM/SNAM` now all look like ordinary small
+  sideband/discriminator scalars rather than hidden post-bank float content.
 - The leading helper cluster at the top of `FUN_00586000` is now mostly
   demoted as generic serializer framing:
   - `FUN_004FB090` = object-header/save-data preamble plus `EDID`-like output
@@ -126,7 +184,7 @@ Recommended read order:
     - `ENAM` is the linked eye-list importer
     - `MNAM/FNAM` set the subsection selector `local_20`
     - `FGGS/FGGA/FGTS` all route into `LAB_00588C06`
-    - `SNAM` is the still-unrecovered post-bank tail tag
+    - `SNAM` is the recovered post-bank 16-bit scalar at `owner + 0x794`
   - the shared tail slots after `FUN_00572360` / `FUN_00586000` are now
     ranked as generic shared object-interface helpers, not deferred
     `FGGS/FGGA/FGTS` continuation:
@@ -152,7 +210,7 @@ Recommended read order:
   - `FUN_0051CD20` is tiny linked-list append glue
 - So the generic provider-table helper branch is now a weak shipped `_0`
   suspect; the stronger remaining tags on this symmetry branch are still
-  `MAN2`, then `MANP/MANU`.
+  `MAN2`, then the small scalar sideband family only as a weaker follow-up.
 
 ## Strongest remaining shipped `_0` seams
 
@@ -160,7 +218,7 @@ Recommended read order:
   - NPC/current-source path imports only the primary active `FGTS` bank
   - race/default sibling is the only recovered importer that can materialize
     paired banks at `+0x1A8` and `+0x1C8`
-- The paired-bank routing is now partially concrete inside `FUN_00588520`:
+- The paired-bank routing is now mostly concrete inside `FUN_00588520`:
   - primary race/default `FGTS` record is always populated
   - the sibling `+0x1C8` record is mirrored only when the importer-local guard
     `(local_20 == 0) || (local_9 != 0)` holds
@@ -181,20 +239,38 @@ Recommended read order:
     - `local_11` is the separate `MAN0/MAN1` family/mode flag
     - `local_9` only leaks into the later `INDX` remap through the
       `local_11 != 0` branch
-  - `MAN2` is now the strongest still-open tag on this symmetry branch:
-    its behavioral effect is clear, but its semantic label is not
-  - `MANP/MANU` are now the next weaker unresolved tags on the same branch:
-    their write-side sources are known (`+0xBC/+0xC0`), but the exact
-    read-side destinations in `FUN_00588520` are still unrecovered
+    - the destination surface is now concrete:
+      - `local_11 == 0` lands in the auxiliary provider families
+        `+0x4CC/+0x574`
+      - `local_11 != 0` lands in the generic provider families
+        `+0xCC/+0x30C`
+  - what gets copied is now effectively closed:
+    `LAB_00588C06` decodes one float payload and writes it to the primary bank
+    unconditionally and to the companion bank conditionally
+  - `MAN2` remains the strongest still-open tag on this symmetry branch:
+    its behavioral effect is clear, but its exact semantic label is not
+  - writer-side `MAN2` now also looks effectively unconditional in the
+    recovered `FUN_00586000` body and it precedes the recovered
+    `MNAM/FNAM` subsection work, which strengthens the default read that
+    subsection-1 mirror suppression is the normal race/default case
+  - the small post-bank scalar sideband family is now mostly closed:
+    `PNAM <-> +0xBC`, `UNAM <-> +0xC0`, and `SNAM -> +0x794`
   - `ENAM` is now structurally resolved enough to treat as orthogonal:
     it imports the eye list/family and does not currently look like the
     bank-routing seam
-  - `SNAM` is now the strongest unresolved tag immediately after the recovered
-    `FGGS/FGGA/FGTS` writer/parser pair:
-    parser-side it only shows `FUN_004E1130()` with no recovered destination
+  - `SNAM` is now exact enough to stop treating its destination as open:
+    the switch dispatch at `0x005887E0` maps
+    `0x4D414E53 ('SNAM') -> idx 7 -> 0x00588964`, and that handler does the
+    direct-field `FUN_004E1130(owner + 0x794)` read
+  - `FUN_004E1130` itself is now structurally resolved:
+    it is only a generic 2-byte payload reader with optional endian swap,
+    so it no longer hides any meaningful `SNAM` semantics by itself
+  - `SNAM -> +0x794` now looks like another small owner sideband /
+    discriminator scalar, because `+0x794` is already known elsewhere as
+    copied/reset/compared owner state rather than lane-bearing float content
   - `MAN0 / MAN1` flip a separate `local_11` flag used later in the `INDX`
-    sideband branch, which now looks like a neighboring selector/object family
-    rather than a texture-bank selector
+    sideband branch, which now looks like provider/object-family routing rather
+    than a texture-bank selector
   - importer-side `source + 0x1C8` should still be treated as texture-bank-like
     companion float state from the same decoded payload loop
   - do not conflate that with the later owner/provider slot
@@ -271,6 +347,27 @@ Recommended read order:
     - `MANM/MANF` select sex subsection
     - `INDX` instantiates the indexed slot objects and peer-table payloads
       directly, including `FUN_00405B40(...)` on the `+0x30C` peer table
+  - the auxiliary `MAN1` families are no longer dead side state:
+    - they are explicitly constructed, copied, and refreshed like the main
+      provider families
+    - export/bake-side artifacts also read `+0x64C` directly through
+      `vfunc + 0x34`, prepend `"Meshes\\"`, and use the result as an asset path
+    - so they can influence ordinary export indirectly through provider/path
+      selection
+    - but this still looks provider-side, not like a direct continuation of
+      the paired `FGTS` bank semantics at `+0x1A8/+0x1C8`
+  - the remaining direct paired-bank route, if it exists, is upstream of those
+    provider families:
+    - `+0x168/+0x188/+0x1A8/+0x1C8` are the same live-or-inline descriptor
+      family ordinary export merges as a whole
+    - no recovered later branch re-selects `+0x1A8` vs `+0x1C8` through
+      `+0x4CC/+0x574/+0x64C` or through the later eye-provider pair
+    - so `MAN2/local_9` remains plausible only as an upstream descriptor-
+      population seam, not as a later provider-routing seam
+    - and even there it is weaker than before:
+      no recovered consumer-side path shows the companion record changing
+      first loaded `FREGT003` span content after ordinary export chooses the
+      active descriptor family
   - so the old “missing bridge into the late provider family” is now largely
     resolved for the provider tables
   - this demotes the slot-6/7 eye-provider search as the main shipped `_0`
@@ -282,6 +379,15 @@ Recommended read order:
     in the recovered GECK/editor artifact set, the concrete writes are still
     dominated by `FUN_00588520`, while later export/consumer flow uses
     owner-carried slot objects instead
+  - the companion-record branch is weaker again once the bake-visible selector
+    role is combined with actual head EGT structure:
+    - the fourth `0x20` descriptor record is the selector for the second loaded
+      `FREGT003` span
+    - relevant shipped head EGTs are one-span files (`sym=50`, `asym=0`)
+    - so suppressing the companion `+0x1C8` record is now structurally weak as
+      a direct shipped `_0` bake lever
+    - this now demotes `MAN2/local_9` below first-span content/apply fidelity
+      and below upstream provenance of active first-span descriptor content
   - `FUN_00571CC0` is also now a weaker direct candidate for that copy:
     it only copies current-source state and the active descriptor block
   - `FUN_00586740` is still the stronger recovered earlier whole-owner copy
@@ -306,8 +412,9 @@ Recommended read order:
   - `FUN_00586000` itself is the explicit race/default writer sibling and its
     raw tail already reaches `ENAM -> MNAM/FNAM -> FGGS -> FGGA -> FGTS -> SNAM`
   - so the strongest remaining seam is no longer another alternate writer hunt
-  - it is the parser-side flag-lifetime window inside `FUN_00588520`,
-    especially `MAN2 -> MNAM/FNAM -> LAB_00588C06 -> SNAM`
+  - the local parser-side flag-lifetime window inside `FUN_00588520`
+    (`MAN2 -> MNAM/FNAM -> LAB_00588C06 -> SNAM`) is now a narrower secondary
+    GECK-side branch, not the top remaining one
 
 ## Demoted branches
 
@@ -327,20 +434,44 @@ Recommended read order:
 ## Best next targets
 
 1. Stay on the race/default importer side:
-  - exact effect of `MAN2`, `MNAM/FNAM`, `SNAM`, and the mirror guard in
-    `FUN_00588520`
+  - if staying on GECK decomp, prioritize upstream provenance of active
+    first-span descriptor content over more consumer-side paired-bank routing
+  - the sharper GECK-side target is now:
+    the populate/copy path for the sex-selected race/default template families
+    at `+0x694/+0x714`, especially the third `0x20` record later serialized as
+    `FGTS`
+  - the basis-space part of that question is now mostly closed:
+    the next exact decomp target is no longer the raw emit tail after
+    `MNAM/FNAM`; it is the earlier helper/copy path that populates the spans
+    that tail serializes
+  - the new strongest exact sub-target on that branch is:
+    whether any non-UI stash producer for `+0x7AC/+0x7B2`, or any other later
+    non-UI overwrite, actually exists; without that, the stronger remaining
+    branch shifts back to first-span `FREGT003` content/apply fidelity
+  - exact effect of `MAN2`, `MNAM/FNAM`, and the mirror guard in
+    `FUN_00588520` now ranks as a narrower secondary branch
   - highest-value next target:
-    stay inside `FUN_00588520` and recover the parser-side flag-lifetime
-    window spanning:
-    `case MAN2 -> case MNAM/FNAM -> LAB_00588C06 -> case SNAM`
-  - the sharpest unresolved sub-question inside that window is now:
-    what `SNAM` means after the bank writes, and whether the
-    `local_11 != 0` remap path is cosmetic/provider-side only or still
-    relevant to shipped `_0`
-  - exact semantics of the importer-side paired-bank state at source-object
-    `+0x1A8/+0x1C8`
-  - treat `MANP/MANU` as the secondary follow-up on this branch, not the
-    first stop
+    prove a non-UI overwrite of `+0x694/+0x714` after `FUN_00588520`, or
+    otherwise demote the remaining GECK branch below first-span `FREGT003`
+    content/apply fidelity
+  - `SNAM -> +0x794` is now effectively resolved and looks like a small
+    sideband/discriminator scalar, not the strongest remaining `_0` seam
+  - the sharpest remaining `MAN2/local_9` sub-question is now only:
+    whether subsection-1 mirror suppression changes upstream descriptor
+    population in a first-span-visible way despite the now-weak fourth-record
+    route
+  - the ordinary-export consumer surface for the auxiliary
+    `+0x4CC/+0x574/+0x64C` families is now partially resolved:
+    it can influence export indirectly through provider/object/path selection,
+    but currently looks weak as the main shipped `_0` seam
+  - the exact semantics of the flags around the importer-side paired-bank
+    state at source-object `+0x1A8/+0x1C8`
+  - treat the `PNAM/UNAM/SNAM` scalar sideband family as mostly resolved and
+    not the first stop on this branch
+  - the short note for this rerank is:
+    [codex_geck_primary_bank_control_alignment_rerank_resolution.txt](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/research/facegen_research_artifacts/notes/geck/codex_geck_primary_bank_control_alignment_rerank_resolution.txt)
+  - and the basis-space follow-up note is:
+    [codex_geck_fgts_basis_space_alignment_resolution.txt](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/research/facegen_research_artifacts/notes/geck/codex_geck_fgts_basis_space_alignment_resolution.txt)
 2. Recover the bridge, if any, from that importer-side paired-bank state into
    the later owner/provider eye-slot family:
    - `owner + sex * 0x120 + 0x1A4`
@@ -359,6 +490,17 @@ Recommended read order:
   - `0x9E6` currently does not
 6. Keep the hair/eye source-handle branch only as supporting context for
    current-source validation, not as the leading shipped `_0` hypothesis.
+
+## Latest rerank
+
+- Three independent subagent reads plus a local reread converged on the same
+  update:
+  - primary race/default `+0x1A8` provenance plus `SI.CTL` family-B control
+    alignment is now the stronger GECK-side seam
+  - `MAN2/local_9` remains real, but only as a narrower upstream
+    descriptor-population check
+  - first-span `FREGT003` content/apply fidelity still remains the stronger
+    competing branch overall
 
 ## Scope note
 

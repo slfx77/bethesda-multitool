@@ -1,11 +1,10 @@
 using System.Numerics;
-using FalloutXbox360Utils.CLI;
+using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Animation;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
+using FalloutXbox360Utils.Core.Formats.Nif;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 
-namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
+namespace FalloutXbox360Utils.CLI;
 
 /// <summary>
 ///     Weapon and equipment attachment node resolution, holster pose loading,
@@ -468,7 +467,8 @@ internal static class NpcWeaponAttachmentResolver
 
         if (string.IsNullOrWhiteSpace(parentOverrideBone) ||
             !holsterOverrides.TryGetValue(attachmentNodeName, out var attachmentOverride) ||
-            !NpcSkeletonLoader.TryReadNodeLocalTransform(skeletonData, skeletonInfo, attachmentNodeName, out var bindLocalTransform))
+            !NpcSkeletonLoader.TryReadNodeLocalTransform(skeletonData, skeletonInfo, attachmentNodeName,
+                out var bindLocalTransform))
         {
             return worldTransforms.ContainsKey(attachmentNodeName)
                 ? defaultWorldTransform

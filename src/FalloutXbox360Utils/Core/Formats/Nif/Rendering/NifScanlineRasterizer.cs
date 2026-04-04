@@ -113,6 +113,8 @@ internal static class NifScanlineRasterizer
 
                 // Emissive surfaces (BSShaderNoLightingProperty) are self-illuminated — no shading
                 float shade;
+                var specIntensity = 0f; // Blinn-Phong specular intensity (SM3001.pso: pow(NdotH, glossiness))
+                var normalAlpha = 255f; // Normal map alpha = specular mask (SM3001.pso line 67,189)
                 float nx = 0, ny = 0, nz = 1; // default normal (toward camera)
 
                 if (tri.IsEmissive)
@@ -149,7 +151,7 @@ internal static class NifScanlineRasterizer
                         u -= MathF.Floor(u);
                         v -= MathF.Floor(v);
 
-                        var (mnr, mng, mnb, _) = SampleTexture(
+                        var (mnr, mng, mnb, mna) = SampleTexture(
                             normalMap,
                             u,
                             v,
@@ -157,6 +159,9 @@ internal static class NifScanlineRasterizer
                             dvDx,
                             duDy,
                             dvDy);
+
+                        // Normal map alpha = specular mask (SM3001.pso: mul r7.w, r3.w, c22.w)
+                        normalAlpha = mna;
 
                         // Decode from [0,255] to [-1,1]
                         // Y is negated: Bethesda normal maps use DirectX convention (Y-down)
@@ -250,6 +255,18 @@ internal static class NifScanlineRasterizer
                             ny * RenderLightingConstants.HalfVec.Y +
                             nz * RenderLightingConstants.HalfVec.Z);
                         shade = MathF.Min(shade + MathF.Pow(specNdotH, 4f) * tri.EnvMapScale * 0.25f, 1f);
+                    }
+                    // General specular: Blinn-Phong from SM3001.pso disassembly.
+                    // SM3001 lines 70-71: NdotH = dot(H, N); specPower = pow(NdotH, glossiness)
+                    // SM3001 line 189: finalSpec *= normalMapAlpha (specular mask)
+                    // SM3001 line 195: finalColor = diffuse * tex + specular (additive)
+                    else if (tri.Glossiness > 2f && (tri.SpecR > 0f || tri.SpecG > 0f || tri.SpecB > 0f))
+                    {
+                        var specNdotH = MathF.Max(0f,
+                            nx * RenderLightingConstants.HalfVec.X +
+                            ny * RenderLightingConstants.HalfVec.Y +
+                            nz * RenderLightingConstants.HalfVec.Z);
+                        specIntensity = MathF.Pow(specNdotH, tri.Glossiness) * (normalAlpha / 255f);
                     }
                 }
                 else
@@ -348,6 +365,18 @@ internal static class NifScanlineRasterizer
                         fb += tri.EmissiveB * 255f;
                     }
 
+                    // Add Blinn-Phong specular highlight (SM3001.pso line 195: finalColor = diffuse*tex + spec)
+                    // SM3001 multiplies by ToggleNumLights.w (runtime specular intensity, unknown value).
+                    // NiMaterialProperty specular color provides per-channel tint; 0.15 global scale
+                    // approximates the engine's subtle specular without knowing the exact runtime value.
+                    if (specIntensity > 0f)
+                    {
+                        const float specScale = 0.06f;
+                        fr += tri.SpecR * specIntensity * specScale * 255f;
+                        fg += tri.SpecG * specIntensity * specScale * 255f;
+                        fb += tri.SpecB * specIntensity * specScale * 255f;
+                    }
+
                     var fk = isBackFacing ? (byte)2 : (byte)1;
                     if (tri.AlphaRenderMode != NifAlphaRenderMode.Blend)
                     {
@@ -369,15 +398,23 @@ internal static class NifScanlineRasterizer
                             continue;
                         }
 
-                        // For emissive blended surfaces (e.g., Rex brain cage), use screen blend
-                        // at half intensity: result = dst + src*0.5 - dst*src*0.5/255.
-                        // This brightens without fully replacing what's behind, giving an
-                        // illuminated glass look.
-                        if (tri.IsEmissive)
+                        // For emissive blended surfaces with additive blend mode (DstBlend=ONE,
+                        // e.g., steam, energy FX), use actual additive blending via the
+                        // standard blend path — the SrcBlendMode/DstBlendMode already encode
+                        // the correct behavior.  For non-additive emissive surfaces (e.g.,
+                        // Rex brain cage with standard SRC_ALPHA/INV_SRC_ALPHA), keep the
+                        // screen blend at half intensity for an illuminated glass look.
+                        if (tri.IsEmissive && tri.DstBlendMode != 0) // 0 = ONE (additive)
                         {
-                            pixels[pIdx + 0] = (byte)Math.Clamp(pixels[pIdx + 0] + fr * 0.5f - pixels[pIdx + 0] * fr * 0.5f / 255f, 0, 255);
-                            pixels[pIdx + 1] = (byte)Math.Clamp(pixels[pIdx + 1] + fg * 0.5f - pixels[pIdx + 1] * fg * 0.5f / 255f, 0, 255);
-                            pixels[pIdx + 2] = (byte)Math.Clamp(pixels[pIdx + 2] + fb * 0.5f - pixels[pIdx + 2] * fb * 0.5f / 255f, 0, 255);
+                            pixels[pIdx + 0] =
+                                (byte)Math.Clamp(pixels[pIdx + 0] + fr * 0.5f - pixels[pIdx + 0] * fr * 0.5f / 255f, 0,
+                                    255);
+                            pixels[pIdx + 1] =
+                                (byte)Math.Clamp(pixels[pIdx + 1] + fg * 0.5f - pixels[pIdx + 1] * fg * 0.5f / 255f, 0,
+                                    255);
+                            pixels[pIdx + 2] =
+                                (byte)Math.Clamp(pixels[pIdx + 2] + fb * 0.5f - pixels[pIdx + 2] * fb * 0.5f / 255f, 0,
+                                    255);
                         }
                         else
                         {
@@ -391,15 +428,25 @@ internal static class NifScanlineRasterizer
 
                             pixels[pIdx + 0] = (byte)Math.Clamp(
                                 fr * ResolveBlendFactor(tri.SrcBlendMode, srcA, srcR, srcG, srcB, dstR, dstG, dstB, 0) +
-                                pixels[pIdx + 0] * ResolveBlendFactor(tri.DstBlendMode, srcA, srcR, srcG, srcB, dstR, dstG, dstB, 0), 0, 255);
+                                pixels[pIdx + 0] * ResolveBlendFactor(tri.DstBlendMode, srcA, srcR, srcG, srcB, dstR,
+                                    dstG, dstB, 0), 0, 255);
                             pixels[pIdx + 1] = (byte)Math.Clamp(
                                 fg * ResolveBlendFactor(tri.SrcBlendMode, srcA, srcR, srcG, srcB, dstR, dstG, dstB, 1) +
-                                pixels[pIdx + 1] * ResolveBlendFactor(tri.DstBlendMode, srcA, srcR, srcG, srcB, dstR, dstG, dstB, 1), 0, 255);
+                                pixels[pIdx + 1] * ResolveBlendFactor(tri.DstBlendMode, srcA, srcR, srcG, srcB, dstR,
+                                    dstG, dstB, 1), 0, 255);
                             pixels[pIdx + 2] = (byte)Math.Clamp(
                                 fb * ResolveBlendFactor(tri.SrcBlendMode, srcA, srcR, srcG, srcB, dstR, dstG, dstB, 2) +
-                                pixels[pIdx + 2] * ResolveBlendFactor(tri.DstBlendMode, srcA, srcR, srcG, srcB, dstR, dstG, dstB, 2), 0, 255);
+                                pixels[pIdx + 2] * ResolveBlendFactor(tri.DstBlendMode, srcA, srcR, srcG, srcB, dstR,
+                                    dstG, dstB, 2), 0, 255);
                         }
-                        pixels[pIdx + 3] = Math.Max(pixels[pIdx + 3], (byte)Math.Clamp(srcA * 255f, 0f, 255f));
+
+                        // Additive blending (DstBlend=ONE) adds light without occluding
+                        // what's behind — keep output alpha low so the effect looks
+                        // translucent against transparent PNG backgrounds.
+                        var outAlpha = tri.DstBlendMode == 0
+                            ? (byte)Math.Clamp(srcA * 64f, 0f, 255f)
+                            : (byte)Math.Clamp(srcA * 255f, 0f, 255f);
+                        pixels[pIdx + 3] = Math.Max(pixels[pIdx + 3], outAlpha);
                     }
                 }
                 else
@@ -477,9 +524,15 @@ internal static class NifScanlineRasterizer
 
                         if (tri.IsEmissive)
                         {
-                            pixels[pIdx + 0] = (byte)Math.Clamp(pixels[pIdx + 0] + fr * 0.5f - pixels[pIdx + 0] * fr * 0.5f / 255f, 0, 255);
-                            pixels[pIdx + 1] = (byte)Math.Clamp(pixels[pIdx + 1] + fg * 0.5f - pixels[pIdx + 1] * fg * 0.5f / 255f, 0, 255);
-                            pixels[pIdx + 2] = (byte)Math.Clamp(pixels[pIdx + 2] + fb * 0.5f - pixels[pIdx + 2] * fb * 0.5f / 255f, 0, 255);
+                            pixels[pIdx + 0] =
+                                (byte)Math.Clamp(pixels[pIdx + 0] + fr * 0.5f - pixels[pIdx + 0] * fr * 0.5f / 255f, 0,
+                                    255);
+                            pixels[pIdx + 1] =
+                                (byte)Math.Clamp(pixels[pIdx + 1] + fg * 0.5f - pixels[pIdx + 1] * fg * 0.5f / 255f, 0,
+                                    255);
+                            pixels[pIdx + 2] =
+                                (byte)Math.Clamp(pixels[pIdx + 2] + fb * 0.5f - pixels[pIdx + 2] * fb * 0.5f / 255f, 0,
+                                    255);
                         }
                         else
                         {
@@ -491,15 +544,22 @@ internal static class NifScanlineRasterizer
                             var dstB2 = pixels[pIdx + 2] / 255f;
 
                             pixels[pIdx + 0] = (byte)Math.Clamp(
-                                fr * ResolveBlendFactor(tri.SrcBlendMode, srcA, srcR2, srcG2, srcB2, dstR2, dstG2, dstB2, 0) +
-                                pixels[pIdx + 0] * ResolveBlendFactor(tri.DstBlendMode, srcA, srcR2, srcG2, srcB2, dstR2, dstG2, dstB2, 0), 0, 255);
+                                fr * ResolveBlendFactor(tri.SrcBlendMode, srcA, srcR2, srcG2, srcB2, dstR2, dstG2,
+                                    dstB2, 0) +
+                                pixels[pIdx + 0] * ResolveBlendFactor(tri.DstBlendMode, srcA, srcR2, srcG2, srcB2,
+                                    dstR2, dstG2, dstB2, 0), 0, 255);
                             pixels[pIdx + 1] = (byte)Math.Clamp(
-                                fg * ResolveBlendFactor(tri.SrcBlendMode, srcA, srcR2, srcG2, srcB2, dstR2, dstG2, dstB2, 1) +
-                                pixels[pIdx + 1] * ResolveBlendFactor(tri.DstBlendMode, srcA, srcR2, srcG2, srcB2, dstR2, dstG2, dstB2, 1), 0, 255);
+                                fg * ResolveBlendFactor(tri.SrcBlendMode, srcA, srcR2, srcG2, srcB2, dstR2, dstG2,
+                                    dstB2, 1) +
+                                pixels[pIdx + 1] * ResolveBlendFactor(tri.DstBlendMode, srcA, srcR2, srcG2, srcB2,
+                                    dstR2, dstG2, dstB2, 1), 0, 255);
                             pixels[pIdx + 2] = (byte)Math.Clamp(
-                                fb * ResolveBlendFactor(tri.SrcBlendMode, srcA, srcR2, srcG2, srcB2, dstR2, dstG2, dstB2, 2) +
-                                pixels[pIdx + 2] * ResolveBlendFactor(tri.DstBlendMode, srcA, srcR2, srcG2, srcB2, dstR2, dstG2, dstB2, 2), 0, 255);
+                                fb * ResolveBlendFactor(tri.SrcBlendMode, srcA, srcR2, srcG2, srcB2, dstR2, dstG2,
+                                    dstB2, 2) +
+                                pixels[pIdx + 2] * ResolveBlendFactor(tri.DstBlendMode, srcA, srcR2, srcG2, srcB2,
+                                    dstR2, dstG2, dstB2, 2), 0, 255);
                         }
+
                         pixels[pIdx + 3] = Math.Max(pixels[pIdx + 3], (byte)Math.Clamp(srcA * 255f, 0f, 255f));
                     }
                 }
@@ -728,7 +788,7 @@ internal static class NifScanlineRasterizer
     /// <summary>
     ///     Resolve a D3D blend factor enum value to a per-channel multiplier.
     ///     Matches SetupGeometryAlphaBlending (VA 0x82AAD430) blend mode extraction.
-    ///     <paramref name="channel"/>: 0=R, 1=G, 2=B for SRC_COLOR/DST_COLOR modes.
+    ///     <paramref name="channel" />: 0=R, 1=G, 2=B for SRC_COLOR/DST_COLOR modes.
     /// </summary>
     internal static float ResolveBlendFactor(
         byte mode, float srcAlpha,

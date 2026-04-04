@@ -35,6 +35,7 @@ internal static class NifSubmeshExtractor
         byte dstBlendMode = 7,
         float materialAlpha = 1f,
         float materialGlossiness = 10f,
+        (float R, float G, float B) specularColor = default,
         bool useDualQuaternionSkinning = false,
         float[]? preSkinMorphDeltas = null)
     {
@@ -100,7 +101,8 @@ internal static class NifSubmeshExtractor
             SrcBlendMode = srcBlendMode,
             DstBlendMode = dstBlendMode,
             MaterialAlpha = materialAlpha,
-            MaterialGlossiness = materialGlossiness
+            MaterialGlossiness = materialGlossiness,
+            SpecularColor = specularColor
         };
     }
 
@@ -295,7 +297,7 @@ internal static class NifSubmeshExtractor
             Positions = transformed.Positions,
             Triangles = triangles,
             Normals = transformed.Normals
-                ?? NifGeometryTransformUtils.RecomputeSmoothNormals(transformed.Positions, triangles),
+                      ?? NifGeometryTransformUtils.RecomputeSmoothNormals(transformed.Positions, triangles),
             UVs = uvs,
             VertexColors = vertexColors,
             Tangents = transformed.Tangents,
@@ -449,7 +451,7 @@ internal static class NifSubmeshExtractor
             Positions = transformed.Positions,
             Triangles = triangles,
             Normals = transformed.Normals
-                ?? NifGeometryTransformUtils.RecomputeSmoothNormals(transformed.Positions, triangles),
+                      ?? NifGeometryTransformUtils.RecomputeSmoothNormals(transformed.Positions, triangles),
             UVs = uvs,
             VertexColors = vertexColors,
             Tangents = transformed.Tangents,

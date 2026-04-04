@@ -21,23 +21,23 @@ semantic conclusions were stronger than the raw evidence and are now called out 
 - `tools/GhidraProject/facegen_geck_tri_early_sections.txt` — 13 functions, FRTRI003 early section families + optional branch
 - `tools/GhidraProject/facegen_geck_tri_early_record_helpers.txt` — 18 functions, early `0x08` / `0x10` record storage helpers
 - `tools/GhidraProject/facegen_geck_tri_front_tail_layout.txt` — focused internal GECK disassembly for the still-unparsed `0x20` / `0x2C` / `0x34` / `0x38` front-tail read loops
-- `TestOutput/codex_tri_mixed_pre_differential_region.txt` — raw anchor probe of the now-stronger mixed early fixed-width `0x0C` region that overlaps the parser's provisional second block
-- `TestOutput/codex_tri_support_topology_probe.txt` — sibling NIF topology comparison for the mixed early `u32x3` table, including the narrowed `teethlowerhuman.tri` outlier
-- `TestOutput/codex_tri_support_topology_runtime_bridge.txt` — GECK/runtime bridge summary for the mixed early support-topology family and the current runtime-use boundary
-- `TestOutput/codex_tri_support_topology_caller_resolution.txt` — focused runtime caller resolution for `TRI_Helper_GetVector3At`, showing the remaining direct owners collapse to bridge-local load/copy helpers
+- `research/facegen_research_artifacts/notes/tri/codex_tri_mixed_pre_differential_region.txt` — raw anchor probe of the now-stronger mixed early fixed-width `0x0C` region that overlaps the parser's provisional second block
+- `research/facegen_research_artifacts/notes/tri/codex_tri_support_topology_probe.txt` — sibling NIF topology comparison for the mixed early `u32x3` table, including the narrowed `teethlowerhuman.tri` outlier
+- `research/facegen_research_artifacts/notes/tri/codex_tri_support_topology_runtime_bridge.txt` — GECK/runtime bridge summary for the mixed early support-topology family and the current runtime-use boundary
+- `research/facegen_research_artifacts/notes/tri/codex_tri_support_topology_caller_resolution.txt` — focused runtime caller resolution for `TRI_Helper_GetVector3At`, showing the remaining direct owners collapse to bridge-local load/copy helpers
 - `tools/GhidraProject/facegen_support_topology_getvector3_callscan_pdb_xenon.txt` — direct-call scan for `TRI_Helper_GetVector3At`, used to narrow the runtime owner set for the base early TRI family
 - `tools/GhidraProject/facegen_support_topology_callers_decompiled_pdb_xenon.txt` — focused Xbox MemDebug decompile of the direct `TRI_Helper_GetVector3At` caller set
 - `tools/GhidraProject/facegen_support_topology_loadintoobject_callscan_pdb_xenon.txt` — caller scan for `TRI_Helper_LoadIntoObject`, used to pin the named owner chain for the base early TRI family
 - `tools/GhidraProject/facegen_support_topology_buildextended_callscan_pdb_xenon.txt` — caller scan for `TRI_Helper_BuildExtendedMorphObject`, confirming the same named owner chain on the runtime morph-builder side
 - `tools/GhidraProject/facegen_support_topology_vectorcount_callscan_pdb_xenon.txt` — raw caller scan for the neighboring base-family `float3` count helper, used to find broader bridge-local fanout
 - `tools/GhidraProject/facegen_support_topology_vectorcount_callers_decompiled_pdb_xenon.txt` — representative local decompile around the wider `TRI_Helper_GetVector3Count` caller set
-- `TestOutput/codex_tri_support_topology_vectorcount_resolution.txt` — summary of the broader vector-count helper fanout and what it implies for the mixed early support-topology family
+- `research/facegen_research_artifacts/notes/tri/codex_tri_support_topology_vectorcount_resolution.txt` — summary of the broader vector-count helper fanout and what it implies for the mixed early support-topology family
 - `tools/GhidraProject/facegen_tri_plus60_family_decompiled_pdb_xenon.txt` — focused Xbox MemDebug decompile of the TRI runtime `+0x60` family helper cluster
-- `TestOutput/codex_tri_plus60_family_bridge.txt` — summary of the `+0x60` runtime family and its bridge back to the raw/materialized `0x20` family plus mixed early base vectors
+- `research/facegen_research_artifacts/notes/tri/codex_tri_plus60_family_bridge.txt` — summary of the `+0x60` runtime family and its bridge back to the raw/materialized `0x20` family plus mixed early base vectors
 - `tools/GhidraProject/facegen_tri_plus70_family_decompiled_pdb_xenon.txt` — focused Xbox MemDebug decompile of the TRI runtime `+0x70` family helper cluster
-- `TestOutput/codex_tri_plus70_family_bridge.txt` — summary of the `+0x70` runtime family and its bridge back to the raw/materialized `0x2C` family
+- `research/facegen_research_artifacts/notes/tri/codex_tri_plus70_family_bridge.txt` — summary of the `+0x70` runtime family and its bridge back to the raw/materialized `0x2C` family
 - `tools/GhidraProject/facegen_tri_plus70_usage_callscan_pdb_xenon.txt` — direct-call scan for `TRI_Plus70_GetRecord` / `TRI_Plus70_CopyRecord`, used to check whether the `+0x70` family escapes the bridge-local load/copy neighborhood
-- `TestOutput/codex_tri_plus70_prefix_semantics.txt` — summary of the follow-up `+0x70` pass, including the `uint32 + Vector3 + string` layout read for the old 12-byte fixed prefix
+- `research/facegen_research_artifacts/notes/tri/codex_tri_plus70_prefix_semantics.txt` — summary of the follow-up `+0x70` pass, including the `uint32 + Vector3 + string` layout read for the old 12-byte fixed prefix
 - `tools/GhidraProject/facegen_tri_tail_helper_cluster_decompiled_pdb_xenon.txt` — focused Xbox MemDebug decompile of the shared tail/string/span helper cluster under the TRI `+0x60` / `+0x70` families
 - `tools/GhidraProject/facegen_tri_tail_helper_callscan_pdb_xenon.txt` — direct-call scan for the shared TRI tail/string/span helper set, used to check whether the helpers stay bridge-local or widen into a broader runtime subsystem
 - `tools/GhidraProject/facegen_tri_tail_fallback_strings_raw.txt` — raw MemDebug probe of the TRI tail fallback literals, confirming that the loader's short-name defaults are empty strings
@@ -47,10 +47,10 @@ semantic conclusions were stronger than the raw evidence and are now called out 
 - `tools/GhidraProject/facegen_tri_support_span50_callscan_pdb_xenon.txt` — raw caller scan for the `+0x50` (`0x10`-stride) support-span accessors
 - `tools/GhidraProject/facegen_tri_support_span_strings_raw.txt` — raw MemDebug probe of the widened `+0x50` caller’s CSV-style string literals
 - `tools/GhidraProject/facegen_tri_structured_span_orphans_decompiled_pdb_xenon.txt` — focused Xbox MemDebug decompile of the remaining out-of-cluster `+0x30` / `+0x50` support-span caller sites
-- `TestOutput/codex_tri_tail_helper_semantics.txt` — summary of the tail-helper pass, including the small-string result for the dynamic tails and the fixed-stride span result for the neighboring helper families
-- `TestOutput/codex_tri_tail_string_semantics.txt` — summary of the follow-up tail semantics pass, including the empty-string fallback probe and the current best read on the `+0x60` / `+0x70` names
-- `TestOutput/codex_tri_support_span_semantics.txt` — summary of the widened `+0x30` / `+0x40` / `+0x50` caller pass and why those families now look more like support-data storage/validation than runtime morph application
-- `TestOutput/codex_tri_structured_span_orphan_resolution.txt` — summary of the out-of-cluster `+0x30` / `+0x50` caller pass and why those sites still look like export/serialization helpers rather than runtime morph consumers
+- `research/facegen_research_artifacts/notes/tri/codex_tri_tail_helper_semantics.txt` — summary of the tail-helper pass, including the small-string result for the dynamic tails and the fixed-stride span result for the neighboring helper families
+- `research/facegen_research_artifacts/notes/tri/codex_tri_tail_string_semantics.txt` — summary of the follow-up tail semantics pass, including the empty-string fallback probe and the current best read on the `+0x60` / `+0x70` names
+- `research/facegen_research_artifacts/notes/tri/codex_tri_support_span_semantics.txt` — summary of the widened `+0x30` / `+0x40` / `+0x50` caller pass and why those families now look more like support-data storage/validation than runtime morph application
+- `research/facegen_research_artifacts/notes/tri/codex_tri_structured_span_orphan_resolution.txt` — summary of the out-of-cluster `+0x30` / `+0x50` caller pass and why those sites still look like export/serialization helpers rather than runtime morph consumers
 - `tools/GhidraProject/facegen_geck_tri_context_lifecycle.txt` — 5 functions, coord-context ctor/dtor + follow-up helper
 - `tools/GhidraProject/facegen_geck_tri_followup_caller.txt` — 2 functions, caller classification for `FUN_00696ab0`
 - `tools/GhidraProject/facegen_geck_bsfacegenmodel_helpers.txt` — 5 functions, BSFaceGenModel-side loader + cleanup helpers
@@ -66,30 +66,30 @@ semantic conclusions were stronger than the raw evidence and are now called out 
 - `tools/GhidraProject/facegen_geck_additional_geom_data_vtable.txt` — attempted AGD vtable reconstruction from serializer DATA refs
 - `tools/GhidraProject/facegen_runtime_agd_decompiled_pdb_xenon.txt` — Xbox MemDebug raw-PDB pass for AGD + runtime FaceGen bridge
 - `tools/GhidraProject/facegen_prepare_head_followup_helpers_decompiled_pdb_xenon.txt` — raw-PDB/manual-address pass for `BSFaceGenManager::PrepareHeadForShaders` plus the two sibling-path helpers directly under `ResolveFaceGenShaderTexture`
-- `TestOutput/codex_prepare_head_followup_helper_resolution.txt` — summary of the resolved `"%s_n.dds"` / `"%s_s.dds"` helper pair under `PrepareHeadForShaders`
-- `TestOutput/codex_geck_generation_bake_join.txt` — summary of the GECK generation-to-bake join and the narrowed remaining handoff gap
+- `research/facegen_research_artifacts/notes/supporting/codex_prepare_head_followup_helper_resolution.txt` — summary of the resolved `"%s_n.dds"` / `"%s_s.dds"` helper pair under `PrepareHeadForShaders`
+- `research/facegen_research_artifacts/notes/geck/codex_geck_generation_bake_join.txt` — summary of the GECK generation-to-bake join and the narrowed remaining handoff gap
 - `tools/GhidraProject/facegen_geck_generation_install_bridge.txt` — focused GECK decompile of the remaining generation/install bridge from `FUN_00697a10` through the bake-visible `FREGT003` lazy-load path
-- `TestOutput/codex_geck_install_bridge_resolution.txt` — summary of the focused GECK install-bridge pass, including the split between durable model-side overflow storage and the separate bake-visible package chain
+- `research/facegen_research_artifacts/notes/geck/codex_geck_install_bridge_resolution.txt` — summary of the focused GECK install-bridge pass, including the split between durable model-side overflow storage and the separate bake-visible package chain
 - `tools/GhidraProject/facegen_geck_model_overflow_consumer_bridge.txt` — focused GECK decompile of the first known downstream consumer of the durable model-side overflow vectors at `[this + 0x08] + 0x14/+0x18`
-- `TestOutput/codex_geck_model_overflow_consumer_resolution.txt` — summary of the geometry-side overflow-consumer pass and the remaining bake-visible handoff gap
+- `research/facegen_research_artifacts/notes/geck/codex_geck_model_overflow_consumer_resolution.txt` — summary of the geometry-side overflow-consumer pass and the remaining bake-visible handoff gap
 - `tools/GhidraProject/facegen_geck_generated_package_cache_bridge.txt` — focused GECK decompile of the post-generation cache/install helper `FUN_0068D510` and the matching resolve path `FUN_0068D670`
-- `TestOutput/codex_geck_generated_package_cache_bridge_resolution.txt` — summary of the cache/install pass, including the `BSFaceGenModelMap::Entry` read and why it still does not prove an overflow-to-package copy
+- `research/facegen_research_artifacts/notes/geck/codex_geck_generated_package_cache_bridge_resolution.txt` — summary of the cache/install pass, including the `BSFaceGenModelMap::Entry` read and why it still does not prove an overflow-to-package copy
 - `tools/GhidraProject/facegen_geck_metadata_holder_bridge.txt` — focused GECK decompile of `FUN_00405B40`, `FUN_00694880`, and the `[this + 0x0C]` metadata-holder path
-- `TestOutput/codex_geck_metadata_holder_resolution.txt` — summary of the metadata-holder pass, including the `path + length/state + lazy package ptr` layout read for `[this + 0x0C]`
+- `research/facegen_research_artifacts/notes/geck/codex_geck_metadata_holder_resolution.txt` — summary of the metadata-holder pass, including the `path + length/state + lazy package ptr` layout read for `[this + 0x0C]`
 - `tools/GhidraProject/facegen_geck_bake_direct_read_bridge.txt` — focused GECK decompile of `FUN_00695B50`, `FUN_0068DA70`, `FUN_00C5D220`, and representative non-bake callers of the numeric helper
-- `TestOutput/codex_geck_bake_direct_read_bridge_resolution.txt` — summary of the direct bake-side helper pass, including the cache/package read for `FUN_0068DA70` and the generic round-to-int read for `FUN_00C5D220`
+- `research/facegen_research_artifacts/notes/geck/codex_geck_bake_direct_read_bridge_resolution.txt` — summary of the direct bake-side helper pass, including the cache/package read for `FUN_0068DA70` and the generic round-to-int read for `FUN_00C5D220`
 - `tools/GhidraProject/facegen_geck_egt_package_object_bridge.txt` — focused GECK decompile of the bake-visible `0x34` `FREGT003` package object family plus parser-entry helpers
-- `TestOutput/codex_geck_egt_package_object_bridge_resolution.txt` — summary of the package-object pass, including the two `0x18` child spans and the narrowed file-derived parser read
+- `research/facegen_research_artifacts/notes/geck/codex_geck_egt_package_object_bridge_resolution.txt` — summary of the package-object pass, including the two `0x18` child spans and the narrowed file-derived parser read
 - `tools/GhidraProject/facegen_geck_fregt_writer_bridge.txt` — focused GECK decompile of the higher-level writer/export owners above the shared FaceGen binary/schema helpers
-- `TestOutput/codex_geck_fregt_writer_bridge_resolution.txt` — summary of the writer-side pass, including the `FRTRI003` save-path result and the lack of a comparable `FREGT003` magic-bearing writer
+- `research/facegen_research_artifacts/notes/geck/codex_geck_fregt_writer_bridge_resolution.txt` — summary of the writer-side pass, including the `FRTRI003` save-path result and the lack of a comparable `FREGT003` magic-bearing writer
 - `tools/GhidraProject/facegen_geck_export_staging_bridge.txt` — focused GECK decompile of the `FUN_00587B20 -> FUN_0068CB60 -> FUN_0068FE90 -> FUN_00695B50` export-staging path plus the holder/lazy-load siblings beside it
-- `TestOutput/codex_geck_export_staging_bridge_resolution.txt` — summary of the export-staging pass, including the cache-hit/generate split in `FUN_0068FE90` and the remaining on-demand lazy package load inside `FUN_00695B50`
+- `research/facegen_research_artifacts/notes/geck/codex_geck_export_staging_bridge_resolution.txt` — summary of the export-staging pass, including the cache-hit/generate split in `FUN_0068FE90` and the remaining on-demand lazy package load inside `FUN_00695B50`
 - `tools/GhidraProject/facegen_geck_export_owner_bridge.txt` — focused GECK decompile of the concrete FaceMods writer lane, the sibling BodyMods lane, and the shared pre-save texture application stage under them
-- `TestOutput/codex_geck_export_owner_bridge_resolution.txt` — summary of the GECK export-owner split, including why `FUN_00574500` is the real FaceMods writer and why `FUN_00691B10` is a shared application step rather than a writer
+- `research/facegen_research_artifacts/notes/geck/codex_geck_export_owner_bridge_resolution.txt` — summary of the GECK export-owner split, including why `FUN_00574500` is the real FaceMods writer and why `FUN_00691B10` is a shared application step rather than a writer
 - `tools/GhidraProject/facegen_geck_bake_selector_bridge.txt` — focused GECK decompile of the ordinary export descriptor builder, the page-8 shade owner, the staging owner, the descriptor merge/materializer helpers, and the shared bake loop
 - `tools/GhidraProject/facegen_geck_bake_selector_callers.txt` — focused GECK decompile of the immediate `FUN_00695B50` callers, especially `FUN_00587B20` and `FUN_00691B10`, to pin where the bake selector records become concrete
-- `TestOutput/codex_geck_bake_selector_callers_resolution.txt` — summary of the selector-bridge/caller passes, including the 4 x `0x20` descriptor-buffer result and the narrowed next target
-- `TestOutput/codex_geck_selector_record_layout_resolution.txt` — summary of the next selector-layout pass, including the recovered `0x20` lane-record body, the concrete `record + 0x00` bake-entry selector read, and why the `+0x1C/+0x20` raster-span pair belongs to `FREGT003` channel subrecords rather than the selector records themselves
+- `research/facegen_research_artifacts/notes/geck/codex_geck_bake_selector_callers_resolution.txt` — summary of the selector-bridge/caller passes, including the 4 x `0x20` descriptor-buffer result and the narrowed next target
+- `research/facegen_research_artifacts/notes/geck/codex_geck_selector_record_layout_resolution.txt` — summary of the next selector-layout pass, including the recovered `0x20` lane-record body, the concrete `record + 0x00` bake-entry selector read, and why the `+0x1C/+0x20` raster-span pair belongs to `FREGT003` channel subrecords rather than the selector records themselves
 - `tools/GhidraProject/facegen_tri_runtime_bridge.txt` — Xbox MemDebug raw-address pass for TRI runtime container + morph builders
 - `tools/GhidraProject/facegen_tri_runtime_tables.txt` — raw Xbox table dump for the runtime morph-builder globals
 - `tools/GhidraProject/facegen_tri_runtime_table_initializers.txt` — xref scan for the runtime morph-builder globals
@@ -124,7 +124,7 @@ semantic conclusions were stronger than the raw evidence and are now called out 
 - `tools/GhidraProject/facegen_packed_vertex_rw_helper_search_raw.txt` — raw MemDebug PDB search output showing the packed write helper at `0x82483850` resolves to `XMConvertFloatToHalfStream`
 - `tools/GhidraProject/facegen_packed_half_stream_symbol_search_raw.txt` — companion raw MemDebug PDB search output for the paired half/float stream conversion helpers
 - `tools/GhidraProject/facegen_packed_vertex_rw_helper_callscan_pdb_xenon.txt` — point-in-time raw-PPC call scan of the packed write helper at `0x82483850`
-- `TestOutput/codex_packed_vertex_rw_helper_semantics.txt` — summary of the packed vertex read/write helper pass under runtime morph apply
+- `research/facegen_research_artifacts/notes/supporting/codex_packed_vertex_rw_helper_semantics.txt` — summary of the packed vertex read/write helper pass under runtime morph apply
 - `tools/GhidraProject/facegen_iterator_mutation_bridge_decompiled_pdb_xenon.txt` — raw-PDB pass for the named FaceGen iterator/mutability owner set (`ApplyCoordinateToExistingMesh`, `ApplyHairMorph`, `UpdateAllChildrenMorphData`, `ReplaceFaceMeshLOD`, `PrecacheFaceGeometry`, `LoadModelMesh`, and the small `NiGeometryData` helper family)
 - `tools/GhidraProject/facegen_iterator_mutation_callscan_pdb_xenon.txt` — point-in-time raw-PPC call scan of the iterator/mutability helper family (`LockPackedVertexData`, `UnlockPackedVertexData`, `GetVerticesIterator`, `SetConsistency`, `MarkAsChanged`, `XMConvertHalfToFloatStream`)
 - `tools/GhidraProject/facegen_child_morph_invocation_decompiled_pdb_xenon.txt` — raw-PDB pass for the remaining `UpdateAllChildrenMorphData` owner set (`UpdateMorphing` and `PlayerCharacter::CloneInventory3D`)
@@ -186,17 +186,17 @@ semantic conclusions were stronger than the raw evidence and are now called out 
 - `tools/GhidraProject/facegen_helper_biped_attachskinnedobject_callscan_pdb_xenon.txt` — point-in-time raw-PPC call scan of `BipedAnim::AttachSkinnedObject`
 - `tools/GhidraProject/facegen_helper_biped_loadbipedparts_callscan_pdb_xenon.txt` — point-in-time raw-PPC call scan of `BipedAnim::LoadBipedParts`
 - `tools/GhidraProject/facegen_helper_bsfadenode_ctor_callscan_pdb_xenon.txt` — point-in-time raw-PPC call scan of `BSFadeNode::BSFadeNode`
-- `TestOutput/codex_tri_anchor_compare.txt` — local `inspect-tri` anchor comparison for `headhuman` vs `eyelefthuman`
-- `TestOutput/codex_tri_nonhair_name_semantics.txt` — local `inspect-tri` probe of head/eye/mouth/tongue/teeth TRI identifier strings
-- `TestOutput/codex_tri_hair_name_probe.txt` — local `inspect-tri` probe of beard/eyebrow TRI identifier strings
-- `TestOutput/codex_tri_sparse_bucket_mapping.txt` — local sparse-TRI bucket/slot mapping report derived from the shared runtime tables plus the `inspect-tri` name probes
-- `TestOutput/codex_tri_sparse_application_bridge.txt` — local runtime-bridge summary for how `TRI_Helper_BuildExtendedMorphObject` matches sparse TRI records into the shared head buckets and replaces differential slots with indexed/statistical ones
-- `TestOutput/codex_tri_child_edge_cases.txt` — local follow-up on the remaining sparse-child application edges: upper-teeth runtime fit and the concrete child-loop fallback gating
-- `TestOutput/codex_tri_header_word_probe.txt` — local anchor-sample header dump used to test whether the early `0x10` / `0x20` / `0x2C` loader loops are actually populated in shipped TRI samples
-- `TestOutput/codex_tri_remaining_tail_accounting.txt` — local summary closing the conceptual bridge from the raw post-vector TRI tail into the runtime statistical packed-tail apply path
-- `TestOutput/codex_skeleton_root_types.txt` — local `NifAnalyzer blocks` comparison for the shipped third-person vs first-person human skeleton roots
-- `TestOutput/codex_headanims_skeleton_map.txt` — local `NifAnalyzer block` map of the shipped third-person `HeadAnims` / `HeadAnims:0` controller branch
-- `TestOutput/codex_headanims_static_path_crosscheck.txt` — local negative cross-check showing no `HeadAnims:0` / `SetAnim*Value` references in the current named static head-build/apply artifacts
+- `research/facegen_research_artifacts/notes/tri/codex_tri_anchor_compare.txt` — local `inspect-tri` anchor comparison for `headhuman` vs `eyelefthuman`
+- `research/facegen_research_artifacts/notes/tri/codex_tri_nonhair_name_semantics.txt` — local `inspect-tri` probe of head/eye/mouth/tongue/teeth TRI identifier strings
+- `research/facegen_research_artifacts/notes/tri/codex_tri_hair_name_probe.txt` — local `inspect-tri` probe of beard/eyebrow TRI identifier strings
+- `research/facegen_research_artifacts/notes/tri/codex_tri_sparse_bucket_mapping.txt` — local sparse-TRI bucket/slot mapping report derived from the shared runtime tables plus the `inspect-tri` name probes
+- `research/facegen_research_artifacts/notes/tri/codex_tri_sparse_application_bridge.txt` — local runtime-bridge summary for how `TRI_Helper_BuildExtendedMorphObject` matches sparse TRI records into the shared head buckets and replaces differential slots with indexed/statistical ones
+- `research/facegen_research_artifacts/notes/tri/codex_tri_child_edge_cases.txt` — local follow-up on the remaining sparse-child application edges: upper-teeth runtime fit and the concrete child-loop fallback gating
+- `research/facegen_research_artifacts/notes/tri/codex_tri_header_word_probe.txt` — local anchor-sample header dump used to test whether the early `0x10` / `0x20` / `0x2C` loader loops are actually populated in shipped TRI samples
+- `research/facegen_research_artifacts/notes/tri/codex_tri_remaining_tail_accounting.txt` — local summary closing the conceptual bridge from the raw post-vector TRI tail into the runtime statistical packed-tail apply path
+- `research/facegen_research_artifacts/notes/supporting/codex_skeleton_root_types.txt` — local `NifAnalyzer blocks` comparison for the shipped third-person vs first-person human skeleton roots
+- `research/facegen_research_artifacts/notes/supporting/codex_headanims_skeleton_map.txt` — local `NifAnalyzer block` map of the shipped third-person `HeadAnims` / `HeadAnims:0` controller branch
+- `research/facegen_research_artifacts/notes/supporting/codex_headanims_static_path_crosscheck.txt` — local negative cross-check showing no `HeadAnims:0` / `SetAnim*Value` references in the current named static head-build/apply artifacts
 - `tools/GhidraProject/facegen_racesexmenu_decompiled_pdb_xenon.txt` — raw-PDB pass for RaceSexMenu slider construction + slider-apply path
 - `tools/GhidraProject/facegen_racesexmenu_slider_labels_raw.txt` — raw EXE dump of the RaceSexMenu FaceGen slider label globals
 - `tools/GhidraProject/facegen_geck_tri_record_helpers.txt` — 9 functions, TRI morph-record helper layer
@@ -5454,3 +5454,454 @@ The remaining exact seam in this window is now narrower than before:
 - what `SNAM` means after the bank writes
 - and whether the `local_11 != 0` remap path matters to shipped `_0`, or if
   the shipped `_0` branch is mostly just the subsection-1 mirror suppression
+
+## 2026-04-03 parser-side `SNAM` helper refinement
+
+Used subagents plus a local reread of the existing parser artifacts to tighten
+the immediate post-bank tail inside `FUN_00588520`.
+
+The main correction is that `FUN_004E1130` is now structurally resolved. In
+[facegen_geck_owner_state_parser_helpers.txt](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/tools/GhidraProject/facegen_geck_owner_state_parser_helpers.txt),
+it is only a fixed-size 16-bit payload reader:
+- `FUN_004E0470(param_1, 2)`
+- consult endian state at `in_ECX + 0x3E8`
+- byte-swap the caller-owned 16-bit value in place when needed
+
+That means `SNAM` is narrower than before. The `case 0x4D414E53` branch in
+`FUN_00588520` still does nothing visible except:
+- if payload size > 1, call `FUN_004E1130(...)`
+
+So `SNAM` is now best read as an unresolved 16-bit post-bank scalar tag, not
+another float-bank payload block. The unresolved part is the destination field
+owned by the caller, not the helper body.
+
+This also sharpens the branch ranking:
+- stronger direct lever: companion-bank mirror logic at `LAB_00588C06`
+- strongest unresolved immediate tail tag: `SNAM`
+- next weaker sideband follow-up: `MANP/MANU`
+
+I recorded the focused note in
+[codex_geck_snam_scalar_helper_resolution.txt](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/research/facegen_research_artifacts/notes/geck/codex_geck_snam_scalar_helper_resolution.txt).
+No build or tests ran on this pass.
+
+## 2026-04-03 focused raw `SNAM` tail inspection
+
+I added
+[run_decompile_geck_snam_tail_bridge.py](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/tools/GhidraProject/run_decompile_geck_snam_tail_bridge.py)
+and generated
+[facegen_geck_snam_tail_bridge.txt](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/tools/GhidraProject/facegen_geck_snam_tail_bridge.txt)
+to inspect the raw helper-call windows around `SNAM/MANP/MANU` inside
+`FUN_00588520` and compare them with the writer sibling `FUN_00586000`.
+
+This materially demoted `MANP/MANU`. The raw parser windows now show:
+- `MANP` targeting `owner + 0xBC` through `FUN_004E10E0`
+- `MANU` targeting `owner + 0xC0` through `FUN_004E10E0`
+
+That lines up cleanly with the writer-side `MANP -> +0xBC` and
+`MANU -> +0xC0` emits, so they now look like ordinary scalar sideband state
+with concrete parser destinations.
+
+The strongest new `SNAM` clue is a direct-field 16-bit helper call inside
+`FUN_00588520`:
+- `0x00588974: LEA EAX,[ESI + 0x794]`
+- `0x0058897A: PUSH EAX`
+- `0x0058897B: MOV ECX,EDX`
+- `0x0058897D: CALL 0x004E1130`
+
+That is now the strongest concrete candidate for the missing caller-owned
+destination of the unresolved `SNAM` scalar read. But I am not treating it as
+proved `SNAM` yet, because the current switch recovery still does not map the
+tag-to-handler identity exactly enough.
+
+I recorded the focused note in
+[codex_geck_snam_tail_callsite_resolution.txt](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/research/facegen_research_artifacts/notes/geck/codex_geck_snam_tail_callsite_resolution.txt).
+No build or tests ran on this pass.
+
+## 2026-04-03 exact `SNAM` switch-table resolution
+
+I then followed the computed jump more directly by decoding the dispatch tables
+around `0x005887E0`. The updated
+[facegen_geck_snam_tail_bridge.txt](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/tools/GhidraProject/facegen_geck_snam_tail_bridge.txt)
+now records the exact mapping:
+- jump table at `0x00589000`
+- index bytes at `0x00589030`
+- base tag `0x4D414E44 = DNAM`
+
+That resolves the relevant tail tags exactly:
+- `0x4D414E53 = SNAM -> idx 7 -> 0x00588964`
+- `0x4D414E50 = PNAM -> idx 6 -> 0x00588870`
+- `0x4D414E55 = UNAM -> idx 8 -> 0x005888FC`
+
+So the previously-candidate `SNAM` destination is now proved:
+- `SNAM -> 0x00588964`
+- `0x00588964` performs
+  `LEA EAX,[ESI + 0x794] ; PUSH EAX ; CALL 0x004E1130`
+- therefore `SNAM -> owner + 0x794`
+
+This also corrects part of the older shorthand naming. Several raw immediates
+that had been described as `MANO/MANP/MANU/MANX/MANY` are more accurately the
+normalized little-endian subrecord names `ONAM/PNAM/UNAM/XNAM/YNAM`.
+
+That materially demotes the whole small scalar sideband family for shipped
+`_0`:
+- `PNAM <-> +0xBC`
+- `UNAM <-> +0xC0`
+- `SNAM -> +0x794`
+
+The stronger remaining seam is back where it belonged earlier:
+- `MAN2`
+- `MNAM/FNAM`
+- the mirror guard at `LAB_00588C06`
+- and the importer-side paired-bank semantics, not the now-mostly-resolved
+  post-bank scalar tail.
+
+## 2026-04-03 focused paired-bank mirror window
+
+I added
+[run_decompile_geck_fun_00588520_mirror_window.py](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/tools/GhidraProject/run_decompile_geck_fun_00588520_mirror_window.py)
+and generated
+[facegen_geck_fun_00588520_mirror_window.txt](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/tools/GhidraProject/facegen_geck_fun_00588520_mirror_window.txt)
+to keep the remaining `FUN_00588520` seam in one place:
+- `MAN2`
+- `MNAM/FNAM`
+- `LAB_00588C06`
+- the later `INDX` remap under `local_11 != 0`
+- and the mirrored writer-side `MAN2` / `MNAM` / `FNAM` windows
+
+This materially tightens the branch.
+
+What is now effectively closed:
+- `LAB_00588C06` decodes one float payload and writes it:
+  - to the primary bank unconditionally
+  - to the companion bank only when `(local_20 == 0) || (local_9 != 0)`
+- so the actual copy behavior is no longer the open question
+
+What the focused windows confirm:
+- `MAN2` is the direct `local_9 = 0` setter
+- `FNAM` sets `local_20 = 1`
+- `MNAM` sets `local_20 = 0`
+- the later `INDX` remap under `local_11 != 0` still consults `local_9`
+  through the collapse:
+  - `if ((local_9 == '\\0') || (local_18 < 2)) iVar3 = 0; else iVar3 = 1;`
+  - then uses `iVar3` in the admissibility check and base expression
+    `local_20 * 8 - iVar3`
+
+The writer-side windows also clarify the symmetry enough to demote another
+false lead:
+- `FUN_00586000` emits `MAN2` before the per-subsection loops
+- then emits `MNAM/FNAM` around the mirrored family loops
+- so this no longer looks like a missing late companion-bank writer stage
+
+That shifts the next exact target again:
+- not more work on `LAB_00588C06` itself
+- instead, the strongest remaining ambiguity in this parser window is the
+  meaning of the `local_11 != 0` remap path after the copy, and whether it
+  matters to shipped `_0` beyond subsection-1 mirror suppression
+
+I recorded the short summary in
+[codex_geck_fun_00588520_mirror_window_resolution.txt](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/research/facegen_research_artifacts/notes/geck/codex_geck_fun_00588520_mirror_window_resolution.txt).
+No build or tests ran on this pass.
+
+## 2026-04-03 post-copy `INDX` remap surface
+
+I then pushed the same artifact one step further by resolving the destination
+surface of the post-copy `INDX` remap inside `FUN_00588520`.
+
+The key offset identities are:
+- `(index * 9 + 0x15D) * 4 = +0x574`
+- `(index * 7 + 0x133) * 4 = +0x4CC`
+- `(index * 9 + 0x33) * 4 = +0xCC`
+- `(index * 7 + 0xC3) * 4 = +0x30C`
+
+That means the remap no longer looks like a hidden float-bank selector. It is
+routing into provider/object tables:
+- `local_11 == 0` lands in the auxiliary `+0x4CC/+0x574` family
+- `local_11 != 0` lands in the generic `+0xCC/+0x30C` family
+
+So the remaining ambiguity here is not “what bank is being copied?” That part
+is closed. It is:
+- whether this remap is only provider-side bookkeeping
+- or whether later source/provider consumption makes it relevant to shipped
+  `_0`
+
+I recorded the short note in
+[codex_geck_fun_00588520_indx_remap_surface_resolution.txt](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/research/facegen_research_artifacts/notes/geck/codex_geck_fun_00588520_indx_remap_surface_resolution.txt).
+
+## 2026-04-03 auxiliary provider-family consumer audit
+
+I then checked whether the auxiliary families reached by the post-copy `INDX`
+remap actually show up on the ordinary-export / bake path in a way that would
+keep this branch hot for shipped `_0`.
+
+The answer is: only weakly, and in a provider/object/path way.
+
+The strongest downstream evidence is:
+- `+0x64C` does show up in later export-side logic:
+  [facegen_geck_export_owner_bridge.txt](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/tools/GhidraProject/facegen_geck_export_owner_bridge.txt)
+  and related artifacts show
+  `local_4ac[iVar5 * 9 + 0x193]` being queried through `vfunc + 0x34`,
+  then prefixed with `"Meshes\\"`
+- the auxiliary families also participate in refresh/update/UI-style hooks:
+  - `+0x4CC/+0x574/+0x64C` through `vfunc + 0x24/+0x28`
+  - owner-control mapping into `+0x574/+0x64C`
+
+But I still do not have a recovered direct use of
+`+0x4CC/+0x574/+0x64C` as a paired-bank float-content consumer on the ordinary
+FaceGen texture bake path. So this reranks the branch again:
+- the auxiliary families are real, not dead
+- they can influence export indirectly through provider/object/path selection
+- but they remain weak as the main shipped `_0` texture mismatch seam
+
+I recorded the short note in
+[codex_geck_aux_provider_export_influence_resolution.txt](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/research/facegen_research_artifacts/notes/geck/codex_geck_aux_provider_export_influence_resolution.txt).
+
+## 2026-04-03 `MAN2` rerank after consumer audit
+
+After the auxiliary-family consumer audit, the branch ranking changed again.
+
+The important merged read is:
+- `MAN2` is emitted unconditionally in the recovered `FUN_00586000` body
+- it appears before the recovered `MNAM/FNAM` subsection work
+- parser-side, `MAN2` is the only recovered write that clears `local_9`
+- `LAB_00588C06` then uses `local_9` in the companion mirror guard
+
+So if the later paired-bank payloads are in that same serialized stream, the
+strongest current interpretation is:
+- subsection `0` still mirrors
+- subsection `1` is normally suppressed
+- and `MAN2/local_9` remains plausible only as an upstream descriptor-content
+  seam, not as a later provider-table routing seam
+
+The other side of the merge is now weaker:
+- the post-copy `local_11` remap clearly lands in provider/object families
+  (`+0xCC/+0x30C` or `+0x4CC/+0x574/+0x64C`)
+- those auxiliary families can influence export indirectly through asset/path
+  selection
+- but they remain weak as the main shipped `_0` texture mismatch seam
+
+So the next exact target, if this branch stays primary, is no longer the
+auxiliary-family consumer audit. It is the direct upstream question:
+- does subsection-1 mirror suppression from `MAN2/local_9` survive into the
+  active descriptor family ordinary export merges, and can that explain any of
+  the remaining shipped `_0` mismatch better than the first-span fidelity
+  branch?
+
+## 2026-04-03 first-span rerank after subagent convergence
+
+The latest three-way pass tightened this further without reopening the old
+provider/selector theories.
+
+What now looks stable:
+
+- `MAN2/local_9` is still real importer-side structure in `FUN_00588520`
+- but from the consumer side, there is still no recovered path where the
+  companion record changes first loaded `FREGT003` span content after ordinary
+  export chooses the active descriptor family
+- on shipped head EGTs relevant to current `_0` work, the later fourth-record
+  route remains structurally weak because that record selects the second loaded
+  span and those heads are one-span files (`sym=50`, `asym=0`)
+
+So the rerank is now:
+
+- stronger remaining branch:
+  first-span `FREGT003` content/apply fidelity
+- next decomp-side branch:
+  upstream provenance of active first-span descriptor content
+- narrower secondary branch:
+  `MAN2/local_9` only as upstream descriptor population, not as a late
+  first-span-visible consumer/selector effect
+
+The short write-up for this pass is
+[codex_geck_man2_firstspan_rerank_resolution.txt](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/research/facegen_research_artifacts/notes/geck/codex_geck_man2_firstspan_rerank_resolution.txt).
+
+## 2026-04-04 primary-bank / control-owner rerank after subagent convergence
+
+Three independent subagent reads plus a local reread converged on the same
+update, and it changes the GECK-side ranking cleanly.
+
+What now looks structurally closed:
+
+- `FUN_00588520` always writes the decoded primary race/default payload to
+  `+0x1A8`; only the companion `+0x1C8` write is conditional
+- `+0x168/+0x188/+0x1A8/+0x1C8` are four consecutive `0x20` records inside the
+  same inline `0x80` descriptor family
+- ordinary export consumes that whole family through
+  `FUN_0056F2E0 -> FUN_0056F390 -> FUN_0068EA20`
+- `FUN_0085AEB0` loads the `SI.CTL` family-B control owner at
+  `DAT_00F05D54 + 0x118`, including:
+  - payload rows at `+0x644`
+  - scales at `+0x684`
+  - writeback coefficients at `+0xFCC`
+
+So the missing GECK-side structure is no longer “how do the imported primary
+bank and the loaded `SI.CTL` controls meet?” They already meet in the same
+descriptor model.
+
+The remaining GECK-side question is now semantic:
+
+- how imported primary race/default `+0x1A8` content corresponds to the loaded
+  family-B `FGTS` control rows from `SI.CTL`
+
+That reranks the nearby alternatives:
+
+- stronger GECK-side seam:
+  primary race/default `+0x1A8` provenance plus loaded family-B control-row
+  alignment
+- weaker GECK-side seam:
+  `MAN2/local_9`, now only as a narrower upstream descriptor-population check
+- stronger competing branch overall:
+  first-span `FREGT003` content/apply fidelity
+
+Short write-up:
+[codex_geck_primary_bank_control_alignment_rerank_resolution.txt](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/research/facegen_research_artifacts/notes/geck/codex_geck_primary_bank_control_alignment_rerank_resolution.txt).
+
+## 2026-04-04 FGTS basis-space alignment follow-up
+
+One more local crosswalk pass tightened the new top GECK seam again.
+
+What now looks concrete:
+
+- the shipped `SI.CTL` texture-symmetric family is `33 x 50`
+- repo-generated `FaceGenTextureSymmetricData` already describes those rows as
+  projections over 50 `FGTS` basis coefficients
+- `FaceGenControls.ComputeTextureSymmetric(...)` computes named control values
+  as dot products against a 50-wide `FGTS` vector
+- on the GECK side, imported primary race/default `FGTS` content still lands at
+  `+0x1A8` inside the same inline descriptor family ordinary export merges
+
+So the remaining GECK-side question is no longer a broad basis-space
+compatibility problem between imported primary `+0x1A8` content and loaded
+family-B control rows. They already look like the same 50-dimensional `FGTS`
+basis space.
+
+That narrows the next GECK target again:
+
+- recover the provenance/selection of the emitted primary race/default
+  50-float `FGTS` vector itself
+- not another generic “how do `+0x1A8` and the family-B control rows align?”
+  pass
+
+Short write-up:
+[codex_geck_fgts_basis_space_alignment_resolution.txt](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/research/facegen_research_artifacts/notes/geck/codex_geck_fgts_basis_space_alignment_resolution.txt).
+
+## 2026-04-04 race/default FGTS emit-source convergence
+
+The subagent convergence plus the focused raw-window dump closed the late
+writer-tail question cleanly enough to rerank it. The new artifact is
+[facegen_geck_race_default_fgts_emit_window.txt](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/tools/GhidraProject/facegen_geck_race_default_fgts_emit_window.txt),
+generated by
+[run_decompile_geck_race_default_fgts_emit_window.py](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/tools/GhidraProject/run_decompile_geck_race_default_fgts_emit_window.py),
+and the short write-up is
+[codex_geck_race_default_fgts_emit_source_resolution.txt](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/research/facegen_research_artifacts/notes/geck/codex_geck_race_default_fgts_emit_source_resolution.txt).
+
+The important result is:
+
+- `FUN_00586000` uses the same broad staged serializer shape as the
+  current-source writer:
+  allocate temp float buffer, copy floats into it, emit tag, free temp.
+- But the copied source floats are now materially localized.
+  The raw tail reads:
+  - `FGGS` from `[EDI + 0x6A0]` with stride `[EDI + 0x6B0]`
+  - `FGGA` from `[EDI + 0x6C0]` with stride `[EDI + 0x6D0]`
+  - `FGTS` from `[EDI + 0x6E0]` with stride `[EDI + 0x6F0]`
+- Those offsets match the first/second/third `0x20` records under the
+  race/default template family rooted at `+0x694`, and the subsection count
+  selection around `+0x74C/+0x76C` shows the matching `+0x714` half.
+
+So the remaining GECK-side gap is no longer late emit mechanics. The next
+exact target moves earlier again: the helper/copy path that populates the
+`+0x694/+0x714` template families before `FUN_00586000` serializes them.
+
+## 2026-04-04 template-family population ladder
+
+I then reread the now-relevant earlier helpers around the template-family
+records instead of staying on the late writer tail.
+
+The useful split is:
+
+- `FUN_00585630` is still only reset/default seed for `+0x694/+0x714`
+- `FUN_00588520` is the direct parser/materializer into those template
+  families; it writes the record fields and uses `FUN_00573BA0` only as the
+  generic float-span resize helper
+- `FUN_005875F0` is the first recovered targeted overwrite path for only the
+  active sex-selected half:
+  it reads one selected family from `+0x7AC` using selector `+0x7B2` and
+  copies it into `+0x694` or `+0x714` through `FUN_0068E960`
+- `FUN_00586740` is the broader donor copy path that copies both template
+  halves wholesale from a donor owner
+
+So the next exact GECK-side target narrows again. It is no longer:
+- whether `FUN_00588520` directly materializes `+0x694/+0x714`
+
+It is now:
+- what populates the `+0x7AC` family
+- what `+0x7B2` is selecting
+- and which caller path chooses between direct parse/materialization,
+  selected-family copy, and donor copy before `FUN_00586000` serializes the
+  chosen `FGTS` half
+
+Short write-up:
+[codex_geck_template_family_population_ladder_resolution.txt](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/research/facegen_research_artifacts/notes/geck/codex_geck_template_family_population_ladder_resolution.txt).
+
+## 2026-04-04 template-family stash/pop rerank
+
+I then closed the strongest-looking later overwrite path enough to rerank it.
+
+The important result is:
+
+- `FUN_005875F0` is still a real targeted overwrite path for the active
+  sex-selected template half
+- but it is a stash/pop path, not a semantic selector:
+  - it reads one family pointer from `+0x7AC` using 1-based selector `+0x7B2`
+  - copies that family into `+0x694` or `+0x714` through `FUN_0068E960`
+  - then pops bookkeeping through `FUN_005703B0`
+- the only recovered caller of `FUN_005875F0` is `FUN_00589F50`
+- `FUN_00589F50` was already demoted earlier as a dialog/UI owner around child
+  `0x87F`
+- `FUN_00587670` zero-initializes `+0x7B2` and stores the backing pointer at
+  `+0x7AC`
+- `FUN_004CF460` allocates the `0x7B8` owner object and calls `FUN_00587670`
+
+So the rerank changes again:
+
+- weaker now:
+  - the `+0x7AC/+0x7B2 -> FUN_005875F0` stash branch as the main ordinary
+    export overwrite seam
+- stronger now:
+  - the immediate provider/parser stream feeding `FUN_00588520`
+  - any later non-UI overwrite path that can still replace the selected half
+    before `FUN_00586000` serializes it
+
+Short write-up:
+[codex_geck_template_family_stash_pop_rerank_resolution.txt](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/research/facegen_research_artifacts/notes/geck/codex_geck_template_family_stash_pop_rerank_resolution.txt).
+
+## 2026-04-04 parser-cursor and non-UI overwrite rerank
+
+I then closed the two obvious remaining GECK-side escape hatches.
+
+The useful result is:
+
+- upstream of `FUN_00588520`, there is no longer a strong hidden-provider
+  mystery:
+  - `param_1` is best read as the generic tagged-form parser stream context
+  - `param_1 + 0x25C` is the current subrecord payload byte length
+  - `FUN_004E0470` is the raw payload copy/advance helper over that parser
+    state
+- downstream of `FUN_00588520`, there is still no stronger recovered non-UI
+  overwrite of `+0x694/+0x714`
+  - `FUN_00586740` is still the donor copy path
+  - `FUN_005875F0` is still the stash/pop overwrite path
+  - but the only recovered caller of `FUN_005875F0` is the already-demoted
+    UI/dialog owner `FUN_00589F50`
+
+So the rerank changes again:
+
+- weaker now:
+  - generic upstream parser/provider archaeology above `FUN_00588520`
+  - the `+0x7AC/+0x7B2` stash branch as the main ordinary export overwrite seam
+- stronger now:
+  - only a still-unrecovered non-UI overwrite of the active half
+  - otherwise, first-span `FREGT003` content/apply fidelity
+
+Short write-up:
+[codex_geck_parser_cursor_and_overwrite_rerank_resolution.txt](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/research/facegen_research_artifacts/notes/geck/codex_geck_parser_cursor_and_overwrite_rerank_resolution.txt).

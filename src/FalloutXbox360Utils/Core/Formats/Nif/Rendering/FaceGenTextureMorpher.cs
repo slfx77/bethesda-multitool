@@ -16,7 +16,9 @@ internal static class FaceGenTextureMorpher
     private const float EngineCompressedDeltaMax = 255f;
     private const float EngineCompressedDeltaScale = 0.5f;
     private const TextureAccumulationMode DefaultAccumulationMode = TextureAccumulationMode.EngineTruncated256;
-    private const DeltaTextureEncodingMode DefaultDeltaEncodingMode = DeltaTextureEncodingMode.EngineCompressed255HalfTruncate;
+
+    private const DeltaTextureEncodingMode DefaultDeltaEncodingMode =
+        DeltaTextureEncodingMode.EngineCompressed255HalfTruncate;
 
     /// <summary>
     ///     When set, exports debug PNG files of the accumulated EGT deltas

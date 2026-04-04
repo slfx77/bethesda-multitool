@@ -51,11 +51,17 @@ internal sealed class NpcListItem : INotifyPropertyChanged
     /// </summary>
     internal static bool ShowEditorId { get; set; }
 
-    public string DisplayName => ShowEditorId
-        ? $"{EditorId ?? "?"} (0x{FormId:X8})"
-        : IsCreature
-            ? $"{FullName ?? EditorId ?? $"0x{FormId:X8}"} [{CreatureTypeName}]"
-            : FullName ?? EditorId ?? $"0x{FormId:X8}";
+    public string DisplayName
+    {
+        get
+        {
+            if (ShowEditorId)
+                return $"{EditorId ?? "?"} (0x{FormId:X8})";
+            if (IsCreature)
+                return $"{FullName ?? EditorId ?? $"0x{FormId:X8}"} [{CreatureTypeName}]";
+            return FullName ?? EditorId ?? $"0x{FormId:X8}";
+        }
+    }
 
     public bool IsSelected
     {
