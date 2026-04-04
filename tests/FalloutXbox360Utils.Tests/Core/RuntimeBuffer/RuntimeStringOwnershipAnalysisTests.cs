@@ -5,7 +5,6 @@ using FalloutXbox360Utils.Core.Coverage;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.RuntimeBuffer;
-using FalloutXbox360Utils.Core.Strings;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.RuntimeBuffer;
@@ -28,7 +27,7 @@ public sealed class RuntimeStringOwnershipAnalysisTests
             hit => Assert.Equal(@"meshes\props\crate01.nif", hit.Text),
             hit => Assert.Equal(@"meshes\props\crate01.nif", hit.Text));
         Assert.Equal(2, result.OwnershipAnalysis.AllHits.Count(h => h.Text == @"meshes\props\crate01.nif"));
-        Assert.Equal(1, result.StringPool.AllFilePaths.Count);
+        Assert.Single(result.StringPool.AllFilePaths);
         Assert.NotEqual(
             result.OwnershipAnalysis.AllHits[0].FileOffset,
             result.OwnershipAnalysis.AllHits[1].FileOffset);
@@ -80,7 +79,7 @@ public sealed class RuntimeStringOwnershipAnalysisTests
     public void ExtractStringDataOnly_InboundPointerWithoutOwner_IsReferencedOwnerUnknown()
     {
         var data = new byte[256];
-        WriteCString(data, 0x40, @"textures\armor\helmet.dds");
+        WriteCString(data, 0x40, "SomeRuntimeAllocatedStringValue");
         WriteBeUInt32(data, 0x80, BaseVa + 0x40);
 
         var result = Analyze(data, CreateCoverage(data.Length, StringGap(0, data.Length)));

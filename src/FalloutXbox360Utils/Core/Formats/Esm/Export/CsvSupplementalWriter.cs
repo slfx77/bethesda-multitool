@@ -1,6 +1,13 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Magic;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.RuntimeBuffer;
 using FalloutXbox360Utils.Core.Strings;
 
@@ -313,7 +320,11 @@ internal static class CsvSupplementalWriter
         }
 
         // Per-category owned string CSVs with owner resolution
-        foreach (var category in new[] { StringCategory.DialogueLine, StringCategory.FilePath, StringCategory.EditorId, StringCategory.GameSetting })
+        foreach (var category in new[]
+                 {
+                     StringCategory.DialogueLine, StringCategory.FilePath, StringCategory.EditorId,
+                     StringCategory.GameSetting
+                 })
         {
             var categoryHits = analysis.OwnedHits
                 .Where(h => h.Category == category)

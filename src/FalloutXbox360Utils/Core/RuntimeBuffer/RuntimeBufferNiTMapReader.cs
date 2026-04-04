@@ -8,10 +8,9 @@ namespace FalloutXbox360Utils.Core.RuntimeBuffer;
 /// </summary>
 internal sealed class RuntimeBufferNiTMapReader
 {
+    private const int MaxSampleStrings = 20;
     private readonly BufferAnalysisContext _ctx;
     private readonly RuntimeBufferStringExtractor _stringExtractor;
-
-    private const int MaxSampleStrings = 20;
 
     public RuntimeBufferNiTMapReader(
         BufferAnalysisContext ctx,

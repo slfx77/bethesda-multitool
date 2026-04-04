@@ -1,7 +1,8 @@
 using System.Buffers.Binary;
-using System.IO.MemoryMappedFiles;
+using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Strings;
 using FalloutXbox360Utils.Core.Utils;
@@ -12,15 +13,14 @@ namespace FalloutXbox360Utils.Core.RuntimeBuffer;
 ///     Second-pass ownership resolution for strings that remain ReferencedOwnerUnknown
 ///     after the initial claim-building pass. Uses three strategies:
 ///     1. BSStringT reverse lookup — validates BSStringT wrapper at referrer, then
-///        reverse-maps field offset to a TESForm instance (with relaxed fallback).
+///     reverse-maps field offset to a TESForm instance (with relaxed fallback).
 ///     2. Vtable-based reverse lookup — scans backwards from referrer to find a vtable,
-///        resolves RTTI, and matches field offset to PDB layout.
+///     resolves RTTI, and matches field offset to PDB layout.
 ///     3. EditorID text-content matching — matches string text against known EditorIDs.
 /// </summary>
 internal sealed class SecondPassOwnershipResolver
 {
     private const int MaxVtableScanBack = 512;
-    private readonly BufferAnalysisContext _ctx;
 
     /// <summary>
     ///     Pre-built lookup: maps (formType, bsStringTFieldOffset) → (recordCode, fieldLabel).
@@ -29,16 +29,31 @@ internal sealed class SecondPassOwnershipResolver
         _bsStringTFieldIndex;
 
     /// <summary>
-    ///     Maps PDB class name → (formType, list of BSStringT field offsets).
+    ///     Sorted distinct field offsets from _bsStringTFieldIndex, used to avoid full
+    ///     dictionary iteration in TryTESFormReverseLookup. For each unique offset we
+    ///     compute one candidate base VA, peek the formType byte, then do a direct
+    ///     dictionary lookup instead of scanning all entries.
     /// </summary>
-    private readonly Dictionary<string, (byte FormType, List<(int Offset, string Label)> Fields)>
-        _classNameFieldIndex;
+    private readonly int[] _bsStringTDistinctOffsets;
 
     /// <summary>
     ///     Maps PDB class name → (formType, list of char* pointer field offsets).
     /// </summary>
     private readonly Dictionary<string, (byte FormType, List<(int Offset, string Label)> Fields)>
         _charPointerFieldIndex;
+
+    /// <summary>
+    ///     Maps PDB class name → (formType, list of BSStringT field offsets).
+    /// </summary>
+    private readonly Dictionary<string, (byte FormType, List<(int Offset, string Label)> Fields)>
+        _classNameFieldIndex;
+
+    private readonly BufferAnalysisContext _ctx;
+
+    /// <summary>
+    ///     Case-insensitive lookup from dialogue line text → RuntimeEditorIdEntry.
+    /// </summary>
+    private readonly Dictionary<string, RuntimeEditorIdEntry>? _dialogueTextLookup;
 
     /// <summary>
     ///     Case-insensitive lookup from EditorID text → RuntimeEditorIdEntry.
@@ -49,11 +64,6 @@ internal sealed class SecondPassOwnershipResolver
     ///     Case-insensitive lookup from GMST setting name → GmstRecord.
     /// </summary>
     private readonly Dictionary<string, GmstRecord>? _gmstTextLookup;
-
-    /// <summary>
-    ///     Case-insensitive lookup from dialogue line text → RuntimeEditorIdEntry.
-    /// </summary>
-    private readonly Dictionary<string, RuntimeEditorIdEntry>? _dialogueTextLookup;
 
     /// <summary>
     ///     Hardcoded NiObject class → string field offsets (not in PDB layouts).
@@ -68,9 +78,12 @@ internal sealed class SecondPassOwnershipResolver
     public SecondPassOwnershipResolver(BufferAnalysisContext ctx)
     {
         _ctx = ctx;
-        _bsStringTFieldIndex = BuildBSStringTFieldIndex();
-        _classNameFieldIndex = BuildClassNameFieldIndex();
-        _charPointerFieldIndex = BuildCharPointerFieldIndex();
+        (_bsStringTFieldIndex, _classNameFieldIndex, _charPointerFieldIndex) = BuildFieldIndices();
+        _bsStringTDistinctOffsets = _bsStringTFieldIndex.Keys
+            .Select(k => k.FieldOffset)
+            .Distinct()
+            .OrderBy(o => o)
+            .ToArray();
         _editorIdTextLookup = BuildEditorIdTextLookup();
         _gmstTextLookup = BuildGmstTextLookup();
         _dialogueTextLookup = BuildDialogueTextLookup();
@@ -474,20 +487,23 @@ internal sealed class SecondPassOwnershipResolver
         // Relaxed fallback: skip BSStringT validation, try TESForm header validation directly.
         // This catches raw char* fields (Script.m_text, ActorValueInfo.sScriptName, etc.)
         // and cases where the BSStringT length field is corrupted or zero'd.
-        return TryTESFormReverseLookup(hit, referrerVa, _bsStringTFieldIndex, relaxed: true);
+        return TryTESFormReverseLookup(hit, referrerVa, _bsStringTFieldIndex, true);
     }
 
     /// <summary>
     ///     Try to reverse-map a referrer VA to a TESForm instance using the field index.
-    ///     When <paramref name="relaxed"/> is true, BSStringT length validation was skipped
+    ///     When <paramref name="relaxed" /> is true, BSStringT length validation was skipped
     ///     so we only match if the triple validation (vtable + FormType + FormID) passes.
+    ///     Uses pre-built distinct offset array: for each unique offset, peeks the formType
+    ///     byte at the candidate base, then does a direct dictionary lookup instead of
+    ///     iterating the entire field index.
     /// </summary>
     private RuntimeStringOwnershipClaim? TryTESFormReverseLookup(
         RuntimeStringHit hit, uint referrerVa,
         Dictionary<(byte FormType, int FieldOffset), (string RecordCode, string FieldLabel)> fieldIndex,
         bool relaxed = false)
     {
-        foreach (var ((formType, fieldOffset), (recordCode, fieldLabel)) in fieldIndex)
+        foreach (var fieldOffset in _bsStringTDistinctOffsets)
         {
             if (referrerVa < (uint)fieldOffset)
             {
@@ -501,7 +517,24 @@ internal sealed class SecondPassOwnershipResolver
                 continue;
             }
 
-            if (!ValidateTESFormHeader(candidateBaseFileOffset.Value, formType, out var candidateFormId))
+            // Peek the formType byte at the candidate base (+4) before full validation.
+            // This avoids the heavier vtable + FormID checks for non-matching types.
+            if (candidateBaseFileOffset.Value + 5 > _ctx.FileSize)
+            {
+                continue;
+            }
+
+            var formTypeBuf = new byte[1];
+            _ctx.Accessor.ReadArray(candidateBaseFileOffset.Value + 4, formTypeBuf, 0, 1);
+            var candidateFormType = formTypeBuf[0];
+
+            if (!fieldIndex.TryGetValue((candidateFormType, fieldOffset), out var match))
+            {
+                continue;
+            }
+
+            if (!ValidateTESFormHeader(candidateBaseFileOffset.Value, candidateFormType,
+                    out var candidateFormId))
             {
                 continue;
             }
@@ -516,12 +549,12 @@ internal sealed class SecondPassOwnershipResolver
                 hit.FileOffset,
                 hit.VirtualAddress,
                 relaxed ? "SecondPassReverseRelaxed" : "SecondPassReverse",
-                $"{recordCode} [{candidateFormId:X8}]",
+                $"{match.RecordCode} [{candidateFormId:X8}]",
                 candidateFormId,
                 candidateBaseFileOffset.Value,
                 ClaimSource.SecondPassReverse,
-                recordCode,
-                fieldLabel);
+                match.RecordCode,
+                match.FieldLabel);
         }
 
         return null;
@@ -702,7 +735,7 @@ internal sealed class SecondPassOwnershipResolver
             nullIdx = maxRead;
         }
 
-        var mangledName = System.Text.Encoding.ASCII.GetString(nameBuffer, 0, nullIdx);
+        var mangledName = Encoding.ASCII.GetString(nameBuffer, 0, nullIdx);
         var className = RttiReader.DemangleName(mangledName);
         if (className == null)
         {
@@ -729,88 +762,67 @@ internal sealed class SecondPassOwnershipResolver
 
     #region Index Building
 
-    private static Dictionary<(byte FormType, int FieldOffset), (string RecordCode, string FieldLabel)>
-        BuildBSStringTFieldIndex()
+    /// <summary>
+    ///     Build all three PDB-based field indices in a single pass over PdbStructLayouts.Layouts.
+    ///     Returns: (bsStringTFieldIndex, classNameFieldIndex, charPointerFieldIndex).
+    /// </summary>
+    private static (
+        Dictionary<(byte FormType, int FieldOffset), (string RecordCode, string FieldLabel)> BsStringT,
+        Dictionary<string, (byte FormType, List<(int Offset, string Label)> Fields)> ClassName,
+        Dictionary<string, (byte FormType, List<(int Offset, string Label)> Fields)> CharPointer
+        ) BuildFieldIndices()
     {
-        var index = new Dictionary<(byte, int), (string, string)>();
+        var bsIndex = new Dictionary<(byte, int), (string, string)>();
+        var classIndex = new Dictionary<string, (byte, List<(int, string)>)>();
+        var charIndex = new Dictionary<string, (byte, List<(int, string)>)>();
 
         foreach (var (formType, layout) in PdbStructLayouts.Layouts)
         {
-            var fields = PdbStructLayouts.GetBSStringTFields(formType);
-            foreach (var field in fields)
+            // BSStringT fields → bsIndex and classIndex
+            var bsFields = PdbStructLayouts.GetBSStringTFields(formType);
+            List<(int, string)>? classFieldList = null;
+
+            foreach (var field in bsFields)
             {
-                // Skip cFormEditorID — handled by RuntimeEditorId claims
                 if (field.Name is "cFormEditorID")
                 {
                     continue;
                 }
 
                 var fieldLabel = field.Owner != null ? $"{field.Owner}.{field.Name}" : field.Name;
-                index.TryAdd((formType, field.Offset), (layout.RecordCode, fieldLabel));
+                bsIndex.TryAdd((formType, field.Offset), (layout.RecordCode, fieldLabel));
+
+                classFieldList ??= [];
+                classFieldList.Add((field.Offset, fieldLabel));
             }
-        }
 
-        return index;
-    }
-
-    private static Dictionary<string, (byte FormType, List<(int Offset, string Label)> Fields)>
-        BuildClassNameFieldIndex()
-    {
-        var index = new Dictionary<string, (byte, List<(int, string)>)>();
-
-        foreach (var (formType, layout) in PdbStructLayouts.Layouts)
-        {
-            var fields = PdbStructLayouts.GetBSStringTFields(formType);
-            if (fields.Count == 0)
+            if (classFieldList is { Count: > 0 })
             {
-                continue;
+                classIndex[layout.ClassName] = (formType, classFieldList);
             }
 
-            var fieldList = fields
-                .Where(f => f.Name is not "cFormEditorID")
-                .Select(f =>
+            // char* pointer fields → charIndex
+            List<(int, string)>? charFieldList = null;
+
+            foreach (var f in layout.Fields)
+            {
+                if (f.Kind is not "pointer" || f.TypeDetail is not "char")
                 {
-                    var label = f.Owner != null ? $"{f.Owner}.{f.Name}" : f.Name;
-                    return (f.Offset, label);
-                })
-                .ToList();
+                    continue;
+                }
 
-            if (fieldList.Count > 0)
+                var label = f.Owner != null ? $"{f.Owner}.{f.Name}" : f.Name;
+                charFieldList ??= [];
+                charFieldList.Add((f.Offset, label));
+            }
+
+            if (charFieldList is { Count: > 0 })
             {
-                index[layout.ClassName] = (formType, fieldList);
+                charIndex[layout.ClassName] = (formType, charFieldList);
             }
         }
 
-        return index;
-    }
-
-    /// <summary>
-    ///     Build index of char* pointer fields from PDB layouts (e.g., Script.m_text, Script.m_data).
-    ///     These are raw char pointers without BSStringT wrappers.
-    /// </summary>
-    private static Dictionary<string, (byte FormType, List<(int Offset, string Label)> Fields)>
-        BuildCharPointerFieldIndex()
-    {
-        var index = new Dictionary<string, (byte, List<(int, string)>)>();
-
-        foreach (var (formType, layout) in PdbStructLayouts.Layouts)
-        {
-            var charPtrFields = layout.Fields
-                .Where(f => f.Kind is "pointer" && f.TypeDetail is "char")
-                .Select(f =>
-                {
-                    var label = f.Owner != null ? $"{f.Owner}.{f.Name}" : f.Name;
-                    return (f.Offset, label);
-                })
-                .ToList();
-
-            if (charPtrFields.Count > 0)
-            {
-                index[layout.ClassName] = (formType, charPtrFields);
-            }
-        }
-
-        return index;
+        return (bsIndex, classIndex, charIndex);
     }
 
     /// <summary>
@@ -902,6 +914,7 @@ internal sealed class SecondPassOwnershipResolver
         {
             index[cls] = [nameField];
         }
+
         index["NiSourceTexture"].Add((48, "NiSourceTexture.m_kFilename"));
 
         // --- TES embedded component classes (BaseFormComponent subclasses) ---

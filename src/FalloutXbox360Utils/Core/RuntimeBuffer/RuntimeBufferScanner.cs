@@ -11,12 +11,11 @@ namespace FalloutXbox360Utils.Core.RuntimeBuffer;
 /// </summary>
 internal sealed class RuntimeBufferScanner
 {
-    private readonly BufferAnalysisContext _ctx;
-    private readonly RuntimeBufferStringExtractor _stringExtractor;
-    private readonly RuntimeBufferNiTMapReader _niTMapReader;
-
     private const int MaxSampleStrings = 20;
     private const int SignatureScanBytes = 512;
+    private readonly BufferAnalysisContext _ctx;
+    private readonly RuntimeBufferNiTMapReader _niTMapReader;
+    private readonly RuntimeBufferStringExtractor _stringExtractor;
 
     public RuntimeBufferScanner(
         BufferAnalysisContext ctx,
@@ -27,6 +26,143 @@ internal sealed class RuntimeBufferScanner
         _stringExtractor = stringExtractor;
         _niTMapReader = niTMapReader;
     }
+
+    #region Manager Walking
+
+    /// <summary>
+    ///     Walk known manager globals to extract runtime data.
+    /// </summary>
+    internal void RunManagerWalk(BufferExplorationResult result)
+    {
+        var globals = _ctx.PdbAnalysis!.ResolvedGlobals;
+
+        var targets = new (string nameContains, Action<BufferExplorationResult, ResolvedGlobal> walker)[]
+        {
+            ("pModelLoader", WalkModelLoader),
+            ("pAllFormsByEditorID", _niTMapReader.WalkMapAsStrings),
+            ("pMemoryPoolsBySize", _niTMapReader.WalkMemoryPoolMap),
+            ("pMemoryPoolsByAddress", _niTMapReader.WalkMemoryPoolMap),
+            ("pTextureManager", WalkTextureManager),
+            ("sEssentialFileCacheList", _stringExtractor.WalkStringAtPointer),
+            ("sUnessentialFileCacheList", _stringExtractor.WalkStringAtPointer),
+            ("pDataHandler", WalkLargeStruct),
+            ("pAudioInstance", WalkLargeStruct),
+            ("sMasterArchiveList", _stringExtractor.WalkStringAtPointer),
+            ("sMasterFilePath", _stringExtractor.WalkStringAtPointer)
+        };
+
+        var seen = new HashSet<string>();
+
+        foreach (var (nameContains, walker) in targets)
+        {
+            foreach (var global in globals)
+            {
+                if (!global.Global.Name.Contains(nameContains, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (global.PointerValue == 0)
+                {
+                    break;
+                }
+
+                if (global.Classification is not (PointerClassification.Heap
+                    or PointerClassification.ModuleRange))
+                {
+                    break;
+                }
+
+                if (global.PointerValue % 4 != 0)
+                {
+                    break;
+                }
+
+                var key = $"{global.Global.Name}:{global.PointerValue:X8}";
+                if (!seen.Add(key))
+                {
+                    continue;
+                }
+
+                walker(result, global);
+                break;
+            }
+        }
+    }
+
+    #endregion
+
+    #region String Pool Extraction
+
+    /// <summary>
+    ///     Extract strings from StringPool and AsciiText gaps.
+    /// </summary>
+    internal void RunStringPoolExtraction(BufferExplorationResult result)
+    {
+        var summary = new StringPoolSummary();
+        var uniqueStrings = new HashSet<string>(StringComparer.Ordinal);
+        var filePathSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var editorIdSet = new HashSet<string>(StringComparer.Ordinal);
+        var dialogueSet = new HashSet<string>(StringComparer.Ordinal);
+        var settingSet = new HashSet<string>(StringComparer.Ordinal);
+
+        // Scan both StringPool and AsciiText gaps for string content
+        var textGaps = _ctx.Coverage.Gaps
+            .Where(g => g.Classification is GapClassification.StringPool or GapClassification.AsciiText)
+            .ToList();
+
+        summary.RegionCount = textGaps.Count;
+        summary.TotalBytes = textGaps.Sum(g => g.Size);
+
+        foreach (var gap in textGaps)
+        {
+            var readSize = (int)Math.Min(gap.Size, 1024 * 1024);
+            var buffer = new byte[readSize];
+            _ctx.Accessor.ReadArray(gap.FileOffset, buffer, 0, readSize);
+
+            RuntimeBufferStringExtractor.ExtractStringsFromBuffer(
+                buffer,
+                gap.FileOffset,
+                gap.VirtualAddress,
+                gap.Classification,
+                result.StringHits,
+                uniqueStrings,
+                filePathSet,
+                editorIdSet,
+                dialogueSet,
+                settingSet,
+                summary);
+        }
+
+        summary.UniqueStrings = uniqueStrings.Count;
+        summary.FilePaths = filePathSet.Count;
+        summary.EditorIds = editorIdSet.Count;
+        summary.DialogueLines = dialogueSet.Count;
+        summary.GameSettings = settingSet.Count;
+        summary.Other = uniqueStrings.Count -
+                        filePathSet.Count - editorIdSet.Count -
+                        dialogueSet.Count - settingSet.Count;
+
+        // Sort samples by length descending - longer strings are more meaningful
+        summary.SampleFilePaths.AddRange(
+            filePathSet.OrderByDescending(s => s.Length).Take(MaxSampleStrings));
+        summary.SampleEditorIds.AddRange(
+            editorIdSet.OrderByDescending(s => s.Length).Take(MaxSampleStrings));
+        summary.SampleDialogue.AddRange(
+            dialogueSet.OrderByDescending(s => s.Length).Take(MaxSampleStrings));
+        summary.SampleSettings.AddRange(
+            settingSet.OrderByDescending(s => s.Length).Take(MaxSampleStrings));
+
+        // Retain full sets for export
+        summary.AllFilePaths = filePathSet;
+        summary.AllEditorIds = editorIdSet;
+        summary.AllDialogue = dialogueSet;
+        summary.AllSettings = settingSet;
+
+        result.StringPools = summary;
+    }
+
+    #endregion
 
     #region Binary Signature Scanning
 
@@ -380,143 +516,6 @@ internal sealed class RuntimeBufferScanner
             ChildPointers = validPtrs,
             Summary = summary
         });
-    }
-
-    #endregion
-
-    #region Manager Walking
-
-    /// <summary>
-    ///     Walk known manager globals to extract runtime data.
-    /// </summary>
-    internal void RunManagerWalk(BufferExplorationResult result)
-    {
-        var globals = _ctx.PdbAnalysis!.ResolvedGlobals;
-
-        var targets = new (string nameContains, Action<BufferExplorationResult, ResolvedGlobal> walker)[]
-        {
-            ("pModelLoader", WalkModelLoader),
-            ("pAllFormsByEditorID", _niTMapReader.WalkMapAsStrings),
-            ("pMemoryPoolsBySize", _niTMapReader.WalkMemoryPoolMap),
-            ("pMemoryPoolsByAddress", _niTMapReader.WalkMemoryPoolMap),
-            ("pTextureManager", WalkTextureManager),
-            ("sEssentialFileCacheList", _stringExtractor.WalkStringAtPointer),
-            ("sUnessentialFileCacheList", _stringExtractor.WalkStringAtPointer),
-            ("pDataHandler", WalkLargeStruct),
-            ("pAudioInstance", WalkLargeStruct),
-            ("sMasterArchiveList", _stringExtractor.WalkStringAtPointer),
-            ("sMasterFilePath", _stringExtractor.WalkStringAtPointer)
-        };
-
-        var seen = new HashSet<string>();
-
-        foreach (var (nameContains, walker) in targets)
-        {
-            foreach (var global in globals)
-            {
-                if (!global.Global.Name.Contains(nameContains, StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                if (global.PointerValue == 0)
-                {
-                    break;
-                }
-
-                if (global.Classification is not (PointerClassification.Heap
-                    or PointerClassification.ModuleRange))
-                {
-                    break;
-                }
-
-                if (global.PointerValue % 4 != 0)
-                {
-                    break;
-                }
-
-                var key = $"{global.Global.Name}:{global.PointerValue:X8}";
-                if (!seen.Add(key))
-                {
-                    continue;
-                }
-
-                walker(result, global);
-                break;
-            }
-        }
-    }
-
-    #endregion
-
-    #region String Pool Extraction
-
-    /// <summary>
-    ///     Extract strings from StringPool and AsciiText gaps.
-    /// </summary>
-    internal void RunStringPoolExtraction(BufferExplorationResult result)
-    {
-        var summary = new StringPoolSummary();
-        var uniqueStrings = new HashSet<string>(StringComparer.Ordinal);
-        var filePathSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var editorIdSet = new HashSet<string>(StringComparer.Ordinal);
-        var dialogueSet = new HashSet<string>(StringComparer.Ordinal);
-        var settingSet = new HashSet<string>(StringComparer.Ordinal);
-
-        // Scan both StringPool and AsciiText gaps for string content
-        var textGaps = _ctx.Coverage.Gaps
-            .Where(g => g.Classification is GapClassification.StringPool or GapClassification.AsciiText)
-            .ToList();
-
-        summary.RegionCount = textGaps.Count;
-        summary.TotalBytes = textGaps.Sum(g => g.Size);
-
-        foreach (var gap in textGaps)
-        {
-            var readSize = (int)Math.Min(gap.Size, 1024 * 1024);
-            var buffer = new byte[readSize];
-            _ctx.Accessor.ReadArray(gap.FileOffset, buffer, 0, readSize);
-
-            RuntimeBufferStringExtractor.ExtractStringsFromBuffer(
-                buffer,
-                gap.FileOffset,
-                gap.VirtualAddress,
-                gap.Classification,
-                result.StringHits,
-                uniqueStrings,
-                filePathSet,
-                editorIdSet,
-                dialogueSet,
-                settingSet,
-                summary);
-        }
-
-        summary.UniqueStrings = uniqueStrings.Count;
-        summary.FilePaths = filePathSet.Count;
-        summary.EditorIds = editorIdSet.Count;
-        summary.DialogueLines = dialogueSet.Count;
-        summary.GameSettings = settingSet.Count;
-        summary.Other = uniqueStrings.Count -
-                        filePathSet.Count - editorIdSet.Count -
-                        dialogueSet.Count - settingSet.Count;
-
-        // Sort samples by length descending - longer strings are more meaningful
-        summary.SampleFilePaths.AddRange(
-            filePathSet.OrderByDescending(s => s.Length).Take(MaxSampleStrings));
-        summary.SampleEditorIds.AddRange(
-            editorIdSet.OrderByDescending(s => s.Length).Take(MaxSampleStrings));
-        summary.SampleDialogue.AddRange(
-            dialogueSet.OrderByDescending(s => s.Length).Take(MaxSampleStrings));
-        summary.SampleSettings.AddRange(
-            settingSet.OrderByDescending(s => s.Length).Take(MaxSampleStrings));
-
-        // Retain full sets for export
-        summary.AllFilePaths = filePathSet;
-        summary.AllEditorIds = editorIdSet;
-        summary.AllDialogue = dialogueSet;
-        summary.AllSettings = settingSet;
-
-        result.StringPools = summary;
     }
 
     #endregion

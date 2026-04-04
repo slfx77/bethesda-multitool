@@ -253,7 +253,7 @@ internal sealed class RuntimeBufferPointerAnalyzer
                     info.AllReferrers ??= [];
                     if (info.AllReferrers.Count < 32)
                     {
-                        info.AllReferrers.Add((referrerFileOffset, (long)referrerVa, context));
+                        info.AllReferrers.Add((referrerFileOffset, referrerVa, context));
                     }
                 }
 

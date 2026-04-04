@@ -11,8 +11,6 @@ namespace FalloutXbox360Utils.Core.RuntimeBuffer;
 /// </summary>
 internal sealed class RuntimeBufferStringExtractor
 {
-    private readonly BufferAnalysisContext _ctx;
-
     internal const int MinStringLength = 4;
     internal const int MaxStringLength = 512;
 
@@ -31,6 +29,8 @@ internal sealed class RuntimeBufferStringExtractor
         "clutter", "architecture", "weapons", "armor", "lodsettings",
         "data", "bsa", "esm", "esp"
     };
+
+    private readonly BufferAnalysisContext _ctx;
 
     public RuntimeBufferStringExtractor(BufferAnalysisContext ctx)
     {

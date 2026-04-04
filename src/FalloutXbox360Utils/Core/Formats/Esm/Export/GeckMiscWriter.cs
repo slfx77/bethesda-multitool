@@ -1,6 +1,9 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.AI;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
 using FalloutXbox360Utils.Core.RuntimeBuffer;
 using FalloutXbox360Utils.Core.Strings;
 
@@ -102,7 +105,8 @@ internal static class GeckMiscWriter
         sb.AppendLine("  Note: These strings come from runtime memory pools, not ESM records.");
         sb.AppendLine("  Includes perk descriptions, skill descriptions, loading screen text,");
         sb.AppendLine("  and other game text not found in the dump's ESM data.");
-        sb.AppendLine("  See string_owned_*.csv / string_unknown_owners.csv / string_unreferenced.csv for full datasets.");
+        sb.AppendLine(
+            "  See string_owned_*.csv / string_unknown_owners.csv / string_unreferenced.csv for full datasets.");
     }
 
     internal static string GenerateStringOwnershipSummaryReport(RuntimeStringOwnershipAnalysis analysis)
@@ -130,7 +134,8 @@ internal static class GeckMiscWriter
 
         sb.AppendLine();
         sb.AppendLine("Notes:");
-        sb.AppendLine("  Owned strings require direct typed evidence from runtime EditorID tables or manager/global walkers.");
+        sb.AppendLine(
+            "  Owned strings require direct typed evidence from runtime EditorID tables or manager/global walkers.");
         sb.AppendLine("  ReferencedOwnerUnknown strings have live inbound pointers, but no conservative owner match.");
         sb.AppendLine("  Unreferenced strings have no 4-byte-aligned inbound pointer to the exact string start.");
         return sb.ToString();
@@ -258,11 +263,11 @@ internal static class GeckMiscWriter
             new("Chance None", ReportValue.Int(list.ChanceNone, $"{list.ChanceNone}%"))
         };
         if (!string.IsNullOrEmpty(list.FlagsDescription) && list.FlagsDescription != "None")
-            identityFields.Add(new("Flags", ReportValue.String(list.FlagsDescription)));
+            identityFields.Add(new ReportField("Flags", ReportValue.String(list.FlagsDescription)));
         if (list.GlobalFormId is > 0)
-            identityFields.Add(new("Global", ReportValue.FormId(list.GlobalFormId.Value, resolver),
+            identityFields.Add(new ReportField("Global", ReportValue.FormId(list.GlobalFormId.Value, resolver),
                 $"0x{list.GlobalFormId.Value:X8}"));
-        sections.Add(new("Identity", identityFields));
+        sections.Add(new ReportSection("Identity", identityFields));
 
         // Entries
         if (list.Entries.Count > 0)
@@ -272,17 +277,17 @@ internal static class GeckMiscWriter
                 {
                     var itemName = e.FormId != 0 ? resolver.FormatFull(e.FormId) : "(none)";
                     return (ReportValue)new ReportValue.CompositeVal(
-                    [
-                        new("Level", ReportValue.Int(e.Level)),
-                        new("Item", ReportValue.String(itemName)),
-                        new("Count", ReportValue.Int(e.Count))
-                    ], $"Lv{e.Level} {itemName} x{e.Count}");
+                        [
+                            new ReportField("Level", ReportValue.Int(e.Level)),
+                            new ReportField("Item", ReportValue.String(itemName)),
+                            new ReportField("Count", ReportValue.Int(e.Count))
+                        ], $"Lv{e.Level} {itemName} x{e.Count}");
                 })
                 .ToList();
 
-            sections.Add(new($"Entries ({list.Entries.Count})",
+            sections.Add(new ReportSection($"Entries ({list.Entries.Count})",
             [
-                new("Entries", ReportValue.List(entryItems))
+                new ReportField("Entries", ReportValue.List(entryItems))
             ]));
         }
 

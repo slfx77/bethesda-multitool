@@ -1,5 +1,4 @@
 using System.IO.MemoryMappedFiles;
-using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.RuntimeBuffer;
 using Xunit;
@@ -47,7 +46,7 @@ public sealed class RuntimeStringOwnershipIntegrationTests(SampleFileFixture sam
 
             Assert.True(File.Exists(ownershipSummaryPath));
 
-            var ownershipSummary = await File.ReadAllTextAsync(ownershipSummaryPath);
+            var ownershipSummary = await File.ReadAllTextAsync(ownershipSummaryPath, TestContext.Current.CancellationToken);
             Assert.Contains("Runtime String Ownership Summary", ownershipSummary);
         }
         finally
