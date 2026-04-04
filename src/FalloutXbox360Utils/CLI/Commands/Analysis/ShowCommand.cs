@@ -1,10 +1,7 @@
 using System.CommandLine;
 using System.Globalization;
-using FalloutXbox360Utils.CLI.Shared;
 using FalloutXbox360Utils.CLI.Show;
 using FalloutXbox360Utils.Core;
-using FalloutXbox360Utils.Core.Formats.Esm.Export;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI.Commands.Analysis;
@@ -49,7 +46,7 @@ public static class ShowCommand
         new MessageShowRenderer(),
         new ChallengeShowRenderer(),
         // Generic fallback (must be last)
-        new GenericShowRenderer(),
+        new GenericShowRenderer()
     ];
 
     public static Command Create()
