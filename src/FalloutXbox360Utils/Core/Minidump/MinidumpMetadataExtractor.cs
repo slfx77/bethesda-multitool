@@ -99,9 +99,17 @@ internal static class MinidumpMetadataExtractor
         AddTextureCarvedFiles(result, textures);
         AddSceneGraphNodeCarvedFiles(result);
         AddTesFormStructRegions(result);
-        // Note: AddRuntimeTerrainMeshRegions is NOT called here because it depends on
-        // terrain mesh enrichment from the semantic parse pipeline, which runs later.
-        // The GUI calls it after semantic parsing; the CLI skips it (small footprint).
+
+        // Identify terrain meshes among geometry-scanned results and create synthetic
+        // LAND records with derived cell coordinates. This runs in the core pipeline
+        // so both CLI (--extract-esm) and GUI get terrain heightmap data automatically.
+        var terrainLandRecords = TerrainMeshIdentifier.IdentifyTerrainMeshes(meshes, esmRecords);
+        if (terrainLandRecords.Count > 0)
+        {
+            esmRecords.LandRecords.AddRange(terrainLandRecords);
+            log.Info("PostProcess: Added {0} terrain-derived LAND records (total: {1})",
+                terrainLandRecords.Count, esmRecords.LandRecords.Count);
+        }
 
         progress?.Report(new AnalysisProgress
             { Phase = "Post-Processing", FilesFound = result.CarvedFiles.Count, PercentComplete = 98 });

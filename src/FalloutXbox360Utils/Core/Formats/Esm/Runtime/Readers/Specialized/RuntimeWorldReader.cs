@@ -300,16 +300,46 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
     public Dictionary<uint, RuntimeLoadedLandData> ReadAllRuntimeLandData(IEnumerable<RuntimeEditorIdEntry> entries)
     {
         var result = new Dictionary<uint, RuntimeLoadedLandData>();
+        var total = 0;
+        var noOffset = 0;
+        var noLoadedData = 0;
+        var badCoords = 0;
+        var noMesh = 0;
+        var withMesh = 0;
 
         // Entries are pre-filtered to LAND by EsmEditorIdExtractor (FormType varies by build)
         foreach (var entry in entries)
         {
+            total++;
             var landData = ReadRuntimeLandData(entry);
             if (landData != null)
             {
                 result[landData.FormId] = landData;
+                if (landData.TerrainMesh != null)
+                {
+                    withMesh++;
+                }
+                else
+                {
+                    noMesh++;
+                }
             }
         }
+
+        // Count failure reasons from the entries that didn't produce results
+        foreach (var entry in entries)
+        {
+            if (entry.TesFormOffset == null)
+            {
+                noOffset++;
+            }
+        }
+
+        var log = Logger.Instance;
+        var failed = total - result.Count;
+        log.Info("LAND terrain: {0} entries → {1} with data ({2} with mesh, {3} coords-only), " +
+                 "{4} failed (no offset: {5}, no loaded data or bad coords: {6})",
+            total, result.Count, withMesh, noMesh, failed, noOffset, failed - noOffset);
 
         return result;
     }
