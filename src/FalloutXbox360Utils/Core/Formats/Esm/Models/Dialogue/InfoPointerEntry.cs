@@ -1,4 +1,4 @@
-namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Models.Dialogue;
 
 /// <summary>
 ///     An INFO record found via pointer following from a TESTopic's QUEST_INFO.infoArray.

@@ -59,10 +59,10 @@ public sealed partial class SingleFileTab
 
             // Extract string pool data for minidump files (requires coverage + accessor)
             if ((_session.StringPool == null || _session.StringOwnership == null) && !_session.IsEsmFile
-                                                                             && _session.CoverageResult != null
-                                                                             && _session.Accessor != null
-                                                                             && _session.AnalysisResult != null
-                                                                             && _session.AnalysisResult.MinidumpInfo != null)
+                && _session.CoverageResult != null
+                && _session.Accessor != null
+                && _session.AnalysisResult != null
+                && _session.AnalysisResult.MinidumpInfo != null)
             {
                 var stringData = await Task.Run(() =>
                 {

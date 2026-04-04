@@ -1,9 +1,12 @@
 using System.Buffers;
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Core.Utils;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
 
 internal sealed class CellRecordHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
@@ -565,6 +568,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         {
             mergedCell = mapCell;
         }
+
         if (mergedCell == null)
         {
             return null;

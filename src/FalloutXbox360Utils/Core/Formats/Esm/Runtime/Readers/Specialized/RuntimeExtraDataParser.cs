@@ -1,4 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using FalloutXbox360Utils.Core.Utils;
 
@@ -675,7 +676,7 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
         bool HasExtraData,
         int VisitedNodeCount,
         IReadOnlyDictionary<byte, int> TypeCounts,
-        RuntimeExtraDataParser.RuntimeRefrExtraData Data);
+        RuntimeRefrExtraData Data);
 
     #endregion
 }

@@ -1,6 +1,6 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
 
 internal sealed record DialogueInfoProvenanceReport
 {

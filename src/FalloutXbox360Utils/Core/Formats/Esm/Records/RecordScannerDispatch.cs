@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using System.Collections.Frozen;
 using System.Text;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Records;
 
 /// <summary>
 ///     Constants, dispatch tables, and types used by the ESM record scanner.

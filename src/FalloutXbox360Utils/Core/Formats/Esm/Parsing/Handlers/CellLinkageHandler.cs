@@ -1,7 +1,9 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
 
 /// <summary>
 ///     Static utility methods for linking cells to worldspaces, inferring worldspace membership,
@@ -536,6 +538,7 @@ internal static class CellLinkageHandler
         }
 
         var cellsCreated = 0;
+        var existingCellFormIds = new HashSet<uint>(existingCells.Select(c => c.FormId));
 
         // Group by parent cell FormID
         foreach (var group in interiorOrphans.GroupBy(r => r.ParentCellFormId ?? r.PersistentCellFormId ?? 0))
@@ -558,6 +561,7 @@ internal static class CellLinkageHandler
                 };
                 cellByFormId[group.Key] = cell;
                 existingCells.Add(cell);
+                existingCellFormIds.Add(cell.FormId);
                 cellsCreated++;
             }
             else
@@ -573,9 +577,10 @@ internal static class CellLinkageHandler
                     IsBigEndian = true
                 };
                 cellByFormId.TryAdd(cell.FormId, cell);
-                if (!existingCells.Exists(c => c.FormId == cell.FormId))
+                if (!existingCellFormIds.Contains(cell.FormId))
                 {
                     existingCells.Add(cell);
+                    existingCellFormIds.Add(cell.FormId);
                     cellsCreated++;
                 }
 

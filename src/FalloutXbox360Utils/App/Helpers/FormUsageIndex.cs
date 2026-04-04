@@ -1,6 +1,11 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.AI;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 
-namespace FalloutXbox360Utils;
+namespace FalloutXbox360Utils.App.Helpers;
 
 /// <summary>
 ///     Reverse index of FormID usages across scripts, lists, inventories, packages, and attached scripts.

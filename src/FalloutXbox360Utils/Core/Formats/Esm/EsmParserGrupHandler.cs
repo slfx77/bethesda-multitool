@@ -1,6 +1,8 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Utils;
+using ParsedSubrecord = FalloutXbox360Utils.Core.Formats.Esm.Subrecords.ParsedSubrecord;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm;
 

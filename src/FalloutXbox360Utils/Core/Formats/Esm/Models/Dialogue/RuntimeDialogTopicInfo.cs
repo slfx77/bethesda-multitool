@@ -1,4 +1,4 @@
-namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Models.Dialogue;
 
 /// <summary>
 ///     Data extracted from a runtime TESTopic C++ struct in the crash dump.

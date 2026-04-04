@@ -1,10 +1,12 @@
 using System.Buffers;
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Dialogue;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Script;
 using FalloutXbox360Utils.Core.Utils;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
 
 /// <summary>
 ///     Parses INFO records from ESM data, handling CTDA conditions, subrecord iteration,
@@ -12,7 +14,6 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 /// </summary>
 internal sealed class DialogueConditionParser(RecordParserContext context) : RecordHandlerBase(context)
 {
-
     /// <summary>
     ///     Parse all INFO records into DialogueRecord instances.
     ///     Uses accessor-based subrecord parsing when available, otherwise falls back to scan result.

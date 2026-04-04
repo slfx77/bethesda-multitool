@@ -2,7 +2,7 @@ using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Schema;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Records;
 
 /// <summary>
 ///     All Fallout: New Vegas ESM record type signatures.

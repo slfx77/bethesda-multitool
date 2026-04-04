@@ -1,8 +1,12 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Dialogue;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Script;
 using FalloutXbox360Utils.Core.Utils;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers;
 
 /// <summary>
 ///     Reader for dialogue, quest, terminal, and note runtime structs from Xbox 360 memory dumps.

@@ -1,4 +1,4 @@
-namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 
 /// <summary>
 ///     Lighting Template (LGTM) record.

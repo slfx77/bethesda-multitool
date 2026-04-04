@@ -1,8 +1,9 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using FalloutXbox360Utils.Core.Utils;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers;
 
 /// <summary>
 ///     Reader for TESObjectREFR runtime structs (REFR/ACHR/ACRE) from Xbox 360 memory dumps.

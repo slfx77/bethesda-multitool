@@ -1,6 +1,6 @@
 using FalloutXbox360Utils.Core.Minidump;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 
 /// <summary>
 ///     Dump-specific TESNPC layout selection.

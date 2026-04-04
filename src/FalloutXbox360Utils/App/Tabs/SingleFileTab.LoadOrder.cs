@@ -3,6 +3,7 @@ using System.IO.MemoryMappedFiles;
 using Windows.Storage.Pickers;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 using FalloutXbox360Utils.Core.Formats.Subtitles;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;

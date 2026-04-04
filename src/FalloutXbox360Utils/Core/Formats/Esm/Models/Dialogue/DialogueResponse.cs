@@ -1,4 +1,4 @@
-namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Models.Dialogue;
 
 /// <summary>
 ///     Individual dialogue response from NAM1 + TRDT subrecords.

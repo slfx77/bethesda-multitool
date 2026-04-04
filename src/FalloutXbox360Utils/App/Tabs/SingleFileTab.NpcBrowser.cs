@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.Web.WebView2.Core;
 using Windows.Storage.Pickers;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
 using WinRT.Interop;
 
 namespace FalloutXbox360Utils;

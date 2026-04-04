@@ -1,6 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Utils;
-using Logger = FalloutXbox360Utils.Core.Logger;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 
@@ -51,7 +50,8 @@ internal sealed class RuntimeNpcFieldReader
         // Validate ranges
         if (aggression > 3 || confidence > 4 || assistance > 2)
         {
-            Logger.Instance.Debug("[AI] Rejected: aggression={0}, confidence={1}, assistance={2}", aggression, confidence, assistance);
+            Logger.Instance.Debug("[AI] Rejected: aggression={0}, confidence={1}, assistance={2}", aggression,
+                confidence, assistance);
             return null;
         }
 

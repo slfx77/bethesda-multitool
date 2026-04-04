@@ -141,7 +141,7 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
         // because random floats in unrelated heap data frequently pass 70% by chance.
         var (vertices, vertexOffset) = ReadDoubleIndirectedFloatArray(
             loadedDataBuffer, LoadedDataVerticesPtrOffset,
-            3, RuntimeTerrainMesh.VertexCount, 200_000, minValidFraction: 0.9);
+            3, RuntimeTerrainMesh.VertexCount, 200_000, 0.9);
 
         if (vertices == null)
         {
@@ -302,8 +302,6 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
         var result = new Dictionary<uint, RuntimeLoadedLandData>();
         var total = 0;
         var noOffset = 0;
-        var noLoadedData = 0;
-        var badCoords = 0;
         var noMesh = 0;
         var withMesh = 0;
 

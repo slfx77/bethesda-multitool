@@ -1,7 +1,7 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Utils;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers;
 
 /// <summary>
 ///     Walks NiTPointerMap&lt;int, TESObjectCELL*&gt; hash tables from TESWorldSpace runtime structs.
@@ -11,8 +11,8 @@ internal sealed class RuntimeCellMapWalker(
     RuntimeMemoryContext context,
     RuntimeCellObjectEnumerator cellEnumerator)
 {
-    private readonly RuntimeMemoryContext _context = context;
     private readonly RuntimeCellObjectEnumerator _cellEnumerator = cellEnumerator;
+    private readonly RuntimeMemoryContext _context = context;
 
     /// <summary>
     ///     Follow the pCellMap pointer from the worldspace struct, then walk the

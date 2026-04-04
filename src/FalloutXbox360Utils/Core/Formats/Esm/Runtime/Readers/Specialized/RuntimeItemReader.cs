@@ -1,4 +1,6 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
@@ -205,8 +207,8 @@ internal sealed class RuntimeItemReader(
         // EquipmentType: BGSEquipType.eEquipType (int32 enum at offset 344)
         var equipTypeValue = RuntimeMemoryContext.ReadInt32BE(buffer, Layouts.ArmoEquipTypeOffset);
         var equipmentType = equipTypeValue >= -1 && equipTypeValue <= 13
-            ? (Enums.EquipmentType)equipTypeValue
-            : Enums.EquipmentType.None;
+            ? (EquipmentType)equipTypeValue
+            : EquipmentType.None;
 
         return new ArmorRecord
         {

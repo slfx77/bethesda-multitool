@@ -1,4 +1,4 @@
-namespace FalloutXbox360Utils.Core.Formats.Esm;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Records;
 
 /// <summary>
 ///     Validation and detection helpers for ESM record scanning.

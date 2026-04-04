@@ -1,4 +1,4 @@
-namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion.Models;
 
 /// <summary>
 ///     Entry for a WRLD record in the conversion index.

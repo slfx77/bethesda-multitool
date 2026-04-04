@@ -1,7 +1,7 @@
 using System.IO.MemoryMappedFiles;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Records;
 
 /// <summary>
 ///     ESM Record format handler for detecting and parsing Bethesda ESM records

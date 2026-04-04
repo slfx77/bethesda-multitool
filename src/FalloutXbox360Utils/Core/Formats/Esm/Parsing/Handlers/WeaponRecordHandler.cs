@@ -1,16 +1,16 @@
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 using FalloutXbox360Utils.Core.Utils;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
 
 /// <summary>
 ///     Handles parsing of WEAP records from ESM data and runtime structs.
 /// </summary>
 internal sealed class WeaponRecordHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
-
     /// <summary>
     ///     Parse all Weapon records from the scan result.
     ///     Uses two-track approach: ESM records for subrecord detail + runtime C++ structs
@@ -474,7 +474,10 @@ internal sealed class WeaponRecordHandler(RecordParserContext context) : RecordH
         }
     }
 
-    private static uint? NullIfZero(uint value) => value == 0 ? null : value;
+    private static uint? NullIfZero(uint value)
+    {
+        return value == 0 ? null : value;
+    }
 
     /// <summary>
     ///     Enrich weapon records with projectile physics data (gravity, speed, range,

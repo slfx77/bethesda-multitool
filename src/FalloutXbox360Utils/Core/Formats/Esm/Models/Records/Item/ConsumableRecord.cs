@@ -1,4 +1,4 @@
-namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 
 /// <summary>
 ///     Parsed Consumable (ALCH) record.

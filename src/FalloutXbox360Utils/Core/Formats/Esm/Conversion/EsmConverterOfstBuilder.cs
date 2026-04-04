@@ -1,4 +1,7 @@
 using System.Buffers.Binary;
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Indexing;
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Processing;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion;
 

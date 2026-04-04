@@ -82,10 +82,12 @@ internal static class SubrecordActorSchemas
         schemas[new SubrecordSchemaRegistry.SchemaKey("ENAM", "RACE")] = SubrecordSchema.FormIdArray;
 
         // ONAM - RACE Older Race (4 bytes = single FormID)
-        schemas[new SubrecordSchemaRegistry.SchemaKey("ONAM", "RACE", 4)] = SubrecordSchema.Simple4Byte("Older Race FormID");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("ONAM", "RACE", 4)] =
+            SubrecordSchema.Simple4Byte("Older Race FormID");
 
         // YNAM - RACE Younger Race (4 bytes = single FormID)
-        schemas[new SubrecordSchemaRegistry.SchemaKey("YNAM", "RACE", 4)] = SubrecordSchema.Simple4Byte("Younger Race FormID");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("YNAM", "RACE", 4)] =
+            SubrecordSchema.Simple4Byte("Younger Race FormID");
 
         // VTCK - RACE Voices (8 bytes = two FormIDs: Male + Female voice types)
         schemas[new SubrecordSchemaRegistry.SchemaKey("VTCK", "RACE", 8)] = new SubrecordSchema(
@@ -153,7 +155,8 @@ internal static class SubrecordActorSchemas
 
         schemas[new SubrecordSchemaRegistry.SchemaKey("CNAM", "NPC_", 4)] = SubrecordSchema.Simple4Byte("Class FormID");
         schemas[new SubrecordSchemaRegistry.SchemaKey("NAM4", "NPC_", 4)] = SubrecordSchema.Simple4Byte("NAM4 FormID");
-        schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "NPC_", 28)] = SubrecordSchema.ByteArray; // NPC skill values - no conversion
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "NPC_", 28)] =
+            SubrecordSchema.ByteArray; // NPC skill values - no conversion
 
         // SNAM - NPC_ Faction Membership (8 bytes)
         schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "NPC_", 8)] =
@@ -179,7 +182,8 @@ internal static class SubrecordActorSchemas
             Description = "Creature Data"
         };
 
-        schemas[new SubrecordSchemaRegistry.SchemaKey("CNAM", "CREA", 4)] = SubrecordSchema.Simple4Byte("Combat Style FormID");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("CNAM", "CREA", 4)] =
+            SubrecordSchema.Simple4Byte("Combat Style FormID");
         schemas[new SubrecordSchemaRegistry.SchemaKey("NAM4", "CREA", 4)] = SubrecordSchema.Simple4Byte("NAM4 FormID");
         schemas[new SubrecordSchemaRegistry.SchemaKey("NAM5", "CREA", 4)] = SubrecordSchema.Simple4Byte("NAM5 FormID");
         schemas[new SubrecordSchemaRegistry.SchemaKey("CSDC", "CREA", 1)] = SubrecordSchema.ByteArray;
@@ -206,7 +210,8 @@ internal static class SubrecordActorSchemas
 
         // DATA - FACT (4 bytes) - Faction Flags
         // PDB: TESFaction.flags = uint32 BE at offset 52
-        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "FACT", 4)] = SubrecordSchema.Simple4Byte("Faction Flags");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "FACT", 4)] =
+            SubrecordSchema.Simple4Byte("Faction Flags");
 
         // RNAM - FACT Rank Number (4 bytes) - override generic FormID version
         schemas[new SubrecordSchemaRegistry.SchemaKey("RNAM", "FACT", 4)] = new SubrecordSchema(F.Int32("RankNumber"))

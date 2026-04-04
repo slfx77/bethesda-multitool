@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text;
 using static FalloutXbox360Utils.Core.Formats.Esm.Conversion.EsmEndianHelpers;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion.Indexing;
 
 /// <summary>
 ///     Statistics tracking and reporting for ESM conversion.

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 
@@ -186,7 +187,7 @@ public sealed class RuntimeRefrExtraDataBaselineTests
     }
 
     private static bool TypeCountsEqual(IReadOnlyDictionary<byte, int> observed,
-        IReadOnlyDictionary<string, int> baseline)
+        Dictionary<string, int> baseline)
     {
         if (observed.Count != baseline.Count)
         {
@@ -195,7 +196,8 @@ public sealed class RuntimeRefrExtraDataBaselineTests
 
         foreach (var (type, count) in observed)
         {
-            if (!baseline.TryGetValue(type.ToString(CultureInfo.InvariantCulture), out var expected) || expected != count)
+            if (!baseline.TryGetValue(type.ToString(CultureInfo.InvariantCulture), out var expected) ||
+                expected != count)
             {
                 return false;
             }

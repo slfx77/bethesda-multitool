@@ -1,7 +1,7 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Schema;
 using static FalloutXbox360Utils.Core.Formats.Esm.Conversion.EsmEndianHelpers;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion.Processing;
 
 /// <summary>
 ///     Converts subrecord data based on type and parent record.

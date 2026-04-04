@@ -1,3 +1,5 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
+
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>

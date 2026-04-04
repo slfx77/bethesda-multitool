@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
+using FalloutXbox360Utils.Core.Formats.Esm.Records;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm;
 

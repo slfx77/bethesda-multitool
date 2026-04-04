@@ -1,4 +1,7 @@
-namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion;
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Indexing;
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Models;
+
+namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion.Processing;
 
 internal sealed class EsmInfoMerger(byte[] input, EsmConversionStats stats)
 {

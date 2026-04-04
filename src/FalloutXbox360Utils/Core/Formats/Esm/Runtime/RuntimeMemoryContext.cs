@@ -1,7 +1,7 @@
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 
 /// <summary>
 ///     Shared context for reading runtime game structures from Xbox 360 memory dumps.

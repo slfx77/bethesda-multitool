@@ -1,4 +1,4 @@
-namespace FalloutXbox360Utils.Core.Formats.Esm;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 
 /// <summary>
 ///     A single field in a flattened PDB struct layout.

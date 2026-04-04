@@ -1,9 +1,13 @@
 using System.Collections.ObjectModel;
+using FalloutXbox360Utils.App.Helpers;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Coverage;
 using FalloutXbox360Utils.Core.Extraction;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
+using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Core.Formats.SaveGame;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Localization;
@@ -258,7 +262,7 @@ public sealed partial class SingleFileTab
                 BuildResultsFilterCheckboxes();
 
                 // Emit BSStringT read diagnostics (visible in VS Output window)
-                var bsReport = Core.Formats.Esm.BSStringDiagnostics.GetReport();
+                var bsReport = BSStringDiagnostics.GetReport();
                 System.Diagnostics.Debug.WriteLine("[BSStringT Diagnostics]\n" + bsReport);
             }
         }

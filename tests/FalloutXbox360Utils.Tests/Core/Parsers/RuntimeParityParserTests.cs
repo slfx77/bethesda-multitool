@@ -1,9 +1,14 @@
+using System.Buffers.Binary;
 using System.IO.MemoryMappedFiles;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
+using FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
+using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
@@ -296,7 +301,7 @@ public sealed class RuntimeParityParserTests : IDisposable
 
         var parser = CreateParser(scanResult, data);
         var topics = parser.ParseDialogTopics();
-        var topic = Assert.Single(topics.Where(record => record.FormId == topicFormId));
+        var topic = Assert.Single(topics, record => record.FormId == topicFormId);
 
         Assert.Equal("TopicFromEsm", topic.EditorId);
         Assert.Equal("Topic Name From ESM", topic.FullName);
@@ -400,7 +405,7 @@ public sealed class RuntimeParityParserTests : IDisposable
 
         var parser = CreateParser(scanResult, data);
         var result = parser.ParseAll();
-        var topic = Assert.Single(result.DialogTopics.Where(record => record.FormId == topicFormId));
+        var topic = Assert.Single(result.DialogTopics, record => record.FormId == topicFormId);
 
         Assert.Equal(questFormId, topic.QuestFormId);
         Assert.Equal(2, topic.ResponseCount);
@@ -1043,8 +1048,17 @@ public sealed class RuntimeParityParserTests : IDisposable
         const int runtimeBaseObjectOffset = 5120;
         const int runtimeParentCellOffset = 5376;
 
+        // MNAM: usableWidth(4) + usableHeight(4) + NWCellX(2) + NWCellY(2) + SECellX(2) + SECellY(2) = 16 bytes
+        var mnamData = new byte[16];
+        BinaryPrimitives.WriteInt32LittleEndian(mnamData.AsSpan(0), 768);
+        BinaryPrimitives.WriteInt32LittleEndian(mnamData.AsSpan(4), 512);
+        BinaryPrimitives.WriteInt16LittleEndian(mnamData.AsSpan(8), -4);
+        BinaryPrimitives.WriteInt16LittleEndian(mnamData.AsSpan(10), -4);
+        BinaryPrimitives.WriteInt16LittleEndian(mnamData.AsSpan(12), 8);
+        BinaryPrimitives.WriteInt16LittleEndian(mnamData.AsSpan(14), 8);
         var worldRecordBytes = BuildRecordBytes(worldspaceFormId, "WRLD", false,
-            ("EDID", NullTermString("RuntimeParentStubWorld")));
+            ("EDID", NullTermString("RuntimeParentStubWorld")),
+            ("MNAM", mnamData));
         Array.Copy(worldRecordBytes, 0, data, worldRecordOffset, worldRecordBytes.Length);
 
         WriteTesFormHeader(data, runtimeWorldOffset, 0x82010000, 0x41, worldspaceFormId);

@@ -1,4 +1,4 @@
-namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 
 /// <summary>
 ///     Script local variable definition from SLSD+SCVR subrecord pairs.

@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
 

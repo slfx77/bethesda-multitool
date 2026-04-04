@@ -1,12 +1,12 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using FalloutXbox360Utils.Core.Utils;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
 
 internal sealed class NpcRecordHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
-
     /// <summary>
     ///     Parse all NPC records from the scan result.
     ///     Uses two-track approach: ESM records for subrecord detail + runtime C++ structs

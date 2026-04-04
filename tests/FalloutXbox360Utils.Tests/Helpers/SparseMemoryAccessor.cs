@@ -1,4 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 
 namespace FalloutXbox360Utils.Tests.Helpers;
 
@@ -10,14 +11,6 @@ namespace FalloutXbox360Utils.Tests.Helpers;
 internal sealed class SparseMemoryAccessor : IMemoryAccessor
 {
     private readonly SortedList<long, byte[]> _ranges = new();
-
-    /// <summary>
-    ///     Add a captured byte range at the given file offset.
-    /// </summary>
-    public void AddRange(long offset, byte[] data)
-    {
-        _ranges[offset] = data;
-    }
 
     public int ReadArray(long position, byte[] array, int offset, int count)
     {
@@ -44,6 +37,14 @@ internal sealed class SparseMemoryAccessor : IMemoryAccessor
         // Not in a captured range — fill with zeros
         Array.Clear(array, offset, count);
         return count;
+    }
+
+    /// <summary>
+    ///     Add a captured byte range at the given file offset.
+    /// </summary>
+    public void AddRange(long offset, byte[] data)
+    {
+        _ranges[offset] = data;
     }
 
     private static int BinarySearchFloor(IList<long> keys, long target)

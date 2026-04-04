@@ -3,6 +3,7 @@ using System.IO.MemoryMappedFiles;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats;
 using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Pdb;
 
@@ -512,12 +513,29 @@ public static class CoverageAnalyzer
         // 0xC0000000-0xDFFFFFFF: Physical RAM direct mapping
         // 0xE0000000-0xFFFFFFFF: Kernel space
 
-        // Accept module range pointers
-        foreach (var (start, end, _) in moduleVaRanges)
+        // Accept module range pointers (binary search — list is sorted by start address)
+        if (moduleVaRanges.Count > 0)
         {
-            if (val >= (uint)start && val < (uint)end)
+            var lo = 0;
+            var hi = moduleVaRanges.Count - 1;
+
+            while (lo <= hi)
             {
-                return true;
+                var mid = lo + ((hi - lo) >> 1);
+                var (start, end, _) = moduleVaRanges[mid];
+
+                if (val < (uint)start)
+                {
+                    hi = mid - 1;
+                }
+                else if (val >= (uint)end)
+                {
+                    lo = mid + 1;
+                }
+                else
+                {
+                    return true; // val >= start && val < end
+                }
             }
         }
 
@@ -525,11 +543,13 @@ public static class CoverageAnalyzer
         return val is >= 0x40000000 and < 0xE0000000;
     }
 
-    private static bool ContainsEsmSignatures(byte[] buffer)
+    private static readonly HashSet<uint> EsmSignatures = BuildEsmSignatureSet();
+
+    private static HashSet<uint> BuildEsmSignatureSet()
     {
-        // Check for 4-byte ASCII signatures typical of ESM records
-        var knownSigs = new HashSet<string>
-        {
+        // Pack each 4-char ASCII signature as a big-endian uint32 for zero-allocation matching
+        string[] sigs =
+        [
             "TES4", "GRUP", "GLOB", "CLAS", "FACT", "RACE", "MGEF", "ENCH",
             "SPEL", "ACTI", "ALCH", "AMMO", "ARMO", "BOOK", "CONT", "DOOR",
             "FURN", "GRAS", "HAIR", "IDLE", "INGR", "KEYM", "LIGH", "MISC",
@@ -537,19 +557,31 @@ public static class CoverageAnalyzer
             "WRLD", "DIAL", "INFO", "QUST", "PACK", "PERK", "NOTE", "TERM",
             "REPU", "RCPE", "IMOD", "CHAL", "MESG", "EXPL", "PROJ", "NAVM",
             "REFR", "ACRE", "ACHR", "PGRE", "LAND", "MUSC"
-        };
+        ];
 
+        var set = new HashSet<uint>(sigs.Length);
+        foreach (var sig in sigs)
+        {
+            set.Add(BinaryPrimitives.ReadUInt32BigEndian(Encoding.ASCII.GetBytes(sig)));
+        }
+
+        return set;
+    }
+
+    private static bool ContainsEsmSignatures(byte[] buffer)
+    {
+        // Check for 4-byte ASCII signatures typical of ESM records (zero-allocation)
         var count = 0;
         for (var i = 0; i <= buffer.Length - 4; i++)
         {
-            // Check if 4 bytes form a known ESM signature
+            // Quick ASCII printable check on first byte to skip obvious non-matches
             if (buffer[i] < 0x20 || buffer[i] > 0x7E)
             {
                 continue;
             }
 
-            var sig = Encoding.ASCII.GetString(buffer, i, 4);
-            if (knownSigs.Contains(sig))
+            var candidate = BinaryPrimitives.ReadUInt32BigEndian(buffer.AsSpan(i, 4));
+            if (EsmSignatures.Contains(candidate))
             {
                 count++;
                 if (count >= 2)

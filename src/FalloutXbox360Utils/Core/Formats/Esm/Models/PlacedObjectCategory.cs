@@ -1,4 +1,4 @@
-namespace FalloutXbox360Utils;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
 ///     Visual category for placed objects in the World tab, used for color-coding.

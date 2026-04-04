@@ -1,4 +1,6 @@
-namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion;
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Models;
+
+namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion.Indexing;
 
 /// <summary>
 ///     Index of records and groups for conversion.

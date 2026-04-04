@@ -1,5 +1,7 @@
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion;
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Processing;
 using Spectre.Console;
 using static FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers.DiffHelpers;
 using static FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers.DiffPatternAnalyzer;

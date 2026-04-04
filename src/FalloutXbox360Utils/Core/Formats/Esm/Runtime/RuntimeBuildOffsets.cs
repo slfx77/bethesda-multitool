@@ -1,6 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 
 /// <summary>
 ///     Computes field offset shifts between early-era and final-era Xbox 360 builds.
@@ -551,12 +551,12 @@ internal static class RuntimeBuildOffsets
         {
             (0x45, 0x46, "DIAL"), // DIAL normally at 0x45; if shifted, at 0x46
             (0x46, 0x47, "INFO"), // INFO normally at 0x46; if shifted, at 0x47
-            (0x41, 0x42, "WRLD"), // WRLD normally at 0x41; if shifted, at 0x42
+            (0x41, 0x42, "WRLD") // WRLD normally at 0x41; if shifted, at 0x42
         };
 
         var displacedAnchors = 0;
         byte lowestDisplaced = 0xFF;
-        foreach (var (expected, displaced, name) in anchorChecks)
+        foreach (var (expected, displaced, _) in anchorChecks)
         {
             counts.TryGetValue(expected, out var expectedCount);
             counts.TryGetValue(displaced, out var displacedCount);

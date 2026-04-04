@@ -90,15 +90,17 @@ internal static class SubrecordCellAndMiscSchemas
         // WORLDSPACE SCHEMAS (WRLD)
         // ========================================================================
 
-        schemas[new SubrecordSchemaRegistry.SchemaKey("CNAM", "WRLD", 4)] = SubrecordSchema.Simple4Byte("Climate FormID");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("CNAM", "WRLD", 4)] =
+            SubrecordSchema.Simple4Byte("Climate FormID");
         schemas[new SubrecordSchemaRegistry.SchemaKey("NAM2", "WRLD", 4)] = SubrecordSchema.Simple4Byte("NAM2 FormID");
         schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "WRLD", 1)] = SubrecordSchema.ByteArray;
 
         // DNAM - WRLD (8 bytes)
-        schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "WRLD", 8)] = new SubrecordSchema(F.Float("Value1"), F.Float("Value2"))
-        {
-            Description = "World Default Land Height/Water Height"
-        };
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "WRLD", 8)] =
+            new SubrecordSchema(F.Float("Value1"), F.Float("Value2"))
+            {
+                Description = "World Default Land Height/Water Height"
+            };
 
         // MNAM - World Map Data (16 bytes)
         schemas[new SubrecordSchemaRegistry.SchemaKey("MNAM", "WRLD", 16)] = new SubrecordSchema(
@@ -113,14 +115,16 @@ internal static class SubrecordCellAndMiscSchemas
         };
 
         // NAM0/NAM9 - Worldspace Bounds (8 bytes)
-        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM0", "WRLD", 8)] = new SubrecordSchema(F.Float("X"), F.Float("Y"))
-        {
-            Description = "Worldspace Bounds Min"
-        };
-        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM9", "WRLD", 8)] = new SubrecordSchema(F.Float("X"), F.Float("Y"))
-        {
-            Description = "Worldspace Bounds Max"
-        };
+        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM0", "WRLD", 8)] =
+            new SubrecordSchema(F.Float("X"), F.Float("Y"))
+            {
+                Description = "Worldspace Bounds Min"
+            };
+        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM9", "WRLD", 8)] =
+            new SubrecordSchema(F.Float("X"), F.Float("Y"))
+            {
+                Description = "Worldspace Bounds Max"
+            };
 
         // ONAM - Worldspace persistent cell list (array of FormIDs)
         schemas[new SubrecordSchemaRegistry.SchemaKey("ONAM", "WRLD")] = SubrecordSchema.FormIdArray;
@@ -221,13 +225,15 @@ internal static class SubrecordCellAndMiscSchemas
         };
 
         // SNAM - WTHR (8 bytes)
-        schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "WTHR", 8)] = new SubrecordSchema(F.FormId("Sound"), F.UInt32("Type"))
-        {
-            Description = "Weather Sound"
-        };
+        schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "WTHR", 8)] =
+            new SubrecordSchema(F.FormId("Sound"), F.UInt32("Type"))
+            {
+                Description = "Weather Sound"
+            };
 
         // IAD - WTHR (4 bytes)
-        schemas[new SubrecordSchemaRegistry.SchemaKey("IAD", "WTHR", 4)] = SubrecordSchema.Simple4Byte("Image Adapter Float");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("IAD", "WTHR", 4)] =
+            SubrecordSchema.Simple4Byte("Image Adapter Float");
 
         schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "WTHR", 15)] = SubrecordSchema.ByteArray;
 
@@ -361,7 +367,8 @@ internal static class SubrecordCellAndMiscSchemas
         // STATIC COLLECTION (SCOL)
         // ========================================================================
 
-        schemas[new SubrecordSchemaRegistry.SchemaKey("ONAM", "SCOL", 4)] = SubrecordSchema.Simple4Byte("Static Object FormID");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("ONAM", "SCOL", 4)] =
+            SubrecordSchema.Simple4Byte("Static Object FormID");
         schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "SCOL")] = SubrecordSchema.FloatArray;
 
         // ========================================================================
@@ -441,10 +448,11 @@ internal static class SubrecordCellAndMiscSchemas
         schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "IMGS")] = SubrecordSchema.FloatArray;
 
         // DNAM - PWAT (8 bytes)
-        schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "PWAT", 8)] = new SubrecordSchema(F.Float("Value1"), F.Float("Value2"))
-        {
-            Description = "Placeable Water Data"
-        };
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "PWAT", 8)] =
+            new SubrecordSchema(F.Float("Value1"), F.Float("Value2"))
+            {
+                Description = "Placeable Water Data"
+            };
 
         schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "VTYP", 1)] = SubrecordSchema.ByteArray;
 
@@ -484,10 +492,11 @@ internal static class SubrecordCellAndMiscSchemas
         };
 
         // DATA - CMNY (4 bytes)
-        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "CMNY", 4)] = new SubrecordSchema(F.UInt32("AbsoluteValue"))
-        {
-            Description = "Caravan Money Value"
-        };
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "CMNY", 4)] =
+            new SubrecordSchema(F.UInt32("AbsoluteValue"))
+            {
+                Description = "Caravan Money Value"
+            };
 
         // DATA - CSNO (56 bytes)
         schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "CSNO", 56)] = new SubrecordSchema(
@@ -545,10 +554,14 @@ internal static class SubrecordCellAndMiscSchemas
         schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "MSTT", 1)] = SubrecordSchema.ByteArray;
 
         // MSET (Media Set) schemas
-        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM1", "MSET", 4)] = SubrecordSchema.Simple4Byte("Music Track FormID");
-        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM8", "MSET", 4)] = SubrecordSchema.Simple4Byte("Music Track FormID");
-        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM9", "MSET", 4)] = SubrecordSchema.Simple4Byte("Music Track FormID");
-        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM0", "MSET", 4)] = SubrecordSchema.Simple4Byte("Music Track FormID");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM1", "MSET", 4)] =
+            SubrecordSchema.Simple4Byte("Music Track FormID");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM8", "MSET", 4)] =
+            SubrecordSchema.Simple4Byte("Music Track FormID");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM9", "MSET", 4)] =
+            SubrecordSchema.Simple4Byte("Music Track FormID");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM0", "MSET", 4)] =
+            SubrecordSchema.Simple4Byte("Music Track FormID");
         schemas[new SubrecordSchemaRegistry.SchemaKey("ANAM", "MSET", 4)] = SubrecordSchema.Simple4Byte("MSET FormID");
         schemas[new SubrecordSchemaRegistry.SchemaKey("BNAM", "MSET", 4)] = SubrecordSchema.Simple4Byte("MSET FormID");
         schemas[new SubrecordSchemaRegistry.SchemaKey("CNAM", "MSET", 4)] = SubrecordSchema.Simple4Byte("MSET FormID");
@@ -565,21 +578,36 @@ internal static class SubrecordCellAndMiscSchemas
         schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "MSET", 0)] = SubrecordSchema.Empty;
 
         // ALOC (Media Location Controller) schemas
-        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM1", "ALOC", 4)] = SubrecordSchema.Simple4Byte("Location Controller FormID");
-        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM2", "ALOC", 4)] = SubrecordSchema.Simple4Byte("Location Controller FormID");
-        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM3", "ALOC", 4)] = SubrecordSchema.Simple4Byte("Location Controller FormID");
-        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM4", "ALOC", 4)] = SubrecordSchema.Simple4Byte("Location Controller FormID");
-        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM5", "ALOC", 4)] = SubrecordSchema.Simple4Byte("Location Controller FormID");
-        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM6", "ALOC", 4)] = SubrecordSchema.Simple4Byte("Location Controller FormID");
-        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM7", "ALOC", 4)] = SubrecordSchema.Simple4Byte("Location Controller FormID");
-        schemas[new SubrecordSchemaRegistry.SchemaKey("GNAM", "ALOC", 4)] = SubrecordSchema.Simple4Byte("Location Controller FormID");
-        schemas[new SubrecordSchemaRegistry.SchemaKey("LNAM", "ALOC", 4)] = SubrecordSchema.Simple4Byte("Location Controller FormID");
-        schemas[new SubrecordSchemaRegistry.SchemaKey("HNAM", "ALOC", 4)] = new SubrecordSchema(F.FormId("Location Controller FormID"));
-        schemas[new SubrecordSchemaRegistry.SchemaKey("ZNAM", "ALOC", 4)] = new SubrecordSchema(F.FormId("Location Controller FormID"));
-        schemas[new SubrecordSchemaRegistry.SchemaKey("XNAM", "ALOC", 4)] = new SubrecordSchema(F.FormId("Location Controller FormID"));
-        schemas[new SubrecordSchemaRegistry.SchemaKey("YNAM", "ALOC", 4)] = new SubrecordSchema(F.FormId("Location Controller FormID"));
-        schemas[new SubrecordSchemaRegistry.SchemaKey("RNAM", "ALOC", 4)] = new SubrecordSchema(F.FormId("Location Controller FormID"));
-        schemas[new SubrecordSchemaRegistry.SchemaKey("FNAM", "ALOC", 4)] = SubrecordSchema.Simple4Byte("Location Controller Flags");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM1", "ALOC", 4)] =
+            SubrecordSchema.Simple4Byte("Location Controller FormID");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM2", "ALOC", 4)] =
+            SubrecordSchema.Simple4Byte("Location Controller FormID");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM3", "ALOC", 4)] =
+            SubrecordSchema.Simple4Byte("Location Controller FormID");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM4", "ALOC", 4)] =
+            SubrecordSchema.Simple4Byte("Location Controller FormID");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM5", "ALOC", 4)] =
+            SubrecordSchema.Simple4Byte("Location Controller FormID");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM6", "ALOC", 4)] =
+            SubrecordSchema.Simple4Byte("Location Controller FormID");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM7", "ALOC", 4)] =
+            SubrecordSchema.Simple4Byte("Location Controller FormID");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("GNAM", "ALOC", 4)] =
+            SubrecordSchema.Simple4Byte("Location Controller FormID");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("LNAM", "ALOC", 4)] =
+            SubrecordSchema.Simple4Byte("Location Controller FormID");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("HNAM", "ALOC", 4)] =
+            new SubrecordSchema(F.FormId("Location Controller FormID"));
+        schemas[new SubrecordSchemaRegistry.SchemaKey("ZNAM", "ALOC", 4)] =
+            new SubrecordSchema(F.FormId("Location Controller FormID"));
+        schemas[new SubrecordSchemaRegistry.SchemaKey("XNAM", "ALOC", 4)] =
+            new SubrecordSchema(F.FormId("Location Controller FormID"));
+        schemas[new SubrecordSchemaRegistry.SchemaKey("YNAM", "ALOC", 4)] =
+            new SubrecordSchema(F.FormId("Location Controller FormID"));
+        schemas[new SubrecordSchemaRegistry.SchemaKey("RNAM", "ALOC", 4)] =
+            new SubrecordSchema(F.FormId("Location Controller FormID"));
+        schemas[new SubrecordSchemaRegistry.SchemaKey("FNAM", "ALOC", 4)] =
+            SubrecordSchema.Simple4Byte("Location Controller Flags");
 
         // Other misc schemas
         schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "ACTI", 4)] = SubrecordSchema.Simple4Byte("Sound FormID");

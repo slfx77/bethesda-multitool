@@ -1,12 +1,12 @@
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.AI;
 using FalloutXbox360Utils.Core.Utils;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
 
 internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
-
     /// <summary>
     ///     Parse all AI Package (PACK) records from the scan result.
     ///     Only extracts location data (PLDT) needed for NPC spawn resolution.

@@ -1,4 +1,4 @@
-namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
 
 /// <summary>
 ///     Body Part Data (BPTD) record.

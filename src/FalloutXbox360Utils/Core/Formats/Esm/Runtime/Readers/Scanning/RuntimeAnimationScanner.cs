@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Text;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
@@ -38,6 +37,12 @@ internal sealed class RuntimeAnimationScanner(RuntimeMemoryContext context)
     private const int MaxFrameCount = 100_000;
     private const int MaxSoundCount = 100;
     private const int MaxAnimGroupType = 255;
+
+    /// <summary>
+    ///     Animation group type names from PDB enum (245 values, 0-244 + 255=None).
+    ///     Generated from cvdump types_full.txt ANIM_GROUP_* enum.
+    /// </summary>
+    private static readonly string[] AnimGroupNames = BuildAnimGroupNames();
 
     private readonly RuntimeMemoryContext _context = context;
 
@@ -146,7 +151,7 @@ internal sealed class RuntimeAnimationScanner(RuntimeMemoryContext context)
         return 0;
     }
 
-    private bool FastFilter(byte[] chunk, int offset, uint vtableVa)
+    private static bool FastFilter(byte[] chunk, int offset, uint vtableVa)
     {
         if (offset + TesAnimGroupSize > chunk.Length)
         {
@@ -237,12 +242,6 @@ internal sealed class RuntimeAnimationScanner(RuntimeMemoryContext context)
         return null;
     }
 
-    /// <summary>
-    ///     Animation group type names from PDB enum (245 values, 0-244 + 255=None).
-    ///     Generated from cvdump types_full.txt ANIM_GROUP_* enum.
-    /// </summary>
-    private static readonly string[] AnimGroupNames = BuildAnimGroupNames();
-
     private static string GetAnimGroupName(int type)
     {
         if (type == 255) return "None";
@@ -254,80 +253,127 @@ internal sealed class RuntimeAnimationScanner(RuntimeMemoryContext context)
     private static string[] BuildAnimGroupNames()
     {
         var names = new string[246];
-        names[0] = "Idle"; names[1] = "DynamicIdle"; names[2] = "SpecialIdle";
-        names[3] = "MoveForward"; names[4] = "MoveBack"; names[5] = "MoveLeft"; names[6] = "MoveRight";
-        names[7] = "FastForward"; names[8] = "FastBack"; names[9] = "FastLeft"; names[10] = "FastRight";
-        names[11] = "DodgeForward"; names[12] = "DodgeBack"; names[13] = "DodgeLeft"; names[14] = "DodgeRight";
-        names[15] = "TurnLeft"; names[16] = "TurnRight";
-        names[17] = "Aim"; names[18] = "AimUp"; names[19] = "AimDown";
-        names[20] = "AimIS"; names[21] = "AimISUp"; names[22] = "AimISDown";
-        names[23] = "Holster"; names[24] = "Equip"; names[25] = "Unequip";
+        names[0] = "Idle";
+        names[1] = "DynamicIdle";
+        names[2] = "SpecialIdle";
+        names[3] = "MoveForward";
+        names[4] = "MoveBack";
+        names[5] = "MoveLeft";
+        names[6] = "MoveRight";
+        names[7] = "FastForward";
+        names[8] = "FastBack";
+        names[9] = "FastLeft";
+        names[10] = "FastRight";
+        names[11] = "DodgeForward";
+        names[12] = "DodgeBack";
+        names[13] = "DodgeLeft";
+        names[14] = "DodgeRight";
+        names[15] = "TurnLeft";
+        names[16] = "TurnRight";
+        names[17] = "Aim";
+        names[18] = "AimUp";
+        names[19] = "AimDown";
+        names[20] = "AimIS";
+        names[21] = "AimISUp";
+        names[22] = "AimISDown";
+        names[23] = "Holster";
+        names[24] = "Equip";
+        names[25] = "Unequip";
         // Attack variants: Left(26-31), Right(32-37), 3(38-43), 4(44-49), 5(50-55),
         // 6(56-61), 7(62-67), 8(68-73), Loop(74-79), Spin(80-85), Spin2(86-91)
         string[] attackSuffixes = ["", "Up", "Down", "IS", "ISUp", "ISDown"];
-        string[] attackNames = ["AttackLeft", "AttackRight", "Attack3", "Attack4", "Attack5",
-            "Attack6", "Attack7", "Attack8", "AttackLoop", "AttackSpin", "AttackSpin2"];
+        string[] attackNames =
+        [
+            "AttackLeft", "AttackRight", "Attack3", "Attack4", "Attack5",
+            "Attack6", "Attack7", "Attack8", "AttackLoop", "AttackSpin", "AttackSpin2"
+        ];
         for (var a = 0; a < attackNames.Length; a++)
+        {
             for (var s = 0; s < 6; s++)
+            {
                 names[26 + a * 6 + s] = attackNames[a] + attackSuffixes[s];
+            }
+        }
         // Power attacks (92-101), PowerAttackStop (102)
-        names[92] = "AttackNormalPower"; names[93] = "AttackForwardPower"; names[94] = "AttackBackPower";
-        names[95] = "AttackLeftPower"; names[96] = "AttackRightPower";
-        names[97] = "AttackCustom1Power"; names[98] = "AttackCustom2Power"; names[99] = "AttackCustom3Power";
-        names[100] = "AttackCustom4Power"; names[101] = "AttackCustom5Power"; names[102] = "PowerAttackStop";
+        names[92] = "AttackNormalPower";
+        names[93] = "AttackForwardPower";
+        names[94] = "AttackBackPower";
+        names[95] = "AttackLeftPower";
+        names[96] = "AttackRightPower";
+        names[97] = "AttackCustom1Power";
+        names[98] = "AttackCustom2Power";
+        names[99] = "AttackCustom3Power";
+        names[100] = "AttackCustom4Power";
+        names[101] = "AttackCustom5Power";
+        names[102] = "PowerAttackStop";
         // PlaceMine (103-113)
         for (var s = 0; s < 6; s++) names[103 + s] = "PlaceMine" + attackSuffixes[s];
         for (var s = 0; s < 6; s++) names[109 + s] = "PlaceMine2" + attackSuffixes[s]; // actually 108
-        names[108] = "PlaceMine2"; names[109] = "PlaceMine2Up"; names[110] = "PlaceMine2Down";
-        names[111] = "PlaceMine2IS"; names[112] = "PlaceMine2ISUp"; names[113] = "PlaceMine2ISDown";
+        names[108] = "PlaceMine2";
+        names[109] = "PlaceMine2Up";
+        names[110] = "PlaceMine2Down";
+        names[111] = "PlaceMine2IS";
+        names[112] = "PlaceMine2ISUp";
+        names[113] = "PlaceMine2ISDown";
         // AttackThrow 1-8 (114-167)
-        string[] throwNames = ["AttackThrow", "AttackThrow2", "AttackThrow3", "AttackThrow4",
-            "AttackThrow5", "Attack9", "AttackThrow6", "AttackThrow7", "AttackThrow8"];
+        string[] throwNames =
+        [
+            "AttackThrow", "AttackThrow2", "AttackThrow3", "AttackThrow4",
+            "AttackThrow5", "Attack9", "AttackThrow6", "AttackThrow7", "AttackThrow8"
+        ];
         for (var t = 0; t < throwNames.Length; t++)
+        {
             for (var s = 0; s < 6; s++)
+            {
                 names[114 + t * 6 + s] = throwNames[t] + attackSuffixes[s];
-        names[168] = "CounterAttack"; names[169] = "Stomp";
-        names[170] = "BlockIdle"; names[171] = "BlockHit"; names[172] = "Recoil";
+            }
+        }
+        names[168] = "CounterAttack";
+        names[169] = "Stomp";
+        names[170] = "BlockIdle";
+        names[171] = "BlockHit";
+        names[172] = "Recoil";
         // Reload variants (173-199)
-        names[173] = "ReloadWStart"; names[174] = "ReloadXStart"; names[175] = "ReloadYStart";
-        names[176] = "ReloadZStart"; names[177] = "ReloadA";
-        string[] reloadLetters = ["B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","W","X","Y","Z"];
+        names[173] = "ReloadWStart";
+        names[174] = "ReloadXStart";
+        names[175] = "ReloadYStart";
+        names[176] = "ReloadZStart";
+        names[177] = "ReloadA";
+        string[] reloadLetters =
+        [
+            "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "W", "X", "Y", "Z"
+        ];
         for (var r = 0; r < reloadLetters.Length; r++) names[178 + r] = "Reload" + reloadLetters[r];
         // Jam variants (200-222)
-        string[] jamLetters = ["A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","W","X","Y","Z"];
+        string[] jamLetters =
+        [
+            "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "W", "X",
+            "Y", "Z"
+        ];
         for (var j = 0; j < jamLetters.Length; j++) names[200 + j] = "Jam" + jamLetters[j];
-        names[223] = "Stagger"; names[224] = "Death"; names[225] = "Talking"; names[226] = "PipBoy";
-        names[227] = "JumpStart"; names[228] = "JumpLoop"; names[229] = "JumpLand";
-        names[230] = "HandGrip1"; names[231] = "HandGrip2"; names[232] = "HandGrip3";
-        names[233] = "HandGrip4"; names[234] = "HandGrip5"; names[235] = "HandGrip6";
-        names[236] = "JumpLoopForward"; names[237] = "JumpLoopBackward";
-        names[238] = "JumpLoopLeft"; names[239] = "JumpLoopRight"; names[240] = "PipBoyChild";
-        names[241] = "JumpLandForward"; names[242] = "JumpLandBackward";
-        names[243] = "JumpLandLeft"; names[244] = "JumpLandRight"; names[245] = "Count";
+        names[223] = "Stagger";
+        names[224] = "Death";
+        names[225] = "Talking";
+        names[226] = "PipBoy";
+        names[227] = "JumpStart";
+        names[228] = "JumpLoop";
+        names[229] = "JumpLand";
+        names[230] = "HandGrip1";
+        names[231] = "HandGrip2";
+        names[232] = "HandGrip3";
+        names[233] = "HandGrip4";
+        names[234] = "HandGrip5";
+        names[235] = "HandGrip6";
+        names[236] = "JumpLoopForward";
+        names[237] = "JumpLoopBackward";
+        names[238] = "JumpLoopLeft";
+        names[239] = "JumpLoopRight";
+        names[240] = "PipBoyChild";
+        names[241] = "JumpLandForward";
+        names[242] = "JumpLandBackward";
+        names[243] = "JumpLandLeft";
+        names[244] = "JumpLandRight";
+        names[245] = "Count";
         return names;
     }
-}
-
-/// <summary>
-///     An animation group discovered in a memory dump via RTTI-based scanning.
-/// </summary>
-public record DiscoveredAnimation
-{
-    /// <summary>File offset of the TESAnimGroup struct in the dump.</summary>
-    public long FileOffset { get; init; }
-
-    /// <summary>Animation group type enum value (0-255).</summary>
-    public int GroupType { get; init; }
-
-    /// <summary>Human-readable animation group type name.</summary>
-    public required string GroupTypeName { get; init; }
-
-    /// <summary>Animation name string from pParentName pointer, if resolvable.</summary>
-    public string? Name { get; init; }
-
-    /// <summary>Number of keyframes in this animation.</summary>
-    public int FrameCount { get; init; }
-
-    /// <summary>Number of associated sound events.</summary>
-    public int SoundCount { get; init; }
 }

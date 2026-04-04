@@ -1,7 +1,7 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 
 /// <summary>
 ///     Placed object reference from REFR/ACHR/ACRE records.

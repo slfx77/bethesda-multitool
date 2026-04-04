@@ -1,7 +1,7 @@
 using System.Buffers;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
 
 /// <summary>
 ///     Base class for ESM record parsing handlers.

@@ -1,8 +1,6 @@
-using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
-using FalloutXbox360Utils.Core.Minidump;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Helpers;
@@ -70,7 +68,7 @@ public sealed class DmpSnippetExtractionRunner(SampleFileFixture samples)
         var reader = RuntimeStructReader.CreateWithAutoDetect(
             accessor, fileSize, minidumpInfo,
             refrEntries, npcEntries, worldEntries, cellEntries,
-            allEntries: allEntries);
+            allEntries);
 
         // NPC reads (RuntimeNpcDumpRegressionTests)
         foreach (var entry in npcEntries.Take(50))
@@ -285,7 +283,9 @@ public sealed class DmpSnippetExtractionRunner(SampleFileFixture samples)
         }
 
         // Generic record reads (covers remaining FormTypes via PDB layouts)
-        foreach (var entry in allEntries.Where(e => e.TesFormOffset.HasValue && !PdbStructLayouts.HasSpecializedReader(e.FormType)).Take(200))
+        foreach (var entry in allEntries
+                     .Where(e => e.TesFormOffset.HasValue && !PdbStructLayouts.HasSpecializedReader(e.FormType))
+                     .Take(200))
         {
             reader.ReadGenericRecord(entry);
         }

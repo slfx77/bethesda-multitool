@@ -1,4 +1,4 @@
-namespace FalloutXbox360Utils.Core.Formats.Esm;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Records;
 
 /// <summary>
 ///     Validates Editor ID strings extracted from Xbox 360 memory dumps.

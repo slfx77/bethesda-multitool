@@ -1,6 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 
 /// <summary>
 ///     Extracted REFR (placed object) with full placement data.

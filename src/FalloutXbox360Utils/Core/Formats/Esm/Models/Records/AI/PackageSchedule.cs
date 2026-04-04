@@ -1,4 +1,4 @@
-namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Models.Records.AI;
 
 /// <summary>
 ///     Package schedule from PSDT subrecord (8 bytes).

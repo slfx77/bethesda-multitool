@@ -1,5 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 
@@ -78,7 +79,8 @@ public sealed class RuntimeProbeConsistencyTests
             var probedPct = totalEntries > 0 ? 100.0 * totalProbed / totalEntries : 0;
             var defaultPct = totalEntries > 0 ? 100.0 * totalDefault / totalEntries : 0;
 
-            Log($"  {typeName,-6}: probed={totalProbed}/{totalEntries} ({probedPct:F1}%)  default={totalDefault}/{totalEntries} ({defaultPct:F1}%)  delta={totalProbed - totalDefault:+0;-0;0}");
+            Log(
+                $"  {typeName,-6}: probed={totalProbed}/{totalEntries} ({probedPct:F1}%)  default={totalDefault}/{totalEntries} ({defaultPct:F1}%)  delta={totalProbed - totalDefault:+0;-0;0}");
         }
 
         // Report probe shifts found
@@ -92,7 +94,7 @@ public sealed class RuntimeProbeConsistencyTests
             }
         }
 
-        await reportWriter.FlushAsync();
+        await reportWriter.FlushAsync(TestContext.Current.CancellationToken);
         Log($"\nReport saved to: {reportPath}");
     }
 
@@ -109,7 +111,7 @@ public sealed class RuntimeProbeConsistencyTests
         var probedReader = RuntimeStructReader.CreateWithAutoDetect(
             snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo,
             refrEntries, npcEntries, worldEntries, cellEntries,
-            allEntries: allEntries);
+            allEntries);
 
         // Create default reader (without allEntries — no probing)
         var defaultReader = RuntimeStructReader.CreateWithAutoDetect(

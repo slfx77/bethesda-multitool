@@ -1,4 +1,4 @@
-namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Models.Dialogue;
 
 /// <summary>
 ///     Static helpers for dialogue viewer logic, extracted for testability.
@@ -292,9 +292,10 @@ internal static class DialogueViewerHelper
             }
         }
 
-        // Fallback: find quest from the topic tree grouping
+        // Fallback: find quest from the topic tree grouping (match by FormID, not record equality)
+        var topicId = topic.TopicFormId;
         var quest = dialogueTree.QuestTrees.Values
-            .FirstOrDefault(q => q.Topics.Contains(topic));
+            .FirstOrDefault(q => q.Topics.Any(t => t.TopicFormId == topicId));
         return quest?.QuestFormId;
     }
 }

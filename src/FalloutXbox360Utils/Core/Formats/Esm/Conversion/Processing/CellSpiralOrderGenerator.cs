@@ -1,4 +1,4 @@
-namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion.Processing;
 
 /// <summary>
 ///     Generates center-spiral ordering for exterior cell block/sub-block iteration.

@@ -1,4 +1,4 @@
-namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 
 /// <summary>
 ///     Extracted LAND record with heightmap and texture data.

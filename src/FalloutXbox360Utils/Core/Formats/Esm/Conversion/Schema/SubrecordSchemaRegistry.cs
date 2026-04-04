@@ -527,7 +527,7 @@ public static class SubrecordSchemaRegistry
             ("NAM4", "MSET"),
             ("NAM5", "MSET"),
             ("NAM6", "MSET"),
-            ("NAM7", "MSET"),
+            ("NAM7", "MSET")
         ];
     }
 

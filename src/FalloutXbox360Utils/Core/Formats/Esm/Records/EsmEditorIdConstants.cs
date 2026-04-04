@@ -1,4 +1,4 @@
-namespace FalloutXbox360Utils.Core.Formats.Esm;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Records;
 
 /// <summary>
 ///     Constants for runtime Editor ID extraction: FormType-to-offset mappings for

@@ -2,9 +2,10 @@ using System.Buffers;
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 using FalloutXbox360Utils.Core.Utils;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
 
 /// <summary>
 ///     Handles parsing of KEYM, ARMO, MISC, and CONT records
@@ -12,7 +13,6 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 /// </summary>
 internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
-
     /// <summary>
     ///     Parse all Key records from the scan result.
     /// </summary>

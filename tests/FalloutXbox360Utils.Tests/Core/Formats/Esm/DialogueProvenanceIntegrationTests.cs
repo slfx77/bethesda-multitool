@@ -3,6 +3,7 @@ using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
+using FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
 using FalloutXbox360Utils.Core.Minidump;
 using Xunit;
 
@@ -56,10 +57,8 @@ public sealed class DialogueProvenanceIntegrationTests(SampleFileFixture samples
     {
         Assert.SkipWhen(_samples.Xbox360ProtoEsm is null, "Xbox 360 proto ESM not available");
 
-        var dialogue = await WithParsedEsmAsync(_samples.Xbox360ProtoEsm!, parsed =>
-        {
-            return parsed.Dialogues.FirstOrDefault(info => info.FormId == 0x000E88EF);
-        });
+        var dialogue = await WithParsedEsmAsync(_samples.Xbox360ProtoEsm!,
+            parsed => { return parsed.Dialogues.FirstOrDefault(info => info.FormId == 0x000E88EF); });
 
         Assert.NotNull(dialogue);
         Assert.Contains(

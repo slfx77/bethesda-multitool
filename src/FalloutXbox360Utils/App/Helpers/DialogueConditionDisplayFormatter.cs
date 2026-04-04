@@ -1,7 +1,7 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Script;
 
-namespace FalloutXbox360Utils;
+namespace FalloutXbox360Utils.App.Helpers;
 
 /// <summary>
 ///     Formats parsed INFO conditions and result-script metadata for the dialogue viewer.

@@ -1,12 +1,12 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using FalloutXbox360Utils.Core.Utils;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
 
 internal sealed class CreatureRecordHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
-
     /// <summary>
     ///     Parse all Creature records from the scan result.
     ///     Uses two-track approach: ESM records for subrecord detail + runtime C++ structs
@@ -16,7 +16,7 @@ internal sealed class CreatureRecordHandler(RecordParserContext context) : Recor
     {
         var creatures = ParseRecordList("CREA", 16384,
             (record, buffer) => ParseCreatureFromAccessor(record, buffer),
-            (record) => ParseCreatureFromScanResult(record));
+            record => ParseCreatureFromScanResult(record));
 
         Context.MergeRuntimeRecords(creatures, 0x2B, c => c.FormId,
             (reader, entry) => reader.ReadRuntimeCreature(entry), "creatures");

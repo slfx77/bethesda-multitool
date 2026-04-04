@@ -99,8 +99,10 @@ internal static class SubrecordWorldSchemas
             Description = "Navigation Door Portal"
         };
 
-        schemas[new SubrecordSchemaRegistry.SchemaKey("CNAM", "REFR", 4)] = SubrecordSchema.Simple4Byte("Audio Location");
-        schemas[new SubrecordSchemaRegistry.SchemaKey("NNAM", "REFR", 4)] = SubrecordSchema.Simple4Byte("Linked Ref Keyword FormID");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("CNAM", "REFR", 4)] =
+            SubrecordSchema.Simple4Byte("Audio Location");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("NNAM", "REFR", 4)] =
+            SubrecordSchema.Simple4Byte("Linked Ref Keyword FormID");
 
         // XPWR - Water Reflection (8 bytes)
         schemas[new SubrecordSchemaRegistry.SchemaKey("XPWR")] = new SubrecordSchema(

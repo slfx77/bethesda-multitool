@@ -1,4 +1,4 @@
-namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
 
 /// <summary>
 ///     A faction rank with male/female titles and insignia path.

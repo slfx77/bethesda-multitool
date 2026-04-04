@@ -3,7 +3,7 @@ using System.Text;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Records;
 
 /// <summary>
 ///     Reads BSStringT&lt;char&gt; strings from TESForm objects in Xbox 360 memory dumps.

@@ -1,6 +1,6 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
 
 /// <summary>
 ///     Handles dialogue-to-topic linking, speaker propagation, EditorID convention matching,
@@ -8,7 +8,6 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 /// </summary>
 internal sealed class DialogueTopicMerger(RecordParserContext context) : RecordHandlerBase(context)
 {
-
     /// <summary>
     ///     Link dialogue records to quests by matching EditorID naming conventions.
     ///     Fallout NV INFO EditorIDs follow patterns like "{QuestPrefix}Topic{NNN}"
@@ -161,8 +160,15 @@ internal sealed class DialogueTopicMerger(RecordParserContext context) : RecordH
                 continue;
             }
 
-            var attributedIndices = indices.Where(i => HasAnySpeaker(dialogues[i])).ToList();
-            var unattributedIndices = indices.Where(i => !HasAnySpeaker(dialogues[i])).ToList();
+            var attributedIndices = new List<int>();
+            var unattributedIndices = new List<int>();
+            foreach (var i in indices)
+            {
+                if (HasAnySpeaker(dialogues[i]))
+                    attributedIndices.Add(i);
+                else
+                    unattributedIndices.Add(i);
+            }
             if (attributedIndices.Count == 0 || unattributedIndices.Count == 0)
             {
                 continue;

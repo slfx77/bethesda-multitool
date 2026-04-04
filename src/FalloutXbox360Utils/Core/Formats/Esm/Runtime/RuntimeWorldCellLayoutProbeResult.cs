@@ -1,4 +1,4 @@
-namespace FalloutXbox360Utils.Core.Formats.Esm;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 
 internal sealed record RuntimeWorldCellLayoutProbeResult(
     RuntimeWorldCellLayout Layout,

@@ -404,7 +404,8 @@ internal static class SubrecordEffectSchemas
         };
 
         schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "IPCT", 4)] = SubrecordSchema.Simple4Byte("Impact Data");
-        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM1", "IPCT", 4)] = SubrecordSchema.Simple4Byte("Secondary Effect FormID");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM1", "IPCT", 4)] =
+            SubrecordSchema.Simple4Byte("Secondary Effect FormID");
         schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "IPCT", 4)] = SubrecordSchema.Simple4Byte("Impact Sound");
 
         // ========================================================================

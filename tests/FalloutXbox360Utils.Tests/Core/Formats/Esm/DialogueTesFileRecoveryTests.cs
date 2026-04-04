@@ -1,7 +1,11 @@
 using System.Buffers.Binary;
+using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
+using FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
@@ -109,14 +113,14 @@ public sealed class DialogueTesFileRecoveryTests
 
         merger.MergeRuntimeDialogueData(dialogues);
 
-        var recovered = Assert.Single(dialogues.Where(dialogue => dialogue.FormId == formIdB));
+        var recovered = Assert.Single(dialogues, dialogue => dialogue.FormId == formIdB);
         Assert.Equal(tesFileOffsetB, recovered.TesFileOffset);
         Assert.Equal(runtimeOffsetB, recovered.RuntimeStructOffset);
         Assert.True(recovered.HasResultScript);
         Assert.Single(recovered.ResultScripts);
         Assert.Equal("ShowBarterMenu", recovered.ResultScripts[0].SourceText);
 
-        var calibrator = Assert.Single(dialogues.Where(dialogue => dialogue.FormId == formIdA));
+        var calibrator = Assert.Single(dialogues, dialogue => dialogue.FormId == formIdA);
         Assert.Equal(rawOffsetA, calibrator.RawRecordOffset);
         Assert.Equal(tesFileOffsetA, calibrator.TesFileOffset);
     }
@@ -153,13 +157,15 @@ public sealed class DialogueTesFileRecoveryTests
         var context = CreateContext(new SparseMemoryAccessor(), 0x80);
         var result = DialogueTesFileScriptRecovery.TryRecover(
             context,
-            [new DialogueTesFileMappingSegment
-            {
-                BaseVirtualAddress = HeapBaseVa,
-                MinTesFileOffset = 0x100,
-                MaxTesFileOffset = 0x100,
-                MatchCount = 1
-            }],
+            [
+                new DialogueTesFileMappingSegment
+                {
+                    BaseVirtualAddress = HeapBaseVa,
+                    MinTesFileOffset = 0x100,
+                    MaxTesFileOffset = 0x100,
+                    MatchCount = 1
+                }
+            ],
             0x100,
             0x0000BEEF,
             "InfoTest");
@@ -201,7 +207,7 @@ public sealed class DialogueTesFileRecoveryTests
     public void TryRecover_WhenRecordIsCompressed_ReturnsCompressedRecord()
     {
         var accessor = new SparseMemoryAccessor();
-        accessor.AddRange(0x100, BuildHeader("INFO", 0x0000BEEF, flags: 0x00040000));
+        accessor.AddRange(0x100, BuildHeader("INFO", 0x0000BEEF, 0x00040000));
         var result = DialogueTesFileScriptRecovery.TryRecover(
             CreateContext(accessor, 0x2000),
             [CreateSingleSegment(0x100)],
@@ -293,14 +299,15 @@ public sealed class DialogueTesFileRecoveryTests
         var buffer = new byte[RuntimeDialogueLayouts.InfoLayout.StructSize];
         buffer[4] = 0x45;
         BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan(12), formId);
-        BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan(RuntimeDialogueLayouts.InfoFileOffsetOffset), tesFileOffset);
+        BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan(RuntimeDialogueLayouts.InfoFileOffsetOffset),
+            tesFileOffset);
         return buffer;
     }
 
     private static byte[] BuildHeader(string signature, uint formId, uint flags = 0, uint dataSize = 0)
     {
         var buffer = new byte[24];
-        System.Text.Encoding.ASCII.GetBytes(signature, buffer.AsSpan(0, 4));
+        Encoding.ASCII.GetBytes(signature, buffer.AsSpan(0, 4));
         BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan(4), dataSize);
         BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan(8), flags);
         BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan(12), formId);
@@ -311,14 +318,14 @@ public sealed class DialogueTesFileRecoveryTests
     {
         var dataSize = subrecords.Sum(subrecord => 6 + subrecord.data.Length);
         var buffer = new byte[24 + dataSize];
-        System.Text.Encoding.ASCII.GetBytes("INFO", buffer.AsSpan(0, 4));
+        Encoding.ASCII.GetBytes("INFO", buffer.AsSpan(0, 4));
         BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan(4), (uint)dataSize);
         BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan(12), formId);
 
         var offset = 24;
         foreach (var (sig, data) in subrecords)
         {
-            var sigBytes = System.Text.Encoding.ASCII.GetBytes(sig);
+            var sigBytes = Encoding.ASCII.GetBytes(sig);
             buffer[offset] = sigBytes[3];
             buffer[offset + 1] = sigBytes[2];
             buffer[offset + 2] = sigBytes[1];

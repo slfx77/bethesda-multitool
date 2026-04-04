@@ -1,4 +1,4 @@
-namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 
 /// <summary>
 ///     Runtime worldspace data extracted from a TESWorldSpace struct in an Xbox 360 memory dump.

@@ -1,4 +1,4 @@
-namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Models.Records.AI;
 
 /// <summary>
 ///     Package target from PTDT/PTD2 subrecord (16 bytes).

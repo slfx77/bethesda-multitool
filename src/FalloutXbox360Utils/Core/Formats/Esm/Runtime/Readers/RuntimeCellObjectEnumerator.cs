@@ -1,8 +1,8 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
-using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Utils;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers;
 
 /// <summary>
 ///     Reads TESObjectCELL runtime structs from Xbox 360 memory dumps.
@@ -11,9 +11,9 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 /// </summary>
 internal sealed class RuntimeCellObjectEnumerator
 {
+    private readonly Func<int?, int?> _adjustCellFieldOffset;
     private readonly RuntimeMemoryContext _context;
     private readonly RuntimePdbFieldAccessor _fields;
-    private readonly Func<int?, int?> _adjustCellFieldOffset;
 
     internal RuntimeCellObjectEnumerator(
         RuntimeMemoryContext context,
@@ -99,12 +99,14 @@ internal sealed class RuntimeCellObjectEnumerator
             return null;
         }
 
-        var flagsOffset = _adjustCellFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "cCellFlags", "TESObjectCELL"));
+        var flagsOffset =
+            _adjustCellFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "cCellFlags", "TESObjectCELL"));
         var waterHeightOffset =
             _adjustCellFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "fWaterHeight", "TESObjectCELL"));
         var worldspaceOffset =
             _adjustCellFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "pWorldSpace", "TESObjectCELL"));
-        var landOffset = _adjustCellFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "pCellLand", "TESObjectCELL"));
+        var landOffset =
+            _adjustCellFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "pCellLand", "TESObjectCELL"));
         var referenceListOffset =
             _adjustCellFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "listReferences", "TESObjectCELL"));
 
@@ -114,7 +116,8 @@ internal sealed class RuntimeCellObjectEnumerator
 
         // pLightingTemplate — BGSLightingTemplate pointer (FormType 0x67)
         var lightingTemplateOffset =
-            _adjustCellFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "pLightingTemplate", "TESObjectCELL"));
+            _adjustCellFieldOffset(
+                RuntimePdbFieldAccessor.FindFieldOffset(layout, "pLightingTemplate", "TESObjectCELL"));
         var lightingTemplateFormId = lightingTemplateOffset.HasValue
             ? _fields.ReadPointerToFormId(buffer, lightingTemplateOffset.Value, 0x67)
             : null;
@@ -317,21 +320,6 @@ internal sealed class RuntimeCellObjectEnumerator
         return RuntimeMemoryContext.IsNormalFloat(value) ? value : null;
     }
 
-    #region BSExtraData Linked List (Cell ExtraDataList)
-
-    private const int CellExtraEtypeOffset = 4;
-    private const int CellExtraNextOffset = 8;
-    private const int CellExtraPayloadOffset = 12;
-    private const int CellExtraNodeReadSize = 16;
-    private const int MaxCellExtraListNodes = 64;
-
-    private const byte ExtraCellMusicTypeCode = 0x07;
-    private const byte ExtraCellImageSpaceCode = 0x59;
-    private const byte ExtraEncounterZoneCode = 0x74;
-    private const byte ExtraCellAcousticSpaceCode = 0x81;
-
-    #endregion
-
     internal sealed record RuntimeCellProbeSnapshot(
         uint FormId,
         string? FullName,
@@ -346,4 +334,19 @@ internal sealed class RuntimeCellObjectEnumerator
         uint? MusicTypeFormId = null,
         uint? AcousticSpaceFormId = null,
         uint? ImageSpaceFormId = null);
+
+    #region BSExtraData Linked List (Cell ExtraDataList)
+
+    private const int CellExtraEtypeOffset = 4;
+    private const int CellExtraNextOffset = 8;
+    private const int CellExtraPayloadOffset = 12;
+    private const int CellExtraNodeReadSize = 16;
+    private const int MaxCellExtraListNodes = 64;
+
+    private const byte ExtraCellMusicTypeCode = 0x07;
+    private const byte ExtraCellImageSpaceCode = 0x59;
+    private const byte ExtraEncounterZoneCode = 0x74;
+    private const byte ExtraCellAcousticSpaceCode = 0x81;
+
+    #endregion
 }

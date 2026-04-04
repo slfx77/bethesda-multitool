@@ -1,6 +1,8 @@
 using System.CommandLine;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion;
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Processing;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI.Commands.Esm;

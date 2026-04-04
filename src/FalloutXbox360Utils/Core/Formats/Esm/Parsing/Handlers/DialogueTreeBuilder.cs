@@ -1,6 +1,7 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Dialogue;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
 
 /// <summary>
 ///     Builds hierarchical dialogue trees: Quest -> Topic -> INFO chains with cross-topic links.
@@ -9,7 +10,6 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 /// </summary>
 internal sealed class DialogueTreeBuilder(RecordParserContext context) : RecordHandlerBase(context)
 {
-
     /// <summary>
     ///     Build hierarchical dialogue trees from dialogue, topic, and quest records.
     /// </summary>

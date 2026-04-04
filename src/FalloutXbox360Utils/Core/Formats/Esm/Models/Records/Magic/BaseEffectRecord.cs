@@ -1,4 +1,4 @@
-namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Magic;
 
 /// <summary>
 ///     Parsed Base Effect (MGEF) record.

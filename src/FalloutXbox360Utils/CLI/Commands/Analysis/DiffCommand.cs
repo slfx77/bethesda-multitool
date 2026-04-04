@@ -1,6 +1,5 @@
 using System.CommandLine;
 using System.Globalization;
-using FalloutXbox360Utils.CLI.Shared;
 using FalloutXbox360Utils.Core;
 using Spectre.Console;
 

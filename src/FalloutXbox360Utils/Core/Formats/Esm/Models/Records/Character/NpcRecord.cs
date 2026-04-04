@@ -1,6 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
 
 /// <summary>
 ///     Parsed NPC record.

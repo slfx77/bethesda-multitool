@@ -1,7 +1,7 @@
 using System.CommandLine;
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Scanning;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Core.Minidump;
 using Spectre.Console;
 
@@ -66,7 +66,8 @@ public static class AnimationsCommand
 
             if (vtableVa == 0)
             {
-                AnsiConsole.MarkupLine("[yellow]TESAnimGroup class not found in RTTI census — no animations to discover.[/]");
+                AnsiConsole.MarkupLine(
+                    "[yellow]TESAnimGroup class not found in RTTI census — no animations to discover.[/]");
                 return;
             }
 

@@ -3,6 +3,8 @@ using System.IO.MemoryMappedFiles;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
+using FalloutXbox360Utils.Core.Formats.Esm.Records;
 
 namespace FalloutXbox360Utils.Tests.Helpers;
 
@@ -93,7 +95,7 @@ internal sealed class EsmTestFileBuilder
         var grupSize = 24 + contentSize;
 
         var grup = new byte[grupSize];
-        WriteGrupHeader(grup, 0, (uint)grupSize, label, grupType: 0);
+        WriteGrupHeader(grup, 0, (uint)grupSize, label, 0);
 
         var offset = 24;
         foreach (var record in records)

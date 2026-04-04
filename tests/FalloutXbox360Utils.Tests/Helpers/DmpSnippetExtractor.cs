@@ -3,7 +3,7 @@ using System.IO.MemoryMappedFiles;
 using System.Text.Json;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Core.Minidump;
 
 namespace FalloutXbox360Utils.Tests.Helpers;
@@ -21,6 +21,7 @@ namespace FalloutXbox360Utils.Tests.Helpers;
 internal static class DmpSnippetExtractor
 {
     private static readonly JsonSerializerOptions s_jsonOptions = new() { WriteIndented = false };
+
     /// <summary>
     ///     Extract a snippet from a real DMP file by running <paramref name="testAction" />.
     ///     Saves the snippet binary and JSON manifest to <paramref name="outputDir" />.
@@ -130,71 +131,3 @@ internal static class DmpSnippetExtractor
         };
     }
 }
-
-#region Manifest Models
-
-internal sealed class DmpSnippetManifest
-{
-    public required string SourceFileName { get; init; }
-    public long SourceFileSize { get; init; }
-    public required DmpSnippetMinidumpInfo MinidumpInfo { get; init; }
-    public required List<RuntimeEditorIdEntry> RuntimeEditorIds { get; init; }
-    public required List<RuntimeEditorIdEntry> RuntimeRefrFormEntries { get; init; }
-    public required Dictionary<uint, string> FormIdMap { get; init; }
-    public required List<DmpSnippetRange> Ranges { get; init; }
-}
-
-internal sealed class DmpSnippetMinidumpInfo
-{
-    public bool IsValid { get; init; }
-    public ushort ProcessorArchitecture { get; init; }
-    public required List<DmpSnippetModule> Modules { get; init; }
-    public required List<DmpSnippetMemoryRegion> MemoryRegions { get; init; }
-
-    public MinidumpInfo ToMinidumpInfo()
-    {
-        return new MinidumpInfo
-        {
-            IsValid = IsValid,
-            ProcessorArchitecture = ProcessorArchitecture,
-            Modules = Modules.Select(m => new MinidumpModule
-            {
-                Name = m.Name,
-                BaseAddress = m.BaseAddress,
-                Size = m.Size,
-                Checksum = m.Checksum,
-                TimeDateStamp = m.TimeDateStamp
-            }).ToList(),
-            MemoryRegions = MemoryRegions.Select(r => new MinidumpMemoryRegion
-            {
-                VirtualAddress = r.VirtualAddress,
-                Size = r.Size,
-                FileOffset = r.FileOffset
-            }).ToList()
-        };
-    }
-}
-
-internal sealed class DmpSnippetModule
-{
-    public required string Name { get; init; }
-    public long BaseAddress { get; init; }
-    public int Size { get; init; }
-    public uint Checksum { get; init; }
-    public uint TimeDateStamp { get; init; }
-}
-
-internal sealed class DmpSnippetMemoryRegion
-{
-    public long VirtualAddress { get; init; }
-    public long Size { get; init; }
-    public long FileOffset { get; init; }
-}
-
-internal sealed class DmpSnippetRange
-{
-    public long Offset { get; init; }
-    public int Length { get; init; }
-}
-
-#endregion

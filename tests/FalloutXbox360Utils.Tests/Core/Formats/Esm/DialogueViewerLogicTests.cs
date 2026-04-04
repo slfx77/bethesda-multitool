@@ -1,4 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Dialogue;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm;

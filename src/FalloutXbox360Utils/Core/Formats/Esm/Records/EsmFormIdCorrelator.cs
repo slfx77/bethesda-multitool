@@ -2,7 +2,7 @@ using System.Buffers;
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Utils;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Records;
 
 /// <summary>
 ///     Correlates ESM FormIDs to Editor ID names by scanning backward from EDID subrecords

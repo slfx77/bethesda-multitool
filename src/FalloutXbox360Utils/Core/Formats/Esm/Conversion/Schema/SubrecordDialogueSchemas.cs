@@ -36,7 +36,8 @@ internal static class SubrecordDialogueSchemas
         };
 
         // INDX in QUST is already little-endian on Xbox 360 - DO NOT SWAP!
-        schemas[new SubrecordSchemaRegistry.SchemaKey("INDX", "QUST", 2)] = new SubrecordSchema(F.UInt16LittleEndian("Quest Index"));
+        schemas[new SubrecordSchemaRegistry.SchemaKey("INDX", "QUST", 2)] =
+            new SubrecordSchema(F.UInt16LittleEndian("Quest Index"));
         schemas[new SubrecordSchemaRegistry.SchemaKey("QSDT", "QUST", 1)] = SubrecordSchema.ByteArray;
 
         // ========================================================================
@@ -61,8 +62,10 @@ internal static class SubrecordDialogueSchemas
         // DATA - INFO (4 bytes)
         schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "INFO", 4)] = SubrecordSchema.ByteArray;
 
-        schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "INFO", 4)] = SubrecordSchema.Simple4Byte("Response Type");
-        schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "INFO", 4)] = SubrecordSchema.Simple4Byte("Speaker FormID");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "INFO", 4)] =
+            SubrecordSchema.Simple4Byte("Response Type");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "INFO", 4)] =
+            SubrecordSchema.Simple4Byte("Speaker FormID");
         schemas[new SubrecordSchemaRegistry.SchemaKey("NEXT", "INFO", 0)] = SubrecordSchema.ByteArray;
 
         // ========================================================================
@@ -85,7 +88,8 @@ internal static class SubrecordDialogueSchemas
         // DATA - NOTE (1 byte) - Note Type
         schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "NOTE", 1)] = SubrecordSchema.ByteArray;
         schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "NOTE", 4)] = SubrecordSchema.Simple4Byte("Sound FormID");
-        schemas[new SubrecordSchemaRegistry.SchemaKey("ONAM", "NOTE", 4)] = SubrecordSchema.Simple4Byte("Note Object FormID");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("ONAM", "NOTE", 4)] =
+            SubrecordSchema.Simple4Byte("Note Object FormID");
 
         // ========================================================================
         // TERMINAL SCHEMAS (TERM)
@@ -100,7 +104,8 @@ internal static class SubrecordDialogueSchemas
         // MESSAGE SCHEMAS (MESG)
         // ========================================================================
 
-        schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "MESG", 4)] = SubrecordSchema.Simple4Byte("Message Flags");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "MESG", 4)] =
+            SubrecordSchema.Simple4Byte("Message Flags");
 
         // ========================================================================
         // SCRIPT SCHEMAS (SCPT)
@@ -173,7 +178,8 @@ internal static class SubrecordDialogueSchemas
             F.UInt16("SpecialDataThree"),
             F.Padding(2));
 
-        schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "CHAL", 4)] = SubrecordSchema.Simple4Byte("Challenge Sound");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "CHAL", 4)] =
+            SubrecordSchema.Simple4Byte("Challenge Sound");
 
         // ========================================================================
         // CAMERA SCHEMAS (CAMS, CPTH)
@@ -205,7 +211,8 @@ internal static class SubrecordDialogueSchemas
 
         // DATA - CPTH (1 byte)
         schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "CPTH", 1)] = SubrecordSchema.ByteArray;
-        schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "CPTH", 4)] = SubrecordSchema.Simple4Byte("Camera Path Sound");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "CPTH", 4)] =
+            SubrecordSchema.Simple4Byte("Camera Path Sound");
 
         // ========================================================================
         // PACKAGE SCHEMAS (PACK)
@@ -300,7 +307,8 @@ internal static class SubrecordDialogueSchemas
             Description = "Package Use Weapon Data"
         };
 
-        schemas[new SubrecordSchemaRegistry.SchemaKey("CNAM", "PACK", 4)] = SubrecordSchema.Simple4Byte("Combat Style FormID");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("CNAM", "PACK", 4)] =
+            SubrecordSchema.Simple4Byte("Combat Style FormID");
         // PKPT - PDB: PACK_PATROL_DATA (2 individual bools: bRepeatable, bStartingLocationAtLinkedRef)
         schemas[new SubrecordSchemaRegistry.SchemaKey("PKPT", "PACK", 2)] = SubrecordSchema.ByteArray;
         schemas[new SubrecordSchemaRegistry.SchemaKey("PKAM", "PACK", 0)] = SubrecordSchema.ByteArray;

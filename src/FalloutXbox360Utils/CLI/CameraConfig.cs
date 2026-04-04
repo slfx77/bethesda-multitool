@@ -55,6 +55,7 @@ internal sealed class CameraConfig
             {
                 elevation = ElevationDeg;
             }
+
             return views.Select(v => (v.Suffix, v.Azimuth + defaultAzimuth, elevation)).ToArray();
         }
 

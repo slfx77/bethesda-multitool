@@ -1,6 +1,4 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
-
-namespace FalloutXbox360Utils;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
 ///     Builds a FormID to ObjectBounds lookup from all record types that have OBND.

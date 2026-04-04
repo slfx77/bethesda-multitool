@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
-using static FalloutXbox360Utils.Core.Formats.Esm.RuntimeMemoryContext;
+using static FalloutXbox360Utils.Core.Formats.Esm.Runtime.RuntimeMemoryContext;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 
 /// <summary>
 ///     Collects BSStringT read failure statistics across all runtime struct readers.

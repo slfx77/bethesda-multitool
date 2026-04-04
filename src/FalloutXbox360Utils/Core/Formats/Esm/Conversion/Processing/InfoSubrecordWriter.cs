@@ -1,6 +1,8 @@
 using System.Buffers.Binary;
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Indexing;
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Models;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion.Processing;
 
 /// <summary>
 ///     Handles writing and converting INFO subrecords during Xbox 360 ESM conversion.

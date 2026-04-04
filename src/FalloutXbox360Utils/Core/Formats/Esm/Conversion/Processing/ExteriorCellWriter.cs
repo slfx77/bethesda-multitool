@@ -1,6 +1,8 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Indexing;
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Models;
 using static FalloutXbox360Utils.Core.Formats.Esm.Conversion.EsmEndianHelpers;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion.Processing;
 
 /// <summary>
 ///     Handles writing exterior cell GRUP structures (world children, block/sub-block groups)

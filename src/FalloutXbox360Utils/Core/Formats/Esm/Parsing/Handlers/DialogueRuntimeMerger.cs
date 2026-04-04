@@ -1,6 +1,8 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Dialogue;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
 
 /// <summary>
 ///     Merges runtime DMP data into dialogue and topic records. Handles runtime hash table
@@ -8,7 +10,6 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 /// </summary>
 internal sealed class DialogueRuntimeMerger(RecordParserContext context) : RecordHandlerBase(context)
 {
-
     private List<DialogueTesFileMappingSegment> _tesFileSegments = [];
 
     /// <summary>

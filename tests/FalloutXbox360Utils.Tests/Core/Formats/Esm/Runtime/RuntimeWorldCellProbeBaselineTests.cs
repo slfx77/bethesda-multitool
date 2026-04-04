@@ -1,5 +1,6 @@
 using System.Text.Json;
 using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 

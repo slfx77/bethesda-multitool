@@ -1,4 +1,4 @@
-namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 
 /// <summary>
 ///     VHGT heightmap data from a LAND record.

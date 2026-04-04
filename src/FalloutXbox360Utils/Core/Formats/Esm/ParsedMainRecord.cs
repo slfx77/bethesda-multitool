@@ -1,3 +1,5 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
+
 namespace FalloutXbox360Utils.Core.Formats.Esm;
 
 /// <summary>

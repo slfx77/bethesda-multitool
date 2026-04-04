@@ -1,8 +1,18 @@
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Dialogue;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.AI;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Magic;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers;
 using FalloutXbox360Utils.Core.Minidump;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 
 /// <summary>
 ///     Reader for runtime game structures in Xbox 360 memory dumps.
@@ -27,13 +37,13 @@ public sealed class RuntimeStructReader
     private readonly RuntimeItemReader _items;
     private readonly RuntimeMagicReader _magic;
     private readonly RuntimeMessageReader _messages;
+    private readonly RuntimeMusicTypeReader _musicTypes;
     private readonly RuntimePackageReader _packages;
     private readonly RuntimeRaceReader _races;
     private readonly RuntimeRecipeReader _recipes;
     private readonly RuntimeRefrReader _refrs;
     private readonly RuntimeReputationReader _reputations;
     private readonly RuntimeScriptReader _scripts;
-    private readonly RuntimeMusicTypeReader _musicTypes;
     private readonly RuntimeSoundReader _sounds;
     private readonly RuntimeWeaponModReader _weaponMods;
     private readonly RuntimeWorldReader _world;
@@ -158,20 +168,6 @@ public sealed class RuntimeStructReader
             probeResults);
     }
 
-    #region Effects
-
-    public ProjectilePhysicsData? ReadProjectilePhysics(long fileOffset, uint expectedFormId)
-    {
-        return _effects.ReadProjectilePhysics(fileOffset, expectedFormId);
-    }
-
-    public ProjectileRecord? ReadRuntimeProjectile(RuntimeEditorIdEntry entry)
-    {
-        return _effects.ReadRuntimeProjectile(entry);
-    }
-
-    #endregion
-
     #region Scripts
 
     public RuntimeScriptData? ReadRuntimeScript(RuntimeEditorIdEntry entry)
@@ -231,6 +227,20 @@ public sealed class RuntimeStructReader
     public ReputationRecord? ReadRuntimeReputation(RuntimeEditorIdEntry entry)
     {
         return _reputations.ReadRuntimeReputation(entry);
+    }
+
+    #endregion
+
+    #region Effects
+
+    public ProjectilePhysicsData? ReadProjectilePhysics(long fileOffset, uint expectedFormId)
+    {
+        return _effects.ReadProjectilePhysics(fileOffset, expectedFormId);
+    }
+
+    public ProjectileRecord? ReadRuntimeProjectile(RuntimeEditorIdEntry entry)
+    {
+        return _effects.ReadRuntimeProjectile(entry);
     }
 
     #endregion

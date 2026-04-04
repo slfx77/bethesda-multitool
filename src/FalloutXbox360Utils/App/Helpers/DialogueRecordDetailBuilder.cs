@@ -1,4 +1,7 @@
+using FalloutXbox360Utils.App.Helpers;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Dialogue;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Subtitles;
 
 namespace FalloutXbox360Utils;

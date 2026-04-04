@@ -1,7 +1,7 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Utils;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 
 /// <summary>
 ///     Parsed subrecord.

@@ -3,6 +3,9 @@ using System.IO.Compression;
 using System.Text.Json;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
+using FalloutXbox360Utils.Core.Formats.Esm.Records;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Core.Minidump;
 
 namespace FalloutXbox360Utils.Tests.Helpers;
@@ -13,18 +16,7 @@ namespace FalloutXbox360Utils.Tests.Helpers;
 /// </summary>
 internal sealed class DmpSnippetReader
 {
-    public SparseMemoryAccessor Accessor { get; }
-    public MinidumpInfo MinidumpInfo { get; }
-    public long FileSize { get; }
-    public List<RuntimeEditorIdEntry> RuntimeEditorIds { get; }
-    public List<RuntimeEditorIdEntry> RuntimeRefrFormEntries { get; }
-    public Dictionary<uint, string> FormIdMap { get; }
-
-    /// <summary>
-    ///     Full ESM record scan result, populated externally when available.
-    ///     Needed by tests that use <see cref="RecordParser" />.
-    /// </summary>
-    public EsmRecordScanResult? ScanResult { get; set; }
+    private static readonly ConcurrentDictionary<string, Lazy<Task<DmpSnippetReader>>> SnippetCache = new();
 
     private DmpSnippetReader(
         SparseMemoryAccessor accessor,
@@ -40,7 +32,18 @@ internal sealed class DmpSnippetReader
         FormIdMap = manifest.FormIdMap;
     }
 
-    private static readonly ConcurrentDictionary<string, Lazy<Task<DmpSnippetReader>>> SnippetCache = new();
+    public SparseMemoryAccessor Accessor { get; }
+    public MinidumpInfo MinidumpInfo { get; }
+    public long FileSize { get; }
+    public List<RuntimeEditorIdEntry> RuntimeEditorIds { get; }
+    public List<RuntimeEditorIdEntry> RuntimeRefrFormEntries { get; }
+    public Dictionary<uint, string> FormIdMap { get; }
+
+    /// <summary>
+    ///     Full ESM record scan result, populated externally when available.
+    ///     Needed by tests that use <see cref="RecordParser" />.
+    /// </summary>
+    public EsmRecordScanResult? ScanResult { get; set; }
 
     /// <summary>
     ///     Load a snippet from disk, caching the result across all tests in the run.
@@ -113,7 +116,7 @@ internal sealed class DmpSnippetReader
             npcEntries,
             worldEntries,
             cellEntries,
-            allEntries: RuntimeEditorIds);
+            RuntimeEditorIds);
     }
 
     /// <summary>

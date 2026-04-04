@@ -1,4 +1,3 @@
-using System.CommandLine;
 using FalloutXbox360Utils.CLI.Commands.Dialogue;
 using Xunit;
 

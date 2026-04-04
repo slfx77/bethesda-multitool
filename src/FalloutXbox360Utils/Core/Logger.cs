@@ -80,7 +80,7 @@ public sealed class Logger
     /// <summary>
     ///     Set a custom output writer (for testing). When set, bypasses Spectre.Console.
     /// </summary>
-    public void SetOutput(TextWriter writer)
+    public static void SetOutput(TextWriter writer)
     {
         CustomOutput.Value = writer;
     }

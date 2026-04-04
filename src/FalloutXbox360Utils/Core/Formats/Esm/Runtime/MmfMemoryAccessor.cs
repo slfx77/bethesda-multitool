@@ -1,6 +1,6 @@
 using System.IO.MemoryMappedFiles;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 
 /// <summary>
 ///     Default <see cref="IMemoryAccessor" /> backed by a <see cref="MemoryMappedViewAccessor" />.

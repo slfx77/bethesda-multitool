@@ -1,7 +1,8 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Magic;
 using FalloutXbox360Utils.Core.Utils;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
 
 /// <summary>
 ///     Handles parsing of combat-related effect records: Projectiles (PROJ) and Explosions (EXPL).
@@ -9,7 +10,6 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 /// </summary>
 internal sealed class CombatEffectHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
-
     #region Explosions
 
     /// <summary>

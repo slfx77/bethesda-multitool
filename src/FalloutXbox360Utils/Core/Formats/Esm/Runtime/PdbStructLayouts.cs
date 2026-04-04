@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 
 /// <summary>
 ///     Loads and caches PDB-derived struct layouts from the embedded JSON resource.

@@ -1,8 +1,9 @@
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 using FalloutXbox360Utils.Core.Utils;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
 
 /// <summary>
 ///     Handles parsing of ALCH (consumable/aid/food) and AMMO records
@@ -10,7 +11,6 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 /// </summary>
 internal sealed class ConsumableRecordHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
-
     #region ParseAmmo
 
     /// <summary>

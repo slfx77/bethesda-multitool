@@ -1,5 +1,6 @@
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 
 namespace FalloutXbox360Utils.Tests.Helpers;
 
@@ -13,14 +14,6 @@ internal sealed class RecordingMemoryAccessor(MemoryMappedViewAccessor inner) : 
     private readonly Lock _lock = new();
     private readonly List<(long Offset, int Count)> _reads = [];
 
-    public IReadOnlyList<(long Offset, int Count)> GetRecordedReads()
-    {
-        lock (_lock)
-        {
-            return _reads.ToList();
-        }
-    }
-
     public int ReadArray(long position, byte[] array, int offset, int count)
     {
         lock (_lock)
@@ -29,6 +22,14 @@ internal sealed class RecordingMemoryAccessor(MemoryMappedViewAccessor inner) : 
         }
 
         return inner.ReadArray(position, array, offset, count);
+    }
+
+    public IReadOnlyList<(long Offset, int Count)> GetRecordedReads()
+    {
+        lock (_lock)
+        {
+            return _reads.ToList();
+        }
     }
 
     /// <summary>

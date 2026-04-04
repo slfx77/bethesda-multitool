@@ -1,8 +1,9 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
-using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Utils;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers;
 
 /// <summary>
 ///     Reader for TESWorldSpace and TESObjectCELL runtime structs from Xbox 360 memory dumps.
@@ -11,12 +12,18 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 /// </summary>
 internal sealed class RuntimeCellReader
 {
+    #region TESObjectCELL Struct Layout
+
+    private const int CellShiftStartOffset = 52;
+
+    #endregion
+
     private readonly bool _allowStructuralReads;
+    private readonly RuntimeCellObjectEnumerator _cellEnumerator;
+    private readonly RuntimeCellMapWalker _cellMapWalker;
     private readonly RuntimeMemoryContext _context;
     private readonly RuntimePdbFieldAccessor _fields;
     private readonly RuntimeWorldCellLayout _layout;
-    private readonly RuntimeCellObjectEnumerator _cellEnumerator;
-    private readonly RuntimeCellMapWalker _cellMapWalker;
 
     internal RuntimeCellReader(
         RuntimeMemoryContext context,
@@ -27,6 +34,24 @@ internal sealed class RuntimeCellReader
             ResolveLayout(useProtoOffsets, layoutProbe),
             ResolveAllowStructuralReads(useProtoOffsets, layoutProbe))
     {
+    }
+
+    internal RuntimeCellReader(RuntimeMemoryContext context, RuntimeWorldCellLayout layout)
+        : this(context, layout, true)
+    {
+    }
+
+    private RuntimeCellReader(
+        RuntimeMemoryContext context,
+        RuntimeWorldCellLayout layout,
+        bool allowStructuralReads)
+    {
+        _context = context;
+        _fields = new RuntimePdbFieldAccessor(context);
+        _layout = layout;
+        _allowStructuralReads = allowStructuralReads;
+        _cellEnumerator = new RuntimeCellObjectEnumerator(context, _fields, AdjustCellFieldOffset);
+        _cellMapWalker = new RuntimeCellMapWalker(context, _cellEnumerator);
     }
 
     /// <summary>
@@ -82,24 +107,6 @@ internal sealed class RuntimeCellReader
         }
 
         return probe?.IsHighConfidence != false;
-    }
-
-    internal RuntimeCellReader(RuntimeMemoryContext context, RuntimeWorldCellLayout layout)
-        : this(context, layout, true)
-    {
-    }
-
-    private RuntimeCellReader(
-        RuntimeMemoryContext context,
-        RuntimeWorldCellLayout layout,
-        bool allowStructuralReads)
-    {
-        _context = context;
-        _fields = new RuntimePdbFieldAccessor(context);
-        _layout = layout;
-        _allowStructuralReads = allowStructuralReads;
-        _cellEnumerator = new RuntimeCellObjectEnumerator(context, _fields, AdjustCellFieldOffset);
-        _cellMapWalker = new RuntimeCellMapWalker(context, _cellEnumerator);
     }
 
     public WorldspaceRecord? ReadRuntimeWorldspace(RuntimeEditorIdEntry entry)
@@ -298,6 +305,57 @@ internal sealed class RuntimeCellReader
         };
     }
 
+    /// <summary>
+    ///     Score how well pointer fields at shifted offsets look like real pointer slots.
+    ///     Used by the layout probe to discriminate correct vs wrong world shifts.
+    ///     <para>
+    ///         Returns (plausible, garbage): plausible = count of valid VAs or nulls (expected for
+    ///         pointer fields), garbage = count of non-zero values that are NOT valid VAs (strong
+    ///         signal of misaligned read — correct shifts don't produce garbage in pointer slots).
+    ///     </para>
+    /// </summary>
+    internal (int Plausible, int Garbage) ProbeWorldPointerPlausibility(RuntimeEditorIdEntry entry)
+    {
+        var buffer = ReadStructBuffer(entry, WorldStructSize);
+        if (buffer == null || !IsExpectedForm(buffer, 0x41, entry.FormId))
+        {
+            return (0, 0);
+        }
+
+        // PDB offsets for key pointer fields (all >= WorldShiftStartOffset, so shift applies)
+        ReadOnlySpan<int>
+            pdbPointerOffsets =
+                [64, 68, 80, 128, 132]; // pCellMap, pPersistentCell, pClimate, pParentWorld, pWorldWater
+
+        var plausible = 0;
+        var garbage = 0;
+
+        foreach (var pdbOffset in pdbPointerOffsets)
+        {
+            var adjusted = pdbOffset + _layout.WorldShift;
+            if (adjusted < 0 || adjusted + 4 > buffer.Length)
+            {
+                continue;
+            }
+
+            var ptrValue = BinaryUtils.ReadUInt32BE(buffer, adjusted);
+            if (ptrValue == 0)
+            {
+                plausible++; // Null pointer — expected for unloaded data
+            }
+            else if (_context.IsValidPointer(ptrValue))
+            {
+                plausible++; // Valid VA — strong positive signal
+            }
+            else
+            {
+                garbage++; // Non-zero, not a valid VA — likely misaligned read
+            }
+        }
+
+        return (plausible, garbage);
+    }
+
     #region Worldspace Reading
 
     private WorldspaceRecord? ReadRuntimeWorldspaceCore(RuntimeEditorIdEntry entry)
@@ -314,7 +372,8 @@ internal sealed class RuntimeCellReader
             return null;
         }
 
-        var mapDataOffset = AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "WorldMapData", "TESWorldSpace"));
+        var mapDataOffset =
+            AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "WorldMapData", "TESWorldSpace"));
         var minimumCoordsOffset =
             AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "MinimumCoords", "TESWorldSpace"));
         var maximumCoordsOffset =
@@ -407,9 +466,11 @@ internal sealed class RuntimeCellReader
             ClimateFormId = ReadWorldFormIdPointer(buffer, layout, "pClimate", "TESWorldSpace", 0x36),
             WaterFormId = ReadWorldFormIdPointer(buffer, layout, "pWorldWater", "TESWorldSpace", 0x4E),
             DefaultLandHeight = RuntimeCellObjectEnumerator.ReadNormalFloat(buffer,
-                AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "fDefaultLandHeight", "TESWorldSpace"))),
+                AdjustWorldFieldOffset(
+                    RuntimePdbFieldAccessor.FindFieldOffset(layout, "fDefaultLandHeight", "TESWorldSpace"))),
             DefaultWaterHeight = RuntimeCellObjectEnumerator.ReadNormalFloat(buffer,
-                AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "fDefaultWaterHeight", "TESWorldSpace"))),
+                AdjustWorldFieldOffset(
+                    RuntimePdbFieldAccessor.FindFieldOffset(layout, "fDefaultWaterHeight", "TESWorldSpace"))),
             MapUsableWidth = mapUsableWidth,
             MapUsableHeight = mapUsableHeight,
             MapNWCellX = mapNWCellX,
@@ -438,7 +499,8 @@ internal sealed class RuntimeCellReader
         byte[] buffer,
         PdbTypeLayout layout)
     {
-        var mapDataOffset = AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "WorldMapData", "TESWorldSpace"));
+        var mapDataOffset =
+            AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "WorldMapData", "TESWorldSpace"));
         var minimumCoordsOffset =
             AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "MinimumCoords", "TESWorldSpace"));
         var maximumCoordsOffset =
@@ -574,7 +636,8 @@ internal sealed class RuntimeCellReader
         float? MapOffsetScaleX, float? MapOffsetScaleY, float? MapOffsetZ) ReadWorldExtendedFields(
             byte[] buffer, PdbTypeLayout layout)
     {
-        var flagsOffset = AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "cFlags", "TESWorldSpace"));
+        var flagsOffset =
+            AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "cFlags", "TESWorldSpace"));
         byte? flags = flagsOffset.HasValue && flagsOffset.Value < buffer.Length
             ? buffer[flagsOffset.Value]
             : null;
@@ -589,7 +652,8 @@ internal sealed class RuntimeCellReader
         var musicTypeFormId = ReadWorldFormIdPointer(buffer, layout, "pMusicType", "TESWorldSpace", 0x6B);
 
         var offsetDataOffset =
-            AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "WorldMapOffsetData", "TESWorldSpace"));
+            AdjustWorldFieldOffset(
+                RuntimePdbFieldAccessor.FindFieldOffset(layout, "WorldMapOffsetData", "TESWorldSpace"));
         float? mapOffsetScaleX = null;
         float? mapOffsetScaleY = null;
         float? mapOffsetZ = null;
@@ -688,55 +752,6 @@ internal sealed class RuntimeCellReader
 
     #endregion
 
-    /// <summary>
-    ///     Score how well pointer fields at shifted offsets look like real pointer slots.
-    ///     Used by the layout probe to discriminate correct vs wrong world shifts.
-    ///     <para>
-    ///     Returns (plausible, garbage): plausible = count of valid VAs or nulls (expected for
-    ///     pointer fields), garbage = count of non-zero values that are NOT valid VAs (strong
-    ///     signal of misaligned read — correct shifts don't produce garbage in pointer slots).
-    ///     </para>
-    /// </summary>
-    internal (int Plausible, int Garbage) ProbeWorldPointerPlausibility(RuntimeEditorIdEntry entry)
-    {
-        var buffer = ReadStructBuffer(entry, WorldStructSize);
-        if (buffer == null || !IsExpectedForm(buffer, 0x41, entry.FormId))
-        {
-            return (0, 0);
-        }
-
-        // PDB offsets for key pointer fields (all >= WorldShiftStartOffset, so shift applies)
-        ReadOnlySpan<int> pdbPointerOffsets = [64, 68, 80, 128, 132]; // pCellMap, pPersistentCell, pClimate, pParentWorld, pWorldWater
-
-        var plausible = 0;
-        var garbage = 0;
-
-        foreach (var pdbOffset in pdbPointerOffsets)
-        {
-            var adjusted = pdbOffset + _layout.WorldShift;
-            if (adjusted < 0 || adjusted + 4 > buffer.Length)
-            {
-                continue;
-            }
-
-            var ptrValue = BinaryUtils.ReadUInt32BE(buffer, adjusted);
-            if (ptrValue == 0)
-            {
-                plausible++; // Null pointer — expected for unloaded data
-            }
-            else if (_context.IsValidPointer(ptrValue))
-            {
-                plausible++; // Valid VA — strong positive signal
-            }
-            else
-            {
-                garbage++; // Non-zero, not a valid VA — likely misaligned read
-            }
-        }
-
-        return (plausible, garbage);
-    }
-
     #region TESWorldSpace Struct Layout
 
     private const int WorldStructSize = 244;
@@ -745,12 +760,6 @@ internal sealed class RuntimeCellReader
     private int WorldCellMapPtrOffset => 64 + _layout.WorldShift;
     private int WorldPersistentCellPtrOffset => 68 + _layout.WorldShift;
     private int WorldParentWorldPtrOffset => 128 + _layout.WorldShift;
-
-    #endregion
-
-    #region TESObjectCELL Struct Layout
-
-    private const int CellShiftStartOffset = 52;
 
     #endregion
 }

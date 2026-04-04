@@ -1,8 +1,8 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
-using Logger = FalloutXbox360Utils.Core.Logger;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 
@@ -117,7 +117,8 @@ internal sealed class RuntimeActorReader
         {
             if (fggs != null || fgga != null || fgts != null)
             {
-                Logger.Instance.Debug("[NPC] FaceGen data discarded for 0x{0:X8}: layout probe not high-confidence", entry.FormId);
+                Logger.Instance.Debug("[NPC] FaceGen data discarded for 0x{0:X8}: layout probe not high-confidence",
+                    entry.FormId);
             }
 
             fggs = null;
@@ -348,14 +349,16 @@ internal sealed class RuntimeActorReader
         // Fatigue: 0-5000 (most NPCs 0-200)
         if (fatigueBase > 5000)
         {
-            Logger.Instance.Debug("[ACBS] Rejected at offset 0x{0:X}: fatigue={1}", structOffset + acbsStart, fatigueBase);
+            Logger.Instance.Debug("[ACBS] Rejected at offset 0x{0:X}: fatigue={1}", structOffset + acbsStart,
+                fatigueBase);
             return null;
         }
 
         // Barter gold: 0-50000
         if (barterGold > 50000)
         {
-            Logger.Instance.Debug("[ACBS] Rejected at offset 0x{0:X}: barterGold={1}", structOffset + acbsStart, barterGold);
+            Logger.Instance.Debug("[ACBS] Rejected at offset 0x{0:X}: barterGold={1}", structOffset + acbsStart,
+                barterGold);
             return null;
         }
 
@@ -366,28 +369,32 @@ internal sealed class RuntimeActorReader
         var maxLevel = isPcLevelMult ? 1000 : 100;
         if (level < -128 || level > maxLevel)
         {
-            Logger.Instance.Debug("[ACBS] Rejected at offset 0x{0:X}: level={1} (max={2})", structOffset + acbsStart, level, maxLevel);
+            Logger.Instance.Debug("[ACBS] Rejected at offset 0x{0:X}: level={1} (max={2})", structOffset + acbsStart,
+                level, maxLevel);
             return null;
         }
 
         // Speed multiplier: typically 70-200 (100 = normal)
         if (speedMultiplier > 500)
         {
-            Logger.Instance.Debug("[ACBS] Rejected at offset 0x{0:X}: speedMult={1}", structOffset + acbsStart, speedMultiplier);
+            Logger.Instance.Debug("[ACBS] Rejected at offset 0x{0:X}: speedMult={1}", structOffset + acbsStart,
+                speedMultiplier);
             return null;
         }
 
         // Karma: should be a normal float
         if (!RuntimeMemoryContext.IsNormalFloat(karma))
         {
-            Logger.Instance.Debug("[ACBS] Rejected at offset 0x{0:X}: karma={1} (not normal float)", structOffset + acbsStart, karma);
+            Logger.Instance.Debug("[ACBS] Rejected at offset 0x{0:X}: karma={1} (not normal float)",
+                structOffset + acbsStart, karma);
             return null;
         }
 
         // CalcMin/CalcMax: 0-100
         if (calcMin > 100 || calcMax > 100)
         {
-            Logger.Instance.Debug("[ACBS] Rejected at offset 0x{0:X}: calcMin={1}, calcMax={2}", structOffset + acbsStart, calcMin, calcMax);
+            Logger.Instance.Debug("[ACBS] Rejected at offset 0x{0:X}: calcMin={1}, calcMax={2}",
+                structOffset + acbsStart, calcMin, calcMax);
             return null;
         }
 

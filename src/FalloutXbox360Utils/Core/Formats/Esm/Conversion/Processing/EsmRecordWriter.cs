@@ -1,7 +1,8 @@
 using System.Buffers.Binary;
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Indexing;
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Schema;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion.Processing;
 
 /// <summary>
 ///     Handles writing converted records to output streams.

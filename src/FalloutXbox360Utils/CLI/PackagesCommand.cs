@@ -1,12 +1,12 @@
 using System.CommandLine;
 using System.IO.MemoryMappedFiles;
 using System.Text.Json;
-using FalloutXbox360Utils.CLI.Shared;
-using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.AI;
+using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI;

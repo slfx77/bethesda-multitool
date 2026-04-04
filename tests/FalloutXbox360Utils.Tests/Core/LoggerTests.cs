@@ -11,7 +11,7 @@ public class LoggerTests : IDisposable
     {
         // Reset logger before each test to ensure clean state
         Logger.Instance.Reset();
-        Logger.Instance.SetOutput(_output);
+        Logger.SetOutput(_output);
     }
 
     public void Dispose()
@@ -79,7 +79,7 @@ public class LoggerTests : IDisposable
     public void SetOutput_ChangesOutputDestination()
     {
         var customWriter = new StringWriter();
-        Logger.Instance.SetOutput(customWriter);
+        Logger.SetOutput(customWriter);
         Logger.Instance.Info("custom output test");
 
         Assert.Contains("custom output test", customWriter.ToString());
