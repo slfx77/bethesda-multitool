@@ -2,6 +2,7 @@ using FalloutXbox360Utils.CLI.Rendering.Gltf;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
@@ -57,8 +58,7 @@ internal static class NpcExportPipeline
         }
 
         using var textureResolver = new NifTextureResolver(texturesBsaPaths);
-        var egmCache = new Dictionary<string, EgmParser?>(StringComparer.OrdinalIgnoreCase);
-        var egtCache = new Dictionary<string, EgtParser?>(StringComparer.OrdinalIgnoreCase);
+        var compositionCaches = new NpcCompositionCaches();
 
         var exported = 0;
         var skipped = 0;
@@ -71,13 +71,17 @@ internal static class NpcExportPipeline
             {
                 try
                 {
-                    var scene = NpcExportSceneBuilder.Build(
+                    var plan = NpcCompositionPlanner.CreatePlan(
                         npc,
                         meshArchives,
                         textureResolver,
-                        egmCache,
-                        egtCache,
-                        settings);
+                        compositionCaches,
+                        NpcCompositionOptions.From(settings));
+                    var scene = NpcCompositionExportAdapter.BuildNpc(
+                        plan,
+                        meshArchives,
+                        textureResolver,
+                        compositionCaches);
                     if (scene == null || scene.MeshParts.Count == 0)
                     {
                         skipped++;
@@ -124,23 +128,14 @@ internal static class NpcExportPipeline
             {
                 try
                 {
-                    string? weaponMeshPath = null;
-                    if (creature.InventoryItems != null)
-                    {
-                        foreach (var item in creature.InventoryItems)
-                        {
-                            weaponMeshPath = resolver.ResolveWeaponMeshPath(item.ItemFormId);
-                            if (weaponMeshPath != null) break;
-                        }
-                    }
-
-                    var scene = NifExportSceneBuilder.BuildCreature(
-                        creature.SkeletonPath!,
-                        creature.BodyModelPaths!,
+                    var plan = CreatureCompositionPlanner.CreatePlan(
+                        creature,
                         meshArchives,
-                        settings.BindPose,
-                        creature.ResolveIdleAnimationPath(),
-                        weaponMeshPath);
+                        resolver,
+                        CreatureCompositionOptions.From(settings));
+                    var scene = plan == null
+                        ? null
+                        : NpcCompositionExportAdapter.BuildCreature(plan, meshArchives);
                     if (scene == null || scene.MeshParts.Count == 0)
                     {
                         skipped++;

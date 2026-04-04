@@ -3,6 +3,7 @@ using FalloutXbox360Utils.CLI;
 using FalloutXbox360Utils.CLI.Rendering.Npc;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Animation;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
@@ -13,6 +14,63 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
 internal static class NpcExportBodyAssembler
 {
     private static readonly Logger Log = Logger.Instance;
+
+    internal static void AddBodyEquipment(
+        NpcExportScene scene,
+        NpcCompositionPlan plan,
+        NpcMeshArchiveSet meshArchives,
+        NpcExportSceneBuilder.SkeletonContext skeletonContext)
+    {
+        foreach (var item in plan.BodyEquipment)
+        {
+            if (item.AttachmentMode != EquipmentAttachmentMode.None)
+            {
+                var raw = NpcMeshHelpers.LoadNifRawFromBsa(item.MeshPath, meshArchives);
+                if (raw != null &&
+                    NpcEquipmentAttacher.IsRigidEquipmentModel(raw.Value.Data, raw.Value.Info) &&
+                    NpcWeaponAttachmentResolver.TryResolveEquipmentAttachmentTransform(
+                        item,
+                        skeletonContext.BoneTransforms,
+                        out _,
+                        out var attachmentTransform,
+                        out _))
+                {
+                    var extracted = NpcExportSceneBuilder.LoadExtractedNif(item.MeshPath, meshArchives);
+                    if (extracted != null && extracted.MeshParts.Count > 0)
+                    {
+                        foreach (var part in extracted.MeshParts)
+                        {
+                            if (NifBlockParsers.IsPipBoyScreenShape(part.Name))
+                            {
+                                continue;
+                            }
+
+                            var submesh = NpcExportSceneBuilder.CloneSubmesh(part.Submesh);
+                            var composedTransform = part.ShapeWorldTransform * attachmentTransform;
+                            NpcRenderHelpers.TransformSubmesh(submesh, composedTransform);
+                            ApplyEquipmentTextureOverride(
+                                submesh,
+                                plan.EffectiveBodyTexturePath,
+                                plan.EffectiveHandTexturePath);
+                            NpcExportSceneBuilder.AddRigidSubmesh(scene, item.MeshPath, submesh);
+                        }
+
+                        continue;
+                    }
+                }
+            }
+
+            NpcExportSceneBuilder.AddSkinnedNif(
+                scene,
+                item.MeshPath,
+                meshArchives,
+                skeletonContext.NodeIndicesByBoneName,
+                submesh => ApplyEquipmentTextureOverride(
+                    submesh,
+                    plan.EffectiveBodyTexturePath,
+                    plan.EffectiveHandTexturePath));
+        }
+    }
 
     internal static void AddBodyEquipment(
         NpcExportScene scene,
@@ -104,7 +162,8 @@ internal static class NpcExportBodyAssembler
             return;
         }
 
-        if (!NpcWeaponAttachmentResolver.TryResolveWeaponAttachmentNode(npc.WeaponVisual, out var attachmentNodeName, out _))
+        if (!NpcWeaponAttachmentResolver.TryResolveWeaponAttachmentNode(npc.WeaponVisual, out var attachmentNodeName,
+                out _))
         {
             return;
         }
@@ -231,7 +290,125 @@ internal static class NpcExportBodyAssembler
             }
 
             NpcRenderHelpers.TransformModel(groupModel, groupAttachmentTransform.Value);
-            NpcExportSceneBuilder.AddRigidModel(scene, $"{npc.WeaponVisual.MeshPath}:{group.SourceNodeName}", groupModel);
+            NpcExportSceneBuilder.AddRigidModel(scene, $"{npc.WeaponVisual.MeshPath}:{group.SourceNodeName}",
+                groupModel);
+        }
+    }
+
+    internal static void AddWeapon(
+        NpcExportScene scene,
+        NpcCompositionPlan plan,
+        NpcMeshArchiveSet meshArchives,
+        NifTextureResolver textureResolver,
+        NpcExportSceneBuilder.SkeletonContext skeletonContext)
+    {
+        var weaponPlan = plan.Weapon;
+        if (weaponPlan?.WeaponVisual is not { IsVisible: true, MeshPath: not null } weaponVisual)
+        {
+            return;
+        }
+
+        if (!weaponPlan.MainAttachmentTransform.HasValue)
+        {
+            return;
+        }
+
+        var weaponRaw = NpcMeshHelpers.LoadNifRawFromBsa(weaponVisual.MeshPath, meshArchives);
+        if (weaponRaw == null)
+        {
+            return;
+        }
+
+        if (weaponPlan.UseSkinnedMainWeaponWhenPossible &&
+            plan.Skeleton != null)
+        {
+            var extracted = NpcExportSceneBuilder.LoadExtractedNif(weaponVisual.MeshPath, meshArchives);
+            if (extracted != null)
+            {
+                var addedSkinnedMesh = false;
+                foreach (var part in extracted.MeshParts)
+                {
+                    if (part.Skin == null)
+                    {
+                        continue;
+                    }
+
+                    NpcExportSceneBuilder.AddSkinnedPart(scene, part, skeletonContext.NodeIndicesByBoneName);
+                    addedSkinnedMesh = true;
+                }
+
+                if (addedSkinnedMesh)
+                {
+                    return;
+                }
+            }
+        }
+
+        var weaponModel = weaponPlan.RenderOnlyExplicitHolsterAttachmentGroups
+            ? null
+            : NifGeometryExtractor.Extract(
+                weaponRaw.Value.Data,
+                weaponRaw.Value.Info,
+                textureResolver,
+                excludeBlockIndices: weaponPlan.MainWeaponExcludedShapes);
+        if (weaponModel != null && weaponModel.HasGeometry)
+        {
+            if (NpcSkinningResolver.TryResolveModelAttachmentCompensation(
+                    weaponRaw.Value.Data,
+                    weaponRaw.Value.Info,
+                    "Weapon",
+                    out var modelAnchorCompensation,
+                    out var compensationKind) &&
+                NpcSkinningResolver.ShouldApplyWeaponModelAttachmentCompensation(
+                    weaponVisual.AttachmentMode,
+                    compensationKind))
+            {
+                NpcRenderHelpers.TransformModel(weaponModel, modelAnchorCompensation);
+            }
+
+            NpcRenderHelpers.TransformModel(weaponModel, weaponPlan.MainAttachmentTransform.Value);
+            NpcExportSceneBuilder.AddRigidModel(scene, weaponVisual.MeshPath, weaponModel);
+        }
+
+        if (weaponVisual.AttachmentMode != WeaponAttachmentMode.HolsterPose ||
+            weaponPlan.HolsterAttachmentGroups.Count == 0 ||
+            weaponPlan.HolsterPose == null)
+        {
+            return;
+        }
+
+        var allShapeIndices = NpcSkinningResolver.FindShapeBlockIndices(weaponRaw.Value.Data, weaponRaw.Value.Info);
+        foreach (var group in weaponPlan.HolsterAttachmentGroups)
+        {
+            var groupAttachmentTransform = NpcWeaponAttachmentResolver.ResolveWeaponHolsterAttachmentTransform(
+                weaponPlan.HolsterPose,
+                group.BoneName);
+            if (!groupAttachmentTransform.HasValue)
+            {
+                Log.Warn(
+                    "Export weapon attachment group omitted for NPC 0x{0:X8}: no holster attachment node '{1}' for weapon '{2}'",
+                    plan.Appearance.NpcFormId,
+                    group.BoneName,
+                    weaponVisual.MeshPath);
+                continue;
+            }
+
+            var groupExcludedShapes = new HashSet<int>(allShapeIndices);
+            groupExcludedShapes.ExceptWith(group.ShapeIndices);
+
+            var groupModel = NifGeometryExtractor.Extract(
+                weaponRaw.Value.Data,
+                weaponRaw.Value.Info,
+                textureResolver,
+                excludeBlockIndices: groupExcludedShapes,
+                animOverrides: weaponPlan.HolsterModelPoseOverrides);
+            if (groupModel == null || !groupModel.HasGeometry)
+            {
+                continue;
+            }
+
+            NpcRenderHelpers.TransformModel(groupModel, groupAttachmentTransform.Value);
+            NpcExportSceneBuilder.AddRigidModel(scene, $"{weaponVisual.MeshPath}:{group.SourceNodeName}", groupModel);
         }
     }
 

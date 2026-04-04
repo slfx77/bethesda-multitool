@@ -1,12 +1,13 @@
 using System.Numerics;
-using FalloutXbox360Utils.CLI;
 using FalloutXbox360Utils.CLI.Rendering.Npc;
-using FalloutXbox360Utils.Core.Formats.Esm.Enums;
+using FalloutXbox360Utils.Core;
+using FalloutXbox360Utils.Core.Formats.Nif;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Animation;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
 
-namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
+namespace FalloutXbox360Utils.CLI;
 
 /// <summary>
 ///     Equipment slot logic, armor/weapon attachment, holster pose resolution.
@@ -201,7 +202,8 @@ internal static class NpcEquipmentAttacher
                     return;
                 }
 
-                if (!NpcWeaponAttachmentResolver.TryResolveWeaponAttachmentNode(npc.WeaponVisual, out attachmentNodeName, out var omitReason))
+                if (!NpcWeaponAttachmentResolver.TryResolveWeaponAttachmentNode(npc.WeaponVisual,
+                        out attachmentNodeName, out var omitReason))
                 {
                     Log.Warn("Weapon omitted for NPC 0x{0:X8}: {1}", npc.NpcFormId,
                         omitReason ?? "unsupported attachment");
@@ -222,7 +224,9 @@ internal static class NpcEquipmentAttacher
                     return;
                 }
 
-                weaponBoneTransform = NpcWeaponAttachmentResolver.ResolveWeaponHolsterAttachmentTransform(holsterPose, attachmentNodeName);
+                weaponBoneTransform =
+                    NpcWeaponAttachmentResolver.ResolveWeaponHolsterAttachmentTransform(holsterPose,
+                        attachmentNodeName);
                 if (!weaponBoneTransform.HasValue)
                 {
                     Log.Warn("Weapon omitted for NPC 0x{0:X8}: no attachment node '{1}' in holster pose for {2}",
@@ -365,7 +369,8 @@ internal static class NpcEquipmentAttacher
                 compensationKind))
         {
             NpcRenderHelpers.TransformModel(weaponModel, modelAnchorCompensation);
-            modelAnchorCompensationLabel = compensationKind == NpcSkinningResolver.ModelAttachmentCompensationKind.ExplicitAttachmentNode
+            modelAnchorCompensationLabel = compensationKind ==
+                                           NpcSkinningResolver.ModelAttachmentCompensationKind.ExplicitAttachmentNode
                 ? " + model Weapon anchor compensation"
                 : " + model root fallback compensation";
         }
@@ -400,7 +405,8 @@ internal static class NpcEquipmentAttacher
         var allShapeIndices = NpcSkinningResolver.FindShapeBlockIndices(weaponRaw.Value.Data, weaponRaw.Value.Info);
         foreach (var group in holsterAttachmentGroups)
         {
-            var groupAttachmentTransform = NpcWeaponAttachmentResolver.ResolveWeaponHolsterAttachmentTransform(holsterPose, group.BoneName);
+            var groupAttachmentTransform =
+                NpcWeaponAttachmentResolver.ResolveWeaponHolsterAttachmentTransform(holsterPose, group.BoneName);
             if (!groupAttachmentTransform.HasValue)
             {
                 Log.Warn(
@@ -450,6 +456,273 @@ internal static class NpcEquipmentAttacher
         }
     }
 
+    internal static void LoadEquipmentFromPlan(
+        NpcCompositionPlan plan,
+        NpcMeshArchiveSet meshArchives,
+        NifTextureResolver textureResolver,
+        NifRenderableModel bodyModel)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(meshArchives);
+        ArgumentNullException.ThrowIfNull(textureResolver);
+        ArgumentNullException.ThrowIfNull(bodyModel);
+
+        var idleBoneTransforms = plan.Skeleton?.BodySkinningBones;
+        foreach (var item in plan.BodyEquipment)
+        {
+            var equipRaw = NpcMeshHelpers.LoadNifRawFromBsa(item.MeshPath, meshArchives);
+            if (equipRaw == null)
+            {
+                Log.Warn("Equipment NIF failed to load: {0}", item.MeshPath);
+                continue;
+            }
+
+            var useRigidAttachment = item.AttachmentMode != EquipmentAttachmentMode.None &&
+                                     idleBoneTransforms != null &&
+                                     IsRigidEquipmentModel(equipRaw.Value.Data, equipRaw.Value.Info);
+
+            var equipModel = NifGeometryExtractor.Extract(
+                equipRaw.Value.Data,
+                equipRaw.Value.Info,
+                textureResolver,
+                externalBoneTransforms: useRigidAttachment ? null : idleBoneTransforms,
+                useDualQuaternionSkinning: !useRigidAttachment);
+            if (equipModel == null || !equipModel.HasGeometry)
+            {
+                Log.Warn("Equipment NIF has no geometry: {0}", item.MeshPath);
+                continue;
+            }
+
+            if (useRigidAttachment)
+            {
+                if (!NpcWeaponAttachmentResolver.TryResolveEquipmentAttachmentTransform(
+                        item,
+                        idleBoneTransforms!,
+                        out var attachmentNodeName,
+                        out var attachmentTransform,
+                        out var omitReason))
+                {
+                    Log.Warn("Rigid equipment omitted for NPC 0x{0:X8}: {1}",
+                        plan.Appearance.NpcFormId,
+                        omitReason ?? item.MeshPath);
+                    continue;
+                }
+
+                NpcRenderHelpers.TransformModel(equipModel, attachmentTransform);
+                Log.Debug("Rigid equipment '{0}': node '{1}' at ({2:F1},{3:F1},{4:F1})",
+                    item.MeshPath,
+                    attachmentNodeName,
+                    attachmentTransform.Translation.X,
+                    attachmentTransform.Translation.Y,
+                    attachmentTransform.Translation.Z);
+            }
+
+            foreach (var sub in equipModel.Submeshes)
+            {
+                if (plan.EffectiveBodyTexturePath != null &&
+                    NpcTextureHelpers.IsEquipmentSkinSubmesh(sub.DiffuseTexturePath))
+                {
+                    sub.DiffuseTexturePath =
+                        sub.DiffuseTexturePath!.Contains("hand", StringComparison.OrdinalIgnoreCase)
+                            ? plan.EffectiveHandTexturePath ?? plan.EffectiveBodyTexturePath
+                            : plan.EffectiveBodyTexturePath;
+                }
+
+                sub.RenderOrder = 5;
+                bodyModel.Submeshes.Add(sub);
+                bodyModel.ExpandBounds(sub.Positions);
+            }
+        }
+    }
+
+    internal static void LoadWeaponFromPlan(
+        NpcCompositionPlan plan,
+        NpcMeshArchiveSet meshArchives,
+        NifTextureResolver textureResolver,
+        NifRenderableModel bodyModel)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(meshArchives);
+        ArgumentNullException.ThrowIfNull(textureResolver);
+        ArgumentNullException.ThrowIfNull(bodyModel);
+
+        var weaponPlan = plan.Weapon;
+        if (weaponPlan?.WeaponVisual is not { IsVisible: true, MeshPath: not null } weaponVisual)
+        {
+            return;
+        }
+
+        if (weaponVisual.AttachmentMode == WeaponAttachmentMode.EquippedHandMounted &&
+            weaponPlan.AddonMeshes.Count > 0)
+        {
+            LoadWeaponAddonMeshes(
+                weaponPlan.AddonMeshes,
+                meshArchives,
+                textureResolver,
+                plan.Skeleton?.BodySkinningBones,
+                bodyModel);
+        }
+
+        if (!weaponVisual.RenderStandaloneMesh)
+        {
+            Log.Debug("Weapon '{0}' suppressed as standalone mesh; rendering via addon meshes only",
+                weaponVisual.MeshPath ?? weaponVisual.EditorId ?? "?");
+            return;
+        }
+
+        if (!weaponPlan.MainAttachmentTransform.HasValue)
+        {
+            if (!string.IsNullOrWhiteSpace(weaponPlan.AttachmentOmitReason))
+            {
+                Log.Warn("Weapon omitted for NPC 0x{0:X8}: {1}",
+                    plan.Appearance.NpcFormId,
+                    weaponPlan.AttachmentOmitReason);
+            }
+
+            return;
+        }
+
+        var weaponRaw = NpcMeshHelpers.LoadNifRawFromBsa(weaponVisual.MeshPath, meshArchives);
+        if (weaponRaw == null)
+        {
+            Log.Warn("Weapon NIF failed to load: {0}", weaponVisual.MeshPath);
+            return;
+        }
+
+        if (weaponPlan.UseSkinnedMainWeaponWhenPossible)
+        {
+            var skinnedModel = NifGeometryExtractor.Extract(
+                weaponRaw.Value.Data,
+                weaponRaw.Value.Info,
+                textureResolver,
+                externalBoneTransforms: plan.Skeleton?.BodySkinningBones ?? plan.Skeleton?.WeaponAttachmentBones,
+                useDualQuaternionSkinning: true);
+            if (skinnedModel != null && skinnedModel.HasGeometry && skinnedModel.WasSkinned)
+            {
+                Log.Debug("Weapon '{0}' ({1}): skinned to body pose bones, {2} submeshes",
+                    weaponVisual.MeshPath,
+                    weaponVisual.WeaponType,
+                    skinnedModel.Submeshes.Count);
+
+                foreach (var sub in skinnedModel.Submeshes)
+                {
+                    sub.RenderOrder = 6;
+                    bodyModel.Submeshes.Add(sub);
+                    bodyModel.ExpandBounds(sub.Positions);
+                }
+
+                return;
+            }
+        }
+
+        var weaponModel = weaponPlan.RenderOnlyExplicitHolsterAttachmentGroups
+            ? null
+            : NifGeometryExtractor.Extract(
+                weaponRaw.Value.Data,
+                weaponRaw.Value.Info,
+                textureResolver,
+                excludeBlockIndices: weaponPlan.MainWeaponExcludedShapes);
+        if ((weaponModel == null || !weaponModel.HasGeometry) &&
+            weaponPlan.HolsterAttachmentGroups.Count == 0)
+        {
+            Log.Warn("Weapon NIF has no geometry: {0}", weaponVisual.MeshPath);
+            return;
+        }
+
+        string? modelAnchorCompensationLabel = null;
+        if (weaponModel != null &&
+            weaponModel.HasGeometry &&
+            NpcSkinningResolver.TryResolveModelAttachmentCompensation(
+                weaponRaw.Value.Data,
+                weaponRaw.Value.Info,
+                "Weapon",
+                out var modelAnchorCompensation,
+                out var compensationKind) &&
+            NpcSkinningResolver.ShouldApplyWeaponModelAttachmentCompensation(
+                weaponVisual.AttachmentMode,
+                compensationKind))
+        {
+            NpcRenderHelpers.TransformModel(weaponModel, modelAnchorCompensation);
+            modelAnchorCompensationLabel = compensationKind ==
+                                           NpcSkinningResolver.ModelAttachmentCompensationKind.ExplicitAttachmentNode
+                ? " + model Weapon anchor compensation"
+                : " + model root fallback compensation";
+        }
+
+        if (weaponModel != null && weaponModel.HasGeometry)
+        {
+            NpcRenderHelpers.TransformModel(weaponModel, weaponPlan.MainAttachmentTransform.Value);
+
+            Log.Debug("Weapon '{0}' ({1}): node '{2}' at ({3:F1},{4:F1},{5:F1}){6}, {7} submeshes",
+                weaponVisual.MeshPath,
+                weaponVisual.WeaponType,
+                weaponPlan.AttachmentNodeName ?? "?",
+                weaponPlan.MainAttachmentTransform.Value.Translation.X,
+                weaponPlan.MainAttachmentTransform.Value.Translation.Y,
+                weaponPlan.MainAttachmentTransform.Value.Translation.Z,
+                (weaponPlan.AttachmentSourceLabel ?? string.Empty) + (modelAnchorCompensationLabel ?? string.Empty),
+                weaponModel.Submeshes.Count);
+
+            foreach (var sub in weaponModel.Submeshes)
+            {
+                sub.RenderOrder = 6;
+                bodyModel.Submeshes.Add(sub);
+                bodyModel.ExpandBounds(sub.Positions);
+            }
+        }
+
+        if (weaponVisual.AttachmentMode != WeaponAttachmentMode.HolsterPose ||
+            weaponPlan.HolsterAttachmentGroups.Count == 0 ||
+            weaponPlan.HolsterPose == null)
+        {
+            return;
+        }
+
+        var allShapeIndices = NpcSkinningResolver.FindShapeBlockIndices(weaponRaw.Value.Data, weaponRaw.Value.Info);
+        foreach (var group in weaponPlan.HolsterAttachmentGroups)
+        {
+            var groupAttachmentTransform =
+                NpcWeaponAttachmentResolver.ResolveWeaponHolsterAttachmentTransform(
+                    weaponPlan.HolsterPose,
+                    group.BoneName);
+            if (!groupAttachmentTransform.HasValue)
+            {
+                Log.Warn(
+                    "Weapon attachment group omitted for NPC 0x{0:X8}: no holster attachment node '{1}' for weapon '{2}'",
+                    plan.Appearance.NpcFormId,
+                    group.BoneName,
+                    weaponVisual.MeshPath);
+                continue;
+            }
+
+            var groupExcludedShapes = new HashSet<int>(allShapeIndices);
+            groupExcludedShapes.ExceptWith(group.ShapeIndices);
+
+            var groupModel = NifGeometryExtractor.Extract(
+                weaponRaw.Value.Data,
+                weaponRaw.Value.Info,
+                textureResolver,
+                excludeBlockIndices: groupExcludedShapes,
+                animOverrides: weaponPlan.HolsterModelPoseOverrides);
+            if (groupModel == null || !groupModel.HasGeometry)
+            {
+                Log.Warn(
+                    "Weapon attachment group '{0}' had no geometry for weapon '{1}'",
+                    group.SourceNodeName,
+                    weaponVisual.MeshPath);
+                continue;
+            }
+
+            NpcRenderHelpers.TransformModel(groupModel, groupAttachmentTransform.Value);
+            foreach (var sub in groupModel.Submeshes)
+            {
+                sub.RenderOrder = 6;
+                bodyModel.Submeshes.Add(sub);
+                bodyModel.ExpandBounds(sub.Positions);
+            }
+        }
+    }
+
     internal static bool IsRigidEquipmentModel(byte[] data, NifInfo nif)
     {
         var extracted = NifExportExtractor.Extract(data, nif);
@@ -464,12 +737,27 @@ internal static class NpcEquipmentAttacher
         Dictionary<string, Matrix4x4>? idleBoneTransforms,
         NifRenderableModel bodyModel)
     {
-        if (idleBoneTransforms == null || npc.WeaponVisual?.AddonMeshes is not { Count: > 0 })
+        if (npc.WeaponVisual?.AddonMeshes is not { Count: > 0 } addonMeshes)
         {
             return;
         }
 
-        foreach (var addon in npc.WeaponVisual.AddonMeshes)
+        LoadWeaponAddonMeshes(addonMeshes, meshArchives, textureResolver, idleBoneTransforms, bodyModel);
+    }
+
+    internal static void LoadWeaponAddonMeshes(
+        IReadOnlyList<WeaponAddonVisual> addonMeshes,
+        NpcMeshArchiveSet meshArchives,
+        NifTextureResolver textureResolver,
+        Dictionary<string, Matrix4x4>? idleBoneTransforms,
+        NifRenderableModel bodyModel)
+    {
+        if (idleBoneTransforms == null || addonMeshes.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var addon in addonMeshes)
         {
             var addonRaw = NpcMeshHelpers.LoadNifRawFromBsa(addon.MeshPath, meshArchives);
             if (addonRaw == null)
@@ -503,5 +791,4 @@ internal static class NpcEquipmentAttacher
             }
         }
     }
-
 }

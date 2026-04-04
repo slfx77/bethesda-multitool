@@ -1,10 +1,11 @@
 using System.Numerics;
-using FalloutXbox360Utils.CLI;
 using FalloutXbox360Utils.CLI.Rendering.Npc;
+using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
 
-namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
+namespace FalloutXbox360Utils.CLI;
 
 /// <summary>
 ///     Builds composited NPC head models: base head mesh + EGM/EGT morphs + hair + eyes + head parts.
@@ -30,119 +31,114 @@ internal static class NpcHeadBuilder
         Dictionary<string, Matrix4x4>? idlePoseBones = null,
         Matrix4x4? headEquipmentTransformOverride = null)
     {
+        var compositionCaches = new NpcCompositionCaches(
+            egmCache,
+            egtCache,
+            new Dictionary<string, NpcCompositionCaches.CachedNpcSkeletonPlan?>(
+                StringComparer.OrdinalIgnoreCase));
+        var renderModelCache = new NpcRenderModelCache(headMeshCache);
+        var plan = NpcCompositionPlanner.CreatePlan(
+            npc,
+            meshArchives,
+            textureResolver,
+            compositionCaches,
+            NpcCompositionOptions.From(s));
+        plan = ApplyHeadRenderOverrides(
+            plan,
+            hairFilterOverride,
+            skeletonBones,
+            idlePoseBones,
+            headEquipmentTransformOverride);
+        return BuildFromPlan(plan, meshArchives, textureResolver, compositionCaches, renderModelCache);
+    }
+
+    internal static NifRenderableModel? BuildFromPlan(
+        NpcCompositionPlan plan,
+        NpcMeshArchiveSet meshArchives,
+        NifTextureResolver textureResolver,
+        NpcCompositionCaches compositionCaches,
+        NpcRenderModelCache renderModelCache)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(meshArchives);
+        ArgumentNullException.ThrowIfNull(textureResolver);
+        ArgumentNullException.ThrowIfNull(compositionCaches);
+        ArgumentNullException.ThrowIfNull(renderModelCache);
+
+        var npc = plan.Appearance;
+        var headPlan = plan.Head;
         NifRenderableModel? model = null;
-        var headTexturePath = npc.HeadDiffuseOverride;
         var usedBaseRaceMesh = false;
-        var isFullBody = skeletonBones != null || idlePoseBones != null;
-        var effectiveHairFilter = hairFilterOverride ?? ResolveHairFilter(npc, s);
 
-        // Bone transforms for positioning unskinned attachments (hair, eyes, head parts).
-        // Full-body mode: skeleton's idle-pose bones (target space for attachments).
-        // Head-only mode: head NIF's own bones (no Bip01 chain rotation).
-        var attachmentBoneTransforms = skeletonBones ?? idlePoseBones;
-        var effectiveBonelessAttachmentTransform = headEquipmentTransformOverride;
-
-        // Compute pre-skinning EGM morph deltas for the head mesh.
-        // EGM deltas are in NIF bind-pose space and must be applied BEFORE bone skinning
-        // transforms the vertices. This avoids the coordinate frame mismatch that caused
-        // face distortion when applying EGM post-skinning with a uniform rotation.
-        float[]? headPreSkinDeltas = null;
-        if (npc.BaseHeadNifPath != null && !s.NoEgm &&
-            (npc.FaceGenSymmetricCoeffs != null || npc.FaceGenAsymmetricCoeffs != null))
+        if (headPlan.BaseHeadNifPath != null)
         {
-            var egmPath = Path.ChangeExtension(npc.BaseHeadNifPath, ".egm");
-            var egm = NpcMeshHelpers.LoadAndCacheEgm(egmPath, meshArchives, egmCache);
-            if (egm != null && egm.VertexCount > 0)
+            if (!plan.Options.HeadOnly)
             {
-                // Use EGM vertex count as upper bound; the delta application in
-                // NifSubmeshExtractor clamps to min(positions.Length, deltas.Length).
-                headPreSkinDeltas = FaceGenMeshMorpher.ComputeAccumulatedDeltas(
-                    egm, npc.FaceGenSymmetricCoeffs, npc.FaceGenAsymmetricCoeffs, egm.VertexCount);
+                model = LoadHeadWithPreSkinMorphs(
+                    headPlan.BaseHeadNifPath,
+                    meshArchives,
+                    textureResolver,
+                    headPlan.AttachmentBoneTransforms,
+                    headPlan.HeadPreSkinMorphDeltas);
             }
-        }
-
-        if (npc.BaseHeadNifPath != null)
-        {
-            // Both modes use the same skinning path: extract named bone transforms,
-            // pass them as externalBoneTransforms, and use DQS. This ensures the head
-            // mesh vertices and attachment bone corrections share the exact same bone
-            // dictionary regardless of render mode.
-            if (isFullBody)
+            else if (headPlan.HeadPreSkinMorphDeltas != null)
             {
-                var skelBones = skeletonBones ?? idlePoseBones;
-                model = LoadHeadWithPreSkinMorphs(npc.BaseHeadNifPath, meshArchives,
-                    textureResolver, skelBones, headPreSkinDeltas);
-                if (model != null)
-                    usedBaseRaceMesh = true;
+                model = LoadHeadWithPreSkinMorphs(
+                    headPlan.BaseHeadNifPath,
+                    meshArchives,
+                    textureResolver,
+                    headPlan.AttachmentBoneTransforms,
+                    headPlan.HeadPreSkinMorphDeltas);
             }
             else
             {
-                // Head-only mode: extract bones from the head NIF, then use them for
-                // both skinning and attachment correction ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â same pattern as full-body.
-                var headRaw = NpcMeshHelpers.LoadNifRawFromBsa(npc.BaseHeadNifPath, meshArchives);
-                if (headRaw != null)
+                if (!renderModelCache.HeadMeshes.TryGetValue(headPlan.BaseHeadNifPath, out var cached))
                 {
-                    attachmentBoneTransforms = NifGeometryExtractor.ExtractNamedBoneTransforms(
-                        headRaw.Value.Data, headRaw.Value.Info);
-                    if (attachmentBoneTransforms.Count == 0)
-                        Log.Warn("Head NIF has 0 named bone transforms: {0}", npc.BaseHeadNifPath);
+                    cached = NpcMeshHelpers.LoadNifFromBsa(
+                        headPlan.BaseHeadNifPath,
+                        meshArchives,
+                        textureResolver,
+                        headPlan.AttachmentBoneTransforms,
+                        useDualQuaternionSkinning: true);
+                    renderModelCache.HeadMeshes[headPlan.BaseHeadNifPath] = cached;
                 }
 
-                // Head-only: can't cache when using pre-skin deltas (per-NPC morphs).
-                // Cache only the unmorphed base mesh; apply morphs after cloning.
-                if (headPreSkinDeltas != null)
+                if (cached != null)
                 {
-                    // Per-NPC morphed extraction ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â no caching
-                    model = LoadHeadWithPreSkinMorphs(npc.BaseHeadNifPath, meshArchives,
-                        textureResolver, attachmentBoneTransforms, headPreSkinDeltas);
+                    model = NpcMeshHelpers.DeepCloneModel(cached);
                 }
-                else
-                {
-                    // No EGM morphs ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â use cache
-                    if (!headMeshCache.TryGetValue(npc.BaseHeadNifPath, out var cached))
-                    {
-                        cached = NpcMeshHelpers.LoadNifFromBsa(npc.BaseHeadNifPath, meshArchives, textureResolver,
-                            attachmentBoneTransforms,
-                            useDualQuaternionSkinning: true);
-                        headMeshCache[npc.BaseHeadNifPath] = cached;
-                    }
+            }
 
-                    if (cached != null)
-                        model = NpcMeshHelpers.DeepCloneModel(cached);
-                }
-
-                if (model != null)
-                    usedBaseRaceMesh = true;
+            if (model != null)
+            {
+                usedBaseRaceMesh = true;
             }
         }
 
-        // Fallback: try per-NPC FaceGen mesh (already pre-morphed, skip EGM)
-        if (model == null && npc.FaceGenNifPath != null)
-            model = NpcMeshHelpers.LoadNifFromBsa(npc.FaceGenNifPath, meshArchives, textureResolver);
-
-        if (model == null || !model.HasGeometry)
-            return null;
-
-        effectiveBonelessAttachmentTransform ??=
-            NpcRenderHelpers.BuildBonelessHeadAttachmentTransform(
-                attachmentBoneTransforms,
-                null);
-
-        // Apply head texture override from RACE INDX 0 ICON
-        string? fullTexPath = null;
-        if (headTexturePath != null)
+        if (model == null && headPlan.FaceGenNifPath != null)
         {
-            fullTexPath = "textures\\" + headTexturePath;
-            foreach (var submesh in model.Submeshes)
-                submesh.DiffuseTexturePath = fullTexPath;
+            model = NpcMeshHelpers.LoadNifFromBsa(headPlan.FaceGenNifPath, meshArchives, textureResolver);
         }
 
-        // Apply EGT texture morphs
-        if (!s.NoEgt && usedBaseRaceMesh && npc.BaseHeadNifPath != null &&
-            npc.FaceGenTextureCoeffs != null && fullTexPath != null)
+        if (model == null || !model.HasGeometry)
         {
-            ApplyHeadEgtMorphs(npc, fullTexPath, meshArchives, textureResolver,
-                egtCache, model, s);
+            return null;
+        }
+
+        var headMeshEndIndex = model.Submeshes.Count;
+        if (headPlan.EffectiveHeadTexturePath != null)
+        {
+            for (var index = 0; index < headMeshEndIndex; index++)
+            {
+                model.Submeshes[index].DiffuseTexturePath = headPlan.EffectiveHeadTexturePath;
+                if (!headPlan.EffectiveHeadTextureUsesEgtMorph)
+                {
+                    continue;
+                }
+
+                model.Submeshes[index].IsFaceGen = true;
+                model.Submeshes[index].SubsurfaceColor = (24f / 255f, 8f / 255f, 8f / 255f);
+            }
         }
 
         Log.Debug("Head bounds: ({0:F2}, {1:F2}, {2:F2}) ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ ({3:F2}, {4:F2}, {5:F2})",
@@ -151,48 +147,111 @@ internal static class NpcHeadBuilder
         AttachRaceFaceParts(
             npc,
             model,
-            attachmentBoneTransforms,
+            headPlan.AttachmentBoneTransforms,
             usedBaseRaceMesh,
             meshArchives,
             textureResolver,
-            egmCache,
-            effectiveBonelessAttachmentTransform);
+            compositionCaches.EgmFiles,
+            headPlan.BonelessAttachmentTransform);
 
-        // Load and attach hair mesh
-        if (npc.HairNifPath != null)
+        if (headPlan.HairNifPath != null)
         {
-            AttachHairMesh(npc, model, attachmentBoneTransforms, usedBaseRaceMesh,
-                effectiveHairFilter, meshArchives, textureResolver, egmCache,
-                effectiveBonelessAttachmentTransform);
+            AttachHairMesh(
+                npc,
+                model,
+                headPlan.AttachmentBoneTransforms,
+                usedBaseRaceMesh,
+                headPlan.HairFilter,
+                meshArchives,
+                textureResolver,
+                compositionCaches.EgmFiles,
+                headPlan.BonelessAttachmentTransform);
         }
 
-        // Load and attach head part meshes (eyebrows, beards, teeth, etc. from PNAM ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ HDPT)
-        if (npc.HeadPartNifPaths != null)
+        if (headPlan.HeadPartNifPaths.Count > 0)
         {
-            AttachHeadParts(npc, model, attachmentBoneTransforms, usedBaseRaceMesh,
-                meshArchives, textureResolver, egmCache,
-                effectiveBonelessAttachmentTransform);
+            AttachHeadParts(
+                npc,
+                model,
+                headPlan.AttachmentBoneTransforms,
+                usedBaseRaceMesh,
+                meshArchives,
+                textureResolver,
+                compositionCaches.EgmFiles,
+                headPlan.BonelessAttachmentTransform);
         }
 
-        // Load and attach eye meshes (left and right)
-        AttachEyeMeshes(npc, model, attachmentBoneTransforms, usedBaseRaceMesh,
-            meshArchives, textureResolver, egmCache, egtCache, s,
-            effectiveBonelessAttachmentTransform);
+        AttachEyeMeshes(
+            npc,
+            model,
+            headPlan.AttachmentBoneTransforms,
+            usedBaseRaceMesh,
+            meshArchives,
+            textureResolver,
+            compositionCaches.EgmFiles,
+            headPlan.BonelessAttachmentTransform);
 
-        if (!s.NoEquip && npc.EquippedItems != null)
+        if (headPlan.HeadEquipment.Count > 0)
         {
             AttachHeadEquipment(
                 npc,
                 model,
-                attachmentBoneTransforms,
+                headPlan.AttachmentBoneTransforms,
                 usedBaseRaceMesh,
                 meshArchives,
                 textureResolver,
-                egmCache,
-                effectiveBonelessAttachmentTransform);
+                compositionCaches.EgmFiles,
+                headPlan.BonelessAttachmentTransform);
         }
 
         return model;
+    }
+
+    private static NpcCompositionPlan ApplyHeadRenderOverrides(
+        NpcCompositionPlan plan,
+        string? hairFilterOverride,
+        Dictionary<string, Matrix4x4>? skeletonBones,
+        Dictionary<string, Matrix4x4>? idlePoseBones,
+        Matrix4x4? headEquipmentTransformOverride)
+    {
+        if (hairFilterOverride == null &&
+            skeletonBones == null &&
+            idlePoseBones == null &&
+            !headEquipmentTransformOverride.HasValue)
+        {
+            return plan;
+        }
+
+        var headPlan = new NpcHeadCompositionPlan
+        {
+            BaseHeadNifPath = plan.Head.BaseHeadNifPath,
+            FaceGenNifPath = plan.Head.FaceGenNifPath,
+            HeadPreSkinMorphDeltas = plan.Head.HeadPreSkinMorphDeltas,
+            EffectiveHeadTexturePath = plan.Head.EffectiveHeadTexturePath,
+            EffectiveHeadTextureUsesEgtMorph = plan.Head.EffectiveHeadTextureUsesEgtMorph,
+            HairFilter = hairFilterOverride ?? plan.Head.HairFilter,
+            AttachmentBoneTransforms = skeletonBones ?? idlePoseBones ?? plan.Head.AttachmentBoneTransforms,
+            BonelessAttachmentTransform = headEquipmentTransformOverride ?? plan.Head.BonelessAttachmentTransform,
+            RaceFacePartPaths = plan.Head.RaceFacePartPaths,
+            HairNifPath = plan.Head.HairNifPath,
+            HeadPartNifPaths = plan.Head.HeadPartNifPaths,
+            EyeNifPaths = plan.Head.EyeNifPaths,
+            HeadEquipment = plan.Head.HeadEquipment
+        };
+
+        return new NpcCompositionPlan
+        {
+            Appearance = plan.Appearance,
+            Options = plan.Options,
+            Skeleton = plan.Skeleton,
+            Head = headPlan,
+            BodyParts = plan.BodyParts,
+            BodyEquipment = plan.BodyEquipment,
+            CoveredSlots = plan.CoveredSlots,
+            EffectiveBodyTexturePath = plan.EffectiveBodyTexturePath,
+            EffectiveHandTexturePath = plan.EffectiveHandTexturePath,
+            Weapon = plan.Weapon
+        };
     }
 
     private static NifRenderableModel? LoadHeadWithPreSkinMorphs(
@@ -474,8 +533,6 @@ internal static class NpcHeadBuilder
         NpcMeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, EgmParser?> egmCache,
-        Dictionary<string, EgtParser?> egtCache,
-        NpcRenderSettings s,
         Matrix4x4? bonelessAttachmentTransform)
     {
         var eyeAttachmentTransform = bonelessAttachmentTransform;

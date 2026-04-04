@@ -2,6 +2,7 @@ using System.Numerics;
 using FalloutXbox360Utils.CLI;
 using FalloutXbox360Utils.CLI.Rendering.Npc;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
@@ -11,6 +12,109 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
 /// </summary>
 internal static class NpcExportHeadAssembler
 {
+    internal static void AddHeadContent(
+        NpcExportScene scene,
+        NpcCompositionPlan plan,
+        NpcMeshArchiveSet meshArchives,
+        NifTextureResolver textureResolver,
+        NpcCompositionCaches compositionCaches,
+        Dictionary<string, int>? nodeIndicesByBoneName)
+    {
+        var npc = plan.Appearance;
+        var headPlan = plan.Head;
+        var usedBaseRaceMesh = false;
+
+        if (headPlan.BaseHeadNifPath != null)
+        {
+            var extracted = NpcExportSceneBuilder.LoadExtractedNif(
+                headPlan.BaseHeadNifPath,
+                meshArchives,
+                preSkinMorphDeltas: headPlan.HeadPreSkinMorphDeltas);
+            if (extracted != null)
+            {
+                foreach (var part in extracted.MeshParts)
+                {
+                    if (headPlan.EffectiveHeadTexturePath != null)
+                    {
+                        part.Submesh.DiffuseTexturePath = headPlan.EffectiveHeadTexturePath;
+                    }
+
+                    if (part.Skin != null && nodeIndicesByBoneName != null)
+                    {
+                        NpcExportSceneBuilder.AddSkinnedPart(scene, part, nodeIndicesByBoneName);
+                    }
+                    else
+                    {
+                        NpcExportSceneBuilder.AddExtractedRigidPart(
+                            scene,
+                            part,
+                            part.ShapeWorldTransform,
+                            headPlan.BaseHeadNifPath);
+                    }
+                }
+
+                if (headPlan.HeadPreSkinMorphDeltas != null)
+                {
+                    foreach (var part in extracted.MeshParts)
+                    {
+                        FaceGenMeshMorpher.RecalculateNormals(part.Submesh);
+                    }
+                }
+
+                usedBaseRaceMesh = true;
+            }
+        }
+
+        AddRaceFaceParts(
+            scene,
+            npc,
+            meshArchives,
+            textureResolver,
+            compositionCaches.EgmFiles,
+            usedBaseRaceMesh,
+            headPlan.AttachmentBoneTransforms,
+            headPlan.BonelessAttachmentTransform);
+        AddHair(
+            scene,
+            npc,
+            meshArchives,
+            textureResolver,
+            compositionCaches.EgmFiles,
+            usedBaseRaceMesh,
+            headPlan.HairFilter,
+            headPlan.AttachmentBoneTransforms,
+            headPlan.BonelessAttachmentTransform);
+        AddHeadParts(
+            scene,
+            npc,
+            meshArchives,
+            textureResolver,
+            compositionCaches.EgmFiles,
+            usedBaseRaceMesh,
+            headPlan.AttachmentBoneTransforms,
+            headPlan.BonelessAttachmentTransform);
+        AddEyes(
+            scene,
+            npc,
+            meshArchives,
+            textureResolver,
+            compositionCaches.EgmFiles,
+            usedBaseRaceMesh,
+            headPlan.AttachmentBoneTransforms,
+            headPlan.BonelessAttachmentTransform);
+        AddHeadEquipment(
+            scene,
+            npc,
+            meshArchives,
+            textureResolver,
+            compositionCaches.EgmFiles,
+            usedBaseRaceMesh,
+            nodeIndicesByBoneName,
+            headPlan.AttachmentBoneTransforms,
+            headPlan.BonelessAttachmentTransform,
+            headPlan.HeadEquipment.Count > 0);
+    }
+
     internal static void AddHeadContent(
         NpcExportScene scene,
         NpcAppearance npc,
@@ -54,7 +158,8 @@ internal static class NpcExportHeadAssembler
                     }
                     else
                     {
-                        NpcExportSceneBuilder.AddExtractedRigidPart(scene, part, part.ShapeWorldTransform, npc.BaseHeadNifPath);
+                        NpcExportSceneBuilder.AddExtractedRigidPart(scene, part, part.ShapeWorldTransform,
+                            npc.BaseHeadNifPath);
                     }
                 }
 
@@ -96,6 +201,7 @@ internal static class NpcExportHeadAssembler
         {
             hairFilter = "Hat";
         }
+
         AddRaceFaceParts(scene, npc, meshArchives, textureResolver, egmCache, usedBaseRaceMesh,
             attachmentBoneTransforms, bonelessAttachmentTransform);
         AddHair(scene, npc, meshArchives, textureResolver, egmCache, usedBaseRaceMesh,
@@ -105,7 +211,7 @@ internal static class NpcExportHeadAssembler
         AddEyes(scene, npc, meshArchives, textureResolver, egmCache, usedBaseRaceMesh,
             attachmentBoneTransforms, bonelessAttachmentTransform);
         AddHeadEquipment(scene, npc, meshArchives, textureResolver, egmCache, usedBaseRaceMesh,
-            nodeIndicesByBoneName, attachmentBoneTransforms, bonelessAttachmentTransform, settings);
+            nodeIndicesByBoneName, attachmentBoneTransforms, bonelessAttachmentTransform, !settings.NoEquip);
     }
 
     private static void AddHair(
@@ -427,9 +533,9 @@ internal static class NpcExportHeadAssembler
         Dictionary<string, int>? nodeIndicesByBoneName,
         Dictionary<string, Matrix4x4>? attachmentBoneTransforms,
         Matrix4x4? bonelessAttachmentTransform,
-        NpcExportSettings settings)
+        bool includeEquipment)
     {
-        if (settings.NoEquip || npc.EquippedItems == null)
+        if (!includeEquipment || npc.EquippedItems == null)
         {
             return;
         }

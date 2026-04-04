@@ -1,14 +1,15 @@
 using System.Numerics;
-using FalloutXbox360Utils.CLI;
 using FalloutXbox360Utils.CLI.Rendering.Npc;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
+using FalloutXbox360Utils.Core;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
 
-namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
+namespace FalloutXbox360Utils.CLI;
 
 /// <summary>
 ///     Builds composited NPC full-body models: skeleton + body parts + equipment + head.
-///     Delegates to <see cref="NpcSkeletonLoader"/>, <see cref="NpcEquipmentAttacher"/>,
-///     and <see cref="NpcSkinningResolver"/> for specific subsystems.
+///     Delegates to <see cref="NpcSkeletonLoader" />, <see cref="NpcEquipmentAttacher" />,
+///     and <see cref="NpcSkinningResolver" /> for specific subsystems.
 /// </summary>
 internal static class NpcBodyBuilder
 {
@@ -28,103 +29,92 @@ internal static class NpcBodyBuilder
         ref Dictionary<string, Matrix4x4>? poseDeltaCache,
         NpcRenderSettings s)
     {
-        // Load skeleton bone transforms (cached across NPCs — same skeleton for all humans)
-        if (skeletonBoneCache == null && npc.SkeletonNifPath != null)
-        {
-            NpcSkeletonLoader.LoadSkeletonBones(npc.SkeletonNifPath, meshArchives, s.BindPose,
-                out skeletonBoneCache, out poseDeltaCache, s.AnimOverride);
-        }
-
-        // Skeleton-only mode: build geometric visualization from bone positions/hierarchy.
         if (s.Skeleton && npc.SkeletonNifPath != null)
         {
             var skelModel = NpcSkeletonLoader.BuildSkeletonVisualization(npc.SkeletonNifPath, meshArchives, s.BindPose);
             if (skelModel != null)
-                return skelModel;
-        }
-
-        // Determine which body slots are covered by equipment
-        var coveredSlots = 0u;
-        if (!s.NoEquip && npc.EquippedItems != null)
-        {
-            foreach (var item in npc.EquippedItems)
-                coveredSlots |= item.BipedFlags;
-        }
-
-        if (!s.NoEquip && npc.WeaponVisual?.AddonMeshes is { Count: > 0 })
-        {
-            foreach (var addon in npc.WeaponVisual.AddonMeshes)
             {
-                coveredSlots |= addon.BipedFlags;
+                return skelModel;
             }
         }
 
+        var skeletonPlans = new Dictionary<string, NpcCompositionCaches.CachedNpcSkeletonPlan?>(
+            StringComparer.OrdinalIgnoreCase);
+        if (npc.SkeletonNifPath != null && skeletonBoneCache != null)
+        {
+            skeletonPlans[BuildSkeletonCacheKey(npc.SkeletonNifPath, s)] =
+                new NpcCompositionCaches.CachedNpcSkeletonPlan(
+                    npc.SkeletonNifPath,
+                    skeletonBoneCache,
+                    poseDeltaCache ?? new Dictionary<string, Matrix4x4>(StringComparer.OrdinalIgnoreCase),
+                    null);
+        }
+
+        var compositionCaches = new NpcCompositionCaches(egmCache, egtCache, skeletonPlans);
+        var renderModelCache = new NpcRenderModelCache(headMeshCache);
+        var plan = NpcCompositionPlanner.CreatePlan(
+            npc,
+            meshArchives,
+            textureResolver,
+            compositionCaches,
+            NpcCompositionOptions.From(s));
+
+        skeletonBoneCache = plan.Skeleton?.BodySkinningBones;
+        poseDeltaCache = plan.Skeleton?.PoseDeltas;
+        return BuildFromPlan(plan, meshArchives, textureResolver, compositionCaches, renderModelCache);
+    }
+
+    internal static NifRenderableModel? BuildFromPlan(
+        NpcCompositionPlan plan,
+        NpcMeshArchiveSet meshArchives,
+        NifTextureResolver textureResolver,
+        NpcCompositionCaches compositionCaches,
+        NpcRenderModelCache renderModelCache)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(meshArchives);
+        ArgumentNullException.ThrowIfNull(textureResolver);
+        ArgumentNullException.ThrowIfNull(compositionCaches);
+        ArgumentNullException.ThrowIfNull(renderModelCache);
+
+        var npc = plan.Appearance;
         Log.Debug("NPC 0x{0:X8} ({1}): coveredSlots=0x{2:X}, equipment={3}, bodyTex={4}, upperBody={5}",
-            npc.NpcFormId, npc.EditorId ?? "?", coveredSlots,
-            npc.EquippedItems != null ? string.Join(", ", npc.EquippedItems.Select(e => e.MeshPath)) : "(none)",
-            npc.BodyTexturePath ?? "(null)", npc.UpperBodyNifPath ?? "(null)");
+            npc.NpcFormId, npc.EditorId ?? "?", plan.CoveredSlots,
+            plan.BodyEquipment.Count > 0 ? string.Join(", ", plan.BodyEquipment.Select(e => e.MeshPath)) : "(none)",
+            plan.EffectiveBodyTexturePath ?? "(null)", npc.UpperBodyNifPath ?? "(null)");
 
         var bodyModel = new NifRenderableModel();
+        var bodySkinningBones = plan.Skeleton?.BodySkinningBones;
 
-        // Pre-compute EGT-morphed body/hand textures
-        var effectiveBodyTex = npc.BodyTexturePath;
-        var effectiveHandTex = npc.HandTexturePath;
-        if (!s.NoEgt && npc.FaceGenTextureCoeffs != null)
+        foreach (var bodyPart in plan.BodyParts)
         {
-            ApplyBodyEgtMorphs(npc, meshArchives, textureResolver, egtCache,
-                ref effectiveBodyTex, ref effectiveHandTex);
-        }
-
-        // Load body parts using skeleton idle-pose bone transforms directly.
-        var bodyAndAddonBones = skeletonBoneCache;
-        var weaponAttachmentBones = skeletonBoneCache;
-        if (bodyAndAddonBones != null &&
-            NpcSkeletonLoader.ShouldUseHandToHandIdleArmPose(npc, s) &&
-            !string.IsNullOrWhiteSpace(npc.WeaponVisual?.EquippedPoseKfPath) &&
-            npc.SkeletonNifPath != null)
-        {
-            weaponAttachmentBones = NpcSkeletonLoader.BuildHandToHandEquippedArmBones(
-                npc.SkeletonNifPath,
+            LoadAndMergeBodyPart(
+                bodyPart.MeshPath,
+                bodyPart.TextureOverride,
+                bodyPart.RenderOrder,
                 meshArchives,
-                bodyAndAddonBones,
-                npc.WeaponVisual);
+                textureResolver,
+                bodySkinningBones,
+                bodyModel);
         }
 
-        if ((coveredSlots & 0x04) == 0 && npc.UpperBodyNifPath != null)
-        {
-            LoadAndMergeBodyPart(npc.UpperBodyNifPath, effectiveBodyTex, 0,
-                meshArchives, textureResolver, bodyAndAddonBones, bodyModel);
-        }
+        NpcEquipmentAttacher.LoadEquipmentFromPlan(
+            plan,
+            meshArchives,
+            textureResolver,
+            bodyModel);
+        NpcEquipmentAttacher.LoadWeaponFromPlan(
+            plan,
+            meshArchives,
+            textureResolver,
+            bodyModel);
 
-        if ((coveredSlots & 0x08) == 0 && npc.LeftHandNifPath != null)
-        {
-            LoadAndMergeBodyPart(npc.LeftHandNifPath, effectiveHandTex, 0,
-                meshArchives, textureResolver, bodyAndAddonBones, bodyModel);
-        }
-
-        if ((coveredSlots & 0x10) == 0 && npc.RightHandNifPath != null)
-        {
-            LoadAndMergeBodyPart(npc.RightHandNifPath, effectiveHandTex, 0,
-                meshArchives, textureResolver, bodyAndAddonBones, bodyModel);
-        }
-
-        var bonelessHeadAttachmentTransform = NpcRenderHelpers.BuildBonelessHeadAttachmentTransform(
-            skeletonBoneCache,
-            poseDeltaCache);
-
-        // Load equipment meshes
-        NpcEquipmentAttacher.LoadEquipment(npc, meshArchives, textureResolver, bodyAndAddonBones,
-            effectiveBodyTex, effectiveHandTex, bodyModel, s);
-
-        // Load weapon mesh
-        NpcEquipmentAttacher.LoadWeapon(npc, meshArchives, textureResolver, bodyAndAddonBones, weaponAttachmentBones,
-            bodyModel, s, npc.SkeletonNifPath);
-
-        var headModel = NpcHeadBuilder.Build(npc, meshArchives, textureResolver,
-            headMeshCache, egmCache, egtCache, s,
-            idlePoseBones: skeletonBoneCache,
-            headEquipmentTransformOverride: bonelessHeadAttachmentTransform);
-
+        var headModel = NpcHeadBuilder.BuildFromPlan(
+            plan,
+            meshArchives,
+            textureResolver,
+            compositionCaches,
+            renderModelCache);
         if (headModel != null && headModel.HasGeometry)
         {
             foreach (var sub in headModel.Submeshes)
@@ -209,5 +199,10 @@ internal static class NpcBodyBuilder
                 npc.FaceGenTextureCoeffs!, npc.NpcFormId, "righthand", npc.RenderVariantLabel,
                 meshArchives, textureResolver, egtCache);
         }
+    }
+
+    private static string BuildSkeletonCacheKey(string skeletonNifPath, NpcRenderSettings settings)
+    {
+        return $"{skeletonNifPath}|bind:{settings.BindPose}|anim:{settings.AnimOverride ?? string.Empty}";
     }
 }

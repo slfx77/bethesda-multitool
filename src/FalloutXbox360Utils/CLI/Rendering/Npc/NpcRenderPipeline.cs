@@ -1,8 +1,10 @@
 using System.Numerics;
+using FalloutXbox360Utils.CLI.Rendering;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Animation;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
@@ -520,199 +522,14 @@ internal static class NpcRenderPipeline
         NpcAppearanceResolver resolver,
         NpcRenderSettings settings)
     {
-        if (creature.SkeletonPath == null || creature.BodyModelPaths is not { Length: > 0 })
-        {
-            return null;
-        }
-
-        var skeletonNifPath = creature.SkeletonPath.StartsWith("meshes\\", StringComparison.OrdinalIgnoreCase)
-            ? creature.SkeletonPath
-            : "meshes\\" + creature.SkeletonPath;
-
-        // Load skeleton with idle animation. Fallback chain:
-        // 1. KFFZ from ESM → 2. locomotion/mtidle.kf → 3. skeleton embedded sequences
-        // 4. per-node NiTransformControllers → 5. idleanims/ directory
-        var idleAnimPath = settings.AnimOverride ?? creature.ResolveIdleAnimationPath();
-        NpcSkeletonLoader.LoadSkeletonBones(
-            skeletonNifPath,
+        var plan = CreatureCompositionPlanner.CreatePlan(
+            creature,
             meshArchives,
-            settings.BindPose,
-            out var boneCache,
-            out _,
-            idleAnimPath);
-
-        // If still in bind pose, try additional fallbacks
-        if (boneCache != null && !settings.BindPose)
-        {
-            var skelRaw = NpcMeshHelpers.LoadNifRawFromBsa(skeletonNifPath, meshArchives);
-            if (skelRaw != null)
-            {
-                var bindPoseBones = NifGeometryExtractor.ExtractNamedBoneTransforms(
-                    skelRaw.Value.Data, skelRaw.Value.Info);
-                // Check if skeleton loader actually applied idle overrides.
-                // Use threshold comparison since re-extraction can have float imprecision.
-                var hasIdlePose = false;
-                foreach (var (name, idleTransform) in boneCache)
-                {
-                    if (bindPoseBones.TryGetValue(name, out var bindTransform))
-                    {
-                        var diff = (idleTransform.Translation - bindTransform.Translation).Length();
-                        if (diff > 0.1f)
-                        {
-                            hasIdlePose = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (!hasIdlePose)
-                {
-                    // No idle from skeleton loader — try additional fallbacks
-                    // Fallback 4: per-node NiTransformControllers
-                    var nodeOverrides = NifNodeControllerPoseReader.Parse(
-                        skelRaw.Value.Data, skelRaw.Value.Info);
-                    if (nodeOverrides is { Count: > 0 })
-                    {
-                        boneCache = NifGeometryExtractor.ExtractNamedBoneTransforms(
-                            skelRaw.Value.Data, skelRaw.Value.Info, nodeOverrides);
-                    }
-
-                    // Fallback 5: try candidate KFs in skeleton directory.
-                    // Some creatures have no KFFZ and no mtidle.kf, but have
-                    // special idle or locomotion animations that give an upright pose.
-                    var skelDir = skeletonNifPath.Replace(
-                        "skeleton.nif", "", StringComparison.OrdinalIgnoreCase);
-                    string[] candidateIdleKfs =
-                    [
-                        "idleanims\\specialidle_toungehang.kf",
-                        "idleanims\\specialidle_sniff.kf",
-                        "idleanims\\mtidle.kf",
-                        "locomotion\\mtforward.kf" // walking pose — upright at least
-                    ];
-                    foreach (var candidateKf in candidateIdleKfs)
-                    {
-                        var kfPath = skelDir + candidateKf;
-                        var idleAnimsKf = NpcMeshHelpers.LoadNifRawFromBsa(
-                            kfPath, meshArchives, skipConversion: true);
-                        if (idleAnimsKf != null)
-                        {
-                            var animOverrides = NifAnimationParser.ParseIdlePoseOverrides(
-                                idleAnimsKf.Value.Data, idleAnimsKf.Value.Info);
-                            if (animOverrides is { Count: > 0 })
-                            {
-                                boneCache = NifGeometryExtractor.ExtractNamedBoneTransforms(
-                                    skelRaw.Value.Data, skelRaw.Value.Info, animOverrides);
-                                    break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        var skeletonDirectory = Path.GetDirectoryName(skeletonNifPath);
-        var bodyModel = new NifRenderableModel();
-
-        // Get head bone world transform for rigid mesh attachment (eyes, brain, etc.)
-        // Use full transform (rotation + translation) since rigid meshes are authored
-        // in head-local space and need the head's orientation applied.
-        Matrix4x4? headBoneTransform = null;
-        if (boneCache != null && boneCache.TryGetValue("Bip01 Head", out var headBoneWorld))
-        {
-            headBoneTransform = headBoneWorld;
-        }
-
-        foreach (var bodyPath in creature.BodyModelPaths)
-        {
-            string fullBodyPath;
-            if (bodyPath.Contains('\\') || bodyPath.Contains('/'))
-            {
-                fullBodyPath = bodyPath.StartsWith("meshes\\", StringComparison.OrdinalIgnoreCase)
-                    ? bodyPath
-                    : "meshes\\" + bodyPath;
-            }
-            else if (!string.IsNullOrEmpty(skeletonDirectory))
-            {
-                fullBodyPath = Path.Combine(skeletonDirectory, bodyPath);
-            }
-            else
-            {
-                fullBodyPath = "meshes\\" + bodyPath;
-            }
-
-            var raw = NpcMeshHelpers.LoadNifRawFromBsa(fullBodyPath, meshArchives);
-            if (raw == null)
-            {
-                continue;
-            }
-
-            var partModel = NifGeometryExtractor.Extract(
-                raw.Value.Data,
-                raw.Value.Info,
-                textureResolver,
-                externalBoneTransforms: boneCache,
-                useDualQuaternionSkinning: true);
-            if (partModel == null || !partModel.HasGeometry)
-            {
-                continue;
-            }
-
-            // Rigid (unskinned) meshes are likely authored in head-local space
-            // (eyes, brain dome, etc.). Attach to Bip01 Head using translation only
-            // (matches NifExportSceneBuilder.BuildCreature logic).
-            var attachRigidToHead = !partModel.WasSkinned && headBoneTransform.HasValue;
-
-            foreach (var sub in partModel.Submeshes)
-            {
-                if (attachRigidToHead)
-                {
-                    NpcRenderHelpers.TransformSubmesh(sub, headBoneTransform!.Value);
-                }
-
-                bodyModel.Submeshes.Add(sub);
-                bodyModel.ExpandBounds(sub.Positions);
-            }
-
-            if (partModel.WasSkinned)
-            {
-                bodyModel.WasSkinned = true;
-            }
-        }
-
-        // Attach weapon if creature has one in inventory
-        if (!settings.NoWeapon && creature.InventoryItems != null && boneCache != null)
-        {
-            string? weaponMeshPath = null;
-            foreach (var item in creature.InventoryItems)
-            {
-                weaponMeshPath = resolver.ResolveWeaponMeshPath(item.ItemFormId);
-                if (weaponMeshPath != null) break;
-            }
-
-            if (weaponMeshPath != null && boneCache.TryGetValue("Weapon", out var weaponBoneTransform))
-            {
-                var weaponNifPath = weaponMeshPath.StartsWith("meshes\\", StringComparison.OrdinalIgnoreCase)
-                    ? weaponMeshPath
-                    : "meshes\\" + weaponMeshPath;
-                var weaponRaw = NpcMeshHelpers.LoadNifRawFromBsa(weaponNifPath, meshArchives);
-                if (weaponRaw != null)
-                {
-                    var weaponModel = NifGeometryExtractor.Extract(
-                        weaponRaw.Value.Data, weaponRaw.Value.Info, textureResolver);
-                    if (weaponModel is { HasGeometry: true })
-                    {
-                        foreach (var sub in weaponModel.Submeshes)
-                        {
-                            NpcRenderHelpers.TransformSubmesh(sub, weaponBoneTransform);
-                            bodyModel.Submeshes.Add(sub);
-                            bodyModel.ExpandBounds(sub.Positions);
-                        }
-                    }
-                }
-            }
-        }
-
-        return bodyModel.HasGeometry ? bodyModel : null;
+            resolver,
+            CreatureCompositionOptions.From(settings));
+        return plan == null
+            ? null
+            : NpcCompositionRenderAdapter.BuildCreature(plan, meshArchives, textureResolver);
     }
 
     private static void SaveCreatureResult(
@@ -893,28 +710,25 @@ internal static class NpcRenderPipeline
         NpcRenderCaches caches,
         NpcRenderSettings settings)
     {
-        if (settings.HeadOnly)
+        if (!settings.HeadOnly &&
+            settings.Skeleton &&
+            npc.SkeletonNifPath != null)
         {
-            return NpcHeadBuilder.Build(
-                npc,
-                meshArchives,
-                textureResolver,
-                caches.HeadMeshes,
-                caches.EgmFiles,
-                caches.EgtFiles,
-                settings);
+            return NpcSkeletonLoader.BuildSkeletonVisualization(npc.SkeletonNifPath, meshArchives, settings.BindPose);
         }
 
-        return NpcBodyBuilder.Build(
+        var plan = NpcCompositionPlanner.CreatePlan(
             npc,
             meshArchives,
             textureResolver,
-            caches.HeadMeshes,
-            caches.EgmFiles,
-            caches.EgtFiles,
-            ref caches.SkeletonBones,
-            ref caches.PoseDeltas,
-            settings);
+            caches.Composition,
+            NpcCompositionOptions.From(settings));
+        return NpcCompositionRenderAdapter.BuildNpc(
+            plan,
+            meshArchives,
+            textureResolver,
+            caches.Composition,
+            caches.RenderModels);
     }
 
     private static NifRenderableModel PrepareModelForView(
@@ -934,14 +748,7 @@ internal static class NpcRenderPipeline
         float azimuth,
         float elevation)
     {
-        var model = NpcHeadBuilder.Build(
-            npc,
-            meshArchives,
-            textureResolver,
-            caches.HeadMeshes,
-            caches.EgmFiles,
-            caches.EgtFiles,
-            settings);
+        var model = BuildNpcModel(npc, meshArchives, textureResolver, caches, settings);
         if (model == null || !model.HasGeometry)
         {
             return null;
@@ -967,16 +774,7 @@ internal static class NpcRenderPipeline
         float azimuth,
         float elevation)
     {
-        var model = NpcBodyBuilder.Build(
-            npc,
-            meshArchives,
-            textureResolver,
-            caches.HeadMeshes,
-            caches.EgmFiles,
-            caches.EgtFiles,
-            ref caches.SkeletonBones,
-            ref caches.PoseDeltas,
-            settings);
+        var model = BuildNpcModel(npc, meshArchives, textureResolver, caches, settings);
         if (model == null)
         {
             return null;
@@ -1121,58 +919,33 @@ internal static class NpcRenderPipeline
         {
             if (settings.CompareRaceTextureFgts)
             {
-                if (settings.ForceGpu)
-                {
-                    AnsiConsole.MarkupLine(
-                        "[yellow]--compare-race-fgts currently uses the CPU renderer; ignoring --gpu[/]");
-                }
-
-                AnsiConsole.MarkupLine(
-                    "Using [yellow]CPU software renderer[/] (--compare-race-fgts)");
-                return new NpcGpuRenderResources(null, null, false);
+                var selection = SpriteRenderBackendSelector.Create(
+                    settings.ForceCpu,
+                    settings.ForceGpu,
+                    forcedCpuMessage: "Using [yellow]CPU software renderer[/] (--compare-race-fgts)",
+                    ignoredGpuMessage:
+                    "[yellow]--compare-race-fgts currently uses the CPU renderer; ignoring --gpu[/]",
+                    fallbackCpuMessage: null);
+                return new NpcGpuRenderResources(selection.Device, selection.Renderer, selection.ShouldAbort);
             }
 
             if (settings.Wireframe)
             {
-                if (settings.ForceGpu)
-                {
-                    AnsiConsole.MarkupLine(
-                        "[yellow]Wireframe overlay currently uses the CPU renderer; ignoring --gpu[/]");
-                }
-
-                AnsiConsole.MarkupLine(
-                    "Using [yellow]CPU software renderer[/] (--wireframe)");
-                return new NpcGpuRenderResources(null, null, false);
+                var selection = SpriteRenderBackendSelector.Create(
+                    settings.ForceCpu,
+                    settings.ForceGpu,
+                    forcedCpuMessage: "Using [yellow]CPU software renderer[/] (--wireframe)",
+                    ignoredGpuMessage:
+                    "[yellow]Wireframe overlay currently uses the CPU renderer; ignoring --gpu[/]",
+                    fallbackCpuMessage: null);
+                return new NpcGpuRenderResources(selection.Device, selection.Renderer, selection.ShouldAbort);
             }
 
-            if (settings.ForceCpu)
-            {
-                AnsiConsole.MarkupLine(
-                    "Using [yellow]CPU software renderer[/] (--cpu)");
-                return new NpcGpuRenderResources(null, null, false);
-            }
-
-            var device = GpuDevice.Create();
-            if (device == null)
-            {
-                if (settings.ForceGpu)
-                {
-                    AnsiConsole.MarkupLine(
-                        "[red]Error:[/] --gpu specified but no GPU backend available");
-                    return new NpcGpuRenderResources(null, null, true);
-                }
-
-                AnsiConsole.MarkupLine(
-                    "GPU not available -- using [yellow]CPU software renderer[/]");
-                return new NpcGpuRenderResources(null, null, false);
-            }
-
-            var renderer = new GpuSpriteRenderer(device);
-            AnsiConsole.MarkupLine(
-                "GPU rendering: [green]{0}[/] ({1})",
-                device.Backend,
-                device.Device.DeviceName);
-            return new NpcGpuRenderResources(device, renderer, false);
+            var defaultSelection = SpriteRenderBackendSelector.Create(settings.ForceCpu, settings.ForceGpu);
+            return new NpcGpuRenderResources(
+                defaultSelection.Device,
+                defaultSelection.Renderer,
+                defaultSelection.ShouldAbort);
         }
     }
 }

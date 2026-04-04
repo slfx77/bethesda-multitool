@@ -2,14 +2,15 @@ using System.Numerics;
 using FalloutXbox360Utils.CLI;
 using FalloutXbox360Utils.CLI.Rendering.Npc;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
 
 /// <summary>
 ///     Orchestrates NPC export scene construction. Body assembly lives in
-///     <see cref="NpcExportBodyAssembler"/> and head assembly in
-///     <see cref="NpcExportHeadAssembler"/>.
+///     <see cref="NpcExportBodyAssembler" /> and head assembly in
+///     <see cref="NpcExportHeadAssembler" />.
 /// </summary>
 internal static class NpcExportSceneBuilder
 {
@@ -23,9 +24,18 @@ internal static class NpcExportSceneBuilder
         Dictionary<string, EgtParser?> egtCache,
         NpcExportSettings settings)
     {
-        return settings.HeadOnly
-            ? BuildHeadOnlyScene(npc, meshArchives, textureResolver, egmCache, egtCache, settings)
-            : BuildFullBodyScene(npc, meshArchives, textureResolver, egmCache, egtCache, settings);
+        var compositionCaches = new NpcCompositionCaches(
+            egmCache,
+            egtCache,
+            new Dictionary<string, NpcCompositionCaches.CachedNpcSkeletonPlan?>(
+                StringComparer.OrdinalIgnoreCase));
+        var plan = NpcCompositionPlanner.CreatePlan(
+            npc,
+            meshArchives,
+            textureResolver,
+            compositionCaches,
+            NpcCompositionOptions.From(settings));
+        return NpcCompositionExportAdapter.BuildNpc(plan, meshArchives, textureResolver, compositionCaches);
     }
 
     private static NpcExportScene? BuildFullBodyScene(
@@ -222,7 +232,8 @@ internal static class NpcExportSceneBuilder
 
         var animOverrides = settings.BindPose
             ? null
-            : NpcExportBodyAssembler.LoadAnimationOverrides(npc.SkeletonNifPath, meshArchives, skeletonRaw.Value, settings.AnimOverride);
+            : NpcExportBodyAssembler.LoadAnimationOverrides(npc.SkeletonNifPath, meshArchives, skeletonRaw.Value,
+                settings.AnimOverride);
         var boneTransforms = NifGeometryExtractor.ExtractNamedBoneTransforms(
             skeletonRaw.Value.Data,
             skeletonRaw.Value.Info,

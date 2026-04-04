@@ -3,7 +3,10 @@ using FalloutXbox360Utils.CLI;
 using FalloutXbox360Utils.CLI.Rendering.Npc;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
+using FalloutXbox360Utils.Core.Formats.Esm.Records;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
 using FalloutXbox360Utils.Core.Minidump;
@@ -22,8 +25,7 @@ internal sealed class NpcBrowserService : IDisposable
     private readonly Dictionary<uint, NpcAppearance>? _dmpAppearances;
 
     // Shared caches (same as CLI pipelines)
-    private readonly Dictionary<string, EgmParser?> _egmCache = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, EgtParser?> _egtCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly NpcCompositionCaches _compositionCaches = new();
     private readonly NpcMeshArchiveSet _meshArchives;
     private readonly string _pluginName;
     private readonly NpcRenderCaches _renderCaches = new();
@@ -203,7 +205,8 @@ internal sealed class NpcBrowserService : IDisposable
                 continue;
             }
 
-            list.Add(new NpcListItem(formId, creature.EditorId, creature.FullName, creature.ResolveBodyModelPath(), creature.CreatureTypeName));
+            list.Add(new NpcListItem(formId, creature.EditorId, creature.FullName, creature.ResolveBodyModelPath(),
+                creature.CreatureTypeName));
         }
 
         list.Sort((a, b) =>
@@ -232,8 +235,17 @@ internal sealed class NpcBrowserService : IDisposable
             BindPose = bindPose
         };
 
-        var scene = NpcExportSceneBuilder.Build(
-            appearance, _meshArchives, _textureResolver, _egmCache, _egtCache, settings);
+        var plan = NpcCompositionPlanner.CreatePlan(
+            appearance,
+            _meshArchives,
+            _textureResolver,
+            _compositionCaches,
+            NpcCompositionOptions.From(settings));
+        var scene = NpcCompositionExportAdapter.BuildNpc(
+            plan,
+            _meshArchives,
+            _textureResolver,
+            _compositionCaches);
 
         if (scene == null || scene.MeshParts.Count == 0)
         {
@@ -256,23 +268,16 @@ internal sealed class NpcBrowserService : IDisposable
             return null;
         }
 
-        // Resolve first weapon from creature inventory
-        string? weaponMeshPath = null;
-        if (creature.InventoryItems != null)
-        {
-            foreach (var item in creature.InventoryItems)
+        var plan = CreatureCompositionPlanner.CreatePlan(
+            creature,
+            _meshArchives,
+            _resolver,
+            new CreatureCompositionOptions
             {
-                weaponMeshPath = _resolver.ResolveWeaponMeshPath(item.ItemFormId);
-                if (weaponMeshPath != null)
-                {
-                    break;
-                }
-            }
-        }
-
-        var scene = NifExportSceneBuilder.BuildCreature(
-            creature.SkeletonPath, creature.BodyModelPaths, _meshArchives, bindPose,
-            creature.ResolveIdleAnimationPath(), weaponMeshPath);
+                IncludeWeapon = true,
+                BindPose = bindPose
+            });
+        var scene = plan == null ? null : NpcCompositionExportAdapter.BuildCreature(plan, _meshArchives);
 
         if (scene == null || scene.MeshParts.Count == 0)
         {
@@ -308,31 +313,18 @@ internal sealed class NpcBrowserService : IDisposable
             SpriteSize = spriteSize
         };
 
-        NifRenderableModel? model;
-        if (headOnly)
-        {
-            model = NpcHeadBuilder.Build(
-                appearance,
-                _meshArchives,
-                _textureResolver,
-                _renderCaches.HeadMeshes,
-                _renderCaches.EgmFiles,
-                _renderCaches.EgtFiles,
-                settings);
-        }
-        else
-        {
-            model = NpcBodyBuilder.Build(
-                appearance,
-                _meshArchives,
-                _textureResolver,
-                _renderCaches.HeadMeshes,
-                _renderCaches.EgmFiles,
-                _renderCaches.EgtFiles,
-                ref _renderCaches.SkeletonBones,
-                ref _renderCaches.PoseDeltas,
-                settings);
-        }
+        var plan = NpcCompositionPlanner.CreatePlan(
+            appearance,
+            _meshArchives,
+            _textureResolver,
+            _renderCaches.Composition,
+            NpcCompositionOptions.From(settings));
+        var model = NpcCompositionRenderAdapter.BuildNpc(
+            plan,
+            _meshArchives,
+            _textureResolver,
+            _renderCaches.Composition,
+            _renderCaches.RenderModels);
 
         if (model == null)
         {
@@ -373,9 +365,6 @@ internal sealed class NpcBrowserService : IDisposable
         };
 
         Directory.CreateDirectory(outputDir);
-        var egmCache = new Dictionary<string, EgmParser?>(StringComparer.OrdinalIgnoreCase);
-        var egtCache = new Dictionary<string, EgtParser?>(StringComparer.OrdinalIgnoreCase);
-
         await Task.Run(() =>
         {
             var done = 0;
@@ -384,8 +373,17 @@ internal sealed class NpcBrowserService : IDisposable
                 ct.ThrowIfCancellationRequested();
                 try
                 {
-                    var scene = NpcExportSceneBuilder.Build(
-                        npc, _meshArchives, _textureResolver, egmCache, egtCache, settings);
+                    var plan = NpcCompositionPlanner.CreatePlan(
+                        npc,
+                        _meshArchives,
+                        _textureResolver,
+                        _compositionCaches,
+                        NpcCompositionOptions.From(settings));
+                    var scene = NpcCompositionExportAdapter.BuildNpc(
+                        plan,
+                        _meshArchives,
+                        _textureResolver,
+                        _compositionCaches);
                     if (scene != null && scene.MeshParts.Count > 0)
                     {
                         var outputPath = Path.Combine(outputDir, NpcExportFileNaming.BuildFileName(npc));
@@ -447,20 +445,18 @@ internal sealed class NpcBrowserService : IDisposable
                 {
                     foreach (var (suffix, azimuth, elevation) in views)
                     {
-                        NifRenderableModel? model;
-                        if (headOnly)
-                        {
-                            model = NpcHeadBuilder.Build(
-                                npc, _meshArchives, _textureResolver,
-                                caches.HeadMeshes, caches.EgmFiles, caches.EgtFiles, settings);
-                        }
-                        else
-                        {
-                            model = NpcBodyBuilder.Build(
-                                npc, _meshArchives, _textureResolver,
-                                caches.HeadMeshes, caches.EgmFiles, caches.EgtFiles,
-                                ref caches.SkeletonBones, ref caches.PoseDeltas, settings);
-                        }
+                        var plan = NpcCompositionPlanner.CreatePlan(
+                            npc,
+                            _meshArchives,
+                            _textureResolver,
+                            caches.Composition,
+                            NpcCompositionOptions.From(settings));
+                        var model = NpcCompositionRenderAdapter.BuildNpc(
+                            plan,
+                            _meshArchives,
+                            _textureResolver,
+                            caches.Composition,
+                            caches.RenderModels);
 
                         if (model == null)
                         {

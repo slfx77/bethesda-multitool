@@ -1,20 +1,12 @@
 using System.Numerics;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
 
 namespace FalloutXbox360Utils.CLI.Rendering.Npc;
 
 internal sealed class NpcRenderCaches
 {
-    public Dictionary<string, Matrix4x4>? PoseDeltas;
+    public NpcCompositionCaches Composition { get; } = new();
 
-    public Dictionary<string, Matrix4x4>? SkeletonBones;
-
-    public Dictionary<string, NifRenderableModel?> HeadMeshes { get; } =
-        new(StringComparer.OrdinalIgnoreCase);
-
-    public Dictionary<string, EgmParser?> EgmFiles { get; } =
-        new(StringComparer.OrdinalIgnoreCase);
-
-    public Dictionary<string, EgtParser?> EgtFiles { get; } =
-        new(StringComparer.OrdinalIgnoreCase);
+    public NpcRenderModelCache RenderModels { get; } = new();
 }

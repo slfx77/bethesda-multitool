@@ -1,7 +1,7 @@
 using System.Numerics;
 using FalloutXbox360Utils.CLI;
-using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Animation;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
@@ -66,195 +66,18 @@ internal static class NifExportSceneBuilder
         string? idleAnimationPath = null,
         string? weaponMeshPath = null)
     {
-        var skeletonNifPath = skeletonPath.StartsWith("meshes\\", StringComparison.OrdinalIgnoreCase)
-            ? skeletonPath
-            : "meshes\\" + skeletonPath;
-
-        var skeletonRaw = NpcMeshHelpers.LoadNifRawFromBsa(skeletonNifPath, meshArchives);
-        if (skeletonRaw == null)
-        {
-            return null;
-        }
-
-        // Load idle animation: KFFZ from ESM → locomotion/mtidle.kf → skeleton embedded
-        Dictionary<string, NifAnimationParser.AnimPoseOverride>? animOverrides = null;
-        if (!bindPose)
-        {
-            (byte[] Data, NifInfo Info)? idleRaw = null;
-
-            // 1. Try ESM-defined animation (KFFZ)
-            if (idleAnimationPath != null)
+        var plan = CreatureCompositionPlanner.CreatePlan(
+            skeletonPath,
+            bodyModelPaths,
+            meshArchives,
+            new CreatureCompositionOptions
             {
-                var kfPath = idleAnimationPath.StartsWith("meshes\\", StringComparison.OrdinalIgnoreCase)
-                    ? idleAnimationPath
-                    : "meshes\\" + idleAnimationPath;
-                idleRaw = NpcMeshHelpers.LoadNifRawFromBsa(kfPath, meshArchives, skipConversion: true);
-                if (idleRaw != null)
-                {
-                    Log.Debug("Creature idle animation from KFFZ: {0}", kfPath);
-                }
-            }
-
-            // 2. Try locomotion/mtidle.kf in skeleton directory
-            if (idleRaw == null)
-            {
-                var skeletonDir = skeletonNifPath.Replace(
-                    "skeleton.nif", "", StringComparison.OrdinalIgnoreCase);
-                idleRaw = NpcMeshHelpers.LoadNifRawFromBsa(
-                    skeletonDir + "locomotion\\mtidle.kf", meshArchives, skipConversion: true);
-            }
-
-            // 3. Parse from KF file or fall back to skeleton embedded node controllers
-            if (idleRaw != null)
-            {
-                animOverrides = NifAnimationParser.ParseIdlePoseOverrides(idleRaw.Value.Data, idleRaw.Value.Info);
-            }
-            else
-            {
-                // Try NiControllerSequence blocks first, then per-node NiTransformControllers
-                animOverrides = NifAnimationParser.ParseIdlePoseOverrides(
-                    skeletonRaw.Value.Data, skeletonRaw.Value.Info);
-                if (animOverrides == null || animOverrides.Count == 0)
-                {
-                    animOverrides = NifNodeControllerPoseReader.Parse(
-                        skeletonRaw.Value.Data, skeletonRaw.Value.Info);
-                }
-            }
-        }
-
-        // Extract skeleton hierarchy with animation applied
-        var extractedSkeleton = NifExportExtractor.Extract(
-            skeletonRaw.Value.Data, skeletonRaw.Value.Info, animOverrides);
-        var scene = new NpcExportScene();
-        var nodeIndicesByName = AddNodes(scene, extractedSkeleton.Nodes);
-
-        // Build bone world transforms for attaching rigid meshes to skeleton bones
-        var boneWorldTransforms = extractedSkeleton.NamedNodeWorldTransforms;
-
-        Log.Debug("Creature skeleton: {0} named bones from '{1}'",
-            nodeIndicesByName.Count, Path.GetFileName(skeletonNifPath));
-
-        // Resolve body mesh paths relative to skeleton directory
-        var skeletonDirectory = Path.GetDirectoryName(skeletonNifPath);
-
-        foreach (var bodyPath in bodyModelPaths)
-        {
-            string fullBodyPath;
-            if (bodyPath.Contains('\\') || bodyPath.Contains('/'))
-            {
-                fullBodyPath = bodyPath.StartsWith("meshes\\", StringComparison.OrdinalIgnoreCase)
-                    ? bodyPath
-                    : "meshes\\" + bodyPath;
-            }
-            else if (!string.IsNullOrEmpty(skeletonDirectory))
-            {
-                fullBodyPath = Path.Combine(skeletonDirectory, bodyPath);
-            }
-            else
-            {
-                fullBodyPath = "meshes\\" + bodyPath;
-            }
-
-            var bodyRaw = NpcMeshHelpers.LoadNifRawFromBsa(fullBodyPath, meshArchives);
-            if (bodyRaw == null)
-            {
-                continue;
-            }
-
-            var bodyExtracted = NifExportExtractor.Extract(bodyRaw.Value.Data, bodyRaw.Value.Info);
-            foreach (var part in bodyExtracted.MeshParts)
-            {
-                if (part.Skin != null && TryCreateSkinBinding(part.Skin, nodeIndicesByName, out var skinBinding))
-                {
-                    Log.Debug("  Skinned: '{0}' ({1} bones)", part.Name, part.Skin.BoneNames.Length);
-                    scene.MeshParts.Add(new NpcExportMeshPart
-                    {
-                        Name = part.Name,
-                        Submesh = CloneSubmesh(part.Submesh),
-                        Skin = skinBinding
-                    });
-                }
-                else
-                {
-                    if (part.Skin != null)
-                    {
-                        var missingBones = part.Skin.BoneNames
-                            .Where(b => !nodeIndicesByName.ContainsKey(b))
-                            .ToArray();
-                        Log.Warn("Creature skin binding failed for '{0}': missing bones [{1}]",
-                            part.Name, string.Join(", ", missingBones));
-                    }
-                    else
-                    {
-                        Log.Debug("  Rigid: '{0}'", part.Name);
-                    }
-
-                    // For rigid meshes in creature body NIFs, try to find a skeleton
-                    // bone to attach to. Eye meshes etc. are authored in head-local
-                    // space, so apply translation only (not rotation) from the bone.
-                    var attachmentTransform = part.ShapeWorldTransform;
-                    if (attachmentTransform.Translation.LengthSquared() < 0.01f &&
-                        boneWorldTransforms != null)
-                    {
-                        if (boneWorldTransforms.TryGetValue("Bip01 Head", out var headTransform))
-                        {
-                            attachmentTransform = Matrix4x4.CreateTranslation(headTransform.Translation);
-                            Log.Debug("  Rigid mesh '{0}' attached to 'Bip01 Head'", part.Name);
-                        }
-                    }
-
-                    var rigidSubmesh = CloneSubmesh(part.Submesh);
-                    ApplyWorldTransform(rigidSubmesh, attachmentTransform);
-                    var nodeIndex = scene.AddNode(
-                        $"{Path.GetFileNameWithoutExtension(fullBodyPath)}_{scene.MeshParts.Count}",
-                        NpcExportScene.RootNodeIndex,
-                        Matrix4x4.Identity,
-                        Matrix4x4.Identity,
-                        NpcExportNodeKind.Attachment);
-                    scene.MeshParts.Add(new NpcExportMeshPart
-                    {
-                        Name = part.Name,
-                        NodeIndex = nodeIndex,
-                        Submesh = rigidSubmesh
-                    });
-                }
-            }
-        }
-
-        // Attach weapon if provided and skeleton has a "Weapon" bone
-        if (weaponMeshPath != null && boneWorldTransforms != null &&
-            boneWorldTransforms.TryGetValue("Weapon", out var weaponBoneTransform))
-        {
-            var weaponNifPath = weaponMeshPath.StartsWith("meshes\\", StringComparison.OrdinalIgnoreCase)
-                ? weaponMeshPath
-                : "meshes\\" + weaponMeshPath;
-            var weaponRaw = NpcMeshHelpers.LoadNifRawFromBsa(weaponNifPath, meshArchives);
-            if (weaponRaw != null)
-            {
-                var weaponExtracted = NifExportExtractor.Extract(weaponRaw.Value.Data, weaponRaw.Value.Info);
-                foreach (var part in weaponExtracted.MeshParts)
-                {
-                    var weaponSubmesh = CloneSubmesh(part.Submesh);
-                    ApplyWorldTransform(weaponSubmesh, weaponBoneTransform * part.ShapeWorldTransform);
-                    var nodeIndex = scene.AddNode(
-                        $"Weapon_{scene.MeshParts.Count}",
-                        NpcExportScene.RootNodeIndex,
-                        Matrix4x4.Identity,
-                        Matrix4x4.Identity,
-                        NpcExportNodeKind.Attachment);
-                    scene.MeshParts.Add(new NpcExportMeshPart
-                    {
-                        Name = part.Name,
-                        NodeIndex = nodeIndex,
-                        Submesh = weaponSubmesh
-                    });
-                }
-
-                Log.Debug("  Weapon attached: '{0}' ({1} parts)", weaponNifPath, weaponExtracted.MeshParts.Count);
-            }
-        }
-
-        return scene.MeshParts.Count > 0 ? scene : null;
+                IncludeWeapon = weaponMeshPath != null,
+                BindPose = bindPose
+            },
+            idleAnimationPath,
+            weaponMeshPath);
+        return plan == null ? null : NpcCompositionExportAdapter.BuildCreature(plan, meshArchives);
     }
 
     private static Dictionary<string, int> AddNodes(

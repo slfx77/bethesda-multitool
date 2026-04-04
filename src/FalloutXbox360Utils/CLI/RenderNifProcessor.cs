@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using FalloutXbox360Utils.CLI.Rendering;
 using FalloutXbox360Utils.Core.Formats.Bsa;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Nif;
@@ -20,27 +21,12 @@ internal static class RenderNifProcessor
     private static (GpuDevice? device, GpuSpriteRenderer? renderer) TryCreateGpuRenderer(
         NifRenderSettings s)
     {
-        if (s.ForceCpu)
-        {
-            AnsiConsole.MarkupLine("Using CPU software renderer ([yellow]--cpu[/])");
-            return (null, null);
-        }
-
-        var gpuDevice = GpuDevice.Create();
-        if (gpuDevice != null)
-        {
-            var renderer = new GpuSpriteRenderer(gpuDevice);
-            AnsiConsole.MarkupLine("GPU rendering: [green]{0}[/] ({1})",
-                gpuDevice.Backend, gpuDevice.Device.DeviceName);
-            return (gpuDevice, renderer);
-        }
-
-        if (s.ForceGpu)
-        {
-            AnsiConsole.MarkupLine("[red]Error:[/] --gpu specified but no GPU backend available");
-        }
-
-        return (null, null);
+        var selection = SpriteRenderBackendSelector.Create(
+            s.ForceCpu,
+            s.ForceGpu,
+            forcedCpuMessage: "Using CPU software renderer ([yellow]--cpu[/])",
+            fallbackCpuMessage: null);
+        return (selection.Device, selection.Renderer);
     }
 
     internal static async Task RunBsaBatchAsync(NifRenderSettings s, CancellationToken ct)
