@@ -1,4 +1,9 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Magic;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
@@ -105,9 +110,14 @@ internal static class RecordFieldFlattener
 
     internal static Dictionary<string, string> FlattenNpc(NpcRecord n, FormIdResolver resolver)
     {
+        string gender;
+        if (n.Stats == null)
+            gender = "";
+        else
+            gender = (n.Stats.Flags & 1) == 1 ? "Female" : "Male";
         var d = new Dictionary<string, string>
         {
-            ["Gender"] = n.Stats == null ? "" : (n.Stats.Flags & 1) == 1 ? "Female" : "Male",
+            ["Gender"] = gender,
             ["Level"] = n.Stats?.Level.ToString() ?? "",
             ["Race"] = ResolveRef(n.Race, resolver),
             ["Class"] = ResolveRef(n.Class, resolver),
@@ -278,7 +288,7 @@ internal static class RecordFieldFlattener
             ["Water"] = Fmt.FIdN(w.WaterFormId),
             ["DefaultLandHeight"] = w.DefaultLandHeight?.ToString("F2") ?? "",
             ["DefaultWaterHeight"] = w.DefaultWaterHeight?.ToString("F2") ?? "",
-            ["Flags"] = w.Flags.ToString(),
+            ["Flags"] = w.Flags?.ToString() ?? "",
             ["CellCount"] = w.Cells.Count.ToString()
         };
     }

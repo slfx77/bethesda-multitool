@@ -1,8 +1,9 @@
 using System.CommandLine;
-using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Minidump;
 using Spectre.Console;
 
@@ -106,7 +107,7 @@ internal static class DmpCompareCommand
         // Process base build if specified (inserted as first entry)
         if (!string.IsNullOrEmpty(basePath))
         {
-            var baseResult = await ProcessBaseDirectoryAsync(basePath, ct);
+            var baseResult = await DmpCompareFileProcessor.ProcessBaseDirectoryAsync(basePath, ct);
             if (baseResult != null)
             {
                 dumpData.Add(baseResult.Value);
@@ -139,7 +140,7 @@ internal static class DmpCompareCommand
 
                     try
                     {
-                        var result = await ProcessDumpAsync(dmpFile, verbose);
+                        var result = await DmpCompareFileProcessor.ProcessDumpAsync(dmpFile, verbose);
                         if (result != null)
                         {
                             dumpData.Add(result.Value);
@@ -174,7 +175,7 @@ internal static class DmpCompareCommand
 
                     try
                     {
-                        var result = await ProcessEsmAsync(esmFile, ct);
+                        var result = await DmpCompareFileProcessor.ProcessEsmAsync(esmFile, ct);
                         if (result != null)
                         {
                             var r = result.Value;
@@ -402,8 +403,9 @@ internal static class DmpCompareCommand
         table.AddColumn(new TableColumn("[bold]FormIDs[/]").RightAligned());
 
         foreach (var dump in index.Dumps)
-            table.AddColumn(new TableColumn($"[bold]{Markup.Escape(dump.ShortName)}[/]\n[dim]{dump.FileDate:yyyy-MM-dd}[/]")
-                .RightAligned());
+            table.AddColumn(
+                new TableColumn($"[bold]{Markup.Escape(dump.ShortName)}[/]\n[dim]{dump.FileDate:yyyy-MM-dd}[/]")
+                    .RightAligned());
 
         foreach (var (recordType, formIdMap) in index.StructuredRecords.OrderBy(r => r.Key))
         {
@@ -469,145 +471,4 @@ internal static class DmpCompareCommand
         }
     }
 
-    /// <summary>
-    ///     Process a single DMP file: analyze -> parse -> return records + resolver.
-    /// </summary>
-    private static async Task<(string FilePath, RecordCollection Records, FormIdResolver Resolver, MinidumpInfo? Info)?>
-        ProcessDumpAsync(string dmpFile, bool verbose)
-    {
-        var analyzer = new MinidumpAnalyzer();
-        var result = await analyzer.AnalyzeAsync(dmpFile, includeMetadata: true, verbose: verbose);
-
-        if (result.EsmRecords == null || result.EsmRecords.MainRecords.Count == 0)
-            return null;
-
-        var fileSize = new FileInfo(dmpFile).Length;
-        using var mmf = MemoryMappedFile.CreateFromFile(dmpFile, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-        using var accessor = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
-
-        var parser = new RecordParser(
-            result.EsmRecords, result.FormIdMap, accessor, fileSize, result.MinidumpInfo);
-        var records = parser.ParseAll();
-
-        var resolver = records.CreateResolver(result.FormIdMap);
-
-        return (dmpFile, records, resolver, result.MinidumpInfo);
-    }
-
-    /// <summary>
-    ///     Process a single ESM file: analyze -> parse -> return records + resolver + scan result.
-    /// </summary>
-    private static async Task<(string FilePath, RecordCollection Records, FormIdResolver Resolver, MinidumpInfo? Info,
-        EsmRecordScanResult? ScanResult)?>
-        ProcessEsmAsync(string esmFile, CancellationToken ct)
-    {
-        var analysisResult = await EsmFileAnalyzer.AnalyzeAsync(esmFile, null, ct);
-
-        if (analysisResult.EsmRecords == null || analysisResult.EsmRecords.MainRecords.Count == 0)
-            return null;
-
-        var fileSize = new FileInfo(esmFile).Length;
-        using var mmf = MemoryMappedFile.CreateFromFile(esmFile, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-        using var accessor = mmf.CreateViewAccessor(0, fileSize, MemoryMappedFileAccess.Read);
-
-        var parser = new RecordParser(
-            analysisResult.EsmRecords, analysisResult.FormIdMap, accessor, fileSize, analysisResult.MinidumpInfo);
-        var records = parser.ParseAll();
-
-        var resolver = records.CreateResolver(analysisResult.FormIdMap);
-
-        return (esmFile, records, resolver, null, analysisResult.EsmRecords);
-    }
-
-    /// <summary>
-    ///     Process a base build directory: auto-detect load order from MAST subrecords,
-    ///     parse and merge all ESMs in dependency order (master first, DLCs overlay).
-    /// </summary>
-    private static async Task<(string FilePath, RecordCollection Records, FormIdResolver Resolver, MinidumpInfo? Info)?>
-        ProcessBaseDirectoryAsync(string baseDirPath, CancellationToken ct)
-    {
-        if (!Directory.Exists(baseDirPath))
-        {
-            AnsiConsole.MarkupLine($"[red]Base directory not found:[/] {baseDirPath}");
-            return null;
-        }
-
-        var esmFiles = Directory.GetFiles(baseDirPath, "*.esm").ToList();
-        if (esmFiles.Count == 0)
-        {
-            AnsiConsole.MarkupLine($"[red]No .esm files found in base directory:[/] {baseDirPath}");
-            return null;
-        }
-
-        // Read headers to determine load order from MAST subrecords
-        var fileHeaders = new List<(string Path, string FileName, EsmFileHeader Header)>();
-        foreach (var esmFile in esmFiles)
-        {
-            var headerBytes = new byte[Math.Min(8192, new FileInfo(esmFile).Length)];
-            await using var fs = File.OpenRead(esmFile);
-            var bytesRead = await fs.ReadAsync(headerBytes, ct);
-            var header = EsmParser.ParseFileHeader(headerBytes.AsSpan(0, bytesRead));
-            if (header != null)
-            {
-                fileHeaders.Add((esmFile, Path.GetFileName(esmFile), header));
-            }
-        }
-
-        // Sort: files with no masters first (the base game ESM), then DLCs
-        var ordered = fileHeaders
-            .OrderBy(f => f.Header.Masters.Count)
-            .ThenBy(f => f.FileName)
-            .ToList();
-
-        var masterName = Path.GetFileNameWithoutExtension(ordered[0].FileName);
-        AnsiConsole.MarkupLine($"  [blue]Base build: {Markup.Escape(masterName)}[/] ({ordered.Count} ESMs)");
-
-        foreach (var (path, fileName, header) in ordered)
-        {
-            var mastersStr = header.Masters.Count > 0
-                ? $" (masters: {string.Join(", ", header.Masters)})"
-                : " (master)";
-            AnsiConsole.MarkupLine($"    {Markup.Escape(fileName)}{mastersStr}");
-        }
-
-        // Parse and merge in order
-        RecordCollection? merged = null;
-        FormIdResolver? mergedResolver = null;
-
-        foreach (var (path, fileName, _) in ordered)
-        {
-            var analysisResult = await EsmFileAnalyzer.AnalyzeAsync(path, null, ct);
-            if (analysisResult.EsmRecords == null || analysisResult.EsmRecords.MainRecords.Count == 0)
-                continue;
-
-            var fileSize = new FileInfo(path).Length;
-            using var mmf = MemoryMappedFile.CreateFromFile(path, FileMode.Open, null, 0,
-                MemoryMappedFileAccess.Read);
-            using var accessor = mmf.CreateViewAccessor(0, fileSize, MemoryMappedFileAccess.Read);
-
-            var parser = new RecordParser(
-                analysisResult.EsmRecords, analysisResult.FormIdMap, accessor, fileSize,
-                analysisResult.MinidumpInfo);
-            var records = parser.ParseAll();
-            var resolver = records.CreateResolver(analysisResult.FormIdMap);
-
-            if (merged == null)
-            {
-                merged = records;
-                mergedResolver = resolver;
-            }
-            else
-            {
-                merged = merged.MergeWith(records);
-                mergedResolver = mergedResolver!.MergeWith(resolver);
-            }
-        }
-
-        if (merged == null || mergedResolver == null)
-            return null;
-
-        // Use a non-existent path so FileInfo.Exists returns false → DateTime.MinValue → sorts first.
-        // The filename portion is used as the display name.
-        return (Path.Combine(baseDirPath, $"{masterName}.base"), merged, mergedResolver, null);
-    }
 }

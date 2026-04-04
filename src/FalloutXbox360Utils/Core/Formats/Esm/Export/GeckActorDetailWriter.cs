@@ -1,5 +1,7 @@
 using System.Text;
+using FalloutXbox360Utils.Core.Formats.Esm.FaceGen;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
@@ -19,7 +21,7 @@ internal static class GeckActorDetailWriter
         if (npc.Stats != null)
         {
             var gender = (npc.Stats.Flags & 1) == 1 ? "Female" : "Male";
-            sections.Add(new("Identity", [new("Gender", ReportValue.String(gender))]));
+            sections.Add(new ReportSection("Identity", [new ReportField("Gender", ReportValue.String(gender))]));
         }
 
         // Stats
@@ -27,12 +29,12 @@ internal static class GeckActorDetailWriter
         {
             var statsFields = new List<ReportField>();
             if (npc.Stats != null)
-                statsFields.Add(new("Level", ReportValue.Int(npc.Stats.Level)));
+                statsFields.Add(new ReportField("Level", ReportValue.Int(npc.Stats.Level)));
             if (npc.SpecialStats is { Length: 7 })
             {
                 var s = npc.SpecialStats;
                 var total = s[0] + s[1] + s[2] + s[3] + s[4] + s[5] + s[6];
-                statsFields.Add(new("S.P.E.C.I.A.L.",
+                statsFields.Add(new ReportField("S.P.E.C.I.A.L.",
                     ReportValue.String(
                         $"{s[0]} ST, {s[1]} PE, {s[2]} EN, {s[3]} CH, {s[4]} IN, {s[5]} AG, {s[6]} LK  (Total: {total})")));
             }
@@ -45,16 +47,16 @@ internal static class GeckActorDetailWriter
                 {
                     var name = resolver.GetSkillName(i) ?? $"Skill#{i}";
                     skillItems.Add(new ReportValue.CompositeVal(
-                    [
-                        new("Skill", ReportValue.String(name)),
-                        new("Value", ReportValue.Int(sk[i]))
-                    ], $"{name}: {sk[i]}"));
+                        [
+                            new ReportField("Skill", ReportValue.String(name)),
+                            new ReportField("Value", ReportValue.Int(sk[i]))
+                        ], $"{name}: {sk[i]}"));
                 }
 
-                statsFields.Add(new("Skills", ReportValue.List(skillItems)));
+                statsFields.Add(new ReportField("Skills", ReportValue.List(skillItems)));
             }
 
-            sections.Add(new("Stats", statsFields));
+            sections.Add(new ReportSection("Stats", statsFields));
         }
 
         // Derived Stats
@@ -66,27 +68,27 @@ internal static class GeckActorDetailWriter
                 var baseHealth = sp[2] * 5 + 50;
                 var calcHealth = baseHealth + npc.Stats.Level * 10;
                 var calcFatigue = npc.Stats.FatigueBase + (sp[0] + sp[2]) * 10;
-                derivedFields.Add(new("Base Health", ReportValue.Int(baseHealth)));
-                derivedFields.Add(new("Calculated Health", ReportValue.Int(calcHealth)));
-                derivedFields.Add(new("Fatigue", ReportValue.Int(npc.Stats.FatigueBase)));
-                derivedFields.Add(new("Calc Fatigue", ReportValue.Int(calcFatigue)));
-                derivedFields.Add(new("Critical Chance", ReportValue.FloatDisplay(sp[6], $"{sp[6]}")));
-                derivedFields.Add(new("Speed Mult",
+                derivedFields.Add(new ReportField("Base Health", ReportValue.Int(baseHealth)));
+                derivedFields.Add(new ReportField("Calculated Health", ReportValue.Int(calcHealth)));
+                derivedFields.Add(new ReportField("Fatigue", ReportValue.Int(npc.Stats.FatigueBase)));
+                derivedFields.Add(new ReportField("Calc Fatigue", ReportValue.Int(calcFatigue)));
+                derivedFields.Add(new ReportField("Critical Chance", ReportValue.FloatDisplay(sp[6], $"{sp[6]}")));
+                derivedFields.Add(new ReportField("Speed Mult",
                     ReportValue.Int(npc.Stats.SpeedMultiplier, $"{npc.Stats.SpeedMultiplier}%")));
             }
             else
             {
-                derivedFields.Add(new("Fatigue", ReportValue.Int(npc.Stats.FatigueBase)));
-                derivedFields.Add(new("Speed Mult",
+                derivedFields.Add(new ReportField("Fatigue", ReportValue.Int(npc.Stats.FatigueBase)));
+                derivedFields.Add(new ReportField("Speed Mult",
                     ReportValue.Int(npc.Stats.SpeedMultiplier, $"{npc.Stats.SpeedMultiplier}%")));
             }
 
-            derivedFields.Add(new("Karma",
+            derivedFields.Add(new ReportField("Karma",
                 ReportValue.FloatDisplay(npc.Stats.KarmaAlignment,
                     $"{npc.Stats.KarmaAlignment:F2}{GeckReportHelpers.FormatKarmaLabel(npc.Stats.KarmaAlignment)}")));
-            derivedFields.Add(new("Disposition", ReportValue.Int(npc.Stats.DispositionBase)));
-            derivedFields.Add(new("Barter Gold", ReportValue.Int(npc.Stats.BarterGold)));
-            sections.Add(new("Derived Stats", derivedFields));
+            derivedFields.Add(new ReportField("Disposition", ReportValue.Int(npc.Stats.DispositionBase)));
+            derivedFields.Add(new ReportField("Barter Gold", ReportValue.Int(npc.Stats.BarterGold)));
+            sections.Add(new ReportSection("Derived Stats", derivedFields));
         }
 
         // Combat
@@ -94,16 +96,16 @@ internal static class GeckActorDetailWriter
         {
             var combatFields = new List<ReportField>();
             if (npc.Race.HasValue)
-                combatFields.Add(new("Race", ReportValue.FormId(npc.Race.Value, resolver),
+                combatFields.Add(new ReportField("Race", ReportValue.FormId(npc.Race.Value, resolver),
                     $"0x{npc.Race.Value:X8}"));
             if (npc.Class.HasValue)
-                combatFields.Add(new("Class", ReportValue.FormId(npc.Class.Value, resolver),
+                combatFields.Add(new ReportField("Class", ReportValue.FormId(npc.Class.Value, resolver),
                     $"0x{npc.Class.Value:X8}"));
             if (npc.CombatStyleFormId.HasValue)
-                combatFields.Add(new("Combat Style",
+                combatFields.Add(new ReportField("Combat Style",
                     ReportValue.FormId(npc.CombatStyleFormId.Value, resolver),
                     $"0x{npc.CombatStyleFormId.Value:X8}"));
-            sections.Add(new("Combat", combatFields));
+            sections.Add(new ReportSection("Combat", combatFields));
         }
 
         // Physical Traits
@@ -112,37 +114,37 @@ internal static class GeckActorDetailWriter
         {
             var physFields = new List<ReportField>();
             if (npc.HairFormId.HasValue)
-                physFields.Add(new("Hairstyle", ReportValue.FormId(npc.HairFormId.Value, resolver),
+                physFields.Add(new ReportField("Hairstyle", ReportValue.FormId(npc.HairFormId.Value, resolver),
                     $"0x{npc.HairFormId.Value:X8}"));
             if (npc.HairLength.HasValue)
-                physFields.Add(new("Hair Length", ReportValue.Float(npc.HairLength.Value, "F2")));
+                physFields.Add(new ReportField("Hair Length", ReportValue.Float(npc.HairLength.Value, "F2")));
             if (npc.HairColor.HasValue)
-                physFields.Add(new("Hair Color",
-                    ReportValue.String(NpcRecord.FormatHairColor(npc.HairColor))));
+                physFields.Add(new ReportField("Hair Color",
+                    ReportValue.String(NpcRecord.FormatHairColor(npc.HairColor) ?? "")));
             if (npc.EyesFormId.HasValue)
-                physFields.Add(new("Eyes", ReportValue.FormId(npc.EyesFormId.Value, resolver),
+                physFields.Add(new ReportField("Eyes", ReportValue.FormId(npc.EyesFormId.Value, resolver),
                     $"0x{npc.EyesFormId.Value:X8}"));
             if (npc.Height.HasValue)
-                physFields.Add(new("Height", ReportValue.Float(npc.Height.Value, "F2")));
+                physFields.Add(new ReportField("Height", ReportValue.Float(npc.Height.Value, "F2")));
             if (npc.Weight.HasValue)
-                physFields.Add(new("Weight", ReportValue.Float(npc.Weight.Value, "F1")));
-            sections.Add(new("Physical Traits", physFields));
+                physFields.Add(new ReportField("Weight", ReportValue.Float(npc.Weight.Value)));
+            sections.Add(new ReportSection("Physical Traits", physFields));
         }
 
         // AI Data
         if (npc.AiData != null)
         {
-            sections.Add(new("AI Data",
+            sections.Add(new ReportSection("AI Data",
             [
-                new("Aggression",
+                new ReportField("Aggression",
                     ReportValue.String($"{npc.AiData.AggressionName} ({npc.AiData.Aggression})")),
-                new("Confidence",
+                new ReportField("Confidence",
                     ReportValue.String($"{npc.AiData.ConfidenceName} ({npc.AiData.Confidence})")),
-                new("Mood", ReportValue.String($"{npc.AiData.MoodName} ({npc.AiData.Mood})")),
-                new("Assistance",
+                new ReportField("Mood", ReportValue.String($"{npc.AiData.MoodName} ({npc.AiData.Mood})")),
+                new ReportField("Assistance",
                     ReportValue.String($"{npc.AiData.AssistanceName} ({npc.AiData.Assistance})")),
-                new("Energy Level", ReportValue.Int(npc.AiData.EnergyLevel)),
-                new("Responsibility",
+                new ReportField("Energy Level", ReportValue.Int(npc.AiData.EnergyLevel)),
+                new ReportField("Responsibility",
                     ReportValue.String(
                         $"{npc.AiData.ResponsibilityName} ({npc.AiData.Responsibility})"))
             ]));
@@ -154,26 +156,26 @@ internal static class GeckActorDetailWriter
         {
             var refFields = new List<ReportField>();
             if (npc.Script.HasValue)
-                refFields.Add(new("Script",
+                refFields.Add(new ReportField("Script",
                     ReportValue.FormId(npc.Script.Value,
                         resolver.FormatWithEditorId(npc.Script.Value)),
                     $"0x{npc.Script.Value:X8}"));
             if (npc.VoiceType.HasValue)
-                refFields.Add(new("Voice Type",
+                refFields.Add(new ReportField("Voice Type",
                     ReportValue.FormId(npc.VoiceType.Value,
                         resolver.FormatWithEditorId(npc.VoiceType.Value)),
                     $"0x{npc.VoiceType.Value:X8}"));
             if (npc.Template.HasValue)
-                refFields.Add(new("Template", ReportValue.FormId(npc.Template.Value, resolver),
+                refFields.Add(new ReportField("Template", ReportValue.FormId(npc.Template.Value, resolver),
                     $"0x{npc.Template.Value:X8}"));
             if (npc.OriginalRace.HasValue)
-                refFields.Add(new("Original Race",
+                refFields.Add(new ReportField("Original Race",
                     ReportValue.FormId(npc.OriginalRace.Value, resolver),
                     $"0x{npc.OriginalRace.Value:X8}"));
             if (npc.FaceNpc.HasValue)
-                refFields.Add(new("Face NPC", ReportValue.FormId(npc.FaceNpc.Value, resolver),
+                refFields.Add(new ReportField("Face NPC", ReportValue.FormId(npc.FaceNpc.Value, resolver),
                     $"0x{npc.FaceNpc.Value:X8}"));
-            sections.Add(new("References", refFields));
+            sections.Add(new ReportSection("References", refFields));
         }
 
         // Factions
@@ -185,15 +187,15 @@ internal static class GeckActorDetailWriter
                     var editorId = resolver.ResolveEditorId(f.FactionFormId);
                     var displayName = resolver.ResolveDisplayName(f.FactionFormId);
                     return (ReportValue)new ReportValue.CompositeVal(
-                    [
-                        new("EditorID", ReportValue.String(editorId)),
-                        new("Name", ReportValue.String(displayName)),
-                        new("Rank", ReportValue.Int(f.Rank))
-                    ], $"{editorId} (Rank {f.Rank})");
+                        [
+                            new ReportField("EditorID", ReportValue.String(editorId)),
+                            new ReportField("Name", ReportValue.String(displayName)),
+                            new ReportField("Rank", ReportValue.Int(f.Rank))
+                        ], $"{editorId} (Rank {f.Rank})");
                 })
                 .ToList();
-            sections.Add(new($"Factions ({npc.Factions.Count})",
-                [new("Factions", ReportValue.List(factionItems))]));
+            sections.Add(new ReportSection($"Factions ({npc.Factions.Count})",
+                [new ReportField("Factions", ReportValue.List(factionItems))]));
         }
 
         // Inventory
@@ -205,15 +207,15 @@ internal static class GeckActorDetailWriter
                     var editorId = resolver.ResolveEditorId(i.ItemFormId);
                     var displayName = resolver.ResolveDisplayName(i.ItemFormId);
                     return (ReportValue)new ReportValue.CompositeVal(
-                    [
-                        new("EditorID", ReportValue.String(editorId)),
-                        new("Name", ReportValue.String(displayName)),
-                        new("Qty", ReportValue.Int(i.Count))
-                    ], $"{editorId} x{i.Count}");
+                        [
+                            new ReportField("EditorID", ReportValue.String(editorId)),
+                            new ReportField("Name", ReportValue.String(displayName)),
+                            new ReportField("Qty", ReportValue.Int(i.Count))
+                        ], $"{editorId} x{i.Count}");
                 })
                 .ToList();
-            sections.Add(new($"Inventory ({npc.Inventory.Count})",
-                [new("Items", ReportValue.List(invItems))]));
+            sections.Add(new ReportSection($"Inventory ({npc.Inventory.Count})",
+                [new ReportField("Items", ReportValue.List(invItems))]));
         }
 
         // Spells
@@ -222,8 +224,8 @@ internal static class GeckActorDetailWriter
             var spellItems = npc.Spells.OrderBy(s => s)
                 .Select(s => (ReportValue)ReportValue.FormId(s, resolver))
                 .ToList();
-            sections.Add(new($"Spells/Abilities ({npc.Spells.Count})",
-                [new("Spells", ReportValue.List(spellItems))]));
+            sections.Add(new ReportSection($"Spells/Abilities ({npc.Spells.Count})",
+                [new ReportField("Spells", ReportValue.List(spellItems))]));
         }
 
         // AI Packages
@@ -232,39 +234,107 @@ internal static class GeckActorDetailWriter
             var pkgItems = npc.Packages.OrderBy(p => p)
                 .Select(p => (ReportValue)ReportValue.FormId(p, resolver))
                 .ToList();
-            sections.Add(new($"AI Packages ({npc.Packages.Count})",
-                [new("Packages", ReportValue.List(pkgItems))]));
+            sections.Add(new ReportSection($"AI Packages ({npc.Packages.Count})",
+                [new ReportField("Packages", ReportValue.List(pkgItems))]));
         }
 
-        // FaceGen Morph Data (store as raw hex strings for comparison — the computed projections
-        // depend on the race record which may not be available)
+        // FaceGen Morph Data — CTL-projected slider values + raw hex for exact comparison
         var hasFaceGen = npc.FaceGenGeometrySymmetric != null ||
                          npc.FaceGenGeometryAsymmetric != null ||
                          npc.FaceGenTextureSymmetric != null;
         if (hasFaceGen)
         {
             var fgFields = new List<ReportField>();
+            var isFemale = npc.Stats != null && (npc.Stats.Flags & 1) == 1;
+
+            // FGGS — Geometry Symmetric
             if (npc.FaceGenGeometrySymmetric != null)
-                fgFields.Add(new("FGGS", ReportValue.String(FormatFaceGenHex(npc.FaceGenGeometrySymmetric))));
+            {
+                var raceFggs = isFemale
+                    ? race?.FemaleFaceGenGeometrySymmetric
+                    : race?.MaleFaceGenGeometrySymmetric;
+                AppendFaceGenChannel(fgFields, "FGGS",
+                    npc.FaceGenGeometrySymmetric,
+                    fggs => FaceGenControls.ComputeGeometrySymmetric(fggs, raceFggs));
+            }
+
+            // FGGA — Geometry Asymmetric
             if (npc.FaceGenGeometryAsymmetric != null)
-                fgFields.Add(new("FGGA", ReportValue.String(FormatFaceGenHex(npc.FaceGenGeometryAsymmetric))));
+            {
+                var raceFgga = isFemale
+                    ? race?.FemaleFaceGenGeometryAsymmetric
+                    : race?.MaleFaceGenGeometryAsymmetric;
+                AppendFaceGenChannel(fgFields, "FGGA",
+                    npc.FaceGenGeometryAsymmetric,
+                    fgga => FaceGenControls.ComputeGeometryAsymmetric(fgga, raceFgga));
+            }
+
+            // FGTS — Texture Symmetric
             if (npc.FaceGenTextureSymmetric != null)
-                fgFields.Add(new("FGTS", ReportValue.String(FormatFaceGenHex(npc.FaceGenTextureSymmetric))));
-            sections.Add(new("FaceGen Morph Data", fgFields));
+            {
+                var raceFgts = isFemale
+                    ? race?.FemaleFaceGenTextureSymmetric
+                    : race?.MaleFaceGenTextureSymmetric;
+                AppendFaceGenChannel(fgFields, "FGTS",
+                    npc.FaceGenTextureSymmetric,
+                    fgts => FaceGenControls.ComputeTextureSymmetric(fgts, raceFgts));
+            }
+
+            sections.Add(new ReportSection("FaceGen Morph Data", fgFields));
         }
 
         return new RecordReport("NPC", npc.FormId, npc.EditorId, npc.FullName, sections);
     }
 
-    private static string FormatFaceGenHex(float[] coefficients)
+    /// <summary>
+    ///     Append CTL-projected control values and raw hex for a single FaceGen channel
+    ///     (FGGS, FGGA, or FGTS) to the report field list.
+    /// </summary>
+    private static void AppendFaceGenChannel(
+        List<ReportField> fgFields,
+        string label,
+        float[] coefficients,
+        Func<float[], (string Name, float Value)[]> computeControls)
     {
-        // Compact hex representation for comparison: first 8 coefficients only
-        if (coefficients.Length == 0) return "(empty)";
-        var count = Math.Min(8, coefficients.Length);
-        var nonZero = 0;
-        for (var i = 0; i < coefficients.Length; i++)
-            if (Math.Abs(coefficients[i]) > 0.001f) nonZero++;
-        return $"{nonZero}/{coefficients.Length} non-zero";
+        // Compute named slider projections via CTL basis vectors
+        var controls = computeControls(coefficients);
+        var activeControls = controls
+            .Where(c => Math.Abs(c.Value) > 0.01f)
+            .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(c => (ReportValue)new ReportValue.CompositeVal(
+            [
+                new ReportField("Control", ReportValue.String(c.Name)),
+                new ReportField("Value", ReportValue.Float(c.Value, "F4"))
+            ], $"{c.Name}: {c.Value:F4}"))
+            .ToList();
+
+        fgFields.Add(new ReportField($"{label} Controls",
+            ReportValue.List(activeControls, $"{activeControls.Count}/{controls.Length} active")));
+
+        // Raw IEEE 754 little-endian hex for exact byte-level comparison
+        fgFields.Add(new ReportField($"{label} Hex", ReportValue.String(BuildFaceGenHexString(coefficients))));
+    }
+
+    /// <summary>
+    ///     Convert a FaceGen float array to a hex string of IEEE 754 little-endian bytes.
+    ///     Suitable for exact binary comparison or GECK import.
+    /// </summary>
+    private static string BuildFaceGenHexString(float[] values)
+    {
+        if (values.Length == 0) return "(empty)";
+
+        var sb = new StringBuilder(values.Length * 12);
+        for (var i = 0; i < values.Length; i++)
+        {
+            var bytes = BitConverter.GetBytes(values[i]);
+            if (!BitConverter.IsLittleEndian)
+                Array.Reverse(bytes);
+
+            if (i > 0) sb.Append(' ');
+            sb.Append($"{bytes[0]:X2} {bytes[1]:X2} {bytes[2]:X2} {bytes[3]:X2}");
+        }
+
+        return sb.ToString();
     }
 
     internal static void AppendNpcReportEntry(
@@ -323,5 +393,4 @@ internal static class GeckActorDetailWriter
 
         return sb.ToString();
     }
-
 }

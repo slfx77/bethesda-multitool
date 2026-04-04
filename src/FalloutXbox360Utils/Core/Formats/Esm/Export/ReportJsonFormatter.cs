@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
@@ -19,7 +20,7 @@ internal static class ReportJsonFormatter
             WriteReport(writer, report);
         }
 
-        return System.Text.Encoding.UTF8.GetString(ms.ToArray());
+        return Encoding.UTF8.GetString(ms.ToArray());
     }
 
     /// <summary>Format multiple record reports as a JSON array.</summary>
@@ -37,7 +38,7 @@ internal static class ReportJsonFormatter
             writer.WriteEndArray();
         }
 
-        return System.Text.Encoding.UTF8.GetString(ms.ToArray());
+        return Encoding.UTF8.GetString(ms.ToArray());
     }
 
     /// <summary>Write a single report to a <see cref="Utf8JsonWriter" />.</summary>

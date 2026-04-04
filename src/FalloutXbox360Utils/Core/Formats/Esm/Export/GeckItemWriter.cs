@@ -1,5 +1,6 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
@@ -16,9 +17,9 @@ internal static class GeckItemWriter
         var sections = new List<ReportSection>();
 
         // Identity
-        sections.Add(new("Identity",
+        sections.Add(new ReportSection("Identity",
         [
-            new("Equip", ReportValue.String(item.EquipmentTypeName))
+            new ReportField("Equip", ReportValue.String(item.EquipmentTypeName))
         ]));
 
         // Stats
@@ -33,15 +34,15 @@ internal static class GeckItemWriter
 
         if (item.BipedFlags != 0)
         {
-            statsFields.Add(new("Biped Slots", ReportValue.String($"0x{item.BipedFlags:X8}")));
+            statsFields.Add(new ReportField("Biped Slots", ReportValue.String($"0x{item.BipedFlags:X8}")));
         }
 
         if (!string.IsNullOrEmpty(item.ModelPath))
         {
-            statsFields.Add(new("Model", ReportValue.String(item.ModelPath)));
+            statsFields.Add(new ReportField("Model", ReportValue.String(item.ModelPath)));
         }
 
-        sections.Add(new("Stats", statsFields));
+        sections.Add(new ReportSection("Stats", statsFields));
 
         return new RecordReport("Armor", item.FormId, item.EditorId, item.FullName, sections);
     }
@@ -61,17 +62,17 @@ internal static class GeckItemWriter
 
         if (item.ProjectileFormId.HasValue)
         {
-            statsFields.Add(new("Projectile",
+            statsFields.Add(new ReportField("Projectile",
                 ReportValue.FormId(item.ProjectileFormId.Value, resolver),
                 $"0x{item.ProjectileFormId.Value:X8}"));
         }
 
         if (!string.IsNullOrEmpty(item.ModelPath))
         {
-            statsFields.Add(new("Model", ReportValue.String(item.ModelPath)));
+            statsFields.Add(new ReportField("Model", ReportValue.String(item.ModelPath)));
         }
 
-        sections.Add(new("Stats", statsFields));
+        sections.Add(new ReportSection("Stats", statsFields));
 
         return new RecordReport("Ammo", item.FormId, item.EditorId, item.FullName, sections);
     }
@@ -89,19 +90,19 @@ internal static class GeckItemWriter
 
         if (item.AddictionFormId.HasValue)
         {
-            statsFields.Add(new("Addiction",
+            statsFields.Add(new ReportField("Addiction",
                 ReportValue.FormId(item.AddictionFormId.Value, resolver),
                 $"0x{item.AddictionFormId.Value:X8}"));
-            statsFields.Add(new("Addict. Chance",
+            statsFields.Add(new ReportField("Addict. Chance",
                 ReportValue.FloatDisplay(item.AddictionChance, $"{item.AddictionChance * 100:F0}%")));
         }
 
         if (!string.IsNullOrEmpty(item.ModelPath))
         {
-            statsFields.Add(new("Model", ReportValue.String(item.ModelPath)));
+            statsFields.Add(new ReportField("Model", ReportValue.String(item.ModelPath)));
         }
 
-        sections.Add(new("Stats", statsFields));
+        sections.Add(new ReportSection("Stats", statsFields));
 
         // Effects (conditional)
         if (item.Effects.Count > 0)
@@ -123,18 +124,18 @@ internal static class GeckItemWriter
 
                 effectItems.Add(new ReportValue.CompositeVal(
                 [
-                    new("Effect", effect.EffectFormId != 0
-                        ? ReportValue.FormId(effect.EffectFormId, resolver)
-                        : ReportValue.String("(none)"),
+                    new ReportField("Effect", effect.EffectFormId != 0
+                            ? ReportValue.FormId(effect.EffectFormId, resolver)
+                            : ReportValue.String("(none)"),
                         effect.EffectFormId != 0 ? $"0x{effect.EffectFormId:X8}" : null),
-                    new("Magnitude", ReportValue.Float(effect.Magnitude)),
-                    new("Area", ReportValue.Int((int)effect.Area)),
-                    new("Duration", ReportValue.Int((int)effect.Duration)),
-                    new("Type", ReportValue.String(typeName))
+                    new ReportField("Magnitude", ReportValue.Float(effect.Magnitude)),
+                    new ReportField("Area", ReportValue.Int((int)effect.Area)),
+                    new ReportField("Duration", ReportValue.Int((int)effect.Duration)),
+                    new ReportField("Type", ReportValue.String(typeName))
                 ], effectName));
             }
 
-            sections.Add(new("Effects", [new("Effects", ReportValue.List(effectItems))]));
+            sections.Add(new ReportSection("Effects", [new ReportField("Effects", ReportValue.List(effectItems))]));
         }
 
         return new RecordReport("Consumable", item.FormId, item.EditorId, item.FullName, sections);
@@ -153,10 +154,10 @@ internal static class GeckItemWriter
 
         if (!string.IsNullOrEmpty(item.ModelPath))
         {
-            statsFields.Add(new("Model", ReportValue.String(item.ModelPath)));
+            statsFields.Add(new ReportField("Model", ReportValue.String(item.ModelPath)));
         }
 
-        sections.Add(new("Stats", statsFields));
+        sections.Add(new ReportSection("Stats", statsFields));
 
         return new RecordReport("Misc Item", item.FormId, item.EditorId, item.FullName, sections);
     }
@@ -166,10 +167,10 @@ internal static class GeckItemWriter
         var sections = new List<ReportSection>();
 
         // Stats
-        sections.Add(new("Stats",
+        sections.Add(new ReportSection("Stats",
         [
-            new("Value", ReportValue.Int(key.Value, $"{key.Value} caps")),
-            new("Weight", ReportValue.Float(key.Weight))
+            new ReportField("Value", ReportValue.Int(key.Value, $"{key.Value} caps")),
+            new ReportField("Weight", ReportValue.Float(key.Weight))
         ]));
 
         return new RecordReport("Key", key.FormId, key.EditorId, key.FullName, sections);
@@ -397,7 +398,6 @@ internal static class GeckItemWriter
     internal static void AppendArmorSection(StringBuilder sb, List<ArmorRecord> armor,
         FormIdResolver? resolver = null)
     {
-        resolver ??= FormIdResolver.Empty;
         GeckReportHelpers.AppendSectionHeader(sb, $"Armor ({armor.Count})");
 
         foreach (var item in armor.OrderBy(a => a.EditorId ?? ""))

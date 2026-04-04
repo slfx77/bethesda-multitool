@@ -1,4 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
@@ -96,7 +97,7 @@ public static class HeightmapPngExporter
     /// </summary>
     public static async Task ExportLandRecordAsync(
         ExtractedLandRecord land,
-        int _index,
+        int index,
         string outputDir,
         bool useColorGradient = true)
     {

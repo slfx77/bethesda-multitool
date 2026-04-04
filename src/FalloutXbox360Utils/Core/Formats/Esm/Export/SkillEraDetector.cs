@@ -22,30 +22,6 @@ internal static class SkillEraDetector
     private const int AvThrowing = 44;
 
     /// <summary>
-    ///     Detected skill era profile for a single dump or ESM.
-    /// </summary>
-    internal sealed record SkillEraProfile(
-        bool BigGunsActive,
-        string Slot1Name,
-        string Slot9Name,
-        string Slot12Name)
-    {
-        /// <summary>Human-readable one-line summary.</summary>
-        public string Summary
-        {
-            get
-            {
-                if (BigGunsActive)
-                {
-                    return $"Early: {Slot1Name} active, {Slot9Name}, {Slot12Name}";
-                }
-
-                return $"Final: Big Guns merged → {Slot9Name}, {Slot12Name}";
-            }
-        }
-    }
-
-    /// <summary>
     ///     Detects the skill era from AVIF records and weapon Skill field values.
     /// </summary>
     internal static SkillEraProfile Detect(RecordCollection records)
@@ -95,14 +71,16 @@ internal static class SkillEraDetector
         //    referencing Skill 33 does not override an explicit OBSOLETE marker.
         var isObsolete = avifBigGunsName?.Contains("OBSOLETE", StringComparison.OrdinalIgnoreCase) == true;
         var bigGunsActive = !isObsolete
-            && (!string.IsNullOrEmpty(avifBigGunsName) || anyWeaponUsesBigGuns);
+                            && (!string.IsNullOrEmpty(avifBigGunsName) || anyWeaponUsesBigGuns);
 
         // 4. Determine slot display names.
-        var slot1Name = !string.IsNullOrEmpty(avifBigGunsName) && !isObsolete
-            ? avifBigGunsName
-            : bigGunsActive
-                ? "Big Guns"
-                : "(unused)";
+        string slot1Name;
+        if (!string.IsNullOrEmpty(avifBigGunsName) && !isObsolete)
+            slot1Name = avifBigGunsName;
+        else if (bigGunsActive)
+            slot1Name = "Big Guns";
+        else
+            slot1Name = "(unused)";
 
         var slot9Name = !string.IsNullOrEmpty(avifSmallGunsName)
             ? avifSmallGunsName
@@ -113,5 +91,29 @@ internal static class SkillEraDetector
             : "Survival"; // default to final name
 
         return new SkillEraProfile(bigGunsActive, slot1Name, slot9Name, slot12Name);
+    }
+
+    /// <summary>
+    ///     Detected skill era profile for a single dump or ESM.
+    /// </summary>
+    internal sealed record SkillEraProfile(
+        bool BigGunsActive,
+        string Slot1Name,
+        string Slot9Name,
+        string Slot12Name)
+    {
+        /// <summary>Human-readable one-line summary.</summary>
+        public string Summary
+        {
+            get
+            {
+                if (BigGunsActive)
+                {
+                    return $"Early: {Slot1Name} active, {Slot9Name}, {Slot12Name}";
+                }
+
+                return $"Final: Big Guns merged → {Slot9Name}, {Slot12Name}";
+            }
+        }
     }
 }

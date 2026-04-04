@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Text;
 using System.Web;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using ImageMagick;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
@@ -12,6 +13,505 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 /// </summary>
 internal static class CrossDumpHtmlWriter
 {
+    private const string PlacedObjectTagPrefix = "\x01#";
+
+    private const string CssStyles = """
+                                         * { box-sizing: border-box; }
+                                         body {
+                                           font-family: system-ui, -apple-system, sans-serif;
+                                           margin: 20px;
+                                           background: #fff;
+                                           color: #1a1a1a;
+                                         }
+                                         h1 { margin-bottom: 4px; }
+                                         .summary { color: #666; margin-top: 0; }
+                                         a { color: #0066cc; }
+
+                                         .controls {
+                                           display: flex;
+                                           align-items: center;
+                                           gap: 12px;
+                                           padding: 8px 12px;
+                                           flex-wrap: wrap;
+                                           position: sticky;
+                                           top: 0;
+                                           z-index: 10;
+                                           background: #fff;
+                                           border-bottom: 1px solid #ddd;
+                                           margin: 0;
+                                         }
+                                         .controls input[type="text"] {
+                                           padding: 6px 12px;
+                                           border: 1px solid #ccc;
+                                           border-radius: 4px;
+                                           font-size: 13px;
+                                           min-width: 300px;
+                                         }
+                                         .controls button {
+                                           padding: 5px 12px;
+                                           border: 1px solid #ccc;
+                                           border-radius: 4px;
+                                           background: #f5f5f5;
+                                           cursor: pointer;
+                                           font-size: 12px;
+                                         }
+                                         .controls button:hover { background: #e8e8e8; }
+                                         .match-count { font-size: 12px; color: #888; }
+
+                                         table { border-collapse: separate; border-spacing: 0; width: 100%; margin: 8px 0; }
+                                         tbody { content-visibility: auto; contain-intrinsic-size: auto 500px; }
+                                         table.compact { width: auto; }
+                                         table.compact th { position: static; }
+                                         th, td { border: 1px solid #ddd; padding: 6px 8px; vertical-align: top; text-align: left; }
+                                         th {
+                                           background: #f5f5f5;
+                                           position: sticky;
+                                           top: 38px;
+                                           z-index: 3;
+                                           font-size: 13px;
+                                         }
+                                         .col-editor {
+                                           position: sticky;
+                                           left: 0;
+                                           z-index: 1;
+                                           background: #fff;
+                                           min-width: 120px;
+                                           white-space: nowrap;
+                                         }
+                                         th.col-editor { z-index: 5; }
+                                         .col-name { min-width: 80px; white-space: nowrap; }
+                                         .col-coords { min-width: 70px; white-space: nowrap; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 12px; }
+                                         .col-formid { min-width: 90px; white-space: nowrap; }
+                                         .sortable { cursor: pointer; user-select: none; }
+                                         .formid { font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 12px; }
+                                         .name-change { color: #999; font-size: 11px; }
+                                         .dump-date { font-size: 11px; color: #888; font-weight: normal; }
+                                         .build-header { cursor: pointer; }
+                                         .build-header:hover { background: #e8e8f0; }
+                                         .build-filter-label { font-size: 10px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
+
+                                         .summary-row { cursor: pointer; }
+                                         .summary-row:hover { background: #f0f4ff; }
+                                         .summary-row:hover .col-editor { background: #f0f4ff; }
+                                         .summary-row td { padding: 4px 8px; }
+                                         .detail-row td { padding: 2px 4px; }
+                                         .detail-row .col-editor { background: #fff; }
+
+                                         .badge {
+                                           display: inline-block;
+                                           padding: 2px 8px;
+                                           border-radius: 3px;
+                                           font-size: 10px;
+                                           font-weight: 600;
+                                           letter-spacing: 0.5px;
+                                           text-transform: uppercase;
+                                         }
+                                         .badge-new { background: #d4edda; color: #155724; }
+                                         .badge-changed { background: #fff3cd; color: #856404; }
+                                         .badge-same { background: #e9ecef; color: #6c757d; }
+                                         .badge-removed { background: #f8d7da; color: #721c24; }
+                                         .badge-absent { color: #ccc; }
+                                         .badge-sparse { background: #e2e3f1; color: #5a5b8a; }
+                                         .badge-base { background: #d6e4f0; color: #2c5282; }
+
+                                         pre.record-text {
+                                           margin: 0;
+                                           font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+                                           font-size: 11px;
+                                           line-height: 1.4;
+                                           white-space: pre;
+                                           tab-size: 4;
+                                         }
+                                         .line-new { background: #d4edda; }
+                                         .line-changed { background: #fff3cd; }
+                                         .line-removed { background: #f8d7da; color: #999; text-decoration: line-through; }
+                                         .line-sparse { color: #999; font-style: italic; }
+
+                                         .toc {
+                                           background: #f8f9fa;
+                                           border: 1px solid #ddd;
+                                           border-radius: 4px;
+                                           padding: 8px 16px;
+                                           margin: 8px 0 16px 0;
+                                         }
+                                         .toc ul { margin: 4px 0; padding-left: 20px; columns: 3; }
+                                         .toc li { font-size: 13px; margin: 2px 0; }
+
+                                         .group-section { margin: 8px 0; }
+                                         .group-header {
+                                           margin: 0;
+                                           padding: 8px 0;
+                                           border-bottom: 2px solid #0066cc;
+                                           color: #0066cc;
+                                           font-size: 18px;
+                                           cursor: pointer;
+                                           user-select: none;
+                                         }
+                                         .group-header:hover { opacity: 0.8; }
+
+                                         .cell-map-container { margin: 8px 0; border: 1px solid #ccc; display: inline-block; }
+                                         .cell-grid-overlay { pointer-events: none; }
+                                         .cell-tile { cursor: pointer; pointer-events: auto; box-sizing: border-box; }
+                                         .cell-tile:hover { outline: 2px solid #fff; z-index: 1; background: rgba(255,255,255,0.3); }
+
+                                         /* build-hidden: columns hidden/shown via dynamic #build-col-style stylesheet */
+                                         .build-nav { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+                                         .build-nav button { padding: 3px 8px; font-size: 11px; border: 1px solid #ccc; border-radius: 3px; background: #f5f5f5; cursor: pointer; }
+                                         .build-nav button:hover { background: #e0e0e0; }
+                                         .build-nav button:disabled { opacity: 0.4; cursor: default; }
+                                         .build-nav-label { font-size: 12px; color: #666; min-width: 120px; text-align: center; }
+                                         .hidden { display: none !important; }
+
+                                         @media (prefers-color-scheme: dark) {
+                                           body { background: #1a1a1a; color: #e0e0e0; }
+                                           a { color: #6db3f2; }
+                                           th { background: #2a2a2a; border-color: #444; }
+                                           td { border-color: #444; }
+                                           .controls { background: #1a1a1a; border-bottom-color: #444; }
+                                           .col-editor { background: #1a1a1a; }
+                                           .detail-row .col-editor { background: #1a1a1a; }
+                                           .summary { color: #999; }
+                                           .dump-date { color: #777; }
+                                           .controls input[type="text"] { background: #2a2a2a; color: #e0e0e0; border-color: #555; }
+                                           .controls button { background: #333; color: #e0e0e0; border-color: #555; }
+                                           .controls button:hover { background: #444; }
+                                           .summary-row:hover { background: #252535; }
+                                           .summary-row:hover .col-editor { background: #252535; }
+                                           .badge-new { background: #1e3a1e; color: #8fd19e; }
+                                           .badge-changed { background: #3a3520; color: #e0c878; }
+                                           .badge-same { background: #2a2a2a; color: #888; }
+                                           .badge-removed { background: #3a1e1e; color: #e08888; }
+                                           .badge-absent { color: #555; }
+                                           .badge-sparse { background: #2a2a3a; color: #9999cc; }
+                                           .badge-base { background: #1e2a3a; color: #6b9fd4; }
+                                           .line-new { background: #1e3a1e; }
+                                           .line-changed { background: #3a3520; }
+                                           .line-removed { background: #3a1e1e; color: #777; }
+                                           .line-sparse { color: #666; }
+                                           .group-header { color: #6db3f2; border-bottom-color: #6db3f2; }
+                                           .toc { background: #2a2a2a; border-color: #444; }
+                                           .cell-map-container { border-color: #555; }
+                                           .build-header:hover { background: #333; }
+                                           .build-nav button { background: #333; color: #e0e0e0; border-color: #555; }
+                                           .build-nav button:hover { background: #444; }
+                                           .build-nav-label { color: #999; }
+                                         }
+                                     """;
+
+    private const string JavaScriptCode = """
+                                              // Decompress a base64-encoded raw deflate blob via native DecompressionStream
+                                              async function inflate(b64) {
+                                                var bin = atob(b64);
+                                                var bytes = new Uint8Array(bin.length);
+                                                for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+                                                var ds = new DecompressionStream('deflate-raw');
+                                                var writer = ds.writable.getWriter();
+                                                writer.write(bytes);
+                                                writer.close();
+                                                var reader = ds.readable.getReader();
+                                                var chunks = [];
+                                                while (true) {
+                                                  var result = await reader.read();
+                                                  if (result.done) break;
+                                                  chunks.push(result.value);
+                                                }
+                                                var total = chunks.reduce(function(s, c) { return s + c.length; }, 0);
+                                                var merged = new Uint8Array(total);
+                                                var off = 0;
+                                                for (var c of chunks) { merged.set(c, off); off += c.length; }
+                                                return new TextDecoder().decode(merged);
+                                              }
+
+                                              // Inflate all compressed cells in a detail row (if not already done)
+                                              async function inflateRow(detailRow) {
+                                                if (detailRow.dataset.inflated) return;
+                                                detailRow.dataset.inflated = '1';
+                                                var cells = detailRow.querySelectorAll('td[data-z]');
+                                                var promises = Array.from(cells).map(async function(td) {
+                                                  var html = await inflate(td.getAttribute('data-z'));
+                                                  td.innerHTML = html;
+                                                  td.removeAttribute('data-z');
+                                                });
+                                                await Promise.all(promises);
+                                              }
+
+                                              async function toggleDetail(summaryRow) {
+                                                var detailRow = summaryRow.nextElementSibling;
+                                                if (detailRow && detailRow.classList.contains('detail-row')) {
+                                                  if (detailRow.style.display === 'none') {
+                                                    await inflateRow(detailRow);
+                                                    detailRow.style.display = '';
+                                                  } else {
+                                                    detailRow.style.display = 'none';
+                                                  }
+                                                }
+                                              }
+                                              var _expandCancel = false;
+                                              async function expandAll() {
+                                                _expandCancel = false;
+                                                // Expand all collapsed group sections first
+                                                document.querySelectorAll('.group-content').forEach(function(gc) {
+                                                  if (gc.style.display === 'none') {
+                                                    gc.style.display = '';
+                                                    var header = gc.previousElementSibling;
+                                                    if (header) header.textContent = header.textContent.replace('\u25B6', '\u25BC');
+                                                  }
+                                                });
+                                                var rows = Array.from(document.querySelectorAll('.detail-row:not(.hidden)'));
+                                                var i = 0;
+                                                async function batch() {
+                                                  if (_expandCancel) return;
+                                                  var end = Math.min(i + 20, rows.length);
+                                                  for (; i < end; i++) {
+                                                    if (_expandCancel) return;
+                                                    await inflateRow(rows[i]);
+                                                    rows[i].style.display = '';
+                                                  }
+                                                  if (i < rows.length) requestAnimationFrame(batch);
+                                                }
+                                                await batch();
+                                              }
+                                              function collapseAll() {
+                                                _expandCancel = true;
+                                                document.querySelectorAll('.detail-row').forEach(function(r) {
+                                                  r.style.display = 'none';
+                                                });
+                                                // Also collapse all group sections
+                                                document.querySelectorAll('.group-content').forEach(function(gc) {
+                                                  gc.style.display = 'none';
+                                                  var header = gc.previousElementSibling;
+                                                  if (header) header.textContent = header.textContent.replace('\u25BC', '\u25B6');
+                                                });
+                                              }
+                                              function filterRows() {
+                                                var query = document.getElementById('search').value.toLowerCase();
+                                                var summaryRows = document.querySelectorAll('.summary-row');
+                                                var visible = 0;
+                                                summaryRows.forEach(function(row) {
+                                                  var searchData = row.getAttribute('data-search') || '';
+                                                  var match = !query || searchData.indexOf(query) !== -1;
+                                                  row.classList.toggle('hidden', !match);
+                                                  var detail = row.nextElementSibling;
+                                                  if (detail && detail.classList.contains('detail-row')) {
+                                                    if (!match) {
+                                                      detail.classList.add('hidden');
+                                                    } else {
+                                                      detail.classList.remove('hidden');
+                                                    }
+                                                  }
+                                                  if (match) visible++;
+                                                });
+                                                var countEl = document.getElementById('matchCount');
+                                                if (query) {
+                                                  countEl.textContent = visible + ' of ' + summaryRows.length + ' records';
+                                                } else {
+                                                  countEl.textContent = '';
+                                                }
+                                              }
+                                              // Collapsible group sections
+                                              function toggleGroup(header) {
+                                                var content = header.nextElementSibling;
+                                                if (content.style.display === 'none') {
+                                                  content.style.display = '';
+                                                  header.textContent = header.textContent.replace('\u25B6', '\u25BC');
+                                                  // Apply any pending build sort to this newly-visible table
+                                                  if (_pendingBuildSort) {
+                                                    var tbody = content.querySelector('tbody');
+                                                    if (tbody) {
+                                                      applyBuildSort(tbody, _pendingBuildSort.idx, _pendingBuildSort.sortType, _pendingBuildSort.fixedCols);
+                                                    }
+                                                  }
+                                                } else {
+                                                  content.style.display = 'none';
+                                                  header.textContent = header.textContent.replace('\u25BC', '\u25B6');
+                                                }
+                                              }
+                                              function expandGroup(groupId) {
+                                                var section = document.getElementById(groupId);
+                                                if (!section) return;
+                                                var header = section.querySelector('.group-header');
+                                                var content = section.querySelector('.group-content');
+                                                if (content && content.style.display === 'none') {
+                                                  content.style.display = '';
+                                                  if (header) header.textContent = header.textContent.replace('\u25B6', '\u25BC');
+                                                }
+                                              }
+                                              // Navigate to a cell row from the grid tile map
+                                              function navigateToCell(tile) {
+                                                var formId = tile.getAttribute('data-formid');
+                                                // Search all tables on the page (cell may be in the same group-section)
+                                                var row = document.querySelector('.summary-row[data-formid="' + formId + '"]');
+                                                if (!row) return;
+                                                // Ensure the group containing this row is expanded
+                                                var section = row.closest('.group-content');
+                                                if (section && section.style.display === 'none') {
+                                                  section.style.display = '';
+                                                  var header = section.previousElementSibling;
+                                                  if (header) header.textContent = header.textContent.replace('\u25B6', '\u25BC');
+                                                }
+                                                // Scroll after a brief delay to let layout settle
+                                                setTimeout(function() {
+                                                  row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                                  row.style.outline = '3px solid #0066cc';
+                                                  row.style.outlineOffset = '-1px';
+                                                  setTimeout(function() { row.style.outline = ''; row.style.outlineOffset = ''; }, 3000);
+                                                }, 50);
+                                              }
+                                              // Build column pagination — show 3 at a time
+                                              function navBuilds(dir) {
+                                                var nav = document.querySelector('.build-nav');
+                                                if (!nav) return;
+                                                var total = parseInt(nav.dataset.total);
+                                                var size = parseInt(nav.dataset.size);
+                                                var start = parseInt(nav.dataset.start);
+                                                if (dir === 'first') start = 0;
+                                                else if (dir === 'prev3') start = Math.max(0, start - size);
+                                                else if (dir === 'prev1') start = Math.max(0, start - 1);
+                                                else if (dir === 'next1') start = Math.min(total - size, start + 1);
+                                                else if (dir === 'next3') start = Math.min(total - size, start + size);
+                                                else if (dir === 'last') start = Math.max(0, total - size);
+                                                if (start < 0) start = 0;
+                                                nav.dataset.start = start;
+                                                // Show/hide columns via dynamic stylesheet (O(1) instead of O(n*builds) DOM ops)
+                                                var styleId = 'build-col-style';
+                                                var styleEl = document.getElementById(styleId);
+                                                if (!styleEl) {
+                                                  styleEl = document.createElement('style');
+                                                  styleEl.id = styleId;
+                                                  document.head.appendChild(styleEl);
+                                                }
+                                                var rules = '';
+                                                for (var i = 0; i < total; i++) {
+                                                  if (i < start || i >= start + size) {
+                                                    rules += '.build-col-' + i + '{display:none !important}';
+                                                  }
+                                                }
+                                                styleEl.textContent = rules;
+                                                // Update label
+                                                var label = nav.querySelector('.build-nav-label');
+                                                if (label) label.textContent = 'Builds ' + (start + 1) + '\u2013' + Math.min(start + size, total) + ' of ' + total;
+                                                // Update button states
+                                                var btns = nav.querySelectorAll('button');
+                                                btns[0].disabled = start === 0;
+                                                btns[1].disabled = start === 0;
+                                                btns[2].disabled = start === 0;
+                                                btns[3].disabled = start + size >= total;
+                                                btns[4].disabled = start + size >= total;
+                                                btns[5].disabled = start + size >= total;
+                                              }
+                                              // Build column sort — click header to cycle through badge types, sorting that type to top
+                                              var _badgeOrder = {'BASE':0, 'NEW':1, 'CHANGED':2, 'REMOVED':3, 'NOT PRESENT':4, 'SAME':5, 'SPARSE':6, '\u2014':7, '':8};
+                                              var _badgeTypes = ['', 'BASE', 'NEW', 'CHANGED', 'REMOVED', 'NOT PRESENT', 'SAME'];
+                                              // Pending sort state: applied lazily when a collapsed group is expanded
+                                              var _pendingBuildSort = null; // { idx, sortType, fixedCols }
+                                              function filterByBuild(th) {
+                                                var table = th.closest('table');
+                                                var tbody = table.querySelector('tbody');
+                                                var idx = parseInt(th.getAttribute('data-dump-idx'));
+                                                var fixedCols = tbody.querySelector('.col-coords') ? 4 : 3;
+                                                // Cycle sort state
+                                                var current = th.dataset.filterState || '';
+                                                var curIdx = _badgeTypes.indexOf(current);
+                                                var sortType = _badgeTypes[(curIdx + 1) % _badgeTypes.length];
+                                                th.dataset.filterState = sortType;
+                                                // Update label
+                                                var label = th.querySelector('.build-filter-label');
+                                                if (label) label.textContent = sortType ? '\u25B2 ' + sortType : '';
+                                                // Clear other build sort labels in same table
+                                                table.querySelectorAll('.build-header').forEach(function(h) {
+                                                  if (h !== th) {
+                                                    h.dataset.filterState = '';
+                                                    var l = h.querySelector('.build-filter-label');
+                                                    if (l) l.textContent = '';
+                                                  }
+                                                });
+                                                // Apply sort to this table
+                                                applyBuildSort(tbody, idx, sortType, fixedCols);
+                                                // Store pending sort for other tables (applied on group expand)
+                                                _pendingBuildSort = sortType ? { idx: idx, sortType: sortType, fixedCols: fixedCols } : null;
+                                                // Apply to other VISIBLE tables only
+                                                document.querySelectorAll('.group-content').forEach(function(gc) {
+                                                  if (gc.style.display !== 'none') {
+                                                    var otherTbody = gc.querySelector('tbody');
+                                                    if (otherTbody && otherTbody !== tbody) {
+                                                      applyBuildSort(otherTbody, idx, sortType, fixedCols);
+                                                    }
+                                                  }
+                                                });
+                                              }
+                                              function applyBuildSort(tbody, idx, sortType, fixedCols) {
+                                                var summaryRows = Array.from(tbody.querySelectorAll('.summary-row'));
+                                                if (summaryRows.length === 0) return;
+                                                var pairs = summaryRows.map(function(sr) {
+                                                  var cells = sr.querySelectorAll('td');
+                                                  var cell = cells[fixedCols + idx];
+                                                  var badge = cell ? cell.querySelector('.badge') : null;
+                                                  var badgeText = badge ? badge.textContent.trim() : '';
+                                                  return { summary: sr, detail: sr.nextElementSibling, badge: badgeText, formid: sr.getAttribute('data-formid') || '' };
+                                                });
+                                                if (!sortType) {
+                                                  pairs.sort(function(a, b) { return a.formid < b.formid ? -1 : a.formid > b.formid ? 1 : 0; });
+                                                } else {
+                                                  pairs.sort(function(a, b) {
+                                                    var aMatch = a.badge === sortType ? -1 : 0;
+                                                    var bMatch = b.badge === sortType ? -1 : 0;
+                                                    if (aMatch !== bMatch) return aMatch - bMatch;
+                                                    var aOrd = _badgeOrder[a.badge] !== undefined ? _badgeOrder[a.badge] : 9;
+                                                    var bOrd = _badgeOrder[b.badge] !== undefined ? _badgeOrder[b.badge] : 9;
+                                                    if (aOrd !== bOrd) return aOrd - bOrd;
+                                                    return a.formid < b.formid ? -1 : a.formid > b.formid ? 1 : 0;
+                                                  });
+                                                }
+                                                // Use DocumentFragment for batch DOM update (avoids per-element reflow)
+                                                var frag = document.createDocumentFragment();
+                                                pairs.forEach(function(p) {
+                                                  frag.appendChild(p.summary);
+                                                  if (p.detail) frag.appendChild(p.detail);
+                                                });
+                                                tbody.appendChild(frag);
+                                              }
+                                              // Column sorting (per-table)
+                                              function sortBy(th, col) {
+                                                var table = th.closest('table');
+                                                var tbody = table.querySelector('tbody');
+                                                // Toggle direction — store sort state on the table element
+                                                var prevCol = table.dataset.sortCol;
+                                                var asc = prevCol === col ? table.dataset.sortAsc !== 'true' : true;
+                                                table.dataset.sortCol = col;
+                                                table.dataset.sortAsc = asc;
+                                                // Update arrow indicators within this table only
+                                                table.querySelectorAll('.sort-indicator').forEach(function(s) { s.textContent = ''; });
+                                                th.querySelector('.sort-indicator').textContent = asc ? '\u25B2' : '\u25BC';
+                                                // Collect summary+detail row pairs
+                                                var summaryRows = Array.from(tbody.querySelectorAll('.summary-row'));
+                                                var pairs = summaryRows.map(function(sr) {
+                                                  return { summary: sr, detail: sr.nextElementSibling };
+                                                });
+                                                pairs.sort(function(a, b) {
+                                                  var cmp;
+                                                  if (col === 'coords') {
+                                                    var ax = parseInt(a.summary.getAttribute('data-cx')) || 0;
+                                                    var ay = parseInt(a.summary.getAttribute('data-cy')) || 0;
+                                                    var bx = parseInt(b.summary.getAttribute('data-cx')) || 0;
+                                                    var by = parseInt(b.summary.getAttribute('data-cy')) || 0;
+                                                    cmp = ax !== bx ? ax - bx : ay - by;
+                                                  } else {
+                                                    var va = (a.summary.getAttribute('data-' + col) || '').toLowerCase();
+                                                    var vb = (b.summary.getAttribute('data-' + col) || '').toLowerCase();
+                                                    cmp = va < vb ? -1 : va > vb ? 1 : 0;
+                                                  }
+                                                  return asc ? cmp : -cmp;
+                                                });
+                                                // Re-append in sorted order using DocumentFragment (batch DOM update)
+                                                var frag = document.createDocumentFragment();
+                                                pairs.forEach(function(p) {
+                                                  frag.appendChild(p.summary);
+                                                  if (p.detail) frag.appendChild(p.detail);
+                                                });
+                                                tbody.appendChild(frag);
+                                              }
+                                          """;
+
     /// <summary>
     ///     Generate all HTML files: one per record type plus an index page.
     /// </summary>
@@ -60,13 +560,15 @@ internal static class CrossDumpHtmlWriter
         // Navigation + controls
         sb.AppendLine("  <div class=\"controls\">");
         sb.AppendLine("    <a href=\"index.html\">&larr; Back to index</a>");
-        sb.AppendLine("    <input type=\"text\" id=\"search\" placeholder=\"Search by FormID, EditorID, or name...\" oninput=\"filterRows()\">");
+        sb.AppendLine(
+            "    <input type=\"text\" id=\"search\" placeholder=\"Search by FormID, EditorID, or name...\" oninput=\"filterRows()\">");
         sb.AppendLine("    <button onclick=\"expandAll()\">Expand All</button>");
         sb.AppendLine("    <button onclick=\"collapseAll()\">Collapse All</button>");
         sb.AppendLine("    <span id=\"matchCount\" class=\"match-count\"></span>");
         if (dumps.Count > 3)
         {
-            sb.AppendLine($"    <div class=\"build-nav\" data-total=\"{dumps.Count}\" data-start=\"0\" data-size=\"3\">");
+            sb.AppendLine(
+                $"    <div class=\"build-nav\" data-total=\"{dumps.Count}\" data-start=\"0\" data-size=\"3\">");
             sb.AppendLine("      <button onclick=\"navBuilds('first')\">&laquo; First</button>");
             sb.AppendLine("      <button onclick=\"navBuilds('prev3')\">&lsaquo; 3</button>");
             sb.AppendLine("      <button onclick=\"navBuilds('prev1')\">&lsaquo; 1</button>");
@@ -183,8 +685,11 @@ internal static class CrossDumpHtmlWriter
                 }
             }
 
-            var status = dumpCount <= 1 ? (isNew ? "new" : "single") :
-                hasChanged ? "changed" : "same";
+            string status;
+            if (dumpCount <= 1)
+                status = isNew ? "new" : "single";
+            else
+                status = hasChanged ? "changed" : "same";
 
             string? name = null, edId = null;
             foreach (var (ed, dn, _) in dumpMap.Values)
@@ -233,7 +738,8 @@ internal static class CrossDumpHtmlWriter
         var displayHeight = imgHeight * 2;
         var displayCellPx = cellPx * 2;
 
-        sb.AppendLine($"      <div class=\"cell-map-container\" style=\"position:relative;display:inline-block;width:{displayWidth}px;height:{displayHeight}px;\">");
+        sb.AppendLine(
+            $"      <div class=\"cell-map-container\" style=\"position:relative;display:inline-block;width:{displayWidth}px;height:{displayHeight}px;\">");
 
         if (hasHeightmap)
         {
@@ -321,7 +827,7 @@ internal static class CrossDumpHtmlWriter
         if (globalRange < 0.001f) globalRange = 1f;
 
         // Amber tint (FNV Pip-Boy HUD: #FFB642)
-        const float tintR = 255f / 255f;
+        const float tintR = 1f;
         const float tintG = 182f / 255f;
         const float tintB = 66f / 255f;
 
@@ -412,11 +918,15 @@ internal static class CrossDumpHtmlWriter
         sb.AppendLine("  <table>");
         sb.AppendLine("    <thead>");
         sb.AppendLine("      <tr>");
-        sb.AppendLine("        <th class=\"col-editor sortable\" onclick=\"sortBy(this,'editor')\">Editor ID <span class=\"sort-indicator\"></span></th>");
-        sb.AppendLine("        <th class=\"col-name sortable\" onclick=\"sortBy(this,'name')\">Name <span class=\"sort-indicator\"></span></th>");
+        sb.AppendLine(
+            "        <th class=\"col-editor sortable\" onclick=\"sortBy(this,'editor')\">Editor ID <span class=\"sort-indicator\"></span></th>");
+        sb.AppendLine(
+            "        <th class=\"col-name sortable\" onclick=\"sortBy(this,'name')\">Name <span class=\"sort-indicator\"></span></th>");
         if (hasCoords)
-            sb.AppendLine("        <th class=\"col-coords sortable\" onclick=\"sortBy(this,'coords')\">Coords <span class=\"sort-indicator\"></span></th>");
-        sb.AppendLine("        <th class=\"col-formid sortable\" onclick=\"sortBy(this,'formid')\">Form ID <span class=\"sort-indicator\"></span></th>");
+            sb.AppendLine(
+                "        <th class=\"col-coords sortable\" onclick=\"sortBy(this,'coords')\">Coords <span class=\"sort-indicator\"></span></th>");
+        sb.AppendLine(
+            "        <th class=\"col-formid sortable\" onclick=\"sortBy(this,'formid')\">Form ID <span class=\"sort-indicator\"></span></th>");
         for (var i = 0; i < dumps.Count; i++)
         {
             var hiddenClass = "";
@@ -435,7 +945,8 @@ internal static class CrossDumpHtmlWriter
             .OrderBy(kvp =>
             {
                 foreach (var dm in kvp.Value.Values)
-                    if (dm.EditorId != null) return dm.EditorId;
+                    if (dm.EditorId != null)
+                        return dm.EditorId;
                 return "";
             })
             .ToList();
@@ -476,7 +987,8 @@ internal static class CrossDumpHtmlWriter
             var coordAttrs = "";
             if (hasCoords && gridCoords!.TryGetValue(formId, out var gcAttr))
                 coordAttrs = $" data-cx=\"{gcAttr.X}\" data-cy=\"{gcAttr.Y}\"";
-            sb.Append($"      <tr class=\"summary-row\" data-search=\"{Esc(searchData)}\" data-editor=\"{Esc(editorIdSearch)}\" data-name=\"{Esc(nameSearch)}\" data-coords=\"{Esc(coordsDisplay)}\"{coordAttrs} data-formid=\"0x{formId:X8}\" onclick=\"toggleDetail(this)\">");
+            sb.Append(
+                $"      <tr class=\"summary-row\" data-search=\"{Esc(searchData)}\" data-editor=\"{Esc(editorIdSearch)}\" data-name=\"{Esc(nameSearch)}\" data-coords=\"{Esc(coordsDisplay)}\"{coordAttrs} data-formid=\"0x{formId:X8}\" onclick=\"toggleDetail(this)\">");
             sb.Append($"<td class=\"col-editor\">{editorIdDisplay}</td>");
             sb.Append($"<td class=\"col-name\">{nameDisplay}</td>");
             if (hasCoords)
@@ -519,7 +1031,8 @@ internal static class CrossDumpHtmlWriter
                     if (previousText != null)
                     {
                         var badgeText = dumps[dumpIdx].IsDmp ? "NOT PRESENT" : "REMOVED";
-                        sb.Append($"<td class=\"{colClass}\"><span class=\"badge badge-removed\">{badgeText}</span></td>");
+                        sb.Append(
+                            $"<td class=\"{colClass}\"><span class=\"badge badge-removed\">{badgeText}</span></td>");
                     }
                     else
                     {
@@ -659,8 +1172,6 @@ internal static class CrossDumpHtmlWriter
         return sb.ToString();
     }
 
-    private const string PlacedObjectTagPrefix = "\x01#";
-
     /// <summary>
     ///     Tag placed-object sub-lines with their parent's FormID so the LCS
     ///     matches them to the correct block. Lines like "model: X.nif" that appear
@@ -677,7 +1188,7 @@ internal static class CrossDumpHtmlWriter
             var trimmed = line.TrimStart();
 
             // Detect placed object header: "- ObjectName (TYPE) [0xFormID]"
-            if (trimmed.StartsWith("- ") && trimmed.Contains("[0x"))
+            if (trimmed.StartsWith("- ", StringComparison.Ordinal) && trimmed.Contains("[0x"))
             {
                 var bracketStart = trimmed.IndexOf("[0x", StringComparison.Ordinal);
                 var bracketEnd = trimmed.IndexOf(']', bracketStart);
@@ -696,7 +1207,7 @@ internal static class CrossDumpHtmlWriter
             else
             {
                 // Section header or other non-sub-line — reset context
-                if (!string.IsNullOrWhiteSpace(line) && !line.StartsWith("  "))
+                if (!string.IsNullOrWhiteSpace(line) && !line.StartsWith("  ", StringComparison.Ordinal))
                     currentFormId = null;
                 result[i] = line;
             }
@@ -707,15 +1218,13 @@ internal static class CrossDumpHtmlWriter
 
     private static string StripPlacedObjectTag(string line)
     {
-        if (!line.StartsWith(PlacedObjectTagPrefix))
+        if (!line.StartsWith(PlacedObjectTagPrefix, StringComparison.Ordinal))
             return line;
 
         // Find the end of the tag: "\x01#[0xFormID]"
         var closeBracket = line.IndexOf(']', PlacedObjectTagPrefix.Length);
         return closeBracket >= 0 ? line[(closeBracket + 1)..] : line;
     }
-
-    private enum DiffTag { Equal, Added, Removed, Changed }
 
     /// <summary>
     ///     Compute a line-level diff between two string arrays using LCS.
@@ -903,7 +1412,7 @@ internal static class CrossDumpHtmlWriter
     {
         var raw = Encoding.UTF8.GetBytes(html);
         using var ms = new MemoryStream();
-        using (var deflate = new DeflateStream(ms, CompressionLevel.Optimal, leaveOpen: true))
+        using (var deflate = new DeflateStream(ms, CompressionLevel.Optimal, true))
         {
             deflate.Write(raw, 0, raw.Length);
         }
@@ -911,502 +1420,16 @@ internal static class CrossDumpHtmlWriter
         return Convert.ToBase64String(ms.ToArray());
     }
 
-    private static string Esc(string text) => HttpUtility.HtmlEncode(text);
+    private static string Esc(string text)
+    {
+        return HttpUtility.HtmlEncode(text);
+    }
 
-    private const string CssStyles = """
-        * { box-sizing: border-box; }
-        body {
-          font-family: system-ui, -apple-system, sans-serif;
-          margin: 20px;
-          background: #fff;
-          color: #1a1a1a;
-        }
-        h1 { margin-bottom: 4px; }
-        .summary { color: #666; margin-top: 0; }
-        a { color: #0066cc; }
-
-        .controls {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 8px 12px;
-          flex-wrap: wrap;
-          position: sticky;
-          top: 0;
-          z-index: 10;
-          background: #fff;
-          border-bottom: 1px solid #ddd;
-          margin: 0;
-        }
-        .controls input[type="text"] {
-          padding: 6px 12px;
-          border: 1px solid #ccc;
-          border-radius: 4px;
-          font-size: 13px;
-          min-width: 300px;
-        }
-        .controls button {
-          padding: 5px 12px;
-          border: 1px solid #ccc;
-          border-radius: 4px;
-          background: #f5f5f5;
-          cursor: pointer;
-          font-size: 12px;
-        }
-        .controls button:hover { background: #e8e8e8; }
-        .match-count { font-size: 12px; color: #888; }
-
-        table { border-collapse: separate; border-spacing: 0; width: 100%; margin: 8px 0; }
-        tbody { content-visibility: auto; contain-intrinsic-size: auto 500px; }
-        table.compact { width: auto; }
-        table.compact th { position: static; }
-        th, td { border: 1px solid #ddd; padding: 6px 8px; vertical-align: top; text-align: left; }
-        th {
-          background: #f5f5f5;
-          position: sticky;
-          top: 38px;
-          z-index: 3;
-          font-size: 13px;
-        }
-        .col-editor {
-          position: sticky;
-          left: 0;
-          z-index: 1;
-          background: #fff;
-          min-width: 120px;
-          white-space: nowrap;
-        }
-        th.col-editor { z-index: 5; }
-        .col-name { min-width: 80px; white-space: nowrap; }
-        .col-coords { min-width: 70px; white-space: nowrap; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 12px; }
-        .col-formid { min-width: 90px; white-space: nowrap; }
-        .sortable { cursor: pointer; user-select: none; }
-        .formid { font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 12px; }
-        .name-change { color: #999; font-size: 11px; }
-        .dump-date { font-size: 11px; color: #888; font-weight: normal; }
-        .build-header { cursor: pointer; }
-        .build-header:hover { background: #e8e8f0; }
-        .build-filter-label { font-size: 10px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
-
-        .summary-row { cursor: pointer; }
-        .summary-row:hover { background: #f0f4ff; }
-        .summary-row:hover .col-editor { background: #f0f4ff; }
-        .summary-row td { padding: 4px 8px; }
-        .detail-row td { padding: 2px 4px; }
-        .detail-row .col-editor { background: #fff; }
-
-        .badge {
-          display: inline-block;
-          padding: 2px 8px;
-          border-radius: 3px;
-          font-size: 10px;
-          font-weight: 600;
-          letter-spacing: 0.5px;
-          text-transform: uppercase;
-        }
-        .badge-new { background: #d4edda; color: #155724; }
-        .badge-changed { background: #fff3cd; color: #856404; }
-        .badge-same { background: #e9ecef; color: #6c757d; }
-        .badge-removed { background: #f8d7da; color: #721c24; }
-        .badge-absent { color: #ccc; }
-        .badge-sparse { background: #e2e3f1; color: #5a5b8a; }
-        .badge-base { background: #d6e4f0; color: #2c5282; }
-
-        pre.record-text {
-          margin: 0;
-          font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
-          font-size: 11px;
-          line-height: 1.4;
-          white-space: pre;
-          tab-size: 4;
-        }
-        .line-new { background: #d4edda; }
-        .line-changed { background: #fff3cd; }
-        .line-removed { background: #f8d7da; color: #999; text-decoration: line-through; }
-        .line-sparse { color: #999; font-style: italic; }
-
-        .toc {
-          background: #f8f9fa;
-          border: 1px solid #ddd;
-          border-radius: 4px;
-          padding: 8px 16px;
-          margin: 8px 0 16px 0;
-        }
-        .toc ul { margin: 4px 0; padding-left: 20px; columns: 3; }
-        .toc li { font-size: 13px; margin: 2px 0; }
-
-        .group-section { margin: 8px 0; }
-        .group-header {
-          margin: 0;
-          padding: 8px 0;
-          border-bottom: 2px solid #0066cc;
-          color: #0066cc;
-          font-size: 18px;
-          cursor: pointer;
-          user-select: none;
-        }
-        .group-header:hover { opacity: 0.8; }
-
-        .cell-map-container { margin: 8px 0; border: 1px solid #ccc; display: inline-block; }
-        .cell-grid-overlay { pointer-events: none; }
-        .cell-tile { cursor: pointer; pointer-events: auto; box-sizing: border-box; }
-        .cell-tile:hover { outline: 2px solid #fff; z-index: 1; background: rgba(255,255,255,0.3); }
-
-        /* build-hidden: columns hidden/shown via dynamic #build-col-style stylesheet */
-        .build-nav { display: flex; align-items: center; gap: 6px; margin-left: auto; }
-        .build-nav button { padding: 3px 8px; font-size: 11px; border: 1px solid #ccc; border-radius: 3px; background: #f5f5f5; cursor: pointer; }
-        .build-nav button:hover { background: #e0e0e0; }
-        .build-nav button:disabled { opacity: 0.4; cursor: default; }
-        .build-nav-label { font-size: 12px; color: #666; min-width: 120px; text-align: center; }
-        .hidden { display: none !important; }
-
-        @media (prefers-color-scheme: dark) {
-          body { background: #1a1a1a; color: #e0e0e0; }
-          a { color: #6db3f2; }
-          th { background: #2a2a2a; border-color: #444; }
-          td { border-color: #444; }
-          .controls { background: #1a1a1a; border-bottom-color: #444; }
-          .col-editor { background: #1a1a1a; }
-          .detail-row .col-editor { background: #1a1a1a; }
-          .summary { color: #999; }
-          .dump-date { color: #777; }
-          .controls input[type="text"] { background: #2a2a2a; color: #e0e0e0; border-color: #555; }
-          .controls button { background: #333; color: #e0e0e0; border-color: #555; }
-          .controls button:hover { background: #444; }
-          .summary-row:hover { background: #252535; }
-          .summary-row:hover .col-editor { background: #252535; }
-          .badge-new { background: #1e3a1e; color: #8fd19e; }
-          .badge-changed { background: #3a3520; color: #e0c878; }
-          .badge-same { background: #2a2a2a; color: #888; }
-          .badge-removed { background: #3a1e1e; color: #e08888; }
-          .badge-absent { color: #555; }
-          .badge-sparse { background: #2a2a3a; color: #9999cc; }
-          .badge-base { background: #1e2a3a; color: #6b9fd4; }
-          .line-new { background: #1e3a1e; }
-          .line-changed { background: #3a3520; }
-          .line-removed { background: #3a1e1e; color: #777; }
-          .line-sparse { color: #666; }
-          .group-header { color: #6db3f2; border-bottom-color: #6db3f2; }
-          .toc { background: #2a2a2a; border-color: #444; }
-          .cell-map-container { border-color: #555; }
-          .build-header:hover { background: #333; }
-          .build-nav button { background: #333; color: #e0e0e0; border-color: #555; }
-          .build-nav button:hover { background: #444; }
-          .build-nav-label { color: #999; }
-        }
-    """;
-
-    private const string JavaScriptCode = """
-        // Decompress a base64-encoded raw deflate blob via native DecompressionStream
-        async function inflate(b64) {
-          var bin = atob(b64);
-          var bytes = new Uint8Array(bin.length);
-          for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-          var ds = new DecompressionStream('deflate-raw');
-          var writer = ds.writable.getWriter();
-          writer.write(bytes);
-          writer.close();
-          var reader = ds.readable.getReader();
-          var chunks = [];
-          while (true) {
-            var result = await reader.read();
-            if (result.done) break;
-            chunks.push(result.value);
-          }
-          var total = chunks.reduce(function(s, c) { return s + c.length; }, 0);
-          var merged = new Uint8Array(total);
-          var off = 0;
-          for (var c of chunks) { merged.set(c, off); off += c.length; }
-          return new TextDecoder().decode(merged);
-        }
-
-        // Inflate all compressed cells in a detail row (if not already done)
-        async function inflateRow(detailRow) {
-          if (detailRow.dataset.inflated) return;
-          detailRow.dataset.inflated = '1';
-          var cells = detailRow.querySelectorAll('td[data-z]');
-          var promises = Array.from(cells).map(async function(td) {
-            var html = await inflate(td.getAttribute('data-z'));
-            td.innerHTML = html;
-            td.removeAttribute('data-z');
-          });
-          await Promise.all(promises);
-        }
-
-        async function toggleDetail(summaryRow) {
-          var detailRow = summaryRow.nextElementSibling;
-          if (detailRow && detailRow.classList.contains('detail-row')) {
-            if (detailRow.style.display === 'none') {
-              await inflateRow(detailRow);
-              detailRow.style.display = '';
-            } else {
-              detailRow.style.display = 'none';
-            }
-          }
-        }
-        var _expandCancel = false;
-        async function expandAll() {
-          _expandCancel = false;
-          // Expand all collapsed group sections first
-          document.querySelectorAll('.group-content').forEach(function(gc) {
-            if (gc.style.display === 'none') {
-              gc.style.display = '';
-              var header = gc.previousElementSibling;
-              if (header) header.textContent = header.textContent.replace('\u25B6', '\u25BC');
-            }
-          });
-          var rows = Array.from(document.querySelectorAll('.detail-row:not(.hidden)'));
-          var i = 0;
-          async function batch() {
-            if (_expandCancel) return;
-            var end = Math.min(i + 20, rows.length);
-            for (; i < end; i++) {
-              if (_expandCancel) return;
-              await inflateRow(rows[i]);
-              rows[i].style.display = '';
-            }
-            if (i < rows.length) requestAnimationFrame(batch);
-          }
-          await batch();
-        }
-        function collapseAll() {
-          _expandCancel = true;
-          document.querySelectorAll('.detail-row').forEach(function(r) {
-            r.style.display = 'none';
-          });
-          // Also collapse all group sections
-          document.querySelectorAll('.group-content').forEach(function(gc) {
-            gc.style.display = 'none';
-            var header = gc.previousElementSibling;
-            if (header) header.textContent = header.textContent.replace('\u25BC', '\u25B6');
-          });
-        }
-        function filterRows() {
-          var query = document.getElementById('search').value.toLowerCase();
-          var summaryRows = document.querySelectorAll('.summary-row');
-          var visible = 0;
-          summaryRows.forEach(function(row) {
-            var searchData = row.getAttribute('data-search') || '';
-            var match = !query || searchData.indexOf(query) !== -1;
-            row.classList.toggle('hidden', !match);
-            var detail = row.nextElementSibling;
-            if (detail && detail.classList.contains('detail-row')) {
-              if (!match) {
-                detail.classList.add('hidden');
-              } else {
-                detail.classList.remove('hidden');
-              }
-            }
-            if (match) visible++;
-          });
-          var countEl = document.getElementById('matchCount');
-          if (query) {
-            countEl.textContent = visible + ' of ' + summaryRows.length + ' records';
-          } else {
-            countEl.textContent = '';
-          }
-        }
-        // Collapsible group sections
-        function toggleGroup(header) {
-          var content = header.nextElementSibling;
-          if (content.style.display === 'none') {
-            content.style.display = '';
-            header.textContent = header.textContent.replace('\u25B6', '\u25BC');
-            // Apply any pending build sort to this newly-visible table
-            if (_pendingBuildSort) {
-              var tbody = content.querySelector('tbody');
-              if (tbody) {
-                applyBuildSort(tbody, _pendingBuildSort.idx, _pendingBuildSort.sortType, _pendingBuildSort.fixedCols);
-              }
-            }
-          } else {
-            content.style.display = 'none';
-            header.textContent = header.textContent.replace('\u25BC', '\u25B6');
-          }
-        }
-        function expandGroup(groupId) {
-          var section = document.getElementById(groupId);
-          if (!section) return;
-          var header = section.querySelector('.group-header');
-          var content = section.querySelector('.group-content');
-          if (content && content.style.display === 'none') {
-            content.style.display = '';
-            if (header) header.textContent = header.textContent.replace('\u25B6', '\u25BC');
-          }
-        }
-        // Navigate to a cell row from the grid tile map
-        function navigateToCell(tile) {
-          var formId = tile.getAttribute('data-formid');
-          // Search all tables on the page (cell may be in the same group-section)
-          var row = document.querySelector('.summary-row[data-formid="' + formId + '"]');
-          if (!row) return;
-          // Ensure the group containing this row is expanded
-          var section = row.closest('.group-content');
-          if (section && section.style.display === 'none') {
-            section.style.display = '';
-            var header = section.previousElementSibling;
-            if (header) header.textContent = header.textContent.replace('\u25B6', '\u25BC');
-          }
-          // Scroll after a brief delay to let layout settle
-          setTimeout(function() {
-            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            row.style.outline = '3px solid #0066cc';
-            row.style.outlineOffset = '-1px';
-            setTimeout(function() { row.style.outline = ''; row.style.outlineOffset = ''; }, 3000);
-          }, 50);
-        }
-        // Build column pagination — show 3 at a time
-        function navBuilds(dir) {
-          var nav = document.querySelector('.build-nav');
-          if (!nav) return;
-          var total = parseInt(nav.dataset.total);
-          var size = parseInt(nav.dataset.size);
-          var start = parseInt(nav.dataset.start);
-          if (dir === 'first') start = 0;
-          else if (dir === 'prev3') start = Math.max(0, start - size);
-          else if (dir === 'prev1') start = Math.max(0, start - 1);
-          else if (dir === 'next1') start = Math.min(total - size, start + 1);
-          else if (dir === 'next3') start = Math.min(total - size, start + size);
-          else if (dir === 'last') start = Math.max(0, total - size);
-          if (start < 0) start = 0;
-          nav.dataset.start = start;
-          // Show/hide columns via dynamic stylesheet (O(1) instead of O(n*builds) DOM ops)
-          var styleId = 'build-col-style';
-          var styleEl = document.getElementById(styleId);
-          if (!styleEl) {
-            styleEl = document.createElement('style');
-            styleEl.id = styleId;
-            document.head.appendChild(styleEl);
-          }
-          var rules = '';
-          for (var i = 0; i < total; i++) {
-            if (i < start || i >= start + size) {
-              rules += '.build-col-' + i + '{display:none !important}';
-            }
-          }
-          styleEl.textContent = rules;
-          // Update label
-          var label = nav.querySelector('.build-nav-label');
-          if (label) label.textContent = 'Builds ' + (start + 1) + '\u2013' + Math.min(start + size, total) + ' of ' + total;
-          // Update button states
-          var btns = nav.querySelectorAll('button');
-          btns[0].disabled = start === 0;
-          btns[1].disabled = start === 0;
-          btns[2].disabled = start === 0;
-          btns[3].disabled = start + size >= total;
-          btns[4].disabled = start + size >= total;
-          btns[5].disabled = start + size >= total;
-        }
-        // Build column sort — click header to cycle through badge types, sorting that type to top
-        var _badgeOrder = {'BASE':0, 'NEW':1, 'CHANGED':2, 'REMOVED':3, 'NOT PRESENT':4, 'SAME':5, 'SPARSE':6, '\u2014':7, '':8};
-        var _badgeTypes = ['', 'BASE', 'NEW', 'CHANGED', 'REMOVED', 'NOT PRESENT', 'SAME'];
-        // Pending sort state: applied lazily when a collapsed group is expanded
-        var _pendingBuildSort = null; // { idx, sortType, fixedCols }
-        function filterByBuild(th) {
-          var table = th.closest('table');
-          var tbody = table.querySelector('tbody');
-          var idx = parseInt(th.getAttribute('data-dump-idx'));
-          var fixedCols = tbody.querySelector('.col-coords') ? 4 : 3;
-          // Cycle sort state
-          var current = th.dataset.filterState || '';
-          var curIdx = _badgeTypes.indexOf(current);
-          var sortType = _badgeTypes[(curIdx + 1) % _badgeTypes.length];
-          th.dataset.filterState = sortType;
-          // Update label
-          var label = th.querySelector('.build-filter-label');
-          if (label) label.textContent = sortType ? '\u25B2 ' + sortType : '';
-          // Clear other build sort labels in same table
-          table.querySelectorAll('.build-header').forEach(function(h) {
-            if (h !== th) {
-              h.dataset.filterState = '';
-              var l = h.querySelector('.build-filter-label');
-              if (l) l.textContent = '';
-            }
-          });
-          // Apply sort to this table
-          applyBuildSort(tbody, idx, sortType, fixedCols);
-          // Store pending sort for other tables (applied on group expand)
-          _pendingBuildSort = sortType ? { idx: idx, sortType: sortType, fixedCols: fixedCols } : null;
-          // Apply to other VISIBLE tables only
-          document.querySelectorAll('.group-content').forEach(function(gc) {
-            if (gc.style.display !== 'none') {
-              var otherTbody = gc.querySelector('tbody');
-              if (otherTbody && otherTbody !== tbody) {
-                applyBuildSort(otherTbody, idx, sortType, fixedCols);
-              }
-            }
-          });
-        }
-        function applyBuildSort(tbody, idx, sortType, fixedCols) {
-          var summaryRows = Array.from(tbody.querySelectorAll('.summary-row'));
-          if (summaryRows.length === 0) return;
-          var pairs = summaryRows.map(function(sr) {
-            var cells = sr.querySelectorAll('td');
-            var cell = cells[fixedCols + idx];
-            var badge = cell ? cell.querySelector('.badge') : null;
-            var badgeText = badge ? badge.textContent.trim() : '';
-            return { summary: sr, detail: sr.nextElementSibling, badge: badgeText, formid: sr.getAttribute('data-formid') || '' };
-          });
-          if (!sortType) {
-            pairs.sort(function(a, b) { return a.formid < b.formid ? -1 : a.formid > b.formid ? 1 : 0; });
-          } else {
-            pairs.sort(function(a, b) {
-              var aMatch = a.badge === sortType ? -1 : 0;
-              var bMatch = b.badge === sortType ? -1 : 0;
-              if (aMatch !== bMatch) return aMatch - bMatch;
-              var aOrd = _badgeOrder[a.badge] !== undefined ? _badgeOrder[a.badge] : 9;
-              var bOrd = _badgeOrder[b.badge] !== undefined ? _badgeOrder[b.badge] : 9;
-              if (aOrd !== bOrd) return aOrd - bOrd;
-              return a.formid < b.formid ? -1 : a.formid > b.formid ? 1 : 0;
-            });
-          }
-          // Use DocumentFragment for batch DOM update (avoids per-element reflow)
-          var frag = document.createDocumentFragment();
-          pairs.forEach(function(p) {
-            frag.appendChild(p.summary);
-            if (p.detail) frag.appendChild(p.detail);
-          });
-          tbody.appendChild(frag);
-        }
-        // Column sorting (per-table)
-        function sortBy(th, col) {
-          var table = th.closest('table');
-          var tbody = table.querySelector('tbody');
-          // Toggle direction — store sort state on the table element
-          var prevCol = table.dataset.sortCol;
-          var asc = prevCol === col ? table.dataset.sortAsc !== 'true' : true;
-          table.dataset.sortCol = col;
-          table.dataset.sortAsc = asc;
-          // Update arrow indicators within this table only
-          table.querySelectorAll('.sort-indicator').forEach(function(s) { s.textContent = ''; });
-          th.querySelector('.sort-indicator').textContent = asc ? '\u25B2' : '\u25BC';
-          // Collect summary+detail row pairs
-          var summaryRows = Array.from(tbody.querySelectorAll('.summary-row'));
-          var pairs = summaryRows.map(function(sr) {
-            return { summary: sr, detail: sr.nextElementSibling };
-          });
-          pairs.sort(function(a, b) {
-            var cmp;
-            if (col === 'coords') {
-              var ax = parseInt(a.summary.getAttribute('data-cx')) || 0;
-              var ay = parseInt(a.summary.getAttribute('data-cy')) || 0;
-              var bx = parseInt(b.summary.getAttribute('data-cx')) || 0;
-              var by = parseInt(b.summary.getAttribute('data-cy')) || 0;
-              cmp = ax !== bx ? ax - bx : ay - by;
-            } else {
-              var va = (a.summary.getAttribute('data-' + col) || '').toLowerCase();
-              var vb = (b.summary.getAttribute('data-' + col) || '').toLowerCase();
-              cmp = va < vb ? -1 : va > vb ? 1 : 0;
-            }
-            return asc ? cmp : -cmp;
-          });
-          // Re-append in sorted order using DocumentFragment (batch DOM update)
-          var frag = document.createDocumentFragment();
-          pairs.forEach(function(p) {
-            frag.appendChild(p.summary);
-            if (p.detail) frag.appendChild(p.detail);
-          });
-          tbody.appendChild(frag);
-        }
-    """;
+    private enum DiffTag
+    {
+        Equal,
+        Added,
+        Removed,
+        Changed
+    }
 }

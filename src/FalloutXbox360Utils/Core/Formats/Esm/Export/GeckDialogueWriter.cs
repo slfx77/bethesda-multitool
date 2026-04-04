@@ -1,5 +1,9 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Dialogue;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
@@ -18,9 +22,9 @@ internal static class GeckDialogueWriter
             new("Priority", ReportValue.Int(quest.Priority))
         };
         if (quest.Script.HasValue)
-            identityFields.Add(new("Script", ReportValue.FormId(quest.Script.Value, resolver),
+            identityFields.Add(new ReportField("Script", ReportValue.FormId(quest.Script.Value, resolver),
                 $"0x{quest.Script.Value:X8}"));
-        sections.Add(new("Identity", identityFields));
+        sections.Add(new ReportSection("Identity", identityFields));
 
         // Stages
         if (quest.Stages.Count > 0)
@@ -31,13 +35,13 @@ internal static class GeckDialogueWriter
                     var flagsStr = s.Flags != 0 ? $" [Flags: 0x{s.Flags:X2}]" : "";
                     var logStr = !string.IsNullOrEmpty(s.LogEntry) ? $" {s.LogEntry}" : "";
                     return (ReportValue)new ReportValue.CompositeVal(
-                    [
-                        new("Index", ReportValue.Int(s.Index)),
-                        new("Log", ReportValue.String(s.LogEntry ?? ""))
-                    ], $"[{s.Index,3}]{flagsStr}{logStr}");
+                        [
+                            new ReportField("Index", ReportValue.Int(s.Index)),
+                            new ReportField("Log", ReportValue.String(s.LogEntry ?? ""))
+                        ], $"[{s.Index,3}]{flagsStr}{logStr}");
                 })
                 .ToList();
-            sections.Add(new("Stages", [new("Stages", ReportValue.List(stageItems))]));
+            sections.Add(new ReportSection("Stages", [new ReportField("Stages", ReportValue.List(stageItems))]));
         }
 
         // Objectives
@@ -48,13 +52,13 @@ internal static class GeckDialogueWriter
                 {
                     var text = !string.IsNullOrEmpty(o.DisplayText) ? o.DisplayText : "(no text)";
                     return (ReportValue)new ReportValue.CompositeVal(
-                    [
-                        new("Index", ReportValue.Int(o.Index)),
-                        new("Text", ReportValue.String(text))
-                    ], $"[{o.Index,3}] {text}");
+                        [
+                            new ReportField("Index", ReportValue.Int(o.Index)),
+                            new ReportField("Text", ReportValue.String(text))
+                        ], $"[{o.Index,3}] {text}");
                 })
                 .ToList();
-            sections.Add(new("Objectives", [new("Objectives", ReportValue.List(objItems))]));
+            sections.Add(new ReportSection("Objectives", [new ReportField("Objectives", ReportValue.List(objItems))]));
         }
 
         return new RecordReport("Quest", quest.FormId, quest.EditorId, quest.FullName, sections);
@@ -509,5 +513,176 @@ internal static class GeckDialogueWriter
         FormIdResolver? resolver = null)
     {
         return GeckTextContentWriter.GenerateMessagesReport(messages, resolver);
+    }
+
+    /// <summary>Build a structured dialog topic report from a <see cref="DialogTopicRecord" />.</summary>
+    internal static RecordReport BuildDialogTopicReport(DialogTopicRecord topic, FormIdResolver resolver)
+    {
+        var sections = new List<ReportSection>();
+
+        // Identity
+        var identityFields = new List<ReportField>
+        {
+            new("TopicType", ReportValue.String(topic.TopicTypeName)),
+            new("Flags", ReportValue.String($"0x{topic.Flags:X2}"))
+        };
+        if (topic.IsRumors)
+            identityFields.Add(new ReportField("Rumors", ReportValue.Bool(true)));
+        if (topic.IsTopLevel)
+            identityFields.Add(new ReportField("TopLevel", ReportValue.Bool(true)));
+        if (topic.ResponseCount > 0)
+            identityFields.Add(new ReportField("ResponseCount", ReportValue.Int(topic.ResponseCount)));
+        if (topic.Priority != 0f)
+            identityFields.Add(new ReportField("Priority", ReportValue.Float(topic.Priority)));
+        if (topic.JournalIndex != 0)
+            identityFields.Add(new ReportField("JournalIndex", ReportValue.Int(topic.JournalIndex)));
+        sections.Add(new ReportSection("Identity", identityFields));
+
+        // References
+        var refFields = new List<ReportField>();
+        if (topic.QuestFormId.HasValue)
+            refFields.Add(new ReportField("Quest", ReportValue.FormId(topic.QuestFormId.Value, resolver),
+                $"0x{topic.QuestFormId.Value:X8}"));
+        if (topic.SpeakerFormId.HasValue)
+            refFields.Add(new ReportField("Speaker", ReportValue.FormId(topic.SpeakerFormId.Value, resolver),
+                $"0x{topic.SpeakerFormId.Value:X8}"));
+        if (refFields.Count > 0)
+            sections.Add(new ReportSection("References", refFields));
+
+        return new RecordReport("DialogTopic", topic.FormId, topic.EditorId, topic.FullName, sections);
+    }
+
+    /// <summary>Build a structured dialogue report from a <see cref="DialogueRecord" />.</summary>
+    internal static RecordReport BuildDialogueReport(DialogueRecord dialogue, FormIdResolver resolver)
+    {
+        var sections = new List<ReportSection>();
+
+        // Identity
+        var identityFields = new List<ReportField>();
+        if (!string.IsNullOrEmpty(dialogue.PromptText))
+            identityFields.Add(new ReportField("PromptText", ReportValue.String(dialogue.PromptText)));
+        identityFields.Add(new ReportField("InfoFlags", ReportValue.String($"0x{dialogue.InfoFlags:X2}")));
+        if (dialogue.IsGoodbye)
+            identityFields.Add(new ReportField("Goodbye", ReportValue.Bool(true)));
+        if (dialogue.IsRandom)
+            identityFields.Add(new ReportField("Random", ReportValue.Bool(true)));
+        if (dialogue.IsSayOnce)
+            identityFields.Add(new ReportField("SayOnce", ReportValue.Bool(true)));
+        if (dialogue.IsSpeechChallenge)
+        {
+            identityFields.Add(new ReportField("SpeechChallenge", ReportValue.Bool(true)));
+            identityFields.Add(new ReportField("Difficulty", ReportValue.String(dialogue.DifficultyName)));
+        }
+        sections.Add(new ReportSection("Identity", identityFields));
+
+        // References
+        var refFields = new List<ReportField>();
+        if (dialogue.TopicFormId.HasValue)
+            refFields.Add(new ReportField("Topic", ReportValue.FormId(dialogue.TopicFormId.Value, resolver),
+                $"0x{dialogue.TopicFormId.Value:X8}"));
+        if (dialogue.QuestFormId.HasValue)
+            refFields.Add(new ReportField("Quest", ReportValue.FormId(dialogue.QuestFormId.Value, resolver),
+                $"0x{dialogue.QuestFormId.Value:X8}"));
+        if (dialogue.SpeakerFormId.HasValue)
+            refFields.Add(new ReportField("Speaker", ReportValue.FormId(dialogue.SpeakerFormId.Value, resolver),
+                $"0x{dialogue.SpeakerFormId.Value:X8}"));
+        if (dialogue.PreviousInfo.HasValue)
+            refFields.Add(new ReportField("PreviousINFO", ReportValue.FormId(dialogue.PreviousInfo.Value, resolver),
+                $"0x{dialogue.PreviousInfo.Value:X8}"));
+        if (refFields.Count > 0)
+            sections.Add(new ReportSection("References", refFields));
+
+        // Responses
+        if (dialogue.Responses.Count > 0)
+        {
+            var responseItems = dialogue.Responses.OrderBy(r => r.ResponseNumber)
+                .Select(r =>
+                {
+                    var emotionStr = r.EmotionType != 0 || r.EmotionValue != 0
+                        ? $" [{r.EmotionName}: {r.EmotionValue}]"
+                        : "";
+                    var textStr = !string.IsNullOrEmpty(r.Text) ? $" \"{r.Text}\"" : "";
+                    return (ReportValue)new ReportValue.CompositeVal(
+                        [
+                            new ReportField("ResponseNumber", ReportValue.Int(r.ResponseNumber)),
+                            new ReportField("Text", ReportValue.String(r.Text ?? "")),
+                            new ReportField("Emotion", ReportValue.String(r.EmotionName)),
+                            new ReportField("EmotionValue", ReportValue.Int(r.EmotionValue))
+                        ], $"[{r.ResponseNumber}]{emotionStr}{textStr}");
+                })
+                .ToList();
+            sections.Add(new ReportSection("Responses",
+                [new ReportField("Responses", ReportValue.List(responseItems))]));
+        }
+
+        // Conditions
+        if (dialogue.Conditions.Count > 0)
+        {
+            var conditionItems = dialogue.Conditions
+                .Select(c =>
+                {
+                    var orStr = c.IsOr ? " OR" : "";
+                    var display =
+                        $"Func {c.FunctionIndex} {c.ComparisonOperator} {c.ComparisonValue:F1} ({c.RunOnName}){orStr}";
+                    return (ReportValue)new ReportValue.CompositeVal(
+                        [
+                            new ReportField("FunctionIndex", ReportValue.Int(c.FunctionIndex)),
+                            new ReportField("ComparisonOp", ReportValue.String(c.ComparisonOperator)),
+                            new ReportField("ComparisonValue", ReportValue.Float(c.ComparisonValue)),
+                            new ReportField("RunOn", ReportValue.String(c.RunOnName)),
+                            new ReportField("Param1", ReportValue.Int((int)c.Parameter1)),
+                            new ReportField("Param2", ReportValue.Int((int)c.Parameter2)),
+                            new ReportField("IsOr", ReportValue.Bool(c.IsOr))
+                        ], display);
+                })
+                .ToList();
+            sections.Add(new ReportSection("Conditions",
+                [new ReportField("Conditions", ReportValue.List(conditionItems))]));
+        }
+
+        // Result Scripts
+        if (dialogue.ResultScripts.Count > 0)
+        {
+            var scriptFields = new List<ReportField>();
+            for (var i = 0; i < dialogue.ResultScripts.Count; i++)
+            {
+                var script = dialogue.ResultScripts[i];
+                var prefix = dialogue.ResultScripts.Count > 1 ? $"Script{i + 1}" : "Script";
+                if (!string.IsNullOrEmpty(script.SourceText))
+                    scriptFields.Add(new ReportField($"{prefix}Source", ReportValue.String(script.SourceText)));
+                else if (!string.IsNullOrEmpty(script.DecompiledText))
+                    scriptFields.Add(new ReportField($"{prefix}Decompiled", ReportValue.String(script.DecompiledText)));
+            }
+            if (scriptFields.Count > 0)
+                sections.Add(new ReportSection("ResultScripts", scriptFields));
+        }
+
+        // Topic Links
+        var linkFields = new List<ReportField>();
+        if (dialogue.LinkToTopics.Count > 0)
+        {
+            var linkToItems = dialogue.LinkToTopics
+                .Select(id => (ReportValue)ReportValue.FormId(id, resolver))
+                .ToList();
+            linkFields.Add(new ReportField("LinkTo", ReportValue.List(linkToItems)));
+        }
+        if (dialogue.LinkFromTopics.Count > 0)
+        {
+            var linkFromItems = dialogue.LinkFromTopics
+                .Select(id => (ReportValue)ReportValue.FormId(id, resolver))
+                .ToList();
+            linkFields.Add(new ReportField("LinkFrom", ReportValue.List(linkFromItems)));
+        }
+        if (dialogue.AddTopics.Count > 0)
+        {
+            var addItems = dialogue.AddTopics
+                .Select(id => (ReportValue)ReportValue.FormId(id, resolver))
+                .ToList();
+            linkFields.Add(new ReportField("AddTopics", ReportValue.List(addItems)));
+        }
+        if (linkFields.Count > 0)
+            sections.Add(new ReportSection("TopicLinks", linkFields));
+
+        return new RecordReport("Dialogue", dialogue.FormId, dialogue.EditorId, null, sections);
     }
 }

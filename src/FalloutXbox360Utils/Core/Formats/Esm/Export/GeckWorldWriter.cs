@@ -1,6 +1,7 @@
 using System.Text;
-using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
@@ -23,78 +24,78 @@ internal static class GeckWorldWriter
 
         if (cell.GridX.HasValue)
         {
-            identityFields.Add(new("Grid", ReportValue.String($"{cell.GridX}, {cell.GridY}")));
+            identityFields.Add(new ReportField("Grid", ReportValue.String($"{cell.GridX}, {cell.GridY}")));
         }
 
         if (cell.WorldspaceFormId.HasValue)
         {
-            identityFields.Add(new("Worldspace",
+            identityFields.Add(new ReportField("Worldspace",
                 ReportValue.FormId(cell.WorldspaceFormId.Value, resolver),
                 $"0x{cell.WorldspaceFormId.Value:X8}"));
         }
 
-        sections.Add(new("Identity", identityFields));
+        sections.Add(new ReportSection("Identity", identityFields));
 
         // Environment
         var envFields = new List<ReportField>();
 
         if (cell.WaterHeight.HasValue)
         {
-            envFields.Add(new("Water Height", ReportValue.Float(cell.WaterHeight.Value)));
+            envFields.Add(new ReportField("Water Height", ReportValue.Float(cell.WaterHeight.Value)));
         }
 
         if (cell.EncounterZoneFormId.HasValue)
         {
-            envFields.Add(new("Encounter Zone",
+            envFields.Add(new ReportField("Encounter Zone",
                 ReportValue.FormId(cell.EncounterZoneFormId.Value, resolver),
                 $"0x{cell.EncounterZoneFormId.Value:X8}"));
         }
 
         if (cell.MusicTypeFormId.HasValue)
         {
-            envFields.Add(new("Music Type",
+            envFields.Add(new ReportField("Music Type",
                 ReportValue.FormId(cell.MusicTypeFormId.Value, resolver),
                 $"0x{cell.MusicTypeFormId.Value:X8}"));
         }
 
         if (cell.AcousticSpaceFormId.HasValue)
         {
-            envFields.Add(new("Acoustic Space",
+            envFields.Add(new ReportField("Acoustic Space",
                 ReportValue.FormId(cell.AcousticSpaceFormId.Value, resolver),
                 $"0x{cell.AcousticSpaceFormId.Value:X8}"));
         }
 
         if (cell.ImageSpaceFormId.HasValue)
         {
-            envFields.Add(new("Image Space",
+            envFields.Add(new ReportField("Image Space",
                 ReportValue.FormId(cell.ImageSpaceFormId.Value, resolver),
                 $"0x{cell.ImageSpaceFormId.Value:X8}"));
         }
 
         if (cell.LightingTemplateFormId.HasValue)
         {
-            envFields.Add(new("Lighting Template",
+            envFields.Add(new ReportField("Lighting Template",
                 ReportValue.FormId(cell.LightingTemplateFormId.Value, resolver),
                 $"0x{cell.LightingTemplateFormId.Value:X8}"));
         }
 
         if (cell.LightingTemplateInheritanceFlags.HasValue)
         {
-            envFields.Add(new("Lighting Inheritance Flags",
+            envFields.Add(new ReportField("Lighting Inheritance Flags",
                 ReportValue.String($"0x{cell.LightingTemplateInheritanceFlags.Value:X8}")));
         }
 
         if (envFields.Count > 0)
         {
-            sections.Add(new("Environment", envFields));
+            sections.Add(new ReportSection("Environment", envFields));
         }
 
         // Heightmap
         if (cell.Heightmap != null)
         {
-            sections.Add(new("Heightmap",
+            sections.Add(new ReportSection("Heightmap",
             [
-                new("Height Offset", ReportValue.Float(cell.Heightmap.HeightOffset))
+                new ReportField("Height Offset", ReportValue.Float(cell.Heightmap.HeightOffset))
             ]));
         }
 
@@ -104,9 +105,9 @@ internal static class GeckWorldWriter
             var linkedItems = cell.LinkedCellFormIds
                 .Select(fid => (ReportValue)ReportValue.FormId(fid, resolver))
                 .ToList();
-            sections.Add(new("Linked Cells",
+            sections.Add(new ReportSection("Linked Cells",
             [
-                new("Doors To", ReportValue.List(linkedItems, $"{linkedItems.Count} cells"))
+                new ReportField("Doors To", ReportValue.List(linkedItems, $"{linkedItems.Count} cells"))
             ]));
         }
 
@@ -114,9 +115,9 @@ internal static class GeckWorldWriter
         if (cell.PlacedObjects.Count > 0)
         {
             var objectItems = BuildPlacedObjectList(cell.PlacedObjects, resolver);
-            sections.Add(new("Placed Objects",
+            sections.Add(new ReportSection("Placed Objects",
             [
-                new("Objects", ReportValue.List(objectItems, $"{cell.PlacedObjects.Count} objects"))
+                new ReportField("Objects", ReportValue.List(objectItems, $"{cell.PlacedObjects.Count} objects"))
             ]));
         }
 
@@ -136,64 +137,65 @@ internal static class GeckWorldWriter
 
         if (wrld.Flags.HasValue)
         {
-            identityFields.Add(new("Flags", ReportValue.String($"0x{wrld.Flags.Value:X2}")));
+            identityFields.Add(new ReportField("Flags", ReportValue.String($"0x{wrld.Flags.Value:X2}")));
         }
 
         if (wrld.ParentWorldspaceFormId.HasValue)
         {
-            identityFields.Add(new("Parent",
+            identityFields.Add(new ReportField("Parent",
                 ReportValue.FormId(wrld.ParentWorldspaceFormId.Value, resolver),
                 $"0x{wrld.ParentWorldspaceFormId.Value:X8}"));
         }
 
         if (wrld.ParentUseFlags.HasValue)
         {
-            identityFields.Add(new("Parent Use Flags", ReportValue.String($"0x{wrld.ParentUseFlags.Value:X4}")));
+            identityFields.Add(new ReportField("Parent Use Flags",
+                ReportValue.String($"0x{wrld.ParentUseFlags.Value:X4}")));
         }
 
-        sections.Add(new("Identity", identityFields));
+        sections.Add(new ReportSection("Identity", identityFields));
 
         // Environment
         var envFields = new List<ReportField>();
 
         if (wrld.ClimateFormId.HasValue)
         {
-            envFields.Add(new("Climate",
+            envFields.Add(new ReportField("Climate",
                 ReportValue.FormId(wrld.ClimateFormId.Value, resolver),
                 $"0x{wrld.ClimateFormId.Value:X8}"));
         }
 
         if (wrld.WaterFormId.HasValue)
         {
-            envFields.Add(new("Water",
+            envFields.Add(new ReportField("Water",
                 ReportValue.FormId(wrld.WaterFormId.Value, resolver),
                 $"0x{wrld.WaterFormId.Value:X8}"));
         }
 
         if (wrld.EncounterZoneFormId.HasValue)
         {
-            envFields.Add(new("Encounter Zone",
+            envFields.Add(new ReportField("Encounter Zone",
                 ReportValue.FormId(wrld.EncounterZoneFormId.Value, resolver),
                 $"0x{wrld.EncounterZoneFormId.Value:X8}"));
         }
 
         if (wrld.ImageSpaceFormId.HasValue)
         {
-            envFields.Add(new("Image Space",
+            envFields.Add(new ReportField("Image Space",
                 ReportValue.FormId(wrld.ImageSpaceFormId.Value, resolver),
                 $"0x{wrld.ImageSpaceFormId.Value:X8}"));
         }
 
         if (wrld.MusicTypeFormId.HasValue)
         {
-            envFields.Add(new("Music Type",
+            envFields.Add(new ReportField("Music Type",
                 ReportValue.FormId(wrld.MusicTypeFormId.Value, resolver),
                 $"0x{wrld.MusicTypeFormId.Value:X8}"));
         }
 
         if (envFields.Count > 0)
         {
-            sections.Add(new("Environment", envFields));
+            sections.Add(new ReportSection("Environment", envFields));
         }
 
         // Heights
@@ -202,24 +204,26 @@ internal static class GeckWorldWriter
             var heightFields = new List<ReportField>();
             if (wrld.DefaultLandHeight.HasValue)
             {
-                heightFields.Add(new("Default Land Height", ReportValue.Float(wrld.DefaultLandHeight.Value)));
+                heightFields.Add(
+                    new ReportField("Default Land Height", ReportValue.Float(wrld.DefaultLandHeight.Value)));
             }
 
             if (wrld.DefaultWaterHeight.HasValue)
             {
-                heightFields.Add(new("Default Water Height", ReportValue.Float(wrld.DefaultWaterHeight.Value)));
+                heightFields.Add(new ReportField("Default Water Height",
+                    ReportValue.Float(wrld.DefaultWaterHeight.Value)));
             }
 
-            sections.Add(new("Heights", heightFields));
+            sections.Add(new ReportSection("Heights", heightFields));
         }
 
         // Bounds
         if (wrld.BoundsMinX.HasValue)
         {
-            sections.Add(new("World Bounds",
+            sections.Add(new ReportSection("World Bounds",
             [
-                new("Min", ReportValue.String($"({wrld.BoundsMinX:F0}, {wrld.BoundsMinY:F0})")),
-                new("Max", ReportValue.String($"({wrld.BoundsMaxX:F0}, {wrld.BoundsMaxY:F0})"))
+                new ReportField("Min", ReportValue.String($"({wrld.BoundsMinX:F0}, {wrld.BoundsMinY:F0})")),
+                new ReportField("Max", ReportValue.String($"({wrld.BoundsMaxX:F0}, {wrld.BoundsMaxY:F0})"))
             ]));
         }
 
@@ -235,24 +239,24 @@ internal static class GeckWorldWriter
 
             if (wrld.MapOffsetScaleX.HasValue)
             {
-                mapFields.Add(new("Offset Scale",
+                mapFields.Add(new ReportField("Offset Scale",
                     ReportValue.String($"({wrld.MapOffsetScaleX:F2}, {wrld.MapOffsetScaleY:F2})")));
             }
 
             if (wrld.MapOffsetZ.HasValue)
             {
-                mapFields.Add(new("Offset Z", ReportValue.Float(wrld.MapOffsetZ.Value)));
+                mapFields.Add(new ReportField("Offset Z", ReportValue.Float(wrld.MapOffsetZ.Value)));
             }
 
-            sections.Add(new("Map Data", mapFields));
+            sections.Add(new ReportSection("Map Data", mapFields));
         }
 
         // Cells summary
         if (wrld.Cells.Count > 0)
         {
-            sections.Add(new("Cells",
+            sections.Add(new ReportSection("Cells",
             [
-                new("Count", ReportValue.Int(wrld.Cells.Count))
+                new ReportField("Count", ReportValue.Int(wrld.Cells.Count))
             ]));
         }
 
@@ -284,27 +288,28 @@ internal static class GeckWorldWriter
                               MathF.Abs(obj.RotZ) > 0.001f;
             if (hasRotation)
             {
-                fields.Add(new("Rotation", ReportValue.String($"({obj.RotX:F3}, {obj.RotY:F3}, {obj.RotZ:F3})")));
+                fields.Add(new ReportField("Rotation",
+                    ReportValue.String($"({obj.RotX:F3}, {obj.RotY:F3}, {obj.RotZ:F3})")));
             }
 
             if (Math.Abs(obj.Scale - 1.0f) > 0.01f)
             {
-                fields.Add(new("Scale", ReportValue.Float(obj.Scale, "F2")));
+                fields.Add(new ReportField("Scale", ReportValue.Float(obj.Scale, "F2")));
             }
 
             if (obj.IsInitiallyDisabled)
             {
-                fields.Add(new("Disabled", ReportValue.Bool(true)));
+                fields.Add(new ReportField("Disabled", ReportValue.Bool(true)));
             }
 
             if (obj.ModelPath != null)
             {
-                fields.Add(new("Model", ReportValue.String(obj.ModelPath)));
+                fields.Add(new ReportField("Model", ReportValue.String(obj.ModelPath)));
             }
 
             if (obj.Bounds != null)
             {
-                fields.Add(new("Bounds", ReportValue.String(
+                fields.Add(new ReportField("Bounds", ReportValue.String(
                     $"[{obj.Bounds.X1},{obj.Bounds.Y1},{obj.Bounds.Z1}]-[{obj.Bounds.X2},{obj.Bounds.Y2},{obj.Bounds.Z2}]")));
             }
 

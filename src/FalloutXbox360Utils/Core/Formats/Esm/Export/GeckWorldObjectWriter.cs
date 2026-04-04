@@ -1,6 +1,9 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Magic;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
@@ -17,29 +20,31 @@ internal static class GeckWorldObjectWriter
 
         var statsFields = new List<ReportField>
         {
-            new("Force", ReportValue.Float(expl.Force, "F1")),
-            new("Damage", ReportValue.Float(expl.Damage, "F1")),
-            new("Radius", ReportValue.Float(expl.Radius, "F1")),
-            new("IS Radius", ReportValue.Float(expl.ISRadius, "F1"))
+            new("Force", ReportValue.Float(expl.Force)),
+            new("Damage", ReportValue.Float(expl.Damage)),
+            new("Radius", ReportValue.Float(expl.Radius)),
+            new("IS Radius", ReportValue.Float(expl.ISRadius))
         };
         if (expl.Light != 0)
-            statsFields.Add(new("Light", ReportValue.FormId(expl.Light, resolver), $"0x{expl.Light:X8}"));
+            statsFields.Add(new ReportField("Light", ReportValue.FormId(expl.Light, resolver), $"0x{expl.Light:X8}"));
         if (expl.Sound1 != 0)
-            statsFields.Add(new("Sound 1", ReportValue.FormId(expl.Sound1, resolver), $"0x{expl.Sound1:X8}"));
+            statsFields.Add(
+                new ReportField("Sound 1", ReportValue.FormId(expl.Sound1, resolver), $"0x{expl.Sound1:X8}"));
         if (expl.Sound2 != 0)
-            statsFields.Add(new("Sound 2", ReportValue.FormId(expl.Sound2, resolver), $"0x{expl.Sound2:X8}"));
+            statsFields.Add(
+                new ReportField("Sound 2", ReportValue.FormId(expl.Sound2, resolver), $"0x{expl.Sound2:X8}"));
         if (expl.ImpactDataSet != 0)
-            statsFields.Add(new("Impact Data", ReportValue.FormId(expl.ImpactDataSet, resolver),
+            statsFields.Add(new ReportField("Impact Data", ReportValue.FormId(expl.ImpactDataSet, resolver),
                 $"0x{expl.ImpactDataSet:X8}"));
         if (expl.Enchantment != 0)
-            statsFields.Add(new("Enchantment", ReportValue.FormId(expl.Enchantment, resolver),
+            statsFields.Add(new ReportField("Enchantment", ReportValue.FormId(expl.Enchantment, resolver),
                 $"0x{expl.Enchantment:X8}"));
         if (!string.IsNullOrEmpty(expl.ModelPath))
-            statsFields.Add(new("Model", ReportValue.String(expl.ModelPath)));
+            statsFields.Add(new ReportField("Model", ReportValue.String(expl.ModelPath)));
         if (expl.Flags != 0)
-            statsFields.Add(new("Flags",
+            statsFields.Add(new ReportField("Flags",
                 ReportValue.String(FlagRegistry.DecodeFlagNamesWithHex(expl.Flags, FlagRegistry.ExplosionFlags))));
-        sections.Add(new("Stats", statsFields));
+        sections.Add(new ReportSection("Stats", statsFields));
 
         return new RecordReport("Explosion", expl.FormId, expl.EditorId, expl.FullName, sections);
     }
@@ -50,49 +55,49 @@ internal static class GeckWorldObjectWriter
         var sections = new List<ReportSection>();
 
         // Identity
-        sections.Add(new("Identity", [new("Type", ReportValue.String(proj.TypeName))]));
+        sections.Add(new ReportSection("Identity", [new ReportField("Type", ReportValue.String(proj.TypeName))]));
 
         // Physics
         var physFields = new List<ReportField>
         {
-            new("Speed", ReportValue.Float(proj.Speed, "F1")),
+            new("Speed", ReportValue.Float(proj.Speed)),
             new("Gravity", ReportValue.Float(proj.Gravity, "F4")),
-            new("Range", ReportValue.Float(proj.Range, "F1")),
-            new("Impact Force", ReportValue.Float(proj.ImpactForce, "F1"))
+            new("Range", ReportValue.Float(proj.Range)),
+            new("Impact Force", ReportValue.Float(proj.ImpactForce))
         };
         if (proj.FadeDuration is not 0)
-            physFields.Add(new("Fade Duration", ReportValue.Float(proj.FadeDuration, "F2")));
+            physFields.Add(new ReportField("Fade Duration", ReportValue.Float(proj.FadeDuration, "F2")));
         if (proj.Timer is not 0)
-            physFields.Add(new("Timer", ReportValue.Float(proj.Timer, "F2")));
-        sections.Add(new("Physics", physFields));
+            physFields.Add(new ReportField("Timer", ReportValue.Float(proj.Timer, "F2")));
+        sections.Add(new ReportSection("Physics", physFields));
 
         // Muzzle Flash
         if (proj.MuzzleFlashDuration is not 0 || proj.MuzzleFlashLight != 0)
         {
             var mfFields = new List<ReportField>();
             if (proj.MuzzleFlashDuration is not 0)
-                mfFields.Add(new("Flash Duration", ReportValue.Float(proj.MuzzleFlashDuration, "F2")));
+                mfFields.Add(new ReportField("Flash Duration", ReportValue.Float(proj.MuzzleFlashDuration, "F2")));
             if (proj.MuzzleFlashLight != 0)
-                mfFields.Add(new("Flash Light", ReportValue.FormId(proj.MuzzleFlashLight, resolver),
+                mfFields.Add(new ReportField("Flash Light", ReportValue.FormId(proj.MuzzleFlashLight, resolver),
                     $"0x{proj.MuzzleFlashLight:X8}"));
-            sections.Add(new("Muzzle Flash", mfFields));
+            sections.Add(new ReportSection("Muzzle Flash", mfFields));
         }
 
         // References
         var refFields = new List<ReportField>();
         if (proj.Light != 0)
-            refFields.Add(new("Light", ReportValue.FormId(proj.Light, resolver), $"0x{proj.Light:X8}"));
+            refFields.Add(new ReportField("Light", ReportValue.FormId(proj.Light, resolver), $"0x{proj.Light:X8}"));
         if (proj.Explosion != 0)
-            refFields.Add(new("Explosion", ReportValue.FormId(proj.Explosion, resolver),
+            refFields.Add(new ReportField("Explosion", ReportValue.FormId(proj.Explosion, resolver),
                 $"0x{proj.Explosion:X8}"));
         if (proj.Sound != 0)
-            refFields.Add(new("Sound", ReportValue.FormId(proj.Sound, resolver), $"0x{proj.Sound:X8}"));
+            refFields.Add(new ReportField("Sound", ReportValue.FormId(proj.Sound, resolver), $"0x{proj.Sound:X8}"));
         if (!string.IsNullOrEmpty(proj.ModelPath))
-            refFields.Add(new("Model", ReportValue.String(proj.ModelPath)));
+            refFields.Add(new ReportField("Model", ReportValue.String(proj.ModelPath)));
         if (proj.Flags != 0)
-            refFields.Add(new("Flags", ReportValue.String($"0x{proj.Flags:X4}")));
+            refFields.Add(new ReportField("Flags", ReportValue.String($"0x{proj.Flags:X4}")));
         if (refFields.Count > 0)
-            sections.Add(new("References", refFields));
+            sections.Add(new ReportSection("References", refFields));
 
         return new RecordReport("Projectile", proj.FormId, proj.EditorId, proj.FullName, sections);
     }
@@ -397,12 +402,12 @@ internal static class GeckWorldObjectWriter
             sb.AppendLine($"  Radius:      {light.Radius}");
             sb.AppendLine($"  Color:       #{r:X2}{g:X2}{b:X2} ({r}, {g}, {b})");
             sb.AppendLine($"  Duration:    {(light.Duration == 0 ? "Infinite" : $"{light.Duration}s")}");
-            if (light.FalloffExponent != 0)
+            if (light.FalloffExponent is not 0f)
             {
                 sb.AppendLine($"  Falloff:     {light.FalloffExponent:F2}");
             }
 
-            if (light.FOV != 0)
+            if (light.FOV is not 0f)
             {
                 sb.AppendLine($"  FOV:         {light.FOV:F1}\u00B0");
             }
@@ -412,7 +417,7 @@ internal static class GeckWorldObjectWriter
                 sb.AppendLine($"  Flags:       0x{light.Flags:X8}");
             }
 
-            if (light.Value != 0 || light.Weight != 0)
+            if (light.Value != 0 || light.Weight is not 0f)
             {
                 sb.AppendLine($"  Value:       {light.Value}");
                 sb.AppendLine($"  Weight:      {light.Weight:F1}");

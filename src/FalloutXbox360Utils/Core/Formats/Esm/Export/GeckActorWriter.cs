@@ -1,5 +1,7 @@
 using System.Text;
+using FalloutXbox360Utils.Core.Formats.Esm.FaceGen;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
@@ -53,7 +55,10 @@ internal static class GeckActorWriter
                     var sk = npc.Skills;
                     var hasBigGuns = resolver.SkillEra?.BigGunsActive ?? false;
 
-                    string Sk(int i) => resolver.GetSkillName(i) ?? $"Skill#{i}";
+                    string Sk(int i)
+                    {
+                        return resolver.GetSkillName(i) ?? $"Skill#{i}";
+                    }
 
                     sb.AppendLine("  Skills:");
                     sb.AppendLine(

@@ -1,5 +1,7 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
@@ -16,12 +18,12 @@ internal static class GeckFactionWriter
         {
             var flagFields = new List<ReportField>();
             if (faction.IsHiddenFromPlayer)
-                flagFields.Add(new("Hidden From Player", ReportValue.Bool(true)));
+                flagFields.Add(new ReportField("Hidden From Player", ReportValue.Bool(true)));
             if (faction.AllowsEvil)
-                flagFields.Add(new("Allows Evil", ReportValue.Bool(true)));
+                flagFields.Add(new ReportField("Allows Evil", ReportValue.Bool(true)));
             if (faction.AllowsSpecialCombat)
-                flagFields.Add(new("Allows Special Combat", ReportValue.Bool(true)));
-            sections.Add(new("Flags", flagFields));
+                flagFields.Add(new ReportField("Allows Special Combat", ReportValue.Bool(true)));
+            sections.Add(new ReportSection("Flags", flagFields));
         }
 
         // Ranks
@@ -32,13 +34,13 @@ internal static class GeckFactionWriter
                 {
                     var title = r.MaleTitle ?? r.FemaleTitle ?? "(unnamed)";
                     return (ReportValue)new ReportValue.CompositeVal(
-                    [
-                        new("Number", ReportValue.Int(r.RankNumber)),
-                        new("Title", ReportValue.String(title))
-                    ], $"[{r.RankNumber}] {title}");
+                        [
+                            new ReportField("Number", ReportValue.Int(r.RankNumber)),
+                            new ReportField("Title", ReportValue.String(title))
+                        ], $"[{r.RankNumber}] {title}");
                 })
                 .ToList();
-            sections.Add(new("Ranks", [new("Ranks", ReportValue.List(rankItems))]));
+            sections.Add(new ReportSection("Ranks", [new ReportField("Ranks", ReportValue.List(rankItems))]));
         }
 
         // Relations
@@ -46,12 +48,12 @@ internal static class GeckFactionWriter
         {
             var relItems = faction.Relations.OrderBy(r => r.FactionFormId)
                 .Select(r => (ReportValue)new ReportValue.CompositeVal(
-                [
-                    new("Faction", ReportValue.FormId(r.FactionFormId, resolver)),
-                    new("Modifier", ReportValue.Int(r.Modifier, $"{r.Modifier:+0;-0}"))
-                ], $"{resolver.FormatFull(r.FactionFormId)}: {r.Modifier:+0;-0}"))
+                    [
+                        new ReportField("Faction", ReportValue.FormId(r.FactionFormId, resolver)),
+                        new ReportField("Modifier", ReportValue.Int(r.Modifier, $"{r.Modifier:+0;-0}"))
+                    ], $"{resolver.FormatFull(r.FactionFormId)}: {r.Modifier:+0;-0}"))
                 .ToList();
-            sections.Add(new("Relations", [new("Relations", ReportValue.List(relItems))]));
+            sections.Add(new ReportSection("Relations", [new ReportField("Relations", ReportValue.List(relItems))]));
         }
 
         return new RecordReport("Faction", faction.FormId, faction.EditorId, faction.FullName, sections);

@@ -1,6 +1,9 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 

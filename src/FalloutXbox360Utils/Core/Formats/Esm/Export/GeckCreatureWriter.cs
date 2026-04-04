@@ -1,5 +1,6 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
@@ -12,48 +13,49 @@ internal static class GeckCreatureWriter
         var sections = new List<ReportSection>();
 
         // Identity
-        sections.Add(new("Identity", [new("Type", ReportValue.String(creature.CreatureTypeName))]));
+        sections.Add(new ReportSection("Identity",
+            [new ReportField("Type", ReportValue.String(creature.CreatureTypeName))]));
 
         // Stats (ACBS)
         if (creature.Stats != null)
         {
-            sections.Add(new("Stats",
+            sections.Add(new ReportSection("Stats",
             [
-                new("Level", ReportValue.Int(creature.Stats.Level)),
-                new("Fatigue Base", ReportValue.Int(creature.Stats.FatigueBase)),
-                new("Barter Gold", ReportValue.Int(creature.Stats.BarterGold)),
-                new("Speed Mult", ReportValue.Int(creature.Stats.SpeedMultiplier)),
-                new("Calc Range",
+                new ReportField("Level", ReportValue.Int(creature.Stats.Level)),
+                new ReportField("Fatigue Base", ReportValue.Int(creature.Stats.FatigueBase)),
+                new ReportField("Barter Gold", ReportValue.Int(creature.Stats.BarterGold)),
+                new ReportField("Speed Mult", ReportValue.Int(creature.Stats.SpeedMultiplier)),
+                new ReportField("Calc Range",
                     ReportValue.String($"{creature.Stats.CalcMin} - {creature.Stats.CalcMax}")),
-                new("Flags", ReportValue.String($"0x{creature.Stats.Flags:X8}"))
+                new ReportField("Flags", ReportValue.String($"0x{creature.Stats.Flags:X8}"))
             ]));
         }
 
         // Combat
-        sections.Add(new("Combat",
+        sections.Add(new ReportSection("Combat",
         [
-            new("Attack Damage", ReportValue.Int(creature.AttackDamage)),
-            new("Combat Skill", ReportValue.Int(creature.CombatSkill)),
-            new("Magic Skill", ReportValue.Int(creature.MagicSkill)),
-            new("Stealth Skill", ReportValue.Int(creature.StealthSkill))
+            new ReportField("Attack Damage", ReportValue.Int(creature.AttackDamage)),
+            new ReportField("Combat Skill", ReportValue.Int(creature.CombatSkill)),
+            new ReportField("Magic Skill", ReportValue.Int(creature.MagicSkill)),
+            new ReportField("Stealth Skill", ReportValue.Int(creature.StealthSkill))
         ]));
 
         // AI Data
         if (creature.AiData != null)
         {
             var ai = creature.AiData;
-            sections.Add(new("AI Data",
+            sections.Add(new ReportSection("AI Data",
             [
-                new("Aggression", ReportValue.String(ai.AggressionName)),
-                new("Confidence", ReportValue.String(ai.ConfidenceName)),
-                new("Mood", ReportValue.String(ai.MoodName)),
-                new("Assistance", ReportValue.String(ai.AssistanceName))
+                new ReportField("Aggression", ReportValue.String(ai.AggressionName)),
+                new ReportField("Confidence", ReportValue.String(ai.ConfidenceName)),
+                new ReportField("Mood", ReportValue.String(ai.MoodName)),
+                new ReportField("Assistance", ReportValue.String(ai.AssistanceName))
             ]));
         }
 
         // Model
         if (!string.IsNullOrEmpty(creature.ModelPath))
-            sections.Add(new("Model", [new("Path", ReportValue.String(creature.ModelPath))]));
+            sections.Add(new ReportSection("Model", [new ReportField("Path", ReportValue.String(creature.ModelPath))]));
 
         return new RecordReport("Creature", creature.FormId, creature.EditorId, creature.FullName,
             sections);
@@ -66,8 +68,8 @@ internal static class GeckCreatureWriter
 
         // Description
         if (!string.IsNullOrEmpty(race.Description))
-            sections.Add(new("Description",
-                [new("Description", ReportValue.String(race.Description))]));
+            sections.Add(new ReportSection("Description",
+                [new ReportField("Description", ReportValue.String(race.Description))]));
 
         // Skill Boosts
         if (race.SkillBoosts.Count > 0)
@@ -77,20 +79,21 @@ internal static class GeckCreatureWriter
                 {
                     var skillName = resolver.GetActorValueName(b.SkillIndex) ?? $"AV#{b.SkillIndex}";
                     return (ReportValue)new ReportValue.CompositeVal(
-                    [
-                        new("Skill", ReportValue.String(skillName)),
-                        new("Boost", ReportValue.Int(b.Boost, GeckReportHelpers.FormatModifier(b.Boost)))
-                    ], $"{skillName} {GeckReportHelpers.FormatModifier(b.Boost)}");
+                        [
+                            new ReportField("Skill", ReportValue.String(skillName)),
+                            new ReportField("Boost",
+                                ReportValue.Int(b.Boost, GeckReportHelpers.FormatModifier(b.Boost)))
+                        ], $"{skillName} {GeckReportHelpers.FormatModifier(b.Boost)}");
                 })
                 .ToList();
-            sections.Add(new("Skill Boosts", [new("Boosts", ReportValue.List(boostItems))]));
+            sections.Add(new ReportSection("Skill Boosts", [new ReportField("Boosts", ReportValue.List(boostItems))]));
         }
 
         // Height
-        sections.Add(new("Height",
+        sections.Add(new ReportSection("Height",
         [
-            new("Male", ReportValue.Float(race.MaleHeight, "F2")),
-            new("Female", ReportValue.Float(race.FemaleHeight, "F2"))
+            new ReportField("Male", ReportValue.Float(race.MaleHeight, "F2")),
+            new ReportField("Female", ReportValue.Float(race.FemaleHeight, "F2"))
         ]));
 
         // Voice Types
@@ -98,12 +101,12 @@ internal static class GeckCreatureWriter
         {
             var voiceFields = new List<ReportField>();
             if (race.MaleVoiceFormId.HasValue)
-                voiceFields.Add(new("Male", ReportValue.FormId(race.MaleVoiceFormId.Value, resolver),
+                voiceFields.Add(new ReportField("Male", ReportValue.FormId(race.MaleVoiceFormId.Value, resolver),
                     $"0x{race.MaleVoiceFormId.Value:X8}"));
             if (race.FemaleVoiceFormId.HasValue)
-                voiceFields.Add(new("Female", ReportValue.FormId(race.FemaleVoiceFormId.Value, resolver),
+                voiceFields.Add(new ReportField("Female", ReportValue.FormId(race.FemaleVoiceFormId.Value, resolver),
                     $"0x{race.FemaleVoiceFormId.Value:X8}"));
-            sections.Add(new("Voice Types", voiceFields));
+            sections.Add(new ReportSection("Voice Types", voiceFields));
         }
 
         // Related Races
@@ -111,12 +114,12 @@ internal static class GeckCreatureWriter
         {
             var relFields = new List<ReportField>();
             if (race.OlderRaceFormId.HasValue)
-                relFields.Add(new("Older", ReportValue.FormId(race.OlderRaceFormId.Value, resolver),
+                relFields.Add(new ReportField("Older", ReportValue.FormId(race.OlderRaceFormId.Value, resolver),
                     $"0x{race.OlderRaceFormId.Value:X8}"));
             if (race.YoungerRaceFormId.HasValue)
-                relFields.Add(new("Younger", ReportValue.FormId(race.YoungerRaceFormId.Value, resolver),
+                relFields.Add(new ReportField("Younger", ReportValue.FormId(race.YoungerRaceFormId.Value, resolver),
                     $"0x{race.YoungerRaceFormId.Value:X8}"));
-            sections.Add(new("Related Races", relFields));
+            sections.Add(new ReportSection("Related Races", relFields));
         }
 
         // Racial Abilities
@@ -125,22 +128,26 @@ internal static class GeckCreatureWriter
             var abilityItems = race.AbilityFormIds
                 .Select(a => (ReportValue)ReportValue.FormId(a, resolver))
                 .ToList();
-            sections.Add(new("Racial Abilities",
-                [new("Abilities", ReportValue.List(abilityItems))]));
+            sections.Add(new ReportSection("Racial Abilities",
+                [new ReportField("Abilities", ReportValue.List(abilityItems))]));
         }
 
         return new RecordReport("Race", race.FormId, race.EditorId, race.FullName, sections);
     }
 
     internal static void AppendCreaturesSection(StringBuilder sb, List<CreatureRecord> creatures)
-        => GeckActorWriter.AppendCreaturesSection(sb, creatures, FormIdResolver.Empty);
+    {
+        GeckActorWriter.AppendCreaturesSection(sb, creatures, FormIdResolver.Empty);
+    }
 
     /// <summary>
     ///     Generate a report for Creatures only.
     /// </summary>
     public static string GenerateCreaturesReport(List<CreatureRecord> creatures,
         FormIdResolver? resolver = null)
-        => GeckActorWriter.GenerateCreaturesReport(creatures, resolver);
+    {
+        return GeckActorWriter.GenerateCreaturesReport(creatures, resolver);
+    }
 
     internal static void AppendRacesSection(StringBuilder sb, List<RaceRecord> races,
         FormIdResolver resolver)

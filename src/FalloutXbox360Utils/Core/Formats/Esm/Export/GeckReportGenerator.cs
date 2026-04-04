@@ -521,7 +521,8 @@ public static class GeckReportGenerator
         if (result.Projectiles.Count > 0)
         {
             files["projectiles.csv"] = CsvSupplementalWriter.GenerateProjectilesCsv(result.Projectiles);
-            files["projectile_report.txt"] = GeckWorldObjectWriter.GenerateProjectilesReport(result.Projectiles, resolver);
+            files["projectile_report.txt"] =
+                GeckWorldObjectWriter.GenerateProjectilesReport(result.Projectiles, resolver);
         }
 
         if (result.Sounds.Count > 0)

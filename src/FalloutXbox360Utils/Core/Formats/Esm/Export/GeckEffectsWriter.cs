@@ -1,5 +1,6 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Magic;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
@@ -13,9 +14,9 @@ internal static class GeckEffectsWriter
         // Description
         if (!string.IsNullOrEmpty(perk.Description))
         {
-            sections.Add(new("Description",
+            sections.Add(new ReportSection("Description",
             [
-                new("Text", ReportValue.String(perk.Description))
+                new ReportField("Text", ReportValue.String(perk.Description))
             ]));
         }
 
@@ -29,10 +30,10 @@ internal static class GeckEffectsWriter
         };
         if (!string.IsNullOrEmpty(perk.IconPath))
         {
-            reqFields.Add(new("Icon", ReportValue.String(perk.IconPath)));
+            reqFields.Add(new ReportField("Icon", ReportValue.String(perk.IconPath)));
         }
 
-        sections.Add(new("Requirements", reqFields));
+        sections.Add(new ReportSection("Requirements", reqFields));
 
         // Entries
         if (perk.Entries.Count > 0)
@@ -48,7 +49,7 @@ internal static class GeckEffectsWriter
                     };
                     if (entry.AbilityFormId.HasValue)
                     {
-                        fields.Add(new("Ability", ReportValue.FormId(entry.AbilityFormId.Value, resolver),
+                        fields.Add(new ReportField("Ability", ReportValue.FormId(entry.AbilityFormId.Value, resolver),
                             $"0x{entry.AbilityFormId.Value:X8}"));
                     }
 
@@ -60,9 +61,9 @@ internal static class GeckEffectsWriter
                 })
                 .ToList();
 
-            sections.Add(new($"Entries ({perk.Entries.Count})",
+            sections.Add(new ReportSection($"Entries ({perk.Entries.Count})",
             [
-                new("Entries", ReportValue.List(items))
+                new ReportField("Entries", ReportValue.List(items))
             ]));
         }
 
@@ -74,17 +75,17 @@ internal static class GeckEffectsWriter
         var sections = new List<ReportSection>();
 
         // Identity
-        sections.Add(new("Identity",
+        sections.Add(new ReportSection("Identity",
         [
-            new("Type", ReportValue.String(spell.TypeName))
+            new ReportField("Type", ReportValue.String(spell.TypeName))
         ]));
 
         // Stats
-        sections.Add(new("Stats",
+        sections.Add(new ReportSection("Stats",
         [
-            new("Cost", ReportValue.Int((int)spell.Cost)),
-            new("Level", ReportValue.Int((int)spell.Level)),
-            new("Flags", ReportValue.Int(spell.Flags, $"0x{spell.Flags:X2}"))
+            new ReportField("Cost", ReportValue.Int((int)spell.Cost)),
+            new ReportField("Level", ReportValue.Int((int)spell.Level)),
+            new ReportField("Flags", ReportValue.Int(spell.Flags, $"0x{spell.Flags:X2}"))
         ]));
 
         // Effects
@@ -120,9 +121,9 @@ internal static class GeckEffectsWriter
                 })
                 .ToList();
 
-            sections.Add(new($"Effects ({spell.Effects.Count})",
+            sections.Add(new ReportSection($"Effects ({spell.Effects.Count})",
             [
-                new("Effects", ReportValue.List(items))
+                new ReportField("Effects", ReportValue.List(items))
             ]));
         }
 

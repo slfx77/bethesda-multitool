@@ -1,5 +1,6 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
@@ -141,6 +142,92 @@ internal static class GeckScriptWriter
 
             sb.AppendLine("|");
         }
+    }
+
+    internal static RecordReport BuildScriptReport(ScriptRecord script, FormIdResolver resolver)
+    {
+        var sections = new List<ReportSection>();
+
+        // Identity
+        sections.Add(new ReportSection("Identity",
+        [
+            new ReportField("Type", ReportValue.String(script.ScriptType)),
+            new ReportField("Is Compiled", ReportValue.Bool(script.IsCompiled))
+        ]));
+
+        // Stats
+        sections.Add(new ReportSection("Stats",
+        [
+            new ReportField("Variable Count", ReportValue.Int((int)script.VariableCount)),
+            new ReportField("Ref Object Count", ReportValue.Int((int)script.RefObjectCount)),
+            new ReportField("Compiled Size", ReportValue.Int((int)script.CompiledSize, $"{script.CompiledSize:N0} bytes"))
+        ]));
+
+        // References
+        var refFields = new List<ReportField>();
+        if (script.OwnerQuestFormId.HasValue)
+        {
+            refFields.Add(new ReportField("Owner Quest",
+                ReportValue.FormId(script.OwnerQuestFormId.Value, resolver),
+                $"0x{script.OwnerQuestFormId.Value:X8}"));
+        }
+
+        if (script.ReferencedObjects.Count > 0)
+        {
+            var refItems = script.ReferencedObjects
+                .Select(id => (ReportValue)ReportValue.FormId(id, resolver))
+                .ToList();
+            refFields.Add(new ReportField("Referenced Objects", ReportValue.List(refItems)));
+        }
+
+        if (refFields.Count > 0)
+        {
+            sections.Add(new ReportSection("References", refFields));
+        }
+
+        // Variables
+        if (script.Variables.Count > 0)
+        {
+            var varItems = script.Variables
+                .OrderBy(v => v.Index)
+                .Select(v =>
+                {
+                    var fields = new List<ReportField>
+                    {
+                        new("Name", ReportValue.String(v.Name ?? "(unnamed)")),
+                        new("Type", ReportValue.String(v.TypeName)),
+                        new("Index", ReportValue.Int((int)v.Index))
+                    };
+                    return (ReportValue)new ReportValue.CompositeVal(fields,
+                        $"[{v.Index,3}] {v.TypeName,-5} {v.Name ?? "(unnamed)"}");
+                })
+                .ToList();
+
+            sections.Add(new ReportSection($"Variables ({script.Variables.Count})",
+            [
+                new ReportField("Variables", ReportValue.List(varItems))
+            ]));
+        }
+
+        // Source
+        if (script.HasSource)
+        {
+            sections.Add(new ReportSection("Source",
+            [
+                new ReportField("SCTX", ReportValue.String(script.SourceText!))
+            ]));
+        }
+
+        // Decompiled
+        if (!string.IsNullOrEmpty(script.DecompiledText))
+        {
+            sections.Add(new ReportSection("Decompiled",
+            [
+                new ReportField("SCDA", ReportValue.String(script.DecompiledText))
+            ]));
+        }
+
+        return new RecordReport("Script", script.FormId, script.EditorId, null, sections);
     }
 
     internal static string GenerateScriptsReport(List<ScriptRecord> scripts,

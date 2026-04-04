@@ -1,5 +1,6 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
@@ -18,38 +19,38 @@ internal static class GeckItemDetailWriter
         var sections = new List<ReportSection>();
 
         // Identity (type field only — FormID/EditorID/DisplayName are on RecordReport itself)
-        sections.Add(new("Identity",
+        sections.Add(new ReportSection("Identity",
         [
-            new("Type", ReportValue.String(weapon.WeaponTypeName))
+            new ReportField("Type", ReportValue.String(weapon.WeaponTypeName))
         ]));
 
         // Combat Stats
-        sections.Add(new("Combat Stats",
+        sections.Add(new ReportSection("Combat Stats",
         [
-            new("Damage", ReportValue.Int(weapon.Damage)),
-            new("DPS", ReportValue.FloatDisplay(weapon.DamagePerSecond, $"{weapon.DamagePerSecond:F1}")),
-            new("Fire Rate", ReportValue.FloatDisplay(weapon.ShotsPerSec, $"{weapon.ShotsPerSec:F2}/sec")),
-            new("Clip Size", ReportValue.Int(weapon.ClipSize)),
-            new("Range", ReportValue.String($"{weapon.MinRange:F0} \u2013 {weapon.MaxRange:F0}")),
-            new("Speed", ReportValue.Float(weapon.Speed, "F2")),
-            new("Reach", ReportValue.Float(weapon.Reach, "F2")),
-            new("Ammo Per Shot", ReportValue.Int(weapon.AmmoPerShot)),
-            new("Projectiles", ReportValue.Int(weapon.NumProjectiles))
+            new ReportField("Damage", ReportValue.Int(weapon.Damage)),
+            new ReportField("DPS", ReportValue.FloatDisplay(weapon.DamagePerSecond, $"{weapon.DamagePerSecond:F1}")),
+            new ReportField("Fire Rate", ReportValue.FloatDisplay(weapon.ShotsPerSec, $"{weapon.ShotsPerSec:F2}/sec")),
+            new ReportField("Clip Size", ReportValue.Int(weapon.ClipSize)),
+            new ReportField("Range", ReportValue.String($"{weapon.MinRange:F0} \u2013 {weapon.MaxRange:F0}")),
+            new ReportField("Speed", ReportValue.Float(weapon.Speed, "F2")),
+            new ReportField("Reach", ReportValue.Float(weapon.Reach, "F2")),
+            new ReportField("Ammo Per Shot", ReportValue.Int(weapon.AmmoPerShot)),
+            new ReportField("Projectiles", ReportValue.Int(weapon.NumProjectiles))
         ]));
 
         // Accuracy
-        sections.Add(new("Accuracy",
+        sections.Add(new ReportSection("Accuracy",
         [
-            new("Spread", ReportValue.Float(weapon.Spread, "F2")),
-            new("Min Spread", ReportValue.Float(weapon.MinSpread, "F2")),
-            new("Drift", ReportValue.Float(weapon.Drift, "F2"))
+            new ReportField("Spread", ReportValue.Float(weapon.Spread, "F2")),
+            new ReportField("Min Spread", ReportValue.Float(weapon.MinSpread, "F2")),
+            new ReportField("Drift", ReportValue.Float(weapon.Drift, "F2"))
         ]));
 
         // VATS
-        sections.Add(new("VATS",
+        sections.Add(new ReportSection("VATS",
         [
-            new("AP Cost", ReportValue.FloatDisplay(weapon.ActionPoints, $"{weapon.ActionPoints:F0}")),
-            new("Hit Chance", ReportValue.Int(weapon.VatsToHitChance))
+            new ReportField("AP Cost", ReportValue.FloatDisplay(weapon.ActionPoints, $"{weapon.ActionPoints:F0}")),
+            new ReportField("Hit Chance", ReportValue.Int(weapon.VatsToHitChance))
         ]));
 
         // Requirements (conditional)
@@ -57,10 +58,10 @@ internal static class GeckItemDetailWriter
         {
             var reqFields = new List<ReportField>();
             if (weapon.StrengthRequirement > 0)
-                reqFields.Add(new("Strength", ReportValue.Int((int)weapon.StrengthRequirement)));
+                reqFields.Add(new ReportField("Strength", ReportValue.Int((int)weapon.StrengthRequirement)));
             if (weapon.SkillRequirement > 0)
-                reqFields.Add(new("Skill", ReportValue.Int((int)weapon.SkillRequirement)));
-            sections.Add(new("Requirements", reqFields));
+                reqFields.Add(new ReportField("Skill", ReportValue.Int((int)weapon.SkillRequirement)));
+            sections.Add(new ReportSection("Requirements", reqFields));
         }
 
         // Critical (conditional)
@@ -73,18 +74,18 @@ internal static class GeckItemDetailWriter
                 new("Chance", ReportValue.FloatDisplay(weapon.CriticalChance, $"x{weapon.CriticalChance:F1}"))
             };
             if (weapon.CriticalEffectFormId.HasValue)
-                critFields.Add(new("Effect",
+                critFields.Add(new ReportField("Effect",
                     ReportValue.FormId(weapon.CriticalEffectFormId.Value, resolver),
                     $"0x{weapon.CriticalEffectFormId.Value:X8}"));
-            sections.Add(new("Critical", critFields));
+            sections.Add(new ReportSection("Critical", critFields));
         }
 
         // Value / Weight
-        sections.Add(new("Value / Weight",
+        sections.Add(new ReportSection("Value / Weight",
         [
-            new("Value", ReportValue.Int(weapon.Value, $"{weapon.Value} caps")),
-            new("Weight", ReportValue.Float(weapon.Weight, "F1")),
-            new("Health", ReportValue.Int(weapon.Health))
+            new ReportField("Value", ReportValue.Int(weapon.Value, $"{weapon.Value} caps")),
+            new ReportField("Weight", ReportValue.Float(weapon.Weight)),
+            new ReportField("Health", ReportValue.Int(weapon.Health))
         ]));
 
         // Ammo & Projectile (conditional)
@@ -93,18 +94,18 @@ internal static class GeckItemDetailWriter
         {
             var ammoFields = new List<ReportField>();
             if (weapon.AmmoFormId.HasValue)
-                ammoFields.Add(new("Ammo",
+                ammoFields.Add(new ReportField("Ammo",
                     ReportValue.FormId(weapon.AmmoFormId.Value, resolver),
                     $"0x{weapon.AmmoFormId.Value:X8}"));
             if (weapon.ProjectileFormId.HasValue)
-                ammoFields.Add(new("Projectile",
+                ammoFields.Add(new ReportField("Projectile",
                     ReportValue.FormId(weapon.ProjectileFormId.Value, resolver),
                     $"0x{weapon.ProjectileFormId.Value:X8}"));
             if (weapon.ImpactDataSetFormId.HasValue)
-                ammoFields.Add(new("Impact Data",
+                ammoFields.Add(new ReportField("Impact Data",
                     ReportValue.FormId(weapon.ImpactDataSetFormId.Value, resolver),
                     $"0x{weapon.ImpactDataSetFormId.Value:X8}"));
-            sections.Add(new("Ammo & Projectile", ammoFields));
+            sections.Add(new ReportSection("Ammo & Projectile", ammoFields));
         }
 
         // Projectile Physics (conditional)
@@ -116,68 +117,72 @@ internal static class GeckItemDetailWriter
                 new("Speed", ReportValue.FloatDisplay(proj.Speed, $"{proj.Speed:F1} units/sec")),
                 new("Gravity", ReportValue.Float(proj.Gravity, "F4")),
                 new("Range", ReportValue.FloatDisplay(proj.Range, $"{proj.Range:F0}")),
-                new("Force", ReportValue.Float(proj.Force, "F1"))
+                new("Force", ReportValue.Float(proj.Force))
             };
             if (proj.MuzzleFlashDuration > 0)
-                projFields.Add(new("Muzzle Flash",
+                projFields.Add(new ReportField("Muzzle Flash",
                     ReportValue.FloatDisplay(proj.MuzzleFlashDuration, $"{proj.MuzzleFlashDuration:F3}s")));
             if (proj.ExplosionFormId.HasValue)
-                projFields.Add(new("Explosion",
+                projFields.Add(new ReportField("Explosion",
                     ReportValue.FormId(proj.ExplosionFormId.Value, resolver),
                     $"0x{proj.ExplosionFormId.Value:X8}"));
             if (proj.ActiveSoundLoopFormId.HasValue)
-                projFields.Add(new("In-Flight Snd",
+                projFields.Add(new ReportField("In-Flight Snd",
                     ReportValue.FormId(proj.ActiveSoundLoopFormId.Value,
                         resolver.FormatWithEditorId(proj.ActiveSoundLoopFormId.Value)),
                     $"0x{proj.ActiveSoundLoopFormId.Value:X8}"));
             if (proj.CountdownSoundFormId.HasValue)
-                projFields.Add(new("Countdown Snd",
+                projFields.Add(new ReportField("Countdown Snd",
                     ReportValue.FormId(proj.CountdownSoundFormId.Value,
                         resolver.FormatWithEditorId(proj.CountdownSoundFormId.Value)),
                     $"0x{proj.CountdownSoundFormId.Value:X8}"));
             if (proj.DeactivateSoundFormId.HasValue)
-                projFields.Add(new("Deactivate Snd",
+                projFields.Add(new ReportField("Deactivate Snd",
                     ReportValue.FormId(proj.DeactivateSoundFormId.Value,
                         resolver.FormatWithEditorId(proj.DeactivateSoundFormId.Value)),
                     $"0x{proj.DeactivateSoundFormId.Value:X8}"));
             if (!string.IsNullOrEmpty(proj.ModelPath))
-                projFields.Add(new("Proj. Model", ReportValue.String(proj.ModelPath)));
-            sections.Add(new("Projectile Physics", projFields));
+                projFields.Add(new ReportField("Proj. Model", ReportValue.String(proj.ModelPath)));
+            sections.Add(new ReportSection("Projectile Physics", projFields));
         }
 
         // Sound Effects (conditional)
-        {
-            var soundFields = new List<ReportField>();
-            AddSoundField(soundFields, "Fire (3D)", weapon.FireSound3DFormId, resolver);
-            AddSoundField(soundFields, "Fire (Distant)", weapon.FireSoundDistFormId, resolver);
-            AddSoundField(soundFields, "Fire (2D)", weapon.FireSound2DFormId, resolver);
-            AddSoundField(soundFields, "Dry Fire", weapon.DryFireSoundFormId, resolver);
-            AddSoundField(soundFields, "Idle", weapon.IdleSoundFormId, resolver);
-            AddSoundField(soundFields, "Equip", weapon.EquipSoundFormId, resolver);
-            AddSoundField(soundFields, "Unequip", weapon.UnequipSoundFormId, resolver);
-            AddSoundField(soundFields, "Pickup", weapon.PickupSoundFormId, resolver);
-            AddSoundField(soundFields, "Putdown", weapon.PutdownSoundFormId, resolver);
-            if (soundFields.Count > 0)
-                sections.Add(new("Sound Effects", soundFields));
-        }
+        AddSoundEffectsSection(sections, weapon, resolver);
 
         // Model (conditional)
         if (!string.IsNullOrEmpty(weapon.ModelPath))
         {
-            sections.Add(new("Model",
+            sections.Add(new ReportSection("Model",
             [
-                new("Path", ReportValue.String(weapon.ModelPath))
+                new ReportField("Path", ReportValue.String(weapon.ModelPath))
             ]));
         }
 
         return new RecordReport("Weapon", weapon.FormId, weapon.EditorId, weapon.FullName, sections);
     }
 
+    private static void AddSoundEffectsSection(
+        List<ReportSection> sections, WeaponRecord weapon, FormIdResolver resolver)
+    {
+        var soundFields = new List<ReportField>();
+        AddSoundField(soundFields, "Fire (3D)", weapon.FireSound3DFormId, resolver);
+        AddSoundField(soundFields, "Fire (Distant)", weapon.FireSoundDistFormId, resolver);
+        AddSoundField(soundFields, "Fire (2D)", weapon.FireSound2DFormId, resolver);
+        AddSoundField(soundFields, "Dry Fire", weapon.DryFireSoundFormId, resolver);
+        AddSoundField(soundFields, "Idle", weapon.IdleSoundFormId, resolver);
+        AddSoundField(soundFields, "Equip", weapon.EquipSoundFormId, resolver);
+        AddSoundField(soundFields, "Unequip", weapon.UnequipSoundFormId, resolver);
+        AddSoundField(soundFields, "Pickup", weapon.PickupSoundFormId, resolver);
+        AddSoundField(soundFields, "Putdown", weapon.PutdownSoundFormId, resolver);
+        if (soundFields.Count > 0)
+            sections.Add(new ReportSection("Sound Effects", soundFields));
+    }
+
     private static void AddSoundField(List<ReportField> fields, string label, uint? formId,
         FormIdResolver resolver)
     {
         if (!formId.HasValue) return;
-        fields.Add(new(label,
+        fields.Add(new ReportField(label,
             ReportValue.FormId(formId.Value, resolver),
             $"0x{formId.Value:X8}"));
     }
@@ -244,9 +249,9 @@ internal static class GeckItemDetailWriter
         var sections = new List<ReportSection>();
 
         // Identity
-        sections.Add(new("Identity",
+        sections.Add(new ReportSection("Identity",
         [
-            new("Respawns", ReportValue.Bool(container.Respawns))
+            new ReportField("Respawns", ReportValue.Bool(container.Respawns))
         ]));
 
         // Contents
@@ -258,26 +263,26 @@ internal static class GeckItemDetailWriter
                     var editorId = resolver.ResolveEditorId(item.ItemFormId);
                     var displayName = resolver.ResolveDisplayName(item.ItemFormId);
                     return (ReportValue)new ReportValue.CompositeVal(
-                    [
-                        new("EditorID", ReportValue.String(editorId)),
-                        new("Name", ReportValue.String(displayName)),
-                        new("Qty", ReportValue.Int(item.Count))
-                    ], $"{editorId} x{item.Count}");
+                        [
+                            new ReportField("EditorID", ReportValue.String(editorId)),
+                            new ReportField("Name", ReportValue.String(displayName)),
+                            new ReportField("Qty", ReportValue.Int(item.Count))
+                        ], $"{editorId} x{item.Count}");
                 })
                 .ToList();
 
-            sections.Add(new($"Contents ({container.Contents.Count} items)",
+            sections.Add(new ReportSection($"Contents ({container.Contents.Count} items)",
             [
-                new("Items", ReportValue.List(items))
+                new ReportField("Items", ReportValue.List(items))
             ]));
         }
 
         // References
         if (container.Script.HasValue)
         {
-            sections.Add(new("References",
+            sections.Add(new ReportSection("References",
             [
-                new("Script", ReportValue.FormId(container.Script.Value, resolver),
+                new ReportField("Script", ReportValue.FormId(container.Script.Value, resolver),
                     $"0x{container.Script.Value:X8}")
             ]));
         }
@@ -285,9 +290,9 @@ internal static class GeckItemDetailWriter
         // Model
         if (!string.IsNullOrEmpty(container.ModelPath))
         {
-            sections.Add(new("Model",
+            sections.Add(new ReportSection("Model",
             [
-                new("Path", ReportValue.String(container.ModelPath))
+                new ReportField("Path", ReportValue.String(container.ModelPath))
             ]));
         }
 
@@ -348,18 +353,18 @@ internal static class GeckItemDetailWriter
         // Identity
         var identityFields = new List<ReportField>();
         if (recipe.RequiredSkill >= 0)
-            identityFields.Add(new("Required Skill",
+            identityFields.Add(new ReportField("Required Skill",
                 ReportValue.Int(recipe.RequiredSkill, $"{recipe.RequiredSkill} (level {recipe.RequiredSkillLevel})")));
         if (recipe.CategoryFormId != 0)
-            identityFields.Add(new("Category",
+            identityFields.Add(new ReportField("Category",
                 ReportValue.FormId(recipe.CategoryFormId, resolver),
                 $"0x{recipe.CategoryFormId:X8}"));
         if (recipe.SubcategoryFormId != 0)
-            identityFields.Add(new("Subcategory",
+            identityFields.Add(new ReportField("Subcategory",
                 ReportValue.FormId(recipe.SubcategoryFormId, resolver),
                 $"0x{recipe.SubcategoryFormId:X8}"));
         if (identityFields.Count > 0)
-            sections.Add(new("Identity", identityFields));
+            sections.Add(new ReportSection("Identity", identityFields));
 
         // Ingredients
         if (recipe.Ingredients.Count > 0)
@@ -371,16 +376,16 @@ internal static class GeckItemDetailWriter
                         ? resolver.FormatFull(ing.ItemFormId)
                         : "(none)";
                     return (ReportValue)new ReportValue.CompositeVal(
-                    [
-                        new("Item", ReportValue.String(itemName)),
-                        new("Count", ReportValue.Int((int)ing.Count))
-                    ], $"{itemName} x{ing.Count}");
+                        [
+                            new ReportField("Item", ReportValue.String(itemName)),
+                            new ReportField("Count", ReportValue.Int((int)ing.Count))
+                        ], $"{itemName} x{ing.Count}");
                 })
                 .ToList();
 
-            sections.Add(new($"Ingredients ({recipe.Ingredients.Count})",
+            sections.Add(new ReportSection($"Ingredients ({recipe.Ingredients.Count})",
             [
-                new("Items", ReportValue.List(items))
+                new ReportField("Items", ReportValue.List(items))
             ]));
         }
 
@@ -394,16 +399,16 @@ internal static class GeckItemDetailWriter
                         ? resolver.FormatFull(output.ItemFormId)
                         : "(none)";
                     return (ReportValue)new ReportValue.CompositeVal(
-                    [
-                        new("Item", ReportValue.String(itemName)),
-                        new("Count", ReportValue.Int((int)output.Count))
-                    ], $"{itemName} x{output.Count}");
+                        [
+                            new ReportField("Item", ReportValue.String(itemName)),
+                            new ReportField("Count", ReportValue.Int((int)output.Count))
+                        ], $"{itemName} x{output.Count}");
                 })
                 .ToList();
 
-            sections.Add(new($"Outputs ({recipe.Outputs.Count})",
+            sections.Add(new ReportSection($"Outputs ({recipe.Outputs.Count})",
             [
-                new("Items", ReportValue.List(items))
+                new ReportField("Items", ReportValue.List(items))
             ]));
         }
 
@@ -423,13 +428,13 @@ internal static class GeckItemDetailWriter
             new("Weight", ReportValue.Float(mod.Weight, "F2"))
         };
         if (!string.IsNullOrEmpty(mod.Description))
-            valueFields.Add(new("Description", ReportValue.String(mod.Description)));
+            valueFields.Add(new ReportField("Description", ReportValue.String(mod.Description)));
         if (!string.IsNullOrEmpty(mod.ModelPath))
-            valueFields.Add(new("Model", ReportValue.String(mod.ModelPath)));
+            valueFields.Add(new ReportField("Model", ReportValue.String(mod.ModelPath)));
         if (!string.IsNullOrEmpty(mod.Icon))
-            valueFields.Add(new("Icon", ReportValue.String(mod.Icon)));
+            valueFields.Add(new ReportField("Icon", ReportValue.String(mod.Icon)));
 
-        sections.Add(new("Properties", valueFields));
+        sections.Add(new ReportSection("Properties", valueFields));
 
         return new RecordReport("Weapon Mod", mod.FormId, mod.EditorId, mod.FullName, sections);
     }
