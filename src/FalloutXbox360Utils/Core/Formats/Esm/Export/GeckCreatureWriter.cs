@@ -6,46 +6,141 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 /// <summary>Generates GECK-style text reports for Creature, Race, and Class records.</summary>
 internal static class GeckCreatureWriter
 {
-    internal static void AppendCreaturesSection(StringBuilder sb, List<CreatureRecord> creatures)
+    /// <summary>Build a structured creature report from a <see cref="CreatureRecord" />.</summary>
+    internal static RecordReport BuildCreatureReport(CreatureRecord creature, FormIdResolver resolver)
     {
-        GeckReportHelpers.AppendSectionHeader(sb, $"Creatures ({creatures.Count})");
+        var sections = new List<ReportSection>();
 
-        foreach (var creature in creatures.OrderBy(c => c.EditorId ?? ""))
+        // Identity
+        sections.Add(new("Identity", [new("Type", ReportValue.String(creature.CreatureTypeName))]));
+
+        // Stats (ACBS)
+        if (creature.Stats != null)
         {
-            GeckReportHelpers.AppendRecordHeader(sb, "CREA", creature.EditorId);
-
-            sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(creature.FormId)}");
-            sb.AppendLine($"Editor ID:      {creature.EditorId ?? "(none)"}");
-            sb.AppendLine($"Display Name:   {creature.FullName ?? "(none)"}");
-            sb.AppendLine($"Type:           {creature.CreatureTypeName}");
-            sb.AppendLine($"Endianness:     {(creature.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")}");
-            sb.AppendLine($"Offset:         0x{creature.Offset:X8}");
-
-            if (creature.Stats != null)
-            {
-                sb.AppendLine();
-                sb.AppendLine("Stats (ACBS):");
-                sb.AppendLine($"  Level:          {creature.Stats.Level}");
-                sb.AppendLine($"  Fatigue Base:   {creature.Stats.FatigueBase}");
-            }
-
-            if (creature.AttackDamage > 0)
-            {
-                sb.AppendLine($"  Attack Damage:  {creature.AttackDamage}");
-            }
+            sections.Add(new("Stats",
+            [
+                new("Level", ReportValue.Int(creature.Stats.Level)),
+                new("Fatigue Base", ReportValue.Int(creature.Stats.FatigueBase)),
+                new("Barter Gold", ReportValue.Int(creature.Stats.BarterGold)),
+                new("Speed Mult", ReportValue.Int(creature.Stats.SpeedMultiplier)),
+                new("Calc Range",
+                    ReportValue.String($"{creature.Stats.CalcMin} - {creature.Stats.CalcMax}")),
+                new("Flags", ReportValue.String($"0x{creature.Stats.Flags:X8}"))
+            ]));
         }
+
+        // Combat
+        sections.Add(new("Combat",
+        [
+            new("Attack Damage", ReportValue.Int(creature.AttackDamage)),
+            new("Combat Skill", ReportValue.Int(creature.CombatSkill)),
+            new("Magic Skill", ReportValue.Int(creature.MagicSkill)),
+            new("Stealth Skill", ReportValue.Int(creature.StealthSkill))
+        ]));
+
+        // AI Data
+        if (creature.AiData != null)
+        {
+            var ai = creature.AiData;
+            sections.Add(new("AI Data",
+            [
+                new("Aggression", ReportValue.String(ai.AggressionName)),
+                new("Confidence", ReportValue.String(ai.ConfidenceName)),
+                new("Mood", ReportValue.String(ai.MoodName)),
+                new("Assistance", ReportValue.String(ai.AssistanceName))
+            ]));
+        }
+
+        // Model
+        if (!string.IsNullOrEmpty(creature.ModelPath))
+            sections.Add(new("Model", [new("Path", ReportValue.String(creature.ModelPath))]));
+
+        return new RecordReport("Creature", creature.FormId, creature.EditorId, creature.FullName,
+            sections);
     }
+
+    /// <summary>Build a structured race report from a <see cref="RaceRecord" />.</summary>
+    internal static RecordReport BuildRaceReport(RaceRecord race, FormIdResolver resolver)
+    {
+        var sections = new List<ReportSection>();
+
+        // Description
+        if (!string.IsNullOrEmpty(race.Description))
+            sections.Add(new("Description",
+                [new("Description", ReportValue.String(race.Description))]));
+
+        // Skill Boosts
+        if (race.SkillBoosts.Count > 0)
+        {
+            var boostItems = race.SkillBoosts
+                .Select(b =>
+                {
+                    var skillName = resolver.GetActorValueName(b.SkillIndex) ?? $"AV#{b.SkillIndex}";
+                    return (ReportValue)new ReportValue.CompositeVal(
+                    [
+                        new("Skill", ReportValue.String(skillName)),
+                        new("Boost", ReportValue.Int(b.Boost, GeckReportHelpers.FormatModifier(b.Boost)))
+                    ], $"{skillName} {GeckReportHelpers.FormatModifier(b.Boost)}");
+                })
+                .ToList();
+            sections.Add(new("Skill Boosts", [new("Boosts", ReportValue.List(boostItems))]));
+        }
+
+        // Height
+        sections.Add(new("Height",
+        [
+            new("Male", ReportValue.Float(race.MaleHeight, "F2")),
+            new("Female", ReportValue.Float(race.FemaleHeight, "F2"))
+        ]));
+
+        // Voice Types
+        if (race.MaleVoiceFormId.HasValue || race.FemaleVoiceFormId.HasValue)
+        {
+            var voiceFields = new List<ReportField>();
+            if (race.MaleVoiceFormId.HasValue)
+                voiceFields.Add(new("Male", ReportValue.FormId(race.MaleVoiceFormId.Value, resolver),
+                    $"0x{race.MaleVoiceFormId.Value:X8}"));
+            if (race.FemaleVoiceFormId.HasValue)
+                voiceFields.Add(new("Female", ReportValue.FormId(race.FemaleVoiceFormId.Value, resolver),
+                    $"0x{race.FemaleVoiceFormId.Value:X8}"));
+            sections.Add(new("Voice Types", voiceFields));
+        }
+
+        // Related Races
+        if (race.OlderRaceFormId.HasValue || race.YoungerRaceFormId.HasValue)
+        {
+            var relFields = new List<ReportField>();
+            if (race.OlderRaceFormId.HasValue)
+                relFields.Add(new("Older", ReportValue.FormId(race.OlderRaceFormId.Value, resolver),
+                    $"0x{race.OlderRaceFormId.Value:X8}"));
+            if (race.YoungerRaceFormId.HasValue)
+                relFields.Add(new("Younger", ReportValue.FormId(race.YoungerRaceFormId.Value, resolver),
+                    $"0x{race.YoungerRaceFormId.Value:X8}"));
+            sections.Add(new("Related Races", relFields));
+        }
+
+        // Racial Abilities
+        if (race.AbilityFormIds.Count > 0)
+        {
+            var abilityItems = race.AbilityFormIds
+                .Select(a => (ReportValue)ReportValue.FormId(a, resolver))
+                .ToList();
+            sections.Add(new("Racial Abilities",
+                [new("Abilities", ReportValue.List(abilityItems))]));
+        }
+
+        return new RecordReport("Race", race.FormId, race.EditorId, race.FullName, sections);
+    }
+
+    internal static void AppendCreaturesSection(StringBuilder sb, List<CreatureRecord> creatures)
+        => GeckActorWriter.AppendCreaturesSection(sb, creatures, FormIdResolver.Empty);
 
     /// <summary>
     ///     Generate a report for Creatures only.
     /// </summary>
     public static string GenerateCreaturesReport(List<CreatureRecord> creatures,
-        FormIdResolver? _resolver = null)
-    {
-        var sb = new StringBuilder();
-        AppendCreaturesSection(sb, creatures);
-        return sb.ToString();
-    }
+        FormIdResolver? resolver = null)
+        => GeckActorWriter.GenerateCreaturesReport(creatures, resolver);
 
     internal static void AppendRacesSection(StringBuilder sb, List<RaceRecord> races,
         FormIdResolver resolver)
@@ -227,6 +322,95 @@ internal static class GeckCreatureWriter
     {
         var sb = new StringBuilder();
         AppendClassesSection(sb, classes);
+        return sb.ToString();
+    }
+
+    // ── Appearance Sections ──────────────────────────────────────────────
+
+    internal static void AppendHairSection(StringBuilder sb, List<HairRecord> hair)
+    {
+        GeckReportHelpers.AppendSectionHeader(sb, $"Hair Styles ({hair.Count})");
+        sb.AppendLine();
+
+        var playable = hair.Count(h => h.IsPlayable);
+        sb.AppendLine($"Total Hair Styles: {hair.Count:N0}");
+        sb.AppendLine($"  Playable: {playable:N0}");
+        sb.AppendLine();
+
+        foreach (var h in hair.OrderBy(x => x.EditorId, StringComparer.OrdinalIgnoreCase))
+        {
+            sb.AppendLine(new string('\u2500', 80));
+            sb.AppendLine($"  HAIR: {h.EditorId ?? "(none)"} \u2014 {h.FullName ?? "(unnamed)"}");
+            sb.AppendLine($"  FormID:      {GeckReportHelpers.FormatFormId(h.FormId)}");
+            if (h.IsPlayable)
+            {
+                sb.AppendLine("  Playable:    Yes");
+            }
+
+            if (!string.IsNullOrEmpty(h.ModelPath))
+            {
+                sb.AppendLine($"  Model:       {h.ModelPath}");
+            }
+
+            if (!string.IsNullOrEmpty(h.TexturePath))
+            {
+                sb.AppendLine($"  Texture:     {h.TexturePath}");
+            }
+
+            if (h.Flags != 0)
+            {
+                sb.AppendLine($"  Flags:       0x{h.Flags:X2}");
+            }
+
+            sb.AppendLine();
+        }
+    }
+
+    public static string GenerateHairReport(List<HairRecord> hair)
+    {
+        var sb = new StringBuilder();
+        AppendHairSection(sb, hair);
+        return sb.ToString();
+    }
+
+    internal static void AppendEyesSection(StringBuilder sb, List<EyesRecord> eyes)
+    {
+        GeckReportHelpers.AppendSectionHeader(sb, $"Eye Types ({eyes.Count})");
+        sb.AppendLine();
+
+        var playable = eyes.Count(e => e.IsPlayable);
+        sb.AppendLine($"Total Eye Types: {eyes.Count:N0}");
+        sb.AppendLine($"  Playable: {playable:N0}");
+        sb.AppendLine();
+
+        foreach (var eye in eyes.OrderBy(e => e.EditorId, StringComparer.OrdinalIgnoreCase))
+        {
+            sb.AppendLine(new string('\u2500', 80));
+            sb.AppendLine($"  EYES: {eye.EditorId ?? "(none)"} \u2014 {eye.FullName ?? "(unnamed)"}");
+            sb.AppendLine($"  FormID:      {GeckReportHelpers.FormatFormId(eye.FormId)}");
+            if (eye.IsPlayable)
+            {
+                sb.AppendLine("  Playable:    Yes");
+            }
+
+            if (!string.IsNullOrEmpty(eye.TexturePath))
+            {
+                sb.AppendLine($"  Texture:     {eye.TexturePath}");
+            }
+
+            if (eye.Flags != 0)
+            {
+                sb.AppendLine($"  Flags:       0x{eye.Flags:X2}");
+            }
+
+            sb.AppendLine();
+        }
+    }
+
+    public static string GenerateEyesReport(List<EyesRecord> eyes)
+    {
+        var sb = new StringBuilder();
+        AppendEyesSection(sb, eyes);
         return sb.ToString();
     }
 }

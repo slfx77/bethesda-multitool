@@ -23,26 +23,94 @@ internal static class GeckActorWriter
             sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(npc.FormId)}");
             sb.AppendLine($"Editor ID:      {npc.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {npc.FullName ?? "(none)"}");
+            if (npc.Stats != null)
+            {
+                sb.AppendLine($"Gender:         {((npc.Stats.Flags & 1) == 1 ? "Female" : "Male")}");
+            }
+
             sb.AppendLine($"Endianness:     {(npc.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")}");
             sb.AppendLine($"Offset:         0x{npc.Offset:X8}");
 
+            // Stats
+            if (npc.Stats != null || npc.SpecialStats != null)
+            {
+                sb.AppendLine();
+                sb.AppendLine("Stats:");
+                if (npc.Stats != null)
+                {
+                    sb.AppendLine($"  Level:          {npc.Stats.Level}");
+                }
+
+                if (npc.SpecialStats is { Length: 7 } sp)
+                {
+                    var total = sp[0] + sp[1] + sp[2] + sp[3] + sp[4] + sp[5] + sp[6];
+                    sb.AppendLine(
+                        $"  S.P.E.C.I.A.L.: {sp[0]} ST, {sp[1]} PE, {sp[2]} EN, {sp[3]} CH, {sp[4]} IN, {sp[5]} AG, {sp[6]} LK  (Total: {total})");
+                }
+
+                if (npc.Skills is { Length: 14 })
+                {
+                    var sk = npc.Skills;
+                    var hasBigGuns = resolver.SkillEra?.BigGunsActive ?? false;
+
+                    string Sk(int i) => resolver.GetSkillName(i) ?? $"Skill#{i}";
+
+                    sb.AppendLine("  Skills:");
+                    sb.AppendLine(
+                        $"    {Sk(0),-18}{sk[0],3}    {Sk(2),-18}{sk[2],3}    {Sk(3),-18}{sk[3],3}");
+                    if (hasBigGuns)
+                        sb.AppendLine(
+                            $"    {Sk(1),-18}{sk[1],3}    {Sk(4),-18}{sk[4],3}    {Sk(5),-18}{sk[5],3}");
+                    else
+                        sb.AppendLine(
+                            $"    {Sk(9),-18}{sk[9],3}    {Sk(4),-18}{sk[4],3}    {Sk(5),-18}{sk[5],3}");
+                    sb.AppendLine(
+                        $"    {Sk(6),-18}{sk[6],3}    {Sk(7),-18}{sk[7],3}    {Sk(8),-18}{sk[8],3}");
+                    sb.AppendLine(
+                        $"    {Sk(10),-18}{sk[10],3}    {Sk(11),-18}{sk[11],3}    {Sk(12),-18}{sk[12],3}");
+                    sb.AppendLine($"    {Sk(13),-18}{sk[13],3}");
+                }
+            }
+
+            // Derived Stats
             if (npc.Stats != null)
             {
                 sb.AppendLine();
-                sb.AppendLine("Stats (ACBS):");
-                sb.AppendLine($"  Level:          {npc.Stats.Level}");
-                sb.AppendLine($"  Fatigue Base:   {npc.Stats.FatigueBase}");
-                sb.AppendLine($"  Barter Gold:    {npc.Stats.BarterGold}");
-                sb.AppendLine($"  Speed Mult:     {npc.Stats.SpeedMultiplier}");
-                sb.AppendLine($"  Karma:          {npc.Stats.KarmaAlignment:F2}");
-                sb.AppendLine($"  Disposition:    {npc.Stats.DispositionBase}");
-                sb.AppendLine($"  Calc Range:     {npc.Stats.CalcMin} - {npc.Stats.CalcMax}");
-                sb.AppendLine($"  Flags:          0x{npc.Stats.Flags:X8}");
+                sb.AppendLine("Derived Stats:");
+                if (npc.SpecialStats is { Length: 7 } sp2)
+                {
+                    var str = sp2[0];
+                    var end = sp2[2];
+                    var lck = sp2[6];
+                    var baseHealth = end * 5 + 50;
+                    var calcHealth = baseHealth + npc.Stats.Level * 10;
+                    var calcFatigue = npc.Stats.FatigueBase + (str + end) * 10;
+
+                    sb.AppendLine($"  {"Base Health:",-18}{baseHealth,-10}{"Calculated Health:",-22}{calcHealth}");
+                    sb.AppendLine(
+                        $"  {"Fatigue:",-18}{npc.Stats.FatigueBase,-10}{"Calc Fatigue:",-22}{calcFatigue}");
+                    sb.AppendLine(
+                        $"  {"Critical Chance:",-18}{(float)lck,-10:F0}{"Speed Mult:",-22}{npc.Stats.SpeedMultiplier}%");
+                    sb.AppendLine(
+                        $"  {"Melee Damage:",-18}{str * 0.5f,-10:F2}{"Unarmed Damage:",-22}{0.5f + str * 0.1f:F2}");
+                    sb.AppendLine(
+                        $"  {"Poison Resist:",-18}{(end - 1) * 5f,-10:F2}{"Rad Resist:",-22}{(end - 1) * 2f:F2}");
+                }
+                else
+                {
+                    sb.AppendLine(
+                        $"  {"Fatigue:",-18}{npc.Stats.FatigueBase,-10}{"Speed Mult:",-22}{npc.Stats.SpeedMultiplier}%");
+                }
+
+                sb.AppendLine(
+                    $"  {"Karma:",-18}{npc.Stats.KarmaAlignment:F2}{GeckReportHelpers.FormatKarmaLabel(npc.Stats.KarmaAlignment)}");
+                sb.AppendLine(
+                    $"  {"Disposition:",-18}{npc.Stats.DispositionBase,-10}{"Barter Gold:",-22}{npc.Stats.BarterGold}");
             }
 
+            // Combat
             if (npc.Race.HasValue)
             {
-                sb.AppendLine();
                 sb.AppendLine($"Race:           {resolver.FormatFull(npc.Race.Value)}");
             }
 
@@ -51,6 +119,62 @@ internal static class GeckActorWriter
                 sb.AppendLine($"Class:          {resolver.FormatFull(npc.Class.Value)}");
             }
 
+            if (npc.CombatStyleFormId.HasValue)
+            {
+                sb.AppendLine($"Combat Style:   {resolver.FormatFull(npc.CombatStyleFormId.Value)}");
+            }
+
+            // Physical Traits
+            if (npc.HairFormId.HasValue || npc.EyesFormId.HasValue || npc.HairLength.HasValue ||
+                npc.HairColor.HasValue || npc.Height.HasValue || npc.Weight.HasValue)
+            {
+                sb.AppendLine();
+                sb.AppendLine("Physical Traits:");
+                if (npc.HairFormId.HasValue)
+                {
+                    sb.AppendLine($"  Hairstyle:      {resolver.FormatFull(npc.HairFormId.Value)}");
+                }
+
+                if (npc.HairLength.HasValue)
+                {
+                    sb.AppendLine($"  Hair Length:    {npc.HairLength.Value:F2}");
+                }
+
+                if (npc.HairColor.HasValue)
+                {
+                    sb.AppendLine($"  Hair Color:    {NpcRecord.FormatHairColor(npc.HairColor)}");
+                }
+
+                if (npc.EyesFormId.HasValue)
+                {
+                    sb.AppendLine($"  Eyes:           {resolver.FormatFull(npc.EyesFormId.Value)}");
+                }
+
+                if (npc.Height.HasValue)
+                {
+                    sb.AppendLine($"  Height:         {npc.Height.Value:F2}");
+                }
+
+                if (npc.Weight.HasValue)
+                {
+                    sb.AppendLine($"  Weight:         {npc.Weight.Value:F1}");
+                }
+            }
+
+            // AI Data
+            if (npc.AiData != null)
+            {
+                sb.AppendLine();
+                sb.AppendLine("AI Data:");
+                sb.AppendLine($"  Aggression:     {npc.AiData.AggressionName} ({npc.AiData.Aggression})");
+                sb.AppendLine($"  Confidence:     {npc.AiData.ConfidenceName} ({npc.AiData.Confidence})");
+                sb.AppendLine($"  Mood:           {npc.AiData.MoodName} ({npc.AiData.Mood})");
+                sb.AppendLine($"  Assistance:     {npc.AiData.AssistanceName} ({npc.AiData.Assistance})");
+                sb.AppendLine($"  Energy Level:   {npc.AiData.EnergyLevel}");
+                sb.AppendLine($"  Responsibility: {npc.AiData.ResponsibilityName} ({npc.AiData.Responsibility})");
+            }
+
+            // References
             if (npc.Script.HasValue)
             {
                 sb.AppendLine($"Script:         {resolver.FormatFull(npc.Script.Value)}");
@@ -66,41 +190,65 @@ internal static class GeckActorWriter
                 sb.AppendLine($"Template:       {resolver.FormatFull(npc.Template.Value)}");
             }
 
+            if (npc.OriginalRace.HasValue)
+            {
+                sb.AppendLine($"Original Race:  {resolver.FormatFull(npc.OriginalRace.Value)}");
+            }
+
+            if (npc.FaceNpc.HasValue)
+            {
+                sb.AppendLine($"Face NPC:       {resolver.FormatFull(npc.FaceNpc.Value)}");
+            }
+
+            // Factions with display names
             if (npc.Factions.Count > 0)
             {
                 sb.AppendLine();
-                sb.AppendLine("Factions:");
-                foreach (var faction in npc.Factions)
+                sb.AppendLine($"Factions ({npc.Factions.Count}):");
+                sb.AppendLine($"  {"EditorID",-32} {"Name",-32} {"Rank",4}");
+                sb.AppendLine($"  {new string('-', 32)} {new string('-', 32)} {new string('-', 4)}");
+                foreach (var faction in npc.Factions.OrderBy(f => f.FactionFormId))
                 {
-                    sb.AppendLine($"  - {resolver.FormatFull(faction.FactionFormId)} (Rank: {faction.Rank})");
+                    var editorId = resolver.ResolveEditorId(faction.FactionFormId);
+                    var displayName = resolver.ResolveDisplayName(faction.FactionFormId);
+                    sb.AppendLine(
+                        $"  {GeckReportHelpers.Truncate(editorId, 32),-32} {GeckReportHelpers.Truncate(displayName, 32),-32} {faction.Rank,4}");
                 }
             }
 
+            // Inventory with display names
+            if (npc.Inventory.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine($"Inventory ({npc.Inventory.Count}):");
+                sb.AppendLine($"  {"EditorID",-32} {"Name",-32} {"Qty",5}");
+                sb.AppendLine($"  {new string('-', 32)} {new string('-', 32)} {new string('-', 5)}");
+                foreach (var item in npc.Inventory.OrderBy(i => i.ItemFormId))
+                {
+                    var editorId = resolver.ResolveEditorId(item.ItemFormId);
+                    var displayName = resolver.ResolveDisplayName(item.ItemFormId);
+                    sb.AppendLine(
+                        $"  {GeckReportHelpers.Truncate(editorId, 32),-32} {GeckReportHelpers.Truncate(displayName, 32),-32} {item.Count,5}");
+                }
+            }
+
+            // Spells with display names
             if (npc.Spells.Count > 0)
             {
                 sb.AppendLine();
-                sb.AppendLine("Spells/Abilities:");
-                foreach (var spell in npc.Spells)
+                sb.AppendLine($"Spells/Abilities ({npc.Spells.Count}):");
+                foreach (var spell in npc.Spells.OrderBy(s => s))
                 {
                     sb.AppendLine($"  - {resolver.FormatFull(spell)}");
                 }
             }
 
-            if (npc.Inventory.Count > 0)
-            {
-                sb.AppendLine();
-                sb.AppendLine("Inventory:");
-                foreach (var item in npc.Inventory)
-                {
-                    sb.AppendLine($"  - {resolver.FormatFull(item.ItemFormId)} x{item.Count}");
-                }
-            }
-
+            // AI Packages with display names
             if (npc.Packages.Count > 0)
             {
                 sb.AppendLine();
-                sb.AppendLine("AI Packages:");
-                foreach (var package in npc.Packages)
+                sb.AppendLine($"AI Packages ({npc.Packages.Count}):");
+                foreach (var package in npc.Packages.OrderBy(p => p))
                 {
                     sb.AppendLine($"  - {resolver.FormatFull(package)}");
                 }
@@ -158,9 +306,19 @@ internal static class GeckActorWriter
         return sb.ToString();
     }
 
-    internal static void AppendCreaturesSection(StringBuilder sb, List<CreatureRecord> creatures)
+    internal static void AppendCreaturesSection(StringBuilder sb, List<CreatureRecord> creatures,
+        FormIdResolver resolver)
     {
         GeckReportHelpers.AppendSectionHeader(sb, $"Creatures ({creatures.Count})");
+
+        var byType = creatures.GroupBy(c => c.CreatureTypeName).OrderByDescending(g => g.Count()).ToList();
+        sb.AppendLine($"Total Creatures: {creatures.Count:N0}");
+        foreach (var group in byType)
+        {
+            sb.AppendLine($"  {group.Key}: {group.Count():N0}");
+        }
+
+        sb.AppendLine();
 
         foreach (var creature in creatures.OrderBy(c => c.EditorId ?? ""))
         {
@@ -179,12 +337,82 @@ internal static class GeckActorWriter
                 sb.AppendLine("Stats (ACBS):");
                 sb.AppendLine($"  Level:          {creature.Stats.Level}");
                 sb.AppendLine($"  Fatigue Base:   {creature.Stats.FatigueBase}");
+                sb.AppendLine($"  Barter Gold:    {creature.Stats.BarterGold}");
+                sb.AppendLine($"  Speed Mult:     {creature.Stats.SpeedMultiplier}");
+                sb.AppendLine($"  Calc Range:     {creature.Stats.CalcMin} - {creature.Stats.CalcMax}");
+                sb.AppendLine($"  Flags:          0x{creature.Stats.Flags:X8}");
             }
 
-            if (creature.AttackDamage > 0)
+            sb.AppendLine();
+            sb.AppendLine("Combat:");
+            sb.AppendLine($"  Attack Damage:  {creature.AttackDamage}");
+            sb.AppendLine($"  Combat Skill:   {creature.CombatSkill}");
+            sb.AppendLine($"  Magic Skill:    {creature.MagicSkill}");
+            sb.AppendLine($"  Stealth Skill:  {creature.StealthSkill}");
+
+            if (creature.AiData != null)
             {
-                sb.AppendLine($"  Attack Damage:  {creature.AttackDamage}");
+                var ai = creature.AiData;
+                sb.AppendLine();
+                sb.AppendLine("AI Data (AIDT):");
+                sb.AppendLine($"  Aggression:     {ai.AggressionName}");
+                sb.AppendLine($"  Confidence:     {ai.ConfidenceName}");
+                sb.AppendLine($"  Assistance:     {ai.AssistanceName}");
+                sb.AppendLine($"  Mood:           {ai.MoodName}");
+                sb.AppendLine($"  Energy:         {ai.EnergyLevel}");
+                sb.AppendLine($"  Responsibility: {ai.ResponsibilityName}");
+                if (ai.Flags != 0)
+                {
+                    sb.AppendLine($"  Service Flags:  0x{ai.Flags:X8}");
+                }
             }
+
+            if (creature.Script.HasValue)
+            {
+                sb.AppendLine($"Script:         {resolver.FormatFull(creature.Script.Value)}");
+            }
+
+            if (creature.DeathItem.HasValue)
+            {
+                sb.AppendLine($"Death Item:     {resolver.FormatFull(creature.DeathItem.Value)}");
+            }
+
+            if (creature.Factions.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("Factions:");
+                foreach (var faction in creature.Factions.OrderBy(f => f.FactionFormId))
+                {
+                    sb.AppendLine($"  - {resolver.FormatFull(faction.FactionFormId)} (Rank: {faction.Rank})");
+                }
+            }
+
+            if (creature.Spells.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("Spells/Abilities:");
+                foreach (var spell in creature.Spells.OrderBy(s => s))
+                {
+                    sb.AppendLine($"  - {resolver.FormatFull(spell)}");
+                }
+            }
+
+            if (creature.Packages.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("AI Packages:");
+                foreach (var package in creature.Packages.OrderBy(p => p))
+                {
+                    sb.AppendLine($"  - {resolver.FormatFull(package)}");
+                }
+            }
+
+            if (!string.IsNullOrEmpty(creature.ModelPath))
+            {
+                sb.AppendLine($"Model:          {creature.ModelPath}");
+            }
+
+            sb.AppendLine();
         }
     }
 
@@ -192,10 +420,10 @@ internal static class GeckActorWriter
     ///     Generate a report for Creatures only.
     /// </summary>
     public static string GenerateCreaturesReport(List<CreatureRecord> creatures,
-        FormIdResolver? _resolver = null)
+        FormIdResolver? resolver = null)
     {
         var sb = new StringBuilder();
-        AppendCreaturesSection(sb, creatures);
+        AppendCreaturesSection(sb, creatures, resolver ?? FormIdResolver.Empty);
         return sb.ToString();
     }
 

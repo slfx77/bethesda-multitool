@@ -4,9 +4,318 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
-/// <summary>Generates GECK-style text reports for Cell, Worldspace, Map Marker, Sound, Explosion, and Projectile records.</summary>
+/// <summary>Generates GECK-style text reports for Cell, Worldspace, and Map Marker records.</summary>
 internal static class GeckWorldWriter
 {
+    internal static RecordReport BuildCellReport(CellRecord cell, FormIdResolver resolver)
+    {
+        var sections = new List<ReportSection>();
+
+        // Identity
+        var identityFields = new List<ReportField>
+        {
+            new("Type", ReportValue.String(cell.IsInterior ? "Interior" : "Exterior")),
+            new("Flags", ReportValue.String($"0x{cell.Flags:X2}")),
+            new("Has Water", ReportValue.Bool(cell.HasWater)),
+            new("Endianness", ReportValue.String(cell.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")),
+            new("Offset", ReportValue.String($"0x{cell.Offset:X8}"))
+        };
+
+        if (cell.GridX.HasValue)
+        {
+            identityFields.Add(new("Grid", ReportValue.String($"{cell.GridX}, {cell.GridY}")));
+        }
+
+        if (cell.WorldspaceFormId.HasValue)
+        {
+            identityFields.Add(new("Worldspace",
+                ReportValue.FormId(cell.WorldspaceFormId.Value, resolver),
+                $"0x{cell.WorldspaceFormId.Value:X8}"));
+        }
+
+        sections.Add(new("Identity", identityFields));
+
+        // Environment
+        var envFields = new List<ReportField>();
+
+        if (cell.WaterHeight.HasValue)
+        {
+            envFields.Add(new("Water Height", ReportValue.Float(cell.WaterHeight.Value)));
+        }
+
+        if (cell.EncounterZoneFormId.HasValue)
+        {
+            envFields.Add(new("Encounter Zone",
+                ReportValue.FormId(cell.EncounterZoneFormId.Value, resolver),
+                $"0x{cell.EncounterZoneFormId.Value:X8}"));
+        }
+
+        if (cell.MusicTypeFormId.HasValue)
+        {
+            envFields.Add(new("Music Type",
+                ReportValue.FormId(cell.MusicTypeFormId.Value, resolver),
+                $"0x{cell.MusicTypeFormId.Value:X8}"));
+        }
+
+        if (cell.AcousticSpaceFormId.HasValue)
+        {
+            envFields.Add(new("Acoustic Space",
+                ReportValue.FormId(cell.AcousticSpaceFormId.Value, resolver),
+                $"0x{cell.AcousticSpaceFormId.Value:X8}"));
+        }
+
+        if (cell.ImageSpaceFormId.HasValue)
+        {
+            envFields.Add(new("Image Space",
+                ReportValue.FormId(cell.ImageSpaceFormId.Value, resolver),
+                $"0x{cell.ImageSpaceFormId.Value:X8}"));
+        }
+
+        if (cell.LightingTemplateFormId.HasValue)
+        {
+            envFields.Add(new("Lighting Template",
+                ReportValue.FormId(cell.LightingTemplateFormId.Value, resolver),
+                $"0x{cell.LightingTemplateFormId.Value:X8}"));
+        }
+
+        if (cell.LightingTemplateInheritanceFlags.HasValue)
+        {
+            envFields.Add(new("Lighting Inheritance Flags",
+                ReportValue.String($"0x{cell.LightingTemplateInheritanceFlags.Value:X8}")));
+        }
+
+        if (envFields.Count > 0)
+        {
+            sections.Add(new("Environment", envFields));
+        }
+
+        // Heightmap
+        if (cell.Heightmap != null)
+        {
+            sections.Add(new("Heightmap",
+            [
+                new("Height Offset", ReportValue.Float(cell.Heightmap.HeightOffset))
+            ]));
+        }
+
+        // Linked Cells
+        if (cell.LinkedCellFormIds.Count > 0)
+        {
+            var linkedItems = cell.LinkedCellFormIds
+                .Select(fid => (ReportValue)ReportValue.FormId(fid, resolver))
+                .ToList();
+            sections.Add(new("Linked Cells",
+            [
+                new("Doors To", ReportValue.List(linkedItems, $"{linkedItems.Count} cells"))
+            ]));
+        }
+
+        // Placed Objects
+        if (cell.PlacedObjects.Count > 0)
+        {
+            var objectItems = BuildPlacedObjectList(cell.PlacedObjects, resolver);
+            sections.Add(new("Placed Objects",
+            [
+                new("Objects", ReportValue.List(objectItems, $"{cell.PlacedObjects.Count} objects"))
+            ]));
+        }
+
+        return new RecordReport("Cell", cell.FormId, cell.EditorId, cell.FullName, sections);
+    }
+
+    internal static RecordReport BuildWorldspaceReport(WorldspaceRecord wrld, FormIdResolver resolver)
+    {
+        var sections = new List<ReportSection>();
+
+        // Identity
+        var identityFields = new List<ReportField>
+        {
+            new("Endianness", ReportValue.String(wrld.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")),
+            new("Offset", ReportValue.String($"0x{wrld.Offset:X8}"))
+        };
+
+        if (wrld.Flags.HasValue)
+        {
+            identityFields.Add(new("Flags", ReportValue.String($"0x{wrld.Flags.Value:X2}")));
+        }
+
+        if (wrld.ParentWorldspaceFormId.HasValue)
+        {
+            identityFields.Add(new("Parent",
+                ReportValue.FormId(wrld.ParentWorldspaceFormId.Value, resolver),
+                $"0x{wrld.ParentWorldspaceFormId.Value:X8}"));
+        }
+
+        if (wrld.ParentUseFlags.HasValue)
+        {
+            identityFields.Add(new("Parent Use Flags", ReportValue.String($"0x{wrld.ParentUseFlags.Value:X4}")));
+        }
+
+        sections.Add(new("Identity", identityFields));
+
+        // Environment
+        var envFields = new List<ReportField>();
+
+        if (wrld.ClimateFormId.HasValue)
+        {
+            envFields.Add(new("Climate",
+                ReportValue.FormId(wrld.ClimateFormId.Value, resolver),
+                $"0x{wrld.ClimateFormId.Value:X8}"));
+        }
+
+        if (wrld.WaterFormId.HasValue)
+        {
+            envFields.Add(new("Water",
+                ReportValue.FormId(wrld.WaterFormId.Value, resolver),
+                $"0x{wrld.WaterFormId.Value:X8}"));
+        }
+
+        if (wrld.EncounterZoneFormId.HasValue)
+        {
+            envFields.Add(new("Encounter Zone",
+                ReportValue.FormId(wrld.EncounterZoneFormId.Value, resolver),
+                $"0x{wrld.EncounterZoneFormId.Value:X8}"));
+        }
+
+        if (wrld.ImageSpaceFormId.HasValue)
+        {
+            envFields.Add(new("Image Space",
+                ReportValue.FormId(wrld.ImageSpaceFormId.Value, resolver),
+                $"0x{wrld.ImageSpaceFormId.Value:X8}"));
+        }
+
+        if (wrld.MusicTypeFormId.HasValue)
+        {
+            envFields.Add(new("Music Type",
+                ReportValue.FormId(wrld.MusicTypeFormId.Value, resolver),
+                $"0x{wrld.MusicTypeFormId.Value:X8}"));
+        }
+
+        if (envFields.Count > 0)
+        {
+            sections.Add(new("Environment", envFields));
+        }
+
+        // Heights
+        if (wrld.DefaultLandHeight.HasValue || wrld.DefaultWaterHeight.HasValue)
+        {
+            var heightFields = new List<ReportField>();
+            if (wrld.DefaultLandHeight.HasValue)
+            {
+                heightFields.Add(new("Default Land Height", ReportValue.Float(wrld.DefaultLandHeight.Value)));
+            }
+
+            if (wrld.DefaultWaterHeight.HasValue)
+            {
+                heightFields.Add(new("Default Water Height", ReportValue.Float(wrld.DefaultWaterHeight.Value)));
+            }
+
+            sections.Add(new("Heights", heightFields));
+        }
+
+        // Bounds
+        if (wrld.BoundsMinX.HasValue)
+        {
+            sections.Add(new("World Bounds",
+            [
+                new("Min", ReportValue.String($"({wrld.BoundsMinX:F0}, {wrld.BoundsMinY:F0})")),
+                new("Max", ReportValue.String($"({wrld.BoundsMaxX:F0}, {wrld.BoundsMaxY:F0})"))
+            ]));
+        }
+
+        // Map Data
+        if (wrld.MapUsableWidth.HasValue)
+        {
+            var mapFields = new List<ReportField>
+            {
+                new("Usable Size", ReportValue.String($"{wrld.MapUsableWidth}x{wrld.MapUsableHeight}")),
+                new("Cell Range", ReportValue.String(
+                    $"[{wrld.MapNWCellX},{wrld.MapNWCellY}]-[{wrld.MapSECellX},{wrld.MapSECellY}]"))
+            };
+
+            if (wrld.MapOffsetScaleX.HasValue)
+            {
+                mapFields.Add(new("Offset Scale",
+                    ReportValue.String($"({wrld.MapOffsetScaleX:F2}, {wrld.MapOffsetScaleY:F2})")));
+            }
+
+            if (wrld.MapOffsetZ.HasValue)
+            {
+                mapFields.Add(new("Offset Z", ReportValue.Float(wrld.MapOffsetZ.Value)));
+            }
+
+            sections.Add(new("Map Data", mapFields));
+        }
+
+        // Cells summary
+        if (wrld.Cells.Count > 0)
+        {
+            sections.Add(new("Cells",
+            [
+                new("Count", ReportValue.Int(wrld.Cells.Count))
+            ]));
+        }
+
+        return new RecordReport("Worldspace", wrld.FormId, wrld.EditorId, wrld.FullName, sections);
+    }
+
+    private static List<ReportValue> BuildPlacedObjectList(
+        List<PlacedReference> placedObjects, FormIdResolver resolver)
+    {
+        var items = new List<ReportValue>();
+
+        foreach (var obj in placedObjects.OrderBy(o => o.FormId))
+        {
+            var baseStr = !string.IsNullOrEmpty(obj.BaseEditorId)
+                ? obj.BaseEditorId
+                : resolver.GetBestName(obj.BaseFormId)
+                  ?? GeckReportHelpers.FormatFormId(obj.BaseFormId);
+
+            var fields = new List<ReportField>
+            {
+                new("FormID", ReportValue.FormId(obj.FormId, GeckReportHelpers.FormatFormId(obj.FormId)),
+                    $"0x{obj.FormId:X8}"),
+                new("Base", ReportValue.String(baseStr)),
+                new("Type", ReportValue.String(obj.RecordType)),
+                new("Position", ReportValue.String($"({obj.X:F1}, {obj.Y:F1}, {obj.Z:F1})"))
+            };
+
+            var hasRotation = MathF.Abs(obj.RotX) > 0.001f || MathF.Abs(obj.RotY) > 0.001f ||
+                              MathF.Abs(obj.RotZ) > 0.001f;
+            if (hasRotation)
+            {
+                fields.Add(new("Rotation", ReportValue.String($"({obj.RotX:F3}, {obj.RotY:F3}, {obj.RotZ:F3})")));
+            }
+
+            if (Math.Abs(obj.Scale - 1.0f) > 0.01f)
+            {
+                fields.Add(new("Scale", ReportValue.Float(obj.Scale, "F2")));
+            }
+
+            if (obj.IsInitiallyDisabled)
+            {
+                fields.Add(new("Disabled", ReportValue.Bool(true)));
+            }
+
+            if (obj.ModelPath != null)
+            {
+                fields.Add(new("Model", ReportValue.String(obj.ModelPath)));
+            }
+
+            if (obj.Bounds != null)
+            {
+                fields.Add(new("Bounds", ReportValue.String(
+                    $"[{obj.Bounds.X1},{obj.Bounds.Y1},{obj.Bounds.Z1}]-[{obj.Bounds.X2},{obj.Bounds.Y2},{obj.Bounds.Z2}]")));
+            }
+
+            var disabledTag = obj.IsInitiallyDisabled ? " [DISABLED]" : "";
+            var display = $"{baseStr} ({obj.RecordType}) [{GeckReportHelpers.FormatFormId(obj.FormId)}]{disabledTag}";
+            items.Add(new ReportValue.CompositeVal(fields, display));
+        }
+
+        return items;
+    }
+
     internal static void AppendPlacedObjects(
         StringBuilder sb, List<PlacedReference> placedObjects, FormIdResolver resolver)
     {
@@ -18,7 +327,7 @@ internal static class GeckWorldWriter
         sb.AppendLine();
         sb.AppendLine($"Placed Objects ({placedObjects.Count}):");
 
-        foreach (var obj in placedObjects)
+        foreach (var obj in placedObjects.OrderBy(o => o.FormId))
         {
             var baseStr = !string.IsNullOrEmpty(obj.BaseEditorId)
                 ? obj.BaseEditorId
@@ -323,235 +632,6 @@ internal static class GeckWorldWriter
             sb.AppendLine();
         }
 
-        return sb.ToString();
-    }
-
-    internal static void AppendExplosionsSection(StringBuilder sb, List<ExplosionRecord> explosions,
-        FormIdResolver resolver)
-    {
-        GeckReportHelpers.AppendSectionHeader(sb, $"Explosions ({explosions.Count})");
-        sb.AppendLine();
-
-        sb.AppendLine($"Total Explosions: {explosions.Count:N0}");
-        var withEnchantment = explosions.Count(e => e.Enchantment != 0);
-        sb.AppendLine($"  With Enchantment: {withEnchantment:N0}");
-        if (explosions.Count > 0)
-        {
-            sb.AppendLine(
-                $"  Damage Range: {explosions.Min(e => e.Damage):F0} \u2013 {explosions.Max(e => e.Damage):F0}");
-            sb.AppendLine(
-                $"  Radius Range: {explosions.Min(e => e.Radius):F0} \u2013 {explosions.Max(e => e.Radius):F0}");
-        }
-
-        sb.AppendLine();
-
-        foreach (var expl in explosions.OrderBy(e => e.EditorId, StringComparer.OrdinalIgnoreCase))
-        {
-            sb.AppendLine(new string('\u2500', 80));
-            sb.AppendLine($"  EXPLOSION: {expl.EditorId ?? "(none)"} \u2014 {expl.FullName ?? "(unnamed)"}");
-            sb.AppendLine($"  FormID:      {GeckReportHelpers.FormatFormId(expl.FormId)}");
-            sb.AppendLine($"  \u2500\u2500 Stats {new string('\u2500', 70)}");
-            sb.AppendLine($"  Force:       {expl.Force:F1}");
-            sb.AppendLine($"  Damage:      {expl.Damage:F1}");
-            sb.AppendLine($"  Radius:      {expl.Radius:F1}");
-            sb.AppendLine($"  IS Radius:   {expl.ISRadius:F1}");
-            if (expl.Light != 0)
-            {
-                sb.AppendLine($"  Light:       {resolver.FormatFull(expl.Light)}");
-            }
-
-            if (expl.Sound1 != 0)
-            {
-                sb.AppendLine($"  Sound 1:     {resolver.FormatFull(expl.Sound1)}");
-            }
-
-            if (expl.Sound2 != 0)
-            {
-                sb.AppendLine($"  Sound 2:     {resolver.FormatFull(expl.Sound2)}");
-            }
-
-            if (expl.ImpactDataSet != 0)
-            {
-                sb.AppendLine($"  Impact Data: {resolver.FormatFull(expl.ImpactDataSet)}");
-            }
-
-            if (expl.Enchantment != 0)
-            {
-                sb.AppendLine($"  Enchantment: {resolver.FormatFull(expl.Enchantment)}");
-            }
-
-            if (!string.IsNullOrEmpty(expl.ModelPath))
-            {
-                sb.AppendLine($"  Model:       {expl.ModelPath}");
-            }
-
-            if (expl.Flags != 0)
-            {
-                sb.AppendLine(
-                    $"  Flags:       {FlagRegistry.DecodeFlagNamesWithHex(expl.Flags, FlagRegistry.ExplosionFlags)}");
-            }
-
-            sb.AppendLine();
-        }
-    }
-
-    public static string GenerateExplosionsReport(List<ExplosionRecord> explosions,
-        FormIdResolver? resolver = null)
-    {
-        var sb = new StringBuilder();
-        AppendExplosionsSection(sb, explosions, resolver ?? FormIdResolver.Empty);
-        return sb.ToString();
-    }
-
-    internal static void AppendProjectilesSection(StringBuilder sb, List<ProjectileRecord> projectiles,
-        FormIdResolver resolver)
-    {
-        GeckReportHelpers.AppendSectionHeader(sb, $"Projectiles ({projectiles.Count})");
-        sb.AppendLine();
-
-        var byType = projectiles.GroupBy(p => p.TypeName).OrderByDescending(g => g.Count()).ToList();
-        sb.AppendLine($"Total Projectiles: {projectiles.Count:N0}");
-        sb.AppendLine("By Type:");
-        foreach (var group in byType)
-        {
-            sb.AppendLine($"  {group.Key,-20} {group.Count(),5:N0}");
-        }
-
-        if (projectiles.Count > 0)
-        {
-            sb.AppendLine(
-                $"  Speed Range: {projectiles.Min(p => p.Speed):F0} \u2013 {projectiles.Max(p => p.Speed):F0}");
-        }
-
-        sb.AppendLine();
-
-        foreach (var proj in projectiles.OrderBy(p => p.EditorId, StringComparer.OrdinalIgnoreCase))
-        {
-            sb.AppendLine(new string('\u2500', 80));
-            sb.AppendLine($"  PROJECTILE: {proj.EditorId ?? "(none)"} \u2014 {proj.FullName ?? "(unnamed)"}");
-            sb.AppendLine($"  FormID:       {GeckReportHelpers.FormatFormId(proj.FormId)}");
-            sb.AppendLine($"  Type:         {proj.TypeName}");
-            sb.AppendLine($"  \u2500\u2500 Physics {new string('\u2500', 68)}");
-            sb.AppendLine($"  Speed:        {proj.Speed:F1}");
-            sb.AppendLine($"  Gravity:      {proj.Gravity:F4}");
-            sb.AppendLine($"  Range:        {proj.Range:F1}");
-            sb.AppendLine($"  Impact Force: {proj.ImpactForce:F1}");
-            if (proj.FadeDuration is not 0)
-            {
-                sb.AppendLine($"  Fade Duration: {proj.FadeDuration:F2}");
-            }
-
-            if (proj.Timer is not 0)
-            {
-                sb.AppendLine($"  Timer:        {proj.Timer:F2}");
-            }
-
-            if (proj.MuzzleFlashDuration is not 0 || proj.MuzzleFlashLight != 0)
-            {
-                sb.AppendLine($"  \u2500\u2500 Muzzle Flash {new string('\u2500', 63)}");
-                if (proj.MuzzleFlashDuration is not 0)
-                {
-                    sb.AppendLine($"  Flash Duration: {proj.MuzzleFlashDuration:F2}");
-                }
-
-                if (proj.MuzzleFlashLight != 0)
-                {
-                    sb.AppendLine($"  Flash Light:  {resolver.FormatFull(proj.MuzzleFlashLight)}");
-                }
-            }
-
-            if (proj.Light != 0)
-            {
-                sb.AppendLine($"  Light:        {resolver.FormatFull(proj.Light)}");
-            }
-
-            if (proj.Explosion != 0)
-            {
-                sb.AppendLine($"  Explosion:    {resolver.FormatFull(proj.Explosion)}");
-            }
-
-            if (proj.Sound != 0)
-            {
-                sb.AppendLine($"  Sound:        {resolver.FormatFull(proj.Sound)}");
-            }
-
-            if (!string.IsNullOrEmpty(proj.ModelPath))
-            {
-                sb.AppendLine($"  Model:        {proj.ModelPath}");
-            }
-
-            if (proj.Flags != 0)
-            {
-                sb.AppendLine($"  Flags:        0x{proj.Flags:X4}");
-            }
-
-            sb.AppendLine();
-        }
-    }
-
-    public static string GenerateProjectilesReport(List<ProjectileRecord> projectiles,
-        FormIdResolver? resolver = null)
-    {
-        var sb = new StringBuilder();
-        AppendProjectilesSection(sb, projectiles, resolver ?? FormIdResolver.Empty);
-        return sb.ToString();
-    }
-
-    internal static void AppendSoundsSection(StringBuilder sb, List<SoundRecord> sounds)
-    {
-        GeckReportHelpers.AppendSectionHeader(sb, $"Sounds ({sounds.Count})");
-        sb.AppendLine();
-
-        var withFile = sounds.Count(s => !string.IsNullOrEmpty(s.FileName));
-        var looping = sounds.Count(s => (s.Flags & 0x0010) != 0);
-        sb.AppendLine($"Total Sounds: {sounds.Count:N0}");
-        sb.AppendLine($"  With File Path: {withFile:N0}");
-        sb.AppendLine($"  Looping:        {looping:N0}");
-        sb.AppendLine();
-
-        foreach (var snd in sounds.OrderBy(s => s.EditorId, StringComparer.OrdinalIgnoreCase))
-        {
-            sb.AppendLine(new string('\u2500', 80));
-            sb.AppendLine($"  SOUND: {snd.EditorId ?? "(none)"}");
-            sb.AppendLine($"  FormID:         {GeckReportHelpers.FormatFormId(snd.FormId)}");
-
-            if (!string.IsNullOrEmpty(snd.FileName))
-            {
-                sb.AppendLine($"  File:           {snd.FileName}");
-            }
-
-            sb.AppendLine($"  Min Atten Dist: {snd.MinAttenuationDistance * 5}");
-            sb.AppendLine($"  Max Atten Dist: {snd.MaxAttenuationDistance * 5}");
-
-            if (snd.StaticAttenuation != 0)
-            {
-                sb.AppendLine($"  Static Atten:   {snd.StaticAttenuation / 100.0:F2} dB");
-            }
-
-            if (snd.Flags != 0)
-            {
-                sb.AppendLine(
-                    $"  Flags:          {FlagRegistry.DecodeFlagNamesWithHex(snd.Flags, FlagRegistry.SoundFlags)}");
-            }
-
-            if (snd.StartTime != 0 || snd.EndTime != 0)
-            {
-                sb.AppendLine($"  Play Hours:     {snd.StartTime}:00 \u2013 {snd.EndTime}:00");
-            }
-
-            if (snd.RandomPercentChance != 0)
-            {
-                sb.AppendLine($"  Random Chance:  {snd.RandomPercentChance}%");
-            }
-
-            sb.AppendLine();
-        }
-    }
-
-    public static string GenerateSoundsReport(List<SoundRecord> sounds)
-    {
-        var sb = new StringBuilder();
-        AppendSoundsSection(sb, sounds);
         return sb.ToString();
     }
 }

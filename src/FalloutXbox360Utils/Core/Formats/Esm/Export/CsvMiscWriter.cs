@@ -320,16 +320,16 @@ internal static class CsvMiscWriter
                 s.Offset.ToString(),
                 "", "", ""));
 
-            foreach (var effectId in s.EffectFormIds)
+            foreach (var effect in s.Effects)
             {
                 sb.AppendLine(string.Join(",",
                     "EFFECT",
                     Fmt.FId(s.FormId),
                     "", "", "", "", "", "", "",
                     "", "",
-                    Fmt.FId(effectId),
-                    resolver.ResolveCsv(effectId),
-                    resolver.ResolveDisplayNameCsv(effectId)));
+                    Fmt.FId(effect.EffectFormId),
+                    resolver.ResolveCsv(effect.EffectFormId),
+                    resolver.ResolveDisplayNameCsv(effect.EffectFormId)));
             }
         }
 

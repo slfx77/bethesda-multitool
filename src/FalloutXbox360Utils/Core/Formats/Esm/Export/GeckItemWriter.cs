@@ -9,6 +9,172 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 /// </summary>
 internal static class GeckItemWriter
 {
+    // ── Structured Build*Report methods ──
+
+    internal static RecordReport BuildArmorReport(ArmorRecord item, FormIdResolver resolver)
+    {
+        var sections = new List<ReportSection>();
+
+        // Identity
+        sections.Add(new("Identity",
+        [
+            new("Equip", ReportValue.String(item.EquipmentTypeName))
+        ]));
+
+        // Stats
+        var statsFields = new List<ReportField>
+        {
+            new("DT", ReportValue.FloatDisplay(item.DamageThreshold, $"{item.DamageThreshold:F1}")),
+            new("DR", ReportValue.Int(item.DamageResistance)),
+            new("Value", ReportValue.Int(item.Value, $"{item.Value} caps")),
+            new("Weight", ReportValue.Float(item.Weight)),
+            new("Health", ReportValue.Int(item.Health))
+        };
+
+        if (item.BipedFlags != 0)
+        {
+            statsFields.Add(new("Biped Slots", ReportValue.String($"0x{item.BipedFlags:X8}")));
+        }
+
+        if (!string.IsNullOrEmpty(item.ModelPath))
+        {
+            statsFields.Add(new("Model", ReportValue.String(item.ModelPath)));
+        }
+
+        sections.Add(new("Stats", statsFields));
+
+        return new RecordReport("Armor", item.FormId, item.EditorId, item.FullName, sections);
+    }
+
+    internal static RecordReport BuildAmmoReport(AmmoRecord item, FormIdResolver resolver)
+    {
+        var sections = new List<ReportSection>();
+
+        // Stats
+        var statsFields = new List<ReportField>
+        {
+            new("Speed", ReportValue.FloatDisplay(item.Speed, $"{item.Speed:F1}")),
+            new("Value", ReportValue.Int((int)item.Value, $"{item.Value} caps")),
+            new("Clip Rounds", ReportValue.Int(item.ClipRounds)),
+            new("Flags", ReportValue.String($"0x{item.Flags:X2}"))
+        };
+
+        if (item.ProjectileFormId.HasValue)
+        {
+            statsFields.Add(new("Projectile",
+                ReportValue.FormId(item.ProjectileFormId.Value, resolver),
+                $"0x{item.ProjectileFormId.Value:X8}"));
+        }
+
+        if (!string.IsNullOrEmpty(item.ModelPath))
+        {
+            statsFields.Add(new("Model", ReportValue.String(item.ModelPath)));
+        }
+
+        sections.Add(new("Stats", statsFields));
+
+        return new RecordReport("Ammo", item.FormId, item.EditorId, item.FullName, sections);
+    }
+
+    internal static RecordReport BuildConsumableReport(ConsumableRecord item, FormIdResolver resolver)
+    {
+        var sections = new List<ReportSection>();
+
+        // Stats
+        var statsFields = new List<ReportField>
+        {
+            new("Value", ReportValue.Int((int)item.Value, $"{item.Value} caps")),
+            new("Weight", ReportValue.Float(item.Weight))
+        };
+
+        if (item.AddictionFormId.HasValue)
+        {
+            statsFields.Add(new("Addiction",
+                ReportValue.FormId(item.AddictionFormId.Value, resolver),
+                $"0x{item.AddictionFormId.Value:X8}"));
+            statsFields.Add(new("Addict. Chance",
+                ReportValue.FloatDisplay(item.AddictionChance, $"{item.AddictionChance * 100:F0}%")));
+        }
+
+        if (!string.IsNullOrEmpty(item.ModelPath))
+        {
+            statsFields.Add(new("Model", ReportValue.String(item.ModelPath)));
+        }
+
+        sections.Add(new("Stats", statsFields));
+
+        // Effects (conditional)
+        if (item.Effects.Count > 0)
+        {
+            var effectItems = new List<ReportValue>();
+            foreach (var effect in item.Effects)
+            {
+                var effectName = effect.EffectFormId != 0
+                    ? resolver.FormatFull(effect.EffectFormId)
+                    : "(none)";
+
+                var typeName = effect.Type switch
+                {
+                    0 => "Self",
+                    1 => "Touch",
+                    2 => "Target",
+                    _ => $"#{effect.Type}"
+                };
+
+                effectItems.Add(new ReportValue.CompositeVal(
+                [
+                    new("Effect", effect.EffectFormId != 0
+                        ? ReportValue.FormId(effect.EffectFormId, resolver)
+                        : ReportValue.String("(none)"),
+                        effect.EffectFormId != 0 ? $"0x{effect.EffectFormId:X8}" : null),
+                    new("Magnitude", ReportValue.Float(effect.Magnitude)),
+                    new("Area", ReportValue.Int((int)effect.Area)),
+                    new("Duration", ReportValue.Int((int)effect.Duration)),
+                    new("Type", ReportValue.String(typeName))
+                ], effectName));
+            }
+
+            sections.Add(new("Effects", [new("Effects", ReportValue.List(effectItems))]));
+        }
+
+        return new RecordReport("Consumable", item.FormId, item.EditorId, item.FullName, sections);
+    }
+
+    internal static RecordReport BuildMiscItemReport(MiscItemRecord item, FormIdResolver resolver)
+    {
+        var sections = new List<ReportSection>();
+
+        // Stats
+        var statsFields = new List<ReportField>
+        {
+            new("Value", ReportValue.Int(item.Value, $"{item.Value} caps")),
+            new("Weight", ReportValue.Float(item.Weight))
+        };
+
+        if (!string.IsNullOrEmpty(item.ModelPath))
+        {
+            statsFields.Add(new("Model", ReportValue.String(item.ModelPath)));
+        }
+
+        sections.Add(new("Stats", statsFields));
+
+        return new RecordReport("Misc Item", item.FormId, item.EditorId, item.FullName, sections);
+    }
+
+    internal static RecordReport BuildKeyReport(KeyRecord key, FormIdResolver resolver)
+    {
+        var sections = new List<ReportSection>();
+
+        // Stats
+        sections.Add(new("Stats",
+        [
+            new("Value", ReportValue.Int(key.Value, $"{key.Value} caps")),
+            new("Weight", ReportValue.Float(key.Weight))
+        ]));
+
+        return new RecordReport("Key", key.FormId, key.EditorId, key.FullName, sections);
+    }
+
     internal static void AppendWeaponsSection(StringBuilder sb, List<WeaponRecord> weapons,
         FormIdResolver resolver)
     {
@@ -29,15 +195,24 @@ internal static class GeckItemWriter
             sb.AppendLine("Combat Stats:");
             sb.AppendLine($"  Damage:         {weapon.Damage}");
             sb.AppendLine($"  DPS:            {weapon.DamagePerSecond:F1}");
-            sb.AppendLine($"  Fire Rate:      {weapon.ShotsPerSec:F1}/sec");
+            sb.AppendLine($"  Fire Rate:      {weapon.ShotsPerSec:F2}/sec");
             sb.AppendLine($"  Clip Size:      {weapon.ClipSize}");
             sb.AppendLine($"  Range:          {weapon.MinRange:F0} - {weapon.MaxRange:F0}");
+            sb.AppendLine($"  Speed:          {weapon.Speed:F2}");
+            sb.AppendLine($"  Reach:          {weapon.Reach:F2}");
+            sb.AppendLine($"  Ammo Per Shot:  {weapon.AmmoPerShot}");
+            sb.AppendLine($"  Projectiles:    {weapon.NumProjectiles}");
 
             sb.AppendLine();
             sb.AppendLine("Accuracy:");
             sb.AppendLine($"  Spread:         {weapon.Spread:F2}");
             sb.AppendLine($"  Min Spread:     {weapon.MinSpread:F2}");
             sb.AppendLine($"  Drift:          {weapon.Drift:F2}");
+
+            sb.AppendLine();
+            sb.AppendLine("VATS:");
+            sb.AppendLine($"  AP Cost:        {weapon.ActionPoints:F0}");
+            sb.AppendLine($"  Hit Chance:     {weapon.VatsToHitChance}");
 
             if (weapon.StrengthRequirement > 0 || weapon.SkillRequirement > 0)
             {
@@ -54,7 +229,8 @@ internal static class GeckItemWriter
                 }
             }
 
-            if (weapon.CriticalDamage != 0 || Math.Abs(weapon.CriticalChance - 1.0f) > 0.01f)
+            if (weapon.CriticalDamage != 0 || Math.Abs(weapon.CriticalChance - 1.0f) > 0.01f ||
+                weapon.CriticalEffectFormId.HasValue)
             {
                 sb.AppendLine();
                 sb.AppendLine("Critical:");
@@ -88,7 +264,51 @@ internal static class GeckItemWriter
                 sb.AppendLine($"  Impact Data:    {resolver.FormatFull(weapon.ImpactDataSetFormId.Value)}");
             }
 
-            sb.AppendLine($"  AP Cost:        {weapon.ActionPoints:F0}");
+            // Projectile Physics
+            if (weapon.ProjectileData != null)
+            {
+                var proj = weapon.ProjectileData;
+                sb.AppendLine();
+                sb.AppendLine("Projectile Physics:");
+                sb.AppendLine($"  Speed:          {proj.Speed:F1} units/sec");
+                sb.AppendLine($"  Gravity:        {proj.Gravity:F4}");
+                sb.AppendLine($"  Range:          {proj.Range:F0}");
+                sb.AppendLine($"  Force:          {proj.Force:F1}");
+
+                if (proj.MuzzleFlashDuration > 0)
+                {
+                    sb.AppendLine($"  Muzzle Flash:   {proj.MuzzleFlashDuration:F3}s");
+                }
+
+                if (proj.ExplosionFormId.HasValue)
+                {
+                    sb.AppendLine(
+                        $"  Explosion:      {resolver.FormatFull(proj.ExplosionFormId.Value)}");
+                }
+
+                if (proj.ActiveSoundLoopFormId.HasValue)
+                {
+                    sb.AppendLine(
+                        $"  In-Flight Snd:  {resolver.FormatWithEditorId(proj.ActiveSoundLoopFormId.Value)}");
+                }
+
+                if (proj.CountdownSoundFormId.HasValue)
+                {
+                    sb.AppendLine(
+                        $"  Countdown Snd:  {resolver.FormatWithEditorId(proj.CountdownSoundFormId.Value)}");
+                }
+
+                if (proj.DeactivateSoundFormId.HasValue)
+                {
+                    sb.AppendLine(
+                        $"  Deactivate Snd: {resolver.FormatWithEditorId(proj.DeactivateSoundFormId.Value)}");
+                }
+
+                if (!string.IsNullOrEmpty(proj.ModelPath))
+                {
+                    sb.AppendLine($"  Proj. Model:    {proj.ModelPath}");
+                }
+            }
 
             if (!string.IsNullOrEmpty(weapon.ModelPath))
             {
@@ -174,8 +394,10 @@ internal static class GeckItemWriter
         return sb.ToString();
     }
 
-    internal static void AppendArmorSection(StringBuilder sb, List<ArmorRecord> armor)
+    internal static void AppendArmorSection(StringBuilder sb, List<ArmorRecord> armor,
+        FormIdResolver? resolver = null)
     {
+        resolver ??= FormIdResolver.Empty;
         GeckReportHelpers.AppendSectionHeader(sb, $"Armor ({armor.Count})");
 
         foreach (var item in armor.OrderBy(a => a.EditorId ?? ""))
@@ -185,15 +407,22 @@ internal static class GeckItemWriter
             sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(item.FormId)}");
             sb.AppendLine($"Editor ID:      {item.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {item.FullName ?? "(none)"}");
+            sb.AppendLine($"Equip:          {item.EquipmentTypeName}");
             sb.AppendLine($"Endianness:     {(item.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")}");
             sb.AppendLine($"Offset:         0x{item.Offset:X8}");
 
             sb.AppendLine();
             sb.AppendLine("Stats:");
             sb.AppendLine($"  DT:             {item.DamageThreshold:F1}");
+            sb.AppendLine($"  DR:             {item.DamageResistance}");
             sb.AppendLine($"  Value:          {item.Value} caps");
             sb.AppendLine($"  Weight:         {item.Weight:F1}");
             sb.AppendLine($"  Health:         {item.Health}");
+
+            if (item.BipedFlags != 0)
+            {
+                sb.AppendLine($"  Biped Slots:    0x{item.BipedFlags:X8}");
+            }
 
             if (!string.IsNullOrEmpty(item.ModelPath))
             {
@@ -282,13 +511,31 @@ internal static class GeckItemWriter
                 sb.AppendLine($"  Addict. Chance: {item.AddictionChance * 100:F0}%");
             }
 
-            if (item.EffectFormIds.Count > 0)
+            if (item.Effects.Count > 0)
             {
                 sb.AppendLine();
-                sb.AppendLine("Effects:");
-                foreach (var effect in item.EffectFormIds)
+                sb.AppendLine(
+                    $"  {"Effect",-32} {"Magnitude",10} {"Area",6} {"Duration",10} {"Type",-8}");
+                sb.AppendLine($"  {new string('\u2500', 70)}");
+                foreach (var effect in item.Effects)
                 {
-                    sb.AppendLine($"  - {resolver.FormatFull(effect)}");
+                    var effectName = effect.EffectFormId != 0
+                        ? resolver.FormatFull(effect.EffectFormId)
+                        : "(none)";
+                    if (effectName.Length > 32)
+                    {
+                        effectName = effectName[..29] + "\u2026";
+                    }
+
+                    var typeName = effect.Type switch
+                    {
+                        0 => "Self",
+                        1 => "Touch",
+                        2 => "Target",
+                        _ => $"#{effect.Type}"
+                    };
+                    sb.AppendLine(
+                        $"  {effectName,-32} {effect.Magnitude,10:F1} {effect.Area,6} {effect.Duration,10} {typeName,-8}");
                 }
             }
 
@@ -396,10 +643,25 @@ internal static class GeckItemWriter
             {
                 sb.AppendLine();
                 sb.AppendLine($"Contents ({container.Contents.Count}):");
-                foreach (var item in container.Contents)
+                sb.AppendLine($"  {"EditorID",-32} {"Name",-32} {"Qty",5}");
+                sb.AppendLine($"  {new string('-', 32)} {new string('-', 32)} {new string('-', 5)}");
+                foreach (var item in container.Contents.OrderBy(i => i.ItemFormId))
                 {
-                    sb.AppendLine($"  - {resolver.FormatFull(item.ItemFormId)} x{item.Count}");
+                    var editorId = resolver.ResolveEditorId(item.ItemFormId);
+                    var displayName = resolver.ResolveDisplayName(item.ItemFormId);
+                    sb.AppendLine(
+                        $"  {GeckReportHelpers.Truncate(editorId, 32),-32} {GeckReportHelpers.Truncate(displayName, 32),-32} {item.Count,5}");
                 }
+            }
+
+            if (container.Script.HasValue)
+            {
+                sb.AppendLine($"  Script:         {resolver.FormatFull(container.Script.Value)}");
+            }
+
+            if (!string.IsNullOrEmpty(container.ModelPath))
+            {
+                sb.AppendLine($"  Model:          {container.ModelPath}");
             }
         }
     }

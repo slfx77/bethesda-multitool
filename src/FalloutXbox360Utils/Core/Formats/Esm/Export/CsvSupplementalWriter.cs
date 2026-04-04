@@ -261,78 +261,6 @@ internal static class CsvSupplementalWriter
         return sb.ToString();
     }
 
-    /// <summary>
-    ///     Generate CSV files from string pool data extracted from runtime memory.
-    ///     Returns a dictionary mapping filename to content.
-    /// </summary>
-    public static Dictionary<string, string> GenerateStringPoolCsvs(StringPoolSummary sp)
-    {
-        var files = new Dictionary<string, string>();
-
-        if (sp.AllDialogue.Count > 0)
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine("Text,Length");
-            foreach (var text in sp.AllDialogue.OrderByDescending(s => s.Length))
-            {
-                sb.AppendLine($"{Fmt.CsvEscape(text)},{text.Length}");
-            }
-
-            files["string_pool_dialogue.csv"] = sb.ToString();
-        }
-
-        if (sp.AllFilePaths.Count > 0)
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine("Path,Extension");
-            foreach (var path in sp.AllFilePaths.OrderBy(s => s, StringComparer.OrdinalIgnoreCase))
-            {
-                var dot = path.LastIndexOf('.');
-                var ext = dot >= 0 && dot < path.Length - 1 ? path[dot..] : "";
-                sb.AppendLine($"{Fmt.CsvEscape(path)},{Fmt.CsvEscape(ext)}");
-            }
-
-            files["string_pool_file_paths.csv"] = sb.ToString();
-        }
-
-        if (sp.AllEditorIds.Count > 0)
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine("EditorID");
-            foreach (var id in sp.AllEditorIds.OrderBy(s => s, StringComparer.Ordinal))
-            {
-                sb.AppendLine(Fmt.CsvEscape(id));
-            }
-
-            files["string_pool_editor_ids.csv"] = sb.ToString();
-        }
-
-        if (sp.AllSettings.Count > 0)
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine("Name,InferredType");
-            foreach (var name in sp.AllSettings.OrderBy(s => s, StringComparer.Ordinal))
-            {
-                var inferredType = name.Length > 0
-                    ? name[0] switch
-                    {
-                        'f' => "Float",
-                        'i' => "Int",
-                        'b' => "Bool",
-                        's' => "String",
-                        'u' => "Unsigned",
-                        _ => "Unknown"
-                    }
-                    : "Unknown";
-                sb.AppendLine($"{Fmt.CsvEscape(name)},{inferredType}");
-            }
-
-            files["string_pool_game_settings.csv"] = sb.ToString();
-        }
-
-        return files;
-    }
-
     public static Dictionary<string, string> GenerateStringOwnershipCsvs(RuntimeStringOwnershipAnalysis analysis)
     {
         var files = new Dictionary<string, string>();
@@ -382,6 +310,53 @@ internal static class CsvSupplementalWriter
             }
 
             files["string_unreferenced.csv"] = sb.ToString();
+        }
+
+        // Per-category owned string CSVs with owner resolution
+        foreach (var category in new[] { StringCategory.DialogueLine, StringCategory.FilePath, StringCategory.EditorId, StringCategory.GameSetting })
+        {
+            var categoryHits = analysis.OwnedHits
+                .Where(h => h.Category == category)
+                .OrderBy(h => h.Text, StringComparer.Ordinal)
+                .ThenBy(h => h.FileOffset)
+                .ToList();
+
+            if (categoryHits.Count == 0)
+            {
+                continue;
+            }
+
+            var sb = new StringBuilder();
+            sb.AppendLine(
+                "Text,Length,OwnerKind,OwnerName,OwnerFormID,OwnerRecordType,OwnerField,ClaimSource,InboundPointerCount,StringFileOffset,StringVA");
+
+            foreach (var hit in categoryHits)
+            {
+                var r = hit.OwnerResolution;
+                sb.AppendLine(string.Join(",",
+                    Fmt.CsvEscape(hit.Text),
+                    hit.Length.ToString(),
+                    Fmt.CsvEscape(r?.OwnerKind),
+                    Fmt.CsvEscape(r?.OwnerName),
+                    r?.OwnerFormId.HasValue == true ? $"0x{r.OwnerFormId.Value:X8}" : "",
+                    Fmt.CsvEscape(r?.OwnerRecordType),
+                    Fmt.CsvEscape(r?.OwnerFieldOrSubrecord),
+                    r?.ClaimSource?.ToString() ?? "",
+                    hit.InboundPointerCount.ToString(),
+                    FormatOffset(hit.FileOffset),
+                    FormatOffset(hit.VirtualAddress)));
+            }
+
+            var fileName = category switch
+            {
+                StringCategory.DialogueLine => "string_owned_dialogue.csv",
+                StringCategory.FilePath => "string_owned_filepaths.csv",
+                StringCategory.EditorId => "string_owned_editorids.csv",
+                StringCategory.GameSetting => "string_owned_gamesettings.csv",
+                _ => $"string_owned_{category}.csv"
+            };
+
+            files[fileName] = sb.ToString();
         }
 
         return files;

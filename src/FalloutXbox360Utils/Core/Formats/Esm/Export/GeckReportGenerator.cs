@@ -35,7 +35,7 @@ public static class GeckReportGenerator
 
         if (result.Creatures.Count > 0)
         {
-            GeckActorWriter.AppendCreaturesSection(sb, result.Creatures);
+            GeckActorWriter.AppendCreaturesSection(sb, result.Creatures, resolver);
         }
 
         if (result.Races.Count > 0)
@@ -43,9 +43,24 @@ public static class GeckReportGenerator
             GeckActorWriter.AppendRacesSection(sb, result.Races, resolver);
         }
 
+        if (result.Classes.Count > 0)
+        {
+            GeckActorWriter.AppendClassesSection(sb, result.Classes);
+        }
+
         if (result.Factions.Count > 0)
         {
             GeckFactionWriter.AppendFactionsSection(sb, result.Factions, resolver);
+        }
+
+        if (result.Reputations.Count > 0)
+        {
+            GeckFactionWriter.AppendReputationsSection(sb, result.Reputations);
+        }
+
+        if (result.Challenges.Count > 0)
+        {
+            GeckFactionWriter.AppendChallengesSection(sb, result.Challenges, resolver);
         }
 
         // Quests and Dialogue
@@ -77,6 +92,11 @@ public static class GeckReportGenerator
         if (result.Dialogues.Count > 0)
         {
             GeckDialogueWriter.AppendDialogueSection(sb, result.Dialogues, resolver);
+        }
+
+        if (result.Messages.Count > 0)
+        {
+            GeckDialogueWriter.AppendMessagesSection(sb, result.Messages, resolver);
         }
 
         // Scripts
@@ -121,6 +141,16 @@ public static class GeckReportGenerator
             GeckItemWriter.AppendContainersSection(sb, result.Containers, resolver);
         }
 
+        if (result.Recipes.Count > 0)
+        {
+            GeckItemDetailWriter.AppendRecipesSection(sb, result.Recipes, resolver);
+        }
+
+        if (result.WeaponMods.Count > 0)
+        {
+            GeckItemDetailWriter.AppendWeaponModsSection(sb, result.WeaponMods);
+        }
+
         // Abilities
         if (result.Perks.Count > 0)
         {
@@ -130,6 +160,27 @@ public static class GeckReportGenerator
         if (result.Spells.Count > 0)
         {
             GeckEffectsWriter.AppendSpellsSection(sb, result.Spells, resolver);
+        }
+
+        if (result.Enchantments.Count > 0)
+        {
+            GeckEffectsWriter.AppendEnchantmentsSection(sb, result.Enchantments, resolver);
+        }
+
+        if (result.BaseEffects.Count > 0)
+        {
+            GeckEffectsWriter.AppendBaseEffectsSection(sb, result.BaseEffects, resolver);
+        }
+
+        // Combat effects
+        if (result.Projectiles.Count > 0)
+        {
+            GeckWorldObjectWriter.AppendProjectilesSection(sb, result.Projectiles, resolver);
+        }
+
+        if (result.Explosions.Count > 0)
+        {
+            GeckWorldObjectWriter.AppendExplosionsSection(sb, result.Explosions, resolver);
         }
 
         // World
@@ -143,9 +194,77 @@ public static class GeckReportGenerator
             GeckWorldWriter.AppendWorldspacesSection(sb, result.Worldspaces, resolver);
         }
 
+        if (result.MapMarkers.Count > 0)
+        {
+            GeckWorldWriter.AppendMapMarkersSection(sb, result.MapMarkers, resolver);
+        }
+
         if (result.Sounds.Count > 0)
         {
-            GeckWorldWriter.AppendSoundsSection(sb, result.Sounds);
+            GeckWorldObjectWriter.AppendSoundsSection(sb, result.Sounds);
+        }
+
+        // World objects
+        if (result.Doors.Count > 0)
+        {
+            GeckWorldObjectWriter.AppendDoorsSection(sb, result.Doors, resolver);
+        }
+
+        if (result.Lights.Count > 0)
+        {
+            GeckWorldObjectWriter.AppendLightsSection(sb, result.Lights);
+        }
+
+        if (result.Furniture.Count > 0)
+        {
+            GeckWorldObjectWriter.AppendFurnitureSection(sb, result.Furniture, resolver);
+        }
+
+        if (result.Activators.Count > 0)
+        {
+            GeckWorldObjectWriter.AppendActivatorsSection(sb, result.Activators, resolver);
+        }
+
+        if (result.Statics.Count > 0)
+        {
+            GeckWorldObjectWriter.AppendStaticsSection(sb, result.Statics);
+        }
+
+        // Appearance
+        if (result.Hair.Count > 0)
+        {
+            GeckCreatureWriter.AppendHairSection(sb, result.Hair);
+        }
+
+        if (result.Eyes.Count > 0)
+        {
+            GeckCreatureWriter.AppendEyesSection(sb, result.Eyes);
+        }
+
+        // Miscellaneous
+        if (result.FormLists.Count > 0)
+        {
+            GeckMiscWriter.AppendFormListsSection(sb, result.FormLists, resolver);
+        }
+
+        if (result.CombatStyles.Count > 0)
+        {
+            GeckMiscWriter.AppendCombatStylesSection(sb, result.CombatStyles);
+        }
+
+        if (result.LeveledLists.Count > 0)
+        {
+            GeckMiscWriter.AppendLeveledListsSection(sb, result.LeveledLists, resolver);
+        }
+
+        if (result.GameSettings.Count > 0)
+        {
+            GeckMiscWriter.AppendGameSettingsSection(sb, result.GameSettings);
+        }
+
+        if (result.Globals.Count > 0)
+        {
+            GeckMiscWriter.AppendGlobalsSection(sb, result.Globals);
         }
 
         // String pool data from runtime memory
@@ -402,25 +521,73 @@ public static class GeckReportGenerator
         if (result.Projectiles.Count > 0)
         {
             files["projectiles.csv"] = CsvSupplementalWriter.GenerateProjectilesCsv(result.Projectiles);
-            files["projectile_report.txt"] = GeckWorldWriter.GenerateProjectilesReport(result.Projectiles, resolver);
+            files["projectile_report.txt"] = GeckWorldObjectWriter.GenerateProjectilesReport(result.Projectiles, resolver);
         }
 
         if (result.Sounds.Count > 0)
         {
             files["sounds.csv"] = CsvSupplementalWriter.GenerateSoundsCsv(result.Sounds);
-            files["sound_report.txt"] = GeckWorldWriter.GenerateSoundsReport(result.Sounds);
+            files["sound_report.txt"] = GeckWorldObjectWriter.GenerateSoundsReport(result.Sounds);
         }
 
         if (result.Explosions.Count > 0)
         {
             files["explosions.csv"] = CsvMiscWriter.GenerateExplosionsCsv(result.Explosions, resolver);
-            files["explosion_report.txt"] = GeckWorldWriter.GenerateExplosionsReport(result.Explosions, resolver);
+            files["explosion_report.txt"] = GeckWorldObjectWriter.GenerateExplosionsReport(result.Explosions, resolver);
         }
 
         if (result.Messages.Count > 0)
         {
             files["messages.csv"] = CsvSupplementalWriter.GenerateMessagesCsv(result.Messages, resolver);
             files["message_report.txt"] = GeckDialogueWriter.GenerateMessagesReport(result.Messages, resolver);
+        }
+
+        // World objects
+        if (result.Doors.Count > 0)
+        {
+            files["door_report.txt"] = GeckWorldObjectWriter.GenerateDoorsReport(result.Doors, resolver);
+        }
+
+        if (result.Lights.Count > 0)
+        {
+            files["light_report.txt"] = GeckWorldObjectWriter.GenerateLightsReport(result.Lights);
+        }
+
+        if (result.Furniture.Count > 0)
+        {
+            files["furniture_report.txt"] = GeckWorldObjectWriter.GenerateFurnitureReport(result.Furniture, resolver);
+        }
+
+        if (result.Activators.Count > 0)
+        {
+            files["activator_report.txt"] = GeckWorldObjectWriter.GenerateActivatorsReport(result.Activators, resolver);
+        }
+
+        if (result.Statics.Count > 0)
+        {
+            files["static_report.txt"] = GeckWorldObjectWriter.GenerateStaticsReport(result.Statics);
+        }
+
+        // Appearance
+        if (result.Hair.Count > 0)
+        {
+            files["hair_report.txt"] = GeckCreatureWriter.GenerateHairReport(result.Hair);
+        }
+
+        if (result.Eyes.Count > 0)
+        {
+            files["eyes_report.txt"] = GeckCreatureWriter.GenerateEyesReport(result.Eyes);
+        }
+
+        // Miscellaneous
+        if (result.FormLists.Count > 0)
+        {
+            files["formlist_report.txt"] = GeckMiscWriter.GenerateFormListsReport(result.FormLists, resolver);
+        }
+
+        if (result.CombatStyles.Count > 0)
+        {
+            files["combatstyle_report.txt"] = GeckMiscWriter.GenerateCombatStylesReport(result.CombatStyles);
         }
 
         if (result.Classes.Count > 0)
@@ -445,15 +612,6 @@ public static class GeckReportGenerator
         if (sources.RuntimeEditorIds is { Count: > 0 })
         {
             files["runtime_editorids.csv"] = GeckMiscWriter.GenerateRuntimeEditorIdsReport(sources.RuntimeEditorIds);
-        }
-
-        // String pool CSVs
-        if (sources.StringPool != null)
-        {
-            foreach (var (filename, content) in CsvSupplementalWriter.GenerateStringPoolCsvs(sources.StringPool))
-            {
-                files[filename] = content;
-            }
         }
 
         if (sources.StringOwnership != null)

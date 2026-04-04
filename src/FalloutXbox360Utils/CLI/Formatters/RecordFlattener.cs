@@ -65,10 +65,15 @@ internal static class RecordFlattener
         result.AddRange(records.FormLists.Select(r => new FlatRecord(r.FormId, "FLST", r.EditorId, null)));
         result.AddRange(records.Projectiles.Select(r => new FlatRecord(r.FormId, "PROJ", r.EditorId, r.FullName)));
         result.AddRange(records.Explosions.Select(r => new FlatRecord(r.FormId, "EXPL", r.EditorId, r.FullName)));
+        result.AddRange(records.MusicTypes.Select(r => new FlatRecord(r.FormId, "MUSC", r.EditorId, r.FileName)));
 
         // AI
         result.AddRange(records.Packages.Select(r => new FlatRecord(r.FormId, "PACK", r.EditorId, null)));
         result.AddRange(records.CombatStyles.Select(r => new FlatRecord(r.FormId, "CSTY", r.EditorId, null)));
+
+        // Stats
+        result.AddRange(
+            records.ActorValueInfos.Select(r => new FlatRecord(r.FormId, "AVIF", r.EditorId, r.FullName)));
 
         // Generic
         result.AddRange(

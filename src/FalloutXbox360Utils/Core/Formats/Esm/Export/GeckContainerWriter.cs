@@ -29,7 +29,7 @@ internal static class GeckContainerWriter
             {
                 sb.AppendLine();
                 sb.AppendLine($"Contents ({container.Contents.Count}):");
-                foreach (var item in container.Contents)
+                foreach (var item in container.Contents.OrderBy(i => i.ItemFormId))
                 {
                     sb.AppendLine($"  - {resolver.FormatFull(item.ItemFormId)} x{item.Count}");
                 }
@@ -43,56 +43,8 @@ internal static class GeckContainerWriter
         FormIdResolver resolver)
     {
         sb.AppendLine();
-
-        // Header with both EditorID and display name
-        var title = !string.IsNullOrEmpty(container.FullName)
-            ? $"CONTAINER: {container.EditorId ?? "(unknown)"} \u2014 {container.FullName}"
-            : $"CONTAINER: {container.EditorId ?? "(unknown)"}";
-        sb.AppendLine(new string(GeckReportHelpers.SeparatorChar, GeckReportHelpers.SeparatorWidth));
-        var padding = (GeckReportHelpers.SeparatorWidth - title.Length) / 2;
-        sb.AppendLine(new string(' ', Math.Max(0, padding)) + title);
-        sb.AppendLine(new string(GeckReportHelpers.SeparatorChar, GeckReportHelpers.SeparatorWidth));
-
-        // Basic info
-        sb.AppendLine($"  FormID:         {GeckReportHelpers.FormatFormId(container.FormId)}");
-        sb.AppendLine($"  Editor ID:      {container.EditorId ?? "(none)"}");
-        sb.AppendLine($"  Display Name:   {container.FullName ?? "(none)"}");
-        sb.AppendLine($"  Respawns:       {(container.Respawns ? "Yes" : "No")}");
-
-        // Contents table
-        if (container.Contents.Count > 0)
-        {
-            sb.AppendLine();
-            sb.AppendLine(
-                $"  \u2500\u2500 Contents ({container.Contents.Count} items) {new string('\u2500', 56 - container.Contents.Count.ToString().Length)}");
-            sb.AppendLine($"    {"EditorID",-32} {"Name",-32} {"Qty",5}");
-            sb.AppendLine($"    {new string('\u2500', 32)} {new string('\u2500', 32)} {new string('\u2500', 5)}");
-
-            foreach (var item in container.Contents)
-            {
-                var editorId = resolver.ResolveEditorId(item.ItemFormId);
-                var displayName = resolver.ResolveDisplayName(item.ItemFormId);
-                sb.AppendLine(
-                    $"    {GeckReportHelpers.Truncate(editorId, 32),-32} {GeckReportHelpers.Truncate(displayName, 32),-32} {item.Count,5}");
-            }
-        }
-
-        // Script reference
-        if (container.Script.HasValue)
-        {
-            sb.AppendLine();
-            sb.AppendLine($"  \u2500\u2500 References {new string('\u2500', 67)}");
-            sb.AppendLine(
-                $"  Script:         {resolver.FormatFull(container.Script.Value)}");
-        }
-
-        // Model path
-        if (!string.IsNullOrEmpty(container.ModelPath))
-        {
-            sb.AppendLine();
-            sb.AppendLine($"  \u2500\u2500 Model {new string('\u2500', 73)}");
-            sb.AppendLine($"  Path:           {container.ModelPath}");
-        }
+        var report = GeckItemDetailWriter.BuildContainerReport(container, resolver);
+        sb.Append(ReportTextFormatter.Format(report));
     }
 
     /// <summary>
@@ -178,7 +130,7 @@ internal static class GeckContainerWriter
                     $"  \u2500\u2500 Ingredients ({recipe.Ingredients.Count}) {new string('\u2500', 80 - 22 - recipe.Ingredients.Count.ToString().Length)}");
                 sb.AppendLine($"  {"Item",-50} {"Count",6}");
                 sb.AppendLine($"  {new string('\u2500', 58)}");
-                foreach (var ing in recipe.Ingredients)
+                foreach (var ing in recipe.Ingredients.OrderBy(i => i.ItemFormId))
                 {
                     var itemName = ing.ItemFormId != 0
                         ? resolver.FormatFull(ing.ItemFormId)
@@ -193,7 +145,7 @@ internal static class GeckContainerWriter
                     $"  \u2500\u2500 Outputs ({recipe.Outputs.Count}) {new string('\u2500', 80 - 19 - recipe.Outputs.Count.ToString().Length)}");
                 sb.AppendLine($"  {"Item",-50} {"Count",6}");
                 sb.AppendLine($"  {new string('\u2500', 58)}");
-                foreach (var output in recipe.Outputs)
+                foreach (var output in recipe.Outputs.OrderBy(o => o.ItemFormId))
                 {
                     var itemName = output.ItemFormId != 0
                         ? resolver.FormatFull(output.ItemFormId)

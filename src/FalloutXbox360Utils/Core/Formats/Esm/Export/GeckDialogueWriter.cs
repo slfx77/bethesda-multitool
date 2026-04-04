@@ -6,6 +6,60 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 /// <summary>Generates GECK-style text reports for Quest, Dialog Topic, Dialogue, and Dialogue Tree records.</summary>
 internal static class GeckDialogueWriter
 {
+    /// <summary>Build a structured quest report from a <see cref="QuestRecord" />.</summary>
+    internal static RecordReport BuildQuestReport(QuestRecord quest, FormIdResolver resolver)
+    {
+        var sections = new List<ReportSection>();
+
+        // Identity
+        var identityFields = new List<ReportField>
+        {
+            new("Flags", ReportValue.String($"0x{quest.Flags:X2}")),
+            new("Priority", ReportValue.Int(quest.Priority))
+        };
+        if (quest.Script.HasValue)
+            identityFields.Add(new("Script", ReportValue.FormId(quest.Script.Value, resolver),
+                $"0x{quest.Script.Value:X8}"));
+        sections.Add(new("Identity", identityFields));
+
+        // Stages
+        if (quest.Stages.Count > 0)
+        {
+            var stageItems = quest.Stages.OrderBy(s => s.Index)
+                .Select(s =>
+                {
+                    var flagsStr = s.Flags != 0 ? $" [Flags: 0x{s.Flags:X2}]" : "";
+                    var logStr = !string.IsNullOrEmpty(s.LogEntry) ? $" {s.LogEntry}" : "";
+                    return (ReportValue)new ReportValue.CompositeVal(
+                    [
+                        new("Index", ReportValue.Int(s.Index)),
+                        new("Log", ReportValue.String(s.LogEntry ?? ""))
+                    ], $"[{s.Index,3}]{flagsStr}{logStr}");
+                })
+                .ToList();
+            sections.Add(new("Stages", [new("Stages", ReportValue.List(stageItems))]));
+        }
+
+        // Objectives
+        if (quest.Objectives.Count > 0)
+        {
+            var objItems = quest.Objectives.OrderBy(o => o.Index)
+                .Select(o =>
+                {
+                    var text = !string.IsNullOrEmpty(o.DisplayText) ? o.DisplayText : "(no text)";
+                    return (ReportValue)new ReportValue.CompositeVal(
+                    [
+                        new("Index", ReportValue.Int(o.Index)),
+                        new("Text", ReportValue.String(text))
+                    ], $"[{o.Index,3}] {text}");
+                })
+                .ToList();
+            sections.Add(new("Objectives", [new("Objectives", ReportValue.List(objItems))]));
+        }
+
+        return new RecordReport("Quest", quest.FormId, quest.EditorId, quest.FullName, sections);
+    }
+
     internal static void AppendQuestsSection(StringBuilder sb, List<QuestRecord> quests,
         FormIdResolver resolver)
     {
@@ -32,7 +86,7 @@ internal static class GeckDialogueWriter
             {
                 sb.AppendLine();
                 sb.AppendLine("Stages:");
-                foreach (var stage in quest.Stages)
+                foreach (var stage in quest.Stages.OrderBy(s => s.Index))
                 {
                     var flagsStr = stage.Flags != 0 ? $" [Flags: 0x{stage.Flags:X2}]" : "";
                     var logStr = !string.IsNullOrEmpty(stage.LogEntry)
@@ -46,7 +100,7 @@ internal static class GeckDialogueWriter
             {
                 sb.AppendLine();
                 sb.AppendLine("Objectives:");
-                foreach (var obj in quest.Objectives)
+                foreach (var obj in quest.Objectives.OrderBy(o => o.Index))
                 {
                     var text = !string.IsNullOrEmpty(obj.DisplayText)
                         ? obj.DisplayText

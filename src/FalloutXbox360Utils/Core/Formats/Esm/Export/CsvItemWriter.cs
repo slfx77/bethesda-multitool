@@ -9,7 +9,7 @@ internal static class CsvItemWriter
     {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "RowType,FormID,EditorID,Name,WeaponType,WeaponTypeName,Damage,DPS,FireRate,ClipSize,MinRange,MaxRange,Spread,MinSpread,Drift,StrReq,SkillReq,CritDamage,CritChance,CritEffectFormID,Value,Weight,Health,AmmoFormID,AmmoName,AmmoDisplayName,ProjectileFormID,ProjectileName,ProjectileDisplayName,ImpactDataSetFormID,ImpactDataSetName,ImpactDataSetDisplayName,APCost,ModelPath,PickupSoundFormID,PickupSoundName,PickupSoundDisplayName,PutdownSoundFormID,PutdownSoundName,PutdownSoundDisplayName,FireSound3DFormID,FireSound3DName,FireSound3DDisplayName,FireSoundDistFormID,FireSoundDistName,FireSoundDistDisplayName,FireSound2DFormID,FireSound2DName,FireSound2DDisplayName,DryFireSoundFormID,DryFireSoundName,DryFireSoundDisplayName,IdleSoundFormID,IdleSoundName,IdleSoundDisplayName,EquipSoundFormID,EquipSoundName,EquipSoundDisplayName,UnequipSoundFormID,UnequipSoundName,UnequipSoundDisplayName,ProjSpeed,ProjGravity,ProjRange,ProjForce,ProjExplosionFormID,ProjExplosionName,ProjExplosionDisplayName,ProjInFlightSoundFormID,ProjInFlightSoundName,ProjInFlightSoundDisplayName,ProjModelPath,Endianness,Offset");
+            "RowType,FormID,EditorID,Name,WeaponType,WeaponTypeName,Skill,SkillName,Damage,DPS,FireRate,ClipSize,NumProjectiles,AmmoPerShot,MinRange,MaxRange,Spread,MinSpread,Drift,StrReq,SkillReq,CritDamage,CritChance,CritEffectFormID,Value,Weight,Health,AmmoFormID,AmmoName,AmmoDisplayName,ProjectileFormID,ProjectileName,ProjectileDisplayName,ImpactDataSetFormID,ImpactDataSetName,ImpactDataSetDisplayName,APCost,ModelPath,PickupSoundFormID,PickupSoundName,PickupSoundDisplayName,PutdownSoundFormID,PutdownSoundName,PutdownSoundDisplayName,FireSound3DFormID,FireSound3DName,FireSound3DDisplayName,FireSoundDistFormID,FireSoundDistName,FireSoundDistDisplayName,FireSound2DFormID,FireSound2DName,FireSound2DDisplayName,DryFireSoundFormID,DryFireSoundName,DryFireSoundDisplayName,IdleSoundFormID,IdleSoundName,IdleSoundDisplayName,EquipSoundFormID,EquipSoundName,EquipSoundDisplayName,UnequipSoundFormID,UnequipSoundName,UnequipSoundDisplayName,ProjSpeed,ProjGravity,ProjRange,ProjForce,ProjExplosionFormID,ProjExplosionName,ProjExplosionDisplayName,ProjInFlightSoundFormID,ProjInFlightSoundName,ProjInFlightSoundDisplayName,ProjModelPath,Endianness,Offset");
 
         foreach (var w in weapons.OrderBy(w => w.EditorId ?? ""))
         {
@@ -20,10 +20,14 @@ internal static class CsvItemWriter
                 Fmt.CsvEscape(w.FullName),
                 ((int)w.WeaponType).ToString(),
                 Fmt.CsvEscape(w.WeaponTypeName),
+                w.Skill.ToString(),
+                Fmt.CsvEscape(resolver.GetActorValueName((int)w.Skill) ?? ""),
                 w.Damage.ToString(),
                 w.DamagePerSecond.ToString("F1"),
                 w.ShotsPerSec.ToString("F2"),
                 w.ClipSize.ToString(),
+                w.NumProjectiles.ToString(),
+                w.AmmoPerShot.ToString(),
                 w.MinRange.ToString("F0"),
                 w.MaxRange.ToString("F0"),
                 w.Spread.ToString("F2"),
@@ -196,16 +200,16 @@ internal static class CsvItemWriter
                 c.Offset.ToString(),
                 "", "", ""));
 
-            foreach (var effectId in c.EffectFormIds)
+            foreach (var effect in c.Effects)
             {
                 sb.AppendLine(string.Join(",",
                     "EFFECT",
                     Fmt.FId(c.FormId),
                     "", "", "", "", "", "", "", "", "",
                     "", "",
-                    Fmt.FId(effectId),
-                    resolver.ResolveCsv(effectId),
-                    resolver.ResolveDisplayNameCsv(effectId)));
+                    Fmt.FId(effect.EffectFormId),
+                    resolver.ResolveCsv(effect.EffectFormId),
+                    resolver.ResolveDisplayNameCsv(effect.EffectFormId)));
             }
         }
 

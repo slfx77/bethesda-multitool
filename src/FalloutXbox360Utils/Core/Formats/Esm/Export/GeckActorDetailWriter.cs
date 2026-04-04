@@ -9,6 +9,264 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 /// </summary>
 internal static class GeckActorDetailWriter
 {
+    /// <summary>Build a structured NPC report from an <see cref="NpcRecord" />.</summary>
+    internal static RecordReport BuildNpcReport(NpcRecord npc, FormIdResolver resolver,
+        RaceRecord? race = null)
+    {
+        var sections = new List<ReportSection>();
+
+        // Identity — gender
+        if (npc.Stats != null)
+        {
+            var gender = (npc.Stats.Flags & 1) == 1 ? "Female" : "Male";
+            sections.Add(new("Identity", [new("Gender", ReportValue.String(gender))]));
+        }
+
+        // Stats
+        if (npc.Stats != null || npc.SpecialStats != null)
+        {
+            var statsFields = new List<ReportField>();
+            if (npc.Stats != null)
+                statsFields.Add(new("Level", ReportValue.Int(npc.Stats.Level)));
+            if (npc.SpecialStats is { Length: 7 })
+            {
+                var s = npc.SpecialStats;
+                var total = s[0] + s[1] + s[2] + s[3] + s[4] + s[5] + s[6];
+                statsFields.Add(new("S.P.E.C.I.A.L.",
+                    ReportValue.String(
+                        $"{s[0]} ST, {s[1]} PE, {s[2]} EN, {s[3]} CH, {s[4]} IN, {s[5]} AG, {s[6]} LK  (Total: {total})")));
+            }
+
+            if (npc.Skills is { Length: 14 })
+            {
+                var sk = npc.Skills;
+                var skillItems = new List<ReportValue>();
+                for (var i = 0; i < 14; i++)
+                {
+                    var name = resolver.GetSkillName(i) ?? $"Skill#{i}";
+                    skillItems.Add(new ReportValue.CompositeVal(
+                    [
+                        new("Skill", ReportValue.String(name)),
+                        new("Value", ReportValue.Int(sk[i]))
+                    ], $"{name}: {sk[i]}"));
+                }
+
+                statsFields.Add(new("Skills", ReportValue.List(skillItems)));
+            }
+
+            sections.Add(new("Stats", statsFields));
+        }
+
+        // Derived Stats
+        if (npc.Stats != null)
+        {
+            var derivedFields = new List<ReportField>();
+            if (npc.SpecialStats is { Length: 7 } sp)
+            {
+                var baseHealth = sp[2] * 5 + 50;
+                var calcHealth = baseHealth + npc.Stats.Level * 10;
+                var calcFatigue = npc.Stats.FatigueBase + (sp[0] + sp[2]) * 10;
+                derivedFields.Add(new("Base Health", ReportValue.Int(baseHealth)));
+                derivedFields.Add(new("Calculated Health", ReportValue.Int(calcHealth)));
+                derivedFields.Add(new("Fatigue", ReportValue.Int(npc.Stats.FatigueBase)));
+                derivedFields.Add(new("Calc Fatigue", ReportValue.Int(calcFatigue)));
+                derivedFields.Add(new("Critical Chance", ReportValue.FloatDisplay(sp[6], $"{sp[6]}")));
+                derivedFields.Add(new("Speed Mult",
+                    ReportValue.Int(npc.Stats.SpeedMultiplier, $"{npc.Stats.SpeedMultiplier}%")));
+            }
+            else
+            {
+                derivedFields.Add(new("Fatigue", ReportValue.Int(npc.Stats.FatigueBase)));
+                derivedFields.Add(new("Speed Mult",
+                    ReportValue.Int(npc.Stats.SpeedMultiplier, $"{npc.Stats.SpeedMultiplier}%")));
+            }
+
+            derivedFields.Add(new("Karma",
+                ReportValue.FloatDisplay(npc.Stats.KarmaAlignment,
+                    $"{npc.Stats.KarmaAlignment:F2}{GeckReportHelpers.FormatKarmaLabel(npc.Stats.KarmaAlignment)}")));
+            derivedFields.Add(new("Disposition", ReportValue.Int(npc.Stats.DispositionBase)));
+            derivedFields.Add(new("Barter Gold", ReportValue.Int(npc.Stats.BarterGold)));
+            sections.Add(new("Derived Stats", derivedFields));
+        }
+
+        // Combat
+        if (npc.Race.HasValue || npc.Class.HasValue || npc.CombatStyleFormId.HasValue)
+        {
+            var combatFields = new List<ReportField>();
+            if (npc.Race.HasValue)
+                combatFields.Add(new("Race", ReportValue.FormId(npc.Race.Value, resolver),
+                    $"0x{npc.Race.Value:X8}"));
+            if (npc.Class.HasValue)
+                combatFields.Add(new("Class", ReportValue.FormId(npc.Class.Value, resolver),
+                    $"0x{npc.Class.Value:X8}"));
+            if (npc.CombatStyleFormId.HasValue)
+                combatFields.Add(new("Combat Style",
+                    ReportValue.FormId(npc.CombatStyleFormId.Value, resolver),
+                    $"0x{npc.CombatStyleFormId.Value:X8}"));
+            sections.Add(new("Combat", combatFields));
+        }
+
+        // Physical Traits
+        if (npc.HairFormId.HasValue || npc.EyesFormId.HasValue || npc.HairLength.HasValue ||
+            npc.HairColor.HasValue || npc.Height.HasValue || npc.Weight.HasValue)
+        {
+            var physFields = new List<ReportField>();
+            if (npc.HairFormId.HasValue)
+                physFields.Add(new("Hairstyle", ReportValue.FormId(npc.HairFormId.Value, resolver),
+                    $"0x{npc.HairFormId.Value:X8}"));
+            if (npc.HairLength.HasValue)
+                physFields.Add(new("Hair Length", ReportValue.Float(npc.HairLength.Value, "F2")));
+            if (npc.HairColor.HasValue)
+                physFields.Add(new("Hair Color",
+                    ReportValue.String(NpcRecord.FormatHairColor(npc.HairColor))));
+            if (npc.EyesFormId.HasValue)
+                physFields.Add(new("Eyes", ReportValue.FormId(npc.EyesFormId.Value, resolver),
+                    $"0x{npc.EyesFormId.Value:X8}"));
+            if (npc.Height.HasValue)
+                physFields.Add(new("Height", ReportValue.Float(npc.Height.Value, "F2")));
+            if (npc.Weight.HasValue)
+                physFields.Add(new("Weight", ReportValue.Float(npc.Weight.Value, "F1")));
+            sections.Add(new("Physical Traits", physFields));
+        }
+
+        // AI Data
+        if (npc.AiData != null)
+        {
+            sections.Add(new("AI Data",
+            [
+                new("Aggression",
+                    ReportValue.String($"{npc.AiData.AggressionName} ({npc.AiData.Aggression})")),
+                new("Confidence",
+                    ReportValue.String($"{npc.AiData.ConfidenceName} ({npc.AiData.Confidence})")),
+                new("Mood", ReportValue.String($"{npc.AiData.MoodName} ({npc.AiData.Mood})")),
+                new("Assistance",
+                    ReportValue.String($"{npc.AiData.AssistanceName} ({npc.AiData.Assistance})")),
+                new("Energy Level", ReportValue.Int(npc.AiData.EnergyLevel)),
+                new("Responsibility",
+                    ReportValue.String(
+                        $"{npc.AiData.ResponsibilityName} ({npc.AiData.Responsibility})"))
+            ]));
+        }
+
+        // References
+        if (npc.Script.HasValue || npc.VoiceType.HasValue || npc.Template.HasValue ||
+            npc.OriginalRace.HasValue || npc.FaceNpc.HasValue)
+        {
+            var refFields = new List<ReportField>();
+            if (npc.Script.HasValue)
+                refFields.Add(new("Script",
+                    ReportValue.FormId(npc.Script.Value,
+                        resolver.FormatWithEditorId(npc.Script.Value)),
+                    $"0x{npc.Script.Value:X8}"));
+            if (npc.VoiceType.HasValue)
+                refFields.Add(new("Voice Type",
+                    ReportValue.FormId(npc.VoiceType.Value,
+                        resolver.FormatWithEditorId(npc.VoiceType.Value)),
+                    $"0x{npc.VoiceType.Value:X8}"));
+            if (npc.Template.HasValue)
+                refFields.Add(new("Template", ReportValue.FormId(npc.Template.Value, resolver),
+                    $"0x{npc.Template.Value:X8}"));
+            if (npc.OriginalRace.HasValue)
+                refFields.Add(new("Original Race",
+                    ReportValue.FormId(npc.OriginalRace.Value, resolver),
+                    $"0x{npc.OriginalRace.Value:X8}"));
+            if (npc.FaceNpc.HasValue)
+                refFields.Add(new("Face NPC", ReportValue.FormId(npc.FaceNpc.Value, resolver),
+                    $"0x{npc.FaceNpc.Value:X8}"));
+            sections.Add(new("References", refFields));
+        }
+
+        // Factions
+        if (npc.Factions.Count > 0)
+        {
+            var factionItems = npc.Factions.OrderBy(f => f.FactionFormId)
+                .Select(f =>
+                {
+                    var editorId = resolver.ResolveEditorId(f.FactionFormId);
+                    var displayName = resolver.ResolveDisplayName(f.FactionFormId);
+                    return (ReportValue)new ReportValue.CompositeVal(
+                    [
+                        new("EditorID", ReportValue.String(editorId)),
+                        new("Name", ReportValue.String(displayName)),
+                        new("Rank", ReportValue.Int(f.Rank))
+                    ], $"{editorId} (Rank {f.Rank})");
+                })
+                .ToList();
+            sections.Add(new($"Factions ({npc.Factions.Count})",
+                [new("Factions", ReportValue.List(factionItems))]));
+        }
+
+        // Inventory
+        if (npc.Inventory.Count > 0)
+        {
+            var invItems = npc.Inventory.OrderBy(i => i.ItemFormId)
+                .Select(i =>
+                {
+                    var editorId = resolver.ResolveEditorId(i.ItemFormId);
+                    var displayName = resolver.ResolveDisplayName(i.ItemFormId);
+                    return (ReportValue)new ReportValue.CompositeVal(
+                    [
+                        new("EditorID", ReportValue.String(editorId)),
+                        new("Name", ReportValue.String(displayName)),
+                        new("Qty", ReportValue.Int(i.Count))
+                    ], $"{editorId} x{i.Count}");
+                })
+                .ToList();
+            sections.Add(new($"Inventory ({npc.Inventory.Count})",
+                [new("Items", ReportValue.List(invItems))]));
+        }
+
+        // Spells
+        if (npc.Spells.Count > 0)
+        {
+            var spellItems = npc.Spells.OrderBy(s => s)
+                .Select(s => (ReportValue)ReportValue.FormId(s, resolver))
+                .ToList();
+            sections.Add(new($"Spells/Abilities ({npc.Spells.Count})",
+                [new("Spells", ReportValue.List(spellItems))]));
+        }
+
+        // AI Packages
+        if (npc.Packages.Count > 0)
+        {
+            var pkgItems = npc.Packages.OrderBy(p => p)
+                .Select(p => (ReportValue)ReportValue.FormId(p, resolver))
+                .ToList();
+            sections.Add(new($"AI Packages ({npc.Packages.Count})",
+                [new("Packages", ReportValue.List(pkgItems))]));
+        }
+
+        // FaceGen Morph Data (store as raw hex strings for comparison — the computed projections
+        // depend on the race record which may not be available)
+        var hasFaceGen = npc.FaceGenGeometrySymmetric != null ||
+                         npc.FaceGenGeometryAsymmetric != null ||
+                         npc.FaceGenTextureSymmetric != null;
+        if (hasFaceGen)
+        {
+            var fgFields = new List<ReportField>();
+            if (npc.FaceGenGeometrySymmetric != null)
+                fgFields.Add(new("FGGS", ReportValue.String(FormatFaceGenHex(npc.FaceGenGeometrySymmetric))));
+            if (npc.FaceGenGeometryAsymmetric != null)
+                fgFields.Add(new("FGGA", ReportValue.String(FormatFaceGenHex(npc.FaceGenGeometryAsymmetric))));
+            if (npc.FaceGenTextureSymmetric != null)
+                fgFields.Add(new("FGTS", ReportValue.String(FormatFaceGenHex(npc.FaceGenTextureSymmetric))));
+            sections.Add(new("FaceGen Morph Data", fgFields));
+        }
+
+        return new RecordReport("NPC", npc.FormId, npc.EditorId, npc.FullName, sections);
+    }
+
+    private static string FormatFaceGenHex(float[] coefficients)
+    {
+        // Compact hex representation for comparison: first 8 coefficients only
+        if (coefficients.Length == 0) return "(empty)";
+        var count = Math.Min(8, coefficients.Length);
+        var nonZero = 0;
+        for (var i = 0; i < coefficients.Length; i++)
+            if (Math.Abs(coefficients[i]) > 0.001f) nonZero++;
+        return $"{nonZero}/{coefficients.Length} non-zero";
+    }
+
     internal static void AppendNpcReportEntry(
         StringBuilder sb,
         NpcRecord npc,
@@ -16,320 +274,8 @@ internal static class GeckActorDetailWriter
         RaceRecord? race = null)
     {
         sb.AppendLine();
-
-        // Header with both EditorID and display name
-        var title = !string.IsNullOrEmpty(npc.FullName)
-            ? $"NPC: {npc.EditorId ?? "(unknown)"} \u2014 {npc.FullName}"
-            : $"NPC: {npc.EditorId ?? "(unknown)"}";
-        sb.AppendLine(new string(GeckReportHelpers.SeparatorChar, GeckReportHelpers.SeparatorWidth));
-        var padding = (GeckReportHelpers.SeparatorWidth - title.Length) / 2;
-        sb.AppendLine(new string(' ', Math.Max(0, padding)) + title);
-        sb.AppendLine(new string(GeckReportHelpers.SeparatorChar, GeckReportHelpers.SeparatorWidth));
-
-        // Basic info
-        sb.AppendLine($"  FormID:         {GeckReportHelpers.FormatFormId(npc.FormId)}");
-        sb.AppendLine($"  Editor ID:      {npc.EditorId ?? "(none)"}");
-        sb.AppendLine($"  Display Name:   {npc.FullName ?? "(none)"}");
-
-        if (npc.Stats != null)
-        {
-            var gender = (npc.Stats.Flags & 1) == 1 ? "Female" : "Male";
-            sb.AppendLine($"  Gender:         {gender}");
-        }
-
-        // Stats
-        if (npc.Stats != null || npc.SpecialStats != null)
-        {
-            sb.AppendLine();
-            sb.AppendLine($"  \u2500\u2500 Stats {new string('\u2500', 73)}");
-
-            if (npc.Stats != null)
-            {
-                sb.AppendLine($"  Level:          {npc.Stats.Level}");
-            }
-
-            if (npc.SpecialStats is { Length: 7 })
-            {
-                var s = npc.SpecialStats;
-                var total = s[0] + s[1] + s[2] + s[3] + s[4] + s[5] + s[6];
-                sb.AppendLine(
-                    $"  S.P.E.C.I.A.L.: {s[0]} ST, {s[1]} PE, {s[2]} EN, {s[3]} CH, {s[4]} IN, {s[5]} AG, {s[6]} LK  (Total: {total})");
-            }
-
-            // Skills (14 bytes, skip BigGuns index 1 for FNV)
-            if (npc.Skills is { Length: 14 })
-            {
-                var sk = npc.Skills;
-
-                // Use AVIF-sourced names when available, resolver provides hardcoded fallback
-                string Sk(int i)
-                {
-                    return resolver.GetSkillName(i) ?? $"Skill#{i}";
-                }
-
-                sb.AppendLine("  Skills:");
-                sb.AppendLine(
-                    $"    {Sk(0),-18}{sk[0],3}    {Sk(2),-18}{sk[2],3}    {Sk(3),-18}{sk[3],3}");
-                sb.AppendLine($"    {Sk(9),-18}{sk[9],3}    {Sk(4),-18}{sk[4],3}    {Sk(5),-18}{sk[5],3}");
-                sb.AppendLine(
-                    $"    {Sk(6),-18}{sk[6],3}    {Sk(7),-18}{sk[7],3}    {Sk(8),-18}{sk[8],3}");
-                sb.AppendLine($"    {Sk(10),-18}{sk[10],3}    {Sk(11),-18}{sk[11],3}    {Sk(12),-18}{sk[12],3}");
-                sb.AppendLine($"    {Sk(13),-18}{sk[13],3}");
-            }
-        }
-
-        // Derived Stats (computed from SPECIAL + Level + Fatigue, plus ACBS stats)
-        if (npc.Stats != null)
-        {
-            sb.AppendLine();
-            sb.AppendLine($"  \u2500\u2500 Derived Stats {new string('\u2500', 65)}");
-
-            if (npc.SpecialStats is { Length: 7 } sp2)
-            {
-                var str = sp2[0];
-                var end = sp2[2];
-                var lck = sp2[6];
-                var baseHealth = end * 5 + 50;
-                var calcHealth = baseHealth + npc.Stats.Level * 10;
-                var calcFatigue = npc.Stats.FatigueBase + (str + end) * 10;
-                var critChance = (float)lck;
-                var meleeDamage = str * 0.5f;
-                var unarmedDamage = 0.5f + str * 0.1f;
-                var poisonResist = (end - 1) * 5f;
-                var radResist = (end - 1) * 2f;
-
-                sb.AppendLine($"  {"Base Health:",-18}{baseHealth,-10}{"Calculated Health:",-22}{calcHealth}");
-                sb.AppendLine($"  {"Fatigue:",-18}{npc.Stats.FatigueBase,-10}{"Calc Fatigue:",-22}{calcFatigue}");
-                sb.AppendLine(
-                    $"  {"Critical Chance:",-18}{critChance,-10:F0}{"Speed Mult:",-22}{npc.Stats.SpeedMultiplier}%");
-                sb.AppendLine($"  {"Melee Damage:",-18}{meleeDamage,-10:F2}{"Unarmed Damage:",-22}{unarmedDamage:F2}");
-                sb.AppendLine($"  {"Poison Resist:",-18}{poisonResist,-10:F2}{"Rad Resist:",-22}{radResist:F2}");
-            }
-            else
-            {
-                sb.AppendLine(
-                    $"  {"Fatigue:",-18}{npc.Stats.FatigueBase,-10}{"Speed Mult:",-22}{npc.Stats.SpeedMultiplier}%");
-            }
-
-            sb.AppendLine(
-                $"  {"Karma:",-18}{npc.Stats.KarmaAlignment:F2}{GeckReportHelpers.FormatKarmaLabel(npc.Stats.KarmaAlignment)}");
-            sb.AppendLine(
-                $"  {"Disposition:",-18}{npc.Stats.DispositionBase,-10}{"Barter Gold:",-22}{npc.Stats.BarterGold}");
-        }
-
-        // Combat
-        if (npc.Race.HasValue || npc.Class.HasValue || npc.CombatStyleFormId.HasValue || npc.Factions.Count > 0)
-        {
-            sb.AppendLine();
-            sb.AppendLine($"  \u2500\u2500 Combat {new string('\u2500', 72)}");
-
-            if (npc.Race.HasValue)
-            {
-                sb.AppendLine(
-                    $"  Race:           {resolver.FormatFull(npc.Race.Value)}");
-            }
-
-            if (npc.Class.HasValue)
-            {
-                sb.AppendLine(
-                    $"  Class:          {resolver.FormatFull(npc.Class.Value)}");
-            }
-
-            if (npc.CombatStyleFormId.HasValue)
-            {
-                sb.AppendLine(
-                    $"  Combat Style:   {resolver.FormatFull(npc.CombatStyleFormId.Value)}");
-            }
-        }
-
-        // Physical Traits
-        if (npc.HairFormId.HasValue || npc.EyesFormId.HasValue || npc.HairLength.HasValue ||
-            npc.HairColor.HasValue || npc.Height.HasValue || npc.Weight.HasValue)
-        {
-            sb.AppendLine();
-            sb.AppendLine($"  \u2500\u2500 Physical Traits {new string('\u2500', 63)}");
-
-            if (npc.HairFormId.HasValue)
-            {
-                sb.AppendLine(
-                    $"  Hairstyle:      {resolver.FormatFull(npc.HairFormId.Value)}");
-            }
-
-            if (npc.HairLength.HasValue)
-            {
-                sb.AppendLine($"  Hair Length:    {npc.HairLength.Value:F2}");
-            }
-
-            if (npc.HairColor.HasValue)
-            {
-                sb.AppendLine($"  Hair Color:    {NpcRecord.FormatHairColor(npc.HairColor)}");
-            }
-
-            if (npc.EyesFormId.HasValue)
-            {
-                sb.AppendLine(
-                    $"  Eyes:           {resolver.FormatFull(npc.EyesFormId.Value)}");
-            }
-
-            if (npc.Height.HasValue)
-            {
-                sb.AppendLine($"  Height:         {npc.Height.Value:F2}");
-            }
-
-            if (npc.Weight.HasValue)
-            {
-                sb.AppendLine($"  Weight:         {npc.Weight.Value:F1}");
-            }
-        }
-
-        // AI Data
-        if (npc.AiData != null)
-        {
-            sb.AppendLine();
-            sb.AppendLine($"  \u2500\u2500 AI Data {new string('\u2500', 71)}");
-            sb.AppendLine($"  Aggression:     {npc.AiData.AggressionName} ({npc.AiData.Aggression})");
-            sb.AppendLine($"  Confidence:     {npc.AiData.ConfidenceName} ({npc.AiData.Confidence})");
-            sb.AppendLine($"  Mood:           {npc.AiData.MoodName} ({npc.AiData.Mood})");
-            sb.AppendLine($"  Assistance:     {npc.AiData.AssistanceName} ({npc.AiData.Assistance})");
-            sb.AppendLine($"  Energy Level:   {npc.AiData.EnergyLevel}");
-            sb.AppendLine($"  Responsibility: {npc.AiData.ResponsibilityName} ({npc.AiData.Responsibility})");
-        }
-
-        // References
-        if (npc.Script.HasValue || npc.VoiceType.HasValue || npc.Template.HasValue ||
-            npc.OriginalRace.HasValue || npc.FaceNpc.HasValue)
-        {
-            sb.AppendLine();
-            sb.AppendLine($"  \u2500\u2500 References {new string('\u2500', 68)}");
-
-            if (npc.Script.HasValue)
-            {
-                sb.AppendLine($"  Script:         {resolver.FormatWithEditorId(npc.Script.Value)}");
-            }
-
-            if (npc.VoiceType.HasValue)
-            {
-                sb.AppendLine($"  Voice Type:     {resolver.FormatWithEditorId(npc.VoiceType.Value)}");
-            }
-
-            if (npc.Template.HasValue)
-            {
-                sb.AppendLine(
-                    $"  Template:       {resolver.FormatFull(npc.Template.Value)}");
-            }
-
-            if (npc.OriginalRace.HasValue)
-            {
-                sb.AppendLine(
-                    $"  Original Race:  {resolver.FormatFull(npc.OriginalRace.Value)}");
-            }
-
-            if (npc.FaceNpc.HasValue)
-            {
-                sb.AppendLine(
-                    $"  Face NPC:       {resolver.FormatFull(npc.FaceNpc.Value)}");
-            }
-        }
-
-        // Factions table
-        if (npc.Factions.Count > 0)
-        {
-            sb.AppendLine();
-            sb.AppendLine($"  Factions ({npc.Factions.Count}):");
-            sb.AppendLine($"    {"EditorID",-32} {"Name",-32} {"Rank",4}");
-            sb.AppendLine($"    {new string('\u2500', 32)} {new string('\u2500', 32)} {new string('\u2500', 4)}");
-
-            foreach (var faction in npc.Factions)
-            {
-                var editorId = resolver.ResolveEditorId(faction.FactionFormId);
-                var displayName = resolver.ResolveDisplayName(faction.FactionFormId);
-                sb.AppendLine(
-                    $"    {GeckReportHelpers.Truncate(editorId, 32),-32} {GeckReportHelpers.Truncate(displayName, 32),-32} {faction.Rank,4}");
-            }
-        }
-
-        // Inventory table
-        if (npc.Inventory.Count > 0)
-        {
-            sb.AppendLine();
-            sb.AppendLine($"  Inventory ({npc.Inventory.Count}):");
-            sb.AppendLine($"    {"EditorID",-32} {"Name",-32} {"Qty",5}");
-            sb.AppendLine($"    {new string('\u2500', 32)} {new string('\u2500', 32)} {new string('\u2500', 5)}");
-
-            foreach (var item in npc.Inventory)
-            {
-                var editorId = resolver.ResolveEditorId(item.ItemFormId);
-                var displayName = resolver.ResolveDisplayName(item.ItemFormId);
-                sb.AppendLine(
-                    $"    {GeckReportHelpers.Truncate(editorId, 32),-32} {GeckReportHelpers.Truncate(displayName, 32),-32} {item.Count,5}");
-            }
-        }
-
-        // Spells table
-        if (npc.Spells.Count > 0)
-        {
-            sb.AppendLine();
-            sb.AppendLine($"  Spells/Abilities ({npc.Spells.Count}):");
-            sb.AppendLine($"    {"EditorID",-32} {"Name",-32}");
-            sb.AppendLine($"    {new string('\u2500', 32)} {new string('\u2500', 32)}");
-
-            foreach (var spellId in npc.Spells)
-            {
-                var editorId = resolver.ResolveEditorId(spellId);
-                var displayName = resolver.ResolveDisplayName(spellId);
-                sb.AppendLine(
-                    $"    {GeckReportHelpers.Truncate(editorId, 32),-32} {GeckReportHelpers.Truncate(displayName, 32),-32}");
-            }
-        }
-
-        // AI Packages table
-        if (npc.Packages.Count > 0)
-        {
-            sb.AppendLine();
-            sb.AppendLine($"  AI Packages ({npc.Packages.Count}):");
-            sb.AppendLine($"    {"EditorID",-32} {"Name",-32}");
-            sb.AppendLine($"    {new string('\u2500', 32)} {new string('\u2500', 32)}");
-
-            foreach (var pkgId in npc.Packages)
-            {
-                var editorId = resolver.ResolveEditorId(pkgId);
-                var displayName = resolver.ResolveDisplayName(pkgId);
-                sb.AppendLine(
-                    $"    {GeckReportHelpers.Truncate(editorId, 32),-32} {GeckReportHelpers.Truncate(displayName, 32),-32}");
-            }
-        }
-
-        // FaceGen Morph Data
-        var hasFaceGen = npc.FaceGenGeometrySymmetric != null ||
-                         npc.FaceGenGeometryAsymmetric != null ||
-                         npc.FaceGenTextureSymmetric != null;
-        if (hasFaceGen)
-        {
-            sb.AppendLine();
-            sb.AppendLine($"  \u2500\u2500 FaceGen Morph Data {new string('\u2500', 60)}");
-
-            // NPC face data is an offset from the race's base face.
-            // Merge race base + NPC offset before projecting onto control vectors.
-            var isFemale = npc.Stats != null && (npc.Stats.Flags & 1) == 1;
-            var raceFggs = isFemale ? race?.FemaleFaceGenGeometrySymmetric : race?.MaleFaceGenGeometrySymmetric;
-            var raceFgga = isFemale ? race?.FemaleFaceGenGeometryAsymmetric : race?.MaleFaceGenGeometryAsymmetric;
-            var raceFgts = isFemale ? race?.FemaleFaceGenTextureSymmetric : race?.MaleFaceGenTextureSymmetric;
-
-            AppendFaceGenControlSection(sb, "Geometry-Symmetric",
-                npc.FaceGenGeometrySymmetric,
-                fggs => FaceGenControls.ComputeGeometrySymmetric(fggs, raceFggs));
-            AppendFaceGenRawHex(sb, "FGGS", npc.FaceGenGeometrySymmetric);
-
-            AppendFaceGenControlSection(sb, "Geometry-Asymmetric",
-                npc.FaceGenGeometryAsymmetric,
-                fgga => FaceGenControls.ComputeGeometryAsymmetric(fgga, raceFgga));
-            AppendFaceGenRawHex(sb, "FGGA", npc.FaceGenGeometryAsymmetric);
-
-            AppendFaceGenControlSection(sb, "Texture-Symmetric",
-                npc.FaceGenTextureSymmetric,
-                fgts => FaceGenControls.ComputeTextureSymmetric(fgts, raceFgts));
-            AppendFaceGenRawHex(sb, "FGTS", npc.FaceGenTextureSymmetric);
-        }
+        var report = BuildNpcReport(npc, resolver, race);
+        sb.Append(ReportTextFormatter.Format(report));
     }
 
     /// <summary>
@@ -378,119 +324,4 @@ internal static class GeckActorDetailWriter
         return sb.ToString();
     }
 
-    /// <summary>
-    ///     Append a FaceGen control section using CTL-based projections.
-    ///     Computes named slider values by projecting basis coefficients (FGGS/FGGA/FGTS)
-    ///     through the si.ctl linear control direction vectors.
-    ///     Controls are sorted alphabetically and grouped by facial region.
-    /// </summary>
-    internal static void AppendFaceGenControlSection(
-        StringBuilder sb,
-        string sectionLabel,
-        float[]? basisValues,
-        Func<float[], (string Name, float Value)[]> computeControls)
-    {
-        if (basisValues == null || basisValues.Length == 0)
-        {
-            return;
-        }
-
-        // Check if all basis values are zero
-        var basisActive = 0;
-        foreach (var v in basisValues)
-        {
-            if (Math.Abs(v) > 0.0001f)
-            {
-                basisActive++;
-            }
-        }
-
-        if (basisActive == 0)
-        {
-            sb.AppendLine($"  {sectionLabel} ({basisValues.Length} basis values): all zero");
-            return;
-        }
-
-        // Compute named control projections
-        var controls = computeControls(basisValues);
-        var activeControls = controls.Where(c => Math.Abs(c.Value) > 0.01f).ToList();
-        activeControls.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
-
-        sb.AppendLine($"  {sectionLabel} ({controls.Length} controls, {activeControls.Count} active):");
-
-        if (activeControls.Count == 0)
-        {
-            sb.AppendLine("    (all controls near zero)");
-            return;
-        }
-
-        foreach (var (name, value) in activeControls)
-        {
-            sb.AppendLine($"    {name,-45} {value,+8:F4}");
-        }
-    }
-
-    /// <summary>
-    ///     Append raw little-endian hex bytes for a FaceGen float array.
-    ///     Each float is converted to its IEEE 754 little-endian 4-byte representation
-    ///     (PC-compatible format for GECK import/ESM editing).
-    ///     This allows exact reproduction without floating-point rounding.
-    /// </summary>
-    internal static void AppendFaceGenRawHex(StringBuilder sb, string label, float[]? values)
-    {
-        if (values == null || values.Length == 0)
-        {
-            return;
-        }
-
-        // Check if all zero - skip hex if so
-        var allZero = true;
-        foreach (var v in values)
-        {
-            if (Math.Abs(v) > 0.0001f)
-            {
-                allZero = false;
-                break;
-            }
-        }
-
-        if (allZero)
-        {
-            return;
-        }
-
-        sb.AppendLine($"  {label} Raw Hex ({values.Length * 4} bytes, little-endian / PC):");
-
-        // Convert each float to little-endian bytes and format as hex
-        var hexLine = new StringBuilder("    ");
-        for (var i = 0; i < values.Length; i++)
-        {
-            var bytes = BitConverter.GetBytes(values[i]);
-            // BitConverter gives native endian (LE on x86); reverse if running on BE
-            if (!BitConverter.IsLittleEndian)
-            {
-                Array.Reverse(bytes);
-            }
-
-            hexLine.Append($"{bytes[0]:X2} {bytes[1]:X2} {bytes[2]:X2} {bytes[3]:X2}");
-
-            if (i < values.Length - 1)
-            {
-                hexLine.Append(' ');
-            }
-
-            // Line break every 10 floats (40 bytes) for readability
-            if ((i + 1) % 10 == 0 && i < values.Length - 1)
-            {
-                sb.AppendLine(hexLine.ToString().TrimEnd());
-                hexLine.Clear();
-                hexLine.Append("    ");
-            }
-        }
-
-        if (hexLine.Length > 4)
-        {
-            sb.AppendLine(hexLine.ToString().TrimEnd());
-        }
-    }
 }

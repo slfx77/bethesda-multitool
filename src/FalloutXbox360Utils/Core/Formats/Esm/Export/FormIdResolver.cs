@@ -161,6 +161,12 @@ public sealed class FormIdResolver
         return GetActorValueName(skillIndex + 32);
     }
 
+    /// <summary>
+    ///     Detected skill era profile, if available. Populated by
+    ///     <see cref="SkillEraDetector.Detect" /> after records are loaded.
+    /// </summary>
+    internal SkillEraDetector.SkillEraProfile? SkillEra { get; set; }
+
     #endregion
 
     #region Core Lookups

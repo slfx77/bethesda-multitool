@@ -102,7 +102,7 @@ internal static class GeckMiscWriter
         sb.AppendLine("  Note: These strings come from runtime memory pools, not ESM records.");
         sb.AppendLine("  Includes perk descriptions, skill descriptions, loading screen text,");
         sb.AppendLine("  and other game text not found in the dump's ESM data.");
-        sb.AppendLine("  See string_pool_*.csv files for full datasets.");
+        sb.AppendLine("  See string_owned_*.csv / string_unknown_owners.csv / string_unreferenced.csv for full datasets.");
     }
 
     internal static string GenerateStringOwnershipSummaryReport(RuntimeStringOwnershipAnalysis analysis)
@@ -246,6 +246,49 @@ internal static class GeckMiscWriter
         return sb.ToString();
     }
 
+    /// <summary>Build a structured leveled list report from a <see cref="LeveledListRecord" />.</summary>
+    internal static RecordReport BuildLeveledListReport(LeveledListRecord list, FormIdResolver resolver)
+    {
+        var sections = new List<ReportSection>();
+
+        // Identity
+        var identityFields = new List<ReportField>
+        {
+            new("Type", ReportValue.String(list.ListType)),
+            new("Chance None", ReportValue.Int(list.ChanceNone, $"{list.ChanceNone}%"))
+        };
+        if (!string.IsNullOrEmpty(list.FlagsDescription) && list.FlagsDescription != "None")
+            identityFields.Add(new("Flags", ReportValue.String(list.FlagsDescription)));
+        if (list.GlobalFormId is > 0)
+            identityFields.Add(new("Global", ReportValue.FormId(list.GlobalFormId.Value, resolver),
+                $"0x{list.GlobalFormId.Value:X8}"));
+        sections.Add(new("Identity", identityFields));
+
+        // Entries
+        if (list.Entries.Count > 0)
+        {
+            var entryItems = list.Entries.OrderBy(e => e.Level)
+                .Select(e =>
+                {
+                    var itemName = e.FormId != 0 ? resolver.FormatFull(e.FormId) : "(none)";
+                    return (ReportValue)new ReportValue.CompositeVal(
+                    [
+                        new("Level", ReportValue.Int(e.Level)),
+                        new("Item", ReportValue.String(itemName)),
+                        new("Count", ReportValue.Int(e.Count))
+                    ], $"Lv{e.Level} {itemName} x{e.Count}");
+                })
+                .ToList();
+
+            sections.Add(new($"Entries ({list.Entries.Count})",
+            [
+                new("Entries", ReportValue.List(entryItems))
+            ]));
+        }
+
+        return new RecordReport("Leveled List", list.FormId, list.EditorId, null, sections);
+    }
+
     internal static void AppendLeveledListsSection(StringBuilder sb, List<LeveledListRecord> lists,
         FormIdResolver resolver)
     {
@@ -306,6 +349,93 @@ internal static class GeckMiscWriter
     {
         var sb = new StringBuilder();
         AppendLeveledListsSection(sb, lists, resolver ?? FormIdResolver.Empty);
+        return sb.ToString();
+    }
+
+    // ── Form Lists ───────────────────────────────────────────────────────
+
+    internal static void AppendFormListsSection(StringBuilder sb, List<FormListRecord> formLists,
+        FormIdResolver resolver)
+    {
+        GeckReportHelpers.AppendSectionHeader(sb, $"Form Lists ({formLists.Count})");
+        sb.AppendLine();
+
+        var totalEntries = formLists.Sum(fl => fl.FormIds.Count);
+        sb.AppendLine($"Total Form Lists: {formLists.Count:N0}");
+        sb.AppendLine($"  Total Entries:  {totalEntries:N0}");
+        sb.AppendLine();
+
+        foreach (var fl in formLists.OrderBy(f => f.EditorId, StringComparer.OrdinalIgnoreCase))
+        {
+            sb.AppendLine(new string('\u2500', 80));
+            sb.AppendLine($"  FLST: {fl.EditorId ?? "(none)"} ({fl.FormIds.Count} entries)");
+            sb.AppendLine($"  FormID:      {GeckReportHelpers.FormatFormId(fl.FormId)}");
+
+            foreach (var entryId in fl.FormIds)
+            {
+                sb.AppendLine($"    - {resolver.FormatFull(entryId)}");
+            }
+
+            sb.AppendLine();
+        }
+    }
+
+    internal static string GenerateFormListsReport(List<FormListRecord> formLists,
+        FormIdResolver? resolver = null)
+    {
+        var sb = new StringBuilder();
+        AppendFormListsSection(sb, formLists, resolver ?? FormIdResolver.Empty);
+        return sb.ToString();
+    }
+
+    // ── Combat Styles ────────────────────────────────────────────────────
+
+    internal static void AppendCombatStylesSection(StringBuilder sb, List<CombatStyleRecord> styles)
+    {
+        GeckReportHelpers.AppendSectionHeader(sb, $"Combat Styles ({styles.Count})");
+        sb.AppendLine();
+
+        foreach (var cs in styles.OrderBy(s => s.EditorId, StringComparer.OrdinalIgnoreCase))
+        {
+            sb.AppendLine(new string('\u2500', 80));
+            sb.AppendLine($"  CSTY: {cs.EditorId ?? "(none)"}");
+            sb.AppendLine($"  FormID:      {GeckReportHelpers.FormatFormId(cs.FormId)}");
+
+            AppendCombatStyleData(sb, "Style Data (CSTD)", cs.StyleData);
+            AppendCombatStyleData(sb, "Advanced Data (CSAD)", cs.AdvancedData);
+            AppendCombatStyleData(sb, "Simple Data (CSSD)", cs.SimpleData);
+
+            sb.AppendLine();
+        }
+    }
+
+    private static void AppendCombatStyleData(StringBuilder sb, string label,
+        Dictionary<string, object?>? data)
+    {
+        if (data is not { Count: > 0 })
+        {
+            return;
+        }
+
+        sb.AppendLine($"  {label}:");
+        foreach (var (key, value) in data.OrderBy(kv => kv.Key))
+        {
+            var formatted = value switch
+            {
+                float f => f.ToString("F4"),
+                uint u => $"0x{u:X8}",
+                int i => i.ToString(),
+                byte b => b.ToString(),
+                _ => value?.ToString() ?? "(null)"
+            };
+            sb.AppendLine($"    {key,-30} {formatted}");
+        }
+    }
+
+    internal static string GenerateCombatStylesReport(List<CombatStyleRecord> styles)
+    {
+        var sb = new StringBuilder();
+        AppendCombatStylesSection(sb, styles);
         return sb.ToString();
     }
 }
