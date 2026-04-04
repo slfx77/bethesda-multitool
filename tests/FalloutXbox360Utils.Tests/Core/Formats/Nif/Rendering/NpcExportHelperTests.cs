@@ -40,33 +40,6 @@ public sealed class NpcExportHelperTests
     }
 
     [Fact]
-    public void FlipGreenChannel_FlipsOnlyGreenAndLeavesInputUntouched()
-    {
-        var source = new byte[]
-        {
-            10, 20, 30, 40,
-            50, 60, 70, 80
-        };
-
-        var flipped = NpcGlbTextureEncoder.FlipGreenChannel(source);
-
-        Assert.Equal(
-            new byte[]
-            {
-                10, 235, 30, 40,
-                50, 195, 70, 80
-            },
-            flipped);
-        Assert.Equal(
-            new byte[]
-            {
-                10, 20, 30, 40,
-                50, 60, 70, 80
-            },
-            source);
-    }
-
-    [Fact]
     public void EncodePng_WritesPngSignature()
     {
         var texture = DecodedTexture.FromBaseLevel(
@@ -80,7 +53,7 @@ public sealed class NpcExportHelperTests
             2,
             false);
 
-        var png = NpcGlbTextureEncoder.EncodePng(texture, true);
+        var png = NpcGlbTextureEncoder.EncodePng(texture);
 
         Assert.Equal(
             new byte[] { 0x89, 0x50, 0x4E, 0x47 },

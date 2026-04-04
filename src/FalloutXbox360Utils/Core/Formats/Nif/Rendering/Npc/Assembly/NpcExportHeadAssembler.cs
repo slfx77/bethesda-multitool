@@ -168,18 +168,30 @@ internal static class NpcExportHeadAssembler
                 npc.HairNifPath);
         }
 
+        // Some hair NIFs contain both actual hair strands and scalp/skin geometry.
+        // Hair strands have NiStencilProperty (IsDoubleSided=true); scalp shapes are
+        // single-sided and overlap the FaceGen head mesh, causing z-fighting dark bands.
+        // Only filter when the NIF has a mix — if all shapes are single-sided, keep them all.
+        if (hairModel.Submeshes.Any(s => s.IsDoubleSided))
+        {
+            hairModel.Submeshes.RemoveAll(s => !s.IsDoubleSided);
+        }
+
         var tint = NpcTextureHelpers.UnpackHairColor(npc.HairColor);
         foreach (var submesh in hairModel.Submeshes)
         {
             submesh.TintColor = tint;
-            submesh.IsDoubleSided = true;
-            // Hair normal maps cause dark streak artifacts in GLB viewers because
-            // the tangent space doesn't match the original authoring assumptions.
-            // The diffuse texture + vertex normals + tint color are sufficient.
-            submesh.NormalMapTexturePath = null;
             if (npc.HairTexturePath != null)
             {
                 submesh.DiffuseTexturePath = npc.HairTexturePath;
+            }
+
+            // Hair NIFs use flat per-face normals with unshared vertices. Recompute
+            // smooth normals with seam welding so coincident vertices get averaged,
+            // producing smooth shading across hair blade strips in GLB PBR viewers.
+            if (submesh.Normals != null)
+            {
+                FaceGenMeshMorpher.RecalculateNormals(submesh);
             }
         }
 

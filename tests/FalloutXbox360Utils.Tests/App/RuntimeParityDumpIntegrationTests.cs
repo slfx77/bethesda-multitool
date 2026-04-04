@@ -16,7 +16,7 @@ public sealed class RuntimeParityDumpIntegrationTests
     [Fact]
     public async Task RuntimeReader_OnDebugDump_ReadsWorldspaceAndCellParityData()
     {
-        var snippet = await DmpSnippetReader.LoadAsync(SnippetDir, "debug_dump");
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, "debug_dump");
         var reader = snippet.CreateStructReader();
 
         var wrldEntries = snippet.RuntimeEditorIds
@@ -45,7 +45,7 @@ public sealed class RuntimeParityDumpIntegrationTests
     [Fact]
     public async Task RuntimeReader_OnReleaseDump_ReadsListAndWorldObjectParityData()
     {
-        var snippet = await DmpSnippetReader.LoadAsync(SnippetDir, "release_dump");
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, "release_dump");
         var reader = snippet.CreateStructReader();
 
         var formLists = snippet.RuntimeEditorIds
@@ -132,7 +132,7 @@ public sealed class RuntimeParityDumpIntegrationTests
     [Fact]
     public async Task RuntimeReader_OnReleaseBetaVariant_ReadsEncounterZoneParityData()
     {
-        var snippet = await DmpSnippetReader.LoadAsync(SnippetDir, "xex4_dump");
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, "xex4_dump");
         var reader = snippet.CreateStructReader();
 
         var runtimeRefrs = snippet.RuntimeRefrFormEntries
@@ -149,7 +149,7 @@ public sealed class RuntimeParityDumpIntegrationTests
     [Fact]
     public async Task RuntimeReader_OnReleaseBetaVariant_ReadsMerchantContainerParityData()
     {
-        var snippet = await DmpSnippetReader.LoadAsync(SnippetDir, "xex4_dump");
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, "xex4_dump");
         var reader = snippet.CreateStructReader();
 
         var runtimeRefrs = snippet.RuntimeRefrFormEntries
@@ -171,7 +171,7 @@ public sealed class RuntimeParityDumpIntegrationTests
 
         foreach (var snippetName in AllSnippetNames)
         {
-            var snippet = await DmpSnippetReader.LoadAsync(SnippetDir, snippetName);
+            var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
             var runtimeReader = snippet.CreateStructReader();
 
             var topicEntries = snippet.RuntimeEditorIds
@@ -212,7 +212,7 @@ public sealed class RuntimeParityDumpIntegrationTests
 
         foreach (var snippetName in AllSnippetNames)
         {
-            var snippet = await DmpSnippetReader.LoadAsync(SnippetDir, snippetName);
+            var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
             var runtimeReader = snippet.CreateStructReader();
 
             var topicEntries = snippet.RuntimeEditorIds
@@ -255,7 +255,7 @@ public sealed class RuntimeParityDumpIntegrationTests
 
         foreach (var snippetName in AllSnippetNames)
         {
-            var snippet = await DmpSnippetReader.LoadAsync(SnippetDir, snippetName);
+            var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
             var runtimeReader = snippet.CreateStructReader();
 
             var projEntries = snippet.RuntimeEditorIds

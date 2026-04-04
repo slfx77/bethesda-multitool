@@ -302,11 +302,12 @@ Recommended read order:
 - The residual is localized and mixed:
   - mouth-heavy component
   - whole-face / eye-support component
-- So the strongest remaining write-side target is no longer the hidden tail of
-  `FUN_00586000` itself.
-- It is the adjacent or alternate race/default writer/helper stage that owns
-  the missing float-bank emission, not the race-only trailing helper family and
-  not the fake no-return edge on `FUN_008542C0`.
+- The writer-side ambiguity is now materially reduced:
+  - `FUN_00586000` itself is the explicit race/default writer sibling and its
+    raw tail already reaches `ENAM -> MNAM/FNAM -> FGGS -> FGGA -> FGTS -> SNAM`
+  - so the strongest remaining seam is no longer another alternate writer hunt
+  - it is the parser-side flag-lifetime window inside `FUN_00588520`,
+    especially `MAN2 -> MNAM/FNAM -> LAB_00588C06 -> SNAM`
 
 ## Demoted branches
 

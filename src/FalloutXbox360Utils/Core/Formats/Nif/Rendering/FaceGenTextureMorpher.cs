@@ -15,6 +15,8 @@ internal static class FaceGenTextureMorpher
     private const float EngineCompressedDeltaMin = -255f;
     private const float EngineCompressedDeltaMax = 255f;
     private const float EngineCompressedDeltaScale = 0.5f;
+    private const TextureAccumulationMode DefaultAccumulationMode = TextureAccumulationMode.EngineTruncated256;
+    private const DeltaTextureEncodingMode DefaultDeltaEncodingMode = DeltaTextureEncodingMode.EngineCompressed255HalfTruncate;
 
     /// <summary>
     ///     When set, exports debug PNG files of the accumulated EGT deltas
@@ -39,7 +41,7 @@ internal static class FaceGenTextureMorpher
         EgtParser egt,
         float[] textureCoeffs)
     {
-        return Apply(baseTexture, egt, textureCoeffs, TextureAccumulationMode.EngineQuantized256);
+        return Apply(baseTexture, egt, textureCoeffs, DefaultAccumulationMode, DefaultDeltaEncodingMode);
     }
 
     internal static DecodedTexture? Apply(
@@ -48,39 +50,27 @@ internal static class FaceGenTextureMorpher
         float[] textureCoeffs,
         TextureAccumulationMode accumulationMode)
     {
-        var texW = baseTexture.Width;
-        var texH = baseTexture.Height;
-        var egtW = egt.Cols;
-        var egtH = egt.Rows;
+        return Apply(baseTexture, egt, textureCoeffs, accumulationMode, DefaultDeltaEncodingMode);
+    }
 
-        if (texW <= 0 || texH <= 0 || egtW <= 0 || egtH <= 0)
-            return null;
-
-        // Clone the base texture pixels
-        var pixels = (byte[])baseTexture.Pixels.Clone();
-
-        var (nativeR, nativeG, nativeB) = AccumulateNativeDeltas(egt, textureCoeffs, accumulationMode);
-
-        // Debug export: EGT deltas at native resolution and upscaled resolution
-        if (DebugExportDir != null)
-            ExportDebugNative(nativeR, nativeG, nativeB, egtW, egtH);
-
-        var (deltaR, deltaG, deltaB) = UpscaleNativeDeltas(nativeR, nativeG, nativeB, egtW, egtH, texW, texH);
-
-        // Debug export: upscaled deltas
-        if (DebugExportDir != null)
-            ExportDebugUpscaled(deltaR, deltaG, deltaB, texW, texH);
-
-        // Apply accumulated deltas to pixels
-        for (var i = 0; i < texW * texH; i++)
+    internal static DecodedTexture? Apply(
+        DecodedTexture baseTexture,
+        EgtParser egt,
+        float[] textureCoeffs,
+        TextureAccumulationMode accumulationMode,
+        DeltaTextureEncodingMode encodingMode)
+    {
+        var encodedDeltaTexture = BuildNativeDeltaTexture(
+            egt,
+            textureCoeffs,
+            accumulationMode,
+            encodingMode);
+        if (encodedDeltaTexture == null)
         {
-            var pi = i * 4;
-            pixels[pi] = ClampByte(pixels[pi] + deltaR[i]);
-            pixels[pi + 1] = ClampByte(pixels[pi + 1] + deltaG[i]);
-            pixels[pi + 2] = ClampByte(pixels[pi + 2] + deltaB[i]);
+            return null;
         }
 
-        return DecodedTexture.FromBaseLevel(pixels, texW, texH);
+        return ApplyEncodedDeltaTexture(baseTexture, encodedDeltaTexture);
     }
 
     /// <summary>
@@ -94,8 +84,8 @@ internal static class FaceGenTextureMorpher
         return BuildNativeDeltaTexture(
             egt,
             textureCoeffs,
-            TextureAccumulationMode.EngineQuantized256,
-            DeltaTextureEncodingMode.EngineCompressed255Half);
+            DefaultAccumulationMode,
+            DefaultDeltaEncodingMode);
     }
 
     internal static DecodedTexture? BuildNativeDeltaTexture(
@@ -107,7 +97,7 @@ internal static class FaceGenTextureMorpher
             egt,
             textureCoeffs,
             accumulationMode,
-            DeltaTextureEncodingMode.EngineCompressed255Half);
+            DefaultDeltaEncodingMode);
     }
 
     internal static DecodedTexture? BuildNativeDeltaTexture(
@@ -131,6 +121,29 @@ internal static class FaceGenTextureMorpher
             egtH);
     }
 
+    internal static (float[] R, float[] G, float[] B)? BuildNativeDeltaBuffers(
+        EgtParser egt,
+        float[] textureCoeffs)
+    {
+        return BuildNativeDeltaBuffers(
+            egt,
+            textureCoeffs,
+            DefaultAccumulationMode);
+    }
+
+    internal static (float[] R, float[] G, float[] B)? BuildNativeDeltaBuffers(
+        EgtParser egt,
+        float[] textureCoeffs,
+        TextureAccumulationMode accumulationMode)
+    {
+        var egtW = egt.Cols;
+        var egtH = egt.Rows;
+        if (egtW <= 0 || egtH <= 0)
+            return null;
+
+        return AccumulateNativeDeltas(egt, textureCoeffs, accumulationMode);
+    }
+
     /// <summary>
     ///     Builds a neutral-gray RGBA texture representing the EGT deltas upscaled to an output size.
     ///     RGB is 128-centered, alpha is opaque.
@@ -146,8 +159,8 @@ internal static class FaceGenTextureMorpher
             textureCoeffs,
             outputWidth,
             outputHeight,
-            TextureAccumulationMode.EngineQuantized256,
-            DeltaTextureEncodingMode.EngineCompressed255Half);
+            DefaultAccumulationMode,
+            DefaultDeltaEncodingMode);
     }
 
     internal static DecodedTexture? BuildUpscaledDeltaTexture(
@@ -163,7 +176,7 @@ internal static class FaceGenTextureMorpher
             outputWidth,
             outputHeight,
             accumulationMode,
-            DeltaTextureEncodingMode.EngineCompressed255Half);
+            DefaultDeltaEncodingMode);
     }
 
     internal static DecodedTexture? BuildUpscaledDeltaTexture(
@@ -210,7 +223,7 @@ internal static class FaceGenTextureMorpher
         EgtParser egt,
         float[] textureCoeffs)
     {
-        return ApplyNativeResolution(baseTexture, egt, textureCoeffs, TextureAccumulationMode.EngineQuantized256);
+        return ApplyNativeResolution(baseTexture, egt, textureCoeffs, DefaultAccumulationMode);
     }
 
     internal static DecodedTexture? ApplyNativeResolution(
@@ -236,12 +249,11 @@ internal static class FaceGenTextureMorpher
         Parallel.For(0, egtH, y =>
         {
             var srcFy = (y + 0.5f) * texH / egtH - 0.5f;
-            var nativeRow = egtH - 1 - y;
 
             for (var x = 0; x < egtW; x++)
             {
                 var srcFx = (x + 0.5f) * texW / egtW - 0.5f;
-                var nativeIndex = nativeRow * egtW + x;
+                var nativeIndex = y * egtW + x;
                 var pixelIndex = (y * egtW + x) * 4;
                 var (r, g, b, a) = BilinearSampleTexture(baseTexture.Pixels, srcFx, srcFy, texW, texH);
 
@@ -311,7 +323,7 @@ internal static class FaceGenTextureMorpher
             nativeB,
             egtW,
             egtH,
-            DeltaTextureEncodingMode.EngineCompressed255Half);
+            DefaultDeltaEncodingMode);
 
         PngWriter.SaveRgba(nativePx, egtW, egtH,
             Path.Combine(DebugExportDir!, $"{label}_egt_native_{egtW}x{egtH}.png"));
@@ -329,7 +341,7 @@ internal static class FaceGenTextureMorpher
             deltaB,
             texW,
             texH,
-            DeltaTextureEncodingMode.EngineCompressed255Half);
+            DefaultDeltaEncodingMode);
 
         PngWriter.SaveRgba(upscaledPx, texW, texH,
             Path.Combine(DebugExportDir!, $"{label}_egt_upscaled_{texW}x{texH}.png"));
@@ -344,6 +356,7 @@ internal static class FaceGenTextureMorpher
         {
             TextureAccumulationMode.CurrentFloat => AccumulateNativeDeltasFloat(egt, textureCoeffs),
             TextureAccumulationMode.EngineQuantized256 => AccumulateNativeDeltasQuantized256(egt, textureCoeffs),
+            TextureAccumulationMode.EngineTruncated256 => AccumulateNativeDeltasQuantized256(egt, textureCoeffs),
             TextureAccumulationMode.EngineQuantized256Double => AccumulateNativeDeltasQuantized256Double(egt,
                 textureCoeffs),
             TextureAccumulationMode.EngineQuantizedCombined256 => AccumulateNativeDeltasQuantizedCombined(egt,
@@ -533,14 +546,10 @@ internal static class FaceGenTextureMorpher
         var nativePx = new byte[egtW * egtH * 4];
         for (var i = 0; i < egtW * egtH; i++)
         {
-            // V-flip to match DDS orientation: EGT row 0 = bottom, PNG row 0 = top
-            var srcRow = egtH - 1 - i / egtW;
-            var srcCol = i % egtW;
-            var srcIdx = srcRow * egtW + srcCol;
             var pi = i * 4;
-            nativePx[pi] = EncodeDeltaChannel(nativeR[srcIdx], encodingMode);
-            nativePx[pi + 1] = EncodeDeltaChannel(nativeG[srcIdx], encodingMode);
-            nativePx[pi + 2] = EncodeDeltaChannel(nativeB[srcIdx], encodingMode);
+            nativePx[pi] = EncodeDeltaChannel(nativeR[i], encodingMode);
+            nativePx[pi + 1] = EncodeDeltaChannel(nativeG[i], encodingMode);
+            nativePx[pi + 2] = EncodeDeltaChannel(nativeB[i], encodingMode);
             nativePx[pi + 3] = 255;
         }
 
@@ -618,9 +627,8 @@ internal static class FaceGenTextureMorpher
 
         Parallel.For(0, outputHeight, y =>
         {
-            // Map texture row to EGT coordinate (V-flipped —
-            // DDS stores top-to-bottom, EGT stores bottom-to-top)
-            var egtFy = egtH - 1 - (y + 0.5f) * egtH / outputHeight;
+            // The parser already materializes EGT rows in top-to-bottom image order.
+            var egtFy = (y + 0.5f) * egtH / outputHeight - 0.5f;
 
             for (var x = 0; x < outputWidth; x++)
             {
@@ -732,6 +740,7 @@ internal static class FaceGenTextureMorpher
     {
         CurrentFloat,
         EngineQuantized256,
+        EngineTruncated256,
         EngineQuantized256Double,
         EngineQuantizedCombined256,
         EngineQuantizedCombined65536

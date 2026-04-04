@@ -16,6 +16,7 @@ internal sealed class EgtParser
     private const string ExpectedMagic = "FREGT003";
     private const int HeaderSize = 64;
     private const int ChannelCount = 3; // RGB
+    private const int RowAlignment = 8;
 
     public int Cols { get; private init; }
     public int Rows { get; private init; }
@@ -46,9 +47,7 @@ internal sealed class EgtParser
         //   uStack_b0 (header offset 0) = row count (loop bound for row iteration)
         //   iStack_ac (header offset 4) = width (bytes read per row)
         // Note: Engine aligns row stride to 8 bytes: stride = (width + 7) & ~7.
-        //   For 256-wide EGTs this is a no-op. Non-8-aligned widths would need padding.
         // Note: Engine V-flips during parse (reads rows bottom-to-top into memory).
-        //   We read top-to-bottom here; V-flip is applied later in FaceGenTextureMorpher.
         var rows = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(8));
         var cols = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(12));
         var symCount = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(16));
@@ -110,26 +109,15 @@ internal sealed class EgtParser
         var scale = BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(offset));
         offset += 4;
 
-        var texelCount = rows * cols;
-
-        // 3 channels (R, G, B), each rows × cols int8 deltas
-        // File stores cols bytes per row with no padding
-        var channelSize = texelCount;
+        var rowStride = AlignTo(cols, RowAlignment);
+        var channelSize = rowStride * rows;
         var totalSize = ChannelCount * channelSize;
         if (offset + totalSize > data.Length)
             return null;
 
-        // Read all 3 channels as flat sbyte arrays
-        var r = new sbyte[texelCount];
-        var g = new sbyte[texelCount];
-        var b = new sbyte[texelCount];
-
-        Buffer.BlockCopy(data, offset, r, 0, texelCount);
-        offset += texelCount;
-        Buffer.BlockCopy(data, offset, g, 0, texelCount);
-        offset += texelCount;
-        Buffer.BlockCopy(data, offset, b, 0, texelCount);
-        offset += texelCount;
+        var r = ReadChannel(data, ref offset, cols, rows, rowStride);
+        var g = ReadChannel(data, ref offset, cols, rows, rowStride);
+        var b = ReadChannel(data, ref offset, cols, rows, rowStride);
 
         return new EgtMorph
         {
@@ -138,5 +126,28 @@ internal sealed class EgtParser
             DeltaG = g,
             DeltaB = b
         };
+    }
+
+    private static sbyte[] ReadChannel(byte[] data, ref int offset, int cols, int rows, int rowStride)
+    {
+        var channel = new sbyte[cols * rows];
+        for (var fileRow = 0; fileRow < rows; fileRow++)
+        {
+            var destinationRow = rows - 1 - fileRow;
+            var destinationOffset = destinationRow * cols;
+            for (var col = 0; col < cols; col++)
+            {
+                channel[destinationOffset + col] = unchecked((sbyte)data[offset + col]);
+            }
+
+            offset += rowStride;
+        }
+
+        return channel;
+    }
+
+    private static int AlignTo(int value, int alignment)
+    {
+        return (value + alignment - 1) & ~(alignment - 1);
     }
 }

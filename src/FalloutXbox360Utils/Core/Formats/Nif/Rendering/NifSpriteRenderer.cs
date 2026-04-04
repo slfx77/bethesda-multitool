@@ -380,7 +380,6 @@ internal static class NifSpriteRenderer
             }
 
             var alphaState = NifAlphaClassifier.Classify(submesh, texture);
-
             if (textureResolver != null && uvs != null && submesh.NormalMapTexturePath != null)
             {
                 normalMap = textureResolver.GetTexture(submesh.NormalMapTexturePath);
@@ -391,8 +390,10 @@ internal static class NifSpriteRenderer
             // Submeshes whose texture path was set but failed to load still render with
             // flat shading so the geometry remains visible (e.g., cut NPCs with missing textures).
             // Vertex-colored submeshes render even without texture (e.g., hair with HCLR tint).
+            // Alpha-blended submeshes always render (e.g., glass lenses may have no texture).
             if (textureResolver != null && texture == null &&
                 submesh.DiffuseTexturePath == null &&
+                !submesh.HasAlphaBlend &&
                 !(submesh.UseVertexColors && submesh.VertexColors != null))
             {
                 continue;
@@ -417,6 +418,9 @@ internal static class NifSpriteRenderer
                     X2 = pos[i2], Y2 = pos[i2 + 1], Z2 = pos[i2 + 2],
                     AvgZ = (pos[i0 + 2] + pos[i1 + 2] + pos[i2 + 2]) / 3f,
                     IsEmissive = submesh.IsEmissive,
+                    EmissiveR = submesh.AnimatedEmissiveColor?.R ?? 0f,
+                    EmissiveG = submesh.AnimatedEmissiveColor?.G ?? 0f,
+                    EmissiveB = submesh.AnimatedEmissiveColor?.B ?? 0f,
                     IsDoubleSided = submesh.IsDoubleSided,
                     HasAlphaBlend = alphaState.HasAlphaBlend,
                     HasAlphaTest = alphaState.HasAlphaTest,
@@ -426,6 +430,10 @@ internal static class NifSpriteRenderer
                     DstBlendMode = alphaState.DstBlendMode,
                     MaterialAlpha = alphaState.MaterialAlpha,
                     AlphaRenderMode = alphaState.RenderMode,
+                    Glossiness = submesh.MaterialGlossiness,
+                    SpecR = submesh.SpecularColor.R,
+                    SpecG = submesh.SpecularColor.G,
+                    SpecB = submesh.SpecularColor.B,
                     IsEyeEnvmap = submesh.IsEyeEnvmap,
                     EnvMapScale = submesh.EnvMapScale,
                     RenderOrder = submesh.RenderOrder,

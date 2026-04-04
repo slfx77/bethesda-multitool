@@ -20,6 +20,12 @@ internal static class NpcAppearanceIndexBuilder
                         record.FormId,
                         NpcRecordScanner.Process(esmData, bigEndian, record));
                     break;
+                case "CREA":
+                    AddIfPresent(
+                        index.Creatures,
+                        record.FormId,
+                        CreatureRecordScanner.Process(esmData, bigEndian, record));
+                    break;
                 case "RACE":
                     AddIfPresent(
                         index.Races,

@@ -38,7 +38,7 @@ public sealed class RuntimeNpcDumpRegressionTests
 
     private static async Task<NpcRecord?> LoadNpcAsync(string snippetName, string editorId)
     {
-        var snippet = await DmpSnippetReader.LoadAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
 
         var npcEntries = snippet.RuntimeEditorIds
             .Where(entry => entry.FormType == 0x2A)

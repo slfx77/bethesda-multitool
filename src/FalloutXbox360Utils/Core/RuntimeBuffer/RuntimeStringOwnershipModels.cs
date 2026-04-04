@@ -19,6 +19,10 @@ public sealed class RuntimeStringOwnerResolution
     public long? ReferrerVa { get; init; }
     public long? ReferrerFileOffset { get; init; }
     public string? ReferrerContext { get; init; }
+    public ClaimSource? ClaimSource { get; init; }
+    public string? OwnerRecordType { get; init; }
+    public string? OwnerFieldOrSubrecord { get; init; }
+    public IReadOnlyList<(long FileOffset, long Va, string? Context)>? AllReferrers { get; init; }
 }
 
 public sealed class RuntimeStringHit
@@ -45,6 +49,7 @@ public sealed class RuntimeStringOwnershipAnalysis
     public List<RuntimeStringHit> UnreferencedHits { get; } = [];
     public Dictionary<StringCategory, int> CategoryCounts { get; } = [];
     public Dictionary<RuntimeStringOwnershipStatus, int> StatusCounts { get; } = [];
+    public Dictionary<ClaimSource, int> ClaimSourceCounts { get; } = [];
 }
 
 internal sealed record RuntimeDecodedString(
@@ -54,13 +59,28 @@ internal sealed record RuntimeDecodedString(
     int Length,
     StringCategory Category);
 
+public enum ClaimSource
+{
+    RawRecordSubrecord,
+    RuntimeStructField,
+    TextContentMatch,
+    SecondPassVtable,
+    SecondPassReverse,
+    SecondPassReverseRelaxed,
+    ManagerGlobal,
+    RuntimeEditorId
+}
+
 internal sealed record RuntimeStringOwnershipClaim(
     long StringFileOffset,
     long? StringVirtualAddress,
     string OwnerKind,
     string OwnerName,
     uint? OwnerFormId,
-    long? OwnerFileOffset);
+    long? OwnerFileOffset,
+    ClaimSource ClaimSource = ClaimSource.ManagerGlobal,
+    string? OwnerRecordType = null,
+    string? OwnerFieldOrSubrecord = null);
 
 internal sealed record RuntimeStringReportData(
     StringPoolSummary StringPool,

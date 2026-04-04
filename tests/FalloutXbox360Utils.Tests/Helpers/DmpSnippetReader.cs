@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Text.Json;
 using FalloutXbox360Utils.Core.Formats.Esm;
@@ -37,6 +38,20 @@ internal sealed class DmpSnippetReader
         RuntimeEditorIds = manifest.RuntimeEditorIds;
         RuntimeRefrFormEntries = manifest.RuntimeRefrFormEntries;
         FormIdMap = manifest.FormIdMap;
+    }
+
+    private static readonly ConcurrentDictionary<string, Lazy<Task<DmpSnippetReader>>> SnippetCache = new();
+
+    /// <summary>
+    ///     Load a snippet from disk, caching the result across all tests in the run.
+    ///     Safe for concurrent access — each snippet is loaded exactly once.
+    /// </summary>
+    public static Task<DmpSnippetReader> LoadCachedAsync(string snippetDir, string snippetName)
+    {
+        return SnippetCache.GetOrAdd(
+            snippetName,
+            name => new Lazy<Task<DmpSnippetReader>>(() => LoadAsync(snippetDir, name))
+        ).Value;
     }
 
     /// <summary>

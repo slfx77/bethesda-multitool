@@ -21,7 +21,8 @@ internal sealed class BufferAnalysisContext
         PdbAnalysisResult? pdbAnalysis,
         IReadOnlyList<RuntimeEditorIdEntry>? runtimeEditorIds,
         uint moduleStart,
-        uint moduleEnd)
+        uint moduleEnd,
+        IReadOnlyList<GmstRecord>? gameSettings = null)
     {
         Accessor = accessor;
         FileSize = fileSize;
@@ -31,6 +32,7 @@ internal sealed class BufferAnalysisContext
         RuntimeEditorIds = runtimeEditorIds;
         ModuleStart = moduleStart;
         ModuleEnd = moduleEnd;
+        GameSettings = gameSettings;
     }
 
     public MemoryMappedViewAccessor Accessor { get; }
@@ -41,6 +43,7 @@ internal sealed class BufferAnalysisContext
     public IReadOnlyList<RuntimeEditorIdEntry>? RuntimeEditorIds { get; }
     public uint ModuleStart { get; }
     public uint ModuleEnd { get; }
+    public IReadOnlyList<GmstRecord>? GameSettings { get; }
 
     /// <summary>
     ///     Check if a 32-bit value is a valid pointer in the minidump.
@@ -100,7 +103,8 @@ internal sealed class RuntimeBufferAnalyzer
         MinidumpInfo minidumpInfo,
         CoverageResult coverage,
         PdbAnalysisResult? pdbAnalysis,
-        IReadOnlyList<RuntimeEditorIdEntry>? runtimeEditorIds = null)
+        IReadOnlyList<RuntimeEditorIdEntry>? runtimeEditorIds = null,
+        IReadOnlyList<GmstRecord>? gameSettings = null)
     {
         var gameModule = MinidumpAnalyzer.FindGameModule(minidumpInfo);
         uint moduleStart = 0;
@@ -113,7 +117,7 @@ internal sealed class RuntimeBufferAnalyzer
 
         _ctx = new BufferAnalysisContext(
             accessor, fileSize, minidumpInfo, coverage, pdbAnalysis, runtimeEditorIds,
-            moduleStart, moduleEnd);
+            moduleStart, moduleEnd, gameSettings);
 
         var stringExtractor = new RuntimeBufferStringExtractor(_ctx);
         _pointerAnalyzer = new RuntimeBufferPointerAnalyzer(_ctx);

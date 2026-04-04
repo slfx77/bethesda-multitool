@@ -195,7 +195,7 @@ public static class SnapshotMapper
                 Value = (int)c.Value,
                 Weight = c.Weight,
                 Flags = c.Flags,
-                EffectFormIds = [.. c.EffectFormIds]
+                EffectFormIds = [.. c.Effects.Select(e => e.EffectFormId)]
             });
         }
 

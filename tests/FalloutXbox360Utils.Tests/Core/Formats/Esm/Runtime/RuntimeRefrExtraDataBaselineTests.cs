@@ -121,7 +121,7 @@ public sealed class RuntimeRefrExtraDataBaselineTests
             Assert.True(SamplePathToSnippet.TryGetValue(baseline.SamplePath, out var snippetName),
                 $"No snippet mapping for baseline '{baseline.Label}': {baseline.SamplePath}");
 
-            var snippet = await DmpSnippetReader.LoadAsync(SnippetDir, snippetName);
+            var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
             var observed = ObserveSnippet(snippet, baseline.SampleLimit);
             var mismatch = BuildMismatchMessage(baseline, observed);
 

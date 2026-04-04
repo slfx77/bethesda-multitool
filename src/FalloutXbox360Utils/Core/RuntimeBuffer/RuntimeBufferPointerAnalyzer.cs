@@ -66,7 +66,8 @@ internal sealed class RuntimeBufferPointerAnalyzer
                     OwnerFileOffset = claim.OwnerFileOffset,
                     ReferrerVa = referrerInfo?.ReferrerVa,
                     ReferrerFileOffset = referrerInfo?.ReferrerFileOffset,
-                    ReferrerContext = referrerInfo?.ReferrerContext
+                    ReferrerContext = referrerInfo?.ReferrerContext,
+                    AllReferrers = referrerInfo?.AllReferrers
                 };
                 analysis.OwnedHits.Add(hit);
             }
@@ -77,7 +78,8 @@ internal sealed class RuntimeBufferPointerAnalyzer
                 {
                     ReferrerVa = referrerInfo.ReferrerVa,
                     ReferrerFileOffset = referrerInfo.ReferrerFileOffset,
-                    ReferrerContext = referrerInfo.ReferrerContext
+                    ReferrerContext = referrerInfo.ReferrerContext,
+                    AllReferrers = referrerInfo.AllReferrers
                 };
                 analysis.ReferencedOwnerUnknownHits.Add(hit);
             }
@@ -94,6 +96,10 @@ internal sealed class RuntimeBufferPointerAnalyzer
             analysis.StatusCounts.TryGetValue(hit.OwnershipStatus, out var statusCount);
             analysis.StatusCounts[hit.OwnershipStatus] = statusCount + 1;
         }
+
+        // Second pass: resolve remaining unknowns via BSStringT, vtable, and text-content strategies
+        var secondPass = new SecondPassOwnershipResolver(_ctx);
+        secondPass.Resolve(analysis);
 
         result.StringOwnership = analysis;
     }
@@ -236,11 +242,18 @@ internal sealed class RuntimeBufferPointerAnalyzer
                     }
 
                     info.Count++;
+                    var context = DescribeReferrerContext(referrerFileOffset);
                     if (info.ReferrerFileOffset == null)
                     {
                         info.ReferrerFileOffset = referrerFileOffset;
                         info.ReferrerVa = referrerVa;
-                        info.ReferrerContext = DescribeReferrerContext(referrerFileOffset);
+                        info.ReferrerContext = context;
+                    }
+
+                    info.AllReferrers ??= [];
+                    if (info.AllReferrers.Count < 32)
+                    {
+                        info.AllReferrers.Add((referrerFileOffset, (long)referrerVa, context));
                     }
                 }
 
@@ -309,6 +322,7 @@ internal sealed class RuntimeBufferPointerAnalyzer
         public long? ReferrerVa { get; set; }
         public long? ReferrerFileOffset { get; set; }
         public string? ReferrerContext { get; set; }
+        public List<(long FileOffset, long Va, string? Context)>? AllReferrers { get; set; }
     }
 
     #endregion

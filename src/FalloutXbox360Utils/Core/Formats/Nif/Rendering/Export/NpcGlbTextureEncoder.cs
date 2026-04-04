@@ -5,22 +5,8 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
 
 internal static class NpcGlbTextureEncoder
 {
-    internal static byte[] EncodePng(DecodedTexture texture, bool flipGreenChannel = false)
+    internal static byte[] EncodePng(DecodedTexture texture)
     {
-        var pixels = flipGreenChannel
-            ? FlipGreenChannel(texture.Pixels)
-            : texture.Pixels;
-        return PngWriter.EncodeRgba(pixels, texture.Width, texture.Height);
-    }
-
-    internal static byte[] FlipGreenChannel(byte[] pixels)
-    {
-        var copy = (byte[])pixels.Clone();
-        for (var index = 1; index < copy.Length; index += 4)
-        {
-            copy[index] = (byte)(255 - copy[index]);
-        }
-
-        return copy;
+        return PngWriter.EncodeRgba(texture.Pixels, texture.Width, texture.Height);
     }
 }

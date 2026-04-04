@@ -15,9 +15,10 @@ public sealed class Logger
     private static readonly Lock SyncLock = new();
 
     /// <summary>
-    ///     Custom output writer for testing. When set, bypasses Spectre.Console.
+    ///     Custom output writer for testing. Uses AsyncLocal so each test's async context
+    ///     gets its own writer, allowing Logger-dependent tests to run in parallel.
     /// </summary>
-    private TextWriter? _customOutput;
+    private static readonly AsyncLocal<TextWriter?> CustomOutput = new();
 
     /// <summary>
     ///     Optional file writer for logging to file (useful for GUI apps).
@@ -81,7 +82,7 @@ public sealed class Logger
     /// </summary>
     public void SetOutput(TextWriter writer)
     {
-        _customOutput = writer;
+        CustomOutput.Value = writer;
     }
 
     /// <summary>
@@ -210,10 +211,11 @@ public sealed class Logger
         }
 
         // If custom output is set (for testing), use plain text output
-        if (_customOutput != null)
+        var customWriter = CustomOutput.Value;
+        if (customWriter != null)
         {
             var prefix = BuildPlainPrefix(level);
-            _customOutput.WriteLine(prefix + message);
+            customWriter.WriteLine(prefix + message);
             return;
         }
 
@@ -285,6 +287,6 @@ public sealed class Logger
         UseSpectre = true;
         IncludeTimestamp = false;
         IncludeLevel = true;
-        _customOutput = null;
+        CustomOutput.Value = null;
     }
 }

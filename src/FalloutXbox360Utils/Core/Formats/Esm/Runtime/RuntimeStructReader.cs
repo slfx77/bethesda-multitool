@@ -33,6 +33,7 @@ public sealed class RuntimeStructReader
     private readonly RuntimeRefrReader _refrs;
     private readonly RuntimeReputationReader _reputations;
     private readonly RuntimeScriptReader _scripts;
+    private readonly RuntimeMusicTypeReader _musicTypes;
     private readonly RuntimeSoundReader _sounds;
     private readonly RuntimeWeaponModReader _weaponMods;
     private readonly RuntimeWorldReader _world;
@@ -61,7 +62,7 @@ public sealed class RuntimeStructReader
         _context = new RuntimeMemoryContext(accessor, fileSize, minidumpInfo);
         _actors = new RuntimeActorReader(_context, npcLayoutProbe);
         _generic = new RuntimeGenericReader(_context, probeResults?.GenericTypeShifts);
-        _items = new RuntimeItemReader(_context);
+        _items = new RuntimeItemReader(_context, probeResults?.WeaponSoundLayout);
         _dialogue = new RuntimeDialogueReader(_context);
         _effects = new RuntimeEffectReader(_context, probeResults?.EffectLayout);
         _scripts = new RuntimeScriptReader(_context);
@@ -78,6 +79,7 @@ public sealed class RuntimeStructReader
         _classes = new RuntimeClassReader(_context);
         _appearance = new RuntimeCharacterAppearanceReader(_context);
         _reputations = new RuntimeReputationReader(_context);
+        _musicTypes = new RuntimeMusicTypeReader(_context);
         _sounds = new RuntimeSoundReader(_context);
         _books = new RuntimeBookReader(_context, probeResults?.BookLayout);
         _weaponMods = new RuntimeWeaponModReader(_context);
@@ -141,6 +143,7 @@ public sealed class RuntimeStructReader
                 RaceLayout = RuntimeRaceProbe.Probe(context, allEntries),
                 EffectLayout = RuntimeEffectProbe.Probe(context, allEntries),
                 MagicLayout = RuntimeMagicProbe.Probe(context, allEntries),
+                WeaponSoundLayout = RuntimeWeaponSoundProbe.Probe(context, allEntries),
                 GenericTypeShifts = RuntimeGenericReader.ProbeAllTypeShifts(context, allEntries)
             };
         }
@@ -160,6 +163,11 @@ public sealed class RuntimeStructReader
     public ProjectilePhysicsData? ReadProjectilePhysics(long fileOffset, uint expectedFormId)
     {
         return _effects.ReadProjectilePhysics(fileOffset, expectedFormId);
+    }
+
+    public ProjectileRecord? ReadRuntimeProjectile(RuntimeEditorIdEntry entry)
+    {
+        return _effects.ReadRuntimeProjectile(entry);
     }
 
     #endregion
@@ -228,6 +236,11 @@ public sealed class RuntimeStructReader
     #endregion
 
     #region Sounds
+
+    public MusicTypeRecord? ReadRuntimeMusicType(RuntimeEditorIdEntry entry)
+    {
+        return _musicTypes.ReadRuntimeMusicType(entry);
+    }
 
     public SoundRecord? ReadRuntimeSound(RuntimeEditorIdEntry entry)
     {

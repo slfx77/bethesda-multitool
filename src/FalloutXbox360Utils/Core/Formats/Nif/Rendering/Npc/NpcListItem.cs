@@ -3,7 +3,7 @@ using System.ComponentModel;
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc;
 
 /// <summary>
-///     Lightweight NPC descriptor for the GUI NPC browser list.
+///     Lightweight NPC/creature descriptor for the GUI browser list.
 ///     Implements INotifyPropertyChanged for two-way binding of IsSelected.
 /// </summary>
 internal sealed class NpcListItem : INotifyPropertyChanged
@@ -19,6 +19,16 @@ internal sealed class NpcListItem : INotifyPropertyChanged
         RaceFormId = raceFormId;
     }
 
+    public NpcListItem(uint formId, string? editorId, string? fullName, string? modelPath, string creatureTypeName)
+    {
+        FormId = formId;
+        EditorId = editorId;
+        FullName = fullName;
+        ModelPath = modelPath;
+        CreatureTypeName = creatureTypeName;
+        IsCreature = true;
+    }
+
     public uint FormId { get; }
 
     public string? EditorId { get; }
@@ -29,6 +39,12 @@ internal sealed class NpcListItem : INotifyPropertyChanged
 
     public uint? RaceFormId { get; }
 
+    public bool IsCreature { get; }
+
+    public string? CreatureTypeName { get; }
+
+    public string? ModelPath { get; }
+
     /// <summary>
     ///     When true, DisplayName shows EditorID (FormID) instead of FullName.
     ///     Toggled by the NPC browser's "Show Editor ID" checkbox.
@@ -37,7 +53,9 @@ internal sealed class NpcListItem : INotifyPropertyChanged
 
     public string DisplayName => ShowEditorId
         ? $"{EditorId ?? "?"} (0x{FormId:X8})"
-        : FullName ?? EditorId ?? $"0x{FormId:X8}";
+        : IsCreature
+            ? $"{FullName ?? EditorId ?? $"0x{FormId:X8}"} [{CreatureTypeName}]"
+            : FullName ?? EditorId ?? $"0x{FormId:X8}";
 
     public bool IsSelected
     {

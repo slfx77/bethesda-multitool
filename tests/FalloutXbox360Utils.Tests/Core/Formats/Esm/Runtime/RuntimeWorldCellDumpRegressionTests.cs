@@ -12,7 +12,7 @@ public sealed class RuntimeWorldCellDumpRegressionTests
     [Fact]
     public async Task Probe_OnDebugDump_IsHighConfidence()
     {
-        var snippet = await DmpSnippetReader.LoadAsync(SnippetDir, "debug_dump");
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, "debug_dump");
         var result = ProbeSnippet(snippet);
 
         Assert.NotNull(result.Probe);
@@ -23,7 +23,7 @@ public sealed class RuntimeWorldCellDumpRegressionTests
     [Fact]
     public async Task Probe_OnReleaseDump_ReturnsCellBackedCandidate()
     {
-        var snippet = await DmpSnippetReader.LoadAsync(SnippetDir, "release_dump");
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, "release_dump");
         var result = ProbeSnippet(snippet);
 
         AssertReleaseBetaFamilyProbe(result);
@@ -32,7 +32,7 @@ public sealed class RuntimeWorldCellDumpRegressionTests
     [Fact]
     public async Task Probe_OnReleaseDumpXex4_ReturnsCellBackedCandidate()
     {
-        var snippet = await DmpSnippetReader.LoadAsync(SnippetDir, "xex4_dump");
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, "xex4_dump");
         var result = ProbeSnippet(snippet);
 
         AssertReleaseBetaFamilyProbe(result);
@@ -41,7 +41,7 @@ public sealed class RuntimeWorldCellDumpRegressionTests
     [Fact]
     public async Task Probe_OnReleaseDumpXex44_ReturnsCellBackedCandidate()
     {
-        var snippet = await DmpSnippetReader.LoadAsync(SnippetDir, "xex44_dump");
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, "xex44_dump");
         var result = ProbeSnippet(snippet);
 
         AssertReleaseBetaFamilyProbe(result);
@@ -50,7 +50,7 @@ public sealed class RuntimeWorldCellDumpRegressionTests
     [Fact]
     public async Task Probe_OnMemDebugDump_IsHighConfidence()
     {
-        var snippet = await DmpSnippetReader.LoadAsync(SnippetDir, "memdebug_dump");
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, "memdebug_dump");
         var result = ProbeSnippet(snippet);
 
         Assert.NotNull(result.Probe);

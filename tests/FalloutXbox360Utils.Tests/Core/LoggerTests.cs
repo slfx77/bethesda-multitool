@@ -3,7 +3,6 @@ using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core;
 
-[Collection(LoggerSerialTestGroup.Name)]
 public class LoggerTests : IDisposable
 {
     private readonly StringWriter _output = new();

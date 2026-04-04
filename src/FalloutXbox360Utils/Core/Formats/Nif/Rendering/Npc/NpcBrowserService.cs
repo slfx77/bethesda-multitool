@@ -46,6 +46,7 @@ internal sealed class NpcBrowserService : IDisposable
     }
 
     public int NpcCount => _dmpAppearances?.Count ?? _resolver.NpcCount;
+    public int CreatureCount => _resolver.CreatureCount;
     public int RaceCount => _resolver.RaceCount;
     public bool IsDmpMode => _dmpAppearances != null;
 
@@ -182,7 +183,8 @@ internal sealed class NpcBrowserService : IDisposable
         }
 
         var npcs = _resolver.GetAllNpcs();
-        var list = new List<NpcListItem>(npcs.Count);
+        var creatures = _resolver.GetAllCreatures();
+        var list = new List<NpcListItem>(npcs.Count + creatures.Count);
 
         foreach (var (formId, npc) in npcs)
         {
@@ -192,6 +194,16 @@ internal sealed class NpcBrowserService : IDisposable
             }
 
             list.Add(new NpcListItem(formId, npc.EditorId, npc.FullName, npc.IsFemale, npc.RaceFormId));
+        }
+
+        foreach (var (formId, creature) in creatures)
+        {
+            if (namedOnly && string.IsNullOrEmpty(creature.FullName))
+            {
+                continue;
+            }
+
+            list.Add(new NpcListItem(formId, creature.EditorId, creature.FullName, creature.ResolveBodyModelPath(), creature.CreatureTypeName));
         }
 
         list.Sort((a, b) =>
@@ -222,6 +234,45 @@ internal sealed class NpcBrowserService : IDisposable
 
         var scene = NpcExportSceneBuilder.Build(
             appearance, _meshArchives, _textureResolver, _egmCache, _egtCache, settings);
+
+        if (scene == null || scene.MeshParts.Count == 0)
+        {
+            return null;
+        }
+
+        return NpcGlbWriter.WriteToBytes(scene, _textureResolver);
+    }
+
+    public byte[]? BuildCreatureGlb(uint creatureFormId, bool bindPose = false)
+    {
+        var creatures = _resolver.GetAllCreatures();
+        if (!creatures.TryGetValue(creatureFormId, out var creature))
+        {
+            return null;
+        }
+
+        if (creature.SkeletonPath == null || creature.BodyModelPaths is not { Length: > 0 })
+        {
+            return null;
+        }
+
+        // Resolve first weapon from creature inventory
+        string? weaponMeshPath = null;
+        if (creature.InventoryItems != null)
+        {
+            foreach (var item in creature.InventoryItems)
+            {
+                weaponMeshPath = _resolver.ResolveWeaponMeshPath(item.ItemFormId);
+                if (weaponMeshPath != null)
+                {
+                    break;
+                }
+            }
+        }
+
+        var scene = NifExportSceneBuilder.BuildCreature(
+            creature.SkeletonPath, creature.BodyModelPaths, _meshArchives, bindPose,
+            creature.ResolveIdleAnimationPath(), weaponMeshPath);
 
         if (scene == null || scene.MeshParts.Count == 0)
         {

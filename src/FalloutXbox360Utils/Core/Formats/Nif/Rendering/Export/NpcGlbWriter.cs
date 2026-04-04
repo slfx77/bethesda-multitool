@@ -369,7 +369,7 @@ internal static class NpcGlbWriter
         if (!submesh.IsEmissive && normalTexture != null)
         {
             var image = ImageBuilder.From(
-                new MemoryImage(NpcGlbTextureEncoder.EncodePng(normalTexture, true)),
+                new MemoryImage(NpcGlbTextureEncoder.EncodePng(normalTexture)),
                 BuildDerivedTextureName(submesh.NormalMapTexturePath, "normal"));
             material.WithNormal(image);
 

@@ -5,7 +5,6 @@ using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
 
-[Collection(LoggerSerialTestGroup.Name)]
 public sealed class NifAlphaCompositionTests
 {
     private const string BackTexturePath = @"textures\tests\back.dds";

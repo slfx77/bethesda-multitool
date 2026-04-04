@@ -88,6 +88,53 @@ internal sealed class TriParser
         return _headerWords[(byteOffset - 8) / 4];
     }
 
+    internal bool TryGetDifferentialRecord(string name, out TriDifferentialRecordCandidate record)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+
+        if (!_differentialRegionCandidate.HasValue)
+        {
+            record = default;
+            return false;
+        }
+
+        foreach (var candidate in _differentialRegionCandidate.Value.Records)
+        {
+            if (string.Equals(candidate.Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                record = candidate;
+                return true;
+            }
+        }
+
+        record = default;
+        return false;
+    }
+
+    internal short[]? ReadDifferentialRecordDeltas(TriDifferentialRecordCandidate record)
+    {
+        var payloadOffset = record.PackedDeltaPayloadOffset - HeaderSize;
+        if (payloadOffset < 0 || record.PackedDeltaPayloadLength < 0)
+        {
+            return null;
+        }
+
+        if (payloadOffset > Payload.Length || Payload.Length - payloadOffset < record.PackedDeltaPayloadLength)
+        {
+            return null;
+        }
+
+        var shortCount = record.PackedDeltaPayloadLength / sizeof(short);
+        var deltas = new short[shortCount];
+        var span = Payload.AsSpan(payloadOffset, record.PackedDeltaPayloadLength);
+        for (var i = 0; i < shortCount; i++)
+        {
+            deltas[i] = BinaryPrimitives.ReadInt16LittleEndian(span.Slice(i * sizeof(short), sizeof(short)));
+        }
+
+        return deltas;
+    }
+
     public static TriParser? Parse(byte[] data)
     {
         if (data.Length < HeaderSize)

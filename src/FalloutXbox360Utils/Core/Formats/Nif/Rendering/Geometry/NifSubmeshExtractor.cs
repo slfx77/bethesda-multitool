@@ -294,7 +294,8 @@ internal static class NifSubmeshExtractor
         {
             Positions = transformed.Positions,
             Triangles = triangles,
-            Normals = transformed.Normals,
+            Normals = transformed.Normals
+                ?? NifGeometryTransformUtils.RecomputeSmoothNormals(transformed.Positions, triangles),
             UVs = uvs,
             VertexColors = vertexColors,
             Tangents = transformed.Tangents,
@@ -447,7 +448,8 @@ internal static class NifSubmeshExtractor
         {
             Positions = transformed.Positions,
             Triangles = triangles,
-            Normals = transformed.Normals,
+            Normals = transformed.Normals
+                ?? NifGeometryTransformUtils.RecomputeSmoothNormals(transformed.Positions, triangles),
             UVs = uvs,
             VertexColors = vertexColors,
             Tangents = transformed.Tangents,

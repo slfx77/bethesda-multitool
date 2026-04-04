@@ -51,7 +51,7 @@ public sealed class RuntimeProbeConsistencyTests
 
         foreach (var snippetName in SnippetNames)
         {
-            var snippet = await DmpSnippetReader.LoadAsync(SnippetDir, snippetName);
+            var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
             var result = TestSnippet(snippet, snippetName, Log);
             allResults.Add(result);
         }

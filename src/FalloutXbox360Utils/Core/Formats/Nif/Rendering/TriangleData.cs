@@ -43,6 +43,7 @@ internal struct TriangleData
 
     // Emissive (self-illuminated, no lighting applied)
     public bool IsEmissive;
+    public float EmissiveR, EmissiveG, EmissiveB; // animated emissive color (from NiMaterialColorController)
 
     // Double-sided (NiStencilProperty DRAW_BOTH: flip normals instead of culling)
     public bool IsDoubleSided;
@@ -56,6 +57,10 @@ internal struct TriangleData
     public byte DstBlendMode;
     public float MaterialAlpha; // From NiMaterialProperty, 1.0 = opaque
     public NifAlphaRenderMode AlphaRenderMode;
+
+    // Material specular: Blinn-Phong highlight from NiMaterialProperty
+    public float Glossiness;
+    public float SpecR, SpecG, SpecB;
 
     // Eye environment map (SLS2057.pso cubemap reflection approximation)
     public bool IsEyeEnvmap;

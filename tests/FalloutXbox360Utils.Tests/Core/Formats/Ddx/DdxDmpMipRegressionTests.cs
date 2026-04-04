@@ -165,7 +165,9 @@ public sealed class DdxDmpMipRegressionTests
         var repoRoot = FindRepoRoot();
         var carvedDump = await EnsureCarvedDumpAsync(dumpPath!);
 
-        var entry = carvedDump.Entries.SingleOrDefault(e =>
+        // Use FirstOrDefault — duplicates are expected when the same texture is loaded
+        // at multiple memory addresses in the dump.
+        var entry = carvedDump.Entries.FirstOrDefault(e =>
             string.Equals(e.Filename, regressionCase.CarvedFilename, StringComparison.OrdinalIgnoreCase) &&
             string.Equals(e.OriginalPath, regressionCase.OriginalPath, StringComparison.OrdinalIgnoreCase));
         Assert.NotNull(entry);

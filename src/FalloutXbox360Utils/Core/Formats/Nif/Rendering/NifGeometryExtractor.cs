@@ -278,6 +278,7 @@ internal static class NifGeometryExtractor
                 // NiMaterialProperty: alpha float (< 1.0 triggers blending even without NiAlphaProperty)
                 materialAlpha = NifBlockParsers.ReadMaterialAlpha(data, nif, propRefs);
                 materialGlossiness = NifBlockParsers.ReadMaterialGlossiness(data, nif, propRefs);
+                specularColor = NifBlockParsers.ReadMaterialSpecularColor(data, nif, propRefs);
             }
 
             // Look up skinning data for this shape (null if not skinned or bind-pose mode)
@@ -306,6 +307,17 @@ internal static class NifGeometryExtractor
                     NifTextureAnimationEvaluator.TryResolveBaseUvTransform(data, nif, propRefs, out var uvTransform))
                 {
                     NifTextureAnimationEvaluator.ApplyInPlace(submesh.UVs, uvTransform);
+                }
+
+                // Read animated emissive color from NiMaterialColorController chain
+                if (propRefs != null)
+                {
+                    var animEmissive = NifBlockParsers.ReadAnimatedEmissiveColor(data, nif, propRefs);
+                    if (animEmissive.HasValue)
+                    {
+                        submesh.AnimatedEmissiveColor = animEmissive;
+                        submesh.IsEmissive = true;
+                    }
                 }
 
                 if (skinning != null) model.WasSkinned = true;

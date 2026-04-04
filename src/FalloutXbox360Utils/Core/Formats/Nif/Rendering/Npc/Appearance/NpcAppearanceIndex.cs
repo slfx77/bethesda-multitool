@@ -1,8 +1,13 @@
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
+
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance;
 
 internal sealed class NpcAppearanceIndex
 {
     public Dictionary<uint, NpcScanEntry> Npcs { get; } =
+        new();
+
+    public Dictionary<uint, CreatureScanEntry> Creatures { get; } =
         new();
 
     public Dictionary<uint, RaceScanEntry> Races { get; } =

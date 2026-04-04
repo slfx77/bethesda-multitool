@@ -39,7 +39,7 @@ internal sealed class RenderableSubmesh
     public NifShaderTextureMetadata? ShaderMetadata { get; init; }
 
     /// <summary>True if this submesh uses BSShaderNoLightingProperty (self-illuminated, e.g., neon signs).</summary>
-    public bool IsEmissive { get; init; }
+    public bool IsEmissive { get; set; }
 
     /// <summary>True if BSShaderFlags2 bit 5 (Vertex_Colors) is set, meaning vertex colors should modulate the texture.</summary>
     public bool UseVertexColors { get; init; }
@@ -75,6 +75,9 @@ internal sealed class RenderableSubmesh
     /// <summary>Material glossiness from NiMaterialProperty. Fallout 3 / New Vegas commonly default this to 10.</summary>
     public float MaterialGlossiness { get; init; } = 10f;
 
+    /// <summary>Material specular color from NiMaterialProperty (RGB, 0-1). Controls specular highlight tint and intensity.</summary>
+    public (float R, float G, float B) SpecularColor { get; init; } = (0, 0, 0);
+
     /// <summary>True if BSShaderFlags bit 17 (Eye_Environment_Mapping = 0x20000) is set.</summary>
     public bool IsEyeEnvmap { get; init; }
 
@@ -109,6 +112,13 @@ internal sealed class RenderableSubmesh
     ///     Only used when <see cref="IsFaceGen" /> is true. Default = (0, 0, 0) = no scatter.
     /// </summary>
     public (float R, float G, float B) SubsurfaceColor { get; set; }
+
+    /// <summary>
+    ///     Animated emissive color from NiMaterialColorController (TC_SELF_ILLUM or TC_DIFFUSE).
+    ///     When set, the submesh is treated as self-illuminated with this color applied additively.
+    ///     Extracted from the first keyframe of the controller's NiPosData.
+    /// </summary>
+    public (float R, float G, float B)? AnimatedEmissiveColor { get; set; }
 
     public int VertexCount => Positions.Length / 3;
     public int TriangleCount => Triangles.Length / 3;

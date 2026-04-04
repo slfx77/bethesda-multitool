@@ -4,7 +4,6 @@ using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
 
-[Collection(LoggerSerialTestGroup.Name)]
 public sealed class UnpackedNifGlbExportRegressionTests
 {
     [Fact]

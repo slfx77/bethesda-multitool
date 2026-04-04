@@ -23,7 +23,8 @@ internal static class RuntimeStringReportHelper
             result.MinidumpInfo,
             coverage,
             coverage.PdbAnalysis,
-            result.EsmRecords?.RuntimeEditorIds);
+            result.EsmRecords?.RuntimeEditorIds,
+            result.EsmRecords?.GameSettings);
 
         var stringData = bufferAnalyzer.ExtractStringDataOnly();
         RuntimeBufferAnalyzer.CrossReferenceWithCarvedFiles(stringData.StringPool, result.CarvedFiles);
