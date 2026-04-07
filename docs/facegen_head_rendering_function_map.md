@@ -536,11 +536,18 @@ late UI refresh layers we chased more recently.
   - this is still the cleanest recovered overwrite path for only the active
     sex-selected template half, but it is now weaker as an ordinary export seam
     until a non-UI stash producer is recovered
+  - a direct write-site reread still has not produced any non-UI filler of the
+    stash
   Not this:
   - not the original parser/materializer for the template families
   Still open:
   - whether any non-UI path populates the `+0x7AC` list
   - what exact semantic family `+0x7B2` is selecting if that branch matters
+  Current rerank:
+  - focused write-site scan still found only constructor/reset init,
+    stash/pop consume, and the already-demoted UI/dialog caller
+  - so this branch is now weaker than first-span fidelity work unless a future
+    raw xref pass finds a real non-UI stash producer
 
 - `FUN_00586740`
   Confidence: `High`
@@ -671,6 +678,15 @@ That leaves two broad possibilities:
 2. the editor/importer/source side is not feeding the same effective state into
    bake that we assume
 
+One nearby repo-side sub-branch is now materially weaker:
+
+- a direct probe of earlier native-delta truncation
+  (`trunc((trunc(coeff*256) * trunc(scale*256)) / 256)` once per morph before
+  the pixel loop) failed on the anchors
+- it worsened `0x0001816A`, produced only noise-level raw gain on `0x000181D2`,
+  and worsened the real trunc-encoded path overall
+- so not another near-neighbor accumulator-truncation variant
+
 The current decomp branch is aimed at option 2.
 But within option 2, the late UI/provider layer is now mostly supporting
 structure. The surviving meaningful earlier copy points are:
@@ -680,7 +696,7 @@ structure. The surviving meaningful earlier copy points are:
 
 ## Best next targets
 
-1. Stay on the GECK-side primary-bank provenance branch
+1. Keep the GECK-side primary-bank provenance branch as fallback only
    Goal:
    determine whether any non-UI overwrite path actually survives after direct
    materialization into the sex-selected race/default template families at
@@ -693,11 +709,13 @@ structure. The surviving meaningful earlier copy points are:
    - the remaining GECK-side gap is upstream template-family provenance, not missing
      descriptor structure or generic control-row compatibility
    Exact next target:
-   - any non-UI stash producer for `+0x7AC/+0x7B2`
-   - or any other later non-UI overwrite that can still replace the active
-     sex-selected half before `FUN_00586000`
-   - otherwise, demote the remaining GECK branch below first-span
-     `FREGT003` content/apply fidelity
+   - this is now mostly a fallback branch only:
+     focused stash write-site scanning did not recover a non-UI producer
+   - if revisited, the next exact target is still a raw xref/write-site hunt
+     for a non-UI overwrite of the active sex-selected half before
+     `FUN_00586000`
+   - otherwise, the stronger remaining branch is first-span
+     `FREGT003` row-content/materialization fidelity
      serializes it
 
 2. Keep `FUN_00588520` as the upstream importer anchor, but narrow the open
@@ -720,8 +738,210 @@ structure. The surviving meaningful earlier copy points are:
 4. If the GECK-side branch stops moving, step back to the stronger competing
    branch
    Goal:
-   return to first-span `FREGT003` content/apply fidelity, which still outranks
-   the local `MAN2/local_9` asymmetry window overall.
+   return to first-span `FREGT003` row-content/materialization fidelity, which
+   still outranks the local `MAN2/local_9` asymmetry window overall.
+   Sharper repo-side read now:
+   - prioritize per-basis morph content/materialization fidelity inside the
+     late hotspot family
+   - keep subtler coefficient/source-state provenance only as the secondary
+     branch
+   - the next exact discriminator inside that branch is no longer another
+     whole-row swap theory; it is channel-level mixing or an external
+     row-materialization path around the same `[37]/[40]` hotspot family
+   - do not prioritize another nearby early truncation variant in
+     `FaceGenTextureMorpher`
+
+5. Static same-race/same-sex FGTS provenance scan
+   Goal:
+   test whether a plausible authored-family provenance move can explain most of
+   the shipped `_0` anchor gap before invoking unrestricted 50-dim raw fit.
+   Current result:
+   - `verify-egt --raw-fit-prov-family` now shows the best same-race/same-sex
+     authored family candidate is effectively the current merged vector on both
+     anchors.
+   - `0x0001816A`: `currentRawMAE=3.3268`, `familyRawMAE=3.3258`,
+     `rawFitRawMAE=2.2061`
+   - `0x000181D2`: `currentRawMAE=2.9462`, `familyRawMAE=2.9538`,
+     `rawFitRawMAE=1.9213`
+   - the late hotspot rows
+     `[35,36,37,38,39,40,41,42,43,45,46,49]` stay unchanged under the best
+     family candidate while unrestricted raw fit still wants large movement
+   - so broad static same-race/same-sex authored provenance is now a weak
+     explanation for the anchor mismatch
+
+6. Unquantized first-span raw-fit oracle
+   Goal:
+   test whether the current parsed first-span basis can approach shipped raw
+   deltas once coefficient256 rounding is removed from the fit itself.
+   Current result:
+   - the new `RAWFIT-FLOAT-ORACLE` path reuses the same joint-RGB first-span
+     basis and linear solve as quantized `RAWFIT`, but scores the unrounded
+     solved vector directly
+   - `0x0001816A`: `fitRawMAE 2.2061 -> 2.2051`, encode-loss floor `0.4701`
+   - `0x000181D2`: `fitRawMAE 1.9213 -> 1.9204`, encode-loss floor `0.4957`
+   - encoded RGB movement is also negligible:
+     `1.0925 -> 1.0939` and `0.9369 -> 0.9348`
+   - so coefficient quantization is now a weak explanation for the anchor
+     mismatch
+   - the stronger remaining repo-side branch stays first-span per-basis
+     content/materialization fidelity, with provenance/state effects still
+     secondary
+   Short write-up:
+   [codex_egt_float_oracle_rerank_resolution.txt](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/research/facegen_research_artifacts/notes/egt/codex_egt_float_oracle_rerank_resolution.txt)
+
+7. Fixed-coefficient late-hotspot row backsolve
+   Goal:
+   test whether the residual can be explained by row-content/materialization
+   changes inside individual late first-span hotspot morphs while keeping the
+   current coefficient fixed.
+   Current result:
+   - `--inspect-morph [35,36,37,40,42,49]` now computes the implied signed-byte
+     row needed for each morph, clamps it to legal EGT range, and scores the
+     corrected raw buffer
+   - several single-row corrections nearly eliminate raw residual while staying
+     mostly in range:
+     - `0x0001816A [37]`: `99.9%` in range, `rowClampRawMAE=0.0026`
+     - `0x0001816A [35]`: `99.1%` in range, `rowClampRawMAE=0.0473`
+     - `0x000181D2 [40]`: `99.2%` in range, `rowClampRawMAE=0.0270`
+     - `0x000181D2 [37]`: `99.8%` in range, `rowClampRawMAE=0.0076`
+   - weaker single-row cases still exist:
+     `0x0001816A [40]` and `0x000181D2 [36]`
+   - this pushes the repo-side branch further toward late hotspot row
+     content/materialization itself, not coefficient quantization and not broad
+     same-family provenance
+   Short write-up:
+   [codex_egt_row_backsolve_rerank_resolution.txt](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/research/facegen_research_artifacts/notes/egt/codex_egt_row_backsolve_rerank_resolution.txt)
+
+8. Gain-only late-hotspot row fit
+   Goal:
+   confirm whether the hotspot mismatch is amplitude-only or true row-content
+   mismatch on the same late hotspot set.
+   Current result:
+   - `--inspect-morph` now also fits one scalar `g` per morph under
+     `delta' = clamp(g * currentRow)`
+   - gain-only stays far above the unconstrained row-backsolve on the same
+     rows:
+     - `0x0001816A [37]`: `gainRawMAE=3.1858` vs `rowClampRawMAE=0.0026`
+     - `0x0001816A [35]`: `3.2783` vs `0.0473`
+     - `0x000181D2 [37]`: `2.7994` vs `0.0076`
+     - `0x000181D2 [40]`: `2.6402` vs `0.0270`
+   - so the row-hotspot branch now reads as wrong row content/shape, or a
+     row-level materialization step that effectively substitutes a different
+     legal-ish row, not amplitude-only drift
+   Short write-up:
+   [codex_egt_row_gain_rerank_resolution.txt](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/research/facegen_research_artifacts/notes/egt/codex_egt_row_gain_rerank_resolution.txt)
+
+9. Affine late-hotspot row fit
+   Goal:
+   test whether the current parsed hotspot rows are at least recoverable under a
+   simple affine row transform, rather than a scalar-only gain.
+   Current result:
+   - `--inspect-morph` now also fits
+     `delta' = clamp(a * currentRow + b)` on the same fixed-coefficient target
+   - affine improves slightly over gain-only on some rows, but still stays far
+     above the unconstrained free-row backsolve:
+     - `0x0001816A [37]`: `affineRawMAE=3.0625` vs `rowClampRawMAE=0.0026`
+     - `0x0001816A [35]`: `3.2281` vs `0.0473`
+     - `0x000181D2 [37]`: `2.7102` vs `0.0076`
+     - `0x000181D2 [40]`: `2.6262` vs `0.0270`
+   - the fitted affine parameters are also often sign-flipping or strongly
+     offset, not mild row rescaling
+   - so the surviving branch is now best read as wrong row content/shape
+     outright, or a row-level substitution process, not scalar or affine drift
+   Short write-up:
+   [codex_egt_row_affine_rerank_resolution.txt](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/research/facegen_research_artifacts/notes/egt/codex_egt_row_affine_rerank_resolution.txt)
+
+10. Direct row-space similarity on late hotspot rows
+   Goal:
+   compare the current parsed row against the unclamped free-row target
+   directly in byte space, instead of only testing gain-only or affine
+   materialization models.
+   Current result:
+   - `--inspect-morph` now reports direct row-space cosine/correlation and
+     best scalar/affine row-fit residuals against the same free-row target used
+     by row backsolve
+   - representative rows stay near zero or negative in row-space similarity,
+     and scalar/affine row models explain little of the required row movement:
+     - `0x0001816A [35]`: `cos=0.0598`, `corr=-0.0194`,
+       `gainExpl=1.5%`, `affExpl=3.0%`
+     - `0x0001816A [37]`: `cos=0.0088`, `corr=-0.0493`,
+       `gainExpl=4.2%`, `affExpl=7.9%`
+     - `0x000181D2 [40]`: `cos=-0.1970`, `corr=-0.1877`,
+       `gainExpl=10.4%`, `affExpl=10.9%`
+     - `0x000181D2 [42]`: `cos=-0.0093`, `corr=-0.0341`,
+       `gainExpl=1.3%`, `affExpl=3.3%`
+   - even where free-row backsolve nearly eliminates raw residual, the current
+     parsed row is not close to the required target under direct row-space
+     comparison
+   - so the surviving repo-side branch is now best read as wrong row
+     content/shape outright, or a row-level substitution/materialization
+     process, not amplitude-only drift
+   Short write-up:
+   [codex_egt_row_similarity_rerank_resolution.txt](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/research/facegen_research_artifacts/notes/egt/codex_egt_row_similarity_rerank_resolution.txt)
+
+11. Nearest other symmetric row against the same free-row target
+   Goal:
+   test whether the required hotspot correction is just a clean substitution to
+   another already-loaded symmetric row.
+   Current result:
+   - `--inspect-morph` now reports the best non-self symmetric row under the
+     same affine row-fit metric used by the direct row-space discriminator
+   - the best non-self candidate only beats the current row modestly:
+     - `0x0001816A [35] -> other [37]`: `vsSelf=10.0%`
+     - `0x0001816A [37] -> other [01]`: `vsSelf=5.9%`
+     - `0x000181D2 [40] -> other [37]`: `vsSelf=3.3%`
+     - `0x000181D2 [49] -> other [40]`: `vsSelf=11.5%`
+   - so a plain whole-row swap/index mismatch to another loaded symmetric row
+     is now weak
+   - the next sharper target is channel-level mixing or another external
+     row-materialization path, not another whole-row substitution theory
+   Short write-up:
+   [codex_egt_row_nearest_rerank_resolution.txt](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/research/facegen_research_artifacts/notes/egt/codex_egt_row_nearest_rerank_resolution.txt)
+
+11. Nearest other symmetric-row scan
+   Goal:
+   test whether the required free-row target is best explained by a simple
+   substitution to another already-existing symmetric row, rather than an
+   external row-materialization path.
+   Current result:
+   - `--inspect-morph` now scans every other symmetric row against the same
+     free-row target and reports the best non-self affine row-space match
+   - the best non-self candidate is usually from the same late-hotspot family
+     (`[37]` or `[40]`, with isolated `[00]/[01]` cases), but it only improves
+     over the current row modestly:
+     - `0x0001816A [35] -> other [37]`: `vsSelf=10.0%`
+     - `0x0001816A [37] -> other [01]`: `vsSelf=5.9%`
+     - `0x000181D2 [40] -> other [37]`: `vsSelf=3.3%`
+     - `0x000181D2 [49] -> other [40]`: `vsSelf=11.5%`
+   - so a plain swap to another already-loaded symmetric row is now a weak
+     explanation for the shipped `_0` hotspot mismatch
+   - the stronger surviving branch is an external row
+     materialization/substitution path, or wrong row content outright, not a
+     simple row-index mix-up within the current parsed first span
+   Short write-up:
+   [codex_egt_row_nearest_rerank_resolution.txt](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/research/facegen_research_artifacts/notes/egt/codex_egt_row_nearest_rerank_resolution.txt)
+
+11. Non-self nearest-row scan on late hotspot rows
+   Goal:
+   test whether the required free-row target is simply another existing
+   symmetric row, which would point to row-substitution or row-index mismatch
+   rather than a more external materialization step.
+   Current result:
+   - `--inspect-morph` now also scans every other symmetric row against the
+     same free-row target and reports the best non-self affine match
+   - the best candidate usually stays inside the same late-hotspot family
+     (`[37]` / `[40]`, with occasional `[01]` / `[00]`), but only improves
+     modestly over the current row:
+     - `0x0001816A [35] -> other [37]`: `vsSelf=10.0%`
+     - `0x000181D2 [35] -> other [40]`: `vsSelf=10.3%`
+     - `0x000181D2 [49] -> other [40]`: `vsSelf=11.5%`
+     - `0x000181D2 [40] -> other [37]`: `vsSelf=3.3%`
+   - so the mismatch does not currently read like a clean direct row swap to
+     another existing symmetric basis row
+   - the stronger remaining branch is row-level materialization /
+     substitution beyond simple row-index mismatch
+   Short write-up:
+   [codex_egt_row_neighbor_rerank_resolution.txt](/c:/Users/mmc99/source/repos/Xbox360MemoryCarver/research/facegen_research_artifacts/notes/egt/codex_egt_row_neighbor_rerank_resolution.txt)
 
 ## What is still missing from our docs
 

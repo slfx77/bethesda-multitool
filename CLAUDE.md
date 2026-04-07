@@ -184,8 +184,8 @@ src/FalloutXbox360Utils/
 │   │   ├── Save/           # save decode/report
 │   │   └── Version/        # version extract/inventory/report/track
 │   ├── Rendering/          # Pipeline implementations for render/export commands
-│   │   ├── Nif/            # NIF→PNG/GLB export pipeline
-│   │   ├── Npc/            # NPC render + export (head+body+equipment)
+│   │   ├── Nif/            # NifExportPipeline.cs (NIF→PNG/GLB)
+│   │   ├── Npc/            # NpcRenderPipeline.cs + NpcExportPipeline.cs (head+body+equipment)
 │   │   └── Gltf/           # GLB validation
 │   ├── Formatters/         # Semdiff formatting, diff resolution
 │   ├── Show/               # Record display renderers (Actor, Item, Quest, Misc)
@@ -194,15 +194,20 @@ src/FalloutXbox360Utils/
 │   ├── Formats/
 │   │   ├── Esm/            # ESM parsing, conversion, runtime reading, export
 │   │   │   ├── Conversion/ # Xbox→PC converter engine (see ESM Conversion section)
-│   │   │   ├── Runtime/    # PDB-based DMP struct readers (generic + 24 specialized)
+│   │   │   ├── Runtime/    # PDB-based DMP struct readers (Readers/Generic/ + 24 specialized)
 │   │   │   ├── Export/     # CSV, GECK reports, cross-dump comparison
 │   │   │   ├── Parsing/    # ESM record/subrecord parsing
 │   │   │   ├── Analysis/   # Semantic analysis
 │   │   │   ├── FaceGen/    # FaceGen coefficient handling
 │   │   │   ├── Script/     # Script bytecode parsing
-│   │   │   └── Models/     # Record data models
+│   │   │   ├── Records/    # Per-record-type models (split from Models/)
+│   │   │   ├── Subrecords/ # Per-subrecord parsers
+│   │   │   ├── Presentation/ # Display/formatting helpers
+│   │   │   ├── Enums/      # ESM enum definitions
+│   │   │   └── Models/     # Shared record data models
 │   │   ├── Nif/            # NIF mesh format
 │   │   │   ├── Rendering/  # Rasterizer, FaceGen morpher, GPU sprites, NPC assembly
+│   │   │   │   └── Npc/Composition/  # NPC + Creature render/export composition planners
 │   │   │   ├── Skinning/   # Skin data/partition parsing + LBS/DQS
 │   │   │   ├── Geometry/   # Packed geometry, topology
 │   │   │   ├── Conversion/ # NIF endian conversion
