@@ -49,7 +49,7 @@ internal static class NifSkinInfluenceBuilder
                 totalWeight += vertexInfluences[i].Weight;
             }
 
-            if (totalWeight > 0.001f && Math.Abs(totalWeight - 1f) > 0.01f)
+            if (totalWeight > 0.001f && Math.Abs(totalWeight - 1f) > 0.001f)
             {
                 for (var i = 0; i < count; i++)
                 {

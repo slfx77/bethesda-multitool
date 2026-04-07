@@ -48,4 +48,16 @@ internal sealed class NpcAppearanceIndex
 
     public Dictionary<uint, List<uint>> LeveledNpcs { get; } =
         new();
+
+    public Dictionary<uint, CstyEntry> CombatStyles { get; } =
+        new();
 }
+
+internal enum WeaponRestriction
+{
+    None = 0,
+    MeleeOnly = 1,
+    RangedOnly = 2
+}
+
+internal sealed record CstyEntry(WeaponRestriction Restriction);

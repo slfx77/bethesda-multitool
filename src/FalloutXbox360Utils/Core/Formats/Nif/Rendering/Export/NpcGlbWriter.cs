@@ -54,6 +54,8 @@ internal static class NpcGlbWriter
                 continue;
             }
 
+            NormalizeWinding(meshPart.Submesh);
+
             if (meshPart.Skin != null)
             {
                 var skinnedMesh = BuildSkinnedMesh(meshPart, textureResolver, materialCache);
@@ -83,6 +85,16 @@ internal static class NpcGlbWriter
         }
 
         return sceneBuilder.ToGltf2();
+    }
+
+    private static void NormalizeWinding(RenderableSubmesh submesh)
+    {
+        if (submesh.Normals == null || submesh.TriangleCount == 0)
+        {
+            return;
+        }
+
+        GltfNormalDiagnostic.FixWindingOrder(submesh);
     }
 
     private static Dictionary<int, NodeBuilder> BuildNodeBuilders(NpcExportScene scene)

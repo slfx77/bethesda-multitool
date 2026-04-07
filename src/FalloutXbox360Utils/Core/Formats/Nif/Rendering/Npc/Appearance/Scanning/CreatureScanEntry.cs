@@ -11,6 +11,10 @@ internal sealed record CreatureScanEntry(
     List<InventoryItem>? InventoryItems,
     byte CreatureType)
 {
+    public uint? CombatStyleFormId { get; init; }
+    public byte? CombatSkill { get; init; }
+    public byte? Strength { get; init; }
+
     internal string CreatureTypeName => CreatureType switch
     {
         0 => "Animal",

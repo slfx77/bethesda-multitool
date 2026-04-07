@@ -74,25 +74,28 @@ internal static class NpcExportHeadAssembler
             usedBaseRaceMesh,
             headPlan.AttachmentBoneTransforms,
             headPlan.BonelessAttachmentTransform);
-        AddHair(
-            scene,
-            npc,
-            meshArchives,
-            textureResolver,
-            compositionCaches.EgmFiles,
-            usedBaseRaceMesh,
-            headPlan.HairFilter,
-            headPlan.AttachmentBoneTransforms,
-            headPlan.BonelessAttachmentTransform);
-        AddHeadParts(
-            scene,
-            npc,
-            meshArchives,
-            textureResolver,
-            compositionCaches.EgmFiles,
-            usedBaseRaceMesh,
-            headPlan.AttachmentBoneTransforms,
-            headPlan.BonelessAttachmentTransform);
+        if (plan.Options.IncludeHair)
+        {
+            AddHair(
+                scene,
+                npc,
+                meshArchives,
+                textureResolver,
+                compositionCaches.EgmFiles,
+                usedBaseRaceMesh,
+                headPlan.HairFilter,
+                headPlan.AttachmentBoneTransforms,
+                headPlan.BonelessAttachmentTransform);
+            AddHeadParts(
+                scene,
+                npc,
+                meshArchives,
+                textureResolver,
+                compositionCaches.EgmFiles,
+                usedBaseRaceMesh,
+                headPlan.AttachmentBoneTransforms,
+                headPlan.BonelessAttachmentTransform);
+        }
         AddEyes(
             scene,
             npc,
@@ -204,10 +207,13 @@ internal static class NpcExportHeadAssembler
 
         AddRaceFaceParts(scene, npc, meshArchives, textureResolver, egmCache, usedBaseRaceMesh,
             attachmentBoneTransforms, bonelessAttachmentTransform);
-        AddHair(scene, npc, meshArchives, textureResolver, egmCache, usedBaseRaceMesh,
-            hairFilter, attachmentBoneTransforms, bonelessAttachmentTransform);
-        AddHeadParts(scene, npc, meshArchives, textureResolver, egmCache, usedBaseRaceMesh,
-            attachmentBoneTransforms, bonelessAttachmentTransform);
+        if (!settings.NoHair)
+        {
+            AddHair(scene, npc, meshArchives, textureResolver, egmCache, usedBaseRaceMesh,
+                hairFilter, attachmentBoneTransforms, bonelessAttachmentTransform);
+            AddHeadParts(scene, npc, meshArchives, textureResolver, egmCache, usedBaseRaceMesh,
+                attachmentBoneTransforms, bonelessAttachmentTransform);
+        }
         AddEyes(scene, npc, meshArchives, textureResolver, egmCache, usedBaseRaceMesh,
             attachmentBoneTransforms, bonelessAttachmentTransform);
         AddHeadEquipment(scene, npc, meshArchives, textureResolver, egmCache, usedBaseRaceMesh,
@@ -292,13 +298,12 @@ internal static class NpcExportHeadAssembler
                 submesh.DiffuseTexturePath = npc.HairTexturePath;
             }
 
-            // Hair NIFs use flat per-face normals with unshared vertices. Recompute
-            // smooth normals with seam welding so coincident vertices get averaged,
-            // producing smooth shading across hair blade strips in GLB PBR viewers.
-            if (submesh.Normals != null)
-            {
-                FaceGenMeshMorpher.RecalculateNormals(submesh);
-            }
+            // Hair NIFs intentionally have unshared per-face vertices and authored
+            // flat normals. The engine renders them as-is. Previously we called
+            // RecalculateNormals + WeldSeamNormals to "smooth" hair, but this averages
+            // normals across hair cards facing very different directions, producing
+            // sideways-pointing normals at silhouette edges that read as dark patches
+            // in glTF PBR viewers. Trust the authored NIF normals.
         }
 
         NpcExportSceneBuilder.AddRigidModel(scene, npc.HairNifPath, hairModel);

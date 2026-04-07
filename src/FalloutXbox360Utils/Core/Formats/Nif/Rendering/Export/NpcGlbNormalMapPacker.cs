@@ -23,9 +23,10 @@ internal static class NpcGlbNormalMapPacker
 
         var specularTexture = TryResolveSpecularTexture(textureResolver, normalMapPath);
         var mergedTexture = MergeNormalAndSpecular(normalTexture, specularTexture);
+        var gltfTexture = ConvertDirectXNormalMapToGltf(mergedTexture);
         var hasGlossAlpha = specularTexture != null || HasVariableAlpha(normalTexture);
 
-        return new NpcGlbPackedNormal(mergedTexture, hasGlossAlpha);
+        return new NpcGlbPackedNormal(gltfTexture, hasGlossAlpha);
     }
 
     internal static DecodedTexture? Resolve(
@@ -82,6 +83,30 @@ internal static class NpcGlbNormalMapPacker
             normalTexture.Width,
             normalTexture.Height,
             false);
+    }
+
+    internal static DecodedTexture ConvertDirectXNormalMapToGltf(DecodedTexture texture)
+    {
+        ArgumentNullException.ThrowIfNull(texture);
+
+        var convertedLevels = new List<DecodedTextureMipLevel>(texture.MipLevels.Count);
+        foreach (var level in texture.MipLevels)
+        {
+            var pixels = (byte[])level.Pixels.Clone();
+            for (var index = 1; index < pixels.Length; index += 4)
+            {
+                pixels[index] = (byte)(255 - pixels[index]);
+            }
+
+            convertedLevels.Add(new DecodedTextureMipLevel
+            {
+                Pixels = pixels,
+                Width = level.Width,
+                Height = level.Height
+            });
+        }
+
+        return new DecodedTexture { MipLevels = convertedLevels };
     }
 
     private static DecodedTexture? TryResolveSpecularTexture(

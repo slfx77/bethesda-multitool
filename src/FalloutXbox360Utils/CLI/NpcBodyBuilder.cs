@@ -2,6 +2,7 @@ using System.Numerics;
 using FalloutXbox360Utils.CLI.Rendering.Npc;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
 
 namespace FalloutXbox360Utils.CLI;
@@ -109,6 +110,10 @@ internal static class NpcBodyBuilder
             textureResolver,
             bodyModel);
 
+        // Stitch boundary vertices between body parts and equipment to close seams
+        // at mesh boundaries (e.g., outfit sleeve ↔ hand mesh at the wrist).
+        NpcBoundaryVertexStitcher.StitchBoundaryVertices(bodyModel.Submeshes);
+
         var headModel = NpcHeadBuilder.BuildFromPlan(
             plan,
             meshArchives,
@@ -165,6 +170,7 @@ internal static class NpcBodyBuilder
                 NpcTextureHelpers.ShouldApplyBodyTextureOverride(sub.DiffuseTexturePath, textureOverride))
                 sub.DiffuseTexturePath = textureOverride;
             sub.RenderOrder = renderOrder;
+            sub.SourceNifPath = nifPath;
             targetModel.Submeshes.Add(sub);
             targetModel.ExpandBounds(sub.Positions);
         }

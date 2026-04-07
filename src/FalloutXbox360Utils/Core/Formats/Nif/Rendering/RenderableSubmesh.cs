@@ -120,6 +120,19 @@ internal sealed class RenderableSubmesh
     /// </summary>
     public (float R, float G, float B)? AnimatedEmissiveColor { get; set; }
 
+    /// <summary>
+    ///     Pre-skinning vertex positions in world space (same layout as <see cref="Positions" />).
+    ///     Populated only for skinned submeshes; used by boundary vertex stitching to identify
+    ///     coincident vertices across different source NIFs, then cleared after stitching.
+    /// </summary>
+    public float[]? BindPosePositions { get; set; }
+
+    /// <summary>
+    ///     Path of the source NIF file this submesh was extracted from.
+    ///     Used by boundary vertex stitching to distinguish cross-NIF seams from within-NIF geometry.
+    /// </summary>
+    public string? SourceNifPath { get; set; }
+
     public int VertexCount => Positions.Length / 3;
     public int TriangleCount => Triangles.Length / 3;
 }

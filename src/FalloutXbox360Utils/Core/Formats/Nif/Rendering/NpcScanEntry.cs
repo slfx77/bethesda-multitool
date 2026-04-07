@@ -25,4 +25,5 @@ internal sealed class NpcScanEntry
     public List<uint>? PackageFormIds { get; init; }
     public uint? TemplateFormId { get; init; }
     public ushort TemplateFlags { get; init; }
+    public uint? CombatStyleFormId { get; init; }
 }

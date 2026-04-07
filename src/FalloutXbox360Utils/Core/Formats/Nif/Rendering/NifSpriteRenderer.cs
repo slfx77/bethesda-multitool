@@ -287,7 +287,9 @@ internal static class NifSpriteRenderer
                     nz /= len;
                 }
 
-                tri.FlatShade = ComputeShade(nx, ny, nz, tri.IsDoubleSided);
+                tri.FlatShade = tri.HasTintColor
+                    ? ComputeTintedShade(nx, ny, nz)
+                    : ComputeShade(nx, ny, nz, tri.IsDoubleSided);
             }
 
             // Rotate tangents and bitangents
@@ -413,9 +415,15 @@ internal static class NifSpriteRenderer
 
                 var tri = new TriangleData
                 {
-                    X0 = pos[i0], Y0 = pos[i0 + 1], Z0 = pos[i0 + 2],
-                    X1 = pos[i1], Y1 = pos[i1 + 1], Z1 = pos[i1 + 2],
-                    X2 = pos[i2], Y2 = pos[i2 + 1], Z2 = pos[i2 + 2],
+                    X0 = pos[i0],
+                    Y0 = pos[i0 + 1],
+                    Z0 = pos[i0 + 2],
+                    X1 = pos[i1],
+                    Y1 = pos[i1 + 1],
+                    Z1 = pos[i1 + 2],
+                    X2 = pos[i2],
+                    Y2 = pos[i2 + 1],
+                    Z2 = pos[i2 + 2],
                     AvgZ = (pos[i0 + 2] + pos[i1 + 2] + pos[i2 + 2]) / 3f,
                     IsEmissive = submesh.IsEmissive,
                     EmissiveR = submesh.AnimatedEmissiveColor?.R ?? 0f,
@@ -564,7 +572,9 @@ internal static class NifSpriteRenderer
                         nz /= len;
                     }
 
-                    tri.FlatShade = ComputeShade(nx, ny, nz, tri.IsDoubleSided);
+                    tri.FlatShade = tri.HasTintColor
+                        ? ComputeTintedShade(nx, ny, nz)
+                        : ComputeShade(nx, ny, nz, tri.IsDoubleSided);
                 }
 
                 list.Add(tri);
@@ -613,6 +623,27 @@ internal static class NifSpriteRenderer
         // SKIN2000: min(lightColor * NdotL + lightColor * fresnel * 0.5, 1.0) + ambient
         var directional = MathF.Min(RenderLightingConstants.LightIntensity * NdotL +
                                     RenderLightingConstants.LightIntensity * fresnel * 0.5f, 1f);
+
+        return Math.Clamp(directional + ambient, 0f, 1f);
+    }
+
+    /// <summary>
+    ///     Flatter thin-shell lighting for tinted hair and beard meshes.
+    ///     These meshes use shell/card geometry with authored normals that work poorly
+    ///     with the face shader's SKIN2000 Fresnel term, which exaggerates dark contour
+    ///     bands at silhouette edges. Keep two-sided diffuse response, compress the
+    ///     hemisphere ambient range, and drop the skin-specific Fresnel contribution.
+    /// </summary>
+    internal static float ComputeTintedShade(float nx, float ny, float nz)
+    {
+        var hemiBlend = -ny * 0.5f + 0.5f;
+        var ambientMid = (RenderLightingConstants.GroundAmbient + RenderLightingConstants.SkyAmbient) * 0.5f;
+        var ambient = ambientMid + (hemiBlend - 0.5f) * 0.08f;
+
+        const float wrap = 0.5f;
+        var rawNdotL = MathF.Abs(nx * LightDirX + ny * LightDirY + nz * LightDirZ);
+        var NdotL = MathF.Max(0f, (rawNdotL + wrap) / (1f + wrap));
+        var directional = RenderLightingConstants.LightIntensity * NdotL;
 
         return Math.Clamp(directional + ambient, 0f, 1f);
     }

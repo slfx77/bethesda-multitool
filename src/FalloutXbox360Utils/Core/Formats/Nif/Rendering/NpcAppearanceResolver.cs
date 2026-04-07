@@ -89,17 +89,63 @@ internal sealed class NpcAppearanceResolver
 
     public string? ResolveWeaponMeshPath(uint itemFormId)
     {
-        // Direct weapon lookup
-        if (_index.Weapons.TryGetValue(itemFormId, out var weapon))
-        {
-            return weapon.ModelPath;
-        }
-
-        // Walk leveled item lists to find a weapon (max depth 3 to avoid cycles)
-        return ResolveLeveledWeapon(itemFormId, 3);
+        return ResolveWeaponEntry(itemFormId)?.ModelPath;
     }
 
-    private string? ResolveLeveledWeapon(uint formId, int maxDepth)
+    public WeaponRestriction GetWeaponRestriction(uint? combatStyleFormId)
+    {
+        if (combatStyleFormId is { } id &&
+            _index.CombatStyles.TryGetValue(id, out var csty))
+        {
+            return csty.Restriction;
+        }
+
+        return WeaponRestriction.None;
+    }
+
+    public WeapScanEntry? ResolveWeaponEntry(uint itemFormId)
+    {
+        if (_index.Weapons.TryGetValue(itemFormId, out var weapon))
+        {
+            return weapon;
+        }
+
+        return ResolveLeveledWeaponEntry(itemFormId, 3);
+    }
+
+    /// <summary>
+    ///     Collects every reachable weapon for a single inventory FormId, expanding
+    ///     leveled item lists. Used by selection scoring (vs <see cref="ResolveWeaponEntry" />
+    ///     which returns the first match for backward compat).
+    /// </summary>
+    public void CollectWeaponEntries(uint itemFormId, List<WeapScanEntry> sink)
+    {
+        CollectWeaponEntries(itemFormId, sink, 5);
+    }
+
+    private void CollectWeaponEntries(uint formId, List<WeapScanEntry> sink, int maxDepth)
+    {
+        if (maxDepth <= 0)
+        {
+            return;
+        }
+
+        if (_index.Weapons.TryGetValue(formId, out var weapon))
+        {
+            sink.Add(weapon);
+            return;
+        }
+
+        if (_index.LeveledItems.TryGetValue(formId, out var entries))
+        {
+            foreach (var entryFormId in entries)
+            {
+                CollectWeaponEntries(entryFormId, sink, maxDepth - 1);
+            }
+        }
+    }
+
+    private WeapScanEntry? ResolveLeveledWeaponEntry(uint formId, int maxDepth)
     {
         if (maxDepth <= 0)
         {
@@ -115,10 +161,10 @@ internal sealed class NpcAppearanceResolver
         {
             if (_index.Weapons.TryGetValue(entryFormId, out var weapon))
             {
-                return weapon.ModelPath;
+                return weapon;
             }
 
-            var nested = ResolveLeveledWeapon(entryFormId, maxDepth - 1);
+            var nested = ResolveLeveledWeaponEntry(entryFormId, maxDepth - 1);
             if (nested != null)
             {
                 return nested;

@@ -75,6 +75,25 @@ float computeShade(vec3 n, bool twoSidedLighting)
     return clamp(directional + ambient, 0.0, 1.0);
 }
 
+float computeTintedShade(vec3 n)
+{
+    vec3 lightDir = uLightDir.xyz;
+    float skyAmb = uAmbient.x;
+    float gndAmb = uAmbient.y;
+    float lightInt = uAmbient.z;
+
+    float hemiBlend = -n.y * 0.5 + 0.5;
+    float ambientMid = (gndAmb + skyAmb) * 0.5;
+    float ambient = ambientMid + (hemiBlend - 0.5) * 0.08;
+
+    float wrap = 0.5;
+    float rawNdotL = abs(dot(n, lightDir));
+    float NdotL = max(0.0, (rawNdotL + wrap) / (1.0 + wrap));
+    float directional = lightInt * NdotL;
+
+    return clamp(directional + ambient, 0.0, 1.0);
+}
+
 void main()
 {
     uint flags = uint(uFlags.x);
@@ -114,7 +133,9 @@ void main()
     }
     else if ((flags & HAS_NORMALS) != 0u)
     {
-        shade = computeShade(normal, (flags & IS_DOUBLE_SIDED) != 0u);
+        shade = ((flags & HAS_TINT) != 0u)
+            ? computeTintedShade(normal)
+            : computeShade(normal, (flags & IS_DOUBLE_SIDED) != 0u);
 
         // Eye specular: approximate SLS2057.pso cubemap reflection
         if ((flags & IS_EYE_ENVMAP) != 0u)
@@ -166,17 +187,12 @@ void main()
         discard; // Skip fully transparent + DXT fringe on blended meshes
     }
 
-    // Color modulation: tint and vertex color are MUTUALLY EXCLUSIVE on RGB.
-    // CPU: when HasTintColor, only the GREEN vertex channel is used as a scalar in the
-    // SM3002.pso tint formula, and RGB vertex color multiplication is skipped entirely.
-    // When no tint, standard RGB vertex color modulation is applied.
+    // Color modulation: tint and vertex color are mutually exclusive on RGB.
+    // Preserve vertex alpha, but do not modulate tinted RGB by raw mesh vertex colors;
+    // that creates blocky dark regions on hair/beard meshes in profile views.
     if ((flags & HAS_TINT) != 0u)
     {
-        // SM3002.pso hair tint: tintedShade = 2 * (vc * (HairTint - 0.5) + 0.5)
-        // vc = vertex color GREEN channel only (scalar), NOT full RGB
-        vec3 tint = uTintColor.rgb;
-        float vc = ((flags & HAS_VCOL) != 0u) ? vVertexColor.g : 1.0;
-        texColor.rgb = 2.0 * (vc * (tint - 0.5) + 0.5) * texColor.rgb;
+        texColor.rgb *= 2.0 * uTintColor.rgb;
     }
     else if ((flags & HAS_VCOL) != 0u)
     {

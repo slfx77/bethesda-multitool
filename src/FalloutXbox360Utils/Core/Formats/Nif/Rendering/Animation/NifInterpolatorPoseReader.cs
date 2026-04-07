@@ -197,13 +197,23 @@ internal static class NifInterpolatorPoseReader
         var qz = DecompressControlPoint(data, compactStart, rotHandle + 3, rotOffset, rotHalfRange, be);
         NormalizeQuaternion(ref qw, ref qx, ref qy, ref qz);
 
-        var hasTranslation = transHandle != 0xFFFF &&
-                             transHandle + 2 < numCompactControlPoints &&
-                             MathF.Abs(transOffset) < 1e30f;
+        // When a handle is 0xFFFF the spline contributes nothing on that channel and
+        // the engine falls back to the default Vec3 / Quat / float stored in the base
+        // NiBSplineTransformInterpolator fields (offsets 16..47 of the block).
+        var defaultTx = BinaryUtils.ReadFloat(data, blockOffset + 16, be);
+        var defaultTy = BinaryUtils.ReadFloat(data, blockOffset + 20, be);
+        var defaultTz = BinaryUtils.ReadFloat(data, blockOffset + 24, be);
+        var defaultScale = BinaryUtils.ReadFloat(data, blockOffset + 44, be);
+
+        var splineHasTranslation = transHandle != 0xFFFF &&
+                                   transHandle + 2 < numCompactControlPoints &&
+                                   MathF.Abs(transOffset) < 1e30f;
+        var defaultHasTranslation = MathF.Abs(defaultTx) < 1e30f;
+        var hasTranslation = splineHasTranslation || defaultHasTranslation;
         var tx = 0f;
         var ty = 0f;
         var tz = 0f;
-        if (hasTranslation)
+        if (splineHasTranslation)
         {
             tx = DecompressControlPoint(
                 data,
@@ -227,12 +237,20 @@ internal static class NifInterpolatorPoseReader
                 transHalfRange,
                 be);
         }
+        else if (defaultHasTranslation)
+        {
+            tx = defaultTx;
+            ty = defaultTy;
+            tz = defaultTz;
+        }
 
-        var hasScale = scaleHandle != 0xFFFF &&
-                       scaleHandle < numCompactControlPoints &&
-                       MathF.Abs(scaleOffset) < 1e30f;
+        var splineHasScale = scaleHandle != 0xFFFF &&
+                             scaleHandle < numCompactControlPoints &&
+                             MathF.Abs(scaleOffset) < 1e30f;
+        var defaultHasScale = MathF.Abs(defaultScale) < 1e30f;
+        var hasScale = splineHasScale || defaultHasScale;
         var scale = 1f;
-        if (hasScale)
+        if (splineHasScale)
         {
             scale = DecompressControlPoint(
                 data,
@@ -241,6 +259,10 @@ internal static class NifInterpolatorPoseReader
                 scaleOffset,
                 scaleHalfRange,
                 be);
+        }
+        else if (defaultHasScale)
+        {
+            scale = defaultScale;
         }
 
         return new NifAnimationParser.AnimPoseOverride(

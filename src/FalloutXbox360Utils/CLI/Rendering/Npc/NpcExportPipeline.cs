@@ -1,4 +1,5 @@
 using FalloutXbox360Utils.CLI.Rendering.Gltf;
+using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
@@ -19,6 +20,11 @@ internal static class NpcExportPipeline
         if (!ValidateInputPaths(settings, out var texturesBsaPaths))
         {
             return;
+        }
+
+        if (settings.NoTextures)
+        {
+            texturesBsaPaths = Array.Empty<string>();
         }
 
         Directory.CreateDirectory(settings.OutputDir);
@@ -88,6 +94,18 @@ internal static class NpcExportPipeline
                         continue;
                     }
 
+                    NormalizeSceneWinding(scene);
+
+                    if (settings.DiagnoseNormals)
+                    {
+                        AnsiConsole.MarkupLine(
+                            "\n[cyan]Normal diagnostic for[/] 0x{0:X8} {1}:",
+                            npc.NpcFormId,
+                            npc.FullName ?? npc.EditorId ?? "?");
+                        GltfNormalDiagnostic.Run(scene);
+                        GltfNormalDiagnostic.RunWithCoordinateConversion(scene);
+                    }
+
                     var outputPath = Path.Combine(
                         settings.OutputDir,
                         NpcExportFileNaming.BuildFileName(npc));
@@ -142,6 +160,8 @@ internal static class NpcExportPipeline
                         continue;
                     }
 
+                    NormalizeSceneWinding(scene);
+
                     var name = creature.EditorId ?? $"{formId:X8}";
                     var outputPath = Path.Combine(settings.OutputDir, $"{name}.glb");
                     NpcGlbWriter.Write(scene, textureResolver, outputPath);
@@ -172,6 +192,19 @@ internal static class NpcExportPipeline
             exported,
             skipped,
             failed);
+    }
+
+    private static void NormalizeSceneWinding(NpcExportScene scene)
+    {
+        foreach (var meshPart in scene.MeshParts)
+        {
+            if (meshPart.Submesh.Normals == null || meshPart.Submesh.TriangleCount == 0)
+            {
+                continue;
+            }
+
+            GltfNormalDiagnostic.FixWindingOrder(meshPart.Submesh);
+        }
     }
 
     private static bool ValidateInputPaths(
@@ -207,7 +240,7 @@ internal static class NpcExportPipeline
         texturesBsaPaths = NpcTextureHelpers.ResolveTexturesBsaPaths(
             settings.MeshesBsaPath,
             settings.ExplicitTexturesBsaPaths);
-        if (texturesBsaPaths.Length == 0)
+        if (texturesBsaPaths.Length == 0 && !settings.NoTextures)
         {
             AnsiConsole.MarkupLine("[red]Error:[/] No texture BSA files found");
             return false;

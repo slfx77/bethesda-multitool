@@ -147,7 +147,8 @@ internal static class NpcMeshHelpers
         NifRenderableModel model,
         float[]? symCoeffs, float[]? asymCoeffs,
         NpcMeshArchiveSet meshArchives,
-        Dictionary<string, EgmParser?> egmCache)
+        Dictionary<string, EgmParser?> egmCache,
+        bool recalculateNormals = true)
     {
         if (!egmCache.TryGetValue(egmPath, out var egm))
         {
@@ -159,7 +160,7 @@ internal static class NpcMeshHelpers
         {
             Log.Debug("EGM '{0}': {1} sym + {2} asym morphs, {3} vertices",
                 egmPath, egm.SymmetricMorphs.Length, egm.AsymmetricMorphs.Length, egm.VertexCount);
-            FaceGenMeshMorpher.Apply(model, egm, symCoeffs, asymCoeffs);
+            FaceGenMeshMorpher.Apply(model, egm, symCoeffs, asymCoeffs, recalculateNormals);
         }
     }
 

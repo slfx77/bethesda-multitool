@@ -10,6 +10,7 @@ internal sealed class NpcCompositionOptions : IEquatable<NpcCompositionOptions>
     public bool BindPose { get; init; }
     public bool ApplyEgm { get; init; } = true;
     public bool ApplyEgt { get; init; } = true;
+    public bool IncludeHair { get; init; } = true;
     public string? AnimOverride { get; init; }
 
     public static NpcCompositionOptions From(NpcRenderSettings settings)
@@ -24,6 +25,7 @@ internal sealed class NpcCompositionOptions : IEquatable<NpcCompositionOptions>
             BindPose = settings.BindPose,
             ApplyEgm = !settings.NoEgm,
             ApplyEgt = !settings.NoEgt,
+            IncludeHair = true,
             AnimOverride = settings.AnimOverride
         };
     }
@@ -40,6 +42,7 @@ internal sealed class NpcCompositionOptions : IEquatable<NpcCompositionOptions>
             BindPose = settings.BindPose,
             ApplyEgm = !settings.NoEgm,
             ApplyEgt = !settings.NoEgt,
+            IncludeHair = !settings.NoHair,
             AnimOverride = settings.AnimOverride
         };
     }

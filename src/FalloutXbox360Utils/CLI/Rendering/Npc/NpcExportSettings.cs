@@ -16,4 +16,7 @@ internal sealed class NpcExportSettings
     public bool NoEgt { get; init; }
     public bool BindPose { get; init; }
     public string? AnimOverride { get; init; }
+    public bool NoTextures { get; set; }
+    public bool DiagnoseNormals { get; set; }
+    public bool NoHair { get; set; }
 }

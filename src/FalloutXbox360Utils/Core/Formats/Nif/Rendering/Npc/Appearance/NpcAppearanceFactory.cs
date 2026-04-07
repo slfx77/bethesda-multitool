@@ -26,7 +26,8 @@ internal sealed class NpcAppearanceFactory
             index.Weapons,
             index.ArmorAddons,
             index.LeveledItems,
-            index.Idles);
+            index.Idles,
+            index.CombatStyles);
     }
 
     internal NpcAppearance Build(uint formId, NpcScanEntry npc, string pluginName)

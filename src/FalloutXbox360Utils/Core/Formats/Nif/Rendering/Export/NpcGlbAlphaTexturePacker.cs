@@ -21,10 +21,26 @@ internal static class NpcGlbAlphaTexturePacker
             diffuseTexture != null &&
             UsesStandardAlphaBlend(alphaState) &&
             !IsGlassLikeShape(submesh) &&
-            !IsHairShape(submesh) &&
             HasMostlyBinaryAlpha(diffuseTexture))
         {
             renderMode = NifAlphaRenderMode.Cutout;
+        }
+
+        // Hair NIFs typically have HasAlphaBlend=true but HasAlphaTest=false. Bethesda's
+        // engine still uses alpha-test discard for hair via the SM3002 shader, not real
+        // alpha blending. In glTF, BLEND mode causes overlapping hair cards to compound
+        // darken each other (each layer multiplies by (1-srcAlpha)), creating visible
+        // dark patches where cards stack. Force CUTOUT for hair-like meshes (tinted) so
+        // each card pixel is either fully opaque or fully discarded.
+        if (renderMode == NifAlphaRenderMode.Blend &&
+            diffuseTexture != null &&
+            IsHairShape(submesh) &&
+            HasMostlyBinaryAlpha(diffuseTexture))
+        {
+            renderMode = NifAlphaRenderMode.Cutout;
+            // Default cutout threshold for hair: 128 (mid-range). The SM3002 shader uses
+            // engine-specific alpha test thresholds we don't replicate exactly.
+            threshold = 128;
         }
 
         if (renderMode == NifAlphaRenderMode.Cutout && diffuseTexture != null)

@@ -113,6 +113,12 @@ internal static class NpcAppearanceIndexBuilder
                         record.FormId,
                         LeveledListRecordScanner.Process(esmData, bigEndian, record));
                     break;
+                case "CSTY":
+                    AddIfPresent(
+                        index.CombatStyles,
+                        record.FormId,
+                        CombatStyleRecordScanner.Process(esmData, bigEndian, record));
+                    break;
             }
         }
 

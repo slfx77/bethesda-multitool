@@ -34,17 +34,20 @@ internal sealed class NpcWeaponResolver
 
     private readonly IReadOnlyDictionary<uint, PackageScanEntry> _packages;
     private readonly IReadOnlyDictionary<uint, WeapScanEntry> _weapons;
+    private readonly IReadOnlyDictionary<uint, CstyEntry> _combatStyles;
 
     internal NpcWeaponResolver(
         IReadOnlyDictionary<uint, PackageScanEntry> packages,
         IReadOnlyDictionary<uint, WeapScanEntry> weapons,
         IReadOnlyDictionary<uint, ArmaAddonScanEntry> armorAddons,
         IReadOnlyDictionary<uint, List<uint>> leveledItems,
-        IReadOnlyDictionary<uint, IdleScanEntry> idles)
+        IReadOnlyDictionary<uint, IdleScanEntry> idles,
+        IReadOnlyDictionary<uint, CstyEntry>? combatStyles = null)
     {
         _packages = packages;
         _weapons = weapons;
         _leveledItems = leveledItems;
+        _combatStyles = combatStyles ?? new Dictionary<uint, CstyEntry>();
         _idlesByEditorId = BuildIdleEditorLookup(idles);
         _handToHandAddonsByPath = BuildHandToHandAddonLookup(armorAddons);
     }
@@ -140,29 +143,52 @@ internal sealed class NpcWeaponResolver
             return null;
         }
 
-        var ammoCounts = new Dictionary<uint, int>();
-        foreach (var item in expandedInventory)
-        {
-            ammoCounts.TryGetValue(item.ItemFormId, out var count);
-            ammoCounts[item.ItemFormId] = count + item.Count;
-        }
-
-        WeaponVisual? bestVisual = null;
-        var bestScore = float.MinValue;
-
+        // Collect renderable candidates with their inventory FormId, then apply
+        // CSTY Weapon Restrictions filtering and score the survivors. We deliberately
+        // ignore ammo availability — companions like Cass and Arcade get their iconic
+        // ranged weapon's ammo at runtime (scripts, leveled lists, template inheritance)
+        // rather than from static CNTO entries, so an ammo gate would push them to a
+        // melee fallback they'd never actually use.
+        var candidates = new List<(uint FormId, WeapScanEntry Weapon)>();
         foreach (var item in expandedInventory)
         {
             if (item.Count <= 0 ||
                 !_weapons.TryGetValue(item.ItemFormId, out var weapon) ||
                 !IsRenderableCombatWeapon(weapon) ||
-                string.IsNullOrWhiteSpace(weapon.ModelPath) ||
-                !HasAmmo(weapon, ammoCounts))
+                string.IsNullOrWhiteSpace(weapon.ModelPath))
             {
                 continue;
             }
 
+            candidates.Add((item.ItemFormId, weapon));
+        }
+
+        if (candidates.Count == 0)
+        {
+            return null;
+        }
+
+        var restriction = ResolveWeaponRestriction(npc.CombatStyleFormId);
+        var pool = candidates;
+        if (restriction != WeaponRestriction.None)
+        {
+            var filtered = candidates
+                .Where(c => WeaponSelectionScorer.MatchesRestriction(c.Weapon.WeaponType, restriction))
+                .ToList();
+            if (filtered.Count > 0)
+            {
+                pool = filtered;
+            }
+        }
+
+        var strength = npc.SpecialStats is { Length: > 0 } ? npc.SpecialStats[0] : (byte)10;
+
+        WeaponVisual? bestVisual = null;
+        var bestScore = float.MinValue;
+        foreach (var (formId, weapon) in pool)
+        {
             if (!TryBuildVisual(
-                    item.ItemFormId,
+                    formId,
                     WeaponVisualSourceKind.EsmBestWeapon,
                     null,
                     npc.IsFemale,
@@ -171,15 +197,24 @@ internal sealed class NpcWeaponResolver
                 continue;
             }
 
-            var score = ScoreWeapon(npc, weapon);
+            var score = WeaponSelectionScorer.Score(weapon, npc.Skills, combatSkillAggregate: null, strength);
             if (score > bestScore)
             {
                 bestScore = score;
                 bestVisual = visual;
             }
         }
-
         return bestVisual;
+    }
+
+    private WeaponRestriction ResolveWeaponRestriction(uint? combatStyleFormId)
+    {
+        if (combatStyleFormId is { } id && _combatStyles.TryGetValue(id, out var csty))
+        {
+            return csty.Restriction;
+        }
+
+        return WeaponRestriction.None;
     }
 
     private List<InventoryItem> ExpandInventory(List<InventoryItem> inventoryItems)
@@ -566,70 +601,8 @@ internal sealed class NpcWeaponResolver
                (weapon.FlagsEx & WeaponNotUsedInNormalCombatFlag) == 0;
     }
 
-    private static bool HasAmmo(WeapScanEntry weapon, Dictionary<uint, int> ammoCounts)
-    {
-        if (!weapon.AmmoFormId.HasValue)
-        {
-            return true;
-        }
 
-        return ammoCounts.TryGetValue(weapon.AmmoFormId.Value, out var count) && count > 0;
-    }
-
-    private static float ScoreWeapon(NpcScanEntry npc, WeapScanEntry weapon)
-    {
-        var baseDps = MathF.Max(weapon.Damage, 0) * MathF.Max(weapon.ShotsPerSec, 0.1f);
-        var effectiveRange = weapon.MaxRange > 0f
-            ? MathF.Max(weapon.MaxRange - weapon.MinRange, weapon.MaxRange)
-            : 0f;
-        var rangeFactor = 1f + MathF.Min(effectiveRange / 2000f, 0.75f);
-        var spreadPenalty = 1f / (1f + MathF.Max(weapon.Spread, 0f) * 0.5f);
-        var skill = ResolveActorSkill(npc.Skills, weapon.SkillActorValue);
-        var skillFactor = 0.5f + Math.Clamp(skill / 100f, 0f, 1f);
-        var skillRequirementPenalty = weapon.SkillRequirement > 0 && skill < weapon.SkillRequirement
-            ? 0.35f
-            : 1f;
-        var strength = npc.SpecialStats is { Length: > 0 }
-            ? npc.SpecialStats[0]
-            : (byte)10;
-        var strengthPenalty = weapon.StrengthRequirement > 0 && strength < weapon.StrengthRequirement
-            ? 0.65f
-            : 1f;
-        var conditionFactor = weapon.Health > 0 ? 1f : 0.85f;
-
-        return baseDps * rangeFactor * spreadPenalty * skillFactor * skillRequirementPenalty * strengthPenalty *
-               conditionFactor;
-    }
-
-    private static float ResolveActorSkill(byte[]? skills, uint actorValueId)
-    {
-        if (skills == null || skills.Length == 0)
-        {
-            return 50f;
-        }
-
-        var index = actorValueId switch
-        {
-            32 => 0, // Barter
-            33 => 1, // Big Guns
-            34 => 2, // Energy Weapons
-            35 => 3, // Explosives
-            38 => 6, // Melee Weapons
-            41 => 9, // Guns
-            44 => 12, // Survival/Thrown
-            45 => 13, // Unarmed
-            _ => -1
-        };
-
-        if (index < 0 || index >= skills.Length)
-        {
-            return 50f;
-        }
-
-        return skills[index];
-    }
-
-    private static bool TryResolveHolsterProfileKey(WeaponType weaponType, out string holsterProfileKey)
+    internal static bool TryResolveHolsterProfileKey(WeaponType weaponType, out string holsterProfileKey)
     {
         holsterProfileKey = weaponType switch
         {

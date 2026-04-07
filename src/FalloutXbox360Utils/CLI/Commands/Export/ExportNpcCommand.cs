@@ -87,6 +87,18 @@ internal static class ExportNpcCommand
         {
             Description = "Override animation KF path (e.g. sneakmtidle.kf)"
         };
+        var noTexturesOption = new Option<bool>("--no-textures")
+        {
+            Description = "Export without textures (vertex colors + flat material only)"
+        };
+        var diagnoseNormalsOption = new Option<bool>("--diagnose-normals")
+        {
+            Description = "Run normal/winding consistency diagnostic on exported meshes"
+        };
+        var noHairOption = new Option<bool>("--no-hair")
+        {
+            Description = "Skip hair geometry (debugging)"
+        };
 
         command.Arguments.Add(inputArg);
         command.Options.Add(extraMeshesBsaOption);
@@ -104,6 +116,9 @@ internal static class ExportNpcCommand
         command.Options.Add(weaponOption);
         command.Options.Add(bindPoseOption);
         command.Options.Add(animOption);
+        command.Options.Add(noTexturesOption);
+        command.Options.Add(diagnoseNormalsOption);
+        command.Options.Add(noHairOption);
 
         command.SetAction((parseResult, _) =>
         {
@@ -149,7 +164,10 @@ internal static class ExportNpcCommand
                 return Task.CompletedTask;
             }
 
-            NpcExportPipeline.Run(settings!);
+            settings!.NoTextures = parseResult.GetValue(noTexturesOption);
+            settings.DiagnoseNormals = parseResult.GetValue(diagnoseNormalsOption);
+            settings.NoHair = parseResult.GetValue(noHairOption);
+            NpcExportPipeline.Run(settings);
             return Task.CompletedTask;
         });
 

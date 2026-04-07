@@ -122,6 +122,7 @@ internal static class NpcEquipmentAttacher
                 }
 
                 sub.RenderOrder = 5;
+                sub.SourceNifPath = item.MeshPath;
                 bodyModel.Submeshes.Add(sub);
                 bodyModel.ExpandBounds(sub.Positions);
             }
@@ -529,6 +530,7 @@ internal static class NpcEquipmentAttacher
                 }
 
                 sub.RenderOrder = 5;
+                sub.SourceNifPath = item.MeshPath;
                 bodyModel.Submeshes.Add(sub);
                 bodyModel.ExpandBounds(sub.Positions);
             }

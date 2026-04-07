@@ -16,7 +16,8 @@ internal static class FaceGenMeshMorpher
         NifRenderableModel model,
         EgmParser egm,
         float[]? symmetricCoeffs,
-        float[]? asymmetricCoeffs)
+        float[]? asymmetricCoeffs,
+        bool recalculateNormals = true)
     {
         var submesh = FindLargestSubmesh(model);
         if (submesh == null)
@@ -24,7 +25,8 @@ internal static class FaceGenMeshMorpher
 
         var vertexCount = Math.Min(submesh.VertexCount, egm.VertexCount);
         AccumulateDeltas(submesh.Positions, egm, symmetricCoeffs, asymmetricCoeffs, vertexCount);
-        RecalculateNormals(submesh);
+        if (recalculateNormals)
+            RecalculateNormals(submesh);
         RecalculateBounds(model);
     }
 
@@ -135,6 +137,12 @@ internal static class FaceGenMeshMorpher
         var positions = submesh.Positions;
         var triangles = submesh.Triangles;
 
+        // Save the original authored normals. NIF meshes don't guarantee consistent
+        // triangle winding order — the engine uses authored normals and doesn't depend
+        // on winding for face direction. After recomputing from cross products, we check
+        // each vertex normal against its original direction and flip if they disagree.
+        var originalNormals = (float[])normals.Clone();
+
         Array.Clear(normals);
 
         for (var t = 0; t < triangles.Length; t += 3)
@@ -176,6 +184,19 @@ internal static class FaceGenMeshMorpher
                 normals[v] = nx / len;
                 normals[v + 1] = ny / len;
                 normals[v + 2] = nz / len;
+
+                // If the recomputed normal disagrees with the original authored normal,
+                // the triangle winding is reversed at this vertex. Flip to preserve the
+                // original outward direction.
+                var dot = normals[v] * originalNormals[v] +
+                          normals[v + 1] * originalNormals[v + 1] +
+                          normals[v + 2] * originalNormals[v + 2];
+                if (dot < 0f)
+                {
+                    normals[v] = -normals[v];
+                    normals[v + 1] = -normals[v + 1];
+                    normals[v + 2] = -normals[v + 2];
+                }
             }
         }
 
@@ -192,7 +213,7 @@ internal static class FaceGenMeshMorpher
     ///     EGM morphing breaks seam-vertex normal sharing, causing visible hard edges
     ///     at mesh boundaries (neck, ears). This restores smooth normals at those seams.
     /// </summary>
-    private static void WeldSeamNormals(float[] positions, float[] normals)
+    internal static void WeldSeamNormals(float[] positions, float[] normals)
     {
         const float epsilon = 0.001f;
         const float epsilonSq = epsilon * epsilon;

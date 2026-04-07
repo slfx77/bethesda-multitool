@@ -270,14 +270,6 @@ internal static class NpcHeadBuilder
             useDualQuaternionSkinning: true,
             preSkinMorphDeltas: preSkinMorphDeltas);
 
-        // When EGM deltas were applied pre-skinning, recalculate normals from the
-        // final morphed+skinned positions so lighting reflects the morphed geometry.
-        if (model != null && preSkinMorphDeltas != null)
-        {
-            foreach (var sub in model.Submeshes)
-                FaceGenMeshMorpher.RecalculateNormals(sub);
-        }
-
         return model;
     }
 
@@ -335,7 +327,8 @@ internal static class NpcHeadBuilder
                     npc.FaceGenSymmetricCoeffs,
                     npc.FaceGenAsymmetricCoeffs,
                     meshArchives,
-                    egmCache);
+                    egmCache,
+                    recalculateNormals: false);
             }
 
             // Apply a small inward offset to mouth/teeth parts when FaceGen morphs
@@ -481,7 +474,8 @@ internal static class NpcHeadBuilder
             var hairEgmPath = Path.Combine(hairDir, hairBaseName + egmSuffix);
             NpcMeshHelpers.LoadAndApplyEgm(hairEgmPath, hairModel,
                 npc.FaceGenSymmetricCoeffs, npc.FaceGenAsymmetricCoeffs,
-                meshArchives, egmCache);
+                meshArchives, egmCache,
+                recalculateNormals: false);
         }
 
         if (attachmentBoneTransforms != null &&
@@ -584,7 +578,8 @@ internal static class NpcHeadBuilder
                 var eyeEgmPath = Path.ChangeExtension(eyeNifPath, ".egm");
                 NpcMeshHelpers.LoadAndApplyEgm(eyeEgmPath, eyeModel,
                     npc.FaceGenSymmetricCoeffs, npc.FaceGenAsymmetricCoeffs,
-                    meshArchives, egmCache);
+                    meshArchives, egmCache,
+                    recalculateNormals: false);
             }
 
             // Attach eyes with the direct boneless head transform.
@@ -651,7 +646,8 @@ internal static class NpcHeadBuilder
                 var egmPath = Path.ChangeExtension(partPath, ".egm");
                 NpcMeshHelpers.LoadAndApplyEgm(egmPath, partModel,
                     npc.FaceGenSymmetricCoeffs, npc.FaceGenAsymmetricCoeffs,
-                    meshArchives, egmCache);
+                    meshArchives, egmCache,
+                    recalculateNormals: false);
             }
 
             // Position head parts: parent to Bip01 Head bone (same as hair).
@@ -733,7 +729,8 @@ internal static class NpcHeadBuilder
                     npc.FaceGenSymmetricCoeffs,
                     npc.FaceGenAsymmetricCoeffs,
                     meshArchives,
-                    egmCache);
+                    egmCache,
+                    recalculateNormals: false);
             }
 
             if (!hasSkinning)

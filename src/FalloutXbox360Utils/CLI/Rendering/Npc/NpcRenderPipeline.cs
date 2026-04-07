@@ -522,6 +522,17 @@ internal static class NpcRenderPipeline
         NpcAppearanceResolver resolver,
         NpcRenderSettings settings)
     {
+        if (settings.Skeleton && creature.SkeletonPath != null)
+        {
+            var skelPath = creature.SkeletonPath.StartsWith("meshes\\", StringComparison.OrdinalIgnoreCase)
+                ? creature.SkeletonPath
+                : "meshes\\" + creature.SkeletonPath.TrimStart('\\');
+            return NpcSkeletonLoader.BuildSkeletonVisualization(
+                skelPath,
+                meshArchives,
+                settings.BindPose);
+        }
+
         var plan = CreatureCompositionPlanner.CreatePlan(
             creature,
             meshArchives,

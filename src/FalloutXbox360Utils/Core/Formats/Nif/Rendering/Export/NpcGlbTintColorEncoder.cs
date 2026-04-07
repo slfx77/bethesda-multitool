@@ -77,6 +77,15 @@ internal static class NpcGlbTintColorEncoder
         }
 
         var color = NifVertexColorPolicy.Read(submesh, vertexIndex);
+
+        // Preserve vertex alpha for tinted meshes, but keep RGB neutral. Using
+        // raw mesh vertex colors as a tint scalar creates blocky dark patches on
+        // hair/beard renders and mismatches the desired uniform HCLR tinting.
+        if (HasTintColor(submesh))
+        {
+            return new Vector4(1f, 1f, 1f, color.A / 255f);
+        }
+
         return new Vector4(
             color.R / 255f,
             color.G / 255f,

@@ -33,6 +33,7 @@ internal static class NpcRecordScanner
         var isFemale = false;
         ushort templateFlags = 0;
         uint? templateFormId = null;
+        uint? combatStyleFormId = null;
         float[]? faceGenSymmetric = null;
         float[]? faceGenAsymmetric = null;
         float[]? faceGenTexture = null;
@@ -122,6 +123,12 @@ internal static class NpcRecordScanner
                         0,
                         bigEndian);
                     break;
+                case "ZNAM" when subrecord.Data.Length == 4:
+                    combatStyleFormId = BinaryUtils.ReadUInt32(
+                        subrecord.Data,
+                        0,
+                        bigEndian);
+                    break;
                 case "FGGS" when subrecord.Data.Length >= 4:
                     faceGenSymmetric = NpcRecordDataReader.ReadFloatArray(
                         subrecord.Data,
@@ -151,12 +158,10 @@ internal static class NpcRecordScanner
                     break;
                 case "DNAM" when subrecord.Data.Length == 28:
                 {
+                    // FNV NPC_ DNAM: 14 skill base values (bytes 0..13)
+                    // followed by 14 skill offset values (bytes 14..27).
                     skills = new byte[14];
-                    for (var i = 0; i < skills.Length; i++)
-                    {
-                        skills[i] = subrecord.Data[i * 2];
-                    }
-
+                    Array.Copy(subrecord.Data, 0, skills, 0, 14);
                     break;
                 }
             }
@@ -181,7 +186,8 @@ internal static class NpcRecordScanner
             InventoryItems = inventoryItems.Count > 0 ? inventoryItems : null,
             PackageFormIds = packageFormIds.Count > 0 ? packageFormIds : null,
             TemplateFormId = templateFormId,
-            TemplateFlags = templateFlags
+            TemplateFlags = templateFlags,
+            CombatStyleFormId = combatStyleFormId
         };
     }
 }

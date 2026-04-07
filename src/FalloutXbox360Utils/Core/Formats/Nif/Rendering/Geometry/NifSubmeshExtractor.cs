@@ -86,6 +86,7 @@ internal static class NifSubmeshExtractor
             VertexColors = submesh.VertexColors,
             Tangents = submesh.Tangents,
             Bitangents = submesh.Bitangents,
+            BindPosePositions = submesh.BindPosePositions,
             ShaderMetadata = shaderMetadata,
             DiffuseTexturePath = diffuseTexturePath,
             NormalMapTexturePath = normalMapTexturePath,
@@ -282,6 +283,11 @@ internal static class NifSubmeshExtractor
                 positions[i] += preSkinMorphDeltas[i];
         }
 
+        // Capture bind-pose world positions before skinning for boundary vertex stitching
+        float[]? bindPosePositions = skinning.HasValue
+            ? NifGeometryTransformUtils.TransformPositions(positions, transform)
+            : null;
+
         var transformed = ApplySkinningOrTransform(
             positions,
             normals,
@@ -301,7 +307,8 @@ internal static class NifSubmeshExtractor
             UVs = uvs,
             VertexColors = vertexColors,
             Tangents = transformed.Tangents,
-            Bitangents = transformed.Bitangents
+            Bitangents = transformed.Bitangents,
+            BindPosePositions = bindPosePositions
         };
     }
 
@@ -436,6 +443,11 @@ internal static class NifSubmeshExtractor
                 positions[i] += preSkinMorphDeltas[i];
         }
 
+        // Capture bind-pose world positions before skinning for boundary vertex stitching
+        float[]? bindPosePositions = skinning.HasValue
+            ? NifGeometryTransformUtils.TransformPositions(positions, transform)
+            : null;
+
         var transformed = ApplySkinningOrTransform(
             positions,
             normals,
@@ -455,7 +467,8 @@ internal static class NifSubmeshExtractor
             UVs = uvs,
             VertexColors = vertexColors,
             Tangents = transformed.Tangents,
-            Bitangents = transformed.Bitangents
+            Bitangents = transformed.Bitangents,
+            BindPosePositions = bindPosePositions
         };
     }
 

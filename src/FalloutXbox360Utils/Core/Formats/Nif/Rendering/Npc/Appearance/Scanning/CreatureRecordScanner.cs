@@ -28,6 +28,9 @@ internal static class CreatureRecordScanner
         string[]? animationPaths = null;
         var inventoryItems = new List<InventoryItem>();
         byte creatureType = 0;
+        uint? combatStyleFormId = null;
+        byte? combatSkill = null;
+        byte? strength = null;
 
         foreach (var subrecord in subrecords)
         {
@@ -55,6 +58,21 @@ internal static class CreatureRecordScanner
                     break;
                 case "DATA" when subrecord.Data.Length >= 1:
                     creatureType = subrecord.Data[0];
+                    // FNV CREA DATA: [0]=type, [1]=combatSkill, [2]=magicSkill, [3]=stealthSkill,
+                    //                [4..7]=int32 health, [8..9]=short damage, [10..16]=7 SPECIAL bytes
+                    if (subrecord.Data.Length >= 4)
+                    {
+                        combatSkill = subrecord.Data[1];
+                    }
+
+                    if (subrecord.Data.Length >= 17)
+                    {
+                        strength = subrecord.Data[10];
+                    }
+
+                    break;
+                case "ZNAM" when subrecord.Data.Length == 4:
+                    combatStyleFormId = BinaryUtils.ReadUInt32(subrecord.Data, 0, bigEndian);
                     break;
             }
         }
@@ -66,7 +84,12 @@ internal static class CreatureRecordScanner
 
         return new CreatureScanEntry(
             editorId, fullName, skeletonPath, bodyModelPaths, animationPaths,
-            inventoryItems.Count > 0 ? inventoryItems : null, creatureType);
+            inventoryItems.Count > 0 ? inventoryItems : null, creatureType)
+        {
+            CombatStyleFormId = combatStyleFormId,
+            CombatSkill = combatSkill,
+            Strength = strength
+        };
     }
 
     /// <summary>

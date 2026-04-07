@@ -242,7 +242,9 @@ internal static class NifScanlineRasterizer
                         }
                     }
 
-                    shade = NifSpriteRenderer.ComputeShade(nx, ny, nz, tri.IsDoubleSided);
+                    shade = tri.HasTintColor
+                        ? NifSpriteRenderer.ComputeTintedShade(nx, ny, nz)
+                        : NifSpriteRenderer.ComputeShade(nx, ny, nz, tri.IsDoubleSided);
 
                     // Eye specular: approximate SLS2057.pso cubemap reflection as Blinn-Phong.
                     // The game samples an EnvironmentCubeMap at the reflection vector; we
@@ -324,17 +326,12 @@ internal static class NifScanlineRasterizer
                     float fr, fg, fb;
                     if (tri.HasTintColor)
                     {
-                        // SM3002.pso hair shader (from D3D9 bytecode disassembly):
-                        //   tintedShade = 2 * (vc * (HairTint - 0.5) + 0.5)
-                        //   final = accumulatedDiffuse * blendedTex * tintedShade
-                        // The "lightScalar" is a hardcoded -0.5 (def c6), NOT per-pixel NdotL.
-                        // With vc=1: tintedShade = 2*HairTint. Dark tints darken, light tints brighten.
-                        var vc = tri.HasVertexColors
-                            ? (tri.G0 * w0 + tri.G1 * w1 + tri.G2 * w2) / 255f
-                            : 1f;
-                        var tintShadeR = 2f * (vc * (tri.TintR - 0.5f) + 0.5f);
-                        var tintShadeG = 2f * (vc * (tri.TintG - 0.5f) + 0.5f);
-                        var tintShadeB = 2f * (vc * (tri.TintB - 0.5f) + 0.5f);
+                        // Hair tint is an HCLR-driven uniform multiplier. Preserve vertex alpha,
+                        // but do not modulate tinted RGB by raw mesh vertex colors; that produces
+                        // blocky dark patches in profile views on hair/beard meshes.
+                        var tintShadeR = 2f * tri.TintR;
+                        var tintShadeG = 2f * tri.TintG;
+                        var tintShadeB = 2f * tri.TintB;
                         fr = r * tintShadeR * shade;
                         fg = g * tintShadeG * shade;
                         fb = b * tintShadeB * shade;
@@ -480,14 +477,10 @@ internal static class NifScanlineRasterizer
                     float fr, fg, fb;
                     if (tri.HasTintColor)
                     {
-                        // Hair tint (no texture fallback): same SM3002 formula
-                        var vc = tri.HasVertexColors
-                            ? (tri.G0 * w0 + tri.G1 * w1 + tri.G2 * w2) / 255f
-                            : 1f;
-                        var baseVal = tri.HasVertexColors ? 255f : brightness;
-                        fr = Math.Clamp(baseVal * 2f * (vc * (tri.TintR - 0.5f) + 0.5f) * shade, 0, 255);
-                        fg = Math.Clamp(baseVal * 2f * (vc * (tri.TintG - 0.5f) + 0.5f) * shade, 0, 255);
-                        fb = Math.Clamp(baseVal * 2f * (vc * (tri.TintB - 0.5f) + 0.5f) * shade, 0, 255);
+                        var baseVal = brightness;
+                        fr = Math.Clamp(baseVal * 2f * tri.TintR * shade, 0, 255);
+                        fg = Math.Clamp(baseVal * 2f * tri.TintG * shade, 0, 255);
+                        fb = Math.Clamp(baseVal * 2f * tri.TintB * shade, 0, 255);
                     }
                     else if (tri.HasVertexColors)
                     {
