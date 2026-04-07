@@ -1,3 +1,4 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
@@ -41,11 +42,9 @@ internal static class CellLinkageHandler
             }
             else if (ws.BoundsMinX.HasValue && ws.BoundsMaxX.HasValue)
             {
-                // NAM0/NAM9: world unit coordinates, convert to cell grid (4096 units per cell)
-                minCellX = (int)MathF.Floor(ws.BoundsMinX.Value / 4096f);
-                maxCellX = (int)MathF.Floor(ws.BoundsMaxX.Value / 4096f);
-                minCellY = (int)MathF.Floor(ws.BoundsMinY!.Value / 4096f);
-                maxCellY = (int)MathF.Floor(ws.BoundsMaxY!.Value / 4096f);
+                // NAM0/NAM9: world unit coordinates, convert to cell grid
+                (minCellX, minCellY) = CellUtils.WorldToCellCoordinates(ws.BoundsMinX.Value, ws.BoundsMinY!.Value);
+                (maxCellX, maxCellY) = CellUtils.WorldToCellCoordinates(ws.BoundsMaxX.Value, ws.BoundsMaxY!.Value);
             }
             else
             {
@@ -310,8 +309,7 @@ internal static class CellLinkageHandler
                 var stillOrphans = new List<ExtractedRefrRecord>();
                 foreach (var orphan in trueOrphans)
                 {
-                    var gx = (int)MathF.Floor(orphan.Position!.X / 4096f);
-                    var gy = (int)MathF.Floor(orphan.Position.Y / 4096f);
+                    var (gx, gy) = CellUtils.WorldToCellCoordinates(orphan.Position!.X, orphan.Position.Y);
 
                     var resolvedCell = TryResolveOrphanByGrid(
                         gx, gy, gridToCellByWorldspace, wsBounds, cellByFormId, context);
@@ -375,8 +373,7 @@ internal static class CellLinkageHandler
         foreach (var orphan in trueOrphans)
         {
             var pos = orphan.Position!;
-            var gx = (int)MathF.Floor(pos.X / 4096f);
-            var gy = (int)MathF.Floor(pos.Y / 4096f);
+            var (gx, gy) = CellUtils.WorldToCellCoordinates(pos.X, pos.Y);
 
             // Find a worldspace whose grid bounds contain (gx, gy).
             // wsBounds is sorted by cell count ascending, so smallest (most specific) wins.
@@ -514,8 +511,7 @@ internal static class CellLinkageHandler
                 // Only move refs with non-trivial coordinates. Refs near the origin are
                 // either genuine origin-tile refs or coordinate-less container refs;
                 // leave them on the persistent cell unless their grid clearly resolves.
-                var gx = (int)MathF.Floor(pref.X / 4096f);
-                var gy = (int)MathF.Floor(pref.Y / 4096f);
+                var (gx, gy) = CellUtils.WorldToCellCoordinates(pref.X, pref.Y);
 
                 // Skip refs whose position is essentially zero AND no grid entry exists
                 // for (0,0) — those are likely uninitialized positions, not real placements.
@@ -798,17 +794,15 @@ internal static class CellLinkageHandler
         {
             var distinctGrids = relatedOrphans
                 .Where(orphan => orphan.Position != null)
-                .Select(orphan => (
-                    X: (int)MathF.Floor(orphan.Position!.X / 4096f),
-                    Y: (int)MathF.Floor(orphan.Position.Y / 4096f)))
+                .Select(orphan => CellUtils.WorldToCellCoordinates(orphan.Position!.X, orphan.Position.Y))
                 .Distinct()
                 .Take(2)
                 .ToList();
 
             if (distinctGrids.Count == 1)
             {
-                gridX = distinctGrids[0].X;
-                gridY = distinctGrids[0].Y;
+                gridX = distinctGrids[0].cellX;
+                gridY = distinctGrids[0].cellY;
             }
         }
 
