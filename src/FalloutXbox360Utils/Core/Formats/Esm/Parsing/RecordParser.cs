@@ -265,6 +265,19 @@ public sealed class RecordParser
             }
         }
 
+        // Persistent-ref redistribution: walk every IsPersistentCell container and move refs
+        // with valid world positions into their real exterior tile (per-worldspace grid lookup
+        // with parsed-cell fallback and synthetic-tile creation when neither source covers the
+        // destination grid). Must run after CreateVirtualCells so that Phase 1 has had a chance
+        // to populate persistent cells via ParentCellFormId.
+        var redistributed = CellLinkageHandler.RedistributePersistentRefs(cells, _context);
+        if (redistributed > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] Redistributed {redistributed} persistent ref(s) from persistent " +
+                "cell containers to their owning exterior tiles");
+        }
+
         WorldRecordHandler.EnsureWorldspacesForCells(cells, worldspaces, _context);
         WorldRecordHandler.LinkCellsToWorldspaces(cells, worldspaces);
         var packages = _ai.ParsePackages();
