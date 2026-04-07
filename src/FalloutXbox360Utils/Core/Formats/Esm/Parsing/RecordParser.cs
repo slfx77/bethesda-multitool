@@ -437,6 +437,9 @@ public sealed class RecordParser
             ModelPathIndex = modelIndex,
             FormIdToEditorId = new Dictionary<uint, string>(_context.FormIdToEditorId),
             FormIdToDisplayName = _context.BuildFormIdToDisplayNameMap(),
+            RuntimeWorldspaceMaps = _context.RuntimeWorldspaceCellMaps != null
+                ? new Dictionary<uint, RuntimeWorldspaceData>(_context.RuntimeWorldspaceCellMaps)
+                : [],
             TotalRecordsProcessed = _context.ScanResult.MainRecords.Count,
             UnparsedTypeCounts = unparsedCounts
         };

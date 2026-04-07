@@ -211,6 +211,14 @@ public record RecordCollection
     /// <summary>FormID to display name (FullName) mapping built from runtime hash table entries.</summary>
     public Dictionary<uint, string> FormIdToDisplayName { get; init; } = [];
 
+    /// <summary>
+    ///     Runtime worldspace cell maps captured by walking TESWorldSpace pCellMap hash tables
+    ///     during DMP analysis. Keyed by worldspace FormID. Empty for ESM-only sources.
+    ///     Preserves the same data the runtime parser used to build cell stubs so diagnostic
+    ///     consumers can inspect grid bounds and the persistent-cell pointer without re-scanning.
+    /// </summary>
+    public Dictionary<uint, RuntimeWorldspaceData> RuntimeWorldspaceMaps { get; init; } = [];
+
     /// <summary>Total records processed.</summary>
     public int TotalRecordsProcessed { get; init; }
 
