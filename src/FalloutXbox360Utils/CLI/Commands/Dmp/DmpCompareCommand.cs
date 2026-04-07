@@ -1,17 +1,13 @@
 using System.CommandLine;
-using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
-using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
-using FalloutXbox360Utils.Core.Formats.Esm.Records;
-using FalloutXbox360Utils.Core.Minidump;
+using FalloutXbox360Utils.Core.Semantic;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI.Commands.Dmp;
 
 /// <summary>
-///     Cross-dump comparison command: processes all DMP files in a directory and generates
-///     per-record-type comparison CSVs showing what changed between builds.
+///     Cross-dump comparison command: processes all DMP/ESM files in a directory and generates
+///     per-record-type comparison output.
 /// </summary>
 internal static class DmpCompareCommand
 {
@@ -20,7 +16,7 @@ internal static class DmpCompareCommand
         var dirArg = new Argument<string>("directory") { Description = "Directory containing .dmp files" };
         var outputOpt = new Option<string>("-o", "--output")
         {
-            Description = "Output directory for comparison CSVs",
+            Description = "Output directory for comparison output",
             Required = true
         };
         var typesOpt = new Option<string?>("--types")
@@ -38,8 +34,7 @@ internal static class DmpCompareCommand
         };
         var formatOpt = new Option<string?>("--format")
         {
-            Description = "Output format: html (default, JSON-embedded HTML with field-level diff), " +
-                          "json (raw JSON files per record type), csv (CSV files per record type)"
+            Description = "Output format: html (default), json, csv"
         };
 
         var command = new Command("compare",
@@ -66,8 +61,13 @@ internal static class DmpCompareCommand
     }
 
     private static async Task RunAsync(
-        string dirPath, string outputPath, string? typeFilter, bool verbose, string? basePath,
-        string? format, CancellationToken ct)
+        string dirPath,
+        string outputPath,
+        string? typeFilter,
+        bool verbose,
+        string? basePath,
+        string? format,
+        CancellationToken cancellationToken)
     {
         if (!Directory.Exists(dirPath))
         {
@@ -75,52 +75,30 @@ internal static class DmpCompareCommand
             return;
         }
 
-        var dmpFiles = Directory.GetFiles(dirPath, "*.dmp")
-            .Where(f => !Path.GetFileName(f).Contains("hangdump", StringComparison.OrdinalIgnoreCase))
-            .OrderBy(f => new FileInfo(f).LastWriteTimeUtc)
+        var sourceFiles = Directory.GetFiles(dirPath, "*.*")
+            .Where(path =>
+                path.EndsWith(".dmp", StringComparison.OrdinalIgnoreCase) ||
+                path.EndsWith(".esm", StringComparison.OrdinalIgnoreCase))
+            .Where(path => !Path.GetFileName(path).Contains("hangdump", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(path => new FileInfo(path).LastWriteTimeUtc)
             .ToList();
 
-        // Also scan for ESM files (supports comparing across ESM builds)
-        var esmFiles = Directory.GetFiles(dirPath, "*.esm")
-            .OrderBy(f => new FileInfo(f).LastWriteTimeUtc)
-            .ToList();
-
-        var totalFiles = dmpFiles.Count + esmFiles.Count;
-        if (totalFiles == 0)
+        if (sourceFiles.Count == 0)
         {
             AnsiConsole.MarkupLine($"[red]No .dmp or .esm files found in:[/] {dirPath}");
             return;
         }
 
+        var dmpCount = sourceFiles.Count(path => path.EndsWith(".dmp", StringComparison.OrdinalIgnoreCase));
+        var esmCount = sourceFiles.Count - dmpCount;
+
         AnsiConsole.MarkupLine(
-            $"[blue]Cross-build comparison: {dmpFiles.Count} DMP files, {esmFiles.Count} ESM files" +
+            $"[blue]Cross-build comparison: {dmpCount} DMP files, {esmCount} ESM files" +
             (basePath != null ? $", base: {Path.GetFileName(basePath.TrimEnd(Path.DirectorySeparatorChar))}" : "") +
             "[/]");
         AnsiConsole.WriteLine();
 
-        // Process each dump: analyze -> parse -> flatten
-        var dumpData =
-            new List<(string FilePath, RecordCollection Records, FormIdResolver Resolver, MinidumpInfo? Info)>();
-        var esmScanResults = new List<(EsmRecordScanResult ScanResult, FormIdResolver Resolver)>();
-        var hasBaseBuild = false;
-
-        // Process base build if specified (inserted as first entry)
-        if (!string.IsNullOrEmpty(basePath))
-        {
-            var baseResult = await DmpCompareFileProcessor.ProcessBaseDirectoryAsync(basePath, ct);
-            if (baseResult != null)
-            {
-                dumpData.Add(baseResult.Value);
-                hasBaseBuild = true;
-                AnsiConsole.MarkupLine(
-                    $"  [green]Base build:[/] {baseResult.Value.Records.TotalRecordsParsed:N0} records");
-            }
-            else
-            {
-                AnsiConsole.MarkupLine("[yellow]Warning: no records found in base directory[/]");
-            }
-        }
-
+        CrossDumpComparisonResult? comparisonResult = null;
         await AnsiConsole.Progress()
             .AutoClear(false)
             .Columns(
@@ -130,271 +108,66 @@ internal static class DmpCompareCommand
                 new SpinnerColumn())
             .StartAsync(async ctx =>
             {
-                var task = ctx.AddTask($"Processing {totalFiles} files", maxValue: totalFiles);
+                var progressTask = ctx.AddTask("Loading semantic sources", maxValue: sourceFiles.Count + 1);
+                var processed = 0;
 
-                foreach (var dmpFile in dmpFiles)
-                {
-                    ct.ThrowIfCancellationRequested();
-                    var fileName = Path.GetFileName(dmpFile);
-                    task.Description = $"Processing {fileName}";
-
-                    try
+                comparisonResult = await CrossDumpComparisonPipeline.BuildAsync(
+                    new CrossDumpComparisonRequest
                     {
-                        var result = await DmpCompareFileProcessor.ProcessDumpAsync(dmpFile, verbose);
-                        if (result != null)
-                        {
-                            dumpData.Add(result.Value);
-                            if (verbose)
-                            {
-                                AnsiConsole.MarkupLine(
-                                    $"  [green]{Markup.Escape(fileName)}[/]: " +
-                                    $"{result.Value.Records.Weapons.Count} weapons, " +
-                                    $"{result.Value.Records.Npcs.Count} NPCs, " +
-                                    $"{result.Value.Records.Cells.Count} cells");
-                            }
-                        }
-                        else
-                        {
-                            AnsiConsole.MarkupLine($"  [yellow]{Markup.Escape(fileName)}[/]: no ESM records found");
-                        }
-                    }
-                    catch (Exception ex)
+                        SourceFiles = sourceFiles,
+                        OutputPath = outputPath,
+                        BaseDirectoryPath = basePath,
+                        TypeFilter = typeFilter,
+                        OutputFormat = format ?? "html",
+                        Verbose = verbose
+                    },
+                    status =>
                     {
-                        AnsiConsole.MarkupLine(
-                            $"  [red]{Markup.Escape(fileName)}[/]: {Markup.Escape(ex.Message)}");
-                    }
+                        progressTask.Description = status;
+                        progressTask.Value = Math.Min(++processed, progressTask.MaxValue);
+                    },
+                    cancellationToken);
 
-                    task.Increment(1);
-                }
-
-                foreach (var esmFile in esmFiles)
-                {
-                    ct.ThrowIfCancellationRequested();
-                    var fileName = Path.GetFileName(esmFile);
-                    task.Description = $"Processing {fileName}";
-
-                    try
-                    {
-                        var result = await DmpCompareFileProcessor.ProcessEsmAsync(esmFile, ct);
-                        if (result != null)
-                        {
-                            var r = result.Value;
-                            dumpData.Add((r.FilePath, r.Records, r.Resolver, r.Info));
-                            if (r.ScanResult != null)
-                                esmScanResults.Add((r.ScanResult, r.Resolver));
-                            if (verbose)
-                            {
-                                AnsiConsole.MarkupLine(
-                                    $"  [green]{Markup.Escape(fileName)}[/]: " +
-                                    $"{result.Value.Records.Weapons.Count} weapons, " +
-                                    $"{result.Value.Records.Npcs.Count} NPCs, " +
-                                    $"{result.Value.Records.Cells.Count} cells");
-                            }
-                        }
-                        else
-                        {
-                            AnsiConsole.MarkupLine($"  [yellow]{Markup.Escape(fileName)}[/]: no records found");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        AnsiConsole.MarkupLine(
-                            $"  [red]{Markup.Escape(fileName)}[/]: {Markup.Escape(ex.Message)}");
-                    }
-
-                    task.Increment(1);
-                }
+                progressTask.Value = progressTask.MaxValue;
             });
 
-        if (dumpData.Count == 0)
+        if (comparisonResult == null || comparisonResult.Index.StructuredRecords.Count == 0)
         {
-            AnsiConsole.MarkupLine("[red]No dumps produced parseable records.[/]");
+            AnsiConsole.MarkupLine("[red]No sources produced parseable records.[/]");
             return;
         }
 
+        if (verbose)
+        {
+            foreach (var source in comparisonResult.Sources)
+            {
+                AnsiConsole.MarkupLine(
+                    $"  [green]{Markup.Escape(Path.GetFileName(source.FilePath))}[/]: " +
+                    $"{source.Records.Weapons.Count} weapons, " +
+                    $"{source.Records.Npcs.Count} NPCs, " +
+                    $"{source.Records.Cells.Count} cells");
+            }
+        }
+
+        var writtenFiles = await CrossDumpOutputWriter.WriteAsync(
+            comparisonResult.Index,
+            outputPath,
+            format,
+            cancellationToken);
+
+        PrintSummaryTable(comparisonResult.Index);
+        PrintSkillEraSummary(comparisonResult.Sources);
+
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"[blue]Aggregating {dumpData.Count} dumps...[/]");
-
-        // Aggregate
-        var index = CrossDumpAggregator.Aggregate(dumpData);
-
-        // Feed ESM LAND records for complete heightmap generation
-        foreach (var (scanResult, resolver) in esmScanResults)
+        AnsiConsole.MarkupLine("[bold]Output files:[/]");
+        foreach (var file in writtenFiles.OrderBy(path => path))
         {
-            foreach (var land in scanResult.LandRecords)
-            {
-                if (land.Heightmap == null || !land.BestCellX.HasValue || !land.BestCellY.HasValue)
-                    continue;
-
-                // Resolve worldspace for this LAND record
-                var wsGroup = "WastelandNV"; // default
-                if (scanResult.LandToWorldspaceMap.TryGetValue(land.Header.FormId, out var wsFormId) && wsFormId != 0)
-                {
-                    var wsName = resolver.ResolveEditorId(wsFormId);
-                    if (!string.IsNullOrEmpty(wsName))
-                        wsGroup = wsName;
-                }
-
-                if (!index.CellHeightmaps.TryGetValue(wsGroup, out var wsHeightmaps))
-                {
-                    wsHeightmaps = new Dictionary<(int, int), LandHeightmap>();
-                    index.CellHeightmaps[wsGroup] = wsHeightmaps;
-                }
-
-                wsHeightmaps[(land.BestCellX.Value, land.BestCellY.Value)] = land.Heightmap;
-            }
+            AnsiConsole.MarkupLine($"  {Markup.Escape(file)}");
         }
+    }
 
-        // Mark base build and filter base-only records
-        if (hasBaseBuild && index.Dumps.Count > 0)
-        {
-            index.Dumps[0] = index.Dumps[0] with { IsBase = true };
-
-            // Cross-game EditorID matching: when the base build (e.g., FO3) and other
-            // builds (e.g., FNV) share records with the same EditorID but different FormIDs,
-            // merge the base entry into the other build's FormID slot. This links records that
-            // evolved across games where FormIDs were reassigned.
-            var editorIdMerged = 0;
-            foreach (var (_, formIdMap) in index.StructuredRecords)
-            {
-                // Build EditorID → FormID index for non-base dumps
-                var editorIdToFormId = new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase);
-                foreach (var (formId, dumpMap) in formIdMap)
-                {
-                    foreach (var (dumpIdx, report) in dumpMap)
-                    {
-                        if (dumpIdx != 0 && !string.IsNullOrEmpty(report.EditorId))
-                        {
-                            editorIdToFormId.TryAdd(report.EditorId, formId);
-                        }
-                    }
-                }
-
-                // Find base-only records whose EditorID matches a record in another dump
-                // under a different FormID
-                var toMerge = new List<(uint BaseFormId, uint TargetFormId)>();
-                foreach (var (formId, dumpMap) in formIdMap)
-                {
-                    if (!dumpMap.ContainsKey(0) || dumpMap.Count > 1) continue;
-
-                    var editorId = dumpMap[0].EditorId;
-                    if (string.IsNullOrEmpty(editorId)) continue;
-
-                    if (editorIdToFormId.TryGetValue(editorId, out var targetFormId) && targetFormId != formId)
-                    {
-                        toMerge.Add((formId, targetFormId));
-                    }
-                }
-
-                foreach (var (baseFormId, targetFormId) in toMerge)
-                {
-                    if (!formIdMap.TryGetValue(baseFormId, out var baseDumpMap)) continue;
-                    if (!formIdMap.TryGetValue(targetFormId, out var targetDumpMap)) continue;
-                    if (!baseDumpMap.TryGetValue(0, out var baseEntry)) continue;
-                    if (targetDumpMap.ContainsKey(0)) continue;
-
-                    targetDumpMap[0] = baseEntry;
-                    formIdMap.Remove(baseFormId);
-                    editorIdMerged++;
-                }
-            }
-
-            if (editorIdMerged > 0)
-            {
-                AnsiConsole.MarkupLine(
-                    $"  [dim]Matched {editorIdMerged:N0} base records to other builds by EditorID[/]");
-            }
-
-            // Remove records that only exist in the base build (not in any FNV build)
-            var baseOnlyRemoved = 0;
-            foreach (var (_, formIdMap) in index.StructuredRecords)
-            {
-                var toRemove = formIdMap
-                    .Where(kvp => kvp.Value.Count == 1 && kvp.Value.ContainsKey(0))
-                    .Select(kvp => kvp.Key)
-                    .ToList();
-                foreach (var formId in toRemove)
-                {
-                    formIdMap.Remove(formId);
-                    baseOnlyRemoved++;
-                }
-            }
-
-            if (baseOnlyRemoved > 0)
-            {
-                AnsiConsole.MarkupLine(
-                    $"  [dim]Filtered {baseOnlyRemoved:N0} base-only records (not present in any other build)[/]");
-            }
-        }
-
-        // Filter types if requested
-        if (!string.IsNullOrEmpty(typeFilter))
-        {
-            var allowedTypes = new HashSet<string>(
-                typeFilter.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
-                StringComparer.OrdinalIgnoreCase);
-
-            var keysToRemove = index.StructuredRecords.Keys
-                .Where(k => !allowedTypes.Contains(k))
-                .ToList();
-            foreach (var key in keysToRemove)
-                index.StructuredRecords.Remove(key);
-        }
-
-        // Generate output based on format
-        var outputFormat = (format ?? "html").ToLowerInvariant();
-        Directory.CreateDirectory(outputPath);
-
-        switch (outputFormat)
-        {
-            case "json":
-            {
-                // Raw JSON files (one per record type) for external consumption
-                foreach (var (recordType, formIdMap) in index.StructuredRecords.OrderBy(r => r.Key))
-                {
-                    var reports = formIdMap.Values
-                        .SelectMany(dm => dm.Values)
-                        .ToList();
-                    var json = ReportJsonFormatter.FormatBatch(reports);
-                    var filename = $"{recordType.ToLowerInvariant()}.json";
-                    await File.WriteAllTextAsync(Path.Combine(outputPath, filename), json, ct);
-                }
-
-                AnsiConsole.MarkupLine(
-                    $"[green]Comparison complete:[/] {index.StructuredRecords.Count} JSON files written to {outputPath}");
-                break;
-            }
-            case "csv":
-            {
-                // CSV files (one per record type)
-                foreach (var (recordType, formIdMap) in index.StructuredRecords.OrderBy(r => r.Key))
-                {
-                    var reports = formIdMap.Values
-                        .SelectMany(dm => dm.Values)
-                        .ToList();
-                    if (reports.Count == 0) continue;
-                    var csv = ReportCsvFormatter.Format(reports);
-                    var filename = $"{recordType.ToLowerInvariant()}.csv";
-                    await File.WriteAllTextAsync(Path.Combine(outputPath, filename), csv, ct);
-                }
-
-                AnsiConsole.MarkupLine(
-                    $"[green]Comparison complete:[/] {index.StructuredRecords.Count} CSV files written to {outputPath}");
-                break;
-            }
-            default:
-            {
-                // HTML pages with embedded JSON + client-side field-level diff rendering
-                var htmlFiles = CrossDumpJsonHtmlWriter.GenerateAll(index);
-                foreach (var (filename, content) in htmlFiles)
-                    await File.WriteAllTextAsync(Path.Combine(outputPath, filename), content, ct);
-                AnsiConsole.MarkupLine(
-                    $"[green]Comparison complete:[/] {htmlFiles.Count} HTML files written to {outputPath}");
-                break;
-            }
-        }
-
-        // Summary table
+    private static void PrintSummaryTable(CrossDumpRecordIndex index)
+    {
         var table = new Table()
             .Border(TableBorder.Rounded)
             .Title("[bold]Cross-Dump Comparison Summary[/]");
@@ -403,9 +176,11 @@ internal static class DmpCompareCommand
         table.AddColumn(new TableColumn("[bold]FormIDs[/]").RightAligned());
 
         foreach (var dump in index.Dumps)
+        {
             table.AddColumn(
                 new TableColumn($"[bold]{Markup.Escape(dump.ShortName)}[/]\n[dim]{dump.FileDate:yyyy-MM-dd}[/]")
                     .RightAligned());
+        }
 
         foreach (var (recordType, formIdMap) in index.StructuredRecords.OrderBy(r => r.Key))
         {
@@ -415,60 +190,54 @@ internal static class DmpCompareCommand
                 formIdMap.Count.ToString("N0")
             };
 
-            for (var dumpIdx = 0; dumpIdx < index.Dumps.Count; dumpIdx++)
+            for (var dumpIndex = 0; dumpIndex < index.Dumps.Count; dumpIndex++)
             {
-                var count = formIdMap.Values.Count(dm => dm.ContainsKey(dumpIdx));
+                var count = formIdMap.Values.Count(dumpMap => dumpMap.ContainsKey(dumpIndex));
                 row.Add(count.ToString("N0"));
             }
 
             table.AddRow(row.Select(Markup.Escape).ToArray());
         }
 
-        // Total row
         var totalRow = new List<string>
         {
             "[bold]TOTAL[/]",
-            $"[bold]{index.StructuredRecords.Values.Sum(m => m.Count):N0}[/]"
+            $"[bold]{index.StructuredRecords.Values.Sum(map => map.Count):N0}[/]"
         };
-        for (var dumpIdx = 0; dumpIdx < index.Dumps.Count; dumpIdx++)
+
+        for (var dumpIndex = 0; dumpIndex < index.Dumps.Count; dumpIndex++)
         {
             var total = index.StructuredRecords.Values
-                .Sum(formIdMap => formIdMap.Values.Count(dm => dm.ContainsKey(dumpIdx)));
+                .Sum(formIdMap => formIdMap.Values.Count(dumpMap => dumpMap.ContainsKey(dumpIndex)));
             totalRow.Add($"[bold]{total:N0}[/]");
         }
 
         table.AddRow(totalRow.ToArray());
-
         AnsiConsole.Write(table);
-
-        // Skill era per dump
-        var anyEra = dumpData.Any(d => d.Resolver.SkillEra != null);
-        if (anyEra)
-        {
-            AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine("[bold]Skill Era Detection:[/]");
-            foreach (var d in dumpData)
-            {
-                var era = d.Resolver.SkillEra;
-                var name = Markup.Escape(Path.GetFileName(d.FilePath));
-                if (era != null)
-                {
-                    AnsiConsole.MarkupLine($"  [cyan]{name}[/]: {Markup.Escape(era.Summary)}");
-                }
-                else
-                {
-                    AnsiConsole.MarkupLine($"  [cyan]{name}[/]: [dim](no AVIF/weapon data)[/]");
-                }
-            }
-        }
-
-        // List output files
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[bold]Output files:[/]");
-        foreach (var file in Directory.GetFiles(outputPath).OrderBy(f => f))
-        {
-            AnsiConsole.MarkupLine($"  {Markup.Escape(file)}");
-        }
     }
 
+    private static void PrintSkillEraSummary(IEnumerable<SemanticSource> sources)
+    {
+        var sourceList = sources.ToList();
+        if (!sourceList.Any(source => source.Resolver.SkillEra != null))
+        {
+            return;
+        }
+
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine("[bold]Skill Era Detection:[/]");
+        foreach (var source in sourceList)
+        {
+            var era = source.Resolver.SkillEra;
+            var name = Markup.Escape(Path.GetFileName(source.FilePath));
+            if (era != null)
+            {
+                AnsiConsole.MarkupLine($"  [cyan]{name}[/]: {Markup.Escape(era.Summary)}");
+            }
+            else
+            {
+                AnsiConsole.MarkupLine($"  [cyan]{name}[/]: [dim](no AVIF/weapon data)[/]");
+            }
+        }
+    }
 }

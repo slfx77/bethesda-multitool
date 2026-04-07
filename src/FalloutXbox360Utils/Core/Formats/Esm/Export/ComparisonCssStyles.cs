@@ -3,7 +3,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 /// <summary>CSS styles for HTML comparison pages (light + dark mode).</summary>
 internal static class ComparisonCssStyles
 {
-    internal const string Styles = """
+  internal const string Styles = """
                                        * { box-sizing: border-box; }
                                        body {
                                          font-family: system-ui, -apple-system, sans-serif;
@@ -53,7 +53,7 @@ internal static class ComparisonCssStyles
                                          font-size: 14px;
                                        }
 
-                                       table { border-collapse: separate; border-spacing: 0; width: 100%; margin: 8px 0; }
+                                       table { border-collapse: separate; border-spacing: 0; width: 100%; margin: 8px 0; table-layout: auto; }
                                        tbody { content-visibility: auto; contain-intrinsic-size: auto 500px; }
                                        table.compact { width: auto; }
                                        table.compact th { position: static; }
@@ -65,20 +65,21 @@ internal static class ComparisonCssStyles
                                          z-index: 3;
                                          font-size: 13px;
                                        }
+                                       /* Fixed identity columns: size to content. width:1px + white-space:nowrap
+                                          collapses to the natural max(header, content) width without wrapping
+                                          and without padding the column out wider than necessary. */
                                        .col-editor {
                                          position: sticky;
                                          left: 0;
                                          z-index: 1;
                                          background: #fff;
-                                         min-width: 80px;
-                                         max-width: 160px;
-                                         white-space: normal;
-                                         word-break: break-word;
+                                         width: 1px;
+                                         white-space: nowrap;
                                        }
                                        th.col-editor { z-index: 5; }
-                                       .col-name { min-width: 60px; max-width: 140px; white-space: normal; word-break: break-word; }
-                                       .col-coords { min-width: 70px; white-space: nowrap; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 12px; }
-                                       .col-formid { width: 90px; white-space: nowrap; }
+                                       .col-name { width: 1px; white-space: nowrap; }
+                                       .col-coords { width: 1px; white-space: nowrap; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 12px; }
+                                       .col-formid { width: 1px; white-space: nowrap; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 12px; }
                                        .sortable { cursor: pointer; user-select: none; }
                                        .formid { font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 12px; }
                                        .name-change { color: #999; font-size: 11px; }
@@ -112,23 +113,67 @@ internal static class ComparisonCssStyles
                                        .badge-base { background: #d6e4f0; color: #2c5282; }
 
                                        .record-detail {
-                                         font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
-                                         font-size: 13px;
-                                         line-height: 1.5;
-                                         white-space: pre-wrap;
+                                         font-family: system-ui, -apple-system, sans-serif;
+                                         font-size: 12px;
+                                         line-height: 1.4;
                                          margin: 0;
+                                         overflow-x: auto;
+                                       }
+                                       .rd-section { margin-bottom: 4px; }
+                                       .rd-section-header {
+                                         font-weight: 600;
+                                         font-size: 12px;
+                                         padding: 2px 0;
+                                         border-bottom: 1px solid #444;
+                                         margin-bottom: 2px;
+                                       }
+                                       .rd-field {
+                                         display: flex;
+                                         gap: 6px;
+                                         padding: 1px 0 1px 4px;
+                                       }
+                                       .rd-key {
+                                         flex: 0 0 auto;
+                                         min-width: 80px;
+                                         color: #aaa;
+                                         text-align: left;
+                                         font-size: 12px;
+                                       }
+                                       .rd-val {
+                                         flex: 1 1 auto;
+                                         word-break: break-word;
+                                       }
+                                       .rd-list-item {
+                                         padding: 1px 0 1px 16px;
+                                       }
+                                       .rd-list-meta {
+                                         color: #999;
+                                         display: block;
+                                         font-size: 11px;
+                                         padding-left: 12px;
+                                       }
+                                       .rd-list-flag {
+                                         color: #c26a00;
+                                         font-weight: 600;
+                                       }
+                                       .rd-code {
+                                         font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+                                         font-size: 11px;
+                                         background: #1a1a1a;
+                                         border: 1px solid #333;
+                                         border-radius: 3px;
+                                         padding: 4px 8px;
+                                         white-space: pre-wrap;
+                                         word-break: break-all;
+                                         display: block;
+                                         margin: 2px 0;
+                                         max-height: 200px;
+                                         overflow-y: auto;
                                        }
                                        .field-new { background: #d4edda; }
                                        .field-changed { background: #fff3cd; }
                                        .field-removed { background: #f8d7da; color: #999; text-decoration: line-through; }
                                        .field-sparse { color: #999; font-style: italic; }
-                                       .section-header { font-weight: bold; }
-                                       .record-detail hr {
-                                         border: none;
-                                         border-top: 1px solid #555;
-                                         margin: 2px 0;
-                                       }
-                                       .field-arrow { color: #888; margin: 0 4px; }
 
                                        .toc {
                                          background: #f8f9fa;
@@ -158,6 +203,12 @@ internal static class ComparisonCssStyles
                                        .build-nav button:disabled { opacity: 0.4; cursor: default; }
                                        .build-nav-label { font-size: 12px; color: #666; min-width: 120px; text-align: center; }
                                        .hidden { display: none !important; }
+
+                                       .sub-label { font-size: 0.85em; color: #888; }
+                                       .response-text { font-style: italic; }
+                                       .response-emotion { font-size: 0.85em; color: #c89b3c; margin-left: 0.5em; }
+                                       .group-mode-selector { display: inline-flex; gap: 8px; align-items: center; font-size: 13px; }
+                                       .group-mode-selector label { cursor: pointer; white-space: nowrap; }
 
                                        @media (prefers-color-scheme: dark) {
                                          body { background: #1a1a1a; color: #e0e0e0; }
@@ -191,6 +242,13 @@ internal static class ComparisonCssStyles
                                          .build-nav button { background: #333; color: #e0e0e0; border-color: #555; }
                                          .build-nav button:hover { background: #444; }
                                          .build-nav-label { color: #999; }
+                                         .sub-label { color: #777; }
+                                         .response-emotion { color: #d4a84b; }
+                                         .rd-section-header { border-bottom-color: #555; }
+                                         .rd-key { color: #999; }
+                                         .rd-list-meta { color: #aaa; }
+                                         .rd-list-flag { color: #ffb347; }
+                                         .rd-code { background: #111; border-color: #333; }
                                        }
                                    """;
 }

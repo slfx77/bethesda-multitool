@@ -12,17 +12,10 @@ internal sealed class CrossDumpRecordIndex
     internal List<DumpSnapshot> Dumps { get; } = [];
 
     /// <summary>
-    ///     RecordType -> FormID -> (dumpIndex -> (EditorId, DisplayName, FormattedText)).
-    ///     Each entry contains the full text detail for a record in a specific dump.
-    /// </summary>
-    internal Dictionary<string, Dictionary<uint, Dictionary<int, (string? EditorId, string? DisplayName,
-        string FormattedText)>>> Records { get; } = [];
-
-    /// <summary>
     ///     RecordType -> FormID -> (dumpIndex -> RecordReport).
-    ///     Structured data parallel to <see cref="Records" />. Used by JSON/CSV formatters
-    ///     and the new HTML writer. Populated by <see cref="CrossDumpAggregator.Aggregate" />.
-    /// </summary>
+    ///     Canonical structured comparison data used by HTML, JSON, and CSV output.
+    ///     Populated by <see cref="CrossDumpAggregator.Aggregate" />.
+     /// </summary>
     internal Dictionary<string, Dictionary<uint, Dictionary<int, RecordReport>>> StructuredRecords { get; } = [];
 
     /// <summary>
@@ -51,4 +44,10 @@ internal sealed class CrossDumpRecordIndex
 
     /// <summary>WorldspaceFormId -> EditorId mapping for LAND record worldspace resolution.</summary>
     internal Dictionary<uint, string> LandWorldspaceMap { get; } = [];
+
+    /// <summary>
+    ///     RecordType -> FormID -> key/value metadata for display (quest name, topic name, speaker, etc.).
+    ///     Kept separate from <see cref="StructuredRecords" /> to avoid touching the report model or delta encoding.
+    /// </summary>
+    internal Dictionary<string, Dictionary<uint, Dictionary<string, string>>> RecordMetadata { get; } = [];
 }
