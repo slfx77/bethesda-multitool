@@ -1,15 +1,14 @@
 using System.Collections.ObjectModel;
-using FalloutXbox360Utils.App.Helpers;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Coverage;
 using FalloutXbox360Utils.Core.Extraction;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
-using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Core.Formats.SaveGame;
 using FalloutXbox360Utils.Core.Minidump;
+using FalloutXbox360Utils.Core.Semantic;
 using FalloutXbox360Utils.Localization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -209,8 +208,13 @@ public sealed partial class SingleFileTab
     {
         return fileType switch
         {
-            AnalysisFileType.EsmFile => await EsmFileAnalyzer.AnalyzeAsync(filePath, progress),
-            AnalysisFileType.Minidump => await new MinidumpAnalyzer().AnalyzeAsync(filePath, progress),
+            AnalysisFileType.EsmFile or AnalysisFileType.Minidump => await SemanticFileLoader.AnalyzeOnlyAsync(
+                filePath,
+                new SemanticFileLoadOptions
+                {
+                    FileType = fileType,
+                    AnalysisProgress = progress
+                }),
             AnalysisFileType.SaveFile => await AnalyzeSaveFileAsync(filePath, progress),
             _ => throw new NotSupportedException($"Unknown file type: {filePath}")
         };
@@ -238,23 +242,18 @@ public sealed partial class SingleFileTab
                 StatusTextBlock.Text = p.phase;
             }));
 
-        _semanticParseTask = Task.Run(() =>
-        {
-            var parser = new RecordParser(
-                _analysisResult!.EsmRecords!,
-                _analysisResult.FormIdMap,
-                _session.Accessor!,
-                _session.FileSize,
-                _analysisResult.MinidumpInfo);
-            return parser.ParseAll(reconProgress);
-        });
+        _semanticLoadTask = Task.Run(() => SemanticFileLoader.LoadFromAnalysisResult(
+            _session.FilePath!,
+            _analysisResult!,
+            _session.FileType,
+            reconProgress));
 
         try
         {
-            _session.SemanticResult = await _semanticParseTask;
+            var loaded = await _semanticLoadTask;
+            _session.AdoptSemanticSession(loaded);
             if (_session.SemanticResult != null)
             {
-                _session.Resolver = _session.SemanticResult.CreateResolver();
                 // TESForm struct regions are added by the core pipeline (PostProcessMetadataAsync).
                 // Terrain mesh regions depend on semantic parse enrichment, so add them here.
                 SingleFileAnalysisHelper.AddRuntimeTerrainMeshRegions(_analysisResult!);
@@ -306,15 +305,18 @@ public sealed partial class SingleFileTab
     private async Task EnsureSemanticParseAsync()
     {
         if (_session.SemanticResult != null) return;
-        if (_semanticParseTask == null) return;
+        if (_semanticLoadTask == null) return;
 
         try
         {
-            _session.SemanticResult = await _semanticParseTask;
+            var loaded = await _semanticLoadTask;
+            if (_session.SemanticResult == null)
+            {
+                _session.AdoptSemanticSession(loaded);
+            }
 
             if (_session.SemanticResult != null)
             {
-                _session.Resolver = _session.SemanticResult.CreateResolver();
                 StatusTextBlock.Text =
                     Strings.Status_ParsedRecords(_session.SemanticResult.TotalRecordsParsed);
             }

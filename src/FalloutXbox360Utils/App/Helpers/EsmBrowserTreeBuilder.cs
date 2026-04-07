@@ -1,11 +1,11 @@
 using System.Collections;
 using System.Collections.ObjectModel;
-using FalloutXbox360Utils.App.Helpers;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.AI;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
+using FalloutXbox360Utils.Core.Formats.Esm.Presentation;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
@@ -217,6 +217,7 @@ internal static class EsmBrowserTreeBuilder
     /// </summary>
     public static void LoadRecordTypeChildren(
         EsmBrowserNode typeNode,
+        RecordCollection? allRecords = null,
         FormIdResolver? resolver = null,
         Dictionary<uint, List<WorldPlacement>>? placementIndex = null,
         FormUsageIndex? usageIndex = null,
@@ -315,7 +316,7 @@ internal static class EsmBrowserTreeBuilder
                 ParentIconGlyph = typeNode.IconGlyph,
                 FileOffset = offset,
                 DataObject = record,
-                Properties = BuildProperties(record, resolver, placementIndex, usageIndex, raceLookup,
+                Properties = BuildProperties(record, allRecords, resolver, placementIndex, usageIndex, raceLookup,
                     factionMembersIndex)
             };
 
@@ -385,12 +386,20 @@ internal static class EsmBrowserTreeBuilder
     /// </summary>
     public static List<EsmPropertyEntry> BuildProperties(
         object record,
+        RecordCollection? allRecords = null,
         FormIdResolver? resolver = null,
         Dictionary<uint, List<WorldPlacement>>? placementIndex = null,
         FormUsageIndex? usageIndex = null,
         IReadOnlyDictionary<uint, RaceRecord>? raceLookup = null,
         Dictionary<uint, List<(uint FormId, string? Name)>>? factionMembersIndex = null)
     {
+        if (resolver != null &&
+            RecordDetailPresenter.TryBuildForRecord(record, allRecords, resolver, out var detailModel) &&
+            detailModel != null)
+        {
+            return RecordDetailPropertyAdapter.Convert(detailModel);
+        }
+
         var properties = new List<EsmPropertyEntry>();
         var type = record.GetType();
         var (recordFormId, _, _, _) = EsmPropertyFormatter.ExtractRecordIdentity(record);

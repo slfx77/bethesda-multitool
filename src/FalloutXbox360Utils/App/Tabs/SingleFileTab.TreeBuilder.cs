@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using FalloutXbox360Utils.App.Helpers;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
@@ -40,6 +39,7 @@ public sealed partial class SingleFileTab
         {
             EsmBrowserTreeBuilder.LoadRecordTypeChildren(
                 browserNode,
+                _session.SemanticResult,
                 _session.EffectiveResolver,
                 _placementIndex,
                 _usageIndex,
@@ -71,6 +71,7 @@ public sealed partial class SingleFileTab
                     else if (browserNode.NodeType == "RecordType" && browserNode.Children.Count == 0)
                         EsmBrowserTreeBuilder.LoadRecordTypeChildren(
                             browserNode,
+                            _session.SemanticResult,
                             _session.EffectiveResolver,
                             _placementIndex,
                             _usageIndex,
@@ -258,10 +259,12 @@ public sealed partial class SingleFileTab
             StatusTextBlock.Text = Strings.Status_BuildingSearchIndex;
             var resolver = _session.EffectiveResolver;
             var tree = _esmBrowserTree;
+            var allRecords = _session.SemanticResult;
             var placements = _placementIndex;
             var usageIndex = _usageIndex;
             await Task.Run(() => EnsureAllChildrenLoaded(
                     tree,
+                    allRecords,
                     resolver,
                     placements,
                     usageIndex,
@@ -310,6 +313,7 @@ public sealed partial class SingleFileTab
 
     private static void EnsureAllChildrenLoaded(
         ObservableCollection<EsmBrowserNode> tree,
+        RecordCollection? allRecords,
         FormIdResolver? resolver,
         Dictionary<uint, List<WorldPlacement>>? placementIndex = null,
         FormUsageIndex? usageIndex = null,
@@ -336,8 +340,8 @@ public sealed partial class SingleFileTab
 
                 if (typeNode.HasUnrealizedChildren && typeNode.Children.Count == 0)
                 {
-                    EsmBrowserTreeBuilder.LoadRecordTypeChildren(typeNode, resolver, placementIndex, usageIndex,
-                        raceLookup, factionMembersIndex);
+                    EsmBrowserTreeBuilder.LoadRecordTypeChildren(typeNode, allRecords, resolver,
+                        placementIndex, usageIndex, raceLookup, factionMembersIndex);
                 }
             }
         }

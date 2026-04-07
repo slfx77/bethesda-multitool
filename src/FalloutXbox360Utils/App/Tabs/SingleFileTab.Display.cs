@@ -446,7 +446,7 @@ public sealed partial class SingleFileTab
     private void ResetSubTabs()
     {
         _session.Dispose();
-        _semanticParseTask = null;
+        _semanticLoadTask = null;
         LoadOrderStatusText.Text = "";
 
         ResetMemoryMapTab();

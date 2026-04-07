@@ -43,6 +43,7 @@ public sealed partial class SingleFileTab
         {
             EnsureAllChildrenLoaded(
                 _esmBrowserTree,
+                _session.SemanticResult,
                 _session.EffectiveResolver,
                 _placementIndex,
                 _usageIndex,

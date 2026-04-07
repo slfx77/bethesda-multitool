@@ -1,4 +1,4 @@
-namespace FalloutXbox360Utils.App.Helpers;
+namespace FalloutXbox360Utils;
 
 internal sealed record FormUsageReference(
     uint SourceFormId,

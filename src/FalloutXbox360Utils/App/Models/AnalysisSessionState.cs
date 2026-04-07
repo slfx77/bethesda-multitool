@@ -106,15 +106,41 @@ internal sealed class AnalysisSessionState : IDisposable
     /// <summary>
     ///     Opens a new analysis session, disposing any previous one.
     /// </summary>
-    public void Open(string filePath, AnalysisResult result, AnalysisFileType fileType = AnalysisFileType.Minidump)
+    public void Open(
+        string filePath,
+        AnalysisResult result,
+        AnalysisFileType fileType = AnalysisFileType.Minidump,
+        bool openAccessor = true)
     {
         Dispose();
         FilePath = filePath;
         FileSize = new FileInfo(filePath).Length;
         AnalysisResult = result;
         FileType = fileType;
-        _mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-        Accessor = _mmf.CreateViewAccessor(0, FileSize, MemoryMappedFileAccess.Read);
+        if (openAccessor)
+        {
+            _mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+            Accessor = _mmf.CreateViewAccessor(0, FileSize, MemoryMappedFileAccess.Read);
+        }
+    }
+
+    public void AdoptSemanticSession(UnifiedAnalysisResult session)
+    {
+        FilePath = session.FilePath;
+        FileSize = new FileInfo(session.FilePath).Length;
+        AnalysisResult = session.RawResult;
+        FileType = session.FileType;
+
+        Accessor?.Dispose();
+        Accessor = null;
+        _mmf?.Dispose();
+        _mmf = null;
+
+        var (mappedFile, accessor) = session.DetachDisposables();
+        _mmf = mappedFile;
+        Accessor = accessor;
+        SemanticResult = session.Records;
+        Resolver = session.Resolver;
     }
 
     public void Dispose()

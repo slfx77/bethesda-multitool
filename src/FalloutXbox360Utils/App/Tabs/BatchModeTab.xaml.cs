@@ -288,54 +288,33 @@ public sealed partial class BatchModeTab : UserControl, IDisposable, IHasSetting
     private async Task GenerateCrossDumpComparisonAsync(
         List<DumpFileEntry> selectedFiles, string outputPath, CancellationToken ct)
     {
-        var dmpFiles = selectedFiles
-            .Where(f => f.FilePath.EndsWith(".dmp", StringComparison.OrdinalIgnoreCase))
+        var sourceFiles = selectedFiles
+            .Where(f =>
+                f.FilePath.EndsWith(".dmp", StringComparison.OrdinalIgnoreCase) ||
+                f.FilePath.EndsWith(".esm", StringComparison.OrdinalIgnoreCase))
             .Select(f => f.FilePath)
             .OrderBy(f => new FileInfo(f).LastWriteTimeUtc)
             .ToList();
 
-        if (dmpFiles.Count < 2) return;
-
-        var dumpData =
-            new List<(string FilePath, RecordCollection Records, FormIdResolver Resolver, MinidumpInfo? Info)>();
-
-        foreach (var dmpFile in dmpFiles)
+        if (sourceFiles.Count < 2)
         {
-            ct.ThrowIfCancellationRequested();
-            try
-            {
-                var analyzer = new MinidumpAnalyzer();
-                var result = await analyzer.AnalyzeAsync(dmpFile, includeMetadata: true, verbose: false);
-                if (result.EsmRecords == null || result.EsmRecords.MainRecords.Count == 0) continue;
-
-                var fileSize = new FileInfo(dmpFile).Length;
-                using var mmf = MemoryMappedFile.CreateFromFile(
-                    dmpFile, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-                using var accessor = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
-
-                var parser = new RecordParser(
-                    result.EsmRecords, result.FormIdMap, accessor, fileSize, result.MinidumpInfo);
-                var records = parser.ParseAll();
-                var resolver = records.CreateResolver(result.FormIdMap);
-                dumpData.Add((dmpFile, records, resolver, result.MinidumpInfo));
-            }
-            catch
-            {
-                // Skip dumps that fail to parse
-            }
+            return;
         }
-
-        if (dumpData.Count < 2) return;
-
-        var index = CrossDumpAggregator.Aggregate(dumpData);
-        var htmlFiles = CrossDumpHtmlWriter.GenerateAll(index);
 
         var comparisonDir = Path.Combine(outputPath, "comparison");
-        Directory.CreateDirectory(comparisonDir);
-        foreach (var (filename, content) in htmlFiles)
-        {
-            await File.WriteAllTextAsync(Path.Combine(comparisonDir, filename), content, ct);
-        }
+        var comparison = await CrossDumpComparisonPipeline.BuildAsync(
+            new CrossDumpComparisonRequest
+            {
+                SourceFiles = sourceFiles,
+                OutputPath = comparisonDir,
+                TypeFilter = null,
+                OutputFormat = "html",
+                Verbose = false
+            },
+            status => DispatcherQueue.TryEnqueue(() => StatusTextBlock.Text = status),
+            ct);
+
+        await CrossDumpOutputWriter.WriteAsync(comparison.Index, comparisonDir, "html", ct);
     }
 
     private async Task ProcessEntryAsync(
@@ -435,173 +414,42 @@ public sealed partial class BatchModeTab : UserControl, IDisposable, IHasSetting
 
     private async void LoadOrderButton_Click(object sender, RoutedEventArgs e)
     {
-        // Create working copy of current load order (preserves already-loaded data)
-        var workingEntries = new ObservableCollection<LoadOrderEntry>(
-            _loadOrder.Entries.Select(existing => new LoadOrderEntry
+        var workingEntries = LoadOrderDialogService.CreateWorkingEntries(_loadOrder.Entries);
+        var dialogResult = await LoadOrderDialogService.ShowAsync(
+            XamlRoot,
+            workingEntries,
+            new LoadOrderDialogOptions
             {
-                FilePath = existing.FilePath,
-                FileType = existing.FileType,
-                Resolver = existing.Resolver,
-                Records = existing.Records
-            }));
+                Title = "Load Order",
+                IntroText =
+                    "Add supplementary ESM/ESP/DMP files to enrich batch reports with NPC names, quest names, etc."
+            });
 
-        // Build dialog content
-        var panel = new StackPanel { Spacing = 12 };
-
-        panel.Children.Add(new TextBlock
+        switch (dialogResult.Action)
         {
-            Text = "Add supplementary ESM/ESP/DMP files to enrich batch reports with NPC names, quest names, etc.",
-            TextWrapping = TextWrapping.Wrap,
-            FontStyle = Windows.UI.Text.FontStyle.Italic,
-            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
-        });
-
-        // Load order ListView
-        var listView = new ListView
-        {
-            ItemsSource = workingEntries,
-            CanReorderItems = true,
-            AllowDrop = true,
-            SelectionMode = ListViewSelectionMode.None,
-            MinHeight = 80,
-            MaxHeight = 300
-        };
-
-        listView.ItemTemplate = (DataTemplate)Microsoft.UI.Xaml.Markup.XamlReader.Load(
-            """
-            <DataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                          xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-                <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,2">
-                    <TextBlock Grid.Column="0" VerticalAlignment="Center"
-                               Margin="0,0,12,0" Opacity="0.6"
-                               Text="&#x2261;" FontSize="16" />
-                    <TextBlock Grid.Column="1" VerticalAlignment="Center"
-                               Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
-                    <Button Grid.Column="2" Content="&#xE711;" FontFamily="Segoe MDL2 Assets"
-                            FontSize="10" Padding="6,4" Margin="8,0,0,0"
-                            Background="Transparent" Tag="{Binding}" />
-                </Grid>
-            </DataTemplate>
-            """);
-
-        listView.ContainerContentChanging += (_, args) =>
-        {
-            if (args.Phase != 0) return;
-            var root = args.ItemContainer.ContentTemplateRoot as Grid;
-            var removeBtn = root?.Children.OfType<Button>().FirstOrDefault();
-            if (removeBtn != null)
-            {
-                removeBtn.Click -= RemoveEntryClick;
-                removeBtn.Click += RemoveEntryClick;
-            }
-        };
-
-        void RemoveEntryClick(object s, RoutedEventArgs _)
-        {
-            if (s is Button btn && btn.Tag is LoadOrderEntry entry)
-                workingEntries.Remove(entry);
+            case LoadOrderDialogAction.Cancel:
+                return;
+            case LoadOrderDialogAction.ClearAll:
+                _loadOrder.Dispose();
+                UpdateLoadOrderStatusText();
+                return;
         }
 
-        panel.Children.Add(listView);
-
-        // Empty state text
-        var emptyText = new TextBlock
+        if (dialogResult.Entries.Count == 0)
         {
-            Text = "No files added. Click \"Add Files\" to get started.",
-            FontStyle = Windows.UI.Text.FontStyle.Italic,
-            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
-            Visibility = workingEntries.Count == 0 ? Visibility.Visible : Visibility.Collapsed,
-            Margin = new Thickness(0, -4, 0, 0)
-        };
-        workingEntries.CollectionChanged += (_, _) =>
-            emptyText.Visibility = workingEntries.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        panel.Children.Add(emptyText);
-
-        // Add Files button
-        var addButton = new Button
-        {
-            Content = "Add Files...",
-            Margin = new Thickness(0, 4, 0, 0)
-        };
-        addButton.Click += async (_, _) =>
-        {
-            var picker = new FileOpenPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
-            foreach (var ext in new[] { ".esm", ".esp", ".dmp" })
-                picker.FileTypeFilter.Add(ext);
-            InitializeWithWindow.Initialize(picker,
-                WindowNative.GetWindowHandle(App.Current.MainWindow));
-
-            var files = await picker.PickMultipleFilesAsync();
-            if (files == null || files.Count == 0) return;
-
-            foreach (var file in files)
-            {
-                var path = file.Path;
-
-                // Skip duplicates
-                if (workingEntries.Any(en => string.Equals(en.FilePath, path, StringComparison.OrdinalIgnoreCase)))
-                    continue;
-
-                var fileType = FileTypeDetector.Detect(path);
-                if (fileType == AnalysisFileType.Unknown) continue;
-
-                workingEntries.Add(new LoadOrderEntry
-                {
-                    FilePath = path,
-                    FileType = fileType
-                });
-            }
-        };
-        panel.Children.Add(addButton);
-
-        // Show dialog
-        var dialog = new ContentDialog
-        {
-            Title = "Load Order",
-            Content = new ScrollViewer
-            {
-                Content = panel,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
-            },
-            PrimaryButtonText = "Load",
-            SecondaryButtonText = _loadOrder.HasData ? "Clear All" : null,
-            CloseButtonText = "Cancel",
-            XamlRoot = XamlRoot,
-            DefaultButton = ContentDialogButton.Primary
-        };
-
-        var result = await dialog.ShowAsync();
-
-        if (result == ContentDialogResult.Secondary)
-        {
-            _loadOrder.Dispose();
-            UpdateLoadOrderStatusText();
             return;
         }
-
-        if (result != ContentDialogResult.Primary) return;
-        if (workingEntries.Count == 0) return;
 
         try
         {
             LoadOrderButton.IsEnabled = false;
             StatusTextBlock.Text = "Loading load order data...";
 
-            // Load new entries that haven't been loaded yet
-            for (var i = 0; i < workingEntries.Count; i++)
-            {
-                var entry = workingEntries[i];
-                if (entry.IsLoaded) continue;
-
-                StatusTextBlock.Text = $"Loading {entry.DisplayName} ({i + 1}/{workingEntries.Count})...";
-                await LoadSingleEntryAsync(entry);
-            }
-
-            // Replace load order entries with working copy
-            _loadOrder.Dispose();
-            foreach (var entry in workingEntries)
-                _loadOrder.Entries.Add(entry);
+            await LoadOrderDialogService.ApplyAsync(
+                _loadOrder,
+                dialogResult.Entries,
+                dialogResult.SubtitleCsvPath,
+                status => DispatcherQueue.TryEnqueue(() => StatusTextBlock.Text = status));
 
             UpdateLoadOrderStatusText();
             StatusTextBlock.Text = "Load order data loaded.";
@@ -615,58 +463,6 @@ public sealed partial class BatchModeTab : UserControl, IDisposable, IHasSetting
         {
             LoadOrderButton.IsEnabled = true;
         }
-    }
-
-    private async Task LoadSingleEntryAsync(LoadOrderEntry entry)
-    {
-        var path = entry.FilePath;
-        var fileType = entry.FileType;
-
-        if (fileType != AnalysisFileType.EsmFile && fileType != AnalysisFileType.Minidump)
-        {
-            await ShowDialogAsync("Load Failed",
-                $"Only ESM, ESP, and DMP files are supported: {entry.DisplayName}", true);
-            return;
-        }
-
-        // Run analysis
-        AnalysisResult analysisResult;
-        if (fileType == AnalysisFileType.EsmFile)
-        {
-            analysisResult = await EsmFileAnalyzer.AnalyzeAsync(path, null);
-        }
-        else
-        {
-            analysisResult = await new MinidumpAnalyzer().AnalyzeAsync(path, null);
-        }
-
-        if (analysisResult.EsmRecords == null)
-        {
-            await ShowDialogAsync("Load Failed",
-                $"No ESM records found in: {entry.DisplayName}", true);
-            return;
-        }
-
-        // Parse records
-        StatusTextBlock.Text = $"Parsing {entry.DisplayName}...";
-
-        var fileSize = new FileInfo(path).Length;
-        using var mmf = MemoryMappedFile.CreateFromFile(path, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-        using var accessor = mmf.CreateViewAccessor(0, fileSize, MemoryMappedFileAccess.Read);
-
-        var records = await Task.Run(() =>
-        {
-            var parser = new RecordParser(
-                analysisResult.EsmRecords,
-                analysisResult.FormIdMap,
-                accessor,
-                fileSize,
-                analysisResult.MinidumpInfo);
-            return parser.ParseAll();
-        });
-
-        entry.Resolver = records.CreateResolver();
-        entry.Records = records;
     }
 
     private void UpdateLoadOrderStatusText()

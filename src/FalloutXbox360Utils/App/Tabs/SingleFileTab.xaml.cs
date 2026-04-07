@@ -1,11 +1,11 @@
 using System.Collections.ObjectModel;
 using Windows.Storage.Pickers;
-using FalloutXbox360Utils.App.Helpers;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
+using FalloutXbox360Utils.Core.Semantic;
 using FalloutXbox360Utils.Localization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -159,7 +159,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     private int _reportViewportLineCount = 20;
     private double _measuredLineHeight;
     private EsmBrowserNode? _selectedBrowserNode;
-    private Task<RecordCollection>? _semanticParseTask;
+    private Task<UnifiedAnalysisResult>? _semanticLoadTask;
     private string _currentSearchQuery = "";
     private AnalysisPipelinePhase _pipelinePhase;
 
@@ -270,7 +270,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
                     _analysisResult, isEsmFile: fileType == AnalysisFileType.EsmFile));
             }
 
-            _session.Open(filePath, _analysisResult, fileType);
+            _session.Open(filePath, _analysisResult, fileType, openAccessor: fileType == AnalysisFileType.SaveFile);
             UpdateFileInfoCard();
 
             _session.RuntimeMeshes = _analysisResult.RuntimeMeshes;
