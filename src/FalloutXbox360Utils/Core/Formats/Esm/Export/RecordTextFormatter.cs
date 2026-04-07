@@ -4,6 +4,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Magic;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
@@ -17,21 +18,27 @@ internal static class RecordTextFormatter
     ///     Build a structured report for a single record.
     ///     Returns null if the record type is not supported.
     /// </summary>
-    internal static RecordReport? BuildReport(object record, FormIdResolver resolver)
+    internal static RecordReport? BuildReport(
+        object record, FormIdResolver resolver,
+        Dictionary<uint, List<(uint FormId, string? Name)>>? factionMembers = null,
+        Dictionary<uint, List<(PlacedReference Ref, CellRecord Cell)>>? keyLockedDoors = null,
+        Dictionary<uint, List<(WeaponRecord Weapon, WeaponModSlot Slot)>>? modToWeapon = null)
     {
-        return record switch
+        var report = record switch
         {
             WeaponRecord w => GeckItemDetailWriter.BuildWeaponReport(w, resolver),
             NpcRecord n => GeckActorDetailWriter.BuildNpcReport(n, resolver),
             ContainerRecord c => GeckItemDetailWriter.BuildContainerReport(c, resolver),
             QuestRecord q => GeckDialogueWriter.BuildQuestReport(q, resolver),
-            FactionRecord f => GeckFactionWriter.BuildFactionReport(f, resolver),
+            FactionRecord f => GeckFactionWriter.BuildFactionReport(f, resolver,
+                factionMembers?.GetValueOrDefault(f.FormId)),
             CreatureRecord cr => GeckCreatureWriter.BuildCreatureReport(cr, resolver),
             RaceRecord r => GeckCreatureWriter.BuildRaceReport(r, resolver),
             ProjectileRecord p => GeckWorldObjectWriter.BuildProjectileReport(p, resolver),
             ExplosionRecord e => GeckWorldObjectWriter.BuildExplosionReport(e, resolver),
             LeveledListRecord l => GeckMiscWriter.BuildLeveledListReport(l, resolver),
-            WeaponModRecord m => GeckItemDetailWriter.BuildWeaponModReport(m),
+            WeaponModRecord m => GeckItemDetailWriter.BuildWeaponModReport(m, resolver,
+                modToWeapon?.GetValueOrDefault(m.FormId)),
             RecipeRecord r => GeckItemDetailWriter.BuildRecipeReport(r, resolver),
             PerkRecord p => GeckEffectsWriter.BuildPerkReport(p, resolver),
             SpellRecord s => GeckEffectsWriter.BuildSpellReport(s, resolver),
@@ -39,7 +46,8 @@ internal static class RecordTextFormatter
             AmmoRecord a => GeckItemWriter.BuildAmmoReport(a, resolver),
             ConsumableRecord c => GeckItemWriter.BuildConsumableReport(c, resolver),
             MiscItemRecord m => GeckItemWriter.BuildMiscItemReport(m, resolver),
-            KeyRecord k => GeckItemWriter.BuildKeyReport(k, resolver),
+            KeyRecord k => GeckItemWriter.BuildKeyReport(k, resolver,
+                keyLockedDoors?.GetValueOrDefault(k.FormId)),
             CellRecord c => GeckWorldWriter.BuildCellReport(c, resolver),
             WorldspaceRecord w => GeckWorldWriter.BuildWorldspaceReport(w, resolver),
             ScriptRecord s => GeckScriptWriter.BuildScriptReport(s, resolver),
@@ -47,6 +55,39 @@ internal static class RecordTextFormatter
             DialogueRecord d => GeckDialogueWriter.BuildDialogueReport(d, resolver),
             _ => null
         };
+
+        if (report != null)
+            InjectIdentityFields(report);
+
+        return report;
+    }
+
+    /// <summary>
+    ///     Inject FormID, EditorID, and DisplayName as fields in the first section
+    ///     so they appear in the detail view and can be highlighted when they change.
+    /// </summary>
+    private static void InjectIdentityFields(RecordReport report)
+    {
+        var identityFields = new List<ReportField>
+        {
+            new("FormID", ReportValue.String($"0x{report.FormId:X8}"))
+        };
+        if (!string.IsNullOrEmpty(report.EditorId))
+            identityFields.Add(new("Editor ID", ReportValue.String(report.EditorId)));
+        if (!string.IsNullOrEmpty(report.DisplayName))
+            identityFields.Add(new("Display Name", ReportValue.String(report.DisplayName)));
+
+        // Prepend to existing Identity section if one exists, otherwise create one
+        var existingIdentity = report.Sections.FirstOrDefault(
+            s => s.Name.Equals("Identity", StringComparison.OrdinalIgnoreCase));
+        if (existingIdentity != null)
+        {
+            existingIdentity.Fields.InsertRange(0, identityFields);
+        }
+        else
+        {
+            report.Sections.Insert(0, new ReportSection("Identity", identityFields));
+        }
     }
 
     /// <summary>

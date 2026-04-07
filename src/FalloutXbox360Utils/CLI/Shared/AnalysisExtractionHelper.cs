@@ -9,6 +9,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Core.RuntimeBuffer;
+using FalloutXbox360Utils.Core.Semantic;
 using FalloutXbox360Utils.Core.Strings;
 using Spectre.Console;
 using static FalloutXbox360Utils.Core.LogLevel;
@@ -39,13 +40,13 @@ internal static class AnalysisExtractionHelper
         RecordCollection semanticResult;
         RuntimeStringOwnershipAnalysis? stringOwnership = null;
         StringPoolSummary? stringPool = null;
-        var fileSize = new FileInfo(input).Length;
-        using (var mmf = MemoryMappedFile.CreateFromFile(input, FileMode.Open, null, 0, MemoryMappedFileAccess.Read))
-        using (var accessor = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
+        using (var loaded = SemanticFileLoader.LoadFromAnalysisResult(
+                   input,
+                   result,
+                   SemanticFileLoader.ResolveSemanticFileType(input),
+                   null))
         {
-            var parser = new RecordParser(
-                result.EsmRecords!, result.FormIdMap, accessor, fileSize, result.MinidumpInfo);
-            semanticResult = parser.ParseAll();
+            semanticResult = loaded.Records;
 
             // Show BSStringT read diagnostics for DMP files
             if (result.MinidumpInfo != null)
@@ -59,7 +60,7 @@ internal static class AnalysisExtractionHelper
             }
 
             // Extract string pool data to enrich the CSV exports
-            var stringData = ExtractRuntimeStringData(result, accessor);
+            var stringData = ExtractRuntimeStringData(result, loaded.Accessor!);
             stringPool = stringData?.StringPool;
             stringOwnership = stringData?.OwnershipAnalysis;
         }

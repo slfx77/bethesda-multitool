@@ -1,12 +1,10 @@
 using System.CommandLine;
-using System.IO.MemoryMappedFiles;
 using System.Text;
 using FalloutXbox360Utils.Core;
-using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
-using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
-using FalloutXbox360Utils.Core.Minidump;
+using FalloutXbox360Utils.Core.Semantic;
+using FalloutXbox360Utils.CLI.Shared;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI.Commands.Analysis;
@@ -223,67 +221,20 @@ public static class CompareCommand
 
     private static async Task<RecordCollection?> LoadDmpAsync(string path)
     {
-        var analyzer = new MinidumpAnalyzer();
-        AnalysisResult result = null!;
-
-        await AnsiConsole.Progress()
-            .Columns(new TaskDescriptionColumn(), new ProgressBarColumn(), new PercentageColumn(),
-                new SpinnerColumn())
-            .StartAsync(async ctx =>
-            {
-                var task = ctx.AddTask("[green]Analyzing DMP[/]", maxValue: 100);
-                var progress = new Progress<AnalysisProgress>(p =>
-                {
-                    task.Value = p.PercentComplete;
-                    task.Description = $"[green]{p.Phase}[/]";
-                });
-                result = await analyzer.AnalyzeAsync(path, progress);
-                task.Value = 100;
-            });
-
-        if (result.EsmRecords == null)
-        {
-            AnsiConsole.MarkupLine("[red]Error:[/] No ESM records found in DMP.");
-            return null;
-        }
-
-        using var mmf = MemoryMappedFile.CreateFromFile(path, FileMode.Open, null, 0,
-            MemoryMappedFileAccess.Read);
-        using var accessor = mmf.CreateViewAccessor(0, result.FileSize, MemoryMappedFileAccess.Read);
-        var parser = new RecordParser(result.EsmRecords, result.FormIdMap, accessor, result.FileSize,
-            result.MinidumpInfo);
-        return parser.ParseAll();
+        using var loaded = await CliSemanticLoader.TryLoadAsync(
+            path,
+            "Loading DMP comparison data...");
+        return loaded?.Records;
     }
 
     private static async Task<RecordCollection?> LoadEsmAsync(string path, CancellationToken ct)
     {
-        var analysisResult = await AnsiConsole.Progress()
-            .Columns(new TaskDescriptionColumn(), new ProgressBarColumn(), new PercentageColumn(),
-                new SpinnerColumn())
-            .StartAsync(async ctx =>
-            {
-                var task = ctx.AddTask("[green]Analyzing ESM[/]", maxValue: 100);
-                var progress = new Progress<AnalysisProgress>(p =>
-                {
-                    task.Value = p.PercentComplete;
-                    task.Description = $"[green]{p.Phase}[/]";
-                });
-                return await EsmFileAnalyzer.AnalyzeAsync(path, progress, ct);
-            });
-
-        if (analysisResult.EsmRecords == null)
-        {
-            AnsiConsole.MarkupLine("[red]Error:[/] No ESM records found in ESM file.");
-            return null;
-        }
-
-        var fileInfo = new FileInfo(path);
-        using var mmf = MemoryMappedFile.CreateFromFile(path, FileMode.Open, null, 0,
-            MemoryMappedFileAccess.Read);
-        using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
-        var parser = new RecordParser(analysisResult.EsmRecords, analysisResult.FormIdMap, accessor,
-            fileInfo.Length, analysisResult.MinidumpInfo);
-        return parser.ParseAll();
+        using var loaded = await CliSemanticLoader.TryLoadAsync(
+            path,
+            "Loading ESM comparison data...",
+            new SemanticFileLoadOptions { FileType = AnalysisFileType.EsmFile },
+            ct);
+        return loaded?.Records;
     }
 
     #endregion

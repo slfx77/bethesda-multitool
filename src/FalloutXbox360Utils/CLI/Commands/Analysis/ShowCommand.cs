@@ -14,6 +14,7 @@ public static class ShowCommand
 {
     private static readonly IRecordDisplayRenderer[] Renderers =
     [
+        new SharedRecordDetailShowRenderer(),
         // Actor domain
         new NpcShowRenderer(),
         new CreatureShowRenderer(),

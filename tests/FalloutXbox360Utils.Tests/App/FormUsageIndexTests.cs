@@ -1,4 +1,4 @@
-using FalloutXbox360Utils.App.Helpers;
+using FalloutXbox360Utils;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.AI;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;

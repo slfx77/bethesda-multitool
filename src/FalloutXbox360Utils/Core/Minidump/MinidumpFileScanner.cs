@@ -330,8 +330,8 @@ internal sealed class MinidumpFileScanner
         string signatureId,
         IFileFormat format)
     {
-        // For DDX files, we need to read some data before the signature to find the path
-        // Read up to 512 bytes before and the header after
+        // DDX files store the path before the signature; read up to 512 bytes before
+        // the signature offset plus the header bytes after it.
         const int preReadSize = 512;
         var actualPreRead = (int)Math.Min(preReadSize, offset);
         var readStart = offset - actualPreRead;

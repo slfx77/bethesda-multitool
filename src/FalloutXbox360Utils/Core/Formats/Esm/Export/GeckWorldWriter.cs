@@ -272,8 +272,27 @@ internal static class GeckWorldWriter
         {
             var baseStr = !string.IsNullOrEmpty(obj.BaseEditorId)
                 ? obj.BaseEditorId
-                : resolver.GetBestName(obj.BaseFormId)
+                : resolver.GetEditorId(obj.BaseFormId)
                   ?? GeckReportHelpers.FormatFormId(obj.BaseFormId);
+
+            // Resolve a human-readable name distinct from the base editor ID:
+            // - Map markers carry their map name on the placement itself.
+            // - Other objects: prefer the base record's display (FULL) name when it
+            //   actually adds information (i.e. differs from the editor ID).
+            string? displayName = null;
+            if (obj.IsMapMarker && !string.IsNullOrEmpty(obj.MarkerName))
+            {
+                displayName = obj.MarkerName;
+            }
+            else
+            {
+                var baseDisplay = resolver.GetDisplayName(obj.BaseFormId);
+                if (!string.IsNullOrEmpty(baseDisplay)
+                    && !string.Equals(baseDisplay, baseStr, StringComparison.Ordinal))
+                {
+                    displayName = baseDisplay;
+                }
+            }
 
             var fields = new List<ReportField>
             {
@@ -283,6 +302,11 @@ internal static class GeckWorldWriter
                 new("Type", ReportValue.String(obj.RecordType)),
                 new("Position", ReportValue.String($"({obj.X:F1}, {obj.Y:F1}, {obj.Z:F1})"))
             };
+
+            if (displayName != null)
+            {
+                fields.Add(new ReportField("Name", ReportValue.String(displayName)));
+            }
 
             var hasRotation = MathF.Abs(obj.RotX) > 0.001f || MathF.Abs(obj.RotY) > 0.001f ||
                               MathF.Abs(obj.RotZ) > 0.001f;
@@ -314,7 +338,8 @@ internal static class GeckWorldWriter
             }
 
             var disabledTag = obj.IsInitiallyDisabled ? " [DISABLED]" : "";
-            var display = $"{baseStr} ({obj.RecordType}) [{GeckReportHelpers.FormatFormId(obj.FormId)}]{disabledTag}";
+            var nameTag = displayName != null ? $" \"{displayName}\"" : "";
+            var display = $"{baseStr}{nameTag} ({obj.RecordType}) [{GeckReportHelpers.FormatFormId(obj.FormId)}]{disabledTag}";
             items.Add(new ReportValue.CompositeVal(fields, display));
         }
 

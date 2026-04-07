@@ -1,11 +1,12 @@
 using System.CommandLine;
-using System.IO.MemoryMappedFiles;
+using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
-using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
+using FalloutXbox360Utils.Core.Semantic;
+using FalloutXbox360Utils.CLI.Shared;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI.Commands.Analysis;
@@ -72,40 +73,12 @@ public static class WorldCommand
     private static async Task<RecordCollection?> LoadAndParseAsync(
         string input, CancellationToken cancellationToken)
     {
-        if (!File.Exists(input))
-        {
-            AnsiConsole.MarkupLine("[red]Error:[/] File not found: {0}", input);
-            return null;
-        }
-
-        AnsiConsole.MarkupLine("[blue]Loading:[/] {0}", Path.GetFileName(input));
-
-        var analysisResult = await CliProgressRunner.RunWithProgressAsync(
-            "Analyzing ESM file...",
-            (progress, ct) => EsmFileAnalyzer.AnalyzeAsync(input, progress, ct),
+        using var loaded = await CliSemanticLoader.TryLoadAsync(
+            input,
+            "Loading world data...",
+            new SemanticFileLoadOptions { FileType = AnalysisFileType.EsmFile },
             cancellationToken);
-
-        if (analysisResult.EsmRecords == null)
-        {
-            AnsiConsole.MarkupLine("[red]Error:[/] No ESM records found in file.");
-            return null;
-        }
-
-        AnsiConsole.MarkupLine("[blue]Parsing world data...[/]");
-
-        var fileInfo = new FileInfo(input);
-        RecordCollection semanticResult;
-        using (var mmf = MemoryMappedFile.CreateFromFile(input, FileMode.Open, null, 0,
-                   MemoryMappedFileAccess.Read))
-        using (var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read))
-        {
-            var parser = new RecordParser(
-                analysisResult.EsmRecords, analysisResult.FormIdMap, accessor, fileInfo.Length,
-                analysisResult.MinidumpInfo);
-            semanticResult = parser.ParseAll();
-        }
-
-        return semanticResult;
+        return loaded?.Records;
     }
 
     private static async Task RunMarkersAsync(string input, CancellationToken cancellationToken)

@@ -119,6 +119,14 @@ public record PlacedReference
     /// <summary>Whether this is a persistent reference (flag 0x0400 on main record header).</summary>
     public bool IsPersistent { get; init; }
 
+    /// <summary>
+    ///     FormID of the persistent cell that originally owned this ref before it was
+    ///     redistributed by world position to its real exterior tile. Null when the ref
+    ///     was placed directly into its parent cell. Used by reports/exporters to
+    ///     reconstruct the "persistent only" view after redistribution.
+    /// </summary>
+    public uint? OriginCellFormId { get; init; }
+
     /// <summary>Whether this record has the Initially Disabled flag (0x0800) on its main record header.</summary>
     public bool IsInitiallyDisabled { get; init; }
 

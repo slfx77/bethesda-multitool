@@ -3,12 +3,10 @@
 #pragma warning disable IDE0051, S1144
 
 using System.CommandLine;
-using System.IO.MemoryMappedFiles;
-using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
-using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
-using FalloutXbox360Utils.Core.Minidump;
+using FalloutXbox360Utils.Core.Semantic;
+using FalloutXbox360Utils.CLI.Shared;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI.Commands.Dialogue;
@@ -37,52 +35,16 @@ public static class DialogueCommand
     internal static async Task<(RecordCollection result, Dictionary<uint, string> formIdMap)?> LoadAndParseAsync(
         string input, CancellationToken cancellationToken)
     {
-        if (!File.Exists(input))
-        {
-            AnsiConsole.MarkupLine("[red]Error:[/] File not found: {0}", input);
-            return null;
-        }
-
-        AnsiConsole.MarkupLine("[blue]Loading:[/] {0}", Path.GetFileName(input));
-
-        var isDump = Path.GetExtension(input).Equals(".dmp", StringComparison.OrdinalIgnoreCase);
-
-        var taskLabel = isDump ? "Analyzing memory dump..." : "Analyzing ESM file...";
-        var analysisResult = await CliProgressRunner.RunWithProgressAsync(
-            taskLabel,
-            async (progress, ct) =>
-            {
-                if (isDump)
-                {
-                    var analyzer = new MinidumpAnalyzer();
-                    return await analyzer.AnalyzeAsync(input, progress, true, false, ct);
-                }
-
-                return await EsmFileAnalyzer.AnalyzeAsync(input, progress, ct);
-            },
+        using var loaded = await CliSemanticLoader.TryLoadAsync(
+            input,
+            Path.GetExtension(input).Equals(".dmp", StringComparison.OrdinalIgnoreCase)
+                ? "Loading dialogue from memory dump..."
+                : "Loading dialogue from ESM...",
+            null,
             cancellationToken);
-
-        if (analysisResult.EsmRecords == null)
-        {
-            AnsiConsole.MarkupLine("[red]Error:[/] No ESM records found in file.");
-            return null;
-        }
-
-        AnsiConsole.MarkupLine("[blue]Parsing dialogue...[/]");
-
-        var fileInfo = new FileInfo(input);
-        RecordCollection semanticResult;
-        using (var mmf = MemoryMappedFile.CreateFromFile(input, FileMode.Open, null, 0,
-                   MemoryMappedFileAccess.Read))
-        using (var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read))
-        {
-            var parser = new RecordParser(
-                analysisResult.EsmRecords, analysisResult.FormIdMap, accessor, fileInfo.Length,
-                analysisResult.MinidumpInfo);
-            semanticResult = parser.ParseAll();
-        }
-
-        return (semanticResult, analysisResult.FormIdMap);
+        return loaded == null
+            ? null
+            : (loaded.Records, loaded.RawResult.FormIdMap);
     }
 
     internal static string FormatPct(int count, int total)

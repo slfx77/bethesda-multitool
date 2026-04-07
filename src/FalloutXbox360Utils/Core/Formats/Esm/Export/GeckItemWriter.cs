@@ -1,6 +1,8 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
@@ -131,8 +133,8 @@ internal static class GeckItemWriter
                     new ReportField("Magnitude", ReportValue.Float(effect.Magnitude)),
                     new ReportField("Area", ReportValue.Int((int)effect.Area)),
                     new ReportField("Duration", ReportValue.Int((int)effect.Duration)),
-                    new ReportField("Type", ReportValue.String(typeName))
-                ], effectName));
+                    new ReportField("Target", ReportValue.String(typeName))
+                ], $"{effectName}\nMagnitude: {effect.Magnitude:F1}\tArea: {effect.Area}u\tDuration: {effect.Duration}s\tTarget: {typeName}"));
             }
 
             sections.Add(new ReportSection("Effects", [new ReportField("Effects", ReportValue.List(effectItems))]));
@@ -162,16 +164,61 @@ internal static class GeckItemWriter
         return new RecordReport("Misc Item", item.FormId, item.EditorId, item.FullName, sections);
     }
 
-    internal static RecordReport BuildKeyReport(KeyRecord key, FormIdResolver resolver)
+    internal static RecordReport BuildKeyReport(
+        KeyRecord key, FormIdResolver resolver,
+        IReadOnlyList<(PlacedReference Ref, CellRecord Cell)>? linkedDoors = null)
     {
         var sections = new List<ReportSection>();
 
         // Stats
-        sections.Add(new ReportSection("Stats",
-        [
-            new ReportField("Value", ReportValue.Int(key.Value, $"{key.Value} caps")),
-            new ReportField("Weight", ReportValue.Float(key.Weight))
-        ]));
+        var statsFields = new List<ReportField>
+        {
+            new("Value", ReportValue.Int(key.Value, $"{key.Value} caps")),
+            new("Weight", ReportValue.Float(key.Weight))
+        };
+        if (!string.IsNullOrEmpty(key.ModelPath))
+            statsFields.Add(new ReportField("Model", ReportValue.String(key.ModelPath)));
+        sections.Add(new ReportSection("Stats", statsFields));
+
+        // Linked Doors (reverse index: which doors/containers use this key)
+        if (linkedDoors is { Count: > 0 })
+        {
+            var doorItems = linkedDoors
+                .OrderBy(d => d.Cell.FullName ?? d.Cell.EditorId ?? "")
+                .Select(d =>
+                {
+                    var fields = new List<ReportField>();
+
+                    // Door/container base object
+                    if (d.Ref.BaseFormId != 0)
+                        fields.Add(new ReportField("Object",
+                            ReportValue.FormId(d.Ref.BaseFormId, resolver),
+                            $"0x{d.Ref.BaseFormId:X8}"));
+
+                    // Lock level
+                    if (d.Ref.LockLevel.HasValue)
+                        fields.Add(new ReportField("Lock Level",
+                            ReportValue.Int(d.Ref.LockLevel.Value)));
+
+                    // Cell location
+                    var cellName = d.Cell.FullName ?? d.Cell.EditorId ?? $"0x{d.Cell.FormId:X8}";
+                    fields.Add(new ReportField("Cell",
+                        ReportValue.FormId(d.Cell.FormId, resolver),
+                        $"0x{d.Cell.FormId:X8}"));
+
+                    // Summary
+                    var objName = resolver.FormatFull(d.Ref.BaseFormId);
+                    var lockStr = d.Ref.LockLevel.HasValue ? $" (Lock {d.Ref.LockLevel})" : "";
+                    return (ReportValue)new ReportValue.CompositeVal(fields,
+                        $"{objName}{lockStr} in {cellName}");
+                })
+                .ToList();
+
+            sections.Add(new ReportSection($"Linked Doors ({linkedDoors.Count})",
+            [
+                new ReportField("Doors", ReportValue.List(doorItems))
+            ]));
+        }
 
         return new RecordReport("Key", key.FormId, key.EditorId, key.FullName, sections);
     }

@@ -79,6 +79,23 @@ public record CellRecord
     /// <summary>True for synthetic cells created to hold orphan references in DMP mode.</summary>
     public bool IsVirtual { get; init; }
 
+    /// <summary>
+    ///     True when this CellRecord represents the worldspace's persistent cell container
+    ///     (the logical owner of refs flagged with the persistent flag 0x0400). Persistent
+    ///     cells have no grid coordinate of their own — refs they own are redistributed to
+    ///     real exterior tiles by world position. Renderers must not draw this cell at any
+    ///     grid tile, and reports should label it "Persistent" instead of "[gx,gy]".
+    /// </summary>
+    public bool IsPersistentCell { get; init; }
+
+    /// <summary>
+    ///     True when this is a synthetic catch-all bucket for orphan refs whose owning
+    ///     cell could not be resolved (no parent cell pointer and no plausible grid match
+    ///     against any worldspace's known bounds). GridX/GridY are null. Renderers should
+    ///     surface these in a side panel rather than placing them on a tile.
+    /// </summary>
+    public bool IsUnresolvedBucket { get; init; }
+
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }
 

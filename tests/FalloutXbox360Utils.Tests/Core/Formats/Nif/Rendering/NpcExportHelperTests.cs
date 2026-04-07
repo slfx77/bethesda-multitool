@@ -218,6 +218,106 @@ public sealed class NpcExportHelperTests
     }
 
     [Fact]
+    public void ConvertDirectXNormalMapToGltf_FlipsGreenChannelAndPreservesAlpha()
+    {
+        var normalTexture = DecodedTexture.FromBaseLevel(
+            [
+                64, 32, 255, 10,
+                192, 224, 200, 240
+            ],
+            2,
+            1,
+            false);
+
+        var converted = NpcGlbNormalMapPacker.ConvertDirectXNormalMapToGltf(normalTexture);
+
+        Assert.Equal(
+            new byte[]
+            {
+                64, 223, 255, 10,
+                192, 31, 200, 240
+            },
+            converted.Pixels);
+    }
+
+    [Fact]
+    public void FixWindingOrder_ReversesTrianglesThatDisagreeWithNormals()
+    {
+        var submesh = new RenderableSubmesh
+        {
+            Positions =
+            [
+                0f, 0f, 0f,
+                0f, 1f, 0f,
+                1f, 0f, 0f
+            ],
+            Normals =
+            [
+                0f, 0f, 1f,
+                0f, 0f, 1f,
+                0f, 0f, 1f
+            ],
+            Triangles = [0, 1, 2]
+        };
+
+        var fixedCount = GltfNormalDiagnostic.FixWindingOrder(submesh);
+
+        Assert.Equal(1, fixedCount);
+        Assert.Equal((ushort)0, submesh.Triangles[0]);
+        Assert.Equal((ushort)2, submesh.Triangles[1]);
+        Assert.Equal((ushort)1, submesh.Triangles[2]);
+    }
+
+    [Fact]
+    public void Analyze_CountsFlippedTrianglesAndZeroNormals()
+    {
+        var submesh = new RenderableSubmesh
+        {
+            Positions =
+            [
+                0f, 0f, 0f,
+                0f, 1f, 0f,
+                1f, 0f, 0f
+            ],
+            Normals =
+            [
+                0f, 0f, 1f,
+                0f, 0f, 1f,
+                0f, 0f, 0f
+            ],
+            Triangles = [0, 1, 2]
+        };
+
+        var analysis = MeshWindingDiagnostic.Analyze(submesh);
+
+        Assert.Equal(1, analysis.TotalTriangles);
+        Assert.Equal(1, analysis.FlippedCount);
+        Assert.Equal(1, analysis.ZeroNormalCount);
+        Assert.Single(analysis.SampleFlippedIndices);
+        Assert.Equal(0, analysis.SampleFlippedIndices[0]);
+    }
+
+    [Fact]
+    public void BuildVertexColor_TintedMeshPreservesAlphaButNeutralizesRgb()
+    {
+        var submesh = new RenderableSubmesh
+        {
+            Positions = [0f, 0f, 0f],
+            Triangles = [],
+            VertexColors = [32, 96, 192, 128],
+            UseVertexColors = true,
+            TintColor = (0.7f, 0.6f, 0.5f)
+        };
+
+        var color = NpcGlbTintColorEncoder.BuildVertexColor(submesh, 0);
+
+        Assert.Equal(1f, color.X);
+        Assert.Equal(1f, color.Y);
+        Assert.Equal(1f, color.Z);
+        Assert.Equal(128f / 255f, color.W, 3);
+    }
+
+    [Fact]
     public void BuildMetallicRoughnessTexture_UsesGlossAlphaAndEnvironmentMask()
     {
         var normalTexture = DecodedTexture.FromBaseLevel(

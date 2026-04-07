@@ -540,6 +540,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             Heightmap = esm.Heightmap ?? runtime.Heightmap,
             RuntimeTerrainMesh = esm.RuntimeTerrainMesh ?? runtime.RuntimeTerrainMesh,
             HasPersistentObjects = esm.HasPersistentObjects || runtime.HasPersistentObjects,
+            IsPersistentCell = esm.IsPersistentCell || runtime.IsPersistentCell,
             IsVirtual = esm.IsVirtual || runtime.IsVirtual,
             Offset = esm.Offset != 0 ? esm.Offset : runtime.Offset,
             IsBigEndian = esm.IsBigEndian || runtime.IsBigEndian

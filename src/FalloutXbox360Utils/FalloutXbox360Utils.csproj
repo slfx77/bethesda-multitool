@@ -16,6 +16,12 @@
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
   </PropertyGroup>
 
+  <!-- Ensure multi-target restore materializes RID-specific assets for both CLI and GUI builds. -->
+  <PropertyGroup Condition="'$(BuildTestsOnly)' != 'true' and '$(TargetFramework)' == ''">
+    <RuntimeIdentifiers>win-x64;linux-x64;osx-x64</RuntimeIdentifiers>
+    <RuntimeIdentifier Condition="'$(Platform)' == 'x64'">win-x64</RuntimeIdentifier>
+  </PropertyGroup>
+
   <!-- Single-file and trimming options for CLI builds -->
   <PropertyGroup Condition="!$(TargetFramework.Contains('windows'))">
     <RuntimeIdentifiers>win-x64;linux-x64;osx-x64</RuntimeIdentifiers>
@@ -115,6 +121,8 @@
     <Compile Include="App\Helpers\DialogueConditionDisplayFormatter.cs" />
     <Compile Include="App\Helpers\FormUsageIndex.cs" />
     <Compile Include="App\Helpers\FormUsageReference.cs" />
+    <Compile Include="App\Helpers\RecordDetailPropertyAdapter.cs" />
+    <Compile Include="App\Models\EsmPropertyEntry.cs" />
     <!-- XAML files in App/ -->
     <Page Remove="App\**\*.xaml" />
     <!-- Root XAML files -->

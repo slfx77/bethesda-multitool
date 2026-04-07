@@ -74,12 +74,14 @@ internal static class CellLinkageHandler
             return;
         }
 
-        // Sort by area descending so the largest worldspace is used as tiebreaker
+        // Sort by area ascending so the smallest (most specific) containing worldspace
+        // wins for nested worldspaces (e.g. DLC zones inside the main Wasteland WRLD).
+        // Matches the disambiguation order used by BuildWorldspaceBoundsFromCellMaps.
         worldspaceBounds.Sort((a, b) =>
         {
             var areaA = (long)(a.MaxCellX - a.MinCellX) * (a.MaxCellY - a.MinCellY);
             var areaB = (long)(b.MaxCellX - b.MinCellX) * (b.MaxCellY - b.MinCellY);
-            return areaB.CompareTo(areaA);
+            return areaA.CompareTo(areaB);
         });
 
         var inferredCount = 0;
@@ -94,7 +96,8 @@ internal static class CellLinkageHandler
             var gx = cell.GridX.Value;
             var gy = cell.GridY!.Value;
 
-            // Find matching worldspace (prefer largest by area = first in sorted list)
+            // Find matching worldspace (prefer smallest by area = first in sorted list,
+            // so a child worldspace wins over its parent when their bounds overlap).
             foreach (var (ws, minX, minY, maxX, maxY) in worldspaceBounds)
             {
                 if (gx >= minX && gx <= maxX && gy >= minY && gy <= maxY)
@@ -215,6 +218,17 @@ internal static class CellLinkageHandler
         // to assign orphans to, instead of falling through to virtual cells.
         var stubsCreated = CreateCellMapStubs(existingCells, cellByFormId, context);
         var parentSignalStubsCreated = CreateReferencedCellStubs(orphans, existingCells, cellByFormId, context);
+
+        // Phase 0.75: Redistribute refs sitting on persistent cells to their real exterior tiles
+        // by world position. The persistent cell is a logical container — refs it owns carry real
+        // worldspace coordinates that belong to specific exterior cells. Without this pass, every
+        // persistent ref appears clustered at the persistent stub's (formerly hardcoded) grid.
+        var redistributed = RedistributePersistentRefs(existingCells, cellByFormId, context);
+        if (redistributed > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] CreateVirtualCells: redistributed {redistributed} persistent refs from persistent cells to exterior tiles");
+        }
 
         // Phase Interior: Group interior orphans by their parent cell FormID.
         var interiorCellsCreated = AssignInteriorOrphans(interiorOrphans, existingCells, cellByFormId, context);
@@ -340,36 +354,203 @@ internal static class CellLinkageHandler
                 "may be unloaded persistent refs or interior refs with unknown cell type");
         }
 
-        // Phase 2: Group remaining orphans by grid cell derived from position (4096 world units per cell)
-        var groups = trueOrphans
-            .GroupBy(r => ((int)MathF.Floor(r.Position!.X / 4096f), (int)MathF.Floor(r.Position.Y / 4096f)))
-            .Where(g => g.Any())
-            .ToList();
+        // Phase 2: Bin remaining orphans into worldspace-scoped virtual cells, but only when the
+        // computed grid is plausible for that worldspace. Refs whose position doesn't fall within
+        // any known worldspace's bounds go into per-worldspace (or null) Unresolved buckets so we
+        // don't fabricate spurious tile assignments at [0,0] or wherever floor(pos/4096) lands.
+        var wsBoundsForPhase2 = context.RuntimeWorldspaceCellMaps is { Count: > 0 }
+            ? BuildWorldspaceBoundsFromCellMaps(
+                context.RuntimeWorldspaceCellMaps.ToDictionary(
+                    kv => kv.Key,
+                    kv => kv.Value.Cells.GroupBy(c => (c.GridX, c.GridY))
+                        .ToDictionary(g => g.Key, g => g.First().CellFormId)))
+            : [];
 
         var virtualCells = new List<CellRecord>();
+        var virtualByKey = new Dictionary<(uint WsFormId, int Gx, int Gy), CellRecord>();
+        var unresolvedByWs = new Dictionary<uint, CellRecord>();
         var syntheticFormId = 0xFF000001u;
+        var unresolvedFormId = 0xFE100001u;
 
-        foreach (var group in groups)
+        foreach (var orphan in trueOrphans)
         {
-            var (gridX, gridY) = group.Key;
-            var refs = group.Select(r => ToPlacedReference(r, context, "Virtual")).ToList();
+            var pos = orphan.Position!;
+            var gx = (int)MathF.Floor(pos.X / 4096f);
+            var gy = (int)MathF.Floor(pos.Y / 4096f);
 
-            virtualCells.Add(new CellRecord
+            // Find a worldspace whose grid bounds contain (gx, gy).
+            // wsBounds is sorted by cell count ascending, so smallest (most specific) wins.
+            uint? matchedWs = null;
+            foreach (var (wsFormId, minGX, minGY, maxGX, maxGY, _) in wsBoundsForPhase2)
             {
-                FormId = syntheticFormId++,
-                EditorId = $"[Virtual {gridX},{gridY}]",
-                GridX = gridX,
-                GridY = gridY,
-                PlacedObjects = refs,
-                IsVirtual = true,
-                IsBigEndian = refs[0].IsBigEndian
-            });
+                if (gx >= minGX && gx <= maxGX && gy >= minGY && gy <= maxGY)
+                {
+                    matchedWs = wsFormId;
+                    break;
+                }
+            }
+
+            if (matchedWs is uint wsId)
+            {
+                var key = (wsId, gx, gy);
+                if (!virtualByKey.TryGetValue(key, out var vcell))
+                {
+                    var wsName = context.GetEditorId(wsId) ?? $"0x{wsId:X8}";
+                    vcell = new CellRecord
+                    {
+                        FormId = syntheticFormId++,
+                        EditorId = $"[Virtual {gx},{gy} {wsName}]",
+                        GridX = gx,
+                        GridY = gy,
+                        WorldspaceFormId = wsId,
+                        PlacedObjects = [],
+                        IsVirtual = true,
+                        IsBigEndian = orphan.Header.IsBigEndian
+                    };
+                    virtualByKey[key] = vcell;
+                    virtualCells.Add(vcell);
+                }
+
+                vcell.PlacedObjects.Add(ToPlacedReference(orphan, context, "Virtual"));
+            }
+            else
+            {
+                // Position doesn't fall within any known worldspace — true unresolved ref.
+                var bucketWs = orphan.ParentCellFormId is uint pcid &&
+                               cellByFormId.TryGetValue(pcid, out var pcell) &&
+                               pcell.WorldspaceFormId is uint pcws
+                    ? pcws
+                    : 0u;
+
+                if (!unresolvedByWs.TryGetValue(bucketWs, out var ucell))
+                {
+                    var wsName = bucketWs == 0
+                        ? "Unknown"
+                        : context.GetEditorId(bucketWs) ?? $"0x{bucketWs:X8}";
+                    ucell = new CellRecord
+                    {
+                        FormId = unresolvedFormId++,
+                        EditorId = $"[Unresolved {wsName}]",
+                        GridX = null,
+                        GridY = null,
+                        WorldspaceFormId = bucketWs == 0 ? null : bucketWs,
+                        PlacedObjects = [],
+                        IsVirtual = true,
+                        IsUnresolvedBucket = true,
+                        IsBigEndian = orphan.Header.IsBigEndian
+                    };
+                    unresolvedByWs[bucketWs] = ucell;
+                    virtualCells.Add(ucell);
+                }
+
+                ucell.PlacedObjects.Add(ToPlacedReference(orphan, context, "Unresolved"));
+            }
         }
 
         Logger.Instance.Debug(
-            $"  [Semantic] CreateVirtualCells: {trueOrphans.Count} true orphans -> {virtualCells.Count} virtual cells");
+            $"  [Semantic] CreateVirtualCells: {trueOrphans.Count} true orphans -> " +
+            $"{virtualByKey.Count} bounded virtual cells, {unresolvedByWs.Count} unresolved buckets");
 
         return virtualCells;
+    }
+
+    /// <summary>
+    ///     Phase 0.75: Walk every persistent CellRecord and move refs with valid world positions
+    ///     into the real exterior tile they belong to (per-worldspace grid lookup). Refs keep
+    ///     IsPersistent=true and gain OriginCellFormId pointing back at the persistent container,
+    ///     so reports can still reconstruct a "persistent only" view. Refs whose grid isn't in
+    ///     the worldspace cell map remain on the persistent cell (they have nowhere better to go;
+    ///     a later pass could promote them to runtime stubs if desired).
+    /// </summary>
+    private static int RedistributePersistentRefs(
+        List<CellRecord> existingCells,
+        Dictionary<uint, CellRecord> cellByFormId,
+        RecordParserContext context)
+    {
+        if (context.RuntimeWorldspaceCellMaps is not { Count: > 0 })
+        {
+            return 0;
+        }
+
+        // Build per-worldspace grid -> cell FormID maps (same shape as Phase 1.5).
+        var gridToCellByWorldspace = new Dictionary<uint, Dictionary<(int, int), uint>>();
+        foreach (var (wsFormId, wsData) in context.RuntimeWorldspaceCellMaps)
+        {
+            var gridMap = new Dictionary<(int, int), uint>();
+            foreach (var cellEntry in wsData.Cells)
+            {
+                gridMap.TryAdd((cellEntry.GridX, cellEntry.GridY), cellEntry.CellFormId);
+            }
+
+            if (gridMap.Count > 0)
+            {
+                gridToCellByWorldspace[wsFormId] = gridMap;
+            }
+        }
+
+        if (gridToCellByWorldspace.Count == 0)
+        {
+            return 0;
+        }
+
+        var moved = 0;
+        for (var i = 0; i < existingCells.Count; i++)
+        {
+            var pcell = existingCells[i];
+            if (!pcell.IsPersistentCell || pcell.PlacedObjects.Count == 0)
+            {
+                continue;
+            }
+
+            var wsId = pcell.WorldspaceFormId;
+            if (wsId is null || !gridToCellByWorldspace.TryGetValue(wsId.Value, out var gridMap))
+            {
+                continue;
+            }
+
+            var keep = new List<PlacedReference>(pcell.PlacedObjects.Count);
+            foreach (var pref in pcell.PlacedObjects)
+            {
+                // Only move refs with non-trivial coordinates. Refs near the origin are
+                // either genuine origin-tile refs or coordinate-less container refs;
+                // leave them on the persistent cell unless their grid clearly resolves.
+                var gx = (int)MathF.Floor(pref.X / 4096f);
+                var gy = (int)MathF.Floor(pref.Y / 4096f);
+
+                // Skip refs whose position is essentially zero AND no grid entry exists
+                // for (0,0) — those are likely uninitialized positions, not real placements.
+                var hasPosition = MathF.Abs(pref.X) > 1f || MathF.Abs(pref.Y) > 1f;
+                if (!hasPosition)
+                {
+                    keep.Add(pref);
+                    continue;
+                }
+
+                if (gridMap.TryGetValue((gx, gy), out var destCellFormId) &&
+                    cellByFormId.TryGetValue(destCellFormId, out var destCell) &&
+                    destCell.FormId != pcell.FormId)
+                {
+                    destCell.PlacedObjects.Add(pref with
+                    {
+                        OriginCellFormId = pcell.FormId,
+                        AssignmentSource = "PersistentRedistributed"
+                    });
+                    moved++;
+                }
+                else
+                {
+                    keep.Add(pref);
+                }
+            }
+
+            if (keep.Count != pcell.PlacedObjects.Count)
+            {
+                existingCells[i] = pcell with { PlacedObjects = keep };
+                cellByFormId[pcell.FormId] = existingCells[i];
+            }
+        }
+
+        return moved;
     }
 
     /// <summary>
@@ -399,10 +580,11 @@ internal static class CellLinkageHandler
                     FormId = wsData.PersistentCellFormId.Value,
                     EditorId = context.GetEditorId(wsData.PersistentCellFormId.Value),
                     FullName = context.FormIdToFullName.GetValueOrDefault(wsData.PersistentCellFormId.Value),
-                    GridX = 0,
-                    GridY = 0,
+                    GridX = null,
+                    GridY = null,
                     WorldspaceFormId = wsFormId,
                     HasPersistentObjects = true,
+                    IsPersistentCell = true,
                     PlacedObjects = [],
                     IsBigEndian = true
                 };

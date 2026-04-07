@@ -9,7 +9,9 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 internal static class GeckFactionWriter
 {
     /// <summary>Build a structured faction report from a <see cref="FactionRecord" />.</summary>
-    internal static RecordReport BuildFactionReport(FactionRecord faction, FormIdResolver resolver)
+    internal static RecordReport BuildFactionReport(
+        FactionRecord faction, FormIdResolver resolver,
+        IReadOnlyList<(uint FormId, string? Name)>? members = null)
     {
         var sections = new List<ReportSection>();
 
@@ -54,6 +56,18 @@ internal static class GeckFactionWriter
                     ], $"{resolver.FormatFull(r.FactionFormId)}: {r.Modifier:+0;-0}"))
                 .ToList();
             sections.Add(new ReportSection("Relations", [new ReportField("Relations", ReportValue.List(relItems))]));
+        }
+
+        // Members (reverse index: NPCs/creatures belonging to this faction)
+        if (members is { Count: > 0 })
+        {
+            var memberItems = members.OrderBy(m => m.Name ?? "", StringComparer.OrdinalIgnoreCase)
+                .Select(m => (ReportValue)new ReportValue.CompositeVal(
+                    [new ReportField("NPC", ReportValue.FormId(m.FormId, resolver))],
+                    resolver.FormatFull(m.FormId)))
+                .ToList();
+            sections.Add(new ReportSection($"Members ({members.Count})",
+                [new ReportField("Members", ReportValue.List(memberItems))]));
         }
 
         return new RecordReport("Faction", faction.FormId, faction.EditorId, faction.FullName, sections);

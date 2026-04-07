@@ -557,25 +557,7 @@ internal static class GeckDialogueWriter
     {
         var sections = new List<ReportSection>();
 
-        // Identity
-        var identityFields = new List<ReportField>();
-        if (!string.IsNullOrEmpty(dialogue.PromptText))
-            identityFields.Add(new ReportField("PromptText", ReportValue.String(dialogue.PromptText)));
-        identityFields.Add(new ReportField("InfoFlags", ReportValue.String($"0x{dialogue.InfoFlags:X2}")));
-        if (dialogue.IsGoodbye)
-            identityFields.Add(new ReportField("Goodbye", ReportValue.Bool(true)));
-        if (dialogue.IsRandom)
-            identityFields.Add(new ReportField("Random", ReportValue.Bool(true)));
-        if (dialogue.IsSayOnce)
-            identityFields.Add(new ReportField("SayOnce", ReportValue.Bool(true)));
-        if (dialogue.IsSpeechChallenge)
-        {
-            identityFields.Add(new ReportField("SpeechChallenge", ReportValue.Bool(true)));
-            identityFields.Add(new ReportField("Difficulty", ReportValue.String(dialogue.DifficultyName)));
-        }
-        sections.Add(new ReportSection("Identity", identityFields));
-
-        // References
+        // References — topic, quest, speaker (shown prominently)
         var refFields = new List<ReportField>();
         if (dialogue.TopicFormId.HasValue)
             refFields.Add(new ReportField("Topic", ReportValue.FormId(dialogue.TopicFormId.Value, resolver),
@@ -586,103 +568,152 @@ internal static class GeckDialogueWriter
         if (dialogue.SpeakerFormId.HasValue)
             refFields.Add(new ReportField("Speaker", ReportValue.FormId(dialogue.SpeakerFormId.Value, resolver),
                 $"0x{dialogue.SpeakerFormId.Value:X8}"));
-        if (dialogue.PreviousInfo.HasValue)
-            refFields.Add(new ReportField("PreviousINFO", ReportValue.FormId(dialogue.PreviousInfo.Value, resolver),
-                $"0x{dialogue.PreviousInfo.Value:X8}"));
         if (refFields.Count > 0)
             sections.Add(new ReportSection("References", refFields));
 
-        // Responses
+        // Prompt — the player-visible text (most important for comparison)
+        if (!string.IsNullOrEmpty(dialogue.PromptText))
+            sections.Add(new ReportSection("Prompt",
+                [new ReportField("Player", ReportValue.String($"\"{dialogue.PromptText}\""))]));
+
+        // Responses — each response as its own field, not nested in a list wrapper
         if (dialogue.Responses.Count > 0)
         {
-            var responseItems = dialogue.Responses.OrderBy(r => r.ResponseNumber)
-                .Select(r =>
-                {
-                    var emotionStr = r.EmotionType != 0 || r.EmotionValue != 0
-                        ? $" [{r.EmotionName}: {r.EmotionValue}]"
-                        : "";
-                    var textStr = !string.IsNullOrEmpty(r.Text) ? $" \"{r.Text}\"" : "";
-                    return (ReportValue)new ReportValue.CompositeVal(
-                        [
-                            new ReportField("ResponseNumber", ReportValue.Int(r.ResponseNumber)),
-                            new ReportField("Text", ReportValue.String(r.Text ?? "")),
-                            new ReportField("Emotion", ReportValue.String(r.EmotionName)),
-                            new ReportField("EmotionValue", ReportValue.Int(r.EmotionValue))
-                        ], $"[{r.ResponseNumber}]{emotionStr}{textStr}");
-                })
-                .ToList();
-            sections.Add(new ReportSection("Responses",
-                [new ReportField("Responses", ReportValue.List(responseItems))]));
+            var responseFields = new List<ReportField>();
+            foreach (var r in dialogue.Responses.OrderBy(r => r.ResponseNumber))
+            {
+                var emotionTag = r.EmotionType != 0 || r.EmotionValue != 0
+                    ? $"  [{r.EmotionName} ({r.EmotionValue:+0;-0})]"
+                    : "";
+                var text = !string.IsNullOrEmpty(r.Text) ? $"\"{r.Text}\"" : "(no text)";
+                responseFields.Add(new ReportField(
+                    $"Response {r.ResponseNumber}",
+                    ReportValue.String($"{text}{emotionTag}")));
+            }
+
+            sections.Add(new ReportSection("Responses", responseFields));
         }
 
-        // Conditions
+        // Flags — only if any are set
+        var flagParts = new List<string>();
+        if (dialogue.IsGoodbye) flagParts.Add("Goodbye");
+        if (dialogue.IsRandom) flagParts.Add("Random");
+        if (dialogue.IsSayOnce) flagParts.Add("SayOnce");
+        if (dialogue.IsSpeechChallenge) flagParts.Add($"Speech Challenge ({dialogue.DifficultyName})");
+        if (flagParts.Count > 0 || dialogue.InfoFlags != 0)
+        {
+            var flagFields = new List<ReportField>();
+            if (flagParts.Count > 0)
+                flagFields.Add(new ReportField("Flags", ReportValue.String(string.Join(", ", flagParts))));
+            if (dialogue.InfoFlags != 0 && flagParts.Count == 0)
+                flagFields.Add(new ReportField("InfoFlags", ReportValue.String($"0x{dialogue.InfoFlags:X2}")));
+            sections.Add(new ReportSection("Flags", flagFields));
+        }
+
+        // Conditions — human-readable format using ScriptFunctionTable
         if (dialogue.Conditions.Count > 0)
         {
-            var conditionItems = dialogue.Conditions
-                .Select(c =>
-                {
-                    var orStr = c.IsOr ? " OR" : "";
-                    var display =
-                        $"Func {c.FunctionIndex} {c.ComparisonOperator} {c.ComparisonValue:F1} ({c.RunOnName}){orStr}";
-                    return (ReportValue)new ReportValue.CompositeVal(
-                        [
-                            new ReportField("FunctionIndex", ReportValue.Int(c.FunctionIndex)),
-                            new ReportField("ComparisonOp", ReportValue.String(c.ComparisonOperator)),
-                            new ReportField("ComparisonValue", ReportValue.Float(c.ComparisonValue)),
-                            new ReportField("RunOn", ReportValue.String(c.RunOnName)),
-                            new ReportField("Param1", ReportValue.Int((int)c.Parameter1)),
-                            new ReportField("Param2", ReportValue.Int((int)c.Parameter2)),
-                            new ReportField("IsOr", ReportValue.Bool(c.IsOr))
-                        ], display);
-                })
-                .ToList();
-            sections.Add(new ReportSection("Conditions",
-                [new ReportField("Conditions", ReportValue.List(conditionItems))]));
+            var condFields = new List<ReportField>();
+            for (var i = 0; i < dialogue.Conditions.Count; i++)
+            {
+                var c = dialogue.Conditions[i];
+                var display = FormatConditionHumanReadable(c, resolver);
+                condFields.Add(new ReportField(
+                    $"Condition {i + 1}{(c.IsOr ? " (OR)" : "")}",
+                    ReportValue.String(display)));
+            }
+
+            sections.Add(new ReportSection("Conditions", condFields));
         }
 
-        // Result Scripts
+        // Result Scripts — source or decompiled text
         if (dialogue.ResultScripts.Count > 0)
         {
             var scriptFields = new List<ReportField>();
             for (var i = 0; i < dialogue.ResultScripts.Count; i++)
             {
                 var script = dialogue.ResultScripts[i];
-                var prefix = dialogue.ResultScripts.Count > 1 ? $"Script{i + 1}" : "Script";
+                var label = dialogue.ResultScripts.Count > 1 ? $"Script {i + 1}" : "Result Script";
                 if (!string.IsNullOrEmpty(script.SourceText))
-                    scriptFields.Add(new ReportField($"{prefix}Source", ReportValue.String(script.SourceText)));
+                    scriptFields.Add(new ReportField(label, ReportValue.String(script.SourceText)));
                 else if (!string.IsNullOrEmpty(script.DecompiledText))
-                    scriptFields.Add(new ReportField($"{prefix}Decompiled", ReportValue.String(script.DecompiledText)));
+                    scriptFields.Add(new ReportField($"{label} (decompiled)",
+                        ReportValue.String(script.DecompiledText)));
             }
+
             if (scriptFields.Count > 0)
-                sections.Add(new ReportSection("ResultScripts", scriptFields));
+                sections.Add(new ReportSection("Result Scripts", scriptFields));
         }
 
-        // Topic Links
+        // Links — previous INFO, topic links
         var linkFields = new List<ReportField>();
+        if (dialogue.PreviousInfo.HasValue)
+            linkFields.Add(new ReportField("Previous INFO",
+                ReportValue.FormId(dialogue.PreviousInfo.Value, resolver),
+                $"0x{dialogue.PreviousInfo.Value:X8}"));
         if (dialogue.LinkToTopics.Count > 0)
         {
             var linkToItems = dialogue.LinkToTopics
-                .Select(id => (ReportValue)ReportValue.FormId(id, resolver))
-                .ToList();
-            linkFields.Add(new ReportField("LinkTo", ReportValue.List(linkToItems)));
+                .Select(id => (ReportValue)ReportValue.FormId(id, resolver)).ToList();
+            linkFields.Add(new ReportField("Links To", ReportValue.List(linkToItems)));
         }
+
         if (dialogue.LinkFromTopics.Count > 0)
         {
             var linkFromItems = dialogue.LinkFromTopics
-                .Select(id => (ReportValue)ReportValue.FormId(id, resolver))
-                .ToList();
-            linkFields.Add(new ReportField("LinkFrom", ReportValue.List(linkFromItems)));
+                .Select(id => (ReportValue)ReportValue.FormId(id, resolver)).ToList();
+            linkFields.Add(new ReportField("Links From", ReportValue.List(linkFromItems)));
         }
+
         if (dialogue.AddTopics.Count > 0)
         {
             var addItems = dialogue.AddTopics
-                .Select(id => (ReportValue)ReportValue.FormId(id, resolver))
-                .ToList();
-            linkFields.Add(new ReportField("AddTopics", ReportValue.List(addItems)));
+                .Select(id => (ReportValue)ReportValue.FormId(id, resolver)).ToList();
+            linkFields.Add(new ReportField("Unlocks Topics", ReportValue.List(addItems)));
         }
+
         if (linkFields.Count > 0)
-            sections.Add(new ReportSection("TopicLinks", linkFields));
+            sections.Add(new ReportSection("Links", linkFields));
 
         return new RecordReport("Dialogue", dialogue.FormId, dialogue.EditorId, null, sections);
+    }
+
+    /// <summary>
+    ///     Format a dialogue condition as a human-readable expression using
+    ///     <see cref="Script.ScriptFunctionTable" /> for function name resolution.
+    /// </summary>
+    private static string FormatConditionHumanReadable(DialogueCondition c, FormIdResolver resolver)
+    {
+        var opcode = (ushort)(0x1000 | c.FunctionIndex);
+        var function = Script.ScriptFunctionTable.Get(opcode);
+        var functionName = function?.Name ?? $"Func{c.FunctionIndex}";
+
+        var paramParts = new List<string>();
+        if (c.Parameter1 != 0)
+        {
+            // Try to resolve as FormID, fall back to numeric
+            var resolved = resolver.GetEditorId(c.Parameter1);
+            paramParts.Add(!string.IsNullOrEmpty(resolved) ? resolved : c.Parameter1.ToString());
+        }
+
+        if (c.Parameter2 != 0)
+            paramParts.Add(c.Parameter2.ToString());
+
+        var paramStr = paramParts.Count > 0 ? $"({string.Join(", ", paramParts)})" : "()";
+
+        var qualifiers = new List<string>();
+        if (c.RunOnName != "Subject")
+            qualifiers.Add($"Run On: {c.RunOnName}");
+        if (c.Reference != 0)
+        {
+            var refName = resolver.GetEditorId(c.Reference);
+            qualifiers.Add(!string.IsNullOrEmpty(refName)
+                ? $"Ref: {refName}"
+                : $"Ref: 0x{c.Reference:X8}");
+        }
+
+        var qualStr = qualifiers.Count > 0 ? $" [{string.Join("; ", qualifiers)}]" : "";
+
+        return $"{functionName}{paramStr} {c.ComparisonOperator} {c.ComparisonValue:G}{qualStr}";
     }
 }

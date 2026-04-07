@@ -8,6 +8,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 using FalloutXbox360Utils.Core.Formats.SaveGame;
 using FalloutXbox360Utils.Core.Formats.SaveGame.Export;
 using FalloutXbox360Utils.Core.Minidump;
+using FalloutXbox360Utils.Core.Semantic;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI.Commands.Save;
@@ -236,45 +237,21 @@ internal static class SaveReportCommand
         {
             AnsiConsole.MarkupLine($"  Loading ESM/DMP: {Markup.Escape(Path.GetFileName(path))}...");
             var fileType = FileTypeDetector.Detect(path);
-
-            AnalysisResult analysisResult;
-            if (fileType == AnalysisFileType.EsmFile)
-            {
-                analysisResult = EsmFileAnalyzer.AnalyzeAsync(path).GetAwaiter().GetResult();
-            }
-            else if (fileType == AnalysisFileType.Minidump)
-            {
-                analysisResult = new MinidumpAnalyzer().AnalyzeAsync(path).GetAwaiter().GetResult();
-            }
-            else
+            if (fileType != AnalysisFileType.EsmFile && fileType != AnalysisFileType.Minidump)
             {
                 AnsiConsole.MarkupLine("[yellow]  Not an ESM/DMP file, skipping enrichment.[/]");
                 return null;
             }
 
-            if (analysisResult.EsmRecords == null)
-            {
-                AnsiConsole.MarkupLine("[yellow]  No ESM records found, skipping enrichment.[/]");
-                return null;
-            }
-
-            AnsiConsole.MarkupLine("  Parsing records...");
-            var fileSize = new FileInfo(path).Length;
-            using var mmf = MemoryMappedFile.CreateFromFile(path, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-            using var accessor = mmf.CreateViewAccessor(0, fileSize, MemoryMappedFileAccess.Read);
-
-            var parser = new RecordParser(
-                analysisResult.EsmRecords,
-                analysisResult.FormIdMap,
-                accessor,
-                fileSize,
-                analysisResult.MinidumpInfo);
-            var records = parser.ParseAll();
-            var resolver = records.CreateResolver();
+            using var loaded = SemanticFileLoader.LoadAsync(
+                    path,
+                    new SemanticFileLoadOptions { FileType = fileType })
+                .GetAwaiter()
+                .GetResult();
 
             AnsiConsole.MarkupLine(
-                $"  [green]Loaded {records.TotalRecordsParsed:N0} records for name resolution.[/]");
-            return resolver;
+                $"  [green]Loaded {loaded.Records.TotalRecordsParsed:N0} records for name resolution.[/]");
+            return loaded.Resolver;
         }
         catch (Exception ex)
         {

@@ -83,7 +83,38 @@ internal static class ReportTextFormatter
 
         foreach (var field in section.Fields)
         {
-            AppendReportField(sb, field);
+            // Skip redundant label when a section has a single field matching the section name
+            var isRedundantKey = section.Fields.Count == 1
+                                && string.Equals(field.Key, section.Name, StringComparison.OrdinalIgnoreCase);
+
+            if (isRedundantKey && field.Value is ReportValue.ListVal listVal)
+            {
+                // Render list items directly under the section header
+                foreach (var item in listVal.Items)
+                {
+                    sb.AppendLine(item is ReportValue.CompositeVal composite
+                        ? $"{Indent}  - {composite.Display}"
+                        : $"{Indent}  - {item.Display}");
+                }
+            }
+            else if (isRedundantKey)
+            {
+                // Single field with same name as section — render value directly
+                switch (field.Value)
+                {
+                    case ReportValue.StringVal { Raw: { Length: > 0 } raw } when raw.Contains('\n'):
+                        foreach (var line in raw.Split('\n'))
+                            sb.AppendLine($"{Indent}{line.TrimEnd('\r')}");
+                        break;
+                    default:
+                        sb.AppendLine($"{Indent}{field.Value.Display}");
+                        break;
+                }
+            }
+            else
+            {
+                AppendReportField(sb, field);
+            }
         }
     }
 
@@ -100,6 +131,15 @@ internal static class ReportTextFormatter
                 foreach (var subField in compositeVal.Fields)
                 {
                     AppendField(sb, $"  {subField.Key}", subField.Value.Display);
+                }
+
+                break;
+            case ReportValue.StringVal { Raw: { Length: > 0 } raw } when raw.Contains('\n'):
+                // Multi-line string — render key as sub-header, text indented below
+                sb.AppendLine($"{Indent}{field.Key}:");
+                foreach (var line in raw.Split('\n'))
+                {
+                    sb.AppendLine($"{Indent}  {line.TrimEnd('\r')}");
                 }
 
                 break;

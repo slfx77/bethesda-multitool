@@ -1,12 +1,11 @@
 using System.CommandLine;
-using System.IO.MemoryMappedFiles;
 using System.Text.Json;
-using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.AI;
-using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
+using FalloutXbox360Utils.Core.Semantic;
+using FalloutXbox360Utils.CLI.Shared;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI;
@@ -72,35 +71,19 @@ public static class PackagesCommand
             return;
         }
 
-        AnsiConsole.MarkupLine("[blue]Loading:[/] {0}", Path.GetFileName(input));
-
-        var analysisResult = await CliProgressRunner.RunWithProgressAsync(
-            "Analyzing file...",
-            (progress, ct) => EsmFileAnalyzer.AnalyzeAsync(input, progress, ct),
+        using var loaded = await CliSemanticLoader.TryLoadAsync(
+            input,
+            "Loading package data...",
+            new SemanticFileLoadOptions(),
             cancellationToken);
-
-        if (analysisResult.EsmRecords == null)
+        if (loaded == null)
         {
-            AnsiConsole.MarkupLine("[red]Error:[/] No ESM records found in file.");
             return;
         }
 
-        AnsiConsole.MarkupLine("[blue]Parsing records...[/]");
-
-        var fileInfo = new FileInfo(input);
-        RecordCollection semanticResult;
-        using (var mmf = MemoryMappedFile.CreateFromFile(input, FileMode.Open, null, 0,
-                   MemoryMappedFileAccess.Read))
-        using (var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read))
-        {
-            var parser = new RecordParser(
-                analysisResult.EsmRecords, analysisResult.FormIdMap, accessor, fileInfo.Length,
-                analysisResult.MinidumpInfo);
-            semanticResult = parser.ParseAll();
-        }
-
-        var packages = semanticResult.Packages;
-        var resolver = semanticResult.CreateResolver();
+        var packages = loaded.Records.Packages;
+        var resolver = loaded.Resolver;
+        var semanticResult = loaded.Records;
 
         // Apply filters
         IEnumerable<PackageRecord> filtered = packages;

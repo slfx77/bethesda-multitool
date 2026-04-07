@@ -367,7 +367,23 @@ internal static class SubrecordEffectSchemas
         schemas[new SubrecordSchemaRegistry.SchemaKey("CSAD", null, 84)] = SubrecordSchema.FloatArray;
 
         // CSSD - Combat Style Simple (64 bytes)
-        schemas[new SubrecordSchemaRegistry.SchemaKey("CSSD", null, 64)] = SubrecordSchema.FloatArray;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("CSSD", null, 64)] = new SubrecordSchema(
+            F.Float("CoverSearchRadius"),
+            F.Float("TakeCoverChance"),
+            F.Float("WaitTimerMin"),
+            F.Float("WaitTimerMax"),
+            F.Float("WaitToFireTimerMin"),
+            F.Float("WaitToFireTimerMax"),
+            F.Float("FireTimerMin"),
+            F.Float("FireTimerMax"),
+            F.Float("RangedWeaponRangeMultMin"),
+            F.Padding(4),
+            F.UInt32("WeaponRestrictions"), // 0=None, 1=MeleeOnly, 2=RangedOnly
+            F.Float("RangedWeaponRangeMultMax"),
+            F.Float("MaxTargetingFOV"),
+            F.Float("CombatRadius"),
+            F.Float("SemiAutoFiringDelayMultMin"),
+            F.Float("SemiAutoFiringDelayMultMax"));
 
         // ========================================================================
         // IMPACT DATA SCHEMAS (IPCT, IPDS)

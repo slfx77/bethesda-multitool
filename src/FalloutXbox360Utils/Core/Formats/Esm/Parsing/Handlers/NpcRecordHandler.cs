@@ -160,13 +160,9 @@ internal sealed class NpcRecordHandler(RecordParserContext context) : RecordHand
                 }
                 case "DNAM" when sub.DataLength == 28:
                 {
-                    // NPC_ DNAM: 14 skill base values (each 2 bytes: base + modifier)
-                    skills = new byte[14];
-                    for (var i = 0; i < 14; i++)
-                    {
-                        skills[i] = subData[i * 2]; // Base value (skip modifier byte)
-                    }
-
+                    // FNV NPC_ DNAM: 14 skill base values (bytes 0..13)
+                    // followed by 14 skill offset values (bytes 14..27).
+                    skills = subData.Slice(0, 14).ToArray();
                     break;
                 }
                 case "PKID" when sub.DataLength == 4:

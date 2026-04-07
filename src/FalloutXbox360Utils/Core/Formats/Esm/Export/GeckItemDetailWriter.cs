@@ -24,6 +24,31 @@ internal static class GeckItemDetailWriter
             new ReportField("Type", ReportValue.String(weapon.WeaponTypeName))
         ]));
 
+        // Flags (only set ones)
+        var flagFields = new List<ReportField>();
+        if (weapon.IsAutomatic) flagFields.Add(new ReportField("Automatic", ReportValue.Bool(true)));
+        if (weapon.HasScope) flagFields.Add(new ReportField("Has Scope", ReportValue.Bool(true)));
+        if (weapon.CantDrop) flagFields.Add(new ReportField("Can't Drop", ReportValue.Bool(true)));
+        if (weapon.HideBackpack) flagFields.Add(new ReportField("Hide Backpack", ReportValue.Bool(true)));
+        if (weapon.IsEmbeddedWeapon) flagFields.Add(new ReportField("Embedded Weapon", ReportValue.Bool(true)));
+        if (weapon.IsNonPlayable) flagFields.Add(new ReportField("Non-Playable", ReportValue.Bool(true)));
+        if (weapon.IsPlayerOnly) flagFields.Add(new ReportField("Player Only", ReportValue.Bool(true)));
+        if (weapon.NpcsUseAmmo) flagFields.Add(new ReportField("NPCs Use Ammo", ReportValue.Bool(true)));
+        if (weapon.NoJamAfterReload) flagFields.Add(new ReportField("No Jam After Reload", ReportValue.Bool(true)));
+        if (weapon.IsMinorCrime) flagFields.Add(new ReportField("Minor Crime", ReportValue.Bool(true)));
+        if (weapon.IsRangeFixed) flagFields.Add(new ReportField("Range Fixed", ReportValue.Bool(true)));
+        if (weapon.NotUsedInNormalCombat)
+            flagFields.Add(new ReportField("Not Used in Normal Combat", ReportValue.Bool(true)));
+        if (weapon.HasLongBursts) flagFields.Add(new ReportField("Long Bursts", ReportValue.Bool(true)));
+        if (weapon.DontUseFirstPersonIsAnimations)
+            flagFields.Add(new ReportField("No 1st-Person IS Anims", ReportValue.Bool(true)));
+        if (weapon.DontUseThirdPersonIsAnimations)
+            flagFields.Add(new ReportField("No 3rd-Person IS Anims", ReportValue.Bool(true)));
+        if (flagFields.Count > 0)
+        {
+            sections.Add(new ReportSection("Flags", flagFields));
+        }
+
         // Combat Stats
         sections.Add(new ReportSection("Combat Stats",
         [
@@ -52,6 +77,30 @@ internal static class GeckItemDetailWriter
             new ReportField("AP Cost", ReportValue.FloatDisplay(weapon.ActionPoints, $"{weapon.ActionPoints:F0}")),
             new ReportField("Hit Chance", ReportValue.Int(weapon.VatsToHitChance))
         ]));
+
+        // VATS Attack (special VATS effect — Phase 4)
+        if (weapon.VatsAttack is { } vats &&
+            (vats.EffectFormId != 0 || vats.ActionPointCost != 0 || vats.DamageMultiplier != 0
+             || vats.IsSilent || vats.RequiresMod || vats.ExtraFlags != 0))
+        {
+            var vatsFields = new List<ReportField>();
+            if (vats.EffectFormId != 0)
+                vatsFields.Add(new ReportField("Effect",
+                    ReportValue.FormId(vats.EffectFormId, resolver),
+                    $"0x{vats.EffectFormId:X8}"));
+            if (Math.Abs(vats.ActionPointCost) > 0.001f)
+                vatsFields.Add(new ReportField("AP Cost", ReportValue.Float(vats.ActionPointCost)));
+            if (Math.Abs(vats.DamageMultiplier) > 0.001f)
+                vatsFields.Add(new ReportField("Damage Mult", ReportValue.Float(vats.DamageMultiplier)));
+            if (Math.Abs(vats.SkillRequired) > 0.001f)
+                vatsFields.Add(new ReportField("Skill Required", ReportValue.Float(vats.SkillRequired)));
+            if (vats.IsSilent) vatsFields.Add(new ReportField("Silent", ReportValue.Bool(true)));
+            if (vats.RequiresMod) vatsFields.Add(new ReportField("Mod Required", ReportValue.Bool(true)));
+            if (vats.ExtraFlags != 0)
+                vatsFields.Add(new ReportField("Extra Flags",
+                    ReportValue.Int(vats.ExtraFlags, $"0x{vats.ExtraFlags:X2}")));
+            sections.Add(new ReportSection("VATS Attack", vatsFields));
+        }
 
         // Requirements (conditional)
         if (weapon.StrengthRequirement > 0 || weapon.SkillRequirement > 0)
@@ -87,6 +136,71 @@ internal static class GeckItemDetailWriter
             new ReportField("Weight", ReportValue.Float(weapon.Weight)),
             new ReportField("Health", ReportValue.Int(weapon.Health))
         ]));
+
+        // Override (Phase 3) — conditional
+        var overrideFields = new List<ReportField>();
+        if (Math.Abs(weapon.DamageToWeaponMult - 1.0f) > 0.001f)
+            overrideFields.Add(new ReportField("Damage to Weapon Mult", ReportValue.Float(weapon.DamageToWeaponMult)));
+        if (Math.Abs(weapon.KillImpulse) > 0.001f)
+            overrideFields.Add(new ReportField("Kill Impulse", ReportValue.Float(weapon.KillImpulse)));
+        if (Math.Abs(weapon.KillImpulseDistance) > 0.001f)
+            overrideFields.Add(new ReportField("Impulse Distance", ReportValue.Float(weapon.KillImpulseDistance)));
+        if (overrideFields.Count > 0)
+            sections.Add(new ReportSection("Override", overrideFields));
+
+        // Semi-Auto Fire Delay (Phase 3) — conditional
+        if (Math.Abs(weapon.SemiAutoFireDelayMin) > 0.001f || Math.Abs(weapon.SemiAutoFireDelayMax) > 0.001f)
+        {
+            sections.Add(new ReportSection("Semi-Auto Fire Delay",
+            [
+                new ReportField("Min (sec)", ReportValue.Float(weapon.SemiAutoFireDelayMin)),
+                new ReportField("Max (sec)", ReportValue.Float(weapon.SemiAutoFireDelayMax))
+            ]));
+        }
+
+        // Animation overrides (Phase 3) — conditional
+        var animFields = new List<ReportField>();
+        if (Math.Abs(weapon.AnimShotsPerSecond) > 0.001f)
+            animFields.Add(new ReportField("Anim Shots/Sec", ReportValue.Float(weapon.AnimShotsPerSecond)));
+        if (Math.Abs(weapon.AnimReloadTime) > 0.001f)
+            animFields.Add(new ReportField("Anim Reload Time", ReportValue.Float(weapon.AnimReloadTime)));
+        if (Math.Abs(weapon.AnimJamTime) > 0.001f)
+            animFields.Add(new ReportField("Anim Jam Time", ReportValue.Float(weapon.AnimJamTime)));
+        if (weapon.PowerAttackOverrideAnim != 0)
+            animFields.Add(new ReportField("Power Attack Anim", ReportValue.Int(weapon.PowerAttackOverrideAnim)));
+        if (weapon.ModReloadClipAnimation != 0)
+            animFields.Add(new ReportField("Mod Reload Anim", ReportValue.Int(weapon.ModReloadClipAnimation)));
+        if (weapon.ModFireAnimation != 0)
+            animFields.Add(new ReportField("Mod Fire Anim", ReportValue.Int(weapon.ModFireAnimation)));
+        if (animFields.Count > 0)
+            sections.Add(new ReportSection("Animation Overrides", animFields));
+
+        // Misc (Phase 3) — conditional
+        var miscFields = new List<ReportField>();
+        if (weapon.Resistance != 0)
+            miscFields.Add(new ReportField("Resistance", ReportValue.Int((int)weapon.Resistance)));
+        if (Math.Abs(weapon.IronSightUseMult - 1.0f) > 0.001f)
+            miscFields.Add(new ReportField("Sight Usage Mult", ReportValue.Float(weapon.IronSightUseMult)));
+        if (Math.Abs(weapon.AmmoRegenRate) > 0.001f)
+            miscFields.Add(new ReportField("Ammo Regen Rate", ReportValue.Float(weapon.AmmoRegenRate)));
+        if (Math.Abs(weapon.CookTimer) > 0.001f)
+            miscFields.Add(new ReportField("Cook Timer (sec)", ReportValue.Float(weapon.CookTimer)));
+        if (miscFields.Count > 0)
+            sections.Add(new ReportSection("Misc", miscFields));
+
+        // Rumble (Phase 3) — conditional
+        if (Math.Abs(weapon.RumbleLeftMotor) > 0.001f || Math.Abs(weapon.RumbleRightMotor) > 0.001f
+                                                      || Math.Abs(weapon.RumbleDuration) > 0.001f)
+        {
+            sections.Add(new ReportSection("Rumble",
+            [
+                new ReportField("Left Motor", ReportValue.Float(weapon.RumbleLeftMotor)),
+                new ReportField("Right Motor", ReportValue.Float(weapon.RumbleRightMotor)),
+                new ReportField("Duration", ReportValue.Float(weapon.RumbleDuration)),
+                new ReportField("Pattern", ReportValue.Int((int)weapon.RumblePattern)),
+                new ReportField("Wavelength", ReportValue.Float(weapon.RumbleWavelength))
+            ]));
+        }
 
         // Ammo & Projectile (conditional)
         if (weapon.AmmoFormId.HasValue || weapon.ProjectileFormId.HasValue ||
@@ -149,12 +263,91 @@ internal static class GeckItemDetailWriter
         // Sound Effects (conditional)
         AddSoundEffectsSection(sections, weapon, resolver);
 
-        // Model (conditional)
-        if (!string.IsNullOrEmpty(weapon.ModelPath))
+        // Weapon Mods (conditional)
+        if (weapon.ModSlots.Count > 0)
         {
-            sections.Add(new ReportSection("Model",
+            var modItems = weapon.ModSlots
+                .OrderBy(s => s.SlotIndex)
+                .Select(slot =>
+                {
+                    var fields = new List<ReportField>
+                    {
+                        new("Effect", ReportValue.String(slot.ActionName)),
+                        new("Value", ReportValue.Float(slot.Value))
+                    };
+                    if (MathF.Abs(slot.ValueTwo) > 0.001f)
+                        fields.Add(new ReportField("Value 2", ReportValue.Float(slot.ValueTwo)));
+                    if (slot.ModFormId.HasValue)
+                        fields.Add(new ReportField("Mod",
+                            ReportValue.FormId(slot.ModFormId.Value, resolver),
+                            $"0x{slot.ModFormId.Value:X8}"));
+
+                    var modName = slot.ModFormId.HasValue
+                        ? resolver.FormatFull(slot.ModFormId.Value)
+                        : "(unassigned)";
+                    return (ReportValue)new ReportValue.CompositeVal(fields,
+                        $"[Slot {slot.SlotIndex}] {slot.ActionName}: {slot.Value:G} — {modName}");
+                })
+                .ToList();
+
+            sections.Add(new ReportSection($"Weapon Mods ({weapon.ModSlots.Count})",
             [
-                new ReportField("Path", ReportValue.String(weapon.ModelPath))
+                new ReportField("Mods", ReportValue.List(modItems))
+            ]));
+        }
+
+        // Art Assets (Phase 5)
+        var artFields = new List<ReportField>();
+        if (!string.IsNullOrEmpty(weapon.ModelPath))
+            artFields.Add(new ReportField("Model", ReportValue.String(weapon.ModelPath)));
+        if (!string.IsNullOrEmpty(weapon.ShellCasingModelPath))
+            artFields.Add(new ReportField("Shell Casing Model", ReportValue.String(weapon.ShellCasingModelPath)));
+        if (!string.IsNullOrEmpty(weapon.InventoryIconPath))
+            artFields.Add(new ReportField("Inventory Icon", ReportValue.String(weapon.InventoryIconPath)));
+        if (!string.IsNullOrEmpty(weapon.MessageIconPath))
+            artFields.Add(new ReportField("Message Icon", ReportValue.String(weapon.MessageIconPath)));
+        if (!string.IsNullOrEmpty(weapon.EmbeddedWeaponNode))
+            artFields.Add(new ReportField("Embedded Weapon Node", ReportValue.String(weapon.EmbeddedWeaponNode)));
+        if (artFields.Count > 0)
+            sections.Add(new ReportSection("Art Assets", artFields));
+
+        // Repair Item List (Phase 5)
+        if (weapon.RepairItemListFormId is { } repairFormId && repairFormId != 0)
+        {
+            sections.Add(new ReportSection("Repair",
+            [
+                new ReportField("Repair List", ReportValue.FormId(repairFormId, resolver),
+                    $"0x{repairFormId:X8}")
+            ]));
+        }
+
+        // Modded Model Variants (Phase 6)
+        if (weapon.ModelVariants.Count > 0)
+        {
+            var variantItems = weapon.ModelVariants
+                .Select(v =>
+                {
+                    var fields = new List<ReportField>
+                    {
+                        new("Combination", ReportValue.String(v.CombinationName))
+                    };
+                    if (!string.IsNullOrEmpty(v.ThirdPersonModelPath))
+                        fields.Add(new ReportField("3rd Person Model", ReportValue.String(v.ThirdPersonModelPath)));
+                    if (v.FirstPersonObjectFormId is > 0)
+                        fields.Add(new ReportField("1st Person Object",
+                            ReportValue.FormId(v.FirstPersonObjectFormId.Value, resolver),
+                            $"0x{v.FirstPersonObjectFormId.Value:X8}"));
+
+                    var summary = v.CombinationName;
+                    if (!string.IsNullOrEmpty(v.ThirdPersonModelPath))
+                        summary += $": {v.ThirdPersonModelPath}";
+                    return (ReportValue)new ReportValue.CompositeVal(fields, summary);
+                })
+                .ToList();
+
+            sections.Add(new ReportSection($"Modded Models ({weapon.ModelVariants.Count})",
+            [
+                new ReportField("Variants", ReportValue.List(variantItems))
             ]));
         }
 
@@ -165,15 +358,24 @@ internal static class GeckItemDetailWriter
         List<ReportSection> sections, WeaponRecord weapon, FormIdResolver resolver)
     {
         var soundFields = new List<ReportField>();
+        // Item handling
+        AddSoundField(soundFields, "Pickup", weapon.PickupSoundFormId, resolver);
+        AddSoundField(soundFields, "Putdown", weapon.PutdownSoundFormId, resolver);
+        // Attack
         AddSoundField(soundFields, "Fire (3D)", weapon.FireSound3DFormId, resolver);
         AddSoundField(soundFields, "Fire (Distant)", weapon.FireSoundDistFormId, resolver);
         AddSoundField(soundFields, "Fire (2D)", weapon.FireSound2DFormId, resolver);
+        AddSoundField(soundFields, "Attack Loop", weapon.AttackLoopSoundFormId, resolver);
         AddSoundField(soundFields, "Dry Fire", weapon.DryFireSoundFormId, resolver);
+        AddSoundField(soundFields, "Melee Block", weapon.MeleeBlockSoundFormId, resolver);
+        // Equipment
         AddSoundField(soundFields, "Idle", weapon.IdleSoundFormId, resolver);
         AddSoundField(soundFields, "Equip", weapon.EquipSoundFormId, resolver);
         AddSoundField(soundFields, "Unequip", weapon.UnequipSoundFormId, resolver);
-        AddSoundField(soundFields, "Pickup", weapon.PickupSoundFormId, resolver);
-        AddSoundField(soundFields, "Putdown", weapon.PutdownSoundFormId, resolver);
+        // Mod silenced variants
+        AddSoundField(soundFields, "Mod Silenced (3D)", weapon.ModSilencedSound3DFormId, resolver);
+        AddSoundField(soundFields, "Mod Silenced (Distant)", weapon.ModSilencedSoundDistFormId, resolver);
+        AddSoundField(soundFields, "Mod Silenced (2D)", weapon.ModSilencedSound2DFormId, resolver);
         if (soundFields.Count > 0)
             sections.Add(new ReportSection("Sound Effects", soundFields));
     }
@@ -353,8 +555,11 @@ internal static class GeckItemDetailWriter
         // Identity
         var identityFields = new List<ReportField>();
         if (recipe.RequiredSkill >= 0)
+        {
+            var skillName = resolver.GetActorValueName(recipe.RequiredSkill) ?? $"AV#{recipe.RequiredSkill}";
             identityFields.Add(new ReportField("Required Skill",
-                ReportValue.Int(recipe.RequiredSkill, $"{recipe.RequiredSkill} (level {recipe.RequiredSkillLevel})")));
+                ReportValue.Int(recipe.RequiredSkill, $"{skillName} (level {recipe.RequiredSkillLevel})")));
+        }
         if (recipe.CategoryFormId != 0)
             identityFields.Add(new ReportField("Category",
                 ReportValue.FormId(recipe.CategoryFormId, resolver),
@@ -418,7 +623,9 @@ internal static class GeckItemDetailWriter
     /// <summary>
     ///     Build a structured weapon mod report from a <see cref="WeaponModRecord" />.
     /// </summary>
-    internal static RecordReport BuildWeaponModReport(WeaponModRecord mod)
+    internal static RecordReport BuildWeaponModReport(
+        WeaponModRecord mod, FormIdResolver resolver,
+        IReadOnlyList<(WeaponRecord Weapon, WeaponModSlot Slot)>? weaponEffects = null)
     {
         var sections = new List<ReportSection>();
 
@@ -435,6 +642,35 @@ internal static class GeckItemDetailWriter
             valueFields.Add(new ReportField("Icon", ReportValue.String(mod.Icon)));
 
         sections.Add(new ReportSection("Properties", valueFields));
+
+        // Effects (from weapon definitions — what this mod does when attached)
+        if (weaponEffects is { Count: > 0 })
+        {
+            var effectItems = weaponEffects
+                .OrderBy(e => e.Weapon.FullName ?? e.Weapon.EditorId ?? "")
+                .Select(e =>
+                {
+                    var fields = new List<ReportField>
+                    {
+                        new("Weapon", ReportValue.FormId(e.Weapon.FormId, resolver),
+                            $"0x{e.Weapon.FormId:X8}"),
+                        new("Effect", ReportValue.String(e.Slot.ActionName)),
+                        new("Value", ReportValue.Float(e.Slot.Value))
+                    };
+                    if (MathF.Abs(e.Slot.ValueTwo) > 0.001f)
+                        fields.Add(new ReportField("Value 2", ReportValue.Float(e.Slot.ValueTwo)));
+
+                    var weaponName = e.Weapon.FullName ?? e.Weapon.EditorId ?? $"0x{e.Weapon.FormId:X8}";
+                    return (ReportValue)new ReportValue.CompositeVal(fields,
+                        $"{weaponName}: {e.Slot.ActionName} {e.Slot.Value:G}");
+                })
+                .ToList();
+
+            sections.Add(new ReportSection($"Effects ({weaponEffects.Count})",
+            [
+                new ReportField("Effects", ReportValue.List(effectItems))
+            ]));
+        }
 
         return new RecordReport("Weapon Mod", mod.FormId, mod.EditorId, mod.FullName, sections);
     }

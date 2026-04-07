@@ -178,12 +178,8 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output)
         AppendOpcodeLE(bytecode, 0x001D, 0); // ScriptName
         AppendBeginGameModeLE(bytecode);
 
-        // If(0x0016) paramLen: [jumpOff:2][exprLen:2][expr]
-        // Expression: 1 == 1 -> [0x20][0x6E][1:4LE] [0x20][0x6E][1:4LE] [0x20][0x09][0x01]
-        // Actually the comparison operators are two-byte: [0x20][operator_byte]
-        // == is two bytes: first byte + second byte
-        // Let me use a simpler expression: just literal 1
-        // Expression for literal 1: [0x20][0x6E][01 00 00 00]
+        // If(0x0016) paramLen layout: [jumpOff:2][exprLen:2][expr]
+        // Expression used here is a literal 1: [0x20][0x6E][01 00 00 00].
         var expr = BuildIntLiteralExpr(1);
         var ifParams = new List<byte>();
         AppendUInt16LE(ifParams, 0); // jumpOffset (unused for decompilation)

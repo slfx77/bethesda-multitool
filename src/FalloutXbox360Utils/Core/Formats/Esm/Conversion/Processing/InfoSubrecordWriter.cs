@@ -124,7 +124,7 @@ internal sealed class InfoSubrecordWriter(EsmConversionStats stats)
                     }
                     else if (blocks.Count == 0)
                     {
-                        // NEXT before any SCHR - we'll handle this below
+                        // NEXT before any SCHR — handled by the fallthrough below.
                     }
 
                     break;

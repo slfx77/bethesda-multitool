@@ -473,6 +473,66 @@ public record RecordCollection
         return map;
     }
 
+    /// <summary>
+    ///     Builds a reverse index: key FormID → list of locked doors/containers that use this key.
+    ///     Each entry includes the placed reference, its containing cell, and lock level.
+    /// </summary>
+    public Dictionary<uint, List<(PlacedReference Ref, CellRecord Cell)>> BuildKeyToLockedDoorsMap()
+    {
+        var map = new Dictionary<uint, List<(PlacedReference, CellRecord)>>();
+
+        foreach (var cell in Cells)
+        {
+            foreach (var obj in cell.PlacedObjects)
+            {
+                if (obj.LockKeyFormId is not (> 0))
+                {
+                    continue;
+                }
+
+                if (!map.TryGetValue(obj.LockKeyFormId.Value, out var list))
+                {
+                    list = [];
+                    map[obj.LockKeyFormId.Value] = list;
+                }
+
+                list.Add((obj, cell));
+            }
+        }
+
+        return map;
+    }
+
+    /// <summary>
+    ///     Builds a reverse index: IMOD FormID → list of (weapon, slot) that accept this mod.
+    ///     Used for displaying what a weapon mod does in the weapon mod report.
+    /// </summary>
+    public Dictionary<uint, List<(WeaponRecord Weapon, WeaponModSlot Slot)>> BuildModToWeaponMap()
+    {
+        var map = new Dictionary<uint, List<(WeaponRecord, WeaponModSlot)>>();
+
+        foreach (var weapon in Weapons)
+        {
+            foreach (var slot in weapon.ModSlots)
+            {
+                if (slot.ModFormId is not (> 0))
+                {
+                    continue;
+                }
+
+                if (!map.TryGetValue(slot.ModFormId.Value, out var list))
+                {
+                    list = [];
+                    map[slot.ModFormId.Value] = list;
+                }
+
+                list.Add((weapon, slot));
+            }
+        }
+
+        return map;
+    }
+
     private Dictionary<uint, uint> BuildRefToBaseMap()
     {
         var map = new Dictionary<uint, uint>();

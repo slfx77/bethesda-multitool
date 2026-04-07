@@ -209,21 +209,21 @@ internal static class GeckScriptWriter
             ]));
         }
 
-        // Source
+        // Source (SCTX) — only available in debug DMPs
         if (script.HasSource)
         {
             sections.Add(new ReportSection("Source",
             [
-                new ReportField("SCTX", ReportValue.String(script.SourceText!))
+                new ReportField("Source", ReportValue.String(script.SourceText!))
             ]));
         }
 
-        // Decompiled
+        // Decompiled (SCDA) — available in all builds
         if (!string.IsNullOrEmpty(script.DecompiledText))
         {
             sections.Add(new ReportSection("Decompiled",
             [
-                new ReportField("SCDA", ReportValue.String(script.DecompiledText))
+                new ReportField("Decompiled", ReportValue.String(script.DecompiledText))
             ]));
         }
 

@@ -23,17 +23,26 @@ internal static class RecordReportComparer
 
     private static bool SectionsEqual(List<ReportSection> a, List<ReportSection> b)
     {
-        if (a.Count != b.Count)
-            return false;
+        // Compare only sections that exist in BOTH reports.
+        // Sections present in only one report are skipped — they represent
+        // build-specific data (e.g., SCTX only in debug DMPs) that shouldn't
+        // cause a record to be marked as CHANGED.
+        var bByName = new Dictionary<string, ReportSection>(b.Count);
+        foreach (var section in b)
+            bByName.TryAdd(section.Name, section);
 
-        for (var i = 0; i < a.Count; i++)
+        foreach (var sectionA in a)
         {
-            if (a[i].Name != b[i].Name)
-                return false;
-            if (!FieldsEqual(a[i].Fields, b[i].Fields))
-                return false;
+            if (bByName.TryGetValue(sectionA.Name, out var sectionB))
+            {
+                if (!FieldsEqual(sectionA.Fields, sectionB.Fields))
+                    return false;
+            }
+            // Section only in A — skip (not a change)
         }
 
+        // No need to check sections only in B — if they don't match anything in A,
+        // they're build-specific and skipped.
         return true;
     }
 

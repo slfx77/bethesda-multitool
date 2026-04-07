@@ -27,6 +27,8 @@ public sealed class UnifiedAnalysisResult : IDisposable
     /// <summary>Source file path.</summary>
     public string FilePath { get; init; } = "";
 
+    internal MemoryMappedViewAccessor? Accessor => _accessor;
+
     public void Dispose()
     {
         _accessor?.Dispose();
@@ -37,5 +39,14 @@ public sealed class UnifiedAnalysisResult : IDisposable
     {
         _mmf = mmf;
         _accessor = accessor;
+    }
+
+    internal (MemoryMappedFile? MappedFile, MemoryMappedViewAccessor? Accessor) DetachDisposables()
+    {
+        var mappedFile = _mmf;
+        var accessor = _accessor;
+        _mmf = null;
+        _accessor = null;
+        return (mappedFile, accessor);
     }
 }

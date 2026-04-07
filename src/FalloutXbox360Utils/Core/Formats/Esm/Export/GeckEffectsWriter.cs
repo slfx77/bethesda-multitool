@@ -67,6 +67,60 @@ internal static class GeckEffectsWriter
             ]));
         }
 
+        // Conditions (skill/stat requirements, perk prerequisites)
+        if (perk.Conditions.Count > 0)
+        {
+            var condItems = perk.Conditions
+                .Select(c =>
+                {
+                    var fields = new List<ReportField>
+                    {
+                        new("Function", ReportValue.String(c.FunctionName))
+                    };
+
+                    // Resolve display for the parameter
+                    if (c.FunctionName == "GetActorValue")
+                    {
+                        var avName = resolver.GetActorValueName((int)c.Parameter1) ?? $"AV#{c.Parameter1}";
+                        fields.Add(new ReportField("Skill", ReportValue.String(avName)));
+                    }
+                    else if (c.Parameter1FormId.HasValue)
+                    {
+                        fields.Add(new ReportField("Target",
+                            ReportValue.FormId(c.Parameter1FormId.Value, resolver),
+                            $"0x{c.Parameter1FormId.Value:X8}"));
+                    }
+
+                    fields.Add(new ReportField("Condition",
+                        ReportValue.String($"{c.OperatorDisplay} {c.ComparisonValue:G}")));
+
+                    // Build summary string
+                    string summary;
+                    if (c.FunctionName == "GetActorValue")
+                    {
+                        var avName = resolver.GetActorValueName((int)c.Parameter1) ?? $"AV#{c.Parameter1}";
+                        summary = $"{avName} {c.OperatorDisplay} {c.ComparisonValue:G}";
+                    }
+                    else if (c.Parameter1FormId.HasValue)
+                    {
+                        summary =
+                            $"{c.FunctionName}: {resolver.FormatFull(c.Parameter1FormId.Value)} {c.OperatorDisplay} {c.ComparisonValue:G}";
+                    }
+                    else
+                    {
+                        summary = $"{c.FunctionName}({c.Parameter1}) {c.OperatorDisplay} {c.ComparisonValue:G}";
+                    }
+
+                    return (ReportValue)new ReportValue.CompositeVal(fields, summary);
+                })
+                .ToList();
+
+            sections.Add(new ReportSection($"Conditions ({perk.Conditions.Count})",
+            [
+                new ReportField("Conditions", ReportValue.List(condItems))
+            ]));
+        }
+
         return new RecordReport("Perk", perk.FormId, perk.EditorId, perk.FullName, sections);
     }
 
@@ -113,11 +167,11 @@ internal static class GeckEffectsWriter
                         new("Magnitude", ReportValue.Float(effect.Magnitude)),
                         new("Area", ReportValue.Int((int)effect.Area)),
                         new("Duration", ReportValue.Int((int)effect.Duration)),
-                        new("Type", ReportValue.String(typeName))
+                        new("Target", ReportValue.String(typeName))
                     };
 
                     return (ReportValue)new ReportValue.CompositeVal(fields,
-                        $"{effectName} Mag:{effect.Magnitude:F1} Area:{effect.Area} Dur:{effect.Duration} {typeName}");
+                        $"{effectName}\nMagnitude: {effect.Magnitude:F1}\tArea: {effect.Area}u\tDuration: {effect.Duration}s\tTarget: {typeName}");
                 })
                 .ToList();
 
