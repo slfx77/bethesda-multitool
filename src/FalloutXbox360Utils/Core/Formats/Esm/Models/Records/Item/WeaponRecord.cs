@@ -50,6 +50,30 @@ public record WeaponRecord
     /// <summary>Weapon flags (DNAM byte 16).</summary>
     public byte Flags { get; init; }
 
+    /// <summary>Decoded WeaponFlags accessor (computed from <see cref="Flags" />).</summary>
+    public WeaponFlags FlagBits => (WeaponFlags)Flags;
+
+    /// <summary>True if this weapon is fully automatic (Flags bit 0x02).</summary>
+    public bool IsAutomatic => (FlagBits & WeaponFlags.Automatic) != 0;
+
+    /// <summary>True if this weapon has an iron sight scope (Flags bit 0x04).</summary>
+    public bool HasScope => (FlagBits & WeaponFlags.HasScope) != 0;
+
+    /// <summary>True if this weapon cannot be dropped (Flags bit 0x08).</summary>
+    public bool CantDrop => (FlagBits & WeaponFlags.CantDrop) != 0;
+
+    /// <summary>True if this weapon hides the player's backpack when equipped (Flags bit 0x10).</summary>
+    public bool HideBackpack => (FlagBits & WeaponFlags.HideBackpack) != 0;
+
+    /// <summary>True if this is an embedded weapon (e.g., creature attack — Flags bit 0x20).</summary>
+    public bool IsEmbeddedWeapon => (FlagBits & WeaponFlags.EmbeddedWeapon) != 0;
+
+    /// <summary>True if first-person iron sight animations are disabled (Flags bit 0x40).</summary>
+    public bool DontUseFirstPersonIsAnimations => (FlagBits & WeaponFlags.DontUseFirstPersonIsAnimations) != 0;
+
+    /// <summary>True if this weapon is non-playable (Flags bit 0x80).</summary>
+    public bool IsNonPlayable => (FlagBits & WeaponFlags.NonPlayable) != 0;
+
     /// <summary>Hand grip animation type (DNAM byte 17).</summary>
     public HandGripAnimation HandGrip { get; init; }
 
@@ -100,6 +124,116 @@ public record WeaponRecord
 
     /// <summary>Extended weapon flags (DNAM FlagsEx uint32).</summary>
     public uint FlagsEx { get; init; }
+
+    /// <summary>Decoded WeaponFlagsEx accessor.</summary>
+    public WeaponFlagsEx FlagBitsEx => (WeaponFlagsEx)FlagsEx;
+
+    /// <summary>True if this weapon is restricted to the player (FlagsEx bit 0x01).</summary>
+    public bool IsPlayerOnly => (FlagBitsEx & WeaponFlagsEx.PlayerOnly) != 0;
+
+    /// <summary>True if NPCs use ammo when firing this weapon (FlagsEx bit 0x02).</summary>
+    public bool NpcsUseAmmo => (FlagBitsEx & WeaponFlagsEx.NpcsUseAmmo) != 0;
+
+    /// <summary>True if no jam after reload (FlagsEx bit 0x04).</summary>
+    public bool NoJamAfterReload => (FlagBitsEx & WeaponFlagsEx.NoJamAfterReload) != 0;
+
+    /// <summary>True if firing this weapon is a minor crime (FlagsEx bit 0x10).</summary>
+    public bool IsMinorCrime => (FlagBitsEx & WeaponFlagsEx.MinorCrime) != 0;
+
+    /// <summary>True if range is fixed (FlagsEx bit 0x20).</summary>
+    public bool IsRangeFixed => (FlagBitsEx & WeaponFlagsEx.RangeFixed) != 0;
+
+    /// <summary>True if this weapon is not used in normal combat (FlagsEx bit 0x40).</summary>
+    public bool NotUsedInNormalCombat => (FlagBitsEx & WeaponFlagsEx.NotUsedInNormalCombat) != 0;
+
+    /// <summary>True if third-person iron sight animations are disabled (FlagsEx bit 0x100).</summary>
+    public bool DontUseThirdPersonIsAnimations => (FlagBitsEx & WeaponFlagsEx.DontUseThirdPersonIsAnimations) != 0;
+
+    /// <summary>True if this weapon supports long bursts (FlagsEx bit 0x200).</summary>
+    public bool HasLongBursts => (FlagBitsEx & WeaponFlagsEx.LongBursts) != 0;
+
+    // ── Phase 3: previously-unparsed DNAM fields ──
+
+    /// <summary>Override damage multiplier applied to the weapon's own condition. DNAM +84.</summary>
+    public float DamageToWeaponMult { get; init; } = 1.0f;
+
+    /// <summary>Resistance bonus applied by the weapon (DNAM +120).</summary>
+    public uint Resistance { get; init; }
+
+    /// <summary>Sight Usage / Iron sight scope multiplier. DNAM +124.</summary>
+    public float IronSightUseMult { get; init; } = 1.0f;
+
+    /// <summary>Ammo regeneration rate per second (e.g., MF Hyperbreeder). DNAM +176.</summary>
+    public float AmmoRegenRate { get; init; }
+
+    /// <summary>Kill impulse force applied to ragdolls. DNAM +180.</summary>
+    public float KillImpulse { get; init; }
+
+    /// <summary>Distance over which kill impulse is applied. DNAM +196.</summary>
+    public float KillImpulseDistance { get; init; }
+
+    /// <summary>Semi-automatic fire delay minimum (seconds). DNAM +128.</summary>
+    public float SemiAutoFireDelayMin { get; init; }
+
+    /// <summary>Semi-automatic fire delay maximum (seconds). DNAM +132.</summary>
+    public float SemiAutoFireDelayMax { get; init; }
+
+    /// <summary>Animation shots per second override. DNAM +88.</summary>
+    public float AnimShotsPerSecond { get; init; }
+
+    /// <summary>Animation reload time override (seconds). DNAM +92.</summary>
+    public float AnimReloadTime { get; init; }
+
+    /// <summary>Animation jam time override (seconds). DNAM +96.</summary>
+    public float AnimJamTime { get; init; }
+
+    /// <summary>Power attack override animation type. DNAM +164.</summary>
+    public byte PowerAttackOverrideAnim { get; init; }
+
+    /// <summary>Mod-attached reload clip animation override. DNAM +172 (signed).</summary>
+    public sbyte ModReloadClipAnimation { get; init; }
+
+    /// <summary>Mod-attached fire animation override. DNAM +173 (signed).</summary>
+    public sbyte ModFireAnimation { get; init; }
+
+    /// <summary>Grenade cook timer (seconds). DNAM +136.</summary>
+    public float CookTimer { get; init; }
+
+    /// <summary>Rumble: left motor strength. DNAM +72.</summary>
+    public float RumbleLeftMotor { get; init; }
+
+    /// <summary>Rumble: right motor strength. DNAM +76.</summary>
+    public float RumbleRightMotor { get; init; }
+
+    /// <summary>Rumble: duration (seconds). DNAM +80.</summary>
+    public float RumbleDuration { get; init; }
+
+    /// <summary>Rumble: pattern enum. DNAM +108.</summary>
+    public uint RumblePattern { get; init; }
+
+    /// <summary>Rumble: wavelength. DNAM +112.</summary>
+    public float RumbleWavelength { get; init; }
+
+    /// <summary>VATS attack data parsed from the VATS subrecord (20 bytes).</summary>
+    public VatsAttackData? VatsAttack { get; init; }
+
+    /// <summary>Inventory image path from ICON subrecord (Pip-Boy menu icon).</summary>
+    public string? InventoryIconPath { get; init; }
+
+    /// <summary>Message icon path from MICO subrecord.</summary>
+    public string? MessageIconPath { get; init; }
+
+    /// <summary>Shell casing model path from MOD2 subrecord.</summary>
+    public string? ShellCasingModelPath { get; init; }
+
+    /// <summary>Repair item list FormID from REPL subrecord (BGSListForm).</summary>
+    public uint? RepairItemListFormId { get; init; }
+
+    /// <summary>
+    ///     Modded model variants — 3rd-person world model + 1st-person STAT object FormID
+    ///     for each combination of installed mods (None / Mod1 / Mod2 / Mod3 / Mod12 / Mod13 / Mod23 / Mod123).
+    /// </summary>
+    public List<WeaponModelVariant> ModelVariants { get; init; } = [];
 
     /// <summary>Attack damage multiplier.</summary>
     public float AttackMultiplier { get; init; }
@@ -187,6 +321,25 @@ public record WeaponRecord
 
     /// <summary>Unequip sound FormID (dump +580).</summary>
     public uint? UnequipSoundFormId { get; init; }
+
+    /// <summary>Attack loop sound FormID (e.g., minigun spin-up). PDB +568 pAttackLoop.</summary>
+    public uint? AttackLoopSoundFormId { get; init; }
+
+    /// <summary>Melee block sound FormID. PDB +576 pMeleeBlockSound.</summary>
+    public uint? MeleeBlockSoundFormId { get; init; }
+
+    /// <summary>Modded weapon attack sound (3D), used when a silencer mod is attached. PDB +592.</summary>
+    public uint? ModSilencedSound3DFormId { get; init; }
+
+    /// <summary>Modded weapon attack sound (Distant), used when a silencer mod is attached. PDB +596.</summary>
+    public uint? ModSilencedSoundDistFormId { get; init; }
+
+    /// <summary>Modded weapon attack sound (2D), used when a silencer mod is attached. PDB +600.</summary>
+    public uint? ModSilencedSound2DFormId { get; init; }
+
+    // Weapon mod slots (from DNAM — defines what mods the weapon accepts and their effects)
+    /// <summary>Mod slots with action types, values, and assigned IMOD FormIDs.</summary>
+    public List<WeaponModSlot> ModSlots { get; init; } = [];
 
     // Projectile physics (cross-referenced from BGSProjectile runtime struct)
     /// <summary>Projectile physics data, if a projectile is assigned and readable.</summary>

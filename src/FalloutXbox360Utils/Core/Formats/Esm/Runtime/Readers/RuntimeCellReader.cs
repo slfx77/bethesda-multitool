@@ -175,6 +175,7 @@ internal sealed class RuntimeCellReader
                 WorldspaceFormId = entry.WorldspaceFormId,
                 Flags = entry.IsInterior ? (byte)0x01 : (byte)0x00,
                 HasPersistentObjects = entry.IsPersistent,
+                IsPersistentCell = entry.IsPersistent,
                 IsBigEndian = true
             };
         }
@@ -184,7 +185,8 @@ internal sealed class RuntimeCellReader
             GridX = cell.GridX ?? entry.GridX,
             GridY = cell.GridY ?? entry.GridY,
             WorldspaceFormId = cell.WorldspaceFormId ?? entry.WorldspaceFormId,
-            HasPersistentObjects = cell.HasPersistentObjects || entry.IsPersistent
+            HasPersistentObjects = cell.HasPersistentObjects || entry.IsPersistent,
+            IsPersistentCell = cell.IsPersistentCell || entry.IsPersistent
         };
     }
 

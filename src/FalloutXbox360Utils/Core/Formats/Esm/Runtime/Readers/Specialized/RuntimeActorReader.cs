@@ -233,8 +233,14 @@ internal sealed class RuntimeActorReader
         // Read script pointer
         var scriptFormId = _context.FollowPointerToFormId(buffer, NpcFields.CreaScriptOffset);
 
-        // Read ACBS (actor base stats) at +24, same structure as NPC
+        // Read ACBS (actor base stats), same structure as NPC
         var stats = ReadCreatureActorBaseStats(buffer, NpcFields.CreaAcbsOffset, offset);
+
+        // Read AI data (TESAIForm at PDB +164, shared base class with NPC)
+        var aiData = NpcFields.ReadNpcAiData(buffer);
+
+        // Read death item pointer (pDeathItem at PDB +92, shared base class with NPC)
+        var deathItem = _context.FollowPointerToFormId(buffer, NpcFields.NpcDeathItemPtrOffset);
 
         // Read AI package list (BSSimpleList<TESPackage*> at TESAIForm+24)
         // TESCreature inherits TESActorBase at offset 0, same layout as TESNPC
@@ -249,6 +255,8 @@ internal sealed class RuntimeActorReader
             EditorId = entry.EditorId,
             FullName = entry.DisplayName,
             Stats = stats,
+            AiData = aiData,
+            DeathItem = deathItem,
             CreatureType = creatureType,
             CombatSkill = combatSkill,
             MagicSkill = magicSkill,

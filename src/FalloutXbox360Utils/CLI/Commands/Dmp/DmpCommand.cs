@@ -29,6 +29,7 @@ public static class DmpCommand
         command.Subcommands.Add(DmpCompareCommand.Create());
         command.Subcommands.Add(RttiCommand.Create());
         command.Subcommands.Add(AnimationsCommand.Create());
+        command.Subcommands.Add(WeaponSoundLayoutCommand.Create());
 
         return command;
     }

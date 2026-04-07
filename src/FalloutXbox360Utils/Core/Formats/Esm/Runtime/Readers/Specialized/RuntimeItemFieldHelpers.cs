@@ -143,6 +143,212 @@ internal sealed class RuntimeItemFieldHelpers
         return (damage, chance, effectFormId);
     }
 
+    /// <summary>
+    ///     Read modded weapon model variants — base model + 7 combinations.
+    ///     Each combination has a 1st-person STAT pointer (PDB 608+i*4) and a 3rd-person
+    ///     TESModelTextureSwap struct (PDB 640+i*32, cModel BSStringT at +4 within).
+    ///     Returns the base + variants that have non-null model paths or non-zero STAT pointers.
+    /// </summary>
+    internal List<WeaponModelVariant> ReadWeaponModelVariants(byte[] buffer, long structFileOffset)
+    {
+        var result = new List<WeaponModelVariant>();
+
+        var combinations = new[]
+        {
+            WeaponModCombination.None,
+            WeaponModCombination.Mod1,
+            WeaponModCombination.Mod2,
+            WeaponModCombination.Mod3,
+            WeaponModCombination.Mod12,
+            WeaponModCombination.Mod23,
+            WeaponModCombination.Mod13,
+            WeaponModCombination.Mod123
+        };
+
+        var firstPersonBase = _layouts.Weap1stPersonObjectOffset;
+        var worldModelBase = _layouts.WeapWorldModelMod1Offset;
+
+        for (var i = 0; i < 8; i++)
+        {
+            // 1st-person STAT pointer (4 bytes per slot)
+            uint? firstPersonFormId = null;
+            var fpOffset = firstPersonBase + i * 4;
+            if (fpOffset >= 0 && fpOffset + 4 <= buffer.Length)
+            {
+                firstPersonFormId = _context.FollowPointerToFormId(buffer, fpOffset);
+            }
+
+            // 3rd-person model: TESModelTextureSwap at 32-byte stride.
+            // The base (None) variant uses the existing WeapModelPathOffset; only Mod1..Mod123
+            // are in the WorldModelMod array. Skip i=0 and read i-1 for the array index.
+            string? thirdPersonPath = null;
+            if (i >= 1)
+            {
+                // TESModelTextureSwap struct at worldModelBase + (i-1)*32
+                // cModel BSStringT inside the struct is at +4
+                var modelStructOffset = worldModelBase + (i - 1) * 32;
+                var bsStringOffset = modelStructOffset + 4;
+                if (bsStringOffset >= 0 && bsStringOffset + 8 <= buffer.Length)
+                {
+                    thirdPersonPath = _context.ReadBSStringT(structFileOffset, bsStringOffset);
+                }
+            }
+
+            // Skip empty variants (no model AND no 1st-person object)
+            if (string.IsNullOrEmpty(thirdPersonPath) && firstPersonFormId is null or 0)
+            {
+                continue;
+            }
+
+            result.Add(new WeaponModelVariant
+            {
+                Combination = combinations[i],
+                ThirdPersonModelPath = thirdPersonPath,
+                FirstPersonObjectFormId = firstPersonFormId
+            });
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    ///     Read OBJ_WEAP_VATS_SPECIAL (20 bytes) from the runtime weapon struct.
+    ///     PDB layout (verified):
+    ///     +0  pVATSSpecialEffect (TESForm*, 4)
+    ///     +4  fVATSSpecialAP (float)
+    ///     +8  fVATSSpecialMultiplier (float)
+    ///     +12 fVATSSkillRequired (float)
+    ///     +16 bSilent (1B), +17 bModRequired (1B), +18 cFlags (1B), +19 padding
+    /// </summary>
+    internal VatsAttackData? ReadWeaponVatsAttack(byte[] buffer)
+    {
+        var vatsOffset = _layouts.WeapVatsDataOffset;
+        if (vatsOffset < 0 || vatsOffset + 20 > buffer.Length)
+        {
+            return null;
+        }
+
+        var effectFormId = _context.FollowPointerToFormId(buffer, vatsOffset);
+        var ap = BinaryUtils.ReadFloatBE(buffer, vatsOffset + 4);
+        var damMult = BinaryUtils.ReadFloatBE(buffer, vatsOffset + 8);
+        var skillReq = BinaryUtils.ReadFloatBE(buffer, vatsOffset + 12);
+        var silent = buffer[vatsOffset + 16];
+        var modRequired = buffer[vatsOffset + 17];
+        var extraFlags = buffer[vatsOffset + 18];
+
+        // Skip if everything is zero (no VATS attack configured)
+        if (effectFormId is null or 0 && ap == 0 && damMult == 0 && skillReq == 0
+            && silent == 0 && modRequired == 0 && extraFlags == 0)
+        {
+            return null;
+        }
+
+        return new VatsAttackData
+        {
+            EffectFormId = effectFormId ?? 0,
+            ActionPointCost = RuntimeMemoryContext.IsNormalFloat(ap) ? ap : 0,
+            DamageMultiplier = RuntimeMemoryContext.IsNormalFloat(damMult) ? damMult : 0,
+            SkillRequired = RuntimeMemoryContext.IsNormalFloat(skillReq) ? skillReq : 0,
+            IsSilent = silent != 0,
+            RequiresMod = modRequired != 0,
+            ExtraFlags = extraFlags
+        };
+    }
+
+    /// <summary>
+    ///     Read Phase 3 OBJ_WEAP fields (rumble, animation overrides, semi-auto delays, etc.)
+    ///     from the runtime DNAM data block at offset WeapDataStart.
+    /// </summary>
+    internal (float DamageToWeaponMult, uint Resistance, float IronSightUseMult, float AmmoRegenRate,
+        float KillImpulse, float KillImpulseDistance, float SemiAutoMin, float SemiAutoMax,
+        float AnimShotsPerSec, float AnimReloadTime, float AnimJamTime, byte PowerAttackOverride,
+        sbyte ModReloadAnim, sbyte ModFireAnim, float CookTimer, float RumbleLeft, float RumbleRight,
+        float RumbleDuration, uint RumblePattern, float RumbleWavelength) ReadWeaponPhase3Fields(byte[] buffer)
+    {
+        var d = _layouts.WeapDataStart;
+
+        static float Rd(byte[] b, int off) => BinaryUtils.ReadFloatBE(b, off);
+        static uint Ru(byte[] b, int off) => BinaryUtils.ReadUInt32BE(b, off);
+
+        return (
+            DamageToWeaponMult: Rd(buffer, d + RuntimeItemLayouts.DnamDamageToWeaponMultRelOffset),
+            Resistance: Ru(buffer, d + RuntimeItemLayouts.DnamResistanceRelOffset),
+            IronSightUseMult: Rd(buffer, d + RuntimeItemLayouts.DnamIronSightUseMultRelOffset),
+            AmmoRegenRate: Rd(buffer, d + RuntimeItemLayouts.DnamAmmoRegenRateRelOffset),
+            KillImpulse: Rd(buffer, d + RuntimeItemLayouts.DnamKillImpulseRelOffset),
+            KillImpulseDistance: Rd(buffer, d + RuntimeItemLayouts.DnamKillImpulseDistanceRelOffset),
+            SemiAutoMin: Rd(buffer, d + RuntimeItemLayouts.DnamSemiAutoDelayMinRelOffset),
+            SemiAutoMax: Rd(buffer, d + RuntimeItemLayouts.DnamSemiAutoDelayMaxRelOffset),
+            AnimShotsPerSec: Rd(buffer, d + RuntimeItemLayouts.DnamAnimShotsPerSecondRelOffset),
+            AnimReloadTime: Rd(buffer, d + RuntimeItemLayouts.DnamAnimReloadTimeRelOffset),
+            AnimJamTime: Rd(buffer, d + RuntimeItemLayouts.DnamAnimJamTimeRelOffset),
+            PowerAttackOverride: buffer[d + RuntimeItemLayouts.DnamPowerAttackOverrideRelOffset],
+            ModReloadAnim: (sbyte)buffer[d + RuntimeItemLayouts.DnamModReloadClipAnimationRelOffset],
+            ModFireAnim: (sbyte)buffer[d + RuntimeItemLayouts.DnamModFireAnimationRelOffset],
+            CookTimer: Rd(buffer, d + RuntimeItemLayouts.DnamCookTimerRelOffset),
+            RumbleLeft: Rd(buffer, d + RuntimeItemLayouts.DnamRumbleLeftMotorRelOffset),
+            RumbleRight: Rd(buffer, d + RuntimeItemLayouts.DnamRumbleRightMotorRelOffset),
+            RumbleDuration: Rd(buffer, d + RuntimeItemLayouts.DnamRumbleDurationRelOffset),
+            RumblePattern: Ru(buffer, d + RuntimeItemLayouts.DnamRumblePatternRelOffset),
+            RumbleWavelength: Rd(buffer, d + RuntimeItemLayouts.DnamRumbleWavelengthRelOffset)
+        );
+    }
+
+    internal List<WeaponModSlot> ReadWeaponModSlots(byte[] buffer)
+    {
+        var result = new List<WeaponModSlot>();
+        var dataStart = _layouts.WeapDataStart;
+
+        var actions = new[]
+        {
+            BinaryUtils.ReadUInt32BE(buffer, dataStart + RuntimeItemLayouts.DnamModActionOneRelOffset),
+            BinaryUtils.ReadUInt32BE(buffer, dataStart + RuntimeItemLayouts.DnamModActionTwoRelOffset),
+            BinaryUtils.ReadUInt32BE(buffer, dataStart + RuntimeItemLayouts.DnamModActionThreeRelOffset)
+        };
+        var values = new[]
+        {
+            BinaryUtils.ReadFloatBE(buffer, dataStart + RuntimeItemLayouts.DnamModValueOneRelOffset),
+            BinaryUtils.ReadFloatBE(buffer, dataStart + RuntimeItemLayouts.DnamModValueTwoRelOffset),
+            BinaryUtils.ReadFloatBE(buffer, dataStart + RuntimeItemLayouts.DnamModValueThreeRelOffset)
+        };
+        var values2 = new[]
+        {
+            BinaryUtils.ReadFloatBE(buffer, dataStart + RuntimeItemLayouts.DnamModValueTwoOneRelOffset),
+            BinaryUtils.ReadFloatBE(buffer, dataStart + RuntimeItemLayouts.DnamModValueTwoTwoRelOffset),
+            BinaryUtils.ReadFloatBE(buffer, dataStart + RuntimeItemLayouts.DnamModValueTwoThreeRelOffset)
+        };
+        var modPtrs = new[]
+        {
+            _context.FollowPointerToFormId(buffer, _layouts.WeapModObjectOneOffset),
+            _context.FollowPointerToFormId(buffer, _layouts.WeapModObjectTwoOffset),
+            _context.FollowPointerToFormId(buffer, _layouts.WeapModObjectThreeOffset)
+        };
+
+        for (var i = 0; i < 3; i++)
+        {
+            if (actions[i] == 0)
+            {
+                continue;
+            }
+
+            var val = RuntimeMemoryContext.IsNormalFloat(values[i]) ? values[i] : 0f;
+            var val2 = RuntimeMemoryContext.IsNormalFloat(values2[i]) ? values2[i] : 0f;
+
+            result.Add(new WeaponModSlot
+            {
+                SlotIndex = i + 1,
+                Action = Enum.IsDefined(typeof(WeaponModAction), actions[i])
+                    ? (WeaponModAction)actions[i]
+                    : WeaponModAction.None,
+                Value = val,
+                ValueTwo = val2,
+                ModFormId = modPtrs[i]
+            });
+        }
+
+        return result;
+    }
+
     #endregion
 
     #region Container Helper Methods

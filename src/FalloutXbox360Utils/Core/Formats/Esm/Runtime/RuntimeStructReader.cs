@@ -11,6 +11,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers;
 using FalloutXbox360Utils.Core.Minidump;
+using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 
@@ -145,6 +146,17 @@ public sealed class RuntimeStructReader
         RuntimeProbeResults? probeResults = null;
         if (allEntries is { Count: > 0 })
         {
+            // Build a FormID → entry lookup once for content-based positional validation
+            // (used by the weapon sound probe to disambiguate adjacent SOUN pointers).
+            var editorIdsByFormId = new Dictionary<uint, RuntimeEditorIdEntry>(allEntries.Count);
+            foreach (var entry in allEntries)
+            {
+                if (entry.FormId != 0)
+                {
+                    editorIdsByFormId[entry.FormId] = entry;
+                }
+            }
+
             probeResults = new RuntimeProbeResults
             {
                 NpcLayout = npcLayoutProbe,
@@ -153,7 +165,9 @@ public sealed class RuntimeStructReader
                 RaceLayout = RuntimeRaceProbe.Probe(context, allEntries),
                 EffectLayout = RuntimeEffectProbe.Probe(context, allEntries),
                 MagicLayout = RuntimeMagicProbe.Probe(context, allEntries),
-                WeaponSoundLayout = RuntimeWeaponSoundProbe.Probe(context, allEntries),
+                WeaponSoundLayout = RuntimeWeaponSoundProbe.Probe(context, allEntries,
+                    log: msg => Logger.Instance.Info(msg),
+                    editorIdsByFormId: editorIdsByFormId),
                 GenericTypeShifts = RuntimeGenericReader.ProbeAllTypeShifts(context, allEntries)
             };
         }

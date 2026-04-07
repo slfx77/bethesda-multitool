@@ -175,7 +175,7 @@ internal sealed class RuntimeContainerReader(RuntimeMemoryContext context)
 
     // TESObjectCONT: PDB size 156, Debug dump 160, Release dump 172
     private int ContStructSize => 156 + _s;
-    private int ContModelPathOffset => 64 + _s;
+    private int ContModelPathOffset => 76 + _s; // TESModel.cModel BSStringT (PDB offset 92)
     private int ContScriptPtrOffset => 108 + _s; // TESScriptableForm::pFormScript (base+104, field+4)
     private int ContContentsDataOffset => 52 + _s;
     private int ContContentsNextOffset => 56 + _s;

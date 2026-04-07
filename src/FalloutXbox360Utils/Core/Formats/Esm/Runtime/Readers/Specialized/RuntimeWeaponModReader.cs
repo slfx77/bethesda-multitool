@@ -48,6 +48,7 @@ internal sealed class RuntimeWeaponModReader
 
         var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, FullNameOffset);
         var modelPath = _context.ReadBSStringT(offset, ModelOffset);
+        var iconPath = _context.ReadBSStringT(offset, IconOffset);
 
         var value = RuntimeMemoryContext.ReadInt32BE(buffer, ValueOffset);
         if (value < 0 || value > 1_000_000)
@@ -63,6 +64,7 @@ internal sealed class RuntimeWeaponModReader
             EditorId = entry.EditorId,
             FullName = fullName,
             ModelPath = modelPath,
+            Icon = iconPath,
             Value = value,
             Weight = weight,
             Offset = offset,
@@ -77,6 +79,7 @@ internal sealed class RuntimeWeaponModReader
     private const int FormIdOffset = 12;
     private const int FullNameOffset = 68; // TESFullName.cFullName BSStringT
     private const int ModelOffset = 80; // TESModel.cModel BSStringT
+    private const int IconOffset = 112; // TESTexture.TextureName BSStringT
     private const int ValueOffset = 144; // TESValueForm.iValue (uint32)
     private const int WeightOffset = 152; // TESWeightForm.fWeight (float32)
 

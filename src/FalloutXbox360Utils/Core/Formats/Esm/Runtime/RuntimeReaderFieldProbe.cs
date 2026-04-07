@@ -37,7 +37,18 @@ internal static class RuntimeReaderFieldProbe
         ByteRange,
 
         /// <summary>Read BSStringT (8 bytes: pointer + length), must resolve to a non-empty ASCII string.</summary>
-        BSStringT
+        BSStringT,
+
+        /// <summary>
+        ///     Follow pointer → resolve target FormID via the editor ID hash table → match the
+        ///     resolved EditorID against a regex pattern. Returns the field weight on match,
+        ///     0 on non-match. Used for content-based positional validation when many adjacent
+        ///     pointers all resolve to the same FormType (e.g., a contiguous run of TESSound
+        ///     pointers in TESObjectWEAP). The CheckArg must be a tuple
+        ///     <c>(System.Text.RegularExpressions.Regex pattern, byte expectedFormType)</c>.
+        ///     Requires the probe to be invoked with a non-null editorIdsByFormId dictionary.
+        /// </summary>
+        PatternMatchFormId
     }
 
     /// <summary>
@@ -63,7 +74,8 @@ internal static class RuntimeReaderFieldProbe
         int baseStructSize,
         string probeName,
         int maxSamples = 12,
-        Action<string>? log = null)
+        Action<string>? log = null,
+        IReadOnlyDictionary<uint, RuntimeEditorIdEntry>? editorIdsByFormId = null)
     {
         // Filter to entries with valid offsets
         var samples = entries
@@ -83,7 +95,8 @@ internal static class RuntimeReaderFieldProbe
         return RuntimeLayoutProbeEngine.Probe(
             samples,
             candidates,
-            (sample, candidate) => ScoreSample(context, sample, fields, candidate.Layout, baseStructSize),
+            (sample, candidate) => ScoreSample(context, sample, fields, candidate.Layout,
+                baseStructSize, editorIdsByFormId),
             probeName,
             log,
             sample => $"0x{sample.FormId:X8} ({sample.EditorId})");
@@ -154,7 +167,8 @@ internal static class RuntimeReaderFieldProbe
         RuntimeEditorIdEntry entry,
         IReadOnlyList<FieldSpec> fields,
         int[] shifts,
-        int baseStructSize)
+        int baseStructSize,
+        IReadOnlyDictionary<uint, RuntimeEditorIdEntry>? editorIdsByFormId = null)
     {
         if (entry.TesFormOffset == null)
         {
@@ -213,7 +227,7 @@ internal static class RuntimeReaderFieldProbe
             }
 
             maxPoints += field.Weight;
-            points += ScoreField(context, offset, buffer, effectiveOffset, field);
+            points += ScoreField(context, offset, buffer, effectiveOffset, field, editorIdsByFormId);
         }
 
         return new RuntimeLayoutProbeScore(points, maxPoints);
@@ -224,7 +238,8 @@ internal static class RuntimeReaderFieldProbe
         long structFileOffset,
         byte[] buffer,
         int effectiveOffset,
-        FieldSpec field)
+        FieldSpec field,
+        IReadOnlyDictionary<uint, RuntimeEditorIdEntry>? editorIdsByFormId)
     {
         switch (field.Check)
         {
@@ -301,6 +316,37 @@ internal static class RuntimeReaderFieldProbe
             {
                 var str = context.ReadBSStringT(structFileOffset, effectiveOffset);
                 return !string.IsNullOrEmpty(str) ? field.Weight : 0;
+            }
+
+            case FieldCheck.PatternMatchFormId:
+            {
+                if (editorIdsByFormId is null)
+                {
+                    return 0;
+                }
+
+                if (field.CheckArg is not (System.Text.RegularExpressions.Regex pattern, byte expectedType))
+                {
+                    return 0;
+                }
+
+                var formId = context.FollowPointerToFormId(buffer, effectiveOffset, expectedType);
+                if (formId is null or 0)
+                {
+                    return 0;
+                }
+
+                if (!editorIdsByFormId.TryGetValue(formId.Value, out var entry))
+                {
+                    return 0;
+                }
+
+                if (string.IsNullOrEmpty(entry.EditorId))
+                {
+                    return 0;
+                }
+
+                return pattern.IsMatch(entry.EditorId) ? field.Weight : 0;
             }
 
             default:

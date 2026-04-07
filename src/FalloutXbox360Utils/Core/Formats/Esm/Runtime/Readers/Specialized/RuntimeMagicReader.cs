@@ -287,6 +287,12 @@ internal sealed class RuntimeMagicReader
         var ranks = buffer[perkData + 2];
         var playable = buffer[perkData + 3];
 
+        // Walk PerkEntries BSSimpleList at offset 88
+        var entries = WalkPerkEntryList(buffer, PerkEntriesListOffset + _s);
+
+        // Walk PerkConditions TESCondition linked list at offset 80
+        var conditions = WalkPerkConditions(offset, buffer, PerkConditionsListOffset + _s);
+
         return new PerkRecord
         {
             FormId = entry.FormId,
@@ -297,9 +303,249 @@ internal sealed class RuntimeMagicReader
             MinLevel = minLevel,
             Ranks = ranks,
             Playable = playable,
+            Entries = entries,
+            Conditions = conditions,
             Offset = offset,
             IsBigEndian = true
         };
+    }
+
+    /// <summary>
+    ///     Walk BSSimpleList of BGSPerkEntry* pointers.
+    ///     BGSPerkEntry runtime layout (speculative from GECK analysis):
+    ///     +0: vtable (4B), +4: rank (uint8), +5: priority (uint8), +6: pad (2B),
+    ///     +8: type-specific data (pointer for Ability/QuestStage, entryPoint ID for EntryPoint).
+    ///     Type is inferred from the pointer at +8: SPEL=Ability, QUST=QuestStage, else EntryPoint.
+    /// </summary>
+    private List<PerkEntry> WalkPerkEntryList(byte[] structBuffer, int listOffset)
+    {
+        var result = new List<PerkEntry>();
+
+        var headVa = BinaryUtils.ReadUInt32BE(structBuffer, listOffset);
+        if (headVa == 0 || !_context.IsValidPointer(headVa))
+        {
+            return result;
+        }
+
+        var visited = new HashSet<uint>();
+        var currentVa = headVa;
+
+        for (var i = 0; i < MaxListNodes; i++)
+        {
+            if (currentVa == 0 || !visited.Add(currentVa))
+            {
+                break;
+            }
+
+            var nodeFileOffset = _context.VaToFileOffset(currentVa);
+            if (nodeFileOffset == null)
+            {
+                break;
+            }
+
+            // BSSimpleList node: m_item (BGSPerkEntry*, 4B) + m_pkNext (4B)
+            var nodeBuffer = _context.ReadBytes(nodeFileOffset.Value, 8);
+            if (nodeBuffer == null)
+            {
+                break;
+            }
+
+            var entryVa = BinaryUtils.ReadUInt32BE(nodeBuffer);
+            var nextVa = BinaryUtils.ReadUInt32BE(nodeBuffer, 4);
+
+            if (entryVa != 0 && _context.IsValidPointer(entryVa))
+            {
+                var entry = ReadPerkEntry(entryVa);
+                if (entry != null)
+                {
+                    result.Add(entry);
+                }
+            }
+
+            currentVa = nextVa;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    ///     Read a single BGSPerkEntry from memory. Infers type from pointer at +8:
+    ///     if it resolves to SPEL (0x14), type=Ability; otherwise type=EntryPoint (most common).
+    /// </summary>
+    private PerkEntry? ReadPerkEntry(uint entryVa)
+    {
+        var entryFileOffset = _context.VaToFileOffset(entryVa);
+        if (entryFileOffset == null)
+        {
+            return null;
+        }
+
+        // Read enough for: vtable(4) + rank(1) + priority(1) + pad(2) + data ptr(4) = 12 bytes
+        var entryBuffer = _context.ReadBytes(entryFileOffset.Value, 12);
+        if (entryBuffer == null)
+        {
+            return null;
+        }
+
+        var rank = entryBuffer[4];
+        var priority = entryBuffer[5];
+
+        // Try to determine type by following the pointer at +8
+        var dataVa = BinaryUtils.ReadUInt32BE(entryBuffer, 8);
+        byte type = 2; // Default: EntryPoint (most common)
+        uint? abilityFormId = null;
+
+        if (dataVa != 0 && _context.IsValidPointer(dataVa))
+        {
+            // Check if pointer resolves to a SpellItem (SPEL, FormType 0x14) → Ability entry
+            var formId = _context.FollowPointerVaToFormId(dataVa, 0x14);
+            if (formId is > 0)
+            {
+                type = 1; // Ability
+                abilityFormId = formId;
+            }
+            else
+            {
+                // Check if pointer resolves to a Quest (QUST, FormType 0x40) → QuestStage entry
+                formId = _context.FollowPointerVaToFormId(dataVa, 0x40);
+                if (formId is > 0)
+                {
+                    type = 0; // QuestStage
+                }
+            }
+        }
+
+        return new PerkEntry
+        {
+            Type = type,
+            Rank = rank,
+            Priority = priority,
+            AbilityFormId = abilityFormId
+        };
+    }
+
+    /// <summary>
+    ///     Walk TESCondition linked list (BSSimpleList of TESConditionItem*).
+    ///     Each TESConditionItem is 28 bytes: Type(1) + pad(3) + ComparisonValue(4) +
+    ///     FunctionIndex(2) + pad(2) + Param1(4) + Param2(4) + RunOn(4) + Reference(4).
+    ///     Extracts skill/stat requirements (GetActorValue) and perk prerequisites (HasPerk).
+    /// </summary>
+    private List<PerkCondition> WalkPerkConditions(long structFileOffset, byte[] structBuffer, int listOffset)
+    {
+        var results = new List<PerkCondition>();
+
+        // BSSimpleList inline: first item pointer + next node pointer (8 bytes)
+        var firstItemVa = BinaryUtils.ReadUInt32BE(structBuffer, listOffset);
+        var nextVa = BinaryUtils.ReadUInt32BE(structBuffer, listOffset + 4);
+
+        // Read first inline item
+        ReadPerkConditionItem(firstItemVa, results);
+
+        // Walk linked list
+        var visited = new HashSet<uint>();
+        while (nextVa != 0 && results.Count < MaxListNodes && visited.Add(nextVa))
+        {
+            var nodeBuf = _context.ReadBytesAtVa(nextVa, 8);
+            if (nodeBuf == null)
+            {
+                break;
+            }
+
+            ReadPerkConditionItem(BinaryUtils.ReadUInt32BE(nodeBuf), results);
+            nextVa = BinaryUtils.ReadUInt32BE(nodeBuf, 4);
+        }
+
+        return results;
+    }
+
+    private void ReadPerkConditionItem(uint conditionItemVa, List<PerkCondition> results)
+    {
+        if (!_context.IsValidPointer(conditionItemVa))
+        {
+            return;
+        }
+
+        var buffer = _context.ReadBytesAtVa(conditionItemVa, 28);
+        if (buffer == null)
+        {
+            return;
+        }
+
+        var type = buffer[0];
+        var comparisonOperator = (byte)((type >> 5) & 0x7);
+        if (comparisonOperator > 5)
+        {
+            return;
+        }
+
+        var functionIndex = BinaryUtils.ReadUInt16BE(buffer, 8);
+        var comparisonValue = BinaryUtils.ReadFloatBE(buffer, 4);
+        if (!RuntimeMemoryContext.IsNormalFloat(comparisonValue))
+        {
+            comparisonValue = 0;
+        }
+
+        var rawParam1 = BinaryUtils.ReadUInt32BE(buffer, 12);
+
+        // Skip empty conditions
+        if (type == 0 && functionIndex == 0 && rawParam1 == 0 && MathF.Abs(comparisonValue) < 0.0001f)
+        {
+            return;
+        }
+
+        // Determine function name and resolve parameter
+        string functionName;
+        string? param1Display = null;
+        uint? param1FormId = null;
+
+        switch (functionIndex)
+        {
+            case 0x0E: // GetActorValue — Param1 is ActorValue enum index
+                functionName = "GetActorValue";
+                // rawParam1 is a pointer to the ActorValue enum — it's actually a raw int for conditions
+                // In runtime conditions, param1 for GetActorValue is typically the AV index directly
+                if (rawParam1 is > 0 and <= 76)
+                {
+                    param1Display = rawParam1.ToString();
+                }
+                else if (rawParam1 != 0 && _context.IsValidPointer(rawParam1))
+                {
+                    // Some builds store this as a pointer — try following it
+                    rawParam1 = _context.FollowPointerVaToFormId(rawParam1) ?? rawParam1;
+                    param1Display = rawParam1.ToString();
+                }
+
+                break;
+
+            case 0xC1: // HasPerk — Param1 is Perk FormID pointer
+                functionName = "HasPerk";
+                if (rawParam1 != 0 && _context.IsValidPointer(rawParam1))
+                {
+                    var perkFormId = _context.FollowPointerVaToFormId(rawParam1);
+                    if (perkFormId is > 0)
+                    {
+                        param1FormId = perkFormId;
+                        rawParam1 = perkFormId.Value;
+                    }
+                }
+
+                break;
+
+            default:
+                functionName = $"Func_{functionIndex:X4}";
+                break;
+        }
+
+        results.Add(new PerkCondition
+        {
+            FunctionIndex = functionIndex,
+            FunctionName = functionName,
+            Parameter1 = rawParam1,
+            Parameter1Display = param1Display,
+            Parameter1FormId = param1FormId,
+            ComparisonOperator = comparisonOperator,
+            ComparisonValue = comparisonValue
+        });
     }
 
     #endregion
@@ -472,6 +718,8 @@ internal sealed class RuntimeMagicReader
     private const int PerkFullNameOffset = 44;
     private const int PerkIconOffset = 64;
     private const int PerkDataOffset = 72; // PerkData, 5 bytes
+    private const int PerkConditionsListOffset = 80; // TESCondition (BSSimpleList<TESConditionItem*>)
+    private const int PerkEntriesListOffset = 88; // BSSimpleList<BGSPerkEntry*>
 
     // EffectItem struct size (pSetting + magnitude + area + duration + type + actorValue)
     private const int EffectItemSize = 24;

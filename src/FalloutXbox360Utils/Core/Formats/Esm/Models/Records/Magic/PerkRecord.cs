@@ -37,6 +37,9 @@ public record PerkRecord
     /// <summary>Perk entries (PRKE/PRKC/EPFT chains).</summary>
     public List<PerkEntry> Entries { get; init; } = [];
 
+    /// <summary>Perk conditions (skill/stat requirements, perk prerequisites).</summary>
+    public List<PerkCondition> Conditions { get; init; } = [];
+
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }
 

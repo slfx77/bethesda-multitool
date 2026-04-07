@@ -15,19 +15,21 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 /// </summary>
 internal sealed class RuntimeItemReader(
     RuntimeMemoryContext context,
-    RuntimeLayoutProbeResult<int[]>? weaponSoundProbe = null)
+    RuntimeWeaponSoundProbeResult? weaponSoundProbe = null)
 {
-    private const int MinProbeMargin = 3;
     private readonly RuntimeMemoryContext _context = context;
 
     // Build-specific offset shift: Proto Debug PDB + _s = actual dump offset.
     private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
         MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
 
-    // Weapon sound shift from probe (e.g., -4 for builds missing a field before IdleSound).
-    private readonly int _weaponSoundShift = weaponSoundProbe is { Margin: >= MinProbeMargin }
-        ? weaponSoundProbe.Winner.Layout[1]
-        : 0;
+    // Selected weapon sound layout variant (V1 = early FO3-derived, V2 = FNV).
+    // The probe picks whichever pattern-matches better; default to V2 if no probe result.
+    private readonly RuntimeWeaponSoundLayoutVariant _weaponSoundVariant =
+        weaponSoundProbe?.Variant ?? RuntimeWeaponSoundLayoutVariant.V2;
+
+    // Fine-grained shift on top of the chosen layout (for builds that drift slightly).
+    private readonly int _weaponSoundShift = weaponSoundProbe?.FineShift ?? 0;
 
     // Delegate container reading to dedicated class.
     private RuntimeContainerReader? _containerReader;
@@ -37,7 +39,8 @@ internal sealed class RuntimeItemReader(
 
     // Shared layouts for field reading.
     private RuntimeItemLayouts? _layouts;
-    private RuntimeItemLayouts Layouts => _layouts ??= new RuntimeItemLayouts(_s, _weaponSoundShift);
+    private RuntimeItemLayouts Layouts => _layouts ??=
+        new RuntimeItemLayouts(_s, _weaponSoundShift, _weaponSoundVariant);
     private RuntimeItemFieldHelpers FieldHelpers => _fieldHelpers ??= new RuntimeItemFieldHelpers(_context, Layouts);
     private RuntimeContainerReader ContainerReader => _containerReader ??= new RuntimeContainerReader(_context);
 
@@ -79,25 +82,35 @@ internal sealed class RuntimeItemReader(
         var baseFields = FieldHelpers.ReadWeaponBaseClassFields(buffer);
         var combatFields = FieldHelpers.ReadWeaponCombatFields(buffer);
         var critFields = FieldHelpers.ReadWeaponCriticalFields(buffer);
+        var modSlotFields = FieldHelpers.ReadWeaponModSlots(buffer);
+        var phase3 = FieldHelpers.ReadWeaponPhase3Fields(buffer);
+        var vatsAttack = FieldHelpers.ReadWeaponVatsAttack(buffer);
+        var modelVariants = FieldHelpers.ReadWeaponModelVariants(buffer, offset);
 
         // Follow ammo pointer to get ammo FormID
         var ammoFormId = _context.FollowPointerToFormId(buffer, Layouts.WeapAmmoPtrOffset);
 
         // Read model path via BSStringT at TESModel offset
         var modelPath = _context.ReadBSStringT(offset, Layouts.WeapModelPathOffset);
-        var embeddedWeaponNode = _context.ReadBSStringT(offset, Layouts.WeapEmbeddedWeaponNodeOffset);
+        var embeddedWeaponNode = ReadBSStringTSafe(offset, Layouts.WeapEmbeddedWeaponNodeOffset);
 
-        // Read sound pointers (TESSound* at various offsets)
+        // Read sound pointers (TESSound* at various offsets). Offsets may be -1 for fields
+        // that don't exist in the V1 (FO3-derived) layout — those reads safely return null.
         var pickupSound = _context.FollowPointerToFormId(buffer, Layouts.WeapPickupSoundOffset);
         var putdownSound = _context.FollowPointerToFormId(buffer, Layouts.WeapPutdownSoundOffset);
-        var fireSound3D = _context.FollowPointerToFormId(buffer, Layouts.WeapFireSound3DOffset);
-        var fireSoundDist = _context.FollowPointerToFormId(buffer, Layouts.WeapFireSoundDistOffset);
-        var fireSound2D = _context.FollowPointerToFormId(buffer, Layouts.WeapFireSound2DOffset);
-        var dryFireSound = _context.FollowPointerToFormId(buffer, Layouts.WeapDryFireSoundOffset);
-        var idleSound = _context.FollowPointerToFormId(buffer, Layouts.WeapIdleSoundOffset);
-        var equipSound = _context.FollowPointerToFormId(buffer, Layouts.WeapEquipSoundOffset);
-        var unequipSound = _context.FollowPointerToFormId(buffer, Layouts.WeapUnequipSoundOffset);
-        var impactDataSet = _context.FollowPointerToFormId(buffer, Layouts.WeapImpactDataSetOffset);
+        var fireSound3D = FollowPointerSafe(buffer, Layouts.WeapFireSound3DOffset);
+        var fireSoundDist = FollowPointerSafe(buffer, Layouts.WeapFireSoundDistOffset);
+        var fireSound2D = FollowPointerSafe(buffer, Layouts.WeapFireSound2DOffset);
+        var attackLoopSound = FollowPointerSafe(buffer, Layouts.WeapAttackLoopOffset);
+        var dryFireSound = FollowPointerSafe(buffer, Layouts.WeapDryFireSoundOffset);
+        var meleeBlockSound = FollowPointerSafe(buffer, Layouts.WeapMeleeBlockSoundOffset);
+        var idleSound = FollowPointerSafe(buffer, Layouts.WeapIdleSoundOffset);
+        var equipSound = FollowPointerSafe(buffer, Layouts.WeapEquipSoundOffset);
+        var unequipSound = FollowPointerSafe(buffer, Layouts.WeapUnequipSoundOffset);
+        var modSilenced3D = FollowPointerSafe(buffer, Layouts.WeapModSilencedSound3DOffset);
+        var modSilencedDist = FollowPointerSafe(buffer, Layouts.WeapModSilencedSoundDistOffset);
+        var modSilenced2D = FollowPointerSafe(buffer, Layouts.WeapModSilencedSound2DOffset);
+        var impactDataSet = FollowPointerSafe(buffer, Layouts.WeapImpactDataSetOffset);
 
         return new WeaponRecord
         {
@@ -137,11 +150,39 @@ internal sealed class RuntimeItemReader(
             FireSound3DFormId = fireSound3D,
             FireSoundDistFormId = fireSoundDist,
             FireSound2DFormId = fireSound2D,
+            AttackLoopSoundFormId = attackLoopSound,
             DryFireSoundFormId = dryFireSound,
+            MeleeBlockSoundFormId = meleeBlockSound,
             IdleSoundFormId = idleSound,
             EquipSoundFormId = equipSound,
             UnequipSoundFormId = unequipSound,
+            ModSilencedSound3DFormId = modSilenced3D,
+            ModSilencedSoundDistFormId = modSilencedDist,
+            ModSilencedSound2DFormId = modSilenced2D,
             ImpactDataSetFormId = impactDataSet,
+            ModSlots = modSlotFields,
+            DamageToWeaponMult = phase3.DamageToWeaponMult,
+            Resistance = phase3.Resistance,
+            IronSightUseMult = phase3.IronSightUseMult,
+            AmmoRegenRate = phase3.AmmoRegenRate,
+            KillImpulse = phase3.KillImpulse,
+            KillImpulseDistance = phase3.KillImpulseDistance,
+            SemiAutoFireDelayMin = phase3.SemiAutoMin,
+            SemiAutoFireDelayMax = phase3.SemiAutoMax,
+            AnimShotsPerSecond = phase3.AnimShotsPerSec,
+            AnimReloadTime = phase3.AnimReloadTime,
+            AnimJamTime = phase3.AnimJamTime,
+            PowerAttackOverrideAnim = phase3.PowerAttackOverride,
+            ModReloadClipAnimation = phase3.ModReloadAnim,
+            ModFireAnimation = phase3.ModFireAnim,
+            CookTimer = phase3.CookTimer,
+            RumbleLeftMotor = phase3.RumbleLeft,
+            RumbleRightMotor = phase3.RumbleRight,
+            RumbleDuration = phase3.RumbleDuration,
+            RumblePattern = phase3.RumblePattern,
+            RumbleWavelength = phase3.RumbleWavelength,
+            VatsAttack = vatsAttack,
+            ModelVariants = modelVariants,
             Offset = offset,
             IsBigEndian = true
         };
@@ -210,6 +251,10 @@ internal sealed class RuntimeItemReader(
             ? (EquipmentType)equipTypeValue
             : EquipmentType.None;
 
+        // Model paths from TESBipedModelForm.bipedModel / worldModel (TESModelTextureSwap.cModel at +4)
+        var modelPath = _context.ReadBSStringT(offset, Layouts.ArmoBipedModelPathOffset)
+                        ?? _context.ReadBSStringT(offset, Layouts.ArmoWorldModelPathOffset);
+
         return new ArmorRecord
         {
             FormId = entry.FormId,
@@ -222,6 +267,7 @@ internal sealed class RuntimeItemReader(
             DamageResistance = damageResistance,
             DamageThreshold = damageThreshold,
             EquipmentType = equipmentType,
+            ModelPath = modelPath,
             Bounds = ReadBounds(buffer),
             Offset = offset,
             IsBigEndian = true
@@ -468,6 +514,9 @@ internal sealed class RuntimeItemReader(
         var addictionChance = RuntimeMemoryContext.ReadValidatedFloat(
             buffer, Layouts.AlchAddictionChanceOffset, 0, 1);
 
+        // Walk EffectItem list (BSSimpleList<EffectItem*> at offset 80)
+        var effects = WalkEffectItemList(buffer, Layouts.AlchEffectListOffset);
+
         return new ConsumableRecord
         {
             FormId = entry.FormId,
@@ -478,6 +527,7 @@ internal sealed class RuntimeItemReader(
             Flags = flags,
             AddictionFormId = addictionFormId,
             AddictionChance = addictionChance,
+            Effects = effects,
             Bounds = ReadBounds(buffer),
             Offset = offset,
             IsBigEndian = true
@@ -495,5 +545,99 @@ internal sealed class RuntimeItemReader(
         var bounds = RecordParserContext.ReadObjectBounds(
             buffer.AsSpan(off, 12), true);
         return bounds is { X1: 0, Y1: 0, Z1: 0, X2: 0, Y2: 0, Z2: 0 } ? null : bounds;
+    }
+
+    /// <summary>
+    ///     Walk a BSSimpleList of EffectItem* pointers (same structure as SPEL/ENCH effects).
+    ///     Each EffectItem is 24 bytes: pSetting(4) + magnitude(4) + area(4) + duration(4) + type(4) + actorValue(4).
+    /// </summary>
+    private List<EnchantmentEffect> WalkEffectItemList(byte[] structBuffer, int listOffset)
+    {
+        var result = new List<EnchantmentEffect>();
+
+        var headVa = BinaryUtils.ReadUInt32BE(structBuffer, listOffset);
+        if (headVa == 0 || !_context.IsValidPointer(headVa))
+        {
+            return result;
+        }
+
+        var visited = new HashSet<uint>();
+        var currentVa = headVa;
+
+        for (var i = 0; i < 32; i++)
+        {
+            if (currentVa == 0 || !visited.Add(currentVa))
+            {
+                break;
+            }
+
+            var nodeFileOffset = _context.VaToFileOffset(currentVa);
+            if (nodeFileOffset == null)
+            {
+                break;
+            }
+
+            var nodeBuffer = _context.ReadBytes(nodeFileOffset.Value, 8);
+            if (nodeBuffer == null)
+            {
+                break;
+            }
+
+            var itemVa = BinaryUtils.ReadUInt32BE(nodeBuffer);
+            var nextVa = BinaryUtils.ReadUInt32BE(nodeBuffer, 4);
+
+            if (itemVa != 0)
+            {
+                var itemOffset = _context.VaToFileOffset(itemVa);
+                if (itemOffset != null)
+                {
+                    var eiBuf = _context.ReadBytes(itemOffset.Value, 24);
+                    if (eiBuf != null)
+                    {
+                        var settingFormId = _context.FollowPointerVaToFormId(
+                            BinaryUtils.ReadUInt32BE(eiBuf));
+                        var magnitude = BinaryUtils.ReadFloatBE(eiBuf, 4);
+                        var area = BinaryUtils.ReadUInt32BE(eiBuf, 8);
+                        var duration = BinaryUtils.ReadUInt32BE(eiBuf, 12);
+                        var type = BinaryUtils.ReadUInt32BE(eiBuf, 16);
+                        var actorValue = unchecked((int)BinaryUtils.ReadUInt32BE(eiBuf, 20));
+
+                        if (settingFormId is > 0)
+                        {
+                            result.Add(new EnchantmentEffect
+                            {
+                                EffectFormId = settingFormId.Value,
+                                Magnitude = RuntimeMemoryContext.IsNormalFloat(magnitude) ? magnitude : 0f,
+                                Area = area,
+                                Duration = duration,
+                                Type = type,
+                                ActorValue = actorValue
+                            });
+                        }
+                    }
+                }
+            }
+
+            currentVa = nextVa;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    ///     Follow a pointer at the given buffer offset, but skip the read if the offset is
+    ///     negative — used for fields that don't exist in the V1 (FO3-derived) layout.
+    /// </summary>
+    private uint? FollowPointerSafe(byte[] buffer, int offset)
+    {
+        return offset < 0 ? null : _context.FollowPointerToFormId(buffer, offset);
+    }
+
+    /// <summary>
+    ///     Read a BSStringT, but skip the read if the offset is negative.
+    /// </summary>
+    private string? ReadBSStringTSafe(long structFileOffset, int relOffset)
+    {
+        return relOffset < 0 ? null : _context.ReadBSStringT(structFileOffset, relOffset);
     }
 }
