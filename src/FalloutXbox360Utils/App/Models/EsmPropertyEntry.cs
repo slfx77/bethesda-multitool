@@ -36,4 +36,11 @@ public sealed class EsmPropertyEntry
 
     /// <summary>Cell FormID for world map navigation (linked cells, door destinations).</summary>
     public uint? CellNavigationFormId { get; init; }
+
+    /// <summary>
+    ///     Reference FormID of a placed object (REFR/ACHR/ACRE) used to navigate to
+    ///     that placement on the world map. Distinct from <see cref="LinkedFormId" />,
+    ///     which targets the base record for Data Browser navigation.
+    /// </summary>
+    public uint? PlacedReferenceFormId { get; init; }
 }

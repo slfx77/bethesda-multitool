@@ -13,40 +13,6 @@ internal sealed class NpcCompositionOptions : IEquatable<NpcCompositionOptions>
     public bool IncludeHair { get; init; } = true;
     public string? AnimOverride { get; init; }
 
-    public static NpcCompositionOptions From(NpcRenderSettings settings)
-    {
-        ArgumentNullException.ThrowIfNull(settings);
-
-        return new NpcCompositionOptions
-        {
-            HeadOnly = settings.HeadOnly,
-            IncludeEquipment = !settings.NoEquip,
-            IncludeWeapon = !settings.NoEquip && !settings.NoWeapon,
-            BindPose = settings.BindPose,
-            ApplyEgm = !settings.NoEgm,
-            ApplyEgt = !settings.NoEgt,
-            IncludeHair = true,
-            AnimOverride = settings.AnimOverride
-        };
-    }
-
-    public static NpcCompositionOptions From(NpcExportSettings settings)
-    {
-        ArgumentNullException.ThrowIfNull(settings);
-
-        return new NpcCompositionOptions
-        {
-            HeadOnly = settings.HeadOnly,
-            IncludeEquipment = !settings.NoEquip,
-            IncludeWeapon = !settings.NoEquip && settings.IncludeWeapon,
-            BindPose = settings.BindPose,
-            ApplyEgm = !settings.NoEgm,
-            ApplyEgt = !settings.NoEgt,
-            IncludeHair = !settings.NoHair,
-            AnimOverride = settings.AnimOverride
-        };
-    }
-
     public bool Equals(NpcCompositionOptions? other)
     {
         if (ReferenceEquals(this, other))
@@ -84,4 +50,39 @@ internal sealed class NpcCompositionOptions : IEquatable<NpcCompositionOptions>
             ApplyEgt,
             AnimOverride?.ToUpperInvariant());
     }
+
+    public static NpcCompositionOptions From(NpcRenderSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        return new NpcCompositionOptions
+        {
+            HeadOnly = settings.HeadOnly,
+            IncludeEquipment = !settings.NoEquip,
+            IncludeWeapon = !settings.NoEquip && !settings.NoWeapon,
+            BindPose = settings.BindPose,
+            ApplyEgm = !settings.NoEgm,
+            ApplyEgt = !settings.NoEgt,
+            IncludeHair = true,
+            AnimOverride = settings.AnimOverride
+        };
+    }
+
+    public static NpcCompositionOptions From(NpcExportSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        return new NpcCompositionOptions
+        {
+            HeadOnly = settings.HeadOnly,
+            IncludeEquipment = !settings.NoEquip,
+            IncludeWeapon = !settings.NoEquip && settings.IncludeWeapon,
+            BindPose = settings.BindPose,
+            ApplyEgm = !settings.NoEgm,
+            ApplyEgt = !settings.NoEgt,
+            IncludeHair = !settings.NoHair,
+            AnimOverride = settings.AnimOverride
+        };
+    }
+
 }

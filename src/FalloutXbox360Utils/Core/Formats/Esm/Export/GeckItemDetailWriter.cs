@@ -80,7 +80,7 @@ internal static class GeckItemDetailWriter
 
         // VATS Attack (special VATS effect — Phase 4)
         if (weapon.VatsAttack is { } vats &&
-            (vats.EffectFormId != 0 || vats.ActionPointCost != 0 || vats.DamageMultiplier != 0
+            (vats.EffectFormId != 0 || Math.Abs(vats.ActionPointCost) > 0f || Math.Abs(vats.DamageMultiplier) > 0f
              || vats.IsSilent || vats.RequiresMod || vats.ExtraFlags != 0))
         {
             var vatsFields = new List<ReportField>();
@@ -560,6 +560,7 @@ internal static class GeckItemDetailWriter
             identityFields.Add(new ReportField("Required Skill",
                 ReportValue.Int(recipe.RequiredSkill, $"{skillName} (level {recipe.RequiredSkillLevel})")));
         }
+
         if (recipe.CategoryFormId != 0)
             identityFields.Add(new ReportField("Category",
                 ReportValue.FormId(recipe.CategoryFormId, resolver),

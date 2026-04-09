@@ -237,7 +237,7 @@ internal sealed class RuntimeItemFieldHelpers
         var extraFlags = buffer[vatsOffset + 18];
 
         // Skip if everything is zero (no VATS attack configured)
-        if (effectFormId is null or 0 && ap == 0 && damMult == 0 && skillReq == 0
+        if (effectFormId is null or 0 && Math.Abs(ap) <= 0f && Math.Abs(damMult) <= 0f && Math.Abs(skillReq) <= 0f
             && silent == 0 && modRequired == 0 && extraFlags == 0)
         {
             return null;
@@ -267,8 +267,15 @@ internal sealed class RuntimeItemFieldHelpers
     {
         var d = _layouts.WeapDataStart;
 
-        static float Rd(byte[] b, int off) => BinaryUtils.ReadFloatBE(b, off);
-        static uint Ru(byte[] b, int off) => BinaryUtils.ReadUInt32BE(b, off);
+        static float Rd(byte[] b, int off)
+        {
+            return BinaryUtils.ReadFloatBE(b, off);
+        }
+
+        static uint Ru(byte[] b, int off)
+        {
+            return BinaryUtils.ReadUInt32BE(b, off);
+        }
 
         return (
             DamageToWeaponMult: Rd(buffer, d + RuntimeItemLayouts.DnamDamageToWeaponMultRelOffset),

@@ -4,7 +4,6 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.AI;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
@@ -16,7 +15,6 @@ using FalloutXbox360Utils.Core.Semantic;
 using FalloutXbox360Utils.Core.VersionTracking.Extraction;
 using FalloutXbox360Utils.Core.VersionTracking.Models;
 using FalloutXbox360Utils.Tests.Helpers;
-using FalloutXbox360Utils;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Semantic;
@@ -24,6 +22,24 @@ namespace FalloutXbox360Utils.Tests.Core.Semantic;
 public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDisposable
 {
     private readonly List<string> _tempDirectories = [];
+
+    public void Dispose()
+    {
+        foreach (var directory in _tempDirectories)
+        {
+            try
+            {
+                if (Directory.Exists(directory))
+                {
+                    Directory.Delete(directory, true);
+                }
+            }
+            catch
+            {
+                // Best-effort cleanup for temp test artifacts.
+            }
+        }
+    }
 
     [Fact]
     public async Task SemanticFileLoader_load_async_matches_analyze_then_load_for_synthetic_esm()
@@ -54,7 +70,8 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
         Assert.Equal(loadedFromAnalysis.Records.TotalRecordsParsed, loaded.Records.TotalRecordsParsed);
         Assert.Equal("StatBase", loaded.Resolver.GetEditorId(0x00001000));
         Assert.Equal(loadedFromAnalysis.Resolver.GetEditorId(0x00001000), loaded.Resolver.GetEditorId(0x00001000));
-        Assert.Equal(loadedFromAnalysis.Resolver.GetDisplayName(0x00001000), loaded.Resolver.GetDisplayName(0x00001000));
+        Assert.Equal(loadedFromAnalysis.Resolver.GetDisplayName(0x00001000),
+            loaded.Resolver.GetDisplayName(0x00001000));
     }
 
     [Fact]
@@ -80,10 +97,10 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
                 ("FULL", NullTerm("Overlay Name"))));
 
         var sourceSet = await SemanticSourceSetBuilder.LoadSourcesAsync(
-        [
-            new SemanticSourceRequest { FilePath = basePath, FileType = AnalysisFileType.EsmFile },
-            new SemanticSourceRequest { FilePath = overlayPath, FileType = AnalysisFileType.EsmFile }
-        ],
+            [
+                new SemanticSourceRequest { FilePath = basePath, FileType = AnalysisFileType.EsmFile },
+                new SemanticSourceRequest { FilePath = overlayPath, FileType = AnalysisFileType.EsmFile }
+            ],
             cancellationToken: cancellationToken);
 
         var mergedResolver = sourceSet.BuildMergedResolver();
@@ -135,7 +152,8 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
             SourceType = BuildSourceType.Esm
         };
 
-        var wrapperSnapshot = await EsmSnapshotExtractor.ExtractAsync(filePath, buildInfo, cancellationToken: cancellationToken);
+        var wrapperSnapshot =
+            await EsmSnapshotExtractor.ExtractAsync(filePath, buildInfo, cancellationToken: cancellationToken);
         var pipelineSnapshot = await VersionSnapshotPipeline.ExtractAsync(
             filePath,
             buildInfo,
@@ -159,14 +177,14 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
         var index = new CrossDumpRecordIndex();
         index.Dumps.Add(new DumpSnapshot(
             "build_01.dmp",
-            DateTime.SpecifyKind(new DateTime(2024, 1, 1), DateTimeKind.Utc),
+            new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc),
             "build_01",
             true));
         index.StructuredRecords["Weapon"] = new Dictionary<uint, Dictionary<int, RecordReport>>
         {
-            [0x00004000] = new Dictionary<int, RecordReport>
+            [0x00004000] = new()
             {
-                [0] = new(
+                [0] = new RecordReport(
                     "Weapon",
                     0x00004000,
                     "WeapTest",
@@ -179,7 +197,8 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
 
         Assert.Contains(Path.Combine(outputDir, "index.html"), writtenFiles);
         Assert.Contains(Path.Combine(outputDir, "compare_weapon.html"), writtenFiles);
-        Assert.Contains("Cross-Build Comparison", await File.ReadAllTextAsync(Path.Combine(outputDir, "compare_weapon.html")));
+        Assert.Contains("Cross-Build Comparison",
+            await File.ReadAllTextAsync(Path.Combine(outputDir, "compare_weapon.html"), cancellationToken));
     }
 
     [Fact]
@@ -190,14 +209,14 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
         var index = new CrossDumpRecordIndex();
         index.Dumps.Add(new DumpSnapshot(
             "build_01.dmp",
-            DateTime.SpecifyKind(new DateTime(2024, 1, 1), DateTimeKind.Utc),
+            new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc),
             "build_01",
             true));
         index.StructuredRecords["Cell"] = new Dictionary<uint, Dictionary<int, RecordReport>>
         {
-            [0x00005000] = new Dictionary<int, RecordReport>
+            [0x00005000] = new()
             {
-                [0] = new(
+                [0] = new RecordReport(
                     "Cell",
                     0x00005000,
                     "GoodspringsCell",
@@ -220,28 +239,28 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
     }
 
     [Fact]
-    public void CrossDumpJsonHtmlWriter_splits_oversized_cell_pages_into_subpages()
+    public void CrossDumpJsonHtmlWriter_uses_chunked_page_for_grouped_cells_with_small_payload_limit()
     {
         var index = new CrossDumpRecordIndex();
         index.Dumps.Add(new DumpSnapshot(
             "build_01.dmp",
-            DateTime.SpecifyKind(new DateTime(2024, 1, 1), DateTimeKind.Utc),
+            new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc),
             "build_01",
             true));
         index.StructuredRecords["Cell"] = new Dictionary<uint, Dictionary<int, RecordReport>>
         {
-            [0x00005000] = new Dictionary<int, RecordReport>
+            [0x00005000] = new()
             {
-                [0] = new(
+                [0] = new RecordReport(
                     "Cell",
                     0x00005000,
                     "GoodspringsA",
                     "Goodsprings A",
                     [new ReportSection("Environment", [new ReportField("Interior", ReportValue.Bool(false))])])
             },
-            [0x00005001] = new Dictionary<int, RecordReport>
+            [0x00005001] = new()
             {
-                [0] = new(
+                [0] = new RecordReport(
                     "Cell",
                     0x00005001,
                     "GoodspringsB",
@@ -257,36 +276,38 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
         index.CellGridCoords[0x00005000] = (4, -2);
         index.CellGridCoords[0x00005001] = (5, -2);
 
-        var files = CrossDumpJsonHtmlWriter.GenerateAll(index, maxInlineCompressedPayloadLength: 1);
+        // With a 1-byte inline limit, the chunked page path is taken instead of inline
+        var files = CrossDumpJsonHtmlWriter.GenerateAll(index, 1);
 
         Assert.Contains("compare_cell.html", files.Keys);
-        Assert.Contains(files.Keys, key => key.StartsWith("compare_cell_", StringComparison.Ordinal) && key != "compare_cell.html");
-        Assert.Contains("split into smaller pages", files["compare_cell.html"], StringComparison.OrdinalIgnoreCase);
+        // Chunked pages use per-group script tags with data-group attributes
+        Assert.Contains("data-group=", files["compare_cell.html"], StringComparison.Ordinal);
+        Assert.Contains("chunked by group", files["compare_cell.html"], StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void CrossDumpJsonHtmlWriter_splits_cell_pages_when_raw_json_payload_is_large()
+    public void CrossDumpJsonHtmlWriter_uses_chunked_page_when_json_payload_exceeds_cell_limit()
     {
         var index = new CrossDumpRecordIndex();
         index.Dumps.Add(new DumpSnapshot(
             "build_01.dmp",
-            DateTime.SpecifyKind(new DateTime(2024, 1, 1), DateTimeKind.Utc),
+            new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc),
             "build_01",
             true));
         index.StructuredRecords["Cell"] = new Dictionary<uint, Dictionary<int, RecordReport>>
         {
-            [0x00005000] = new Dictionary<int, RecordReport>
+            [0x00005000] = new()
             {
-                [0] = new(
+                [0] = new RecordReport(
                     "Cell",
                     0x00005000,
                     "GoodspringsA",
                     "Goodsprings A",
                     [new ReportSection("Environment", [new ReportField("Interior", ReportValue.Bool(false))])])
             },
-            [0x00005001] = new Dictionary<int, RecordReport>
+            [0x00005001] = new()
             {
-                [0] = new(
+                [0] = new RecordReport(
                     "Cell",
                     0x00005001,
                     "GoodspringsB",
@@ -300,22 +321,26 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
             [0x00005001] = "Goodsprings"
         };
 
+        // int.MaxValue inline limit but 1-byte JSON limit forces chunked path
         var files = CrossDumpJsonHtmlWriter.GenerateAll(
             index,
-            maxInlineCompressedPayloadLength: int.MaxValue,
-            maxCellJsonPayloadLength: 1);
+            int.MaxValue,
+            1);
 
         Assert.Contains("compare_cell.html", files.Keys);
-        Assert.Contains(files.Keys, key => key.StartsWith("compare_cell_", StringComparison.Ordinal) && key != "compare_cell.html");
+        Assert.Contains("data-group=", files["compare_cell.html"], StringComparison.Ordinal);
     }
 
     [Fact]
     public void ComparisonJsRenderer_uses_streaming_json_parse_for_embedded_payload()
     {
         Assert.Contains("function createInflatedReadable(bytes, format)", ComparisonJsRenderer.Script);
-        Assert.Contains("new Blob([bytes]).stream().pipeThrough(new DecompressionStream(format))", ComparisonJsRenderer.Script);
-        Assert.Contains("return new Response(createInflatedReadable(bytes, format)).json();", ComparisonJsRenderer.Script);
-        Assert.Contains("setLoadingStatus('Inflating comparison data (' + format + ')...');", ComparisonJsRenderer.Script);
+        Assert.Contains("new Blob([bytes]).stream().pipeThrough(new DecompressionStream(format))",
+            ComparisonJsRenderer.Script);
+        Assert.Contains("return new Response(createInflatedReadable(bytes, format)).json();",
+            ComparisonJsRenderer.Script);
+        Assert.Contains("setLoadingStatus('Inflating comparison data (' + format + ')...');",
+            ComparisonJsRenderer.Script);
         Assert.Contains("var formats = ['deflate', 'deflate-raw'];", ComparisonJsRenderer.Script);
         Assert.Contains("function readCompressedPayload()", ComparisonJsRenderer.Script);
         Assert.Contains("window.__comparisonDebug = DEBUG_STATE;", ComparisonJsRenderer.Script);
@@ -361,8 +386,8 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
         };
 
         var report = GeckWorldWriter.BuildCellReport(cell, resolver);
-        var placedObjects = Assert.Single(report.Sections.Where(section => section.Name == "Placed Objects"));
-        var objectsField = Assert.Single(placedObjects.Fields.Where(field => field.Key == "Objects"));
+        var placedObjects = Assert.Single(report.Sections, section => section.Name == "Placed Objects");
+        var objectsField = Assert.Single(placedObjects.Fields, field => field.Key == "Objects");
         var objectList = Assert.IsType<ReportValue.ListVal>(objectsField.Value);
         var objectItem = Assert.IsType<ReportValue.CompositeVal>(Assert.Single(objectList.Items));
         var fields = objectItem.Fields.ToDictionary(field => field.Key, field => field.Value);
@@ -397,8 +422,10 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
         var cases = new (object Record, string ExpectedLinkLabel, uint ExpectedLinkedFormId)[]
         {
             (new NpcRecord { FormId = 1, EditorId = "NpcDoc", FullName = "Doc", Race = 0x10 }, "Race", 0x10),
-            (new WeaponRecord { FormId = 2, EditorId = "WeapRifle", FullName = "Rifle", AmmoFormId = 0x20 }, "Ammo", 0x20),
-            (new QuestRecord { FormId = 3, EditorId = "QuestMain", FullName = "Main Quest", Script = 0x30 }, "Script", 0x30),
+            (new WeaponRecord { FormId = 2, EditorId = "WeapRifle", FullName = "Rifle", AmmoFormId = 0x20 }, "Ammo",
+                0x20),
+            (new QuestRecord { FormId = 3, EditorId = "QuestMain", FullName = "Main Quest", Script = 0x30 }, "Script",
+                0x30),
             (new PackageRecord
             {
                 FormId = 4,
@@ -406,7 +433,8 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
                 Data = new PackageData(),
                 UseWeaponData = new PackageUseWeaponData { WeaponFormId = 0x40 }
             }, "Weapon", 0x40),
-            (new CellRecord { FormId = 5, EditorId = "GoodspringsCell", FullName = "Goodsprings", WorldspaceFormId = 0x50 }, "Worldspace", 0x50)
+            (new CellRecord { FormId = 5, EditorId = "GoodspringsCell", FullName = "Goodsprings", WorldspaceFormId = 0x50 },
+                "Worldspace", 0x50)
         };
 
         foreach (var testCase in cases)
@@ -456,24 +484,6 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
             .ToList();
 
         Assert.True(offenders.Count == 0, "Unexpected manual semantic parse sites:\n" + string.Join("\n", offenders));
-    }
-
-    public void Dispose()
-    {
-        foreach (var directory in _tempDirectories)
-        {
-            try
-            {
-                if (Directory.Exists(directory))
-                {
-                    Directory.Delete(directory, true);
-                }
-            }
-            catch
-            {
-                // Best-effort cleanup for temp test artifacts.
-            }
-        }
     }
 
     private string WriteSyntheticEsm(string fileName, params byte[][] records)

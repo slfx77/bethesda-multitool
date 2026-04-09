@@ -38,7 +38,8 @@ public sealed partial class SingleFileTab
             TextDecorations = TextDecorations.Underline,
             FontSize = fontSize,
             Foreground = linkColor,
-            FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas")
+            FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
+            TextWrapping = TextWrapping.Wrap
         };
 
         var link = new HyperlinkButton

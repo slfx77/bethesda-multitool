@@ -31,10 +31,16 @@ internal static class ComparisonJsonBlobBuilder
         {
             foreach (var field in section.Fields)
             {
-                if (ExcludedFieldKeys.Contains(field.Key)) { hasAny = true; break; }
+                if (ExcludedFieldKeys.Contains(field.Key))
+                {
+                    hasAny = true;
+                    break;
+                }
             }
+
             if (hasAny) break;
         }
+
         if (!hasAny) return report;
 
         var newSections = new List<ReportSection>(report.Sections.Count);
@@ -45,9 +51,11 @@ internal static class ComparisonJsonBlobBuilder
             {
                 if (!ExcludedFieldKeys.Contains(field.Key)) keptFields.Add(field);
             }
+
             if (keptFields.Count > 0)
                 newSections.Add(new ReportSection(section.Name, keptFields));
         }
+
         return new RecordReport(
             report.RecordType, report.FormId, report.EditorId, report.DisplayName, newSections);
     }
@@ -96,8 +104,12 @@ internal static class ComparisonJsonBlobBuilder
 
             var presentDumps = new HashSet<int>();
             foreach (var dm in formIdMap.Values)
+            {
                 foreach (var k in dm.Keys)
+                {
                     presentDumps.Add(k);
+                }
+            }
 
             for (var dumpIdx = 0; dumpIdx < dumps.Count; dumpIdx++)
             {
@@ -357,7 +369,7 @@ internal static class ComparisonJsonBlobBuilder
                 // Estimate record size by serializing just this entry
                 var singleJson = BuildRecordsChunk(
                     new Dictionary<uint, Dictionary<int, RecordReport>> { { formId, dumpMap } },
-                    dumps, metadata);
+                    metadata);
                 var entrySize = (long)Encoding.UTF8.GetByteCount(singleJson);
 
                 // If adding this record would exceed the limit, flush current chunk
@@ -366,7 +378,7 @@ internal static class ComparisonJsonBlobBuilder
                     var label = groupMap.Count > currentChunk.Count
                         ? $"{groupKey} (part {partNum})"
                         : groupKey;
-                    chunks.Add((label, BuildRecordsChunk(currentChunk, dumps, metadata)));
+                    chunks.Add((label, BuildRecordsChunk(currentChunk, metadata)));
                     partNum++;
                     currentChunk.Clear();
                     currentSize = 2;
@@ -379,7 +391,7 @@ internal static class ComparisonJsonBlobBuilder
             if (currentChunk.Count > 0)
             {
                 var label = partNum > 1 ? $"{groupKey} (part {partNum})" : groupKey;
-                chunks.Add((label, BuildRecordsChunk(currentChunk, dumps, metadata)));
+                chunks.Add((label, BuildRecordsChunk(currentChunk, metadata)));
             }
         }
 
@@ -389,7 +401,6 @@ internal static class ComparisonJsonBlobBuilder
     /// <summary>Build a JSON blob containing only record data (no dumps/groups metadata).</summary>
     private static string BuildRecordsChunk(
         Dictionary<uint, Dictionary<int, RecordReport>> records,
-        List<DumpSnapshot> dumps,
         Dictionary<uint, Dictionary<string, string>>? metadata)
     {
         using var ms = new MemoryStream();
@@ -507,11 +518,21 @@ internal static class ComparisonJsonBlobBuilder
         writer.WriteStartArray();
         var presentDumps = new HashSet<int>();
         foreach (var dm in formIdMap.Values)
+        {
             foreach (var k in dm.Keys)
+            {
                 presentDumps.Add(k);
+            }
+        }
+
         for (var dumpIdx = 0; dumpIdx < dumps.Count; dumpIdx++)
+        {
             if (!presentDumps.Contains(dumpIdx))
+            {
                 writer.WriteNumberValue(dumpIdx);
+            }
+        }
+
         writer.WriteEndArray();
     }
 }

@@ -1,5 +1,4 @@
 using FalloutXbox360Utils.Core.Semantic;
-using FalloutXbox360Utils.Tests;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Semantic;
@@ -16,7 +15,7 @@ public sealed class UnifiedPipelineIntegrationTests(SampleFileFixture samples)
     {
         Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 ESM sample not available");
 
-        using var result = await SemanticFileLoader.LoadAsync(samples.Xbox360FinalEsm!);
+        using var result = await SemanticFileLoader.LoadAsync(samples.Xbox360FinalEsm!, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.NotNull(result.Records);
         Assert.True(result.Records.Cells.Count > 0,
@@ -30,7 +29,7 @@ public sealed class UnifiedPipelineIntegrationTests(SampleFileFixture samples)
     {
         Assert.SkipWhen(samples.PcFinalEsm is null, "PC ESM sample not available");
 
-        using var result = await SemanticFileLoader.LoadAsync(samples.PcFinalEsm!);
+        using var result = await SemanticFileLoader.LoadAsync(samples.PcFinalEsm!, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.NotNull(result.Records);
         Assert.True(result.Records.Cells.Count > 0,
@@ -45,7 +44,7 @@ public sealed class UnifiedPipelineIntegrationTests(SampleFileFixture samples)
     {
         Assert.SkipWhen(samples.DebugDump is null, "Debug DMP sample not available");
 
-        using var result = await SemanticFileLoader.LoadAsync(samples.DebugDump!);
+        using var result = await SemanticFileLoader.LoadAsync(samples.DebugDump!, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.NotNull(result.Records);
         Assert.True(result.Records.Cells.Count > 0,

@@ -10,34 +10,6 @@ internal sealed class CreatureCompositionOptions : IEquatable<CreatureCompositio
     public bool ApplyEgt { get; init; } = true;
     public string? AnimOverride { get; init; }
 
-    public static CreatureCompositionOptions From(NpcRenderSettings settings)
-    {
-        ArgumentNullException.ThrowIfNull(settings);
-
-        return new CreatureCompositionOptions
-        {
-            IncludeWeapon = !settings.NoEquip && !settings.NoWeapon,
-            BindPose = settings.BindPose,
-            ApplyEgm = !settings.NoEgm,
-            ApplyEgt = !settings.NoEgt,
-            AnimOverride = settings.AnimOverride
-        };
-    }
-
-    public static CreatureCompositionOptions From(NpcExportSettings settings)
-    {
-        ArgumentNullException.ThrowIfNull(settings);
-
-        return new CreatureCompositionOptions
-        {
-            IncludeWeapon = !settings.NoEquip && settings.IncludeWeapon,
-            BindPose = settings.BindPose,
-            ApplyEgm = !settings.NoEgm,
-            ApplyEgt = !settings.NoEgt,
-            AnimOverride = settings.AnimOverride
-        };
-    }
-
     public bool Equals(CreatureCompositionOptions? other)
     {
         if (ReferenceEquals(this, other))
@@ -71,4 +43,33 @@ internal sealed class CreatureCompositionOptions : IEquatable<CreatureCompositio
             ApplyEgt,
             AnimOverride?.ToUpperInvariant());
     }
+
+    public static CreatureCompositionOptions From(NpcRenderSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        return new CreatureCompositionOptions
+        {
+            IncludeWeapon = !settings.NoEquip && !settings.NoWeapon,
+            BindPose = settings.BindPose,
+            ApplyEgm = !settings.NoEgm,
+            ApplyEgt = !settings.NoEgt,
+            AnimOverride = settings.AnimOverride
+        };
+    }
+
+    public static CreatureCompositionOptions From(NpcExportSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        return new CreatureCompositionOptions
+        {
+            IncludeWeapon = !settings.NoEquip && settings.IncludeWeapon,
+            BindPose = settings.BindPose,
+            ApplyEgm = !settings.NoEgm,
+            ApplyEgt = !settings.NoEgt,
+            AnimOverride = settings.AnimOverride
+        };
+    }
+
 }

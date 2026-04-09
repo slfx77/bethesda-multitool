@@ -17,58 +17,58 @@ internal static class RecordDetailPresenter
         string? editorId,
         out RecordDetailModel? model)
     {
-        if (TryFind(records.Npcs, formId, editorId, r => r.FormId, r => r.EditorId, out NpcRecord? npc))
+        if (TryFind(records.Npcs, formId, editorId, r => r.FormId, r => r.EditorId, out var npc))
         {
-            model = BuildNpc(npc, resolver);
+            model = BuildNpc(npc!, resolver);
             return true;
         }
 
-        if (TryFind(records.Creatures, formId, editorId, r => r.FormId, r => r.EditorId, out CreatureRecord? creature))
+        if (TryFind(records.Creatures, formId, editorId, r => r.FormId, r => r.EditorId, out var creature))
         {
-            model = BuildCreature(creature, resolver);
+            model = BuildCreature(creature!, resolver);
             return true;
         }
 
-        if (TryFind(records.Weapons, formId, editorId, r => r.FormId, r => r.EditorId, out WeaponRecord? weapon))
+        if (TryFind(records.Weapons, formId, editorId, r => r.FormId, r => r.EditorId, out var weapon))
         {
-            model = BuildWeapon(weapon, resolver);
+            model = BuildWeapon(weapon!, resolver);
             return true;
         }
 
-        if (TryFind(records.Armor, formId, editorId, r => r.FormId, r => r.EditorId, out ArmorRecord? armor))
+        if (TryFind(records.Armor, formId, editorId, r => r.FormId, r => r.EditorId, out var armor))
         {
-            model = BuildArmor(armor, resolver);
+            model = BuildArmor(armor!, resolver);
             return true;
         }
 
-        if (TryFind(records.Quests, formId, editorId, r => r.FormId, r => r.EditorId, out QuestRecord? quest))
+        if (TryFind(records.Quests, formId, editorId, r => r.FormId, r => r.EditorId, out var quest))
         {
-            model = BuildQuest(quest, resolver);
+            model = BuildQuest(quest!, resolver);
             return true;
         }
 
-        if (TryFind(records.Packages, formId, editorId, r => r.FormId, r => r.EditorId, out PackageRecord? package))
+        if (TryFind(records.Packages, formId, editorId, r => r.FormId, r => r.EditorId, out var package))
         {
-            model = BuildPackage(package, resolver);
+            model = BuildPackage(package!, resolver);
             return true;
         }
 
-        if (TryFind(records.DialogTopics, formId, editorId, r => r.FormId, r => r.EditorId, out DialogTopicRecord? topic))
+        if (TryFind(records.DialogTopics, formId, editorId, r => r.FormId, r => r.EditorId, out var topic))
         {
-            model = BuildDialogTopic(topic, records, resolver);
+            model = BuildDialogTopic(topic!, records, resolver);
             return true;
         }
 
-        if (TryFind(records.Cells, formId, editorId, r => r.FormId, r => r.EditorId, out CellRecord? cell))
+        if (TryFind(records.Cells, formId, editorId, r => r.FormId, r => r.EditorId, out var cell))
         {
-            model = BuildCell(cell, resolver);
+            model = BuildCell(cell!, resolver);
             return true;
         }
 
         if (TryFind(records.Worldspaces, formId, editorId, r => r.FormId, r => r.EditorId,
-                out WorldspaceRecord? worldspace))
+                out var worldspace))
         {
-            model = BuildWorldspace(worldspace, resolver);
+            model = BuildWorldspace(worldspace!, resolver);
             return true;
         }
 
@@ -287,6 +287,8 @@ internal static class RecordDetailPresenter
         return Model("WEAP", weapon.FormId, weapon.EditorId, weapon.FullName, sections);
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Major Code Smell", "S1172",
+        Justification = "Resolver kept for signature symmetry with sibling Build* methods")]
     private static RecordDetailModel BuildArmor(ArmorRecord armor, FormIdResolver resolver)
     {
         var sections = new List<RecordDetailSection>
@@ -536,6 +538,7 @@ internal static class RecordDetailPresenter
         Func<T, uint> formIdSelector,
         Func<T, string?> editorIdSelector,
         out T? match)
+        where T : class
     {
         match = records.FirstOrDefault(record =>
             (formId.HasValue && formIdSelector(record) == formId.Value) ||
@@ -566,12 +569,13 @@ internal static class RecordDetailPresenter
         return new RecordDetailSection
         {
             Title = title,
-            Entries = entries.Where(entry => !string.IsNullOrEmpty(entry.Value) || entry.Kind == RecordDetailEntryKind.List)
+            Entries = entries.Where(entry =>
+                    !string.IsNullOrEmpty(entry.Value) || entry.Kind == RecordDetailEntryKind.List)
                 .ToList()
         };
     }
 
-    private static RecordDetailSection ListSection(string title, IReadOnlyList<RecordDetailListItem>? items)
+    private static RecordDetailSection ListSection(string title, List<RecordDetailListItem>? items)
     {
         items ??= [];
         return new RecordDetailSection
@@ -729,7 +733,8 @@ internal static class RecordDetailPresenter
 
     private static string? FormatMapOffset(WorldspaceRecord worldspace)
     {
-        if (!worldspace.MapOffsetScaleX.HasValue && !worldspace.MapOffsetScaleY.HasValue && !worldspace.MapOffsetZ.HasValue)
+        if (!worldspace.MapOffsetScaleX.HasValue && !worldspace.MapOffsetScaleY.HasValue &&
+            !worldspace.MapOffsetZ.HasValue)
         {
             return null;
         }
@@ -741,6 +746,11 @@ internal static class RecordDetailPresenter
 
     private static string? BoolText(bool? value)
     {
-        return value.HasValue ? (value.Value ? "Yes" : "No") : null;
+        if (!value.HasValue)
+        {
+            return null;
+        }
+
+        return value.Value ? "Yes" : "No";
     }
 }

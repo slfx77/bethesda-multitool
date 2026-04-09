@@ -13,23 +13,6 @@ internal static class CrossDumpJsonHtmlWriter
     private const int DefaultMaxCellJsonPayloadLength = 96 * 1024 * 1024;
     private const int PayloadChunkSize = 512 * 1024;
 
-    private sealed record PayloadBundle(string CompressedPayload, int JsonLength);
-
-    private sealed record CellChunkPayload(
-        Dictionary<uint, Dictionary<int, RecordReport>> Records,
-        Dictionary<uint, (int X, int Y)>? GridCoords,
-        string CompressedPayload);
-
-    private sealed record CellPageChunk(
-        string GroupName,
-        string FileName,
-        int RecordCount,
-        int PartIndex,
-        int PartCount,
-        Dictionary<uint, Dictionary<int, RecordReport>> Records,
-        Dictionary<uint, (int X, int Y)>? GridCoords,
-        string CompressedPayload);
-
     /// <summary>
     ///     Generate all HTML files: one per record type (with embedded JSON) plus an index page.
     /// </summary>
@@ -106,13 +89,11 @@ internal static class CrossDumpJsonHtmlWriter
             metadata,
             cellGridCoords);
 
-        if (ShouldUseChunkedPage(recordType, groups, payload,
+        if (ShouldUseChunkedPage(groups, payload,
                 maxInlineCompressedPayloadLength, maxCellJsonPayloadLength))
         {
             files[$"compare_{recordType.ToLowerInvariant()}.html"] = GenerateChunkedPage(
-                recordType, formIdMap, dumps, groups!, cellGridCoords, metadata,
-                alternateGroups, defaultGroupMode,
-                maxInlineCompressedPayloadLength, maxCellJsonPayloadLength);
+                recordType, formIdMap, dumps, groups!, cellGridCoords, metadata);
             return files;
         }
 
@@ -120,11 +101,8 @@ internal static class CrossDumpJsonHtmlWriter
             recordType,
             formIdMap,
             dumps,
-            groups,
             alternateGroups,
             defaultGroupMode,
-            metadata,
-            cellGridCoords,
             payload.CompressedPayload);
         return files;
     }
@@ -133,23 +111,13 @@ internal static class CrossDumpJsonHtmlWriter
         string recordType,
         Dictionary<uint, Dictionary<int, RecordReport>> formIdMap,
         List<DumpSnapshot> dumps,
-        Dictionary<uint, string>? groups,
         Dictionary<uint, string>? alternateGroups,
         string? defaultGroupMode,
-        Dictionary<uint, Dictionary<string, string>>? metadata,
-        Dictionary<uint, (int X, int Y)>? cellGridCoords,
-        string compressedPayload,
-        string? titleOverride = null,
-        string? headingOverride = null,
-        string? summaryOverride = null,
-        string backLinkHref = "index.html",
-        string backLinkText = "&larr; Back to index",
-        string? noticeHtml = null)
+        string compressedPayload)
     {
         var sb = new StringBuilder();
-        var pageTitle = titleOverride ?? $"{recordType} \u2014 Cross-Build Comparison";
-        var pageHeading = headingOverride ?? $"{recordType} \u2014 Cross-Build Comparison";
-        var pageSummary = summaryOverride ?? $"{dumps.Count} builds, {formIdMap.Count:N0} records";
+        var pageTitle = $"{recordType} \u2014 Cross-Build Comparison";
+        var pageSummary = $"{dumps.Count} builds, {formIdMap.Count:N0} records";
 
         ComparisonHtmlHelpers.AppendHtmlHeader(sb, pageTitle);
 
@@ -163,16 +131,12 @@ internal static class CrossDumpJsonHtmlWriter
         }
 
         sb.AppendLine(
-            $"  <h1>{ComparisonHtmlHelpers.Esc(pageHeading)} </h1>");
+            $"  <h1>{ComparisonHtmlHelpers.Esc(pageTitle)} </h1>");
         sb.AppendLine($"  <p class=\"summary\">{ComparisonHtmlHelpers.Esc(pageSummary)}</p>");
-        if (!string.IsNullOrEmpty(noticeHtml))
-        {
-            sb.AppendLine($"  <div class=\"summary\">{noticeHtml}</div>");
-        }
 
         // Navigation + controls
         sb.AppendLine("  <div class=\"controls\">");
-        sb.AppendLine($"    <a href=\"{backLinkHref}\">{backLinkText}</a>");
+        sb.AppendLine("    <a href=\"index.html\">&larr; Back to index</a>");
         sb.AppendLine(
             "    <input type=\"text\" id=\"search\" placeholder=\"Search by FormID, EditorID, or name...\" oninput=\"filterRows()\">");
         sb.AppendLine("    <button onclick=\"expandAll()\">Expand All</button>");
@@ -226,7 +190,6 @@ internal static class CrossDumpJsonHtmlWriter
     }
 
     private static bool ShouldUseChunkedPage(
-        string recordType,
         Dictionary<uint, string>? groups,
         PayloadBundle payload,
         int maxInlineCompressedPayloadLength,
@@ -272,11 +235,7 @@ internal static class CrossDumpJsonHtmlWriter
         List<DumpSnapshot> dumps,
         Dictionary<uint, string> groups,
         Dictionary<uint, (int X, int Y)>? cellGridCoords,
-        Dictionary<uint, Dictionary<string, string>>? metadata,
-        Dictionary<uint, string>? alternateGroups,
-        string? defaultGroupMode,
-        int maxInlineCompressedPayloadLength,
-        int maxCellJsonPayloadLength)
+        Dictionary<uint, Dictionary<string, string>>? metadata)
     {
         // Build the index blob (metadata only — no records)
         var (indexBlob, chunks) = ComparisonJsonBlobBuilder.BuildChunked(
@@ -344,230 +303,6 @@ internal static class CrossDumpJsonHtmlWriter
         sb.AppendLine($"  <script>{ComparisonJsRenderer.Script}</script>");
         ComparisonHtmlHelpers.AppendHtmlFooter(sb);
         return sb.ToString();
-    }
-
-    private static Dictionary<string, string> GenerateSplitCellPages(
-        Dictionary<uint, Dictionary<int, RecordReport>> formIdMap,
-        List<DumpSnapshot> dumps,
-        Dictionary<uint, string> groups,
-        Dictionary<uint, (int X, int Y)>? cellGridCoords,
-        int maxInlineCompressedPayloadLength,
-        int maxCellJsonPayloadLength)
-    {
-        var files = new Dictionary<string, string>();
-        var usedStems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var groupedRecords = new Dictionary<string, List<KeyValuePair<uint, Dictionary<int, RecordReport>>>>(
-            StringComparer.Ordinal);
-
-        foreach (var entry in formIdMap.OrderBy(kvp => kvp.Key))
-        {
-            var groupName = groups.TryGetValue(entry.Key, out var explicitGroup) && !string.IsNullOrWhiteSpace(explicitGroup)
-                ? explicitGroup
-                : "(Ungrouped)";
-            if (!groupedRecords.TryGetValue(groupName, out var bucket))
-            {
-                bucket = [];
-                groupedRecords[groupName] = bucket;
-            }
-
-            bucket.Add(entry);
-        }
-
-        var allPages = new List<CellPageChunk>();
-        foreach (var groupName in OrderGroupKeys(groupedRecords.Keys))
-        {
-            var entries = groupedRecords[groupName];
-            var payloads = SplitCellGroupPayloads(
-                entries,
-                dumps,
-                cellGridCoords,
-                maxInlineCompressedPayloadLength,
-                maxCellJsonPayloadLength);
-            var stem = MakeUniqueStem($"compare_cell_{Slugify(groupName)}", usedStems);
-            for (var i = 0; i < payloads.Count; i++)
-            {
-                var payload = payloads[i];
-                var fileName = payloads.Count == 1
-                    ? $"{stem}.html"
-                    : $"{stem}_part{i + 1}.html";
-                allPages.Add(new CellPageChunk(
-                    groupName,
-                    fileName,
-                    payload.Records.Count,
-                    i + 1,
-                    payloads.Count,
-                    payload.Records,
-                    payload.GridCoords,
-                    payload.CompressedPayload));
-            }
-        }
-
-        files["compare_cell.html"] = GenerateSplitCellLandingPage(dumps, allPages);
-
-        foreach (var page in allPages)
-        {
-            var pageLabel = page.PartCount == 1
-                ? page.GroupName
-                : $"{page.GroupName} (Part {page.PartIndex} of {page.PartCount})";
-            var pageNotice = page.PartCount == 1
-                ? $"Generated as a standalone Cell subpage because the full Cell comparison exceeds browser payload limits."
-                : $"Generated as one chunk of a split Cell comparison because the full Cell payload exceeds browser payload limits.";
-            files[page.FileName] = GenerateRecordTypePage(
-                "Cell",
-                page.Records,
-                dumps,
-                null,
-                null,
-                null,
-                null,
-                page.GridCoords,
-                page.CompressedPayload,
-                titleOverride: $"Cell \u2014 {pageLabel} \u2014 Cross-Build Comparison",
-                headingOverride: $"Cell \u2014 {pageLabel}",
-                summaryOverride: $"{dumps.Count} builds, {page.RecordCount:N0} records",
-                backLinkHref: "compare_cell.html",
-                backLinkText: "&larr; Back to Cell index",
-                noticeHtml: ComparisonHtmlHelpers.Esc(pageNotice));
-        }
-
-        return files;
-    }
-
-    private static List<CellChunkPayload> SplitCellGroupPayloads(
-        List<KeyValuePair<uint, Dictionary<int, RecordReport>>> entries,
-        List<DumpSnapshot> dumps,
-        Dictionary<uint, (int X, int Y)>? cellGridCoords,
-        int maxInlineCompressedPayloadLength,
-        int maxCellJsonPayloadLength)
-    {
-        var accepted = new List<CellChunkPayload>();
-        SplitRecursive(entries);
-        return accepted;
-
-        void SplitRecursive(List<KeyValuePair<uint, Dictionary<int, RecordReport>>> slice)
-        {
-            var recordMap = slice.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
-            var coords = cellGridCoords == null
-                ? null
-                : slice.Where(kvp => cellGridCoords.ContainsKey(kvp.Key))
-                    .ToDictionary(kvp => kvp.Key, kvp => cellGridCoords[kvp.Key]);
-            var payload = BuildCompressedPayload(
-                recordMap,
-                dumps,
-                "Cell",
-                null,
-                null,
-                null,
-                null,
-                coords);
-
-            if ((payload.CompressedPayload.Length <= maxInlineCompressedPayloadLength
-                 && payload.JsonLength <= maxCellJsonPayloadLength)
-                || slice.Count <= 1)
-            {
-                accepted.Add(new CellChunkPayload(recordMap, coords, payload.CompressedPayload));
-                return;
-            }
-
-            var midpoint = slice.Count / 2;
-            SplitRecursive(slice.Take(midpoint).ToList());
-            SplitRecursive(slice.Skip(midpoint).ToList());
-        }
-    }
-
-    private static string GenerateSplitCellLandingPage(
-        List<DumpSnapshot> dumps,
-        List<CellPageChunk> pages)
-    {
-        var sb = new StringBuilder();
-        ComparisonHtmlHelpers.AppendHtmlHeader(sb, "Cell \u2014 Cross-Build Comparison");
-        sb.AppendLine("  <h1>Cell \u2014 Cross-Build Comparison</h1>");
-        sb.AppendLine($"  <p class=\"summary\">{dumps.Count} builds, {pages.Sum(p => p.RecordCount):N0} records</p>");
-        sb.AppendLine("  <p class=\"summary\">The full Cell report was split into smaller pages because browsers do not reliably handle the monolithic Cell payload.</p>");
-        sb.AppendLine("  <div class=\"controls\">");
-        sb.AppendLine("    <a href=\"index.html\">&larr; Back to index</a>");
-        sb.AppendLine("  </div>");
-        sb.AppendLine("  <table class=\"compact\">");
-        sb.AppendLine("    <thead><tr><th>Group</th><th>Records</th><th>Pages</th></tr></thead>");
-        sb.AppendLine("    <tbody>");
-
-        foreach (var group in pages.GroupBy(p => p.GroupName).OrderBy(g => OrderGroupKey(g.Key)).ThenBy(g => g.Key, StringComparer.Ordinal))
-        {
-            sb.Append("      <tr>");
-            sb.Append($"<td>{ComparisonHtmlHelpers.Esc(group.Key)}</td>");
-            sb.Append($"<td>{group.Sum(p => p.RecordCount):N0}</td>");
-            sb.Append("<td>");
-
-            var pageLinks = group.OrderBy(p => p.PartIndex).ToList();
-            for (var i = 0; i < pageLinks.Count; i++)
-            {
-                if (i > 0)
-                {
-                    sb.Append(" | ");
-                }
-
-                var label = pageLinks.Count == 1 ? "Open" : $"Part {pageLinks[i].PartIndex}";
-                sb.Append($"<a href=\"{pageLinks[i].FileName}\">{ComparisonHtmlHelpers.Esc(label)}</a>");
-            }
-
-            sb.AppendLine("</td></tr>");
-        }
-
-        sb.AppendLine("    </tbody>");
-        sb.AppendLine("  </table>");
-        ComparisonHtmlHelpers.AppendHtmlFooter(sb);
-        return sb.ToString();
-    }
-
-    private static IEnumerable<string> OrderGroupKeys(IEnumerable<string> groupKeys)
-    {
-        return groupKeys
-            .OrderBy(OrderGroupKey)
-            .ThenBy(key => key, StringComparer.Ordinal);
-    }
-
-    private static int OrderGroupKey(string groupKey)
-    {
-        return string.Equals(groupKey, "Interior Cells", StringComparison.Ordinal) ? 1 : 0;
-    }
-
-    private static string MakeUniqueStem(string baseStem, ISet<string> usedStems)
-    {
-        var candidate = baseStem;
-        var suffix = 2;
-        while (!usedStems.Add(candidate))
-        {
-            candidate = $"{baseStem}_{suffix++}";
-        }
-
-        return candidate;
-    }
-
-    private static string Slugify(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return "group";
-        }
-
-        var sb = new StringBuilder(value.Length);
-        var lastWasSeparator = false;
-        foreach (var ch in value)
-        {
-            if (char.IsLetterOrDigit(ch))
-            {
-                sb.Append(char.ToLowerInvariant(ch));
-                lastWasSeparator = false;
-            }
-            else if (!lastWasSeparator)
-            {
-                sb.Append('_');
-                lastWasSeparator = true;
-            }
-        }
-
-        var slug = sb.ToString().Trim('_');
-        return string.IsNullOrEmpty(slug) ? "group" : slug;
     }
 
     private static string GenerateIndexPage(CrossDumpRecordIndex index)
@@ -651,4 +386,6 @@ internal static class CrossDumpJsonHtmlWriter
 
         sb.AppendLine("  </div>");
     }
+
+    private sealed record PayloadBundle(string CompressedPayload, int JsonLength);
 }

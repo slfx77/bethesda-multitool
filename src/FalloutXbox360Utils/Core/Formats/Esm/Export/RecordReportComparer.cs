@@ -33,10 +33,10 @@ internal static class RecordReportComparer
 
         foreach (var sectionA in a)
         {
-            if (bByName.TryGetValue(sectionA.Name, out var sectionB))
+            if (bByName.TryGetValue(sectionA.Name, out var sectionB) &&
+                !FieldsEqual(sectionA.Fields, sectionB.Fields))
             {
-                if (!FieldsEqual(sectionA.Fields, sectionB.Fields))
-                    return false;
+                return false;
             }
             // Section only in A — skip (not a change)
         }

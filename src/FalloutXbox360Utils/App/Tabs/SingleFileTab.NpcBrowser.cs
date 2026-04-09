@@ -246,7 +246,11 @@ public sealed partial class SingleFileTab
                 assetsDir,
                 CoreWebView2HostResourceAccessKind.Allow);
 
-            NpcModelViewer.CoreWebView2.Navigate("https://npc-viewer-assets/npc-viewer.html");
+            NpcModelViewer.CoreWebView2.Navigate(
+#pragma warning disable S1075 // URIs should not be hardcoded
+                "https://npc-viewer-assets/npc-viewer.html"
+#pragma warning restore S1075
+                );
             _webViewInitialized = true;
         }
         catch (Exception ex)

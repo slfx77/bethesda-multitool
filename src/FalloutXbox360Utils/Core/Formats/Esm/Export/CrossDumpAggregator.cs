@@ -1,3 +1,4 @@
+using System.Globalization;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
@@ -122,11 +123,7 @@ internal static class CrossDumpAggregator
                         // Filter out resolver placeholder strings like "(none)".
                         var wsDisplayName = dump.Resolver.ResolveDisplayName(wsFid);
                         var wsEditorId = dump.Resolver.ResolveEditorId(wsFid);
-                        var bestName = IsRealName(wsDisplayName)
-                            ? wsDisplayName
-                            : IsRealName(wsEditorId)
-                                ? wsEditorId
-                                : null;
+                        var bestName = PickRealName(wsDisplayName, wsEditorId);
                         if (bestName != null)
                         {
                             // Only overwrite if we don't already have a real name,
@@ -212,14 +209,14 @@ internal static class CrossDumpAggregator
                         index.RecordGroups["Dialogue_NPC"] = npcGroups;
                     }
 
-                    if (!npcGroups.TryGetValue(formId, out var existingNpcGroup))
+                    // Insert on first sighting; upgrade "(No Speaker)" if a later dump
+                    // provides speaker or quest attribution.
+                    var hasExistingNpcGroup = npcGroups.TryGetValue(formId, out var existingNpcGroup);
+                    var canUpgradeNoSpeaker = hasExistingNpcGroup
+                        && existingNpcGroup == "(No Speaker)"
+                        && (d.SpeakerFormId.HasValue || d.QuestFormId.HasValue);
+                    if (!hasExistingNpcGroup || canUpgradeNoSpeaker)
                     {
-                        npcGroups[formId] = ResolveSpeakerGroupLabel(d, dump.Resolver, speakerLabels);
-                    }
-                    else if (existingNpcGroup == "(No Speaker)"
-                             && (d.SpeakerFormId.HasValue || d.QuestFormId.HasValue))
-                    {
-                        // Upgrade: later dump provides speaker or quest attribution
                         npcGroups[formId] = ResolveSpeakerGroupLabel(d, dump.Resolver, speakerLabels);
                     }
 
@@ -280,7 +277,7 @@ internal static class CrossDumpAggregator
                 if (currentKey.StartsWith("WS:0x", StringComparison.Ordinal))
                 {
                     var hex = currentKey[5..];
-                    if (uint.TryParse(hex, System.Globalization.NumberStyles.HexNumber, null, out var wsFid))
+                    if (uint.TryParse(hex, NumberStyles.HexNumber, null, out var wsFid))
                     {
                         cellGroups[cellFormId] = worldspaceLabels.TryGetValue(wsFid, out var label)
                             ? label
@@ -303,7 +300,7 @@ internal static class CrossDumpAggregator
                 if (index.RecordMetadata.TryGetValue("Dialogue", out var metas)
                     && metas.TryGetValue(dialogueFormId, out var m)
                     && m.TryGetValue("speakerFormId", out var spkHex)
-                    && uint.TryParse(spkHex.Replace("0x", ""), System.Globalization.NumberStyles.HexNumber,
+                    && uint.TryParse(spkHex.Replace("0x", ""), NumberStyles.HexNumber,
                         null, out var spkFid)
                     && speakerFormIdToLabel.TryGetValue(spkFid, out var canonicalLabel)
                     && canonicalLabel != currentLabel)
@@ -320,7 +317,7 @@ internal static class CrossDumpAggregator
                 if (index.RecordMetadata.TryGetValue("Dialogue", out var metas)
                     && metas.TryGetValue(dialogueFormId, out var m)
                     && m.TryGetValue("questFormId", out var qstHex)
-                    && uint.TryParse(qstHex.Replace("0x", ""), System.Globalization.NumberStyles.HexNumber,
+                    && uint.TryParse(qstHex.Replace("0x", ""), NumberStyles.HexNumber,
                         null, out var qstFid)
                     && questLabels.TryGetValue(qstFid, out var canonicalLabel)
                     && canonicalLabel != currentLabel)
@@ -356,11 +353,7 @@ internal static class CrossDumpAggregator
 
         if (!questLabels.TryGetValue(questFormId, out var existingLabel))
         {
-            var label = !string.IsNullOrEmpty(questDisplayName)
-                ? $"{questDisplayName} ({questEditorId ?? Fmt.FIdAlways(questFormId)})"
-                : !string.IsNullOrEmpty(questEditorId)
-                    ? questEditorId
-                    : $"Quest 0x{questFormId:X8}";
+            var label = BuildQuestLabel(questFormId, questDisplayName, questEditorId);
             questLabels[questFormId] = label;
             return label;
         }
@@ -417,11 +410,7 @@ internal static class CrossDumpAggregator
             if (!speakerLabels.TryGetValue(d.SpeakerFormId.Value, out var existingLabel))
             {
                 // First time — create label
-                var label = !string.IsNullOrEmpty(speakerName)
-                    ? $"{speakerName} (0x{d.SpeakerFormId.Value:X8})"
-                    : !string.IsNullOrEmpty(speakerEditorId)
-                        ? $"{speakerEditorId} (0x{d.SpeakerFormId.Value:X8})"
-                        : $"NPC 0x{d.SpeakerFormId.Value:X8}";
+                var label = BuildSpeakerLabel(d.SpeakerFormId.Value, speakerName, speakerEditorId);
                 speakerLabels[d.SpeakerFormId.Value] = label;
                 return label;
             }
@@ -436,8 +425,8 @@ internal static class CrossDumpAggregator
                     // Only record history if the old name was a real display name,
                     // not an EditorID fallback or a FormID-only placeholder like "NPC 0x..."
                     var oldWasFallback = string.Equals(oldName, speakerEditorId,
-                                            StringComparison.OrdinalIgnoreCase)
-                                        || oldName.StartsWith("NPC 0x", StringComparison.Ordinal);
+                                             StringComparison.OrdinalIgnoreCase)
+                                         || oldName.StartsWith("NPC 0x", StringComparison.Ordinal);
                     if (!oldWasFallback && oldName != speakerName)
                     {
                         speakerLabels[d.SpeakerFormId.Value] =
@@ -458,13 +447,42 @@ internal static class CrossDumpAggregator
         {
             var questName = resolver.GetBestName(d.QuestFormId.Value);
             var questEditorId = resolver.GetEditorId(d.QuestFormId.Value);
-            return !string.IsNullOrEmpty(questName)
-                ? $"{questName} (quest)"
-                : !string.IsNullOrEmpty(questEditorId)
-                    ? $"{questEditorId} (quest)"
-                    : $"Quest 0x{d.QuestFormId.Value:X8}";
+            var questLabel = PickRealName(questName, questEditorId);
+            return questLabel != null ? $"{questLabel} (quest)" : $"Quest 0x{d.QuestFormId.Value:X8}";
         }
 
         return "(No Speaker)";
+    }
+
+    private static string? PickRealName(string? displayName, string? editorId)
+    {
+        if (IsRealName(displayName))
+        {
+            return displayName;
+        }
+
+        return IsRealName(editorId) ? editorId : null;
+    }
+
+    private static string BuildQuestLabel(uint questFormId, string? displayName, string? editorId)
+    {
+        if (!string.IsNullOrEmpty(displayName))
+        {
+            return $"{displayName} ({editorId ?? Fmt.FIdAlways(questFormId)})";
+        }
+
+        return !string.IsNullOrEmpty(editorId) ? editorId : $"Quest 0x{questFormId:X8}";
+    }
+
+    private static string BuildSpeakerLabel(uint speakerFormId, string? displayName, string? editorId)
+    {
+        if (!string.IsNullOrEmpty(displayName))
+        {
+            return $"{displayName} (0x{speakerFormId:X8})";
+        }
+
+        return !string.IsNullOrEmpty(editorId)
+            ? $"{editorId} (0x{speakerFormId:X8})"
+            : $"NPC 0x{speakerFormId:X8}";
     }
 }

@@ -1,15 +1,11 @@
 using System.Numerics;
 using FalloutXbox360Utils.CLI;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Animation;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
 
 internal static class NifExportSceneBuilder
 {
-    private static readonly Logger Log = Logger.Instance;
-
     internal static NpcExportScene? Build(byte[] data, NifInfo nif, string sourceLabel)
     {
         var extracted = NifExportExtractor.Extract(data, nif);

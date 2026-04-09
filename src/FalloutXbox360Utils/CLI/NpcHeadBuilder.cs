@@ -273,14 +273,6 @@ internal static class NpcHeadBuilder
         return model;
     }
 
-    private static string? ResolveHairFilter(NpcAppearance npc, NpcRenderSettings settings)
-    {
-        if (settings.NoEquip)
-            return null;
-
-        return NpcTextureHelpers.HasHatEquipment(npc.EquippedItems) ? "Hat" : null;
-    }
-
     private static void AttachRaceFaceParts(
         NpcAppearance npc,
         NifRenderableModel model,
@@ -328,7 +320,7 @@ internal static class NpcHeadBuilder
                     npc.FaceGenAsymmetricCoeffs,
                     meshArchives,
                     egmCache,
-                    recalculateNormals: false);
+                    false);
             }
 
             // Apply a small inward offset to mouth/teeth parts when FaceGen morphs
@@ -375,64 +367,6 @@ internal static class NpcHeadBuilder
         }
     }
 
-    private static void ApplyHeadEgtMorphs(
-        NpcAppearance npc, string fullTexPath,
-        NpcMeshArchiveSet meshArchives,
-        NifTextureResolver textureResolver,
-        Dictionary<string, EgtParser?> egtCache,
-        NifRenderableModel model, NpcRenderSettings s)
-    {
-        var egtPath = Path.ChangeExtension(npc.BaseHeadNifPath!, ".egt");
-
-        if (!egtCache.TryGetValue(egtPath, out var egt))
-        {
-            egt = NpcMeshHelpers.LoadEgtFromBsa(egtPath, meshArchives);
-            egtCache[egtPath] = egt;
-        }
-
-        if (egt == null)
-            return;
-
-        FaceGenTextureMorpher.DebugLabel = NpcTextureHelpers.BuildNpcRenderName(npc);
-
-        var baseTexture = textureResolver.GetTexture(fullTexPath);
-        if (baseTexture == null)
-        {
-            Log.Warn("Base head texture not found for EGT morph: {0}", fullTexPath);
-            return;
-        }
-
-        var morphed = FaceGenTextureMorpher.Apply(baseTexture, egt, npc.FaceGenTextureCoeffs!);
-        if (morphed == null)
-        {
-            Log.Warn("EGT texture morph returned null for NPC 0x{0:X8} (base texture: {1})",
-                npc.NpcFormId, fullTexPath);
-            return;
-        }
-
-        if (s.ExportEgt)
-        {
-            var egtDir = Path.Combine(s.OutputDir, "egt_debug");
-            var label = NpcTextureHelpers.BuildNpcRenderName(npc);
-            PngWriter.SaveRgba(baseTexture.Pixels, baseTexture.Width, baseTexture.Height,
-                Path.Combine(egtDir, $"{label}_base_{baseTexture.Width}x{baseTexture.Height}.png"));
-            PngWriter.SaveRgba(morphed.Pixels, morphed.Width, morphed.Height,
-                Path.Combine(egtDir, $"{label}_morphed_{morphed.Width}x{morphed.Height}.png"));
-        }
-
-        var npcTexKey = NpcTextureHelpers.BuildNpcFaceEgtTextureKey(npc);
-        textureResolver.InjectTexture(npcTexKey, morphed);
-        foreach (var submesh in model.Submeshes)
-        {
-            submesh.DiffuseTexturePath = npcTexKey;
-            submesh.IsFaceGen = true;
-            // _sk subsurface color: RGB(24, 8, 8) / 255 — uniform across all races/genders.
-            // The engine's SKIN shader multiplies this by a scatter intensity to add warm red
-            // backlighting that counteracts green casts from EGT texture morphs.
-            submesh.SubsurfaceColor = (24f / 255f, 8f / 255f, 8f / 255f);
-        }
-    }
-
     private static void AttachHairMesh(
         NpcAppearance npc, NifRenderableModel model,
         Dictionary<string, Matrix4x4>? attachmentBoneTransforms,
@@ -475,7 +409,7 @@ internal static class NpcHeadBuilder
             NpcMeshHelpers.LoadAndApplyEgm(hairEgmPath, hairModel,
                 npc.FaceGenSymmetricCoeffs, npc.FaceGenAsymmetricCoeffs,
                 meshArchives, egmCache,
-                recalculateNormals: false);
+                false);
         }
 
         if (attachmentBoneTransforms != null &&
@@ -579,7 +513,7 @@ internal static class NpcHeadBuilder
                 NpcMeshHelpers.LoadAndApplyEgm(eyeEgmPath, eyeModel,
                     npc.FaceGenSymmetricCoeffs, npc.FaceGenAsymmetricCoeffs,
                     meshArchives, egmCache,
-                    recalculateNormals: false);
+                    false);
             }
 
             // Attach eyes with the direct boneless head transform.
@@ -647,7 +581,7 @@ internal static class NpcHeadBuilder
                 NpcMeshHelpers.LoadAndApplyEgm(egmPath, partModel,
                     npc.FaceGenSymmetricCoeffs, npc.FaceGenAsymmetricCoeffs,
                     meshArchives, egmCache,
-                    recalculateNormals: false);
+                    false);
             }
 
             // Position head parts: parent to Bip01 Head bone (same as hair).
@@ -730,7 +664,7 @@ internal static class NpcHeadBuilder
                     npc.FaceGenAsymmetricCoeffs,
                     meshArchives,
                     egmCache,
-                    recalculateNormals: false);
+                    false);
             }
 
             if (!hasSkinning)

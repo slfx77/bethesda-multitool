@@ -176,37 +176,6 @@ internal static class NpcBodyBuilder
         }
     }
 
-    private static void ApplyBodyEgtMorphs(
-        NpcAppearance npc,
-        NpcMeshArchiveSet meshArchives,
-        NifTextureResolver textureResolver,
-        Dictionary<string, EgtParser?> egtCache,
-        ref string? effectiveBodyTex, ref string? effectiveHandTex)
-    {
-        if (npc.BodyEgtPath != null && npc.BodyTexturePath != null)
-        {
-            var key = NpcMeshHelpers.ApplyBodyEgtMorph(npc.BodyEgtPath, npc.BodyTexturePath,
-                npc.FaceGenTextureCoeffs!, npc.NpcFormId, "upperbody", npc.RenderVariantLabel,
-                meshArchives, textureResolver, egtCache);
-            if (key != null) effectiveBodyTex = key;
-        }
-
-        if (npc.LeftHandEgtPath != null && npc.HandTexturePath != null)
-        {
-            var key = NpcMeshHelpers.ApplyBodyEgtMorph(npc.LeftHandEgtPath, npc.HandTexturePath,
-                npc.FaceGenTextureCoeffs!, npc.NpcFormId, "lefthand", npc.RenderVariantLabel,
-                meshArchives, textureResolver, egtCache);
-            if (key != null) effectiveHandTex = key;
-        }
-
-        if (npc.RightHandEgtPath != null && npc.HandTexturePath != null)
-        {
-            NpcMeshHelpers.ApplyBodyEgtMorph(npc.RightHandEgtPath, npc.HandTexturePath,
-                npc.FaceGenTextureCoeffs!, npc.NpcFormId, "righthand", npc.RenderVariantLabel,
-                meshArchives, textureResolver, egtCache);
-        }
-    }
-
     private static string BuildSkeletonCacheKey(string skeletonNifPath, NpcRenderSettings settings)
     {
         return $"{skeletonNifPath}|bind:{settings.BindPose}|anim:{settings.AnimOverride ?? string.Empty}";

@@ -7,8 +7,6 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc;
 /// </summary>
 internal static class NpcBoundaryVertexStitcher
 {
-    private static readonly Logger Log = Logger.Instance;
-
     /// <summary>
     ///     Grid cell size for spatial hashing of bind-pose positions.
     ///     Wrist boundary vertices should be at effectively identical positions (sub-0.001 unit),
@@ -18,6 +16,7 @@ internal static class NpcBoundaryVertexStitcher
 
     private const float MatchThreshold = 0.01f;
     private const float MatchThresholdSq = MatchThreshold * MatchThreshold;
+    private static readonly Logger Log = Logger.Instance;
 
     internal static void StitchBoundaryVertices(List<RenderableSubmesh> submeshes)
     {

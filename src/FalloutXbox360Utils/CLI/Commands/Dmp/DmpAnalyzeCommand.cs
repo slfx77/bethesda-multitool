@@ -13,7 +13,6 @@ namespace FalloutXbox360Utils.CLI.Commands.Dmp;
 ///     sections covering persistent references, map markers, per-cell breakdown, unresolved
 ///     buckets, and runtime worldspace cell maps. Replaces the legacy <c>dmp-diag</c> command,
 ///     which ran its own scanner pipeline and re-implemented cell grouping.
-///
 ///     All data here is sourced from <see cref="RecordCollection" /> via
 ///     <see cref="SemanticFileLoader.LoadAsync" />, so any future cell-linkage fix
 ///     (persistent ref redistribution, unresolved buckets, etc.) automatically reaches the
@@ -261,18 +260,37 @@ internal static class DmpAnalyzeCommand
             foreach (var cell in topCells)
             {
                 var modIndex = (byte)(cell.FormId >> 24);
-                var sourceLabel = cell.IsVirtual
-                    ? "[yellow]VIRT[/]"
-                    : modIndex == 0xFF
-                        ? "[yellow]RT[/]"
-                        : "[green]ESM[/]";
-                var kindTag = cell.IsPersistentCell
-                    ? " [magenta](Persistent)[/]"
-                    : cell.IsInterior
-                        ? " [grey](Interior)[/]"
-                        : cell.GridX.HasValue
-                            ? $" [grey]({cell.GridX},{cell.GridY})[/]"
-                            : "";
+                string sourceLabel;
+                if (cell.IsVirtual)
+                {
+                    sourceLabel = "[yellow]VIRT[/]";
+                }
+                else if (modIndex == 0xFF)
+                {
+                    sourceLabel = "[yellow]RT[/]";
+                }
+                else
+                {
+                    sourceLabel = "[green]ESM[/]";
+                }
+
+                string kindTag;
+                if (cell.IsPersistentCell)
+                {
+                    kindTag = " [magenta](Persistent)[/]";
+                }
+                else if (cell.IsInterior)
+                {
+                    kindTag = " [grey](Interior)[/]";
+                }
+                else if (cell.GridX.HasValue)
+                {
+                    kindTag = $" [grey]({cell.GridX},{cell.GridY})[/]";
+                }
+                else
+                {
+                    kindTag = "";
+                }
 
                 var refrCount = cell.PlacedObjects.Count(p => p.RecordType == "REFR");
                 var achrCount = cell.PlacedObjects.Count(p => p.RecordType == "ACHR");
@@ -301,7 +319,8 @@ internal static class DmpAnalyzeCommand
         }
 
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[bold yellow]Unresolved Buckets[/] [grey](refs whose owning cell could not be inferred)[/]:");
+        AnsiConsole.MarkupLine(
+            "[bold yellow]Unresolved Buckets[/] [grey](refs whose owning cell could not be inferred)[/]:");
         foreach (var r in withUnresolved)
         {
             AnsiConsole.MarkupLine($"\n  [cyan]{Markup.Escape(r.FileName)}[/]:");

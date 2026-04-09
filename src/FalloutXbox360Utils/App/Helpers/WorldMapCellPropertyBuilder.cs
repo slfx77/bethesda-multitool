@@ -210,19 +210,31 @@ internal static class WorldMapCellPropertyBuilder
                 IsExpandable = true,
                 SubItems = group.Select(obj =>
                 {
-                    var referenceName = PlacedObjectCategoryResolver.GetReferenceAwareName(obj, resolver);
-                    var baseName = resolver?.GetBestName(obj.BaseFormId);
-                    var displayName = !string.IsNullOrEmpty(baseName) &&
-                                      !string.Equals(referenceName, baseName, StringComparison.OrdinalIgnoreCase)
-                        ? $"{referenceName} [{baseName}]"
-                        : referenceName;
+                    // Editor ID column (reference EDID, falling back to base EDID/best name)
+                    var editorId = PlacedObjectCategoryResolver.GetReferenceEditorId(obj, resolver)
+                                   ?? obj.BaseEditorId
+                                   ?? resolver?.GetBestName(obj.BaseFormId)
+                                   ?? $"0x{obj.BaseFormId:X8}";
+                    // Full in-game name of the base record (may be null for objects without FULL)
+                    var baseName = resolver?.GetDisplayName(obj.BaseFormId);
+                    if (string.IsNullOrEmpty(baseName) &&
+                        obj.IsMapMarker && !string.IsNullOrEmpty(obj.MarkerName))
+                    {
+                        baseName = obj.MarkerName;
+                    }
+
                     return new EsmPropertyEntry
                     {
-                        Col1 = displayName,
-                        Col3 = $"0x{obj.FormId:X8}",
-                        Col3FormId = obj.FormId,
-                        Name = displayName,
-                        Value = $"0x{obj.FormId:X8}"
+                        Col1 = editorId,
+                        Col2 = baseName,
+                        // Display the BASE FormID — that's what the Data Browser can navigate to.
+                        Col3 = $"0x{obj.BaseFormId:X8}",
+                        // Link target for the Data Browser (base record).
+                        LinkedFormId = obj.BaseFormId,
+                        // Reference FormID is used to locate the placement on the world map.
+                        PlacedReferenceFormId = obj.FormId,
+                        Name = editorId,
+                        Value = $"0x{obj.BaseFormId:X8}"
                     };
                 }).ToList()
             });

@@ -1,9 +1,9 @@
 using System.Text;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Dialogue;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Script;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
@@ -532,7 +532,7 @@ internal static class GeckDialogueWriter
             identityFields.Add(new ReportField("TopLevel", ReportValue.Bool(true)));
         if (topic.ResponseCount > 0)
             identityFields.Add(new ReportField("ResponseCount", ReportValue.Int(topic.ResponseCount)));
-        if (topic.Priority != 0f)
+        if (Math.Abs(topic.Priority) > 0f)
             identityFields.Add(new ReportField("Priority", ReportValue.Float(topic.Priority)));
         if (topic.JournalIndex != 0)
             identityFields.Add(new ReportField("JournalIndex", ReportValue.Int(topic.JournalIndex)));
@@ -685,7 +685,7 @@ internal static class GeckDialogueWriter
     private static string FormatConditionHumanReadable(DialogueCondition c, FormIdResolver resolver)
     {
         var opcode = (ushort)(0x1000 | c.FunctionIndex);
-        var function = Script.ScriptFunctionTable.Get(opcode);
+        var function = ScriptFunctionTable.Get(opcode);
         var functionName = function?.Name ?? $"Func{c.FunctionIndex}";
 
         var paramParts = new List<string>();

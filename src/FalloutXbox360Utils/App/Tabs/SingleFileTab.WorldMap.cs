@@ -284,6 +284,9 @@ public sealed partial class SingleFileTab
     private Grid BuildSubItemsGrid(List<EsmPropertyEntry> subItems)
     {
         var subItemsGrid = new Grid { Visibility = Visibility.Collapsed };
+        // Col 0: editor ID / name (clickable for in-map nav)
+        // Col 1: full base name (in-game FULL), auto-sized
+        // Col 2: FormID / value (link to Data Browser when navigable) — takes remaining space so long values wrap
         subItemsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         subItemsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         subItemsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -301,7 +304,7 @@ public sealed partial class SingleFileTab
                 Padding = new Thickness(22, 1, 12, 1),
                 IsTextSelectionEnabled = true,
                 TextTrimming = TextTrimming.CharacterEllipsis,
-                MaxWidth = 160
+                MaxWidth = 200
             };
 
             // Cell navigation links (linked cells, door destinations)
@@ -312,22 +315,26 @@ public sealed partial class SingleFileTab
                 var capturedFormId = sub.CellNavigationFormId.Value;
                 subName.Tapped += (_, _) => NavigateToCellInWorldMap(capturedFormId);
             }
-            // Find the placed object for navigation
-            else if (sub.Col3FormId is > 0 && _selectedWorldCell != null)
+            // In-map navigation to a placed reference
+            else
             {
-                var targetFormId = sub.Col3FormId.Value;
-                var placedObj = _selectedWorldCell.PlacedObjects
-                    .FirstOrDefault(o => o.FormId == targetFormId);
-                if (placedObj != null)
+                var placedRefFormId = sub.PlacedReferenceFormId ?? sub.Col3FormId;
+                if (placedRefFormId is > 0 && _selectedWorldCell != null)
                 {
-                    subName.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(
-                        Microsoft.UI.Colors.CornflowerBlue);
-                    var capturedObj = placedObj;
-                    subName.Tapped += (_, _) =>
+                    var targetFormId = placedRefFormId.Value;
+                    var placedObj = _selectedWorldCell.PlacedObjects
+                        .FirstOrDefault(o => o.FormId == targetFormId);
+                    if (placedObj != null)
                     {
-                        WorldMapControl?.NavigateToObjectInOverview(capturedObj);
-                        WorldMap_InspectObject(null, capturedObj);
-                    };
+                        subName.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                            Microsoft.UI.Colors.CornflowerBlue);
+                        var capturedObj = placedObj;
+                        subName.Tapped += (_, _) =>
+                        {
+                            WorldMapControl?.NavigateToObjectInOverview(capturedObj);
+                            WorldMap_InspectObject(null, capturedObj);
+                        };
+                    }
                 }
             }
 
@@ -335,15 +342,34 @@ public sealed partial class SingleFileTab
             Grid.SetColumn(subName, 0);
             subItemsGrid.Children.Add(subName);
 
-            // Sub-item FormID (linked if navigable)
+            // Optional full-name column (Col2)
+            if (!string.IsNullOrEmpty(sub.Col2))
+            {
+                var fullName = new TextBlock
+                {
+                    Text = sub.Col2,
+                    FontSize = 11,
+                    Padding = new Thickness(0, 1, 12, 1),
+                    IsTextSelectionEnabled = true,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current
+                        .Resources["TextFillColorSecondaryBrush"]
+                };
+                Grid.SetRow(fullName, subRow);
+                Grid.SetColumn(fullName, 1);
+                subItemsGrid.Children.Add(fullName);
+            }
+
+            // Sub-item FormID column — prefer LinkedFormId (base record) for Data Browser navigation,
+            // falling back to Col3FormId for legacy callers.
             var subFormIdText = sub.Col3 ?? sub.Value;
-            var subFormId = sub.Col3FormId ?? sub.LinkedFormId;
+            var subFormId = sub.LinkedFormId ?? sub.Col3FormId;
             if (subFormId is > 0 && IsFormIdNavigable(subFormId.Value))
             {
                 var link = CreateFormIdLink(subFormIdText, subFormId.Value, 11, monospace: true);
                 link.Margin = new Thickness(0, 0, 4, 0);
                 Grid.SetRow(link, subRow);
-                Grid.SetColumn(link, 1);
+                Grid.SetColumn(link, 2);
                 subItemsGrid.Children.Add(link);
             }
             else
@@ -354,10 +380,11 @@ public sealed partial class SingleFileTab
                     FontSize = 11,
                     Padding = new Thickness(0, 1, 4, 1),
                     FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
-                    IsTextSelectionEnabled = true
+                    IsTextSelectionEnabled = true,
+                    TextWrapping = TextWrapping.Wrap
                 };
                 Grid.SetRow(subVal, subRow);
-                Grid.SetColumn(subVal, 1);
+                Grid.SetColumn(subVal, 2);
                 subItemsGrid.Children.Add(subVal);
             }
 

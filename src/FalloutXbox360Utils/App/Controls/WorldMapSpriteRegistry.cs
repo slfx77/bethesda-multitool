@@ -107,6 +107,9 @@ internal sealed class WorldMapSpriteRegistry : IDisposable
         public required float BoundsHeight { get; init; }
     }
 
+    // Populated by System.Text.Json deserialization — Sonar can't see the assignment.
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Major Code Smell", "S3459:Unassigned auto-property", Justification = "Set by JSON deserializer")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Major Code Smell", "S1144:Unused private setter", Justification = "Set by JSON deserializer")]
     private sealed class SpriteIndexEntry
     {
         public string File { get; init; } = "";

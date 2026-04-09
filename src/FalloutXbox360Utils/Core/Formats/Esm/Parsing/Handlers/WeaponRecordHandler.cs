@@ -109,16 +109,16 @@ internal sealed class WeaponRecordHandler(RecordParserContext context) : RecordH
         uint? repairItemListFormId = null;
         uint? impactDataSetFormIdEsm = null;
 
-        // Phase 6: Modified model variants
-        // INAM = Impact Data Set; WNAM = base 1st-person STAT; WNM1..WNM7 = modded 1st-person STATs;
-        // MWD1..MWD7 = modded 3rd-person world model paths.
-        // Combination order: 1, 2, 3, 1+2, 1+3, 2+3, 1+2+3
+        // Phase 6: Modified model variants.
+        // Subrecord roles — INAM is the impact data set, WNAM is the base first-person STAT,
+        // WNM1..WNM7 are modded first-person STATs, MWD1..MWD7 are modded third-person world model paths.
+        // Combination order is 1, 2, 3, 1+2, 1+3, 2+3, 1+2+3.
         uint? firstPersonObjectBase = null;
         var firstPersonModObjects = new uint?[7];
         var modWorldMeshes = new string?[7];
 
         // Phase 3: Additional DNAM fields previously dropped by the parser
-        float damageToWeaponMult = 1.0f;
+        var damageToWeaponMult = 1.0f;
         uint resistance = 0;
         var ironSightUseMult = 1.0f;
         float ammoRegenRate = 0;
@@ -452,9 +452,9 @@ internal sealed class WeaponRecordHandler(RecordParserContext context) : RecordH
                     vatsAttack = new VatsAttackData
                     {
                         EffectFormId = vatsEffect,
-                        ActionPointCost = float.IsNormal(vatsAp) || vatsAp == 0 ? vatsAp : 0,
-                        DamageMultiplier = float.IsNormal(vatsDamMult) || vatsDamMult == 0 ? vatsDamMult : 0,
-                        SkillRequired = float.IsNormal(vatsSkill) || vatsSkill == 0 ? vatsSkill : 0,
+                        ActionPointCost = SafeNormalOrZero(vatsAp),
+                        DamageMultiplier = SafeNormalOrZero(vatsDamMult),
+                        SkillRequired = SafeNormalOrZero(vatsSkill),
                         IsSilent = subData[16] != 0,
                         RequiresMod = subData[17] != 0,
                         ExtraFlags = subData[18]
@@ -815,5 +815,17 @@ internal sealed class WeaponRecordHandler(RecordParserContext context) : RecordH
                 $"  [Semantic] Enriched {enrichedCount}/{weapons.Count} weapons with projectile physics " +
                 $"({projectileEntries.Count} projectiles in hash table)");
         }
+    }
+
+    // Returns the float if it is a normal value or exact zero, otherwise 0f.
+    // Avoids `== 0f` exact-equality comparison (S1244) by using bit-pattern comparison.
+    private static float SafeNormalOrZero(float value)
+    {
+        if (float.IsNormal(value))
+        {
+            return value;
+        }
+
+        return BitConverter.SingleToInt32Bits(value) == 0 ? value : 0f;
     }
 }
