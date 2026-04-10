@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Unified Semantic Loader**: Core/Semantic `SemanticFileLoader` auto-detects file type (ESM, DMP, ESP) and produces a shared `RecordCollection` for all CLI commands and GUI tabs
+- **Shared Record Detail Presenter**: `RecordDetailPresenter` in Core/Presentation builds structured detail models for NPC, creature, weapon, armor, quest, package, dialogue, cell, and worldspace records
+- **NPC Composition Planners**: `NpcCompositionPlanner` and `CreatureCompositionPlanner` centralize render/export planning; `NpcCompositionExportAdapter` replaces direct scene builder calls
+- **Cross-Dump Comparison Pipeline**: `CrossDumpAggregator` + `CrossDumpJsonHtmlWriter` generate interactive HTML reports with compressed JSON, chunked pages, and field-level browser-side diff
+- **Unified `dmp analyze` Command**: Replaces `dmp-diag`; scans persistent refs, map markers, and runtime structures across dump directories
+- **CellUtils Helper**: `CellUtils.WorldToCell()` replaces inline `floor(x/4096)` calculations
+- **Weapon Projectile Enrichment**: Semantic loader enriches weapons with ESM projectile physics data (172/260 weapons, 80 PROJ records)
+- **Music Type Parsing**: MUSC records now included in specialized semantic parsing (+20 records)
+- **Persistent-Ref Redistribution**: Hoisted to a top-level pass for clearer pipeline ordering
+- **File Size Exemptions Doc**: `docs/file-size-exemptions.md` documenting intentional 500-line guideline exemptions
+
+### Changed
+
+- **CLI Commands Unified**: `search`, `stats`, `list`, `show`, `diff`, `compare`, `world`, `analyze` commands wired onto the semantic loader for format-agnostic operation
+- **GUI Tabs Refactored**: Extracted `LoadOrderDialogService`, `RecordDetailPropertyAdapter`, and property builders from `SingleFileTab` into standalone helpers
+- **NPC Rendering**: Weapon resolution and mesh diagnostics integrated; render/export routed through composition plans
+- **Runtime Readers Expanded**: Weapon sound probe, additional item/NPC field layouts, runtime worldspace maps exposed on `RecordCollection`
+- **Cross-Dump HTML**: Replaced split-cell-pages approach with per-group chunked pages (single HTML with lazy-loaded compressed script tags)
+- **ESM Parsing Reorganized**: Record parsing and runtime consumers restructured for clearer module boundaries
+- **Show Renderers Split**: CLI show renderers split by record type (Actor, Item, Quest, Misc, Generic, Magic, WorldObject)
+
+### Fixed
+
+- **Build Errors**: Fixed incomplete namespace refactor (5 files), added `partial` to `TranscriptionJsonContext` for .NET 10 source gen compatibility
+- **203 Analyzer Warnings Resolved**: Dead code removal (~450 lines), float equality fixes, null safety, nested ternary extraction, unused parameter cleanup, xUnit best practices
+- **CS0675 Sign-Extended Bitwise-Or**: Fixed in `NpcBoundaryVertexStitcher` spatial hashing
+- **CS8604 Nullable Warnings**: Fixed in `RecordDetailPresenter` TryFind pattern
+
+### Removed
+
+- Dead code from Phase C refactor: `GenerateSplitCellPages` + 7 helpers (225 lines), `BuildFullBodyScene`/`BuildHeadOnlyScene`/`LoadSkeletonContext` in `NpcExportSceneBuilder` (228 lines), `ApplyBodyEgtMorphs`, `ApplyHeadEgtMorphs`, `ResolveHairFilter`
+
+### Refactored (500-line guideline)
+
+- `PdbAnalyzer/Program.cs`: 1,213 → 557 LOC; extracted 7 command classes into `Commands/` + `PdbAnalyzerHelpers`
+- `CellLinkageHandler`: 1,058 → 510 LOC; extracted `PersistentRefRedistributor` (578 LOC)
+- `NpcFaceGenTextureVerifier`: 4,950 → 4,708 LOC; extracted `LinearAlgebraUtils` (187 LOC) + `MorphCorrectionHelpers` (160 LOC)
+
 ## [2.3.0] - 2026-03-22
 
 ### Added

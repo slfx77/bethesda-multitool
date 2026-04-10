@@ -75,7 +75,7 @@ dmp modules <file>              # List loaded modules
 dmp regions <file>              # List memory regions
 dmp va2offset <file> <address>  # Convert VA to file offset
 dmp hexdump <file> <address>    # Hex dump at address
-dmp dmp-diag <directory>        # Scan DMPs for persistent refs and map markers
+dmp analyze <directory>          # Unified DMP analysis (persistent refs, map markers, runtime structs)
 dmp buffers <file>              # Memory buffer analysis
 dmp coverage <file>             # Runtime structure coverage analysis
 dmp compare <f1> <f2>           # Compare runtime structures between DMPs
@@ -188,9 +188,10 @@ src/FalloutXbox360Utils/
 │   │   ├── Npc/            # NpcRenderPipeline.cs + NpcExportPipeline.cs (head+body+equipment)
 │   │   └── Gltf/           # GLB validation
 │   ├── Formatters/         # Semdiff formatting, diff resolution
-│   ├── Show/               # Record display renderers (Actor, Item, Quest, Misc)
+│   ├── Show/               # Record display renderers (Actor, Item, Quest, Misc, Generic, Magic, WorldObject)
 │   └── Shared/             # CLI helpers, progress bars, table builders
 ├── Core/
+│   ├── Semantic/           # SemanticFileLoader (format-agnostic ESM/DMP/ESP loading)
 │   ├── Formats/
 │   │   ├── Esm/            # ESM parsing, conversion, runtime reading, export
 │   │   │   ├── Conversion/ # Xbox→PC converter engine (see ESM Conversion section)
