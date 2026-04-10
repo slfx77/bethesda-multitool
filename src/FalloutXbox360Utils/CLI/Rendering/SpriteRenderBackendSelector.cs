@@ -55,28 +55,3 @@ internal static class SpriteRenderBackendSelector
         return new SpriteRenderBackendSelection(device, renderer, false);
     }
 }
-
-internal sealed class SpriteRenderBackendSelection : IDisposable
-{
-    internal SpriteRenderBackendSelection(
-        GpuDevice? device,
-        GpuSpriteRenderer? renderer,
-        bool shouldAbort)
-    {
-        Device = device;
-        Renderer = renderer;
-        ShouldAbort = shouldAbort;
-    }
-
-    internal GpuDevice? Device { get; }
-
-    internal GpuSpriteRenderer? Renderer { get; }
-
-    internal bool ShouldAbort { get; }
-
-    public void Dispose()
-    {
-        Renderer?.Dispose();
-        Device?.Dispose();
-    }
-}

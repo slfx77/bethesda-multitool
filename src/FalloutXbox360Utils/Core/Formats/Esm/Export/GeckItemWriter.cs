@@ -1,5 +1,4 @@
 using System.Text;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
@@ -125,16 +124,17 @@ internal static class GeckItemWriter
                 };
 
                 effectItems.Add(new ReportValue.CompositeVal(
-                [
-                    new ReportField("Effect", effect.EffectFormId != 0
-                            ? ReportValue.FormId(effect.EffectFormId, resolver)
-                            : ReportValue.String("(none)"),
-                        effect.EffectFormId != 0 ? $"0x{effect.EffectFormId:X8}" : null),
-                    new ReportField("Magnitude", ReportValue.Float(effect.Magnitude)),
-                    new ReportField("Area", ReportValue.Int((int)effect.Area)),
-                    new ReportField("Duration", ReportValue.Int((int)effect.Duration)),
-                    new ReportField("Target", ReportValue.String(typeName))
-                ], $"{effectName}\nMagnitude: {effect.Magnitude:F1}\tArea: {effect.Area}u\tDuration: {effect.Duration}s\tTarget: {typeName}"));
+                    [
+                        new ReportField("Effect", effect.EffectFormId != 0
+                                ? ReportValue.FormId(effect.EffectFormId, resolver)
+                                : ReportValue.String("(none)"),
+                            effect.EffectFormId != 0 ? $"0x{effect.EffectFormId:X8}" : null),
+                        new ReportField("Magnitude", ReportValue.Float(effect.Magnitude)),
+                        new ReportField("Area", ReportValue.Int((int)effect.Area)),
+                        new ReportField("Duration", ReportValue.Int((int)effect.Duration)),
+                        new ReportField("Target", ReportValue.String(typeName))
+                    ],
+                    $"{effectName}\nMagnitude: {effect.Magnitude:F1}\tArea: {effect.Area}u\tDuration: {effect.Duration}s\tTarget: {typeName}"));
             }
 
             sections.Add(new ReportSection("Effects", [new ReportField("Effects", ReportValue.List(effectItems))]));

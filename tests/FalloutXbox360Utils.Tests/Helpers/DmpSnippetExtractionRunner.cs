@@ -1,5 +1,4 @@
 using FalloutXbox360Utils.Core;
-using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using Xunit;
 

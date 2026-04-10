@@ -2,10 +2,8 @@ using System.Globalization;
 using System.IO.MemoryMappedFiles;
 using System.Text;
 using FalloutXbox360Utils.Core;
-using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
-using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Core.RuntimeBuffer;
@@ -43,8 +41,7 @@ internal static class AnalysisExtractionHelper
         using (var loaded = SemanticFileLoader.LoadFromAnalysisResult(
                    input,
                    result,
-                   SemanticFileLoader.ResolveSemanticFileType(input),
-                   null))
+                   SemanticFileLoader.ResolveSemanticFileType(input)))
         {
             semanticResult = loaded.Records;
 

@@ -126,7 +126,8 @@ internal static class LoadOrderDialogService
                     continue;
                 }
 
-                if (workingEntries.Any(entry => string.Equals(entry.FilePath, path, StringComparison.OrdinalIgnoreCase)))
+                if (workingEntries.Any(entry =>
+                        string.Equals(entry.FilePath, path, StringComparison.OrdinalIgnoreCase)))
                 {
                     continue;
                 }

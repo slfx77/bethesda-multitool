@@ -2,7 +2,6 @@ using System.Buffers.Binary;
 using System.IO.MemoryMappedFiles;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats;
-using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Pdb;

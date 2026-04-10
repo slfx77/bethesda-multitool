@@ -42,7 +42,7 @@ internal static class CliSemanticLoader
                     var parseProgress = options.ParseProgress ?? new Progress<(int percent, string phase)>(p =>
                     {
                         task.Description = p.phase;
-                        task.Value = 80 + (p.percent * 0.2);
+                        task.Value = 80 + p.percent * 0.2;
                     });
 
                     var result = await SemanticFileLoader.LoadAsync(

@@ -46,7 +46,8 @@ public sealed class RuntimeStringOwnershipIntegrationTests(SampleFileFixture sam
 
             Assert.True(File.Exists(ownershipSummaryPath));
 
-            var ownershipSummary = await File.ReadAllTextAsync(ownershipSummaryPath, TestContext.Current.CancellationToken);
+            var ownershipSummary =
+                await File.ReadAllTextAsync(ownershipSummaryPath, TestContext.Current.CancellationToken);
             Assert.Contains("Runtime String Ownership Summary", ownershipSummary);
         }
         finally

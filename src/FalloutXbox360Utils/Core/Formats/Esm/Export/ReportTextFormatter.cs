@@ -85,7 +85,7 @@ internal static class ReportTextFormatter
         {
             // Skip redundant label when a section has a single field matching the section name
             var isRedundantKey = section.Fields.Count == 1
-                                && string.Equals(field.Key, section.Name, StringComparison.OrdinalIgnoreCase);
+                                 && string.Equals(field.Key, section.Name, StringComparison.OrdinalIgnoreCase);
 
             if (isRedundantKey && field.Value is ReportValue.ListVal listVal)
             {

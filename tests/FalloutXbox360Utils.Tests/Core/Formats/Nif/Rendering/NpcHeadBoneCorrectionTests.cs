@@ -1,6 +1,5 @@
 using System.Numerics;
 using FalloutXbox360Utils.CLI;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;

@@ -1,5 +1,4 @@
 using System.IO.MemoryMappedFiles;
-using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 
 namespace FalloutXbox360Utils.Tests.Helpers;

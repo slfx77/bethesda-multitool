@@ -62,7 +62,6 @@ public sealed class NpcCompositionCoreTests(SampleFileFixture samples)
 
         var appearance = WithOverrides(
             veronica!,
-            equippedItems:
             [
                 new EquippedItem
                 {
@@ -77,7 +76,7 @@ public sealed class NpcCompositionCoreTests(SampleFileFixture samples)
                     MeshPath = @"meshes\armor\testtorso.nif"
                 }
             ],
-            weaponVisual: new WeaponVisual
+            new WeaponVisual
             {
                 IsVisible = true,
                 WeaponType = WeaponType.HandToHandMelee,

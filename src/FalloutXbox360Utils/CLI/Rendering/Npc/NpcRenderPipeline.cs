@@ -1,14 +1,9 @@
-using System.Numerics;
-using FalloutXbox360Utils.CLI.Rendering;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Animation;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI.Rendering.Npc;
@@ -933,10 +928,9 @@ internal static class NpcRenderPipeline
                 var selection = SpriteRenderBackendSelector.Create(
                     settings.ForceCpu,
                     settings.ForceGpu,
-                    forcedCpuMessage: "Using [yellow]CPU software renderer[/] (--compare-race-fgts)",
-                    ignoredGpuMessage:
+                    "Using [yellow]CPU software renderer[/] (--compare-race-fgts)",
                     "[yellow]--compare-race-fgts currently uses the CPU renderer; ignoring --gpu[/]",
-                    fallbackCpuMessage: null);
+                    null);
                 return new NpcGpuRenderResources(selection.Device, selection.Renderer, selection.ShouldAbort);
             }
 
@@ -945,10 +939,9 @@ internal static class NpcRenderPipeline
                 var selection = SpriteRenderBackendSelector.Create(
                     settings.ForceCpu,
                     settings.ForceGpu,
-                    forcedCpuMessage: "Using [yellow]CPU software renderer[/] (--wireframe)",
-                    ignoredGpuMessage:
+                    "Using [yellow]CPU software renderer[/] (--wireframe)",
                     "[yellow]Wireframe overlay currently uses the CPU renderer; ignoring --gpu[/]",
-                    fallbackCpuMessage: null);
+                    null);
                 return new NpcGpuRenderResources(selection.Device, selection.Renderer, selection.ShouldAbort);
             }
 

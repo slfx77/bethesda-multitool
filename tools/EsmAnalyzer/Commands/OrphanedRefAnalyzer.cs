@@ -176,7 +176,7 @@ internal static class OrphanedRefAnalyzer
                     dumpFile, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
                 using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
 
-                var reconstructor = new FalloutXbox360Utils.Core.Formats.Esm.RecordParser(
+                var reconstructor = new FalloutXbox360Utils.Core.Formats.Esm.Parsing.RecordParser(
                     analysisResult.EsmRecords,
                     analysisResult.FormIdMap,
                     accessor,

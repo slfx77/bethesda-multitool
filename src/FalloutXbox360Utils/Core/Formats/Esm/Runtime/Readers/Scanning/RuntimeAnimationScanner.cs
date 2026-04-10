@@ -294,6 +294,7 @@ internal sealed class RuntimeAnimationScanner(RuntimeMemoryContext context)
                 names[26 + a * 6 + s] = attackNames[a] + attackSuffixes[s];
             }
         }
+
         // Power attacks (92-101), PowerAttackStop (102)
         names[92] = "AttackNormalPower";
         names[93] = "AttackForwardPower";
@@ -328,6 +329,7 @@ internal sealed class RuntimeAnimationScanner(RuntimeMemoryContext context)
                 names[114 + t * 6 + s] = throwNames[t] + attackSuffixes[s];
             }
         }
+
         names[168] = "CounterAttack";
         names[169] = "Stomp";
         names[170] = "BlockIdle";

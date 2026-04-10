@@ -1,4 +1,3 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
@@ -15,7 +14,7 @@ internal sealed class CrossDumpRecordIndex
     ///     RecordType -> FormID -> (dumpIndex -> RecordReport).
     ///     Canonical structured comparison data used by HTML, JSON, and CSV output.
     ///     Populated by <see cref="CrossDumpAggregator.Aggregate" />.
-     /// </summary>
+    /// </summary>
     internal Dictionary<string, Dictionary<uint, Dictionary<int, RecordReport>>> StructuredRecords { get; } = [];
 
     /// <summary>

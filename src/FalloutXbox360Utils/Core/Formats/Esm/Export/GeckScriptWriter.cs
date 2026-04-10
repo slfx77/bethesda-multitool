@@ -1,5 +1,4 @@
 using System.Text;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
@@ -160,7 +159,8 @@ internal static class GeckScriptWriter
         [
             new ReportField("Variable Count", ReportValue.Int((int)script.VariableCount)),
             new ReportField("Ref Object Count", ReportValue.Int((int)script.RefObjectCount)),
-            new ReportField("Compiled Size", ReportValue.Int((int)script.CompiledSize, $"{script.CompiledSize:N0} bytes"))
+            new ReportField("Compiled Size",
+                ReportValue.Int((int)script.CompiledSize, $"{script.CompiledSize:N0} bytes"))
         ]));
 
         // References

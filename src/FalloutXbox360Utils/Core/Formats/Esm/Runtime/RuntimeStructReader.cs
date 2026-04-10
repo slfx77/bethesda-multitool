@@ -11,7 +11,6 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers;
 using FalloutXbox360Utils.Core.Minidump;
-using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 
@@ -166,8 +165,8 @@ public sealed class RuntimeStructReader
                 EffectLayout = RuntimeEffectProbe.Probe(context, allEntries),
                 MagicLayout = RuntimeMagicProbe.Probe(context, allEntries),
                 WeaponSoundLayout = RuntimeWeaponSoundProbe.Probe(context, allEntries,
-                    log: msg => Logger.Instance.Info(msg),
-                    editorIdsByFormId: editorIdsByFormId),
+                    msg => Logger.Instance.Info(msg),
+                    editorIdsByFormId),
                 GenericTypeShifts = RuntimeGenericReader.ProbeAllTypeShifts(context, allEntries)
             };
         }

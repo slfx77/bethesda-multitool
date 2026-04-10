@@ -1,5 +1,4 @@
 using System.Numerics;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;

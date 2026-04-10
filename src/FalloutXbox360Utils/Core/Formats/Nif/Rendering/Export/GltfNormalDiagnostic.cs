@@ -1,5 +1,4 @@
 using System.Numerics;
-using FalloutXbox360Utils.CLI;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
 
@@ -125,7 +124,8 @@ internal static class GltfNormalDiagnostic
 
         Log.Info(
             "[NormalDiag] {0}: vCol={1} useVCol={2} emissive={3} doubleSide={4} aBlend={5} aTest={6} tint={7} normalMap={8} matAlpha={9:F2}",
-            name, hasVcol, useVcol, isEmissive, isDoubleSided, hasAlphaBlend, hasAlphaTest, hasTint, hasNormalMap, matAlpha);
+            name, hasVcol, useVcol, isEmissive, isDoubleSided, hasAlphaBlend, hasAlphaTest, hasTint, hasNormalMap,
+            matAlpha);
 
         if (hasVcol && submesh.VertexColors != null)
         {

@@ -1,8 +1,6 @@
 using System.Numerics;
 using FalloutXbox360Utils.CLI;
-using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Animation;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
@@ -46,8 +44,8 @@ internal static class NpcCompositionPlanner
                 ref effectiveHandTex);
         }
 
-        Dictionary<string, Matrix4x4>? attachmentBoneTransforms = skeleton?.BodySkinningBones;
-        Matrix4x4? bonelessAttachmentTransform = skeleton != null
+        var attachmentBoneTransforms = skeleton?.BodySkinningBones;
+        var bonelessAttachmentTransform = skeleton != null
             ? NpcRenderHelpers.BuildBonelessHeadAttachmentTransform(
                 skeleton.BodySkinningBones,
                 skeleton.PoseDeltas)

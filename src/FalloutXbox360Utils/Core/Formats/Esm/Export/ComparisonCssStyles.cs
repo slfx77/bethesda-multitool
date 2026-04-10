@@ -3,7 +3,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 /// <summary>CSS styles for HTML comparison pages (light + dark mode).</summary>
 internal static class ComparisonCssStyles
 {
-  internal const string Styles = """
+    internal const string Styles = """
                                        * { box-sizing: border-box; }
                                        body {
                                          font-family: system-ui, -apple-system, sans-serif;

@@ -97,6 +97,37 @@ public static class DumpCommands
         return command;
     }
 
+    public static Command CreateRawHexSearchCommand()
+    {
+        var command = new Command("raw-hex",
+            "Walk records, decompress bodies, and search for a hex pattern (sees inside compressed records)");
+
+        var fileArg = new Argument<string>("file") { Description = "Path to the ESM file" };
+        var patternArg = new Argument<string>("pattern")
+        { Description = "Hex pattern (e.g. \"07 07 05 01 03 07 06\" or \"07070501030706\")" };
+        var typeOption = new Option<string?>("-t", "--type")
+        { Description = "Restrict to a single record type (e.g. NPC_)" };
+        var limitOption = new Option<int>("-l", "--limit")
+        { Description = "Maximum hits to render (0 = unlimited). Total count is always reported.", DefaultValueFactory = _ => 0 };
+        var contextOption = new Option<int>("-c", "--context")
+        { Description = "Bytes of context around each hit", DefaultValueFactory = _ => 32 };
+
+        command.Arguments.Add(fileArg);
+        command.Arguments.Add(patternArg);
+        command.Options.Add(typeOption);
+        command.Options.Add(limitOption);
+        command.Options.Add(contextOption);
+
+        command.SetAction(parseResult => DumpCommandsRawHexSearch.Run(
+            parseResult.GetValue(fileArg)!,
+            parseResult.GetValue(patternArg)!,
+            parseResult.GetValue(typeOption),
+            parseResult.GetValue(limitOption),
+            parseResult.GetValue(contextOption)));
+
+        return command;
+    }
+
     public static Command CreateHexCommand()
     {
         var command = new Command("hex", "Hex dump of raw bytes at a specific offset");

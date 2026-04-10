@@ -3,7 +3,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 /// <summary>Client-side JavaScript for JSON-driven HTML comparison pages.</summary>
 internal static class ComparisonJsRenderer
 {
-  internal const string Script = """
+    internal const string Script = """
                                        // --- Diagnostics ---
                                        var DEBUG_ENABLED = /(?:^|[?&#])debug(?:=1|=true)?(?:$|[&#])/i.test(window.location.search || '')
                                          || /(?:^|[?&#])debug(?:=1|=true)?(?:$|[&#])/i.test(window.location.hash || '');

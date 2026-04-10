@@ -1,7 +1,6 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
-using FalloutXbox360Utils.Core.Formats.Esm.Conversion;
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Schema;
 using Spectre.Console;

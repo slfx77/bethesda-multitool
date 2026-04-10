@@ -1,5 +1,3 @@
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
-
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
 
 internal sealed class NpcCompositionPlan
@@ -23,13 +21,4 @@ internal sealed class NpcCompositionPlan
     public string? EffectiveHandTexturePath { get; init; }
 
     public NpcWeaponCompositionPlan? Weapon { get; init; }
-}
-
-internal sealed class NpcBodyMeshPlan
-{
-    public required string MeshPath { get; init; }
-
-    public string? TextureOverride { get; init; }
-
-    public int RenderOrder { get; init; }
 }

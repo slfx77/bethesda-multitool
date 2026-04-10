@@ -24,7 +24,10 @@ internal static class ComparisonHtmlHelpers
     }
 
     /// <summary>HTML-encode a string.</summary>
-    internal static string Esc(string text) => HttpUtility.HtmlEncode(text);
+    internal static string Esc(string text)
+    {
+        return HttpUtility.HtmlEncode(text);
+    }
 
     /// <summary>Emit the HTML document header with CSS.</summary>
     internal static void AppendHtmlHeader(StringBuilder sb, string title)

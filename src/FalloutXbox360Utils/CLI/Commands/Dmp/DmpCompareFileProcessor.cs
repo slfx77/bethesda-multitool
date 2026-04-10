@@ -1,10 +1,9 @@
-using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Semantic;
-using FalloutXbox360Utils.Core;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI.Commands.Dmp;
@@ -15,7 +14,8 @@ namespace FalloutXbox360Utils.CLI.Commands.Dmp;
 /// </summary>
 internal static class DmpCompareFileProcessor
 {
-    internal static async Task<(string FilePath, RecordCollection Records, FormIdResolver Resolver, MinidumpInfo? Info)?>
+    internal static async
+        Task<(string FilePath, RecordCollection Records, FormIdResolver Resolver, MinidumpInfo? Info)?>
         ProcessDumpAsync(string dmpFile, bool verbose, CancellationToken cancellationToken = default)
     {
         var source = await SemanticSourceSetBuilder.LoadSourceAsync(
@@ -51,7 +51,8 @@ internal static class DmpCompareFileProcessor
             source.RawResult?.EsmRecords);
     }
 
-    internal static async Task<(string FilePath, RecordCollection Records, FormIdResolver Resolver, MinidumpInfo? Info)?>
+    internal static async
+        Task<(string FilePath, RecordCollection Records, FormIdResolver Resolver, MinidumpInfo? Info)?>
         ProcessBaseDirectoryAsync(string baseDirPath, CancellationToken cancellationToken)
     {
         if (!Directory.Exists(baseDirPath))

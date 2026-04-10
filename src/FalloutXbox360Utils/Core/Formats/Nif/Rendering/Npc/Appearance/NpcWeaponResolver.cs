@@ -28,13 +28,14 @@ internal sealed class NpcWeaponResolver
         ("rt", "lt")
     ];
 
+    private readonly IReadOnlyDictionary<uint, CstyEntry> _combatStyles;
+
     private readonly Dictionary<string, List<ArmaAddonScanEntry>> _handToHandAddonsByPath;
     private readonly Dictionary<string, IdleScanEntry> _idlesByEditorId;
     private readonly IReadOnlyDictionary<uint, List<uint>> _leveledItems;
 
     private readonly IReadOnlyDictionary<uint, PackageScanEntry> _packages;
     private readonly IReadOnlyDictionary<uint, WeapScanEntry> _weapons;
-    private readonly IReadOnlyDictionary<uint, CstyEntry> _combatStyles;
 
     internal NpcWeaponResolver(
         IReadOnlyDictionary<uint, PackageScanEntry> packages,
@@ -197,13 +198,14 @@ internal sealed class NpcWeaponResolver
                 continue;
             }
 
-            var score = WeaponSelectionScorer.Score(weapon, npc.Skills, combatSkillAggregate: null, strength);
+            var score = WeaponSelectionScorer.Score(weapon, npc.Skills, null, strength);
             if (score > bestScore)
             {
                 bestScore = score;
                 bestVisual = visual;
             }
         }
+
         return bestVisual;
     }
 

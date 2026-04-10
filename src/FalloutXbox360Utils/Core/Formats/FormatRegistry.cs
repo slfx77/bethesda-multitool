@@ -2,7 +2,6 @@ using System.Collections.Frozen;
 using FalloutXbox360Utils.Core.Formats.Bik;
 using FalloutXbox360Utils.Core.Formats.Dds;
 using FalloutXbox360Utils.Core.Formats.Ddx;
-using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Formats.Lip;
 using FalloutXbox360Utils.Core.Formats.Nif;

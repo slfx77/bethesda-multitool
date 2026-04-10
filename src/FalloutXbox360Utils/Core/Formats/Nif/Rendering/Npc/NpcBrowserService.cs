@@ -1,14 +1,11 @@
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.CLI;
 using FalloutXbox360Utils.CLI.Rendering.Npc;
-using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
 using FalloutXbox360Utils.Core.Minidump;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc;
@@ -21,11 +18,11 @@ internal sealed class NpcBrowserService : IDisposable
 {
     private static readonly Logger Log = Logger.Instance;
 
-    // Pre-resolved appearances from DMP (null for ESM-only mode)
-    private readonly Dictionary<uint, NpcAppearance>? _dmpAppearances;
-
     // Shared caches (same as CLI pipelines)
     private readonly NpcCompositionCaches _compositionCaches = new();
+
+    // Pre-resolved appearances from DMP (null for ESM-only mode)
+    private readonly Dictionary<uint, NpcAppearance>? _dmpAppearances;
     private readonly NpcMeshArchiveSet _meshArchives;
     private readonly string _pluginName;
     private readonly NpcRenderCaches _renderCaches = new();

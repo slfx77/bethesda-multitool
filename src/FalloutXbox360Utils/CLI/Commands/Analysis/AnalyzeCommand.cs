@@ -4,7 +4,6 @@ using System.IO.MemoryMappedFiles;
 using System.Text;
 using System.Text.Json;
 using FalloutXbox360Utils.Core;
-using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Parsing;

@@ -785,14 +785,14 @@ internal sealed class RuntimeNpcFieldReader
 
     // TESCreature: PDB struct size 368, base values = PDB offset - 16
     public int CreaStructSize => 352 + _coreShift;
-    public int CreaAcbsOffset => 52 + _coreShift;          // PDB 68: actorData (ACTOR_BASE_DATA, same as NPC)
-    public int CreaModelPathOffset => 224 + _coreShift;     // PDB 240: cModel (BSStringT<char>)
-    public int CreaScriptOffset => 248 + _coreShift;        // PDB 264: pFormScript (TESScriptableForm)
-    public int CreaAttackDamageOffset => 272 + _coreShift;  // PDB 288: sAttackDamage (uint16)
-    public int CreaTypeOffset => 300 + _coreShift;          // PDB 316: CREATURE_DATA byte 0 (type)
-    public int CreaCombatSkillOffset => 301 + _coreShift;   // PDB 317: CREATURE_DATA byte 1 (combat)
-    public int CreaMagicSkillOffset => 302 + _coreShift;    // PDB 318: CREATURE_DATA byte 2 (magic)
-    public int CreaStealthSkillOffset => 303 + _coreShift;  // PDB 319: CREATURE_DATA byte 3 (stealth)
+    public int CreaAcbsOffset => 52 + _coreShift; // PDB 68: actorData (ACTOR_BASE_DATA, same as NPC)
+    public int CreaModelPathOffset => 224 + _coreShift; // PDB 240: cModel (BSStringT<char>)
+    public int CreaScriptOffset => 248 + _coreShift; // PDB 264: pFormScript (TESScriptableForm)
+    public int CreaAttackDamageOffset => 272 + _coreShift; // PDB 288: sAttackDamage (uint16)
+    public int CreaTypeOffset => 300 + _coreShift; // PDB 316: CREATURE_DATA byte 0 (type)
+    public int CreaCombatSkillOffset => 301 + _coreShift; // PDB 317: CREATURE_DATA byte 1 (combat)
+    public int CreaMagicSkillOffset => 302 + _coreShift; // PDB 318: CREATURE_DATA byte 2 (magic)
+    public int CreaStealthSkillOffset => 303 + _coreShift; // PDB 319: CREATURE_DATA byte 3 (stealth)
 
     #endregion
 }

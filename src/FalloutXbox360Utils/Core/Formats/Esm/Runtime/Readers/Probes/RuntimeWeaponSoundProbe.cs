@@ -7,18 +7,14 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Probes;
 ///     Probe for TESObjectWEAP sound field layout auto-detection across build versions.
 ///     Empirical investigation revealed two distinct struct layouts that don't differ by a
 ///     simple shift: they have entirely different field counts and strides.
-///
 ///     Layout V1 (early FO3-derived builds: xex / xex1 / xex2): 7 fields, no Distant /
 ///     AttackLoop / Idle / MeleeBlock / ModSilenced. Fire2D directly follows Fire3D.
-///
 ///     Layout V2 (all FNV-era builds: xex3+, MemDebug, Debug, Jacobstown): 14 fields including
 ///     all FNV additions. Matches the OBJ_WEAP definition in the MemDebug PDB.
-///
 ///     Both layouts anchor on Fire3D at PDB-relative offset 548 (code base 532 + _s 16). The
 ///     probe uses pattern-matching against the runtime editor ID hash table to disambiguate
 ///     which layout the dump uses, plus a fine-grained shift sweep on top of each layout
 ///     for builds that drift from the reference.
-///
 ///     The PDB-style offsets used here are STRUCT-RELATIVE (not file offsets). Each base
 ///     offset is meant to be added to `weapon.TesFormOffset` plus the runtime _s shift (16).
 ///     The probe operates on PDB-style offsets minus _s, matching the convention in
@@ -30,14 +26,19 @@ internal static class RuntimeWeaponSoundProbe
     // resolved EditorID of whatever sound the slot's pointer leads to.
     private static readonly Regex Fire3DPattern =
         new(@"(?i)(fire3d|3dfire)", RegexOptions.Compiled);
+
     private static readonly Regex FireDistPattern =
         new(@"(?i)(dist|3ddist)", RegexOptions.Compiled);
+
     private static readonly Regex Fire2DPattern =
         new(@"(?i)(fire2d|2dfire)", RegexOptions.Compiled);
+
     private static readonly Regex DryFirePattern =
         new(@"(?i)(dryfire|firedry)", RegexOptions.Compiled);
+
     private static readonly Regex EquipPattern =
         new(@"(?i)equip(?!un)", RegexOptions.Compiled);
+
     private static readonly Regex UnequipPattern =
         new(@"(?i)(unequip|equipun)", RegexOptions.Compiled);
 
@@ -130,16 +131,16 @@ internal static class RuntimeWeaponSoundProbe
         var v2Result = RuntimeReaderFieldProbe.Probe(
             context, weapEntries, LayoutV2Fields, 1,
             FineShiftOptions, 924, "WeaponSoundLayout-V2",
-            maxSamples: 24,
-            log: log,
-            editorIdsByFormId: editorIdsByFormId);
+            24,
+            log,
+            editorIdsByFormId);
 
         var v1Result = RuntimeReaderFieldProbe.Probe(
             context, weapEntries, LayoutV1Fields, 1,
             FineShiftOptions, 924, "WeaponSoundLayout-V1",
-            maxSamples: 24,
-            log: log,
-            editorIdsByFormId: editorIdsByFormId);
+            24,
+            log,
+            editorIdsByFormId);
 
         var v1Score = v1Result?.WinnerScore ?? -1;
         var v2Score = v2Result?.WinnerScore ?? -1;

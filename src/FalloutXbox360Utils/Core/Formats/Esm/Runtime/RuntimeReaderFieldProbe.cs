@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Utils;
 
@@ -325,7 +326,7 @@ internal static class RuntimeReaderFieldProbe
                     return 0;
                 }
 
-                if (field.CheckArg is not (System.Text.RegularExpressions.Regex pattern, byte expectedType))
+                if (field.CheckArg is not (Regex pattern, byte expectedType))
                 {
                     return 0;
                 }

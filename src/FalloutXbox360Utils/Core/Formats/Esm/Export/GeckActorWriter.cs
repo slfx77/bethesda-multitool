@@ -1,6 +1,5 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.FaceGen;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;

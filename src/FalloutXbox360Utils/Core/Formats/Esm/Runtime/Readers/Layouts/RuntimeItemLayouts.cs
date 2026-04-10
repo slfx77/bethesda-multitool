@@ -169,12 +169,14 @@ internal sealed class RuntimeItemLayouts
     // VATS attack data (V2 only — added by FNV)
     internal int WeapVatsAttackNameOffset =>
         IsV1 ? -1 : 864 + _s + _weapSoundShift;
+
     internal int WeapVatsDataOffset =>
         IsV1 ? -1 : 872 + _s + _weapSoundShift;
 
     // Modded model variants (V2 only)
     internal int Weap1stPersonObjectOffset =>
         IsV1 ? 576 + _s + _weapSoundShift : 584 + _s + _weapSoundShift;
+
     internal int WeapWorldModelMod1Offset =>
         IsV1 ? -1 : 616 + _s + _weapSoundShift;
 

@@ -1,6 +1,5 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Magic;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;

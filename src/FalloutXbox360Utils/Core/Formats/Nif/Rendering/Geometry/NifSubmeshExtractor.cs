@@ -284,7 +284,7 @@ internal static class NifSubmeshExtractor
         }
 
         // Capture bind-pose world positions before skinning for boundary vertex stitching
-        float[]? bindPosePositions = skinning.HasValue
+        var bindPosePositions = skinning.HasValue
             ? NifGeometryTransformUtils.TransformPositions(positions, transform)
             : null;
 
@@ -444,7 +444,7 @@ internal static class NifSubmeshExtractor
         }
 
         // Capture bind-pose world positions before skinning for boundary vertex stitching
-        float[]? bindPosePositions = skinning.HasValue
+        var bindPosePositions = skinning.HasValue
             ? NifGeometryTransformUtils.TransformPositions(positions, transform)
             : null;
 

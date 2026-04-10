@@ -117,9 +117,3 @@ internal static class MeshWindingDiagnostic
         return new Vector3(array[offset], array[offset + 1], array[offset + 2]);
     }
 }
-
-internal readonly record struct SubmeshWindingAnalysis(
-    int TotalTriangles,
-    int FlippedCount,
-    int ZeroNormalCount,
-    IReadOnlyList<int> SampleFlippedIndices);

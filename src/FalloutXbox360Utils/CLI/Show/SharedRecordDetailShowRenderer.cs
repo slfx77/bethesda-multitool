@@ -33,6 +33,7 @@ internal sealed class SharedRecordDetailShowRenderer : IRecordDisplayRenderer
                         {
                             lines.Add($"[cyan]{Markup.Escape(entry.Label)}:[/]");
                         }
+
                         if (entry.Items != null)
                         {
                             foreach (var item in entry.Items)

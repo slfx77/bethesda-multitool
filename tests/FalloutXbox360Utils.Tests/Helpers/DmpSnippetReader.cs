@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Text.Json;
-using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 using FalloutXbox360Utils.Core.Formats.Esm.Records;

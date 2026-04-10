@@ -1,7 +1,5 @@
 using System.Numerics;
 using FalloutXbox360Utils.CLI;
-using FalloutXbox360Utils.Core.Formats.Nif;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Animation;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
@@ -45,9 +43,9 @@ internal static class CreatureCompositionPlanner
             weaponEntry = WeaponSelectionScorer.PickBestWeapon(
                 candidates,
                 restriction,
-                skills: null, // Creatures don't have a DNAM skills array
-                combatSkillAggregate: creature.CombatSkill,
-                strength: creature.Strength ?? 10);
+                null, // Creatures don't have a DNAM skills array
+                creature.CombatSkill,
+                creature.Strength ?? 10);
             weaponMeshPath = weaponEntry?.ModelPath;
         }
 
@@ -302,7 +300,7 @@ internal static class CreatureCompositionPlanner
             skeletonDir + $"{profileKey}Holster.kf",
             skeletonDir + $"{profileKey}idle.kf",
             $"meshes\\characters\\_male\\{profileKey}Holster.kf",
-            $"meshes\\characters\\_male\\{profileKey}idle.kf",
+            $"meshes\\characters\\_male\\{profileKey}idle.kf"
         ];
 
         foreach (var kfPath in candidateKfPaths)

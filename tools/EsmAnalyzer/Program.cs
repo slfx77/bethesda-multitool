@@ -77,6 +77,7 @@ internal sealed class Program
         var searchCommand = new Command("search", "Search and locate data within ESM files");
         searchCommand.Subcommands.Add(DumpCommands.CreateTextSearchCommand());  // "text" instead of "search"
         searchCommand.Subcommands.Add(DumpCommands.CreateHexCommand());
+        searchCommand.Subcommands.Add(DumpCommands.CreateRawHexSearchCommand());
         searchCommand.Subcommands.Add(DumpCommands.CreateLocateCommand());
         searchCommand.Subcommands.Add(DumpCommands.CreateLocateFormIdCommand());
         searchCommand.Subcommands.Add(DumpCommands.CreateFindFormIdCommand());

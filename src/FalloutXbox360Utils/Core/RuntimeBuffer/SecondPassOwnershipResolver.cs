@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using System.Text;
-using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Core.Minidump;
@@ -23,18 +22,18 @@ internal sealed class SecondPassOwnershipResolver
     private const int MaxVtableScanBack = 512;
 
     /// <summary>
-    ///     Pre-built lookup: maps (formType, bsStringTFieldOffset) → (recordCode, fieldLabel).
-    /// </summary>
-    private readonly Dictionary<(byte FormType, int FieldOffset), (string RecordCode, string FieldLabel)>
-        _bsStringTFieldIndex;
-
-    /// <summary>
     ///     Sorted distinct field offsets from _bsStringTFieldIndex, used to avoid full
     ///     dictionary iteration in TryTESFormReverseLookup. For each unique offset we
     ///     compute one candidate base VA, peek the formType byte, then do a direct
     ///     dictionary lookup instead of scanning all entries.
     /// </summary>
     private readonly int[] _bsStringTDistinctOffsets;
+
+    /// <summary>
+    ///     Pre-built lookup: maps (formType, bsStringTFieldOffset) → (recordCode, fieldLabel).
+    /// </summary>
+    private readonly Dictionary<(byte FormType, int FieldOffset), (string RecordCode, string FieldLabel)>
+        _bsStringTFieldIndex;
 
     /// <summary>
     ///     Maps PDB class name → (formType, list of char* pointer field offsets).

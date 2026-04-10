@@ -103,4 +103,7 @@ xEdit_error.txt
 # Research notes and archived probe artifacts
 docs/facegen_egt_residual_investigation.md
 docs/facegen_testoutput_research_index.md
+docs/facegen_head_rendering_current_status.md
+docs/facegen_head_rendering_function_map.md
+docs/facegen_head_rendering_pipeline.md
 research/facegen_research_artifacts/

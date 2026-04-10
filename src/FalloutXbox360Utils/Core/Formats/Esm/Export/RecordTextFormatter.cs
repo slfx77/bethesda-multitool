@@ -73,13 +73,13 @@ internal static class RecordTextFormatter
             new("FormID", ReportValue.String($"0x{report.FormId:X8}"))
         };
         if (!string.IsNullOrEmpty(report.EditorId))
-            identityFields.Add(new("Editor ID", ReportValue.String(report.EditorId)));
+            identityFields.Add(new ReportField("Editor ID", ReportValue.String(report.EditorId)));
         if (!string.IsNullOrEmpty(report.DisplayName))
-            identityFields.Add(new("Display Name", ReportValue.String(report.DisplayName)));
+            identityFields.Add(new ReportField("Display Name", ReportValue.String(report.DisplayName)));
 
         // Prepend to existing Identity section if one exists, otherwise create one
-        var existingIdentity = report.Sections.FirstOrDefault(
-            s => s.Name.Equals("Identity", StringComparison.OrdinalIgnoreCase));
+        var existingIdentity =
+            report.Sections.FirstOrDefault(s => s.Name.Equals("Identity", StringComparison.OrdinalIgnoreCase));
         if (existingIdentity != null)
         {
             existingIdentity.Fields.InsertRange(0, identityFields);

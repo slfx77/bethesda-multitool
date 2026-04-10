@@ -493,7 +493,7 @@ public record RecordCollection
         {
             foreach (var obj in cell.PlacedObjects)
             {
-                if (obj.LockKeyFormId is not (> 0))
+                if (obj.LockKeyFormId is not > 0)
                 {
                     continue;
                 }
@@ -523,7 +523,7 @@ public record RecordCollection
         {
             foreach (var slot in weapon.ModSlots)
             {
-                if (slot.ModFormId is not (> 0))
+                if (slot.ModFormId is not > 0)
                 {
                     continue;
                 }

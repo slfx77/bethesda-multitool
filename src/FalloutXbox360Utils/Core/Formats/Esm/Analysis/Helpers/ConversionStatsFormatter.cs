@@ -1,5 +1,4 @@
 using System.Globalization;
-using FalloutXbox360Utils.Core.Formats.Esm.Conversion;
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Indexing;
 using Spectre.Console;
 using static FalloutXbox360Utils.Core.Formats.Esm.Conversion.EsmEndianHelpers;

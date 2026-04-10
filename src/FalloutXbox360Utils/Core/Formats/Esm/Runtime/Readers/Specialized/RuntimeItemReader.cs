@@ -23,13 +23,13 @@ internal sealed class RuntimeItemReader(
     private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
         MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
 
+    // Fine-grained shift on top of the chosen layout (for builds that drift slightly).
+    private readonly int _weaponSoundShift = weaponSoundProbe?.FineShift ?? 0;
+
     // Selected weapon sound layout variant (V1 = early FO3-derived, V2 = FNV).
     // The probe picks whichever pattern-matches better; default to V2 if no probe result.
     private readonly RuntimeWeaponSoundLayoutVariant _weaponSoundVariant =
         weaponSoundProbe?.Variant ?? RuntimeWeaponSoundLayoutVariant.V2;
-
-    // Fine-grained shift on top of the chosen layout (for builds that drift slightly).
-    private readonly int _weaponSoundShift = weaponSoundProbe?.FineShift ?? 0;
 
     // Delegate container reading to dedicated class.
     private RuntimeContainerReader? _containerReader;
@@ -39,8 +39,10 @@ internal sealed class RuntimeItemReader(
 
     // Shared layouts for field reading.
     private RuntimeItemLayouts? _layouts;
+
     private RuntimeItemLayouts Layouts => _layouts ??=
         new RuntimeItemLayouts(_s, _weaponSoundShift, _weaponSoundVariant);
+
     private RuntimeItemFieldHelpers FieldHelpers => _fieldHelpers ??= new RuntimeItemFieldHelpers(_context, Layouts);
     private RuntimeContainerReader ContainerReader => _containerReader ??= new RuntimeContainerReader(_context);
 

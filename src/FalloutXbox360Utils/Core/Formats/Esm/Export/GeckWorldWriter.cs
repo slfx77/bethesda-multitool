@@ -1,5 +1,4 @@
 using System.Text;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 
@@ -339,7 +338,8 @@ internal static class GeckWorldWriter
 
             var disabledTag = obj.IsInitiallyDisabled ? " [DISABLED]" : "";
             var nameTag = displayName != null ? $" \"{displayName}\"" : "";
-            var display = $"{baseStr}{nameTag} ({obj.RecordType}) [{GeckReportHelpers.FormatFormId(obj.FormId)}]{disabledTag}";
+            var display =
+                $"{baseStr}{nameTag} ({obj.RecordType}) [{GeckReportHelpers.FormatFormId(obj.FormId)}]{disabledTag}";
             items.Add(new ReportValue.CompositeVal(fields, display));
         }
 

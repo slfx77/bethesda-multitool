@@ -1,6 +1,5 @@
 using System.CommandLine;
 using System.IO.MemoryMappedFiles;
-using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;

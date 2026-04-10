@@ -1,5 +1,3 @@
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
-
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
 
 internal sealed class NpcRenderModelCache

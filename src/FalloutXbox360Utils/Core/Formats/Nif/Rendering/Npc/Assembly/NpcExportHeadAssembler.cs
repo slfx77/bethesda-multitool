@@ -3,7 +3,6 @@ using FalloutXbox360Utils.CLI;
 using FalloutXbox360Utils.CLI.Rendering.Npc;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
 
@@ -96,6 +95,7 @@ internal static class NpcExportHeadAssembler
                 headPlan.AttachmentBoneTransforms,
                 headPlan.BonelessAttachmentTransform);
         }
+
         AddEyes(
             scene,
             npc,
@@ -214,6 +214,7 @@ internal static class NpcExportHeadAssembler
             AddHeadParts(scene, npc, meshArchives, textureResolver, egmCache, usedBaseRaceMesh,
                 attachmentBoneTransforms, bonelessAttachmentTransform);
         }
+
         AddEyes(scene, npc, meshArchives, textureResolver, egmCache, usedBaseRaceMesh,
             attachmentBoneTransforms, bonelessAttachmentTransform);
         AddHeadEquipment(scene, npc, meshArchives, textureResolver, egmCache, usedBaseRaceMesh,

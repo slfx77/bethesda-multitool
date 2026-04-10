@@ -9,7 +9,6 @@ namespace FalloutXbox360Utils.Core;
 /// </summary>
 public sealed class UnifiedAnalysisResult : IDisposable
 {
-    private MemoryMappedViewAccessor? _accessor;
     private MemoryMappedFile? _mmf;
 
     /// <summary>The detected file type.</summary>
@@ -27,26 +26,26 @@ public sealed class UnifiedAnalysisResult : IDisposable
     /// <summary>Source file path.</summary>
     public string FilePath { get; init; } = "";
 
-    internal MemoryMappedViewAccessor? Accessor => _accessor;
+    internal MemoryMappedViewAccessor? Accessor { get; private set; }
 
     public void Dispose()
     {
-        _accessor?.Dispose();
+        Accessor?.Dispose();
         _mmf?.Dispose();
     }
 
     internal void SetDisposables(MemoryMappedFile mmf, MemoryMappedViewAccessor accessor)
     {
         _mmf = mmf;
-        _accessor = accessor;
+        Accessor = accessor;
     }
 
     internal (MemoryMappedFile? MappedFile, MemoryMappedViewAccessor? Accessor) DetachDisposables()
     {
         var mappedFile = _mmf;
-        var accessor = _accessor;
+        var accessor = Accessor;
         _mmf = null;
-        _accessor = null;
+        Accessor = null;
         return (mappedFile, accessor);
     }
 }

@@ -1,6 +1,5 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.FaceGen;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
@@ -302,10 +301,10 @@ internal static class GeckActorDetailWriter
             .Where(c => Math.Abs(c.Value) > 0.01f)
             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .Select(c => (ReportValue)new ReportValue.CompositeVal(
-            [
-                new ReportField("Control", ReportValue.String(c.Name)),
-                new ReportField("Value", ReportValue.Float(c.Value, "F4"))
-            ], $"{c.Name}: {c.Value:F4}"))
+                [
+                    new ReportField("Control", ReportValue.String(c.Name)),
+                    new ReportField("Value", ReportValue.Float(c.Value, "F4"))
+                ], $"{c.Name}: {c.Value:F4}"))
             .ToList();
 
         fgFields.Add(new ReportField($"{label} Controls",

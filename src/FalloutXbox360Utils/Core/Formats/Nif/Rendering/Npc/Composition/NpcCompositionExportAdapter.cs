@@ -1,8 +1,6 @@
-using System.Numerics;
 using FalloutXbox360Utils.CLI;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
 

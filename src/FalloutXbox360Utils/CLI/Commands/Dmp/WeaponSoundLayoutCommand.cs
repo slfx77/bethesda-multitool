@@ -1,9 +1,8 @@
 using System.CommandLine;
+using System.Globalization;
 using System.IO.MemoryMappedFiles;
-using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Records;
-using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
 using Spectre.Console;
@@ -75,7 +74,7 @@ internal static class WeaponSoundLayoutCommand
             s = s[2..];
         }
 
-        return uint.TryParse(s, System.Globalization.NumberStyles.HexNumber, null, out result);
+        return uint.TryParse(s, NumberStyles.HexNumber, null, out result);
     }
 
     private static void Run(string dumpPath, uint targetFormId, int startOffset, int length)
@@ -114,8 +113,8 @@ internal static class WeaponSoundLayoutCommand
         }
 
         // Find the target weapon (FormType 0x28 = WEAP)
-        var weapon = scanResult.RuntimeEditorIds.FirstOrDefault(
-            e => e.FormType == 0x28 && e.FormId == targetFormId && e.TesFormOffset.HasValue);
+        var weapon = scanResult.RuntimeEditorIds.FirstOrDefault(e =>
+            e.FormType == 0x28 && e.FormId == targetFormId && e.TesFormOffset.HasValue);
         if (weapon == null)
         {
             AnsiConsole.MarkupLine(
@@ -157,8 +156,8 @@ internal static class WeaponSoundLayoutCommand
             var ptr = BinaryUtils.ReadUInt32BE(buffer, i);
             var hex = $"{buffer[i]:X2} {buffer[i + 1]:X2} {buffer[i + 2]:X2} {buffer[i + 3]:X2}";
 
-            string typeCol = "—";
-            string idCol = "(null)";
+            var typeCol = "—";
+            var idCol = "(null)";
 
             if (ptr != 0)
             {

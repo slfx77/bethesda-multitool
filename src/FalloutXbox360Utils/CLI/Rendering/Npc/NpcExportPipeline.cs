@@ -1,12 +1,9 @@
 using FalloutXbox360Utils.CLI.Rendering.Gltf;
-using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI.Rendering.Npc;

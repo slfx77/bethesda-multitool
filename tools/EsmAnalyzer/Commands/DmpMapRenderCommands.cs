@@ -4,6 +4,8 @@ using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core;
+using FalloutXbox360Utils.Core.Semantic;
 using ImageMagick;
 using ImageMagick.Drawing;
 using Spectre.Console;
@@ -63,7 +65,7 @@ public static class DmpMapRenderCommands
     }
 
     private sealed record FrameData(
-        string FileName, string Stem, List<ExtractedRefrRecord> Markers, DateTime? ModuleTimestamp);
+        string FileName, string Stem, List<PlacedReference> Markers, DateTime? ModuleTimestamp);
 
     private static async Task RunAsync(string dirPath, string? outputDir, int longEdge, string schemeName,
         int gifDelay, string? fo3EsmPath, CancellationToken cancellationToken)
@@ -122,10 +124,13 @@ public static class DmpMapRenderCommands
             var fileName = Path.GetFileName(dmpFile);
             try
             {
-                var result = FalloutXbox360Utils.CLI.DmpDiagCommand.ProcessDmp(dmpFile);
-                var markers = result.Markers
-                    .Where(m => m.Position != null)
-                    .Where(m => !fo3MarkerFormIds.Contains(m.Header.FormId))
+                using var loaded = await SemanticFileLoader.LoadAsync(
+                    dmpFile,
+                    new SemanticFileLoadOptions { FileType = AnalysisFileType.Minidump },
+                    cancellationToken);
+
+                var markers = loaded.Records.MapMarkers
+                    .Where(m => !fo3MarkerFormIds.Contains(m.FormId))
                     .ToList();
 
                 if (markers.Count == 0)
@@ -135,8 +140,15 @@ public static class DmpMapRenderCommands
                     continue;
                 }
 
+                DateTime? moduleTimestamp = null;
+                var gameModule = loaded.RawResult?.MinidumpInfo?.FindGameModule();
+                if (gameModule != null && gameModule.TimeDateStamp != 0)
+                {
+                    moduleTimestamp = DateTimeOffset.FromUnixTimeSeconds(gameModule.TimeDateStamp).UtcDateTime;
+                }
+
                 var stem = Path.GetFileNameWithoutExtension(fileName);
-                frameData.Add(new FrameData(fileName, stem, markers, result.ModuleTimestamp));
+                frameData.Add(new FrameData(fileName, stem, markers, moduleTimestamp));
             }
             catch (Exception ex)
             {
@@ -215,17 +227,12 @@ public static class DmpMapRenderCommands
 
         try
         {
-            var fileInfo = new FileInfo(esmPath);
-            using var mmf = MemoryMappedFile.CreateFromFile(esmPath, FileMode.Open, null, 0,
-                MemoryMappedFileAccess.Read);
-            using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
+            using var loaded = await SemanticFileLoader.LoadAsync(
+                esmPath,
+                new SemanticFileLoadOptions { FileType = AnalysisFileType.EsmFile },
+                cancellationToken);
 
-            var scanResult = EsmRecordScanner.ScanForRecordsMemoryMapped(accessor, fileInfo.Length);
-            EsmWorldExtractor.ExtractRefrRecords(accessor, fileInfo.Length, scanResult);
-
-            var markers = scanResult.RefrRecords
-                .Where(r => r.IsMapMarker && r.Position != null)
-                .ToList();
+            var markers = loaded.Records.MapMarkers.ToList();
 
             if (markers.Count == 0)
             {
@@ -273,20 +280,11 @@ public static class DmpMapRenderCommands
 
         try
         {
-            var fileInfo = new FileInfo(fo3EsmPath);
-            using var mmf = MemoryMappedFile.CreateFromFile(fo3EsmPath, FileMode.Open, null, 0,
-                MemoryMappedFileAccess.Read);
-            using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
+            using var loaded = SemanticFileLoader.LoadAsync(
+                fo3EsmPath,
+                new SemanticFileLoadOptions { FileType = AnalysisFileType.EsmFile }).GetAwaiter().GetResult();
 
-            var scanResult = EsmRecordScanner.ScanForRecordsMemoryMapped(accessor, fileInfo.Length);
-            EsmWorldExtractor.ExtractRefrRecords(accessor, fileInfo.Length, scanResult);
-
-            var markerIds = scanResult.RefrRecords
-                .Where(r => r.IsMapMarker)
-                .Select(r => r.Header.FormId)
-                .ToHashSet();
-
-            return markerIds;
+            return loaded.Records.MapMarkers.Select(m => m.FormId).ToHashSet();
         }
         catch (Exception ex)
         {
@@ -301,12 +299,12 @@ public static class DmpMapRenderCommands
 
     private sealed record WorldBounds(float MinX, float MaxX, float MinY, float MaxY, float WorldW, float WorldH);
 
-    private static WorldBounds ComputeWorldBounds(List<ExtractedRefrRecord> allMarkers)
+    private static WorldBounds ComputeWorldBounds(List<PlacedReference> allMarkers)
     {
-        var minX = allMarkers.Min(m => m.Position!.X);
-        var maxX = allMarkers.Max(m => m.Position!.X);
-        var minY = allMarkers.Min(m => m.Position!.Y);
-        var maxY = allMarkers.Max(m => m.Position!.Y);
+        var minX = allMarkers.Min(m => m.X);
+        var maxX = allMarkers.Max(m => m.X);
+        var minY = allMarkers.Min(m => m.Y);
+        var maxY = allMarkers.Max(m => m.Y);
 
         var worldW = maxX - minX;
         var worldH = maxY - minY;
@@ -335,7 +333,7 @@ public static class DmpMapRenderCommands
     // Single Frame Rendering
     // ========================================================================
 
-    private static void RenderMarkerMap(List<ExtractedRefrRecord> markers, string outputPath, int longEdge,
+    private static void RenderMarkerMap(List<PlacedReference> markers, string outputPath, int longEdge,
         SchemeColor scheme, WorldBounds bounds, string frameTitle)
     {
         var (imageW, imageH, pixelsPerUnit) = MapExportLayoutEngine.ComputeImageSize(
@@ -347,7 +345,7 @@ public static class DmpMapRenderCommands
         image.Write(outputPath, MagickFormat.Png);
     }
 
-    private static void DrawMarkersAndLabels(MagickImage image, List<ExtractedRefrRecord> markers,
+    private static void DrawMarkersAndLabels(MagickImage image, List<PlacedReference> markers,
         WorldBounds bounds, float pixelsPerUnit, int imageW, int imageH,
         MapExportSizing sizing, SchemeColor scheme, string frameTitle)
     {
@@ -358,13 +356,12 @@ public static class DmpMapRenderCommands
                 var name = m.MarkerName;
                 if (!string.IsNullOrEmpty(name))
                 {
-                    var x = (int)MathF.Round(m.Position!.X);
-                    var y = (int)MathF.Round(m.Position.Y);
+                    var x = (int)MathF.Round(m.X);
+                    var y = (int)MathF.Round(m.Y);
                     name = $"{name}\n({x}, {y})";
                 }
 
-                return new MapMarkerInput(m.Position!.X, m.Position.Y,
-                    ToMarkerType(m.MarkerType), name);
+                return new MapMarkerInput(m.X, m.Y, m.MarkerType, name);
             })
             .ToList();
 

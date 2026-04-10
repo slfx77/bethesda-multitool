@@ -27,7 +27,7 @@ internal static class WeaponSelectionScorer
             return null;
         }
 
-        IReadOnlyList<WeapScanEntry> pool = candidates;
+        var pool = candidates;
         if (restriction != WeaponRestriction.None)
         {
             var filtered = new List<WeapScanEntry>();
@@ -167,8 +167,8 @@ internal static class WeaponSelectionScorer
 
         var weaponSkill = skills[index];
         // Average all combat-related skills (Melee, Guns, Energy, BigGuns, Explosives, Unarmed, Thrown)
-        int sum = 0;
-        int count = 0;
+        var sum = 0;
+        var count = 0;
         ReadOnlySpan<int> combatSkillIndices = stackalloc int[] { 1, 2, 3, 6, 9, 12, 13 };
         foreach (var i in combatSkillIndices)
         {

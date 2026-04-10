@@ -24,7 +24,7 @@ internal static class RenderNifProcessor
         var selection = SpriteRenderBackendSelector.Create(
             s.ForceCpu,
             s.ForceGpu,
-            forcedCpuMessage: "Using CPU software renderer ([yellow]--cpu[/])",
+            "Using CPU software renderer ([yellow]--cpu[/])",
             fallbackCpuMessage: null);
         return (selection.Device, selection.Renderer);
     }

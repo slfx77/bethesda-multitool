@@ -20,17 +20,26 @@ internal static class NpcFaceGenTextureVerifier
     private const int MorphInspectionRowSampleCount = 16;
     private const int TopResidualProjectionCount = 10;
     private const int TopRegionRawFitCount = 5;
+    private const string ExternalBlendPrimaryFileName = "headchildfemale.egt";
+    private const int ExternalBlendPrimaryMorphIndex = 37;
+    private const string ExternalBlendSecondaryFileName = "headchild.egt";
+    private const int ExternalBlendSecondaryMorphIndex = 41;
     private static readonly int[] LateHotspotFamilyIndices = [35, 36, 37, 38, 39, 40, 41, 42, 43, 45, 46, 49];
     private static readonly Dictionary<uint, Dictionary<int, CrossNpcRequiredRow>> InspectRequiredRows = [];
+    private static readonly Dictionary<uint, InspectNpcState> InspectNpcStates = [];
+    private static readonly Dictionary<uint, string> InspectCurrentEgtPaths = [];
     internal static bool EnableRawDeltaCoefficientFit { get; set; }
     internal static bool EnableResidualProjection { get; set; }
     internal static int[]? ResidualSubspaceIndices { get; set; }
     internal static int[]? InspectMorphIndices { get; set; }
+    internal static bool EnableInspectMorphSummaryOnly { get; set; }
     internal static bool EnableMorphStructure { get; set; }
 
     internal static void ResetInspectMorphRunState()
     {
         InspectRequiredRows.Clear();
+        InspectNpcStates.Clear();
+        InspectCurrentEgtPaths.Clear();
     }
 
     internal static IReadOnlyDictionary<uint, ShippedNpcFaceTexture> DiscoverShippedFaceTextures(
@@ -949,16 +958,7 @@ internal static class NpcFaceGenTextureVerifier
         (float[] R, float[] G, float[] B) currentNative,
         (float[] R, float[] G, float[] B) shippedDecoded)
     {
-        if (!meshArchives.TryExtractFile(egtPath, out var rawEgtData, out var rawArchivePath))
-        {
-            Console.WriteLine(
-                $"  MORPH-INSPECT 0x{appearance.NpcFormId:X8}: raw EGT extract failed for {egtPath}");
-            return;
-        }
-
-        var rowStride = AlignTo(egt.Cols, 8);
-        var channelSize = rowStride * egt.Rows;
-        var morphSize = 4 + (3 * channelSize);
+        InspectCurrentEgtPaths[appearance.NpcFormId] = egtPath;
         var namedRegions = GetNamedRegions(egt.Cols, egt.Rows)
             .ToDictionary(region => region.Name, region => region, StringComparer.OrdinalIgnoreCase);
         var eyes = namedRegions["eyes"];
@@ -980,6 +980,59 @@ internal static class NpcFaceGenTextureVerifier
             mouth.Y,
             mouth.W,
             mouth.H);
+        var npcState = new InspectNpcState(
+            egt.Cols,
+            egt.Rows,
+            currentNative,
+            shippedDecoded,
+            currentRawMae,
+            currentEyesRawMae,
+            currentMouthRawMae,
+            new Dictionary<int, InspectMorphState>());
+        InspectNpcStates[appearance.NpcFormId] = npcState;
+
+        if (EnableInspectMorphSummaryOnly)
+        {
+            foreach (var morphIndex in morphIndices
+                         .Where(index => index >= 0)
+                         .Distinct()
+                         .OrderBy(index => index))
+            {
+                if (morphIndex >= egt.SymmetricMorphs.Length)
+                {
+                    continue;
+                }
+
+                var morph = egt.SymmetricMorphs[morphIndex];
+                var coeff = morphIndex < currentCoefficients.Length ? currentCoefficients[morphIndex] : 0f;
+                var coeff256 = (int)(coeff * 256f);
+                var scale256 = (int)(morph.Scale * 256f);
+                var contributionFactor = coeff256 * scale256 / 65536f;
+                npcState.Morphs[morphIndex] = new InspectMorphState(morphIndex, morph, contributionFactor);
+
+                CrossSearchRequiredRows(
+                    egt,
+                    morphIndex,
+                    morph,
+                    coeff256,
+                    currentNative,
+                    shippedDecoded,
+                    appearance.NpcFormId);
+            }
+
+            return;
+        }
+
+        if (!meshArchives.TryExtractFile(egtPath, out var rawEgtData, out var rawArchivePath))
+        {
+            Console.WriteLine(
+                $"  MORPH-INSPECT 0x{appearance.NpcFormId:X8}: raw EGT extract failed for {egtPath}");
+            return;
+        }
+
+        var rowStride = AlignTo(egt.Cols, 8);
+        var channelSize = rowStride * egt.Rows;
+        var morphSize = 4 + (3 * channelSize);
 
         Console.WriteLine(
             $"  MORPH-INSPECT 0x{appearance.NpcFormId:X8}: source={Path.GetFileName(rawArchivePath)} " +
@@ -1011,6 +1064,7 @@ internal static class NpcFaceGenTextureVerifier
             var coeff256 = (int)(coeff * 256f);
             var scale256 = (int)(morph.Scale * 256f);
             var contributionFactor = coeff256 * scale256 / 65536f;
+            npcState.Morphs[morphIndex] = new InspectMorphState(morphIndex, morph, contributionFactor);
             var stats = ComputeMorphContributionStats(egt, morph, contributionFactor);
             var residualAlignment = ComputeMorphResidualAlignment(egt, morph, currentNative, shippedDecoded);
 
@@ -1230,6 +1284,11 @@ internal static class NpcFaceGenTextureVerifier
             requiredG,
             requiredB);
 
+        if (EnableInspectMorphSummaryOnly)
+        {
+            return;
+        }
+
         var channelNames = new[] { "R", "G", "B" };
         var requiredChannels = new[] { requiredR, requiredG, requiredB };
 
@@ -1403,6 +1462,723 @@ internal static class NpcFaceGenTextureVerifier
                 }
             }
         }
+    }
+
+    internal static void PrintExternalHeadEgtRequiredRowSummary(
+        NpcMeshArchiveSet meshArchives,
+        Dictionary<string, EgtParser?> egtCache)
+    {
+        if (InspectRequiredRows.Count == 0)
+        {
+            return;
+        }
+
+        var excludedPaths = InspectCurrentEgtPaths.Values
+            .Select(NormalizeArchiveVirtualPath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var candidatePaths = EnumerateExternalHeadEgtPaths(meshArchives)
+            .Where(path => !excludedPaths.Contains(path))
+            .ToArray();
+        if (candidatePaths.Length == 0)
+        {
+            Console.WriteLine("  TARGETROW-EGTEXT: no external head EGT candidates");
+            return;
+        }
+
+        var candidates = new List<ExternalHeadEgtCandidate>(candidatePaths.Length);
+        foreach (var candidatePath in candidatePaths)
+        {
+            if (!egtCache.TryGetValue(candidatePath, out var candidateEgt))
+            {
+                candidateEgt = NpcMeshHelpers.LoadEgtFromBsa(candidatePath, meshArchives);
+                egtCache[candidatePath] = candidateEgt;
+            }
+
+            if (candidateEgt == null || candidateEgt.SymmetricMorphs.Length == 0)
+            {
+                continue;
+            }
+
+            candidates.Add(new ExternalHeadEgtCandidate(candidatePath, candidateEgt));
+        }
+
+        if (candidates.Count == 0)
+        {
+            Console.WriteLine("  TARGETROW-EGTEXT: external head EGT candidates failed to load");
+            return;
+        }
+
+        Console.WriteLine(
+            $"  TARGETROW-EGTEXT candidates={candidates.Count} excluded={excludedPaths.Count}:");
+
+        var sharedBlend2Fit = default(ExternalDonorBlendFit);
+        var sharedBlend2BiasFit = default(ExternalDonorBlendFit);
+        var sharedBlendMorphIndex = 37;
+        var sharedBlendRows = InspectRequiredRows.Values
+            .SelectMany(rows => rows.Values)
+            .Where(row => row.MorphIndex == sharedBlendMorphIndex)
+            .ToArray();
+        var sharedBlendDonor37 = FindExternalHeadEgtCandidateByFileName(candidates, "headchildfemale.egt");
+        var sharedBlendDonor41 = FindExternalHeadEgtCandidateByFileName(candidates, "headchild.egt");
+        if (sharedBlendRows.Length >= 2 &&
+            sharedBlendDonor37 != null &&
+            sharedBlendDonor41 != null &&
+            sharedBlendMorphIndex >= 0 &&
+            sharedBlendMorphIndex < sharedBlendDonor37.Egt.SymmetricMorphs.Length &&
+            41 >= 0 &&
+            41 < sharedBlendDonor41.Egt.SymmetricMorphs.Length)
+        {
+            sharedBlend2Fit = FitExternalDonorBlendRows(
+                sharedBlendRows,
+                sharedBlendDonor37.Egt.SymmetricMorphs[sharedBlendMorphIndex],
+                sharedBlendDonor41.Egt.SymmetricMorphs[41],
+                includeBias: false);
+            sharedBlend2BiasFit = FitExternalDonorBlendRows(
+                sharedBlendRows,
+                sharedBlendDonor37.Egt.SymmetricMorphs[sharedBlendMorphIndex],
+                sharedBlendDonor41.Egt.SymmetricMorphs[41],
+                includeBias: true);
+        }
+
+        foreach (var npcFormId in InspectRequiredRows.Keys.OrderBy(id => id))
+        {
+            if (!InspectNpcStates.TryGetValue(npcFormId, out var npcState))
+            {
+                continue;
+            }
+
+            var currentPath = InspectCurrentEgtPaths.TryGetValue(npcFormId, out var currentEgtPath)
+                ? currentEgtPath
+                : "<unknown>";
+            Console.WriteLine(
+                $"    0x{npcFormId:X8} current={currentPath}");
+
+            foreach (var sourceRow in InspectRequiredRows[npcFormId].Values.OrderBy(row => row.MorphIndex))
+            {
+                npcState.Morphs.TryGetValue(sourceRow.MorphIndex, out var sourceMorphState);
+                var best37 = FindBestExternalHeadEgtRowMatch(sourceRow, candidates, 37);
+                var bestLate = FindBestExternalHeadEgtRowMatch(sourceRow, candidates, LateHotspotFamilyIndices);
+                var best37Apply = sourceMorphState == null || best37 == null
+                    ? null
+                    : ComputeExternalDonorApplyStats(npcState, sourceMorphState, best37.Morph);
+                var bestLateApply = sourceMorphState == null || bestLate == null
+                    ? null
+                    : ComputeExternalDonorApplyStats(npcState, sourceMorphState, bestLate.Morph);
+                var blend2 = sourceMorphState == null || best37 == null || bestLate == null
+                    ? null
+                    : ComputeExternalDonorBlendStats(
+                        npcState,
+                        sourceMorphState,
+                        sourceRow,
+                        best37,
+                        bestLate,
+                        includeBias: false);
+                var blend2Bias = sourceMorphState == null || best37 == null || bestLate == null
+                    ? null
+                    : ComputeExternalDonorBlendStats(
+                        npcState,
+                        sourceMorphState,
+                        sourceRow,
+                        best37,
+                        bestLate,
+                        includeBias: true);
+                var sharedBlend2 = sourceMorphState == null ||
+                                   sourceRow.MorphIndex != sharedBlendMorphIndex ||
+                                   sharedBlend2Fit == null
+                    ? null
+                    : ComputeExternalDonorBlendApplyStats(
+                        npcState,
+                        sourceMorphState,
+                        sharedBlend2Fit);
+                var sharedBlend2Bias = sourceMorphState == null ||
+                                       sourceRow.MorphIndex != sharedBlendMorphIndex ||
+                                       sharedBlend2BiasFit == null
+                    ? null
+                    : ComputeExternalDonorBlendApplyStats(
+                        npcState,
+                        sourceMorphState,
+                        sharedBlend2BiasFit);
+
+                var best37Text = best37 == null
+                    ? "best37=none"
+                    : $"best37={best37.Path}[{best37.MorphIndex:D2}] " +
+                      $"cos={best37.Stats.Cosine,7:F4} corr={best37.Stats.Correlation,7:F4} " +
+                      $"affineMAE={best37.Stats.AffineFitMae,7:F2}";
+                var bestLateText = bestLate == null
+                    ? "bestLate=none"
+                    : $"bestLate={bestLate.Path}[{bestLate.MorphIndex:D2}] " +
+                      $"cos={bestLate.Stats.Cosine,7:F4} corr={bestLate.Stats.Correlation,7:F4} " +
+                      $"affineMAE={bestLate.Stats.AffineFitMae,7:F2}";
+                var vs37 = best37 == null || best37.Stats.AffineFitMae <= 1e-9 || bestLate == null
+                    ? 0d
+                    : Math.Max(0d, 100d * (1d - (bestLate.Stats.AffineFitMae / best37.Stats.AffineFitMae)));
+
+                Console.WriteLine(
+                    $"      [{sourceRow.MorphIndex:D2}] {best37Text} | {bestLateText} vs37={vs37,6:F1}%");
+                if (best37Apply != null)
+                {
+                    Console.WriteLine(
+                        $"           apply37 rawMAE={best37Apply.RawMetrics.MeanAbsoluteRgbError:F4} " +
+                        $"(Δ={best37Apply.RawMetrics.MeanAbsoluteRgbError - npcState.CurrentRawMae:+0.0000;-0.0000}) " +
+                        $"eyes={best37Apply.EyesRawMae:F4} " +
+                        $"(Δ={best37Apply.EyesRawMae - npcState.CurrentEyesRawMae:+0.0000;-0.0000}) " +
+                        $"mouth={best37Apply.MouthRawMae:F4} " +
+                        $"(Δ={best37Apply.MouthRawMae - npcState.CurrentMouthRawMae:+0.0000;-0.0000})");
+                }
+
+                if (bestLateApply != null)
+                {
+                    Console.WriteLine(
+                        $"           applyLate rawMAE={bestLateApply.RawMetrics.MeanAbsoluteRgbError:F4} " +
+                        $"(Δ={bestLateApply.RawMetrics.MeanAbsoluteRgbError - npcState.CurrentRawMae:+0.0000;-0.0000}) " +
+                        $"eyes={bestLateApply.EyesRawMae:F4} " +
+                        $"(Δ={bestLateApply.EyesRawMae - npcState.CurrentEyesRawMae:+0.0000;-0.0000}) " +
+                        $"mouth={bestLateApply.MouthRawMae:F4} " +
+                        $"(Δ={bestLateApply.MouthRawMae - npcState.CurrentMouthRawMae:+0.0000;-0.0000})");
+                }
+
+                if (blend2 != null)
+                {
+                    Console.WriteLine(
+                        $"           blend2 a={blend2.CoefficientA,7:F4} b={blend2.CoefficientB,7:F4} " +
+                        $"rowMAE={blend2.RowMae,7:F2}");
+                    Console.WriteLine(
+                        $"           applyBlend2 rawMAE={blend2.ApplyStats.RawMetrics.MeanAbsoluteRgbError:F4} " +
+                        $"(Δ={blend2.ApplyStats.RawMetrics.MeanAbsoluteRgbError - npcState.CurrentRawMae:+0.0000;-0.0000}) " +
+                        $"eyes={blend2.ApplyStats.EyesRawMae:F4} " +
+                        $"(Δ={blend2.ApplyStats.EyesRawMae - npcState.CurrentEyesRawMae:+0.0000;-0.0000}) " +
+                        $"mouth={blend2.ApplyStats.MouthRawMae:F4} " +
+                        $"(Δ={blend2.ApplyStats.MouthRawMae - npcState.CurrentMouthRawMae:+0.0000;-0.0000})");
+                }
+
+                if (blend2Bias != null)
+                {
+                    Console.WriteLine(
+                        $"           blend2b a={blend2Bias.CoefficientA,7:F4} b={blend2Bias.CoefficientB,7:F4} " +
+                        $"bias={blend2Bias.Bias,7:F4} rowMAE={blend2Bias.RowMae,7:F2}");
+                    Console.WriteLine(
+                        $"           applyBlend2b rawMAE={blend2Bias.ApplyStats.RawMetrics.MeanAbsoluteRgbError:F4} " +
+                        $"(Δ={blend2Bias.ApplyStats.RawMetrics.MeanAbsoluteRgbError - npcState.CurrentRawMae:+0.0000;-0.0000}) " +
+                        $"eyes={blend2Bias.ApplyStats.EyesRawMae:F4} " +
+                        $"(Δ={blend2Bias.ApplyStats.EyesRawMae - npcState.CurrentEyesRawMae:+0.0000;-0.0000}) " +
+                        $"mouth={blend2Bias.ApplyStats.MouthRawMae:F4} " +
+                        $"(Δ={blend2Bias.ApplyStats.MouthRawMae - npcState.CurrentMouthRawMae:+0.0000;-0.0000})");
+                }
+
+                if (sharedBlend2 != null)
+                {
+                    Console.WriteLine(
+                        $"           sharedBlend2 a={sharedBlend2.CoefficientA,7:F4} b={sharedBlend2.CoefficientB,7:F4} " +
+                        $"rowMAE={sharedBlend2.RowMae,7:F2}");
+                    Console.WriteLine(
+                        $"           applySharedBlend2 rawMAE={sharedBlend2.ApplyStats.RawMetrics.MeanAbsoluteRgbError:F4} " +
+                        $"(Δ={sharedBlend2.ApplyStats.RawMetrics.MeanAbsoluteRgbError - npcState.CurrentRawMae:+0.0000;-0.0000}) " +
+                        $"eyes={sharedBlend2.ApplyStats.EyesRawMae:F4} " +
+                        $"(Δ={sharedBlend2.ApplyStats.EyesRawMae - npcState.CurrentEyesRawMae:+0.0000;-0.0000}) " +
+                        $"mouth={sharedBlend2.ApplyStats.MouthRawMae:F4} " +
+                        $"(Δ={sharedBlend2.ApplyStats.MouthRawMae - npcState.CurrentMouthRawMae:+0.0000;-0.0000})");
+                }
+
+                if (sharedBlend2Bias != null)
+                {
+                    Console.WriteLine(
+                        $"           sharedBlend2b a={sharedBlend2Bias.CoefficientA,7:F4} b={sharedBlend2Bias.CoefficientB,7:F4} " +
+                        $"bias={sharedBlend2Bias.Bias,7:F4} rowMAE={sharedBlend2Bias.RowMae,7:F2}");
+                    Console.WriteLine(
+                        $"           applySharedBlend2b rawMAE={sharedBlend2Bias.ApplyStats.RawMetrics.MeanAbsoluteRgbError:F4} " +
+                        $"(Δ={sharedBlend2Bias.ApplyStats.RawMetrics.MeanAbsoluteRgbError - npcState.CurrentRawMae:+0.0000;-0.0000}) " +
+                        $"eyes={sharedBlend2Bias.ApplyStats.EyesRawMae:F4} " +
+                        $"(Δ={sharedBlend2Bias.ApplyStats.EyesRawMae - npcState.CurrentEyesRawMae:+0.0000;-0.0000}) " +
+                        $"mouth={sharedBlend2Bias.ApplyStats.MouthRawMae:F4} " +
+                        $"(Δ={sharedBlend2Bias.ApplyStats.MouthRawMae - npcState.CurrentMouthRawMae:+0.0000;-0.0000})");
+                }
+            }
+        }
+    }
+
+    private static IReadOnlyList<string> EnumerateExternalHeadEgtPaths(NpcMeshArchiveSet meshArchives)
+    {
+        var discovered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var archivePath in meshArchives.ArchivePaths)
+        {
+            var archive = BsaParser.Parse(archivePath);
+            foreach (var file in archive.AllFiles)
+            {
+                var normalized = NormalizeArchiveVirtualPath(file.FullPath);
+                if (!normalized.EndsWith(".egt", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var fileName = Path.GetFileName(normalized);
+                if (fileName?.Contains("head", StringComparison.OrdinalIgnoreCase) != true)
+                {
+                    continue;
+                }
+
+                discovered.Add(normalized);
+            }
+        }
+
+        return discovered.OrderBy(path => path, StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    private static ExternalHeadEgtRowMatch? FindBestExternalHeadEgtRowMatch(
+        CrossNpcRequiredRow sourceRow,
+        IReadOnlyList<ExternalHeadEgtCandidate> candidates,
+        int morphIndex)
+    {
+        CrossNpcRequiredRowSimilarity? bestStats = null;
+        ExternalHeadEgtCandidate? bestCandidate = null;
+
+        foreach (var candidate in candidates)
+        {
+            if (morphIndex < 0 || morphIndex >= candidate.Egt.SymmetricMorphs.Length)
+            {
+                continue;
+            }
+
+            var candidateRow = CreateCrossNpcRequiredRow(candidate.Path, morphIndex, candidate.Egt.SymmetricMorphs[morphIndex]);
+            if (!AreComparableRows(sourceRow, candidateRow))
+            {
+                continue;
+            }
+
+            var stats = ComputeCrossNpcRequiredRowSimilarity(sourceRow, candidateRow);
+            if (bestStats == null || stats.AffineFitMae < bestStats.AffineFitMae)
+            {
+                bestStats = stats;
+                bestCandidate = candidate;
+            }
+        }
+
+        return bestStats == null || bestCandidate == null
+            ? null
+            : new ExternalHeadEgtRowMatch(
+                Path.GetFileName(bestCandidate.Path) ?? bestCandidate.Path,
+                bestCandidate.Path,
+                morphIndex,
+                bestStats,
+                bestCandidate.Egt.SymmetricMorphs[morphIndex]);
+    }
+
+    private static ExternalHeadEgtRowMatch? FindBestExternalHeadEgtRowMatch(
+        CrossNpcRequiredRow sourceRow,
+        IReadOnlyList<ExternalHeadEgtCandidate> candidates,
+        IReadOnlyList<int> morphIndices)
+    {
+        ExternalHeadEgtRowMatch? bestMatch = null;
+
+        foreach (var morphIndex in morphIndices)
+        {
+            var candidateMatch = FindBestExternalHeadEgtRowMatch(sourceRow, candidates, morphIndex);
+            if (candidateMatch == null)
+            {
+                continue;
+            }
+
+            if (bestMatch == null || candidateMatch.Stats.AffineFitMae < bestMatch.Stats.AffineFitMae)
+            {
+                bestMatch = candidateMatch;
+            }
+        }
+
+        return bestMatch;
+    }
+
+    private static CrossNpcRequiredRow CreateCrossNpcRequiredRow(
+        string sourcePath,
+        int morphIndex,
+        EgtMorph morph)
+    {
+        return new CrossNpcRequiredRow(
+            morphIndex,
+            morph.DeltaR,
+            morph.DeltaG,
+            morph.DeltaB,
+            sourcePath);
+    }
+
+    private static bool AreComparableRows(
+        CrossNpcRequiredRow source,
+        CrossNpcRequiredRow target)
+    {
+        return source.RequiredR.Length == target.RequiredR.Length &&
+               source.RequiredG.Length == target.RequiredG.Length &&
+               source.RequiredB.Length == target.RequiredB.Length;
+    }
+
+    private static string NormalizeArchiveVirtualPath(string path)
+    {
+        return path
+            .Replace('/', '\\')
+            .TrimStart('\\');
+    }
+
+    private static ExternalDonorApplyStats? ComputeExternalDonorApplyStats(
+        InspectNpcState npcState,
+        InspectMorphState sourceMorphState,
+        EgtMorph donorMorph)
+    {
+        if (Math.Abs(sourceMorphState.Factor) <= 1e-9f)
+        {
+            return null;
+        }
+
+        var pixelCount = npcState.Cols * npcState.Rows;
+        if (sourceMorphState.SourceMorph.DeltaR.Length != pixelCount ||
+            donorMorph.DeltaR.Length != pixelCount ||
+            sourceMorphState.SourceMorph.DeltaG.Length != pixelCount ||
+            donorMorph.DeltaG.Length != pixelCount ||
+            sourceMorphState.SourceMorph.DeltaB.Length != pixelCount ||
+            donorMorph.DeltaB.Length != pixelCount)
+        {
+            return null;
+        }
+
+        var correctedR = new float[pixelCount];
+        var correctedG = new float[pixelCount];
+        var correctedB = new float[pixelCount];
+        for (var pixelIndex = 0; pixelIndex < pixelCount; pixelIndex++)
+        {
+            correctedR[pixelIndex] = npcState.CurrentNative.R[pixelIndex] +
+                ((donorMorph.DeltaR[pixelIndex] - sourceMorphState.SourceMorph.DeltaR[pixelIndex]) * sourceMorphState.Factor);
+            correctedG[pixelIndex] = npcState.CurrentNative.G[pixelIndex] +
+                ((donorMorph.DeltaG[pixelIndex] - sourceMorphState.SourceMorph.DeltaG[pixelIndex]) * sourceMorphState.Factor);
+            correctedB[pixelIndex] = npcState.CurrentNative.B[pixelIndex] +
+                ((donorMorph.DeltaB[pixelIndex] - sourceMorphState.SourceMorph.DeltaB[pixelIndex]) * sourceMorphState.Factor);
+        }
+
+        var corrected = (correctedR, correctedG, correctedB);
+        var rawMetrics = CompareFloatDeltaRgb(corrected, npcState.ShippedDecoded);
+        var regions = GetNamedRegions(npcState.Cols, npcState.Rows)
+            .ToDictionary(region => region.Name, region => region, StringComparer.OrdinalIgnoreCase);
+        var eyes = regions["eyes"];
+        var mouth = regions["mouth"];
+
+        return new ExternalDonorApplyStats(
+            rawMetrics,
+            GetRegionRawMae(corrected, npcState.ShippedDecoded, npcState.Cols, eyes.X, eyes.Y, eyes.W, eyes.H),
+            GetRegionRawMae(corrected, npcState.ShippedDecoded, npcState.Cols, mouth.X, mouth.Y, mouth.W, mouth.H));
+    }
+
+    private static ExternalDonorBlendStats? ComputeExternalDonorBlendStats(
+        InspectNpcState npcState,
+        InspectMorphState sourceMorphState,
+        CrossNpcRequiredRow sourceRow,
+        ExternalHeadEgtRowMatch donorA,
+        ExternalHeadEgtRowMatch donorB,
+        bool includeBias)
+    {
+        var fit = FitExternalDonorBlendRow(sourceRow, donorA.Morph, donorB.Morph, includeBias);
+        if (fit == null)
+        {
+            return null;
+        }
+
+        var blendedMorph = new EgtMorph
+        {
+            Scale = sourceMorphState.SourceMorph.Scale,
+            DeltaR = fit.DeltaR,
+            DeltaG = fit.DeltaG,
+            DeltaB = fit.DeltaB
+        };
+        var applyStats = ComputeExternalDonorApplyStats(npcState, sourceMorphState, blendedMorph);
+        return applyStats == null
+            ? null
+            : new ExternalDonorBlendStats(
+                fit.CoefficientA,
+                fit.CoefficientB,
+                fit.Bias,
+                fit.RowMae,
+                applyStats);
+    }
+
+    private static ExternalDonorBlendStats? ComputeExternalDonorBlendApplyStats(
+        InspectNpcState npcState,
+        InspectMorphState sourceMorphState,
+        ExternalDonorBlendFit fit)
+    {
+        var blendedMorph = new EgtMorph
+        {
+            Scale = sourceMorphState.SourceMorph.Scale,
+            DeltaR = fit.DeltaR,
+            DeltaG = fit.DeltaG,
+            DeltaB = fit.DeltaB
+        };
+        var applyStats = ComputeExternalDonorApplyStats(npcState, sourceMorphState, blendedMorph);
+        return applyStats == null
+            ? null
+            : new ExternalDonorBlendStats(
+                fit.CoefficientA,
+                fit.CoefficientB,
+                fit.Bias,
+                fit.RowMae,
+                applyStats);
+    }
+
+    private static ExternalDonorBlendFit? FitExternalDonorBlendRow(
+        CrossNpcRequiredRow sourceRow,
+        EgtMorph donorA,
+        EgtMorph donorB,
+        bool includeBias)
+    {
+        return FitExternalDonorBlendRows([sourceRow], donorA, donorB, includeBias);
+    }
+
+    private static ExternalDonorBlendFit? FitExternalDonorBlendRows(
+        IReadOnlyList<CrossNpcRequiredRow> sourceRows,
+        EgtMorph donorA,
+        EgtMorph donorB,
+        bool includeBias)
+    {
+        if (sourceRows.Count == 0)
+        {
+            return null;
+        }
+
+        var pixelCount = sourceRows[0].RequiredR.Length;
+        if (sourceRows[0].RequiredG.Length != pixelCount ||
+            sourceRows[0].RequiredB.Length != pixelCount ||
+            donorA.DeltaR.Length != pixelCount ||
+            donorA.DeltaG.Length != pixelCount ||
+            donorA.DeltaB.Length != pixelCount ||
+            donorB.DeltaR.Length != pixelCount ||
+            donorB.DeltaG.Length != pixelCount ||
+            donorB.DeltaB.Length != pixelCount)
+        {
+            return null;
+        }
+
+        double sum11 = 0d;
+        double sum12 = 0d;
+        double sum22 = 0d;
+        double sum1 = 0d;
+        double sum2 = 0d;
+        double sumY = 0d;
+        double sum1Y = 0d;
+        double sum2Y = 0d;
+
+        static void AccumulateChannel(
+            sbyte[] target,
+            sbyte[] left,
+            sbyte[] right,
+            ref double sum11,
+            ref double sum12,
+            ref double sum22,
+            ref double sum1,
+            ref double sum2,
+            ref double sumY,
+            ref double sum1Y,
+            ref double sum2Y)
+        {
+            for (var i = 0; i < target.Length; i++)
+            {
+                var x1 = (double)left[i];
+                var x2 = (double)right[i];
+                var y = (double)target[i];
+                sum11 += x1 * x1;
+                sum12 += x1 * x2;
+                sum22 += x2 * x2;
+                sum1 += x1;
+                sum2 += x2;
+                sumY += y;
+                sum1Y += x1 * y;
+                sum2Y += x2 * y;
+            }
+        }
+
+        foreach (var sourceRow in sourceRows)
+        {
+            if (sourceRow.RequiredR.Length != pixelCount ||
+                sourceRow.RequiredG.Length != pixelCount ||
+                sourceRow.RequiredB.Length != pixelCount)
+            {
+                return null;
+            }
+
+            AccumulateChannel(sourceRow.RequiredR, donorA.DeltaR, donorB.DeltaR,
+                ref sum11, ref sum12, ref sum22, ref sum1, ref sum2, ref sumY, ref sum1Y, ref sum2Y);
+            AccumulateChannel(sourceRow.RequiredG, donorA.DeltaG, donorB.DeltaG,
+                ref sum11, ref sum12, ref sum22, ref sum1, ref sum2, ref sumY, ref sum1Y, ref sum2Y);
+            AccumulateChannel(sourceRow.RequiredB, donorA.DeltaB, donorB.DeltaB,
+                ref sum11, ref sum12, ref sum22, ref sum1, ref sum2, ref sumY, ref sum1Y, ref sum2Y);
+        }
+
+        var sampleCount = pixelCount * 3 * sourceRows.Count;
+
+        double[] solution;
+        if (includeBias)
+        {
+            if (!TrySolveLinearSystem(
+                    new[,]
+                    {
+                        { sum11, sum12, sum1 },
+                        { sum12, sum22, sum2 },
+                        { sum1, sum2, sampleCount }
+                    },
+                    [sum1Y, sum2Y, sumY],
+                    out solution))
+            {
+                return null;
+            }
+        }
+        else
+        {
+            if (!TrySolveLinearSystem(
+                    new[,]
+                    {
+                        { sum11, sum12 },
+                        { sum12, sum22 }
+                    },
+                    [sum1Y, sum2Y],
+                    out solution))
+            {
+                return null;
+            }
+        }
+
+        var coefficientA = solution[0];
+        var coefficientB = solution[1];
+        var bias = includeBias ? solution[2] : 0d;
+        var blendedR = new sbyte[pixelCount];
+        var blendedG = new sbyte[pixelCount];
+        var blendedB = new sbyte[pixelCount];
+        double sumAbs = 0d;
+
+        static sbyte BlendSample(double coefficientA, double coefficientB, double bias, sbyte left, sbyte right)
+        {
+            return (sbyte)Math.Clamp(
+                (int)Math.Round((coefficientA * left) + (coefficientB * right) + bias),
+                -128,
+                127);
+        }
+
+        for (var i = 0; i < pixelCount; i++)
+        {
+            blendedR[i] = BlendSample(coefficientA, coefficientB, bias, donorA.DeltaR[i], donorB.DeltaR[i]);
+            blendedG[i] = BlendSample(coefficientA, coefficientB, bias, donorA.DeltaG[i], donorB.DeltaG[i]);
+            blendedB[i] = BlendSample(coefficientA, coefficientB, bias, donorA.DeltaB[i], donorB.DeltaB[i]);
+        }
+
+        foreach (var sourceRow in sourceRows)
+        {
+            for (var i = 0; i < pixelCount; i++)
+            {
+                sumAbs += Math.Abs(blendedR[i] - sourceRow.RequiredR[i]);
+                sumAbs += Math.Abs(blendedG[i] - sourceRow.RequiredG[i]);
+                sumAbs += Math.Abs(blendedB[i] - sourceRow.RequiredB[i]);
+            }
+        }
+
+        return new ExternalDonorBlendFit(
+            coefficientA,
+            coefficientB,
+            bias,
+            sumAbs / sampleCount,
+            blendedR,
+            blendedG,
+            blendedB);
+    }
+
+    private static ExternalHeadEgtCandidate? FindExternalHeadEgtCandidateByFileName(
+        IReadOnlyList<ExternalHeadEgtCandidate> candidates,
+        string fileName)
+    {
+        foreach (var candidate in candidates)
+        {
+            var candidateFileName = Path.GetFileName(candidate.Path);
+            if (string.Equals(candidateFileName, fileName, StringComparison.OrdinalIgnoreCase))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TrySolveLinearSystem(
+        double[,] matrix,
+        double[] rightHandSide,
+        out double[] solution)
+    {
+        var size = rightHandSide.Length;
+        solution = new double[size];
+        if (matrix.GetLength(0) != size || matrix.GetLength(1) != size)
+        {
+            return false;
+        }
+
+        var workingMatrix = (double[,])matrix.Clone();
+        var workingRhs = (double[])rightHandSide.Clone();
+
+        for (var column = 0; column < size; column++)
+        {
+            var pivotRow = column;
+            var pivotAbs = Math.Abs(workingMatrix[pivotRow, column]);
+            for (var row = column + 1; row < size; row++)
+            {
+                var candidateAbs = Math.Abs(workingMatrix[row, column]);
+                if (candidateAbs > pivotAbs)
+                {
+                    pivotAbs = candidateAbs;
+                    pivotRow = row;
+                }
+            }
+
+            if (pivotAbs <= 1e-9)
+            {
+                return false;
+            }
+
+            if (pivotRow != column)
+            {
+                for (var swapColumn = column; swapColumn < size; swapColumn++)
+                {
+                    (workingMatrix[column, swapColumn], workingMatrix[pivotRow, swapColumn]) =
+                        (workingMatrix[pivotRow, swapColumn], workingMatrix[column, swapColumn]);
+                }
+
+                (workingRhs[column], workingRhs[pivotRow]) = (workingRhs[pivotRow], workingRhs[column]);
+            }
+
+            var pivot = workingMatrix[column, column];
+            for (var row = column + 1; row < size; row++)
+            {
+                var factor = workingMatrix[row, column] / pivot;
+                if (Math.Abs(factor) <= 1e-12)
+                {
+                    continue;
+                }
+
+                workingMatrix[row, column] = 0d;
+                for (var eliminationColumn = column + 1; eliminationColumn < size; eliminationColumn++)
+                {
+                    workingMatrix[row, eliminationColumn] -= factor * workingMatrix[column, eliminationColumn];
+                }
+
+                workingRhs[row] -= factor * workingRhs[column];
+            }
+        }
+
+        for (var row = size - 1; row >= 0; row--)
+        {
+            var value = workingRhs[row];
+            for (var column = row + 1; column < size; column++)
+            {
+                value -= workingMatrix[row, column] * solution[column];
+            }
+
+            var pivot = workingMatrix[row, row];
+            if (Math.Abs(pivot) <= 1e-9)
+            {
+                return false;
+            }
+
+            solution[row] = value / pivot;
+        }
+
+        return true;
     }
 
     private static CrossNpcRequiredRowSimilarity ComputeCrossNpcRequiredRowSimilarity(
@@ -4673,7 +5449,8 @@ internal static class NpcFaceGenTextureVerifier
         int MorphIndex,
         sbyte[] RequiredR,
         sbyte[] RequiredG,
-        sbyte[] RequiredB);
+        sbyte[] RequiredB,
+        string? SourcePath = null);
 
     private sealed record CrossNpcRequiredRowSimilarity(
         double Cosine,
@@ -4682,6 +5459,53 @@ internal static class NpcFaceGenTextureVerifier
         double AffineFitMae,
         double AffineScale,
         double AffineBias);
+
+    private sealed record ExternalHeadEgtCandidate(
+        string Path,
+        EgtParser Egt);
+
+    private sealed record ExternalHeadEgtRowMatch(
+        string Path,
+        string FullPath,
+        int MorphIndex,
+        CrossNpcRequiredRowSimilarity Stats,
+        EgtMorph Morph);
+
+    private sealed record InspectNpcState(
+        int Cols,
+        int Rows,
+        (float[] R, float[] G, float[] B) CurrentNative,
+        (float[] R, float[] G, float[] B) ShippedDecoded,
+        double CurrentRawMae,
+        double CurrentEyesRawMae,
+        double CurrentMouthRawMae,
+        Dictionary<int, InspectMorphState> Morphs);
+
+    private sealed record InspectMorphState(
+        int MorphIndex,
+        EgtMorph SourceMorph,
+        float Factor);
+
+    private sealed record ExternalDonorApplyStats(
+        FloatDeltaRgbComparisonMetrics RawMetrics,
+        double EyesRawMae,
+        double MouthRawMae);
+
+    private sealed record ExternalDonorBlendFit(
+        double CoefficientA,
+        double CoefficientB,
+        double Bias,
+        double RowMae,
+        sbyte[] DeltaR,
+        sbyte[] DeltaG,
+        sbyte[] DeltaB);
+
+    private sealed record ExternalDonorBlendStats(
+        double CoefficientA,
+        double CoefficientB,
+        double Bias,
+        double RowMae,
+        ExternalDonorApplyStats ApplyStats);
 
     private sealed record PrincipalComponentSet(
         double[] Eigenvalues,

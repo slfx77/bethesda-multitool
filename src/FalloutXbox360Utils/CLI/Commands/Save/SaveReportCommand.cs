@@ -1,13 +1,9 @@
 using System.CommandLine;
-using System.IO.MemoryMappedFiles;
 using System.Text;
 using FalloutXbox360Utils.Core;
-using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
-using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 using FalloutXbox360Utils.Core.Formats.SaveGame;
 using FalloutXbox360Utils.Core.Formats.SaveGame.Export;
-using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Semantic;
 using Spectre.Console;
 

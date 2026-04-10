@@ -169,6 +169,7 @@ internal sealed class DialogueTopicMerger(RecordParserContext context) : RecordH
                 else
                     unattributedIndices.Add(i);
             }
+
             if (attributedIndices.Count == 0 || unattributedIndices.Count == 0)
             {
                 continue;

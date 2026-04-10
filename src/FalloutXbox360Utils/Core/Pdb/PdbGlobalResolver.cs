@@ -3,7 +3,6 @@ using System.Globalization;
 using System.IO.MemoryMappedFiles;
 using System.Text;
 using System.Text.RegularExpressions;
-using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.RuntimeBuffer;
