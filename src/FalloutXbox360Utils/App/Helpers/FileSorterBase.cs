@@ -5,7 +5,7 @@ namespace FalloutXbox360Utils;
 /// </summary>
 /// <typeparam name="TItem">The type of items being sorted.</typeparam>
 /// <typeparam name="TColumn">The enum type defining sortable columns.</typeparam>
-internal abstract class FileSorterBase<TItem, TColumn> where TColumn : struct, Enum
+public abstract class FileSorterBase<TItem, TColumn> where TColumn : struct, Enum
 {
     public TColumn CurrentColumn { get; private set; }
 

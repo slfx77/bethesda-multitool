@@ -22,7 +22,7 @@ internal static class GeckWorldObjectWriter
             new("Force", ReportValue.Float(expl.Force)),
             new("Damage", ReportValue.Float(expl.Damage)),
             new("Radius", ReportValue.Float(expl.Radius)),
-            new("IS Radius", ReportValue.Float(expl.ISRadius))
+            new("IS Radius", ReportValue.Float(expl.IsRadius))
         };
         if (expl.Light != 0)
             statsFields.Add(new ReportField("Light", ReportValue.FormId(expl.Light, resolver), $"0x{expl.Light:X8}"));
@@ -129,7 +129,7 @@ internal static class GeckWorldObjectWriter
             sb.AppendLine($"  Force:       {expl.Force:F1}");
             sb.AppendLine($"  Damage:      {expl.Damage:F1}");
             sb.AppendLine($"  Radius:      {expl.Radius:F1}");
-            sb.AppendLine($"  IS Radius:   {expl.ISRadius:F1}");
+            sb.AppendLine($"  IS Radius:   {expl.IsRadius:F1}");
             if (expl.Light != 0)
             {
                 sb.AppendLine($"  Light:       {resolver.FormatFull(expl.Light)}");
@@ -406,9 +406,9 @@ internal static class GeckWorldObjectWriter
                 sb.AppendLine($"  Falloff:     {light.FalloffExponent:F2}");
             }
 
-            if (light.FOV is not 0f)
+            if (light.Fov is not 0f)
             {
-                sb.AppendLine($"  FOV:         {light.FOV:F1}\u00B0");
+                sb.AppendLine($"  FOV:         {light.Fov:F1}\u00B0");
             }
 
             if (light.Flags != 0)

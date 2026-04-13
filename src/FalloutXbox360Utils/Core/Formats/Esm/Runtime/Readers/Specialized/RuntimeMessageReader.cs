@@ -47,7 +47,7 @@ internal sealed class RuntimeMessageReader
             return null;
         }
 
-        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, FullNameOffset);
+        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, FullNameOffset);
         var flags = BinaryUtils.ReadUInt32BE(buffer, FlagsOffset);
         var displayTime = BinaryUtils.ReadUInt32BE(buffer, DisplayTimeOffset);
 

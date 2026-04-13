@@ -46,7 +46,7 @@ internal sealed class RuntimeSoundReader
             return null;
         }
 
-        var fileName = _context.ReadBSStringT(offset, SoundFileOffset);
+        var fileName = _context.ReadBsStringT(offset, SoundFileOffset);
 
         // SOUND_DATA struct at +76 (36 bytes) — same layout as SNDD subrecord
         var minAtten = buffer[SoundDataOffset + 0];

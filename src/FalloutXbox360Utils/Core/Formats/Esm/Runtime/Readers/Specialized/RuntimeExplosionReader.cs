@@ -46,8 +46,8 @@ internal sealed class RuntimeExplosionReader
             return null;
         }
 
-        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, FullNameOffset);
-        var modelPath = _context.ReadBSStringT(offset, ModelOffset);
+        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, FullNameOffset);
+        var modelPath = _context.ReadBsStringT(offset, ModelOffset);
 
         // BGSExplosionData (52 bytes at +132)
         var force = BinaryUtils.ReadFloatBE(buffer, ExpDataOffset);
@@ -81,7 +81,7 @@ internal sealed class RuntimeExplosionReader
             Light = light,
             Sound1 = sound1,
             Flags = flags,
-            ISRadius = isRadius,
+            IsRadius = isRadius,
             ImpactDataSet = impactDataSet,
             Sound2 = sound2,
             Enchantment = enchantment,

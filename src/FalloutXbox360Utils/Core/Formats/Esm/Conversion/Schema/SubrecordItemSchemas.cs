@@ -431,7 +431,7 @@ internal static class SubrecordItemSchemas
             F.FormId("Light"),
             F.FormId("Sound1"),
             F.UInt32("Flags"),
-            F.Float("ISRadius"),
+            F.Float("IsRadius"),
             F.FormId("ImpactDataSet"),
             F.FormId("Sound2"),
             F.Float("RadiationLevel"),

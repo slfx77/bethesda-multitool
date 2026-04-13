@@ -46,9 +46,9 @@ internal sealed class RuntimeWeaponModReader
             return null;
         }
 
-        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, FullNameOffset);
-        var modelPath = _context.ReadBSStringT(offset, ModelOffset);
-        var iconPath = _context.ReadBSStringT(offset, IconOffset);
+        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, FullNameOffset);
+        var modelPath = _context.ReadBsStringT(offset, ModelOffset);
+        var iconPath = _context.ReadBsStringT(offset, IconOffset);
 
         var value = RuntimeMemoryContext.ReadInt32BE(buffer, ValueOffset);
         if (value < 0 || value > 1_000_000)

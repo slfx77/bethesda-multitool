@@ -28,7 +28,7 @@ internal sealed class ExplosionShowRenderer : IRecordDisplayRenderer
             $"  [cyan]Force:[/]     {expl.Force:F1}",
             $"  [cyan]Damage:[/]    {expl.Damage:F1}",
             $"  [cyan]Radius:[/]    {expl.Radius:F1}",
-            $"  [cyan]IS Radius:[/] {expl.ISRadius:F1}"
+            $"  [cyan]IS Radius:[/] {expl.IsRadius:F1}"
         };
 
         if (expl.Flags != 0)

@@ -42,7 +42,7 @@ internal static class EditorIdLookupTables
             if (entry.FormType == infoFormType.Value && entry.TesFormOffset.HasValue)
             {
                 infoCount++;
-                var dialogueLine = EsmEditorIdStringReader.ReadBSStringT(accessor, fileSize, minidumpInfo,
+                var dialogueLine = EsmEditorIdStringReader.ReadBsStringT(accessor, fileSize, minidumpInfo,
                     entry.TesFormOffset.Value, EsmEditorIdConstants.InfoPromptOffset);
                 if (dialogueLine != null)
                 {

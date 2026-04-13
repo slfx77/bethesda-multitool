@@ -187,7 +187,7 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
         }
 
         var markerType = BinaryUtils.ReadUInt16BE(mapBuffer, MapMarkerTypeOffset);
-        var markerName = _context.ReadBSStringT(mapDataFileOffset, MapMarkerNameFieldOffset);
+        var markerName = _context.ReadBsStringT(mapDataFileOffset, MapMarkerNameFieldOffset);
 
         return (true, markerType, markerName);
     }
@@ -348,7 +348,7 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
 
     private string? ReadEditorId(long nodeFileOffset)
     {
-        return _context.ReadBSStringT(nodeFileOffset, ExtraPayloadPtrOffset);
+        return _context.ReadBsStringT(nodeFileOffset, ExtraPayloadPtrOffset);
     }
 
     private uint? ReadTeleportDestinationDoorFormId(long nodeFileOffset)

@@ -31,7 +31,7 @@ public record ExplosionRecord
     public uint Flags { get; init; }
 
     /// <summary>IS Radius from DATA (image space modifier radius).</summary>
-    public float ISRadius { get; init; }
+    public float IsRadius { get; init; }
 
     /// <summary>Impact Data Set FormID from DATA.</summary>
     public uint ImpactDataSet { get; init; }

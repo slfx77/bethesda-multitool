@@ -72,7 +72,7 @@ internal sealed class RuntimeWorldObjectReader(RuntimeMemoryContext context)
             Color = RuntimePdbFieldAccessor.ReadUInt32(buffer, lightDataOffset.Value + 8),
             Flags = RuntimePdbFieldAccessor.ReadUInt32(buffer, lightDataOffset.Value + 12),
             FalloffExponent = RuntimePdbFieldAccessor.ReadFloat(buffer, lightDataOffset.Value + 16),
-            FOV = RuntimePdbFieldAccessor.ReadFloat(buffer, lightDataOffset.Value + 20),
+            Fov = RuntimePdbFieldAccessor.ReadFloat(buffer, lightDataOffset.Value + 20),
             Value = (int)RuntimePdbFieldAccessor.ReadUInt32(buffer,
                 RuntimePdbFieldAccessor.FindFieldOffset(layout, "iValue", "TESValueForm") ?? lightDataOffset.Value),
             Weight = RuntimePdbFieldAccessor.ReadFloat(buffer,

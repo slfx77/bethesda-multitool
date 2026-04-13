@@ -93,7 +93,7 @@ internal sealed class RuntimeItemReader(
         var ammoFormId = _context.FollowPointerToFormId(buffer, Layouts.WeapAmmoPtrOffset);
 
         // Read model path via BSStringT at TESModel offset
-        var modelPath = _context.ReadBSStringT(offset, Layouts.WeapModelPathOffset);
+        var modelPath = _context.ReadBsStringT(offset, Layouts.WeapModelPathOffset);
         var embeddedWeaponNode = ReadBSStringTSafe(offset, Layouts.WeapEmbeddedWeaponNodeOffset);
 
         // Read sound pointers (TESSound* at various offsets). Offsets may be -1 for fields
@@ -254,8 +254,8 @@ internal sealed class RuntimeItemReader(
             : EquipmentType.None;
 
         // Model paths from TESBipedModelForm.bipedModel / worldModel (TESModelTextureSwap.cModel at +4)
-        var modelPath = _context.ReadBSStringT(offset, Layouts.ArmoBipedModelPathOffset)
-                        ?? _context.ReadBSStringT(offset, Layouts.ArmoWorldModelPathOffset);
+        var modelPath = _context.ReadBsStringT(offset, Layouts.ArmoBipedModelPathOffset)
+                        ?? _context.ReadBsStringT(offset, Layouts.ArmoWorldModelPathOffset);
 
         return new ArmorRecord
         {
@@ -316,7 +316,7 @@ internal sealed class RuntimeItemReader(
         }
 
         // Read world model path via BSStringT at TESModel offset (+80)
-        var modelPath = _context.ReadBSStringT(offset, Layouts.WeapModelPathOffset);
+        var modelPath = _context.ReadBsStringT(offset, Layouts.WeapModelPathOffset);
 
         // AMMO_DATA: speed (float) + flags (uint32)
         var speed = RuntimeMemoryContext.ReadValidatedFloat(buffer, Layouts.AmmoSpeedOffset, 0, 100000);
@@ -385,7 +385,7 @@ internal sealed class RuntimeItemReader(
         var weight = RuntimeMemoryContext.ReadValidatedFloat(buffer, Layouts.MiscWeightOffset, 0, 500);
 
         // Read model path via BSStringT at TESModel offset (+80)
-        var modelPath = _context.ReadBSStringT(offset, Layouts.WeapModelPathOffset);
+        var modelPath = _context.ReadBsStringT(offset, Layouts.WeapModelPathOffset);
 
         return new MiscItemRecord
         {
@@ -444,7 +444,7 @@ internal sealed class RuntimeItemReader(
         var weight = RuntimeMemoryContext.ReadValidatedFloat(buffer, Layouts.MiscWeightOffset, 0, 500);
 
         // Read model path via BSStringT at TESModel offset (+80)
-        var modelPath = _context.ReadBSStringT(offset, Layouts.WeapModelPathOffset);
+        var modelPath = _context.ReadBsStringT(offset, Layouts.WeapModelPathOffset);
 
         return new KeyRecord
         {
@@ -640,6 +640,6 @@ internal sealed class RuntimeItemReader(
     /// </summary>
     private string? ReadBSStringTSafe(long structFileOffset, int relOffset)
     {
-        return relOffset < 0 ? null : _context.ReadBSStringT(structFileOffset, relOffset);
+        return relOffset < 0 ? null : _context.ReadBsStringT(structFileOffset, relOffset);
     }
 }

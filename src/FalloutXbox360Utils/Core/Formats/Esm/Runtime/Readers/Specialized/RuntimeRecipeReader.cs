@@ -48,7 +48,7 @@ internal sealed class RuntimeRecipeReader
             return null;
         }
 
-        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, FullNameOffset);
+        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, FullNameOffset);
 
         // RECIPE_DATA at +52: Skill (int32) + Level (uint32)
         var skill = RuntimeMemoryContext.ReadInt32BE(buffer, RecipeDataOffset);

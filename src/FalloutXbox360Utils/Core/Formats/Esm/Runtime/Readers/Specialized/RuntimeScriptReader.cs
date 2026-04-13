@@ -282,7 +282,7 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
         }
 
         // Read cEditorID BSStringT at offset 0
-        var editorId = _context.ReadBSStringT(fileOffset.Value, 0);
+        var editorId = _context.ReadBsStringT(fileOffset.Value, 0);
 
         return (formId.Value, editorId);
     }
@@ -383,7 +383,7 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
         var type = isInteger != 0 ? (byte)1 : (byte)0;
 
         // Read cName BSStringT at offset 24
-        var name = _context.ReadBSStringT(fileOffset.Value, SvarNameOffset);
+        var name = _context.ReadBsStringT(fileOffset.Value, SvarNameOffset);
 
         return new ScriptVariableInfo(index, name, type);
     }

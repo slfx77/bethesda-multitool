@@ -315,7 +315,7 @@ internal static class RuntimeReaderFieldProbe
 
             case FieldCheck.BSStringT:
             {
-                var str = context.ReadBSStringT(structFileOffset, effectiveOffset);
+                var str = context.ReadBsStringT(structFileOffset, effectiveOffset);
                 return !string.IsNullOrEmpty(str) ? field.Weight : 0;
             }
 

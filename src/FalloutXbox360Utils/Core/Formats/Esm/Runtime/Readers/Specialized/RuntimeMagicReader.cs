@@ -59,9 +59,9 @@ internal sealed class RuntimeMagicReader
             return null;
         }
 
-        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, MgefFullNameOffset + _s);
-        var modelPath = _context.ReadBSStringT(offset, MgefModelOffset + _s);
-        var icon = _context.ReadBSStringT(offset, MgefIconOffset + _s);
+        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, MgefFullNameOffset + _s);
+        var modelPath = _context.ReadBsStringT(offset, MgefModelOffset + _s);
+        var icon = _context.ReadBsStringT(offset, MgefIconOffset + _s);
 
         // EffectSettingData (72 bytes)
         var dataBase = MgefDataOffset + _s;
@@ -155,7 +155,7 @@ internal sealed class RuntimeMagicReader
             return null;
         }
 
-        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, SpelFullNameOffset + _s);
+        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, SpelFullNameOffset + _s);
 
         // SpellItemData (16 bytes)
         var spelData = SpelDataOffset + _s;
@@ -216,7 +216,7 @@ internal sealed class RuntimeMagicReader
             return null;
         }
 
-        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, EnchFullNameOffset + _s);
+        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, EnchFullNameOffset + _s);
 
         // EnchantmentItemData (16 bytes)
         var enchData = EnchDataOffset + _s;
@@ -412,8 +412,8 @@ internal sealed class RuntimeMagicReader
             return null;
         }
 
-        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, PerkFullNameOffset + _s);
-        var iconPath = _context.ReadBSStringT(offset, PerkIconOffset + _s);
+        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, PerkFullNameOffset + _s);
+        var iconPath = _context.ReadBsStringT(offset, PerkIconOffset + _s);
 
         // PerkData (5 bytes)
         var perkData = PerkDataOffset + _s;

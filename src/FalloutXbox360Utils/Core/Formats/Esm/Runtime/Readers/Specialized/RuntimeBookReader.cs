@@ -54,8 +54,8 @@ internal sealed class RuntimeBookReader
             return null;
         }
 
-        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, _layout.FullNameOffset);
-        var modelPath = _context.ReadBSStringT(offset, _layout.ModelOffset);
+        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, _layout.FullNameOffset);
+        var modelPath = _context.ReadBsStringT(offset, _layout.ModelOffset);
 
         var value = RuntimeMemoryContext.ReadInt32BE(buffer, _layout.ValueOffset);
         if (value < 0 || value > 1_000_000)

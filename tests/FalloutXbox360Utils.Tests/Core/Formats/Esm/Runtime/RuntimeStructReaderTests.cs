@@ -655,7 +655,7 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : IDispos
 
     #endregion
 
-    #region ReadBSStringT Tests (via ReadRuntimeAmmo model path)
+    #region ReadBsStringT Tests (via ReadRuntimeAmmo model path)
 
     [Fact]
     public void ReadBSStringT_ValidString_ReturnsCorrectText()
@@ -678,12 +678,12 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : IDispos
 
         var reader = CreateReader(data);
 
-        // Test ReadBSStringT directly (it's public)
-        var result = reader.ReadBSStringT(structOffset, ModelPathBSStringTOffset);
+        // Test ReadBsStringT directly (it's public)
+        var result = reader.ReadBsStringT(structOffset, ModelPathBSStringTOffset);
 
         Assert.Equal(expectedPath, result);
 
-        _output.WriteLine($"ReadBSStringT returned: {result}");
+        _output.WriteLine($"ReadBsStringT returned: {result}");
     }
 
     [Fact]
@@ -697,7 +697,7 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : IDispos
         WriteUInt16BE(data, structOffset + ModelPathBSStringTOffset + 4, 0);
 
         var reader = CreateReader(data);
-        var result = reader.ReadBSStringT(structOffset, ModelPathBSStringTOffset);
+        var result = reader.ReadBsStringT(structOffset, ModelPathBSStringTOffset);
 
         Assert.Null(result);
 
@@ -711,7 +711,7 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : IDispos
         var reader = CreateReader(data);
 
         // Try to read BSStringT from beyond file boundary
-        var result = reader.ReadBSStringT(DataSize - 2, ModelPathBSStringTOffset);
+        var result = reader.ReadBsStringT(DataSize - 2, ModelPathBSStringTOffset);
 
         Assert.Null(result);
 

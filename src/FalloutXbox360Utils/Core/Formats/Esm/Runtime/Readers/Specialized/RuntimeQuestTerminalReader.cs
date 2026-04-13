@@ -69,7 +69,7 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
         }
 
         // Try to read quest display name from BSStringT, with fallback to hash table DisplayName
-        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, QustFullNameOffset);
+        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, QustFullNameOffset);
 
         // Follow pFormScript pointer → Script* → get Script FormID (0x11 = SCPT)
         var scriptFormId = _context.FollowPointerToFormId(buffer, QustScriptOffset, 0x11);
@@ -136,7 +136,7 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
         }
 
         // Read password (optional)
-        var password = _context.ReadBSStringT(offset, TermPasswordOffset);
+        var password = _context.ReadBsStringT(offset, TermPasswordOffset);
 
         // Parse menu items from BSSimpleList at +152
         var menuItems = WalkTerminalMenuItemList(offset);
@@ -195,8 +195,8 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
         }
 
         // BGSNote has TESModel at +64, TESFullName at +88 (reversed vs MISC/KEYM)
-        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, NoteFullNameOffset);
-        var modelPath = _context.ReadBSStringT(offset, NoteModelPathOffset);
+        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, NoteFullNameOffset);
+        var modelPath = _context.ReadBsStringT(offset, NoteModelPathOffset);
 
         return new NoteRecord
         {
@@ -294,7 +294,7 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
         }
 
         // Read ResponseText at +0 (BSStringT: 4-byte length pointer + 4-byte data pointer)
-        var text = _context.ReadBSStringT(fileOffset.Value, MenuItemResponseTextOffset);
+        var text = _context.ReadBsStringT(fileOffset.Value, MenuItemResponseTextOffset);
 
         // Read ResultScript FormID at +16
         var scriptPtr = BinaryUtils.ReadUInt32BE(buf, MenuItemResultScriptOffset);
@@ -571,7 +571,7 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
         }
 
         var initialized = buf[QuestObjectiveInitializedOffset] != 0;
-        var displayText = _context.ReadBSStringT(fileOffset.Value, QuestObjectiveDisplayTextOffset);
+        var displayText = _context.ReadBsStringT(fileOffset.Value, QuestObjectiveDisplayTextOffset);
         var state = BinaryUtils.ReadUInt32BE(buf, QuestObjectiveStateOffset);
         if (!initialized && string.IsNullOrEmpty(displayText))
         {

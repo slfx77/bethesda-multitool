@@ -184,7 +184,7 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
             if (projectileOffsets.TryGetValue(projFormId, out var projFileOffset))
             {
                 // Read model path BSStringT at dump offset +80 (TESModel.cModel in BGSProjectile)
-                projModelPath = Context.RuntimeReader.ReadBSStringT(projFileOffset, 80);
+                projModelPath = Context.RuntimeReader.ReadBsStringT(projFileOffset, 80);
             }
 
             // Create updated record with projectile data

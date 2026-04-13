@@ -375,7 +375,7 @@ internal sealed class RuntimeGenericReader(
         // BSStringT<char> is 8 bytes (4B pointer + 2B length + 2B maxLength) — try to resolve
         if (field.TypeDetail is "BSStringT<char>")
         {
-            var str = _context.ReadBSStringT(tesFormFileOffset, effectiveOffset);
+            var str = _context.ReadBsStringT(tesFormFileOffset, effectiveOffset);
             if (str != null)
             {
                 return str;

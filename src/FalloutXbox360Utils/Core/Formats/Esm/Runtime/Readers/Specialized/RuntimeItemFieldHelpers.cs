@@ -190,7 +190,7 @@ internal sealed class RuntimeItemFieldHelpers
                 var bsStringOffset = modelStructOffset + 4;
                 if (bsStringOffset >= 0 && bsStringOffset + 8 <= buffer.Length)
                 {
-                    thirdPersonPath = _context.ReadBSStringT(structFileOffset, bsStringOffset);
+                    thirdPersonPath = _context.ReadBsStringT(structFileOffset, bsStringOffset);
                 }
             }
 

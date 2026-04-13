@@ -99,8 +99,8 @@ internal sealed class RuntimeEffectReader(
         var defaultWeaponSource = _context.FollowPointerToFormId(buffer, ProjDefaultWeaponSourceOffset);
 
         // Read outer BGSProjectile fields
-        var modelPath = _context.ReadBSStringT(fileOffset, ModelPathOffset);
-        var fullName = _context.ReadBSStringT(fileOffset, ProjFullNameOffset);
+        var modelPath = _context.ReadBsStringT(fileOffset, ModelPathOffset);
+        var fullName = _context.ReadBsStringT(fileOffset, ProjFullNameOffset);
         var soundLevel = BinaryUtils.ReadUInt32BE(buffer, ProjSoundLevelOffset);
 
         return new ProjectilePhysicsData

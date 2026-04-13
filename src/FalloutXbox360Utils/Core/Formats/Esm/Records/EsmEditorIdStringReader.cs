@@ -17,7 +17,7 @@ internal static class EsmEditorIdStringReader
     ///     Offset 0: pString (char* pointer, 4 bytes BE)
     ///     Offset 4: sLen (uint16 BE)
     /// </summary>
-    internal static string? ReadBSStringT(
+    internal static string? ReadBsStringT(
         MemoryMappedViewAccessor accessor,
         long fileSize,
         MinidumpInfo minidumpInfo,

@@ -47,8 +47,8 @@ internal sealed class RuntimeCharacterAppearanceReader
             return null;
         }
 
-        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, EyesFullNameOffset);
-        var texturePath = _context.ReadBSStringT(offset, EyesTextureOffset);
+        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, EyesFullNameOffset);
+        var texturePath = _context.ReadBsStringT(offset, EyesTextureOffset);
         var flags = buffer[EyesFlagsOffset];
 
         return new EyesRecord
@@ -96,9 +96,9 @@ internal sealed class RuntimeCharacterAppearanceReader
             return null;
         }
 
-        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, HairFullNameOffset);
-        var modelPath = _context.ReadBSStringT(offset, HairModelOffset);
-        var texturePath = _context.ReadBSStringT(offset, HairTextureOffset);
+        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, HairFullNameOffset);
+        var modelPath = _context.ReadBsStringT(offset, HairModelOffset);
+        var texturePath = _context.ReadBsStringT(offset, HairTextureOffset);
         var flags = buffer[HairFlagsOffset];
 
         return new HairRecord

@@ -196,7 +196,7 @@ internal static class NifSpriteRenderer
         {
             foreach (var tri in triangleList)
             {
-                NifScanlineRasterizer.DrawTriangleWireframeOverlay(
+                NifWireframeRenderer.DrawTriangleWireframeOverlay(
                     ssPixels,
                     depthBuffer,
                     ssWidth,

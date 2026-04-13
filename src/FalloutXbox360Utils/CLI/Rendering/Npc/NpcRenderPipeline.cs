@@ -12,8 +12,17 @@ internal static class NpcRenderPipeline
 {
     internal static void Run(NpcRenderSettings settings)
     {
-        if (!ValidateInputPaths(settings, out var texturesBsaPaths))
+        var error = NpcPipelineHelpers.ValidateInputPaths(
+            settings.MeshesBsaPath,
+            settings.ExtraMeshesBsaPaths,
+            settings.EsmPath,
+            settings.ExplicitTexturesBsaPaths,
+            settings.DmpPath,
+            false,
+            out var texturesBsaPaths);
+        if (error != null)
         {
+            AnsiConsole.MarkupLine("[red]Error:[/] {0}", error);
             return;
         }
 
@@ -58,6 +67,7 @@ internal static class NpcRenderPipeline
 
         using var textureResolver = new NifTextureResolver(texturesBsaPaths);
         var pluginName = Path.GetFileName(settings.EsmPath);
+
         var appearances = ResolveAppearances(settings, resolver, pluginName);
         var creatures = ResolveCreatures(settings, resolver);
 
@@ -129,7 +139,7 @@ internal static class NpcRenderPipeline
         // Render creatures
         if (creatures is { Count: > 0 })
         {
-            RenderCreaturesCpu(
+            NpcCreatureRenderer.RenderCreaturesCpu(
                 creatures,
                 meshArchives,
                 textureResolver,
@@ -145,62 +155,6 @@ internal static class NpcRenderPipeline
             rendered,
             skipped,
             failed);
-    }
-
-    private static bool ValidateInputPaths(
-        NpcRenderSettings settings,
-        out string[] texturesBsaPaths)
-    {
-        texturesBsaPaths = Array.Empty<string>();
-
-        if (!File.Exists(settings.MeshesBsaPath))
-        {
-            AnsiConsole.MarkupLine(
-                "[red]Error:[/] Meshes BSA not found: {0}",
-                settings.MeshesBsaPath);
-            return false;
-        }
-
-        if (settings.ExtraMeshesBsaPaths is { Length: > 0 })
-        {
-            foreach (var extraMeshesBsaPath in settings.ExtraMeshesBsaPaths)
-            {
-                if (!File.Exists(extraMeshesBsaPath))
-                {
-                    AnsiConsole.MarkupLine(
-                        "[red]Error:[/] Extra meshes BSA not found: {0}",
-                        extraMeshesBsaPath);
-                    return false;
-                }
-            }
-        }
-
-        if (!File.Exists(settings.EsmPath))
-        {
-            AnsiConsole.MarkupLine(
-                "[red]Error:[/] ESM file not found: {0}",
-                settings.EsmPath);
-            return false;
-        }
-
-        texturesBsaPaths = NpcTextureHelpers.ResolveTexturesBsaPaths(
-            settings.MeshesBsaPath,
-            settings.ExplicitTexturesBsaPaths);
-        if (texturesBsaPaths.Length == 0)
-        {
-            AnsiConsole.MarkupLine("[red]Error:[/] No texture BSA files found");
-            return false;
-        }
-
-        if (settings.DmpPath != null && !File.Exists(settings.DmpPath))
-        {
-            AnsiConsole.MarkupLine(
-                "[red]Error:[/] DMP file not found: {0}",
-                settings.DmpPath);
-            return false;
-        }
-
-        return true;
     }
 
     private static void ConfigureRenderer(NpcRenderSettings settings)
@@ -255,6 +209,67 @@ internal static class NpcRenderPipeline
         }
     }
 
+    private static List<NpcAppearance>? ResolveAppearances(
+        NpcRenderSettings settings,
+        NpcAppearanceResolver resolver,
+        string pluginName)
+    {
+        var result = NpcPipelineHelpers.ResolveAppearances(
+            resolver, pluginName, settings.DmpPath, settings.NpcFilters);
+
+        if (result == null)
+        {
+            if (settings.DmpPath != null)
+            {
+                AnsiConsole.MarkupLine("[yellow]No NPCs resolved from DMP[/]");
+            }
+
+            return null;
+        }
+
+        if (settings.NpcFilters is { Length: > 0 } && result.Count > 0)
+        {
+            AnsiConsole.MarkupLine(
+                "Matched [green]{0}[/] NPCs from {1} filter(s)",
+                result.Count,
+                settings.NpcFilters.Length);
+        }
+        else if (settings.NpcFilters == null || settings.NpcFilters.Length == 0)
+        {
+            AnsiConsole.MarkupLine(
+                "Resolved [green]{0}[/] named NPCs",
+                result.Count);
+        }
+
+        return result;
+    }
+
+    private static List<(uint FormId, CreatureScanEntry Creature)>? ResolveCreatures(
+        NpcRenderSettings settings,
+        NpcAppearanceResolver resolver)
+    {
+        var result = NpcPipelineHelpers.ResolveCreatures(
+            resolver, settings.DmpPath, settings.NpcFilters);
+
+        if (result is { Count: > 0 })
+        {
+            if (settings.NpcFilters is { Length: > 0 })
+            {
+                AnsiConsole.MarkupLine(
+                    "Matched [green]{0}[/] creatures from filter(s)",
+                    result.Count);
+            }
+            else
+            {
+                AnsiConsole.MarkupLine(
+                    "Resolved [green]{0}[/] named creatures",
+                    result.Count);
+            }
+        }
+
+        return result;
+    }
+
     private static void RenderNpcsCpu(
         List<NpcAppearance> appearances,
         NpcMeshArchiveSet meshArchives,
@@ -265,8 +280,7 @@ internal static class NpcRenderPipeline
         ref int skipped,
         ref int failed)
     {
-        var views = settings.Camera.ResolveViews(
-            90f);
+        var views = settings.Camera.ResolveViews(90f);
 
         foreach (var npc in appearances)
         {
@@ -275,32 +289,10 @@ internal static class NpcRenderPipeline
                 foreach (var (suffix, azimuth, elevation) in views)
                 {
                     var result = settings.HeadOnly
-                        ? RenderNpcHead(
-                            npc,
-                            meshArchives,
-                            textureResolver,
-                            caches,
-                            settings,
-                            azimuth,
-                            elevation)
-                        : RenderNpcFullBody(
-                            npc,
-                            meshArchives,
-                            textureResolver,
-                            caches,
-                            settings,
-                            azimuth,
-                            elevation);
+                        ? RenderNpcHead(npc, meshArchives, textureResolver, caches, settings, azimuth, elevation)
+                        : RenderNpcFullBody(npc, meshArchives, textureResolver, caches, settings, azimuth, elevation);
 
-                    SaveNpcResult(
-                        npc,
-                        result,
-                        settings,
-                        appearances.Count,
-                        ref rendered,
-                        ref skipped,
-                        ref failed,
-                        suffix);
+                    SaveNpcResult(npc, result, settings, appearances.Count, ref rendered, ref skipped, ref failed, suffix);
                 }
             }
             catch (Exception ex)
@@ -319,289 +311,6 @@ internal static class NpcRenderPipeline
         }
     }
 
-    private static List<NpcAppearance>? ResolveAppearances(
-        NpcRenderSettings settings,
-        NpcAppearanceResolver resolver,
-        string pluginName)
-    {
-        if (settings.DmpPath != null)
-        {
-            var dmpAppearances = NpcRenderHelpers.ResolveFromDmp(
-                settings.DmpPath,
-                resolver,
-                pluginName,
-                settings.NpcFilters);
-            if (dmpAppearances.Count == 0)
-            {
-                AnsiConsole.MarkupLine("[yellow]No NPCs resolved from DMP[/]");
-                return null;
-            }
-
-            return dmpAppearances;
-        }
-
-        if (settings.NpcFilters is { Length: > 0 })
-        {
-            var allAppearances = resolver.ResolveAllHeadOnly(pluginName);
-            var formIdSet = new HashSet<uint>();
-            var editorIdSet = new HashSet<string>(
-                StringComparer.OrdinalIgnoreCase);
-
-            foreach (var filter in settings.NpcFilters)
-            {
-                var formId = NpcTextureHelpers.ParseFormId(filter);
-                if (formId.HasValue)
-                {
-                    formIdSet.Add(formId.Value);
-                    continue;
-                }
-
-                editorIdSet.Add(filter.Trim());
-            }
-
-            var filtered = allAppearances
-                .Where(appearance =>
-                    formIdSet.Contains(appearance.NpcFormId) ||
-                    (appearance.EditorId != null &&
-                     editorIdSet.Contains(appearance.EditorId)))
-                .ToList();
-
-            if (filtered.Count == 0)
-            {
-                // Don't error — filters may match creatures instead
-                return new List<NpcAppearance>();
-            }
-
-            AnsiConsole.MarkupLine(
-                "Matched [green]{0}[/] NPCs from {1} filter(s)",
-                filtered.Count,
-                settings.NpcFilters.Length);
-            return filtered;
-        }
-
-        var allNamed = resolver.ResolveAllHeadOnly(pluginName, true);
-        AnsiConsole.MarkupLine(
-            "Resolved [green]{0}[/] named NPCs",
-            allNamed.Count);
-        return allNamed;
-    }
-
-    private static List<(uint FormId, CreatureScanEntry Creature)>? ResolveCreatures(
-        NpcRenderSettings settings,
-        NpcAppearanceResolver resolver)
-    {
-        if (settings.DmpPath != null)
-        {
-            return null; // DMP mode doesn't support creatures yet
-        }
-
-        var allCreatures = resolver.GetAllCreatures();
-        if (allCreatures.Count == 0)
-        {
-            return null;
-        }
-
-        if (settings.NpcFilters is { Length: > 0 })
-        {
-            var formIdSet = new HashSet<uint>();
-            var editorIdSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            foreach (var filter in settings.NpcFilters)
-            {
-                var formId = NpcTextureHelpers.ParseFormId(filter);
-                if (formId.HasValue)
-                {
-                    formIdSet.Add(formId.Value);
-                    continue;
-                }
-
-                editorIdSet.Add(filter.Trim());
-            }
-
-            var filtered = allCreatures
-                .Where(kvp =>
-                    formIdSet.Contains(kvp.Key) ||
-                    (kvp.Value.EditorId != null && editorIdSet.Contains(kvp.Value.EditorId)))
-                .Select(kvp => (kvp.Key, kvp.Value))
-                .ToList();
-
-            if (filtered.Count > 0)
-            {
-                AnsiConsole.MarkupLine(
-                    "Matched [green]{0}[/] creatures from filter(s)",
-                    filtered.Count);
-            }
-
-            return filtered.Count > 0 ? filtered : null;
-        }
-
-        // No filters: include all named creatures
-        var allNamed = allCreatures
-            .Where(kvp => !string.IsNullOrEmpty(kvp.Value.FullName))
-            .Select(kvp => (kvp.Key, kvp.Value))
-            .ToList();
-        if (allNamed.Count > 0)
-        {
-            AnsiConsole.MarkupLine(
-                "Resolved [green]{0}[/] named creatures",
-                allNamed.Count);
-        }
-
-        return allNamed.Count > 0 ? allNamed : null;
-    }
-
-    private static void RenderCreaturesCpu(
-        List<(uint FormId, CreatureScanEntry Creature)> creatures,
-        NpcMeshArchiveSet meshArchives,
-        NifTextureResolver textureResolver,
-        NpcAppearanceResolver resolver,
-        NpcRenderSettings settings,
-        ref int rendered,
-        ref int skipped,
-        ref int failed)
-    {
-        var views = settings.Camera.ResolveViews(90f);
-
-        foreach (var (formId, creature) in creatures)
-        {
-            try
-            {
-                var model = BuildCreatureModel(creature, meshArchives, textureResolver, resolver, settings);
-                foreach (var (suffix, azimuth, elevation) in views)
-                {
-                    SpriteResult? result = null;
-                    if (model is { HasGeometry: true })
-                    {
-                        var renderModel = views.Length > 1
-                            ? NpcMeshHelpers.DeepCloneModel(model)
-                            : model;
-                        result = NifSpriteRenderer.Render(
-                            renderModel,
-                            textureResolver,
-                            1.0f,
-                            32,
-                            settings.SpriteSize,
-                            azimuth,
-                            elevation,
-                            settings.SpriteSize);
-                    }
-
-                    SaveCreatureResult(
-                        formId,
-                        creature,
-                        result,
-                        settings,
-                        creatures.Count,
-                        ref rendered,
-                        ref skipped,
-                        ref failed,
-                        suffix);
-                }
-            }
-            catch (Exception ex)
-            {
-                failed++;
-                AnsiConsole.MarkupLine(
-                    "[red]FAIL:[/] 0x{0:X8} {1}: {2}",
-                    formId,
-                    creature.EditorId ?? "?",
-                    Markup.Escape(ex.Message));
-            }
-        }
-    }
-
-    private static NifRenderableModel? BuildCreatureModel(
-        CreatureScanEntry creature,
-        NpcMeshArchiveSet meshArchives,
-        NifTextureResolver textureResolver,
-        NpcAppearanceResolver resolver,
-        NpcRenderSettings settings)
-    {
-        if (settings.Skeleton && creature.SkeletonPath != null)
-        {
-            var skelPath = creature.SkeletonPath.StartsWith("meshes\\", StringComparison.OrdinalIgnoreCase)
-                ? creature.SkeletonPath
-                : "meshes\\" + creature.SkeletonPath.TrimStart('\\');
-            return NpcSkeletonLoader.BuildSkeletonVisualization(
-                skelPath,
-                meshArchives,
-                settings.BindPose);
-        }
-
-        var plan = CreatureCompositionPlanner.CreatePlan(
-            creature,
-            meshArchives,
-            resolver,
-            CreatureCompositionOptions.From(settings));
-        return plan == null
-            ? null
-            : NpcCompositionRenderAdapter.BuildCreature(plan, meshArchives, textureResolver);
-    }
-
-    private static void SaveCreatureResult(
-        uint formId,
-        CreatureScanEntry creature,
-        SpriteResult? result,
-        NpcRenderSettings settings,
-        int totalCount,
-        ref int rendered,
-        ref int skipped,
-        ref int failed,
-        string viewSuffix = "")
-    {
-        if (result == null)
-        {
-            skipped++;
-            if (settings.NpcFilters != null)
-            {
-                AnsiConsole.MarkupLine(
-                    "[yellow]Skipped:[/] 0x{0:X8} {1} -- no geometry",
-                    formId,
-                    creature.FullName ?? creature.EditorId ?? "unknown");
-            }
-
-            return;
-        }
-
-        var name = creature.EditorId ?? $"{formId:X8}";
-        var fileName = $"{name}{viewSuffix}.png";
-        var outputPath = Path.Combine(settings.OutputDir, fileName);
-        var expectedLength = result.Width * result.Height * 4;
-
-        if (result.Pixels.Length != expectedLength)
-        {
-            failed++;
-            AnsiConsole.MarkupLine(
-                "[red]FAIL:[/] 0x{0:X8} {1}: pixel buffer mismatch ({2} bytes, expected {3} for {4}x{5})",
-                formId,
-                creature.EditorId ?? "?",
-                result.Pixels.Length,
-                expectedLength,
-                result.Width,
-                result.Height);
-            return;
-        }
-
-        PngWriter.SaveRgba(
-            result.Pixels,
-            result.Width,
-            result.Height,
-            outputPath);
-        rendered++;
-
-        if (settings.NpcFilters != null || totalCount <= 20)
-        {
-            AnsiConsole.MarkupLine(
-                "[green]OK:[/] 0x{0:X8} {1} ({2}) -> {3} ({4}x{5})",
-                formId,
-                Markup.Escape(creature.FullName ?? "?"),
-                Markup.Escape(creature.CreatureTypeName),
-                fileName,
-                result.Width,
-                result.Height);
-        }
-    }
-
     private static void RenderNpcsPipelinedGpu(
         List<NpcAppearance> appearances,
         GpuSpriteRenderer gpuRenderer,
@@ -613,18 +322,12 @@ internal static class NpcRenderPipeline
         ref int skipped,
         ref int failed)
     {
-        var views = settings.Camera.ResolveViews(
-            90f);
+        var views = settings.Camera.ResolveViews(90f);
 
         NifRenderableModel? currentModel = null;
         if (appearances.Count > 0)
         {
-            currentModel = BuildNpcModel(
-                appearances[0],
-                meshArchives,
-                textureResolver,
-                caches,
-                settings);
+            currentModel = BuildNpcModel(appearances[0], meshArchives, textureResolver, caches, settings);
         }
 
         for (var i = 0; i < appearances.Count; i++)
@@ -641,42 +344,21 @@ internal static class NpcRenderPipeline
 
                     if (currentModel is { HasGeometry: true })
                     {
-                        var renderModel = PrepareModelForView(
-                            currentModel,
-                            viewIndex < views.Length - 1);
+                        var renderModel = viewIndex < views.Length - 1
+                            ? NpcMeshHelpers.DeepCloneModel(currentModel)
+                            : currentModel;
                         pending = gpuRenderer.SubmitRender(
-                            renderModel,
-                            textureResolver,
-                            1.0f,
-                            32,
-                            settings.SpriteSize,
-                            azimuth,
-                            elevation,
-                            settings.SpriteSize);
+                            renderModel, textureResolver, 1.0f, 32,
+                            settings.SpriteSize, azimuth, elevation, settings.SpriteSize);
                     }
 
                     if (viewIndex == views.Length - 1 && i + 1 < appearances.Count)
                     {
-                        nextModel = BuildNpcModel(
-                            appearances[i + 1],
-                            meshArchives,
-                            textureResolver,
-                            caches,
-                            settings);
+                        nextModel = BuildNpcModel(appearances[i + 1], meshArchives, textureResolver, caches, settings);
                     }
 
-                    var result = pending != null
-                        ? gpuRenderer.CompleteRender(pending)
-                        : null;
-                    SaveNpcResult(
-                        npc,
-                        result,
-                        settings,
-                        appearances.Count,
-                        ref rendered,
-                        ref skipped,
-                        ref failed,
-                        suffix);
+                    var result = pending != null ? gpuRenderer.CompleteRender(pending) : null;
+                    SaveNpcResult(npc, result, settings, appearances.Count, ref rendered, ref skipped, ref failed, suffix);
                 }
             }
             catch (Exception ex)
@@ -692,18 +374,9 @@ internal static class NpcRenderPipeline
             {
                 EvictNpcTextures(textureResolver, npc);
                 gpuRenderer.EvictTexture(NpcTextureHelpers.BuildNpcFaceEgtTextureKey(npc));
-                gpuRenderer.EvictTexture(NpcTextureHelpers.BuildNpcBodyEgtTextureKey(
-                    npc.NpcFormId,
-                    "upperbody",
-                    npc.RenderVariantLabel));
-                gpuRenderer.EvictTexture(NpcTextureHelpers.BuildNpcBodyEgtTextureKey(
-                    npc.NpcFormId,
-                    "lefthand",
-                    npc.RenderVariantLabel));
-                gpuRenderer.EvictTexture(NpcTextureHelpers.BuildNpcBodyEgtTextureKey(
-                    npc.NpcFormId,
-                    "righthand",
-                    npc.RenderVariantLabel));
+                gpuRenderer.EvictTexture(NpcTextureHelpers.BuildNpcBodyEgtTextureKey(npc.NpcFormId, "upperbody", npc.RenderVariantLabel));
+                gpuRenderer.EvictTexture(NpcTextureHelpers.BuildNpcBodyEgtTextureKey(npc.NpcFormId, "lefthand", npc.RenderVariantLabel));
+                gpuRenderer.EvictTexture(NpcTextureHelpers.BuildNpcBodyEgtTextureKey(npc.NpcFormId, "righthand", npc.RenderVariantLabel));
                 currentModel = nextModel;
             }
         }
@@ -716,33 +389,14 @@ internal static class NpcRenderPipeline
         NpcRenderCaches caches,
         NpcRenderSettings settings)
     {
-        if (!settings.HeadOnly &&
-            settings.Skeleton &&
-            npc.SkeletonNifPath != null)
+        if (!settings.HeadOnly && settings.Skeleton && npc.SkeletonNifPath != null)
         {
             return NpcSkeletonLoader.BuildSkeletonVisualization(npc.SkeletonNifPath, meshArchives, settings.BindPose);
         }
 
         var plan = NpcCompositionPlanner.CreatePlan(
-            npc,
-            meshArchives,
-            textureResolver,
-            caches.Composition,
-            NpcCompositionOptions.From(settings));
-        return NpcCompositionRenderAdapter.BuildNpc(
-            plan,
-            meshArchives,
-            textureResolver,
-            caches.Composition,
-            caches.RenderModels);
-    }
-
-    private static NifRenderableModel PrepareModelForView(
-        NifRenderableModel model,
-        bool cloneForRender)
-    {
-        var renderModel = cloneForRender ? NpcMeshHelpers.DeepCloneModel(model) : model;
-        return renderModel;
+            npc, meshArchives, textureResolver, caches.Composition, NpcCompositionOptions.From(settings));
+        return NpcCompositionRenderAdapter.BuildNpc(plan, meshArchives, textureResolver, caches.Composition, caches.RenderModels);
     }
 
     private static SpriteResult? RenderNpcHead(
@@ -755,20 +409,8 @@ internal static class NpcRenderPipeline
         float elevation)
     {
         var model = BuildNpcModel(npc, meshArchives, textureResolver, caches, settings);
-        if (model == null || !model.HasGeometry)
-        {
-            return null;
-        }
-
-        return NifSpriteRenderer.Render(
-            model,
-            textureResolver,
-            1.0f,
-            32,
-            settings.SpriteSize,
-            azimuth,
-            elevation,
-            settings.SpriteSize);
+        if (model == null || !model.HasGeometry) return null;
+        return NifSpriteRenderer.Render(model, textureResolver, 1.0f, 32, settings.SpriteSize, azimuth, elevation, settings.SpriteSize);
     }
 
     private static SpriteResult? RenderNpcFullBody(
@@ -781,20 +423,8 @@ internal static class NpcRenderPipeline
         float elevation)
     {
         var model = BuildNpcModel(npc, meshArchives, textureResolver, caches, settings);
-        if (model == null)
-        {
-            return null;
-        }
-
-        return NifSpriteRenderer.Render(
-            model,
-            textureResolver,
-            1.0f,
-            32,
-            settings.SpriteSize,
-            azimuth,
-            elevation,
-            settings.SpriteSize);
+        if (model == null) return null;
+        return NifSpriteRenderer.Render(model, textureResolver, 1.0f, 32, settings.SpriteSize, azimuth, elevation, settings.SpriteSize);
     }
 
     private static void SaveNpcResult(
@@ -840,11 +470,7 @@ internal static class NpcRenderPipeline
             return;
         }
 
-        PngWriter.SaveRgba(
-            result.Pixels,
-            result.Width,
-            result.Height,
-            outputPath);
+        PngWriter.SaveRgba(result.Pixels, result.Width, result.Height, outputPath);
         rendered++;
 
         if (settings.NpcFilters != null || totalCount <= 20)
@@ -883,18 +509,9 @@ internal static class NpcRenderPipeline
         NpcAppearance npc)
     {
         textureResolver.EvictTexture(NpcTextureHelpers.BuildNpcFaceEgtTextureKey(npc));
-        textureResolver.EvictTexture(NpcTextureHelpers.BuildNpcBodyEgtTextureKey(
-            npc.NpcFormId,
-            "upperbody",
-            npc.RenderVariantLabel));
-        textureResolver.EvictTexture(NpcTextureHelpers.BuildNpcBodyEgtTextureKey(
-            npc.NpcFormId,
-            "lefthand",
-            npc.RenderVariantLabel));
-        textureResolver.EvictTexture(NpcTextureHelpers.BuildNpcBodyEgtTextureKey(
-            npc.NpcFormId,
-            "righthand",
-            npc.RenderVariantLabel));
+        textureResolver.EvictTexture(NpcTextureHelpers.BuildNpcBodyEgtTextureKey(npc.NpcFormId, "upperbody", npc.RenderVariantLabel));
+        textureResolver.EvictTexture(NpcTextureHelpers.BuildNpcBodyEgtTextureKey(npc.NpcFormId, "lefthand", npc.RenderVariantLabel));
+        textureResolver.EvictTexture(NpcTextureHelpers.BuildNpcBodyEgtTextureKey(npc.NpcFormId, "righthand", npc.RenderVariantLabel));
     }
 
     private sealed class NpcGpuRenderResources : IDisposable
@@ -910,9 +527,7 @@ internal static class NpcRenderPipeline
         }
 
         internal GpuDevice? Device { get; }
-
         internal GpuSpriteRenderer? Renderer { get; }
-
         internal bool ShouldAbort { get; }
 
         public void Dispose()
@@ -926,8 +541,7 @@ internal static class NpcRenderPipeline
             if (settings.CompareRaceTextureFgts)
             {
                 var selection = SpriteRenderBackendSelector.Create(
-                    settings.ForceCpu,
-                    settings.ForceGpu,
+                    settings.ForceCpu, settings.ForceGpu,
                     "Using [yellow]CPU software renderer[/] (--compare-race-fgts)",
                     "[yellow]--compare-race-fgts currently uses the CPU renderer; ignoring --gpu[/]",
                     null);
@@ -937,8 +551,7 @@ internal static class NpcRenderPipeline
             if (settings.Wireframe)
             {
                 var selection = SpriteRenderBackendSelector.Create(
-                    settings.ForceCpu,
-                    settings.ForceGpu,
+                    settings.ForceCpu, settings.ForceGpu,
                     "Using [yellow]CPU software renderer[/] (--wireframe)",
                     "[yellow]Wireframe overlay currently uses the CPU renderer; ignoring --gpu[/]",
                     null);
@@ -946,10 +559,7 @@ internal static class NpcRenderPipeline
             }
 
             var defaultSelection = SpriteRenderBackendSelector.Create(settings.ForceCpu, settings.ForceGpu);
-            return new NpcGpuRenderResources(
-                defaultSelection.Device,
-                defaultSelection.Renderer,
-                defaultSelection.ShouldAbort);
+            return new NpcGpuRenderResources(defaultSelection.Device, defaultSelection.Renderer, defaultSelection.ShouldAbort);
         }
     }
 }

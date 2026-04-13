@@ -177,7 +177,8 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
                     {
                         best = best with
                         {
-                            ResultScripts = MergeResultScripts(best.ResultScripts, other.ResultScripts),
+                            ResultScripts = DialogueResultScriptParser.MergeResultScripts(
+                                best.ResultScripts, other.ResultScripts),
                             HasResultScript = best.HasResultScript || other.HasResultScript
                         };
                     }
@@ -269,8 +270,8 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
 
         // Result scripts
         var resultSourceTexts = new List<string>();
-        var resultScriptBlocks = new List<DialogueResultScriptBuilder>();
-        DialogueResultScriptBuilder? currentResultScript = null;
+        var resultScriptBlocks = new List<DialogueResultScriptParser.DialogueResultScriptBuilder>();
+        DialogueResultScriptParser.DialogueResultScriptBuilder? currentResultScript = null;
         uint? pendingVariableIndex = null;
         byte pendingVariableType = 0;
 
@@ -330,7 +331,6 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
                     speakerFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
                 case "SNAM" when sub.DataLength == 4:
-                    // SNAM = Speaker Animation (IDLE FormID), not the speaker NPC.
                     speakerAnimationFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
                 case "TPIC" when sub.DataLength == 4:
@@ -375,9 +375,10 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
 
                     break;
                 case "SCHR":
-                    FlushPendingVariable(currentResultScript, ref pendingVariableIndex, ref pendingVariableType);
+                    DialogueResultScriptParser.FlushPendingVariable(
+                        currentResultScript, ref pendingVariableIndex, ref pendingVariableType);
                     hasResultScript = true;
-                    currentResultScript = new DialogueResultScriptBuilder();
+                    currentResultScript = new DialogueResultScriptParser.DialogueResultScriptBuilder();
                     resultScriptBlocks.Add(currentResultScript);
                     break;
                 case "SCTX":
@@ -391,16 +392,16 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
                     break;
                 }
                 case "SCDA":
-                    currentResultScript ??= StartImplicitResultScript(resultScriptBlocks);
+                    currentResultScript ??= DialogueResultScriptParser.StartImplicitResultScript(resultScriptBlocks);
                     currentResultScript.CompiledData = subData.ToArray();
                     break;
                 case "SCRO" when sub.DataLength >= 4:
-                    currentResultScript ??= StartImplicitResultScript(resultScriptBlocks);
+                    currentResultScript ??= DialogueResultScriptParser.StartImplicitResultScript(resultScriptBlocks);
                     currentResultScript.ReferencedObjects.Add(
                         RecordParserContext.ReadFormId(subData, record.IsBigEndian));
                     break;
                 case "SLSD" when sub.DataLength >= 16:
-                    currentResultScript ??= StartImplicitResultScript(resultScriptBlocks);
+                    currentResultScript ??= DialogueResultScriptParser.StartImplicitResultScript(resultScriptBlocks);
                     pendingVariableIndex = record.IsBigEndian
                         ? BinaryPrimitives.ReadUInt32BigEndian(subData)
                         : BinaryPrimitives.ReadUInt32LittleEndian(subData);
@@ -411,7 +412,7 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
                     break;
                 case "SCVR":
                 {
-                    currentResultScript ??= StartImplicitResultScript(resultScriptBlocks);
+                    currentResultScript ??= DialogueResultScriptParser.StartImplicitResultScript(resultScriptBlocks);
                     var variableName = EsmStringUtils.ReadNullTermString(subData);
                     if (pendingVariableIndex.HasValue)
                     {
@@ -423,13 +424,14 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
                     break;
                 }
                 case "SCRV" when sub.DataLength >= 4:
-                    currentResultScript ??= StartImplicitResultScript(resultScriptBlocks);
+                    currentResultScript ??= DialogueResultScriptParser.StartImplicitResultScript(resultScriptBlocks);
                     var variableIndex = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     currentResultScript.ReferencedObjects.Add(0x80000000 | variableIndex);
                     break;
                 case "NEXT":
-                    FlushPendingVariable(currentResultScript, ref pendingVariableIndex, ref pendingVariableType);
-                    currentResultScript ??= StartImplicitResultScript(resultScriptBlocks);
+                    DialogueResultScriptParser.FlushPendingVariable(
+                        currentResultScript, ref pendingVariableIndex, ref pendingVariableType);
+                    currentResultScript ??= DialogueResultScriptParser.StartImplicitResultScript(resultScriptBlocks);
                     currentResultScript.HasNextSeparator = true;
                     currentResultScript = null;
                     break;
@@ -447,7 +449,8 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
             }
         }
 
-        FlushPendingVariable(currentResultScript, ref pendingVariableIndex, ref pendingVariableType);
+        DialogueResultScriptParser.FlushPendingVariable(
+            currentResultScript, ref pendingVariableIndex, ref pendingVariableType);
 
         // Add final response if any
         if (currentResponseText != null)
@@ -461,11 +464,12 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
             });
         }
 
-        var resultScripts = BuildResultScripts(
+        var resultScripts = DialogueResultScriptParser.BuildResultScripts(
             resultSourceTexts,
             resultScriptBlocks,
             editorId ?? Context.GetEditorId(record.FormId),
-            record.FormId);
+            record.FormId,
+            Context.ResolveFormName);
         if (resultScripts.Count > 0)
         {
             hasResultScript = true;
@@ -477,8 +481,6 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
             EditorId = editorId ?? Context.GetEditorId(record.FormId),
             TopicFormId = topicFormId,
             QuestFormId = questFormId,
-            // Speaker priority: ANAM > CTDA GetIsID > (topic TNAM propagated later)
-            // Note: SNAM is Speaker *Animation* (IDLE FormID), NOT a speaker NPC.
             SpeakerFormId = speakerFormId ?? conditionSpeaker,
             SpeakerFactionFormId = conditionFaction,
             SpeakerRaceFormId = conditionRace,
@@ -526,10 +528,8 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
         var reference = SubrecordDataReader.GetUInt32(fields, "Reference");
         var compValue = SubrecordDataReader.GetFloat(fields, "ComparisonValue");
         var typeByte = SubrecordDataReader.GetByte(fields, "Type");
-        var compOp = (typeByte >> 5) & 0x7; // 0=Eq, 1=NotEq, 2=Gt, 3=GtEq, 4=Lt, 5=LtEq
+        var compOp = (typeByte >> 5) & 0x7;
 
-        // Positive match: boolean function returns true for this param
-        // Equal/GtEq + compValue~1.0  OR  NotEqual + compValue~0.0  OR  Greater + compValue~0.0
         var isPositive = runOn == 0 &&
                          ((compOp is 0 or 3 && compValue >= 0.99f) ||
                           (compOp is 1 && compValue < 0.01f) ||
@@ -539,16 +539,16 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
         {
             switch (functionIndex)
             {
-                case 0x48: // GetIsID -> specific NPC speaker
+                case 0x48:
                     conditionSpeaker ??= param1;
                     break;
-                case 0x47: // GetInFaction -> faction-based shared dialogue
+                case 0x47:
                     conditionFaction ??= param1;
                     break;
-                case 0x45: // GetIsRace -> race-based dialogue
+                case 0x45:
                     conditionRace ??= param1;
                     break;
-                case 0x1AB: // GetIsVoiceType -> voice-type-based generic dialogue
+                case 0x1AB:
                     conditionVoiceType ??= param1;
                     break;
             }
@@ -564,376 +564,5 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
             RunOn = runOn,
             Reference = reference
         };
-    }
-
-    private List<DialogueResultScript> BuildResultScripts(
-        List<string> sourceTexts,
-        List<DialogueResultScriptBuilder> blocks,
-        string? editorId,
-        uint infoFormId)
-    {
-        if (blocks.Count == 0)
-        {
-            return sourceTexts
-                .Where(text => !string.IsNullOrWhiteSpace(text))
-                .Select(text => new DialogueResultScript { SourceText = text })
-                .ToList();
-        }
-
-        AssignSourceTextsToBlocks(sourceTexts, blocks);
-
-        var resultScripts =
-            new List<DialogueResultScript>(blocks.Count + Math.Max(0, sourceTexts.Count - blocks.Count));
-        for (var i = 0; i < blocks.Count; i++)
-        {
-            var block = blocks[i];
-            var decompiledText = TryDecompileResultScript(block, editorId, infoFormId, i);
-            resultScripts.Add(new DialogueResultScript
-            {
-                SourceText = block.SourceText,
-                DecompiledText = decompiledText,
-                CompiledData = block.CompiledData,
-                ReferencedObjects = block.ReferencedObjects
-                    .Where(formId => (formId & 0x80000000) == 0)
-                    .ToList(),
-                HasNextSeparator = block.HasNextSeparator
-            });
-        }
-
-        if (sourceTexts.Count > blocks.Count)
-        {
-            for (var i = blocks.Count; i < sourceTexts.Count; i++)
-            {
-                if (!string.IsNullOrWhiteSpace(sourceTexts[i]))
-                {
-                    resultScripts.Add(new DialogueResultScript { SourceText = sourceTexts[i] });
-                }
-            }
-        }
-
-        return resultScripts
-            .Where(script => script.HasContent)
-            .ToList();
-    }
-
-    private static void AssignSourceTextsToBlocks(List<string> sourceTexts, List<DialogueResultScriptBuilder> blocks)
-    {
-        if (sourceTexts.Count == 0 || blocks.Count == 0)
-        {
-            return;
-        }
-
-        if (sourceTexts.Count >= blocks.Count)
-        {
-            for (var i = 0; i < blocks.Count; i++)
-            {
-                blocks[i].SourceText ??= sourceTexts[i];
-            }
-
-            return;
-        }
-
-        var sourceIndex = 0;
-        for (var i = 0; i < blocks.Count && sourceIndex < sourceTexts.Count; i++)
-        {
-            if (blocks[i].CompiledData is { Length: > 0 })
-            {
-                blocks[i].SourceText ??= sourceTexts[sourceIndex++];
-            }
-        }
-
-        for (var i = 0; i < blocks.Count && sourceIndex < sourceTexts.Count; i++)
-        {
-            if (string.IsNullOrEmpty(blocks[i].SourceText))
-            {
-                blocks[i].SourceText = sourceTexts[sourceIndex++];
-            }
-        }
-    }
-
-    private string? TryDecompileResultScript(
-        DialogueResultScriptBuilder block,
-        string? editorId,
-        uint infoFormId,
-        int index)
-    {
-        if (block.CompiledData is not { Length: > 0 })
-        {
-            return null;
-        }
-
-        try
-        {
-            var scriptName = !string.IsNullOrWhiteSpace(editorId)
-                ? $"{editorId}_Result_{index + 1}"
-                : $"INFO_{infoFormId:X8}_Result_{index + 1}";
-            var decompiler = new ScriptDecompiler(
-                block.Variables,
-                block.ReferencedObjects,
-                Context.ResolveFormName,
-                false,
-                scriptName);
-            return decompiler.Decompile(block.CompiledData);
-        }
-        catch (Exception ex)
-        {
-            return $"; Decompilation failed: {ex.Message}";
-        }
-    }
-
-    private static DialogueResultScriptBuilder StartImplicitResultScript(List<DialogueResultScriptBuilder> blocks)
-    {
-        var block = new DialogueResultScriptBuilder();
-        blocks.Add(block);
-        return block;
-    }
-
-    private static void FlushPendingVariable(
-        DialogueResultScriptBuilder? currentResultScript,
-        ref uint? pendingVariableIndex,
-        ref byte pendingVariableType)
-    {
-        if (!pendingVariableIndex.HasValue || currentResultScript == null)
-        {
-            return;
-        }
-
-        currentResultScript.Variables.Add(new ScriptVariableInfo(
-            pendingVariableIndex.Value, null, pendingVariableType));
-        pendingVariableIndex = null;
-        pendingVariableType = 0;
-    }
-
-    private static List<DialogueResultScript> MergeResultScripts(
-        List<DialogueResultScript> primary,
-        List<DialogueResultScript> secondary)
-    {
-        if (primary.Count == 0)
-        {
-            return secondary;
-        }
-
-        if (secondary.Count == 0)
-        {
-            return primary;
-        }
-
-        var maxCount = Math.Max(primary.Count, secondary.Count);
-        var merged = new List<DialogueResultScript>(maxCount);
-
-        for (var i = 0; i < maxCount; i++)
-        {
-            var left = i < primary.Count ? primary[i] : null;
-            var right = i < secondary.Count ? secondary[i] : null;
-
-            if (left == null)
-            {
-                merged.Add(right!);
-                continue;
-            }
-
-            if (right == null)
-            {
-                merged.Add(left);
-                continue;
-            }
-
-            merged.Add(new DialogueResultScript
-            {
-                SourceText = left.SourceText ?? right.SourceText,
-                DecompiledText = left.DecompiledText ?? right.DecompiledText,
-                CompiledData = left.CompiledData ?? right.CompiledData,
-                ReferencedObjects = left.ReferencedObjects
-                    .Concat(right.ReferencedObjects)
-                    .Distinct()
-                    .ToList(),
-                HasNextSeparator = left.HasNextSeparator || right.HasNextSeparator
-            });
-        }
-
-        return merged
-            .Where(script => script.HasContent)
-            .ToList();
-    }
-
-    /// <summary>
-    ///     Parse result scripts (SCHR/SCTX/SCDA/SCRO/SLSD/SCVR/SCRV/NEXT) from raw ESM subrecord data.
-    ///     Used by the DMP path to extract result scripts from memory-mapped ESM pages.
-    /// </summary>
-    internal static List<DialogueResultScript> ParseResultScriptsFromSubrecords(
-        byte[] data, int dataSize, bool isBigEndian,
-        string? editorId, uint formId,
-        Func<uint, string?>? resolveFormName = null)
-    {
-        var resultSourceTexts = new List<string>();
-        var resultScriptBlocks = new List<DialogueResultScriptBuilder>();
-        DialogueResultScriptBuilder? currentResultScript = null;
-        uint? pendingVariableIndex = null;
-        byte pendingVariableType = 0;
-
-        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, isBigEndian))
-        {
-            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
-
-            switch (sub.Signature)
-            {
-                case "SCHR":
-                    FlushPendingVariable(currentResultScript, ref pendingVariableIndex, ref pendingVariableType);
-                    currentResultScript = new DialogueResultScriptBuilder();
-                    resultScriptBlocks.Add(currentResultScript);
-                    break;
-                case "SCTX":
-                {
-                    var sourceText = EsmStringUtils.ReadNullTermString(subData);
-                    if (!string.IsNullOrEmpty(sourceText))
-                    {
-                        resultSourceTexts.Add(sourceText);
-                    }
-
-                    break;
-                }
-                case "SCDA":
-                    currentResultScript ??= StartImplicitResultScript(resultScriptBlocks);
-                    currentResultScript.CompiledData = subData.ToArray();
-                    break;
-                case "SCRO" when sub.DataLength >= 4:
-                    currentResultScript ??= StartImplicitResultScript(resultScriptBlocks);
-                    currentResultScript.ReferencedObjects.Add(
-                        RecordParserContext.ReadFormId(subData, isBigEndian));
-                    break;
-                case "SLSD" when sub.DataLength >= 16:
-                    currentResultScript ??= StartImplicitResultScript(resultScriptBlocks);
-                    pendingVariableIndex = isBigEndian
-                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
-                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
-                    var isIntegerRaw = isBigEndian
-                        ? BinaryPrimitives.ReadUInt32BigEndian(subData[12..])
-                        : BinaryPrimitives.ReadUInt32LittleEndian(subData[12..]);
-                    pendingVariableType = isIntegerRaw != 0 ? (byte)1 : (byte)0;
-                    break;
-                case "SCVR":
-                {
-                    currentResultScript ??= StartImplicitResultScript(resultScriptBlocks);
-                    var variableName = EsmStringUtils.ReadNullTermString(subData);
-                    if (pendingVariableIndex.HasValue)
-                    {
-                        currentResultScript.Variables.Add(new ScriptVariableInfo(
-                            pendingVariableIndex.Value, variableName, pendingVariableType));
-                        pendingVariableIndex = null;
-                    }
-
-                    break;
-                }
-                case "SCRV" when sub.DataLength >= 4:
-                    currentResultScript ??= StartImplicitResultScript(resultScriptBlocks);
-                    var variableIndex = RecordParserContext.ReadFormId(subData, isBigEndian);
-                    currentResultScript.ReferencedObjects.Add(0x80000000 | variableIndex);
-                    break;
-                case "NEXT":
-                    FlushPendingVariable(currentResultScript, ref pendingVariableIndex, ref pendingVariableType);
-                    currentResultScript ??= StartImplicitResultScript(resultScriptBlocks);
-                    currentResultScript.HasNextSeparator = true;
-                    currentResultScript = null;
-                    break;
-            }
-        }
-
-        FlushPendingVariable(currentResultScript, ref pendingVariableIndex, ref pendingVariableType);
-
-        return BuildResultScriptsStatic(resultSourceTexts, resultScriptBlocks, editorId, formId, resolveFormName);
-    }
-
-    /// <summary>
-    ///     Static version of BuildResultScripts that accepts an optional form name resolver.
-    /// </summary>
-    private static List<DialogueResultScript> BuildResultScriptsStatic(
-        List<string> sourceTexts,
-        List<DialogueResultScriptBuilder> blocks,
-        string? editorId,
-        uint infoFormId,
-        Func<uint, string?>? resolveFormName)
-    {
-        if (blocks.Count == 0)
-        {
-            return sourceTexts
-                .Where(text => !string.IsNullOrWhiteSpace(text))
-                .Select(text => new DialogueResultScript { SourceText = text })
-                .ToList();
-        }
-
-        AssignSourceTextsToBlocks(sourceTexts, blocks);
-
-        var resultScripts =
-            new List<DialogueResultScript>(blocks.Count + Math.Max(0, sourceTexts.Count - blocks.Count));
-        for (var i = 0; i < blocks.Count; i++)
-        {
-            var block = blocks[i];
-            var decompiledText = TryDecompileResultScriptStatic(block, editorId, infoFormId, i, resolveFormName);
-            resultScripts.Add(new DialogueResultScript
-            {
-                SourceText = block.SourceText,
-                DecompiledText = decompiledText,
-                CompiledData = block.CompiledData,
-                ReferencedObjects = block.ReferencedObjects
-                    .Where(fid => (fid & 0x80000000) == 0)
-                    .ToList(),
-                HasNextSeparator = block.HasNextSeparator
-            });
-        }
-
-        if (sourceTexts.Count > blocks.Count)
-        {
-            for (var i = blocks.Count; i < sourceTexts.Count; i++)
-            {
-                if (!string.IsNullOrWhiteSpace(sourceTexts[i]))
-                {
-                    resultScripts.Add(new DialogueResultScript { SourceText = sourceTexts[i] });
-                }
-            }
-        }
-
-        return resultScripts
-            .Where(script => script.HasContent)
-            .ToList();
-    }
-
-    private static string? TryDecompileResultScriptStatic(
-        DialogueResultScriptBuilder block,
-        string? editorId,
-        uint infoFormId,
-        int index,
-        Func<uint, string?>? resolveFormName)
-    {
-        if (block.CompiledData is not { Length: > 0 })
-        {
-            return null;
-        }
-
-        try
-        {
-            var scriptName = !string.IsNullOrWhiteSpace(editorId)
-                ? $"{editorId}_Result_{index + 1}"
-                : $"INFO_{infoFormId:X8}_Result_{index + 1}";
-            var decompiler = new ScriptDecompiler(
-                block.Variables,
-                block.ReferencedObjects,
-                resolveFormName ?? (formId => $"0x{formId:X8}"),
-                false,
-                scriptName);
-            return decompiler.Decompile(block.CompiledData);
-        }
-        catch (Exception ex)
-        {
-            return $"; Decompilation failed: {ex.Message}";
-        }
-    }
-
-    internal sealed class DialogueResultScriptBuilder
-    {
-        public string? SourceText { get; set; }
-        public byte[]? CompiledData { get; set; }
-        public List<uint> ReferencedObjects { get; } = [];
-        public List<ScriptVariableInfo> Variables { get; } = [];
-        public bool HasNextSeparator { get; set; }
     }
 }

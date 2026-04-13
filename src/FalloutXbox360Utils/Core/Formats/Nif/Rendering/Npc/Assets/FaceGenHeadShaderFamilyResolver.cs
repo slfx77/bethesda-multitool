@@ -80,7 +80,7 @@ internal static class FaceGenHeadShaderFamilyResolver
                 var pixelIndex = (y * width + x) * 4;
                 var u = (x + 0.5f) / width;
                 var v = (y + 0.5f) / height;
-                var (mr, mg, mb, _) = NifScanlineRasterizer.SampleTexture(detailModulationTexture, u, v);
+                var (mr, mg, mb, _) = NifTextureSampler.SampleTexture(detailModulationTexture, u, v);
 
                 outputPixels[pixelIndex] = ApplyModulation(sourcePixels[pixelIndex], mr);
                 outputPixels[pixelIndex + 1] = ApplyModulation(sourcePixels[pixelIndex + 1], mg);

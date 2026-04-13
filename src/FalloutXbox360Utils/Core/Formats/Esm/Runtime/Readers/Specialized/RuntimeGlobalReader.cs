@@ -8,14 +8,8 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 ///     Typed runtime reader for TESGlobal structs (FormType 0x06, 48 bytes).
 ///     Reads cType (value type char) and fValue (float).
 /// </summary>
-internal sealed class RuntimeGlobalReader
+internal sealed class RuntimeGlobalReader(RuntimeMemoryContext context)
 {
-    private readonly RuntimeMemoryContext _context;
-
-    public RuntimeGlobalReader(RuntimeMemoryContext context)
-    {
-        _context = context;
-    }
 
     public GlobalRecord? ReadRuntimeGlobal(RuntimeEditorIdEntry entry)
     {
@@ -25,7 +19,7 @@ internal sealed class RuntimeGlobalReader
         }
 
         var offset = entry.TesFormOffset.Value;
-        if (offset + StructSize > _context.FileSize)
+        if (offset + StructSize > context.FileSize)
         {
             return null;
         }
@@ -33,7 +27,7 @@ internal sealed class RuntimeGlobalReader
         var buffer = new byte[StructSize];
         try
         {
-            _context.Accessor.ReadArray(offset, buffer, 0, StructSize);
+            context.Accessor.ReadArray(offset, buffer, 0, StructSize);
         }
         catch
         {

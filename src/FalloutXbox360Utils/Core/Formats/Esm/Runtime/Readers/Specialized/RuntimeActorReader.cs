@@ -228,7 +228,7 @@ internal sealed class RuntimeActorReader
         }
 
         // Read model path
-        var modelPath = _context.ReadBSStringT(offset, NpcFields.CreaModelPathOffset);
+        var modelPath = _context.ReadBsStringT(offset, NpcFields.CreaModelPathOffset);
 
         // Read script pointer
         var scriptFormId = _context.FollowPointerToFormId(buffer, NpcFields.CreaScriptOffset);
@@ -308,7 +308,7 @@ internal sealed class RuntimeActorReader
         var flags = BinaryUtils.ReadUInt32BE(buffer, FactFlagsOffset);
 
         // Read display name — hash table already has it from FullNameOffset=44
-        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, FactFullNameOffset);
+        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, FactFullNameOffset);
 
         return new FactionRecord
         {
@@ -540,9 +540,9 @@ internal sealed class RuntimeActorReader
             return null;
         }
 
-        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, AvifFullNameOffset);
-        var icon = _context.ReadBSStringT(offset, AvifTextureOffset);
-        var abbreviation = _context.ReadBSStringT(offset, AvifAbbreviationOffset);
+        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, AvifFullNameOffset);
+        var icon = _context.ReadBsStringT(offset, AvifTextureOffset);
+        var abbreviation = _context.ReadBsStringT(offset, AvifAbbreviationOffset);
 
         return new ActorValueInfoRecord
         {

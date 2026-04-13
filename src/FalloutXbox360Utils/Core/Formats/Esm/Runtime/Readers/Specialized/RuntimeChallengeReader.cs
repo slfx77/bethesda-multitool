@@ -46,7 +46,7 @@ internal sealed class RuntimeChallengeReader
             return null;
         }
 
-        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, FullNameOffset);
+        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, FullNameOffset);
 
         // CHALLENGE_DATA (24 bytes at +100)
         var challengeType = BinaryUtils.ReadUInt32BE(buffer, DataOffset);

@@ -46,7 +46,7 @@ internal sealed class RuntimeReputationReader
             return null;
         }
 
-        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, FullNameOffset);
+        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, FullNameOffset);
         var positiveValue = BinaryUtils.ReadFloatBE(buffer, PositiveValueOffset);
         var negativeValue = BinaryUtils.ReadFloatBE(buffer, NegativeValueOffset);
 

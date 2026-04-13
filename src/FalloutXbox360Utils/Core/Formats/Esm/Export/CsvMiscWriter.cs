@@ -422,7 +422,7 @@ internal static class CsvMiscWriter
     {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "RowType,FormID,EditorID,Name,Force,Damage,Radius,ISRadius,Flags,FlagsDescription,LightFormID,LightName,Sound1FormID,Sound1Name,Sound2FormID,Sound2Name,ImpactDataSetFormID,ImpactDataSetName,EnchantmentFormID,EnchantmentName,ModelPath,Endianness,Offset");
+            "RowType,FormID,EditorID,Name,Force,Damage,Radius,IsRadius,Flags,FlagsDescription,LightFormID,LightName,Sound1FormID,Sound1Name,Sound2FormID,Sound2Name,ImpactDataSetFormID,ImpactDataSetName,EnchantmentFormID,EnchantmentName,ModelPath,Endianness,Offset");
 
         foreach (var e in explosions.OrderBy(e => e.EditorId ?? ""))
         {
@@ -434,7 +434,7 @@ internal static class CsvMiscWriter
                 e.Force.ToString("F1"),
                 e.Damage.ToString("F1"),
                 e.Radius.ToString("F1"),
-                e.ISRadius.ToString("F1"),
+                e.IsRadius.ToString("F1"),
                 $"0x{e.Flags:X4}",
                 Fmt.CsvEscape(FlagRegistry.DecodeFlagNames(e.Flags, FlagRegistry.ExplosionFlags)),
                 Fmt.FIdAlways(e.Light),

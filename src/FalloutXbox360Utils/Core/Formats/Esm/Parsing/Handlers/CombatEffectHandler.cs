@@ -74,7 +74,7 @@ internal sealed class CombatEffectHandler(RecordParserContext context) : RecordH
                         light = SubrecordDataReader.GetUInt32(fields, "Light");
                         sound1 = SubrecordDataReader.GetUInt32(fields, "Sound1");
                         flags = SubrecordDataReader.GetUInt32(fields, "Flags");
-                        isRadius = SubrecordDataReader.GetFloat(fields, "ISRadius");
+                        isRadius = SubrecordDataReader.GetFloat(fields, "IsRadius");
                         impactDataSet = SubrecordDataReader.GetUInt32(fields, "ImpactDataSet");
                         sound2 = SubrecordDataReader.GetUInt32(fields, "Sound2");
                     }
@@ -96,7 +96,7 @@ internal sealed class CombatEffectHandler(RecordParserContext context) : RecordH
             Light = light,
             Sound1 = sound1,
             Flags = flags,
-            ISRadius = isRadius,
+            IsRadius = isRadius,
             ImpactDataSet = impactDataSet,
             Sound2 = sound2,
             Enchantment = enchantment,

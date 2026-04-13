@@ -414,7 +414,7 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
             var strValid = pStr != 0 && sLen > 0 && sLen < 256 && _context.IsValidPointer(pStr);
             if (strValid)
             {
-                var name = _context.ReadBSStringT(sample.Offset, bstOff);
+                var name = _context.ReadBsStringT(sample.Offset, bstOff);
                 if (name != null)
                 {
                     details.Append($"FullName=\"{name}\" OK, ");

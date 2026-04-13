@@ -201,9 +201,9 @@ public sealed class RuntimeStructReader
 
     #region Strings (shared utility)
 
-    public string? ReadBSStringT(long tesFormFileOffset, int fieldOffset)
+    public string? ReadBsStringT(long tesFormFileOffset, int fieldOffset)
     {
-        return _context.ReadBSStringT(tesFormFileOffset, fieldOffset);
+        return _context.ReadBsStringT(tesFormFileOffset, fieldOffset);
     }
 
     #endregion

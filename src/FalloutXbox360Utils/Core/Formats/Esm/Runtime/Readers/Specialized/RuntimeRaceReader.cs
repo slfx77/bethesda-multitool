@@ -58,7 +58,7 @@ internal sealed class RuntimeRaceReader
             return null;
         }
 
-        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, _layout.FullNameOffset);
+        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, _layout.FullNameOffset);
 
         // RACE_DATA struct (36 bytes)
         var skillBoosts = ReadSkillBoosts(buffer);

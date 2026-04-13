@@ -46,8 +46,8 @@ internal sealed class RuntimeClassReader
             return null;
         }
 
-        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, FullNameOffset);
-        var icon = _context.ReadBSStringT(offset, IconOffset);
+        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, FullNameOffset);
+        var icon = _context.ReadBsStringT(offset, IconOffset);
 
         // TESAttributes: vtable(4) + UCHAR[7] at +76. Attribute bytes start at +80.
         var attributeWeights = new byte[7];

@@ -38,7 +38,7 @@ public record LightRecord
     public float FalloffExponent { get; init; }
 
     /// <summary>Field of View angle.</summary>
-    public float FOV { get; init; }
+    public float Fov { get; init; }
 
     /// <summary>Base value in caps.</summary>
     public int Value { get; init; }

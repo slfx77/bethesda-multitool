@@ -19,7 +19,7 @@ public sealed class NifScanlineRasterizerTests
             V2 = 1f
         };
 
-        var gradients = NifScanlineRasterizer.ComputeUvGradients(
+        var gradients = NifTextureSampler.ComputeUvGradients(
             tri,
             0f,
             0f,
@@ -49,7 +49,7 @@ public sealed class NifScanlineRasterizerTests
             ]
         };
 
-        var lowFootprintSample = NifScanlineRasterizer.SampleTexture(
+        var lowFootprintSample = NifTextureSampler.SampleTexture(
             texture,
             0.25f,
             0.25f,
@@ -57,7 +57,7 @@ public sealed class NifScanlineRasterizerTests
             0f,
             0f,
             0.01f);
-        var highFootprintSample = NifScanlineRasterizer.SampleTexture(
+        var highFootprintSample = NifTextureSampler.SampleTexture(
             texture,
             0.25f,
             0.25f,
@@ -66,13 +66,13 @@ public sealed class NifScanlineRasterizerTests
             0f,
             0.5f);
 
-        Assert.Equal(0, NifScanlineRasterizer.SelectMipLevel(
+        Assert.Equal(0, NifTextureSampler.SelectMipLevel(
             texture,
             0.01f,
             0f,
             0f,
             0.01f));
-        Assert.Equal(2, NifScanlineRasterizer.SelectMipLevel(
+        Assert.Equal(2, NifTextureSampler.SelectMipLevel(
             texture,
             0.5f,
             0f,
@@ -259,7 +259,7 @@ public sealed class NifScanlineRasterizerTests
             RenderOrder = 2
         };
 
-        NifScanlineRasterizer.DrawTriangleWireframeOverlay(
+        NifWireframeRenderer.DrawTriangleWireframeOverlay(
             pixels,
             depthBuffer,
             width,
@@ -297,7 +297,7 @@ public sealed class NifScanlineRasterizerTests
             Z2 = 1f
         };
 
-        NifScanlineRasterizer.DrawTriangleWireframeOverlay(
+        NifWireframeRenderer.DrawTriangleWireframeOverlay(
             pixels,
             depthBuffer,
             width,

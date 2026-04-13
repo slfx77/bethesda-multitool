@@ -37,9 +37,9 @@ internal sealed class LightShowRenderer : IRecordDisplayRenderer
             lines.Add($"[cyan]Falloff:[/]     {light.FalloffExponent:F2}");
         }
 
-        if (light.FOV is not 0f)
+        if (light.Fov is not 0f)
         {
-            lines.Add($"[cyan]FOV:[/]         {light.FOV:F1}\u00B0");
+            lines.Add($"[cyan]FOV:[/]         {light.Fov:F1}\u00B0");
         }
 
         if (light.Flags != 0)

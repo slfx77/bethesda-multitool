@@ -287,7 +287,7 @@ internal static class DialogueTesFileScriptRecovery
             };
         }
 
-        var scripts = DialogueConditionParser.ParseResultScriptsFromSubrecords(
+        var scripts = DialogueResultScriptParser.ParseResultScriptsFromSubrecords(
             recordData,
             (int)dataSize,
             true,

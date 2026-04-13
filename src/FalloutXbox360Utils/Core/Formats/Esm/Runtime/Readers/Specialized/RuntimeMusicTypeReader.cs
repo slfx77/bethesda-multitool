@@ -46,7 +46,7 @@ internal sealed class RuntimeMusicTypeReader
             return null;
         }
 
-        var fileName = _context.ReadBSStringT(offset, SoundFileOffset);
+        var fileName = _context.ReadBsStringT(offset, SoundFileOffset);
         var attenuation = BinaryUtils.ReadFloatBE(buffer, AttenuationOffset);
 
         return new MusicTypeRecord

@@ -420,7 +420,7 @@ internal static class EsmEditorIdExtractor
             if (tesFormFileOffset.HasValue
                 && EsmEditorIdConstants.FullNameOffsetByFormType.TryGetValue(formType, out var fullNameOffset))
             {
-                displayName = EsmEditorIdStringReader.ReadBSStringT(accessor, fileSize, minidumpInfo,
+                displayName = EsmEditorIdStringReader.ReadBsStringT(accessor, fileSize, minidumpInfo,
                     tesFormFileOffset.Value, fullNameOffset);
             }
 

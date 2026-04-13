@@ -3,7 +3,7 @@ namespace FalloutXbox360Utils;
 /// <summary>
 ///     Shared sorting logic for convertible file list views (DDX, NIF).
 /// </summary>
-internal sealed class ConvertibleFileSorter<TEntry>
+public sealed class ConvertibleFileSorter<TEntry>
     : FileSorterBase<TEntry, ConvertibleSortColumn>
     where TEntry : IConvertibleFileEntry
 {
@@ -34,7 +34,7 @@ internal sealed class ConvertibleFileSorter<TEntry>
     }
 }
 
-internal enum ConvertibleSortColumn
+public enum ConvertibleSortColumn
 {
     None,
     FilePath,
@@ -46,10 +46,11 @@ internal enum ConvertibleSortColumn
 /// <summary>
 ///     Shared interface for file entries in convertible file lists.
 /// </summary>
-internal interface IConvertibleFileEntry
+public interface IConvertibleFileEntry
 {
     string RelativePath { get; }
     long FileSize { get; }
     string FormatDescription { get; set; }
     string Status { get; set; }
+    bool IsSelected { get; set; }
 }

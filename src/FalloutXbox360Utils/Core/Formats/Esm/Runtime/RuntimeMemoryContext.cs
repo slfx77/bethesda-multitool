@@ -299,7 +299,7 @@ internal sealed class RuntimeMemoryContext(
     ///     Offset 0: pString (char* pointer, 4 bytes BE)
     ///     Offset 4: sLen (uint16 BE)
     /// </summary>
-    public string? ReadBSStringT(long tesFormFileOffset, int fieldOffset)
+    public string? ReadBsStringT(long tesFormFileOffset, int fieldOffset)
     {
         return ReadBSStringTDiag(tesFormFileOffset, fieldOffset, out _);
     }

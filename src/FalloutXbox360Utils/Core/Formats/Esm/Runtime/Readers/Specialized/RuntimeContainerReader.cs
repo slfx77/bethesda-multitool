@@ -53,7 +53,7 @@ internal sealed class RuntimeContainerReader(RuntimeMemoryContext context)
         var flags = buffer[ContFlagsOffset];
 
         // Read model path
-        var modelPath = _context.ReadBSStringT(offset, ContModelPathOffset);
+        var modelPath = _context.ReadBsStringT(offset, ContModelPathOffset);
 
         // Read script pointer
         var scriptFormId = _context.FollowPointerToFormId(buffer, ContScriptPtrOffset);
