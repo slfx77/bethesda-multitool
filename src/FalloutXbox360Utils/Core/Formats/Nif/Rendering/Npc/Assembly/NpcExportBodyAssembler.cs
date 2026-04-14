@@ -258,7 +258,29 @@ internal static class NpcExportBodyAssembler
             return;
         }
 
-        var allShapeIndices = NpcSkinningResolver.FindShapeBlockIndices(weaponRaw.Value.Data, weaponRaw.Value.Info);
+        // Extract ALL geometry once, then partition by SourceBlockIndex (O(G*N) → O(N))
+        var fullModel = NifGeometryExtractor.Extract(
+            weaponRaw.Value.Data,
+            weaponRaw.Value.Info,
+            textureResolver,
+            animOverrides: holsterModelPoseOverrides);
+        if (fullModel is not { HasGeometry: true })
+        {
+            return;
+        }
+
+        var submeshByBlock = new Dictionary<int, List<RenderableSubmesh>>();
+        foreach (var sub in fullModel.Submeshes)
+        {
+            if (!submeshByBlock.TryGetValue(sub.SourceBlockIndex, out var list))
+            {
+                list = [];
+                submeshByBlock[sub.SourceBlockIndex] = list;
+            }
+
+            list.Add(sub);
+        }
+
         foreach (var group in holsterAttachmentGroups)
         {
             var groupAttachmentTransform = NpcWeaponAttachmentResolver.ResolveWeaponHolsterAttachmentTransform(
@@ -274,18 +296,26 @@ internal static class NpcExportBodyAssembler
                 continue;
             }
 
-            var groupExcludedShapes = new HashSet<int>(allShapeIndices);
-            groupExcludedShapes.ExceptWith(group.ShapeIndices);
+            var groupSubmeshes = new List<RenderableSubmesh>();
+            foreach (var shapeIdx in group.ShapeIndices)
+            {
+                if (submeshByBlock.TryGetValue(shapeIdx, out var subs))
+                {
+                    groupSubmeshes.AddRange(subs);
+                }
+            }
 
-            var groupModel = NifGeometryExtractor.Extract(
-                weaponRaw.Value.Data,
-                weaponRaw.Value.Info,
-                textureResolver,
-                excludeBlockIndices: groupExcludedShapes,
-                animOverrides: holsterModelPoseOverrides);
-            if (groupModel == null || !groupModel.HasGeometry)
+            if (groupSubmeshes.Count == 0)
             {
                 continue;
+            }
+
+            // Build a temporary model for the group's submeshes
+            var groupModel = new NifRenderableModel();
+            foreach (var sub in groupSubmeshes)
+            {
+                groupModel.Submeshes.Add(sub);
+                groupModel.ExpandBounds(sub.Positions);
             }
 
             NpcRenderHelpers.TransformModel(groupModel, groupAttachmentTransform.Value);

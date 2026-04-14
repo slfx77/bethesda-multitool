@@ -89,11 +89,17 @@ internal static class WeaponSelectionScorer
         byte? combatSkillAggregate,
         byte strength)
     {
-        // sqrt-dampened DPS: real sustained DPS doesn't scale linearly with fire rate
-        // because of reload, ammo consumption, and accuracy degradation. A linear
-        // (Damage × ShotsPerSec) wildly overstates fast-firing weapons.
-        var dampedDps = MathF.Max(weapon.Damage, 0) *
-                        MathF.Sqrt(MathF.Max(weapon.ShotsPerSec, 0.1f));
+        // Linear DPS: Damage × ShotsPerSec. The previous sqrt-dampened formula
+        // understated fast-firing weapons to the point where a 20 dmg × 4 rps auto
+        // lost to a 45 dmg × 1 rps rifle despite having nearly double the real DPS.
+        var dps = MathF.Max(weapon.Damage, 0) *
+                  MathF.Max(weapon.ShotsPerSec, 0.1f);
+
+        // Weapons that require ammo are penalized: static NPC inventories rarely
+        // include ammo entries (companions get ammo via scripts/leveled lists at
+        // runtime). Without this, a high-DPS ammo-gated weapon dominates a usable
+        // sidearm the NPC would actually equip.
+        var ammoPenalty = weapon.AmmoFormId.HasValue ? 0.01f : 1f;
 
         var isMelee = IsMeleeWeapon(weapon.WeaponType);
 
@@ -135,7 +141,7 @@ internal static class WeaponSelectionScorer
         // the strength bonus above so they can stack for an iconic role match.
         var preferenceBonus = ComputePreferenceBonus(skills, weapon.SkillActorValue);
 
-        return dampedDps * rangeFactor * spreadPenalty * skillFactor *
+        return dps * ammoPenalty * rangeFactor * spreadPenalty * skillFactor *
                skillRequirementPenalty * strengthPenalty *
                meleeBonus * preferenceBonus;
     }

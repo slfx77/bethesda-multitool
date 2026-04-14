@@ -165,7 +165,8 @@ public sealed class NifAlphaCompositionTests
                 FrontBlendTexturePath,
                 hasAlphaBlend: true,
                 srcBlendMode: srcBlendMode,
-                dstBlendMode: dstBlendMode));
+                dstBlendMode: dstBlendMode,
+                isEmissive: true));
 
         using var gpu = GpuDevice.Create();
         Assert.SkipWhen(gpu is null, "GPU backend not available");
@@ -185,11 +186,23 @@ public sealed class NifAlphaCompositionTests
         Assert.InRange(gpuStats.AvgR, 0f, 16f);
         if (srcBlendMode == 0 && dstBlendMode == 1)
         {
+            // One/Zero: front fully replaces back → pure green
             Assert.InRange(gpuStats.AvgG, 220f, 255f);
             Assert.InRange(gpuStats.AvgB, 0f, 32f);
             return;
         }
 
+        if (srcBlendMode == 2 && dstBlendMode == 3)
+        {
+            // SourceColor/InverseSourceColor: front green channel is 255 (factor 1.0),
+            // so source green passes through fully and dest green is zeroed.
+            // Blue channel: front blue=0 (factor 0.0), dest blue passes through fully.
+            Assert.InRange(gpuStats.AvgG, 220f, 255f);
+            Assert.InRange(gpuStats.AvgB, 220f, 255f);
+            return;
+        }
+
+        // SrcAlpha/InvSrcAlpha (6,7): alpha=128 → ~50% blend of green + blue
         Assert.InRange(gpuStats.AvgG, 96f, 160f);
         Assert.InRange(gpuStats.AvgB, 96f, 160f);
     }
@@ -277,7 +290,8 @@ public sealed class NifAlphaCompositionTests
         byte srcBlendMode = 6,
         byte dstBlendMode = 7,
         byte[]? vertexColors = null,
-        bool useVertexColors = false)
+        bool useVertexColors = false,
+        bool? isEmissive = null)
     {
         return new RenderableSubmesh
         {
@@ -292,7 +306,7 @@ public sealed class NifAlphaCompositionTests
             Triangles = [0, 1, 2, 0, 2, 3],
             UVs = [0f, 0f, 1f, 0f, 1f, 1f, 0f, 1f],
             DiffuseTexturePath = diffuseTexturePath,
-            IsEmissive = !hasAlphaBlend,
+            IsEmissive = isEmissive ?? !hasAlphaBlend,
             IsDoubleSided = true,
             HasAlphaBlend = hasAlphaBlend,
             HasAlphaTest = hasAlphaTest,

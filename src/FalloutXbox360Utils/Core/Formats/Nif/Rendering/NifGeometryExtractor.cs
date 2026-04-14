@@ -303,6 +303,8 @@ internal static class NifGeometryExtractor
                 specularColor, useDualQuaternionSkinning, shapeMorphDeltas);
             if (submesh != null)
             {
+                submesh.SourceBlockIndex = shapeIndex;
+
                 if (propRefs != null &&
                     submesh.UVs != null &&
                     NifTextureAnimationEvaluator.TryResolveBaseUvTransform(data, nif, propRefs, out var uvTransform))

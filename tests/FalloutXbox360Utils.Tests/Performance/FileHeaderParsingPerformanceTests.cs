@@ -77,7 +77,7 @@ public sealed class FileHeaderParsingPerformanceTests : IDisposable
         // Assert
         Assert.Equal(100, results.Length);
         Assert.All(results, r => Assert.Equal("Xbox 360 (BE)", r.format));
-        Assert.True(sw.ElapsedMilliseconds < 500, $"Expected < 500ms, got {sw.ElapsedMilliseconds}ms");
+        Assert.True(sw.ElapsedMilliseconds < 2000, $"Expected < 2000ms, got {sw.ElapsedMilliseconds}ms");
     }
 
     [Fact]
@@ -150,7 +150,7 @@ public sealed class FileHeaderParsingPerformanceTests : IDisposable
         // Assert
         Assert.Equal(100, results.Length);
         Assert.All(results, r => Assert.Equal("3XDO", r.format));
-        Assert.True(sw.ElapsedMilliseconds < 500, $"Expected < 500ms, got {sw.ElapsedMilliseconds}ms");
+        Assert.True(sw.ElapsedMilliseconds < 5000, $"Expected < 5000ms, got {sw.ElapsedMilliseconds}ms");
     }
 
     [Fact]

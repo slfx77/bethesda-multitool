@@ -538,14 +538,20 @@ internal sealed class GpuSpriteRenderer : IDisposable
 
     private static BlendFactor ResolveBlendFactor(byte mode)
     {
+        // NIF alpha property blend modes follow OpenGL enumeration order
         return mode switch
         {
             0 => BlendFactor.One,
             1 => BlendFactor.Zero,
-            2 => BlendFactor.SourceAlpha,
-            3 => BlendFactor.InverseSourceAlpha,
+            2 => BlendFactor.SourceColor,
+            3 => BlendFactor.InverseSourceColor,
+            4 => BlendFactor.DestinationColor,
+            5 => BlendFactor.InverseDestinationColor,
             6 => BlendFactor.SourceAlpha,
             7 => BlendFactor.InverseSourceAlpha,
+            8 => BlendFactor.DestinationAlpha,
+            9 => BlendFactor.InverseDestinationAlpha,
+            10 => BlendFactor.One, // GL_SRC_ALPHA_SATURATE — no Veldrid equivalent; approximate as One
             _ => BlendFactor.SourceAlpha
         };
     }

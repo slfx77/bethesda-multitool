@@ -493,7 +493,31 @@ internal static class NpcWeaponLoader
         Dictionary<string, NifAnimationParser.AnimPoseOverride>? holsterModelPoseOverrides,
         NifRenderableModel bodyModel)
     {
-        var allShapeIndices = NpcSkinningResolver.FindShapeBlockIndices(weaponResult.Data, weaponResult.Info);
+        // Extract ALL geometry once, then partition submeshes by group using SourceBlockIndex.
+        // This avoids re-parsing the entire NIF per attachment group (O(G*N) → O(N)).
+        var fullModel = NifGeometryExtractor.Extract(
+            weaponResult.Data,
+            weaponResult.Info,
+            textureResolver,
+            animOverrides: holsterModelPoseOverrides);
+        if (fullModel == null || !fullModel.HasGeometry)
+        {
+            return;
+        }
+
+        // Build a lookup from block index → submeshes for O(1) partitioning
+        var submeshByBlock = new Dictionary<int, List<RenderableSubmesh>>();
+        foreach (var sub in fullModel.Submeshes)
+        {
+            if (!submeshByBlock.TryGetValue(sub.SourceBlockIndex, out var list))
+            {
+                list = [];
+                submeshByBlock[sub.SourceBlockIndex] = list;
+            }
+
+            list.Add(sub);
+        }
+
         foreach (var group in holsterAttachmentGroups)
         {
             var groupAttachmentTransform =
@@ -508,16 +532,17 @@ internal static class NpcWeaponLoader
                 continue;
             }
 
-            var groupExcludedShapes = new HashSet<int>(allShapeIndices);
-            groupExcludedShapes.ExceptWith(group.ShapeIndices);
+            // Collect submeshes belonging to this group's shape indices
+            var groupSubmeshes = new List<RenderableSubmesh>();
+            foreach (var shapeIdx in group.ShapeIndices)
+            {
+                if (submeshByBlock.TryGetValue(shapeIdx, out var subs))
+                {
+                    groupSubmeshes.AddRange(subs);
+                }
+            }
 
-            var groupModel = NifGeometryExtractor.Extract(
-                weaponResult.Data,
-                weaponResult.Info,
-                textureResolver,
-                excludeBlockIndices: groupExcludedShapes,
-                animOverrides: holsterModelPoseOverrides);
-            if (groupModel == null || !groupModel.HasGeometry)
+            if (groupSubmeshes.Count == 0)
             {
                 Log.Warn(
                     "Weapon attachment group '{0}' had no geometry for weapon '{1}'",
@@ -526,7 +551,11 @@ internal static class NpcWeaponLoader
                 continue;
             }
 
-            NpcRenderHelpers.TransformModel(groupModel, groupAttachmentTransform.Value);
+            // Apply the group's attachment transform to each submesh
+            foreach (var sub in groupSubmeshes)
+            {
+                NpcRenderHelpers.TransformSubmesh(sub, groupAttachmentTransform.Value);
+            }
 
             Log.Debug(
                 "Weapon '{0}' group '{1}' -> '{2}' at ({3:F1},{4:F1},{5:F1}), {6} submeshes",
@@ -536,9 +565,9 @@ internal static class NpcWeaponLoader
                 groupAttachmentTransform.Value.Translation.X,
                 groupAttachmentTransform.Value.Translation.Y,
                 groupAttachmentTransform.Value.Translation.Z,
-                groupModel.Submeshes.Count);
+                groupSubmeshes.Count);
 
-            foreach (var sub in groupModel.Submeshes)
+            foreach (var sub in groupSubmeshes)
             {
                 sub.RenderOrder = 6;
                 bodyModel.Submeshes.Add(sub);

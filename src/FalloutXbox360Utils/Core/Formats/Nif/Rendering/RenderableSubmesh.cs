@@ -133,6 +133,12 @@ internal sealed class RenderableSubmesh
     /// </summary>
     public string? SourceNifPath { get; set; }
 
+    /// <summary>
+    ///     Block index of the source NiTriShape/NiTriStrips in the NIF file.
+    ///     Used to partition submeshes by attachment group without re-extracting.
+    /// </summary>
+    public int SourceBlockIndex { get; set; } = -1;
+
     public int VertexCount => Positions.Length / 3;
     public int TriangleCount => Triangles.Length / 3;
 }

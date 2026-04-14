@@ -145,11 +145,10 @@ internal sealed class NpcWeaponResolver
         }
 
         // Collect renderable candidates with their inventory FormId, then apply
-        // CSTY Weapon Restrictions filtering and score the survivors. We deliberately
-        // ignore ammo availability — companions like Cass and Arcade get their iconic
-        // ranged weapon's ammo at runtime (scripts, leveled lists, template inheritance)
-        // rather than from static CNTO entries, so an ammo gate would push them to a
-        // melee fallback they'd never actually use.
+        // CSTY Weapon Restrictions filtering and score the survivors. The scorer
+        // applies a heavy penalty to weapons that require ammo (AmmoFormId set) since
+        // NPC static inventories rarely include ammo entries — companions get ammo via
+        // scripts and leveled lists at runtime.
         var candidates = new List<(uint FormId, WeapScanEntry Weapon)>();
         foreach (var item in expandedInventory)
         {

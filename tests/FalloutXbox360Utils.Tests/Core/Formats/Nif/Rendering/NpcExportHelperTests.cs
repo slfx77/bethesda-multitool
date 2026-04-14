@@ -298,7 +298,7 @@ public sealed class NpcExportHelperTests
     }
 
     [Fact]
-    public void BuildVertexColor_TintedMeshPreservesAlphaButNeutralizesRgb()
+    public void BuildVertexColor_TintedMeshPreservesRawVertexColorsWhenFlagSet()
     {
         var submesh = new RenderableSubmesh
         {
@@ -311,9 +311,9 @@ public sealed class NpcExportHelperTests
 
         var color = NpcGlbTintColorEncoder.BuildVertexColor(submesh, 0);
 
-        Assert.Equal(1f, color.X);
-        Assert.Equal(1f, color.Y);
-        Assert.Equal(1f, color.Z);
+        Assert.Equal(32f / 255f, color.X, 3);
+        Assert.Equal(96f / 255f, color.Y, 3);
+        Assert.Equal(192f / 255f, color.Z, 3);
         Assert.Equal(128f / 255f, color.W, 3);
     }
 

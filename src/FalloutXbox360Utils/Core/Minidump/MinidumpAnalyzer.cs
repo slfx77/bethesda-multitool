@@ -36,11 +36,32 @@ public sealed class MinidumpAnalyzer
         bool verbose = false,
         CancellationToken cancellationToken = default)
     {
-        var stopwatch = Stopwatch.StartNew();
-        var result = new AnalysisResult { FilePath = filePath };
-
         var fileInfo = new FileInfo(filePath);
-        result.FileSize = fileInfo.Length;
+
+        // Use a single memory-mapped file for all operations
+        using var mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+        using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
+
+        return await AnalyzeAsync(filePath, accessor, fileInfo.Length, progress, includeMetadata, verbose,
+            cancellationToken);
+    }
+
+    /// <summary>
+    ///     Analyze a memory dump using a caller-owned <see cref="MemoryMappedViewAccessor" />.
+    ///     Use this overload when the caller needs the accessor to remain alive after analysis
+    ///     completes (e.g., for subsequent reads against the same file).
+    /// </summary>
+    public async Task<AnalysisResult> AnalyzeAsync(
+        string filePath,
+        MemoryMappedViewAccessor accessor,
+        long fileSize,
+        IProgress<AnalysisProgress>? progress = null,
+        bool includeMetadata = true,
+        bool verbose = false,
+        CancellationToken cancellationToken = default)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var result = new AnalysisResult { FilePath = filePath, FileSize = fileSize };
 
         // Parse minidump to get module information and memory mappings (quick operation)
         var minidumpInfo = MinidumpParser.Parse(filePath);
@@ -50,10 +71,6 @@ public sealed class MinidumpAnalyzer
 
         // Build set of module file offsets to exclude from signature scanning
         var moduleOffsets = BuildModuleOffsetSet(minidumpInfo);
-
-        // Use a single memory-mapped file for all operations
-        using var mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-        using var accessor = mmf.CreateViewAccessor(0, result.FileSize, MemoryMappedFileAccess.Read);
 
         if (includeMetadata)
         {

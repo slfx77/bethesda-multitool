@@ -38,21 +38,26 @@ internal static class DmpSnippetExtractor
         string outputDir,
         Func<AnalysisResult, IMemoryAccessor, long, Task> testAction)
     {
-        // Step 1: Run MinidumpAnalyzer to get metadata
+        // Open the MMF once and share the accessor between analysis and test action.
+        // This prevents the accessor from being disposed by AnalyzeAsync's internal
+        // using block while parallel scans are still running.
+        var fileInfo = new FileInfo(dumpPath);
+        using var mmf = MemoryMappedFile.CreateFromFile(
+            dumpPath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+        using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
+
+        // Step 1: Run MinidumpAnalyzer with the shared accessor
         var analyzer = new MinidumpAnalyzer();
         var analysisResult = await analyzer.AnalyzeAsync(
-            dumpPath, includeMetadata: true, cancellationToken: CancellationToken.None);
+            dumpPath, accessor, fileInfo.Length, includeMetadata: true,
+            cancellationToken: CancellationToken.None);
 
         if (analysisResult.EsmRecords == null || analysisResult.MinidumpInfo == null)
         {
             throw new InvalidOperationException($"Analysis of {dumpPath} produced no ESM records or minidump info");
         }
 
-        // Step 2: Create instrumented accessor
-        var fileInfo = new FileInfo(dumpPath);
-        using var mmf = MemoryMappedFile.CreateFromFile(
-            dumpPath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-        using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
+        // Step 2: Create instrumented accessor wrapping the shared MMF accessor
         var recording = new RecordingMemoryAccessor(accessor);
 
         // Step 3: Run the test action with the recording accessor
