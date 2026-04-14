@@ -7,10 +7,12 @@ using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 using FalloutXbox360Utils.Core.Utils;
+using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
 
+[Collection(SequentialIntegrationCollection.Name)]
 public sealed class RedLucyEvidenceTests(SampleFileFixture samples)
 {
     private const uint BountyHunterDusterFormId = 0x0010D8DB;

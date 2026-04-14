@@ -11,12 +11,14 @@ using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
+using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
 using static FalloutXbox360Utils.Tests.Helpers.EsmTestRecordBuilder;
 
 namespace FalloutXbox360Utils.Tests.Core.Parsers;
 
+[Collection(SequentialIntegrationCollection.Name)]
 public sealed class RuntimeParityParserTests : IDisposable
 {
     private const int DataSize = 24 * 1024;

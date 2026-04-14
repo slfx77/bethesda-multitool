@@ -1,9 +1,11 @@
 using FalloutXbox360Utils.CLI.Rendering.Nif;
+using FalloutXbox360Utils.Tests.Helpers;
 using SharpGLTF.Schema2;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
 
+[Collection(SequentialIntegrationCollection.Name)]
 public sealed class UnpackedNifGlbExportRegressionTests
 {
     [Fact]

@@ -1,10 +1,12 @@
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.RuntimeBuffer;
+using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.RuntimeBuffer;
 
+[Collection(SequentialIntegrationCollection.Name)]
 public sealed class RuntimeStringOwnershipIntegrationTests(SampleFileFixture samples)
 {
     private readonly SampleFileFixture _samples = samples;

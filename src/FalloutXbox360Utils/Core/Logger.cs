@@ -203,11 +203,22 @@ public sealed class Logger
             return;
         }
 
-        // Always write to file if file logging is enabled
-        if (_logFileWriter != null)
+        // Always write to file if file logging is enabled.
+        // Capture the writer into a local to tolerate concurrent Dispose/Close from
+        // other threads, then swallow ObjectDisposedException (the stream can be
+        // closed between the null-check and the write when tests run in parallel).
+        var fileWriter = _logFileWriter;
+        if (fileWriter != null)
         {
-            var prefix = BuildPlainPrefix(level);
-            _logFileWriter.WriteLine(prefix + message);
+            try
+            {
+                var prefix = BuildPlainPrefix(level);
+                fileWriter.WriteLine(prefix + message);
+            }
+            catch (ObjectDisposedException)
+            {
+                // Stream was closed by another thread; drop the message.
+            }
         }
 
         // If custom output is set (for testing), use plain text output
