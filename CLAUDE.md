@@ -434,6 +434,21 @@ dotnet test -p:CollectCoverage=false
 
 CI: `.github/workflows/build-and-test.yml` — builds Release + runs tests with code coverage on Windows, then cross-platform CLI build on Ubuntu.
 
+## Accessibility
+
+The WinUI 3 GUI in `src/FalloutXbox360Utils/App/` has a strict accessibility regression gate. `XamlAccessibilityRatchetTests` (under `tests/FalloutXbox360Utils.Tests/App/Accessibility/`) scans every `*.xaml` file and asserts every interactive control (Button, TextBox, ComboBox, ListView, TreeView, Slider, NumberBox, CheckBox, ToggleButton, DropDownButton, etc.) has an accessible name via one of:
+
+- `AutomationProperties.Name` (literal or bound — `{x:Bind}` to a Name/Title/DisplayName/Label/Text-like property).
+- `AutomationProperties.LabeledBy` (pointing to a sibling `TextBlock` with `x:Name`).
+- `x:Uid` (localized Resources.resw entry).
+- Content-bearing controls: literal `Content=` string, or a nested `<TextBlock Text="…" />` / `<TextBlock x:Uid="…" />`.
+
+The test runs in strict mode — there is no baseline of known gaps. Any new control that lacks one of the above fails the test with the offending file + control type + `x:Name` + XAML line number.
+
+When adding a new interactive control: either set `AutomationProperties.Name` inline, give the control an `x:Uid`, or link it to a visible label via `LabeledBy`. Icon-only buttons should have both a tooltip (visual) and `AutomationProperties.Name` (screen-reader). Headings (`<TextBlock Style="{StaticResource SubtitleTextBlockStyle}" />`) should also get `AutomationProperties.HeadingLevel="Level1"` (page) / `Level2` / `Level3`.
+
+Keyboard shortcuts are declared via XAML `<KeyboardAccelerator>` — WinUI auto-decorates tooltips with the shortcut hint. Add new shortcuts to `KeyboardShortcutsDialog.All` (under `src/FalloutXbox360Utils/App/Dialogs/`) so the F1 cheat-sheet lists them.
+
 ## Code Style
 
 - File-scoped namespaces: `namespace Foo;`
