@@ -104,8 +104,12 @@ internal static class SubrecordActorSchemas
         schemas[new SubrecordSchemaRegistry.SchemaKey("FNAM", "RACE", 0)] = SubrecordSchema.ByteArray;
 
         // ATTR - RACE attributes (2 bytes)
-        schemas[new SubrecordSchemaRegistry.SchemaKey("ATTR", "RACE", 2)] = SubrecordSchema.Simple2Byte("Attribute");
-        schemas[new SubrecordSchemaRegistry.SchemaKey("CNAM", "RACE", 2)] = SubrecordSchema.Simple2Byte("Color Index");
+        // Xbox 360 stores ATTR and CNAM already in little-endian (observed: byte-swapped vs PC
+        // when treated as UInt16 BE). Use UInt16LittleEndian to pass through unchanged.
+        schemas[new SubrecordSchemaRegistry.SchemaKey("ATTR", "RACE", 2)] =
+            new SubrecordSchema(F.UInt16LittleEndian("Attribute"));
+        schemas[new SubrecordSchemaRegistry.SchemaKey("CNAM", "RACE", 2)] =
+            new SubrecordSchema(F.UInt16LittleEndian("Color Index"));
         schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "RACE", 2)] = SubrecordSchema.Simple2Byte();
 
         // PNAM - RACE FaceGen Main Clamp (4 bytes = float)
