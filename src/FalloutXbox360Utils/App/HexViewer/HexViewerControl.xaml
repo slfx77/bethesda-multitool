@@ -172,6 +172,7 @@
             Margin="4,0,0,0"
             IsDirectionReversed="True"
             IsThumbToolTipEnabled="False"
+            AutomationProperties.Name="Hex view scroll position"
             Maximum="100"
             Minimum="0"
             Orientation="Vertical"
@@ -405,6 +406,7 @@
             IsThumbToolTipEnabled="False"
             Maximum="10"
             Minimum="1"
+            AutomationProperties.Name="Minimap zoom"
             ValueChanged="MinimapZoomSlider_ValueChanged"
             Value="1" />
           <TextBlock

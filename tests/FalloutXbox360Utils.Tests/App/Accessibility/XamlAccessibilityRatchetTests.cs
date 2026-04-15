@@ -64,10 +64,15 @@ public sealed class XamlAccessibilityRatchetTests
 
         if (regressions.Count > 0)
         {
+            var gapByKey = gaps.ToDictionary(ToKey, g => g);
+            var regressionsWithLines = regressions.Select(r =>
+                gapByKey.TryGetValue(r, out var g)
+                    ? $"{r}  (line {g.LineNumber})"
+                    : r);
             var header = $"{regressions.Count} new accessibility regression(s). " +
                          "Add AutomationProperties.Name / LabeledBy / x:Uid to these controls, " +
                          "or (last resort) append to a11y-baseline.txt:\n";
-            Assert.Fail(header + string.Join("\n", regressions));
+            Assert.Fail(header + string.Join("\n", regressionsWithLines));
         }
 
         // Fixed-but-still-in-baseline entries are *not* a failure — this keeps the test
@@ -120,7 +125,8 @@ public sealed class XamlAccessibilityRatchetTests
     public void DumpCurrentGaps()
     {
         var gaps = XamlAccessibilityScanner.Scan(AppDirectory);
-        var lines = gaps.Select(ToKey).OrderBy(s => s, StringComparer.Ordinal);
+        var lines = gaps.Select(g => $"{ToKey(g)}  (line {g.LineNumber})")
+            .OrderBy(s => s, StringComparer.Ordinal);
         foreach (var line in lines)
         {
             Console.WriteLine(line);

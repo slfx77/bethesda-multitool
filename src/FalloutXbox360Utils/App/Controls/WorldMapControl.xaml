@@ -29,6 +29,7 @@
       </Grid.ColumnDefinitions>
       <ComboBox x:Name="WorldspaceComboBox" Grid.Column="0" MinWidth="220"
                 SelectionChanged="WorldspaceComboBox_SelectionChanged"
+                AutomationProperties.Name="Worldspace"
                 PlaceholderText="Select Worldspace" />
       <Button x:Name="InteriorsButton" Grid.Column="1" Content="Interiors"
               Click="InteriorsButton_Click"
@@ -48,6 +49,7 @@
               IsEnabled="False" />
       <ComboBox x:Name="ColorSchemeComboBox" Grid.Column="8" MinWidth="100"
                 SelectionChanged="ColorSchemeComboBox_SelectionChanged"
+                AutomationProperties.Name="Heightmap color scheme"
                 ToolTipService.ToolTip="Heightmap color scheme" />
     </Grid>
 
@@ -68,7 +70,8 @@
         <Button x:Name="LegendToggleButton" Click="LegendToggle_Click"
                 HorizontalAlignment="Left"
                 Background="Transparent" BorderThickness="0"
-                Padding="4,2" MinHeight="0" MinWidth="0">
+                Padding="4,2" MinHeight="0" MinWidth="0"
+                AutomationProperties.Name="Toggle legend">
           <StackPanel Orientation="Horizontal" Spacing="4">
             <FontIcon x:Name="LegendToggleIcon" Glyph="&#xE70D;" FontSize="10" />
             <TextBlock Text="Legend" FontSize="10" VerticalAlignment="Center" />
@@ -86,6 +89,7 @@
         <RowDefinition Height="*" />
       </Grid.RowDefinitions>
       <TextBox x:Name="CellSearchBox" Grid.Row="0" PlaceholderText="Search cells..."
+               AutomationProperties.Name="Search cells"
                TextChanged="CellSearchBox_TextChanged" Margin="0,0,0,4" />
       <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="12" Margin="0,0,0,4">
         <CheckBox x:Name="FilterHasObjects" Content="Has objects"
@@ -95,6 +99,7 @@
       </StackPanel>
       <ListView x:Name="CellListView" Grid.Row="2"
                 SelectionMode="Single"
+                AutomationProperties.Name="Cells in worldspace"
                 SelectionChanged="CellListView_SelectionChanged">
         <ListView.GroupStyle>
           <GroupStyle>

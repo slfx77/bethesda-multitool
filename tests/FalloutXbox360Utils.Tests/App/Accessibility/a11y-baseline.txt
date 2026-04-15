@@ -2,15 +2,7 @@
 # One entry per line: "<relativeFile>:<ControlType>:<x:Name or empty>"
 # See XamlAccessibilityScanner.cs for the detection rules.
 #
-# Shrink this file as controls gain AutomationProperties.Name / LabeledBy / x:Uid.
-# When it reaches zero, delete it entirely and the ratchet test becomes strict.
-
-Controls/WorldMapControl.xaml:Button:LegendToggleButton
-Controls/WorldMapControl.xaml:ComboBox:ColorSchemeComboBox
-Controls/WorldMapControl.xaml:ComboBox:WorldspaceComboBox
-Controls/WorldMapControl.xaml:ListView:CellListView
-Controls/WorldMapControl.xaml:TextBox:CellSearchBox
-HexViewer/HexViewerControl.xaml:Slider:MinimapZoomSlider
-HexViewer/HexViewerControl.xaml:Slider:VirtualScrollBar
-Tabs/BatchModeTab.xaml:NumberBox:ParallelCountBox
-Tabs/SingleFileTab.xaml:Button:
+# Currently EMPTY — the ratchet test operates in strict mode. Any new
+# interactive control introduced without AutomationProperties.Name /
+# LabeledBy / x:Uid / bound-text Content will fail the test. Do not
+# append entries here to silence failures; add the missing metadata.
