@@ -206,7 +206,8 @@
                       <CheckBox
                         Grid.Column="0"
                         IsChecked="{x:Bind IsEnabled, Mode=TwoWay}"
-                        IsEnabled="{x:Bind IsAvailable}" />
+                        IsEnabled="{x:Bind IsAvailable}"
+                        AutomationProperties.Name="{x:Bind Name}" />
                       <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock Text="{x:Bind Name}" VerticalAlignment="Center" />
                         <ToggleButton
@@ -217,7 +218,8 @@
                           Background="Transparent"
                           BorderThickness="0"
                           MinWidth="0"
-                          MinHeight="0">
+                          MinHeight="0"
+                          AutomationProperties.Name="Expand category">
                           <FontIcon
                             Glyph="{x:Bind ExpanderGlyph, Mode=OneWay}"
                             FontSize="10"
@@ -261,7 +263,8 @@
                               Grid.Column="0"
                               IsChecked="{x:Bind IsSelected, Mode=TwoWay}"
                               Padding="0"
-                              MinWidth="0" />
+                              MinWidth="0"
+                              AutomationProperties.Name="{x:Bind FileName}" />
                             <TextBlock
                               Grid.Column="1"
                               VerticalAlignment="Center"

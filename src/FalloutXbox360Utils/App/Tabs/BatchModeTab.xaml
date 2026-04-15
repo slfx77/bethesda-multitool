@@ -168,6 +168,7 @@
             <Button
               Grid.Column="1"
               Style="{StaticResource SortableColumnHeaderButtonStyle}"
+              AutomationProperties.Name="Sort by filename"
               Click="SortByFilename_Click">
               <StackPanel Orientation="Horizontal"
                           Spacing="4">
@@ -180,6 +181,7 @@
             <Button
               Grid.Column="2"
               Style="{StaticResource SortableColumnHeaderButtonStyle}"
+              AutomationProperties.Name="Sort by size"
               Click="SortBySize_Click">
               <StackPanel Orientation="Horizontal"
                           Spacing="4">
@@ -192,6 +194,7 @@
             <Button
               Grid.Column="3"
               Style="{StaticResource SortableColumnHeaderButtonStyle}"
+              AutomationProperties.Name="Sort by status"
               Click="SortByStatus_Click">
               <StackPanel Orientation="Horizontal"
                           Spacing="4">
@@ -221,7 +224,8 @@
                   <CheckBox
                     Grid.Column="0"
                     MinWidth="0"
-                    IsChecked="{x:Bind IsSelected, Mode=TwoWay}" />
+                    IsChecked="{x:Bind IsSelected, Mode=TwoWay}"
+                    AutomationProperties.Name="{x:Bind FileName}" />
                   <TextBlock
                     Grid.Column="1"
                     VerticalAlignment="Center"

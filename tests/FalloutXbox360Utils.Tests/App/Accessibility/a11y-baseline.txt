@@ -12,17 +12,7 @@ Controls/WorldMapControl.xaml:ListView:CellListView
 Controls/WorldMapControl.xaml:TextBox:CellSearchBox
 HexViewer/HexViewerControl.xaml:Slider:MinimapZoomSlider
 HexViewer/HexViewerControl.xaml:Slider:VirtualScrollBar
-Tabs/BatchModeTab.xaml:Button:
-Tabs/BatchModeTab.xaml:CheckBox:
 Tabs/BatchModeTab.xaml:NumberBox:ParallelCountBox
-Tabs/BsaExtractorTab.xaml:Button:
-Tabs/BsaExtractorTab.xaml:CheckBox:
-Tabs/DdxConverterTab.xaml:Button:
-Tabs/DdxConverterTab.xaml:CheckBox:
-Tabs/NifConverterTab.xaml:Button:
-Tabs/NifConverterTab.xaml:CheckBox:
-Tabs/RepackerTab.xaml:CheckBox:
-Tabs/RepackerTab.xaml:ToggleButton:
 Tabs/SingleFileTab.xaml:Button:
 Tabs/SingleFileTab.xaml:CheckBox:
 Tabs/SingleFileTab.xaml:ComboBox:DialogueBrowseMode
