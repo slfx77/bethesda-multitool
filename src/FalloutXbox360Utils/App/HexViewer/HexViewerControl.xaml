@@ -51,6 +51,9 @@
             AutomationProperties.Name="Search"
             AutomationProperties.HelpText="Open search bar (Ctrl+F)"
             ToolTipService.ToolTip="Search (Ctrl+F)">
+            <Button.KeyboardAccelerators>
+              <KeyboardAccelerator Key="F" Modifiers="Control" />
+            </Button.KeyboardAccelerators>
             <FontIcon
               FontSize="14"
               Foreground="#FF888888"
@@ -236,6 +239,9 @@
                     AutomationProperties.Name="Find previous"
                     AutomationProperties.HelpText="Find previous match (Shift+F3)"
                     ToolTipService.ToolTip="Previous (Shift+F3)">
+                    <Button.KeyboardAccelerators>
+                      <KeyboardAccelerator Key="F3" Modifiers="Shift" />
+                    </Button.KeyboardAccelerators>
                     <FontIcon
                       FontSize="11"
                       Foreground="#FFAAAAAA"
@@ -252,6 +258,9 @@
                     AutomationProperties.Name="Find next"
                     AutomationProperties.HelpText="Find next match (F3)"
                     ToolTipService.ToolTip="Next (F3)">
+                    <Button.KeyboardAccelerators>
+                      <KeyboardAccelerator Key="F3" />
+                    </Button.KeyboardAccelerators>
                     <FontIcon
                       FontSize="11"
                       Foreground="#FFAAAAAA"

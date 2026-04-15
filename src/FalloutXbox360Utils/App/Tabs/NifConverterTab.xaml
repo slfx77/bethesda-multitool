@@ -281,6 +281,9 @@
                 Margin="4,0,0,0"
                 AutomationProperties.Name="Open folder or BSA"
                 ToolTipService.ToolTip="Browse for directory or BSA file">
+                <DropDownButton.KeyboardAccelerators>
+                  <KeyboardAccelerator Key="O" Modifiers="Control" />
+                </DropDownButton.KeyboardAccelerators>
                 <FontIcon Glyph="&#xE838;" FontSize="14" />
                 <DropDownButton.Flyout>
                   <MenuFlyout Placement="BottomEdgeAlignedRight">
@@ -400,7 +403,11 @@
                 Content="Export as GLB..."
                 HorizontalAlignment="Stretch"
                 Click="NifViewerExportGlb_Click"
-                IsEnabled="False" />
+                IsEnabled="False">
+                <Button.KeyboardAccelerators>
+                  <KeyboardAccelerator Key="E" Modifiers="Control" />
+                </Button.KeyboardAccelerators>
+              </Button>
 
               <!-- Render PNG -->
               <TextBlock x:Name="NifViewerRenderSectionHeader"
@@ -452,7 +459,11 @@
                 Content="Export as PNG..."
                 HorizontalAlignment="Stretch"
                 Click="NifViewerRenderPng_Click"
-                IsEnabled="False" />
+                IsEnabled="False">
+                <Button.KeyboardAccelerators>
+                  <KeyboardAccelerator Key="R" Modifiers="Control" />
+                </Button.KeyboardAccelerators>
+              </Button>
             </StackPanel>
           </ScrollViewer>
         </Grid>
