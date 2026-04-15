@@ -1,8 +1,11 @@
 using Windows.Storage.Pickers;
+using FalloutXbox360Utils.CLI;
 using FalloutXbox360Utils.Core.Formats.Nif;
 using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.Web.WebView2.Core;
 using WinRT.Interop;
 
 namespace FalloutXbox360Utils;
@@ -10,14 +13,15 @@ namespace FalloutXbox360Utils;
 /// <summary>
 ///     Tab for batch converting Xbox 360 NIF files to PC format.
 /// </summary>
-public sealed partial class NifConverterTab : UserControl, IDisposable, IHasSettingsDrawer
+public sealed partial class NifConverterTab : NifFileConverterBase
 {
-    private readonly List<NifFileEntry> _allNifFiles = [];
-    private readonly ConvertibleFileSorter<NifFileEntry> _sorter = new();
-    private CancellationTokenSource? _cts;
+    private string? _currentNifViewerPath;
     private bool _dependencyCheckDone;
-    private List<NifFileEntry> _nifFiles = []; // Using List instead of ObservableCollection for batch performance
-    private CancellationTokenSource? _scanCts;
+
+    // NIF Viewer state
+    private NifBrowserService? _nifBrowserService;
+    private List<NifTreeViewItem>? _nifViewerAllItems;
+    private bool _nifViewerWebViewInitialized;
 
     public NifConverterTab()
     {
@@ -26,25 +30,23 @@ public sealed partial class NifConverterTab : UserControl, IDisposable, IHasSett
         Loaded += NifConverterTab_Loaded;
     }
 
-    /// <summary>
-    ///     Helper to route status text to the global status bar.
-    /// </summary>
-#pragma warning disable CA1822, S2325
-    private StatusTextHelper StatusTextBlock => new();
-#pragma warning restore CA1822, S2325
-    public void ToggleSettingsDrawer() => SettingsDrawerHelper.Toggle(SettingsDrawer);
-    public void CloseSettingsDrawer() => SettingsDrawerHelper.Close(SettingsDrawer);
-
-    public void Dispose()
-    {
-        _cts?.Dispose();
-    }
+    // Wire abstract properties to XAML-declared elements
+    protected override ListView FilesListView => NifFilesListView;
+    protected override ProgressBar ConversionProgressBar => NifConversionProgressBar;
+    protected override Button ConvertButtonElement => NifConvertButton;
+    protected override Button CancelButtonElement => NifCancelButton;
+    protected override TextBox InputDirectoryTextBox => NifInputDirectoryTextBox;
+    protected override TextBox OutputDirectoryTextBox => NifOutputDirectoryTextBox;
+    protected override FontIcon FilePathSortIcon => NifFilePathSortIcon;
+    protected override FontIcon SizeSortIcon => NifSizeSortIcon;
+    protected override FontIcon FormatSortIcon => NifFormatSortIcon;
+    protected override FontIcon StatusSortIcon => NifStatusSortIcon;
+    protected override Border SettingsDrawerElement => SettingsDrawer;
 
     private async void NifConverterTab_Loaded(object sender, RoutedEventArgs e)
     {
         Loaded -= NifConverterTab_Loaded;
 
-        // Check dependencies on first load
         if (!_dependencyCheckDone)
         {
             _dependencyCheckDone = true;
@@ -54,60 +56,20 @@ public sealed partial class NifConverterTab : UserControl, IDisposable, IHasSett
 
     private async Task CheckDependenciesAsync()
     {
-        // Small delay to ensure the UI is fully loaded
         await Task.Delay(100);
-
         var result = DependencyChecker.CheckNifConverterDependencies();
         if (!result.AllAvailable) await DependencyDialogHelper.ShowIfMissingAsync(result, XamlRoot);
-        // NIF Converter has no external dependencies, so this will always pass
     }
 
-    private void SetupTextBoxContextMenus()
-    {
-        TextBoxContextMenuHelper.AttachContextMenu(InputDirectoryTextBox);
-        TextBoxContextMenuHelper.AttachContextMenu(OutputDirectoryTextBox);
-    }
-
-    private void UpdateButtonStates()
-    {
-        var hasOutput = !string.IsNullOrEmpty(OutputDirectoryTextBox.Text);
-        var hasSelected = _nifFiles.Any(f => f.IsSelected);
-        ConvertButton.IsEnabled = hasOutput && hasSelected && (_cts == null || _cts.IsCancellationRequested);
-        CancelButton.IsEnabled = _cts != null && !_cts.IsCancellationRequested;
-    }
-
-    private void UpdateFileCount()
-    {
-        var total = _nifFiles.Count;
-        var selected = _nifFiles.Count(f => f.IsSelected);
-        StatusTextBlock.Text = $"{selected} of {total} files selected";
-    }
-
-    private async Task ShowDialogAsync(string title, string message)
-    {
-        var dialog = new ContentDialog
-        {
-            Title = title,
-            Content = message,
-            CloseButtonText = "OK",
-            XamlRoot = XamlRoot
-        };
-        await dialog.ShowAsync();
-    }
+    #region Browse & Scan
 
     private async void BrowseInputButton_Click(object sender, RoutedEventArgs e)
     {
-        var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
-        picker.FileTypeFilter.Add("*");
-        InitializeWithWindow.Initialize(picker,
-            WindowNative.GetWindowHandle(App.Current.MainWindow));
-
-        var folder = await picker.PickSingleFolderAsync();
+        var folder = await PickFolderAsync();
         if (folder == null) return;
 
-        // Setting InputDirectoryTextBox.Text triggers TextChanged event which calls ScanForNifFilesAsync
-        InputDirectoryTextBox.Text = folder.Path;
-        OutputDirectoryTextBox.Text = Path.Combine(folder.Path, "converted_pc");
+        InputDirectoryTextBox.Text = folder;
+        OutputDirectoryTextBox.Text = Path.Combine(folder, "converted_pc");
     }
 
     private async void InputDirectoryTextBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -120,13 +82,7 @@ public sealed partial class NifConverterTab : UserControl, IDisposable, IHasSett
         }
         else
         {
-            _nifFiles = [];
-            _allNifFiles.Clear();
-            NifFilesListView.ItemsSource = null;
-            _sorter.Reset();
-            UpdateSortIcons();
-            UpdateFileCount();
-            UpdateButtonStates();
+            ClearFileList();
         }
     }
 
@@ -137,36 +93,30 @@ public sealed partial class NifConverterTab : UserControl, IDisposable, IHasSett
 
     private async void BrowseOutputButton_Click(object sender, RoutedEventArgs e)
     {
-        var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
-        picker.FileTypeFilter.Add("*");
-        InitializeWithWindow.Initialize(picker,
-            WindowNative.GetWindowHandle(App.Current.MainWindow));
-
-        var folder = await picker.PickSingleFolderAsync();
+        var folder = await PickFolderAsync();
         if (folder != null)
         {
-            OutputDirectoryTextBox.Text = folder.Path;
+            OutputDirectoryTextBox.Text = folder;
             UpdateButtonStates();
         }
     }
 
     private async Task ScanForNifFilesAsync(string directory)
     {
-        // Cancel any in-progress scan
-        if (_scanCts != null)
+        if (ScanCts != null)
         {
-            await _scanCts.CancelAsync();
-            _scanCts.Dispose();
+            await ScanCts.CancelAsync();
+            ScanCts.Dispose();
         }
 
-        _scanCts = new CancellationTokenSource();
-        var cancellationToken = _scanCts.Token;
+        ScanCts = new CancellationTokenSource();
+        var cancellationToken = ScanCts.Token;
 
-        _nifFiles = [];
-        _allNifFiles.Clear();
-        _allNifFiles.TrimExcess();
-        NifFilesListView.ItemsSource = null;
-        _sorter.Reset();
+        Files = [];
+        AllFiles.Clear();
+        AllFiles.TrimExcess();
+        FilesListView.ItemsSource = null;
+        Sorter.Reset();
         UpdateSortIcons();
         StatusTextBlock.Text = "Scanning for NIF files...";
 
@@ -184,23 +134,12 @@ public sealed partial class NifConverterTab : UserControl, IDisposable, IHasSett
 
         try
         {
-            // Scan and create entries on background thread
             var entries = await ScanAndCreateNifEntriesAsync(directory, cancellationToken);
-
-            // Check if cancelled before updating UI
             if (cancellationToken.IsCancellationRequested) return;
 
-            // Only the ItemsSource assignment happens on UI thread
-            _allNifFiles.Clear();
-            _allNifFiles.Capacity = entries.Length;
-            _allNifFiles.AddRange(entries);
-            _nifFiles = new List<NifFileEntry>(_allNifFiles);
-            NifFilesListView.ItemsSource = _nifFiles;
-
-            UpdateFileCount();
-            UpdateButtonStates();
+            OnScanComplete(entries);
             StatusTextBlock.Text =
-                $"Found {_nifFiles.Count} NIF files. {_nifFiles.Count(f => f.FormatDescription == "Xbox 360 (BE)")} require conversion.";
+                $"Found {Files.Count} NIF files. {Files.Count(f => f.FormatDescription == "Xbox 360 (BE)")} require conversion.";
         }
         finally
         {
@@ -223,7 +162,6 @@ public sealed partial class NifConverterTab : UserControl, IDisposable, IHasSett
             var processedCount = 0;
             var dispatcher = DispatcherQueue;
 
-            // Use Parallel.ForEach with synchronous I/O - much faster than async for small reads
             Parallel.ForEach(
                 Enumerable.Range(0, nifFiles.Count),
                 new ParallelOptions
@@ -247,7 +185,6 @@ public sealed partial class NifConverterTab : UserControl, IDisposable, IHasSett
                         IsSelected = isXbox360
                     };
 
-                    // Update progress every 100 files
                     var current = Interlocked.Increment(ref processedCount);
                     if (current % 100 == 0 || current == nifFiles.Count)
                         dispatcher.TryEnqueue(() => ConversionProgressBar.Value = current);
@@ -264,9 +201,7 @@ public sealed partial class NifConverterTab : UserControl, IDisposable, IHasSett
             var fileInfo = new FileInfo(filePath);
             var fileSize = fileInfo.Length;
 
-            // Use stackalloc for small header buffer - no heap allocation
             Span<byte> headerBytes = stackalloc byte[50];
-
             using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 64);
             var bytesRead = fs.Read(headerBytes);
 
@@ -294,36 +229,20 @@ public sealed partial class NifConverterTab : UserControl, IDisposable, IHasSett
         };
     }
 
-    private void InitializeScanProgress(int fileCount)
-    {
-        DispatcherQueue.TryEnqueue(() =>
-        {
-            ConversionProgressBar.IsIndeterminate = false;
-            ConversionProgressBar.Maximum = fileCount;
-            ConversionProgressBar.Value = 0;
-            StatusTextBlock.Text = $"Scanning {fileCount} NIF files...";
-        });
-    }
+    #endregion
 
-    private void SelectAllButton_Click(object sender, RoutedEventArgs e)
-    {
-        foreach (var file in _nifFiles) file.IsSelected = true;
+    #region Selection
 
-        UpdateFileCount();
-        UpdateButtonStates();
-    }
+    private void SelectAllButton_Click(object sender, RoutedEventArgs e) => SelectAll();
+    private void SelectNoneButton_Click(object sender, RoutedEventArgs e) => SelectNone();
 
-    private void SelectNoneButton_Click(object sender, RoutedEventArgs e)
-    {
-        foreach (var file in _nifFiles) file.IsSelected = false;
+    #endregion
 
-        UpdateFileCount();
-        UpdateButtonStates();
-    }
+    #region Conversion
 
     private async void ConvertButton_Click(object sender, RoutedEventArgs e)
     {
-        var selectedFiles = _nifFiles.Where(f => f.IsSelected).ToList();
+        var selectedFiles = Files.Where(f => f.IsSelected).ToList();
         if (selectedFiles.Count == 0)
         {
             await ShowDialogAsync("No Files Selected", "Please select at least one NIF file to convert.");
@@ -338,7 +257,7 @@ public sealed partial class NifConverterTab : UserControl, IDisposable, IHasSett
 
         if (verbose) Core.Logger.Instance.Level = Core.LogLevel.Debug;
 
-        _cts = new CancellationTokenSource();
+        ConversionCts = new CancellationTokenSource();
         UpdateButtonStates();
 
         ConversionProgressBar.Visibility = Visibility.Visible;
@@ -356,7 +275,7 @@ public sealed partial class NifConverterTab : UserControl, IDisposable, IHasSett
 
             for (var i = 0; i < selectedFiles.Count; i++)
             {
-                if (_cts.Token.IsCancellationRequested) break;
+                if (ConversionCts.Token.IsCancellationRequested) break;
 
                 var file = selectedFiles[i];
                 StatusTextBlock.Text = $"Converting {i + 1}/{selectedFiles.Count}: {file.RelativePath}";
@@ -364,7 +283,6 @@ public sealed partial class NifConverterTab : UserControl, IDisposable, IHasSett
 
                 try
                 {
-                    // Determine output path
                     string outputPath;
                     if (preserveStructure)
                     {
@@ -377,7 +295,6 @@ public sealed partial class NifConverterTab : UserControl, IDisposable, IHasSett
                         outputPath = Path.Combine(outputDir, Path.GetFileName(file.FullPath));
                     }
 
-                    // Check if output exists
                     if (File.Exists(outputPath) && !overwrite)
                     {
                         file.Status = "Skipped (exists)";
@@ -385,14 +302,12 @@ public sealed partial class NifConverterTab : UserControl, IDisposable, IHasSett
                         continue;
                     }
 
-                    // Read and convert
-                    var inputData = await File.ReadAllBytesAsync(file.FullPath, _cts.Token);
-                    var result = await Task.Run(() => NifConverter.Convert(inputData), _cts.Token);
+                    var inputData = await File.ReadAllBytesAsync(file.FullPath, ConversionCts.Token);
+                    var result = await Task.Run(() => NifConverter.Convert(inputData), ConversionCts.Token);
 
                     if (result.Success && result.OutputData != null)
                     {
-                        await File.WriteAllBytesAsync(outputPath, result.OutputData, _cts.Token);
-
+                        await File.WriteAllBytesAsync(outputPath, result.OutputData, ConversionCts.Token);
                         file.Status = "Converted";
                         converted++;
                     }
@@ -424,8 +339,8 @@ public sealed partial class NifConverterTab : UserControl, IDisposable, IHasSett
         }
         finally
         {
-            _cts.Dispose();
-            _cts = null;
+            ConversionCts.Dispose();
+            ConversionCts = null;
             ConversionProgressBar.Visibility = Visibility.Collapsed;
             UpdateButtonStates();
         }
@@ -433,74 +348,396 @@ public sealed partial class NifConverterTab : UserControl, IDisposable, IHasSett
 
     private void CancelButton_Click(object sender, RoutedEventArgs e)
     {
-        _cts?.Cancel();
+        ConversionCts?.Cancel();
         StatusTextBlock.Text = "Cancelling...";
     }
 
+    #endregion
+
     #region Sorting
 
-    private void SortByFilePath_Click(object sender, RoutedEventArgs e)
-    {
-        ApplySort(ConvertibleSortColumn.FilePath);
-    }
+    private void SortByFilePath_Click(object sender, RoutedEventArgs e) => ApplySort(ConvertibleSortColumn.FilePath);
+    private void SortBySize_Click(object sender, RoutedEventArgs e) => ApplySort(ConvertibleSortColumn.Size);
+    private void SortByFormat_Click(object sender, RoutedEventArgs e) => ApplySort(ConvertibleSortColumn.Format);
+    private void SortByStatus_Click(object sender, RoutedEventArgs e) => ApplySort(ConvertibleSortColumn.Status);
 
-    private void SortBySize_Click(object sender, RoutedEventArgs e)
-    {
-        ApplySort(ConvertibleSortColumn.Size);
-    }
+    #endregion
 
-    private void SortByFormat_Click(object sender, RoutedEventArgs e)
-    {
-        ApplySort(ConvertibleSortColumn.Format);
-    }
+    #region NIF Viewer
 
-    private void SortByStatus_Click(object sender, RoutedEventArgs e)
+    private void NifTabView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        ApplySort(ConvertibleSortColumn.Status);
-    }
-
-    private void ApplySort(ConvertibleSortColumn column)
-    {
-        _sorter.CycleSortState(column);
-        UpdateSortIcons();
-        RefreshSortedList();
-    }
-
-    private void UpdateSortIcons()
-    {
-        FilePathSortIcon.Visibility = SizeSortIcon.Visibility =
-            FormatSortIcon.Visibility = StatusSortIcon.Visibility = Visibility.Collapsed;
-
-        var icon = _sorter.CurrentColumn switch
+        // Lazy init WebView when viewer tab is first selected
+        if (NifTabView.SelectedIndex == 1 && !_nifViewerWebViewInitialized)
         {
-            ConvertibleSortColumn.FilePath => FilePathSortIcon,
-            ConvertibleSortColumn.Size => SizeSortIcon,
-            ConvertibleSortColumn.Format => FormatSortIcon,
-            ConvertibleSortColumn.Status => StatusSortIcon,
-            _ => null
+            _ = InitializeNifViewerWebViewAsync();
+        }
+    }
+
+    private async Task InitializeNifViewerWebViewAsync()
+    {
+        if (_nifViewerWebViewInitialized) return;
+
+        try
+        {
+            await NifModelViewer.EnsureCoreWebView2Async();
+
+            var assetsDir = Path.Combine(AppContext.BaseDirectory, "App", "Assets");
+            NifModelViewer.CoreWebView2.SetVirtualHostNameToFolderMapping(
+                "nif-viewer-assets",
+                assetsDir,
+                CoreWebView2HostResourceAccessKind.Allow);
+
+            NifModelViewer.CoreWebView2.Navigate(
+#pragma warning disable S1075
+                "https://nif-viewer-assets/npc-viewer.html"
+#pragma warning restore S1075
+            );
+            _nifViewerWebViewInitialized = true;
+
+            // Set initial status after page loads
+            NifModelViewer.CoreWebView2.NavigationCompleted += async (_, _) =>
+            {
+                try
+                {
+                    await NifModelViewer.ExecuteScriptAsync("setStatus('Select a NIF file to view')");
+                }
+                catch
+                {
+                    // Page may not have setStatus yet
+                }
+            };
+        }
+        catch (Exception ex)
+        {
+            NifViewerPlaceholderText.Text = $"WebView2 init failed: {ex.Message}";
+        }
+    }
+
+    private async void NifViewerBrowseFolder_Click(object sender, RoutedEventArgs e)
+    {
+        var folder = await PickFolderAsync();
+        if (folder != null)
+        {
+            await LoadNifSourceAsync(folder, isBsa: false);
+        }
+    }
+
+    private async void NifViewerBrowseBsa_Click(object sender, RoutedEventArgs e)
+    {
+        var filePicker = new FileOpenPicker();
+        filePicker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+        filePicker.FileTypeFilter.Add(".bsa");
+        InitializeWithWindow.Initialize(filePicker,
+            WindowNative.GetWindowHandle(App.Current.MainWindow));
+
+        var file = await filePicker.PickSingleFileAsync();
+        if (file != null)
+        {
+            await LoadNifSourceAsync(file.Path, isBsa: true);
+        }
+    }
+
+    private async Task LoadNifSourceAsync(string path, bool isBsa)
+    {
+        _nifBrowserService?.Dispose();
+        NifViewerPathTextBox.Text = path;
+
+        try
+        {
+            _nifBrowserService = isBsa
+                ? await Task.Run(() => NifBrowserService.CreateFromBsa(path))
+                : await Task.Run(() => NifBrowserService.CreateFromDirectory(path));
+
+            var entries = await Task.Run(() => _nifBrowserService.ListNifFiles());
+            _nifViewerAllItems = NifTreeViewItem.FromTreeEntries(entries);
+            PopulateNifTree(_nifViewerAllItems);
+
+            var fileCount = _nifViewerAllItems.Sum(i => i.IsDirectory ? i.Children.Count : 1);
+            NifViewerFileCount.Text = $"{fileCount} NIF files";
+        }
+        catch (Exception ex)
+        {
+            NifViewerFileCount.Text = $"Error: {ex.Message}";
+        }
+    }
+
+    private void PopulateNifTree(List<NifTreeViewItem> items)
+    {
+        NifViewerTreeView.ItemsSource = items;
+    }
+
+    private void NifViewerSearchBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_nifViewerAllItems == null) return;
+
+        var search = NifViewerSearchBox.Text?.Trim();
+        if (string.IsNullOrEmpty(search))
+        {
+            PopulateNifTree(_nifViewerAllItems);
+            return;
+        }
+
+        var filtered = new List<NifTreeViewItem>();
+        foreach (var item in _nifViewerAllItems)
+        {
+            if (item.IsDirectory)
+            {
+                var matchingChildren = item.Children
+                    .Where(c => c.DisplayName.Contains(search, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (matchingChildren.Count > 0)
+                {
+                    var clone = new NifTreeViewItem
+                    {
+                        DisplayName = item.DisplayName,
+                        FullPath = item.FullPath,
+                        IsDirectory = true,
+                        IsExpanded = true
+                    };
+                    foreach (var child in matchingChildren)
+                    {
+                        clone.Children.Add(child);
+                    }
+
+                    filtered.Add(clone);
+                }
+            }
+            else if (item.DisplayName.Contains(search, StringComparison.OrdinalIgnoreCase))
+            {
+                filtered.Add(item);
+            }
+        }
+
+        PopulateNifTree(filtered);
+    }
+
+    private async void NifViewerTree_ItemInvoked(TreeView sender, TreeViewItemInvokedEventArgs args)
+    {
+        if (args.InvokedItem is not NifTreeViewItem item || item.IsDirectory) return;
+
+        await LoadNifIntoViewerAsync(item);
+    }
+
+    private async Task LoadNifIntoViewerAsync(NifTreeViewItem item)
+    {
+        if (_nifBrowserService == null || !_nifViewerWebViewInitialized) return;
+
+        _currentNifViewerPath = item.FullPath;
+        NifModelLoadingRing.Visibility = Visibility.Visible;
+        NifViewerPlaceholderText.Visibility = Visibility.Collapsed;
+
+        try
+        {
+            await NifModelViewer.ExecuteScriptAsync("setStatus('Loading model...')");
+
+            var nifData = await Task.Run(() => _nifBrowserService.ReadNifData(item.FullPath));
+            if (nifData == null)
+            {
+                await NifModelViewer.ExecuteScriptAsync("setStatus('Failed to read NIF file')");
+                NifModelLoadingRing.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            // Update info panel
+            var info = await Task.Run(() => NifBrowserService.GetNifInfo(nifData, item.DisplayName));
+            if (info != null)
+            {
+                NifViewerInfoText.Text =
+                    $"File: {info.FileName}\n" +
+                    $"Size: {info.FileSize:N0} bytes\n" +
+                    $"Format: {info.Format}\n" +
+                    $"Blocks: {info.BlockCount}\n" +
+                    $"BS Version: {info.BsVersion}\n" +
+                    $"User Version: {info.UserVersion}";
+                NifViewerBlockTypesText.Text = string.Join(", ", info.BlockTypeNames);
+            }
+
+            // Build GLB for 3D viewer
+            var glbBytes = await Task.Run(() => _nifBrowserService.BuildGlb(nifData, item.DisplayName));
+            if (glbBytes == null)
+            {
+                await NifModelViewer.ExecuteScriptAsync("setStatus('No exportable geometry')");
+                NifModelLoadingRing.Visibility = Visibility.Collapsed;
+                NifViewerExportGlbButton.IsEnabled = false;
+                NifViewerRenderPngButton.IsEnabled = false;
+                return;
+            }
+
+            var base64 = Convert.ToBase64String(glbBytes);
+            await NifModelViewer.ExecuteScriptAsync($"loadModel('{base64}')");
+
+            NifViewerExportGlbButton.IsEnabled = true;
+            NifViewerRenderPngButton.IsEnabled = true;
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                await NifModelViewer.ExecuteScriptAsync(
+                    $"setStatus('Error: {EscapeJsString(ex.Message)}')");
+            }
+            catch
+            {
+                // WebView may not be ready
+            }
+
+            NifViewerExportGlbButton.IsEnabled = false;
+            NifViewerRenderPngButton.IsEnabled = false;
+        }
+        finally
+        {
+            NifModelLoadingRing.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private async void NifViewerExportGlb_Click(object sender, RoutedEventArgs e)
+    {
+        if (_nifBrowserService == null || _currentNifViewerPath == null) return;
+
+        var picker = new FileSavePicker();
+        picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+        picker.FileTypeChoices.Add("GLB File", [".glb"]);
+        picker.SuggestedFileName = Path.ChangeExtension(
+            Path.GetFileName(_currentNifViewerPath), ".glb");
+        InitializeWithWindow.Initialize(picker,
+            WindowNative.GetWindowHandle(App.Current.MainWindow));
+
+        var file = await picker.PickSaveFileAsync();
+        if (file == null) return;
+
+        NifViewerExportGlbButton.IsEnabled = false;
+        try
+        {
+            var nifData = await Task.Run(() => _nifBrowserService.ReadNifData(_currentNifViewerPath));
+            if (nifData == null)
+            {
+                StatusTextBlock.Text = "Failed to read NIF file.";
+                return;
+            }
+
+            var glbBytes = await Task.Run(() => _nifBrowserService.BuildGlb(nifData, _currentNifViewerPath));
+            if (glbBytes != null)
+            {
+                await File.WriteAllBytesAsync(file.Path, glbBytes);
+                StatusTextBlock.Text = $"Exported: {file.Name}";
+            }
+            else
+            {
+                StatusTextBlock.Text = "No geometry to export.";
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusTextBlock.Text = $"Export failed: {ex.Message}";
+        }
+        finally
+        {
+            NifViewerExportGlbButton.IsEnabled = true;
+        }
+    }
+
+    private async void NifViewerRenderPng_Click(object sender, RoutedEventArgs e)
+    {
+        if (_nifBrowserService == null || _currentNifViewerPath == null) return;
+
+        var picker = new FileSavePicker();
+        picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+        picker.FileTypeChoices.Add("PNG Image", [".png"]);
+        picker.SuggestedFileName = Path.ChangeExtension(
+            Path.GetFileName(_currentNifViewerPath), ".png");
+        InitializeWithWindow.Initialize(picker,
+            WindowNative.GetWindowHandle(App.Current.MainWindow));
+
+        var file = await picker.PickSaveFileAsync();
+        if (file == null) return;
+
+        NifViewerRenderPngButton.IsEnabled = false;
+        try
+        {
+            var nifData = await Task.Run(() => _nifBrowserService.ReadNifData(_currentNifViewerPath));
+            if (nifData == null)
+            {
+                StatusTextBlock.Text = "Failed to read NIF file.";
+                return;
+            }
+
+            var spriteSize = Math.Clamp((int)NifViewerSizeNumberBox.Value, 64, 4096);
+            var camera = BuildNifViewerCameraConfig();
+            var views = camera.ResolveViews(defaultAzimuth: 90f);
+
+            foreach (var (suffix, azimuth, elevation) in views)
+            {
+                var pngBytes = await Task.Run(() =>
+                    _nifBrowserService.RenderPng(nifData, _currentNifViewerPath, spriteSize, azimuth, elevation));
+
+                if (pngBytes != null)
+                {
+                    var outputPath = views.Length > 1
+                        ? Path.Combine(
+                            Path.GetDirectoryName(file.Path) ?? ".",
+                            Path.GetFileNameWithoutExtension(file.Path) + suffix + ".png")
+                        : file.Path;
+                    await File.WriteAllBytesAsync(outputPath, pngBytes);
+                }
+            }
+
+            StatusTextBlock.Text = $"Rendered: {(views.Length > 1 ? $"{views.Length} views" : file.Name)}";
+        }
+        catch (Exception ex)
+        {
+            StatusTextBlock.Text = $"Render failed: {ex.Message}";
+        }
+        finally
+        {
+            NifViewerRenderPngButton.IsEnabled = true;
+        }
+    }
+
+    private void NifViewerElevationSlider_ValueChanged(object sender,
+        Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    {
+        if (NifViewerElevationLabel != null)
+        {
+            NifViewerElevationLabel.Text = $"{(int)e.NewValue}";
+        }
+    }
+
+    private CameraConfig BuildNifViewerCameraConfig()
+    {
+        var perspective = "front";
+        if (NifViewerPerspectiveComboBox.SelectedItem is ComboBoxItem item && item.Tag is string tag)
+        {
+            perspective = tag;
+        }
+
+        var elevation = (float)NifViewerElevationSlider.Value;
+
+        return perspective switch
+        {
+            "iso" => new CameraConfig
+            {
+                Isometric = true, ElevationDeg = elevation, ElevationOverridden = true
+            },
+            "side" => new CameraConfig { SideProfile = true },
+            "trimetric" => new CameraConfig { Trimetric = true },
+            _ => new CameraConfig { ElevationDeg = elevation, ElevationOverridden = true }
         };
-
-        if (icon != null)
-        {
-            icon.Visibility = Visibility.Visible;
-            icon.Glyph = _sorter.IsAscending ? "\uE70E" : "\uE70D";
-        }
     }
 
-    private void RefreshSortedList()
+    private static string EscapeJsString(string s)
     {
-        var selectedItem = NifFilesListView.SelectedItem as NifFileEntry;
-        var sorted = _sorter.Sort(_allNifFiles);
+        return s.Replace("\\", "\\\\").Replace("'", "\\'").Replace("\n", "\\n").Replace("\r", "");
+    }
 
-        // Replace list entirely - much faster than clear + add loop
-        _nifFiles = sorted.ToList();
-        NifFilesListView.ItemsSource = _nifFiles;
-
-        if (selectedItem != null && _nifFiles.Contains(selectedItem))
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
         {
-            NifFilesListView.SelectedItem = selectedItem;
-            NifFilesListView.ScrollIntoView(selectedItem, ScrollIntoViewAlignment.Leading);
+            _nifBrowserService?.Dispose();
         }
+
+        base.Dispose(disposing);
     }
 
     #endregion

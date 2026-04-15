@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<UserControl
+<local:NifFileConverterBase
   x:Class="FalloutXbox360Utils.NifConverterTab"
   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
   xmlns:local="using:FalloutXbox360Utils">
 
   <Grid VerticalAlignment="Stretch">
-    <!--  Settings drawer  -->
+    <!--  Settings drawer (shared across sub-tabs)  -->
     <Border
       x:Name="SettingsDrawer"
       Style="{StaticResource SettingsDrawerBorderStyle}">
@@ -35,242 +35,402 @@
       </ScrollViewer>
     </Border>
 
-    <!--  Main content  -->
-    <Grid Padding="16"
-          VerticalAlignment="Stretch">
-      <Grid.RowDefinitions>
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="*" />
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
-      </Grid.RowDefinitions>
+    <!--  TabView for Batch Converter and NIF Viewer  -->
+    <TabView
+      x:Name="NifTabView"
+      IsAddTabButtonVisible="False"
+      CanDragTabs="False"
+      CanReorderTabs="False"
+      TabWidthMode="SizeToContent"
+      VerticalAlignment="Stretch"
+      HorizontalAlignment="Stretch"
+      SelectionChanged="NifTabView_SelectionChanged">
 
-      <!-- Header row: Title + Select buttons (outside card) -->
-      <Grid Grid.Row="0"
-            Margin="0,0,0,8">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
-        <StackPanel Style="{StaticResource TabHeaderStackPanelStyle}">
-          <TextBlock
-            x:Uid="Header_NifConverter"
-            Style="{StaticResource SubtitleTextBlockStyle}" />
-          <TextBlock
-            x:Uid="Subtitle_NifConverter"
-            Style="{StaticResource TabSubtitleStyle}" />
-        </StackPanel>
-        <StackPanel
-          Grid.Column="1"
-          Style="{StaticResource SelectButtonsPanelStyle}">
-          <Button
-            x:Uid="Button_SelectAll"
-            Click="SelectAllButton_Click" />
-          <Button
-            x:Uid="Button_SelectNone"
-            Click="SelectNoneButton_Click" />
-        </StackPanel>
-      </Grid>
-
-      <!-- Files List Card -->
-      <Border
-        Grid.Row="1"
-        VerticalAlignment="Stretch"
-        Style="{StaticResource CardBorderStyle}">
-        <Grid VerticalAlignment="Stretch">
+      <!-- ==================== Batch Converter Tab ==================== -->
+      <TabViewItem Header="Batch Converter" IsClosable="False">
+        <Grid Padding="16"
+              VerticalAlignment="Stretch">
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
           </Grid.RowDefinitions>
 
-          <!-- Column headers -->
+          <!-- Header row: Title + Select buttons -->
           <Grid Grid.Row="0"
-                Style="{StaticResource ColumnHeaderGridStyle}">
+                Margin="0,0,0,8">
             <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="40" />
               <ColumnDefinition Width="*" />
-              <ColumnDefinition Width="80" />
-              <ColumnDefinition Width="120" />
-              <ColumnDefinition Width="200" />
+              <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0"
-                       FontWeight="SemiBold"
-                       Text="" />
-            <Button
+            <StackPanel Style="{StaticResource TabHeaderStackPanelStyle}">
+              <TextBlock
+                x:Uid="Header_NifConverter"
+                Style="{StaticResource SubtitleTextBlockStyle}" />
+              <TextBlock
+                x:Uid="Subtitle_NifConverter"
+                Style="{StaticResource TabSubtitleStyle}" />
+            </StackPanel>
+            <StackPanel
               Grid.Column="1"
-              Style="{StaticResource SortableColumnHeaderButtonStyle}"
-              Click="SortByFilePath_Click">
-              <StackPanel Orientation="Horizontal"
-                          Spacing="4">
-                <TextBlock x:Uid="Col_FilePath" FontWeight="SemiBold" />
-                <FontIcon
-                  x:Name="FilePathSortIcon"
-                  Style="{StaticResource SortIconStyle}" />
-              </StackPanel>
-            </Button>
-            <Button
-              Grid.Column="2"
-              Style="{StaticResource SortableColumnHeaderButtonStyle}"
-              Click="SortBySize_Click">
-              <StackPanel Orientation="Horizontal"
-                          Spacing="4">
-                <TextBlock x:Uid="Col_Size" FontWeight="SemiBold" />
-                <FontIcon
-                  x:Name="SizeSortIcon"
-                  Style="{StaticResource SortIconStyle}" />
-              </StackPanel>
-            </Button>
-            <Button
-              Grid.Column="3"
-              Style="{StaticResource SortableColumnHeaderButtonStyle}"
-              Click="SortByFormat_Click">
-              <StackPanel Orientation="Horizontal"
-                          Spacing="4">
-                <TextBlock x:Uid="Col_Format" FontWeight="SemiBold" />
-                <FontIcon
-                  x:Name="FormatSortIcon"
-                  Style="{StaticResource SortIconStyle}" />
-              </StackPanel>
-            </Button>
-            <Button
-              Grid.Column="4"
-              Style="{StaticResource SortableColumnHeaderButtonStyle}"
-              Click="SortByStatus_Click">
-              <StackPanel Orientation="Horizontal"
-                          Spacing="4">
-                <TextBlock x:Uid="Col_Status" FontWeight="SemiBold" />
-                <FontIcon
-                  x:Name="StatusSortIcon"
-                  Style="{StaticResource SortIconStyle}" />
-              </StackPanel>
-            </Button>
+              Style="{StaticResource SelectButtonsPanelStyle}">
+              <Button
+                x:Uid="Button_SelectAll"
+                Click="SelectAllButton_Click" />
+              <Button
+                x:Uid="Button_SelectNone"
+                Click="SelectNoneButton_Click" />
+            </StackPanel>
           </Grid>
 
-          <!-- Files ListView -->
-          <ListView
-            x:Name="NifFilesListView"
+          <!-- Files List Card -->
+          <Border
             Grid.Row="1"
-            Style="{StaticResource FileListViewStyle}">
-            <ListView.ItemTemplate>
-              <DataTemplate x:DataType="local:NifFileEntry">
-                <Grid Style="{StaticResource ListItemRowGridStyle}">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="40" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="80" />
-                    <ColumnDefinition Width="120" />
-                    <ColumnDefinition Width="200" />
-                  </Grid.ColumnDefinitions>
-                  <CheckBox
-                    Grid.Column="0"
-                    IsChecked="{x:Bind IsSelected, Mode=TwoWay}" />
-                  <TextBlock
-                    Grid.Column="1"
-                    VerticalAlignment="Center"
-                    Text="{x:Bind RelativePath}"
-                    TextTrimming="CharacterEllipsis"
-                    ToolTipService.ToolTip="{x:Bind FullPath}" />
-                  <TextBlock
-                    Grid.Column="2"
-                    VerticalAlignment="Center"
-                    Text="{x:Bind FileSizeDisplay}" />
-                  <TextBlock
-                    Grid.Column="3"
-                    VerticalAlignment="Center"
-                    Foreground="{x:Bind FormatColor}"
-                    Text="{x:Bind FormatDescription}" />
-                  <TextBlock
-                    Grid.Column="4"
-                    VerticalAlignment="Center"
-                    Foreground="{x:Bind StatusColor, Mode=OneWay}"
-                    Text="{x:Bind Status, Mode=OneWay}"
-                    TextTrimming="CharacterEllipsis"
-                    ToolTipService.ToolTip="{x:Bind Status, Mode=OneWay}" />
-                </Grid>
-              </DataTemplate>
-            </ListView.ItemTemplate>
-          </ListView>
+            VerticalAlignment="Stretch"
+            Style="{StaticResource CardBorderStyle}">
+            <Grid VerticalAlignment="Stretch">
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+              </Grid.RowDefinitions>
+
+              <!-- Column headers -->
+              <Grid Grid.Row="0"
+                    Style="{StaticResource ColumnHeaderGridStyle}">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="40" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="80" />
+                  <ColumnDefinition Width="120" />
+                  <ColumnDefinition Width="200" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0"
+                           FontWeight="SemiBold"
+                           Text="" />
+                <Button
+                  Grid.Column="1"
+                  Style="{StaticResource SortableColumnHeaderButtonStyle}"
+                  Click="SortByFilePath_Click">
+                  <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock x:Uid="Col_FilePath" FontWeight="SemiBold" />
+                    <FontIcon x:Name="NifFilePathSortIcon"
+                              Style="{StaticResource SortIconStyle}" />
+                  </StackPanel>
+                </Button>
+                <Button
+                  Grid.Column="2"
+                  Style="{StaticResource SortableColumnHeaderButtonStyle}"
+                  Click="SortBySize_Click">
+                  <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock x:Uid="Col_Size" FontWeight="SemiBold" />
+                    <FontIcon x:Name="NifSizeSortIcon"
+                              Style="{StaticResource SortIconStyle}" />
+                  </StackPanel>
+                </Button>
+                <Button
+                  Grid.Column="3"
+                  Style="{StaticResource SortableColumnHeaderButtonStyle}"
+                  Click="SortByFormat_Click">
+                  <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock x:Uid="Col_Format" FontWeight="SemiBold" />
+                    <FontIcon x:Name="NifFormatSortIcon"
+                              Style="{StaticResource SortIconStyle}" />
+                  </StackPanel>
+                </Button>
+                <Button
+                  Grid.Column="4"
+                  Style="{StaticResource SortableColumnHeaderButtonStyle}"
+                  Click="SortByStatus_Click">
+                  <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock x:Uid="Col_Status" FontWeight="SemiBold" />
+                    <FontIcon x:Name="NifStatusSortIcon"
+                              Style="{StaticResource SortIconStyle}" />
+                  </StackPanel>
+                </Button>
+              </Grid>
+
+              <!-- Files ListView -->
+              <ListView
+                x:Name="NifFilesListView"
+                Grid.Row="1"
+                Style="{StaticResource FileListViewStyle}">
+                <ListView.ItemTemplate>
+                  <DataTemplate x:DataType="local:NifFileEntry">
+                    <Grid Style="{StaticResource ListItemRowGridStyle}">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="40" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="80" />
+                        <ColumnDefinition Width="120" />
+                        <ColumnDefinition Width="200" />
+                      </Grid.ColumnDefinitions>
+                      <CheckBox Grid.Column="0"
+                                IsChecked="{x:Bind IsSelected, Mode=TwoWay}" />
+                      <TextBlock Grid.Column="1" VerticalAlignment="Center"
+                                 Text="{x:Bind RelativePath}"
+                                 TextTrimming="CharacterEllipsis"
+                                 ToolTipService.ToolTip="{x:Bind FullPath}" />
+                      <TextBlock Grid.Column="2" VerticalAlignment="Center"
+                                 Text="{x:Bind FileSizeDisplay}" />
+                      <TextBlock Grid.Column="3" VerticalAlignment="Center"
+                                 Foreground="{x:Bind FormatColor}"
+                                 Text="{x:Bind FormatDescription}" />
+                      <TextBlock Grid.Column="4" VerticalAlignment="Center"
+                                 Foreground="{x:Bind StatusColor, Mode=OneWay}"
+                                 Text="{x:Bind Status, Mode=OneWay}"
+                                 TextTrimming="CharacterEllipsis"
+                                 ToolTipService.ToolTip="{x:Bind Status, Mode=OneWay}" />
+                    </Grid>
+                  </DataTemplate>
+                </ListView.ItemTemplate>
+              </ListView>
+            </Grid>
+          </Border>
+
+          <!-- Progress Bar -->
+          <ProgressBar
+            x:Name="NifConversionProgressBar"
+            Grid.Row="2"
+            Style="{StaticResource TabProgressBarStyle}" />
+
+          <!-- Input/Output Section -->
+          <Grid Grid.Row="3" Style="{StaticResource IoSectionGridStyle}">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <TextBlock x:Uid="Label_InputDirectory" Grid.Row="0" Grid.Column="0"
+                       Style="{StaticResource IoLabelStyle}" />
+            <TextBox x:Name="NifInputDirectoryTextBox" x:Uid="Input_NifInputDir"
+                     Grid.Row="0" Grid.Column="1"
+                     Style="{StaticResource IoTextBoxStyle}"
+                     TextChanged="InputDirectoryTextBox_TextChanged" />
+            <Button x:Uid="Button_Browse" Grid.Row="0" Grid.Column="2"
+                    Click="BrowseInputButton_Click" />
+            <Button x:Name="NifConvertButton" x:Uid="Button_Convert"
+                    Grid.Row="0" Grid.Column="3"
+                    MinWidth="120" Margin="8,0,0,0"
+                    Click="ConvertButton_Click" IsEnabled="False"
+                    Style="{StaticResource AccentButtonStyle}" />
+
+            <TextBlock x:Uid="Label_OutputDirectory" Grid.Row="1" Grid.Column="0"
+                       Style="{StaticResource IoLabelStyle}" />
+            <TextBox x:Name="NifOutputDirectoryTextBox" x:Uid="Input_ConvertOutputDir"
+                     Grid.Row="1" Grid.Column="1"
+                     Style="{StaticResource IoTextBoxStyle}"
+                     TextChanged="OutputDirectoryTextBox_TextChanged" />
+            <Button x:Uid="Button_Browse" Grid.Row="1" Grid.Column="2"
+                    Click="BrowseOutputButton_Click" />
+            <Button x:Name="NifCancelButton" x:Uid="Button_Cancel"
+                    Grid.Row="1" Grid.Column="3"
+                    Margin="8,0,0,0" HorizontalAlignment="Stretch"
+                    Click="CancelButton_Click" IsEnabled="False" />
+          </Grid>
         </Grid>
-      </Border>
+      </TabViewItem>
 
-      <!--  Progress Bar (above I/O)  -->
-      <ProgressBar
-        x:Name="ConversionProgressBar"
-        Grid.Row="2"
-        Style="{StaticResource TabProgressBarStyle}" />
+      <!-- ==================== NIF Viewer Tab ==================== -->
+      <TabViewItem Header="NIF Viewer" IsClosable="False">
+        <Grid Padding="8" VerticalAlignment="Stretch">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="280" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="300" />
+          </Grid.ColumnDefinitions>
 
-      <!-- Input/Output Section -->
-      <Grid
-        Grid.Row="3"
-        Style="{StaticResource IoSectionGridStyle}">
-        <Grid.RowDefinitions>
-          <RowDefinition Height="Auto" />
-          <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
+          <!-- Left: NIF File Browser -->
+          <Grid Grid.Column="0" Margin="0,0,8,0">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="*" />
+              <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
 
-        <!-- Input Directory -->
-        <TextBlock
-          x:Uid="Label_InputDirectory"
-          Grid.Row="0"
-          Grid.Column="0"
-          Style="{StaticResource IoLabelStyle}" />
-        <TextBox
-          x:Name="InputDirectoryTextBox"
-          x:Uid="Input_NifInputDir"
-          Grid.Row="0"
-          Grid.Column="1"
-          Style="{StaticResource IoTextBoxStyle}"
-          TextChanged="InputDirectoryTextBox_TextChanged" />
-        <Button
-          x:Uid="Button_Browse"
-          Grid.Row="0"
-          Grid.Column="2"
-          Click="BrowseInputButton_Click" />
-        <Button
-          x:Name="ConvertButton"
-          x:Uid="Button_Convert"
-          Grid.Row="0"
-          Grid.Column="3"
-          MinWidth="120"
-          Margin="8,0,0,0"
-          Click="ConvertButton_Click"
-          IsEnabled="False"
-          Style="{StaticResource AccentButtonStyle}" />
+            <!-- Browse row -->
+            <Grid Grid.Row="0" Margin="0,0,0,8">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBox
+                x:Name="NifViewerPathTextBox"
+                PlaceholderText="Directory or BSA path..."
+                Grid.Column="0"
+                FontSize="12" />
+              <DropDownButton
+                Grid.Column="1"
+                Margin="4,0,0,0"
+                ToolTipService.ToolTip="Browse for directory or BSA file">
+                <FontIcon Glyph="&#xE838;" FontSize="14" />
+                <DropDownButton.Flyout>
+                  <MenuFlyout Placement="BottomEdgeAlignedRight">
+                    <MenuFlyoutItem Text="Open Folder..." Click="NifViewerBrowseFolder_Click">
+                      <MenuFlyoutItem.Icon>
+                        <FontIcon Glyph="&#xE8B7;" />
+                      </MenuFlyoutItem.Icon>
+                    </MenuFlyoutItem>
+                    <MenuFlyoutItem Text="Open BSA..." Click="NifViewerBrowseBsa_Click">
+                      <MenuFlyoutItem.Icon>
+                        <FontIcon Glyph="&#xE8E5;" />
+                      </MenuFlyoutItem.Icon>
+                    </MenuFlyoutItem>
+                  </MenuFlyout>
+                </DropDownButton.Flyout>
+              </DropDownButton>
+            </Grid>
 
-        <!-- Output Directory -->
-        <TextBlock
-          x:Uid="Label_OutputDirectory"
-          Grid.Row="1"
-          Grid.Column="0"
-          Style="{StaticResource IoLabelStyle}" />
-        <TextBox
-          x:Name="OutputDirectoryTextBox"
-          x:Uid="Input_ConvertOutputDir"
-          Grid.Row="1"
-          Grid.Column="1"
-          Style="{StaticResource IoTextBoxStyle}"
-          TextChanged="OutputDirectoryTextBox_TextChanged" />
-        <Button
-          x:Uid="Button_Browse"
-          Grid.Row="1"
-          Grid.Column="2"
-          Click="BrowseOutputButton_Click" />
-        <Button
-          x:Name="CancelButton"
-          x:Uid="Button_Cancel"
-          Grid.Row="1"
-          Grid.Column="3"
-          Margin="8,0,0,0"
-          HorizontalAlignment="Stretch"
-          Click="CancelButton_Click"
-          IsEnabled="False" />
-      </Grid>
-    </Grid>
+            <!-- Search box -->
+            <TextBox
+              x:Name="NifViewerSearchBox"
+              Grid.Row="1"
+              PlaceholderText="Filter files..."
+              Margin="0,0,0,8"
+              FontSize="12"
+              TextChanged="NifViewerSearchBox_TextChanged" />
+
+            <!-- File tree -->
+            <Border Grid.Row="2"
+                    Style="{StaticResource CardBorderStyle}">
+              <TreeView
+                x:Name="NifViewerTreeView"
+                SelectionMode="Single"
+                ItemInvoked="NifViewerTree_ItemInvoked">
+                <TreeView.ItemTemplate>
+                  <DataTemplate x:DataType="local:NifTreeViewItem">
+                    <TreeViewItem
+                      Content="{x:Bind DisplayName}"
+                      ItemsSource="{x:Bind Children}"
+                      IsExpanded="{x:Bind IsExpanded, Mode=TwoWay}" />
+                  </DataTemplate>
+                </TreeView.ItemTemplate>
+              </TreeView>
+            </Border>
+
+            <!-- File count -->
+            <TextBlock
+              x:Name="NifViewerFileCount"
+              Grid.Row="3"
+              FontSize="11"
+              Margin="0,4,0,0"
+              Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+          </Grid>
+
+          <!-- Center: 3D Model Viewer -->
+          <Grid Grid.Column="1" Margin="0,0,8,0">
+            <Border Style="{StaticResource DarkCardBorderStyle}">
+              <Grid>
+                <WebView2
+                  x:Name="NifModelViewer"
+                  DefaultBackgroundColor="Transparent" />
+                <ProgressRing
+                  x:Name="NifModelLoadingRing"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Center"
+                  Visibility="Collapsed" />
+                <!-- Placeholder text when no model loaded -->
+                <TextBlock
+                  x:Name="NifViewerPlaceholderText"
+                  Text="Select a NIF file to view"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Center"
+                  Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                  FontSize="14" />
+              </Grid>
+            </Border>
+          </Grid>
+
+          <!-- Right: Info + Export Panel -->
+          <ScrollViewer Grid.Column="2"
+                        VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="12" Padding="0,0,0,8">
+
+              <!-- NIF Info -->
+              <TextBlock Text="NIF Info"
+                         Style="{StaticResource SubtitleTextBlockStyle}" />
+              <TextBlock
+                x:Name="NifViewerInfoText"
+                FontSize="12"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                TextWrapping="Wrap"
+                Text="No file selected" />
+
+              <!-- Block Types -->
+              <TextBlock Text="Block Types"
+                         FontWeight="SemiBold" FontSize="13"
+                         Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+              <TextBlock
+                x:Name="NifViewerBlockTypesText"
+                FontSize="11"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                TextWrapping="Wrap" />
+
+              <!-- Export -->
+              <TextBlock Text="Export"
+                         FontWeight="SemiBold" FontSize="13"
+                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                         Margin="0,8,0,0" />
+              <Button
+                x:Name="NifViewerExportGlbButton"
+                Content="Export as GLB..."
+                HorizontalAlignment="Stretch"
+                Click="NifViewerExportGlb_Click"
+                IsEnabled="False" />
+
+              <!-- Render PNG -->
+              <TextBlock Text="Render PNG"
+                         FontWeight="SemiBold" FontSize="13"
+                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                         Margin="0,8,0,0" />
+              <ComboBox
+                x:Name="NifViewerPerspectiveComboBox"
+                HorizontalAlignment="Stretch"
+                SelectedIndex="0">
+                <ComboBoxItem Content="Front (single view)" Tag="front" />
+                <ComboBoxItem Content="Isometric (4 views)" Tag="iso" />
+                <ComboBoxItem Content="Side (4 views)" Tag="side" />
+                <ComboBoxItem Content="Trimetric (4 views)" Tag="trimetric" />
+              </ComboBox>
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="Elevation:" VerticalAlignment="Center" FontSize="12" />
+                <Slider
+                  x:Name="NifViewerElevationSlider"
+                  Minimum="-90" Maximum="90" Value="0"
+                  Width="140"
+                  ValueChanged="NifViewerElevationSlider_ValueChanged" />
+                <TextBlock
+                  x:Name="NifViewerElevationLabel"
+                  Text="0"
+                  VerticalAlignment="Center" FontSize="12" Width="30" />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="Resolution (px):" VerticalAlignment="Center" FontSize="12" />
+                <NumberBox
+                  x:Name="NifViewerSizeNumberBox"
+                  Minimum="64" Maximum="4096"
+                  Value="512"
+                  SpinButtonPlacementMode="Compact"
+                  SmallChange="64" LargeChange="256"
+                  Width="120" />
+              </StackPanel>
+              <Button
+                x:Name="NifViewerRenderPngButton"
+                Content="Export as PNG..."
+                HorizontalAlignment="Stretch"
+                Click="NifViewerRenderPng_Click"
+                IsEnabled="False" />
+            </StackPanel>
+          </ScrollViewer>
+        </Grid>
+      </TabViewItem>
+    </TabView>
   </Grid>
-</UserControl>
+</local:NifFileConverterBase>
