@@ -130,6 +130,26 @@ public sealed partial class MainWindow : Window
         titleBar.ButtonInactiveBackgroundColor = Colors.Transparent;
     }
 
+    // ── Global keyboard shortcuts ──
+
+    private async void F1_ShortcutsDialog_Invoked(
+        Microsoft.UI.Xaml.Input.KeyboardAccelerator sender,
+        Microsoft.UI.Xaml.Input.KeyboardAcceleratorInvokedEventArgs args)
+    {
+        args.Handled = true;
+        var dialog = new KeyboardShortcutsDialog { XamlRoot = Content.XamlRoot };
+        try
+        {
+            await dialog.ShowAsync();
+        }
+        catch
+        {
+            // ContentDialog.ShowAsync can throw if another dialog is already open
+            // (WinUI 3 enforces at most one ContentDialog per XamlRoot). Swallow so
+            // the F1 press doesn't crash the app — user can try again after closing.
+        }
+    }
+
     // ── Title bar navigation buttons ──
 
     private void NavBack_Click(object sender, RoutedEventArgs e)

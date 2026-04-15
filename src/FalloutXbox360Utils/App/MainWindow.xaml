@@ -8,6 +8,11 @@
   Title="Fallout Xbox 360 Utils">
 
   <Grid>
+    <!--  Global keyboard shortcuts (F1 opens the cheat-sheet dialog, available anywhere).  -->
+    <Grid.KeyboardAccelerators>
+      <KeyboardAccelerator Key="F1" Invoked="F1_ShortcutsDialog_Invoked" />
+    </Grid.KeyboardAccelerators>
+
     <!--  Title bar drag region — rendered BEFORE NavigationView in XAML order.
           With IsTitleBarAutoPaddingEnabled="True" on NavView, the expanded pane
           does not claim the top 32 px strip, so the icon/title stay visually on top
