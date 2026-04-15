@@ -5,6 +5,7 @@
   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
   xmlns:controls="using:Microsoft.UI.Xaml.Controls"
+  xmlns:toolkit="using:CommunityToolkit.WinUI.Controls"
   xmlns:hexviewer="using:FalloutXbox360Utils"
   xmlns:local="using:FalloutXbox360Utils">
 
@@ -104,7 +105,9 @@
               <hexviewer:HexViewerControl x:Name="HexViewer" />
             </Border>
 
-            <controls:ContentPresenter Grid.Column="1" />
+            <toolkit:GridSplitter Grid.Column="1" Width="8"
+                                  ResizeBehavior="PreviousAndNext"
+                                  ResizeDirection="Columns" />
 
             <!--  Files Table + Filter  -->
             <Grid Grid.Column="2">
@@ -302,8 +305,13 @@
             <Grid x:Name="DataBrowserContent" Visibility="Collapsed">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="2*" MinWidth="350" />
-                <ColumnDefinition Width="3*" />
+                <ColumnDefinition Width="8" />
+                <ColumnDefinition Width="3*" MinWidth="400" />
               </Grid.ColumnDefinitions>
+
+              <toolkit:GridSplitter Grid.Column="1" Width="8"
+                                    ResizeBehavior="PreviousAndNext"
+                                    ResizeDirection="Columns" />
 
               <!--  Left: search + sort + tree  -->
               <Grid Grid.Column="0">
@@ -369,7 +377,7 @@
               </Grid>
 
               <!--  Property detail panel  -->
-              <Grid Grid.Column="1" Padding="12,0,0,0">
+              <Grid Grid.Column="2" Padding="12,0,0,0">
                 <Grid.RowDefinitions>
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="*" />
@@ -437,8 +445,13 @@
             <Grid x:Name="DialogueViewerContent" Visibility="Collapsed">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="350" MinWidth="280" />
-                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="8" />
+                <ColumnDefinition Width="*" MinWidth="400" />
               </Grid.ColumnDefinitions>
+
+              <toolkit:GridSplitter Grid.Column="1" Width="8"
+                                    ResizeBehavior="PreviousAndNext"
+                                    ResizeDirection="Columns" />
 
               <!--  LEFT PANEL: Quest/NPC picker  -->
               <Grid Grid.Column="0">
@@ -506,7 +519,7 @@
               </Grid>
 
               <!--  RIGHT PANEL: Conversation view  -->
-              <Grid Grid.Column="1" Padding="12,0,0,0">
+              <Grid Grid.Column="2" Padding="12,0,0,0">
                 <Grid.RowDefinitions>
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="*" />
@@ -572,8 +585,13 @@
             <Grid x:Name="WorldMapContent" Visibility="Collapsed">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" MinWidth="400" />
-                <ColumnDefinition Width="520" />
+                <ColumnDefinition Width="8" />
+                <ColumnDefinition Width="520" MinWidth="380" />
               </Grid.ColumnDefinitions>
+
+              <toolkit:GridSplitter Grid.Column="1" Width="8"
+                                    ResizeBehavior="PreviousAndNext"
+                                    ResizeDirection="Columns" />
 
               <!--  Left: Win2D map  -->
               <local:WorldMapControl x:Name="WorldMapControl" Grid.Column="0"
@@ -581,7 +599,7 @@
                                      InspectCell="WorldMap_InspectCell" />
 
               <!--  Right: Object detail panel  -->
-              <Grid Grid.Column="1" Padding="12,0,0,0">
+              <Grid Grid.Column="2" Padding="12,0,0,0">
                 <Grid.RowDefinitions>
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
@@ -658,10 +676,19 @@
             <!--  Main NPC browser content  -->
             <Grid x:Name="NpcBrowserContent" Visibility="Collapsed">
               <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="280" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="300" />
+                <ColumnDefinition Width="280" MinWidth="260" />
+                <ColumnDefinition Width="8" />
+                <ColumnDefinition Width="*" MinWidth="320" />
+                <ColumnDefinition Width="8" />
+                <ColumnDefinition Width="300" MinWidth="280" />
               </Grid.ColumnDefinitions>
+
+              <toolkit:GridSplitter Grid.Column="1" Width="8"
+                                    ResizeBehavior="PreviousAndNext"
+                                    ResizeDirection="Columns" />
+              <toolkit:GridSplitter Grid.Column="3" Width="8"
+                                    ResizeBehavior="PreviousAndNext"
+                                    ResizeDirection="Columns" />
 
               <!--  Left: NPC list with search  -->
               <Grid Grid.Column="0">
@@ -723,7 +750,7 @@
               </Grid>
 
               <!--  Center: 3D model viewer (WebView2)  -->
-              <Grid Grid.Column="1" Margin="8,0"
+              <Grid Grid.Column="2"
                     Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                     CornerRadius="4">
                 <WebView2 x:Name="NpcModelViewer" />
@@ -734,7 +761,7 @@
               </Grid>
 
               <!--  Right: Controls panel  -->
-              <ScrollViewer Grid.Column="2"
+              <ScrollViewer Grid.Column="4"
                             VerticalScrollBarVisibility="Auto"
                             Padding="8,0,0,0">
                 <StackPanel Spacing="12">
@@ -863,9 +890,14 @@
             <!--  Report list + preview  -->
             <Grid Grid.Row="2">
               <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="300" />
-                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="300" MinWidth="280" />
+                <ColumnDefinition Width="8" />
+                <ColumnDefinition Width="*" MinWidth="400" />
               </Grid.ColumnDefinitions>
+
+              <toolkit:GridSplitter Grid.Column="1" Width="8"
+                                    ResizeBehavior="PreviousAndNext"
+                                    ResizeDirection="Columns" />
 
               <ListView x:Name="ReportListView"
                         Grid.Column="0"
@@ -889,7 +921,7 @@
                 </ListView.ItemTemplate>
               </ListView>
 
-              <Grid Grid.Column="1" Margin="12,0,0,0">
+              <Grid Grid.Column="2" Margin="12,0,0,0">
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="*" />
                   <ColumnDefinition Width="Auto" />
@@ -990,10 +1022,14 @@
                               IsClosable="False">
           <Grid Padding="16">
             <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="400" />
-              <ColumnDefinition Width="16" />
-              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="400" MinWidth="380" />
+              <ColumnDefinition Width="8" />
+              <ColumnDefinition Width="*" MinWidth="400" />
             </Grid.ColumnDefinitions>
+
+            <toolkit:GridSplitter Grid.Column="1" Width="8"
+                                  ResizeBehavior="PreviousAndNext"
+                                  ResizeDirection="Columns" />
 
             <!--  Left column: Summary + Classification  -->
             <ScrollViewer Grid.Column="0"

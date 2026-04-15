@@ -130,18 +130,6 @@ public sealed partial class MainWindow : Window
         titleBar.ButtonInactiveBackgroundColor = Colors.Transparent;
     }
 
-    // ── Pane open/close: shift title bar to avoid overlapping the expanded pane ──
-
-    private void NavView_PaneOpened(NavigationView sender, object args)
-    {
-        AppTitleBar.Margin = new Thickness(sender.OpenPaneLength, 0, 0, 0);
-    }
-
-    private void NavView_PaneClosed(NavigationView sender, object args)
-    {
-        AppTitleBar.Margin = new Thickness(48, 0, 0, 0);
-    }
-
     // ── Title bar navigation buttons ──
 
     private void NavBack_Click(object sender, RoutedEventArgs e)
