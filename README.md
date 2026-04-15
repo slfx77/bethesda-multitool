@@ -16,7 +16,7 @@ A .NET 10.0 toolkit for Xbox 360 memory dump analysis, ESM/NIF format conversion
 - **Hex Viewer**: Virtual-scrolling hex editor supporting 200MB+ files with minimap overview
 - **Memory Carver**: File signature detection, extraction, and DDX/XMA conversion
 - **BSA Extractor**: Extract Bethesda archive files with Xbox 360 to PC conversion
-- **NIF Converter**: Xbox 360 to PC NIF mesh conversion (geometry expansion, endian conversion)
+- **NIF Tools**: Batch Convert (Xbox 360 → PC NIF mesh conversion with geometry expansion + endian conversion) + Viewer (browse a folder / BSA, inspect blocks, render PNG, export GLB)
 - **DDX Converter**: Batch DDX to DDS texture conversion
 - **Repacker**: Rebuild Xbox 360 memory regions with modified assets
 
@@ -100,7 +100,7 @@ FalloutXbox360Utils.exe
 FalloutXbox360Utils.exe path/to/dump.dmp
 ```
 
-Tabs: **Single File** (ESM browser, dialogue, world map, hex viewer) | **BSA Extractor** | **NIF Converter** | **DDX Converter** | **Repacker** | **Batch Mode**
+Tabs: **Single File** (ESM browser, dialogue, world map, hex viewer) | **BSA Extractor** | **NIF Tools** (Batch Convert + Viewer) | **DDX Converter** | **Repacker** | **Batch Mode**
 
 ### CLI Mode
 

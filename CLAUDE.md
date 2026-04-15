@@ -45,6 +45,9 @@ esm stats <file>                # Record type statistics
 esm dump <file> <type>          # Dump records of type
 esm trace <file> -o <offset>    # Trace structure at offset
 esm convert <file>              # Convert Xbox 360 ESM to PC format
+esm reports <input> -o <dir>    # Emit GECK-style CSV/TXT per record type
+                                  #   (includes persistent_objects.csv, non_persistent_objects.csv
+                                  #    with InstanceEditorID columns, plus per-type reports)
 esm semdiff <f1> <f2>           # Semantic field-by-field diff
 esm diff --xbox <f> --converted <f> --pc <f>  # Unified 2/3-way diff
 esm cell objects <file> <cell>  # List placed objects in a cell
@@ -78,9 +81,14 @@ dmp hexdump <file> <address>    # Hex dump at address
 dmp analyze <directory>          # Unified DMP analysis (persistent refs, map markers, runtime structs)
 dmp buffers <file>              # Memory buffer analysis
 dmp coverage <file>             # Runtime structure coverage analysis
-dmp compare <f1> <f2>           # Compare runtime structures between DMPs
+dmp compare <f1> <f2>           # Cross-build HTML/JSON/CSV diff (weapons, NPCs, map markers, …)
 dmp formtype-census <file>      # FormType distribution analysis
 dmp rtti <file>                 # RTTI structure scanning
+
+# Report validation commands (sanity-check generated reports)
+report validate <input>                    # Check every field value against declared domains
+report consistency <inputs...>             # Pairwise cross-build diff (loads ESM/DMP directly)
+report consistency --from-html <compare>   #   …or reuse an existing dmp-compare HTML directory
 
 # Dialogue commands
 dialogue stats <file>           # Dialogue record statistics

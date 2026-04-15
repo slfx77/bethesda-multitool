@@ -35,7 +35,7 @@
       </ScrollViewer>
     </Border>
 
-    <!--  TabView for Batch Converter and NIF Viewer  -->
+    <!--  Two sub-tabs: Batch Convert (bulk file conversion) + Viewer (single NIF browse/render)  -->
     <TabView
       x:Name="NifTabView"
       IsAddTabButtonVisible="False"
@@ -46,8 +46,8 @@
       HorizontalAlignment="Stretch"
       SelectionChanged="NifTabView_SelectionChanged">
 
-      <!-- ==================== Batch Converter Tab ==================== -->
-      <TabViewItem Header="Batch Converter" IsClosable="False">
+      <!-- ==================== Batch Convert Tab ==================== -->
+      <TabViewItem x:Uid="Tab_NifBatchConvert" IsClosable="False">
         <Grid Padding="16"
               VerticalAlignment="Stretch">
           <Grid.RowDefinitions>
@@ -237,8 +237,8 @@
         </Grid>
       </TabViewItem>
 
-      <!-- ==================== NIF Viewer Tab ==================== -->
-      <TabViewItem Header="NIF Viewer" IsClosable="False">
+      <!-- ==================== Viewer Tab ==================== -->
+      <TabViewItem x:Uid="Tab_NifViewer" IsClosable="False">
         <Grid Padding="8" VerticalAlignment="Stretch">
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="280" />

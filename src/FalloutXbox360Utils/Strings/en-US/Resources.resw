@@ -51,7 +51,7 @@
     <value>Minidump</value>
   </data>
   <data name="NavHeader_Converters.Content" xml:space="preserve">
-    <value>Converters</value>
+    <value>File Tools</value>
   </data>
   <data name="NavHeader_FullGame.Content" xml:space="preserve">
     <value>Full Game</value>
@@ -65,7 +65,7 @@
     <value>Batch Mode</value>
   </data>
   <data name="Nav_NifConverter.Content" xml:space="preserve">
-    <value>NIF Converter</value>
+    <value>NIF Tools</value>
   </data>
   <data name="Nav_DdxConverter.Content" xml:space="preserve">
     <value>DDX Converter</value>
@@ -656,13 +656,19 @@
 
   <!-- ===== NifConverterTab (x:Uid) ===== -->
   <data name="Header_NifConverter.Text" xml:space="preserve">
-    <value>NIF Converter</value>
+    <value>Batch Convert</value>
   </data>
   <data name="Subtitle_NifConverter.Text" xml:space="preserve">
     <value>Convert Xbox 360 NIF files to PC format.</value>
   </data>
   <data name="Input_NifInputDir.PlaceholderText" xml:space="preserve">
     <value>Select or enter a folder containing Xbox 360 .nif files...</value>
+  </data>
+  <data name="Tab_NifBatchConvert.Header" xml:space="preserve">
+    <value>Batch Convert</value>
+  </data>
+  <data name="Tab_NifViewer.Header" xml:space="preserve">
+    <value>Viewer</value>
   </data>
 
   <!-- ===== BsaExtractorTab (x:Uid) ===== -->

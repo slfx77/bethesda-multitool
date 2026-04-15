@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Report Validation Commands**: `report validate` and `report consistency` for per-build field-domain sanity checks and cross-build agreement diffs. `--from-html` reuses an existing `dmp compare` output; pattern-engine classifies unknown fields so the rule table grows from real data
+- **MapMarker Cross-Dump Comparison**: Map markers now appear in `dmp compare` output — `compare_mapmarker.html` (and JSON/CSV equivalents); shared markers with drift in content are flagged, platform-metadata differences (endianness, offset) are demoted to "expected drift"
+- **Non-Persistent Object Reports**: `esm reports` now emits `non_persistent_objects.csv` + `non_persistent_object_report.txt` alongside the persistent versions, covering XESP-gated placements and runtime-discovered refs
+- **`InstanceEditorID` Column on REFR CSVs**: Both persistent and non-persistent CSVs include the per-REFR editor ID (sourced from the REFR's own EDID subrecord or runtime `ExtraEditorID`) — matches what the GUI explorer displays
+- **NIF Tools: Viewer Tab**: The NIF panel is now a tabbed container with Batch Convert (original functionality) plus a new Viewer sub-tab — folder/BSA picker, NIF file tree, block-type inspector, elevation/perspective PNG render, GLB export
+- **Resizable Hex / Files Column**: Single File tab gains a CommunityToolkit `GridSplitter` between the hex viewer and the files table; columns can be resized by the user
 - **Unified Semantic Loader**: Core/Semantic `SemanticFileLoader` auto-detects file type (ESM, DMP, ESP) and produces a shared `RecordCollection` for all CLI commands and GUI tabs
 - **Shared Record Detail Presenter**: `RecordDetailPresenter` in Core/Presentation builds structured detail models for NPC, creature, weapon, armor, quest, package, dialogue, cell, and worldspace records
 - **NPC Composition Planners**: `NpcCompositionPlanner` and `CreatureCompositionPlanner` centralize render/export planning; `NpcCompositionExportAdapter` replaces direct scene builder calls
@@ -32,6 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **RACE ATTR/CNAM Endianness**: Xbox 360 stores these 2-byte RACE subrecords little-endian (not big-endian like other RACE fields); switched to pass-through instead of byte-swap, fixing attribute/color-index values after Xbox → PC conversion
+- **CSV Display-Name Escaping**: `FormIdResolver.ResolveCsv` and `ResolveDisplayNameCsv` now actually CSV-escape returned strings; previously a display name containing a comma (e.g. "Tiny, Tiny Babies...") corrupted column alignment on every CSV writer
+- **`dmp compare --format json` OOM**: `ReportJsonFormatter.WriteBatch` streams directly to the destination stream; previously materialized the full JSON as a single string and hit the .NET ~2 GB single-allocation cap on large record types (e.g., Cell across multiple builds)
+- **Title Bar / Pane Interaction**: Redesigned `AppTitleBar` so the expanded NavigationView pane no longer claims the top strip; removed the `NavView_PaneOpened/Closed` margin-shift handlers
 - **Build Errors**: Fixed incomplete namespace refactor (5 files), added `partial` to `TranscriptionJsonContext` for .NET 10 source gen compatibility
 - **203 Analyzer Warnings Resolved**: Dead code removal (~450 lines), float equality fixes, null safety, nested ternary extraction, unused parameter cleanup, xUnit best practices
 - **CS0675 Sign-Extended Bitwise-Or**: Fixed in `NpcBoundaryVertexStitcher` spatial hashing
