@@ -137,6 +137,7 @@
                     </Grid.ColumnDefinitions>
                     <Button Grid.Column="0"
                             Style="{StaticResource SortableColumnHeaderButtonStyle}"
+                            AutomationProperties.Name="Sort by offset"
                             Click="SortByOffset_Click">
                       <StackPanel Orientation="Horizontal" Spacing="4">
                         <TextBlock x:Uid="Col_Offset" FontWeight="SemiBold" />
@@ -146,6 +147,7 @@
                     </Button>
                     <Button Grid.Column="1"
                             Style="{StaticResource SortableColumnHeaderButtonStyle}"
+                            AutomationProperties.Name="Sort by size"
                             Click="SortByLength_Click">
                       <StackPanel Orientation="Horizontal" Spacing="4">
                         <TextBlock x:Uid="Col_Size" FontWeight="SemiBold" />
@@ -155,6 +157,7 @@
                     </Button>
                     <Button Grid.Column="2"
                             Style="{StaticResource SortableColumnHeaderButtonStyle}"
+                            AutomationProperties.Name="Sort by type"
                             Click="SortByType_Click">
                       <StackPanel Orientation="Horizontal" Spacing="4">
                         <TextBlock x:Uid="Col_Type" FontWeight="SemiBold" />
@@ -164,6 +167,7 @@
                     </Button>
                     <Button Grid.Column="3"
                             Style="{StaticResource SortableColumnHeaderButtonStyle}"
+                            AutomationProperties.Name="Sort by filename"
                             Click="SortByFilename_Click">
                       <StackPanel Orientation="Horizontal" Spacing="4">
                         <TextBlock x:Uid="Col_Filename" FontWeight="SemiBold" />
@@ -177,6 +181,7 @@
                   <!--  File list  -->
                   <ListView x:Name="ResultsListView"
                             Grid.Row="1"
+                            AutomationProperties.Name="Files found in the memory dump"
                             RightTapped="ResultsListView_RightTapped"
                             SelectionChanged="ResultsListView_SelectionChanged"
                             SelectionMode="Single">
@@ -335,6 +340,7 @@
                   <ComboBox x:Name="EsmSortComboBox"
                             MinWidth="140"
                             SelectedIndex="0"
+                            AutomationProperties.Name="Record sort order"
                             SelectionChanged="EsmSortComboBox_SelectionChanged">
                     <ComboBoxItem x:Uid="Sort_ByName" />
                     <ComboBoxItem x:Uid="Sort_ByEditorId" />
@@ -345,6 +351,7 @@
                 <!--  Tree view (shown when no search)  -->
                 <TreeView x:Name="EsmTreeView"
                           Grid.Row="2"
+                          AutomationProperties.Name="Record browser tree"
                           CanDragItems="False"
                           CanReorderItems="False"
                           Expanding="EsmTreeView_Expanding"
@@ -466,6 +473,7 @@
                 <TextBox x:Name="DialogueSearchBox"
                          Grid.Row="0" Margin="0,0,8,8"
                          PlaceholderText="Search quests, topics, dialogue..."
+                         AutomationProperties.Name="Dialogue search"
                          TextChanged="DialogueSearchBox_TextChanged" />
 
                 <!--  Browse mode toggle  -->
@@ -475,6 +483,7 @@
                              Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                   <ComboBox x:Name="DialogueBrowseMode"
                             MinWidth="120" SelectedIndex="0"
+                            AutomationProperties.Name="Dialogue browse mode"
                             SelectionChanged="DialogueBrowseMode_SelectionChanged">
                     <ComboBoxItem Content="Quest" />
                     <ComboBoxItem Content="NPC" />
@@ -489,6 +498,7 @@
                 <!--  Picker tree  -->
                 <TreeView x:Name="DialoguePickerTree"
                           Grid.Row="2" Margin="0,0,8,0"
+                          AutomationProperties.Name="Dialogue topic tree"
                           CanDragItems="False" CanReorderItems="False"
                           SelectionMode="Single"
                           Expanding="DialoguePickerTree_Expanding"
@@ -665,6 +675,7 @@
                   </Grid.ColumnDefinitions>
                   <TextBox x:Name="NpcBsaPathTextBox" Grid.Column="0"
                            PlaceholderText="e.g. Sample\Full_Builds\...\Data"
+                           AutomationProperties.Name="Game data directory containing BSA files"
                            KeyDown="NpcBsaPathTextBox_KeyDown" />
                   <Button Grid.Column="1" Content="Browse..."
                           Click="NpcBrowserConfigureBsa_Click"
@@ -704,6 +715,7 @@
 
                 <TextBox x:Name="NpcSearchBox" Grid.Row="0"
                          PlaceholderText="Search NPCs..."
+                         AutomationProperties.Name="Search NPCs"
                          TextChanged="NpcSearchBox_TextChanged"
                          Margin="0,0,0,4" />
                 <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,0,0,4">
@@ -719,6 +731,7 @@
                             MinWidth="0" />
                 </StackPanel>
                 <ListView x:Name="NpcListView" Grid.Row="2"
+                          AutomationProperties.Name="NPC list"
                           SelectionChanged="NpcListView_SelectionChanged">
                   <ListView.ItemTemplate>
                     <DataTemplate>
@@ -728,6 +741,7 @@
                           <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                  AutomationProperties.Name="Select NPC"
                                   MinWidth="0" Padding="0" Margin="0,0,4,0"
                                   VerticalAlignment="Center"
                                   Click="NpcItemCheckBox_Click" />
@@ -809,7 +823,8 @@
                   <TextBlock Text="Render PNG" FontWeight="SemiBold" FontSize="13"
                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                              Margin="0,8,0,0" />
-                  <ComboBox x:Name="NpcPerspectiveComboBox" MinWidth="200">
+                  <ComboBox x:Name="NpcPerspectiveComboBox" MinWidth="200"
+                            AutomationProperties.Name="NPC render perspective">
                     <ComboBoxItem Content="Front (single view)" IsSelected="True" Tag="front" />
                     <ComboBoxItem Content="Isometric (4 views)" Tag="iso" />
                     <ComboBoxItem Content="Side (4 views)" Tag="side" />
@@ -819,6 +834,7 @@
                     <TextBlock Text="Elevation:" VerticalAlignment="Center" FontSize="12" />
                     <Slider x:Name="NpcElevationSlider" Minimum="-90" Maximum="90"
                             Value="0" Width="120"
+                            AutomationProperties.Name="NPC render elevation angle"
                             ValueChanged="NpcElevationSlider_ValueChanged" />
                     <TextBlock x:Name="NpcElevationLabel" Text="0" VerticalAlignment="Center"
                                FontSize="12" />
@@ -828,6 +844,7 @@
                     <NumberBox x:Name="NpcSizeNumberBox"
                                Value="512" Minimum="64" Maximum="4096"
                                SmallChange="128" LargeChange="256"
+                               AutomationProperties.Name="NPC render resolution in pixels"
                                SpinButtonPlacementMode="Inline"
                                MinWidth="140" />
                   </StackPanel>
@@ -905,6 +922,7 @@
 
               <ListView x:Name="ReportListView"
                         Grid.Column="0"
+                        AutomationProperties.Name="Generated reports"
                         SelectionChanged="ReportListView_SelectionChanged"
                         SelectionMode="Single">
                 <ListView.ItemTemplate>
@@ -936,6 +954,8 @@
                          IsReadOnly="True"
                          AcceptsReturn="True"
                          TextWrapping="NoWrap"
+                         AutomationProperties.Name="Report preview"
+                         AutomationProperties.HelpText="Read-only preview of the selected report; use a screen reader to scan line-by-line"
                          ScrollViewer.VerticalScrollBarVisibility="Disabled"
                          ScrollViewer.HorizontalScrollBarVisibility="Auto"
                          SizeChanged="ReportPreviewTextBox_SizeChanged"
@@ -1114,6 +1134,7 @@
               <!--  Gap list  -->
               <ListView x:Name="CoverageGapListView"
                         Grid.Row="2"
+                        AutomationProperties.Name="Coverage gaps (unknown regions)"
                         SelectionChanged="CoverageGapListView_SelectionChanged"
                         SelectionMode="Single" />
             </Grid>
