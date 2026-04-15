@@ -1,0 +1,42 @@
+# Baseline of interactive XAML controls currently missing an accessible name.
+# One entry per line: "<relativeFile>:<ControlType>:<x:Name or empty>"
+# See XamlAccessibilityScanner.cs for the detection rules.
+#
+# Shrink this file as controls gain AutomationProperties.Name / LabeledBy / x:Uid.
+# When it reaches zero, delete it entirely and the ratchet test becomes strict.
+
+Controls/WorldMapControl.xaml:Button:LegendToggleButton
+Controls/WorldMapControl.xaml:ComboBox:ColorSchemeComboBox
+Controls/WorldMapControl.xaml:ComboBox:WorldspaceComboBox
+Controls/WorldMapControl.xaml:ListView:CellListView
+Controls/WorldMapControl.xaml:TextBox:CellSearchBox
+HexViewer/HexViewerControl.xaml:Slider:MinimapZoomSlider
+HexViewer/HexViewerControl.xaml:Slider:VirtualScrollBar
+Tabs/BatchModeTab.xaml:Button:
+Tabs/BatchModeTab.xaml:CheckBox:
+Tabs/BatchModeTab.xaml:NumberBox:ParallelCountBox
+Tabs/BsaExtractorTab.xaml:Button:
+Tabs/BsaExtractorTab.xaml:CheckBox:
+Tabs/DdxConverterTab.xaml:Button:
+Tabs/DdxConverterTab.xaml:CheckBox:
+Tabs/NifConverterTab.xaml:Button:
+Tabs/NifConverterTab.xaml:CheckBox:
+Tabs/RepackerTab.xaml:CheckBox:
+Tabs/RepackerTab.xaml:ToggleButton:
+Tabs/SingleFileTab.xaml:Button:
+Tabs/SingleFileTab.xaml:CheckBox:
+Tabs/SingleFileTab.xaml:ComboBox:DialogueBrowseMode
+Tabs/SingleFileTab.xaml:ComboBox:EsmSortComboBox
+Tabs/SingleFileTab.xaml:ComboBox:NpcPerspectiveComboBox
+Tabs/SingleFileTab.xaml:ListView:CoverageGapListView
+Tabs/SingleFileTab.xaml:ListView:NpcListView
+Tabs/SingleFileTab.xaml:ListView:ReportListView
+Tabs/SingleFileTab.xaml:ListView:ResultsListView
+Tabs/SingleFileTab.xaml:NumberBox:NpcSizeNumberBox
+Tabs/SingleFileTab.xaml:Slider:NpcElevationSlider
+Tabs/SingleFileTab.xaml:TextBox:DialogueSearchBox
+Tabs/SingleFileTab.xaml:TextBox:NpcBsaPathTextBox
+Tabs/SingleFileTab.xaml:TextBox:NpcSearchBox
+Tabs/SingleFileTab.xaml:TextBox:ReportPreviewTextBox
+Tabs/SingleFileTab.xaml:TreeView:DialoguePickerTree
+Tabs/SingleFileTab.xaml:TreeView:EsmTreeView
