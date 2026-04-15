@@ -67,6 +67,7 @@
             <StackPanel Style="{StaticResource TabHeaderStackPanelStyle}">
               <TextBlock
                 x:Uid="Header_NifConverter"
+                AutomationProperties.HeadingLevel="Level1"
                 Style="{StaticResource SubtitleTextBlockStyle}" />
               <TextBlock
                 x:Uid="Subtitle_NifConverter"
@@ -154,6 +155,7 @@
               <ListView
                 x:Name="NifFilesListView"
                 Grid.Row="1"
+                AutomationProperties.Name="Files to convert"
                 Style="{StaticResource FileListViewStyle}">
                 <ListView.ItemTemplate>
                   <DataTemplate x:DataType="local:NifFileEntry">
@@ -207,13 +209,16 @@
               <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
-            <TextBlock x:Uid="Label_InputDirectory" Grid.Row="0" Grid.Column="0"
+            <TextBlock x:Name="NifInputDirectoryLabel"
+                       x:Uid="Label_InputDirectory" Grid.Row="0" Grid.Column="0"
                        Style="{StaticResource IoLabelStyle}" />
             <TextBox x:Name="NifInputDirectoryTextBox" x:Uid="Input_NifInputDir"
                      Grid.Row="0" Grid.Column="1"
                      Style="{StaticResource IoTextBoxStyle}"
+                     AutomationProperties.LabeledBy="{Binding ElementName=NifInputDirectoryLabel}"
                      TextChanged="InputDirectoryTextBox_TextChanged" />
             <Button x:Uid="Button_Browse" Grid.Row="0" Grid.Column="2"
+                    AutomationProperties.Name="Browse for input directory"
                     Click="BrowseInputButton_Click" />
             <Button x:Name="NifConvertButton" x:Uid="Button_Convert"
                     Grid.Row="0" Grid.Column="3"
@@ -221,13 +226,16 @@
                     Click="ConvertButton_Click" IsEnabled="False"
                     Style="{StaticResource AccentButtonStyle}" />
 
-            <TextBlock x:Uid="Label_OutputDirectory" Grid.Row="1" Grid.Column="0"
+            <TextBlock x:Name="NifOutputDirectoryLabel"
+                       x:Uid="Label_OutputDirectory" Grid.Row="1" Grid.Column="0"
                        Style="{StaticResource IoLabelStyle}" />
             <TextBox x:Name="NifOutputDirectoryTextBox" x:Uid="Input_ConvertOutputDir"
                      Grid.Row="1" Grid.Column="1"
                      Style="{StaticResource IoTextBoxStyle}"
+                     AutomationProperties.LabeledBy="{Binding ElementName=NifOutputDirectoryLabel}"
                      TextChanged="OutputDirectoryTextBox_TextChanged" />
             <Button x:Uid="Button_Browse" Grid.Row="1" Grid.Column="2"
+                    AutomationProperties.Name="Browse for output directory"
                     Click="BrowseOutputButton_Click" />
             <Button x:Name="NifCancelButton" x:Uid="Button_Cancel"
                     Grid.Row="1" Grid.Column="3"
@@ -265,10 +273,13 @@
                 x:Name="NifViewerPathTextBox"
                 PlaceholderText="Directory or BSA path..."
                 Grid.Column="0"
+                AutomationProperties.Name="NIF source path"
+                AutomationProperties.HelpText="Path to a folder containing NIF files, or a BSA archive"
                 FontSize="12" />
               <DropDownButton
                 Grid.Column="1"
                 Margin="4,0,0,0"
+                AutomationProperties.Name="Open folder or BSA"
                 ToolTipService.ToolTip="Browse for directory or BSA file">
                 <FontIcon Glyph="&#xE838;" FontSize="14" />
                 <DropDownButton.Flyout>
@@ -293,6 +304,8 @@
               x:Name="NifViewerSearchBox"
               Grid.Row="1"
               PlaceholderText="Filter files..."
+              AutomationProperties.Name="Filter files"
+              AutomationProperties.HelpText="Narrow the file tree to matching names"
               Margin="0,0,0,8"
               FontSize="12"
               TextChanged="NifViewerSearchBox_TextChanged" />
@@ -303,6 +316,7 @@
               <TreeView
                 x:Name="NifViewerTreeView"
                 SelectionMode="Single"
+                AutomationProperties.Name="NIF files in selected source"
                 ItemInvoked="NifViewerTree_ItemInvoked">
                 <TreeView.ItemTemplate>
                   <DataTemplate x:DataType="local:NifTreeViewItem">
@@ -355,6 +369,7 @@
 
               <!-- NIF Info -->
               <TextBlock Text="NIF Info"
+                         AutomationProperties.HeadingLevel="Level2"
                          Style="{StaticResource SubtitleTextBlockStyle}" />
               <TextBlock
                 x:Name="NifViewerInfoText"
@@ -365,6 +380,7 @@
 
               <!-- Block Types -->
               <TextBlock Text="Block Types"
+                         AutomationProperties.HeadingLevel="Level3"
                          FontWeight="SemiBold" FontSize="13"
                          Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
               <TextBlock
@@ -375,6 +391,7 @@
 
               <!-- Export -->
               <TextBlock Text="Export"
+                         AutomationProperties.HeadingLevel="Level3"
                          FontWeight="SemiBold" FontSize="13"
                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                          Margin="0,8,0,0" />
@@ -386,13 +403,16 @@
                 IsEnabled="False" />
 
               <!-- Render PNG -->
-              <TextBlock Text="Render PNG"
+              <TextBlock x:Name="NifViewerRenderSectionHeader"
+                         Text="Render PNG"
+                         AutomationProperties.HeadingLevel="Level3"
                          FontWeight="SemiBold" FontSize="13"
                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                          Margin="0,8,0,0" />
               <ComboBox
                 x:Name="NifViewerPerspectiveComboBox"
                 HorizontalAlignment="Stretch"
+                AutomationProperties.Name="Render perspective"
                 SelectedIndex="0">
                 <ComboBoxItem Content="Front (single view)" Tag="front" />
                 <ComboBoxItem Content="Isometric (4 views)" Tag="iso" />
@@ -400,26 +420,32 @@
                 <ComboBoxItem Content="Trimetric (4 views)" Tag="trimetric" />
               </ComboBox>
               <StackPanel Orientation="Horizontal" Spacing="8">
-                <TextBlock Text="Elevation:" VerticalAlignment="Center" FontSize="12" />
+                <TextBlock x:Name="NifViewerElevationSliderLabel"
+                           Text="Elevation:" VerticalAlignment="Center" FontSize="12" />
                 <Slider
                   x:Name="NifViewerElevationSlider"
                   Minimum="-90" Maximum="90" Value="0"
                   Width="140"
+                  AutomationProperties.LabeledBy="{Binding ElementName=NifViewerElevationSliderLabel}"
                   ValueChanged="NifViewerElevationSlider_ValueChanged" />
                 <TextBlock
                   x:Name="NifViewerElevationLabel"
                   Text="0"
+                  AutomationProperties.Name="Current elevation angle"
+                  AutomationProperties.LiveSetting="Polite"
                   VerticalAlignment="Center" FontSize="12" Width="30" />
               </StackPanel>
               <StackPanel Orientation="Horizontal" Spacing="8">
-                <TextBlock Text="Resolution (px):" VerticalAlignment="Center" FontSize="12" />
+                <TextBlock x:Name="NifViewerSizeNumberBoxLabel"
+                           Text="Resolution (px):" VerticalAlignment="Center" FontSize="12" />
                 <NumberBox
                   x:Name="NifViewerSizeNumberBox"
                   Minimum="64" Maximum="4096"
                   Value="512"
                   SpinButtonPlacementMode="Compact"
                   SmallChange="64" LargeChange="256"
-                  Width="120" />
+                  Width="120"
+                  AutomationProperties.LabeledBy="{Binding ElementName=NifViewerSizeNumberBoxLabel}" />
               </StackPanel>
               <Button
                 x:Name="NifViewerRenderPngButton"

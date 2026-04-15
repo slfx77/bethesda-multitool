@@ -48,6 +48,8 @@
             IsEnabled="False"
             Click="NavBack_Click"
             ToolTipService.ToolTip="Back (Alt+Left)"
+            AutomationProperties.Name="Back"
+            AutomationProperties.HelpText="Go back to the previously viewed tab (Alt+Left)"
             Background="Transparent" BorderBrush="Transparent">
             <FontIcon Glyph="&#xE72B;" FontSize="11" />
           </Button>
@@ -58,6 +60,8 @@
             IsEnabled="False"
             Click="NavForward_Click"
             ToolTipService.ToolTip="Forward (Alt+Right)"
+            AutomationProperties.Name="Forward"
+            AutomationProperties.HelpText="Go forward to the next tab in navigation history (Alt+Right)"
             Background="Transparent" BorderBrush="Transparent">
             <FontIcon Glyph="&#xE72A;" FontSize="11" />
           </Button>

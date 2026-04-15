@@ -49,6 +49,7 @@
         <StackPanel Style="{StaticResource TabHeaderStackPanelStyle}">
           <TextBlock
             x:Uid="Header_BsaExtractor"
+            AutomationProperties.HeadingLevel="Level1"
             Style="{StaticResource SubtitleTextBlockStyle}" />
           <TextBlock
             x:Uid="Subtitle_BsaExtractor"
@@ -267,6 +268,7 @@
             <ListView
               x:Name="FilesListView"
               Grid.Row="1"
+              AutomationProperties.Name="Files in archive"
               Style="{StaticResource FileListViewStyle}">
               <ListView.ItemTemplate>
                 <DataTemplate x:DataType="local:BsaFileEntry">

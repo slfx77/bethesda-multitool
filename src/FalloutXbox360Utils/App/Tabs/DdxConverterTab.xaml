@@ -55,6 +55,7 @@
         <StackPanel Style="{StaticResource TabHeaderStackPanelStyle}">
           <TextBlock
             x:Uid="Header_DdxConverter"
+            AutomationProperties.HeadingLevel="Level1"
             Style="{StaticResource SubtitleTextBlockStyle}" />
           <TextBlock
             x:Uid="Subtitle_DdxConvBy"
@@ -150,6 +151,7 @@
           <ListView
             x:Name="DdxFilesListView"
             Grid.Row="1"
+            AutomationProperties.Name="DDX files to convert"
             Style="{StaticResource FileListViewStyle}">
             <ListView.ItemTemplate>
               <DataTemplate x:DataType="local:DdxFileEntry">
@@ -216,6 +218,7 @@
 
         <!-- Input Directory -->
         <TextBlock
+          x:Name="DdxInputDirectoryLabel"
           x:Uid="Label_InputDirectory"
           Grid.Row="0"
           Grid.Column="0"
@@ -226,11 +229,13 @@
           Grid.Row="0"
           Grid.Column="1"
           Style="{StaticResource IoTextBoxStyle}"
+          AutomationProperties.LabeledBy="{Binding ElementName=DdxInputDirectoryLabel}"
           TextChanged="InputDirectoryTextBox_TextChanged" />
         <Button
           x:Uid="Button_Browse"
           Grid.Row="0"
           Grid.Column="2"
+          AutomationProperties.Name="Browse for input directory"
           Click="BrowseInputButton_Click" />
         <Button
           x:Name="ConvertButton"
@@ -245,6 +250,7 @@
 
         <!-- Output Directory -->
         <TextBlock
+          x:Name="DdxOutputDirectoryLabel"
           x:Uid="Label_OutputDirectory"
           Grid.Row="1"
           Grid.Column="0"
@@ -255,11 +261,13 @@
           Grid.Row="1"
           Grid.Column="1"
           Style="{StaticResource IoTextBoxStyle}"
+          AutomationProperties.LabeledBy="{Binding ElementName=DdxOutputDirectoryLabel}"
           TextChanged="OutputDirectoryTextBox_TextChanged" />
         <Button
           x:Uid="Button_Browse"
           Grid.Row="1"
           Grid.Column="2"
+          AutomationProperties.Name="Browse for output directory"
           Click="BrowseOutputButton_Click" />
         <Button
           x:Name="CancelButton"

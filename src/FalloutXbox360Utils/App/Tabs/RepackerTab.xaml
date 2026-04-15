@@ -48,6 +48,7 @@
         <StackPanel Style="{StaticResource TabHeaderStackPanelStyle}">
           <TextBlock
             x:Uid="Header_Repacker"
+            AutomationProperties.HeadingLevel="Level1"
             Style="{StaticResource SubtitleTextBlockStyle}" />
           <TextBlock
             x:Uid="Subtitle_Repacker"
@@ -188,6 +189,7 @@
             <ListView
               x:Name="CategoriesListView"
               Grid.Row="1"
+              AutomationProperties.Name="Repack categories"
               Style="{StaticResource FileListViewStyle}">
               <ListView.ItemTemplate>
                 <DataTemplate x:DataType="local:RepackCategory">

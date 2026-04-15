@@ -106,6 +106,7 @@
         </Grid.ColumnDefinitions>
         <TextBlock
           x:Uid="Header_BatchCarver"
+          AutomationProperties.HeadingLevel="Level1"
           Style="{StaticResource SubtitleTextBlockStyle}" />
         <StackPanel
           Grid.Column="1"
@@ -205,6 +206,7 @@
           <ListView
             x:Name="DumpFilesListView"
             Grid.Row="1"
+            AutomationProperties.Name="Memory dumps to carve"
             Style="{StaticResource FileListViewStyle}">
             <ListView.ItemTemplate>
               <DataTemplate x:DataType="local:DumpFileEntry">

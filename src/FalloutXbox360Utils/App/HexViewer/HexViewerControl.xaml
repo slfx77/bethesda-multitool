@@ -48,6 +48,8 @@
             BorderThickness="0"
             Click="SearchToggleButton_Click"
             Padding="6,4"
+            AutomationProperties.Name="Search"
+            AutomationProperties.HelpText="Open search bar (Ctrl+F)"
             ToolTipService.ToolTip="Search (Ctrl+F)">
             <FontIcon
               FontSize="14"
@@ -215,6 +217,8 @@
                     Background="Transparent"
                     BorderThickness="0"
                     FontSize="13"
+                    AutomationProperties.Name="Search query"
+                    AutomationProperties.HelpText="Enter text to search in the hex view; Enter finds next, Shift+Enter finds previous"
                     KeyDown="SearchTextBox_KeyDown"
                     PlaceholderText="Search..." />
                   <Border
@@ -229,6 +233,8 @@
                     Background="Transparent"
                     BorderThickness="0"
                     Click="SearchPrevButton_Click"
+                    AutomationProperties.Name="Find previous"
+                    AutomationProperties.HelpText="Find previous match (Shift+F3)"
                     ToolTipService.ToolTip="Previous (Shift+F3)">
                     <FontIcon
                       FontSize="11"
@@ -243,6 +249,8 @@
                     Background="Transparent"
                     BorderThickness="0"
                     Click="SearchNextButton_Click"
+                    AutomationProperties.Name="Find next"
+                    AutomationProperties.HelpText="Find next match (F3)"
                     ToolTipService.ToolTip="Next (F3)">
                     <FontIcon
                       FontSize="11"

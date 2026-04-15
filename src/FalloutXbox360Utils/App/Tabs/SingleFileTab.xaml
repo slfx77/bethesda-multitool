@@ -385,6 +385,7 @@
 
                 <StackPanel Grid.Row="0" Margin="0,0,0,8" Spacing="8">
                   <TextBlock x:Name="SelectedRecordTitle" x:Uid="Empty_SelectRecord"
+                             AutomationProperties.HeadingLevel="Level2"
                              Style="{StaticResource SubtitleTextBlockStyle}"
                              VerticalAlignment="Center"
                              TextWrapping="Wrap"
@@ -531,6 +532,7 @@
                             Margin="0,0,0,8">
                   <TextBlock x:Name="DialogueHeaderText"
                              Text="Select a topic from the left panel"
+                             AutomationProperties.HeadingLevel="Level2"
                              Style="{StaticResource SubtitleTextBlockStyle}"
                              VerticalAlignment="Center"
                              TextWrapping="Wrap" MaxLines="2"
@@ -608,6 +610,7 @@
 
                 <TextBlock x:Name="WorldObjectTitle" Grid.Row="0"
                            Text="Click an object to inspect"
+                           AutomationProperties.HeadingLevel="Level2"
                            Style="{StaticResource SubtitleTextBlockStyle}"
                            TextWrapping="Wrap"
                            Margin="0,0,0,8" />
@@ -768,6 +771,7 @@
 
                   <!--  NPC info  -->
                   <TextBlock x:Name="NpcDetailName"
+                             AutomationProperties.HeadingLevel="Level2"
                              Style="{StaticResource SubtitleTextBlockStyle}"
                              TextWrapping="Wrap" />
                   <TextBlock x:Name="NpcDetailInfo" FontSize="12"
