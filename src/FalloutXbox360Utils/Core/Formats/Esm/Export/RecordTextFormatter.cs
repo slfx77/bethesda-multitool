@@ -50,6 +50,7 @@ internal static class RecordTextFormatter
                 keyLockedDoors?.GetValueOrDefault(k.FormId)),
             CellRecord c => GeckWorldWriter.BuildCellReport(c, resolver),
             WorldspaceRecord w => GeckWorldWriter.BuildWorldspaceReport(w, resolver),
+            PlacedReference p when p.IsMapMarker => GeckWorldWriter.BuildMapMarkerReport(p, resolver),
             ScriptRecord s => GeckScriptWriter.BuildScriptReport(s, resolver),
             DialogTopicRecord dt => GeckDialogueWriter.BuildDialogTopicReport(dt, resolver),
             DialogueRecord d => GeckDialogueWriter.BuildDialogueReport(d, resolver),
@@ -124,6 +125,8 @@ internal static class RecordTextFormatter
             yield return ("Cell", c.FormId, c.EditorId, c.FullName, c);
         foreach (var w in records.Worldspaces)
             yield return ("Worldspace", w.FormId, w.EditorId, w.FullName, w);
+        foreach (var m in records.MapMarkers)
+            yield return ("MapMarker", m.FormId, m.EditorId, m.MarkerName, m);
         foreach (var p in records.Perks)
             yield return ("Perk", p.FormId, p.EditorId, p.FullName, p);
         foreach (var s in records.Spells)

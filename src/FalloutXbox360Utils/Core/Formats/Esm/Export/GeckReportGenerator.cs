@@ -462,6 +462,16 @@ public static class GeckReportGenerator
                 GeckWorldWriter.GeneratePersistentObjectsReport(result.Cells, resolver);
         }
 
+        // Non-persistent objects — XESP-gated placements in the ESM, plus runtime refs
+        // observed in DMPs (same PlacedReference model, IsPersistent == false).
+        if (result.Cells.Any(c => c.PlacedObjects.Any(o => !o.IsPersistent)))
+        {
+            files["non_persistent_objects.csv"] =
+                CsvSupplementalWriter.GenerateNonPersistentObjectsCsv(result.Cells, resolver);
+            files["non_persistent_object_report.txt"] =
+                GeckWorldWriter.GenerateNonPersistentObjectsReport(result.Cells, resolver);
+        }
+
         if (result.LeveledLists.Count > 0)
         {
             files["leveled_lists.csv"] = CsvSupplementalWriter.GenerateLeveledListsCsv(result.LeveledLists, resolver);

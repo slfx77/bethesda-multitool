@@ -106,22 +106,46 @@ internal static class CsvSupplementalWriter
 
     public static string GeneratePersistentObjectsCsv(List<CellRecord> cells, FormIdResolver resolver)
     {
+        return GeneratePlacedObjectsCsv(cells, resolver, static o => o.IsPersistent);
+    }
+
+    /// <summary>
+    ///     Non-persistent placed references — disabled / XESP-gated placements in the ESM
+    ///     plus runtime refs observed in a DMP. Same row shape as the persistent CSV so
+    ///     downstream tooling can treat the two files interchangeably.
+    /// </summary>
+    public static string GenerateNonPersistentObjectsCsv(List<CellRecord> cells, FormIdResolver resolver)
+    {
+        return GeneratePlacedObjectsCsv(cells, resolver, static o => !o.IsPersistent);
+    }
+
+    private static string GeneratePlacedObjectsCsv(
+        List<CellRecord> cells,
+        FormIdResolver resolver,
+        Func<PlacedReference, bool> filter)
+    {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "FormID,BaseFormID,BaseEditorID,BaseDisplayName,RecordType,X,Y,Z,RotX,RotY,RotZ,Scale,CellFormID,CellEditorID,IsInitiallyDisabled,OwnerFormID,EnableParentFormID,Offset");
+            "FormID,BaseFormID,BaseEditorID,BaseDisplayName,InstanceEditorID,RecordType,X,Y,Z,RotX,RotY,RotZ,Scale,CellFormID,CellEditorID,IsInitiallyDisabled,OwnerFormID,EnableParentFormID,Offset");
 
         foreach (var cell in cells.OrderBy(c => c.EditorId ?? ""))
         {
             foreach (var obj in cell.PlacedObjects
-                         .Where(o => o.IsPersistent)
+                         .Where(filter)
                          .OrderBy(o => o.RecordType)
                          .ThenBy(o => o.BaseEditorId ?? ""))
             {
+                // Instance name prefers the per-REFR runtime ExtraEditorID when captured,
+                // otherwise falls back to the REFR's own EDID subrecord looked up via
+                // the resolver (same source the GUI explorer's "Reference Editor ID" uses).
+                var instanceEditorId = obj.EditorId ?? resolver.GetEditorId(obj.FormId);
+
                 sb.AppendLine(string.Join(",",
                     Fmt.FId(obj.FormId),
                     Fmt.FId(obj.BaseFormId),
-                    Fmt.CsvEscape(obj.BaseEditorId ?? resolver.ResolveCsv(obj.BaseFormId)),
+                    Fmt.CsvEscape(obj.BaseEditorId) is { Length: > 0 } baseEid ? baseEid : resolver.ResolveCsv(obj.BaseFormId),
                     resolver.ResolveDisplayNameCsv(obj.BaseFormId),
+                    Fmt.CsvEscape(instanceEditorId),
                     Fmt.CsvEscape(obj.RecordType),
                     obj.X.ToString("F2"),
                     obj.Y.ToString("F2"),

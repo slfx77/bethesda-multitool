@@ -274,16 +274,21 @@ public sealed class FormIdResolver
         return DisplayNames.TryGetValue(formId, out var name) ? name : "(none)";
     }
 
-    /// <summary>Resolves EditorID for CSV: EditorID or empty string.</summary>
+    /// <summary>Resolves EditorID for CSV: CSV-escaped EditorID or empty string.</summary>
     public string ResolveCsv(uint formId)
     {
-        return Fmt.Resolve(formId, EditorIds);
+        return Fmt.CsvEscape(Fmt.Resolve(formId, EditorIds));
     }
 
-    /// <summary>Resolves display name for CSV: display name or empty string.</summary>
+    /// <summary>Resolves display name for CSV: CSV-escaped display name or empty string.</summary>
     public string ResolveDisplayNameCsv(uint formId)
     {
-        return formId != 0 && DisplayNames.TryGetValue(formId, out var name) ? name : "";
+        if (formId == 0 || !DisplayNames.TryGetValue(formId, out var name))
+        {
+            return "";
+        }
+
+        return Fmt.CsvEscape(name);
     }
 
     #endregion

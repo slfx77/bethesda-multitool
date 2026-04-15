@@ -90,6 +90,7 @@ public static class Program
         rootCommand.Subcommands.Add(RenderCommand.Create());
         rootCommand.Subcommands.Add(ExportCommand.Create());
         rootCommand.Subcommands.Add(AnalyzeCommand.Create());
+        rootCommand.Subcommands.Add(ReportCommand.Create());
 
         return rootCommand.Parse(args).Invoke();
     }

@@ -23,22 +23,35 @@ internal static class ReportJsonFormatter
         return Encoding.UTF8.GetString(ms.ToArray());
     }
 
-    /// <summary>Format multiple record reports as a JSON array.</summary>
+    /// <summary>
+    ///     Format multiple record reports as a JSON array into a string.
+    ///     Safe only for small collections — a single ~2 GB allocation cap applies to the
+    ///     returned string. Large batches (e.g. the full Cell record set) should use
+    ///     <see cref="WriteBatch" /> to stream directly to a <see cref="Stream" /> instead.
+    /// </summary>
     internal static string FormatBatch(IReadOnlyList<RecordReport> reports, bool indented = true)
     {
         using var ms = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(ms, indented ? DefaultOptions : default))
-        {
-            writer.WriteStartArray();
-            foreach (var report in reports)
-            {
-                WriteReport(writer, report);
-            }
+        WriteBatch(ms, reports, indented);
+        return Encoding.UTF8.GetString(ms.ToArray());
+    }
 
-            writer.WriteEndArray();
+    /// <summary>
+    ///     Stream multiple record reports as a JSON array directly into <paramref name="output" />.
+    ///     O(1) memory regardless of batch size — the only large allocation is whatever
+    ///     buffering <see cref="Utf8JsonWriter" /> does internally (small, bounded).
+    ///     Does NOT dispose or flush <paramref name="output" />; callers own stream lifetime.
+    /// </summary>
+    internal static void WriteBatch(Stream output, IReadOnlyList<RecordReport> reports, bool indented = true)
+    {
+        using var writer = new Utf8JsonWriter(output, indented ? DefaultOptions : default);
+        writer.WriteStartArray();
+        foreach (var report in reports)
+        {
+            WriteReport(writer, report);
         }
 
-        return Encoding.UTF8.GetString(ms.ToArray());
+        writer.WriteEndArray();
     }
 
     /// <summary>Write a single report to a <see cref="Utf8JsonWriter" />.</summary>

@@ -4,6 +4,7 @@ global using FalloutXbox360Utils.CLI.Commands.Dialogue;
 global using FalloutXbox360Utils.CLI.Commands.Dmp;
 global using FalloutXbox360Utils.CLI.Commands.Esm;
 global using FalloutXbox360Utils.CLI.Commands.Export;
+global using FalloutXbox360Utils.CLI.Commands.Report;
 global using FalloutXbox360Utils.CLI.Commands.Save;
 global using FalloutXbox360Utils.CLI.Commands.Version;
 global using FalloutXbox360Utils.CLI.Formatters;

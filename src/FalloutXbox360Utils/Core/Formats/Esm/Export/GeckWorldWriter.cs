@@ -614,21 +614,109 @@ internal static class GeckWorldWriter
         return sb.ToString();
     }
 
+    /// <summary>
+    ///     Build a structured report for a single map marker placed reference, used by
+    ///     <see cref="RecordTextFormatter.BuildReport" /> to include map markers in the
+    ///     cross-dump comparison (<c>compare_mapmarker.html</c>).
+    /// </summary>
+    internal static RecordReport BuildMapMarkerReport(PlacedReference marker, FormIdResolver resolver)
+    {
+        var sections = new List<ReportSection>();
+
+        var identity = new List<ReportField>
+        {
+            new("Endianness",
+                ReportValue.String(marker.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")),
+            new("Offset", ReportValue.String($"0x{marker.Offset:X8}"))
+        };
+
+        if (marker.MarkerType.HasValue)
+        {
+            identity.Add(new ReportField("Type",
+                ReportValue.Int((int)marker.MarkerType.Value, marker.MarkerType.Value.ToString())));
+        }
+
+        identity.Add(new ReportField("Base",
+            ReportValue.FormId(marker.BaseFormId, resolver),
+            $"0x{marker.BaseFormId:X8}"));
+
+        if (!string.IsNullOrEmpty(marker.BaseEditorId))
+        {
+            identity.Add(new ReportField("Base Editor ID", ReportValue.String(marker.BaseEditorId)));
+        }
+
+        sections.Add(new ReportSection("Identity", identity));
+
+        sections.Add(new ReportSection("Position",
+        [
+            new ReportField("X", ReportValue.Float(marker.X, "F2")),
+            new ReportField("Y", ReportValue.Float(marker.Y, "F2")),
+            new ReportField("Z", ReportValue.Float(marker.Z, "F2"))
+        ]));
+
+        var refFields = new List<ReportField>();
+        if (marker.OwnerFormId.HasValue)
+        {
+            refFields.Add(new ReportField("Owner",
+                ReportValue.FormId(marker.OwnerFormId.Value, resolver),
+                $"0x{marker.OwnerFormId.Value:X8}"));
+        }
+
+        if (marker.EnableParentFormId.HasValue)
+        {
+            refFields.Add(new ReportField("Enable Parent",
+                ReportValue.FormId(marker.EnableParentFormId.Value, resolver),
+                $"0x{marker.EnableParentFormId.Value:X8}"));
+        }
+
+        if (refFields.Count > 0)
+        {
+            sections.Add(new ReportSection("References", refFields));
+        }
+
+        return new RecordReport(
+            "MapMarker",
+            marker.FormId,
+            marker.EditorId,
+            marker.MarkerName,
+            sections);
+    }
+
     public static string GeneratePersistentObjectsReport(List<CellRecord> cells,
         FormIdResolver? resolver = null)
     {
-        var res = resolver ?? FormIdResolver.Empty;
+        return GeneratePlacedObjectsReport(cells, resolver ?? FormIdResolver.Empty,
+            "Persistent Objects", static o => o.IsPersistent);
+    }
 
-        var persistent = cells
-            .SelectMany(c => c.PlacedObjects.Where(o => o.IsPersistent)
+    /// <summary>
+    ///     Non-persistent placed-object report — mirror of
+    ///     <see cref="GeneratePersistentObjectsReport" /> with the filter flipped.
+    ///     Rows cover XESP-gated placements in the ESM and runtime refs observed in DMPs.
+    /// </summary>
+    public static string GenerateNonPersistentObjectsReport(List<CellRecord> cells,
+        FormIdResolver? resolver = null)
+    {
+        return GeneratePlacedObjectsReport(cells, resolver ?? FormIdResolver.Empty,
+            "Non-Persistent Objects", static o => !o.IsPersistent);
+    }
+
+    private static string GeneratePlacedObjectsReport(
+        List<CellRecord> cells,
+        FormIdResolver res,
+        string sectionTitle,
+        Func<PlacedReference, bool> filter)
+    {
+        var placed = cells
+            .SelectMany(c => c.PlacedObjects.Where(filter)
                 .Select(o => (Cell: c, Obj: o)))
             .ToList();
 
         var sb = new StringBuilder();
-        GeckReportHelpers.AppendSectionHeader(sb, $"Persistent Objects ({persistent.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"{sectionTitle} ({placed.Count})");
         sb.AppendLine();
 
-        var grouped = persistent
+        var grouped = placed
             .GroupBy(p => p.Obj.RecordType)
             .OrderBy(g => g.Key switch { "ACHR" => 0, "ACRE" => 1, _ => 2 });
 
