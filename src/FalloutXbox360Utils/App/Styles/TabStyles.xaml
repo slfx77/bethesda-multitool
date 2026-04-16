@@ -178,17 +178,23 @@
   <!--
     Draggable column splitter for hex-viewer / file-list / viewer layouts.
     The toolkit default is transparent on Mica which makes the splitter invisible
-    even though dragging works. This style paints a subtle vertical bar so users
-    can actually find the drag target.
+    even though dragging works. Breathing-room Margin keeps the bar from running
+    flush into adjacent controls; the outer Width stays 8 to preserve the hit
+    target. Solid subtle Background makes the splitter visible without adding a
+    custom gripper (toolkit's Element property can't be set on multiple splitters
+    via a shared Style because UIElement has a single-parent invariant; per-site
+    Elements would need to be declared inline if a richer grip is desired).
     -->
   <Style x:Key="ResizableSplitterStyle"
          TargetType="toolkit:GridSplitter">
     <Setter Property="Width"
             Value="8" />
+    <Setter Property="Margin"
+            Value="2,0" />
     <Setter Property="Background"
             Value="{ThemeResource DividerStrokeColorDefaultBrush}" />
     <Setter Property="Foreground"
-            Value="{ThemeResource TextFillColorSecondaryBrush}" />
+            Value="{ThemeResource TextFillColorTertiaryBrush}" />
     <Setter Property="ResizeBehavior"
             Value="PreviousAndNext" />
     <Setter Property="ResizeDirection"
