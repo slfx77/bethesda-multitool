@@ -77,6 +77,10 @@ public sealed partial class SingleFileTab
         CoverageSummaryText.Text = ResultsFormatter.BuildCoverageSummaryText(coverage);
         CoverageClassificationText.Text = ResultsFormatter.BuildCoverageClassificationText(coverage);
 
+        // Coverage data is populated — swap empty-state placeholder for content.
+        CoveragePlaceholder.Visibility = Visibility.Collapsed;
+        CoverageContent.Visibility = Visibility.Visible;
+
         _session.CoverageGaps = ResultsFormatter.BuildCoverageGapEntries(coverage, FormatSize);
 
         _coverageGapSortColumn = CoverageGapSortColumn.Index;
@@ -100,6 +104,10 @@ public sealed partial class SingleFileTab
         InfoFileSize.Text = display.FileSize;
         InfoFormat.Text = display.Format;
         InfoEndianness.Text = display.Endianness;
+
+        // A file is loaded — swap the Summary-tab empty-state placeholder for the content.
+        SummaryPlaceholder.Visibility = Visibility.Collapsed;
+        SummaryContent.Visibility = Visibility.Visible;
 
         if (display.ShowBuildPanel)
         {
@@ -494,6 +502,8 @@ public sealed partial class SingleFileTab
     {
         SummaryRecordPanel.Visibility = Visibility.Collapsed;
         RecordBreakdownPanel.Children.Clear();
+        SummaryContent.Visibility = Visibility.Collapsed;
+        SummaryPlaceholder.Visibility = Visibility.Visible;
     }
 
     private void ResetCoverageTab()
@@ -503,6 +513,8 @@ public sealed partial class SingleFileTab
         CoverageGapListView.ItemsSource = null;
         _coverageGapSortColumn = CoverageGapSortColumn.Index;
         _coverageGapSortAscending = true;
+        CoverageContent.Visibility = Visibility.Collapsed;
+        CoveragePlaceholder.Visibility = Visibility.Visible;
     }
 
     private void InitializeFileTypeCheckboxes()

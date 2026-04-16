@@ -7,8 +7,11 @@
   xmlns:tabs="using:FalloutXbox360Utils"
   Title="Fallout Xbox 360 Utils">
 
-  <Grid>
-    <!--  Global keyboard shortcuts (F1 opens the cheat-sheet dialog, available anywhere).  -->
+  <Grid KeyboardAcceleratorPlacementMode="Hidden">
+    <!--  Global keyboard shortcuts. F1 opens the cheat-sheet dialog, available anywhere.
+          KeyboardAcceleratorPlacementMode="Hidden" on this root Grid suppresses WinUI's
+          automatic "(F1)" hint from being injected into every descendant's tooltip — the
+          cheat-sheet dialog covers discovery instead.  -->
     <Grid.KeyboardAccelerators>
       <KeyboardAccelerator Key="F1" Invoked="F1_ShortcutsDialog_Invoked" />
     </Grid.KeyboardAccelerators>

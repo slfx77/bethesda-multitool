@@ -48,6 +48,12 @@ public sealed partial class SingleFileTab
 
                 ExportAllReportsButton.IsEnabled = _reportEntries.Count > 0;
                 StatusTextBlock.Text = $"Generated {_reportEntries.Count} save reports.";
+                if (_reportEntries.Count > 0)
+                {
+                    ReportsPlaceholder.Visibility = Visibility.Collapsed;
+                    ReportsContent.Visibility = Visibility.Visible;
+                }
+
                 return;
             }
 
@@ -100,6 +106,11 @@ public sealed partial class SingleFileTab
 
             ExportAllReportsButton.IsEnabled = _reportEntries.Count > 0;
             StatusTextBlock.Text = $"Generated {_reportEntries.Count} reports.";
+            if (_reportEntries.Count > 0)
+            {
+                ReportsPlaceholder.Visibility = Visibility.Collapsed;
+                ReportsContent.Visibility = Visibility.Visible;
+            }
         }
         catch (Exception ex)
         {
@@ -133,6 +144,8 @@ public sealed partial class SingleFileTab
         ReportSearchStatus.Text = "";
         ExportAllReportsButton.IsEnabled = false;
         ExportSelectedReportButton.IsEnabled = false;
+        ReportsContent.Visibility = Visibility.Collapsed;
+        ReportsPlaceholder.Visibility = Visibility.Visible;
     }
 
     #endregion

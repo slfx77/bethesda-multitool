@@ -395,16 +395,19 @@ public sealed partial class NifConverterTab : NifFileConverterBase
             );
             _nifViewerWebViewInitialized = true;
 
-            // Set initial status after page loads
+            // Set initial status after page loads. The WebView2 page renders its own
+            // "Select a NIF file to view" message via setStatus, so hide the XAML
+            // placeholder TextBlock to avoid rendering the same text twice stacked.
             NifModelViewer.CoreWebView2.NavigationCompleted += async (_, _) =>
             {
                 try
                 {
                     await NifModelViewer.ExecuteScriptAsync("setStatus('Select a NIF file to view')");
+                    NifViewerPlaceholderText.Visibility = Visibility.Collapsed;
                 }
                 catch
                 {
-                    // Page may not have setStatus yet
+                    // Page may not have setStatus yet — leave the XAML placeholder up as a fallback.
                 }
             };
         }

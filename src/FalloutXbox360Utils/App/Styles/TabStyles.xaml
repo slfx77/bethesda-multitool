@@ -2,7 +2,8 @@
 
 <ResourceDictionary
   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:toolkit="using:CommunityToolkit.WinUI.Controls">
 
   <!--
     Shared styles for tab layouts across the application.
@@ -172,6 +173,44 @@
          TargetType="Grid">
     <Setter Property="Margin"
             Value="0,2" />
+  </Style>
+
+  <!--
+    Draggable column splitter for hex-viewer / file-list / viewer layouts.
+    The toolkit default is transparent on Mica which makes the splitter invisible
+    even though dragging works. This style paints a subtle vertical bar so users
+    can actually find the drag target.
+    -->
+  <Style x:Key="ResizableSplitterStyle"
+         TargetType="toolkit:GridSplitter">
+    <Setter Property="Width"
+            Value="8" />
+    <Setter Property="Background"
+            Value="{ThemeResource DividerStrokeColorDefaultBrush}" />
+    <Setter Property="Foreground"
+            Value="{ThemeResource TextFillColorSecondaryBrush}" />
+    <Setter Property="ResizeBehavior"
+            Value="PreviousAndNext" />
+    <Setter Property="ResizeDirection"
+            Value="Columns" />
+  </Style>
+
+  <!--
+    Consistent "no data loaded" placeholder text for each sub-tab in SingleFileTab.
+    Centered in the tab's content area, secondary color, large enough to read.
+    -->
+  <Style x:Key="EmptyTabPlaceholderStyle"
+         TargetType="TextBlock">
+    <Setter Property="HorizontalAlignment"
+            Value="Center" />
+    <Setter Property="VerticalAlignment"
+            Value="Center" />
+    <Setter Property="TextAlignment"
+            Value="Center" />
+    <Setter Property="FontSize"
+            Value="14" />
+    <Setter Property="Foreground"
+            Value="{ThemeResource TextFillColorSecondaryBrush}" />
   </Style>
 
 </ResourceDictionary>

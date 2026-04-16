@@ -105,9 +105,7 @@
               <hexviewer:HexViewerControl x:Name="HexViewer" />
             </Border>
 
-            <toolkit:GridSplitter Grid.Column="1" Width="8"
-                                  ResizeBehavior="PreviousAndNext"
-                                  ResizeDirection="Columns" />
+            <toolkit:GridSplitter Grid.Column="1" Style="{StaticResource ResizableSplitterStyle}" />
 
             <!--  Files Table + Filter  -->
             <Grid Grid.Column="2">
@@ -298,8 +296,7 @@
                            Width="200" Visibility="Collapsed"
                            Style="{StaticResource TabProgressBarStyle}" />
               <TextBlock x:Name="ParseStatusText" x:Uid="Empty_RunAnalysis"
-                         HorizontalAlignment="Center"
-                         Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                         Style="{StaticResource EmptyTabPlaceholderStyle}" />
               <Button x:Name="ParseButton" x:Uid="Button_ParseRecords"
                       Click="ParseButton_Click"
                       Visibility="Collapsed"
@@ -314,9 +311,7 @@
                 <ColumnDefinition Width="3*" MinWidth="400" />
               </Grid.ColumnDefinitions>
 
-              <toolkit:GridSplitter Grid.Column="1" Width="8"
-                                    ResizeBehavior="PreviousAndNext"
-                                    ResizeDirection="Columns" />
+              <toolkit:GridSplitter Grid.Column="1" Style="{StaticResource ResizableSplitterStyle}" />
 
               <!--  Left: search + sort + tree  -->
               <Grid Grid.Column="0">
@@ -442,8 +437,7 @@
                         Spacing="12">
               <TextBlock x:Name="DialogueViewerStatusText"
                          Text="Run analysis on an ESM or DMP file to view dialogues"
-                         HorizontalAlignment="Center"
-                         Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                         Style="{StaticResource EmptyTabPlaceholderStyle}" />
               <ProgressBar x:Name="DialogueViewerProgressBar"
                            Width="300" Visibility="Collapsed"
                            IsIndeterminate="True" />
@@ -457,9 +451,7 @@
                 <ColumnDefinition Width="*" MinWidth="400" />
               </Grid.ColumnDefinitions>
 
-              <toolkit:GridSplitter Grid.Column="1" Width="8"
-                                    ResizeBehavior="PreviousAndNext"
-                                    ResizeDirection="Columns" />
+              <toolkit:GridSplitter Grid.Column="1" Style="{StaticResource ResizableSplitterStyle}" />
 
               <!--  LEFT PANEL: Quest/NPC picker  -->
               <Grid Grid.Column="0">
@@ -586,8 +578,7 @@
                         HorizontalAlignment="Center" VerticalAlignment="Center"
                         Spacing="12">
               <TextBlock x:Name="WorldMapStatusText" Text="Run analysis to view world data"
-                         HorizontalAlignment="Center"
-                         Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                         Style="{StaticResource EmptyTabPlaceholderStyle}" />
               <ProgressBar x:Name="WorldMapProgressBar"
                            Width="300" Visibility="Collapsed"
                            IsIndeterminate="True" />
@@ -601,9 +592,7 @@
                 <ColumnDefinition Width="520" MinWidth="380" />
               </Grid.ColumnDefinitions>
 
-              <toolkit:GridSplitter Grid.Column="1" Width="8"
-                                    ResizeBehavior="PreviousAndNext"
-                                    ResizeDirection="Columns" />
+              <toolkit:GridSplitter Grid.Column="1" Style="{StaticResource ResizableSplitterStyle}" />
 
               <!--  Left: Win2D map  -->
               <local:WorldMapControl x:Name="WorldMapControl" Grid.Column="0"
@@ -659,8 +648,7 @@
                         Spacing="12" MaxWidth="600">
               <TextBlock x:Name="NpcBrowserStatusText"
                          Text="Run analysis on an ESM to browse NPCs"
-                         HorizontalAlignment="Center"
-                         Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
+                         Style="{StaticResource EmptyTabPlaceholderStyle}" />
               <ProgressBar x:Name="NpcBrowserProgressBar"
                            Width="300" Visibility="Collapsed"
                            IsIndeterminate="True" />
@@ -697,12 +685,8 @@
                 <ColumnDefinition Width="300" MinWidth="280" />
               </Grid.ColumnDefinitions>
 
-              <toolkit:GridSplitter Grid.Column="1" Width="8"
-                                    ResizeBehavior="PreviousAndNext"
-                                    ResizeDirection="Columns" />
-              <toolkit:GridSplitter Grid.Column="3" Width="8"
-                                    ResizeBehavior="PreviousAndNext"
-                                    ResizeDirection="Columns" />
+              <toolkit:GridSplitter Grid.Column="1" Style="{StaticResource ResizableSplitterStyle}" />
+              <toolkit:GridSplitter Grid.Column="3" Style="{StaticResource ResizableSplitterStyle}" />
 
               <!--  Left: NPC list with search  -->
               <Grid Grid.Column="0">
@@ -876,7 +860,11 @@
         <!--  Tab 6: Reports  -->
         <controls:TabViewItem x:Name="ReportsTab" x:Uid="Tab_Reports"
                               IsClosable="False">
-          <Grid Padding="16">
+          <Grid>
+            <TextBlock x:Name="ReportsPlaceholder"
+                       Text="Run analysis on an ESM or DMP file to generate reports"
+                       Style="{StaticResource EmptyTabPlaceholderStyle}" />
+            <Grid x:Name="ReportsContent" Padding="16" Visibility="Collapsed">
             <Grid.RowDefinitions>
               <RowDefinition Height="Auto" />
               <RowDefinition Height="Auto" />
@@ -916,9 +904,7 @@
                 <ColumnDefinition Width="*" MinWidth="400" />
               </Grid.ColumnDefinitions>
 
-              <toolkit:GridSplitter Grid.Column="1" Width="8"
-                                    ResizeBehavior="PreviousAndNext"
-                                    ResizeDirection="Columns" />
+              <toolkit:GridSplitter Grid.Column="1" Style="{StaticResource ResizableSplitterStyle}" />
 
               <ListView x:Name="ReportListView"
                         Grid.Column="0"
@@ -970,13 +956,18 @@
                            ValueChanged="ReportViewerScrollBar_ValueChanged" />
               </Grid>
             </Grid>
+            </Grid>
           </Grid>
         </controls:TabViewItem>
 
         <!--  Tab 6: Summary (File Info + Coverage/Record Breakdown)  -->
         <controls:TabViewItem x:Name="SummaryTab" x:Uid="Tab_Summary"
                               IsClosable="False">
-          <Grid Padding="16">
+          <Grid>
+            <TextBlock x:Name="SummaryPlaceholder"
+                       Text="Run analysis on an ESM or DMP file to see a summary"
+                       Style="{StaticResource EmptyTabPlaceholderStyle}" />
+            <Grid x:Name="SummaryContent" Padding="16" Visibility="Collapsed">
             <Grid.RowDefinitions>
               <RowDefinition Height="Auto" />
               <RowDefinition Height="*" />
@@ -1038,22 +1029,25 @@
                           VerticalScrollBarVisibility="Auto">
               <StackPanel x:Name="RecordBreakdownPanel" Spacing="12" />
             </ScrollViewer>
+            </Grid>
           </Grid>
         </controls:TabViewItem>
 
         <!--  Tab 7: Coverage  -->
         <controls:TabViewItem x:Name="CoverageTab" x:Uid="Tab_Coverage"
                               IsClosable="False">
-          <Grid Padding="16">
+          <Grid>
+            <TextBlock x:Name="CoveragePlaceholder"
+                       Text="Run analysis on an ESM or DMP file to view coverage data"
+                       Style="{StaticResource EmptyTabPlaceholderStyle}" />
+            <Grid x:Name="CoverageContent" Padding="16" Visibility="Collapsed">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="400" MinWidth="380" />
               <ColumnDefinition Width="8" />
               <ColumnDefinition Width="*" MinWidth="400" />
             </Grid.ColumnDefinitions>
 
-            <toolkit:GridSplitter Grid.Column="1" Width="8"
-                                  ResizeBehavior="PreviousAndNext"
-                                  ResizeDirection="Columns" />
+            <toolkit:GridSplitter Grid.Column="1" Style="{StaticResource ResizableSplitterStyle}" />
 
             <!--  Left column: Summary + Classification  -->
             <ScrollViewer Grid.Column="0"
@@ -1141,6 +1135,7 @@
                         AutomationProperties.Name="Coverage gaps (unknown regions)"
                         SelectionChanged="CoverageGapListView_SelectionChanged"
                         SelectionMode="Single" />
+            </Grid>
             </Grid>
           </Grid>
         </controls:TabViewItem>
