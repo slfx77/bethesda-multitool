@@ -393,9 +393,12 @@ internal static class NifSpriteRenderer
             // flat shading so the geometry remains visible (e.g., cut NPCs with missing textures).
             // Vertex-colored submeshes render even without texture (e.g., hair with HCLR tint).
             // Alpha-blended submeshes always render (e.g., glass lenses may have no texture).
+            // BSShaderNoLighting shapes without a texture are shadow/shade overlays — skip them,
+            // as they render as white without the background scene to composite against.
             if (textureResolver != null && texture == null &&
                 submesh.DiffuseTexturePath == null &&
-                !submesh.HasAlphaBlend &&
+                (!submesh.HasAlphaBlend ||
+                 (submesh.IsEmissive && !NifVertexColorPolicy.HasVertexColorData(submesh))) &&
                 !(submesh.UseVertexColors && submesh.VertexColors != null))
             {
                 continue;

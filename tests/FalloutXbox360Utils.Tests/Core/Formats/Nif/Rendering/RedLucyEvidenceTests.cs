@@ -12,7 +12,7 @@ using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
 
-[Collection(SequentialIntegrationCollection.Name)]
+[Collection(SequentialIntegrationGroup.Name)]
 public sealed class RedLucyEvidenceTests(SampleFileFixture samples)
 {
     private const uint BountyHunterDusterFormId = 0x0010D8DB;

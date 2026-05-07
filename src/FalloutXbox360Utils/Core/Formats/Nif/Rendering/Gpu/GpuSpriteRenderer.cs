@@ -277,10 +277,19 @@ internal sealed class GpuSpriteRenderer : IDisposable
             }
 
             // Skip untextured submeshes using the same criteria as the CPU path.
+            // BSShaderNoLighting shadow/shade overlays without a texture are also skipped.
             if (textureResolver != null && diffuseTexture == null &&
                 sub.DiffuseTexturePath == null &&
                 !(sub.IsEmissive && sub.DiffuseTexturePath != null) &&
                 !(sub.UseVertexColors && sub.VertexColors != null))
+            {
+                continue;
+            }
+
+            if (textureResolver != null && diffuseTexture == null &&
+                sub.DiffuseTexturePath == null &&
+                sub.IsEmissive && sub.HasAlphaBlend &&
+                !NifVertexColorPolicy.HasVertexColorData(sub))
             {
                 continue;
             }

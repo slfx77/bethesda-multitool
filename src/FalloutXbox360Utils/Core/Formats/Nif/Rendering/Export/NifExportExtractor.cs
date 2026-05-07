@@ -347,13 +347,12 @@ internal static class NifExportExtractor
             out var srcBlendMode,
             out var dstBlendMode);
 
-        var useVertexColors = false;
+        // Default true: the BSShaderFlags2 Vertex_Colors bit is advisory, not gating — shipped
+        // NIFs frequently have vertex color data with the bit cleared yet the engine applies
+        // them (e.g., rust shading on environment meshes).
+        var useVertexColors = true;
         var isEyeEnvmap = false;
         var envMapScale = 0f;
-        if (shaderMetadata?.ShaderFlags2 is uint shaderFlags2)
-        {
-            useVertexColors = (shaderFlags2 & (1u << 5)) != 0;
-        }
 
         if (shaderMetadata?.ShaderFlags is uint shaderFlags &&
             shaderMetadata.EnvMapScale is float resolvedEnvMapScale)

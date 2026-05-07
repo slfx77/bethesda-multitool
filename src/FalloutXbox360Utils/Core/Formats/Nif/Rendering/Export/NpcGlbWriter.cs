@@ -363,7 +363,10 @@ internal static class NpcGlbWriter
                 materialProfile.RoughnessFactor);
         }
 
-        material.WithDoubleSide(submesh.IsDoubleSided);
+        // Disable DoubleSided for alpha-blended materials to prevent back faces rendering
+        // over front faces in glTF viewers that don't do per-primitive depth sorting.
+        material.WithDoubleSide(submesh.IsDoubleSided &&
+                                preparedAlpha.RenderMode != NifAlphaRenderMode.Blend);
         if (preparedAlpha.Texture != null)
         {
             var image = ImageBuilder.From(

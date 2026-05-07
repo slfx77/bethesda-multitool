@@ -225,7 +225,11 @@ internal static class NifGeometryExtractor
             string? diffusePath = null;
             string? normalMapPath = null;
             var isEmissive = false;
-            var useVertexColors = false; // default to false; only enable if shader flags explicitly set Vertex_Colors
+            // Default true: in practice, both hair and environment NIFs ship with BSShaderFlags2
+            // bit 5 (Vertex_Colors) cleared, yet the engine applies vertex colors when present
+            // (e.g., rust shading on nv_prospectorsaloon's metal sheets). Treat the flag as
+            // advisory, not gating.
+            var useVertexColors = true;
             var isDoubleSided = false;
             var hasAlphaBlend = false;
             var hasAlphaTest = false;
@@ -241,32 +245,24 @@ internal static class NifGeometryExtractor
             List<int>? propRefs = null;
             if (shapePropertyMap.TryGetValue(shapeIndex, out propRefs))
             {
+                // Shader metadata drives vertex color modulation, emissive, and eye envmap flags
+                // independently of whether textures can be resolved — read it unconditionally so
+                // rendering without a texture BSA still respects these flags.
+                shaderMetadata = NifTextureResolver.ReadShaderMetadata(data, nif, propRefs);
+                isEmissive = shaderMetadata?.PropertyType == "BSShaderNoLightingProperty";
+
+                // BSShaderFlags bit 17 = Eye_Environment_Mapping + EnvMapScale for eye specular
+                if (shaderMetadata?.ShaderFlags is uint shaderFlags &&
+                    shaderMetadata.EnvMapScale is float resolvedEnvMapScale)
+                {
+                    isEyeEnvmap = (shaderFlags & 0x20000u) != 0;
+                    envMapScale = resolvedEnvMapScale;
+                }
+
                 if (textureResolver != null)
                 {
-                    shaderMetadata = NifTextureResolver.ReadShaderMetadata(
-                        data,
-                        nif,
-                        propRefs);
                     diffusePath = shaderMetadata?.DiffusePath;
                     normalMapPath = shaderMetadata?.NormalMapPath;
-                    isEmissive = shaderMetadata?.PropertyType ==
-                                 "BSShaderNoLightingProperty";
-
-                    // BSShaderFlags2 bit 5 = Vertex_Colors: controls whether vertex colors
-                    // should modulate the diffuse texture. Hair NIFs have vertex color data
-                    // in the geometry but this flag unset, meaning the engine ignores them.
-                    if (shaderMetadata?.ShaderFlags2 is uint shaderFlags2)
-                    {
-                        useVertexColors = (shaderFlags2 & (1u << 5)) != 0;
-                    }
-
-                    // BSShaderFlags bit 17 = Eye_Environment_Mapping + EnvMapScale for eye specular
-                    if (shaderMetadata?.ShaderFlags is uint shaderFlags &&
-                        shaderMetadata.EnvMapScale is float resolvedEnvMapScale)
-                    {
-                        isEyeEnvmap = (shaderFlags & 0x20000u) != 0;
-                        envMapScale = resolvedEnvMapScale;
-                    }
                 }
 
                 // NiStencilProperty DrawMode: DRAW_BOTH (3) = double-sided (no backface culling)

@@ -243,7 +243,7 @@ internal static class NifPackedDataExtractor
             var vertexColorStream = streams.Ubyte4Streams.FirstOrDefault(s => s.BlockOffset != 16);
             if (vertexColorStream != null)
             {
-                result.VertexColors = ExtractUbyte4Stream(
+                result.VertexColors = ExtractColorStream(
                     ctx.Data,
                     ctx.RawDataOffset,
                     ctx.NumVertices,
@@ -259,7 +259,7 @@ internal static class NifPackedDataExtractor
         if (streams.Ubyte4Streams.Count > 0)
         {
             // Non-skinned mesh: ubyte4 (if present) is vertex colors
-            result.VertexColors = ExtractUbyte4Stream(
+            result.VertexColors = ExtractColorStream(
                 ctx.Data,
                 ctx.RawDataOffset,
                 ctx.NumVertices,
@@ -617,6 +617,46 @@ internal static class NifPackedDataExtractor
             }
             else
             {
+                result[v * 4 + 0] = data[vertexOffset + 0];
+                result[v * 4 + 1] = data[vertexOffset + 1];
+                result[v * 4 + 2] = data[vertexOffset + 2];
+                result[v * 4 + 3] = data[vertexOffset + 3];
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    ///     Extract a D3DCOLOR stream. On Xbox 360 the vertex color is a big-endian uint32
+    ///     <c>0xAARRGGBB</c>, which lands in memory as bytes <c>[A, R, G, B]</c>. We output
+    ///     <c>[R, G, B, A]</c> so downstream consumers can treat it as RGBA without swizzling.
+    /// </summary>
+    private static byte[] ExtractColorStream(byte[] data, int rawDataOffset, int numVertices, int stride,
+        DataStreamInfo stream, bool isBigEndian)
+    {
+        var result = new byte[numVertices * 4];
+        var offset = (int)stream.BlockOffset;
+
+        for (var v = 0; v < numVertices; v++)
+        {
+            var vertexOffset = rawDataOffset + v * stride + offset;
+            if (vertexOffset + 4 > data.Length)
+            {
+                break;
+            }
+
+            if (isBigEndian)
+            {
+                // Xbox D3DCOLOR in memory: [A, R, G, B] → output as [R, G, B, A]
+                result[v * 4 + 0] = data[vertexOffset + 1];
+                result[v * 4 + 1] = data[vertexOffset + 2];
+                result[v * 4 + 2] = data[vertexOffset + 3];
+                result[v * 4 + 3] = data[vertexOffset + 0];
+            }
+            else
+            {
+                // PC packed stream: bytes already in component order [R, G, B, A]
                 result[v * 4 + 0] = data[vertexOffset + 0];
                 result[v * 4 + 1] = data[vertexOffset + 1];
                 result[v * 4 + 2] = data[vertexOffset + 2];

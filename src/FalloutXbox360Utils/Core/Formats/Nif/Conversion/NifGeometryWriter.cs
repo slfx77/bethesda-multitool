@@ -323,16 +323,18 @@ internal static class NifGeometryWriter
     /// </summary>
     internal static int WriteVertexColors(GeometryWriteContext ctx, int srcPos, int outPos, out int newSrcPos)
     {
-        // hasVertexColors (byte) - set to 1 if we have colors from packed data
-        // NOTE: For skinned meshes, ubyte4 stream is bone indices, NOT vertex colors!
+        // hasVertexColors (byte) - set to 1 if we have colors from packed data.
+        // NifPackedDataExtractor separates bone indices (ubyte4 at offset 16) from vertex colors
+        // (ubyte4 at other offsets), so PackedData.VertexColors is valid for both skinned and
+        // non-skinned meshes when populated.
         var origHasVertexColors = ctx.Input[srcPos++];
         var newHasVertexColors =
-            (byte)(ctx.PackedData.VertexColors != null && !ctx.IsSkinned ? 1 : origHasVertexColors);
+            (byte)(ctx.PackedData.VertexColors != null ? 1 : origHasVertexColors);
         ctx.Output[outPos++] = newHasVertexColors;
 
         // PackedGeometryData.VertexColors is already normalized to RGBA byte order by the extractor.
         // Write those channels directly into NIF Color4 float slots.
-        if (newHasVertexColors != 0 && ctx.PackedData.VertexColors != null && !ctx.IsSkinned)
+        if (newHasVertexColors != 0 && ctx.PackedData.VertexColors != null)
         {
             outPos = WriteVertexColorsFromPackedData(ctx, outPos);
         }

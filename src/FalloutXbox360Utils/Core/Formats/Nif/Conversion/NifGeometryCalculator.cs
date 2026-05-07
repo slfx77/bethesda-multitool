@@ -26,7 +26,7 @@ internal static class NifGeometryCalculator
             return null;
         }
 
-        var sizeIncrease = CalculateSizeIncrease(fields.Value, packedData, isSkinned);
+        var sizeIncrease = CalculateSizeIncrease(fields.Value, packedData);
         if (sizeIncrease == 0)
         {
             return null;
@@ -108,7 +108,7 @@ internal static class NifGeometryCalculator
         return new GeometryBlockFields(numVertices, bsDataFlags, hasVertices, hasNormals, hasVertexColors);
     }
 
-    private static int CalculateSizeIncrease(GeometryBlockFields fields, PackedGeometryData packedData, bool isSkinned)
+    private static int CalculateSizeIncrease(GeometryBlockFields fields, PackedGeometryData packedData)
     {
         var sizeIncrease = 0;
         var numVertices = fields.NumVertices;
@@ -132,8 +132,9 @@ internal static class NifGeometryCalculator
             }
         }
 
-        // Vertex colors: skip for skinned meshes (ubyte4 is bone indices)
-        if (fields.HasVertexColors == 0 && packedData.VertexColors != null && !isSkinned)
+        // Vertex colors: NifPackedDataExtractor distinguishes bone indices (offset 16) from
+        // vertex colors (other offsets), so PackedData.VertexColors is valid for skinned meshes too.
+        if (fields.HasVertexColors == 0 && packedData.VertexColors != null)
         {
             sizeIncrease += numVertices * 16;
         }

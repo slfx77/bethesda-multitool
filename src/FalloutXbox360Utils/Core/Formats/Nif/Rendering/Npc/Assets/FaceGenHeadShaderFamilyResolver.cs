@@ -206,13 +206,19 @@ internal static class FaceGenHeadShaderFamilyResolver
 
     private static DecodedTexture CreateDefaultFaceGenMap1Texture()
     {
+        // Engine-accurate default for SKIN2000.pso FaceGenMap1. The 32x32
+        // procedural tile {0x3E, 0x41, 0x3E, 0x40} comes directly from
+        // BSFaceGenManager::ctor (named "DefaultDetailModFaceGenTexture")
+        // — it is what the runtime binds when the per-NPC age/sex variant
+        // lookup fails (which it does for all shipped NPCs, since
+        // Textures\<base><M|F><age>.dds files are not shipped).
         var pixels = new byte[32 * 32 * 4];
         for (var index = 0; index < pixels.Length; index += 4)
         {
-            pixels[index] = 62;
-            pixels[index + 1] = 65;
-            pixels[index + 2] = 62;
-            pixels[index + 3] = 64;
+            pixels[index] = 0x3E;
+            pixels[index + 1] = 0x41;
+            pixels[index + 2] = 0x3E;
+            pixels[index + 3] = 0x40;
         }
 
         return DecodedTexture.FromBaseLevel(pixels, 32, 32);

@@ -20,15 +20,22 @@ internal sealed class NifBrowserService : IDisposable
         string? rootDirectory,
         BsaExtractor? bsaExtractor,
         BsaArchive? bsaArchive,
-        NifTextureResolver textureResolver)
+        NifTextureResolver textureResolver,
+        string[] texturePaths)
     {
         _rootDirectory = rootDirectory;
         _bsaExtractor = bsaExtractor;
         _bsaArchive = bsaArchive;
         _textureResolver = textureResolver;
+        TexturePaths = texturePaths;
     }
 
     public bool IsBsaMode => _bsaExtractor != null;
+
+    /// <summary>
+    ///     Texture sources actually in use (either caller-supplied or auto-detected).
+    /// </summary>
+    internal string[] TexturePaths { get; }
 
     public void Dispose()
     {
@@ -45,7 +52,7 @@ internal sealed class NifBrowserService : IDisposable
         var resolver = texturePaths.Length > 0
             ? new NifTextureResolver(texturePaths)
             : new NifTextureResolver();
-        return new NifBrowserService(rootDir, null, null, resolver);
+        return new NifBrowserService(rootDir, null, null, resolver, texturePaths);
     }
 
     /// <summary>
@@ -58,7 +65,7 @@ internal sealed class NifBrowserService : IDisposable
         var resolver = texturePaths.Length > 0
             ? new NifTextureResolver(texturePaths)
             : new NifTextureResolver();
-        return new NifBrowserService(null, extractor, extractor.Archive, resolver);
+        return new NifBrowserService(null, extractor, extractor.Archive, resolver, texturePaths);
     }
 
     /// <summary>

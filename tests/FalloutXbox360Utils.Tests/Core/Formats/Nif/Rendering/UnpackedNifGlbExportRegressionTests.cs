@@ -5,7 +5,7 @@ using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
 
-[Collection(SequentialIntegrationCollection.Name)]
+[Collection(SequentialIntegrationGroup.Name)]
 public sealed class UnpackedNifGlbExportRegressionTests
 {
     [Fact]
