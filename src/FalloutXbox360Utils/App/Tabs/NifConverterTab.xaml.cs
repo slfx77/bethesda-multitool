@@ -22,12 +22,23 @@ public sealed partial class NifConverterTab : NifFileConverterBase
     private NifBrowserService? _nifBrowserService;
     private List<NifTreeViewItem>? _nifViewerAllItems;
     private bool _nifViewerWebViewInitialized;
+    private string? _nifViewerSourcePath;
+    private bool _nifViewerIsBsa;
 
     public NifConverterTab()
     {
         InitializeComponent();
+        ReorderTabsForModelWorkflow();
         SetupTextBoxContextMenus();
         Loaded += NifConverterTab_Loaded;
+    }
+
+    private void ReorderTabsForModelWorkflow()
+    {
+        NifTabView.TabItems.Clear();
+        NifTabView.TabItems.Add(NifViewerTab);
+        NifTabView.TabItems.Add(NifBatchConvertTab);
+        NifTabView.SelectedItem = NifViewerTab;
     }
 
     // Wire abstract properties to XAML-declared elements
@@ -368,7 +379,7 @@ public sealed partial class NifConverterTab : NifFileConverterBase
     private void NifTabView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         // Lazy init WebView when viewer tab is first selected
-        if (NifTabView.SelectedIndex == 1 && !_nifViewerWebViewInitialized)
+        if (ReferenceEquals(NifTabView.SelectedItem, NifViewerTab) && !_nifViewerWebViewInitialized)
         {
             _ = InitializeNifViewerWebViewAsync();
         }
@@ -441,16 +452,46 @@ public sealed partial class NifConverterTab : NifFileConverterBase
         }
     }
 
+    private async void NifViewerBrowseTextureBsa_Click(object sender, RoutedEventArgs e)
+    {
+        var filePicker = new FileOpenPicker();
+        filePicker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+        filePicker.FileTypeFilter.Add(".bsa");
+        InitializeWithWindow.Initialize(filePicker,
+            WindowNative.GetWindowHandle(App.Current.MainWindow));
+
+        var file = await filePicker.PickSingleFileAsync();
+        if (file == null) return;
+
+        NifViewerTextureBsaTextBox.Text = file.Path;
+        if (!string.IsNullOrEmpty(_nifViewerSourcePath))
+        {
+            await LoadNifSourceAsync(_nifViewerSourcePath, _nifViewerIsBsa);
+        }
+    }
+
     private async Task LoadNifSourceAsync(string path, bool isBsa)
     {
         _nifBrowserService?.Dispose();
         NifViewerPathTextBox.Text = path;
+        _nifViewerSourcePath = path;
+        _nifViewerIsBsa = isBsa;
 
         try
         {
+            var overrideText = NifViewerTextureBsaTextBox.Text?.Trim();
+            var hasOverride = !string.IsNullOrEmpty(overrideText);
+            var texturePathsOverride = hasOverride ? new[] { overrideText! } : null;
+
             _nifBrowserService = isBsa
-                ? await Task.Run(() => NifBrowserService.CreateFromBsa(path))
-                : await Task.Run(() => NifBrowserService.CreateFromDirectory(path));
+                ? await Task.Run(() => NifBrowserService.CreateFromBsa(path, texturePathsOverride))
+                : await Task.Run(() => NifBrowserService.CreateFromDirectory(path, texturePathsOverride));
+
+            // Reflect the auto-detected textures path in the UI when the user hasn't overridden it.
+            if (!hasOverride)
+            {
+                NifViewerTextureBsaTextBox.Text = string.Join("; ", _nifBrowserService.TexturePaths);
+            }
 
             var entries = await Task.Run(() => _nifBrowserService.ListNifFiles());
             _nifViewerAllItems = NifTreeViewItem.FromTreeEntries(entries);
@@ -682,6 +723,24 @@ public sealed partial class NifConverterTab : NifFileConverterBase
                             Path.GetFileNameWithoutExtension(file.Path) + suffix + ".png")
                         : file.Path;
                     await File.WriteAllBytesAsync(outputPath, pngBytes);
+                }
+            }
+
+            // FileSavePicker reserves the chosen path. In multi-view mode we write only to
+            // suffixed filenames, so delete the empty placeholder left at the base path.
+            if (views.Length > 1)
+            {
+                try
+                {
+                    File.Delete(file.Path);
+                }
+                catch (IOException)
+                {
+                    // Best-effort cleanup only; export already wrote the suffixed views.
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    // Best-effort cleanup only; export already wrote the suffixed views.
                 }
             }
 

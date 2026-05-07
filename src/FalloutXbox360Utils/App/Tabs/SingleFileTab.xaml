@@ -88,8 +88,8 @@
           </StackPanel>
         </controls:TabView.TabStripFooter>
 
-        <!--  Tab 1: Memory Map  -->
-        <controls:TabViewItem x:Uid="Tab_MemoryMap" IsClosable="False">
+        <!--  Raw View  -->
+        <controls:TabViewItem x:Name="RawViewTab" x:Uid="Tab_MemoryMap" IsClosable="False">
           <Grid VerticalAlignment="Stretch"
                 HorizontalAlignment="Stretch">
             <Grid.ColumnDefinitions>
@@ -283,7 +283,7 @@
           </Grid>
         </controls:TabViewItem>
 
-        <!--  Tab 2: Data Browser  -->
+        <!--  Records  -->
         <controls:TabViewItem x:Name="DataBrowserTab" x:Uid="Tab_DataBrowser"
                               IsClosable="False">
           <Grid Padding="0,16,0,0">
@@ -426,9 +426,9 @@
           </Grid>
         </controls:TabViewItem>
 
-        <!--  Tab 3: Dialogue Viewer  -->
+        <!--  Dialogue  -->
         <controls:TabViewItem x:Name="DialogueViewerTab"
-                              Header="Dialogue Viewer"
+                              Header="Dialogue"
                               IsClosable="False">
           <Grid Padding="0,16,0,0">
             <!--  Placeholder (shown before population)  -->
@@ -622,10 +622,10 @@
                           Visibility="Collapsed"
                           ToolTipService.ToolTip="View this cell on the map in detail mode" />
                   <Button x:Name="ViewBaseInBrowserButton"
-                          Content="View in Data Browser"
+                          Content="View in Records"
                           Click="ViewBaseInBrowser_Click"
                           Visibility="Collapsed"
-                          ToolTipService.ToolTip="View the base record in the Data Browser" />
+                          ToolTipService.ToolTip="View the base record in Records" />
                 </StackPanel>
 
                 <Border Grid.Row="2" CornerRadius="4"
@@ -960,7 +960,7 @@
           </Grid>
         </controls:TabViewItem>
 
-        <!--  Tab 6: Summary (File Info + Coverage/Record Breakdown)  -->
+        <!--  Overview (File Info + Coverage/Record Breakdown)  -->
         <controls:TabViewItem x:Name="SummaryTab" x:Uid="Tab_Summary"
                               IsClosable="False">
           <Grid>
@@ -1033,7 +1033,7 @@
           </Grid>
         </controls:TabViewItem>
 
-        <!--  Tab 7: Coverage  -->
+        <!--  Coverage Gaps  -->
         <controls:TabViewItem x:Name="CoverageTab" x:Uid="Tab_Coverage"
                               IsClosable="False">
           <Grid>

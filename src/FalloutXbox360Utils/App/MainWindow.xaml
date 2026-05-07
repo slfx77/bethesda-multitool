@@ -95,9 +95,9 @@
       </NavigationView.Resources>
 
       <NavigationView.MenuItems>
-        <NavigationViewItemHeader x:Uid="NavHeader_Minidump" />
+        <NavigationViewItemHeader x:Uid="NavHeader_Explore" />
 
-        <!--  Single File Analysis  -->
+        <!--  Data Explorer  -->
         <NavigationViewItem
           x:Uid="Nav_SingleFile"
           IsSelected="True"
@@ -107,38 +107,11 @@
           </NavigationViewItem.Icon>
         </NavigationViewItem>
 
-        <!--  Batch Mode  -->
-        <NavigationViewItem
-          x:Uid="Nav_BatchMode"
-          Tag="BatchMode">
-          <NavigationViewItem.Icon>
-            <FontIcon Glyph="&#xE8B7;" />
-          </NavigationViewItem.Icon>
-        </NavigationViewItem>
-
         <NavigationViewItemSeparator />
 
-        <NavigationViewItemHeader x:Uid="NavHeader_Converters" />
+        <NavigationViewItemHeader x:Uid="NavHeader_Assets" />
 
-        <!--  NIF Converter  -->
-        <NavigationViewItem
-          x:Uid="Nav_NifConverter"
-          Tag="NifConverter">
-          <NavigationViewItem.Icon>
-            <FontIcon Glyph="&#xF158;" />
-          </NavigationViewItem.Icon>
-        </NavigationViewItem>
-
-        <!--  DDX Converter  -->
-        <NavigationViewItem
-          x:Uid="Nav_DdxConverter"
-          Tag="DdxConverter">
-          <NavigationViewItem.Icon>
-            <FontIcon Glyph="&#xEB9F;" />
-          </NavigationViewItem.Icon>
-        </NavigationViewItem>
-
-        <!--  BSA Extractor  -->
+        <!--  Archive Browser  -->
         <NavigationViewItem
           x:Uid="Nav_BsaExtractor"
           Tag="BsaExtractor">
@@ -147,16 +120,47 @@
           </NavigationViewItem.Icon>
         </NavigationViewItem>
 
+        <!--  Model Tools  -->
+        <NavigationViewItem
+          x:Uid="Nav_NifConverter"
+          Tag="NifConverter">
+          <NavigationViewItem.Icon>
+            <FontIcon Glyph="&#xF158;" />
+          </NavigationViewItem.Icon>
+        </NavigationViewItem>
+
+        <!--  Texture Tools  -->
+        <NavigationViewItem
+          x:Uid="Nav_DdxConverter"
+          Tag="DdxConverter">
+          <NavigationViewItem.Icon>
+            <FontIcon Glyph="&#xEB9F;" />
+          </NavigationViewItem.Icon>
+        </NavigationViewItem>
+
         <NavigationViewItemSeparator />
 
-        <NavigationViewItemHeader x:Uid="NavHeader_FullGame" />
+        <NavigationViewItemHeader x:Uid="NavHeader_Conversion" />
 
-        <!--  Xbox 360 Repacker  -->
+        <!--  Game Repacker  -->
         <NavigationViewItem
           x:Uid="Nav_Repacker"
           Tag="Repacker">
           <NavigationViewItem.Icon>
             <FontIcon Glyph="&#xE777;" />
+          </NavigationViewItem.Icon>
+        </NavigationViewItem>
+
+        <NavigationViewItemSeparator />
+
+        <NavigationViewItemHeader x:Uid="NavHeader_MemoryDumps" />
+
+        <!--  Batch Dump Analysis  -->
+        <NavigationViewItem
+          x:Uid="Nav_BatchMode"
+          Tag="BatchMode">
+          <NavigationViewItem.Icon>
+            <FontIcon Glyph="&#xE8B7;" />
           </NavigationViewItem.Icon>
         </NavigationViewItem>
       </NavigationView.MenuItems>

@@ -226,20 +226,20 @@ public sealed partial class SingleFileTab
             PushUnifiedNav();
         }
 
-        // Dialogue records (DIAL/INFO) are only meaningfully viewable in the Dialogue Viewer —
-        // route there before falling through to the Data Browser tree.
+        // Dialogue records (DIAL/INFO) are only meaningfully viewable in the Dialogue tab —
+        // route there before falling through to the Records tree.
         if (TryNavigateToDialogueRecord(formId))
         {
             return;
         }
 
-        // Switch to Data Browser tab FIRST so progress bar is visible during loading
+        // Switch to Records tab FIRST so progress bar is visible during loading
         if (!ReferenceEquals(SubTabView.SelectedItem, DataBrowserTab))
         {
             SubTabView.SelectedItem = DataBrowserTab;
         }
 
-        // Ensure Data Browser tree is populated before FormID lookup.
+        // Ensure Records tree is populated before FormID lookup.
         // The tree lazily initializes on first tab visit via SelectionChanged,
         // but that handler is fire-and-forget — we must await it here.
         if (_esmBrowserTree == null && _session.HasEsmRecords)
@@ -269,7 +269,7 @@ public sealed partial class SingleFileTab
         if (_formIdNodeIndex == null || !_formIdNodeIndex.TryGetValue(formId, out var targetNode))
         {
             // Show brief status for records not in the data browser tree
-            SelectedRecordTitle.Text = $"Record 0x{formId:X8} is not available in the Data Browser";
+            SelectedRecordTitle.Text = $"Record 0x{formId:X8} is not available in Records";
             return;
         }
 

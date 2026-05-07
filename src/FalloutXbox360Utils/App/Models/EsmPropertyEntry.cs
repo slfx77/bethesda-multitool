@@ -34,13 +34,16 @@ public sealed class EsmPropertyEntry
     /// <summary>Raw FormID for Col4 (sub-item FormID column).</summary>
     public uint? Col4FormId { get; init; }
 
+    /// <summary>Cell FormID for Col4 world-map navigation (door destinations).</summary>
+    public uint? Col4CellNavigationFormId { get; init; }
+
     /// <summary>Cell FormID for world map navigation (linked cells, door destinations).</summary>
     public uint? CellNavigationFormId { get; init; }
 
     /// <summary>
     ///     Reference FormID of a placed object (REFR/ACHR/ACRE) used to navigate to
     ///     that placement on the world map. Distinct from <see cref="LinkedFormId" />,
-    ///     which targets the base record for Data Browser navigation.
+    ///     which targets the base record for Records navigation.
     /// </summary>
     public uint? PlacedReferenceFormId { get; init; }
 }

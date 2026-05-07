@@ -47,34 +47,37 @@
   </data>
 
   <!-- ===== Navigation Headers ===== -->
-  <data name="NavHeader_Minidump.Content" xml:space="preserve">
-    <value>Minidump</value>
+  <data name="NavHeader_Explore.Content" xml:space="preserve">
+    <value>Explore</value>
   </data>
-  <data name="NavHeader_Converters.Content" xml:space="preserve">
-    <value>File Tools</value>
+  <data name="NavHeader_Assets.Content" xml:space="preserve">
+    <value>Assets</value>
   </data>
-  <data name="NavHeader_FullGame.Content" xml:space="preserve">
-    <value>Full Game</value>
+  <data name="NavHeader_Conversion.Content" xml:space="preserve">
+    <value>Conversion</value>
+  </data>
+  <data name="NavHeader_MemoryDumps.Content" xml:space="preserve">
+    <value>Memory Dumps</value>
   </data>
 
   <!-- ===== Navigation Items ===== -->
   <data name="Nav_SingleFile.Content" xml:space="preserve">
-    <value>Single File</value>
+    <value>Data Explorer</value>
   </data>
   <data name="Nav_BatchMode.Content" xml:space="preserve">
-    <value>Batch Mode</value>
+    <value>Batch Dump Analysis</value>
   </data>
   <data name="Nav_NifConverter.Content" xml:space="preserve">
-    <value>NIF Tools</value>
+    <value>Model Tools</value>
   </data>
   <data name="Nav_DdxConverter.Content" xml:space="preserve">
-    <value>DDX Converter</value>
+    <value>Texture Tools</value>
   </data>
   <data name="Nav_BsaExtractor.Content" xml:space="preserve">
-    <value>BSA Extractor</value>
+    <value>Archive Browser</value>
   </data>
   <data name="Nav_Repacker.Content" xml:space="preserve">
-    <value>Repacker</value>
+    <value>Game Repacker</value>
   </data>
 
   <!-- ===== Common Buttons ===== -->
@@ -238,7 +241,7 @@
     <value>Parsing ESM records...</value>
   </data>
   <data name="Status_BuildingDataBrowserTree" xml:space="preserve">
-    <value>Building data browser tree...</value>
+    <value>Building records tree...</value>
   </data>
   <data name="Status_BuildingCategoryTree" xml:space="preserve">
     <value>Building category tree...</value>
@@ -250,7 +253,7 @@
     <value>Building tree view...</value>
   </data>
   <data name="Status_DataBrowserReady" xml:space="preserve">
-    <value>Data browser ready</value>
+    <value>Records ready</value>
   </data>
   <data name="Status_SearchIndexReady" xml:space="preserve">
     <value>Search index ready</value>
@@ -263,7 +266,7 @@
     <value>Mapping FormIDs...</value>
   </data>
   <data name="Status_BuildingMemoryMap" xml:space="preserve">
-    <value>Building memory map...</value>
+    <value>Building raw view...</value>
   </data>
   <data name="Status_ParsingMatches" xml:space="preserve">
     <value>Parsing {0:N0} matches...</value>
@@ -320,7 +323,7 @@
     <value>Walking scene graph...</value>
   </data>
 
-  <!-- Dialogue Viewer -->
+  <!-- Dialogue -->
   <data name="Status_LoadingDialogueData" xml:space="preserve">
     <value>Loading dialogue data...</value>
   </data>
@@ -331,7 +334,7 @@
     <value>No dialogue data found in this file.</value>
   </data>
   <data name="Status_BuildingDialogueViewer" xml:space="preserve">
-    <value>Building dialogue viewer...</value>
+    <value>Building dialogue...</value>
   </data>
   <data name="Empty_RunAnalysisForDialogues" xml:space="preserve">
     <value>Run analysis on an ESM or DMP file to view dialogues</value>
@@ -357,9 +360,9 @@
     <value>Run analysis to view world data</value>
   </data>
 
-  <!-- Data Browser -->
+  <!-- Records -->
   <data name="Status_BuildingNavIndex" xml:space="preserve">
-    <value>Data browser ready. Building navigation index...</value>
+    <value>Records ready. Building navigation index...</value>
   </data>
   <data name="Status_BuildingSearchIndex" xml:space="preserve">
     <value>Building search index...</value>
@@ -448,19 +451,19 @@
 
   <!-- ===== SingleFileTab: Tab Headers (x:Uid) ===== -->
   <data name="Tab_MemoryMap.Header" xml:space="preserve">
-    <value>Memory Map</value>
+    <value>Raw View</value>
   </data>
   <data name="Tab_DataBrowser.Header" xml:space="preserve">
-    <value>Data Browser</value>
+    <value>Records</value>
   </data>
   <data name="Tab_Reports.Header" xml:space="preserve">
     <value>Reports</value>
   </data>
   <data name="Tab_Summary.Header" xml:space="preserve">
-    <value>Summary</value>
+    <value>Overview</value>
   </data>
   <data name="Tab_Coverage.Header" xml:space="preserve">
-    <value>Coverage</value>
+    <value>Coverage Gaps</value>
   </data>
 
   <!-- ===== SingleFileTab: Column Headers (x:Uid) ===== -->
@@ -522,7 +525,7 @@
 
   <!-- ===== SingleFileTab: Placeholder Text (x:Uid) ===== -->
   <data name="Input_MinidumpPath.PlaceholderText" xml:space="preserve">
-    <value>Select or enter a .dmp, .esm, .esp, or .fxs file...</value>
+    <value>Select or enter a .dmp, .esm, .esp, .fxs, or .fos file...</value>
   </data>
   <data name="Input_OutputPath.PlaceholderText" xml:space="preserve">
     <value>Select or enter output directory...</value>
@@ -607,12 +610,12 @@
 
   <!-- ===== BatchModeTab (x:Uid) ===== -->
   <data name="Header_BatchCarver.Text" xml:space="preserve">
-    <value>Minidump Batch Carver</value>
+    <value>Batch Dump Analysis</value>
   </data>
 
   <!-- ===== DdxConverterTab (x:Uid) ===== -->
   <data name="Header_DdxConverter.Text" xml:space="preserve">
-    <value>DDX Converter</value>
+    <value>Texture Tools</value>
   </data>
   <data name="Subtitle_DdxConvBy.Text" xml:space="preserve">
     <value>Uses DDXConv by kran27</value>
@@ -673,7 +676,7 @@
 
   <!-- ===== BsaExtractorTab (x:Uid) ===== -->
   <data name="Header_BsaExtractor.Text" xml:space="preserve">
-    <value>BSA Extractor</value>
+    <value>Archive Browser</value>
   </data>
   <data name="Subtitle_BsaExtractor.Text" xml:space="preserve">
     <value>Extract files from Bethesda BSA archives (PC and Xbox 360).</value>
@@ -726,7 +729,7 @@
 
   <!-- ===== RepackerTab (x:Uid) ===== -->
   <data name="Header_Repacker.Text" xml:space="preserve">
-    <value>Xbox 360 Repacker</value>
+    <value>Game Repacker</value>
   </data>
   <data name="Subtitle_Repacker.Text" xml:space="preserve">
     <value>Convert Xbox 360 Fallout: New Vegas installation to PC format.</value>

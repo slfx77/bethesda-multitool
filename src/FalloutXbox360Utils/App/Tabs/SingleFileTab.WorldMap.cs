@@ -151,14 +151,14 @@ public sealed partial class SingleFileTab
             ? ownerCell
             : null;
 
-        // Show "View in Data Browser" for the base record, hide cell button
+        // Show "View in Records" for the base record, hide cell button
         ViewBaseInBrowserButton.Visibility = Visibility.Visible;
         ViewCellInDetailButton.Visibility = Visibility.Collapsed;
         var navigable = obj.BaseFormId > 0 && IsFormIdNavigable(obj.BaseFormId);
         ViewBaseInBrowserButton.IsEnabled = navigable;
         ToolTipService.SetToolTip(ViewBaseInBrowserButton, navigable
-            ? "View the base record in the Data Browser"
-            : "Base record not available in Data Browser (record type not reconstructed)");
+            ? "View the base record in Records"
+            : "Base record not available in Records (record type not reconstructed)");
 
         WorldMapControl?.SelectObject(obj);
 
@@ -175,7 +175,7 @@ public sealed partial class SingleFileTab
     {
         WorldPropertyPanel.Children.Clear();
 
-        // Use a single Grid matching Data Browser layout (shared column widths)
+        // Use a single Grid matching Records layout (shared column widths)
         var mainGrid = new Grid();
         mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // icon/spacer
         mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // name
@@ -286,7 +286,9 @@ public sealed partial class SingleFileTab
         var subItemsGrid = new Grid { Visibility = Visibility.Collapsed };
         // Col 0: editor ID / name (clickable for in-map nav)
         // Col 1: full base name (in-game FULL), auto-sized
-        // Col 2: FormID / value (link to Data Browser when navigable) — takes remaining space so long values wrap
+        // Col 2: FormID / value (link to Records when navigable)
+        // Col 3: optional contextual link (door destination, etc.)
+        subItemsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         subItemsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         subItemsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         subItemsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -360,7 +362,7 @@ public sealed partial class SingleFileTab
                 subItemsGrid.Children.Add(fullName);
             }
 
-            // Sub-item FormID column — prefer LinkedFormId (base record) for Data Browser navigation,
+            // Sub-item FormID column — prefer LinkedFormId (base record) for Records navigation,
             // falling back to Col3FormId for legacy callers.
             var subFormIdText = sub.Col3 ?? sub.Value;
             var subFormId = sub.LinkedFormId ?? sub.Col3FormId;
@@ -386,6 +388,32 @@ public sealed partial class SingleFileTab
                 Grid.SetRow(subVal, subRow);
                 Grid.SetColumn(subVal, 2);
                 subItemsGrid.Children.Add(subVal);
+            }
+
+            if (!string.IsNullOrEmpty(sub.Col4))
+            {
+                var col4Text = new TextBlock
+                {
+                    Text = sub.Col4,
+                    FontSize = 11,
+                    Padding = new Thickness(0, 1, 4, 1),
+                    FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
+                    IsTextSelectionEnabled = true,
+                    TextWrapping = TextWrapping.Wrap
+                };
+
+                if (sub.Col4CellNavigationFormId is > 0)
+                {
+                    col4Text.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                        Microsoft.UI.Colors.CornflowerBlue);
+                    col4Text.TextDecorations = TextDecorations.Underline;
+                    var capturedFormId = sub.Col4CellNavigationFormId.Value;
+                    col4Text.Tapped += (_, _) => NavigateToCellInWorldMap(capturedFormId);
+                }
+
+                Grid.SetRow(col4Text, subRow);
+                Grid.SetColumn(col4Text, 3);
+                subItemsGrid.Children.Add(col4Text);
             }
 
             subRow++;

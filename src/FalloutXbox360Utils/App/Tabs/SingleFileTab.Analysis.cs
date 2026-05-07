@@ -148,8 +148,8 @@ public sealed partial class SingleFileTab
 
         ParseProgressBar.Visibility = Visibility.Visible;
         ParseProgressBar.IsIndeterminate = true;
-        ParseStatusText.Text = "Building save data browser...";
-        StatusTextBlock.Text = "Building save data browser...";
+        ParseStatusText.Text = "Building save records tree...";
+        StatusTextBlock.Text = "Building save records tree...";
 
         try
         {

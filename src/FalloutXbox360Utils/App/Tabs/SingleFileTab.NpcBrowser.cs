@@ -580,6 +580,24 @@ public sealed partial class SingleFileTab
                 }
             }
 
+            // FileSavePicker reserves the chosen path. In multi-view mode we write only to
+            // suffixed filenames, so delete the empty placeholder left at the base path.
+            if (views.Length > 1)
+            {
+                try
+                {
+                    File.Delete(file.Path);
+                }
+                catch (IOException)
+                {
+                    // Best-effort cleanup only; export already wrote the suffixed views.
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    // Best-effort cleanup only; export already wrote the suffixed views.
+                }
+            }
+
             StatusTextBlock.Text = $"Rendered: {(views.Length > 1 ? $"{views.Length} views" : file.Name)}";
         }
         catch (Exception ex)

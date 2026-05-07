@@ -320,7 +320,32 @@ internal static class PropertyPanelBuilder
         }
 
         // Col4
-        if (sub.Col4FormId is > 0 && callbacks.IsFormIdNavigable(sub.Col4FormId.Value))
+        if (sub.Col4CellNavigationFormId is > 0)
+        {
+            var cellLink = new HyperlinkButton
+            {
+                Content = new TextBlock
+                {
+                    Text = sub.Col4 ?? "",
+                    FontSize = 11,
+                    FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
+                    TextDecorations = TextDecorations.Underline,
+                    Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.CornflowerBlue),
+                    TextWrapping = TextWrapping.Wrap
+                },
+                Padding = new Thickness(0),
+                MinWidth = 0,
+                MinHeight = 0,
+                Margin = new Thickness(0, 0, 4, 0)
+            };
+            StripButtonChrome(cellLink);
+            var capturedCellFormId = sub.Col4CellNavigationFormId.Value;
+            cellLink.Click += async (_, _) => await callbacks.NavigateToCellInWorldMap(capturedCellFormId);
+            Grid.SetRow(cellLink, row);
+            Grid.SetColumn(cellLink, 3);
+            grid.Children.Add(cellLink);
+        }
+        else if (sub.Col4FormId is > 0 && callbacks.IsFormIdNavigable(sub.Col4FormId.Value))
         {
             var col4Link = callbacks.CreateFormIdLink(sub.Col4 ?? "", sub.Col4FormId.Value, 11, true);
             col4Link.Margin = new Thickness(0, 0, 4, 0);

@@ -223,21 +223,52 @@ internal static class WorldMapCellPropertyBuilder
                         baseName = obj.MarkerName;
                     }
 
+                    var linksTo = FormatLinkedCellLabel(obj.DestinationCellFormId, worldViewData, resolver);
+
                     return new EsmPropertyEntry
                     {
                         Col1 = editorId,
                         Col2 = baseName,
-                        // Display the BASE FormID — that's what the Data Browser can navigate to.
+                        // Display the BASE FormID — that's what Records can navigate to.
                         Col3 = $"0x{obj.BaseFormId:X8}",
-                        // Link target for the Data Browser (base record).
+                        // Link target for Records (base record).
                         LinkedFormId = obj.BaseFormId,
                         // Reference FormID is used to locate the placement on the world map.
                         PlacedReferenceFormId = obj.FormId,
+                        Col4 = linksTo != null ? $"Links to: {linksTo.Value.Label}" : null,
+                        Col4CellNavigationFormId = linksTo?.FormId,
                         Name = editorId,
                         Value = $"0x{obj.BaseFormId:X8}"
                     };
                 }).ToList()
             });
         }
+    }
+
+    private static (uint FormId, string Label)? FormatLinkedCellLabel(
+        uint? formId,
+        WorldViewData? worldViewData,
+        FormIdResolver? resolver)
+    {
+        if (formId is not > 0)
+        {
+            return null;
+        }
+
+        var label = $"0x{formId.Value:X8}";
+        if (worldViewData?.CellByFormId.TryGetValue(formId.Value, out var cell) == true)
+        {
+            label = cell.EditorId ?? cell.FullName ?? label;
+            if (cell.GridX.HasValue && cell.GridY.HasValue)
+            {
+                label = $"[{cell.GridX.Value},{cell.GridY.Value}] {label}";
+            }
+        }
+        else
+        {
+            label = resolver?.GetBestName(formId.Value) ?? label;
+        }
+
+        return (formId.Value, label);
     }
 }

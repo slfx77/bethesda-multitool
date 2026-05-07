@@ -215,10 +215,14 @@ internal static class PlacedObjectCategoryResolver
             {
                 cellName = destCell.EditorId ?? destCell.FullName ?? cellName;
             }
+            else
+            {
+                cellName = effectiveResolver?.GetBestName(obj.DestinationCellFormId.Value) ?? cellName;
+            }
 
             properties.Add(new EsmPropertyEntry
             {
-                Name = "Destination Cell",
+                Name = "Links to",
                 Value = cellName,
                 Category = "References",
                 CellNavigationFormId = obj.DestinationCellFormId.Value
@@ -394,7 +398,7 @@ internal static class PlacedObjectCategoryResolver
 
     public static string? GetReferenceEditorId(PlacedReference obj, FormIdResolver? resolver)
     {
-        return resolver?.GetEditorId(obj.FormId);
+        return !string.IsNullOrEmpty(obj.EditorId) ? obj.EditorId : resolver?.GetEditorId(obj.FormId);
     }
 
     public static string GetReferenceAwareName(PlacedReference obj, FormIdResolver? resolver)

@@ -8,11 +8,11 @@ using Microsoft.UI.Xaml.Controls;
 namespace FalloutXbox360Utils;
 
 /// <summary>
-///     Dialogue Viewer tab: interactive conversation navigation with quest/NPC picker.
+///     Dialogue tab: interactive conversation navigation with quest/NPC picker.
 /// </summary>
 public sealed partial class SingleFileTab
 {
-    #region Dialogue Viewer Reset
+    #region Dialogue Reset
 
     private void ResetDialogueViewer()
     {
@@ -42,7 +42,7 @@ public sealed partial class SingleFileTab
     #region Cross-Tab Dialogue Navigation
 
     /// <summary>
-    ///     Attempts to navigate to a dialogue record (INFO or DIAL) in the Dialogue Viewer tab.
+    ///     Attempts to navigate to a dialogue record (INFO or DIAL) in the Dialogue tab.
     ///     Returns true if the FormID was found and navigation was initiated.
     /// </summary>
     private bool TryNavigateToDialogueRecord(uint formId)
@@ -70,7 +70,7 @@ public sealed partial class SingleFileTab
 
     #endregion
 
-    #region Dialogue Viewer Fields
+    #region Dialogue Fields
 
     private readonly HashSet<uint> _visitedTopicFormIds = new();
 
@@ -84,7 +84,7 @@ public sealed partial class SingleFileTab
 
     #endregion
 
-    #region Dialogue Viewer Population
+    #region Dialogue Population
 
     private async Task PopulateDialogueViewerAsync()
     {
@@ -656,7 +656,7 @@ public sealed partial class SingleFileTab
 
     #endregion
 
-    #region Dialogue Viewer Events
+    #region Dialogue Events
 
     private void DialogueBrowseMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {

@@ -31,6 +31,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     public SingleFileTab()
     {
         InitializeComponent();
+        ReorderSubTabsForGameDataWorkflow();
         ResultsListView.ItemsSource = _carvedFiles;
         ReportListView.ItemsSource = _reportEntries;
         InitializeFileTypeCheckboxes();
@@ -39,6 +40,20 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         KeyDown += SingleFileTab_KeyDown;
         Loaded += SingleFileTab_Loaded;
         Unloaded += SingleFileTab_Unloaded;
+    }
+
+    private void ReorderSubTabsForGameDataWorkflow()
+    {
+        SubTabView.TabItems.Clear();
+        SubTabView.TabItems.Add(SummaryTab);
+        SubTabView.TabItems.Add(DataBrowserTab);
+        SubTabView.TabItems.Add(WorldMapTab);
+        SubTabView.TabItems.Add(DialogueViewerTab);
+        SubTabView.TabItems.Add(NpcBrowserTab);
+        SubTabView.TabItems.Add(ReportsTab);
+        SubTabView.TabItems.Add(RawViewTab);
+        SubTabView.TabItems.Add(CoverageTab);
+        SubTabView.SelectedItem = SummaryTab;
     }
 
     #endregion
@@ -79,7 +94,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             PopulateCoverageTab();
         }
 
-        // Auto-populate Data Browser when first selected
+        // Auto-populate Records when first selected
         if (ReferenceEquals(selected, DataBrowserTab) &&
             DataBrowserContent.Visibility == Visibility.Collapsed)
         {
@@ -93,7 +108,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             }
         }
 
-        // Auto-populate Dialogue Viewer when first selected
+        // Auto-populate Dialogue when first selected
         if (ReferenceEquals(selected, DialogueViewerTab) &&
             !_session.DialogueViewerPopulated &&
             _session.HasEsmRecords)

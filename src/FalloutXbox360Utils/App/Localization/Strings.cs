@@ -54,7 +54,7 @@ public static class Strings
     public static string Status_ScanningTextures => Get("Status_ScanningTextures");
     public static string Status_WalkingSceneGraph => Get("Status_WalkingSceneGraph");
 
-    // ===== Dialogue Viewer =====
+    // ===== Dialogue =====
     public static string Status_LoadingDialogueData => Get("Status_LoadingDialogueData");
     public static string Status_ParsingDialogueData => Get("Status_ParsingDialogueData");
     public static string Status_NoDialogueData => Get("Status_NoDialogueData");
@@ -69,7 +69,7 @@ public static class Strings
     public static string Status_BuildingWorldIndex => Get("Status_BuildingWorldIndex");
     public static string Empty_RunAnalysisForWorldMap => Get("Empty_RunAnalysisForWorldMap");
 
-    // ===== Data Browser =====
+    // ===== Records =====
     public static string Status_BuildingNavIndex => Get("Status_BuildingNavIndex");
     public static string Status_BuildingSearchIndex => Get("Status_BuildingSearchIndex");
 

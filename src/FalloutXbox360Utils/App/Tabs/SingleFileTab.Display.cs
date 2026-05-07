@@ -354,7 +354,7 @@ public sealed partial class SingleFileTab
     {
         if (CoverageGapListView.SelectedItem is CoverageGapEntry gap)
         {
-            SubTabView.SelectedIndex = 0; // Switch to Memory Map tab
+            SubTabView.SelectedItem = RawViewTab;
             HexViewer.NavigateToOffset(gap.RawFileOffset);
         }
     }
@@ -594,7 +594,7 @@ public sealed partial class SingleFileTab
         if (_selectedBrowserNode?.FileOffset is > 0)
         {
             PushUnifiedNav();
-            SubTabView.SelectedIndex = 0; // Switch to Memory Map
+            SubTabView.SelectedItem = RawViewTab;
             HexViewer.NavigateToOffset(_selectedBrowserNode.FileOffset.Value);
         }
     }

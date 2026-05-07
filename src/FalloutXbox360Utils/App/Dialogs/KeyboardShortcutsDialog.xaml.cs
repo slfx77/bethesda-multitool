@@ -26,9 +26,9 @@ public sealed partial class KeyboardShortcutsDialog : ContentDialog
         new("HexViewer", "Arrow keys", "Move hex cursor"),
         new("HexViewer", "Page Up / Page Down", "Scroll by one screen"),
 
-        new("NIF Tools — Viewer", "Ctrl+O", "Open folder or BSA"),
-        new("NIF Tools — Viewer", "Ctrl+E", "Export current NIF as GLB"),
-        new("NIF Tools — Viewer", "Ctrl+R", "Render current NIF as PNG"),
+        new("Model Tools — Viewer", "Ctrl+O", "Open folder or BSA"),
+        new("Model Tools — Viewer", "Ctrl+E", "Export current NIF as GLB"),
+        new("Model Tools — Viewer", "Ctrl+R", "Render current NIF as PNG"),
 
         new("Navigation", "Alt+Left", "Previously viewed tab"),
         new("Navigation", "Alt+Right", "Next tab in history"),

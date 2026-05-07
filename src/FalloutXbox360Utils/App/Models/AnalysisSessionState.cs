@@ -37,7 +37,7 @@ internal sealed class AnalysisSessionState : IDisposable
     /// <summary>Unified FormID resolver built from SemanticResult. Set when SemanticResult is assigned.</summary>
     public FormIdResolver? Resolver { get; set; }
 
-    // ── Dialogue Viewer derived data ──
+    // ── Dialogue derived data ──
     public DialogueTreeResult? DialogueTree { get; set; }
     public Dictionary<uint, List<TopicDialogueNode>>? TopicsBySpeaker { get; set; }
     public Dictionary<uint, TopicDialogueNode>? DialogueFormIdIndex { get; set; }
@@ -152,7 +152,7 @@ internal sealed class AnalysisSessionState : IDisposable
         // Resolver
         Resolver = null;
 
-        // Dialogue Viewer
+        // Dialogue
         DialogueTree = null;
         TopicsBySpeaker = null;
         DialogueFormIdIndex = null;

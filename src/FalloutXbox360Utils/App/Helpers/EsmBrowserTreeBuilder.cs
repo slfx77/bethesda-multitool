@@ -40,7 +40,7 @@ internal static class EsmBrowserTreeBuilder
             ("Combat Styles", result.CombatStyles)
         ]);
 
-        // Dialog Topics and Dialogues are in the Dialogue Viewer tab
+        // Dialog topics and dialogue lines are in the Dialogue tab.
         AddCategory(root, "Quests & Dialogue", "\uE8BD", [
             ("Quests", result.Quests),
             ("Notes", result.Notes),

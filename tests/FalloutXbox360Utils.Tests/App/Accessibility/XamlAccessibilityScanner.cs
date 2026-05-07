@@ -23,7 +23,6 @@ namespace FalloutXbox360Utils.Tests.App.Accessibility;
 /// </summary>
 internal static class XamlAccessibilityScanner
 {
-    private static readonly XNamespace WinUiNs = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
     private static readonly XNamespace XamlNs = "http://schemas.microsoft.com/winfx/2006/xaml";
 
     /// <summary>
@@ -108,10 +107,9 @@ internal static class XamlAccessibilityScanner
 
         // Content-bearing controls can derive their accessible name from Content.
         if (element.Name.LocalName is "Button" or "CheckBox" or "ToggleButton" or "RadioButton"
-            or "HyperlinkButton" or "DropDownButton" or "SplitButton" or "RepeatButton")
-        {
-            if (HasContentWithText(element)) return true;
-        }
+                or "HyperlinkButton" or "DropDownButton" or "SplitButton" or "RepeatButton"
+            && HasContentWithText(element))
+            return true;
 
         // Container controls (ListView/TreeView/GridView/FlipView/ComboBox) with Header set
         // can also expose a name via the header text. Keep strict for now — containers with
@@ -166,14 +164,14 @@ internal static class XamlAccessibilityScanner
         // <Button><TextBlock Text="Something" /></Button> pattern.
         foreach (var child in element.Elements())
         {
-            if (child.Name.LocalName == "TextBlock")
-            {
-                var textAttr = child.Attribute("Text");
-                if (textAttr != null && !string.IsNullOrEmpty(textAttr.Value))
-                    return true;
-                if (child.Attribute(XamlNs + "Uid") != null)
-                    return true;
-            }
+            if (child.Name.LocalName != "TextBlock")
+                continue;
+
+            var textAttr = child.Attribute("Text");
+            if (textAttr != null && !string.IsNullOrEmpty(textAttr.Value))
+                return true;
+            if (child.Attribute(XamlNs + "Uid") != null)
+                return true;
         }
 
         return false;

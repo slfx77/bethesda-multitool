@@ -248,13 +248,19 @@ internal static class EsmItemPropertyBuilder
                           ?? PlacedObjectCategoryResolver.GetReferenceAwareName(refr, resolver);
             var baseName = resolver?.GetBestName(refr.BaseFormId) ?? refr.BaseEditorId ?? refr.RecordType;
             var pos = $"({refr.X:F0}, {refr.Y:F0}, {refr.Z:F0})";
+            var destinationCellName = refr.DestinationCellFormId is > 0
+                ? resolver?.GetBestName(refr.DestinationCellFormId.Value) ?? $"0x{refr.DestinationCellFormId.Value:X8}"
+                : null;
             return new EsmPropertyEntry
             {
                 Col1 = refName,
                 Col2 = pos,
                 Col3 = $"0x{refr.FormId:X8}",
-                Col4 = $"{baseName} (0x{refr.BaseFormId:X8})",
-                Col3FormId = refr.FormId
+                Col4 = destinationCellName != null
+                    ? $"Links to: {destinationCellName}"
+                    : $"{baseName} (0x{refr.BaseFormId:X8})",
+                Col3FormId = refr.FormId,
+                Col4CellNavigationFormId = refr.DestinationCellFormId
             };
         }
 

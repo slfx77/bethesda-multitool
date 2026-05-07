@@ -48,7 +48,7 @@
       SelectionChanged="NifTabView_SelectionChanged">
 
       <!-- ==================== Batch Convert Tab ==================== -->
-      <TabViewItem x:Uid="Tab_NifBatchConvert" IsClosable="False">
+      <TabViewItem x:Name="NifBatchConvertTab" x:Uid="Tab_NifBatchConvert" IsClosable="False">
         <Grid Padding="16"
               VerticalAlignment="Stretch">
           <Grid.RowDefinitions>
@@ -252,7 +252,7 @@
       </TabViewItem>
 
       <!-- ==================== Viewer Tab ==================== -->
-      <TabViewItem x:Uid="Tab_NifViewer" IsClosable="False">
+      <TabViewItem x:Name="NifViewerTab" x:Uid="Tab_NifViewer" IsClosable="False">
         <Grid Padding="8" VerticalAlignment="Stretch">
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="280" MinWidth="200" />
@@ -265,6 +265,7 @@
           <!-- Left: NIF File Browser -->
           <Grid Grid.Column="0">
             <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
               <RowDefinition Height="Auto" />
               <RowDefinition Height="Auto" />
               <RowDefinition Height="*" />
@@ -310,10 +311,33 @@
               </DropDownButton>
             </Grid>
 
+            <!-- Texture BSA row -->
+            <Grid Grid.Row="1" Margin="0,0,0,8">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBox
+                x:Name="NifViewerTextureBsaTextBox"
+                PlaceholderText="Textures BSA (auto-detected)..."
+                Grid.Column="0"
+                AutomationProperties.Name="Textures BSA path"
+                AutomationProperties.HelpText="Overrides the auto-detected textures BSA used when rendering NIFs"
+                FontSize="12" />
+              <Button
+                Grid.Column="1"
+                Margin="4,0,0,0"
+                Click="NifViewerBrowseTextureBsa_Click"
+                AutomationProperties.Name="Browse for textures BSA"
+                ToolTipService.ToolTip="Browse for textures BSA">
+                <FontIcon Glyph="&#xE8E5;" FontSize="14" />
+              </Button>
+            </Grid>
+
             <!-- Search box -->
             <TextBox
               x:Name="NifViewerSearchBox"
-              Grid.Row="1"
+              Grid.Row="2"
               PlaceholderText="Filter files..."
               AutomationProperties.Name="Filter files"
               AutomationProperties.HelpText="Narrow the file tree to matching names"
@@ -322,7 +346,7 @@
               TextChanged="NifViewerSearchBox_TextChanged" />
 
             <!-- File tree -->
-            <Border Grid.Row="2"
+            <Border Grid.Row="3"
                     Style="{StaticResource CardBorderStyle}">
               <TreeView
                 x:Name="NifViewerTreeView"
@@ -343,7 +367,7 @@
             <!-- File count -->
             <TextBlock
               x:Name="NifViewerFileCount"
-              Grid.Row="3"
+              Grid.Row="4"
               FontSize="11"
               Margin="0,4,0,0"
               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
@@ -425,7 +449,7 @@
 
               <!-- Render PNG -->
               <TextBlock x:Name="NifViewerRenderSectionHeader"
-                         Text="Render PNG"
+                         Text="Render PNG (Software)"
                          AutomationProperties.HeadingLevel="Level3"
                          FontWeight="SemiBold" FontSize="13"
                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"

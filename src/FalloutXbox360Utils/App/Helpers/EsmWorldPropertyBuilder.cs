@@ -149,20 +149,23 @@ internal static class EsmWorldPropertyBuilder
                            ?? wp.Cell.EditorId
                            ?? $"0x{wp.Cell.FormId:X8}";
             var pos = $"({wp.Ref.X:F0}, {wp.Ref.Y:F0}, {wp.Ref.Z:F0})";
+            var destinationCellName = wp.Ref.DestinationCellFormId is > 0
+                ? $"Links to: 0x{wp.Ref.DestinationCellFormId.Value:X8}"
+                : null;
             var gridInfo = wp.Cell switch
             {
                 { IsInterior: true } => "Interior",
                 { GridX: not null } => $"Grid ({wp.Cell.GridX},{wp.Cell.GridY})",
                 _ => "Exterior"
             };
-
             subItems.Add(new EsmPropertyEntry
             {
                 Col1 = cellName,
                 Col2 = pos,
                 Col3 = $"{wp.Ref.RecordType} 0x{wp.Ref.FormId:X8}",
-                Col4 = gridInfo,
-                CellNavigationFormId = wp.Cell.FormId
+                Col4 = destinationCellName != null ? $"{gridInfo}; {destinationCellName}" : gridInfo,
+                CellNavigationFormId = wp.Cell.FormId,
+                Col4CellNavigationFormId = wp.Ref.DestinationCellFormId
             });
         }
 
