@@ -271,6 +271,12 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
         string? editorId = null;
         string? fullName = null;
         string? text = null;
+        string? modelPath = null;
+        string? iconPath = null;
+        string? texturePath = null;
+        uint? soundFormId = null;
+        uint? objectFormId = null;
+        uint? topicFormId = null;
         byte noteType = 0;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
@@ -288,8 +294,32 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
                 case "DATA" when sub.DataLength >= 1:
                     noteType = subData[0];
                     break;
+                case "MODL":
+                    modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "ICON":
+                    iconPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MICO":
+                case "XNAM":
+                    texturePath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "SNAM" when sub.DataLength >= 4:
+                    soundFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "ONAM" when sub.DataLength >= 4:
+                    objectFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
                 case "TNAM":
-                    text = EsmStringUtils.ReadNullTermString(subData);
+                    if (sub.DataLength == 4 && !LooksLikeInlineString(subData))
+                    {
+                        topicFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    }
+                    else
+                    {
+                        text = EsmStringUtils.ReadNullTermString(subData);
+                    }
+
                     break;
                 case "DESC": // Fallback for text content
                     if (string.IsNullOrEmpty(text))
@@ -308,9 +338,34 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
             FullName = fullName,
             NoteType = noteType,
             Text = text,
+            ModelPath = modelPath,
+            IconPath = iconPath,
+            TexturePath = texturePath,
+            SoundFormId = soundFormId,
+            ObjectFormId = objectFormId,
+            TopicFormId = topicFormId,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
+    }
+
+    private static bool LooksLikeInlineString(ReadOnlySpan<byte> data)
+    {
+        var terminator = data.IndexOf((byte)0);
+        if (terminator < 0)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < terminator; i++)
+        {
+            if (data[i] is < 0x20 or > 0x7E)
+            {
+                return false;
+            }
+        }
+
+        return terminator > 0;
     }
 
     private NoteRecord? ParseNoteFromScanResult(DetectedMainRecord record)

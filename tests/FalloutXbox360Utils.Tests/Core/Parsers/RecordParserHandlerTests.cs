@@ -318,6 +318,168 @@ public class RecordParserHandlerTests
     }
 
     [Fact]
+    public void ParseNotes_WithAccessor_ParsesAssetsAndReferences()
+    {
+        var soundData = new byte[4];
+        BinaryPrimitives.WriteUInt32LittleEndian(soundData, 0x00001234);
+        var objectData = new byte[4];
+        BinaryPrimitives.WriteUInt32LittleEndian(objectData, 0x00005678);
+
+        var recordBytes = BuildRecordBytes(0x00020002, "NOTE", false,
+            ("EDID", NullTermString("TestHolotape")),
+            ("FULL", NullTermString("Test Holotape")),
+            ("MODL", NullTermString(@"Clutter\Holodisk\Holodisk01.NIF")),
+            ("ICON", NullTermString(@"Interface\Icons\PipboyImages\Items\item_holotap.dds")),
+            ("MICO", NullTermString(@"Interface\Icons\MessageIcon.dds")),
+            ("SNAM", soundData),
+            ("ONAM", objectData),
+            ("DATA", [0x01]),
+            ("TNAM", NullTermString("Holotape transcript")));
+
+        var mainRecord = new DetectedMainRecord("NOTE",
+            (uint)(recordBytes.Length - 24), 0, 0x00020002, 0, false);
+
+        var scanResult = MakeScanResult([mainRecord]);
+
+        using var mmf = MemoryMappedFile.CreateNew(null, recordBytes.Length);
+        using var accessor = mmf.CreateViewAccessor(0, recordBytes.Length);
+        accessor.WriteArray(0, recordBytes, 0, recordBytes.Length);
+
+        var parser = new RecordParser(scanResult, accessor: accessor, fileSize: recordBytes.Length);
+        var note = Assert.Single(parser.ParseNotes());
+
+        Assert.Equal(@"Clutter\Holodisk\Holodisk01.NIF", note.ModelPath);
+        Assert.Equal(@"Interface\Icons\PipboyImages\Items\item_holotap.dds", note.IconPath);
+        Assert.Equal(@"Interface\Icons\MessageIcon.dds", note.TexturePath);
+        Assert.Equal(0x00001234u, note.SoundFormId);
+        Assert.Equal(0x00005678u, note.ObjectFormId);
+        Assert.Equal("Holotape transcript", note.Text);
+    }
+
+    [Fact]
+    public void ParseNotes_WithAccessor_ParsesFourByteTnamAsTopicReference()
+    {
+        var topicData = new byte[4];
+        BinaryPrimitives.WriteUInt32LittleEndian(topicData, 0x0000CAFE);
+
+        var recordBytes = BuildRecordBytes(0x00020003, "NOTE", false,
+            ("EDID", NullTermString("TestTopicNote")),
+            ("TNAM", topicData));
+
+        var mainRecord = new DetectedMainRecord("NOTE",
+            (uint)(recordBytes.Length - 24), 0, 0x00020003, 0, false);
+
+        var scanResult = MakeScanResult([mainRecord]);
+
+        using var mmf = MemoryMappedFile.CreateNew(null, recordBytes.Length);
+        using var accessor = mmf.CreateViewAccessor(0, recordBytes.Length);
+        accessor.WriteArray(0, recordBytes, 0, recordBytes.Length);
+
+        var parser = new RecordParser(scanResult, accessor: accessor, fileSize: recordBytes.Length);
+        var note = Assert.Single(parser.ParseNotes());
+
+        Assert.Equal(0x0000CAFEu, note.TopicFormId);
+        Assert.Null(note.Text);
+    }
+
+    [Fact]
+    public void ParsePerks_WithAccessor_ParsesEsmConditionsAndEntryEffects()
+    {
+        var dataField = new byte[] { 0x00, 0x08, 0x01, 0x01, 0x00 };
+
+        var topCondition = new byte[28];
+        topCondition[0] = 0x20; // !=
+        BinaryPrimitives.WriteSingleLittleEndian(topCondition.AsSpan(4), 0.0f);
+        BinaryPrimitives.WriteUInt16LittleEndian(topCondition.AsSpan(8), 0x46); // GetIsSex
+        BinaryPrimitives.WriteUInt32LittleEndian(topCondition.AsSpan(12), 0x00000000); // Male
+
+        var entryData = new byte[] { 0x03, 0x03, 0x00 };
+        var entryCondition = new byte[28];
+        entryCondition[0] = 0x00; // ==
+        BinaryPrimitives.WriteSingleLittleEndian(entryCondition.AsSpan(4), 1.0f);
+        BinaryPrimitives.WriteUInt16LittleEndian(entryCondition.AsSpan(8), 0x1C1); // HasPerk
+        BinaryPrimitives.WriteUInt32LittleEndian(entryCondition.AsSpan(12), 0x0000ABCD);
+
+        var epfd = new byte[4];
+        BinaryPrimitives.WriteSingleLittleEndian(epfd, 1.1f);
+
+        var recordBytes = BuildRecordBytes(0x00060001, "PERK", false,
+            ("EDID", NullTermString("TestPerk")),
+            ("FULL", NullTermString("Test Perk")),
+            ("DATA", dataField),
+            ("CTDA", topCondition),
+            ("PRKE", [0x02, 0x00, 0x05]),
+            ("DATA", entryData),
+            ("PRKC", [0x02]),
+            ("CTDA", entryCondition),
+            ("EPFT", [0x01]),
+            ("EPFD", epfd),
+            ("PRKF", []));
+
+        var mainRecord = new DetectedMainRecord("PERK",
+            (uint)(recordBytes.Length - 24), 0, 0x00060001, 0, false);
+
+        var scanResult = MakeScanResult([mainRecord]);
+
+        using var mmf = MemoryMappedFile.CreateNew(null, recordBytes.Length);
+        using var accessor = mmf.CreateViewAccessor(0, recordBytes.Length);
+        accessor.WriteArray(0, recordBytes, 0, recordBytes.Length);
+
+        var parser = new RecordParser(scanResult, accessor: accessor, fileSize: recordBytes.Length);
+        var perk = Assert.Single(parser.ParsePerks());
+
+        Assert.Equal("TestPerk", perk.EditorId);
+        Assert.Equal("GetIsSex", perk.Conditions[0].FunctionName);
+        Assert.Equal("Male", perk.Conditions[0].Parameter1Display);
+        Assert.Equal("HasPerk", perk.Conditions[1].FunctionName);
+        Assert.Equal(0x0000ABCDu, perk.Conditions[1].Parameter1FormId);
+
+        var entry = Assert.Single(perk.Entries);
+        Assert.Equal(5, entry.Priority);
+        Assert.Equal((byte)3, entry.EntryPoint);
+        Assert.Equal((byte)1, entry.FunctionType);
+        Assert.Equal("Add Value", entry.FunctionTypeName);
+        Assert.Equal(1.1f, entry.EffectValue.GetValueOrDefault(), 3);
+        Assert.Equal((byte)2, entry.ConditionTabCount);
+        Assert.Single(entry.Conditions);
+    }
+
+    [Fact]
+    public void ParsePerks_WithAccessor_ResolvesPermanentActorValueConditionParameter()
+    {
+        var dataField = new byte[] { 0x00, 0x08, 0x01, 0x01, 0x00 };
+
+        var condition = new byte[28];
+        condition[0] = 0x60; // >=
+        BinaryPrimitives.WriteSingleLittleEndian(condition.AsSpan(4), 4.0f);
+        BinaryPrimitives.WriteUInt16LittleEndian(condition.AsSpan(8), 0x01EF); // GetPermanentActorValue
+        BinaryPrimitives.WriteUInt32LittleEndian(condition.AsSpan(12), 0x00000009); // Intelligence
+
+        var recordBytes = BuildRecordBytes(0x00060002, "PERK", false,
+            ("EDID", NullTermString("TestPermanentActorValuePerk")),
+            ("DATA", dataField),
+            ("CTDA", condition));
+
+        var mainRecord = new DetectedMainRecord("PERK",
+            (uint)(recordBytes.Length - 24), 0, 0x00060002, 0, false);
+
+        var scanResult = MakeScanResult([mainRecord]);
+
+        using var mmf = MemoryMappedFile.CreateNew(null, recordBytes.Length);
+        using var accessor = mmf.CreateViewAccessor(0, recordBytes.Length);
+        accessor.WriteArray(0, recordBytes, 0, recordBytes.Length);
+
+        var parser = new RecordParser(scanResult, accessor: accessor, fileSize: recordBytes.Length);
+        var perk = Assert.Single(parser.ParsePerks());
+        var parsedCondition = Assert.Single(perk.Conditions);
+
+        Assert.Equal("GetPermanentActorValue", parsedCondition.FunctionName);
+        Assert.Equal(0x00000009u, parsedCondition.Parameter1);
+        Assert.Equal("Intelligence", parsedCondition.Parameter1Display);
+        Assert.Null(parsedCondition.Parameter1FormId);
+    }
+
+    [Fact]
     public void ParseMessages_WithAccessor_ParsesSubrecords()
     {
         var edidData = NullTermString("TestMsg01");
@@ -535,8 +697,8 @@ public class RecordParserHandlerTests
 
         // The FormIdToEditorId should include the well-known PlayerRef/Player even
         // though they weren't in the main records
-        Assert.True(result.FormIdToEditorId.ContainsKey(0x00000007)); // PlayerRef
-        Assert.True(result.FormIdToEditorId.ContainsKey(0x00000014)); // Player
+        Assert.Equal("PlayerRef", result.FormIdToEditorId[0x00000007]);
+        Assert.Equal("Player", result.FormIdToEditorId[0x00000014]);
     }
 
     #endregion

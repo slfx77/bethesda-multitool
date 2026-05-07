@@ -140,6 +140,18 @@ internal static class SubrecordActorSchemas
                 Description = "NPC Hair Length"
             };
 
+        // NAM6/NAM7 - NPC_ height/weight (4 bytes = float)
+        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM6", "NPC_", 4)] =
+            new SubrecordSchema(F.Float("Height"))
+            {
+                Description = "NPC Height"
+            };
+        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM7", "NPC_", 4)] =
+            new SubrecordSchema(F.Float("Weight"))
+            {
+                Description = "NPC Weight"
+            };
+
         // ENAM - NPC_ Eyes FormID (4 bytes)
         schemas[new SubrecordSchemaRegistry.SchemaKey("ENAM", "NPC_", 4)] = SubrecordSchema.Simple4Byte("Eyes FormID");
 

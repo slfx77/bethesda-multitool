@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
@@ -66,6 +67,8 @@ internal sealed class NpcRecordHandler(RecordParserContext context) : RecordHand
         float? hairLength = null;
         uint? eyesFormId = null;
         uint? hairColor = null;
+        float? height = null;
+        float? weight = null;
         float[]? fggs = null;
         float[]? fgga = null;
         float[]? fgts = null;
@@ -125,8 +128,14 @@ internal sealed class NpcRecordHandler(RecordParserContext context) : RecordHand
                 case "ENAM" when sub.DataLength == 4:
                     eyesFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
-                case "HCLR" when sub.DataLength == 4:
-                    hairColor = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                case "HCLR" when sub.DataLength >= 3:
+                    hairColor = ReadHairColor(subData);
+                    break;
+                case "NAM6" when sub.DataLength == 4:
+                    height = ReadNpcHeight(subData, record.IsBigEndian);
+                    break;
+                case "NAM7" when sub.DataLength == 4:
+                    weight = ReadNpcWeight(subData, record.IsBigEndian);
                     break;
                 case "AIDT" when sub.DataLength >= 12:
                     aiData = ActorRecordHandler.ParseAiData(subData, record.IsBigEndian);
@@ -202,6 +211,8 @@ internal sealed class NpcRecordHandler(RecordParserContext context) : RecordHand
             HairLength = hairLength,
             HairColor = hairColor,
             EyesFormId = eyesFormId,
+            Height = height,
+            Weight = weight,
             FaceGenGeometrySymmetric = fggs,
             FaceGenGeometryAsymmetric = fgga,
             FaceGenTextureSymmetric = fgts,
@@ -213,5 +224,59 @@ internal sealed class NpcRecordHandler(RecordParserContext context) : RecordHand
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
+    }
+
+    private static float ReadFloat(ReadOnlySpan<byte> data, bool bigEndian)
+    {
+        return bigEndian
+            ? BinaryPrimitives.ReadSingleBigEndian(data)
+            : BinaryPrimitives.ReadSingleLittleEndian(data);
+    }
+
+    private static float? ReadNpcHeight(ReadOnlySpan<byte> data, bool bigEndian)
+    {
+        var value = ReadFloat(data, bigEndian);
+        if (!IsUsableNpcFloat(value))
+        {
+            return null;
+        }
+
+        if (MathF.Abs(value) <= 0.0001f)
+        {
+            return 1.0f;
+        }
+
+        return value is >= 0.1f and <= 10.0f ? value : null;
+    }
+
+    private static float? ReadNpcWeight(ReadOnlySpan<byte> data, bool bigEndian)
+    {
+        var value = ReadFloat(data, bigEndian);
+        if (!IsUsableNpcFloat(value))
+        {
+            return null;
+        }
+
+        if (MathF.Abs(value) <= 0.0001f)
+        {
+            return 1.0f;
+        }
+
+        return value is >= 0.0f and <= 1000.0f ? value : null;
+    }
+
+    private static bool IsUsableNpcFloat(float value)
+    {
+        return !float.IsNaN(value) && !float.IsInfinity(value);
+    }
+
+    private static uint ReadHairColor(ReadOnlySpan<byte> data)
+    {
+        // HCLR is byte-oriented color data in subrecord order, not a FormID-style integer.
+        // Store it in the packed format NpcRecord.FormatHairColor expects: 0x00BBGGRR.
+        var r = data[0];
+        var g = data[1];
+        var b = data[2];
+        return (uint)(r | (g << 8) | (b << 16));
     }
 }

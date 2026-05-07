@@ -24,6 +24,21 @@ public record NoteRecord
     /// <summary>Model file path (TESModel.cModel).</summary>
     public string? ModelPath { get; init; }
 
+    /// <summary>Inventory icon path (ICON subrecord).</summary>
+    public string? IconPath { get; init; }
+
+    /// <summary>Message/menu icon path (MICO/XNAM subrecord).</summary>
+    public string? TexturePath { get; init; }
+
+    /// <summary>Associated sound/audio FormID (SNAM subrecord), when present.</summary>
+    public uint? SoundFormId { get; init; }
+
+    /// <summary>Associated object FormID (ONAM subrecord), when present.</summary>
+    public uint? ObjectFormId { get; init; }
+
+    /// <summary>Associated topic FormID (4-byte TNAM variant), when present.</summary>
+    public uint? TopicFormId { get; init; }
+
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }
 
