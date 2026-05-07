@@ -456,23 +456,15 @@ internal sealed class RuntimeMagicReader
     {
         var result = new List<PerkEntry>();
 
-        var headVa = BinaryUtils.ReadUInt32BE(structBuffer, listOffset);
-        if (headVa == 0 || !_context.IsValidPointer(headVa))
-        {
-            return result;
-        }
-
+        var firstItemVa = BinaryUtils.ReadUInt32BE(structBuffer, listOffset);
+        var nextVa = BinaryUtils.ReadUInt32BE(structBuffer, listOffset + 4);
         var visited = new HashSet<uint>();
-        var currentVa = headVa;
 
-        for (var i = 0; i < MaxListNodes; i++)
+        ReadPerkEntry(firstItemVa, result);
+
+        for (var i = 1; nextVa != 0 && i < MaxListNodes && visited.Add(nextVa); i++)
         {
-            if (currentVa == 0 || !visited.Add(currentVa))
-            {
-                break;
-            }
-
-            var nodeFileOffset = _context.VaToFileOffset(currentVa);
+            var nodeFileOffset = _context.VaToFileOffset(nextVa);
             if (nodeFileOffset == null)
             {
                 break;
@@ -486,18 +478,9 @@ internal sealed class RuntimeMagicReader
             }
 
             var entryVa = BinaryUtils.ReadUInt32BE(nodeBuffer);
-            var nextVa = BinaryUtils.ReadUInt32BE(nodeBuffer, 4);
+            nextVa = BinaryUtils.ReadUInt32BE(nodeBuffer, 4);
 
-            if (entryVa != 0 && _context.IsValidPointer(entryVa))
-            {
-                var entry = ReadPerkEntry(entryVa);
-                if (entry != null)
-                {
-                    result.Add(entry);
-                }
-            }
-
-            currentVa = nextVa;
+            ReadPerkEntry(entryVa, result);
         }
 
         return result;
@@ -507,6 +490,15 @@ internal sealed class RuntimeMagicReader
     ///     Read a single BGSPerkEntry from memory. Infers type from pointer at +8:
     ///     if it resolves to SPEL (0x14), type=Ability; otherwise type=EntryPoint (most common).
     /// </summary>
+    private void ReadPerkEntry(uint entryVa, List<PerkEntry> result)
+    {
+        var entry = ReadPerkEntry(entryVa);
+        if (entry != null)
+        {
+            result.Add(entry);
+        }
+    }
+
     private PerkEntry? ReadPerkEntry(uint entryVa)
     {
         var entryFileOffset = _context.VaToFileOffset(entryVa);
@@ -621,6 +613,7 @@ internal sealed class RuntimeMagicReader
         }
 
         var rawParam1 = BinaryUtils.ReadUInt32BE(buffer, 12);
+        var rawParam2 = BinaryUtils.ReadUInt32BE(buffer, 16);
 
         // Skip empty conditions
         if (type == 0 && functionIndex == 0 && rawParam1 == 0 && MathF.Abs(comparisonValue) < 0.0001f)
@@ -628,56 +621,30 @@ internal sealed class RuntimeMagicReader
             return;
         }
 
-        // Determine function name and resolve parameter
-        string functionName;
-        string? param1Display = null;
-        uint? param1FormId = null;
+        var functionName = PerkConditionParameterResolver.ResolveScriptFunctionName(functionIndex);
 
-        switch (functionIndex)
+        if (functionIndex == 0x1C1 && rawParam1 != 0 && _context.IsValidPointer(rawParam1))
         {
-            case 0x0E: // GetActorValue — Param1 is ActorValue enum index
-                functionName = "GetActorValue";
-                // rawParam1 is a pointer to the ActorValue enum — it's actually a raw int for conditions
-                // In runtime conditions, param1 for GetActorValue is typically the AV index directly
-                if (rawParam1 is > 0 and <= 76)
-                {
-                    param1Display = rawParam1.ToString();
-                }
-                else if (rawParam1 != 0 && _context.IsValidPointer(rawParam1))
-                {
-                    // Some builds store this as a pointer — try following it
-                    rawParam1 = _context.FollowPointerVaToFormId(rawParam1) ?? rawParam1;
-                    param1Display = rawParam1.ToString();
-                }
-
-                break;
-
-            case 0xC1: // HasPerk — Param1 is Perk FormID pointer
-                functionName = "HasPerk";
-                if (rawParam1 != 0 && _context.IsValidPointer(rawParam1))
-                {
-                    var perkFormId = _context.FollowPointerVaToFormId(rawParam1);
-                    if (perkFormId is > 0)
-                    {
-                        param1FormId = perkFormId;
-                        rawParam1 = perkFormId.Value;
-                    }
-                }
-
-                break;
-
-            default:
-                functionName = $"Func_{functionIndex:X4}";
-                break;
+            var perkFormId = _context.FollowPointerVaToFormId(rawParam1);
+            if (perkFormId is > 0)
+            {
+                rawParam1 = perkFormId.Value;
+            }
         }
+
+        var param1 = PerkConditionParameterResolver.ResolveParameter(functionIndex, 0, rawParam1);
+        var param2 = PerkConditionParameterResolver.ResolveParameter(functionIndex, 1, rawParam2);
 
         results.Add(new PerkCondition
         {
             FunctionIndex = functionIndex,
             FunctionName = functionName,
             Parameter1 = rawParam1,
-            Parameter1Display = param1Display,
-            Parameter1FormId = param1FormId,
+            Parameter1Display = param1.Display,
+            Parameter1FormId = param1.FormId,
+            Parameter2 = rawParam2,
+            Parameter2Display = param2.Display,
+            Parameter2FormId = param2.FormId,
             ComparisonOperator = comparisonOperator,
             ComparisonValue = comparisonValue
         });

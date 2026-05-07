@@ -6,7 +6,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 /// </summary>
 public record PerkCondition
 {
-    /// <summary>Condition function index (e.g., 0x0E = GetActorValue, 0xC1 = HasPerk).</summary>
+    /// <summary>Condition function index (e.g., 0x0E = GetActorValue, 0x1C1 = HasPerk).</summary>
     public ushort FunctionIndex { get; init; }
 
     /// <summary>Human-readable function name.</summary>
@@ -20,6 +20,15 @@ public record PerkCondition
 
     /// <summary>FormID reference for Parameter1, if applicable (HasPerk target).</summary>
     public uint? Parameter1FormId { get; init; }
+
+    /// <summary>Second parameter from the CTDA payload.</summary>
+    public uint Parameter2 { get; init; }
+
+    /// <summary>Resolved display for Parameter2, if applicable.</summary>
+    public string? Parameter2Display { get; init; }
+
+    /// <summary>FormID reference for Parameter2, if applicable.</summary>
+    public uint? Parameter2FormId { get; init; }
 
     /// <summary>Comparison operator (0==, 1!=, 2>, 3>=, 4&lt;, 5&lt;=).</summary>
     public byte ComparisonOperator { get; init; }

@@ -292,11 +292,60 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
         byte ranks = 1;
         byte playable = 1;
         var entries = new List<PerkEntry>();
+        var conditions = new List<PerkCondition>();
 
         // Track current entry being built
         byte currentEntryType = 0;
         byte currentEntryRank = 0;
         byte currentEntryPriority = 0;
+        uint? currentAbilityFormId = null;
+        uint? currentQuestFormId = null;
+        int? currentQuestStage = null;
+        byte? currentEntryPoint = null;
+        byte? currentFunctionType = null;
+        float? currentEffectValue = null;
+        uint? currentEffectFormId = null;
+        string? currentEffectData = null;
+        byte? currentConditionTabCount = null;
+        var currentEntryConditions = new List<PerkCondition>();
+        var currentEntryActive = false;
+
+        void FinalizeCurrentEntry()
+        {
+            if (!currentEntryActive)
+            {
+                return;
+            }
+
+            entries.Add(new PerkEntry
+            {
+                Type = currentEntryType,
+                Rank = currentEntryRank,
+                Priority = currentEntryPriority,
+                AbilityFormId = currentAbilityFormId,
+                QuestFormId = currentQuestFormId,
+                QuestStage = currentQuestStage,
+                EntryPoint = currentEntryPoint,
+                FunctionType = currentFunctionType,
+                EffectValue = currentEffectValue,
+                EffectFormId = currentEffectFormId,
+                EffectData = currentEffectData,
+                ConditionTabCount = currentConditionTabCount,
+                Conditions = currentEntryConditions
+            });
+
+            currentAbilityFormId = null;
+            currentQuestFormId = null;
+            currentQuestStage = null;
+            currentEntryPoint = null;
+            currentFunctionType = null;
+            currentEffectValue = null;
+            currentEffectFormId = null;
+            currentEffectData = null;
+            currentConditionTabCount = null;
+            currentEntryConditions = [];
+            currentEntryActive = false;
+        }
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -317,29 +366,66 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
                 case "MICO":
                     iconPath = EsmStringUtils.ReadNullTermString(subData);
                     break;
-                case "DATA" when sub.DataLength >= 5:
+                case "DATA" when !currentEntryActive && sub.DataLength >= 5:
                     trait = subData[0];
                     minLevel = subData[1];
                     ranks = subData[2];
                     playable = subData[3];
                     break;
+                case "DATA" when currentEntryActive:
+                    ParsePerkEntryData(
+                        subData,
+                        record.IsBigEndian,
+                        currentEntryType,
+                        ref currentAbilityFormId,
+                        ref currentQuestFormId,
+                        ref currentQuestStage,
+                        ref currentEntryPoint,
+                        ref currentEffectData);
+                    break;
+                case "CTDA" when sub.DataLength >= 24:
+                {
+                    var condition = ParsePerkCondition(subData, record.IsBigEndian);
+                    if (condition != null)
+                    {
+                        conditions.Add(condition);
+                        if (currentEntryActive)
+                        {
+                            currentEntryConditions.Add(condition);
+                        }
+                    }
+
+                    break;
+                }
                 case "PRKE" when sub.DataLength >= 3:
+                    FinalizeCurrentEntry();
                     // Start new perk entry
                     currentEntryType = subData[0];
                     currentEntryRank = subData[1];
                     currentEntryPriority = subData[2];
+                    currentEntryActive = true;
+                    break;
+                case "PRKC" when currentEntryActive && sub.DataLength >= 1:
+                    currentConditionTabCount = subData[0];
                     break;
                 case "EPFT" when sub.DataLength >= 1:
-                    // Entry point function type - finalize entry
-                    entries.Add(new PerkEntry
-                    {
-                        Type = currentEntryType,
-                        Rank = currentEntryRank,
-                        Priority = currentEntryPriority
-                    });
+                    currentFunctionType = subData[0];
+                    break;
+                case "EPFD" when currentEntryActive:
+                    ParsePerkEntryFunctionData(
+                        subData,
+                        record.IsBigEndian,
+                        ref currentEffectValue,
+                        ref currentEffectFormId,
+                        ref currentEffectData);
+                    break;
+                case "PRKF":
+                    FinalizeCurrentEntry();
                     break;
             }
         }
+
+        FinalizeCurrentEntry();
 
         return new PerkRecord
         {
@@ -353,9 +439,138 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
             Ranks = ranks,
             Playable = playable,
             Entries = entries,
+            Conditions = conditions,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
+    }
+
+    private static void ParsePerkEntryData(
+        ReadOnlySpan<byte> subData,
+        bool isBigEndian,
+        byte entryType,
+        ref uint? abilityFormId,
+        ref uint? questFormId,
+        ref int? questStage,
+        ref byte? entryPoint,
+        ref string? effectData)
+    {
+        effectData = FormatRawBytes(subData);
+        switch (entryType)
+        {
+            case 0 when subData.Length >= 8:
+                questFormId = RecordParserContext.ReadFormId(subData, isBigEndian);
+                var rawStage = BinaryUtils.ReadUInt32(subData, 4, isBigEndian);
+                if ((rawStage & 0x00FFFFFF) == 0x00CDCDCD)
+                {
+                    effectData = $"Quest 0x{questFormId.Value:X8}, payload 0x{rawStage:X8}";
+                }
+                else
+                {
+                    questStage = (int)rawStage;
+                    effectData = $"Quest 0x{questFormId.Value:X8}, stage {questStage.Value}";
+                }
+
+                break;
+
+            case 1 when subData.Length >= 4:
+                abilityFormId = RecordParserContext.ReadFormId(subData, isBigEndian);
+                effectData = $"Ability 0x{abilityFormId.Value:X8}";
+                break;
+
+            case 2 when subData.Length >= 1:
+                entryPoint = subData[0];
+                effectData = subData.Length >= 2
+                    ? $"Entry Point #{subData[0]}, payload {FormatRawBytes(subData[1..])}"
+                    : $"Entry Point #{subData[0]}";
+                break;
+        }
+    }
+
+    private static void ParsePerkEntryFunctionData(
+        ReadOnlySpan<byte> subData,
+        bool isBigEndian,
+        ref float? effectValue,
+        ref uint? effectFormId,
+        ref string? effectData)
+    {
+        if (subData.Length == 4)
+        {
+            var raw = RecordParserContext.ReadFormId(subData, isBigEndian);
+            var floatValue = BinaryUtils.ReadFloat(subData, 0, isBigEndian);
+            if (float.IsFinite(floatValue) && MathF.Abs(floatValue) < 100000f)
+            {
+                effectValue = floatValue;
+                effectData = floatValue.ToString("G");
+                return;
+            }
+
+            if (LooksLikeFormId(raw))
+            {
+                effectFormId = raw;
+                effectData = $"0x{raw:X8}";
+                return;
+            }
+        }
+
+        effectData = FormatRawBytes(subData);
+    }
+
+    private static PerkCondition? ParsePerkCondition(ReadOnlySpan<byte> subData, bool isBigEndian)
+    {
+        var type = subData[0];
+        var comparisonOperator = (byte)((type >> 5) & 0x7);
+        if (comparisonOperator > 5)
+        {
+            return null;
+        }
+
+        var comparisonValue = BinaryUtils.ReadFloat(subData, 4, isBigEndian);
+        if (!float.IsFinite(comparisonValue))
+        {
+            comparisonValue = 0;
+        }
+
+        var functionIndex = isBigEndian
+            ? BinaryUtils.ReadUInt16BE(subData, 8)
+            : BinaryUtils.ReadUInt16LE(subData, 8);
+        var parameter1 = RecordParserContext.ReadFormId(subData[12..], isBigEndian);
+        var parameter2 = subData.Length >= 20
+            ? RecordParserContext.ReadFormId(subData[16..], isBigEndian)
+            : 0;
+
+        if (type == 0 && functionIndex == 0 && parameter1 == 0 && parameter2 == 0 &&
+            MathF.Abs(comparisonValue) < 0.0001f)
+        {
+            return null;
+        }
+
+        var param1 = PerkConditionParameterResolver.ResolveParameter(functionIndex, 0, parameter1);
+        var param2 = PerkConditionParameterResolver.ResolveParameter(functionIndex, 1, parameter2);
+
+        return new PerkCondition
+        {
+            FunctionIndex = functionIndex,
+            FunctionName = PerkConditionParameterResolver.ResolveScriptFunctionName(functionIndex),
+            Parameter1 = parameter1,
+            Parameter1Display = param1.Display,
+            Parameter1FormId = param1.FormId,
+            Parameter2 = parameter2,
+            Parameter2Display = param2.Display,
+            Parameter2FormId = param2.FormId,
+            ComparisonOperator = comparisonOperator,
+            ComparisonValue = comparisonValue
+        };
+    }
+
+    private static bool LooksLikeFormId(uint raw)
+    {
+        return raw is > 0 and < 0xFF000000;
+    }
+
+    private static string FormatRawBytes(ReadOnlySpan<byte> data)
+    {
+        return data.Length == 0 ? "" : Convert.ToHexString(data).ToLowerInvariant();
     }
 
     #endregion

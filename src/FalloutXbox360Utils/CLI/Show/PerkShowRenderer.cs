@@ -41,13 +41,38 @@ internal sealed class PerkShowRenderer : IRecordDisplayRenderer
             lines.Add("[bold]Entries:[/]");
             foreach (var entry in perk.Entries)
             {
-                var entryLine = $"  [{entry.TypeName}] Rank {entry.Rank}, Priority {entry.Priority}";
+                var entryLine = $"  {Markup.Escape(entry.TypeName)}: Rank {entry.Rank}, Priority {entry.Priority}";
                 if (entry.AbilityFormId is > 0)
                 {
                     entryLine += $" \u2192 {resolver.FormatWithEditorId(entry.AbilityFormId.Value)}";
                 }
 
+                if (entry.FunctionTypeName != null)
+                {
+                    entryLine += $", {Markup.Escape(entry.FunctionTypeName)}";
+                }
+
+                if (!string.IsNullOrEmpty(entry.EffectData))
+                {
+                    entryLine += $", Data {Markup.Escape(entry.EffectData)}";
+                }
+
                 lines.Add(entryLine);
+            }
+        }
+
+        if (perk.Conditions.Count > 0)
+        {
+            lines.Add("");
+            lines.Add("[bold]Conditions:[/]");
+            foreach (var condition in perk.Conditions)
+            {
+                var parameter = condition.Parameter1Display
+                                ?? (condition.Parameter1FormId.HasValue
+                                    ? resolver.FormatWithEditorId(condition.Parameter1FormId.Value)
+                                    : condition.Parameter1.ToString());
+                lines.Add(
+                    $"  {Markup.Escape(condition.FunctionName)}({Markup.Escape(parameter)}) {condition.OperatorDisplay} {condition.ComparisonValue:G}");
             }
         }
 
