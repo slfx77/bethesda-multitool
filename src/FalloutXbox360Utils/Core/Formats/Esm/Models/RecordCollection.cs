@@ -334,6 +334,7 @@ public record RecordCollection
             ModelPathIndex = MergeDictionary(ModelPathIndex, overlay.ModelPathIndex),
             FormIdToEditorId = MergeDictionary(FormIdToEditorId, overlay.FormIdToEditorId),
             FormIdToDisplayName = MergeDictionary(FormIdToDisplayName, overlay.FormIdToDisplayName),
+            RuntimeWorldspaceMaps = MergeDictionary(RuntimeWorldspaceMaps, overlay.RuntimeWorldspaceMaps),
             UnparsedTypeCounts = MergeDictionary(UnparsedTypeCounts, overlay.UnparsedTypeCounts),
 
             TotalRecordsProcessed = TotalRecordsProcessed + overlay.TotalRecordsProcessed

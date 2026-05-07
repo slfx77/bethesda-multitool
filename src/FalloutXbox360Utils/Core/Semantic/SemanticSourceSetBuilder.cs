@@ -21,7 +21,8 @@ internal static class SemanticSourceSetBuilder
                 AnalysisProgress = analysisProgress,
                 ParseProgress = parseProgress,
                 IncludeMetadata = request.IncludeMetadata,
-                VerboseMinidumpAnalysis = request.VerboseMinidumpAnalysis
+                VerboseMinidumpAnalysis = request.VerboseMinidumpAnalysis,
+                VerboseEsmAnalysis = request.VerboseEsmAnalysis
             },
             cancellationToken);
 
@@ -68,62 +69,73 @@ internal static class SemanticSourceSetBuilder
             throw new DirectoryNotFoundException($"Base directory not found: {baseDirPath}");
         }
 
-        var esmFiles = Directory.GetFiles(baseDirPath, "*.esm").ToList();
-        if (esmFiles.Count == 0)
-        {
-            return [];
-        }
-
-        var fileHeaders = new List<(string Path, string FileName, EsmFileHeader Header)>();
-        foreach (var esmFile in esmFiles)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var headerBytes = new byte[Math.Min(8192, new FileInfo(esmFile).Length)];
-            await using var fs = File.OpenRead(esmFile);
-            var bytesRead = await fs.ReadAsync(headerBytes, cancellationToken);
-            var header = EsmParser.ParseFileHeader(headerBytes.AsSpan(0, bytesRead));
-            if (header != null)
-            {
-                fileHeaders.Add((esmFile, Path.GetFileName(esmFile), header));
-            }
-        }
-
-        return fileHeaders
-            .OrderBy(file => file.Header.Masters.Count)
-            .ThenBy(file => file.FileName, StringComparer.OrdinalIgnoreCase)
-            .Select(file => file.Path)
+        var orderedFiles = await EsmLoadOrderResolver.ResolveDirectoryAsync(baseDirPath, cancellationToken);
+        return orderedFiles
+            .Select(file => file.FilePath)
             .ToList();
     }
 
     internal static async Task<SemanticSource?> LoadMergedBaseDirectoryAsync(
         string baseDirPath,
+        bool verbose = false,
         Action<string>? log = null,
         CancellationToken cancellationToken = default)
     {
-        var orderedFiles = await GetOrderedBaseDirectoryFilesAsync(baseDirPath, cancellationToken);
+        var orderedFiles = await EsmLoadOrderResolver.ResolveDirectoryAsync(baseDirPath, cancellationToken);
         if (orderedFiles.Count == 0)
         {
             return null;
         }
 
-        var baseName = Path.GetFileNameWithoutExtension(orderedFiles[0]);
+        var baseName = Path.GetFileNameWithoutExtension(orderedFiles[0].FilePath);
         log?.Invoke($"Base build: {baseName} ({orderedFiles.Count} ESMs)");
         foreach (var file in orderedFiles)
         {
-            log?.Invoke($"  {Path.GetFileName(file)}");
+            log?.Invoke($"  {Path.GetFileName(file.FilePath)}");
         }
 
         var sourceSet = await LoadSourcesAsync(
             orderedFiles.Select(file => new SemanticSourceRequest
             {
-                FilePath = file,
-                FileType = AnalysisFileType.EsmFile
+                FilePath = file.FilePath,
+                FileType = AnalysisFileType.EsmFile,
+                VerboseEsmAnalysis = verbose
             }),
             cancellationToken: cancellationToken);
+
+        sourceSet = RebaseFlattenedBaseSources(sourceSet, orderedFiles);
 
         return sourceSet.BuildMergedSource(
             Path.Combine(baseDirPath, $"{baseName}.base"),
             AnalysisFileType.EsmFile);
+    }
+
+    private static SemanticSourceSet RebaseFlattenedBaseSources(
+        SemanticSourceSet sourceSet,
+        IReadOnlyList<EsmLoadOrderFile> orderedFiles)
+    {
+        var loadIndexByFileName = orderedFiles.ToDictionary(
+            file => file.FileName,
+            file => file.LoadIndex,
+            StringComparer.OrdinalIgnoreCase);
+        var rebasedSources = new List<SemanticSource>(sourceSet.Sources.Count);
+
+        for (var i = 0; i < sourceSet.Sources.Count; i++)
+        {
+            var source = sourceSet.Sources[i];
+            var descriptor = orderedFiles[i];
+            var mapper = new EsmFormIdLoadOrderMapper(
+                descriptor,
+                loadIndexByFileName,
+                flattenToBase: true);
+            var rebasedRecords = RecordCollectionFormIdRebaser.Rebase(source.Records, mapper.Map);
+            rebasedSources.Add(source with
+            {
+                Records = rebasedRecords,
+                Resolver = rebasedRecords.CreateResolver()
+            });
+        }
+
+        return new SemanticSourceSet(rebasedSources);
     }
 }
