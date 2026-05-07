@@ -86,6 +86,7 @@ internal static class EsmWorldExtractor
         var isMapMarker = false;
         ushort? markerType = null;
         string? markerName = null;
+        string? editorId = null;
 
         // Iterate through subrecords using the standard subrecord header format
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, header.IsBigEndian))
@@ -94,6 +95,10 @@ internal static class EsmWorldExtractor
 
             switch (sub.Signature)
             {
+                case "EDID" when sub.DataLength > 0:
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+
                 case "NAME" when sub.DataLength == 4:
                     baseFormId = SubrecordSchemaReader.ReadNameFormId(subData, header.IsBigEndian) ?? 0;
                     break;
@@ -234,6 +239,7 @@ internal static class EsmWorldExtractor
             IsMapMarker = isMapMarker,
             MarkerType = markerType,
             MarkerName = markerName,
+            EditorId = editorId,
             LinkedRefKeywordFormId = linkedRefKeywordFormId,
             LinkedRefFormId = linkedRefFormId
         };

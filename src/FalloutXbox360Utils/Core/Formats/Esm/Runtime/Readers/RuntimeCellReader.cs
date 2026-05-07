@@ -290,7 +290,7 @@ internal sealed class RuntimeCellReader
             ClimateFormId = worldspaceMetadata?.ClimateFormId,
             WaterFormId = worldspaceMetadata?.WaterFormId,
             DefaultLandHeight = worldspaceMetadata?.DefaultLandHeight,
-            DefaultWaterHeight = worldspaceMetadata?.DefaultWaterHeight,
+            DefaultWaterHeight = WorldHeightNormalizer.NormalizeReportableHeight(worldspaceMetadata?.DefaultWaterHeight),
             MapUsableWidth = worldspaceMetadata?.MapUsableWidth,
             MapUsableHeight = worldspaceMetadata?.MapUsableHeight,
             MapNWCellX = worldspaceMetadata?.MapNWCellX,
@@ -470,7 +470,7 @@ internal sealed class RuntimeCellReader
             DefaultLandHeight = RuntimeCellObjectEnumerator.ReadNormalFloat(buffer,
                 AdjustWorldFieldOffset(
                     RuntimePdbFieldAccessor.FindFieldOffset(layout, "fDefaultLandHeight", "TESWorldSpace"))),
-            DefaultWaterHeight = RuntimeCellObjectEnumerator.ReadNormalFloat(buffer,
+            DefaultWaterHeight = RuntimeCellObjectEnumerator.ReadReportableHeight(buffer,
                 AdjustWorldFieldOffset(
                     RuntimePdbFieldAccessor.FindFieldOffset(layout, "fDefaultWaterHeight", "TESWorldSpace"))),
             MapUsableWidth = mapUsableWidth,
@@ -583,7 +583,7 @@ internal sealed class RuntimeCellReader
             ClimateFormId = worldData.ClimateFormId,
             WaterFormId = worldData.WaterFormId,
             DefaultLandHeight = worldData.DefaultLandHeight,
-            DefaultWaterHeight = worldData.DefaultWaterHeight,
+            DefaultWaterHeight = WorldHeightNormalizer.NormalizeReportableHeight(worldData.DefaultWaterHeight),
             MapUsableWidth = worldData.MapUsableWidth,
             MapUsableHeight = worldData.MapUsableHeight,
             MapNWCellX = worldData.MapNWCellX,
@@ -610,7 +610,8 @@ internal sealed class RuntimeCellReader
             ClimateFormId = preferred.ClimateFormId ?? fallback.ClimateFormId,
             WaterFormId = preferred.WaterFormId ?? fallback.WaterFormId,
             DefaultLandHeight = preferred.DefaultLandHeight ?? fallback.DefaultLandHeight,
-            DefaultWaterHeight = preferred.DefaultWaterHeight ?? fallback.DefaultWaterHeight,
+            DefaultWaterHeight = WorldHeightNormalizer.NormalizeReportableHeight(
+                preferred.DefaultWaterHeight ?? fallback.DefaultWaterHeight),
             MapUsableWidth = preferred.MapUsableWidth ?? fallback.MapUsableWidth,
             MapUsableHeight = preferred.MapUsableHeight ?? fallback.MapUsableHeight,
             MapNWCellX = preferred.MapNWCellX ?? fallback.MapNWCellX,

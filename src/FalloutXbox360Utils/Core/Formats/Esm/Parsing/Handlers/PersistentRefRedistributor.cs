@@ -6,17 +6,17 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
 
 /// <summary>
-///     Persistent-ref redistribution: walks every persistent CellRecord container and moves
-///     refs with valid world positions into the real exterior tile they belong to. Also provides
-///     helpers for creating cell stubs from runtime cell maps and resolving orphan refs by grid
-///     position, used by both this class and <see cref="CellLinkageHandler" />.
+///     Persistent-ref redistribution: moves persistent refs with valid world positions into
+///     the real exterior tile they belong to. This handles both worldspace persistent-cell
+///     containers and persistent refs stored under normal exterior cell child groups. Also
+///     provides helpers for creating cell stubs from runtime cell maps and resolving orphan
+///     refs by grid position, used by both this class and <see cref="CellLinkageHandler" />.
 /// </summary>
 internal static class PersistentRefRedistributor
 {
     /// <summary>
-    ///     Top-level pass invoked from RecordParser after CreateVirtualCells. Walks every
-    ///     persistent CellRecord container and moves refs with valid world positions into the
-    ///     real exterior tile they belong to. See
+    ///     Top-level pass invoked from RecordParser after CreateVirtualCells. Moves persistent
+    ///     refs with valid world positions into the real exterior tile they belong to. See
     ///     <see cref="RedistributePersistentRefs(List{CellRecord}, Dictionary{uint, CellRecord}, RecordParserContext)" />
     ///     for the full algorithm.
     /// </summary>
@@ -34,8 +34,8 @@ internal static class PersistentRefRedistributor
     }
 
     /// <summary>
-    ///     Phase 0.75: Walk every persistent CellRecord and move refs with valid world positions
-    ///     into the real exterior tile they belong to. Refs keep IsPersistent=true and gain
+    ///     Phase 0.75: Move persistent refs with valid world positions into the real exterior
+    ///     tile they belong to. Refs keep IsPersistent=true and gain
     ///     OriginCellFormId pointing back at the persistent container, so reports can still
     ///     reconstruct a "persistent only" view.
     ///     Destination grid lookup uses three sources, in order:
@@ -106,7 +106,7 @@ internal static class PersistentRefRedistributor
         for (var i = 0; i < existingCells.Count; i++)
         {
             var pcell = existingCells[i];
-            if (!pcell.IsPersistentCell || pcell.PlacedObjects.Count == 0)
+            if (pcell.PlacedObjects.Count == 0)
             {
                 continue;
             }
@@ -126,11 +126,7 @@ internal static class PersistentRefRedistributor
             var keep = new List<PlacedReference>(pcell.PlacedObjects.Count);
             foreach (var pref in pcell.PlacedObjects)
             {
-                // Only redistribute refs that landed here via ParentCellFormId reassignment.
-                // Refs placed via the runtime cell list (RuntimeCellList) or grid lookup
-                // (GridMap) are explicit runtime placements and must stay where the engine
-                // put them, even when their world position would point at a different tile.
-                if (pref.AssignmentSource != "ParentCell")
+                if (!ShouldRedistributePersistentRef(pcell, pref))
                 {
                     keep.Add(pref);
                     continue;
@@ -149,9 +145,14 @@ internal static class PersistentRefRedistributor
 
                 CellRecord? destCell = null;
                 if (gridMap.TryGetValue((gx, gy), out var destCellFormId) &&
-                    cellByFormId.TryGetValue(destCellFormId, out var existing) &&
-                    existing.FormId != pcell.FormId)
+                    cellByFormId.TryGetValue(destCellFormId, out var existing))
                 {
+                    if (existing.FormId == pcell.FormId)
+                    {
+                        keep.Add(pref);
+                        continue;
+                    }
+
                     destCell = existing;
                 }
                 else
@@ -204,6 +205,34 @@ internal static class PersistentRefRedistributor
         }
 
         return moved;
+    }
+
+    private static bool ShouldRedistributePersistentRef(CellRecord cell, PlacedReference pref)
+    {
+        // Refs placed via runtime cell lists or runtime grid lookup are explicit engine
+        // placements and must stay where the dump put them, even if their world position
+        // would fall in another tile.
+        if (pref.AssignmentSource is not ("ParentCell" or "CellGrup"))
+        {
+            return false;
+        }
+
+        if (cell.IsPersistentCell)
+        {
+            return true;
+        }
+
+        // Xbox/converted ESMs can carry persistent REFR/ACHR/ACRE records under a normal
+        // exterior cell's persistent child group. Those refs still need the same coordinate
+        // rebucketing as worldspace persistent-cell refs so DMP and ESM reports compare the
+        // door/object in the visible exterior cell row.
+        return pref.IsPersistent &&
+               !cell.IsInterior &&
+               !cell.IsVirtual &&
+               !cell.IsUnresolvedBucket &&
+               cell.WorldspaceFormId.HasValue &&
+               cell.GridX.HasValue &&
+               cell.GridY.HasValue;
     }
 
     /// <summary>

@@ -381,10 +381,37 @@ internal static class RecordDetailBuilders
                 RecordDetailHelpers.Scalar("Heightmap", cell.Heightmap != null ? "Present" : "Absent"),
                 RecordDetailHelpers.Scalar("Runtime Terrain Mesh", cell.RuntimeTerrainMesh != null ? "Present" : "Absent")
             ]),
-            RecordDetailHelpers.ListSection("Linked Cells", cell.LinkedCellFormIds.Select(id => RecordDetailHelpers.ListLinkItem(id, resolver)).ToList())
+            RecordDetailHelpers.ListSection("Linked Cells",
+                cell.LinkedCellFormIds.Select(id => RecordDetailHelpers.ListLinkItem(id, resolver)).ToList()),
+            RecordDetailHelpers.ListSection("Door Links", BuildDoorLinkItems(cell, resolver))
         };
 
         return RecordDetailHelpers.Model("CELL", cell.FormId, cell.EditorId, cell.FullName, sections);
+    }
+
+    private static List<RecordDetailListItem> BuildDoorLinkItems(CellRecord cell, FormIdResolver resolver)
+    {
+        return cell.PlacedObjects
+            .Where(obj => obj.DestinationCellFormId is > 0)
+            .OrderBy(obj => obj.FormId)
+            .Select(obj =>
+            {
+                var destinationCellFormId = obj.DestinationCellFormId.GetValueOrDefault();
+                var referenceName = !string.IsNullOrEmpty(obj.EditorId)
+                    ? obj.EditorId
+                    : resolver.GetEditorId(obj.FormId)
+                      ?? obj.BaseEditorId
+                      ?? resolver.GetBestName(obj.BaseFormId)
+                      ?? $"0x{obj.FormId:X8}";
+                var destinationCell = resolver.FormatFull(destinationCellFormId);
+
+                return new RecordDetailListItem
+                {
+                    Label = $"{referenceName} ({obj.RecordType} 0x{obj.FormId:X8})",
+                    Value = $"Links to: {destinationCell}"
+                };
+            })
+            .ToList();
     }
 
     internal static RecordDetailModel BuildWorldspace(WorldspaceRecord worldspace, FormIdResolver resolver)

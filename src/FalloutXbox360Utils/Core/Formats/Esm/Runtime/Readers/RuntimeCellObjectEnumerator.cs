@@ -137,7 +137,7 @@ internal sealed class RuntimeCellObjectEnumerator
             NormalizeString(displayName)
             ?? _fields.ReadBsString(fileOffset, layout, "cFullName", "TESFullName"),
             flags,
-            ReadNormalFloat(buffer, waterHeightOffset),
+            ReadReportableHeight(buffer, waterHeightOffset),
             worldspaceOffset.HasValue
                 ? _fields.ReadPointerToFormId(buffer, worldspaceOffset.Value, 0x41)
                 : null,
@@ -318,6 +318,17 @@ internal sealed class RuntimeCellObjectEnumerator
 
         var value = RuntimePdbFieldAccessor.ReadFloat(buffer, offset.Value);
         return RuntimeMemoryContext.IsNormalFloat(value) ? value : null;
+    }
+
+    internal static float? ReadReportableHeight(byte[] buffer, int? offset)
+    {
+        if (!offset.HasValue || offset.Value + 4 > buffer.Length)
+        {
+            return null;
+        }
+
+        var value = RuntimePdbFieldAccessor.ReadFloat(buffer, offset.Value);
+        return WorldHeightNormalizer.NormalizeReportableHeight(value);
     }
 
     internal sealed record RuntimeCellProbeSnapshot(

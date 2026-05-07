@@ -122,7 +122,7 @@ public sealed class RecordParserContext
             }
         }
 
-        // Inject well-known engine FormIDs
+        // Inject well-known engine FormIDs.
         FormIdToEditorId.TryAdd(0x00000007, "PlayerRef");
         FormIdToEditorId.TryAdd(0x00000014, "Player");
 

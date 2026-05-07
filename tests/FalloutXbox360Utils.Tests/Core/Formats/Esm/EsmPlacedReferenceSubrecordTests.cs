@@ -124,6 +124,36 @@ public sealed class EsmPlacedReferenceSubrecordTests
         Assert.Equal(192.5f, refr.Radius);
     }
 
+    [Fact]
+    public void ExtractRefrRecordsFromParsed_ReadsReferenceEditorId()
+    {
+        const uint refrFormId = 0x00150310;
+        const uint baseFormId = 0x00150320;
+
+        var record = new ParsedMainRecord
+        {
+            Header = new MainRecordHeader
+            {
+                Signature = "REFR",
+                DataSize = 0,
+                Flags = 0,
+                FormId = refrFormId
+            },
+            Offset = 0x300,
+            Subrecords =
+            [
+                MakeStringSubrecord("EDID", "DoorMarkerRef"),
+                MakeFormIdSubrecord("NAME", baseFormId)
+            ]
+        };
+
+        var scanResult = new EsmRecordScanResult();
+        EsmDataExtractor.ExtractRefrRecordsFromParsed(scanResult, [record], false);
+
+        var refr = Assert.Single(scanResult.RefrRecords);
+        Assert.Equal("DoorMarkerRef", refr.EditorId);
+    }
+
     private static ParsedSubrecord MakeFormIdSubrecord(string signature, uint formId)
     {
         Span<byte> data = stackalloc byte[4];
@@ -144,6 +174,17 @@ public sealed class EsmPlacedReferenceSubrecordTests
         {
             Signature = signature,
             Data = data.ToArray(),
+            BigEndian = false
+        };
+    }
+
+    private static ParsedSubrecord MakeStringSubrecord(string signature, string value)
+    {
+        var data = System.Text.Encoding.UTF8.GetBytes(value + '\0');
+        return new ParsedSubrecord
+        {
+            Signature = signature,
+            Data = data,
             BigEndian = false
         };
     }

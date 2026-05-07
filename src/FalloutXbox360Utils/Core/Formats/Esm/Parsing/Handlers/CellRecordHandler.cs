@@ -76,14 +76,15 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         {
             foreach (var record in cellRecords)
             {
+                cellWorldMap.TryGetValue(record.FormId, out var cellWs);
                 var cell = ParseCellFromScanResult(record, refrByFormId,
                     hasGrupMapping ? cellToRefrMap : null, refrOffsetIndex, refrSortedByOffset,
-                    runtimeCellMapEntries.GetValueOrDefault(record.FormId));
+                    runtimeCellMapEntries.GetValueOrDefault(record.FormId), cellWs);
                 if (cell != null)
                 {
-                    if (cellWorldMap.TryGetValue(cell.FormId, out var worldFormId))
+                    if (cellWs > 0)
                     {
-                        cell = cell with { WorldspaceFormId = worldFormId };
+                        cell = cell with { WorldspaceFormId = cellWs };
                     }
 
                     cells.Add(cell);
@@ -130,7 +131,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
     /// <summary>
     ///     Builds REFR->Cell reverse lookup and populates LinkedCellFormIds on each cell.
     /// </summary>
-    private static void ResolveDoorLinks(List<CellRecord> cells)
+    internal static void ResolveDoorLinks(List<CellRecord> cells)
     {
         // Build reverse map: door REFR FormID -> parent Cell FormID
         var refrToCell = new Dictionary<uint, uint>();
@@ -146,19 +147,25 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         for (var i = 0; i < cells.Count; i++)
         {
             var linkedCells = new HashSet<uint>();
-            var updatedObjects = new List<PlacedReference>();
+            var updatedObjects = new List<PlacedReference>(cells[i].PlacedObjects.Count);
             var anyChanged = false;
 
 #pragma warning disable S3267 // Loop body has conditional + TryGetValue that makes LINQ impractical
             foreach (var obj in cells[i].PlacedObjects)
 #pragma warning restore S3267
             {
+                uint? resolvedDestinationCellFormId = null;
                 if (obj.DestinationDoorFormId is > 0 &&
                     refrToCell.TryGetValue(obj.DestinationDoorFormId.Value, out var destCellFormId) &&
                     destCellFormId != cells[i].FormId) // Exclude self-links
                 {
+                    resolvedDestinationCellFormId = destCellFormId;
                     linkedCells.Add(destCellFormId);
-                    updatedObjects.Add(obj with { DestinationCellFormId = destCellFormId });
+                }
+
+                if (obj.DestinationCellFormId != resolvedDestinationCellFormId)
+                {
+                    updatedObjects.Add(obj with { DestinationCellFormId = resolvedDestinationCellFormId });
                     anyChanged = true;
                 }
                 else
@@ -167,12 +174,15 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                 }
             }
 
-            if (anyChanged || linkedCells.Count > 0)
+            var linkedCellList = linkedCells.Order().ToList();
+            var linkedCellsChanged = !cells[i].LinkedCellFormIds.SequenceEqual(linkedCellList);
+
+            if (anyChanged || linkedCellsChanged)
             {
                 cells[i] = cells[i] with
                 {
                     PlacedObjects = anyChanged ? updatedObjects : cells[i].PlacedObjects,
-                    LinkedCellFormIds = linkedCells.Count > 0 ? linkedCells.ToList() : cells[i].LinkedCellFormIds
+                    LinkedCellFormIds = linkedCellList
                 };
             }
         }
@@ -248,7 +258,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         if (recordData == null)
         {
             return ParseCellFromScanResult(record, refrByFormId, cellToRefrMap,
-                refrOffsetIndex, refrSortedByOffset, runtimeCellMapEntry);
+                refrOffsetIndex, refrSortedByOffset, runtimeCellMapEntry, cellWorldspace);
         }
 
         var (data, dataSize) = recordData.Value;
@@ -293,9 +303,10 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
 
                     break;
                 case "XCLW" when sub.DataLength >= 4:
-                    waterHeight = record.IsBigEndian
+                    var rawWaterHeight = record.IsBigEndian
                         ? BinaryPrimitives.ReadSingleBigEndian(subData)
                         : BinaryPrimitives.ReadSingleLittleEndian(subData);
+                    waterHeight = WorldHeightNormalizer.NormalizeReportableHeight(rawWaterHeight);
                     break;
                 case "XEZN" when sub.DataLength == 4:
                     encounterZoneFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
@@ -342,6 +353,8 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             }
         }
 
+        var isPersistentCell = IsPersistentCellContainer(flags, gridX, gridY, cellWorldspace);
+
         return new CellRecord
         {
             FormId = record.FormId,
@@ -349,6 +362,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             FullName = fullName,
             GridX = gridX,
             GridY = gridY,
+            WorldspaceFormId = cellWorldspace > 0 ? cellWorldspace : null,
             Flags = flags,
             WaterHeight = waterHeight,
             EncounterZoneFormId = encounterZoneFormId,
@@ -358,7 +372,8 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             LightingTemplateFormId = lightingTemplateFormId,
             LightingTemplateInheritanceFlags = lightingTemplateInheritanceFlags,
             PlacedObjects = cellRefs,
-            HasPersistentObjects = cellRefs.Exists(r => r.IsPersistent),
+            HasPersistentObjects = isPersistentCell || cellRefs.Exists(r => r.IsPersistent),
+            IsPersistentCell = isPersistentCell,
             Heightmap = heightmap,
             RuntimeTerrainMesh = terrainMesh,
             Offset = record.Offset,
@@ -371,7 +386,8 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         Dictionary<uint, List<uint>>? cellToRefrMap,
         long[]? refrOffsetIndex,
         ExtractedRefrRecord[]? refrSortedByOffset,
-        RuntimeCellMapEntry? runtimeCellMapEntry)
+        RuntimeCellMapEntry? runtimeCellMapEntry,
+        uint cellWorldspace = 0)
     {
         // Find XCLC near this CELL record
         var cellGrid = Context.ScanResult.CellGrids
@@ -380,17 +396,27 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         var cellRefs = ResolveCellRefs(record, refrByFormId, cellToRefrMap,
             refrOffsetIndex, refrSortedByOffset, runtimeCellMapEntry);
 
+        var isPersistentCell = IsPersistentCellContainer(0, cellGrid?.GridX, cellGrid?.GridY, cellWorldspace);
+
         return new CellRecord
         {
             FormId = record.FormId,
             EditorId = Context.GetEditorId(record.FormId),
             GridX = cellGrid?.GridX,
             GridY = cellGrid?.GridY,
+            WorldspaceFormId = cellWorldspace > 0 ? cellWorldspace : null,
             PlacedObjects = cellRefs,
-            HasPersistentObjects = cellRefs.Exists(r => r.IsPersistent),
+            HasPersistentObjects = isPersistentCell || cellRefs.Exists(r => r.IsPersistent),
+            IsPersistentCell = isPersistentCell,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
+    }
+
+    private static bool IsPersistentCellContainer(byte flags, int? gridX, int? gridY, uint cellWorldspace)
+    {
+        var isInterior = (flags & 0x01) != 0;
+        return cellWorldspace > 0 && !isInterior && (!gridX.HasValue || !gridY.HasValue);
     }
 
     private void MergeRuntimeCells(
@@ -527,7 +553,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             GridY = esm.GridY ?? runtime.GridY,
             WorldspaceFormId = esm.WorldspaceFormId ?? runtime.WorldspaceFormId,
             Flags = esm.Flags != 0 ? esm.Flags : runtime.Flags,
-            WaterHeight = esm.WaterHeight ?? runtime.WaterHeight,
+            WaterHeight = WorldHeightNormalizer.NormalizeReportableHeight(esm.WaterHeight ?? runtime.WaterHeight),
             EncounterZoneFormId = esm.EncounterZoneFormId ?? runtime.EncounterZoneFormId,
             MusicTypeFormId = esm.MusicTypeFormId ?? runtime.MusicTypeFormId,
             AcousticSpaceFormId = esm.AcousticSpaceFormId ?? runtime.AcousticSpaceFormId,

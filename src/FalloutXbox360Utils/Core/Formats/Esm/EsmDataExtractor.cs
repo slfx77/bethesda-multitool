@@ -159,11 +159,15 @@ internal static class EsmDataExtractor
             var isMapMarker = false;
             ushort? markerType = null;
             string? markerName = null;
+            string? editorId = null;
 
             foreach (var sub in record.Subrecords)
             {
                 switch (sub.Signature)
                 {
+                    case "EDID":
+                        editorId = sub.DataAsString;
+                        break;
                     case "NAME" when sub.Data.Length >= 4:
                         baseFormId = bigEndian
                             ? BinaryPrimitives.ReadUInt32BigEndian(sub.Data)
@@ -289,6 +293,7 @@ internal static class EsmDataExtractor
                 IsMapMarker = isMapMarker,
                 MarkerType = markerType,
                 MarkerName = markerName,
+                EditorId = editorId,
                 LinkedRefKeywordFormId = linkedRefKeywordFormId,
                 LinkedRefFormId = linkedRefFormId
             });

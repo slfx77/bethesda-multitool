@@ -1,10 +1,34 @@
+using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
+using FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
+using FalloutXbox360Utils.Core.Formats.Esm.Records;
+using FalloutXbox360Utils.Tests.Helpers;
+using System.Text;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm;
 
-public class EsmFileAnalyzerTests
+public sealed class EsmFileAnalyzerTests(SampleFileFixture samples) : IDisposable
 {
+    private readonly List<string> _tempDirectories = [];
+
+    public void Dispose()
+    {
+        foreach (var directory in _tempDirectories)
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, true);
+            }
+        }
+
+        Logger.Instance.Reset();
+        GC.SuppressFinalize(this);
+    }
+
     private static GrupHeaderInfo MakeGrup(long offset, uint size, uint labelFormId, int groupType)
     {
         var label = BitConverter.GetBytes(labelFormId);
@@ -196,5 +220,151 @@ public class EsmFileAnalyzerTests
         Assert.Empty(landToWorld);
         Assert.Empty(cellToRefr);
         Assert.Empty(topicToInfo);
+    }
+
+    [Fact]
+    public void RedistributePersistentRefs_MovesPersistentCellGrupRefFromNormalExteriorCellToCoordinateCell()
+    {
+        var cells = new List<CellRecord>
+        {
+            new()
+            {
+                FormId = 0x00001000u,
+                WorldspaceFormId = 0x00009000u,
+                GridX = 0,
+                GridY = 0,
+                PlacedObjects =
+                [
+                    new PlacedReference
+                    {
+                        FormId = 0x00002000u,
+                        X = 5000f,
+                        Y = 100f,
+                        IsPersistent = true,
+                        AssignmentSource = "CellGrup"
+                    }
+                ]
+            },
+            new()
+            {
+                FormId = 0x00001001u,
+                WorldspaceFormId = 0x00009000u,
+                GridX = 1,
+                GridY = 0
+            }
+        };
+
+        var moved = CellLinkageHandler.RedistributePersistentRefs(
+            cells,
+            new RecordParserContext(new EsmRecordScanResult()));
+
+        Assert.Equal(1, moved);
+        Assert.Empty(cells.Single(c => c.FormId == 0x00001000u).PlacedObjects);
+
+        var movedRef = Assert.Single(cells.Single(c => c.FormId == 0x00001001u).PlacedObjects);
+        Assert.Equal(0x00002000u, movedRef.FormId);
+        Assert.Equal(0x00001000u, movedRef.OriginCellFormId);
+        Assert.Equal("PersistentRedistributed", movedRef.AssignmentSource);
+    }
+
+    [Fact]
+    public void RedistributePersistentRefs_KeepsPersistentRefAlreadyInCoordinateCell()
+    {
+        var cells = new List<CellRecord>
+        {
+            new()
+            {
+                FormId = 0x00001000u,
+                WorldspaceFormId = 0x00009000u,
+                GridX = 0,
+                GridY = 0,
+                PlacedObjects =
+                [
+                    new PlacedReference
+                    {
+                        FormId = 0x00002000u,
+                        X = 100f,
+                        Y = 100f,
+                        IsPersistent = true,
+                        AssignmentSource = "CellGrup"
+                    }
+                ]
+            },
+            new()
+            {
+                FormId = 0x00001001u,
+                WorldspaceFormId = 0x00009000u,
+                GridX = 1,
+                GridY = 0
+            }
+        };
+
+        var moved = CellLinkageHandler.RedistributePersistentRefs(
+            cells,
+            new RecordParserContext(new EsmRecordScanResult()));
+
+        Assert.Equal(0, moved);
+        Assert.Single(cells.Single(c => c.FormId == 0x00001000u).PlacedObjects);
+        Assert.Empty(cells.Single(c => c.FormId == 0x00001001u).PlacedObjects);
+    }
+
+    [Fact]
+    public async Task AnalyzeAsync_preserves_logger_level_and_stays_quiet_by_default()
+    {
+        var filePath = WriteSyntheticEsm();
+        using var output = new StringWriter();
+        Logger.Instance.Reset();
+        Logger.SetOutput(output);
+        Logger.Instance.Level = LogLevel.Info;
+
+        await EsmFileAnalyzer.AnalyzeAsync(
+            filePath,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(LogLevel.Info, Logger.Instance.Level);
+        Assert.DoesNotContain("[ESM Analysis]", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EsmBuildDateExtractor_decodes_revision_control_date_stamp()
+    {
+        // Low 16 bits are the embedded revision-control date stamp:
+        // month code 0x5B = July 2010, day 0x15 = 21.
+        Assert.Equal(
+            new DateTime(2010, 7, 21, 0, 0, 0, DateTimeKind.Utc),
+            EsmBuildDateExtractor.TryDecodeRevisionDate(0x00395B15u));
+    }
+
+    [Fact]
+    public void EsmBuildDateExtractor_uses_embedded_dates_for_sample_xbox_esms()
+    {
+        Assert.SkipWhen(samples.Xbox360ProtoEsm is null, "Xbox 360 proto ESM sample not available");
+        Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM sample not available");
+
+        var protoDate = EsmBuildDateExtractor.Extract(samples.Xbox360ProtoEsm!);
+        var finalDate = EsmBuildDateExtractor.Extract(samples.Xbox360FinalEsm!);
+
+        Assert.False(protoDate.IsFallback);
+        Assert.False(finalDate.IsFallback);
+        Assert.Equal(new DateTime(2010, 7, 21, 0, 0, 0, DateTimeKind.Utc), protoDate.BuildDateUtc);
+        Assert.Equal(2010, finalDate.BuildDateUtc.Year);
+        Assert.NotEqual(2026, finalDate.BuildDateUtc.Year);
+    }
+
+    private string WriteSyntheticEsm()
+    {
+        var builder = new EsmTestFileBuilder();
+        builder.AddTopLevelGrup("STAT", EsmTestFileBuilder.BuildRecord(
+            "STAT",
+            0x00001000,
+            0,
+            ("EDID", Encoding.ASCII.GetBytes("QuietStat\0"))));
+
+        var directory = Path.Combine(Path.GetTempPath(), "esm-analyzer-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        _tempDirectories.Add(directory);
+        var filePath = Path.Combine(directory, "quiet.esm");
+        File.WriteAllBytes(filePath, builder.Build());
+        return filePath;
     }
 }

@@ -66,6 +66,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
                 LinkedRefKeywordFormId = refr.LinkedRefKeywordFormId,
                 LinkedRefFormId = refr.LinkedRefFormId,
                 LinkedRefChildrenFormIds = refr.LinkedRefChildrenFormIds,
+                EditorId = refr.EditorId,
                 Offset = refr.Header.Offset,
                 IsBigEndian = refr.Header.IsBigEndian
             };
@@ -386,9 +387,10 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
                     defaultLandHeight = record.IsBigEndian
                         ? BinaryPrimitives.ReadSingleBigEndian(subData)
                         : BinaryPrimitives.ReadSingleLittleEndian(subData);
-                    defaultWaterHeight = record.IsBigEndian
+                    var rawDefaultWaterHeight = record.IsBigEndian
                         ? BinaryPrimitives.ReadSingleBigEndian(subData[4..])
                         : BinaryPrimitives.ReadSingleLittleEndian(subData[4..]);
+                    defaultWaterHeight = WorldHeightNormalizer.NormalizeReportableHeight(rawDefaultWaterHeight);
                     break;
                 case "MNAM" when sub.DataLength >= 16:
                     mapUsableWidth = (int)(record.IsBigEndian
@@ -574,7 +576,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
             ClimateFormId = worldData.ClimateFormId,
             WaterFormId = worldData.WaterFormId,
             DefaultLandHeight = worldData.DefaultLandHeight,
-            DefaultWaterHeight = worldData.DefaultWaterHeight,
+            DefaultWaterHeight = WorldHeightNormalizer.NormalizeReportableHeight(worldData.DefaultWaterHeight),
             MapUsableWidth = worldData.MapUsableWidth,
             MapUsableHeight = worldData.MapUsableHeight,
             MapNWCellX = worldData.MapNWCellX,
@@ -626,7 +628,8 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
             ClimateFormId = esm.ClimateFormId ?? runtime.ClimateFormId,
             WaterFormId = esm.WaterFormId ?? runtime.WaterFormId,
             DefaultLandHeight = esm.DefaultLandHeight ?? runtime.DefaultLandHeight,
-            DefaultWaterHeight = esm.DefaultWaterHeight ?? runtime.DefaultWaterHeight,
+            DefaultWaterHeight = WorldHeightNormalizer.NormalizeReportableHeight(
+                esm.DefaultWaterHeight ?? runtime.DefaultWaterHeight),
             MapUsableWidth = esm.MapUsableWidth ?? runtime.MapUsableWidth,
             MapUsableHeight = esm.MapUsableHeight ?? runtime.MapUsableHeight,
             MapNWCellX = esm.MapNWCellX ?? runtime.MapNWCellX,
