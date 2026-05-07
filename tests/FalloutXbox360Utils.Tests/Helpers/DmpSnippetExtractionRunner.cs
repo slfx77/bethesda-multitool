@@ -9,7 +9,7 @@ namespace FalloutXbox360Utils.Tests.Helpers;
 ///     Run this test class once with real DMP files present to generate snippet files.
 ///     The generated snippets can then be used by fast tests via <see cref="DmpSnippetReader" />.
 /// </summary>
-[Collection(SequentialIntegrationCollection.Name)]
+[Collection(SequentialIntegrationGroup.Name)]
 public sealed class DmpSnippetExtractionRunner(SampleFileFixture samples)
 {
     private static readonly string OutputDir = Path.Combine(

@@ -10,7 +10,7 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime;
 ///     to verify that probed layouts produce equal or better read success rates compared to
 ///     hardcoded defaults.
 /// </summary>
-[Collection(SequentialIntegrationCollection.Name)]
+[Collection(SequentialIntegrationGroup.Name)]
 public sealed class RuntimeProbeConsistencyTests
 {
     private static readonly string SnippetDir = Path.Combine(

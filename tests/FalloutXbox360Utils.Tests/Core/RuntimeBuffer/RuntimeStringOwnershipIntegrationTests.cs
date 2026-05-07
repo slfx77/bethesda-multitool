@@ -6,7 +6,7 @@ using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.RuntimeBuffer;
 
-[Collection(SequentialIntegrationCollection.Name)]
+[Collection(SequentialIntegrationGroup.Name)]
 public sealed class RuntimeStringOwnershipIntegrationTests(SampleFileFixture samples)
 {
     private readonly SampleFileFixture _samples = samples;

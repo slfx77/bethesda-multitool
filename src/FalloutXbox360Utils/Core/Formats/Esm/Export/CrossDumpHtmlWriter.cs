@@ -10,4 +10,35 @@ internal static class CrossDumpHtmlWriter
     {
         return CrossDumpJsonHtmlWriter.GenerateAll(index);
     }
+
+    internal static IEnumerable<(string Filename, string Html)> GenerateFiles(CrossDumpRecordIndex index)
+    {
+        return CrossDumpJsonHtmlWriter.GenerateFiles(index);
+    }
+
+    internal static Task<IReadOnlyList<string>> WriteFilesAsync(
+        CrossDumpRecordIndex index,
+        string outputPath,
+        CancellationToken cancellationToken = default)
+    {
+        return CrossDumpJsonHtmlWriter.WriteFilesAsync(index, outputPath, cancellationToken);
+    }
+
+    internal static Task<string?> WriteRecordTypeFileAsync(
+        CrossDumpRecordIndex index,
+        string recordType,
+        string outputPath,
+        CancellationToken cancellationToken = default)
+    {
+        return CrossDumpJsonHtmlWriter.WriteRecordTypeFileAsync(index, recordType, outputPath, cancellationToken);
+    }
+
+    internal static Task<string> WriteIndexPageAsync(
+        IReadOnlyList<DumpSnapshot> dumps,
+        IReadOnlyList<CrossDumpRecordTypeSummary> recordTypes,
+        string outputPath,
+        CancellationToken cancellationToken = default)
+    {
+        return CrossDumpJsonHtmlWriter.WriteIndexPageAsync(dumps, recordTypes, outputPath, cancellationToken);
+    }
 }

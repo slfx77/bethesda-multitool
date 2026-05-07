@@ -67,7 +67,7 @@ public sealed class MinidumpAnalyzer
         var minidumpInfo = MinidumpParser.Parse(filePath);
         result.MinidumpInfo = minidumpInfo;
 
-        ProcessMinidumpInfo(result, minidumpInfo);
+        ProcessMinidumpInfo(result, minidumpInfo, verbose);
 
         // Build set of module file offsets to exclude from signature scanning
         var moduleOffsets = BuildModuleOffsetSet(minidumpInfo);
@@ -181,7 +181,7 @@ public sealed class MinidumpAnalyzer
 
     #region Private Helpers
 
-    private static void ProcessMinidumpInfo(AnalysisResult result, MinidumpInfo minidumpInfo)
+    private static void ProcessMinidumpInfo(AnalysisResult result, MinidumpInfo minidumpInfo, bool verbose)
     {
         if (!minidumpInfo.IsValid)
         {
@@ -189,8 +189,14 @@ public sealed class MinidumpAnalyzer
         }
 
         result.BuildType = DetectBuildType(minidumpInfo);
-        Console.WriteLine(
-            $"[Minidump] {minidumpInfo.Modules.Count} modules, {minidumpInfo.MemoryRegions.Count} memory regions, Xbox 360: {minidumpInfo.IsXbox360}");
+        if (verbose)
+        {
+            Logger.Instance.Debug(
+                "[Minidump] {0} modules, {1} memory regions, Xbox 360: {2}",
+                minidumpInfo.Modules.Count,
+                minidumpInfo.MemoryRegions.Count,
+                minidumpInfo.IsXbox360);
+        }
 
         // Add minidump header as a colored region
         if (minidumpInfo.HeaderSize > 0)
@@ -207,7 +213,7 @@ public sealed class MinidumpAnalyzer
         }
 
         // Add modules directly to results
-        AddModulesFromMinidump(result, minidumpInfo);
+        AddModulesFromMinidump(result, minidumpInfo, verbose);
     }
 
     private static HashSet<long> BuildModuleOffsetSet(MinidumpInfo minidumpInfo)
@@ -262,7 +268,7 @@ public sealed class MinidumpAnalyzer
         });
     }
 
-    private static void AddModulesFromMinidump(AnalysisResult result, MinidumpInfo minidumpInfo)
+    private static void AddModulesFromMinidump(AnalysisResult result, MinidumpInfo minidumpInfo, bool verbose)
     {
         foreach (var module in minidumpInfo.Modules)
         {
@@ -272,8 +278,14 @@ public sealed class MinidumpAnalyzer
             if (fileRange.HasValue)
             {
                 var captured = fileRange.Value.size;
-                Console.WriteLine(
-                    $"[Minidump]   Module: {fileName} at 0x{fileRange.Value.fileOffset:X8}, captured: {captured:N0} bytes");
+                if (verbose)
+                {
+                    Logger.Instance.Debug(
+                        "[Minidump]   Module: {0} at 0x{1:X8}, captured: {2:N0} bytes",
+                        fileName,
+                        fileRange.Value.fileOffset,
+                        captured);
+                }
 
                 // Determine description based on extension
                 var isExe = fileName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);

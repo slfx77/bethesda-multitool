@@ -74,7 +74,7 @@ internal static class GeckScriptWriter
                 sb.AppendLine("Referenced Objects:");
                 foreach (var refId in script.ReferencedObjects)
                 {
-                    sb.AppendLine($"  {resolver.FormatFull(refId)}");
+                    sb.AppendLine($"  {FormatScriptReference(refId, resolver)}");
                 }
             }
 
@@ -175,7 +175,7 @@ internal static class GeckScriptWriter
         if (script.ReferencedObjects.Count > 0)
         {
             var refItems = script.ReferencedObjects
-                .Select(id => (ReportValue)ReportValue.FormId(id, resolver))
+                .Select(id => (ReportValue)ReportValue.FormId(id, FormatScriptReference(id, resolver)))
                 .ToList();
             refFields.Add(new ReportField("Referenced Objects", ReportValue.List(refItems)));
         }
@@ -203,9 +203,9 @@ internal static class GeckScriptWriter
                 })
                 .ToList();
 
-            sections.Add(new ReportSection($"Variables ({script.Variables.Count})",
+            sections.Add(new ReportSection("Variables",
             [
-                new ReportField("Variables", ReportValue.List(varItems))
+                new ReportField("Variables", ReportValue.List(varItems, $"{script.Variables.Count} variables"))
             ]));
         }
 
@@ -228,6 +228,16 @@ internal static class GeckScriptWriter
         }
 
         return new RecordReport("Script", script.FormId, script.EditorId, null, sections);
+    }
+
+    private static string FormatScriptReference(uint formId, FormIdResolver resolver)
+    {
+        return formId switch
+        {
+            0x00000007 => "PlayerRef (0x00000007)",
+            0x00000014 => "Player (0x00000014)",
+            _ => resolver.FormatFull(formId)
+        };
     }
 
     internal static string GenerateScriptsReport(List<ScriptRecord> scripts,

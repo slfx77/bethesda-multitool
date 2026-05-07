@@ -9,7 +9,7 @@ namespace FalloutXbox360Utils.Tests.Core.Semantic;
 ///     SemanticFileLoader and produce a populated RecordCollection. New format adapters
 ///     should add a case here so the architectural rule is enforced by CI.
 /// </summary>
-[Collection(SequentialIntegrationCollection.Name)]
+[Collection(SequentialIntegrationGroup.Name)]
 public sealed class UnifiedPipelineIntegrationTests(SampleFileFixture samples)
 {
     [Fact]

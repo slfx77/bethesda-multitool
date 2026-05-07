@@ -395,7 +395,13 @@ internal static class RecordFieldFlattener
         return new Dictionary<string, string>
         {
             ["NoteType"] = n.NoteTypeName,
-            ["Text"] = n.Text ?? ""
+            ["Text"] = n.Text ?? "",
+            ["ModelPath"] = n.ModelPath ?? "",
+            ["IconPath"] = n.IconPath ?? "",
+            ["TexturePath"] = n.TexturePath ?? "",
+            ["SoundFormId"] = Fmt.FIdN(n.SoundFormId),
+            ["ObjectFormId"] = Fmt.FIdN(n.ObjectFormId),
+            ["TopicFormId"] = Fmt.FIdN(n.TopicFormId)
         };
     }
 

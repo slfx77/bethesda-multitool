@@ -13,6 +13,7 @@ internal static class ComparisonCssStyles
                                        }
                                        h1 { margin-bottom: 4px; }
                                        .summary { color: #666; margin-top: 0; }
+                                       .muted { color: #777; font-size: 12px; }
                                        a { color: #0066cc; }
 
                                        .controls {
@@ -91,6 +92,9 @@ internal static class ComparisonCssStyles
                                        .summary-row { cursor: pointer; }
                                        .summary-row:hover { background: #f0f4ff; }
                                        .summary-row:hover .col-editor { background: #f0f4ff; }
+                                       .summary-row.expanded { background: #f0f4ff; }
+                                       .summary-row.expanded .col-editor { background: #f0f4ff; }
+                                       .summary-row.nav-flash { outline: 2px solid #4c8bf5; outline-offset: -2px; }
                                        .summary-row td { padding: 4px 8px; }
                                        .detail-row td { padding: 4px 8px; }
                                        .detail-row .col-editor { background: #fff; }
@@ -156,6 +160,23 @@ internal static class ComparisonCssStyles
                                          color: #c26a00;
                                          font-weight: 600;
                                        }
+                                       .rd-field-disclosure summary {
+                                         cursor: pointer;
+                                         color: #9ab;
+                                         font-size: 11px;
+                                         user-select: none;
+                                       }
+                                       .rd-field-disclosure-body {
+                                         margin-top: 2px;
+                                       }
+                                       .rd-audit {
+                                         color: #777;
+                                         font-size: 11px;
+                                         border-left: 2px solid #999;
+                                         padding: 2px 0 2px 6px;
+                                         margin-bottom: 4px;
+                                         overflow-wrap: anywhere;
+                                       }
                                        .rd-code {
                                          font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
                                          font-size: 11px;
@@ -169,6 +190,12 @@ internal static class ComparisonCssStyles
                                          margin: 2px 0;
                                          max-height: 200px;
                                          overflow-y: auto;
+                                       }
+                                       .rd-text {
+                                         font-family: inherit;
+                                         white-space: pre-wrap;
+                                         overflow-wrap: anywhere;
+                                         background: transparent;
                                        }
                                        .field-new { background: #d4edda; }
                                        .field-changed { background: #fff3cd; }
@@ -219,12 +246,15 @@ internal static class ComparisonCssStyles
                                          .col-editor { background: #1a1a1a; }
                                          .detail-row .col-editor { background: #1a1a1a; }
                                          .summary { color: #999; }
+                                         .muted { color: #999; }
                                          .dump-date { color: #777; }
                                          .controls input[type="text"] { background: #2a2a2a; color: #e0e0e0; border-color: #555; }
                                          .controls button { background: #333; color: #e0e0e0; border-color: #555; }
                                          .controls button:hover { background: #444; }
                                          .summary-row:hover { background: #252535; }
                                          .summary-row:hover .col-editor { background: #252535; }
+                                         .summary-row.expanded { background: #252535; }
+                                         .summary-row.expanded .col-editor { background: #252535; }
                                          .badge-new { background: #1e3a1e; color: #8fd19e; }
                                          .badge-changed { background: #3a3520; color: #e0c878; }
                                          .badge-same { background: #2a2a2a; color: #888; }
@@ -248,7 +278,9 @@ internal static class ComparisonCssStyles
                                          .rd-key { color: #999; }
                                          .rd-list-meta { color: #aaa; }
                                          .rd-list-flag { color: #ffb347; }
+                                         .rd-audit { color: #aaa; border-left-color: #666; }
                                          .rd-code { background: #111; border-color: #333; }
+                                         .rd-text { background: transparent; }
                                        }
                                    """;
 }

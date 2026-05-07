@@ -18,7 +18,7 @@ using static FalloutXbox360Utils.Tests.Helpers.EsmTestRecordBuilder;
 
 namespace FalloutXbox360Utils.Tests.Core.Parsers;
 
-[Collection(SequentialIntegrationCollection.Name)]
+[Collection(SequentialIntegrationGroup.Name)]
 public sealed class RuntimeParityParserTests : IDisposable
 {
     private const int DataSize = 24 * 1024;

@@ -11,7 +11,10 @@ internal static class CrossDumpJsonHtmlWriter
 {
     private const int DefaultMaxInlineCompressedPayloadLength = 8 * 1024 * 1024;
     private const int DefaultMaxCellJsonPayloadLength = 96 * 1024 * 1024;
+    private const int DefaultChunkedRecordCountThreshold = 10_000;
+    private const int DefaultUngroupedChunkedRecordCountThreshold = 5_000;
     private const int PayloadChunkSize = 512 * 1024;
+    private const string ExternalChunkGlobal = "__comparisonExternalChunks";
 
     /// <summary>
     ///     Generate all HTML files: one per record type (with embedded JSON) plus an index page.
@@ -21,8 +24,15 @@ internal static class CrossDumpJsonHtmlWriter
         int maxInlineCompressedPayloadLength = DefaultMaxInlineCompressedPayloadLength,
         int maxCellJsonPayloadLength = DefaultMaxCellJsonPayloadLength)
     {
-        var files = new Dictionary<string, string>();
+        return GenerateFiles(index, maxInlineCompressedPayloadLength, maxCellJsonPayloadLength)
+            .ToDictionary(file => file.Filename, file => file.Html, StringComparer.OrdinalIgnoreCase);
+    }
 
+    internal static IEnumerable<(string Filename, string Html)> GenerateFiles(
+        CrossDumpRecordIndex index,
+        int maxInlineCompressedPayloadLength = DefaultMaxInlineCompressedPayloadLength,
+        int maxCellJsonPayloadLength = DefaultMaxCellJsonPayloadLength)
+    {
         foreach (var (recordType, formIdMap) in index.StructuredRecords.OrderBy(r => r.Key))
         {
             // Resolve groups: dialogue uses dual group sets, others use single group map
@@ -30,13 +40,13 @@ internal static class CrossDumpJsonHtmlWriter
             Dictionary<uint, string>? alternateGroups = null;
             string? defaultGroupMode = null;
             Dictionary<uint, Dictionary<string, string>>? metadata = null;
+            index.RecordMetadata.TryGetValue(recordType, out metadata);
 
             if (string.Equals(recordType, "Dialogue", StringComparison.OrdinalIgnoreCase))
             {
                 index.RecordGroups.TryGetValue("Dialogue_Quest", out groups);
                 index.RecordGroups.TryGetValue("Dialogue_NPC", out alternateGroups);
                 defaultGroupMode = "Quest";
-                index.RecordMetadata.TryGetValue(recordType, out metadata);
             }
             else
             {
@@ -58,12 +68,166 @@ internal static class CrossDumpJsonHtmlWriter
                          maxInlineCompressedPayloadLength,
                          maxCellJsonPayloadLength))
             {
-                files[filename] = html;
+                yield return (filename, html);
             }
         }
 
-        files["index.html"] = GenerateIndexPage(index);
-        return files;
+        yield return ("index.html", GenerateIndexPage(index));
+    }
+
+    internal static Task<IReadOnlyList<string>> WriteFilesAsync(
+        CrossDumpRecordIndex index,
+        string outputPath,
+        CancellationToken cancellationToken = default)
+    {
+        return WriteFilesAsync(
+            index,
+            outputPath,
+            DefaultMaxInlineCompressedPayloadLength,
+            DefaultMaxCellJsonPayloadLength,
+            cancellationToken);
+    }
+
+    internal static async Task<IReadOnlyList<string>> WriteFilesAsync(
+        CrossDumpRecordIndex index,
+        string outputPath,
+        int maxInlineCompressedPayloadLength = DefaultMaxInlineCompressedPayloadLength,
+        int maxCellJsonPayloadLength = DefaultMaxCellJsonPayloadLength,
+        CancellationToken cancellationToken = default)
+    {
+        Directory.CreateDirectory(outputPath);
+
+        var writtenFiles = new List<string>();
+        foreach (var (recordType, formIdMap) in index.StructuredRecords.OrderBy(r => r.Key))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            Dictionary<uint, string>? groups = null;
+            Dictionary<uint, string>? alternateGroups = null;
+            string? defaultGroupMode = null;
+            Dictionary<uint, Dictionary<string, string>>? metadata = null;
+            index.RecordMetadata.TryGetValue(recordType, out metadata);
+
+            if (string.Equals(recordType, "Dialogue", StringComparison.OrdinalIgnoreCase))
+            {
+                index.RecordGroups.TryGetValue("Dialogue_Quest", out groups);
+                index.RecordGroups.TryGetValue("Dialogue_NPC", out alternateGroups);
+                defaultGroupMode = "Quest";
+            }
+            else
+            {
+                index.RecordGroups.TryGetValue(recordType, out groups);
+            }
+
+            var gridCoords = string.Equals(recordType, "Cell", StringComparison.OrdinalIgnoreCase)
+                ? index.CellGridCoords
+                : null;
+
+            var outputFile = Path.Combine(outputPath, $"compare_{recordType.ToLowerInvariant()}.html");
+            await WriteRecordTypeFileAsync(
+                outputFile,
+                recordType,
+                formIdMap,
+                index.Dumps,
+                groups,
+                alternateGroups,
+                defaultGroupMode,
+                metadata,
+                gridCoords,
+                maxInlineCompressedPayloadLength,
+                maxCellJsonPayloadLength,
+                cancellationToken);
+            writtenFiles.Add(outputFile);
+        }
+
+        var indexFile = Path.Combine(outputPath, "index.html");
+        await File.WriteAllTextAsync(indexFile, GenerateIndexPage(index), cancellationToken);
+        writtenFiles.Add(indexFile);
+
+        return writtenFiles;
+    }
+
+    internal static async Task<string?> WriteRecordTypeFileAsync(
+        CrossDumpRecordIndex index,
+        string recordType,
+        string outputPath,
+        CancellationToken cancellationToken = default)
+    {
+        return await WriteRecordTypeFileAsync(
+            index,
+            recordType,
+            outputPath,
+            DefaultMaxInlineCompressedPayloadLength,
+            DefaultMaxCellJsonPayloadLength,
+            cancellationToken);
+    }
+
+    internal static async Task<string?> WriteRecordTypeFileAsync(
+        CrossDumpRecordIndex index,
+        string recordType,
+        string outputPath,
+        int maxInlineCompressedPayloadLength = DefaultMaxInlineCompressedPayloadLength,
+        int maxCellJsonPayloadLength = DefaultMaxCellJsonPayloadLength,
+        CancellationToken cancellationToken = default)
+    {
+        if (!index.StructuredRecords.TryGetValue(recordType, out var formIdMap) ||
+            formIdMap.Count == 0)
+        {
+            return null;
+        }
+
+        Directory.CreateDirectory(outputPath);
+
+        Dictionary<uint, string>? groups = null;
+        Dictionary<uint, string>? alternateGroups = null;
+        string? defaultGroupMode = null;
+        Dictionary<uint, Dictionary<string, string>>? metadata = null;
+        index.RecordMetadata.TryGetValue(recordType, out metadata);
+
+        if (string.Equals(recordType, "Dialogue", StringComparison.OrdinalIgnoreCase))
+        {
+            index.RecordGroups.TryGetValue("Dialogue_Quest", out groups);
+            index.RecordGroups.TryGetValue("Dialogue_NPC", out alternateGroups);
+            defaultGroupMode = "Quest";
+        }
+        else
+        {
+            index.RecordGroups.TryGetValue(recordType, out groups);
+        }
+
+        var gridCoords = string.Equals(recordType, "Cell", StringComparison.OrdinalIgnoreCase)
+            ? index.CellGridCoords
+            : null;
+
+        var outputFile = Path.Combine(outputPath, $"compare_{recordType.ToLowerInvariant()}.html");
+        await WriteRecordTypeFileAsync(
+            outputFile,
+            recordType,
+            formIdMap,
+            index.Dumps,
+            groups,
+            alternateGroups,
+            defaultGroupMode,
+            metadata,
+            gridCoords,
+            maxInlineCompressedPayloadLength,
+            maxCellJsonPayloadLength,
+            cancellationToken);
+
+        return outputFile;
+    }
+
+    internal static async Task<string> WriteIndexPageAsync(
+        IReadOnlyList<DumpSnapshot> dumps,
+        IReadOnlyList<CrossDumpRecordTypeSummary> recordTypes,
+        string outputPath,
+        CancellationToken cancellationToken = default)
+    {
+        Directory.CreateDirectory(outputPath);
+
+        var indexFile = Path.Combine(outputPath, "index.html");
+        await File.WriteAllTextAsync(indexFile, GenerateIndexPage(dumps, recordTypes), cancellationToken);
+        return indexFile;
     }
 
     private static Dictionary<string, string> GenerateRecordTypeFiles(
@@ -79,6 +243,21 @@ internal static class CrossDumpJsonHtmlWriter
         int maxCellJsonPayloadLength)
     {
         var files = new Dictionary<string, string>();
+        var chunkGroups = groups;
+        var forceChunkedPage = false;
+        if (chunkGroups == null && ShouldUseUngroupedChunkedPageBeforePayload(formIdMap))
+        {
+            chunkGroups = BuildSingleChunkGroup(formIdMap, "All Records");
+            forceChunkedPage = true;
+        }
+
+        if (forceChunkedPage || ShouldUseChunkedPageBeforePayload(chunkGroups, formIdMap))
+        {
+            files[$"compare_{recordType.ToLowerInvariant()}.html"] = GenerateChunkedPage(
+                recordType, formIdMap, dumps, chunkGroups!, cellGridCoords, metadata);
+            return files;
+        }
+
         var payload = BuildCompressedPayload(
             formIdMap,
             dumps,
@@ -105,6 +284,78 @@ internal static class CrossDumpJsonHtmlWriter
             defaultGroupMode,
             payload.CompressedPayload);
         return files;
+    }
+
+    private static async Task WriteRecordTypeFileAsync(
+        string outputFile,
+        string recordType,
+        Dictionary<uint, Dictionary<int, RecordReport>> formIdMap,
+        List<DumpSnapshot> dumps,
+        Dictionary<uint, string>? groups,
+        Dictionary<uint, string>? alternateGroups,
+        string? defaultGroupMode,
+        Dictionary<uint, Dictionary<string, string>>? metadata,
+        Dictionary<uint, (int X, int Y)>? cellGridCoords,
+        int maxInlineCompressedPayloadLength,
+        int maxCellJsonPayloadLength,
+        CancellationToken cancellationToken)
+    {
+        var chunkGroups = groups;
+        var forceChunkedPage = false;
+        if (chunkGroups == null && ShouldUseUngroupedChunkedPageBeforePayload(formIdMap))
+        {
+            chunkGroups = BuildSingleChunkGroup(formIdMap, "All Records");
+            forceChunkedPage = true;
+        }
+
+        if (forceChunkedPage || ShouldUseChunkedPageBeforePayload(chunkGroups, formIdMap))
+        {
+            await WriteChunkedPageAsync(
+                outputFile,
+                recordType,
+                formIdMap,
+                dumps,
+                chunkGroups!,
+                cellGridCoords,
+                metadata,
+                cancellationToken);
+            return;
+        }
+
+        var payload = BuildCompressedPayload(
+            formIdMap,
+            dumps,
+            recordType,
+            groups,
+            alternateGroups,
+            defaultGroupMode,
+            metadata,
+            cellGridCoords);
+
+        if (ShouldUseChunkedPage(groups, payload,
+                maxInlineCompressedPayloadLength, maxCellJsonPayloadLength))
+        {
+            await WriteChunkedPageAsync(
+                outputFile,
+                recordType,
+                formIdMap,
+                dumps,
+                groups!,
+                cellGridCoords,
+                metadata,
+                cancellationToken);
+            return;
+        }
+
+        await WriteRecordTypePageAsync(
+            outputFile,
+            recordType,
+            formIdMap,
+            dumps,
+            alternateGroups,
+            defaultGroupMode,
+            payload.CompressedPayload,
+            cancellationToken);
     }
 
     private static string GenerateRecordTypePage(
@@ -189,6 +440,49 @@ internal static class CrossDumpJsonHtmlWriter
         return sb.ToString();
     }
 
+    private static async Task WriteRecordTypePageAsync(
+        string outputFile,
+        string recordType,
+        Dictionary<uint, Dictionary<int, RecordReport>> formIdMap,
+        List<DumpSnapshot> dumps,
+        Dictionary<uint, string>? alternateGroups,
+        string? defaultGroupMode,
+        string compressedPayload,
+        CancellationToken cancellationToken)
+    {
+        await using var stream = CreateHtmlFileStream(outputFile);
+        await using var writer = CreateHtmlWriter(stream);
+
+        var pageTitle = $"{recordType} \u2014 Cross-Build Comparison";
+        var pageSummary = $"{dumps.Count} builds, {formIdMap.Count:N0} records";
+
+        await WriteHtmlHeaderAsync(writer, pageTitle, cancellationToken);
+        await WriteBuildColumnStyleAsync(writer, dumps.Count, cancellationToken);
+
+        await WriteLineAsync(
+            writer,
+            $"  <h1>{ComparisonHtmlHelpers.Esc(pageTitle)} </h1>",
+            cancellationToken);
+        await WriteLineAsync(
+            writer,
+            $"  <p class=\"summary\">{ComparisonHtmlHelpers.Esc(pageSummary)}</p>",
+            cancellationToken);
+
+        await WriteControlsAsync(
+            writer,
+            dumps.Count,
+            alternateGroups != null && defaultGroupMode != null,
+            cancellationToken);
+
+        await WriteLineAsync(writer, "  <div id=\"loading\">Loading records...</div>", cancellationToken);
+        await WriteLineAsync(writer, "  <div id=\"tables-container\"></div>", cancellationToken);
+
+        await WritePayloadScriptsAsync(writer, compressedPayload, cancellationToken);
+
+        await WriteLineAsync(writer, $"  <script>{ComparisonJsRenderer.Script}</script>", cancellationToken);
+        await WriteHtmlFooterAsync(writer, cancellationToken);
+    }
+
     private static bool ShouldUseChunkedPage(
         Dictionary<uint, string>? groups,
         PayloadBundle payload,
@@ -198,6 +492,30 @@ internal static class CrossDumpJsonHtmlWriter
         return groups is { Count: > 0 }
                && (payload.CompressedPayload.Length > maxInlineCompressedPayloadLength
                    || payload.JsonLength > maxCellJsonPayloadLength);
+    }
+
+    private static bool ShouldUseChunkedPageBeforePayload(
+        Dictionary<uint, string>? groups,
+        Dictionary<uint, Dictionary<int, RecordReport>> formIdMap)
+    {
+        return groups != null && formIdMap.Count >= DefaultChunkedRecordCountThreshold;
+    }
+
+    private static bool ShouldUseUngroupedChunkedPageBeforePayload(
+        Dictionary<uint, Dictionary<int, RecordReport>> formIdMap)
+    {
+        return formIdMap.Count >= DefaultUngroupedChunkedRecordCountThreshold;
+    }
+
+    private static Dictionary<uint, string> BuildSingleChunkGroup(
+        Dictionary<uint, Dictionary<int, RecordReport>> formIdMap,
+        string label)
+    {
+        var groups = new Dictionary<uint, string>(formIdMap.Count);
+        foreach (var formId in formIdMap.Keys)
+            groups[formId] = label;
+
+        return groups;
     }
 
     private static PayloadBundle BuildCompressedPayload(
@@ -237,8 +555,8 @@ internal static class CrossDumpJsonHtmlWriter
         Dictionary<uint, (int X, int Y)>? cellGridCoords,
         Dictionary<uint, Dictionary<string, string>>? metadata)
     {
-        // Build the index blob (metadata only — no records)
-        var (indexBlob, chunks) = ComparisonJsonBlobBuilder.BuildChunked(
+        // Build compressed index and per-group chunks without retaining raw JSON blobs.
+        var (compressedIndexPayload, chunks) = ComparisonJsonBlobBuilder.BuildChunked(
             formIdMap, dumps, recordType, groups, cellGridCoords, metadata);
 
         var sb = new StringBuilder();
@@ -254,8 +572,11 @@ internal static class CrossDumpJsonHtmlWriter
         }
 
         sb.AppendLine($"  <h1>{ComparisonHtmlHelpers.Esc(pageTitle)}</h1>");
+        var chunkSummary = groups.Values.All(value => string.Equals(value, "All Records", StringComparison.Ordinal))
+            ? "chunked"
+            : "chunked by group";
         sb.AppendLine(
-            $"  <p class=\"summary\">{dumps.Count} builds, {formIdMap.Count:N0} records (chunked by group)</p>");
+            $"  <p class=\"summary\">{dumps.Count} builds, {formIdMap.Count:N0} records ({chunkSummary})</p>");
 
         // Controls
         sb.AppendLine("  <div class=\"controls\">");
@@ -287,17 +608,17 @@ internal static class CrossDumpJsonHtmlWriter
         sb.AppendLine("  <div id=\"tables-container\"></div>");
 
         // Index blob (small — just metadata, groups, gridCoords)
-        AppendPayloadScripts(sb, ComparisonHtmlHelpers.CompressToBase64(indexBlob));
+        AppendPayloadScripts(sb, compressedIndexPayload);
 
         // Per-group chunk blobs
         for (var i = 0; i < chunks.Count; i++)
         {
-            var (groupKey, chunkBlob) = chunks[i];
+            var (groupKey, compressedChunkPayload) = chunks[i];
             var chunkId = $"chunk-{i}";
             sb.AppendLine(
                 $"  <script type=\"application/json\" id=\"{chunkId}\" " +
                 $"data-group=\"{ComparisonHtmlHelpers.Esc(groupKey)}\" " +
-                $"data-z=\"{ComparisonHtmlHelpers.CompressToBase64(chunkBlob)}\"></script>");
+                $"data-z=\"{compressedChunkPayload}\"></script>");
         }
 
         sb.AppendLine($"  <script>{ComparisonJsRenderer.Script}</script>");
@@ -305,27 +626,140 @@ internal static class CrossDumpJsonHtmlWriter
         return sb.ToString();
     }
 
+    private static async Task WriteChunkedPageAsync(
+        string outputFile,
+        string recordType,
+        Dictionary<uint, Dictionary<int, RecordReport>> formIdMap,
+        List<DumpSnapshot> dumps,
+        Dictionary<uint, string> groups,
+        Dictionary<uint, (int X, int Y)>? cellGridCoords,
+        Dictionary<uint, Dictionary<string, string>>? metadata,
+        CancellationToken cancellationToken)
+    {
+        await using var stream = CreateHtmlFileStream(outputFile);
+        await using var writer = CreateHtmlWriter(stream);
+        var chunkDirectoryName = $"{Path.GetFileNameWithoutExtension(outputFile)}_chunks";
+        var chunkDirectory = Path.Combine(Path.GetDirectoryName(outputFile) ?? ".", chunkDirectoryName);
+        Directory.CreateDirectory(chunkDirectory);
+
+        var compressedIndexPayload = ComparisonJsonBlobBuilder.BuildChunkedIndex(
+            formIdMap, dumps, recordType, groups, cellGridCoords);
+
+        var pageTitle = $"{recordType} \u2014 Cross-Build Comparison";
+        await WriteHtmlHeaderAsync(writer, pageTitle, cancellationToken);
+        await WriteBuildColumnStyleAsync(writer, dumps.Count, cancellationToken);
+
+        await WriteLineAsync(
+            writer,
+            $"  <h1>{ComparisonHtmlHelpers.Esc(pageTitle)}</h1>",
+            cancellationToken);
+        var chunkSummary = groups.Values.All(value => string.Equals(value, "All Records", StringComparison.Ordinal))
+            ? "chunked"
+            : "chunked by group";
+        await WriteLineAsync(
+            writer,
+            $"  <p class=\"summary\">{dumps.Count} builds, {formIdMap.Count:N0} records ({chunkSummary})</p>",
+            cancellationToken);
+
+        await WriteControlsAsync(writer, dumps.Count, hasDialogueGroupSelector: false, cancellationToken);
+
+        await WriteLineAsync(writer, "  <div id=\"loading\">Loading index...</div>", cancellationToken);
+        await WriteLineAsync(writer, "  <div id=\"tables-container\"></div>", cancellationToken);
+
+        await WritePayloadScriptsAsync(writer, compressedIndexPayload, cancellationToken);
+
+        var chunkIndex = 0;
+        foreach (var (groupKey, compressedChunkPayload) in ComparisonJsonBlobBuilder.BuildChunkPayloads(
+                     formIdMap, recordType, groups, metadata))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var chunkId = $"chunk-{chunkIndex++}";
+            var chunkFileName = $"{chunkId}.js";
+            var chunkRelativePath = $"{chunkDirectoryName}/{chunkFileName}";
+            await WriteExternalChunkScriptAsync(
+                Path.Combine(chunkDirectory, chunkFileName),
+                chunkId,
+                compressedChunkPayload,
+                cancellationToken);
+
+            await WriteLineAsync(
+                writer,
+                $"  <script type=\"application/json\" id=\"{chunkId}\" " +
+                $"data-group=\"{ComparisonHtmlHelpers.Esc(groupKey)}\" " +
+                $"data-external-key=\"{chunkId}\" " +
+                $"data-src=\"{chunkRelativePath}\"></script>",
+                cancellationToken);
+            await WriteLineAsync(
+                writer,
+                $"  <script src=\"{chunkRelativePath}\"></script>",
+                cancellationToken);
+        }
+
+        await WriteLineAsync(writer, $"  <script>{ComparisonJsRenderer.Script}</script>", cancellationToken);
+        await WriteHtmlFooterAsync(writer, cancellationToken);
+    }
+
+    private static async Task WriteExternalChunkScriptAsync(
+        string outputFile,
+        string chunkId,
+        string compressedChunkPayload,
+        CancellationToken cancellationToken)
+    {
+        await using var stream = new FileStream(
+            outputFile,
+            FileMode.Create,
+            FileAccess.Write,
+            FileShare.None,
+            bufferSize: 1024 * 1024,
+            useAsync: true);
+        await using var writer = CreateHtmlWriter(stream);
+        await WriteAsync(
+            writer,
+            $"window.{ExternalChunkGlobal}=window.{ExternalChunkGlobal}||{{}};window.{ExternalChunkGlobal}[\"{chunkId}\"]=\"",
+            cancellationToken);
+        await writer.WriteAsync(compressedChunkPayload.AsMemory(), cancellationToken);
+        await WriteLineAsync(writer, "\";", cancellationToken);
+    }
+
     private static string GenerateIndexPage(CrossDumpRecordIndex index)
+    {
+        var summaries = index.StructuredRecords
+            .OrderBy(entry => entry.Key)
+            .Select(entry => BuildRecordTypeSummary(entry.Key, entry.Value, index.Dumps.Count))
+            .ToList();
+
+        return GenerateIndexPage(index.Dumps, summaries);
+    }
+
+    private static string GenerateIndexPage(
+        IReadOnlyList<DumpSnapshot> dumps,
+        IReadOnlyList<CrossDumpRecordTypeSummary> recordTypes)
     {
         var sb = new StringBuilder();
         ComparisonHtmlHelpers.AppendHtmlHeader(sb, "Cross-Build Comparison Index");
 
         sb.AppendLine("  <h1>Cross-Build Comparison Index</h1>");
 
-        var total = index.StructuredRecords.Values.Sum(m => m.Count);
+        var total = recordTypes.Sum(summary => summary.FormIdCount);
         sb.AppendLine(
-            $"  <p class=\"summary\">{index.Dumps.Count} builds, {total:N0} total records</p>");
+            $"  <p class=\"summary\">{dumps.Count} builds, {total:N0} total records</p>");
 
         // Build info table
         sb.AppendLine("  <h2>Builds</h2>");
         sb.AppendLine("  <table class=\"compact\">");
         sb.AppendLine("    <thead><tr><th>#</th><th>File</th><th>Build Date</th></tr></thead>");
         sb.AppendLine("    <tbody>");
-        for (var i = 0; i < index.Dumps.Count; i++)
+        for (var i = 0; i < dumps.Count; i++)
         {
-            var d = index.Dumps[i];
+            var d = dumps[i];
             var displayFileName = d.IsBase ? d.ShortName : d.FileName;
             var displayDate = d.IsBase ? "(base)" : $"{d.FileDate:yyyy-MM-dd HH:mm}";
+            if (!d.IsBase && !string.IsNullOrWhiteSpace(d.DateSource))
+            {
+                displayDate += $"<br><span class=\"muted\">{ComparisonHtmlHelpers.Esc(d.DateSource)}</span>";
+            }
+
             sb.AppendLine(
                 $"      <tr><td>{i + 1}</td><td>{ComparisonHtmlHelpers.Esc(displayFileName)}</td><td>{displayDate}</td></tr>");
         }
@@ -338,21 +772,21 @@ internal static class CrossDumpJsonHtmlWriter
         sb.AppendLine("  <table class=\"compact\">");
         sb.AppendLine("    <thead>");
         sb.AppendLine("      <tr><th>Type</th><th>Records</th>");
-        foreach (var d in index.Dumps)
+        foreach (var d in dumps)
             sb.AppendLine($"        <th>{ComparisonHtmlHelpers.Esc(d.ShortName)}</th>");
         sb.AppendLine("      </tr>");
         sb.AppendLine("    </thead>");
         sb.AppendLine("    <tbody>");
 
-        foreach (var (recordType, formIdMap) in index.StructuredRecords.OrderBy(r => r.Key))
+        foreach (var summary in recordTypes.OrderBy(summary => summary.RecordType, StringComparer.OrdinalIgnoreCase))
         {
-            var filename = $"compare_{recordType.ToLowerInvariant()}.html";
+            var filename = $"compare_{summary.RecordType.ToLowerInvariant()}.html";
             sb.Append(
-                $"      <tr><td><a href=\"{filename}\">{ComparisonHtmlHelpers.Esc(recordType)}</a></td>");
-            sb.Append($"<td>{formIdMap.Count:N0}</td>");
-            for (var dumpIdx = 0; dumpIdx < index.Dumps.Count; dumpIdx++)
+                $"      <tr><td><a href=\"{filename}\">{ComparisonHtmlHelpers.Esc(summary.RecordType)}</a></td>");
+            sb.Append($"<td>{summary.FormIdCount:N0}</td>");
+            for (var dumpIdx = 0; dumpIdx < dumps.Count; dumpIdx++)
             {
-                var count = formIdMap.Values.Count(dm => dm.ContainsKey(dumpIdx));
+                var count = dumpIdx < summary.DumpCounts.Count ? summary.DumpCounts[dumpIdx] : 0;
                 sb.Append($"<td>{count:N0}</td>");
             }
 
@@ -364,6 +798,26 @@ internal static class CrossDumpJsonHtmlWriter
 
         ComparisonHtmlHelpers.AppendHtmlFooter(sb);
         return sb.ToString();
+    }
+
+    internal static CrossDumpRecordTypeSummary BuildRecordTypeSummary(
+        string recordType,
+        Dictionary<uint, Dictionary<int, RecordReport>> formIdMap,
+        int dumpCount)
+    {
+        var dumpCounts = new int[dumpCount];
+        foreach (var dumpMap in formIdMap.Values)
+        {
+            foreach (var dumpIndex in dumpMap.Keys)
+            {
+                if ((uint)dumpIndex < (uint)dumpCounts.Length)
+                {
+                    dumpCounts[dumpIndex]++;
+                }
+            }
+        }
+
+        return new CrossDumpRecordTypeSummary(recordType, formIdMap.Count, dumpCounts);
     }
 
     private static void AppendPayloadScripts(StringBuilder sb, string compressed)
@@ -385,6 +839,166 @@ internal static class CrossDumpJsonHtmlWriter
         }
 
         sb.AppendLine("  </div>");
+    }
+
+    private static FileStream CreateHtmlFileStream(string outputFile)
+    {
+        return new FileStream(
+            outputFile,
+            FileMode.Create,
+            FileAccess.Write,
+            FileShare.None,
+            bufferSize: 1024 * 1024,
+            useAsync: true);
+    }
+
+    private static StreamWriter CreateHtmlWriter(Stream stream)
+    {
+        return new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), 1024 * 1024);
+    }
+
+    private static async Task WriteHtmlHeaderAsync(
+        TextWriter writer,
+        string title,
+        CancellationToken cancellationToken)
+    {
+        var sb = new StringBuilder();
+        ComparisonHtmlHelpers.AppendHtmlHeader(sb, title);
+        await WriteAsync(writer, sb.ToString(), cancellationToken);
+    }
+
+    private static async Task WriteHtmlFooterAsync(TextWriter writer, CancellationToken cancellationToken)
+    {
+        var sb = new StringBuilder();
+        ComparisonHtmlHelpers.AppendHtmlFooter(sb);
+        await WriteAsync(writer, sb.ToString(), cancellationToken);
+    }
+
+    private static async Task WriteBuildColumnStyleAsync(
+        TextWriter writer,
+        int dumpCount,
+        CancellationToken cancellationToken)
+    {
+        if (dumpCount <= 3)
+        {
+            return;
+        }
+
+        await WriteAsync(writer, "  <style id=\"build-col-style\">", cancellationToken);
+        for (var i = 3; i < dumpCount; i++)
+        {
+            await WriteAsync(writer, $".build-col-{i}{{display:none !important}}", cancellationToken);
+        }
+
+        await WriteLineAsync(writer, "</style>", cancellationToken);
+    }
+
+    private static async Task WriteControlsAsync(
+        TextWriter writer,
+        int dumpCount,
+        bool hasDialogueGroupSelector,
+        CancellationToken cancellationToken)
+    {
+        await WriteLineAsync(writer, "  <div class=\"controls\">", cancellationToken);
+        await WriteLineAsync(writer, "    <a href=\"index.html\">&larr; Back to index</a>", cancellationToken);
+        await WriteLineAsync(
+            writer,
+            "    <input type=\"text\" id=\"search\" placeholder=\"Search by FormID, EditorID, or name...\" oninput=\"filterRows()\">",
+            cancellationToken);
+        await WriteLineAsync(writer, "    <button onclick=\"expandAll()\">Expand All</button>", cancellationToken);
+        await WriteLineAsync(writer, "    <button onclick=\"collapseAll()\">Collapse All</button>", cancellationToken);
+        await WriteLineAsync(writer, "    <span id=\"matchCount\" class=\"match-count\"></span>", cancellationToken);
+
+        if (hasDialogueGroupSelector)
+        {
+            await WriteLineAsync(writer, "    <div class=\"group-mode-selector\">", cancellationToken);
+            await WriteLineAsync(writer, "      <label>Group by:</label>", cancellationToken);
+            await WriteLineAsync(
+                writer,
+                "      <label><input type=\"radio\" name=\"groupMode\" value=\"Quest\" checked onchange=\"switchGroupMode(this.value)\"> Quest</label>",
+                cancellationToken);
+            await WriteLineAsync(
+                writer,
+                "      <label><input type=\"radio\" name=\"groupMode\" value=\"NPC\" onchange=\"switchGroupMode(this.value)\"> NPC</label>",
+                cancellationToken);
+            await WriteLineAsync(writer, "    </div>", cancellationToken);
+        }
+
+        if (dumpCount > 3)
+        {
+            await WriteLineAsync(
+                writer,
+                $"    <div class=\"build-nav\" data-total=\"{dumpCount}\" data-start=\"0\" data-size=\"3\">",
+                cancellationToken);
+            await WriteLineAsync(writer, "      <button onclick=\"navBuilds('first')\">&laquo; First</button>",
+                cancellationToken);
+            await WriteLineAsync(writer, "      <button onclick=\"navBuilds('prev3')\">&lsaquo; 3</button>",
+                cancellationToken);
+            await WriteLineAsync(writer, "      <button onclick=\"navBuilds('prev1')\">&lsaquo; 1</button>",
+                cancellationToken);
+            await WriteLineAsync(
+                writer,
+                $"      <span class=\"build-nav-label\">Builds 1\u20133 of {dumpCount}</span>",
+                cancellationToken);
+            await WriteLineAsync(writer, "      <button onclick=\"navBuilds('next1')\">1 &rsaquo;</button>",
+                cancellationToken);
+            await WriteLineAsync(writer, "      <button onclick=\"navBuilds('next3')\">3 &rsaquo;</button>",
+                cancellationToken);
+            await WriteLineAsync(writer, "      <button onclick=\"navBuilds('last')\">&raquo; Last</button>",
+                cancellationToken);
+            await WriteLineAsync(writer, "    </div>", cancellationToken);
+        }
+
+        await WriteLineAsync(writer, "  </div>", cancellationToken);
+    }
+
+    private static async Task WritePayloadScriptsAsync(
+        TextWriter writer,
+        string compressed,
+        CancellationToken cancellationToken)
+    {
+        if (compressed.Length <= PayloadChunkSize)
+        {
+            await WriteLineAsync(
+                writer,
+                $"  <script type=\"application/octet-stream\" id=\"record-data\">{compressed}</script>",
+                cancellationToken);
+            return;
+        }
+
+        await WriteLineAsync(writer, "  <div id=\"record-data\" hidden>", cancellationToken);
+        for (var offset = 0; offset < compressed.Length; offset += PayloadChunkSize)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var length = Math.Min(PayloadChunkSize, compressed.Length - offset);
+            await WriteAsync(
+                writer,
+                "    <script type=\"application/octet-stream\" class=\"record-data-chunk\">",
+                cancellationToken);
+            await writer.WriteAsync(compressed.AsMemory(offset, length), cancellationToken);
+            await WriteLineAsync(writer, "</script>", cancellationToken);
+        }
+
+        await WriteLineAsync(writer, "  </div>", cancellationToken);
+    }
+
+    private static async Task WriteLineAsync(
+        TextWriter writer,
+        string text,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await writer.WriteLineAsync(text);
+    }
+
+    private static async Task WriteAsync(
+        TextWriter writer,
+        string text,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await writer.WriteAsync(text);
     }
 
     private sealed record PayloadBundle(string CompressedPayload, int JsonLength);

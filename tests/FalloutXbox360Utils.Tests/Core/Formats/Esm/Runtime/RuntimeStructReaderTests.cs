@@ -2,6 +2,7 @@ using System.IO.MemoryMappedFiles;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Layouts;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
 using Xunit;
@@ -38,6 +39,20 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : IDispos
 
     private const int ModelPathBSStringTOffset = 80;
     private const byte WeaponFormType = 0x28;
+
+    [Fact]
+    public void RuntimeItemLayouts_weapon_asset_and_critical_offsets_match_memdebug_pdb()
+    {
+        var layouts = new RuntimeItemLayouts(16);
+
+        Assert.Equal(112, layouts.WeapInventoryIconPathOffset);
+        Assert.Equal(208, layouts.WeapRepairItemListOffset);
+        Assert.Equal(228, layouts.WeapMessageIconPathOffset);
+        Assert.Equal(464, layouts.WeapCritDamageOffset);
+        Assert.Equal(468, layouts.WeapCritChanceOffset);
+        Assert.Equal(476, layouts.WeapCritEffectPtrOffset);
+        Assert.Equal(480, layouts.WeapShellCasingModelPathOffset);
+    }
     private const int BipedWeaponOffset = 0x7C;
     private const int ProcessWeaponDrawnOffset = 0x135;
     private readonly ITestOutputHelper _output = output;

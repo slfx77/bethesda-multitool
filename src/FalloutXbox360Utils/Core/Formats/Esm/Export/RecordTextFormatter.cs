@@ -22,18 +22,24 @@ internal static class RecordTextFormatter
         object record, FormIdResolver resolver,
         Dictionary<uint, List<(uint FormId, string? Name)>>? factionMembers = null,
         Dictionary<uint, List<(PlacedReference Ref, CellRecord Cell)>>? keyLockedDoors = null,
-        Dictionary<uint, List<(WeaponRecord Weapon, WeaponModSlot Slot)>>? modToWeapon = null)
+        Dictionary<uint, List<(WeaponRecord Weapon, WeaponModSlot Slot)>>? modToWeapon = null,
+        IReadOnlyDictionary<uint, PlacedReferenceLocation>? placedReferenceLocations = null,
+        IReadOnlyDictionary<uint, IReadOnlyList<NpcPlacementInfo>>? npcPlacements = null,
+        IReadOnlyDictionary<uint, IReadOnlyList<NpcScriptReferenceInfo>>? npcScriptReferences = null)
     {
         var report = record switch
         {
             WeaponRecord w => GeckItemDetailWriter.BuildWeaponReport(w, resolver),
-            NpcRecord n => GeckActorDetailWriter.BuildNpcReport(n, resolver),
+            NpcRecord n => GeckActorDetailWriter.BuildNpcReport(n, resolver,
+                placements: npcPlacements?.GetValueOrDefault(n.FormId),
+                referencedInScripts: npcScriptReferences?.GetValueOrDefault(n.FormId)),
             ContainerRecord c => GeckItemDetailWriter.BuildContainerReport(c, resolver),
             QuestRecord q => GeckDialogueWriter.BuildQuestReport(q, resolver),
             FactionRecord f => GeckFactionWriter.BuildFactionReport(f, resolver,
                 factionMembers?.GetValueOrDefault(f.FormId)),
             CreatureRecord cr => GeckCreatureWriter.BuildCreatureReport(cr, resolver),
             RaceRecord r => GeckCreatureWriter.BuildRaceReport(r, resolver),
+            NoteRecord n => GeckTextContentWriter.BuildNoteReport(n, resolver),
             ProjectileRecord p => GeckWorldObjectWriter.BuildProjectileReport(p, resolver),
             ExplosionRecord e => GeckWorldObjectWriter.BuildExplosionReport(e, resolver),
             LeveledListRecord l => GeckMiscWriter.BuildLeveledListReport(l, resolver),
@@ -48,9 +54,12 @@ internal static class RecordTextFormatter
             MiscItemRecord m => GeckItemWriter.BuildMiscItemReport(m, resolver),
             KeyRecord k => GeckItemWriter.BuildKeyReport(k, resolver,
                 keyLockedDoors?.GetValueOrDefault(k.FormId)),
-            CellRecord c => GeckWorldWriter.BuildCellReport(c, resolver),
+            CellRecord c => GeckWorldWriter.BuildCellReport(c, resolver, placedReferenceLocations),
             WorldspaceRecord w => GeckWorldWriter.BuildWorldspaceReport(w, resolver),
-            PlacedReference p when p.IsMapMarker => GeckWorldWriter.BuildMapMarkerReport(p, resolver),
+            PlacedReference p when p.IsMapMarker => GeckWorldWriter.BuildMapMarkerReport(
+                p,
+                resolver,
+                placedReferenceLocations),
             ScriptRecord s => GeckScriptWriter.BuildScriptReport(s, resolver),
             DialogTopicRecord dt => GeckDialogueWriter.BuildDialogTopicReport(dt, resolver),
             DialogueRecord d => GeckDialogueWriter.BuildDialogueReport(d, resolver),
@@ -121,6 +130,8 @@ internal static class RecordTextFormatter
             yield return ("Creature", c.FormId, c.EditorId, c.FullName, c);
         foreach (var r in records.Races)
             yield return ("Race", r.FormId, r.EditorId, r.FullName, r);
+        foreach (var n in records.Notes)
+            yield return ("Note", n.FormId, n.EditorId, n.FullName, n);
         foreach (var c in records.Cells)
             yield return ("Cell", c.FormId, c.EditorId, c.FullName, c);
         foreach (var w in records.Worldspaces)

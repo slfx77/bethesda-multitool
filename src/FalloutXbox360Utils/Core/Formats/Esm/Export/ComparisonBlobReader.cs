@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO.Compression;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -32,12 +33,21 @@ internal static class ComparisonBlobReader
         "<script[^>]*id=\"chunk-\\d+\"[^>]*data-z=\"(?<payload>[^\"]+)\"[^>]*>",
         RegexOptions.Compiled);
 
+    private static readonly Regex ExternalChunkMarkerRegex = new(
+        "<script[^>]*id=\"chunk-\\d+\"[^>]*data-external-key=\"(?<key>[^\"]+)\"[^>]*data-src=\"(?<src>[^\"]+)\"[^>]*>",
+        RegexOptions.Compiled);
+
+    private static readonly Regex ExternalChunkPayloadRegex = new(
+        "__comparisonExternalChunks\\[\"(?<key>[^\"]+)\"\\]=\"(?<payload>[^\"]*)\"",
+        RegexOptions.Compiled);
+
     internal sealed record DumpInfo(
         string FileName,
         string ShortName,
         DateTime Date,
         bool IsDmp,
-        bool IsBase);
+        bool IsBase,
+        string DateSource = "");
 
     internal sealed class HtmlPage
     {
@@ -93,9 +103,45 @@ internal static class ComparisonBlobReader
                     ReadRecordsInto(chunkRoot, page.RecordType, page.Records);
                 }
             }
+
+            foreach (var compressedChunkPayload in ReadExternalChunkPayloads(htmlPath, html))
+            {
+                var chunkJson = Decompress(compressedChunkPayload);
+                using var chunkDoc = JsonDocument.Parse(chunkJson);
+                var chunkRoot = chunkDoc.RootElement;
+                if (chunkRoot.ValueKind == JsonValueKind.Object)
+                {
+                    ReadRecordsInto(chunkRoot, page.RecordType, page.Records);
+                }
+            }
         }
 
         return page;
+    }
+
+    private static IEnumerable<string> ReadExternalChunkPayloads(string htmlPath, string html)
+    {
+        var htmlDirectory = Path.GetDirectoryName(htmlPath) ?? ".";
+        foreach (Match marker in ExternalChunkMarkerRegex.Matches(html))
+        {
+            var key = WebUtility.HtmlDecode(marker.Groups["key"].Value);
+            var src = WebUtility.HtmlDecode(marker.Groups["src"].Value)
+                .Replace('/', Path.DirectorySeparatorChar);
+            var chunkPath = Path.Combine(htmlDirectory, src);
+            if (!File.Exists(chunkPath))
+            {
+                continue;
+            }
+
+            var script = File.ReadAllText(chunkPath, Encoding.UTF8);
+            foreach (Match payloadMatch in ExternalChunkPayloadRegex.Matches(script))
+            {
+                if (string.Equals(payloadMatch.Groups["key"].Value, key, StringComparison.Ordinal))
+                {
+                    yield return payloadMatch.Groups["payload"].Value.Trim();
+                }
+            }
+        }
     }
 
     private static void ReadDumps(JsonElement root, HtmlPage page)
@@ -112,7 +158,8 @@ internal static class ComparisonBlobReader
                     ? DateTime.Parse(dts, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind)
                     : DateTime.MinValue,
                 d.TryGetProperty("isDmp", out var idp) && idp.GetBoolean(),
-                d.TryGetProperty("isBase", out var ib) && ib.GetBoolean()));
+                d.TryGetProperty("isBase", out var ib) && ib.GetBoolean(),
+                d.TryGetProperty("dateSource", out var ds) ? ds.GetString() ?? "" : ""));
         }
     }
 

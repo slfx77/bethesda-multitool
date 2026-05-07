@@ -63,8 +63,8 @@ internal static class DmpCompareFileProcessor
 
         var source = await SemanticSourceSetBuilder.LoadMergedBaseDirectoryAsync(
             baseDirPath,
-            message => AnsiConsole.MarkupLine($"  [blue]{Markup.Escape(message)}[/]"),
-            cancellationToken);
+            log: message => AnsiConsole.MarkupLine($"  [blue]{Markup.Escape(message)}[/]"),
+            cancellationToken: cancellationToken);
 
         if (source == null)
         {

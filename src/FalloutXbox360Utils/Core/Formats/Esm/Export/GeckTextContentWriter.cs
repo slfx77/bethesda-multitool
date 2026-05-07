@@ -12,6 +12,79 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 /// </summary>
 internal static class GeckTextContentWriter
 {
+    internal static RecordReport BuildNoteReport(NoteRecord note, FormIdResolver? resolver = null)
+    {
+        resolver ??= FormIdResolver.Empty;
+        var sections = new List<ReportSection>
+        {
+            new("Identity",
+            [
+                new ReportField("Type", ReportValue.String(note.NoteTypeName)),
+                new ReportField("Endianness",
+                    ReportValue.String(note.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")),
+                new ReportField("Offset", ReportValue.String($"0x{note.Offset:X8}"))
+            ])
+        };
+
+        var artFields = new List<ReportField>();
+        if (!string.IsNullOrEmpty(note.ModelPath))
+        {
+            artFields.Add(new ReportField("Model", ReportValue.String(note.ModelPath)));
+        }
+
+        if (!string.IsNullOrEmpty(note.IconPath))
+        {
+            artFields.Add(new ReportField("Inventory Icon", ReportValue.String(note.IconPath)));
+        }
+
+        if (!string.IsNullOrEmpty(note.TexturePath))
+        {
+            artFields.Add(new ReportField("Menu Icon", ReportValue.String(note.TexturePath)));
+        }
+
+        if (artFields.Count > 0)
+        {
+            sections.Add(new ReportSection("Art Assets", artFields));
+        }
+
+        var referenceFields = new List<ReportField>();
+        if (note.SoundFormId is > 0)
+        {
+            referenceFields.Add(new ReportField("Audio",
+                ReportValue.FormId(note.SoundFormId.Value, resolver),
+                $"0x{note.SoundFormId.Value:X8}"));
+        }
+
+        if (note.ObjectFormId is > 0)
+        {
+            referenceFields.Add(new ReportField("Object",
+                ReportValue.FormId(note.ObjectFormId.Value, resolver),
+                $"0x{note.ObjectFormId.Value:X8}"));
+        }
+
+        if (note.TopicFormId is > 0)
+        {
+            referenceFields.Add(new ReportField("Topic",
+                ReportValue.FormId(note.TopicFormId.Value, resolver),
+                $"0x{note.TopicFormId.Value:X8}"));
+        }
+
+        if (referenceFields.Count > 0)
+        {
+            sections.Add(new ReportSection("References", referenceFields));
+        }
+
+        if (!string.IsNullOrEmpty(note.Text))
+        {
+            sections.Add(new ReportSection("Content",
+            [
+                new ReportField("Text", ReportValue.String(note.Text))
+            ]));
+        }
+
+        return new RecordReport("Note", note.FormId, note.EditorId, note.FullName, sections);
+    }
+
     internal static void AppendNotesSection(StringBuilder sb, List<NoteRecord> notes)
     {
         GeckReportHelpers.AppendSectionHeader(sb, $"Notes ({notes.Count})");
@@ -26,6 +99,25 @@ internal static class GeckTextContentWriter
             sb.AppendLine($"Type:           {note.NoteTypeName}");
             sb.AppendLine($"Endianness:     {(note.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")}");
             sb.AppendLine($"Offset:         0x{note.Offset:X8}");
+            if (!string.IsNullOrEmpty(note.ModelPath))
+            {
+                sb.AppendLine($"Model:          {note.ModelPath}");
+            }
+
+            if (!string.IsNullOrEmpty(note.IconPath))
+            {
+                sb.AppendLine($"Icon:           {note.IconPath}");
+            }
+
+            if (!string.IsNullOrEmpty(note.TexturePath))
+            {
+                sb.AppendLine($"Menu Icon:      {note.TexturePath}");
+            }
+
+            if (note.SoundFormId is > 0)
+            {
+                sb.AppendLine($"Audio:          {GeckReportHelpers.FormatFormId(note.SoundFormId.Value)}");
+            }
 
             if (!string.IsNullOrEmpty(note.Text))
             {

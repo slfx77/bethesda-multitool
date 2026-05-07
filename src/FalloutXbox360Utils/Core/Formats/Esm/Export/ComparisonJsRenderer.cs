@@ -239,6 +239,25 @@ internal static class ComparisonJsRenderer
                                          };
                                        }
 
+                                       function readChunkScriptPayload(el) {
+                                         var inlinePayload = el.getAttribute('data-z') || '';
+                                         if (inlinePayload) return inlinePayload;
+                                         var externalKey = el.getAttribute('data-external-key') || el.id || '';
+                                         var externalChunks = window.__comparisonExternalChunks || {};
+                                         if (externalKey && externalChunks[externalKey]) {
+                                           return externalChunks[externalKey];
+                                         }
+                                         return '';
+                                       }
+
+                                       function releaseChunkScriptPayload(el) {
+                                         el.removeAttribute('data-z');
+                                         var externalKey = el.getAttribute('data-external-key') || el.id || '';
+                                         if (externalKey && window.__comparisonExternalChunks) {
+                                           delete window.__comparisonExternalChunks[externalKey];
+                                         }
+                                       }
+
                                        function showLoadFailure(err) {
                                          DEBUG_STATE.failure = {
                                            error: (err && err.message) || String(err),
@@ -309,7 +328,26 @@ internal static class ComparisonJsRenderer
                                            DATA = await inflate(compressed);
                                            setLoadingStatus('Rendering comparison table...');
                                            render();
+                                           document.addEventListener('toggle', function(ev) {
+                                             if (!ev.target || !ev.target.classList
+                                                 || !ev.target.classList.contains('rd-field-disclosure')) {
+                                               return;
+                                             }
+
+                                             var detailRow = ev.target.closest('tr.detail-row');
+                                             if (!detailRow) return;
+                                             var slotCount = parseInt(detailRow.dataset.slotCount || '0');
+                                             if (slotCount > 0) {
+                                               requestAnimationFrame(function() {
+                                                 alignDetailSlots(detailRow, slotCount);
+                                               });
+                                             }
+                                           }, true);
                                            document.getElementById('loading').style.display = 'none';
+                                           await navigateToHashRecord();
+                                           window.addEventListener('hashchange', function() {
+                                             navigateToHashRecord();
+                                           });
                                            debugLog('render-complete', {
                                              recordType: DATA.recordType,
                                              dumpCount: DATA.dumps ? DATA.dumps.length : 0,
@@ -327,6 +365,141 @@ internal static class ComparisonJsRenderer
                                        function esc(s) {
                                          if (!s) return '';
                                          return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+                                       }
+
+                                       function normalizeFormIdKey(value) {
+                                         if (value === null || value === undefined) return '';
+                                         var s = String(value).trim();
+                                         var m = s.match(/0x[0-9a-fA-F]{8}/);
+                                         if (m) return '0x' + m[0].substring(2).toUpperCase();
+                                         if (/^[0-9a-fA-F]{8}$/.test(s)) return '0x' + s.toUpperCase();
+                                         return '';
+                                       }
+
+                                       function recordDomId(formId) {
+                                         var key = normalizeFormIdKey(formId) || String(formId || '');
+                                         return 'record-' + key.replace(/^0x/i, '').toUpperCase();
+                                       }
+
+                                       function recordLinkTargetExists(formId) {
+                                         var key = normalizeFormIdKey(formId);
+                                         if (!key) return false;
+                                         return (DATA.records && DATA.records.hasOwnProperty(key))
+                                           || (DATA.groups && DATA.groups.hasOwnProperty(key));
+                                       }
+
+                                       function renderFormIdValue(val) {
+                                         if (!val) return '';
+                                         var text = val.display || val.raw || '';
+                                         var key = normalizeFormIdKey(val.raw || text);
+                                         if (DATA && DATA.recordType === 'Cell' && recordLinkTargetExists(key)) {
+                                           return '<a href="#' + recordDomId(key) + '" onclick="navigateToRecord(\''
+                                             + key + '\'); return false;">' + esc(text) + '</a>';
+                                         }
+                                         return esc(text);
+                                       }
+
+                                       function renderCellReferenceValue(val) {
+                                         if (!val) return '';
+                                         if (DATA && DATA.recordType === 'Cell') return renderFormIdValue(val);
+                                         return renderCellPageLink(val);
+                                       }
+
+                                       function renderCellPageLink(val) {
+                                         if (!val) return '';
+                                         var text = val.display || val.raw || '';
+                                         var key = normalizeFormIdKey(val.raw || text);
+                                         if (!key) return esc(text);
+                                         return '<a href="compare_cell.html#' + recordDomId(key) + '">'
+                                           + esc(text) + '</a>';
+                                       }
+
+                                       function renderFieldValueForContext(sectionName, fieldKey, val) {
+                                         if (shouldRenderCellPageLink(sectionName, fieldKey, val)) {
+                                           return renderCellReferenceValue(val);
+                                         }
+                                         if (shouldRenderTextContent(sectionName, fieldKey, val)) {
+                                           return renderTextContentValue(val);
+                                         }
+                                         return renderFieldValue(val);
+                                       }
+
+                                       function shouldRenderTextContent(sectionName, fieldKey, val) {
+                                         if (!val || val.type !== 'string') return false;
+                                         if (sectionName === 'Content' && fieldKey === 'Text') return true;
+                                         if (sectionName === 'Description' && fieldKey === 'Text') return true;
+                                         return false;
+                                       }
+
+                                       function renderTextContentValue(val) {
+                                         if (!val) return '';
+                                         return '<div class="rd-text">' + esc(val.raw || val.display || '') + '</div>';
+                                       }
+
+                                       function shouldRenderCellPageLink(sectionName, fieldKey, val) {
+                                         if (!val || val.type !== 'formId') return false;
+                                         if (!fieldKey) return false;
+                                         return fieldKey === 'Cell' || fieldKey === 'Containing Cell';
+                                       }
+
+                                       function hashRecordKey() {
+                                         var hash = window.location.hash || '';
+                                         if (!hash) return '';
+                                         var m = hash.match(/^#record-([0-9a-fA-F]{8})$/);
+                                         if (m) return '0x' + m[1].toUpperCase();
+                                         return normalizeFormIdKey(hash.substring(1));
+                                       }
+
+                                       async function navigateToHashRecord() {
+                                         var key = hashRecordKey();
+                                         if (key) await navigateToRecord(key);
+                                       }
+
+                                       async function navigateToRecord(formId) {
+                                         var key = normalizeFormIdKey(formId);
+                                         if (!key) return;
+
+                                         var row = document.getElementById(recordDomId(key));
+                                         if (!row && DATA.chunked && DATA.groups) {
+                                           var groupName = DATA.groups[key];
+                                           var header = findGroupHeaderForRecordGroup(groupName);
+                                           if (header) {
+                                             await ensureChunkedGroupVisible(header);
+                                             row = document.getElementById(recordDomId(key));
+                                           }
+                                         }
+
+                                         if (!row) return;
+                                         row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                                         if (!row.classList.contains('expanded')) {
+                                           toggleDetail(row);
+                                         }
+                                         row.classList.add('nav-flash');
+                                         setTimeout(function() { row.classList.remove('nav-flash'); }, 1800);
+                                       }
+
+                                       function findGroupHeaderForRecordGroup(groupName) {
+                                         if (!groupName) return null;
+                                         var headers = document.querySelectorAll('.group-header[data-group]');
+                                         for (var i = 0; i < headers.length; i++) {
+                                           if (headers[i].getAttribute('data-group') === groupName) return headers[i];
+                                         }
+                                         return null;
+                                       }
+
+                                       async function ensureChunkedGroupVisible(header) {
+                                         if (!header) return;
+                                         var content = header.nextElementSibling;
+                                         if (!content) return;
+                                         if (!content.dataset.loaded) {
+                                           await toggleGroupChunked(header);
+                                           return;
+                                         }
+                                         if (content.style.display === 'none') {
+                                           content.style.display = '';
+                                           header.textContent = header.textContent.replace('\u25B6', '\u25BC');
+                                           requestAnimationFrame(alignRenderedDetailRows);
+                                         }
                                        }
 
                                        // --- Main render ---
@@ -498,11 +671,11 @@ internal static class ComparisonJsRenderer
                                          // Body
                                          var tbody = document.createElement('tbody');
 
-                                         // Sort records by editorId
+                                         // Default record order: named records first by Editor ID, then
+                                         // cells by numeric grid position, then Form ID.
                                          var formIds = Object.keys(records).sort(function(a, b) {
-                                           var ea = (records[a].editorId || '').toLowerCase();
-                                           var eb = (records[b].editorId || '').toLowerCase();
-                                           return ea < eb ? -1 : ea > eb ? 1 : 0;
+                                           return compareRecordsForDefaultOrder(
+                                             a, records[a], b, records[b], hasCoords, gridCoords);
                                          });
 
                                          for (var fi = 0; fi < formIds.length; fi++) {
@@ -531,15 +704,18 @@ internal static class ComparisonJsRenderer
                                              searchData = (formId + ' ' + questEid + ' ' + questName + ' '
                                                + topicEid + ' ' + topicName + ' ' + speakerName + ' ' + (rec.editorId || '')).toLowerCase();
                                            } else {
+                                             var meta = rec.metadata || {};
                                              // Name change display
                                              editorIdDisplay = esc(editorId);
-                                             if (rec.editorIdHistory && rec.editorIdHistory.length > 1) {
-                                               editorIdDisplay = rec.editorIdHistory.map(esc)
+                                             var editorHistory = visibleNameHistory(rec.editorIdHistory);
+                                             if (editorHistory.length > 1) {
+                                               editorIdDisplay = editorHistory.map(esc)
                                                  .join('<br><span class="name-change">\u21B3 </span>');
                                              }
                                              nameDisplay = esc(displayName);
-                                             if (rec.nameHistory && rec.nameHistory.length > 1) {
-                                               nameDisplay = rec.nameHistory.map(esc)
+                                             var nameHistory = visibleNameHistory(rec.nameHistory);
+                                             if (nameHistory.length > 1) {
+                                               nameDisplay = nameHistory.map(esc)
                                                  .join('<br><span class="name-change">\u21B3 </span>');
                                              }
 
@@ -563,6 +739,7 @@ internal static class ComparisonJsRenderer
                                            summaryRow.setAttribute('data-name', displayName);
                                            summaryRow.setAttribute('data-coords', coordsDisplay);
                                            summaryRow.setAttribute('data-formid', formId);
+                                           summaryRow.id = recordDomId(formId);
                                            if (hasCoords && gridCoords[formId]) {
                                              summaryRow.setAttribute('data-cx', gridCoords[formId][0]);
                                              summaryRow.setAttribute('data-cy', gridCoords[formId][1]);
@@ -588,31 +765,33 @@ internal static class ComparisonJsRenderer
                                            for (var di = 0; di < dumps.length; di++) {
                                              if (sparseDumps.has(di)) continue;
                                              var colClass = 'build-col-' + di;
+                                             var statusCellPrefix = '<td class="' + colClass
+                                               + ' status-cell" data-dump-idx="' + di + '" data-status="';
                                              if (present.has(di)) {
                                                var snapshotKey = resolvedSnapshots[di] !== null
                                                  ? resolvedSnapshots[di].key : null;
                                                if (previousSnapshotKey === null) {
                                                  if (dumps[di].isBase || di === 0)
-                                                   rowHtml += '<td class="' + colClass
+                                                   rowHtml += statusCellPrefix + 'BASE'
                                                      + '"><span class="badge badge-base">BASE</span></td>';
                                                  else
-                                                   rowHtml += '<td class="' + colClass
+                                                   rowHtml += statusCellPrefix + 'NEW'
                                                      + '"><span class="badge badge-new">NEW</span></td>';
                                                } else if (snapshotKey === previousSnapshotKey) {
-                                                 rowHtml += '<td class="' + colClass
+                                                 rowHtml += statusCellPrefix + 'SAME'
                                                    + '"><span class="badge badge-same">SAME</span></td>';
                                                } else {
-                                                 rowHtml += '<td class="' + colClass
+                                                 rowHtml += statusCellPrefix + 'CHANGED'
                                                    + '"><span class="badge badge-changed">CHANGED</span></td>';
                                                }
                                                previousSnapshotKey = snapshotKey;
                                              } else {
                                                if (previousSnapshotKey !== null) {
                                                  var badgeText = dumps[di].isDmp ? 'NOT PRESENT' : 'REMOVED';
-                                                 rowHtml += '<td class="' + colClass
+                                                 rowHtml += statusCellPrefix + badgeText
                                                    + '"><span class="badge badge-removed">' + badgeText + '</span></td>';
                                                } else {
-                                                 rowHtml += '<td class="' + colClass
+                                                 rowHtml += statusCellPrefix + '\u2014'
                                                    + '"><span class="badge badge-absent">&mdash;</span></td>';
                                                }
                                              }
@@ -721,6 +900,12 @@ internal static class ComparisonJsRenderer
                                              var isBase = (dumps[di].isBase || di === 0) && previousReport === null;
                                              var html = renderAligned(report, previousReport, isBase,
                                                template, sectionKeyWidths);
+                                             var virtualAudit = getMetadataDumpValue(
+                                               rec.metadata, 'upgradedVirtualFormIdsByDump', di);
+                                             if (virtualAudit) {
+                                               html = '<div class="rd-audit">Virtual cell aligned from '
+                                                 + esc(virtualAudit) + '</div>' + html;
+                                             }
                                              td.innerHTML = '<div class="record-detail">' + html + '</div>';
                                              previousReport = report;
                                            } else if (previousReport !== null) {
@@ -733,14 +918,25 @@ internal static class ComparisonJsRenderer
                                          // Cross-column slot alignment: equalize each template-slot's height
                                          // so section headers (and individual fields) line up vertically across
                                          // all build columns, even when content heights differ.
+                                         detailRow.dataset.slotCount = String(template.length);
                                          alignDetailSlots(detailRow, template.length);
+                                         requestAnimationFrame(function() {
+                                           alignDetailSlots(detailRow, template.length);
+                                         });
                                        }
 
                                        // Equalize the rendered height of each template slot across all visible
                                        // build columns. Two passes (clear → measure → write) avoid feedback loops
                                        // from earlier writes affecting later measurements.
                                        function alignDetailSlots(detailRow, slotCount) {
-                                         var detailDivs = detailRow.querySelectorAll('td .record-detail');
+                                         if (detailRow.style.display === 'none') return;
+                                         var allDetailDivs = detailRow.querySelectorAll('td .record-detail');
+                                         var detailDivs = [];
+                                         for (var di = 0; di < allDetailDivs.length; di++) {
+                                           if (allDetailDivs[di].offsetParent !== null) {
+                                             detailDivs.push(allDetailDivs[di]);
+                                           }
+                                         }
                                          if (detailDivs.length < 2) return;
                                          var slotLists = [];
                                          for (var i = 0; i < detailDivs.length; i++) {
@@ -782,22 +978,29 @@ internal static class ComparisonJsRenderer
                                          for (var ri = 0; ri < reports.length; ri++) {
                                            var report = reports[ri];
                                            if (!report || !report.sections) continue;
+                                           var reportSectionNames = [];
+                                           for (var rsi = 0; rsi < report.sections.length; rsi++) {
+                                             reportSectionNames.push(canonicalSectionName(report.sections[rsi].name));
+                                           }
                                            for (var si = 0; si < report.sections.length; si++) {
                                              var sec = report.sections[si];
-                                             if (!sectionSeen.has(sec.name)) {
-                                               sectionSeen.add(sec.name);
-                                               sectionOrder.push(sec.name);
-                                               sectionFields[sec.name] = [];
+                                             var secName = reportSectionNames[si];
+                                             if (!sectionSeen.has(secName)) {
+                                               sectionSeen.add(secName);
+                                               insertSectionInReportOrder(sectionOrder, reportSectionNames, si);
+                                               sectionFields[secName] = [];
                                              }
-                                             var existing = new Set(sectionFields[sec.name]);
+                                             var existing = new Set(sectionFields[secName]);
                                              for (var fi = 0; fi < sec.fields.length; fi++) {
                                                if (!existing.has(sec.fields[fi].key)) {
                                                  existing.add(sec.fields[fi].key);
-                                                 sectionFields[sec.name].push(sec.fields[fi].key);
+                                                 sectionFields[secName].push(sec.fields[fi].key);
                                                }
                                              }
                                            }
                                          }
+
+                                         sectionOrder = orderDetailSections(sectionOrder);
 
                                          var template = [];
                                          for (var si = 0; si < sectionOrder.length; si++) {
@@ -811,6 +1014,152 @@ internal static class ComparisonJsRenderer
                                          return template;
                                        }
 
+                                       function canonicalSectionName(name) {
+                                         var text = String(name || '').trim();
+                                         // Report builders historically included counts in section titles
+                                         // ("Inventory (4)", "Variables (12)", "Contents (3 items)").
+                                         // Treat those as the same logical section so item-level diffs
+                                         // and cross-column vertical alignment stay stable.
+                                         return text.replace(/\s+\((?:\d+(?:\s+\w+)?|\d+\/\d+\s+\w+)\)$/i, '');
+                                       }
+
+                                       function insertSectionInReportOrder(sectionOrder, reportSectionNames, sectionIndex) {
+                                         var sectionName = reportSectionNames[sectionIndex];
+                                         var insertAt = -1;
+                                         var prevAt = -1;
+
+                                         for (var ni = sectionIndex + 1; ni < reportSectionNames.length; ni++) {
+                                           var nextAt = sectionOrder.indexOf(reportSectionNames[ni]);
+                                           if (nextAt >= 0) {
+                                             insertAt = nextAt;
+                                             break;
+                                           }
+                                         }
+
+                                         for (var pi = sectionIndex - 1; pi >= 0; pi--) {
+                                           prevAt = sectionOrder.indexOf(reportSectionNames[pi]);
+                                           if (prevAt >= 0) break;
+                                         }
+
+                                         if (insertAt >= 0 && prevAt >= 0 && insertAt <= prevAt) {
+                                           insertAt = prevAt + 1;
+                                         } else if (insertAt < 0 && prevAt >= 0) {
+                                           insertAt = prevAt + 1;
+                                         } else if (insertAt < 0) {
+                                           insertAt = sectionOrder.length;
+                                         }
+
+                                         sectionOrder.splice(insertAt, 0, sectionName);
+                                       }
+
+                                       function orderDetailSections(sectionOrder) {
+                                         var originalIndex = {};
+                                         for (var i = 0; i < sectionOrder.length; i++) {
+                                           originalIndex[sectionOrder[i]] = i;
+                                         }
+
+                                         return sectionOrder.slice().sort(function(a, b) {
+                                           var ar = detailSectionRank(a);
+                                           var br = detailSectionRank(b);
+                                           if (ar !== br) return ar - br;
+                                           return originalIndex[a] - originalIndex[b];
+                                         });
+                                       }
+
+                                       function detailSectionRank(name) {
+                                         if (name === 'Identity') return 0;
+                                         if (name === 'Environment') return 10;
+                                         if (name === 'Heightmap') return 20;
+                                         if (name === 'Door Links') return 30;
+                                         if (name === 'Placed Objects') return 40;
+                                         return 1000;
+                                       }
+
+                                       function getMetadataDumpValue(metadata, key, dumpIdx) {
+                                         if (!metadata || !metadata[key]) return '';
+                                         var prefix = dumpIdx + ':';
+                                         var entries = metadata[key].split(';');
+                                         for (var i = 0; i < entries.length; i++) {
+                                           var entry = entries[i].trim();
+                                           if (entry.indexOf(prefix) === 0) {
+                                             return entry.substring(prefix.length);
+                                           }
+                                         }
+                                         return '';
+                                       }
+
+                                       function visibleNameHistory(history) {
+                                         if (!history || !history.length) return [];
+                                         var seen = {};
+                                         var result = [];
+                                         for (var i = 0; i < history.length; i++) {
+                                           var value = history[i] === null || history[i] === undefined
+                                             ? '' : String(history[i]).trim();
+                                           if (!value || isSyntheticVirtualLabel(value) || seen[value]) continue;
+                                           seen[value] = true;
+                                           result.push(value);
+                                         }
+                                         return result;
+                                       }
+
+                                       function isSyntheticVirtualLabel(value) {
+                                         return /^\[?Virtual\s/i.test(value || '');
+                                       }
+
+                                       function compareRecordsForDefaultOrder(formIdA, recA,
+                                                                              formIdB, recB,
+                                                                              hasCoords, gridCoords) {
+                                         var cmp = compareEditorValues(
+                                           recA ? recA.editorId : '',
+                                           recB ? recB.editorId : '',
+                                           true);
+                                         if (cmp !== 0) return cmp;
+                                         if (hasCoords) {
+                                           cmp = compareCoordinateValues(
+                                             gridCoords ? gridCoords[formIdA] : null,
+                                             gridCoords ? gridCoords[formIdB] : null);
+                                           if (cmp !== 0) return cmp;
+                                         }
+                                         return compareFormIdText(formIdA, formIdB);
+                                       }
+
+                                       function compareEditorValues(a, b, asc) {
+                                         var va = normalizeSortText(a);
+                                         var vb = normalizeSortText(b);
+                                         var aBlank = va.length === 0;
+                                         var bBlank = vb.length === 0;
+                                         if (aBlank !== bBlank) return aBlank ? 1 : -1;
+                                         var cmp = va < vb ? -1 : va > vb ? 1 : 0;
+                                         return asc ? cmp : -cmp;
+                                       }
+
+                                       function normalizeSortText(value) {
+                                         return (value === null || value === undefined)
+                                           ? '' : String(value).trim().toLowerCase();
+                                       }
+
+                                       function compareCoordinateValues(aCoords, bCoords) {
+                                         var ax = aCoords && aCoords.length >= 2 ? parseInt(aCoords[0]) : NaN;
+                                         var ay = aCoords && aCoords.length >= 2 ? parseInt(aCoords[1]) : NaN;
+                                         var bx = bCoords && bCoords.length >= 2 ? parseInt(bCoords[0]) : NaN;
+                                         var by = bCoords && bCoords.length >= 2 ? parseInt(bCoords[1]) : NaN;
+                                         var aHasCoords = !isNaN(ax) && !isNaN(ay);
+                                         var bHasCoords = !isNaN(bx) && !isNaN(by);
+                                         if (aHasCoords !== bHasCoords) return aHasCoords ? -1 : 1;
+                                         if (!aHasCoords && !bHasCoords) return 0;
+                                         return compareCoordinateNumbers(ax, ay, bx, by);
+                                       }
+
+                                       function compareCoordinateNumbers(ax, ay, bx, by) {
+                                         // Row-major map order: north/top first, then west/left to east/right.
+                                         if (ay !== by) return by - ay;
+                                         return ax - bx;
+                                       }
+
+                                       function compareFormIdText(a, b) {
+                                         return a < b ? -1 : a > b ? 1 : 0;
+                                       }
+
                                        // Render a single column against the unified template
                                        function renderAligned(current, previous, isBase, template, keyWidths) {
                                          if (!current || !current.sections) return '';
@@ -820,10 +1169,11 @@ internal static class ComparisonJsRenderer
                                          var curSections = new Set();
                                          for (var si = 0; si < current.sections.length; si++) {
                                            var sec = current.sections[si];
-                                           curSections.add(sec.name);
-                                           curIndex[sec.name] = {};
+                                           var secName = canonicalSectionName(sec.name);
+                                           curSections.add(secName);
+                                           curIndex[secName] = {};
                                            for (var fi = 0; fi < sec.fields.length; fi++)
-                                             curIndex[sec.name][sec.fields[fi].key] = sec.fields[fi];
+                                             curIndex[secName][sec.fields[fi].key] = sec.fields[fi];
                                          }
 
                                          // Index previous report
@@ -832,10 +1182,11 @@ internal static class ComparisonJsRenderer
                                          if (previous && previous.sections) {
                                            for (var si = 0; si < previous.sections.length; si++) {
                                              var ps = previous.sections[si];
-                                             prevSections.add(ps.name);
-                                             prevIndex[ps.name] = {};
+                                             var psName = canonicalSectionName(ps.name);
+                                             prevSections.add(psName);
+                                             prevIndex[psName] = {};
                                              for (var fi = 0; fi < ps.fields.length; fi++)
-                                               prevIndex[ps.name][ps.fields[fi].key] = ps.fields[fi];
+                                               prevIndex[psName][ps.fields[fi].key] = ps.fields[fi];
                                            }
                                          }
 
@@ -873,19 +1224,19 @@ internal static class ComparisonJsRenderer
 
                                            var diffCls = '';
                                            var valHtml = '';
-                                           if (!curField && !prevField) {
-                                             diffCls = ' style="color:#555"'; valHtml = '\u2014';
+                                          if (!curField && !prevField) {
+                                            diffCls = ' style="visibility:hidden"'; valHtml = '\u2014';
                                            } else if (!curField && prevField) {
                                              diffCls = ' class="field-removed"';
-                                             valHtml = renderFieldValue(prevField.value);
+                                             valHtml = renderFieldValueForContext(slot.section, slot.key, prevField.value);
                                            } else if (curField && previous === null) {
                                              if (!isBase) diffCls = ' class="field-new"';
-                                             valHtml = renderFieldValue(curField.value);
+                                             valHtml = renderFieldValueForContext(slot.section, slot.key, curField.value);
                                            } else if (curField && !prevField) {
                                              diffCls = ' class="field-new"';
-                                             valHtml = renderFieldValue(curField.value);
+                                             valHtml = renderFieldValueForContext(slot.section, slot.key, curField.value);
                                            } else if (valuesEqual(curField.value, prevField.value)) {
-                                             valHtml = renderFieldValue(curField.value);
+                                             valHtml = renderFieldValueForContext(slot.section, slot.key, curField.value);
                                            } else if (curField.value && curField.value.type === 'list'
                                                       && prevField.value && prevField.value.type === 'list') {
                                              valHtml = renderListDiffHtml(curField.value, prevField.value);
@@ -896,8 +1247,13 @@ internal static class ComparisonJsRenderer
                                              valHtml = renderCompositeDiffHtml(curField.value, prevField.value);
                                            } else {
                                              diffCls = ' class="field-changed"';
-                                             valHtml = renderFieldValue(curField.value);
+                                             valHtml = renderFieldValueForContext(slot.section, slot.key, curField.value);
                                            }
+
+                                           var valueForDisclosure = curField ? curField.value
+                                             : (prevField ? prevField.value : null);
+                                           valHtml = maybeWrapCollapsedField(slot.section, slot.key,
+                                             valueForDisclosure, valHtml);
 
                                            // diffCls is one of: '', ' class="field-..."', or ' style="..."'.
                                            // For the rd-field case the wrapper already has a class attribute,
@@ -917,7 +1273,7 @@ internal static class ComparisonJsRenderer
                                            } else {
                                              html += '<div class="rd-field' + diffClassName + '" data-slot="' + ti + '"'
                                                + diffStyleAttr + '>'
-                                               + '<div class="rd-key">' + esc(slot.key) + '</div>'
+                                               + '<div class="rd-key">' + esc(displayFieldKey(slot.key)) + '</div>'
                                                + '<div class="rd-val">' + valHtml + '</div></div>';
                                            }
                                          }
@@ -925,6 +1281,28 @@ internal static class ComparisonJsRenderer
                                          html += '</div>';
 
                                          return html;
+                                       }
+
+                                       function displayFieldKey(key) {
+                                         return key === 'FormID' ? 'Form ID' : key;
+                                       }
+
+                                       function maybeWrapCollapsedField(sectionName, fieldKey, value, html) {
+                                         if (!shouldCollapseFieldByDefault(sectionName, fieldKey, value)) {
+                                           return html;
+                                         }
+
+                                         var label = value && value.display ? value.display : 'show details';
+                                         return '<details class="rd-field-disclosure"><summary>'
+                                           + esc(label) + '</summary><div class="rd-field-disclosure-body">'
+                                           + html + '</div></details>';
+                                       }
+
+                                       function shouldCollapseFieldByDefault(sectionName, fieldKey, value) {
+                                         if (sectionName !== 'FaceGen Morph Data') return false;
+                                         if (!/Controls$/i.test(fieldKey || '')) return false;
+                                         return value && value.type === 'list'
+                                           && value.items && value.items.length > 0;
                                        }
 
                                        // Render a field value as HTML (not pre-formatted text)
@@ -939,6 +1317,7 @@ internal static class ComparisonJsRenderer
                                          }
                                          if (val.type === 'list') return renderListHtml(val);
                                          if (val.type === 'composite') return renderCompositeHtml(val);
+                                         if (val.type === 'formId') return renderFormIdValue(val);
                                          return esc(val.display || val.raw || '');
                                        }
 
@@ -962,9 +1341,9 @@ internal static class ComparisonJsRenderer
                                          var h = '';
                                          for (var i = 0; i < val.fields.length; i++) {
                                            h += '<div class="rd-field">'
-                                             + '<div class="rd-key">' + esc(val.fields[i].key) + '</div>'
-                                             + '<div class="rd-val">' + renderFieldValue(val.fields[i].value) + '</div>'
-                                             + '</div>';
+                                            + '<div class="rd-key">' + esc(displayFieldKey(val.fields[i].key)) + '</div>'
+                                            + '<div class="rd-val">' + renderFieldValue(val.fields[i].value) + '</div>'
+                                            + '</div>';
                                          }
                                          return h;
                                        }
@@ -972,6 +1351,8 @@ internal static class ComparisonJsRenderer
                                        function renderCompositeInline(val) {
                                          if (!val || !val.fields) return esc(val ? (val.display || '') : '');
                                          if (looksLikePlacedObjectComposite(val)) return renderPlacedObjectInline(val);
+                                         var fieldMap = buildCompositeFieldMap(val);
+                                         if (fieldMap.Control && fieldMap.Value) return renderCompositeHtml(val);
                                          return esc(val.display || '');
                                        }
 
@@ -1014,6 +1395,12 @@ internal static class ComparisonJsRenderer
                                          var rotationText = compositeFieldText(fieldMap, 'Rotation');
                                          var scaleText = compositeFieldText(fieldMap, 'Scale');
                                          var disabledText = compositeFieldText(fieldMap, 'Disabled');
+                                         var linksToVal = fieldMap['Links to'];
+                                         var destinationDoorVal = fieldMap['Destination Door'];
+                                         var containingCellVal = fieldMap['Containing Cell'];
+                                         var worldspaceVal = fieldMap.Worldspace;
+                                         var cellVal = fieldMap.Cell;
+                                         var gridText = compositeFieldText(fieldMap, 'Grid');
 
                                          if (baseText) header.push(esc(baseText));
                                          if (nameText) header.push('"' + esc(nameText) + '"');
@@ -1029,6 +1416,24 @@ internal static class ComparisonJsRenderer
                                          if (scaleText && scaleText !== '1' && scaleText !== '1.0'
                                              && scaleText !== '1.00') {
                                            details.push('scale=' + esc(scaleText));
+                                         }
+                                         if (containingCellVal) {
+                                           details.push('in ' + renderCellReferenceValue(containingCellVal));
+                                         }
+                                         if (worldspaceVal) {
+                                           details.push('worldspace: ' + renderFormIdValue(worldspaceVal));
+                                         }
+                                         if (cellVal) {
+                                           details.push('cell: ' + renderCellReferenceValue(cellVal));
+                                         }
+                                         if (gridText) {
+                                           details.push('grid: ' + esc(gridText));
+                                         }
+                                         if (linksToVal) {
+                                           details.push('links to: ' + renderFormIdValue(linksToVal));
+                                         }
+                                         if (destinationDoorVal) {
+                                           details.push('destination door: ' + renderFormIdValue(destinationDoorVal));
                                          }
 
                                          var h = header.length > 0 ? header.join(' ') : esc(val.display || '');
@@ -1047,44 +1452,66 @@ internal static class ComparisonJsRenderer
                                          var curKeys = {};
                                          for (var i = 0; i < curItems.length; i++)
                                            curKeys[listItemKey(curItems[i])] = true;
-                                         var h = '';
-                                         for (var i = 0; i < curItems.length; i++) {
-                                           var curItem = curItems[i];
-                                           var key = listItemKey(curItem);
-                                           var prevItem = prevByKey.hasOwnProperty(key) ? prevByKey[key] : null;
-                                           if (prevItem === null) {
-                                             // Item is new in this build.
-                                             var newText = curItem.type === 'composite'
-                                               ? renderCompositeInline(curItem)
-                                               : esc(curItem.display || curItem.raw || '');
-                                             h += '<div class="rd-list-item field-new">' + newText + '</div>';
-                                           } else if (valuesEqual(curItem, prevItem)) {
-                                             // Item unchanged.
-                                             var sameText = curItem.type === 'composite'
-                                               ? renderCompositeInline(curItem)
-                                               : esc(curItem.display || curItem.raw || '');
-                                             h += '<div class="rd-list-item">' + sameText + '</div>';
-                                           } else {
-                                             // Same identity, different content — mark the item changed
-                                             // and render its body via the diff-aware path so the
-                                             // specific sub-fields that differ get yellow.
-                                             var diffText;
-                                             if (curItem.type === 'composite' && prevItem.type === 'composite') {
-                                               diffText = renderCompositeInlineDiff(curItem, prevItem);
-                                             } else {
-                                               diffText = '<span class="field-changed">'
-                                                 + esc(curItem.display || curItem.raw || '') + '</span>';
-                                             }
-                                             h += '<div class="rd-list-item field-changed">' + diffText + '</div>';
-                                           }
+                                          var prevIndexByKey = {};
+                                          for (var i = 0; i < prevItems.length; i++)
+                                            prevIndexByKey[listItemKey(prevItems[i])] = i;
+
+                                          var consumedPrev = {};
+                                          var prevCursor = 0;
+                                          var h = '';
+                                          for (var i = 0; i < curItems.length; i++) {
+                                            var curItem = curItems[i];
+                                            var key = listItemKey(curItem);
+                                            var matchIndex = prevIndexByKey.hasOwnProperty(key)
+                                              ? prevIndexByKey[key] : -1;
+                                            if (matchIndex >= prevCursor) {
+                                              h += renderRemovedListItemsUntil(prevItems, curKeys,
+                                                consumedPrev, prevCursor, matchIndex);
+                                              prevCursor = matchIndex + 1;
+                                            }
+                                            h += renderCurrentListItem(curItem,
+                                              prevByKey.hasOwnProperty(key) ? prevByKey[key] : null);
+                                            if (matchIndex >= 0) consumedPrev[key] = true;
+                                          }
+                                          h += renderRemovedListItemsUntil(prevItems, curKeys,
+                                            consumedPrev, prevCursor, prevItems.length);
+                                          return h;
+                                       }
+
+                                       function renderCurrentListItem(curItem, prevItem) {
+                                         if (prevItem === null) {
+                                           var newText = curItem.type === 'composite'
+                                             ? renderCompositeInline(curItem)
+                                             : esc(curItem.display || curItem.raw || '');
+                                           return '<div class="rd-list-item field-new">' + newText + '</div>';
                                          }
-                                         for (var i = 0; i < prevItems.length; i++) {
+                                         if (valuesEqual(curItem, prevItem)) {
+                                           var sameText = curItem.type === 'composite'
+                                             ? renderCompositeInline(curItem)
+                                             : esc(curItem.display || curItem.raw || '');
+                                           return '<div class="rd-list-item">' + sameText + '</div>';
+                                         }
+                                         var diffText;
+                                         if (curItem.type === 'composite' && prevItem.type === 'composite') {
+                                           diffText = renderCompositeInlineDiff(curItem, prevItem);
+                                         } else {
+                                           diffText = '<span class="field-changed">'
+                                             + esc(curItem.display || curItem.raw || '') + '</span>';
+                                         }
+                                         return '<div class="rd-list-item field-changed">' + diffText + '</div>';
+                                       }
+
+                                       function renderRemovedListItemsUntil(prevItems, curKeys,
+                                                                            consumedPrev, start, end) {
+                                         var h = '';
+                                         for (var i = start; i < end; i++) {
                                            var pkey = listItemKey(prevItems[i]);
-                                           if (curKeys[pkey]) continue;
+                                           if (curKeys[pkey] || consumedPrev[pkey]) continue;
                                            var rmText = prevItems[i].type === 'composite'
                                              ? renderCompositeInline(prevItems[i])
                                              : esc(prevItems[i].display || prevItems[i].raw || '');
                                            h += '<div class="rd-list-item field-removed">' + rmText + '</div>';
+                                           consumedPrev[pkey] = true;
                                          }
                                          return h;
                                        }
@@ -1131,9 +1558,9 @@ internal static class ComparisonJsRenderer
                                              inner = renderFieldValueDiff(f.value, prevField);
                                            }
                                            h += '<div class="rd-field' + cls + '">'
-                                             + '<div class="rd-key">' + esc(f.key) + '</div>'
-                                             + '<div class="rd-val">' + inner + '</div>'
-                                             + '</div>';
+                                            + '<div class="rd-key">' + esc(displayFieldKey(f.key)) + '</div>'
+                                            + '<div class="rd-val">' + inner + '</div>'
+                                            + '</div>';
                                          }
                                          // Sub-fields that were present in prev but removed in cur.
                                          if (prevVal && prevVal.fields) {
@@ -1141,9 +1568,9 @@ internal static class ComparisonJsRenderer
                                              var pf = prevVal.fields[pi];
                                              if (prevSeen[pf.key]) continue;
                                              h += '<div class="rd-field field-removed">'
-                                               + '<div class="rd-key">' + esc(pf.key) + '</div>'
-                                               + '<div class="rd-val">' + renderFieldValue(pf.value) + '</div>'
-                                               + '</div>';
+                                              + '<div class="rd-key">' + esc(displayFieldKey(pf.key)) + '</div>'
+                                              + '<div class="rd-val">' + renderFieldValue(pf.value) + '</div>'
+                                              + '</div>';
                                            }
                                          }
                                          return h;
@@ -1172,6 +1599,18 @@ internal static class ComparisonJsRenderer
                                          var scaleHtml = piece('Scale');
                                          var disabledText = compositeFieldText(curMap, 'Disabled');
                                          var prevDisabled = compositeFieldText(prevMap, 'Disabled');
+                                         function formPiece(key) {
+                                           var curValue = curMap[key];
+                                           if (!curValue) return '';
+                                           var html = (key === 'Cell' || key === 'Containing Cell')
+                                             ? renderCellReferenceValue(curValue)
+                                             : renderFormIdValue(curValue);
+                                           var prevValue = prevMap[key];
+                                           if (prevValue && scalarKeyText(curValue) === scalarKeyText(prevValue)) {
+                                             return html;
+                                           }
+                                           return '<span class="field-changed">' + html + '</span>';
+                                         }
 
                                          var header = [];
                                          if (baseHtml) header.push(baseHtml);
@@ -1191,6 +1630,22 @@ internal static class ComparisonJsRenderer
                                              && scaleText !== '1.00') {
                                            details.push('scale=' + scaleHtml);
                                          }
+                                         var containingCellHtml = formPiece('Containing Cell');
+                                         if (containingCellHtml) {
+                                           details.push('in ' + containingCellHtml);
+                                         }
+                                         var worldspaceHtml = formPiece('Worldspace');
+                                         if (worldspaceHtml) {
+                                           details.push('worldspace: ' + worldspaceHtml);
+                                         }
+                                         var cellHtml = formPiece('Cell');
+                                         if (cellHtml) {
+                                           details.push('cell: ' + cellHtml);
+                                         }
+                                         var gridHtml = piece('Grid');
+                                         if (gridHtml) {
+                                           details.push('grid: ' + gridHtml);
+                                         }
 
                                          var h = header.length > 0 ? header.join(' ') : esc(curVal.display || '');
                                          if (details.length > 0) {
@@ -1208,8 +1663,18 @@ internal static class ComparisonJsRenderer
                                          if (looksLikePlacedObjectComposite(curVal)) {
                                            return renderPlacedObjectInlineDiff(curVal, prevVal);
                                          }
-                                         // Generic composite — fall back to the structured diff renderer.
-                                         return renderCompositeDiffHtml(curVal, prevVal);
+                                         var fieldMap = buildCompositeFieldMap(curVal);
+                                         if (fieldMap.Control && fieldMap.Value) {
+                                           return renderCompositeDiffHtml(curVal, prevVal);
+                                         }
+                                         return renderGenericCompositeInlineDiff(curVal, prevVal);
+                                       }
+
+                                       function renderGenericCompositeInlineDiff(curVal, prevVal) {
+                                         // Inventory, faction, script-reference, and similar list entries
+                                         // should remain one row even when one subfield changes. The list
+                                         // item wrapper carries the changed highlight.
+                                         return esc(curVal.display || '');
                                        }
 
                                        // Check if a value is multi-line text (script source, decompiled, etc.)
@@ -1285,15 +1750,44 @@ internal static class ComparisonJsRenderer
                                          if (!item) return '';
                                          if (item.type === 'formId') return item.raw || item.display || '';
                                          if (item.type === 'composite' && item.fields) {
+                                           var fieldMap = buildCompositeFieldMap(item);
+                                           if (fieldMap.FormID) {
+                                             return 'FormID=' + scalarKeyText(fieldMap.FormID);
+                                           }
+                                           if (fieldMap.Item) {
+                                             return 'Item=' + scalarKeyText(fieldMap.Item);
+                                           }
+                                           if (fieldMap.Faction) {
+                                             return 'Faction=' + scalarKeyText(fieldMap.Faction);
+                                           }
+                                           if (fieldMap.Control) {
+                                             return 'Control=' + scalarKeyText(fieldMap.Control);
+                                           }
+                                           if (fieldMap.Index && (fieldMap.Text || fieldMap.Log)) {
+                                             return 'Index=' + scalarKeyText(fieldMap.Index);
+                                           }
+                                           if (fieldMap.Base && fieldMap.Type && fieldMap.Position) {
+                                             return 'Placed=' + scalarKeyText(fieldMap.Base) + '|'
+                                               + scalarKeyText(fieldMap.Type) + '|'
+                                               + scalarKeyText(fieldMap.Position);
+                                           }
                                            // Use raw values from composite fields for stable matching
                                            var parts = [];
                                            for (var i = 0; i < item.fields.length; i++) {
                                              var v = item.fields[i].value;
-                                             parts.push(item.fields[i].key + '=' + (v ? (v.raw !== undefined ? String(v.raw) : (v.display || '')) : ''));
+                                             parts.push(item.fields[i].key + '=' + scalarKeyText(v));
                                            }
                                            return parts.join('|');
                                          }
                                          return item.raw !== undefined ? String(item.raw) : (item.display || '');
+                                       }
+
+                                       function scalarKeyText(value) {
+                                         if (!value) return '';
+                                         if (value.rawInt !== undefined && value.rawInt !== null) return String(value.rawInt);
+                                         if (value.raw !== undefined && value.raw !== null) return String(value.raw);
+                                         if (value.display !== undefined && value.display !== null) return String(value.display);
+                                         return '';
                                        }
 
                                        // Format a list value with item-level diff against a previous list
@@ -1365,11 +1859,21 @@ internal static class ComparisonJsRenderer
                                          var detailRow = summaryRow.nextElementSibling;
                                          if (detailRow && detailRow.classList.contains('detail-row')) {
                                            if (detailRow.style.display === 'none') {
-                                             renderDetail(detailRow);
                                              detailRow.style.display = '';
+                                             summaryRow.classList.add('expanded');
+                                             renderDetail(detailRow);
                                            } else {
                                              detailRow.style.display = 'none';
+                                             summaryRow.classList.remove('expanded');
                                            }
+                                         }
+                                       }
+
+                                       function alignRenderedDetailRows() {
+                                         var rows = document.querySelectorAll('.detail-row[data-rendered="1"]');
+                                         for (var i = 0; i < rows.length; i++) {
+                                           var slotCount = parseInt(rows[i].dataset.slotCount || '0');
+                                           if (slotCount > 0) alignDetailSlots(rows[i], slotCount);
                                          }
                                        }
                                        function expandAll() {
@@ -1391,6 +1895,8 @@ internal static class ComparisonJsRenderer
                                              if (_expandCancel) return;
                                              renderDetail(rows[i]);
                                              rows[i].style.display = '';
+                                             if (rows[i].previousElementSibling)
+                                               rows[i].previousElementSibling.classList.add('expanded');
                                            }
                                            if (i < rows.length) requestAnimationFrame(batch);
                                          }
@@ -1400,6 +1906,9 @@ internal static class ComparisonJsRenderer
                                          _expandCancel = true;
                                          document.querySelectorAll('.detail-row').forEach(function(r) {
                                            r.style.display = 'none';
+                                         });
+                                         document.querySelectorAll('.summary-row.expanded').forEach(function(r) {
+                                           r.classList.remove('expanded');
                                          });
                                          document.querySelectorAll('.group-content').forEach(function(gc) {
                                            gc.style.display = 'none';
@@ -1446,6 +1955,7 @@ internal static class ComparisonJsRenderer
                                          if (content.style.display === 'none') {
                                            content.style.display = '';
                                            header.textContent = header.textContent.replace('\u25B6', '\u25BC');
+                                           requestAnimationFrame(alignRenderedDetailRows);
                                            if (_pendingBuildSort) {
                                              var tbody = content.querySelector('tbody');
                                              if (tbody) {
@@ -1481,7 +1991,7 @@ internal static class ComparisonJsRenderer
                                              var sg = scripts[si].getAttribute('data-group') || '';
                                              // Match exact group name OR group name with " (part N)" suffix
                                              if (sg === groupName || sg.indexOf(groupName + ' (part ') === 0) {
-                                               var rawZ = scripts[si].getAttribute('data-z') || '';
+                                               var rawZ = readChunkScriptPayload(scripts[si]);
                                                var b64 = sanitizeBase64(rawZ);
                                                if (b64 && b64.length >= 4) {
                                                  chunkScripts.push({ el: scripts[si], b64: b64 });
@@ -1514,7 +2024,7 @@ internal static class ComparisonJsRenderer
                                                  DATA.records[fid] = parsed[fid];
                                                }
                                                // Free script tag memory
-                                               chunkScripts[ri].el.removeAttribute('data-z');
+                                               releaseChunkScriptPayload(chunkScripts[ri].el);
                                              }
                                            } catch (e) {
                                              console.error('Failed to load chunks for', groupName, e);
@@ -1537,6 +2047,7 @@ internal static class ComparisonJsRenderer
                                          } else {
                                            content.style.display = '';
                                            header.textContent = header.textContent.replace('\u25B6', '\u25BC');
+                                           requestAnimationFrame(alignRenderedDetailRows);
                                          }
                                        }
 
@@ -1548,6 +2059,7 @@ internal static class ComparisonJsRenderer
                                          if (content && content.style.display === 'none') {
                                            content.style.display = '';
                                            if (header) header.textContent = header.textContent.replace('\u25B6', '\u25BC');
+                                           requestAnimationFrame(alignRenderedDetailRows);
                                          }
                                        }
 
@@ -1617,6 +2129,7 @@ internal static class ComparisonJsRenderer
                                            btns[4].disabled = atEnd;
                                            btns[5].disabled = atEnd;
                                          }
+                                         requestAnimationFrame(alignRenderedDetailRows);
                                        }
 
                                        function navBuilds(dir) {
@@ -1676,10 +2189,11 @@ internal static class ComparisonJsRenderer
                                          var summaryRows = Array.from(tbody.querySelectorAll('.summary-row'));
                                          if (summaryRows.length === 0) return;
                                          var pairs = summaryRows.map(function(sr) {
-                                           var cells = sr.querySelectorAll('td');
-                                           var cell = cells[fixedCols + idx];
+                                           var cell = sr.querySelector('td.status-cell[data-dump-idx="' + idx + '"]');
                                            var badge = cell ? cell.querySelector('.badge') : null;
-                                           var badgeText = badge ? badge.textContent.trim() : '';
+                                           var badgeText = cell
+                                             ? (cell.getAttribute('data-status') || (badge ? badge.textContent.trim() : ''))
+                                             : '';
                                            return { summary: sr, detail: sr.nextElementSibling,
                                              badge: badgeText, formid: sr.getAttribute('data-formid') || '' };
                                          });
@@ -1723,17 +2237,28 @@ internal static class ComparisonJsRenderer
                                          pairs.sort(function(a, b) {
                                            var cmp;
                                            if (col === 'coords') {
-                                             var ax = parseInt(a.summary.getAttribute('data-cx')) || 0;
-                                             var ay = parseInt(a.summary.getAttribute('data-cy')) || 0;
-                                             var bx = parseInt(b.summary.getAttribute('data-cx')) || 0;
-                                             var by = parseInt(b.summary.getAttribute('data-cy')) || 0;
-                                             cmp = ax !== bx ? ax - bx : ay - by;
+                                             cmp = compareCoordinateValues(
+                                               [a.summary.getAttribute('data-cx'),
+                                                a.summary.getAttribute('data-cy')],
+                                               [b.summary.getAttribute('data-cx'),
+                                                b.summary.getAttribute('data-cy')]);
                                            } else {
-                                             var va = (a.summary.getAttribute('data-' + col) || '').toLowerCase();
-                                             var vb = (b.summary.getAttribute('data-' + col) || '').toLowerCase();
-                                             cmp = va < vb ? -1 : va > vb ? 1 : 0;
+                                             var va = a.summary.getAttribute('data-' + col) || '';
+                                             var vb = b.summary.getAttribute('data-' + col) || '';
+                                             cmp = col === 'editor'
+                                               ? compareEditorValues(va, vb, asc)
+                                               : compareSortTextValues(va, vb);
                                            }
-                                           return asc ? cmp : -cmp;
+                                           if (cmp !== 0) return col === 'editor' ? cmp : (asc ? cmp : -cmp);
+                                           var coordCmp = compareCoordinateValues(
+                                             [a.summary.getAttribute('data-cx'),
+                                              a.summary.getAttribute('data-cy')],
+                                             [b.summary.getAttribute('data-cx'),
+                                              b.summary.getAttribute('data-cy')]);
+                                           if (coordCmp !== 0) return coordCmp;
+                                           return compareFormIdText(
+                                             a.summary.getAttribute('data-formid') || '',
+                                             b.summary.getAttribute('data-formid') || '');
                                          });
                                          var frag = document.createDocumentFragment();
                                          pairs.forEach(function(p) {
@@ -1741,6 +2266,12 @@ internal static class ComparisonJsRenderer
                                            if (p.detail) frag.appendChild(p.detail);
                                          });
                                          tbody.appendChild(frag);
+                                       }
+
+                                       function compareSortTextValues(a, b) {
+                                         var va = normalizeSortText(a);
+                                         var vb = normalizeSortText(b);
+                                         return va < vb ? -1 : va > vb ? 1 : 0;
                                        }
                                    """;
 }

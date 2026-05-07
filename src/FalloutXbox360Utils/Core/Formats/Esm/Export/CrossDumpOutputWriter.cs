@@ -55,13 +55,10 @@ internal static class CrossDumpOutputWriter
                 break;
 
             default:
-                var htmlFiles = CrossDumpHtmlWriter.GenerateAll(index);
-                foreach (var (filename, content) in htmlFiles)
-                {
-                    var outputFile = Path.Combine(outputPath, filename);
-                    await File.WriteAllTextAsync(outputFile, content, cancellationToken);
-                    writtenFiles.Add(outputFile);
-                }
+                writtenFiles.AddRange(await CrossDumpHtmlWriter.WriteFilesAsync(
+                    index,
+                    outputPath,
+                    cancellationToken));
 
                 break;
         }

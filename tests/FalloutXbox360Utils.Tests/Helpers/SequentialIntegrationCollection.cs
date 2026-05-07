@@ -8,7 +8,11 @@ namespace FalloutXbox360Utils.Tests.Helpers;
 ///     failures due to file I/O, memory, and CPU contention — not real bugs.
 /// </summary>
 [CollectionDefinition(Name)]
-public sealed class SequentialIntegrationCollection
+public sealed class SequentialIntegrationGroup
 {
     public const string Name = "SequentialIntegration";
+
+    private SequentialIntegrationGroup()
+    {
+    }
 }

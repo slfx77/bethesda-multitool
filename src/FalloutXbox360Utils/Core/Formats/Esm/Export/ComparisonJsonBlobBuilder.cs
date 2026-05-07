@@ -60,6 +60,23 @@ internal static class ComparisonJsonBlobBuilder
             report.RecordType, report.FormId, report.EditorId, report.DisplayName, newSections);
     }
 
+    private static string? NormalizeHistoryName(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var trimmed = value.Trim();
+        return IsSyntheticVirtualLabel(trimmed) ? null : trimmed;
+    }
+
+    private static bool IsSyntheticVirtualLabel(string value)
+    {
+        return value.StartsWith("[Virtual ", StringComparison.OrdinalIgnoreCase) ||
+               value.StartsWith("Virtual ", StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>
     ///     Build a JSON blob for a record type page with full options:
     ///     record type tag, dual group sets, per-record metadata, and grid coordinates.
@@ -90,6 +107,7 @@ internal static class ComparisonJsonBlobBuilder
                 writer.WriteStartObject();
                 writer.WriteString("fileName", d.FileName);
                 writer.WriteString("date", d.FileDate.ToString("o"));
+                writer.WriteString("dateSource", d.DateSource);
                 writer.WriteString("shortName", d.ShortName);
                 writer.WriteBoolean("isDmp", d.IsDmp);
                 writer.WriteBoolean("isBase", d.IsBase);
@@ -127,13 +145,13 @@ internal static class ComparisonJsonBlobBuilder
                 writer.WritePropertyName($"0x{formId:X8}");
                 writer.WriteStartObject();
 
-                // EditorId and DisplayName: use the latest non-null value
+                // EditorId and DisplayName: use the latest real value
                 string? editorId = null;
                 string? displayName = null;
                 foreach (var report in dumpMap.OrderBy(kvp => kvp.Key).Select(kvp => kvp.Value))
                 {
-                    editorId ??= report.EditorId;
-                    displayName ??= report.DisplayName;
+                    editorId ??= NormalizeHistoryName(report.EditorId);
+                    displayName ??= NormalizeHistoryName(report.DisplayName);
                 }
 
                 if (editorId != null)
@@ -149,6 +167,7 @@ internal static class ComparisonJsonBlobBuilder
                 // All distinct EditorIDs and display names across builds (for name-change tracking)
                 var allEditorIds = dumpMap.OrderBy(kvp => kvp.Key)
                     .Select(kvp => kvp.Value.EditorId)
+                    .Select(NormalizeHistoryName)
                     .Where(e => e != null)
                     .Distinct()
                     .ToList();
@@ -162,6 +181,7 @@ internal static class ComparisonJsonBlobBuilder
 
                 var allNames = dumpMap.OrderBy(kvp => kvp.Key)
                     .Select(kvp => kvp.Value.DisplayName)
+                    .Select(NormalizeHistoryName)
                     .Where(n => n != null)
                     .Distinct()
                     .ToList();
@@ -270,11 +290,12 @@ internal static class ComparisonJsonBlobBuilder
     }
 
     /// <summary>
-    ///     Build chunked JSON blobs for grouped pages (cells).
-    ///     Returns an index blob + per-group chunk blobs, each under the size limit.
+    ///     Build compressed chunked JSON blobs for grouped pages (cells).
+    ///     Returns a compressed index payload + compressed per-group chunk payloads.
     ///     Groups exceeding the limit are split into sub-chunks.
     /// </summary>
-    internal static (string IndexBlob, List<(string GroupKey, string ChunkBlob)> Chunks) BuildChunked(
+    internal static (string CompressedIndexPayload, List<(string GroupKey, string CompressedPayload)> Chunks)
+        BuildChunked(
         Dictionary<uint, Dictionary<int, RecordReport>> formIdMap,
         List<DumpSnapshot> dumps,
         string recordType,
@@ -283,140 +304,241 @@ internal static class ComparisonJsonBlobBuilder
         Dictionary<uint, Dictionary<string, string>>? metadata,
         long maxChunkBytes = 5 * 1024 * 1024)
     {
-        // Partition records by group
-        var grouped = new Dictionary<string, Dictionary<uint, Dictionary<int, RecordReport>>>();
-        foreach (var (formId, dumpMap) in formIdMap)
-        {
-            var groupKey = groups != null && groups.TryGetValue(formId, out var g) ? g : "(Ungrouped)";
-            if (!grouped.TryGetValue(groupKey, out var groupMap))
-            {
-                groupMap = new Dictionary<uint, Dictionary<int, RecordReport>>();
-                grouped[groupKey] = groupMap;
-            }
+        var compressedIndexPayload = BuildChunkedIndex(
+            formIdMap,
+            dumps,
+            recordType,
+            groups,
+            cellGridCoords);
+        var chunks = BuildChunkPayloads(
+                formIdMap,
+                recordType,
+                groups,
+                metadata,
+                maxChunkBytes)
+            .ToList();
 
-            groupMap[formId] = dumpMap;
-        }
-
-        // Build index blob (metadata only, no records)
-        string indexBlob;
-        using (var ms = new MemoryStream())
-        {
-            using (var writer = new Utf8JsonWriter(ms, CompactJsonOptions))
-            {
-                writer.WriteStartObject();
-                writer.WriteString("recordType", recordType);
-                writer.WriteBoolean("chunked", true);
-
-                WriteDumpsArray(writer, dumps);
-                WriteSparseDumps(writer, formIdMap, dumps);
-
-                // Group manifest: group name → record count + chunk index
-                writer.WritePropertyName("groupManifest");
-                writer.WriteStartObject();
-                foreach (var (groupKey, groupMap) in grouped.OrderBy(g =>
-                             g.Key == "Interior Cells" ? 1 : 0).ThenBy(g => g.Key))
-                {
-                    writer.WritePropertyName(groupKey);
-                    writer.WriteNumberValue(groupMap.Count);
-                }
-
-                writer.WriteEndObject();
-
-                if (groups is { Count: > 0 })
-                {
-                    writer.WritePropertyName("groups");
-                    writer.WriteStartObject();
-                    foreach (var (formId, group) in groups)
-                        writer.WriteString($"0x{formId:X8}", group);
-                    writer.WriteEndObject();
-                }
-
-                if (cellGridCoords is { Count: > 0 })
-                {
-                    writer.WritePropertyName("gridCoords");
-                    writer.WriteStartObject();
-                    foreach (var (formId, (x, y)) in cellGridCoords)
-                    {
-                        writer.WritePropertyName($"0x{formId:X8}");
-                        writer.WriteStartArray();
-                        writer.WriteNumberValue(x);
-                        writer.WriteNumberValue(y);
-                        writer.WriteEndArray();
-                    }
-
-                    writer.WriteEndObject();
-                }
-
-                writer.WriteEndObject();
-            }
-
-            indexBlob = Encoding.UTF8.GetString(ms.ToArray());
-        }
-
-        // Build per-group chunk blobs with per-record size tracking.
-        // Serialize each record individually and accumulate into chunks,
-        // flushing when the chunk exceeds the byte limit.
-        var chunks = new List<(string GroupKey, string ChunkBlob)>();
-        foreach (var (groupKey, groupMap) in grouped.OrderBy(g =>
-                     g.Key == "Interior Cells" ? 1 : 0).ThenBy(g => g.Key))
-        {
-            var currentChunk = new Dictionary<uint, Dictionary<int, RecordReport>>();
-            long currentSize = 2; // "{}" wrapper
-            var partNum = 1;
-
-            foreach (var (formId, dumpMap) in groupMap)
-            {
-                // Estimate record size by serializing just this entry
-                var singleJson = BuildRecordsChunk(
-                    new Dictionary<uint, Dictionary<int, RecordReport>> { { formId, dumpMap } },
-                    metadata);
-                var entrySize = (long)Encoding.UTF8.GetByteCount(singleJson);
-
-                // If adding this record would exceed the limit, flush current chunk
-                if (currentChunk.Count > 0 && currentSize + entrySize > maxChunkBytes)
-                {
-                    var label = groupMap.Count > currentChunk.Count
-                        ? $"{groupKey} (part {partNum})"
-                        : groupKey;
-                    chunks.Add((label, BuildRecordsChunk(currentChunk, metadata)));
-                    partNum++;
-                    currentChunk.Clear();
-                    currentSize = 2;
-                }
-
-                currentChunk[formId] = dumpMap;
-                currentSize += entrySize;
-            }
-
-            if (currentChunk.Count > 0)
-            {
-                var label = partNum > 1 ? $"{groupKey} (part {partNum})" : groupKey;
-                chunks.Add((label, BuildRecordsChunk(currentChunk, metadata)));
-            }
-        }
-
-        return (indexBlob, chunks);
+        return (compressedIndexPayload, chunks);
     }
 
-    /// <summary>Build a JSON blob containing only record data (no dumps/groups metadata).</summary>
-    private static string BuildRecordsChunk(
-        Dictionary<uint, Dictionary<int, RecordReport>> records,
-        Dictionary<uint, Dictionary<string, string>>? metadata)
+    internal static string BuildChunkedIndex(
+        Dictionary<uint, Dictionary<int, RecordReport>> formIdMap,
+        List<DumpSnapshot> dumps,
+        string recordType,
+        Dictionary<uint, string>? groups,
+        Dictionary<uint, (int X, int Y)>? cellGridCoords)
     {
+        var groupCounts = CountRecordsByGroup(formIdMap, groups);
+
         using var ms = new MemoryStream();
         using (var writer = new Utf8JsonWriter(ms, CompactJsonOptions))
         {
             writer.WriteStartObject();
-            foreach (var (formId, dumpMap) in records)
+            writer.WriteString("recordType", recordType);
+            writer.WriteBoolean("chunked", true);
+
+            WriteDumpsArray(writer, dumps);
+            WriteSparseDumps(writer, formIdMap, dumps);
+
+            // Group manifest: group name -> record count.
+            writer.WritePropertyName("groupManifest");
+            writer.WriteStartObject();
+            foreach (var groupKey in OrderGroupKeys(groupCounts))
             {
-                writer.WritePropertyName($"0x{formId:X8}");
-                WriteRecordEntry(writer, formId, dumpMap, metadata);
+                writer.WritePropertyName(groupKey);
+                writer.WriteNumberValue(groupCounts[groupKey]);
+            }
+
+            writer.WriteEndObject();
+
+            if (groups is { Count: > 0 })
+            {
+                writer.WritePropertyName("groups");
+                writer.WriteStartObject();
+                foreach (var (formId, group) in groups)
+                    writer.WriteString($"0x{formId:X8}", group);
+                writer.WriteEndObject();
+            }
+
+            if (cellGridCoords is { Count: > 0 })
+            {
+                writer.WritePropertyName("gridCoords");
+                writer.WriteStartObject();
+                foreach (var (formId, (x, y)) in cellGridCoords)
+                {
+                    writer.WritePropertyName($"0x{formId:X8}");
+                    writer.WriteStartArray();
+                    writer.WriteNumberValue(x);
+                    writer.WriteNumberValue(y);
+                    writer.WriteEndArray();
+                }
+
+                writer.WriteEndObject();
             }
 
             writer.WriteEndObject();
         }
 
-        return Encoding.UTF8.GetString(ms.ToArray());
+        return CompressWrittenJsonToBase64(ms);
+    }
+
+    internal static IEnumerable<(string GroupKey, string CompressedPayload)> BuildChunkPayloads(
+        Dictionary<uint, Dictionary<int, RecordReport>> formIdMap,
+        string recordType,
+        Dictionary<uint, string>? groups,
+        Dictionary<uint, Dictionary<string, string>>? metadata,
+        long maxChunkBytes = 5 * 1024 * 1024)
+    {
+        _ = recordType;
+
+        var groupCounts = CountRecordsByGroup(formIdMap, groups);
+        foreach (var groupKey in OrderGroupKeys(groupCounts))
+        {
+            var groupRecordCount = groupCounts[groupKey];
+            var recordsWrittenForGroup = 0;
+            var recordsInCurrentChunk = 0;
+            var partNum = 1;
+            var currentChunk = CreateChunkJsonStream();
+
+            foreach (var (formId, dumpMap) in formIdMap)
+            {
+                if (!string.Equals(ResolveGroupKey(groups, formId), groupKey, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                using var singleRecordJson = BuildSingleRecordChunkBytes(formId, dumpMap, metadata);
+                var entryByteCount = Math.Max(0, singleRecordJson.Length - 2);
+                var commaByteCount = recordsInCurrentChunk == 0 ? 0 : 1;
+                var projectedChunkBytes = currentChunk.Length + commaByteCount + entryByteCount + 1;
+
+                if (recordsInCurrentChunk > 0 && projectedChunkBytes > maxChunkBytes)
+                {
+                    var hasMoreRecords = recordsWrittenForGroup < groupRecordCount;
+                    yield return (
+                        FormatChunkLabel(groupKey, partNum, hasMoreRecords),
+                        FinishAndCompressChunk(currentChunk));
+                    currentChunk.Dispose();
+
+                    partNum++;
+                    recordsInCurrentChunk = 0;
+                    currentChunk = CreateChunkJsonStream();
+                }
+
+                AppendSingleRecordToChunk(currentChunk, singleRecordJson, recordsInCurrentChunk == 0);
+                recordsInCurrentChunk++;
+                recordsWrittenForGroup++;
+            }
+
+            if (recordsInCurrentChunk > 0)
+            {
+                yield return (
+                    FormatChunkLabel(groupKey, partNum, hasMoreRecords: false),
+                    FinishAndCompressChunk(currentChunk));
+            }
+
+            currentChunk.Dispose();
+        }
+    }
+
+    private static Dictionary<string, int> CountRecordsByGroup(
+        Dictionary<uint, Dictionary<int, RecordReport>> formIdMap,
+        Dictionary<uint, string>? groups)
+    {
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var formId in formIdMap.Keys)
+        {
+            var groupKey = ResolveGroupKey(groups, formId);
+            counts[groupKey] = counts.TryGetValue(groupKey, out var count) ? count + 1 : 1;
+        }
+
+        return counts;
+    }
+
+    private static IEnumerable<string> OrderGroupKeys(Dictionary<string, int> groupCounts)
+    {
+        return groupCounts.Keys
+            .OrderBy(groupKey => groupKey == "Interior Cells" ? 1 : 0)
+            .ThenBy(groupKey => groupKey, StringComparer.Ordinal);
+    }
+
+    private static string ResolveGroupKey(Dictionary<uint, string>? groups, uint formId)
+    {
+        return groups != null && groups.TryGetValue(formId, out var group) ? group : "(Ungrouped)";
+    }
+
+    private static string FormatChunkLabel(string groupKey, int partNum, bool hasMoreRecords)
+    {
+        return hasMoreRecords || partNum > 1 ? $"{groupKey} (part {partNum})" : groupKey;
+    }
+
+    private static MemoryStream CreateChunkJsonStream()
+    {
+        var stream = new MemoryStream();
+        stream.WriteByte((byte)'{');
+        return stream;
+    }
+
+    private static string FinishAndCompressChunk(MemoryStream chunkStream)
+    {
+        chunkStream.WriteByte((byte)'}');
+        return CompressWrittenJsonToBase64(chunkStream);
+    }
+
+    private static void AppendSingleRecordToChunk(
+        MemoryStream chunkStream,
+        MemoryStream singleRecordJson,
+        bool isFirstRecord)
+    {
+        if (!isFirstRecord)
+        {
+            chunkStream.WriteByte((byte)',');
+        }
+
+        if (singleRecordJson.Length <= 2)
+        {
+            return;
+        }
+
+        if (singleRecordJson.TryGetBuffer(out var buffer))
+        {
+            chunkStream.Write(
+                buffer.Array!,
+                buffer.Offset + 1,
+                (int)singleRecordJson.Length - 2);
+            return;
+        }
+
+        var bytes = singleRecordJson.ToArray();
+        chunkStream.Write(bytes, 1, bytes.Length - 2);
+    }
+
+    private static MemoryStream BuildSingleRecordChunkBytes(
+        uint formId,
+        Dictionary<int, RecordReport> dumpMap,
+        Dictionary<uint, Dictionary<string, string>>? metadata)
+    {
+        var ms = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(ms, CompactJsonOptions))
+        {
+            writer.WriteStartObject();
+            writer.WritePropertyName($"0x{formId:X8}");
+            WriteRecordEntry(writer, formId, dumpMap, metadata);
+            writer.WriteEndObject();
+        }
+
+        return ms;
+    }
+
+    private static string CompressWrittenJsonToBase64(MemoryStream jsonStream)
+    {
+        if (jsonStream.TryGetBuffer(out var buffer))
+        {
+            return ComparisonHtmlHelpers.CompressToBase64(
+                new ReadOnlySpan<byte>(buffer.Array!, buffer.Offset, (int)jsonStream.Length));
+        }
+
+        return ComparisonHtmlHelpers.CompressToBase64(jsonStream.ToArray());
     }
 
     /// <summary>Write a single record entry (shared by Build and BuildChunked).</summary>
@@ -431,15 +553,15 @@ internal static class ComparisonJsonBlobBuilder
         string? displayName = null;
         foreach (var report in dumpMap.OrderBy(kvp => kvp.Key).Select(kvp => kvp.Value))
         {
-            editorId ??= report.EditorId;
-            displayName ??= report.DisplayName;
+            editorId ??= NormalizeHistoryName(report.EditorId);
+            displayName ??= NormalizeHistoryName(report.DisplayName);
         }
 
         writer.WriteString("editorId", editorId);
         writer.WriteString("displayName", displayName);
 
         var allEditorIds = dumpMap.OrderBy(kvp => kvp.Key)
-            .Select(kvp => kvp.Value.EditorId).Where(e => e != null).Distinct().ToList();
+            .Select(kvp => NormalizeHistoryName(kvp.Value.EditorId)).Where(e => e != null).Distinct().ToList();
         if (allEditorIds.Count > 1)
         {
             writer.WritePropertyName("editorIdHistory");
@@ -449,7 +571,7 @@ internal static class ComparisonJsonBlobBuilder
         }
 
         var allNames = dumpMap.OrderBy(kvp => kvp.Key)
-            .Select(kvp => kvp.Value.DisplayName).Where(n => n != null).Distinct().ToList();
+            .Select(kvp => NormalizeHistoryName(kvp.Value.DisplayName)).Where(n => n != null).Distinct().ToList();
         if (allNames.Count > 1)
         {
             writer.WritePropertyName("nameHistory");
@@ -502,6 +624,7 @@ internal static class ComparisonJsonBlobBuilder
             writer.WriteStartObject();
             writer.WriteString("fileName", d.FileName);
             writer.WriteString("date", d.FileDate.ToString("o"));
+            writer.WriteString("dateSource", d.DateSource);
             writer.WriteString("shortName", d.ShortName);
             writer.WriteBoolean("isDmp", d.IsDmp);
             writer.WriteBoolean("isBase", d.IsBase);

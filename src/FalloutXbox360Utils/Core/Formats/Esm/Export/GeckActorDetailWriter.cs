@@ -12,7 +12,9 @@ internal static class GeckActorDetailWriter
 {
     /// <summary>Build a structured NPC report from an <see cref="NpcRecord" />.</summary>
     internal static RecordReport BuildNpcReport(NpcRecord npc, FormIdResolver resolver,
-        RaceRecord? race = null)
+        RaceRecord? race = null,
+        IReadOnlyList<NpcPlacementInfo>? placements = null,
+        IReadOnlyList<NpcScriptReferenceInfo>? referencedInScripts = null)
     {
         var sections = new List<ReportSection>();
 
@@ -177,6 +179,32 @@ internal static class GeckActorDetailWriter
             sections.Add(new ReportSection("References", refFields));
         }
 
+        // Reverse script references
+        if (referencedInScripts is { Count: > 0 })
+        {
+            var scriptItems = referencedInScripts
+                .OrderBy(reference => reference.ScriptEditorId ?? "", StringComparer.OrdinalIgnoreCase)
+                .ThenBy(reference => reference.ScriptFormId)
+                .Select(reference => (ReportValue)BuildNpcScriptReferenceValue(reference, resolver))
+                .ToList();
+            sections.Add(new ReportSection("Referenced In",
+            [
+                new ReportField("Scripts", ReportValue.List(scriptItems, $"{referencedInScripts.Count} scripts"))
+            ]));
+        }
+
+        // Placements
+        if (placements is { Count: > 0 })
+        {
+            var placementItems = placements
+                .Select(placement => (ReportValue)BuildNpcPlacementValue(placement, resolver))
+                .ToList();
+            sections.Add(new ReportSection("Placements",
+            [
+                new ReportField("References", ReportValue.List(placementItems, $"{placements.Count} references"))
+            ]));
+        }
+
         // Factions
         if (npc.Factions.Count > 0)
         {
@@ -187,14 +215,18 @@ internal static class GeckActorDetailWriter
                     var displayName = resolver.ResolveDisplayName(f.FactionFormId);
                     return (ReportValue)new ReportValue.CompositeVal(
                         [
-                            new ReportField("EditorID", ReportValue.String(editorId)),
+                            new ReportField("Faction", ReportValue.FormId(f.FactionFormId, resolver),
+                                $"0x{f.FactionFormId:X8}"),
+                            new ReportField("Editor ID", ReportValue.String(editorId)),
                             new ReportField("Name", ReportValue.String(displayName)),
                             new ReportField("Rank", ReportValue.Int(f.Rank))
                         ], $"{editorId} (Rank {f.Rank})");
                 })
                 .ToList();
-            sections.Add(new ReportSection($"Factions ({npc.Factions.Count})",
-                [new ReportField("Factions", ReportValue.List(factionItems))]));
+            sections.Add(new ReportSection("Factions",
+            [
+                new ReportField("Factions", ReportValue.List(factionItems, $"{npc.Factions.Count} factions"))
+            ]));
         }
 
         // Inventory
@@ -207,14 +239,16 @@ internal static class GeckActorDetailWriter
                     var displayName = resolver.ResolveDisplayName(i.ItemFormId);
                     return (ReportValue)new ReportValue.CompositeVal(
                         [
+                            new ReportField("Item", ReportValue.FormId(i.ItemFormId, resolver),
+                                $"0x{i.ItemFormId:X8}"),
                             new ReportField("EditorID", ReportValue.String(editorId)),
                             new ReportField("Name", ReportValue.String(displayName)),
                             new ReportField("Qty", ReportValue.Int(i.Count))
                         ], $"{editorId} x{i.Count}");
                 })
                 .ToList();
-            sections.Add(new ReportSection($"Inventory ({npc.Inventory.Count})",
-                [new ReportField("Items", ReportValue.List(invItems))]));
+            sections.Add(new ReportSection("Inventory",
+                [new ReportField("Items", ReportValue.List(invItems, $"{npc.Inventory.Count} items"))]));
         }
 
         // Spells
@@ -223,8 +257,8 @@ internal static class GeckActorDetailWriter
             var spellItems = npc.Spells.OrderBy(s => s)
                 .Select(s => (ReportValue)ReportValue.FormId(s, resolver))
                 .ToList();
-            sections.Add(new ReportSection($"Spells/Abilities ({npc.Spells.Count})",
-                [new ReportField("Spells", ReportValue.List(spellItems))]));
+            sections.Add(new ReportSection("Spells/Abilities",
+                [new ReportField("Spells", ReportValue.List(spellItems, $"{npc.Spells.Count} spells"))]));
         }
 
         // AI Packages
@@ -233,8 +267,8 @@ internal static class GeckActorDetailWriter
             var pkgItems = npc.Packages.OrderBy(p => p)
                 .Select(p => (ReportValue)ReportValue.FormId(p, resolver))
                 .ToList();
-            sections.Add(new ReportSection($"AI Packages ({npc.Packages.Count})",
-                [new ReportField("Packages", ReportValue.List(pkgItems))]));
+            sections.Add(new ReportSection("AI Packages",
+                [new ReportField("Packages", ReportValue.List(pkgItems, $"{npc.Packages.Count} packages"))]));
         }
 
         // FaceGen Morph Data — CTL-projected slider values + raw hex for exact comparison
@@ -285,6 +319,161 @@ internal static class GeckActorDetailWriter
         return new RecordReport("NPC", npc.FormId, npc.EditorId, npc.FullName, sections);
     }
 
+    private static ReportValue.CompositeVal BuildNpcScriptReferenceValue(
+        NpcScriptReferenceInfo reference,
+        FormIdResolver resolver)
+    {
+        var fields = new List<ReportField>
+        {
+            new("FormID", ReportValue.FormId(reference.ScriptFormId, resolver),
+                $"0x{reference.ScriptFormId:X8}"),
+            new("Type", ReportValue.String(reference.ScriptType))
+        };
+
+        if (!string.IsNullOrWhiteSpace(reference.ScriptEditorId))
+        {
+            fields.Add(new ReportField("Editor ID", ReportValue.String(reference.ScriptEditorId)));
+        }
+
+        if (reference.OwnerQuestFormId.HasValue)
+        {
+            fields.Add(new ReportField("Owner Quest",
+                ReportValue.FormId(reference.OwnerQuestFormId.Value, resolver),
+                $"0x{reference.OwnerQuestFormId.Value:X8}"));
+        }
+
+        var label = !string.IsNullOrWhiteSpace(reference.ScriptEditorId)
+            ? $"{reference.ScriptEditorId} ({GeckReportHelpers.FormatFormId(reference.ScriptFormId)})"
+            : resolver.FormatFull(reference.ScriptFormId);
+
+        return new ReportValue.CompositeVal(fields, $"{label} [{reference.ScriptType}]");
+    }
+
+    private static ReportValue.CompositeVal BuildNpcPlacementValue(
+        NpcPlacementInfo placement,
+        FormIdResolver resolver)
+    {
+        var obj = placement.Ref;
+        var baseStr = !string.IsNullOrEmpty(obj.BaseEditorId)
+            ? obj.BaseEditorId
+            : resolver.GetEditorId(obj.BaseFormId)
+              ?? GeckReportHelpers.FormatFormId(obj.BaseFormId);
+        var referenceEditorId = !string.IsNullOrEmpty(obj.EditorId)
+            ? obj.EditorId
+            : resolver.GetEditorId(obj.FormId);
+        var fields = new List<ReportField>
+        {
+            new("FormID", ReportValue.FormId(obj.FormId, GeckReportHelpers.FormatFormId(obj.FormId)),
+                $"0x{obj.FormId:X8}"),
+            new("Base", ReportValue.String(baseStr)),
+            new("Type", ReportValue.String(obj.RecordType))
+        };
+
+        if (placement.WorldspaceFormId is > 0)
+        {
+            fields.Add(new ReportField("Worldspace",
+                ReportValue.FormId(placement.WorldspaceFormId.Value, resolver),
+                $"0x{placement.WorldspaceFormId.Value:X8}"));
+        }
+
+        fields.Add(new ReportField("Cell", ReportValue.FormId(placement.CellFormId, resolver),
+            $"0x{placement.CellFormId:X8}"));
+
+        if (placement.GridX.HasValue && placement.GridY.HasValue)
+        {
+            fields.Add(new ReportField("Grid",
+                ReportValue.String($"{placement.GridX.Value}, {placement.GridY.Value}")));
+        }
+
+        fields.Add(new ReportField("Position", ReportValue.String($"({obj.X:F1}, {obj.Y:F1}, {obj.Z:F1})")));
+
+        if (!string.IsNullOrEmpty(referenceEditorId) &&
+            !string.Equals(referenceEditorId, baseStr, StringComparison.Ordinal))
+        {
+            fields.Add(new ReportField("Reference Editor ID", ReportValue.String(referenceEditorId)));
+        }
+
+        if (!string.IsNullOrEmpty(placement.CellEditorId))
+        {
+            fields.Add(new ReportField("Cell Editor ID", ReportValue.String(placement.CellEditorId)));
+        }
+
+        if (!string.IsNullOrEmpty(placement.CellName))
+        {
+            fields.Add(new ReportField("Cell Name", ReportValue.String(placement.CellName)));
+        }
+
+        var hasRotation = MathF.Abs(obj.RotX) > 0.001f || MathF.Abs(obj.RotY) > 0.001f ||
+                          MathF.Abs(obj.RotZ) > 0.001f;
+        if (hasRotation)
+        {
+            fields.Add(new ReportField("Rotation",
+                ReportValue.String($"({obj.RotX:F3}, {obj.RotY:F3}, {obj.RotZ:F3})")));
+        }
+
+        if (Math.Abs(obj.Scale - 1.0f) > 0.01f)
+        {
+            fields.Add(new ReportField("Scale", ReportValue.Float(obj.Scale, "F2")));
+        }
+
+        if (obj.IsInitiallyDisabled)
+        {
+            fields.Add(new ReportField("Disabled", ReportValue.Bool(true)));
+        }
+
+        if (obj.IsPersistent)
+        {
+            fields.Add(new ReportField("Persistent", ReportValue.Bool(true)));
+        }
+
+        if (!string.IsNullOrEmpty(obj.AssignmentSource))
+        {
+            fields.Add(new ReportField("Assignment Source", ReportValue.String(obj.AssignmentSource)));
+        }
+
+        var disabledTag = obj.IsInitiallyDisabled ? " [DISABLED]" : "";
+        var referenceTag = !string.IsNullOrEmpty(referenceEditorId) &&
+                           !string.Equals(referenceEditorId, baseStr, StringComparison.Ordinal)
+            ? $"{referenceEditorId} ({baseStr})"
+            : baseStr;
+        var locationLabel = ResolvePlacementLocationLabel(placement, resolver);
+        var display =
+            $"{referenceTag} ({obj.RecordType}) [{GeckReportHelpers.FormatFormId(obj.FormId)}] in {locationLabel}{disabledTag}";
+        return new ReportValue.CompositeVal(fields, display);
+    }
+
+    private static string ResolvePlacementLocationLabel(
+        NpcPlacementInfo placement,
+        FormIdResolver resolver)
+    {
+        var cellLabel = ResolvePlacementCellLabel(placement, resolver);
+        return placement.WorldspaceFormId is > 0
+            ? $"{resolver.FormatFull(placement.WorldspaceFormId.Value)} / {cellLabel}"
+            : cellLabel;
+    }
+
+    private static string ResolvePlacementCellLabel(
+        NpcPlacementInfo placement,
+        FormIdResolver resolver)
+    {
+        if (!string.IsNullOrEmpty(placement.CellEditorId) && !string.IsNullOrEmpty(placement.CellName))
+        {
+            return $"{placement.CellName} - {placement.CellEditorId} ({GeckReportHelpers.FormatFormId(placement.CellFormId)})";
+        }
+
+        if (!string.IsNullOrEmpty(placement.CellEditorId))
+        {
+            return $"{placement.CellEditorId} ({GeckReportHelpers.FormatFormId(placement.CellFormId)})";
+        }
+
+        if (!string.IsNullOrEmpty(placement.CellName))
+        {
+            return $"{placement.CellName} ({GeckReportHelpers.FormatFormId(placement.CellFormId)})";
+        }
+
+        return resolver.FormatFull(placement.CellFormId);
+    }
+
     /// <summary>
     ///     Append CTL-projected control values and raw hex for a single FaceGen channel
     ///     (FGGS, FGGA, or FGTS) to the report field list.
@@ -304,7 +493,7 @@ internal static class GeckActorDetailWriter
                 [
                     new ReportField("Control", ReportValue.String(c.Name)),
                     new ReportField("Value", ReportValue.Float(c.Value, "F4"))
-                ], $"{c.Name}: {c.Value:F4}"))
+                ], $"Control: {c.Name} | Value: {c.Value:F4}"))
             .ToList();
 
         fgFields.Add(new ReportField($"{label} Controls",

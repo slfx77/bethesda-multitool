@@ -538,6 +538,15 @@ internal static class GeckDialogueWriter
             identityFields.Add(new ReportField("JournalIndex", ReportValue.Int(topic.JournalIndex)));
         sections.Add(new ReportSection("Identity", identityFields));
 
+        var promptFields = new List<ReportField>();
+        if (!string.IsNullOrWhiteSpace(topic.FullName))
+            promptFields.Add(new ReportField("Player", ReportValue.String($"\"{topic.FullName}\"")));
+        if (!string.IsNullOrWhiteSpace(topic.DummyPrompt) &&
+            !string.Equals(topic.DummyPrompt, topic.FullName, StringComparison.Ordinal))
+            promptFields.Add(new ReportField("Fallback", ReportValue.String($"\"{topic.DummyPrompt}\"")));
+        if (promptFields.Count > 0)
+            sections.Add(new ReportSection("Prompt", promptFields));
+
         // References
         var refFields = new List<ReportField>();
         if (topic.QuestFormId.HasValue)

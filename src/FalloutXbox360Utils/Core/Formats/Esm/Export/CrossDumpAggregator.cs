@@ -1,4 +1,5 @@
 using System.Globalization;
+using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
@@ -17,7 +18,12 @@ internal static class CrossDumpAggregator
     ///     Uses PE TimeDateStamp from game module for build dates when available.
     /// </summary>
     internal static CrossDumpRecordIndex Aggregate(
-        List<(string FilePath, RecordCollection Records, FormIdResolver Resolver, MinidumpInfo? Info)> dumps)
+        List<(string FilePath, RecordCollection Records, FormIdResolver Resolver, MinidumpInfo? Info)> dumps,
+        IReadOnlySet<string>? allowedTypes = null,
+        bool releaseInputRecords = false,
+        IReadOnlyDictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<NpcPlacementInfo>>>? npcPlacementIndexes = null,
+        IReadOnlyDictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<NpcScriptReferenceInfo>>>?
+            npcScriptReferenceIndexes = null)
     {
         var index = new CrossDumpRecordIndex();
 
@@ -28,23 +34,56 @@ internal static class CrossDumpAggregator
                 var fi = new FileInfo(d.FilePath);
                 var fileDate = fi.Exists ? fi.LastWriteTimeUtc : DateTime.MinValue;
 
+                var isDmp = d.FilePath.EndsWith(".dmp", StringComparison.OrdinalIgnoreCase);
+
                 // Use PE timestamp from game module if available
                 var buildDate = fileDate;
+                var dateSource = "file timestamp";
                 if (d.Info != null)
                 {
                     var gameModule = d.Info.FindGameModule();
                     if (gameModule != null && gameModule.TimeDateStamp != 0)
                     {
                         buildDate = DateTimeOffset.FromUnixTimeSeconds(gameModule.TimeDateStamp).UtcDateTime;
+                        dateSource = "PE TimeDateStamp";
                     }
+                }
+                else if (!isDmp)
+                {
+                    var esmDate = EsmBuildDateExtractor.Extract(d.FilePath);
+                    buildDate = esmDate.BuildDateUtc;
+                    dateSource = esmDate.Source;
                 }
 
                 var shortName = Path.GetFileNameWithoutExtension(d.FilePath);
-                var isDmp = d.FilePath.EndsWith(".dmp", StringComparison.OrdinalIgnoreCase);
-                return (d.FilePath, d.Records, d.Resolver, Date: buildDate, ShortName: shortName, IsDmp: isDmp);
+                return (d.FilePath, d.Records, d.Resolver, Date: buildDate, ShortName: shortName, IsDmp: isDmp,
+                    DateSource: dateSource);
             })
             .OrderBy(d => d.Date)
             .ToList();
+        if (releaseInputRecords)
+        {
+            dumps.Clear();
+        }
+
+        var virtualCellCanonicalFormIds = ShouldIncludeType(allowedTypes, "Cell") ||
+                                          ShouldIncludeType(allowedTypes, "MapMarker")
+            ? BuildVirtualCellCanonicalFormIds(ordered.Select(d => d.Records))
+            : new Dictionary<CellCoordinateKey, RealCellCandidate>();
+        if (ShouldIncludeType(allowedTypes, "NPC") && npcPlacementIndexes == null)
+        {
+            npcPlacementIndexes = BuildNpcPlacementIndexes(
+                ordered.Select(d => (d.FilePath, d.Records)));
+        }
+
+        if (ShouldIncludeType(allowedTypes, "NPC") && npcScriptReferenceIndexes == null)
+        {
+            npcScriptReferenceIndexes = BuildNpcScriptReferenceIndexes(
+                ordered.Select(d => (d.FilePath, d.Records)));
+        }
+
+        var upgradedVirtualCellIds = new Dictionary<uint, SortedSet<uint>>();
+        var upgradedVirtualCellIdsByDump = new Dictionary<uint, SortedDictionary<int, SortedSet<uint>>>();
 
         // Canonical labels: FormID → display label.
         // Ensures all dialogue from the same NPC/quest shares one group label
@@ -67,20 +106,73 @@ internal static class CrossDumpAggregator
                 Path.GetFileName(dump.FilePath),
                 dump.Date,
                 dump.ShortName,
-                dump.IsDmp));
+                dump.IsDmp,
+                DateSource: dump.DateSource));
 
-            // Build reverse indexes once per dump for enriched reports
-            var factionMembers = dump.Records.BuildFactionMembersIndex();
-            var keyLockedDoors = dump.Records.BuildKeyToLockedDoorsMap();
-            var modToWeapon = dump.Records.BuildModToWeaponMap();
+            // Build reverse indexes once per dump for enriched reports, but skip
+            // them for scoped runs that cannot use those enrichments.
+            var factionMembers = ShouldIncludeType(allowedTypes, "Faction")
+                ? dump.Records.BuildFactionMembersIndex()
+                : null;
+            var keyLockedDoors = ShouldIncludeType(allowedTypes, "Key")
+                ? dump.Records.BuildKeyToLockedDoorsMap()
+                : null;
+            var modToWeapon = ShouldIncludeType(allowedTypes, "WeaponMod")
+                ? dump.Records.BuildModToWeaponMap()
+                : null;
+            var placedReferenceLocations = ShouldIncludeType(allowedTypes, "Cell") ||
+                                           ShouldIncludeType(allowedTypes, "MapMarker")
+                ? BuildPlacedReferenceLocations(dump.Records.Cells, virtualCellCanonicalFormIds)
+                : null;
+            var npcPlacements = ShouldIncludeType(allowedTypes, "NPC") &&
+                                npcPlacementIndexes != null &&
+                                npcPlacementIndexes.TryGetValue(dump.FilePath, out var placementsForDump)
+                ? placementsForDump
+                : null;
+            var npcScriptReferences = ShouldIncludeType(allowedTypes, "NPC") &&
+                                      npcScriptReferenceIndexes != null &&
+                                      npcScriptReferenceIndexes.TryGetValue(dump.FilePath, out var refsForDump)
+                ? refsForDump
+                : null;
 
             foreach (var (typeName, formId, _, _, record) in
                      RecordTextFormatter.EnumerateAll(dump.Records))
             {
+                if (!ShouldIncludeType(allowedTypes, typeName))
+                {
+                    continue;
+                }
+
+                var reportFormId = formId;
+                var reportWasRebasedVirtualCell = false;
+                var canonicalCell = default(RealCellCandidate);
+                if (record is CellRecord identityCell &&
+                    TryGetVirtualCellCanonicalFormId(
+                        identityCell,
+                        virtualCellCanonicalFormIds,
+                        out canonicalCell))
+                {
+                    reportFormId = canonicalCell.FormId;
+                    reportWasRebasedVirtualCell = true;
+                    if (!upgradedVirtualCellIds.TryGetValue(reportFormId, out var originalIds))
+                    {
+                        originalIds = [];
+                        upgradedVirtualCellIds[reportFormId] = originalIds;
+                    }
+
+                    originalIds.Add(formId);
+                    AddUpgradedVirtualCellForDump(upgradedVirtualCellIdsByDump, reportFormId, dumpIdx, formId);
+                }
+
                 // Build structured report (primary path for all output formats)
                 var report = RecordTextFormatter.BuildReport(record, dump.Resolver,
-                    factionMembers, keyLockedDoors, modToWeapon);
+                    factionMembers, keyLockedDoors, modToWeapon, placedReferenceLocations, npcPlacements,
+                    npcScriptReferences);
                 if (report == null) continue;
+                if (reportWasRebasedVirtualCell)
+                {
+                    report = RebaseVirtualCellReport(report, canonicalCell);
+                }
 
                 if (!index.StructuredRecords.TryGetValue(typeName, out var structFormIdMap))
                 {
@@ -88,10 +180,15 @@ internal static class CrossDumpAggregator
                     index.StructuredRecords[typeName] = structFormIdMap;
                 }
 
-                if (!structFormIdMap.TryGetValue(formId, out var structDumpMap))
+                if (!structFormIdMap.TryGetValue(reportFormId, out var structDumpMap))
                 {
                     structDumpMap = new Dictionary<int, RecordReport>();
-                    structFormIdMap[formId] = structDumpMap;
+                    structFormIdMap[reportFormId] = structDumpMap;
+                }
+
+                if (record is CellRecord { IsVirtual: true } && structDumpMap.ContainsKey(dumpIdx))
+                {
+                    continue;
                 }
 
                 structDumpMap[dumpIdx] = report;
@@ -136,29 +233,29 @@ internal static class CrossDumpAggregator
                         newGroupKey = "Exterior Cells (Unknown Worldspace)";
                     }
 
-                    if (!gm.TryGetValue(formId, out var existingGroup))
+                    if (!gm.TryGetValue(reportFormId, out var existingGroup))
                     {
-                        gm[formId] = newGroupKey;
-                        if (!dump.IsDmp) cellGroupFromEsm.Add(formId);
+                        gm[reportFormId] = newGroupKey;
+                        if (!dump.IsDmp) cellGroupFromEsm.Add(reportFormId);
                     }
                     else if (!dump.IsDmp)
                     {
                         // ESMs are authoritative — overwrite any DMP-sourced group.
                         // (DMP cell parser may misread WorldspaceFormId from runtime structs.)
-                        gm[formId] = newGroupKey;
-                        cellGroupFromEsm.Add(formId);
+                        gm[reportFormId] = newGroupKey;
+                        cellGroupFromEsm.Add(reportFormId);
                     }
-                    else if (!cellGroupFromEsm.Contains(formId))
+                    else if (!cellGroupFromEsm.Contains(reportFormId))
                     {
                         // DMP→DMP upgrade: only allow Interior or Unknown→worldspace
                         if (c.IsInterior && existingGroup != "Interior Cells")
                         {
-                            gm[formId] = "Interior Cells";
+                            gm[reportFormId] = "Interior Cells";
                         }
                         else if (existingGroup == "Exterior Cells (Unknown Worldspace)"
                                  && c.WorldspaceFormId.HasValue)
                         {
-                            gm[formId] = newGroupKey;
+                            gm[reportFormId] = newGroupKey;
                         }
                     }
 
@@ -166,7 +263,7 @@ internal static class CrossDumpAggregator
                     // ESM coords are authoritative over DMP-inferred coords)
                     if (c.GridX.HasValue && c.GridY.HasValue)
                     {
-                        index.CellGridCoords[formId] = (c.GridX.Value, c.GridY.Value);
+                        index.CellGridCoords[reportFormId] = (c.GridX.Value, c.GridY.Value);
                     }
 
                     // Heightmap storage is handled separately from ESM LAND records
@@ -264,7 +361,14 @@ internal static class CrossDumpAggregator
                     }
                 }
             }
+
+            if (releaseInputRecords)
+            {
+                ClearRecordLists(dump.Records);
+            }
         }
+
+        AppendVirtualCellAuditMetadata(index, upgradedVirtualCellIds, upgradedVirtualCellIdsByDump);
 
         // Finalize: replace cell group placeholder keys ("WS:0xFORMID") with the
         // best-resolved worldspace name. All cells from the same worldspace FormID
@@ -329,6 +433,458 @@ internal static class CrossDumpAggregator
 
         return index;
     }
+
+    private static bool ShouldIncludeType(IReadOnlySet<string>? allowedTypes, string typeName)
+    {
+        return allowedTypes is not { Count: > 0 } || allowedTypes.Contains(typeName);
+    }
+
+    private static void ClearRecordLists(RecordCollection records)
+    {
+        records.Npcs.Clear();
+        records.Creatures.Clear();
+        records.Races.Clear();
+        records.Factions.Clear();
+        records.Quests.Clear();
+        records.DialogTopics.Clear();
+        records.Dialogues.Clear();
+        records.Notes.Clear();
+        records.Books.Clear();
+        records.Terminals.Clear();
+        records.Scripts.Clear();
+        records.Weapons.Clear();
+        records.Armor.Clear();
+        records.Ammo.Clear();
+        records.Consumables.Clear();
+        records.MiscItems.Clear();
+        records.Keys.Clear();
+        records.Containers.Clear();
+        records.Perks.Clear();
+        records.Spells.Clear();
+        records.Cells.Clear();
+        records.Worldspaces.Clear();
+        records.MapMarkers.Clear();
+        records.LeveledLists.Clear();
+        records.GameSettings.Clear();
+        records.Globals.Clear();
+        records.Enchantments.Clear();
+        records.BaseEffects.Clear();
+        records.WeaponMods.Clear();
+        records.Recipes.Clear();
+        records.Challenges.Clear();
+        records.Reputations.Clear();
+        records.Projectiles.Clear();
+        records.Explosions.Clear();
+        records.Messages.Clear();
+        records.Classes.Clear();
+        records.Eyes.Clear();
+        records.Hair.Clear();
+        records.FormLists.Clear();
+        records.Activators.Clear();
+        records.Lights.Clear();
+        records.Doors.Clear();
+        records.Statics.Clear();
+        records.Furniture.Clear();
+        records.Packages.Clear();
+        records.GenericRecords.Clear();
+        records.Sounds.Clear();
+        records.MusicTypes.Clear();
+        records.TextureSets.Clear();
+        records.ArmorAddons.Clear();
+        records.Water.Clear();
+        records.BodyPartData.Clear();
+        records.ActorValueInfos.Clear();
+        records.CombatStyles.Clear();
+        records.LightingTemplates.Clear();
+        records.NavMeshes.Clear();
+        records.Weather.Clear();
+    }
+
+    private static Dictionary<uint, PlacedReferenceLocation> BuildPlacedReferenceLocations(
+        IEnumerable<CellRecord> cells,
+        IReadOnlyDictionary<CellCoordinateKey, RealCellCandidate> virtualCellCanonicalFormIds)
+    {
+        var map = new Dictionary<uint, PlacedReferenceLocation>();
+        foreach (var cell in cells)
+        {
+            var cellFormId = cell.FormId;
+            if (TryGetVirtualCellCanonicalFormId(cell, virtualCellCanonicalFormIds, out var canonicalCell))
+            {
+                cellFormId = canonicalCell.FormId;
+            }
+
+            foreach (var obj in cell.PlacedObjects)
+            {
+                if (obj.FormId == 0)
+                {
+                    continue;
+                }
+
+                map[obj.FormId] = new PlacedReferenceLocation(obj, cellFormId);
+            }
+        }
+
+        return map;
+    }
+
+    internal static IReadOnlyDictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<NpcPlacementInfo>>>
+        BuildNpcPlacementIndexes(IEnumerable<(string FilePath, RecordCollection Records)> sources)
+    {
+        var sourceList = sources.ToList();
+        var virtualCellCanonicalFormIds = BuildVirtualCellCanonicalFormIds(sourceList.Select(source => source.Records));
+        var result = new Dictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<NpcPlacementInfo>>>(
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (filePath, records) in sourceList)
+        {
+            result[filePath] = BuildNpcPlacementIndex(records, virtualCellCanonicalFormIds);
+        }
+
+        return result;
+    }
+
+    internal static IReadOnlyDictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<NpcScriptReferenceInfo>>>
+        BuildNpcScriptReferenceIndexes(IEnumerable<(string FilePath, RecordCollection Records)> sources)
+    {
+        var result = new Dictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<NpcScriptReferenceInfo>>>(
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (filePath, records) in sources)
+        {
+            result[filePath] = BuildNpcScriptReferenceIndex(records);
+        }
+
+        return result;
+    }
+
+    private static Dictionary<uint, IReadOnlyList<NpcScriptReferenceInfo>> BuildNpcScriptReferenceIndex(
+        RecordCollection records)
+    {
+        var npcFormIds = records.Npcs.Select(npc => npc.FormId).ToHashSet();
+        if (npcFormIds.Count == 0 || records.Scripts.Count == 0)
+        {
+            return new Dictionary<uint, IReadOnlyList<NpcScriptReferenceInfo>>();
+        }
+
+        var map = new Dictionary<uint, List<NpcScriptReferenceInfo>>();
+        foreach (var script in records.Scripts)
+        {
+            if (script.ReferencedObjects.Count == 0)
+            {
+                continue;
+            }
+
+            var reference = new NpcScriptReferenceInfo(
+                script.FormId,
+                script.EditorId,
+                script.ScriptType,
+                script.OwnerQuestFormId);
+            foreach (var referencedFormId in script.ReferencedObjects.Distinct())
+            {
+                if (!npcFormIds.Contains(referencedFormId))
+                {
+                    continue;
+                }
+
+                if (!map.TryGetValue(referencedFormId, out var scripts))
+                {
+                    scripts = [];
+                    map[referencedFormId] = scripts;
+                }
+
+                scripts.Add(reference);
+            }
+        }
+
+        return map.ToDictionary(
+            entry => entry.Key,
+            entry => (IReadOnlyList<NpcScriptReferenceInfo>)entry.Value
+                .OrderBy(reference => reference.ScriptEditorId ?? "", StringComparer.OrdinalIgnoreCase)
+                .ThenBy(reference => reference.ScriptFormId)
+                .ToList());
+    }
+
+    private static Dictionary<uint, IReadOnlyList<NpcPlacementInfo>> BuildNpcPlacementIndex(
+        RecordCollection records,
+        IReadOnlyDictionary<CellCoordinateKey, RealCellCandidate> virtualCellCanonicalFormIds)
+    {
+        var npcFormIds = records.Npcs.Select(npc => npc.FormId).ToHashSet();
+        if (npcFormIds.Count == 0 || records.Cells.Count == 0)
+        {
+            return new Dictionary<uint, IReadOnlyList<NpcPlacementInfo>>();
+        }
+
+        var map = new Dictionary<uint, List<NpcPlacementInfo>>();
+        foreach (var cell in records.Cells)
+        {
+            var cellFormId = cell.FormId;
+            if (TryGetVirtualCellCanonicalFormId(cell, virtualCellCanonicalFormIds, out var canonicalCell))
+            {
+                cellFormId = canonicalCell.FormId;
+            }
+
+            foreach (var obj in cell.PlacedObjects)
+            {
+                if (!string.Equals(obj.RecordType, "ACHR", StringComparison.OrdinalIgnoreCase) ||
+                    obj.BaseFormId == 0 ||
+                    !npcFormIds.Contains(obj.BaseFormId))
+                {
+                    continue;
+                }
+
+                if (!map.TryGetValue(obj.BaseFormId, out var placements))
+                {
+                    placements = [];
+                    map[obj.BaseFormId] = placements;
+                }
+
+                placements.Add(new NpcPlacementInfo(
+                    obj,
+                    cellFormId,
+                    cell.EditorId,
+                    cell.FullName,
+                    cell.WorldspaceFormId,
+                    cell.GridX,
+                    cell.GridY));
+            }
+        }
+
+        return map.ToDictionary(
+            entry => entry.Key,
+            entry => (IReadOnlyList<NpcPlacementInfo>)entry.Value
+                .OrderBy(placement => ResolveCellSortName(placement), StringComparer.OrdinalIgnoreCase)
+                .ThenBy(placement => placement.GridY ?? int.MaxValue)
+                .ThenBy(placement => placement.GridX ?? int.MaxValue)
+                .ThenBy(placement => placement.Ref.FormId)
+                .ToList());
+    }
+
+    private static string ResolveCellSortName(NpcPlacementInfo placement)
+    {
+        if (!string.IsNullOrWhiteSpace(placement.CellEditorId))
+        {
+            return placement.CellEditorId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(placement.CellName))
+        {
+            return placement.CellName;
+        }
+
+        return "";
+    }
+
+    private static Dictionary<CellCoordinateKey, RealCellCandidate> BuildVirtualCellCanonicalFormIds(
+        IEnumerable<RecordCollection> recordCollections)
+    {
+        var candidates = new Dictionary<CellCoordinateKey, Dictionary<uint, RealCellCandidate>>();
+        foreach (var collection in recordCollections)
+        {
+            foreach (var cell in collection.Cells)
+            {
+                if (!IsStableRealExteriorCell(cell) ||
+                    !TryGetCellCoordinateKey(cell, out var key))
+                {
+                    continue;
+                }
+
+                if (!candidates.TryGetValue(key, out var formIds))
+                {
+                    formIds = [];
+                    candidates[key] = formIds;
+                }
+
+                if (!formIds.TryGetValue(cell.FormId, out var existingCandidate))
+                {
+                    formIds[cell.FormId] = new RealCellCandidate(cell.FormId, cell.EditorId, cell.FullName);
+                }
+                else
+                {
+                    formIds[cell.FormId] = existingCandidate with
+                    {
+                        EditorId = existingCandidate.EditorId ?? cell.EditorId,
+                        DisplayName = existingCandidate.DisplayName ?? cell.FullName
+                    };
+                }
+            }
+        }
+
+        var canonical = new Dictionary<CellCoordinateKey, RealCellCandidate>();
+        foreach (var (key, formIds) in candidates)
+        {
+            if (formIds.Count == 1)
+            {
+                canonical[key] = formIds.Values.Single();
+            }
+        }
+
+        return canonical;
+    }
+
+    private static bool TryGetVirtualCellCanonicalFormId(
+        CellRecord cell,
+        IReadOnlyDictionary<CellCoordinateKey, RealCellCandidate> canonicalFormIds,
+        out RealCellCandidate canonicalCell)
+    {
+        canonicalCell = default;
+        if (!cell.IsVirtual ||
+            cell.IsInterior ||
+            cell.IsPersistentCell ||
+            cell.IsUnresolvedBucket ||
+            !TryGetCellCoordinateKey(cell, out var key))
+        {
+            return false;
+        }
+
+        return canonicalFormIds.TryGetValue(key, out canonicalCell);
+    }
+
+    private static bool IsStableRealExteriorCell(CellRecord cell)
+    {
+        return !cell.IsInterior
+               && !cell.IsVirtual
+               && !cell.IsPersistentCell
+               && !cell.IsUnresolvedBucket
+               && cell.FormId is > 0 and < 0xFE000000
+               && cell.WorldspaceFormId.HasValue
+               && cell.GridX.HasValue
+               && cell.GridY.HasValue;
+    }
+
+    private static bool TryGetCellCoordinateKey(CellRecord cell, out CellCoordinateKey key)
+    {
+        if (cell.WorldspaceFormId.HasValue &&
+            cell.GridX.HasValue &&
+            cell.GridY.HasValue)
+        {
+            key = new CellCoordinateKey(cell.WorldspaceFormId.Value, cell.GridX.Value, cell.GridY.Value);
+            return true;
+        }
+
+        key = default;
+        return false;
+    }
+
+    private static RecordReport RebaseVirtualCellReport(RecordReport report, RealCellCandidate canonicalCell)
+    {
+        var sections = new List<ReportSection>(report.Sections.Count);
+        foreach (var section in report.Sections)
+        {
+            var fields = new List<ReportField>(section.Fields.Count);
+            foreach (var field in section.Fields)
+            {
+                if (field.Key == "FormID")
+                {
+                    fields.Add(field with { Value = ReportValue.String($"0x{canonicalCell.FormId:X8}") });
+                }
+                else if (field.Key == "Editor ID")
+                {
+                    if (canonicalCell.EditorId != null)
+                    {
+                        fields.Add(field with { Value = ReportValue.String(canonicalCell.EditorId) });
+                    }
+                }
+                else if (field.Key == "Display Name")
+                {
+                    if (canonicalCell.DisplayName != null)
+                    {
+                        fields.Add(field with { Value = ReportValue.String(canonicalCell.DisplayName) });
+                    }
+                }
+                else
+                {
+                    fields.Add(field);
+                }
+            }
+
+            if (section.Name.Equals("Identity", StringComparison.OrdinalIgnoreCase))
+            {
+                if (canonicalCell.EditorId != null && fields.All(field => field.Key != "Editor ID"))
+                {
+                    fields.Add(new ReportField("Editor ID", ReportValue.String(canonicalCell.EditorId)));
+                }
+
+                if (canonicalCell.DisplayName != null && fields.All(field => field.Key != "Display Name"))
+                {
+                    fields.Add(new ReportField("Display Name", ReportValue.String(canonicalCell.DisplayName)));
+                }
+            }
+
+            if (fields.Count > 0)
+            {
+                sections.Add(section with { Fields = fields });
+            }
+        }
+
+        return report with
+        {
+            FormId = canonicalCell.FormId,
+            EditorId = canonicalCell.EditorId,
+            DisplayName = canonicalCell.DisplayName,
+            Sections = sections
+        };
+    }
+
+    private static void AddUpgradedVirtualCellForDump(
+        Dictionary<uint, SortedDictionary<int, SortedSet<uint>>> upgradedVirtualCellIdsByDump,
+        uint realFormId,
+        int dumpIdx,
+        uint originalVirtualFormId)
+    {
+        if (!upgradedVirtualCellIdsByDump.TryGetValue(realFormId, out var dumpMap))
+        {
+            dumpMap = [];
+            upgradedVirtualCellIdsByDump[realFormId] = dumpMap;
+        }
+
+        if (!dumpMap.TryGetValue(dumpIdx, out var originalIds))
+        {
+            originalIds = [];
+            dumpMap[dumpIdx] = originalIds;
+        }
+
+        originalIds.Add(originalVirtualFormId);
+    }
+
+    private static void AppendVirtualCellAuditMetadata(
+        CrossDumpRecordIndex index,
+        Dictionary<uint, SortedSet<uint>> upgradedVirtualCellIds,
+        Dictionary<uint, SortedDictionary<int, SortedSet<uint>>> upgradedVirtualCellIdsByDump)
+    {
+        if (upgradedVirtualCellIds.Count == 0)
+        {
+            return;
+        }
+
+        if (!index.RecordMetadata.TryGetValue("Cell", out var cellMetadata))
+        {
+            cellMetadata = new Dictionary<uint, Dictionary<string, string>>();
+            index.RecordMetadata["Cell"] = cellMetadata;
+        }
+
+        foreach (var (realFormId, originalVirtualFormIds) in upgradedVirtualCellIds)
+        {
+            if (!cellMetadata.TryGetValue(realFormId, out var metadata))
+            {
+                metadata = new Dictionary<string, string>();
+                cellMetadata[realFormId] = metadata;
+            }
+
+            metadata["upgradedVirtualFormIds"] =
+                string.Join(", ", originalVirtualFormIds.Select(formId => $"0x{formId:X8}"));
+            if (upgradedVirtualCellIdsByDump.TryGetValue(realFormId, out var dumpMap))
+            {
+                metadata["upgradedVirtualFormIdsByDump"] = string.Join(
+                    ";",
+                    dumpMap.Select(dumpEntry =>
+                        $"{dumpEntry.Key}:{string.Join(", ", dumpEntry.Value.Select(formId => $"0x{formId:X8}"))}"));
+            }
+        }
+    }
+
+    private readonly record struct CellCoordinateKey(uint WorldspaceFormId, int GridX, int GridY);
+
+    private readonly record struct RealCellCandidate(uint FormId, string? EditorId, string? DisplayName);
 
     /// <summary>
     ///     Returns true if a resolver-returned name is a real name (not null, empty,

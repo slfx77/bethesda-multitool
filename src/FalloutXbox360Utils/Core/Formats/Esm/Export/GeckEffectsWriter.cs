@@ -1,4 +1,5 @@
 using System.Text;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Magic;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
@@ -44,12 +45,63 @@ internal static class GeckEffectsWriter
                     var fields = new List<ReportField>
                     {
                         new("Rank", ReportValue.Int(entry.Rank)),
+                        new("Priority", ReportValue.Int(entry.Priority)),
                         new("Type", ReportValue.String(entry.TypeName))
                     };
+                    if (entry.QuestFormId.HasValue)
+                    {
+                        fields.Add(new ReportField("Quest", ReportValue.FormId(entry.QuestFormId.Value, resolver),
+                            $"0x{entry.QuestFormId.Value:X8}"));
+                    }
+
+                    if (entry.QuestStage.HasValue)
+                    {
+                        fields.Add(new ReportField("Quest Stage", ReportValue.Int(entry.QuestStage.Value)));
+                    }
+
                     if (entry.AbilityFormId.HasValue)
                     {
                         fields.Add(new ReportField("Ability", ReportValue.FormId(entry.AbilityFormId.Value, resolver),
                             $"0x{entry.AbilityFormId.Value:X8}"));
+                    }
+
+                    if (entry.EntryPoint.HasValue)
+                    {
+                        fields.Add(new ReportField("Entry Point",
+                            ReportValue.Int(entry.EntryPoint.Value, $"#{entry.EntryPoint.Value}")));
+                    }
+
+                    if (entry.FunctionTypeName != null)
+                    {
+                        fields.Add(new ReportField("Function", ReportValue.String(entry.FunctionTypeName)));
+                    }
+
+                    if (entry.EffectValue.HasValue)
+                    {
+                        fields.Add(new ReportField("Value", ReportValue.FloatDisplay(entry.EffectValue.Value,
+                            entry.EffectValue.Value.ToString("G"))));
+                    }
+
+                    if (entry.EffectFormId.HasValue)
+                    {
+                        fields.Add(new ReportField("Effect Form",
+                            ReportValue.FormId(entry.EffectFormId.Value, resolver),
+                            $"0x{entry.EffectFormId.Value:X8}"));
+                    }
+
+                    if (!string.IsNullOrEmpty(entry.EffectData))
+                    {
+                        fields.Add(new ReportField("Data", ReportValue.String(entry.EffectData)));
+                    }
+
+                    if (entry.ConditionTabCount.HasValue)
+                    {
+                        fields.Add(new ReportField("Condition Tabs", ReportValue.Int(entry.ConditionTabCount.Value)));
+                    }
+
+                    if (entry.Conditions.Count > 0)
+                    {
+                        fields.Add(new ReportField("Conditions", ReportValue.Int(entry.Conditions.Count)));
                     }
 
                     var abilityStr = entry.AbilityFormId.HasValue
@@ -78,10 +130,11 @@ internal static class GeckEffectsWriter
                     };
 
                     // Resolve display for the parameter
-                    if (c.FunctionName == "GetActorValue")
+                    if (PerkConditionParameterResolver.IsActorValueParameter(c.FunctionIndex, 0))
                     {
-                        var avName = resolver.GetActorValueName((int)c.Parameter1) ?? $"AV#{c.Parameter1}";
-                        fields.Add(new ReportField("Skill", ReportValue.String(avName)));
+                        fields.Add(new ReportField("Actor Value",
+                            ReportValue.String(FormatActorValueName(c.Parameter1))));
+                        fields.Add(new ReportField("Actor Value Code", ReportValue.Int((int)c.Parameter1)));
                     }
                     else if (c.Parameter1FormId.HasValue)
                     {
@@ -89,21 +142,44 @@ internal static class GeckEffectsWriter
                             ReportValue.FormId(c.Parameter1FormId.Value, resolver),
                             $"0x{c.Parameter1FormId.Value:X8}"));
                     }
+                    else if (!string.IsNullOrEmpty(c.Parameter1Display))
+                    {
+                        fields.Add(new ReportField("Parameter", ReportValue.String(c.Parameter1Display)));
+                    }
+                    else if (c.Parameter1 != 0)
+                    {
+                        fields.Add(new ReportField("Parameter", ReportValue.String(c.Parameter1.ToString())));
+                    }
+
+                    if (c.Parameter2FormId.HasValue)
+                    {
+                        fields.Add(new ReportField("Parameter 2",
+                            ReportValue.FormId(c.Parameter2FormId.Value, resolver),
+                            $"0x{c.Parameter2FormId.Value:X8}"));
+                    }
+                    else if (!string.IsNullOrEmpty(c.Parameter2Display))
+                    {
+                        fields.Add(new ReportField("Parameter 2", ReportValue.String(c.Parameter2Display)));
+                    }
 
                     fields.Add(new ReportField("Condition",
                         ReportValue.String($"{c.OperatorDisplay} {c.ComparisonValue:G}")));
 
                     // Build summary string
                     string summary;
-                    if (c.FunctionName == "GetActorValue")
+                    if (PerkConditionParameterResolver.IsActorValueParameter(c.FunctionIndex, 0))
                     {
-                        var avName = resolver.GetActorValueName((int)c.Parameter1) ?? $"AV#{c.Parameter1}";
-                        summary = $"{avName} {c.OperatorDisplay} {c.ComparisonValue:G}";
+                        summary =
+                            $"{c.FunctionName} {FormatActorValueName(c.Parameter1)} {c.OperatorDisplay} {c.ComparisonValue:G}";
                     }
                     else if (c.Parameter1FormId.HasValue)
                     {
                         summary =
                             $"{c.FunctionName}: {resolver.FormatFull(c.Parameter1FormId.Value)} {c.OperatorDisplay} {c.ComparisonValue:G}";
+                    }
+                    else if (!string.IsNullOrEmpty(c.Parameter1Display))
+                    {
+                        summary = $"{c.FunctionName}({c.Parameter1Display}) {c.OperatorDisplay} {c.ComparisonValue:G}";
                     }
                     else
                     {
@@ -121,6 +197,12 @@ internal static class GeckEffectsWriter
         }
 
         return new RecordReport("Perk", perk.FormId, perk.EditorId, perk.FullName, sections);
+    }
+
+    private static string FormatActorValueName(uint actorValue)
+    {
+        var name = PerkConditionParameterResolver.ResolveParameter(0x0E, 0, actorValue).Display;
+        return name ?? actorValue.ToString();
     }
 
     internal static RecordReport BuildSpellReport(SpellRecord spell, FormIdResolver resolver)

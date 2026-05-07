@@ -179,15 +179,18 @@ internal static class GeckItemDetailWriter
                         : "(none)";
                     return (ReportValue)new ReportValue.CompositeVal(
                         [
-                            new ReportField("Item", ReportValue.String(itemName)),
+                            new ReportField("Item", ing.ItemFormId != 0
+                                ? ReportValue.FormId(ing.ItemFormId, resolver)
+                                : ReportValue.String(itemName)),
                             new ReportField("Count", ReportValue.Int((int)ing.Count))
                         ], $"{itemName} x{ing.Count}");
                 })
                 .ToList();
 
-            sections.Add(new ReportSection($"Ingredients ({recipe.Ingredients.Count})",
+            sections.Add(new ReportSection("Ingredients",
             [
-                new ReportField("Items", ReportValue.List(items))
+                new ReportField("Count", ReportValue.Int(recipe.Ingredients.Count)),
+                new ReportField("Components", ReportValue.List(items))
             ]));
         }
 
@@ -202,15 +205,18 @@ internal static class GeckItemDetailWriter
                         : "(none)";
                     return (ReportValue)new ReportValue.CompositeVal(
                         [
-                            new ReportField("Item", ReportValue.String(itemName)),
+                            new ReportField("Item", output.ItemFormId != 0
+                                ? ReportValue.FormId(output.ItemFormId, resolver)
+                                : ReportValue.String(itemName)),
                             new ReportField("Count", ReportValue.Int((int)output.Count))
                         ], $"{itemName} x{output.Count}");
                 })
                 .ToList();
 
-            sections.Add(new ReportSection($"Outputs ({recipe.Outputs.Count})",
+            sections.Add(new ReportSection("Outputs",
             [
-                new ReportField("Items", ReportValue.List(items))
+                new ReportField("Count", ReportValue.Int(recipe.Outputs.Count)),
+                new ReportField("Results", ReportValue.List(items))
             ]));
         }
 

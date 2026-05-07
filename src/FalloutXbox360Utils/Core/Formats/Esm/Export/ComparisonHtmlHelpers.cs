@@ -14,13 +14,21 @@ internal static class ComparisonHtmlHelpers
     internal static string CompressToBase64(string text)
     {
         var raw = Encoding.UTF8.GetBytes(text);
+        return CompressToBase64(raw);
+    }
+
+    /// <summary>Compress UTF-8 bytes with Deflate and return as base64.</summary>
+    internal static string CompressToBase64(ReadOnlySpan<byte> raw)
+    {
         using var ms = new MemoryStream();
         using (var deflate = new DeflateStream(ms, CompressionLevel.Optimal, true))
         {
-            deflate.Write(raw, 0, raw.Length);
+            deflate.Write(raw);
         }
 
-        return Convert.ToBase64String(ms.ToArray());
+        return ms.TryGetBuffer(out var buffer)
+            ? Convert.ToBase64String(buffer.Array!, buffer.Offset, buffer.Count)
+            : Convert.ToBase64String(ms.ToArray());
     }
 
     /// <summary>HTML-encode a string.</summary>

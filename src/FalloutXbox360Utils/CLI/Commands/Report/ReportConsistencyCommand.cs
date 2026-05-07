@@ -232,8 +232,9 @@ internal static class ReportConsistencyCommand
         var rosterPage = pages[0];
         var labels = rosterPage.Dumps.Select(d => d.ShortName).ToList();
         var builds = labels
-            .Select(label => (label, (Dictionary<string, Dictionary<uint, RecordReport>>)
-                new Dictionary<string, Dictionary<uint, RecordReport>>(StringComparer.Ordinal)))
+            .Select(label => (
+                Label: label,
+                Records: new Dictionary<string, Dictionary<uint, RecordReport>>(StringComparer.Ordinal)))
             .ToList();
 
         foreach (var page in pages)
@@ -243,10 +244,10 @@ internal static class ReportConsistencyCommand
                 foreach (var (dumpIdx, report) in dumpMap)
                 {
                     if (dumpIdx < 0 || dumpIdx >= builds.Count) continue;
-                    if (!builds[dumpIdx].Item2.TryGetValue(page.RecordType, out var perBuildMap))
+                    if (!builds[dumpIdx].Records.TryGetValue(page.RecordType, out var perBuildMap))
                     {
                         perBuildMap = new Dictionary<uint, RecordReport>();
-                        builds[dumpIdx].Item2[page.RecordType] = perBuildMap;
+                        builds[dumpIdx].Records[page.RecordType] = perBuildMap;
                     }
 
                     perBuildMap[formId] = report;
@@ -254,7 +255,7 @@ internal static class ReportConsistencyCommand
             }
         }
 
-        return builds.Select(b => (b.label, b.Item2)).ToList();
+        return builds.Select(b => (b.Label, b.Records)).ToList();
     }
 
     private static (string Label, string Path) SplitLabel(string spec)
@@ -376,27 +377,23 @@ internal static class ReportConsistencyCommand
                 detail.AddColumn(Markup.Escape($"{pair.BuildA} value"));
                 detail.AddColumn(Markup.Escape($"{pair.BuildB} value"));
 
-                var printed = 0;
-                foreach (var perType in pair.Regressions.OrderBy(kv => kv.Key))
+                var printedDiffs = pair.Regressions
+                    .OrderBy(kv => kv.Key)
+                    .SelectMany(perType => perType.Value
+                        .SelectMany(rec => rec.Differences.Select(diff => (Record: rec, Difference: diff))))
+                    .Take(maxPrint);
+
+                foreach (var (rec, diff) in printedDiffs)
                 {
-                    foreach (var rec in perType.Value)
-                    {
-                        foreach (var diff in rec.Differences)
-                        {
-                            if (printed >= maxPrint) goto done;
-                            detail.AddRow(
-                                Markup.Escape($"{rec.RecordType} {rec.EditorId ?? ""}".TrimEnd()),
-                                $"0x{rec.FormId:X8}",
-                                Markup.Escape(diff.Section),
-                                Markup.Escape(diff.Field),
-                                Markup.Escape(diff.ValueA),
-                                Markup.Escape(diff.ValueB));
-                            printed++;
-                        }
-                    }
+                    detail.AddRow(
+                        Markup.Escape($"{rec.RecordType} {rec.EditorId ?? ""}".TrimEnd()),
+                        $"0x{rec.FormId:X8}",
+                        Markup.Escape(diff.Section),
+                        Markup.Escape(diff.Field),
+                        Markup.Escape(diff.ValueA),
+                        Markup.Escape(diff.ValueB));
                 }
 
-                done:
                 AnsiConsole.Write(detail);
             }
         }

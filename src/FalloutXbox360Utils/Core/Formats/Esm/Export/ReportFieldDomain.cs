@@ -19,14 +19,14 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 /// </summary>
 internal static class ReportFieldDomain
 {
-    internal abstract record DomainRule
+    internal interface IDomainRule
     {
-        internal abstract bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason);
+        bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason);
     }
 
-    internal sealed record IntRange(long Min, long Max) : DomainRule
+    internal sealed record IntRange(long Min, long Max) : IDomainRule
     {
-        internal override bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
+        public bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
         {
             switch (value)
             {
@@ -43,9 +43,9 @@ internal static class ReportFieldDomain
         }
     }
 
-    internal sealed record FloatRange(double Min, double Max, bool AllowNan = false) : DomainRule
+    internal sealed record FloatRange(double Min, double Max, bool AllowNan = false) : IDomainRule
     {
-        internal override bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
+        public bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
         {
             switch (value)
             {
@@ -80,9 +80,9 @@ internal static class ReportFieldDomain
         }
     }
 
-    internal sealed record EnumSet(HashSet<int> ValidValues) : DomainRule
+    internal sealed record EnumSet(HashSet<int> ValidValues) : IDomainRule
     {
-        internal override bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
+        public bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
         {
             if (value is not ReportValue.IntVal i)
             {
@@ -101,9 +101,9 @@ internal static class ReportFieldDomain
         }
     }
 
-    internal sealed record FormIdMustResolve(bool AllowZero = true) : DomainRule
+    internal sealed record FormIdMustResolve(bool AllowZero = true) : IDomainRule
     {
-        internal override bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
+        public bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
         {
             if (value is not ReportValue.FormIdVal f)
             {
@@ -150,9 +150,9 @@ internal static class ReportFieldDomain
         }
     }
 
-    internal sealed record StringNonEmpty(int MaxLen = 4096) : DomainRule
+    internal sealed record StringNonEmpty(int MaxLen = 4096) : IDomainRule
     {
-        internal override bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
+        public bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
         {
             if (value is not ReportValue.StringVal s)
             {
@@ -177,9 +177,9 @@ internal static class ReportFieldDomain
         }
     }
 
-    internal sealed record BoolAny : DomainRule
+    internal sealed record BoolAny : IDomainRule
     {
-        internal override bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
+        public bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
         {
             if (value is ReportValue.BoolVal)
             {
@@ -193,9 +193,9 @@ internal static class ReportFieldDomain
     }
 
     /// <summary>Accepts any IntVal — used by the family/shape layers when we only know "this is an int".</summary>
-    internal sealed record IntAny : DomainRule
+    internal sealed record IntAny : IDomainRule
     {
-        internal override bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
+        public bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
         {
             if (value is ReportValue.IntVal)
             {
@@ -209,9 +209,9 @@ internal static class ReportFieldDomain
     }
 
     /// <summary>Accepts any FloatVal but rejects NaN/Infinity. No numeric bounds.</summary>
-    internal sealed record FloatAny : DomainRule
+    internal sealed record FloatAny : IDomainRule
     {
-        internal override bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
+        public bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
         {
             switch (value)
             {
@@ -233,9 +233,9 @@ internal static class ReportFieldDomain
     }
 
     /// <summary>Accepts any StringVal. Loose check used by shape/suffix families.</summary>
-    internal sealed record StringAny : DomainRule
+    internal sealed record StringAny : IDomainRule
     {
-        internal override bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
+        public bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
         {
             if (value is ReportValue.StringVal)
             {
@@ -252,9 +252,9 @@ internal static class ReportFieldDomain
     ///     Hex bitmask — IntVal of any size, or StringVal starting with <c>0x</c>, or a FormIdVal
     ///     (printed as hex). Used by the <c>*Flags</c> suffix family.
     /// </summary>
-    internal sealed record HexBitmask : DomainRule
+    internal sealed record HexBitmask : IDomainRule
     {
-        internal override bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
+        public bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
         {
             switch (value)
             {
@@ -280,9 +280,9 @@ internal static class ReportFieldDomain
     ///     on the float side). Used by the shape classifier when we've only pattern-matched
     ///     a bare decimal and can't tell whether the producer stored it as int or float.
     /// </summary>
-    internal sealed record NumericAny : DomainRule
+    internal sealed record NumericAny : IDomainRule
     {
-        internal override bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
+        public bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
         {
             switch (value)
             {
@@ -310,9 +310,9 @@ internal static class ReportFieldDomain
     ///     plus formatted display) OR StringVal whose display is the formatted form.
     ///     Used by the shape classifier for displays ending in <c>(0xFORMID)</c>.
     /// </summary>
-    internal sealed record ResolvedReference : DomainRule
+    internal sealed record ResolvedReference : IDomainRule
     {
-        internal override bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
+        public bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
         {
             switch (value)
             {
@@ -332,9 +332,9 @@ internal static class ReportFieldDomain
     ///     floats. Used by section-wildcard rules and loose suffix families where "the rule
     ///     knows the value exists; tight bounds belong in an explicit tuple rule".
     /// </summary>
-    internal sealed record AnyNonNaN : DomainRule
+    internal sealed record AnyNonNaN : IDomainRule
     {
-        internal override bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
+        public bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
         {
             switch (value)
             {
@@ -371,14 +371,14 @@ internal static class ReportFieldDomain
         internal List<UnknownKey> UnknownKeys { get; } = [];
     }
 
-    private static readonly Dictionary<(string Record, string Section, string Field), DomainRule> Rules =
+    private static readonly Dictionary<(string Record, string Section, string Field), IDomainRule> Rules =
         BuildRules();
 
     /// <summary>
     ///     Layer 2. Applied in order — first match wins. <c>RecordType="*"</c> matches any.
     ///     Section supports a trailing <c>*</c> wildcard (<c>"Contents *"</c> etc.).
     /// </summary>
-    private static readonly List<(string RecordType, string SectionGlob, DomainRule Rule)> SectionWildcardRules =
+    private static readonly List<(string RecordType, string SectionGlob, IDomainRule Rule)> SectionWildcardRules =
         BuildSectionWildcardRules();
 
     /// <summary>
@@ -386,13 +386,13 @@ internal static class ReportFieldDomain
     ///     trimmed of surrounding parentheses). Hit covers patterns like
     ///     <c>Body Path</c>, <c>Clip Count</c>, <c>Damage Mult</c>.
     /// </summary>
-    private static readonly Dictionary<string, DomainRule> SuffixFamily = BuildSuffixFamily();
+    private static readonly Dictionary<string, IDomainRule> SuffixFamily = BuildSuffixFamily();
 
     /// <summary>
     ///     Layer 4. Regex on the field value's <c>Display</c> string → best-effort shape
     ///     rule. Tried in order; first match wins.
     /// </summary>
-    private static readonly List<(Regex Pattern, DomainRule Rule)> SampleShapeRules = BuildSampleShapeRules();
+    private static readonly List<(Regex Pattern, IDomainRule Rule)> SampleShapeRules = BuildSampleShapeRules();
 
     /// <summary>
     ///     Walk every field in the report and apply rules. Returns violations and unknown keys.
@@ -480,7 +480,7 @@ internal static class ReportFieldDomain
     }
 
     /// <summary>First-hit-wins traversal of the matching layers. Null = unknown.</summary>
-    private static DomainRule? ResolveRule(string recordType, string sectionName, ReportField field)
+    private static IDomainRule? ResolveRule(string recordType, string sectionName, ReportField field)
     {
         // Layer 1 — explicit tuple.
         if (Rules.TryGetValue((recordType, sectionName, field.Key), out var explicitRule))
@@ -549,16 +549,16 @@ internal static class ReportFieldDomain
     /// </summary>
     internal static int RuleCount => Rules.Count;
 
-    private static Dictionary<(string Record, string Section, string Field), DomainRule> BuildRules()
+    private static Dictionary<(string Record, string Section, string Field), IDomainRule> BuildRules()
     {
-        var rules = new Dictionary<(string, string, string), DomainRule>();
+        var rules = new Dictionary<(string, string, string), IDomainRule>();
 
         // Identity fields are present on every record type via InjectIdentityFields.
         // Apply to every supported RecordType to suppress UnknownKey noise.
         var allRecordTypes = new[]
         {
             "Weapon", "NPC", "Armor", "Ammo", "Consumable", "MiscItem", "Key", "Container",
-            "Quest", "Faction", "Creature", "Race", "Cell", "Worldspace", "Perk", "Spell",
+            "Quest", "Faction", "Creature", "Race", "Note", "Cell", "Worldspace", "MapMarker", "Perk", "Spell",
             "Projectile", "Explosion", "LeveledList", "WeaponMod", "Recipe", "Script",
             "DialogTopic", "Dialogue"
         };
@@ -633,7 +633,7 @@ internal static class ReportFieldDomain
         return rules;
     }
 
-    private static List<(string RecordType, string SectionGlob, DomainRule Rule)> BuildSectionWildcardRules()
+    private static List<(string RecordType, string SectionGlob, IDomainRule Rule)> BuildSectionWildcardRules()
     {
         // Repeating-structure sections. Fields inside these are noisy (variable index
         // names, inline composite rows) — a loose family rule per section avoids
@@ -649,6 +649,13 @@ internal static class ReportFieldDomain
 
             // Script variables.
             ("Script", "Variables", new AnyNonNaN()),
+            ("Note", "Identity", new AnyNonNaN()),
+            ("Note", "Art Assets", new AnyNonNaN()),
+            ("Note", "Content", new AnyNonNaN()),
+            ("Recipe", "Ingredients", new AnyNonNaN()),
+            ("Recipe", "Outputs", new AnyNonNaN()),
+            ("DialogTopic", "Prompt", new AnyNonNaN()),
+            ("MapMarker", "Location", new AnyNonNaN()),
 
             // Faction memberships / NPC faction slots.
             ("Faction", "Members", new AnyNonNaN()),
@@ -663,6 +670,7 @@ internal static class ReportFieldDomain
 
             // NPC inventory slots / FaceGen morph rows.
             ("NPC", "Inventory", new AnyNonNaN()),
+            ("NPC", "Referenced In", new AnyNonNaN()),
             ("NPC", "FaceGen Morph Data*", new AnyNonNaN()),
 
             // Key → doors it unlocks.
@@ -670,9 +678,9 @@ internal static class ReportFieldDomain
         ];
     }
 
-    private static Dictionary<string, DomainRule> BuildSuffixFamily()
+    private static Dictionary<string, IDomainRule> BuildSuffixFamily()
     {
-        var f = new Dictionary<string, DomainRule>(StringComparer.Ordinal);
+        var f = new Dictionary<string, IDomainRule>(StringComparer.Ordinal);
 
         // Asset path / model-ish fields — any non-empty string.
         foreach (var s in new[] { "path", "model", "icon", "texture", "nif" })
@@ -700,7 +708,7 @@ internal static class ReportFieldDomain
         return f;
     }
 
-    private static List<(Regex Pattern, DomainRule Rule)> BuildSampleShapeRules()
+    private static List<(Regex Pattern, IDomainRule Rule)> BuildSampleShapeRules()
     {
         const RegexOptions opts = RegexOptions.CultureInvariant | RegexOptions.Compiled;
 
