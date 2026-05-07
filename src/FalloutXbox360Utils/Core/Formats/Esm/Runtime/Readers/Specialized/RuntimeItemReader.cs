@@ -94,7 +94,11 @@ internal sealed class RuntimeItemReader(
 
         // Read model path via BSStringT at TESModel offset
         var modelPath = _context.ReadBsStringT(offset, Layouts.WeapModelPathOffset);
+        var inventoryIconPath = _context.ReadBsStringT(offset, Layouts.WeapInventoryIconPathOffset);
+        var messageIconPath = _context.ReadBsStringT(offset, Layouts.WeapMessageIconPathOffset);
+        var shellCasingModelPath = _context.ReadBsStringT(offset, Layouts.WeapShellCasingModelPathOffset);
         var embeddedWeaponNode = ReadBSStringTSafe(offset, Layouts.WeapEmbeddedWeaponNodeOffset);
+        var repairItemListFormId = _context.FollowPointerToFormId(buffer, Layouts.WeapRepairItemListOffset);
 
         // Read sound pointers (TESSound* at various offsets). Offsets may be -1 for fields
         // that don't exist in the V1 (FO3-derived) layout — those reads safely return null.
@@ -145,6 +149,10 @@ internal sealed class RuntimeItemReader(
             CriticalChance = critFields.Chance,
             CriticalEffectFormId = critFields.EffectFormId,
             ModelPath = modelPath,
+            InventoryIconPath = inventoryIconPath,
+            MessageIconPath = messageIconPath,
+            ShellCasingModelPath = shellCasingModelPath,
+            RepairItemListFormId = repairItemListFormId,
             EmbeddedWeaponNode = embeddedWeaponNode,
             Bounds = ReadBounds(buffer),
             PickupSoundFormId = pickupSound,

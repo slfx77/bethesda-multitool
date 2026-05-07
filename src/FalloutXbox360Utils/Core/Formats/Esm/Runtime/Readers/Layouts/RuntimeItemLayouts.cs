@@ -48,6 +48,9 @@ internal sealed class RuntimeItemLayouts
     internal int WeapDamageOffset => 160 + _s;
     internal int WeapAmmoPtrOffset => 168 + _s;
     internal int WeapClipRoundsOffset => 176 + _s;
+    internal int WeapInventoryIconPathOffset => 96 + _s; // PDB 112 TESTexture.TextureName (ICON)
+    internal int WeapRepairItemListOffset => 192 + _s; // PDB 208 BGSRepairItemList.pListForm
+    internal int WeapMessageIconPathOffset => 212 + _s; // PDB 228 BGSMessageIcon.Icon (MICO)
     internal int WeapDataStart => 244 + _s;
     internal int WeapAnimTypeOffset => 244 + _s;
     internal int WeapSpeedOffset => 248 + _s;
@@ -104,14 +107,15 @@ internal sealed class RuntimeItemLayouts
     internal int WeapModObjectTwoOffset => 868 + _s + _weapSoundShift;
     internal int WeapModObjectThreeOffset => 872 + _s + _weapSoundShift;
 
-    internal int WeapCritDamageOffset => 440 + _s;
-    internal int WeapCritChanceOffset => 444 + _s;
-    internal int WeapCritEffectPtrOffset => 452 + _s;
+    internal int WeapCritDamageOffset => 448 + _s; // PDB 464 OBJ_WEAP_CRITICAL.sDamage
+    internal int WeapCritChanceOffset => 452 + _s; // PDB 468 OBJ_WEAP_CRITICAL.fMultiplier
+    internal int WeapCritEffectPtrOffset => 460 + _s; // PDB 476 OBJ_WEAP_CRITICAL.pEffect
 
     // Pickup/Putdown sounds — BGSPickupPutdownSounds, before the variable-size data block.
     // Stable across all observed builds.
     internal int WeapPickupSoundOffset => 236 + _s; // PDB 252
     internal int WeapPutdownSoundOffset => 240 + _s; // PDB 256
+    internal int WeapShellCasingModelPathOffset => 464 + _s; // PDB 480 TESObjectWEAP.ShellCasingModel.cModel
 
     // TESObjectWEAP sound block.
     // V2 (FNV — 14 fields, struct ~924 bytes): probed empirically against the 10mm Pistol.
