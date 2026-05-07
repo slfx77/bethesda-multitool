@@ -29,4 +29,9 @@ internal sealed record SemanticFileLoadOptions
     ///     Whether minidump analysis should run in verbose mode.
     /// </summary>
     public bool VerboseMinidumpAnalysis { get; init; }
+
+    /// <summary>
+    ///     Whether ESM/ESP analysis should emit verbose diagnostics.
+    /// </summary>
+    public bool VerboseEsmAnalysis { get; init; }
 }

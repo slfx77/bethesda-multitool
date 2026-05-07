@@ -21,7 +21,16 @@ public static class EsmFileAnalyzer
         IProgress<AnalysisProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        return await Task.Run(() => AnalyzeCore(filePath, progress, cancellationToken), cancellationToken);
+        return await AnalyzeAsync(filePath, progress, verbose: false, cancellationToken);
+    }
+
+    public static async Task<AnalysisResult> AnalyzeAsync(
+        string filePath,
+        IProgress<AnalysisProgress>? progress,
+        bool verbose,
+        CancellationToken cancellationToken = default)
+    {
+        return await Task.Run(() => AnalyzeCore(filePath, progress, verbose, cancellationToken), cancellationToken);
     }
 
     /// <summary>
@@ -30,19 +39,27 @@ public static class EsmFileAnalyzer
     private static AnalysisResult AnalyzeCore(
         string filePath,
         IProgress<AnalysisProgress>? progress,
+        bool verbose,
         CancellationToken cancellationToken)
     {
-        // Enable file logging for ESM analysis diagnostics
-        var logPath = Path.Combine(Path.GetTempPath(), "esm_analysis.log");
-        Logger.Instance.SetLogFile(logPath);
-        Logger.Instance.Level = LogLevel.Debug;
-        Logger.Instance.Info($"[ESM Analysis] Starting analysis of: {filePath}");
-        Logger.Instance.Info($"[ESM Analysis] Log file: {logPath}");
+        var logger = Logger.Instance;
+        var previousLevel = logger.Level;
+        if (verbose && previousLevel < LogLevel.Debug)
+        {
+            logger.Level = LogLevel.Debug;
+        }
 
-        var stopwatch = Stopwatch.StartNew();
-        var result = new AnalysisResult { FilePath = filePath };
-        var fileInfo = new FileInfo(filePath);
-        result.FileSize = fileInfo.Length;
+        try
+        {
+            if (verbose)
+            {
+                logger.Info($"[ESM Analysis] Starting analysis of: {filePath}");
+            }
+
+            var stopwatch = Stopwatch.StartNew();
+            var result = new AnalysisResult { FilePath = filePath };
+            var fileInfo = new FileInfo(filePath);
+            result.FileSize = fileInfo.Length;
 
         // Phase 1: Load file data (4%)
         progress?.Report(new AnalysisProgress
@@ -94,7 +111,10 @@ public static class EsmFileAnalyzer
             TotalBytes = fileInfo.Length
         });
 
-        Logger.Instance.Info($"[ESM Analysis] Parsed {grupHeaders.Count:N0} GRUP headers");
+        if (verbose)
+        {
+            logger.Info($"[ESM Analysis] Parsed {grupHeaders.Count:N0} GRUP headers");
+        }
 
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -108,13 +128,16 @@ public static class EsmFileAnalyzer
 
         var (cellToWorldspace, landToWorldspace, cellToRefrMap, topicToInfoMap) =
             BuildAllMaps(parsedRecords, grupHeaders);
-        Logger.Instance.Info($"[ESM Analysis] Cell\u2192Worldspace map: {cellToWorldspace.Count} cells mapped " +
-                             $"(from {grupHeaders.Count(g => g.GroupType == 1)} World Children GRUPs)");
-        Logger.Instance.Info($"[ESM Analysis] LAND\u2192Worldspace map: {landToWorldspace.Count} LAND records mapped");
-        Logger.Instance.Info($"[ESM Analysis] Cell\u2192REFR map: {cellToRefrMap.Count} cells with " +
-                             $"{cellToRefrMap.Values.Sum(v => v.Count)} placed references");
-        Logger.Instance.Info($"[ESM Analysis] Topic\u2192INFO map: {topicToInfoMap.Count} topics with " +
-                             $"{topicToInfoMap.Values.Sum(v => v.Count)} child INFOs");
+        if (verbose)
+        {
+            logger.Info($"[ESM Analysis] Cell\u2192Worldspace map: {cellToWorldspace.Count} cells mapped " +
+                        $"(from {grupHeaders.Count(g => g.GroupType == 1)} World Children GRUPs)");
+            logger.Info($"[ESM Analysis] LAND\u2192Worldspace map: {landToWorldspace.Count} LAND records mapped");
+            logger.Info($"[ESM Analysis] Cell\u2192REFR map: {cellToRefrMap.Count} cells with " +
+                        $"{cellToRefrMap.Values.Sum(v => v.Count)} placed references");
+            logger.Info($"[ESM Analysis] Topic\u2192INFO map: {topicToInfoMap.Count} topics with " +
+                        $"{topicToInfoMap.Values.Sum(v => v.Count)} child INFOs");
+        }
         result.EsmRecords =
             EsmDataExtractor.ConvertToScanResult(parsedRecords, isBigEndian, cellToWorldspace, landToWorldspace,
                 cellToRefrMap, topicToInfoMap);
@@ -128,12 +151,15 @@ public static class EsmFileAnalyzer
         var npcWithSubrecords = npcRecords.Count(r => r.Subrecords.Count > 0);
         var firstNpc = npcRecords.FirstOrDefault();
         var firstNpcSigs = firstNpc?.Subrecords.Take(5).Select(s => s.Signature).ToList() ?? [];
-        Logger.Instance.Info(
-            $"[ESM Analysis] Total records: {parsedRecords.Count}, NPC_: {npcRecords.Count}, with subrecords: {npcWithSubrecords}");
-        if (firstNpc != null)
+        if (verbose)
         {
-            Logger.Instance.Info(
-                $"[ESM Analysis] First NPC FormId=0x{firstNpc.Header.FormId:X8} has {firstNpc.Subrecords.Count} subrecords: [{string.Join(",", firstNpcSigs)}]");
+            logger.Info(
+                $"[ESM Analysis] Total records: {parsedRecords.Count}, NPC_: {npcRecords.Count}, with subrecords: {npcWithSubrecords}");
+            if (firstNpc != null)
+            {
+                logger.Info(
+                    $"[ESM Analysis] First NPC FormId=0x{firstNpc.Header.FormId:X8} has {firstNpc.Subrecords.Count} subrecords: [{string.Join(",", firstNpcSigs)}]");
+            }
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -146,7 +172,7 @@ public static class EsmFileAnalyzer
             FilesFound = parsedRecords.Count
         });
 
-        result.FormIdMap = BuildFormIdMap(parsedRecords);
+        result.FormIdMap = BuildFormIdMap(parsedRecords, verbose);
 
         // Phase 6: Populate carved files for Memory Map (72-78%)
         progress?.Report(new AnalysisProgress
@@ -168,10 +194,20 @@ public static class EsmFileAnalyzer
             FilesFound = parsedRecords.Count
         });
 
-        Logger.Instance.Info($"[ESM Analysis] Complete. Time: {stopwatch.Elapsed}, Records: {parsedRecords.Count}");
-        Logger.Instance.CloseLogFile();
+        if (verbose)
+        {
+            logger.Info($"[ESM Analysis] Complete. Time: {stopwatch.Elapsed}, Records: {parsedRecords.Count}");
+        }
 
-        return result;
+            return result;
+        }
+        finally
+        {
+            if (verbose)
+            {
+                logger.Level = previousLevel;
+            }
+        }
     }
 
     /// <summary>
@@ -274,7 +310,7 @@ public static class EsmFileAnalyzer
     /// <summary>
     ///     Builds a FormID to EditorID/FullName map from parsed records.
     /// </summary>
-    private static Dictionary<uint, string> BuildFormIdMap(List<ParsedMainRecord> records)
+    private static Dictionary<uint, string> BuildFormIdMap(List<ParsedMainRecord> records, bool verbose)
     {
         var map = new Dictionary<uint, string>();
         var npcCount = 0;
@@ -311,8 +347,11 @@ public static class EsmFileAnalyzer
             }
         }
 
-        Logger.Instance.Info(
-            $"[FormIdMap] Built map: {map.Count} entries. NPC_: {npcCount} total, {npcWithName} with names, avg subrecords: {(npcCount > 0 ? npcSubrecordTotal / npcCount : 0)}");
+        if (verbose)
+        {
+            Logger.Instance.Info(
+                $"[FormIdMap] Built map: {map.Count} entries. NPC_: {npcCount} total, {npcWithName} with names, avg subrecords: {(npcCount > 0 ? npcSubrecordTotal / npcCount : 0)}");
+        }
 
         return map;
     }

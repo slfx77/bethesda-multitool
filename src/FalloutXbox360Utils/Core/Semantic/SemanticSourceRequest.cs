@@ -9,4 +9,5 @@ internal sealed record SemanticSourceRequest
     public AnalysisFileType? FileType { get; init; }
     public bool IncludeMetadata { get; init; } = true;
     public bool VerboseMinidumpAnalysis { get; init; }
+    public bool VerboseEsmAnalysis { get; init; }
 }

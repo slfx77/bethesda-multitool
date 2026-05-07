@@ -112,6 +112,7 @@ internal static class SemanticFileLoader
             AnalysisFileType.EsmFile => await EsmFileAnalyzer.AnalyzeAsync(
                 filePath,
                 options.AnalysisProgress,
+                options.VerboseEsmAnalysis,
                 cancellationToken),
             AnalysisFileType.Minidump => await new MinidumpAnalyzer().AnalyzeAsync(
                 filePath,
