@@ -32,6 +32,9 @@ public record AmmoRecord
     /// <summary>Projectile FormID (from DAT2 subrecord).</summary>
     public uint? ProjectileFormId { get; init; }
 
+    /// <summary>All projectile FormIDs inferred from direct AMMO data and weapon reverse references.</summary>
+    public List<uint> ProjectileFormIds { get; init; } = [];
+
     /// <summary>Weight (from DAT2 subrecord).</summary>
     public float Weight { get; init; }
 

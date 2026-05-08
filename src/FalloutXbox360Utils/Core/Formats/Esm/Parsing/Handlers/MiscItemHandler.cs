@@ -125,6 +125,8 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
         uint categoryFormId = 0, subcategoryFormId = 0;
         var ingredients = new List<RecipeIngredient>();
         var outputs = new List<RecipeOutput>();
+        uint? pendingIngredientItemId = null;
+        uint? pendingOutputItemId = null;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -155,34 +157,68 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
 
                     break;
                 }
-                case "RCIL" when sub.DataLength >= 8:
+                case "RCIL" when sub.DataLength >= 4:
                 {
-                    var fields = SubrecordDataReader.ReadFields("RCIL", null,
-                        data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
-                    if (fields.Count > 0)
+                    FlushPendingRecipeComponent(
+                        ingredients,
+                        outputs,
+                        ref pendingIngredientItemId,
+                        ref pendingOutputItemId,
+                        1);
+                    var itemId = ReadSubrecordUInt32(data, sub.DataOffset, record.IsBigEndian);
+                    if (sub.DataLength >= 8)
                     {
-                        var itemId = SubrecordDataReader.GetUInt32(fields, "Item");
-                        var count = SubrecordDataReader.GetUInt32(fields, "Count");
+                        var count = ReadSubrecordUInt32(data, sub.DataOffset + 4, record.IsBigEndian);
                         ingredients.Add(new RecipeIngredient { ItemFormId = itemId, Count = count });
+                    }
+                    else
+                    {
+                        pendingIngredientItemId = itemId;
                     }
 
                     break;
                 }
-                case "RCOD" when sub.DataLength >= 8:
+                case "RCOD" when sub.DataLength >= 4:
                 {
-                    var fields = SubrecordDataReader.ReadFields("RCOD", null,
-                        data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
-                    if (fields.Count > 0)
+                    FlushPendingRecipeComponent(
+                        ingredients,
+                        outputs,
+                        ref pendingIngredientItemId,
+                        ref pendingOutputItemId,
+                        1);
+                    var itemId = ReadSubrecordUInt32(data, sub.DataOffset, record.IsBigEndian);
+                    if (sub.DataLength >= 8)
                     {
-                        var itemId = SubrecordDataReader.GetUInt32(fields, "Item");
-                        var count = SubrecordDataReader.GetUInt32(fields, "Count");
+                        var count = ReadSubrecordUInt32(data, sub.DataOffset + 4, record.IsBigEndian);
                         outputs.Add(new RecipeOutput { ItemFormId = itemId, Count = count });
                     }
+                    else
+                    {
+                        pendingOutputItemId = itemId;
+                    }
 
+                    break;
+                }
+                case "RCQY" when sub.DataLength >= 4:
+                {
+                    var count = ReadSubrecordUInt32(data, sub.DataOffset, record.IsBigEndian);
+                    FlushPendingRecipeComponent(
+                        ingredients,
+                        outputs,
+                        ref pendingIngredientItemId,
+                        ref pendingOutputItemId,
+                        count);
                     break;
                 }
             }
         }
+
+        FlushPendingRecipeComponent(
+            ingredients,
+            outputs,
+            ref pendingIngredientItemId,
+            ref pendingOutputItemId,
+            1);
 
         return new RecipeRecord
         {
@@ -198,6 +234,31 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
+    }
+
+    private static uint ReadSubrecordUInt32(byte[] data, int offset, bool bigEndian)
+    {
+        return BinaryUtils.ReadUInt32(data, offset, bigEndian);
+    }
+
+    private static void FlushPendingRecipeComponent(
+        List<RecipeIngredient> ingredients,
+        List<RecipeOutput> outputs,
+        ref uint? pendingIngredientItemId,
+        ref uint? pendingOutputItemId,
+        uint count)
+    {
+        if (pendingIngredientItemId is > 0)
+        {
+            ingredients.Add(new RecipeIngredient { ItemFormId = pendingIngredientItemId.Value, Count = count });
+            pendingIngredientItemId = null;
+        }
+
+        if (pendingOutputItemId is > 0)
+        {
+            outputs.Add(new RecipeOutput { ItemFormId = pendingOutputItemId.Value, Count = count });
+            pendingOutputItemId = null;
+        }
     }
 
     #endregion

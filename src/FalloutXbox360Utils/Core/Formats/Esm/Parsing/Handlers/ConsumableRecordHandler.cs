@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 using FalloutXbox360Utils.Core.Utils;
@@ -93,21 +94,10 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
 
                     break;
                 }
-                case "DAT2" when sub.DataLength >= 8:
-                    // DAT2 layout: ProjectilePerShot (U32), Projectile FormID (U32), Weight (float), ...
-                    var projId = RecordParserContext.ReadFormId(subData[4..], record.IsBigEndian);
-                    if (projId != 0)
-                    {
-                        projectileFormId = projId;
-                    }
-
-                    if (sub.DataLength >= 12)
-                    {
-                        weight = record.IsBigEndian
-                            ? BinaryPrimitives.ReadSingleBigEndian(subData[8..])
-                            : BinaryPrimitives.ReadSingleLittleEndian(subData[8..]);
-                    }
-
+                case "DAT2" when sub.DataLength >= 4:
+                    projectileFormId = TryReadAmmoProjectileFromDat2(subData, record.IsBigEndian)
+                                       ?? projectileFormId;
+                    weight = TryReadAmmoWeightFromDat2(subData, record.IsBigEndian) ?? weight;
                     break;
             }
         }
@@ -124,10 +114,64 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
             Value = value,
             ClipRounds = clipRounds,
             ProjectileFormId = projectileFormId,
+            ProjectileFormIds = projectileFormId.HasValue ? [projectileFormId.Value] : [],
             Weight = weight,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
+    }
+
+    private uint? TryReadAmmoProjectileFromDat2(ReadOnlySpan<byte> data, bool bigEndian)
+    {
+        foreach (var offset in new[] { 12, 4, 0, 8, 16 })
+        {
+            if (offset + 4 > data.Length)
+            {
+                continue;
+            }
+
+            // DAT2 is mixed-endian in the Xbox ESMs: scalar values are big-endian,
+            // but projectile FormIDs are stored in the little-endian PC byte order.
+            var candidate = BinaryPrimitives.ReadUInt32LittleEndian(data[offset..]);
+            if (candidate == 0 && bigEndian)
+            {
+                candidate = RecordParserContext.ReadFormId(data[offset..], bigEndian);
+            }
+
+            if (candidate == 0)
+            {
+                continue;
+            }
+
+            if (Context.RecordsByFormId.TryGetValue(candidate, out var target) &&
+                string.Equals(target.RecordType, "PROJ", StringComparison.Ordinal))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private static float? TryReadAmmoWeightFromDat2(ReadOnlySpan<byte> data, bool bigEndian)
+    {
+        foreach (var offset in new[] { 8, 12, 16 })
+        {
+            if (offset + 4 > data.Length)
+            {
+                continue;
+            }
+
+            var candidate = bigEndian
+                ? BinaryPrimitives.ReadSingleBigEndian(data[offset..])
+                : BinaryPrimitives.ReadSingleLittleEndian(data[offset..]);
+            if (!float.IsNaN(candidate) && !float.IsInfinity(candidate) && candidate is >= 0 and <= 100)
+            {
+                return candidate;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -139,22 +183,29 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
         List<WeaponRecord> weapons,
         List<AmmoRecord> ammo)
     {
-        if (Context.RuntimeReader == null || ammo.Count == 0)
+        if (ammo.Count == 0)
         {
             return;
         }
 
-        // Build: ammo FormID -> projectile FormID (from weapons that reference both)
-        var ammoToProjectile = new Dictionary<uint, uint>();
+        // Build: ammo FormID -> projectile FormIDs from weapons that reference both.
+        // This is needed for ESM-only sources where AMMO may lack a direct DAT2 projectile.
+        var ammoToProjectiles = new Dictionary<uint, HashSet<uint>>();
         foreach (var weapon in weapons)
         {
             if (weapon.AmmoFormId is > 0 && weapon.ProjectileFormId is > 0)
             {
-                ammoToProjectile.TryAdd(weapon.AmmoFormId.Value, weapon.ProjectileFormId.Value);
+                if (!ammoToProjectiles.TryGetValue(weapon.AmmoFormId.Value, out var projectiles))
+                {
+                    projectiles = [];
+                    ammoToProjectiles[weapon.AmmoFormId.Value] = projectiles;
+                }
+
+                projectiles.Add(weapon.ProjectileFormId.Value);
             }
         }
 
-        if (ammoToProjectile.Count == 0)
+        if (ammoToProjectiles.Count == 0 && !ammo.Any(a => a.ProjectileFormId is > 0))
         {
             return;
         }
@@ -162,11 +213,14 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
         // Build: projectile FormID -> TesFormOffset (from runtime EditorID hash table)
         // PROJ = FormType 0x33
         var projectileOffsets = new Dictionary<uint, long>();
-        foreach (var entry in Context.ScanResult.RuntimeEditorIds)
+        if (Context.RuntimeReader != null)
         {
-            if (entry.FormType == 0x33 && entry.TesFormOffset.HasValue)
+            foreach (var entry in Context.ScanResult.RuntimeEditorIds)
             {
-                projectileOffsets.TryAdd(entry.FormId, entry.TesFormOffset.Value);
+                if (entry.FormType == 0x33 && entry.TesFormOffset.HasValue)
+                {
+                    projectileOffsets.TryAdd(entry.FormId, entry.TesFormOffset.Value);
+                }
             }
         }
 
@@ -175,13 +229,44 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
         for (var i = 0; i < ammo.Count; i++)
         {
             var a = ammo[i];
-            if (!ammoToProjectile.TryGetValue(a.FormId, out var projFormId))
+            var projectileFormIds = new SortedSet<uint>();
+            if (a.ProjectileFormId is > 0)
+            {
+                projectileFormIds.Add(a.ProjectileFormId.Value);
+            }
+
+            foreach (var existingProjectile in a.ProjectileFormIds)
+            {
+                if (existingProjectile != 0)
+                {
+                    projectileFormIds.Add(existingProjectile);
+                }
+            }
+
+            if (ammoToProjectiles.TryGetValue(a.FormId, out var inferredProjectiles))
+            {
+                foreach (var inferredProjectile in inferredProjectiles)
+                {
+                    projectileFormIds.Add(inferredProjectile);
+                }
+            }
+
+            var projFormId = a.ProjectileFormId;
+            if (projFormId is not > 0 &&
+                projectileFormIds.Count == 1)
+            {
+                projFormId = projectileFormIds.First();
+            }
+
+            if (projFormId is not > 0 && projectileFormIds.Count == 0)
             {
                 continue;
             }
 
             string? projModelPath = null;
-            if (projectileOffsets.TryGetValue(projFormId, out var projFileOffset))
+            if (Context.RuntimeReader != null &&
+                projFormId is > 0 &&
+                projectileOffsets.TryGetValue(projFormId.Value, out var projFileOffset))
             {
                 // Read model path BSStringT at dump offset +80 (TESModel.cModel in BGSProjectile)
                 projModelPath = Context.RuntimeReader.ReadBsStringT(projFileOffset, 80);
@@ -192,7 +277,8 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
             ammo[i] = a with
             {
                 ProjectileFormId = projFormId,
-                ProjectileModelPath = projModelPath
+                ProjectileFormIds = projectileFormIds.ToList(),
+                ProjectileModelPath = projModelPath ?? a.ProjectileModelPath
             };
             enrichedCount++;
         }
@@ -326,14 +412,20 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
                     var fields = SubrecordDataReader.ReadFields("EFIT", null, subData, record.IsBigEndian);
                     if (fields.Count > 0)
                     {
+                        var magnitude = GameStatNormalizer.EffectMagnitude(subData, record.IsBigEndian);
+                        var area = SubrecordDataReader.GetUInt32(fields, "Area");
+                        var duration = SubrecordDataReader.GetUInt32(fields, "Duration");
+                        var type = SubrecordDataReader.GetUInt32(fields, "Type");
+                        var actorValue = SubrecordDataReader.GetInt32(fields, "ActorValue", -1);
+
                         effects.Add(new EnchantmentEffect
                         {
                             EffectFormId = currentEffectId,
-                            Magnitude = SubrecordDataReader.GetFloat(fields, "Magnitude"),
-                            Area = SubrecordDataReader.GetUInt32(fields, "Area"),
-                            Duration = SubrecordDataReader.GetUInt32(fields, "Duration"),
-                            Type = SubrecordDataReader.GetUInt32(fields, "Type"),
-                            ActorValue = SubrecordDataReader.GetInt32(fields, "ActorValue", -1)
+                            Magnitude = magnitude,
+                            Area = GameStatNormalizer.IsPlausibleEffectArea(area) ? area : 0,
+                            Duration = GameStatNormalizer.IsPlausibleEffectDuration(duration) ? duration : 0,
+                            Type = GameStatNormalizer.IsPlausibleEffectTarget(type) ? type : 0,
+                            ActorValue = GameStatNormalizer.IsPlausibleActorValue(actorValue) ? actorValue : -1
                         });
                     }
 

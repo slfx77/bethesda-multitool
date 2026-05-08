@@ -182,6 +182,7 @@ public sealed class RecordParser
             _dialogue.LinkInfoToTopicsByGroupOrder(dialogues, dialogTopics);
         }
 
+        _dialogue.BackfillDialogTopicPromptText(dialogues, dialogTopics);
         DialogueRecordHandler.PropagateTopicSpeakers(dialogues, dialogTopics);
         DialogueRecordHandler.PropagateTopicSiblingSpeakers(dialogues);
         DialogueRecordHandler.PropagateQuestSpeakers(dialogues);

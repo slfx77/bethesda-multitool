@@ -100,7 +100,10 @@ internal static class ReportValidateCommand
         var totalRecords = 0;
 
         var factionMembers = records.BuildFactionMembersIndex();
-        var keyLockedDoors = records.BuildKeyToLockedDoorsMap();
+        var keyLockedDoorIndexes = CrossDumpAggregator.BuildKeyLockedDoorIndexes([(inputPath, records)]);
+        var keyLockedDoors = keyLockedDoorIndexes.TryGetValue(inputPath, out var keyIndex)
+            ? keyIndex
+            : null;
         var modToWeapon = records.BuildModToWeaponMap();
 
         foreach (var (typeName, _, _, _, record) in RecordTextFormatter.EnumerateAll(records))

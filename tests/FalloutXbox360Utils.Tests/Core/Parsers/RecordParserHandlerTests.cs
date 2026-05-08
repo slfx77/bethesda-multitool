@@ -383,6 +383,149 @@ public class RecordParserHandlerTests
     }
 
     [Fact]
+    public void ParseAll_EsmAmmoWithoutDat2Projectile_UsesUniqueWeaponProjectileFallback()
+    {
+        const uint ammoFormId = 0x00001000;
+        const uint weaponFormId = 0x00002000;
+        const uint projectileFormId = 0x00003000;
+
+        var ammoData = new byte[13];
+        BinaryPrimitives.WriteSingleLittleEndian(ammoData, 1.0f);
+        BinaryPrimitives.WriteUInt32LittleEndian(ammoData.AsSpan(8), 2);
+        ammoData[12] = 30;
+
+        var enamData = new byte[4];
+        BinaryPrimitives.WriteUInt32LittleEndian(enamData, ammoFormId);
+
+        var dnamData = new byte[64];
+        BinaryPrimitives.WriteSingleLittleEndian(dnamData.AsSpan(4), 1.0f);
+        BinaryPrimitives.WriteSingleLittleEndian(dnamData.AsSpan(8), 1.0f);
+        BinaryPrimitives.WriteUInt32LittleEndian(dnamData.AsSpan(36), projectileFormId);
+        dnamData[42] = 1;
+
+        var ammoBytes = BuildRecordBytes(ammoFormId, "AMMO", false,
+            ("EDID", NullTermString("AmmoTest")),
+            ("FULL", NullTermString("Test Ammo")),
+            ("DATA", ammoData));
+        var weaponBytes = BuildRecordBytes(weaponFormId, "WEAP", false,
+            ("EDID", NullTermString("WeapTest")),
+            ("ENAM", enamData),
+            ("DNAM", dnamData));
+        var projectileBytes = BuildRecordBytes(projectileFormId, "PROJ", false,
+            ("EDID", NullTermString("ProjectileTest")));
+
+        var data = new byte[ammoBytes.Length + weaponBytes.Length + projectileBytes.Length];
+        Array.Copy(ammoBytes, 0, data, 0, ammoBytes.Length);
+        Array.Copy(weaponBytes, 0, data, ammoBytes.Length, weaponBytes.Length);
+        Array.Copy(projectileBytes, 0, data, ammoBytes.Length + weaponBytes.Length, projectileBytes.Length);
+
+        var mainRecords = new List<DetectedMainRecord>
+        {
+            new("AMMO", (uint)(ammoBytes.Length - 24), 0, ammoFormId, 0, false),
+            new("WEAP", (uint)(weaponBytes.Length - 24), 0, weaponFormId, ammoBytes.Length, false),
+            new("PROJ", (uint)(projectileBytes.Length - 24), 0, projectileFormId,
+                ammoBytes.Length + weaponBytes.Length, false)
+        };
+
+        var scanResult = MakeScanResult(mainRecords);
+        using var mmf = MemoryMappedFile.CreateNew(null, data.Length);
+        using var accessor = mmf.CreateViewAccessor(0, data.Length);
+        accessor.WriteArray(0, data, 0, data.Length);
+
+        var parser = new RecordParser(scanResult, accessor: accessor, fileSize: data.Length);
+        var result = parser.ParseAll();
+
+        var ammo = Assert.Single(result.Ammo);
+        Assert.Equal(projectileFormId, ammo.ProjectileFormId);
+        Assert.Equal([projectileFormId], ammo.ProjectileFormIds);
+    }
+
+    [Fact]
+    public void ParseAll_EsmAmmoWithMultipleWeaponProjectiles_PreservesAllProjectileCandidates()
+    {
+        const uint ammoFormId = 0x00001000;
+        const uint weaponOneFormId = 0x00002000;
+        const uint weaponTwoFormId = 0x00002001;
+        const uint projectileOneFormId = 0x00003000;
+        const uint projectileTwoFormId = 0x00003001;
+
+        var ammoData = new byte[13];
+        BinaryPrimitives.WriteSingleLittleEndian(ammoData, 1.0f);
+        BinaryPrimitives.WriteUInt32LittleEndian(ammoData.AsSpan(8), 2);
+        ammoData[12] = 30;
+
+        static byte[] BuildEnam(uint ammoFormId)
+        {
+            var enamData = new byte[4];
+            BinaryPrimitives.WriteUInt32LittleEndian(enamData, ammoFormId);
+            return enamData;
+        }
+
+        static byte[] BuildWeaponDnam(uint projectileFormId)
+        {
+            var dnamData = new byte[64];
+            BinaryPrimitives.WriteSingleLittleEndian(dnamData.AsSpan(4), 1.0f);
+            BinaryPrimitives.WriteSingleLittleEndian(dnamData.AsSpan(8), 1.0f);
+            BinaryPrimitives.WriteUInt32LittleEndian(dnamData.AsSpan(36), projectileFormId);
+            dnamData[42] = 1;
+            return dnamData;
+        }
+
+        var ammoBytes = BuildRecordBytes(ammoFormId, "AMMO", false,
+            ("EDID", NullTermString("AmmoTest")),
+            ("FULL", NullTermString("Test Ammo")),
+            ("DATA", ammoData));
+        var weaponOneBytes = BuildRecordBytes(weaponOneFormId, "WEAP", false,
+            ("EDID", NullTermString("WeapOneTest")),
+            ("ENAM", BuildEnam(ammoFormId)),
+            ("DNAM", BuildWeaponDnam(projectileOneFormId)));
+        var weaponTwoBytes = BuildRecordBytes(weaponTwoFormId, "WEAP", false,
+            ("EDID", NullTermString("WeapTwoTest")),
+            ("ENAM", BuildEnam(ammoFormId)),
+            ("DNAM", BuildWeaponDnam(projectileTwoFormId)));
+        var projectileOneBytes = BuildRecordBytes(projectileOneFormId, "PROJ", false,
+            ("EDID", NullTermString("ProjectileOneTest")));
+        var projectileTwoBytes = BuildRecordBytes(projectileTwoFormId, "PROJ", false,
+            ("EDID", NullTermString("ProjectileTwoTest")));
+
+        var chunks = new[] { ammoBytes, weaponOneBytes, weaponTwoBytes, projectileOneBytes, projectileTwoBytes };
+        var data = new byte[chunks.Sum(chunk => chunk.Length)];
+        var offset = 0;
+        foreach (var chunk in chunks)
+        {
+            Array.Copy(chunk, 0, data, offset, chunk.Length);
+            offset += chunk.Length;
+        }
+
+        var mainRecords = new List<DetectedMainRecord>();
+        offset = 0;
+        foreach (var (recordType, formId, bytes) in new[]
+                 {
+                     ("AMMO", ammoFormId, ammoBytes),
+                     ("WEAP", weaponOneFormId, weaponOneBytes),
+                     ("WEAP", weaponTwoFormId, weaponTwoBytes),
+                     ("PROJ", projectileOneFormId, projectileOneBytes),
+                     ("PROJ", projectileTwoFormId, projectileTwoBytes)
+                 })
+        {
+            mainRecords.Add(new DetectedMainRecord(recordType, (uint)(bytes.Length - 24), 0, formId, offset, false));
+            offset += bytes.Length;
+        }
+
+        var scanResult = MakeScanResult(mainRecords);
+        using var mmf = MemoryMappedFile.CreateNew(null, data.Length);
+        using var accessor = mmf.CreateViewAccessor(0, data.Length);
+        accessor.WriteArray(0, data, 0, data.Length);
+
+        var parser = new RecordParser(scanResult, accessor: accessor, fileSize: data.Length);
+        var result = parser.ParseAll();
+
+        var ammo = Assert.Single(result.Ammo);
+        Assert.Null(ammo.ProjectileFormId);
+        Assert.Equal([projectileOneFormId, projectileTwoFormId], ammo.ProjectileFormIds.OrderBy(id => id));
+    }
+
+    [Fact]
     public void ParsePerks_WithAccessor_ParsesEsmConditionsAndEntryEffects()
     {
         var dataField = new byte[] { 0x00, 0x08, 0x01, 0x01, 0x00 };

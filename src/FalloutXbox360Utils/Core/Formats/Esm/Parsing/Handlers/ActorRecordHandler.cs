@@ -152,10 +152,29 @@ internal sealed class ActorRecordHandler(RecordParserContext context) : RecordHa
             }
         }
 
-        Context.MergeRuntimeRecords(factions, 0x08, f => f.FormId,
-            (reader, entry) => reader.ReadRuntimeFaction(entry), "factions");
+        Context.MergeRuntimeOverlayRecords(factions, [0x08], f => f.FormId,
+            (reader, entry) => reader.ReadRuntimeFaction(entry),
+            MergeFactionRuntimeData,
+            "factions");
 
         return factions;
+    }
+
+    private static FactionRecord MergeFactionRuntimeData(FactionRecord existing, FactionRecord runtime)
+    {
+        return existing with
+        {
+            EditorId = existing.EditorId ?? runtime.EditorId,
+            FullName = !string.IsNullOrEmpty(existing.FullName) ? existing.FullName : runtime.FullName,
+            Flags = existing.Flags != 0 ? existing.Flags : runtime.Flags,
+            CrimeGoldMultiplier = Math.Abs(existing.CrimeGoldMultiplier) > 0.0001f
+                ? existing.CrimeGoldMultiplier
+                : runtime.CrimeGoldMultiplier,
+            Relations = existing.Relations.Count > 0 ? existing.Relations : runtime.Relations,
+            Ranks = existing.Ranks.Count > 0 ? existing.Ranks : runtime.Ranks,
+            Offset = existing.Offset != 0 ? existing.Offset : runtime.Offset,
+            IsBigEndian = existing.IsBigEndian || runtime.IsBigEndian
+        };
     }
 
     private FactionRecord? ParseFactionFromAccessor(DetectedMainRecord record, byte[] buffer)

@@ -194,7 +194,9 @@ internal static class ComparisonJsonBlobBuilder
                 }
 
                 // Per-record metadata (quest, topic, speaker for dialogue)
-                if (metadata != null && metadata.TryGetValue(formId, out var meta) && meta.Count > 0)
+                Dictionary<string, string>? meta = null;
+                metadata?.TryGetValue(formId, out meta);
+                if (meta is { Count: > 0 })
                 {
                     writer.WritePropertyName("metadata");
                     writer.WriteStartObject();
@@ -202,6 +204,8 @@ internal static class ComparisonJsonBlobBuilder
                         writer.WriteString(key, value);
                     writer.WriteEndObject();
                 }
+
+                WriteSearchText(writer, dumpMap, meta);
 
                 // Snapshots: delta-encoded -- store only when report structurally differs from previous.
                 // Strip comparison-irrelevant fields (Offset, etc.) so they don't drive false CHANGED marks.
@@ -580,7 +584,9 @@ internal static class ComparisonJsonBlobBuilder
             writer.WriteEndArray();
         }
 
-        if (metadata != null && metadata.TryGetValue(formId, out var meta) && meta.Count > 0)
+        Dictionary<string, string>? meta = null;
+        metadata?.TryGetValue(formId, out meta);
+        if (meta is { Count: > 0 })
         {
             writer.WritePropertyName("metadata");
             writer.WriteStartObject();
@@ -588,6 +594,8 @@ internal static class ComparisonJsonBlobBuilder
                 writer.WriteString(key, value);
             writer.WriteEndObject();
         }
+
+        WriteSearchText(writer, dumpMap, meta);
 
         writer.WritePropertyName("snapshots");
         writer.WriteStartObject();
@@ -613,6 +621,94 @@ internal static class ComparisonJsonBlobBuilder
         writer.WriteEndArray();
 
         writer.WriteEndObject();
+    }
+
+    private static void WriteSearchText(
+        Utf8JsonWriter writer,
+        Dictionary<int, RecordReport> dumpMap,
+        IReadOnlyDictionary<string, string>? metadata)
+    {
+        var recordType = dumpMap.Values.FirstOrDefault()?.RecordType;
+        if (!string.Equals(recordType, "Dialogue", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(recordType, "DialogTopic", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var searchText = BuildSearchText(dumpMap, metadata);
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            writer.WriteString("searchText", searchText);
+        }
+    }
+
+    private static string BuildSearchText(
+        Dictionary<int, RecordReport> dumpMap,
+        IReadOnlyDictionary<string, string>? metadata)
+    {
+        var values = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (metadata != null &&
+            metadata.TryGetValue("searchText", out var metadataSearchText))
+        {
+            AddSearchText(values, metadataSearchText);
+        }
+
+        foreach (var report in dumpMap.Values)
+        {
+            AddSearchText(values, report.EditorId);
+            AddSearchText(values, report.DisplayName);
+            foreach (var section in report.Sections)
+            {
+                AddSearchText(values, section.Name);
+                foreach (var field in section.Fields)
+                {
+                    AddSearchText(values, field.Key);
+                    AddSearchText(values, field.FormIdRef);
+                    AddSearchText(values, field.Value.Display);
+                    AddReportValueSearchText(values, field.Value);
+                }
+            }
+        }
+
+        return string.Join(' ', values);
+    }
+
+    private static void AddReportValueSearchText(HashSet<string> values, ReportValue value)
+    {
+        switch (value)
+        {
+            case ReportValue.StringVal stringValue:
+                AddSearchText(values, stringValue.Raw);
+                break;
+            case ReportValue.FormIdVal formIdValue:
+                AddSearchText(values, $"0x{formIdValue.Raw:X8}");
+                break;
+            case ReportValue.ListVal listValue:
+                foreach (var item in listValue.Items)
+                {
+                    AddReportValueSearchText(values, item);
+                }
+
+                break;
+            case ReportValue.CompositeVal composite:
+                foreach (var field in composite.Fields)
+                {
+                    AddSearchText(values, field.Key);
+                    AddSearchText(values, field.FormIdRef);
+                    AddSearchText(values, field.Value.Display);
+                    AddReportValueSearchText(values, field.Value);
+                }
+
+                break;
+        }
+    }
+
+    private static void AddSearchText(HashSet<string> values, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            values.Add(value);
+        }
     }
 
     private static void WriteDumpsArray(Utf8JsonWriter writer, List<DumpSnapshot> dumps)

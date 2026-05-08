@@ -123,6 +123,7 @@ internal static class EsmFormIdPropertyRegistry
         "PreviousInfo",
         "Projectile",
         "ProjectileFormId",
+        "ProjectileFormIds",
         "PutdownSoundFormId",
         "QuestFormId",
         "QuestTrees",

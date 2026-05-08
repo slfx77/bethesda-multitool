@@ -95,63 +95,41 @@ internal sealed class RuntimeRecipeReader
     {
         var result = new List<(uint, uint)>();
 
-        var headVa = BinaryUtils.ReadUInt32BE(structBuffer, listOffset);
-        if (headVa == 0 || !_context.IsValidPointer(headVa))
+        foreach (var componentVa in _context.WalkInlineBSSimpleListItemPointers(
+                     structBuffer,
+                     listOffset,
+                     MaxListNodes))
         {
-            return result;
-        }
-
-        var visited = new HashSet<uint>();
-        var currentVa = headVa;
-
-        for (var i = 0; i < MaxListNodes; i++)
-        {
-            if (currentVa == 0 || !visited.Add(currentVa))
+            if (!_context.IsValidPointer(componentVa))
             {
-                break;
+                continue;
             }
 
-            var nodeFileOffset = _context.VaToFileOffset(currentVa);
-            if (nodeFileOffset == null)
+            var compFileOffset = _context.VaToFileOffset(componentVa);
+            if (compFileOffset == null)
             {
-                break;
+                continue;
             }
 
-            // BSSimpleList node: m_item (4B pointer to TESRecipeComponent) + m_pkNext (4B)
-            var nodeBuffer = _context.ReadBytes(nodeFileOffset.Value, 8);
-            if (nodeBuffer == null)
+            // TESRecipeComponent: pItem (TESForm*, 4B) + uiCount (uint32, 4B)
+            var compBuffer = _context.ReadBytes(compFileOffset.Value, 8);
+            if (compBuffer == null)
             {
-                break;
+                continue;
             }
 
-            var componentVa = BinaryUtils.ReadUInt32BE(nodeBuffer);
-            var nextVa = BinaryUtils.ReadUInt32BE(nodeBuffer, 4);
-
-            if (componentVa != 0 && _context.IsValidPointer(componentVa))
+            var itemVa = BinaryUtils.ReadUInt32BE(compBuffer);
+            var count = BinaryUtils.ReadUInt32BE(compBuffer, 4);
+            if (itemVa == 0 || count is 0 or > 1000)
             {
-                var compFileOffset = _context.VaToFileOffset(componentVa);
-                if (compFileOffset != null)
-                {
-                    // TESRecipeComponent: pItem (TESForm*, 4B) + uiCount (uint32, 4B)
-                    var compBuffer = _context.ReadBytes(compFileOffset.Value, 8);
-                    if (compBuffer != null)
-                    {
-                        var itemVa = BinaryUtils.ReadUInt32BE(compBuffer);
-                        var count = BinaryUtils.ReadUInt32BE(compBuffer, 4);
-
-                        if (itemVa != 0 && count is > 0 and <= 1000)
-                        {
-                            var itemFormId = _context.FollowPointerVaToFormId(itemVa);
-                            if (itemFormId is > 0)
-                            {
-                                result.Add((itemFormId.Value, count));
-                            }
-                        }
-                    }
-                }
+                continue;
             }
 
-            currentVa = nextVa;
+            var itemFormId = _context.FollowPointerVaToFormId(itemVa);
+            if (itemFormId is > 0)
+            {
+                result.Add((itemFormId.Value, count));
+            }
         }
 
         return result;

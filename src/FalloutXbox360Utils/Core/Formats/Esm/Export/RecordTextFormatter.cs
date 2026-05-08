@@ -21,11 +21,12 @@ internal static class RecordTextFormatter
     internal static RecordReport? BuildReport(
         object record, FormIdResolver resolver,
         Dictionary<uint, List<(uint FormId, string? Name)>>? factionMembers = null,
-        Dictionary<uint, List<(PlacedReference Ref, CellRecord Cell)>>? keyLockedDoors = null,
+        IReadOnlyDictionary<uint, IReadOnlyList<KeyLockedDoorInfo>>? keyLockedDoors = null,
         Dictionary<uint, List<(WeaponRecord Weapon, WeaponModSlot Slot)>>? modToWeapon = null,
         IReadOnlyDictionary<uint, PlacedReferenceLocation>? placedReferenceLocations = null,
         IReadOnlyDictionary<uint, IReadOnlyList<NpcPlacementInfo>>? npcPlacements = null,
-        IReadOnlyDictionary<uint, IReadOnlyList<NpcScriptReferenceInfo>>? npcScriptReferences = null)
+        IReadOnlyDictionary<uint, IReadOnlyList<NpcScriptReferenceInfo>>? npcScriptReferences = null,
+        IReadOnlyDictionary<uint, IReadOnlyList<ContainerPlacementInfo>>? containerPlacements = null)
     {
         var report = record switch
         {
@@ -33,7 +34,10 @@ internal static class RecordTextFormatter
             NpcRecord n => GeckActorDetailWriter.BuildNpcReport(n, resolver,
                 placements: npcPlacements?.GetValueOrDefault(n.FormId),
                 referencedInScripts: npcScriptReferences?.GetValueOrDefault(n.FormId)),
-            ContainerRecord c => GeckItemDetailWriter.BuildContainerReport(c, resolver),
+            ContainerRecord c => BuildContainerReport(
+                c,
+                resolver,
+                containerPlacements?.GetValueOrDefault(c.FormId)),
             QuestRecord q => GeckDialogueWriter.BuildQuestReport(q, resolver),
             FactionRecord f => GeckFactionWriter.BuildFactionReport(f, resolver,
                 factionMembers?.GetValueOrDefault(f.FormId)),
@@ -70,6 +74,174 @@ internal static class RecordTextFormatter
             InjectIdentityFields(report);
 
         return report;
+    }
+
+    private static RecordReport BuildContainerReport(
+        ContainerRecord container,
+        FormIdResolver resolver,
+        IReadOnlyList<ContainerPlacementInfo>? placements)
+    {
+        var report = GeckItemDetailWriter.BuildContainerReport(container, resolver);
+        if (placements is not { Count: > 0 })
+        {
+            return report;
+        }
+
+        var placementItems = placements
+            .Select(placement => (ReportValue)BuildContainerPlacementValue(placement, resolver))
+            .ToList();
+        report.Sections.Add(new ReportSection("Placements",
+        [
+            new ReportField("References", ReportValue.List(placementItems, $"{placements.Count} references"))
+        ]));
+
+        return report;
+    }
+
+    private static ReportValue.CompositeVal BuildContainerPlacementValue(
+        ContainerPlacementInfo placement,
+        FormIdResolver resolver)
+    {
+        var obj = placement.Ref;
+        var baseStr = !string.IsNullOrEmpty(obj.BaseEditorId)
+            ? obj.BaseEditorId
+            : resolver.GetEditorId(obj.BaseFormId)
+              ?? GeckReportHelpers.FormatFormId(obj.BaseFormId);
+        var referenceEditorId = !string.IsNullOrEmpty(obj.EditorId)
+            ? obj.EditorId
+            : resolver.GetEditorId(obj.FormId);
+
+        var fields = new List<ReportField>
+        {
+            new("FormID", ReportValue.FormId(obj.FormId, GeckReportHelpers.FormatFormId(obj.FormId)),
+                $"0x{obj.FormId:X8}"),
+            new("Base", ReportValue.String(baseStr)),
+            new("Type", ReportValue.String(obj.RecordType))
+        };
+
+        if (placement.WorldspaceFormId is > 0)
+        {
+            fields.Add(new ReportField("Worldspace",
+                ReportValue.FormId(placement.WorldspaceFormId.Value, resolver),
+                $"0x{placement.WorldspaceFormId.Value:X8}"));
+        }
+
+        fields.Add(new ReportField("Cell", ReportValue.FormId(placement.CellFormId, resolver),
+            $"0x{placement.CellFormId:X8}"));
+
+        if (placement.GridX.HasValue && placement.GridY.HasValue)
+        {
+            fields.Add(new ReportField("Grid",
+                ReportValue.String($"{placement.GridX.Value}, {placement.GridY.Value}")));
+        }
+
+        fields.Add(new ReportField("Position", ReportValue.String($"({obj.X:F1}, {obj.Y:F1}, {obj.Z:F1})")));
+
+        if (!string.IsNullOrEmpty(referenceEditorId) &&
+            !string.Equals(referenceEditorId, baseStr, StringComparison.Ordinal))
+        {
+            fields.Add(new ReportField("Reference Editor ID", ReportValue.String(referenceEditorId)));
+        }
+
+        if (!string.IsNullOrEmpty(placement.CellEditorId))
+        {
+            fields.Add(new ReportField("Cell Editor ID", ReportValue.String(placement.CellEditorId)));
+        }
+
+        if (!string.IsNullOrEmpty(placement.CellName))
+        {
+            fields.Add(new ReportField("Cell Name", ReportValue.String(placement.CellName)));
+        }
+
+        var hasRotation = MathF.Abs(obj.RotX) > 0.001f || MathF.Abs(obj.RotY) > 0.001f ||
+                          MathF.Abs(obj.RotZ) > 0.001f;
+        if (hasRotation)
+        {
+            fields.Add(new ReportField("Rotation",
+                ReportValue.String($"({obj.RotX:F3}, {obj.RotY:F3}, {obj.RotZ:F3})")));
+        }
+
+        if (Math.Abs(obj.Scale - 1.0f) > 0.01f)
+        {
+            fields.Add(new ReportField("Scale", ReportValue.Float(obj.Scale, "F2")));
+        }
+
+        if (obj.Count.HasValue)
+        {
+            fields.Add(new ReportField("Count", ReportValue.Int(obj.Count.Value)));
+        }
+
+        if (obj.IsInitiallyDisabled)
+        {
+            fields.Add(new ReportField("Disabled", ReportValue.Bool(true)));
+        }
+
+        if (obj.IsPersistent)
+        {
+            fields.Add(new ReportField("Persistent", ReportValue.Bool(true)));
+        }
+
+        AddOptionalFormIdField(fields, "Origin Cell", obj.OriginCellFormId, resolver);
+
+        if (!string.IsNullOrEmpty(obj.AssignmentSource))
+        {
+            fields.Add(new ReportField("Assignment Source", ReportValue.String(obj.AssignmentSource)));
+        }
+
+        var disabledTag = obj.IsInitiallyDisabled ? " [DISABLED]" : "";
+        var referenceTag = !string.IsNullOrEmpty(referenceEditorId) &&
+                           !string.Equals(referenceEditorId, baseStr, StringComparison.Ordinal)
+            ? $"{referenceEditorId} ({baseStr})"
+            : baseStr;
+        var locationLabel = ResolveContainerPlacementLocationLabel(placement, resolver);
+        var display =
+            $"{referenceTag} ({obj.RecordType}) [{GeckReportHelpers.FormatFormId(obj.FormId)}] in {locationLabel}{disabledTag}";
+
+        return new ReportValue.CompositeVal(fields, display);
+    }
+
+    private static void AddOptionalFormIdField(
+        List<ReportField> fields,
+        string label,
+        uint? formId,
+        FormIdResolver resolver)
+    {
+        if (formId is > 0)
+        {
+            fields.Add(new ReportField(label, ReportValue.FormId(formId.Value, resolver), $"0x{formId.Value:X8}"));
+        }
+    }
+
+    private static string ResolveContainerPlacementLocationLabel(
+        ContainerPlacementInfo placement,
+        FormIdResolver resolver)
+    {
+        var cellLabel = ResolveContainerPlacementCellLabel(placement, resolver);
+        return placement.WorldspaceFormId is > 0
+            ? $"{resolver.FormatFull(placement.WorldspaceFormId.Value)} / {cellLabel}"
+            : cellLabel;
+    }
+
+    private static string ResolveContainerPlacementCellLabel(
+        ContainerPlacementInfo placement,
+        FormIdResolver resolver)
+    {
+        if (!string.IsNullOrEmpty(placement.CellEditorId) && !string.IsNullOrEmpty(placement.CellName))
+        {
+            return $"{placement.CellName} - {placement.CellEditorId} ({GeckReportHelpers.FormatFormId(placement.CellFormId)})";
+        }
+
+        if (!string.IsNullOrEmpty(placement.CellEditorId))
+        {
+            return $"{placement.CellEditorId} ({GeckReportHelpers.FormatFormId(placement.CellFormId)})";
+        }
+
+        if (!string.IsNullOrEmpty(placement.CellName))
+        {
+            return $"{placement.CellName} ({GeckReportHelpers.FormatFormId(placement.CellFormId)})";
+        }
+
+        return resolver.FormatFull(placement.CellFormId);
     }
 
     /// <summary>
@@ -155,7 +327,7 @@ internal static class RecordTextFormatter
         foreach (var s in records.Scripts)
             yield return ("Script", s.FormId, s.EditorId, null, s);
         foreach (var dt in records.DialogTopics)
-            yield return ("DialogTopic", dt.FormId, dt.EditorId, dt.FullName, dt);
+            yield return ("DialogTopic", dt.FormId, dt.EditorId, dt.FullName ?? dt.DummyPrompt, dt);
         foreach (var d in records.Dialogues)
             yield return ("Dialogue", d.FormId, d.EditorId, null, d);
     }

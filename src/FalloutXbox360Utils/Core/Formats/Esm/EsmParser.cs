@@ -380,7 +380,7 @@ public static class EsmParser
             end = data.Length;
         }
 
-        return Encoding.UTF8.GetString(data[..end]);
+        return EsmStringUtils.DecodeGameText(data[..end]);
     }
 
     /// <summary>

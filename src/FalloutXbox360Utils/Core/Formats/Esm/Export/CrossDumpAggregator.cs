@@ -23,7 +23,9 @@ internal static class CrossDumpAggregator
         bool releaseInputRecords = false,
         IReadOnlyDictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<NpcPlacementInfo>>>? npcPlacementIndexes = null,
         IReadOnlyDictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<NpcScriptReferenceInfo>>>?
-            npcScriptReferenceIndexes = null)
+            npcScriptReferenceIndexes = null,
+        IReadOnlyDictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<ContainerPlacementInfo>>>?
+            containerPlacementIndexes = null)
     {
         var index = new CrossDumpRecordIndex();
 
@@ -67,9 +69,16 @@ internal static class CrossDumpAggregator
         }
 
         var virtualCellCanonicalFormIds = ShouldIncludeType(allowedTypes, "Cell") ||
-                                          ShouldIncludeType(allowedTypes, "MapMarker")
+                                          ShouldIncludeType(allowedTypes, "MapMarker") ||
+                                          ShouldIncludeType(allowedTypes, "Key") ||
+                                          ShouldIncludeType(allowedTypes, "Container")
             ? BuildVirtualCellCanonicalFormIds(ordered.Select(d => d.Records))
             : new Dictionary<CellCoordinateKey, RealCellCandidate>();
+        var keyLockedDoorIndexes = ShouldIncludeType(allowedTypes, "Key")
+            ? BuildKeyLockedDoorIndexes(
+                ordered.Select(d => (d.FilePath, d.Records)),
+                virtualCellCanonicalFormIds)
+            : null;
         if (ShouldIncludeType(allowedTypes, "NPC") && npcPlacementIndexes == null)
         {
             npcPlacementIndexes = BuildNpcPlacementIndexes(
@@ -80,6 +89,13 @@ internal static class CrossDumpAggregator
         {
             npcScriptReferenceIndexes = BuildNpcScriptReferenceIndexes(
                 ordered.Select(d => (d.FilePath, d.Records)));
+        }
+
+        if (ShouldIncludeType(allowedTypes, "Container") && containerPlacementIndexes == null)
+        {
+            containerPlacementIndexes = BuildContainerPlacementIndexes(
+                ordered.Select(d => (d.FilePath, d.Records)),
+                virtualCellCanonicalFormIds);
         }
 
         var upgradedVirtualCellIds = new Dictionary<uint, SortedSet<uint>>();
@@ -114,8 +130,10 @@ internal static class CrossDumpAggregator
             var factionMembers = ShouldIncludeType(allowedTypes, "Faction")
                 ? dump.Records.BuildFactionMembersIndex()
                 : null;
-            var keyLockedDoors = ShouldIncludeType(allowedTypes, "Key")
-                ? dump.Records.BuildKeyToLockedDoorsMap()
+            var keyLockedDoors = ShouldIncludeType(allowedTypes, "Key") &&
+                                 keyLockedDoorIndexes != null &&
+                                 keyLockedDoorIndexes.TryGetValue(dump.FilePath, out var keysForDump)
+                ? keysForDump
                 : null;
             var modToWeapon = ShouldIncludeType(allowedTypes, "WeaponMod")
                 ? dump.Records.BuildModToWeaponMap()
@@ -134,11 +152,27 @@ internal static class CrossDumpAggregator
                                       npcScriptReferenceIndexes.TryGetValue(dump.FilePath, out var refsForDump)
                 ? refsForDump
                 : null;
+            var containerPlacements = ShouldIncludeType(allowedTypes, "Container") &&
+                                      containerPlacementIndexes != null &&
+                                      containerPlacementIndexes.TryGetValue(dump.FilePath, out var containersForDump)
+                ? containersForDump
+                : null;
+            var dialogTopicsByFormId = ShouldIncludeType(allowedTypes, "Dialogue")
+                ? BuildDialogTopicLookup(dump.Records.DialogTopics)
+                : null;
+            var dialogTopicSearchTextByFormId = ShouldIncludeType(allowedTypes, "DialogTopic")
+                ? BuildDialogTopicSearchTextLookup(dump.Records.Dialogues)
+                : null;
 
             foreach (var (typeName, formId, _, _, record) in
                      RecordTextFormatter.EnumerateAll(dump.Records))
             {
                 if (!ShouldIncludeType(allowedTypes, typeName))
+                {
+                    continue;
+                }
+
+                if (record is CellRecord { IsUnresolvedBucket: true })
                 {
                     continue;
                 }
@@ -167,7 +201,7 @@ internal static class CrossDumpAggregator
                 // Build structured report (primary path for all output formats)
                 var report = RecordTextFormatter.BuildReport(record, dump.Resolver,
                     factionMembers, keyLockedDoors, modToWeapon, placedReferenceLocations, npcPlacements,
-                    npcScriptReferences);
+                    npcScriptReferences, containerPlacements);
                 if (report == null) continue;
                 if (reportWasRebasedVirtualCell)
                 {
@@ -347,6 +381,18 @@ internal static class CrossDumpAggregator
                         meta["topicFormId"] = $"0x{d.TopicFormId.Value:X8}";
                         var tEid = dump.Resolver.GetEditorId(d.TopicFormId.Value) ?? "";
                         var tName = dump.Resolver.GetDisplayName(d.TopicFormId.Value) ?? "";
+                        if (string.IsNullOrEmpty(tName) &&
+                            dialogTopicsByFormId != null &&
+                            dialogTopicsByFormId.TryGetValue(d.TopicFormId.Value, out var topic))
+                        {
+                            tName = topic.FullName ?? topic.DummyPrompt ?? "";
+                        }
+
+                        if (string.IsNullOrEmpty(tName))
+                        {
+                            tName = PickFirstDialogueText(d);
+                        }
+
                         if (!string.IsNullOrEmpty(tEid)) meta["topicEditorId"] = tEid;
                         if (!string.IsNullOrEmpty(tName)) meta["topicName"] = tName;
                     }
@@ -359,6 +405,26 @@ internal static class CrossDumpAggregator
                         if (!string.IsNullOrEmpty(sEid)) meta["speakerEditorId"] = sEid;
                         if (!string.IsNullOrEmpty(sName)) meta["speakerName"] = sName;
                     }
+                }
+
+                if (record is DialogTopicRecord dialogTopic &&
+                    dialogTopicSearchTextByFormId != null &&
+                    dialogTopicSearchTextByFormId.TryGetValue(dialogTopic.FormId, out var topicSearchText) &&
+                    !string.IsNullOrWhiteSpace(topicSearchText))
+                {
+                    if (!index.RecordMetadata.TryGetValue(typeName, out var metaMap))
+                    {
+                        metaMap = new Dictionary<uint, Dictionary<string, string>>();
+                        index.RecordMetadata[typeName] = metaMap;
+                    }
+
+                    if (!metaMap.TryGetValue(formId, out var meta))
+                    {
+                        meta = new Dictionary<string, string>();
+                        metaMap[formId] = meta;
+                    }
+
+                    meta["searchText"] = topicSearchText;
                 }
             }
 
@@ -439,6 +505,55 @@ internal static class CrossDumpAggregator
         return allowedTypes is not { Count: > 0 } || allowedTypes.Contains(typeName);
     }
 
+    private static Dictionary<uint, DialogTopicRecord> BuildDialogTopicLookup(
+        IEnumerable<DialogTopicRecord> topics)
+    {
+        var map = new Dictionary<uint, DialogTopicRecord>();
+        foreach (var topic in topics)
+        {
+            map.TryAdd(topic.FormId, topic);
+        }
+
+        return map;
+    }
+
+    private static Dictionary<uint, string> BuildDialogTopicSearchTextLookup(
+        IEnumerable<DialogueRecord> dialogues)
+    {
+        var map = new Dictionary<uint, HashSet<string>>();
+        foreach (var dialogue in dialogues)
+        {
+            if (dialogue.TopicFormId is not > 0)
+            {
+                continue;
+            }
+
+            if (!map.TryGetValue(dialogue.TopicFormId.Value, out var values))
+            {
+                values = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                map[dialogue.TopicFormId.Value] = values;
+            }
+
+            AddSearchValue(values, dialogue.PromptText);
+            foreach (var response in dialogue.Responses)
+            {
+                AddSearchValue(values, response.Text);
+            }
+        }
+
+        return map.ToDictionary(
+            entry => entry.Key,
+            entry => string.Join(' ', entry.Value));
+    }
+
+    private static void AddSearchValue(HashSet<string> values, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            values.Add(value);
+        }
+    }
+
     private static void ClearRecordLists(RecordCollection records)
     {
         records.Npcs.Clear();
@@ -507,11 +622,7 @@ internal static class CrossDumpAggregator
         var map = new Dictionary<uint, PlacedReferenceLocation>();
         foreach (var cell in cells)
         {
-            var cellFormId = cell.FormId;
-            if (TryGetVirtualCellCanonicalFormId(cell, virtualCellCanonicalFormIds, out var canonicalCell))
-            {
-                cellFormId = canonicalCell.FormId;
-            }
+            var cellInfo = ResolvePlacementCellInfo(cell, virtualCellCanonicalFormIds);
 
             foreach (var obj in cell.PlacedObjects)
             {
@@ -520,7 +631,7 @@ internal static class CrossDumpAggregator
                     continue;
                 }
 
-                map[obj.FormId] = new PlacedReferenceLocation(obj, cellFormId);
+                map[obj.FormId] = new PlacedReferenceLocation(obj, cellInfo.FormId);
             }
         }
 
@@ -538,6 +649,42 @@ internal static class CrossDumpAggregator
         foreach (var (filePath, records) in sourceList)
         {
             result[filePath] = BuildNpcPlacementIndex(records, virtualCellCanonicalFormIds);
+        }
+
+        return result;
+    }
+
+    internal static IReadOnlyDictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<KeyLockedDoorInfo>>>
+        BuildKeyLockedDoorIndexes(
+            IEnumerable<(string FilePath, RecordCollection Records)> sources,
+            IReadOnlyDictionary<CellCoordinateKey, RealCellCandidate>? virtualCellCanonicalFormIds = null)
+    {
+        var sourceList = sources.ToList();
+        virtualCellCanonicalFormIds ??= BuildVirtualCellCanonicalFormIds(sourceList.Select(source => source.Records));
+        var result = new Dictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<KeyLockedDoorInfo>>>(
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (filePath, records) in sourceList)
+        {
+            result[filePath] = BuildKeyLockedDoorIndex(records, virtualCellCanonicalFormIds);
+        }
+
+        return result;
+    }
+
+    internal static IReadOnlyDictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<ContainerPlacementInfo>>>
+        BuildContainerPlacementIndexes(
+            IEnumerable<(string FilePath, RecordCollection Records)> sources,
+            IReadOnlyDictionary<CellCoordinateKey, RealCellCandidate>? virtualCellCanonicalFormIds = null)
+    {
+        var sourceList = sources.ToList();
+        virtualCellCanonicalFormIds ??= BuildVirtualCellCanonicalFormIds(sourceList.Select(source => source.Records));
+        var result = new Dictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<ContainerPlacementInfo>>>(
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (filePath, records) in sourceList)
+        {
+            result[filePath] = BuildContainerPlacementIndex(records, virtualCellCanonicalFormIds);
         }
 
         return result;
@@ -617,11 +764,7 @@ internal static class CrossDumpAggregator
         var map = new Dictionary<uint, List<NpcPlacementInfo>>();
         foreach (var cell in records.Cells)
         {
-            var cellFormId = cell.FormId;
-            if (TryGetVirtualCellCanonicalFormId(cell, virtualCellCanonicalFormIds, out var canonicalCell))
-            {
-                cellFormId = canonicalCell.FormId;
-            }
+            var cellInfo = ResolvePlacementCellInfo(cell, virtualCellCanonicalFormIds);
 
             foreach (var obj in cell.PlacedObjects)
             {
@@ -640,18 +783,119 @@ internal static class CrossDumpAggregator
 
                 placements.Add(new NpcPlacementInfo(
                     obj,
-                    cellFormId,
-                    cell.EditorId,
-                    cell.FullName,
-                    cell.WorldspaceFormId,
-                    cell.GridX,
-                    cell.GridY));
+                    cellInfo.FormId,
+                    cellInfo.EditorId,
+                    cellInfo.DisplayName,
+                    cellInfo.WorldspaceFormId,
+                    cellInfo.GridX,
+                    cellInfo.GridY));
             }
         }
 
         return map.ToDictionary(
             entry => entry.Key,
             entry => (IReadOnlyList<NpcPlacementInfo>)entry.Value
+                .OrderBy(placement => ResolveCellSortName(placement), StringComparer.OrdinalIgnoreCase)
+                .ThenBy(placement => placement.GridY ?? int.MaxValue)
+                .ThenBy(placement => placement.GridX ?? int.MaxValue)
+                .ThenBy(placement => placement.Ref.FormId)
+                .ToList());
+    }
+
+    private static Dictionary<uint, IReadOnlyList<KeyLockedDoorInfo>> BuildKeyLockedDoorIndex(
+        RecordCollection records,
+        IReadOnlyDictionary<CellCoordinateKey, RealCellCandidate> virtualCellCanonicalFormIds)
+    {
+        if (records.Keys.Count == 0 || records.Cells.Count == 0)
+        {
+            return new Dictionary<uint, IReadOnlyList<KeyLockedDoorInfo>>();
+        }
+
+        var keyFormIds = records.Keys.Select(key => key.FormId).ToHashSet();
+        var map = new Dictionary<uint, List<KeyLockedDoorInfo>>();
+        foreach (var cell in records.Cells)
+        {
+            var cellInfo = ResolvePlacementCellInfo(cell, virtualCellCanonicalFormIds);
+
+            foreach (var obj in cell.PlacedObjects)
+            {
+                if (obj.LockKeyFormId is not > 0 ||
+                    !keyFormIds.Contains(obj.LockKeyFormId.Value))
+                {
+                    continue;
+                }
+
+                if (!map.TryGetValue(obj.LockKeyFormId.Value, out var doors))
+                {
+                    doors = [];
+                    map[obj.LockKeyFormId.Value] = doors;
+                }
+
+                doors.Add(new KeyLockedDoorInfo(
+                    obj,
+                    cellInfo.FormId,
+                    cellInfo.EditorId,
+                    cellInfo.DisplayName,
+                    cellInfo.WorldspaceFormId,
+                    cellInfo.GridX,
+                    cellInfo.GridY));
+            }
+        }
+
+        return map.ToDictionary(
+            entry => entry.Key,
+            entry => (IReadOnlyList<KeyLockedDoorInfo>)entry.Value
+                .OrderBy(info => ResolveCellSortName(info), StringComparer.OrdinalIgnoreCase)
+                .ThenBy(info => info.GridY ?? int.MaxValue)
+                .ThenBy(info => info.GridX ?? int.MaxValue)
+                .ThenBy(info => info.Ref.FormId)
+                .ToList());
+    }
+
+    private static Dictionary<uint, IReadOnlyList<ContainerPlacementInfo>> BuildContainerPlacementIndex(
+        RecordCollection records,
+        IReadOnlyDictionary<CellCoordinateKey, RealCellCandidate> virtualCellCanonicalFormIds)
+    {
+        if (records.Containers.Count == 0 || records.Cells.Count == 0)
+        {
+            return new Dictionary<uint, IReadOnlyList<ContainerPlacementInfo>>();
+        }
+
+        var containerFormIds = records.Containers.Select(container => container.FormId).ToHashSet();
+        var map = new Dictionary<uint, List<ContainerPlacementInfo>>();
+        foreach (var cell in records.Cells)
+        {
+            var cellInfo = ResolvePlacementCellInfo(cell, virtualCellCanonicalFormIds);
+
+            foreach (var obj in cell.PlacedObjects)
+            {
+                if (!string.Equals(obj.RecordType, "REFR", StringComparison.OrdinalIgnoreCase) ||
+                    obj.BaseFormId == 0 ||
+                    !containerFormIds.Contains(obj.BaseFormId))
+                {
+                    continue;
+                }
+
+                if (!map.TryGetValue(obj.BaseFormId, out var placements))
+                {
+                    placements = [];
+                    map[obj.BaseFormId] = placements;
+                }
+
+                placements.Add(new ContainerPlacementInfo(
+                    obj,
+                    cellInfo.FormId,
+                    cellInfo.EditorId,
+                    cellInfo.DisplayName,
+                    cellInfo.WorldspaceFormId,
+                    cellInfo.GridX,
+                    cellInfo.GridY));
+            }
+        }
+
+        return map.ToDictionary(
+            entry => entry.Key,
+            entry => (IReadOnlyList<ContainerPlacementInfo>)entry.Value
                 .OrderBy(placement => ResolveCellSortName(placement), StringComparer.OrdinalIgnoreCase)
                 .ThenBy(placement => placement.GridY ?? int.MaxValue)
                 .ThenBy(placement => placement.GridX ?? int.MaxValue)
@@ -674,14 +918,80 @@ internal static class CrossDumpAggregator
         return "";
     }
 
+    private static string ResolveCellSortName(KeyLockedDoorInfo info)
+    {
+        if (!string.IsNullOrWhiteSpace(info.CellEditorId))
+        {
+            return info.CellEditorId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(info.CellName))
+        {
+            return info.CellName;
+        }
+
+        return "";
+    }
+
+    private static string ResolveCellSortName(ContainerPlacementInfo placement)
+    {
+        if (!string.IsNullOrWhiteSpace(placement.CellEditorId))
+        {
+            return placement.CellEditorId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(placement.CellName))
+        {
+            return placement.CellName;
+        }
+
+        return "";
+    }
+
+    private static PlacementCellInfo ResolvePlacementCellInfo(
+        CellRecord cell,
+        IReadOnlyDictionary<CellCoordinateKey, RealCellCandidate> virtualCellCanonicalFormIds)
+    {
+        if (TryGetVirtualCellCanonicalFormId(cell, virtualCellCanonicalFormIds, out var canonicalCell))
+        {
+            return new PlacementCellInfo(
+                canonicalCell.FormId,
+                canonicalCell.IsSyntheticVirtual ? null : canonicalCell.EditorId ?? cell.EditorId,
+                canonicalCell.IsSyntheticVirtual ? null : canonicalCell.DisplayName ?? cell.FullName,
+                cell.WorldspaceFormId,
+                cell.GridX,
+                cell.GridY);
+        }
+
+        return new PlacementCellInfo(
+            cell.FormId,
+            cell.EditorId,
+            cell.FullName,
+            cell.WorldspaceFormId,
+            cell.GridX,
+            cell.GridY);
+    }
+
     private static Dictionary<CellCoordinateKey, RealCellCandidate> BuildVirtualCellCanonicalFormIds(
         IEnumerable<RecordCollection> recordCollections)
     {
         var candidates = new Dictionary<CellCoordinateKey, Dictionary<uint, RealCellCandidate>>();
+        var virtualOnlyKeys = new HashSet<CellCoordinateKey>();
+        var allCellFormIds = new HashSet<uint>();
         foreach (var collection in recordCollections)
         {
             foreach (var cell in collection.Cells)
             {
+                allCellFormIds.Add(cell.FormId);
+                if (cell.IsVirtual &&
+                    !cell.IsInterior &&
+                    !cell.IsPersistentCell &&
+                    !cell.IsUnresolvedBucket &&
+                    TryGetCellCoordinateKey(cell, out var virtualKey))
+                {
+                    virtualOnlyKeys.Add(virtualKey);
+                }
+
                 if (!IsStableRealExteriorCell(cell) ||
                     !TryGetCellCoordinateKey(cell, out var key))
                 {
@@ -696,7 +1006,7 @@ internal static class CrossDumpAggregator
 
                 if (!formIds.TryGetValue(cell.FormId, out var existingCandidate))
                 {
-                    formIds[cell.FormId] = new RealCellCandidate(cell.FormId, cell.EditorId, cell.FullName);
+                    formIds[cell.FormId] = new RealCellCandidate(cell.FormId, cell.EditorId, cell.FullName, false);
                 }
                 else
                 {
@@ -716,6 +1026,27 @@ internal static class CrossDumpAggregator
             {
                 canonical[key] = formIds.Values.Single();
             }
+        }
+
+        var nextSyntheticFormId = 0xFD000001u;
+        foreach (var key in virtualOnlyKeys
+                     .OrderBy(key => key.WorldspaceFormId)
+                     .ThenBy(key => key.GridY)
+                     .ThenBy(key => key.GridX))
+        {
+            if (canonical.ContainsKey(key))
+            {
+                continue;
+            }
+
+            while (allCellFormIds.Contains(nextSyntheticFormId))
+            {
+                nextSyntheticFormId++;
+            }
+
+            canonical[key] = new RealCellCandidate(nextSyntheticFormId, null, null, true);
+            allCellFormIds.Add(nextSyntheticFormId);
+            nextSyntheticFormId++;
         }
 
         return canonical;
@@ -882,9 +1213,21 @@ internal static class CrossDumpAggregator
         }
     }
 
-    private readonly record struct CellCoordinateKey(uint WorldspaceFormId, int GridX, int GridY);
+    internal readonly record struct CellCoordinateKey(uint WorldspaceFormId, int GridX, int GridY);
 
-    private readonly record struct RealCellCandidate(uint FormId, string? EditorId, string? DisplayName);
+    internal readonly record struct RealCellCandidate(
+        uint FormId,
+        string? EditorId,
+        string? DisplayName,
+        bool IsSyntheticVirtual);
+
+    private readonly record struct PlacementCellInfo(
+        uint FormId,
+        string? EditorId,
+        string? DisplayName,
+        uint? WorldspaceFormId,
+        int? GridX,
+        int? GridY);
 
     /// <summary>
     ///     Returns true if a resolver-returned name is a real name (not null, empty,
@@ -931,7 +1274,7 @@ internal static class CrossDumpAggregator
                     if (oldName != questDisplayName)
                     {
                         questLabels[questFormId] =
-                            $"{questDisplayName} \u2192 {oldName} ({questEditorId ?? Fmt.FIdAlways(questFormId)})";
+                            $"{oldName} \u2192 {questDisplayName} ({questEditorId ?? Fmt.FIdAlways(questFormId)})";
                     }
                     else
                     {
@@ -1018,6 +1361,18 @@ internal static class CrossDumpAggregator
         }
 
         return IsRealName(editorId) ? editorId : null;
+    }
+
+    private static string PickFirstDialogueText(DialogueRecord dialogue)
+    {
+        if (!string.IsNullOrWhiteSpace(dialogue.PromptText))
+        {
+            return dialogue.PromptText;
+        }
+
+        return dialogue.Responses
+            .Select(response => response.Text)
+            .FirstOrDefault(text => !string.IsNullOrWhiteSpace(text)) ?? "";
     }
 
     private static string BuildQuestLabel(uint questFormId, string? displayName, string? editorId)

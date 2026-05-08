@@ -956,7 +956,7 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
         Assert.Contains("function renderCellPageLink(val)", ComparisonJsRenderer.Script);
         Assert.Contains("compare_cell.html#", ComparisonJsRenderer.Script);
         Assert.Contains("summaryRow.id = recordDomId(formId);", ComparisonJsRenderer.Script);
-        Assert.Contains("requestAnimationFrame(alignRenderedDetailRows);", ComparisonJsRenderer.Script);
+        Assert.Contains("alignRenderedDetailRows();", ComparisonJsRenderer.Script);
         Assert.Contains("alignDetailSlots(detailRow, template.length);", ComparisonJsRenderer.Script);
         Assert.Contains("compositeFieldText(fieldMap, 'Position')", ComparisonJsRenderer.Script);
         Assert.Contains("compositeFieldText(fieldMap, 'Rotation')", ComparisonJsRenderer.Script);
@@ -1247,7 +1247,7 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
     }
 
     [Fact]
-    public void GeckWorldWriter_cell_door_links_list_destination_doors_not_raw_linked_cells()
+    public void GeckWorldWriter_cell_door_links_list_source_doors_with_destination_details()
     {
         var resolver = new FormIdResolver(
             new Dictionary<uint, string>
@@ -1279,6 +1279,7 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
             X = 10,
             Y = 20,
             Z = 30,
+            RotZ = 1.25f,
             DestinationDoorFormId = 0x00007000,
             DestinationCellFormId = 0x00006000
         };
@@ -1303,9 +1304,12 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
                 Assert.Single(doorLinks.Fields).Value).Items));
         var fields = linkItem.Fields.ToDictionary(field => field.Key, field => field.Value);
 
-        Assert.Equal(0x00007010u, Assert.IsType<ReportValue.FormIdVal>(fields["FormID"]).Raw);
-        Assert.Equal(0x00009000u, Assert.IsType<ReportValue.FormIdVal>(fields["Containing Cell"]).Raw);
-        Assert.Equal(0x00007000u, Assert.IsType<ReportValue.FormIdVal>(fields["Linked From"]).Raw);
+        Assert.Equal(0x00007000u, Assert.IsType<ReportValue.FormIdVal>(fields["FormID"]).Raw);
+        Assert.Equal(0x00009000u, Assert.IsType<ReportValue.FormIdVal>(fields["Links to"]).Raw);
+        Assert.Equal(0x00007010u, Assert.IsType<ReportValue.FormIdVal>(fields["Destination Door"]).Raw);
+        Assert.Equal(0x00009000u, Assert.IsType<ReportValue.FormIdVal>(fields["Destination Door Cell"]).Raw);
+        Assert.Equal("(0.000, 0.000, 0.000)", Assert.IsType<ReportValue.StringVal>(fields["Rotation"]).Raw);
+        Assert.DoesNotContain(fields, field => field.Key == "Linked From");
     }
 
     [Fact]
@@ -1456,6 +1460,44 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
     }
 
     [Fact]
+    public void CrossDumpAggregator_excludes_unresolved_bucket_cells_from_comparison_rows()
+    {
+        var records = new RecordCollection
+        {
+            Cells =
+            [
+                new CellRecord
+                {
+                    FormId = 0xFE100001,
+                    EditorId = "[Unresolved Unknown]",
+                    IsVirtual = true,
+                    IsUnresolvedBucket = true,
+                    PlacedObjects =
+                    [
+                        new PlacedReference
+                        {
+                            FormId = 0x00007000,
+                            BaseFormId = 0x00008000,
+                            BaseEditorId = "LooseStatic",
+                            RecordType = "REFR",
+                            X = 100,
+                            Y = 200,
+                            Z = 300
+                        }
+                    ]
+                }
+            ]
+        };
+
+        var index = CrossDumpAggregator.Aggregate(
+            [("bucket.dmp", records, FormIdResolver.Empty, null)],
+            new HashSet<string>(["Cell"], StringComparer.OrdinalIgnoreCase));
+
+        Assert.False(index.StructuredRecords.TryGetValue("Cell", out var cells) &&
+                     cells.ContainsKey(0xFE100001));
+    }
+
+    [Fact]
     public void RecordTextFormatter_includes_structured_note_reports()
     {
         var records = new RecordCollection
@@ -1577,6 +1619,27 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
 
         var prompt = Assert.Single(report.Sections, section => section.Name == "Prompt");
         Assert.Contains(prompt.Fields, field => field.Key == "Player" && field.Value.Display == "\"Who are you?\"");
+    }
+
+    [Fact]
+    public void Dialog_topic_report_prefers_prompt_over_editor_like_full_name()
+    {
+        var report = GeckDialogueWriter.BuildDialogTopicReport(
+            new DialogTopicRecord
+            {
+                FormId = 0x00004501,
+                EditorId = "188ClayJunk",
+                FullName = "188ClayJunk",
+                DummyPrompt = "Got any spare parts?"
+            },
+            FormIdResolver.Empty);
+
+        Assert.Equal("Got any spare parts?", report.DisplayName);
+        var prompt = Assert.Single(report.Sections, section => section.Name == "Prompt");
+        Assert.Contains(prompt.Fields,
+            field => field.Key == "Player" && field.Value.Display == "\"Got any spare parts?\"");
+        Assert.DoesNotContain(prompt.Fields,
+            field => field.Value.Display.Contains("188ClayJunk", StringComparison.Ordinal));
     }
 
     [Fact]

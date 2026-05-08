@@ -273,8 +273,8 @@ internal sealed class RuntimeActorReader
 
     /// <summary>
     ///     Read extended faction data from a runtime TESFaction struct.
-    ///     Returns a FactionRecord with Flags, or null if validation fails.
-    ///     Note: Rank and Relation lists require BSSimpleList traversal (Phase 5D).
+    ///     Returns a FactionRecord with Flags and relation data, or null if validation fails.
+    ///     Note: Rank lists require additional BSSimpleList traversal.
     /// </summary>
     public FactionRecord? ReadRuntimeFaction(RuntimeEditorIdEntry entry)
     {
@@ -306,6 +306,7 @@ internal sealed class RuntimeActorReader
         }
 
         var flags = BinaryUtils.ReadUInt32BE(buffer, FactFlagsOffset);
+        var relations = ReadFactionRelations(buffer);
 
         // Read display name — hash table already has it from FullNameOffset=44
         var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, FactFullNameOffset);
@@ -316,9 +317,62 @@ internal sealed class RuntimeActorReader
             EditorId = entry.EditorId,
             FullName = fullName,
             Flags = flags,
+            Relations = relations,
             Offset = offset,
             IsBigEndian = true
         };
+    }
+
+    private List<FactionRelation> ReadFactionRelations(byte[] factionBuffer)
+    {
+        var relations = new List<FactionRelation>();
+
+        foreach (var reactionVa in _context.WalkInlineBSSimpleListItemPointers(
+                     factionBuffer, FactReactionListOffset))
+        {
+            var relation = ReadFactionRelation(reactionVa);
+            if (relation != null)
+            {
+                relations.Add(relation);
+            }
+        }
+
+        return relations;
+    }
+
+    private FactionRelation? ReadFactionRelation(uint reactionVa)
+    {
+        if (reactionVa == 0 || !_context.IsValidPointer(reactionVa))
+        {
+            return null;
+        }
+
+        var reactionBuffer = _context.ReadBytesAtVa(reactionVa, GroupReactionSize);
+        if (reactionBuffer == null)
+        {
+            return null;
+        }
+
+        var factionVa = BinaryUtils.ReadUInt32BE(reactionBuffer);
+        var factionFormId = _context.FollowPointerVaToFormId(factionVa, 0x08);
+        if (factionFormId is null or 0)
+        {
+            return null;
+        }
+
+        var modifier = RuntimeMemoryContext.ReadInt32BE(reactionBuffer, 4);
+        if (modifier is < MinFactionReactionModifier or > MaxFactionReactionModifier)
+        {
+            return null;
+        }
+
+        var combatReaction = BinaryUtils.ReadUInt32BE(reactionBuffer, 8);
+        if (combatReaction > MaxFactionCombatReaction)
+        {
+            return null;
+        }
+
+        return new FactionRelation(factionFormId.Value, modifier, combatReaction);
     }
 
     /// <summary>
@@ -490,8 +544,13 @@ internal sealed class RuntimeActorReader
 
     // TESFaction: PDB size 76, Debug dump 80, Release dump 92
     private int FactStructSize => 76 + _s;
+    private int FactReactionListOffset => 40 + _s;
     private int FactFlagsOffset => 52 + _s;
     private int FactFullNameOffset => 28 + _s;
+    private const int GroupReactionSize = 12;
+    private const int MinFactionReactionModifier = -100000;
+    private const int MaxFactionReactionModifier = 100000;
+    private const uint MaxFactionCombatReaction = 10;
 
     #endregion
 

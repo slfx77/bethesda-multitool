@@ -87,6 +87,9 @@ public class EditorIdFullNameSeparationTests(ITestOutputHelper output)
             Assert.Single(keys);
             Assert.Equal("KeyVault13", keys[0].EditorId);
             Assert.Equal("Vault 13 Keycard", keys[0].FullName);
+            Assert.Equal("Clutter\\Keycard.nif", keys[0].ModelPath);
+            Assert.Equal(25, keys[0].Value);
+            Assert.Equal(0.1f, keys[0].Weight, 3);
             Assert.NotEqual(keys[0].EditorId, keys[0].FullName);
             _output.WriteLine(
                 $"Key: EditorId={keys[0].EditorId}, FullName={keys[0].FullName} - correctly separated");
@@ -99,7 +102,7 @@ public class EditorIdFullNameSeparationTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void Parsing_WithFullNamePreferredCorrelations_CausesEditorIdSwap()
+    public void Parsing_WithFullNamePreferredCorrelations_KeysStillPreferSubrecordEditorId()
     {
         // This test documents the bug: when formIdCorrelations contains FULL (display names)
         // instead of EDID, the parser's _formIdToEditorId is contaminated.
@@ -150,16 +153,55 @@ public class EditorIdFullNameSeparationTests(ITestOutputHelper output)
             // This demonstrates the bug: GetEditorId returns FullName text
             Assert.Equal("Vault 13 Keycard", editorId);
 
-            // For simple record types (KEYM), EditorId comes from GetEditorId() — NOT subrecord
-            // parsing. So the buggy map poisons the parsed record's EditorId too.
+            // KEYM now parses its own EDID/FULL subrecords, so a bad external correlation map
+            // must not poison the record's semantic EditorId.
             var keys = parser.ParseKeys();
             Assert.Single(keys);
-            // Bug: EditorId == FullName because GetEditorId returned the display name
-            Assert.Equal("Vault 13 Keycard", keys[0].EditorId);
-            Assert.Equal(keys[0].EditorId, keys[0].FullName);
+            Assert.Equal("KeyVault13", keys[0].EditorId);
+            Assert.Equal("Vault 13 Keycard", keys[0].FullName);
+            Assert.NotEqual(keys[0].EditorId, keys[0].FullName);
             _output.WriteLine(
                 $"Key: EditorId={keys[0].EditorId}, FullName={keys[0].FullName} " +
-                "- BUG: both are the same because GetEditorId() returns FullName");
+                "- fixed: parsed EDID wins over the bad correlation map");
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void Parsing_RecipeComponents_UsesItemThenQuantitySubrecords()
+    {
+        var records = new[]
+        {
+            ("RCPE", "RecipeTest", "Test Recipe", 0x00000015u)
+        };
+
+        var esmData = CreateMinimalEsmWithRecords(records, false);
+        var tempFile = Path.Combine(Path.GetTempPath(), $"test_recipe_{Guid.NewGuid()}.esm");
+        try
+        {
+            File.WriteAllBytes(tempFile, esmData);
+            var (scanResult, _) = BuildScanResult(esmData);
+
+            using var mmf = MemoryMappedFile.CreateFromFile(tempFile, FileMode.Open, null, 0,
+                MemoryMappedFileAccess.Read);
+            using var accessor = mmf.CreateViewAccessor(0, esmData.Length, MemoryMappedFileAccess.Read);
+
+            var parser = new RecordParser(scanResult, new Dictionary<uint, string>(), accessor, esmData.Length);
+            var recipes = parser.ParseRecipes();
+
+            var recipe = Assert.Single(recipes);
+            Assert.Equal("RecipeTest", recipe.EditorId);
+            Assert.Equal("Test Recipe", recipe.FullName);
+            var ingredient = Assert.Single(recipe.Ingredients);
+            Assert.Equal(0x00001000u, ingredient.ItemFormId);
+            Assert.Equal(2u, ingredient.Count);
+            var recipeOutput = Assert.Single(recipe.Outputs);
+            Assert.Equal(0x00002000u, recipeOutput.ItemFormId);
+            Assert.Equal(1u, recipeOutput.Count);
         }
         finally
         {
@@ -220,7 +262,7 @@ public class EditorIdFullNameSeparationTests(ITestOutputHelper output)
             var recordsData = new List<byte[]>();
             foreach (var rec in group)
             {
-                var subData = CreateRecordData(rec.EditorId, rec.FullName, bigEndian);
+            var subData = CreateRecordData(rec.Signature, rec.EditorId, rec.FullName, bigEndian);
                 recordsData.Add(subData);
             }
 
@@ -242,7 +284,7 @@ public class EditorIdFullNameSeparationTests(ITestOutputHelper output)
         return ms.ToArray();
     }
 
-    private static byte[] CreateRecordData(string editorId, string fullName, bool bigEndian)
+    private static byte[] CreateRecordData(string signature, string editorId, string fullName, bool bigEndian)
     {
         using var ms = new MemoryStream();
         using var bw = new BinaryWriter(ms);
@@ -255,7 +297,56 @@ public class EditorIdFullNameSeparationTests(ITestOutputHelper output)
         WriteSubrecordHeader(bw, "FULL", (ushort)fullBytes.Length, bigEndian);
         bw.Write(fullBytes);
 
+        if (signature == "KEYM")
+        {
+            var modelBytes = Encoding.ASCII.GetBytes("Clutter\\Keycard.nif\0");
+            WriteSubrecordHeader(bw, "MODL", (ushort)modelBytes.Length, bigEndian);
+            bw.Write(modelBytes);
+
+            WriteSubrecordHeader(bw, "DATA", 8, bigEndian);
+            if (bigEndian)
+            {
+                WriteBE(bw, 25u);
+                WriteBE(bw, BitConverter.SingleToUInt32Bits(0.1f));
+            }
+            else
+            {
+                bw.Write(25);
+                bw.Write(0.1f);
+            }
+        }
+        else if (signature == "RCPE")
+        {
+            WriteSubrecordHeader(bw, "DATA", 16, bigEndian);
+            WriteUInt32(bw, 0u, bigEndian); // skill
+            WriteUInt32(bw, 0u, bigEndian); // level
+            WriteUInt32(bw, 0u, bigEndian); // category
+            WriteUInt32(bw, 0u, bigEndian); // subcategory
+
+            WriteSubrecordHeader(bw, "RCIL", 4, bigEndian);
+            WriteUInt32(bw, 0x00001000u, bigEndian);
+            WriteSubrecordHeader(bw, "RCQY", 4, bigEndian);
+            WriteUInt32(bw, 2u, bigEndian);
+
+            WriteSubrecordHeader(bw, "RCOD", 4, bigEndian);
+            WriteUInt32(bw, 0x00002000u, bigEndian);
+            WriteSubrecordHeader(bw, "RCQY", 4, bigEndian);
+            WriteUInt32(bw, 1u, bigEndian);
+        }
+
         return ms.ToArray();
+    }
+
+    private static void WriteUInt32(BinaryWriter bw, uint value, bool bigEndian)
+    {
+        if (bigEndian)
+        {
+            WriteBE(bw, value);
+        }
+        else
+        {
+            bw.Write(value);
+        }
     }
 
     private static void WriteSubrecordHeader(BinaryWriter bw, string signature, ushort dataLength, bool bigEndian)

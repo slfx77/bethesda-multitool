@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
@@ -91,7 +92,12 @@ internal sealed class CreatureRecordHandler(RecordParserContext context) : Recor
                         combatSkill = SubrecordDataReader.GetByte(fields, "CombatSkill");
                         magicSkill = SubrecordDataReader.GetByte(fields, "MagicSkill");
                         stealthSkill = SubrecordDataReader.GetByte(fields, "StealthSkill");
-                        attackDamage = (short)SubrecordDataReader.GetInt32(fields, "AttackDamage");
+                        if (sub.DataLength >= 10)
+                        {
+                            attackDamage = record.IsBigEndian
+                                ? BinaryPrimitives.ReadInt16BigEndian(subData[8..])
+                                : BinaryPrimitives.ReadInt16LittleEndian(subData[8..]);
+                        }
                     }
                     else
                     {

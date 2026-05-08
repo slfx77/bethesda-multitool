@@ -115,7 +115,7 @@ internal static class GeckWorldWriter
         // Placed Objects
         if (cell.PlacedObjects.Count > 0)
         {
-            var objectItems = BuildPlacedObjectList(cell.PlacedObjects, resolver);
+            var objectItems = BuildPlacedObjectList(cell.PlacedObjects, resolver, placedReferenceLocations);
             sections.Add(new ReportSection("Placed Objects",
             [
                 new ReportField("Objects", ReportValue.List(objectItems, $"{cell.PlacedObjects.Count} objects"))
@@ -265,7 +265,9 @@ internal static class GeckWorldWriter
     }
 
     private static List<ReportValue> BuildPlacedObjectList(
-        List<PlacedReference> placedObjects, FormIdResolver resolver)
+        List<PlacedReference> placedObjects,
+        FormIdResolver resolver,
+        IReadOnlyDictionary<uint, PlacedReferenceLocation>? placedReferenceLocations)
     {
         var items = new List<ReportValue>();
 
@@ -298,9 +300,22 @@ internal static class GeckWorldWriter
                 }
             }
 
-            var fields = BuildPlacedObjectFields(obj, resolver, baseStr, displayName, referenceEditorId);
+            var fields = BuildPlacedObjectFields(
+                obj,
+                resolver,
+                baseStr,
+                displayName,
+                referenceEditorId,
+                placedReferenceLocations: placedReferenceLocations);
 
-            items.Add(BuildPlacedObjectComposite(obj, fields, baseStr, displayName, referenceEditorId, resolver));
+            items.Add(BuildPlacedObjectComposite(
+                obj,
+                fields,
+                baseStr,
+                displayName,
+                referenceEditorId,
+                resolver,
+                placedReferenceLocations));
         }
 
         return items;
@@ -316,39 +331,38 @@ internal static class GeckWorldWriter
                      .Where(obj => obj.DestinationDoorFormId is > 0)
                      .OrderBy(obj => obj.FormId))
         {
-            var destinationDoorFormId = sourceDoor.DestinationDoorFormId!.Value;
-            if (placedReferenceLocations == null ||
-                !placedReferenceLocations.TryGetValue(destinationDoorFormId, out var destination))
-            {
-                items.Add(ReportValue.FormId(destinationDoorFormId, resolver));
-                continue;
-            }
-
-            var linkedDoor = destination.Ref;
-            var baseStr = !string.IsNullOrEmpty(linkedDoor.BaseEditorId)
-                ? linkedDoor.BaseEditorId
-                : resolver.GetEditorId(linkedDoor.BaseFormId)
-                  ?? GeckReportHelpers.FormatFormId(linkedDoor.BaseFormId);
-            var referenceEditorId = !string.IsNullOrEmpty(linkedDoor.EditorId)
-                ? linkedDoor.EditorId
-                : resolver.GetEditorId(linkedDoor.FormId);
+            var baseStr = !string.IsNullOrEmpty(sourceDoor.BaseEditorId)
+                ? sourceDoor.BaseEditorId
+                : resolver.GetEditorId(sourceDoor.BaseFormId)
+                  ?? GeckReportHelpers.FormatFormId(sourceDoor.BaseFormId);
+            var referenceEditorId = !string.IsNullOrEmpty(sourceDoor.EditorId)
+                ? sourceDoor.EditorId
+                : resolver.GetEditorId(sourceDoor.FormId);
             string? displayName = null;
-            var baseDisplay = resolver.GetDisplayName(linkedDoor.BaseFormId);
+            var baseDisplay = resolver.GetDisplayName(sourceDoor.BaseFormId);
             if (!string.IsNullOrEmpty(baseDisplay)
                 && !string.Equals(baseDisplay, baseStr, StringComparison.Ordinal))
             {
                 displayName = baseDisplay;
             }
 
-            var fields = BuildPlacedObjectFields(linkedDoor, resolver, baseStr, displayName, referenceEditorId);
-            fields.Add(new ReportField("Containing Cell",
-                ReportValue.FormId(destination.CellFormId, resolver),
-                $"0x{destination.CellFormId:X8}"));
-            fields.Add(new ReportField("Linked From",
-                ReportValue.FormId(sourceDoor.FormId, resolver),
-                $"0x{sourceDoor.FormId:X8}"));
+            var fields = BuildPlacedObjectFields(
+                sourceDoor,
+                resolver,
+                baseStr,
+                displayName,
+                referenceEditorId,
+                includeRotation: true,
+                placedReferenceLocations: placedReferenceLocations);
 
-            items.Add(BuildPlacedObjectComposite(linkedDoor, fields, baseStr, displayName, referenceEditorId, resolver));
+            items.Add(BuildPlacedObjectComposite(
+                sourceDoor,
+                fields,
+                baseStr,
+                displayName,
+                referenceEditorId,
+                resolver,
+                placedReferenceLocations));
         }
 
         return items;
@@ -359,7 +373,9 @@ internal static class GeckWorldWriter
         FormIdResolver resolver,
         string baseStr,
         string? displayName,
-        string? referenceEditorId)
+        string? referenceEditorId,
+        bool includeRotation = false,
+        IReadOnlyDictionary<uint, PlacedReferenceLocation>? placedReferenceLocations = null)
     {
         var fields = new List<ReportField>
         {
@@ -383,7 +399,7 @@ internal static class GeckWorldWriter
 
         var hasRotation = MathF.Abs(obj.RotX) > 0.001f || MathF.Abs(obj.RotY) > 0.001f ||
                           MathF.Abs(obj.RotZ) > 0.001f;
-        if (hasRotation)
+        if (hasRotation || includeRotation)
         {
             fields.Add(new ReportField("Rotation",
                 ReportValue.String($"({obj.RotX:F3}, {obj.RotY:F3}, {obj.RotZ:F3})")));
@@ -399,8 +415,24 @@ internal static class GeckWorldWriter
             fields.Add(new ReportField("Disabled", ReportValue.Bool(true)));
         }
 
-        AddOptionalFormIdField(fields, "Links to", obj.DestinationCellFormId, resolver);
-        AddOptionalFormIdField(fields, "Destination Door", obj.DestinationDoorFormId, resolver);
+        if (TryResolveDestinationDoor(obj, resolver, placedReferenceLocations, out var destinationDoor))
+        {
+            fields.Add(new ReportField("Links to",
+                ReportValue.FormId(destinationDoor.CellFormId, resolver),
+                $"0x{destinationDoor.CellFormId:X8}"));
+            fields.Add(new ReportField("Destination Door",
+                ReportValue.FormId(destinationDoor.Ref.FormId, destinationDoor.Label),
+                $"0x{destinationDoor.Ref.FormId:X8}"));
+            fields.Add(new ReportField("Destination Door Cell",
+                ReportValue.FormId(destinationDoor.CellFormId, resolver),
+                $"0x{destinationDoor.CellFormId:X8}"));
+        }
+        else
+        {
+            AddOptionalConcreteFormIdField(fields, "Links to", obj.DestinationCellFormId, resolver);
+            AddOptionalFormIdField(fields, "Destination Door", obj.DestinationDoorFormId, resolver);
+        }
+
         AddOptionalFormIdField(fields, "Enable Parent", obj.EnableParentFormId, resolver);
         AddOptionalFormIdField(fields, "Linked Ref", obj.LinkedRefFormId, resolver);
         AddOptionalFormIdField(fields, "Linked Ref Keyword", obj.LinkedRefKeywordFormId, resolver);
@@ -426,20 +458,79 @@ internal static class GeckWorldWriter
         string baseStr,
         string? displayName,
         string? referenceEditorId,
-        FormIdResolver resolver)
+        FormIdResolver resolver,
+        IReadOnlyDictionary<uint, PlacedReferenceLocation>? placedReferenceLocations = null)
     {
         var disabledTag = obj.IsInitiallyDisabled ? " [DISABLED]" : "";
+        var label = BuildPlacedReferenceLabel(obj, baseStr, displayName, referenceEditorId);
+        var linksToTag = "";
+        if (TryResolveDestinationDoor(obj, resolver, placedReferenceLocations, out var destinationDoor))
+        {
+            linksToTag =
+                $" -> Links to: {resolver.FormatFull(destinationDoor.CellFormId)} destination door: {destinationDoor.Label}";
+        }
+        else if (obj.DestinationCellFormId is > 0 && IsConcreteReportFormId(obj.DestinationCellFormId.Value))
+        {
+            linksToTag = $" -> Links to: {resolver.FormatFull(obj.DestinationCellFormId.Value)}";
+        }
+
+        var display =
+            $"{label}{disabledTag}{linksToTag}";
+        return new ReportValue.CompositeVal(fields, display);
+    }
+
+    private static bool TryResolveDestinationDoor(
+        PlacedReference obj,
+        FormIdResolver resolver,
+        IReadOnlyDictionary<uint, PlacedReferenceLocation>? placedReferenceLocations,
+        out DestinationDoorInfo destinationDoor)
+    {
+        destinationDoor = default;
+        if (obj.DestinationDoorFormId is not > 0 ||
+            placedReferenceLocations == null ||
+            !placedReferenceLocations.TryGetValue(obj.DestinationDoorFormId.Value, out var destination))
+        {
+            return false;
+        }
+
+        var destinationBase = !string.IsNullOrEmpty(destination.Ref.BaseEditorId)
+            ? destination.Ref.BaseEditorId
+            : resolver.GetEditorId(destination.Ref.BaseFormId)
+              ?? GeckReportHelpers.FormatFormId(destination.Ref.BaseFormId);
+        var destinationReferenceEditorId = !string.IsNullOrEmpty(destination.Ref.EditorId)
+            ? destination.Ref.EditorId
+            : resolver.GetEditorId(destination.Ref.FormId);
+        string? destinationDisplayName = null;
+        var destinationBaseDisplay = resolver.GetDisplayName(destination.Ref.BaseFormId);
+        if (!string.IsNullOrEmpty(destinationBaseDisplay)
+            && !string.Equals(destinationBaseDisplay, destinationBase, StringComparison.Ordinal))
+        {
+            destinationDisplayName = destinationBaseDisplay;
+        }
+
+        destinationDoor = new DestinationDoorInfo(
+            destination.Ref,
+            destination.CellFormId,
+            BuildPlacedReferenceLabel(
+                destination.Ref,
+                destinationBase,
+                destinationDisplayName,
+                destinationReferenceEditorId));
+        return true;
+    }
+
+    private static string BuildPlacedReferenceLabel(
+        PlacedReference obj,
+        string baseStr,
+        string? displayName,
+        string? referenceEditorId)
+    {
         var nameTag = displayName != null ? $" \"{displayName}\"" : "";
         var referenceTag = !string.IsNullOrEmpty(referenceEditorId) &&
                            !string.Equals(referenceEditorId, baseStr, StringComparison.Ordinal)
             ? $"{referenceEditorId} ({baseStr})"
             : baseStr;
-        var linksToTag = obj.DestinationCellFormId is > 0
-            ? $" -> Links to: {resolver.FormatFull(obj.DestinationCellFormId.Value)}"
-            : "";
-        var display =
-            $"{referenceTag}{nameTag} ({obj.RecordType}) [{GeckReportHelpers.FormatFormId(obj.FormId)}]{disabledTag}{linksToTag}";
-        return new ReportValue.CompositeVal(fields, display);
+        return $"{referenceTag}{nameTag} ({obj.RecordType}) [{GeckReportHelpers.FormatFormId(obj.FormId)}]";
     }
 
     private static void AddOptionalFormIdField(
@@ -455,6 +546,29 @@ internal static class GeckWorldWriter
 
         fields.Add(new ReportField(label, ReportValue.FormId(formId.Value, resolver), $"0x{formId.Value:X8}"));
     }
+
+    private static void AddOptionalConcreteFormIdField(
+        List<ReportField> fields,
+        string label,
+        uint? formId,
+        FormIdResolver resolver)
+    {
+        if (formId is > 0 && IsConcreteReportFormId(formId.Value))
+        {
+            fields.Add(new ReportField(label, ReportValue.FormId(formId.Value, resolver), $"0x{formId.Value:X8}"));
+        }
+    }
+
+    private static bool IsConcreteReportFormId(uint formId)
+    {
+        return (formId & 0xFF000000) != 0xFE000000 &&
+               (formId & 0xFF000000) != 0xFF000000;
+    }
+
+    private readonly record struct DestinationDoorInfo(
+        PlacedReference Ref,
+        uint CellFormId,
+        string Label);
 
     internal static void AppendPlacedObjects(
         StringBuilder sb, List<PlacedReference> placedObjects, FormIdResolver resolver)

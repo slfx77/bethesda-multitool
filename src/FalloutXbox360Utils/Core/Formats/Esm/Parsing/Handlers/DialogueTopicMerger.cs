@@ -295,11 +295,11 @@ internal sealed class DialogueTopicMerger(RecordParserContext context) : RecordH
             dialogueByFormId.TryAdd(dialogues[i].FormId, i);
         }
 
-        // Build DIAL FormID -> topic record for quest propagation
-        var topicByFormId = new Dictionary<uint, DialogTopicRecord>();
-        foreach (var topic in topics)
+        // Build DIAL FormID -> topic list index for quest propagation and response-count derivation.
+        var topicByFormId = new Dictionary<uint, int>();
+        for (var i = 0; i < topics.Count; i++)
         {
-            topicByFormId.TryAdd(topic.FormId, topic);
+            topicByFormId.TryAdd(topics[i].FormId, i);
         }
 
         var linked = 0;
@@ -307,6 +307,13 @@ internal sealed class DialogueTopicMerger(RecordParserContext context) : RecordH
 
         foreach (var (dialFormId, infoFormIds) in topicToInfoMap)
         {
+            if (topicByFormId.TryGetValue(dialFormId, out var topicIndex) &&
+                topics[topicIndex].ResponseCount == 0 &&
+                infoFormIds.Count > 0)
+            {
+                topics[topicIndex] = topics[topicIndex] with { ResponseCount = infoFormIds.Count };
+            }
+
             foreach (var infoFormId in infoFormIds)
             {
                 if (!dialogueByFormId.TryGetValue(infoFormId, out var idx))
@@ -326,7 +333,8 @@ internal sealed class DialogueTopicMerger(RecordParserContext context) : RecordH
 
                 // Propagate QuestFormId from the DIAL topic if the INFO lacks one
                 if ((!dialogue.QuestFormId.HasValue || dialogue.QuestFormId.Value == 0)
-                    && topicByFormId.TryGetValue(dialFormId, out var topic)
+                    && topicByFormId.TryGetValue(dialFormId, out var parentTopicIndex)
+                    && topics[parentTopicIndex] is { } topic
                     && topic.QuestFormId is > 0)
                 {
                     updated = updated with { QuestFormId = topic.QuestFormId };

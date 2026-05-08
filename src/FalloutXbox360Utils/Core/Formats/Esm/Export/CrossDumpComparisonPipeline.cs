@@ -12,6 +12,7 @@ internal static class CrossDumpComparisonPipeline
     [
         "Ammo",
         "Armor",
+        "BaseEffect",
         "Cell",
         "Consumable",
         "Container",
@@ -41,9 +42,14 @@ internal static class CrossDumpComparisonPipeline
     private static readonly Dictionary<string, string[]> RecordTypeDependencies =
         new(StringComparer.OrdinalIgnoreCase)
         {
+            ["Ammo"] = ["Projectile", "Weapon"],
+            ["Consumable"] = ["BaseEffect"],
+            ["Container"] = ["Cell"],
+            ["Dialogue"] = ["DialogTopic"],
             ["Faction"] = ["NPC", "Creature"],
             ["Key"] = ["Cell"],
             ["MapMarker"] = ["Cell"],
+            ["Spell"] = ["BaseEffect"],
             ["WeaponMod"] = ["Weapon"]
         };
 
@@ -447,6 +453,9 @@ internal static class CrossDumpComparisonPipeline
                 break;
             case "Armor":
                 records.Armor.Clear();
+                break;
+            case "BaseEffect":
+                records.BaseEffects.Clear();
                 break;
             case "Cell":
                 records.Cells.Clear();

@@ -57,9 +57,8 @@ internal static class SubrecordEffectSchemas
         };
 
         // EFIT - Effect Item (20 bytes)
-        // PDB: EffectItemData struct — all five fields are T_INT4
         schemas[new SubrecordSchemaRegistry.SchemaKey("EFIT", null, 20)] = new SubrecordSchema(
-            F.Int32("Magnitude"), F.UInt32("Area"), F.UInt32("Duration"),
+            F.Float("Magnitude"), F.UInt32("Area"), F.UInt32("Duration"),
             F.UInt32("Type"), F.Int32("ActorValue"))
         {
             Description = "Effect Item"

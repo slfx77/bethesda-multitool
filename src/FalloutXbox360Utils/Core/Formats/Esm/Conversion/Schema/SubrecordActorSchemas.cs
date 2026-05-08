@@ -191,8 +191,8 @@ internal static class SubrecordActorSchemas
             F.UInt8("CombatSkill"),
             F.UInt8("MagicSkill"),
             F.UInt8("StealthSkill"),
-            F.Int32("AttackDamage"),
-            F.Int16("Health"),
+            F.Int32("Health"),
+            F.Int16("AttackDamage"),
             F.Bytes("Remaining", 7))
         {
             Description = "Creature Data"

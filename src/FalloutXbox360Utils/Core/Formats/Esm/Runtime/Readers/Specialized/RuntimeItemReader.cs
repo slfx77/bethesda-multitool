@@ -1,3 +1,4 @@
+using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
@@ -248,12 +249,17 @@ internal sealed class RuntimeItemReader(
         // BipedFlags: TESBipedModelForm.iBipedObjectSlots (uint32 at offset 116)
         var bipedFlags = BinaryUtils.ReadUInt32BE(buffer, Layouts.ArmoBipedFlagsOffset);
 
-        // DamageResistance: OBJ_ARMO.sRating (uint16 at offset 376)
-        var damageResistance = (int)BinaryUtils.ReadUInt16BE(buffer, Layouts.ArmoRatingOffset);
-
-        // DamageThreshold: OBJ_ARMO.fDamageThreshold (float32 at offset 380)
-        var damageThreshold =
-            RuntimeMemoryContext.ReadValidatedFloat(buffer, Layouts.ArmoDamageThresholdOffset, 0, 100);
+        // OBJ_ARMO rating data. FNV-era runtime builds store DT as a scaled
+        // UInt16 when the float DT field is zero (e.g. 4000 => 20.0 DT).
+        var rawRating = (int)BinaryUtils.ReadUInt16BE(buffer, Layouts.ArmoRatingOffset);
+        var rawThreshold = BinaryUtils.ReadFloatBE(buffer, Layouts.ArmoDamageThresholdOffset);
+        var damageThreshold = GameStatNormalizer.ArmorDamageThreshold(rawThreshold);
+        var damageResistance = GameStatNormalizer.ArmorDamageResistance(rawRating);
+        if (damageThreshold <= 0f && rawRating > 200 && rawRating <= 40000)
+        {
+            damageThreshold = GameStatNormalizer.ArmorDamageThreshold(rawRating / 200f);
+            damageResistance = 0;
+        }
 
         // EquipmentType: BGSEquipType.eEquipType (int32 enum at offset 344)
         var equipTypeValue = RuntimeMemoryContext.ReadInt32BE(buffer, Layouts.ArmoEquipTypeOffset);
@@ -262,8 +268,7 @@ internal sealed class RuntimeItemReader(
             : EquipmentType.None;
 
         // Model paths from TESBipedModelForm.bipedModel / worldModel (TESModelTextureSwap.cModel at +4)
-        var modelPath = _context.ReadBsStringT(offset, Layouts.ArmoBipedModelPathOffset)
-                        ?? _context.ReadBsStringT(offset, Layouts.ArmoWorldModelPathOffset);
+        var modelPath = ReadArmorModelPath(offset, buffer);
 
         return new ArmorRecord
         {
@@ -344,6 +349,7 @@ internal sealed class RuntimeItemReader(
             Flags = (byte)flags,
             ClipRounds = clipRounds,
             ProjectileFormId = projectileFormId,
+            ProjectileFormIds = projectileFormId.HasValue ? [projectileFormId.Value] : [],
             ModelPath = modelPath,
             Bounds = ReadBounds(buffer),
             Offset = offset,
@@ -525,7 +531,7 @@ internal sealed class RuntimeItemReader(
             buffer, Layouts.AlchAddictionChanceOffset, 0, 1);
 
         // Walk EffectItem list (BSSimpleList<EffectItem*> at offset 80)
-        var effects = WalkEffectItemList(buffer, Layouts.AlchEffectListOffset);
+        var effects = RuntimeEffectItemListReader.Read(_context, buffer, Layouts.AlchEffectListOffset, 32);
 
         return new ConsumableRecord
         {
@@ -557,81 +563,34 @@ internal sealed class RuntimeItemReader(
         return bounds is { X1: 0, Y1: 0, Z1: 0, X2: 0, Y2: 0, Z2: 0 } ? null : bounds;
     }
 
-    /// <summary>
-    ///     Walk a BSSimpleList of EffectItem* pointers (same structure as SPEL/ENCH effects).
-    ///     Each EffectItem is 24 bytes: pSetting(4) + magnitude(4) + area(4) + duration(4) + type(4) + actorValue(4).
-    /// </summary>
-    private List<EnchantmentEffect> WalkEffectItemList(byte[] structBuffer, int listOffset)
+    private string? ReadArmorModelPath(long structFileOffset, byte[] buffer)
     {
-        var result = new List<EnchantmentEffect>();
-
-        var headVa = BinaryUtils.ReadUInt32BE(structBuffer, listOffset);
-        if (headVa == 0 || !_context.IsValidPointer(headVa))
+        var direct = _context.ReadBsStringT(structFileOffset, Layouts.ArmoBipedModelPathOffset)
+                     ?? _context.ReadBsStringT(structFileOffset, Layouts.ArmoWorldModelPathOffset);
+        if (LooksLikeModelPath(direct))
         {
-            return result;
+            return direct;
         }
 
-        var visited = new HashSet<uint>();
-        var currentVa = headVa;
-
-        for (var i = 0; i < 32; i++)
+        // Older prototype layouts have small drift in TESBipedModelForm/TESModelTextureSwap.
+        // Probe nearby BSStringT slots and keep only obvious NIF paths.
+        for (var fieldOffset = 48; fieldOffset + 8 <= buffer.Length; fieldOffset += 4)
         {
-            if (currentVa == 0 || !visited.Add(currentVa))
+            var candidate = _context.ReadBsStringT(structFileOffset, fieldOffset);
+            if (LooksLikeModelPath(candidate))
             {
-                break;
+                return candidate;
             }
-
-            var nodeFileOffset = _context.VaToFileOffset(currentVa);
-            if (nodeFileOffset == null)
-            {
-                break;
-            }
-
-            var nodeBuffer = _context.ReadBytes(nodeFileOffset.Value, 8);
-            if (nodeBuffer == null)
-            {
-                break;
-            }
-
-            var itemVa = BinaryUtils.ReadUInt32BE(nodeBuffer);
-            var nextVa = BinaryUtils.ReadUInt32BE(nodeBuffer, 4);
-
-            if (itemVa != 0)
-            {
-                var itemOffset = _context.VaToFileOffset(itemVa);
-                if (itemOffset != null)
-                {
-                    var eiBuf = _context.ReadBytes(itemOffset.Value, 24);
-                    if (eiBuf != null)
-                    {
-                        var settingFormId = _context.FollowPointerVaToFormId(
-                            BinaryUtils.ReadUInt32BE(eiBuf));
-                        var magnitude = BinaryUtils.ReadFloatBE(eiBuf, 4);
-                        var area = BinaryUtils.ReadUInt32BE(eiBuf, 8);
-                        var duration = BinaryUtils.ReadUInt32BE(eiBuf, 12);
-                        var type = BinaryUtils.ReadUInt32BE(eiBuf, 16);
-                        var actorValue = unchecked((int)BinaryUtils.ReadUInt32BE(eiBuf, 20));
-
-                        if (settingFormId is > 0)
-                        {
-                            result.Add(new EnchantmentEffect
-                            {
-                                EffectFormId = settingFormId.Value,
-                                Magnitude = RuntimeMemoryContext.IsNormalFloat(magnitude) ? magnitude : 0f,
-                                Area = area,
-                                Duration = duration,
-                                Type = type,
-                                ActorValue = actorValue
-                            });
-                        }
-                    }
-                }
-            }
-
-            currentVa = nextVa;
         }
 
-        return result;
+        return direct;
+    }
+
+    private static bool LooksLikeModelPath(string? value)
+    {
+        return !string.IsNullOrWhiteSpace(value) &&
+               value.Contains('\\', StringComparison.Ordinal) &&
+               value.EndsWith(".nif", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

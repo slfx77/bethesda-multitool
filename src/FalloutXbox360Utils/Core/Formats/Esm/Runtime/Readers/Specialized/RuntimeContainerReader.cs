@@ -179,7 +179,7 @@ internal sealed class RuntimeContainerReader(RuntimeMemoryContext context)
     private int ContScriptPtrOffset => 108 + _s; // TESScriptableForm::pFormScript (base+104, field+4)
     private int ContContentsDataOffset => 52 + _s;
     private int ContContentsNextOffset => 56 + _s;
-    private int ContFlagsOffset => 124 + _s;
+    private int ContFlagsOffset => 152 + _s; // TESObjectCONT.Data (CONT_DATA flags)
 
     #endregion
 }

@@ -204,6 +204,13 @@ internal static class RecordFieldFlattener
             ["ClipRounds"] = a.ClipRounds.ToString(),
             ["Flags"] = a.Flags.ToString(),
             ["Projectile"] = ResolveRef(a.ProjectileFormId, resolver),
+            ["Projectiles"] = a.ProjectileFormIds.Count > 1
+                ? string.Join("; ", a.ProjectileFormIds
+                    .Where(id => id != 0)
+                    .Distinct()
+                    .OrderBy(id => id)
+                    .Select(id => ResolveRef(id, resolver)))
+                : "",
             ["ModelPath"] = a.ModelPath ?? ""
         };
     }

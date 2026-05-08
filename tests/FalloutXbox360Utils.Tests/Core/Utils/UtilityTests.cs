@@ -72,6 +72,16 @@ public class UtilityTests
         Assert.Equal("", result);
     }
 
+    [Theory]
+    [InlineData(new byte[] { 0x4A, 0x61, 0x6C, 0x61, 0x70, 0x65, 0xF1, 0x6F, 0x00 }, "Jalapeño")]
+    [InlineData(new byte[] { 0x54, 0xE6, 0x6C, 0x65, 0x73, 0x00 }, "Tæles")]
+    [InlineData(new byte[] { 0xA1, 0x4C, 0x61, 0x20, 0x46, 0x61, 0x6E, 0x74, 0x6F, 0x6D, 0x61, 0x21, 0x00 }, "¡La Fantoma!")]
+    public void ReadNullTermString_Span_DecodesWindows1252(byte[] data, string expected)
+    {
+        var result = EsmStringUtils.ReadNullTermString(data);
+        Assert.Equal(expected, result);
+    }
+
     #endregion
 
     #region EsmStringUtils.ReadNullTermString (byte[] overload)
@@ -210,6 +220,20 @@ public class UtilityTests
         byte[] buffer = [0x48, 0x69, 0x00, 0x00, 0x00]; // "Hi..."
         var result = EsmStringUtils.ValidateAndDecodeAscii(buffer, 2);
         Assert.Equal("Hi", result);
+    }
+
+    [Fact]
+    public void ValidateAndDecodeGameText_DecodesWindows1252()
+    {
+        byte[] buffer = [0x4A, 0x61, 0x6C, 0x61, 0x70, 0x65, 0xF1, 0x6F];
+        Assert.Equal("Jalapeño", EsmStringUtils.ValidateAndDecodeGameText(buffer, buffer.Length));
+    }
+
+    [Fact]
+    public void ValidateAndDecodeGameText_UndefinedWindows1252Byte_ReturnsNull()
+    {
+        byte[] buffer = [0x42, 0x61, 0x64, 0x8F, 0x4E, 0x61, 0x6D, 0x65];
+        Assert.Null(EsmStringUtils.ValidateAndDecodeGameText(buffer, buffer.Length));
     }
 
     #endregion

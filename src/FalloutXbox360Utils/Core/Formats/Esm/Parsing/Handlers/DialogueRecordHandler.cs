@@ -190,6 +190,17 @@ internal sealed class DialogueRecordHandler(RecordParserContext context) : Recor
             _runtimeMerger.MergeRuntimeDialogTopicData(deduped);
         }
 
+        foreach (var topic in deduped)
+        {
+            var displayName = !string.IsNullOrWhiteSpace(topic.FullName)
+                ? topic.FullName
+                : topic.DummyPrompt;
+            if (!string.IsNullOrWhiteSpace(displayName))
+            {
+                Context.FormIdToFullName[topic.FormId] = displayName;
+            }
+        }
+
         return deduped;
     }
 
@@ -637,6 +648,84 @@ internal sealed class DialogueRecordHandler(RecordParserContext context) : Recor
         List<DialogTopicRecord> topics)
     {
         _runtimeMerger.MergeRuntimeDialogueTopicLinks(dialogues, topics);
+    }
+
+    internal void BackfillDialogTopicPromptText(
+        List<DialogueRecord> dialogues,
+        List<DialogTopicRecord> topics)
+    {
+        if (dialogues.Count == 0 || topics.Count == 0)
+        {
+            return;
+        }
+
+        var promptsByTopic = dialogues
+            .Where(dialogue => dialogue.TopicFormId is > 0)
+            .GroupBy(dialogue => dialogue.TopicFormId!.Value)
+            .ToDictionary(
+                group => group.Key,
+                group => PickTopicPrompt(group));
+
+        for (var i = 0; i < topics.Count; i++)
+        {
+            var topic = topics[i];
+            if (!promptsByTopic.TryGetValue(topic.FormId, out var prompt) ||
+                string.IsNullOrWhiteSpace(prompt))
+            {
+                continue;
+            }
+
+            var fullNameLooksEditorOnly = TextLooksEditorOnly(topic.FullName, topic.EditorId);
+            if (!fullNameLooksEditorOnly && !string.IsNullOrWhiteSpace(topic.FullName))
+            {
+                continue;
+            }
+
+            topics[i] = topic with
+            {
+                FullName = prompt,
+                DummyPrompt = string.IsNullOrWhiteSpace(topic.DummyPrompt)
+                    ? prompt
+                    : topic.DummyPrompt
+            };
+            Context.FormIdToFullName[topic.FormId] = prompt;
+        }
+    }
+
+    private static string? PickTopicPrompt(IEnumerable<DialogueRecord> dialogues)
+    {
+        foreach (var dialogue in dialogues.OrderBy(d => d.FormId))
+        {
+            if (!string.IsNullOrWhiteSpace(dialogue.PromptText))
+            {
+                return dialogue.PromptText;
+            }
+        }
+
+        return dialogues
+            .OrderBy(d => d.FormId)
+            .SelectMany(d => d.Responses.OrderBy(r => r.ResponseNumber))
+            .Select(response => response.Text)
+            .FirstOrDefault(text => !string.IsNullOrWhiteSpace(text));
+    }
+
+    private static bool TextLooksEditorOnly(string? value, string? editorId)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var trimmed = value.Trim();
+        if (!string.IsNullOrWhiteSpace(editorId) &&
+            string.Equals(trimmed, editorId.Trim(), StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return char.IsDigit(trimmed[0]) &&
+               trimmed.Any(char.IsLetter) &&
+               !trimmed.Any(char.IsWhiteSpace);
     }
 
     /// <summary>

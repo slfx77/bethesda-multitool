@@ -1,3 +1,4 @@
+using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Magic;
@@ -78,14 +79,21 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
                         data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
                     if (fields.Count > 0)
                     {
+                        var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+                        var magnitude = GameStatNormalizer.EffectMagnitude(subData, record.IsBigEndian);
+                        var area = SubrecordDataReader.GetUInt32(fields, "Area");
+                        var duration = SubrecordDataReader.GetUInt32(fields, "Duration");
+                        var effectTargetType = SubrecordDataReader.GetUInt32(fields, "Type");
+                        var actorValue = SubrecordDataReader.GetInt32(fields, "ActorValue", -1);
+
                         effects.Add(new EnchantmentEffect
                         {
                             EffectFormId = currentEffectId,
-                            Magnitude = SubrecordDataReader.GetFloat(fields, "Magnitude"),
-                            Area = SubrecordDataReader.GetUInt32(fields, "Area"),
-                            Duration = SubrecordDataReader.GetUInt32(fields, "Duration"),
-                            Type = SubrecordDataReader.GetUInt32(fields, "Type"),
-                            ActorValue = SubrecordDataReader.GetInt32(fields, "ActorValue", -1)
+                            Magnitude = magnitude,
+                            Area = GameStatNormalizer.IsPlausibleEffectArea(area) ? area : 0,
+                            Duration = GameStatNormalizer.IsPlausibleEffectDuration(duration) ? duration : 0,
+                            Type = GameStatNormalizer.IsPlausibleEffectTarget(effectTargetType) ? effectTargetType : 0,
+                            ActorValue = GameStatNormalizer.IsPlausibleActorValue(actorValue) ? actorValue : -1
                         });
                     }
 
@@ -657,14 +665,20 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
                     var fields = SubrecordDataReader.ReadFields("EFIT", null, subData, record.IsBigEndian);
                     if (fields.Count > 0)
                     {
+                        var magnitude = GameStatNormalizer.EffectMagnitude(subData, record.IsBigEndian);
+                        var area = SubrecordDataReader.GetUInt32(fields, "Area");
+                        var duration = SubrecordDataReader.GetUInt32(fields, "Duration");
+                        var effectTargetType = SubrecordDataReader.GetUInt32(fields, "Type");
+                        var actorValue = SubrecordDataReader.GetInt32(fields, "ActorValue", -1);
+
                         effects.Add(new EnchantmentEffect
                         {
                             EffectFormId = currentEffectId,
-                            Magnitude = SubrecordDataReader.GetFloat(fields, "Magnitude"),
-                            Area = SubrecordDataReader.GetUInt32(fields, "Area"),
-                            Duration = SubrecordDataReader.GetUInt32(fields, "Duration"),
-                            Type = SubrecordDataReader.GetUInt32(fields, "Type"),
-                            ActorValue = SubrecordDataReader.GetInt32(fields, "ActorValue", -1)
+                            Magnitude = magnitude,
+                            Area = GameStatNormalizer.IsPlausibleEffectArea(area) ? area : 0,
+                            Duration = GameStatNormalizer.IsPlausibleEffectDuration(duration) ? duration : 0,
+                            Type = GameStatNormalizer.IsPlausibleEffectTarget(effectTargetType) ? effectTargetType : 0,
+                            ActorValue = GameStatNormalizer.IsPlausibleActorValue(actorValue) ? actorValue : -1
                         });
                     }
 

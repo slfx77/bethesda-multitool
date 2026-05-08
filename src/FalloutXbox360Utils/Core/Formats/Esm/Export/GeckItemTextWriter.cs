@@ -294,6 +294,20 @@ internal static class GeckItemTextWriter
                 sb.AppendLine($"  Projectile:     {resolver.FormatFull(item.ProjectileFormId.Value)}");
             }
 
+            var projectileFormIds = item.ProjectileFormIds
+                .Where(id => id != 0)
+                .Distinct()
+                .OrderBy(id => id)
+                .ToList();
+            if (projectileFormIds.Count > 1)
+            {
+                sb.AppendLine("  Projectiles:");
+                foreach (var projectileFormId in projectileFormIds)
+                {
+                    sb.AppendLine($"    - {resolver.FormatFull(projectileFormId)}");
+                }
+            }
+
             if (!string.IsNullOrEmpty(item.ModelPath))
             {
                 sb.AppendLine($"  Model:          {item.ModelPath}");

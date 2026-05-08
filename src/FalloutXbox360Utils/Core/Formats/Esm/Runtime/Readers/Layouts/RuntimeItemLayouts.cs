@@ -215,7 +215,7 @@ internal sealed class RuntimeItemLayouts
     #region TESObjectALCH — PDB size ~216, Debug dump ~220, Release dump 232
 
     internal int AlchStructSize => 216 + _s;
-    internal int AlchEffectListOffset => 80 + _s; // BSSimpleList<EffectItem*> (inherited from EffectItemList)
+    internal int AlchEffectListOffset => 64 + _s; // BSSimpleList<EffectItem*> (inherited from EffectItemList)
     internal int AlchWeightOffset => 152 + _s;
     internal int AlchValueOffset => 184 + _s;
     internal int AlchFlagsOffset => 188 + _s; // AlchemyItemData.iFlags (byte)

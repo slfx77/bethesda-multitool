@@ -11,6 +11,7 @@ using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm;
 
+[Collection("Logger")]
 public sealed class EsmFileAnalyzerTests(SampleFileFixture samples) : IDisposable
 {
     private readonly List<string> _tempDirectories = [];

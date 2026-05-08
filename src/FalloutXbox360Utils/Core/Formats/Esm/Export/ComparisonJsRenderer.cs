@@ -328,6 +328,10 @@ internal static class ComparisonJsRenderer
                                            DATA = await inflate(compressed);
                                            setLoadingStatus('Rendering comparison table...');
                                            render();
+                                           requestAnimationFrame(equalizeVisibleBuildColumns);
+                                           window.addEventListener('resize', function() {
+                                             requestAnimationFrame(equalizeVisibleBuildColumns);
+                                           });
                                            document.addEventListener('toggle', function(ev) {
                                              if (!ev.target || !ev.target.classList
                                                  || !ev.target.classList.contains('rd-field-disclosure')) {
@@ -498,7 +502,10 @@ internal static class ComparisonJsRenderer
                                          if (content.style.display === 'none') {
                                            content.style.display = '';
                                            header.textContent = header.textContent.replace('\u25B6', '\u25BC');
-                                           requestAnimationFrame(alignRenderedDetailRows);
+                                           requestAnimationFrame(function() {
+                                             equalizeVisibleBuildColumns();
+                                             alignRenderedDetailRows();
+                                           });
                                          }
                                        }
 
@@ -627,6 +634,7 @@ internal static class ComparisonJsRenderer
                                            var tbl = buildTable(records, dumps, sparseDumps, hasCoords, gridCoords, isDialogue);
                                            container.appendChild(tbl);
                                          }
+                                         requestAnimationFrame(equalizeVisibleBuildColumns);
                                        }
 
                                        // --- Table builder ---
@@ -659,7 +667,7 @@ internal static class ComparisonJsRenderer
                                          for (var i = 0; i < dumps.length; i++) {
                                            if (sparseDumps.has(i)) continue; // Skip sparse builds entirely
                                            headerRow.innerHTML +=
-                                             '<th class="build-header build-col-' + i + '" data-dump-idx="' + i
+                                             '<th class="build-header build-cell build-col-' + i + '" data-dump-idx="' + i
                                              + '" onclick="filterByBuild(this)">'
                                              + esc(dumps[i].shortName) + '<br><span class="dump-date">'
                                              + (dumps[i].isBase ? '(base)' : dumps[i].date.substring(0, 10))
@@ -702,7 +710,8 @@ internal static class ComparisonJsRenderer
                                              editorId = questEid;
                                              displayName = topicEid;
                                              searchData = (formId + ' ' + questEid + ' ' + questName + ' '
-                                               + topicEid + ' ' + topicName + ' ' + speakerName + ' ' + (rec.editorId || '')).toLowerCase();
+                                               + topicEid + ' ' + topicName + ' ' + speakerName + ' ' + (rec.editorId || '')
+                                               + ' ' + (rec.searchText || '')).toLowerCase();
                                            } else {
                                              var meta = rec.metadata || {};
                                              // Name change display
@@ -726,6 +735,7 @@ internal static class ComparisonJsRenderer
 
                                              searchData = (formId + ' ' + editorId + ' ' + displayName + ' ' + coordsDisplay)
                                                .toLowerCase();
+                                             if (rec.searchText) searchData += ' ' + String(rec.searchText).toLowerCase();
                                            }
 
                                            // Compute badges -- resolve snapshots for each dump
@@ -764,7 +774,7 @@ internal static class ComparisonJsRenderer
                                            var previousSnapshotKey = null;
                                            for (var di = 0; di < dumps.length; di++) {
                                              if (sparseDumps.has(di)) continue;
-                                             var colClass = 'build-col-' + di;
+                                             var colClass = 'build-cell build-col-' + di;
                                              var statusCellPrefix = '<td class="' + colClass
                                                + ' status-cell" data-dump-idx="' + di + '" data-status="';
                                              if (present.has(di)) {
@@ -815,7 +825,7 @@ internal static class ComparisonJsRenderer
                                            }
                                            for (var di = 0; di < dumps.length; di++) {
                                              if (sparseDumps.has(di)) continue;
-                                             detailHtml += '<td class="build-col-' + di + '"></td>';
+                                             detailHtml += '<td class="build-cell build-col-' + di + '"></td>';
                                            }
                                            detailRow.innerHTML = detailHtml;
                                            tbody.appendChild(detailRow);
@@ -823,6 +833,54 @@ internal static class ComparisonJsRenderer
 
                                          table.appendChild(tbody);
                                          return table;
+                                       }
+
+                                       // Keep the visible build columns equal-width while leaving the
+                                       // identity columns on the browser's natural content-sized table layout.
+                                       function equalizeVisibleBuildColumns() {
+                                         var tables = document.querySelectorAll('#tables-container table');
+                                         for (var i = 0; i < tables.length; i++) {
+                                           equalizeTableBuildColumns(tables[i]);
+                                         }
+                                       }
+
+                                       function equalizeTableBuildColumns(table) {
+                                         if (!table || table.offsetParent === null) return;
+                                         var visibleBuildHeaders = [];
+                                         var buildHeaders = table.querySelectorAll('th.build-header');
+                                         for (var i = 0; i < buildHeaders.length; i++) {
+                                           if (isRenderableTableCell(buildHeaders[i])) {
+                                             visibleBuildHeaders.push(buildHeaders[i]);
+                                           }
+                                         }
+                                         if (visibleBuildHeaders.length === 0) {
+                                           table.style.removeProperty('--build-col-width');
+                                           return;
+                                         }
+
+                                         var identityWidth = 0;
+                                         var identityHeaders = table.querySelectorAll('thead th:not(.build-header)');
+                                         for (var hi = 0; hi < identityHeaders.length; hi++) {
+                                           if (isRenderableTableCell(identityHeaders[hi])) {
+                                             identityWidth += Math.ceil(identityHeaders[hi].getBoundingClientRect().width);
+                                           }
+                                         }
+
+                                         var container = table.parentElement;
+                                         var containerWidth = container
+                                           ? container.getBoundingClientRect().width
+                                           : table.getBoundingClientRect().width;
+                                         if (!containerWidth) containerWidth = table.getBoundingClientRect().width;
+
+                                         var available = containerWidth - identityWidth - visibleBuildHeaders.length;
+                                         var width = Math.max(140,
+                                           Math.floor(available / visibleBuildHeaders.length));
+                                         table.style.setProperty('--build-col-width', width + 'px');
+                                       }
+
+                                       function isRenderableTableCell(cell) {
+                                         return cell && cell.offsetParent !== null
+                                           && window.getComputedStyle(cell).display !== 'none';
                                        }
 
                                        // --- Snapshot resolution ---
@@ -1751,25 +1809,52 @@ internal static class ComparisonJsRenderer
                                          if (item.type === 'formId') return item.raw || item.display || '';
                                          if (item.type === 'composite' && item.fields) {
                                            var fieldMap = buildCompositeFieldMap(item);
+                                           if (fieldMap.Base && fieldMap.Type && fieldMap.Position) {
+                                             if (fieldMap.FormID) {
+                                               return 'PlacedFormID=' + scalarKeyText(fieldMap.FormID);
+                                             }
+                                             return 'Placed=' + scalarKeyText(fieldMap.Base)
+                                               + '|Type=' + scalarKeyText(fieldMap.Type)
+                                               + '|Position=' + scalarKeyText(fieldMap.Position)
+                                               + '|Cell=' + scalarKeyText(fieldMap.Cell || fieldMap['Containing Cell'])
+                                               + '|Worldspace=' + scalarKeyText(fieldMap.Worldspace);
+                                           }
                                            if (fieldMap.FormID) {
                                              return 'FormID=' + scalarKeyText(fieldMap.FormID);
                                            }
                                            if (fieldMap.Item) {
                                              return 'Item=' + scalarKeyText(fieldMap.Item);
                                            }
+                                           var namedItemKey = firstNonEmptyScalarKey(
+                                             fieldMap.EditorID, fieldMap['Editor ID'], fieldMap.Name);
+                                           if (namedItemKey && (fieldMap.Qty || fieldMap.Count)) {
+                                             return 'Item=' + namedItemKey;
+                                           }
                                            if (fieldMap.Faction) {
                                              return 'Faction=' + scalarKeyText(fieldMap.Faction);
+                                           }
+                                           if (fieldMap.Effect) {
+                                             return 'Effect=' + scalarKeyText(fieldMap.Effect)
+                                               + '|Target=' + scalarKeyText(fieldMap.Target);
+                                           }
+                                           if (fieldMap.Rank && fieldMap.Type
+                                               && (fieldMap.Ability || fieldMap.Quest
+                                                 || fieldMap['Entry Point'] || fieldMap.Function
+                                                 || fieldMap['Effect Form'])) {
+                                             return 'PerkEntry=Rank=' + scalarKeyText(fieldMap.Rank)
+                                               + '|Type=' + scalarKeyText(fieldMap.Type)
+                                               + '|Ability=' + scalarKeyText(fieldMap.Ability)
+                                               + '|Quest=' + scalarKeyText(fieldMap.Quest)
+                                               + '|QuestStage=' + scalarKeyText(fieldMap['Quest Stage'])
+                                               + '|EntryPoint=' + scalarKeyText(fieldMap['Entry Point'])
+                                               + '|Function=' + scalarKeyText(fieldMap.Function)
+                                               + '|EffectForm=' + scalarKeyText(fieldMap['Effect Form']);
                                            }
                                            if (fieldMap.Control) {
                                              return 'Control=' + scalarKeyText(fieldMap.Control);
                                            }
                                            if (fieldMap.Index && (fieldMap.Text || fieldMap.Log)) {
                                              return 'Index=' + scalarKeyText(fieldMap.Index);
-                                           }
-                                           if (fieldMap.Base && fieldMap.Type && fieldMap.Position) {
-                                             return 'Placed=' + scalarKeyText(fieldMap.Base) + '|'
-                                               + scalarKeyText(fieldMap.Type) + '|'
-                                               + scalarKeyText(fieldMap.Position);
                                            }
                                            // Use raw values from composite fields for stable matching
                                            var parts = [];
@@ -1787,6 +1872,14 @@ internal static class ComparisonJsRenderer
                                          if (value.rawInt !== undefined && value.rawInt !== null) return String(value.rawInt);
                                          if (value.raw !== undefined && value.raw !== null) return String(value.raw);
                                          if (value.display !== undefined && value.display !== null) return String(value.display);
+                                         return '';
+                                       }
+
+                                       function firstNonEmptyScalarKey() {
+                                         for (var i = 0; i < arguments.length; i++) {
+                                           var text = scalarKeyText(arguments[i]);
+                                           if (text) return text;
+                                         }
                                          return '';
                                        }
 
@@ -1886,6 +1979,7 @@ internal static class ComparisonJsRenderer
                                              if (header) header.textContent = header.textContent.replace('\u25B6', '\u25BC');
                                            }
                                          });
+                                         requestAnimationFrame(equalizeVisibleBuildColumns);
                                          var rows = Array.from(document.querySelectorAll('.detail-row:not(.hidden)'));
                                          var i = 0;
                                          function batch() {
@@ -1955,7 +2049,10 @@ internal static class ComparisonJsRenderer
                                          if (content.style.display === 'none') {
                                            content.style.display = '';
                                            header.textContent = header.textContent.replace('\u25B6', '\u25BC');
-                                           requestAnimationFrame(alignRenderedDetailRows);
+                                           requestAnimationFrame(function() {
+                                             equalizeVisibleBuildColumns();
+                                             alignRenderedDetailRows();
+                                           });
                                            if (_pendingBuildSort) {
                                              var tbody = content.querySelector('tbody');
                                              if (tbody) {
@@ -2042,12 +2139,16 @@ internal static class ComparisonJsRenderer
                                            var tbl = buildTable(chunkRecords, dumps, sparseDumps, hasCoords, gridCoords, isDialogue);
                                            content.appendChild(tbl);
                                            content.dataset.loaded = '1';
+                                           requestAnimationFrame(equalizeVisibleBuildColumns);
                                            if (false) { // cleanup already done above
                                            }
                                          } else {
                                            content.style.display = '';
                                            header.textContent = header.textContent.replace('\u25B6', '\u25BC');
-                                           requestAnimationFrame(alignRenderedDetailRows);
+                                           requestAnimationFrame(function() {
+                                             equalizeVisibleBuildColumns();
+                                             alignRenderedDetailRows();
+                                           });
                                          }
                                        }
 
@@ -2059,7 +2160,10 @@ internal static class ComparisonJsRenderer
                                          if (content && content.style.display === 'none') {
                                            content.style.display = '';
                                            if (header) header.textContent = header.textContent.replace('\u25B6', '\u25BC');
-                                           requestAnimationFrame(alignRenderedDetailRows);
+                                           requestAnimationFrame(function() {
+                                             equalizeVisibleBuildColumns();
+                                             alignRenderedDetailRows();
+                                           });
                                          }
                                        }
 
@@ -2129,7 +2233,10 @@ internal static class ComparisonJsRenderer
                                            btns[4].disabled = atEnd;
                                            btns[5].disabled = atEnd;
                                          }
-                                         requestAnimationFrame(alignRenderedDetailRows);
+                                         requestAnimationFrame(function() {
+                                           equalizeVisibleBuildColumns();
+                                           alignRenderedDetailRows();
+                                         });
                                        }
 
                                        function navBuilds(dir) {

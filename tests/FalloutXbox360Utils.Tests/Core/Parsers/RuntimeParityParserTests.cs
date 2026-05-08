@@ -315,6 +315,54 @@ public sealed class RuntimeParityParserTests : IDisposable
     }
 
     [Fact]
+    public void ParseFactions_RuntimeOverlayFillsRelationList()
+    {
+        var data = new byte[DataSize];
+        const uint factionFormId = 0x00122010;
+        const uint targetFactionFormId = 0x00122011;
+        const int runtimeFactionOffset = 4096;
+        const int reactionOffset = 4608;
+        const int targetFactionOffset = 5120;
+
+        var factionRecordBytes = BuildRecordBytes(factionFormId, "FACT", false,
+            ("EDID", NullTermString("FactionFromEsm")));
+        Array.Copy(factionRecordBytes, 0, data, 0, factionRecordBytes.Length);
+
+        WriteTesFormHeader(data, runtimeFactionOffset, 0x82010000, 0x08, factionFormId);
+        WriteUInt32BE(data, runtimeFactionOffset + 56, FileOffsetToVa(reactionOffset));
+        WriteUInt32BE(data, runtimeFactionOffset + 60, 0);
+        WriteUInt32BE(data, runtimeFactionOffset + 68, 0x04);
+
+        WriteUInt32BE(data, reactionOffset, FileOffsetToVa(targetFactionOffset));
+        WriteInt32BE(data, reactionOffset + 4, -25);
+        WriteUInt32BE(data, reactionOffset + 8, 2);
+        WriteTesFormHeader(data, targetFactionOffset, 0x82010000, 0x08, targetFactionFormId);
+
+        var scanResult = MakeScanResult(
+            [new DetectedMainRecord("FACT", (uint)(factionRecordBytes.Length - 24), 0, factionFormId, 0, false)],
+            runtimeEditorIds:
+            [
+                new RuntimeEditorIdEntry
+                {
+                    EditorId = "FactionFromRuntime",
+                    FormId = factionFormId,
+                    FormType = 0x08,
+                    TesFormOffset = runtimeFactionOffset
+                }
+            ]);
+
+        var parser = CreateParser(scanResult, data);
+        var faction = Assert.Single(parser.ParseFactions());
+        var relation = Assert.Single(faction.Relations);
+
+        Assert.Equal("FactionFromEsm", faction.EditorId);
+        Assert.Equal(0x04u, faction.Flags);
+        Assert.Equal(targetFactionFormId, relation.FactionFormId);
+        Assert.Equal(-25, relation.Modifier);
+        Assert.Equal(2u, relation.CombatFlags);
+    }
+
+    [Fact]
     public void ParseAll_RuntimeDialogueTopicLinksFillTopicQuestAndDerivedResponseCount()
     {
         var data = new byte[DataSize];

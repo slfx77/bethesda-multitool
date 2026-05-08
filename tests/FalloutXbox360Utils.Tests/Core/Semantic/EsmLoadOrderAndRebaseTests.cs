@@ -319,9 +319,76 @@ public sealed class EsmLoadOrderAndRebaseTests : IDisposable
         var cells = index.StructuredRecords["Cell"];
         Assert.Contains(0x00005000u, cells.Keys);
         Assert.Contains(0x00005001u, cells.Keys);
-        Assert.Contains(0xFF000001u, cells.Keys);
+        Assert.DoesNotContain(0xFF000001u, cells.Keys);
+        var syntheticVirtualKey = cells.Keys.Single(key => key != 0x00005000u && key != 0x00005001u);
+        Assert.Equal(0xFD000001u, syntheticVirtualKey);
+        Assert.Single(cells[syntheticVirtualKey]);
+        Assert.Null(cells[syntheticVirtualKey][1].EditorId);
         Assert.False(index.RecordMetadata.TryGetValue("Cell", out var metadata) &&
                      metadata.ContainsKey(0x00005000));
+    }
+
+    [Fact]
+    public void CrossDumpAggregator_aligns_virtual_only_exterior_cells_by_coordinate()
+    {
+        var resolver = BuildCellResolver();
+        var firstDump = new RecordCollection
+        {
+            Cells =
+            [
+                new CellRecord
+                {
+                    FormId = 0xFF000001,
+                    EditorId = "[Virtual 4,-2 WastelandNV]",
+                    GridX = 4,
+                    GridY = -2,
+                    WorldspaceFormId = 0x00000010,
+                    IsVirtual = true
+                }
+            ]
+        };
+        var secondDump = new RecordCollection
+        {
+            Cells =
+            [
+                new CellRecord
+                {
+                    FormId = 0xFE800123,
+                    EditorId = "[Virtual 4,-2 WastelandNV]",
+                    GridX = 4,
+                    GridY = -2,
+                    WorldspaceFormId = 0x00000010,
+                    IsVirtual = true
+                }
+            ]
+        };
+
+        var index = CrossDumpAggregator.Aggregate(
+            [
+                ("first.dmp", firstDump, resolver, null),
+                ("second.dmp", secondDump, resolver, null)
+            ]);
+
+        var cells = index.StructuredRecords["Cell"];
+        Assert.DoesNotContain(0xFF000001u, cells.Keys);
+        Assert.DoesNotContain(0xFE800123u, cells.Keys);
+        var syntheticKey = Assert.Single(cells.Keys);
+        Assert.Equal(0xFD000001u, syntheticKey);
+        Assert.Equal([0, 1], cells[syntheticKey].Keys.OrderBy(key => key).ToArray());
+        Assert.Null(cells[syntheticKey][0].EditorId);
+        Assert.Null(cells[syntheticKey][1].EditorId);
+        Assert.Equal((4, -2), index.CellGridCoords[syntheticKey]);
+
+        var json = ComparisonJsonBlobBuilder.Build(
+            cells,
+            index.Dumps,
+            "Cell",
+            index.RecordGroups["Cell"],
+            null,
+            null,
+            index.RecordMetadata["Cell"],
+            index.CellGridCoords);
+        Assert.DoesNotContain("[Virtual", json);
     }
 
     [Fact]

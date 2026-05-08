@@ -1,8 +1,8 @@
 using System.Buffers.Binary;
-using System.Text;
 using FalloutXbox360Utils.Core.Coverage;
 using FalloutXbox360Utils.Core.Pdb;
 using FalloutXbox360Utils.Core.Strings;
+using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.RuntimeBuffer;
 
@@ -59,7 +59,7 @@ internal sealed class RuntimeBufferStringExtractor
 
         for (var i = 0; i < buffer.Length; i++)
         {
-            if (buffer[i] >= 0x20 && buffer[i] <= 0x7E)
+            if (EsmStringUtils.IsPrintableGameTextByte(buffer[i]))
             {
                 if (start < 0)
                 {
@@ -74,7 +74,7 @@ internal sealed class RuntimeBufferStringExtractor
                     if (len >= MinStringLength && len <= MaxStringLength)
                     {
                         summary.TotalStrings++;
-                        var str = Encoding.ASCII.GetString(buffer, start, len);
+                        var str = EsmStringUtils.DecodeGameText(buffer.AsSpan(start, len));
                         var category = CategorizeString(str);
                         hits.Add(new RuntimeStringHit
                         {
@@ -158,13 +158,13 @@ internal sealed class RuntimeBufferStringExtractor
 
         for (var i = 0; i < end; i++)
         {
-            if (buf[i] < 0x20 || buf[i] > 0x7E)
+            if (!EsmStringUtils.IsPrintableGameTextByte(buf[i]))
             {
                 return null;
             }
         }
 
-        var text = Encoding.ASCII.GetString(buf, 0, end);
+        var text = EsmStringUtils.DecodeGameText(buf.AsSpan(0, end));
         return new RuntimeDecodedString(text, fileOffset.Value, va, end, CategorizeString(text));
     }
 

@@ -1,5 +1,4 @@
 using System.IO.MemoryMappedFiles;
-using System.Text;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
 
@@ -55,22 +54,6 @@ internal static class EsmEditorIdStringReader
         var strBuffer = new byte[sLen];
         accessor.ReadArray(strFileOffset.Value, strBuffer, 0, sLen);
 
-        // Validate: should be mostly printable ASCII
-        var printable = 0;
-        for (var i = 0; i < sLen; i++)
-        {
-            var c = strBuffer[i];
-            if ((c >= 32 && c <= 126) || c == '\n' || c == '\r' || c == '\t')
-            {
-                printable++;
-            }
-        }
-
-        if (printable < sLen * 0.8)
-        {
-            return null;
-        }
-
-        return Encoding.ASCII.GetString(strBuffer, 0, sLen);
+        return EsmStringUtils.ValidateAndDecodeGameText(strBuffer, sLen);
     }
 }

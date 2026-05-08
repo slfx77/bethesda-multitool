@@ -131,6 +131,7 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context) : Recor
                         ? existing.RuntimeStructOffset
                         : entry.TesFormOffset.Value
                 };
+                RegisterTopicDisplayName(entry.FormId, topics[idx]);
                 mergedCount++;
             }
             else
@@ -151,6 +152,7 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context) : Recor
                     RuntimeStructOffset = entry.TesFormOffset.Value,
                     IsBigEndian = true
                 });
+                RegisterTopicDisplayName(entry.FormId, topics[^1]);
                 newCount++;
             }
         }
@@ -158,6 +160,17 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context) : Recor
         Logger.Instance.Debug(
             $"  [Semantic] Runtime DIAL merge: {mergedCount} merged, {newCount} new " +
             $"(total: {topics.Count})");
+    }
+
+    private void RegisterTopicDisplayName(uint formId, DialogTopicRecord topic)
+    {
+        var displayName = !string.IsNullOrWhiteSpace(topic.FullName)
+            ? topic.FullName
+            : topic.DummyPrompt;
+        if (!string.IsNullOrWhiteSpace(displayName))
+        {
+            Context.FormIdToFullName[formId] = displayName;
+        }
     }
 
     /// <summary>
@@ -545,7 +558,7 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context) : Recor
         return dialogue with
         {
             EditorId = dialogue.EditorId ?? runtimeEditorId ?? runtimeInfo.FormEditorId,
-            PromptText = runtimeInfo.PromptText ?? dialogue.PromptText,
+            PromptText = dialogue.PromptText ?? runtimeInfo.PromptText,
             InfoIndex = runtimeInfo.InfoIndex,
             InfoFlags = runtimeInfo.InfoFlags,
             InfoFlagsExt = runtimeInfo.InfoFlagsExt,

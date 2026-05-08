@@ -81,6 +81,12 @@ internal static class ComparisonCssStyles
                                        .col-name { width: 1px; white-space: nowrap; }
                                        .col-coords { width: 1px; white-space: nowrap; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 12px; }
                                        .col-formid { width: 1px; white-space: nowrap; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 12px; }
+                                       .build-cell {
+                                         width: var(--build-col-width, auto);
+                                         min-width: var(--build-col-width, 0);
+                                         max-width: var(--build-col-width, none);
+                                         overflow-wrap: anywhere;
+                                       }
                                        .sortable { cursor: pointer; user-select: none; }
                                        .formid { font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 12px; }
                                        .name-change { color: #999; font-size: 11px; }

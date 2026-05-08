@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Buffers.Binary;
+using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
@@ -18,15 +19,8 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
     /// </summary>
     internal List<KeyRecord> ParseKeys()
     {
-        var keys = ParseRecordList<KeyRecord>("KEYM", 256,
-            (record, _) => new KeyRecord
-            {
-                FormId = record.FormId,
-                EditorId = Context.GetEditorId(record.FormId),
-                FullName = Context.FindFullNameNear(record.Offset),
-                Offset = record.Offset,
-                IsBigEndian = record.IsBigEndian
-            },
+        var keys = ParseRecordList("KEYM", 1024,
+            ParseKeyFromAccessor,
             record => new KeyRecord
             {
                 FormId = record.FormId,
@@ -36,10 +30,100 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
                 IsBigEndian = record.IsBigEndian
             });
 
-        Context.MergeRuntimeRecords(keys, 0x2E, k => k.FormId,
-            (reader, entry) => reader.ReadRuntimeKey(entry), "keys");
+        Context.MergeRuntimeOverlayRecords(keys, [0x2E], k => k.FormId,
+            (reader, entry) => reader.ReadRuntimeKey(entry),
+            MergeKeyRuntimeData,
+            "keys");
 
         return keys;
+    }
+
+    private KeyRecord? ParseKeyFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return new KeyRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            };
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        string? fullName = null;
+        string? modelPath = null;
+        var value = 0;
+        float weight = 0;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "FULL":
+                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODL":
+                    modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "DATA" when sub.DataLength >= 8:
+                {
+                    var fields = SubrecordDataReader.ReadFields("DATA", "KEYM", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        value = SubrecordDataReader.GetInt32(fields, "Value");
+                        weight = SubrecordDataReader.GetFloat(fields, "Weight");
+                    }
+
+                    break;
+                }
+            }
+        }
+
+        if (!string.IsNullOrEmpty(editorId))
+        {
+            Context.FormIdToEditorId[record.FormId] = editorId;
+        }
+
+        if (!string.IsNullOrEmpty(fullName))
+        {
+            Context.FormIdToFullName[record.FormId] = fullName;
+        }
+
+        return new KeyRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            FullName = fullName,
+            ModelPath = modelPath,
+            Value = value,
+            Weight = weight,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    private static KeyRecord MergeKeyRuntimeData(KeyRecord existing, KeyRecord runtime)
+    {
+        return existing with
+        {
+            EditorId = existing.EditorId ?? runtime.EditorId,
+            FullName = existing.FullName ?? runtime.FullName,
+            ModelPath = existing.ModelPath ?? runtime.ModelPath,
+            Value = existing.Value != 0 ? existing.Value : runtime.Value,
+            Weight = Math.Abs(existing.Weight) > float.Epsilon ? existing.Weight : runtime.Weight,
+            Offset = existing.Offset != 0 ? existing.Offset : runtime.Offset,
+            IsBigEndian = existing.IsBigEndian || runtime.IsBigEndian
+        };
     }
 
     /// <summary>
@@ -123,17 +207,12 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
 
                     break;
                 }
-                case "DNAM" when sub.DataLength >= 8:
-                {
-                    var fields = SubrecordDataReader.ReadFields("DNAM", "ARMO", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
-                    {
-                        damageResistance = SubrecordDataReader.GetInt16(fields, "DamageResistance");
-                        damageThreshold = SubrecordDataReader.GetFloat(fields, "DamageThreshold");
-                    }
-
+                case "DNAM" when sub.DataLength >= 2:
+                    (damageResistance, damageThreshold) = ParseArmorDefenseData(
+                        subData,
+                        record.IsBigEndian,
+                        Context.Game);
                     break;
-                }
                 case "BMDT" when sub.DataLength >= 8:
                 {
                     var fields = SubrecordDataReader.ReadFields("BMDT", null, subData, record.IsBigEndian);
@@ -178,6 +257,36 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
+    }
+
+    private static (int DamageResistance, float DamageThreshold) ParseArmorDefenseData(
+        ReadOnlySpan<byte> data,
+        bool bigEndian,
+        FalloutGame game)
+    {
+        var damageResistance = bigEndian
+            ? BinaryPrimitives.ReadInt16BigEndian(data)
+            : BinaryPrimitives.ReadInt16LittleEndian(data);
+        var damageThreshold = 0f;
+
+        // Fallout 3 stores DR at +0. New Vegas extends DNAM with DT at +4
+        // while leaving DR at +0 for compatibility. Some inputs do not carry
+        // reliable game metadata, so a plausible DT at +4 is accepted as FNV.
+        if ((game == FalloutGame.FalloutNewVegas || data.Length >= 8) && data.Length >= 8)
+        {
+            var possibleThreshold = bigEndian
+                ? BinaryPrimitives.ReadSingleBigEndian(data[4..])
+                : BinaryPrimitives.ReadSingleLittleEndian(data[4..]);
+            if (GameStatNormalizer.ArmorDamageThreshold(possibleThreshold) > 0 ||
+                game == FalloutGame.FalloutNewVegas)
+            {
+                damageThreshold = possibleThreshold;
+            }
+        }
+
+        return (
+            GameStatNormalizer.ArmorDamageResistance(damageResistance),
+            GameStatNormalizer.ArmorDamageThreshold(damageThreshold));
     }
 
     /// <summary>

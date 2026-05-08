@@ -100,6 +100,57 @@ internal sealed class RuntimeMemoryContext(
         return ReadBytes(fileOffset.Value, count);
     }
 
+    /// <summary>
+    ///     Walk an inline BSSimpleList where the struct stores the first item pointer
+    ///     at <paramref name="listOffset" /> and the first heap node pointer at +4.
+    ///     Heap nodes are 8 bytes: item pointer, next node pointer.
+    /// </summary>
+    public IEnumerable<uint> WalkInlineBSSimpleListItemPointers(
+        byte[] structBuffer,
+        int listOffset,
+        int maxItems = MaxListItems)
+    {
+        if (listOffset < 0 || listOffset + 8 > structBuffer.Length || maxItems <= 0)
+        {
+            yield break;
+        }
+
+        var itemPtr = BinaryUtils.ReadUInt32BE(structBuffer, listOffset);
+        var nextPtr = BinaryUtils.ReadUInt32BE(structBuffer, listOffset + 4);
+        if (itemPtr != 0)
+        {
+            yield return itemPtr;
+        }
+
+        var visited = new HashSet<uint>();
+        var count = itemPtr != 0 ? 1 : 0;
+        while (nextPtr != 0 &&
+               count < maxItems &&
+               IsValidPointer(nextPtr) &&
+               visited.Add(nextPtr))
+        {
+            var nodeFileOffset = VaToFileOffset(nextPtr);
+            if (nodeFileOffset == null)
+            {
+                yield break;
+            }
+
+            var nodeBuffer = ReadBytes(nodeFileOffset.Value, 8);
+            if (nodeBuffer == null)
+            {
+                yield break;
+            }
+
+            itemPtr = BinaryUtils.ReadUInt32BE(nodeBuffer);
+            nextPtr = BinaryUtils.ReadUInt32BE(nodeBuffer, 4);
+            if (itemPtr != 0)
+            {
+                yield return itemPtr;
+                count++;
+            }
+        }
+    }
+
     public static int ReadInt32BE(byte[] data, int offset)
     {
         return (int)BinaryUtils.ReadUInt32BE(data, offset);
@@ -381,7 +432,7 @@ internal sealed class RuntimeMemoryContext(
         var strBuffer = new byte[sLen];
         Accessor.ReadArray(strFileOffset.Value, strBuffer, 0, sLen);
 
-        var result = EsmStringUtils.ValidateAndDecodeAscii(strBuffer, sLen);
+        var result = EsmStringUtils.ValidateAndDecodeGameText(strBuffer, sLen);
         if (result == null)
         {
             failureReason = BSStringFailure.InvalidAscii;

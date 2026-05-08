@@ -155,6 +155,11 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
                         best = best with { Responses = other.Responses };
                     }
 
+                    if (string.IsNullOrEmpty(best.PromptText) && !string.IsNullOrEmpty(other.PromptText))
+                    {
+                        best = best with { PromptText = other.PromptText };
+                    }
+
                     if (other.ConditionFunctions.Count > 0)
                     {
                         var merged = new HashSet<ushort>(best.ConditionFunctions);
@@ -258,6 +263,7 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
         var linkToTopics = new List<uint>();
         var linkFromTopics = new List<uint>();
         var addTopics = new List<uint>();
+        string? promptText = null;
 
         // CTDA condition-based speaker tracking
         uint? conditionSpeaker = null;
@@ -311,6 +317,9 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
                     currentResponseText = EsmStringUtils.ReadNullTermString(subData);
                     currentEmotionType = 0;
                     currentEmotionValue = 0;
+                    break;
+                case "RNAM":
+                    promptText = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "TRDT" when sub.DataLength >= 24:
                 {
@@ -489,6 +498,7 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
             ConditionFunctions = conditionFunctions,
             Conditions = conditions,
             Responses = responses,
+            PromptText = promptText,
             PreviousInfo = previousInfo,
             Difficulty = difficulty,
             LinkToTopics = linkToTopics,

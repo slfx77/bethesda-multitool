@@ -70,6 +70,21 @@ internal static class GeckItemWriter
                 $"0x{item.ProjectileFormId.Value:X8}"));
         }
 
+        var projectileFormIds = item.ProjectileFormIds
+            .Where(id => id != 0)
+            .Distinct()
+            .OrderBy(id => id)
+            .ToList();
+        if (projectileFormIds.Count > 1)
+        {
+            statsFields.Add(new ReportField("Projectiles",
+                ReportValue.List(
+                    projectileFormIds
+                        .Select(id => (ReportValue)ReportValue.FormId(id, resolver))
+                        .ToList(),
+                    string.Join("; ", projectileFormIds.Select(resolver.FormatFull)))));
+        }
+
         if (!string.IsNullOrEmpty(item.ModelPath))
         {
             statsFields.Add(new ReportField("Model", ReportValue.String(item.ModelPath)));
@@ -168,7 +183,7 @@ internal static class GeckItemWriter
 
     internal static RecordReport BuildKeyReport(
         KeyRecord key, FormIdResolver resolver,
-        IReadOnlyList<(PlacedReference Ref, CellRecord Cell)>? linkedDoors = null)
+        IReadOnlyList<KeyLockedDoorInfo>? linkedDoors = null)
     {
         var sections = new List<ReportSection>();
 
@@ -186,34 +201,11 @@ internal static class GeckItemWriter
         if (linkedDoors is { Count: > 0 })
         {
             var doorItems = linkedDoors
-                .OrderBy(d => d.Cell.FullName ?? d.Cell.EditorId ?? "")
-                .Select(d =>
-                {
-                    var fields = new List<ReportField>();
-
-                    // Door/container base object
-                    if (d.Ref.BaseFormId != 0)
-                        fields.Add(new ReportField("Object",
-                            ReportValue.FormId(d.Ref.BaseFormId, resolver),
-                            $"0x{d.Ref.BaseFormId:X8}"));
-
-                    // Lock level
-                    if (d.Ref.LockLevel.HasValue)
-                        fields.Add(new ReportField("Lock Level",
-                            ReportValue.Int(d.Ref.LockLevel.Value)));
-
-                    // Cell location
-                    var cellName = d.Cell.FullName ?? d.Cell.EditorId ?? $"0x{d.Cell.FormId:X8}";
-                    fields.Add(new ReportField("Cell",
-                        ReportValue.FormId(d.Cell.FormId, resolver),
-                        $"0x{d.Cell.FormId:X8}"));
-
-                    // Summary
-                    var objName = resolver.FormatFull(d.Ref.BaseFormId);
-                    var lockStr = d.Ref.LockLevel.HasValue ? $" (Lock {d.Ref.LockLevel})" : "";
-                    return (ReportValue)new ReportValue.CompositeVal(fields,
-                        $"{objName}{lockStr} in {cellName}");
-                })
+                .OrderBy(d => d.CellName ?? d.CellEditorId ?? "")
+                .ThenBy(d => d.GridY ?? int.MaxValue)
+                .ThenBy(d => d.GridX ?? int.MaxValue)
+                .ThenBy(d => d.Ref.FormId)
+                .Select(d => (ReportValue)BuildKeyLinkedDoorComposite(d, resolver))
                 .ToList();
 
             sections.Add(new ReportSection($"Linked Doors ({linkedDoors.Count})",
@@ -223,6 +215,118 @@ internal static class GeckItemWriter
         }
 
         return new RecordReport("Key", key.FormId, key.EditorId, key.FullName, sections);
+    }
+
+    private static ReportValue.CompositeVal BuildKeyLinkedDoorComposite(
+        KeyLockedDoorInfo info,
+        FormIdResolver resolver)
+    {
+        var door = info.Ref;
+        var baseStr = !string.IsNullOrEmpty(door.BaseEditorId)
+            ? door.BaseEditorId
+            : resolver.GetEditorId(door.BaseFormId)
+              ?? GeckReportHelpers.FormatFormId(door.BaseFormId);
+        var referenceEditorId = !string.IsNullOrEmpty(door.EditorId)
+            ? door.EditorId
+            : resolver.GetEditorId(door.FormId);
+        var baseDisplay = resolver.GetDisplayName(door.BaseFormId);
+        string? displayName = !string.IsNullOrEmpty(baseDisplay) &&
+                              !string.Equals(baseDisplay, baseStr, StringComparison.Ordinal)
+            ? baseDisplay
+            : null;
+
+        var fields = new List<ReportField>
+        {
+            new("FormID", ReportValue.FormId(door.FormId, GeckReportHelpers.FormatFormId(door.FormId)),
+                $"0x{door.FormId:X8}"),
+            new("Base", ReportValue.String(baseStr)),
+            new("Type", ReportValue.String(door.RecordType)),
+            new("Position", ReportValue.String($"({door.X:F1}, {door.Y:F1}, {door.Z:F1})")),
+            new("Containing Cell", ReportValue.FormId(info.CellFormId, resolver), $"0x{info.CellFormId:X8}")
+        };
+
+        if (!string.IsNullOrEmpty(referenceEditorId) &&
+            !string.Equals(referenceEditorId, baseStr, StringComparison.Ordinal))
+        {
+            fields.Add(new ReportField("Reference Editor ID", ReportValue.String(referenceEditorId)));
+        }
+
+        if (displayName != null)
+        {
+            fields.Add(new ReportField("Name", ReportValue.String(displayName)));
+        }
+
+        if (info.WorldspaceFormId is > 0)
+        {
+            fields.Add(new ReportField("Worldspace",
+                ReportValue.FormId(info.WorldspaceFormId.Value, resolver),
+                $"0x{info.WorldspaceFormId.Value:X8}"));
+        }
+
+        if (info.GridX.HasValue && info.GridY.HasValue)
+        {
+            fields.Add(new ReportField("Grid", ReportValue.String($"{info.GridX.Value},{info.GridY.Value}")));
+        }
+
+        var hasRotation = MathF.Abs(door.RotX) > 0.001f || MathF.Abs(door.RotY) > 0.001f ||
+                          MathF.Abs(door.RotZ) > 0.001f;
+        if (hasRotation)
+        {
+            fields.Add(new ReportField("Rotation",
+                ReportValue.String($"({door.RotX:F3}, {door.RotY:F3}, {door.RotZ:F3})")));
+        }
+
+        if (Math.Abs(door.Scale - 1.0f) > 0.01f)
+        {
+            fields.Add(new ReportField("Scale", ReportValue.Float(door.Scale, "F2")));
+        }
+
+        if (door.LockLevel.HasValue)
+        {
+            fields.Add(new ReportField("Lock Level", ReportValue.Int(door.LockLevel.Value)));
+        }
+
+        if (door.IsInitiallyDisabled)
+        {
+            fields.Add(new ReportField("Disabled", ReportValue.Bool(true)));
+        }
+
+        AddOptionalFormIdField(fields, "Links to", door.DestinationCellFormId, resolver);
+        AddOptionalFormIdField(fields, "Destination Door", door.DestinationDoorFormId, resolver);
+        AddOptionalFormIdField(fields, "Enable Parent", door.EnableParentFormId, resolver);
+        AddOptionalFormIdField(fields, "Linked Ref", door.LinkedRefFormId, resolver);
+
+        if (door.ModelPath != null)
+        {
+            fields.Add(new ReportField("Model", ReportValue.String(door.ModelPath)));
+        }
+
+        var disabledTag = door.IsInitiallyDisabled ? " [DISABLED]" : "";
+        var lockTag = door.LockLevel.HasValue ? $" (Lock {door.LockLevel.Value})" : "";
+        var referenceTag = !string.IsNullOrEmpty(referenceEditorId) &&
+                           !string.Equals(referenceEditorId, baseStr, StringComparison.Ordinal)
+            ? $"{referenceEditorId} ({baseStr})"
+            : baseStr;
+        var cellLabel = info.CellName ?? info.CellEditorId ?? GeckReportHelpers.FormatFormId(info.CellFormId);
+        var linksToTag = door.DestinationCellFormId is > 0
+            ? $" -> Links to: {resolver.FormatFull(door.DestinationCellFormId.Value)}"
+            : "";
+        var summary =
+            $"{referenceTag} ({door.RecordType}) [{GeckReportHelpers.FormatFormId(door.FormId)}]{disabledTag}{lockTag} in {cellLabel}{linksToTag}";
+
+        return new ReportValue.CompositeVal(fields, summary);
+    }
+
+    private static void AddOptionalFormIdField(
+        List<ReportField> fields,
+        string label,
+        uint? formId,
+        FormIdResolver resolver)
+    {
+        if (formId is > 0)
+        {
+            fields.Add(new ReportField(label, ReportValue.FormId(formId.Value, resolver), $"0x{formId.Value:X8}"));
+        }
     }
 
     // ── Text-format section writers (delegate to GeckItemTextWriter) ──

@@ -136,7 +136,7 @@ internal static class GeckDialogueWriter
 
             sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(topic.FormId)}");
             sb.AppendLine($"Editor ID:      {topic.EditorId ?? "(none)"}");
-            sb.AppendLine($"Display Name:   {topic.FullName ?? "(none)"}");
+            sb.AppendLine($"Display Name:   {ResolveDialogTopicPlayerText(topic) ?? "(none)"}");
             sb.AppendLine($"Type:           {topic.TopicTypeName}");
             sb.AppendLine($"Endianness:     {(topic.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")}");
             sb.AppendLine($"Offset:         0x{topic.Offset:X8}");
@@ -539,9 +539,12 @@ internal static class GeckDialogueWriter
         sections.Add(new ReportSection("Identity", identityFields));
 
         var promptFields = new List<ReportField>();
-        if (!string.IsNullOrWhiteSpace(topic.FullName))
-            promptFields.Add(new ReportField("Player", ReportValue.String($"\"{topic.FullName}\"")));
-        if (!string.IsNullOrWhiteSpace(topic.DummyPrompt) &&
+        var playerPrompt = ResolveDialogTopicPlayerText(topic);
+        if (!string.IsNullOrWhiteSpace(playerPrompt))
+            promptFields.Add(new ReportField("Player", ReportValue.String($"\"{playerPrompt}\"")));
+        if (!DialogTopicTextLooksEditorOnly(topic.FullName, topic.EditorId) &&
+            !string.IsNullOrWhiteSpace(topic.FullName) &&
+            !string.IsNullOrWhiteSpace(topic.DummyPrompt) &&
             !string.Equals(topic.DummyPrompt, topic.FullName, StringComparison.Ordinal))
             promptFields.Add(new ReportField("Fallback", ReportValue.String($"\"{topic.DummyPrompt}\"")));
         if (promptFields.Count > 0)
@@ -558,7 +561,39 @@ internal static class GeckDialogueWriter
         if (refFields.Count > 0)
             sections.Add(new ReportSection("References", refFields));
 
-        return new RecordReport("DialogTopic", topic.FormId, topic.EditorId, topic.FullName, sections);
+        return new RecordReport("DialogTopic", topic.FormId, topic.EditorId, playerPrompt, sections);
+    }
+
+    private static string? ResolveDialogTopicPlayerText(DialogTopicRecord topic)
+    {
+        if (DialogTopicTextLooksEditorOnly(topic.FullName, topic.EditorId) &&
+            !string.IsNullOrWhiteSpace(topic.DummyPrompt))
+        {
+            return topic.DummyPrompt;
+        }
+
+        return !string.IsNullOrWhiteSpace(topic.FullName)
+            ? topic.FullName
+            : topic.DummyPrompt;
+    }
+
+    private static bool DialogTopicTextLooksEditorOnly(string? value, string? editorId)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var trimmed = value.Trim();
+        if (!string.IsNullOrWhiteSpace(editorId) &&
+            string.Equals(trimmed, editorId.Trim(), StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return char.IsDigit(trimmed[0]) &&
+               trimmed.Any(char.IsLetter) &&
+               !trimmed.Any(char.IsWhiteSpace);
     }
 
     /// <summary>Build a structured dialogue report from a <see cref="DialogueRecord" />.</summary>
