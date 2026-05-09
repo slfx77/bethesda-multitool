@@ -4,7 +4,6 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 ///     Cross-build comparison built on top of <see cref="RecordReportComparer" />.
 ///     Walks per-FormID snapshots from N builds, runs pairwise diffs, and demotes
 ///     known platform/era differences to "expected drift" so real regressions stand out.
-///
 ///     Drift entries are seeded from CLAUDE.md "Known Content Differences" and the
 ///     memory/ docs (formtype_drift.md, nov2009_struct_sizes.md). The allow-list is
 ///     keyed on (RecordType, SectionName, FieldKey) optionally pair-restricted by
@@ -12,249 +11,213 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 /// </summary>
 internal static class CrossBuildReportComparer
 {
-    /// <summary>
-    ///     Why a particular field difference is expected and should not count as a regression.
-    ///     The Pair predicate, when present, must match the (buildA, buildB) labels
-    ///     (case-insensitive substring contains). Null = applies to any pair.
-    /// </summary>
-    internal sealed record DriftRule(
-        string RecordType,
-        string SectionName,
-        string FieldKey,
-        string Reason,
-        Func<string, string, bool>? Pair = null);
-
-    internal sealed record FieldDiff(
-        string Section,
-        string Field,
-        string ValueA,
-        string ValueB);
-
-    internal sealed record RecordDiff(
-        string RecordType,
-        uint FormId,
-        string? EditorId,
-        List<FieldDiff> Differences);
-
-    internal sealed class PairResult
-    {
-        internal string BuildA { get; init; } = "";
-        internal string BuildB { get; init; } = "";
-
-        // Per-record-type counts.
-        internal Dictionary<string, int> SharedFormIds { get; } = new(StringComparer.Ordinal);
-        internal Dictionary<string, int> Matching { get; } = new(StringComparer.Ordinal);
-        internal Dictionary<string, int> DriftAllowed { get; } = new(StringComparer.Ordinal);
-        internal Dictionary<string, List<RecordDiff>> Regressions { get; } = new(StringComparer.Ordinal);
-    }
-
     private static readonly List<DriftRule> DefaultDriftRules =
     [
         // --- Global wildcards (evaluated first; cover the high-volume systematic noise) ---
 
         // Section length differing between prototype & ship builds accounts for ~28% of
         // all observed regressions. Appears whenever a subrecord was added/removed.
-        new DriftRule("*", "*", "(field count)",
+        new("*", "*", "(field count)",
             "Section length drift between builds (prototype ↔ ship)",
             (a, b) => IsPrototype(a) || IsPrototype(b)),
         // Editor ID / Display Name churn across builds — real naming evolution, not a bug.
-        new DriftRule("*", "Identity", "Editor ID",
+        new("*", "Identity", "Editor ID",
             "Editor ID naming churn across builds"),
-        new DriftRule("*", "Identity", "Display Name",
+        new("*", "Identity", "Display Name",
             "FULL string churn (localization / rewrites) across builds"),
         // File/memory position is intentionally excluded from the HTML diff renderer
         // (see ComparisonJsonBlobBuilder.ExcludedFieldKeys). Mirror that here.
-        new DriftRule("*", "Identity", "Offset",
+        new("*", "Identity", "Offset",
             "File/memory offset — excluded from comparison by HTML renderer too"),
         // Endianness is a platform marker (Xbox big-endian vs PC little-endian) — not drift.
-        new DriftRule("*", "Identity", "Endianness",
+        new("*", "Identity", "Endianness",
             "Endianness is a platform label, not semantic drift"),
 
         // --- Structural field-reorder (`X vs Y` synthetic names) ---
         // These surface when a subrecord pair's serialization order flipped between builds.
-        new DriftRule("DialogTopic", "Identity", "ResponseCount vs Priority",
+        new("DialogTopic", "Identity", "ResponseCount vs Priority",
             "DialogTopic Identity subrecord order swapped between builds"),
-        new DriftRule("DialogTopic", "Identity", "Priority vs ResponseCount",
+        new("DialogTopic", "Identity", "Priority vs ResponseCount",
             "DialogTopic Identity subrecord order (reverse pair)"),
-        new DriftRule("Creature", "Identity", "Type vs Display Name",
+        new("Creature", "Identity", "Type vs Display Name",
             "Creature FULL/DATA header order swap"),
-        new DriftRule("NPC", "References", "Template vs Voice Type",
+        new("NPC", "References", "Template vs Voice Type",
             "NPC TPLT/VTCK subrecord order swap"),
-        new DriftRule("NPC", "References", "Voice Type vs Script",
+        new("NPC", "References", "Voice Type vs Script",
             "NPC VTCK/SCRI subrecord order swap"),
-        new DriftRule("NPC", "References", "Face NPC vs Template",
+        new("NPC", "References", "Face NPC vs Template",
             "NPC PNAM/TPLT face-NPC ordering"),
-        new DriftRule("NPC", "Physical", "Height vs Eyes",
+        new("NPC", "Physical", "Height vs Eyes",
             "NPC ENAM/HCLR ordering swap"),
-        new DriftRule("NPC", "Physical", "Hair Color vs Hairstyle",
+        new("NPC", "Physical", "Hair Color vs Hairstyle",
             "NPC HCLF/HCLR ordering swap"),
-        new DriftRule("NPC", "Stats", "S.P.E.C.I.A.L. vs Skills",
+        new("NPC", "Stats", "S.P.E.C.I.A.L. vs Skills",
             "NPC ATTR/DNAM ordering swap"),
-        new DriftRule("Ammo", "Stats", "Projectile vs Model",
+        new("Ammo", "Stats", "Projectile vs Model",
             "Ammo PROJ/MODL ordering swap"),
 
         // --- Schema-wide churn ---
 
         // Worldspace records differ in every single pair — global schema drift, not a bug.
-        new DriftRule("Worldspace", "*", "*",
+        new("Worldspace", "*", "*",
             "Worldspace schema drifts across every pair of builds (global change)"),
         // Ammo Flags default flipped between Xbox and everything else (0x00 ↔ 0xFF).
-        new DriftRule("Ammo", "Stats", "Flags",
+        new("Ammo", "Stats", "Flags",
             "Ammo Flags default differs between Xbox and PC/prototype",
             (a, b) => IsXbox(a) || IsXbox(b)),
 
         // --- Balance rebalances ---
 
-        new DriftRule("Creature", "Combat", "Attack Damage",
+        new("Creature", "Combat", "Attack Damage",
             "Creature Attack Damage rebalanced across builds",
             (a, b) => IsPrototype(a) || IsPrototype(b)),
-        new DriftRule("Creature", "AI Data", "Assistance",
+        new("Creature", "AI Data", "Assistance",
             "Creature AI Assistance rebalanced broadly"),
-        new DriftRule("Creature", "Stats", "Level",
+        new("Creature", "Stats", "Level",
             "Creature Level rebalanced across builds"),
-        new DriftRule("Creature", "Stats", "Flags",
+        new("Creature", "Stats", "Flags",
             "Creature Flags churn across builds"),
-        new DriftRule("Creature", "Stats", "Fatigue",
+        new("Creature", "Stats", "Fatigue",
             "Creature Fatigue rebalanced across builds"),
-        new DriftRule("Armor", "Stats", "DR",
+        new("Armor", "Stats", "DR",
             "Armor DR→DT migration across builds",
             (a, b) => IsPrototype(a) || IsPrototype(b)),
-        new DriftRule("Armor", "Stats", "DT",
+        new("Armor", "Stats", "DT",
             "Armor DT subrecord added/retuned across builds"),
-        new DriftRule("Container", "Identity", "Respawns",
+        new("Container", "Identity", "Respawns",
             "Container Respawns flag flipped broadly between builds"),
-        new DriftRule("Dialogue", "Conditions", "Condition 1",
+        new("Dialogue", "Conditions", "Condition 1",
             "Dialogue CTDA ordering shifts prototype ↔ ship",
             (a, b) => IsPrototype(a) || IsPrototype(b)),
-        new DriftRule("Dialogue", "Conditions", "Condition 2",
+        new("Dialogue", "Conditions", "Condition 2",
             "Dialogue CTDA ordering shifts prototype ↔ ship",
             (a, b) => IsPrototype(a) || IsPrototype(b)),
-        new DriftRule("Weapon", "Sound", "*",
+        new("Weapon", "Sound", "*",
             "Weapon sound-slot indices reordered across builds"),
 
         // --- NPC broad churn (prototype builds rebalance these extensively) ---
 
-        new DriftRule("NPC", "AI Data", "Assistance",
+        new("NPC", "AI Data", "Assistance",
             "NPC AI Assistance rebalanced broadly across builds"),
-        new DriftRule("NPC", "References", "Voice Type",
+        new("NPC", "References", "Voice Type",
             "NPC Voice Type retakes / reassignment between prototype builds",
             (a, b) => IsPrototype(a) || IsPrototype(b)),
-        new DriftRule("NPC", "Derived Stats", "*",
+        new("NPC", "Derived Stats", "*",
             "NPC Derived Stats (Calculated Health, Fatigue, Critical Chance, …) shift with balance changes"),
-        new DriftRule("NPC", "FaceGen Morph Data", "FGGS Hex",
+        new("NPC", "FaceGen Morph Data", "FGGS Hex",
             "NPC FaceGen geometry hash differs (coefficients retuned per build)"),
-        new DriftRule("NPC", "FaceGen Morph Data", "FGTS Hex",
+        new("NPC", "FaceGen Morph Data", "FGTS Hex",
             "NPC FaceGen texture hash differs (coefficients retuned per build)"),
-        new DriftRule("NPC", "FaceGen Morph Data", "FGGA Hex",
+        new("NPC", "FaceGen Morph Data", "FGGA Hex",
             "NPC FaceGen geometry advance hash differs (coefficients retuned per build)"),
-        new DriftRule("NPC", "Stats", "S.P.E.C.I.A.L.",
+        new("NPC", "Stats", "S.P.E.C.I.A.L.",
             "NPC S.P.E.C.I.A.L. attribute layout changes across builds"),
-        new DriftRule("NPC", "Physical Traits", "Hair Color vs Hair Length",
+        new("NPC", "Physical Traits", "Hair Color vs Hair Length",
             "NPC HCLR/HCLG ordering swap"),
-        new DriftRule("NPC", "Physical Traits", "Height vs Eyes",
+        new("NPC", "Physical Traits", "Height vs Eyes",
             "NPC ENAM/HCLR ordering swap in Physical Traits section"),
-        new DriftRule("NPC", "Physical Traits", "Height vs Hair Color",
+        new("NPC", "Physical Traits", "Height vs Hair Color",
             "NPC Physical Traits ordering swap"),
-        new DriftRule("NPC", "Physical Traits", "Eyes vs Hair Color",
+        new("NPC", "Physical Traits", "Eyes vs Hair Color",
             "NPC Physical Traits ordering swap"),
 
         // --- Script rebuilds between builds (bytecode recompile, ref lists shift) ---
 
-        new DriftRule("Script", "Decompiled", "Decompiled",
+        new("Script", "Decompiled", "Decompiled",
             "Script decompiled bytecode changes between builds"),
-        new DriftRule("Script", "Stats", "Compiled Size",
+        new("Script", "Stats", "Compiled Size",
             "Script compiled size tracks source edits"),
-        new DriftRule("Script", "Stats", "Ref Object Count",
+        new("Script", "Stats", "Ref Object Count",
             "Script referenced-object count tracks source edits"),
-        new DriftRule("Script", "References", "Referenced Objects",
+        new("Script", "References", "Referenced Objects",
             "Script referenced-object list tracks source edits"),
 
         // --- Cell + Dialogue content edits ---
 
-        new DriftRule("Cell", "Placed Objects", "Objects",
+        new("Cell", "Placed Objects", "Objects",
             "Cell contents change between builds as content is added / moved"),
-        new DriftRule("Cell", "Identity", "Flags",
+        new("Cell", "Identity", "Flags",
             "Cell flags churn between builds (lighting / exterior flags toggled)"),
-        new DriftRule("Cell", "Environment", "Water Height",
+        new("Cell", "Environment", "Water Height",
             "Cell water height tweaked across builds"),
-        new DriftRule("Dialogue", "Links", "Links To vs Previous INFO",
+        new("Dialogue", "Links", "Links To vs Previous INFO",
             "Dialogue INFO ordering / linkage swap across builds"),
-        new DriftRule("Dialogue", "Links", "Links To",
+        new("Dialogue", "Links", "Links To",
             "Dialogue INFO linkage churn across builds"),
-        new DriftRule("Dialogue", "Conditions", "Condition 3",
+        new("Dialogue", "Conditions", "Condition 3",
             "Dialogue CTDA ordering shifts prototype ↔ ship",
             (a, b) => IsPrototype(a) || IsPrototype(b)),
-        new DriftRule("Dialogue", "References", "Speaker",
+        new("Dialogue", "References", "Speaker",
             "Dialogue Speaker reassignment across builds"),
 
         // --- Second-pass rebalance / schema-evolution absorption ---
         // All explicitly tied to prototype builds so they don't hide real bugs between
         // two ship builds (e.g. xex ↔ debug or a future final/patch comparison).
 
-        new DriftRule("NPC", "Stats", "Level",
+        new("NPC", "Stats", "Level",
             "NPC Level rebalanced broadly across prototype builds",
             (a, b) => IsPrototype(a) || IsPrototype(b)),
-        new DriftRule("NPC", "AI Data", "Confidence",
+        new("NPC", "AI Data", "Confidence",
             "NPC AI Confidence rebalanced across builds"),
-        new DriftRule("NPC", "AI Data", "Class",
+        new("NPC", "AI Data", "Class",
             "NPC AI Class reassignment across builds"),
-        new DriftRule("NPC", "Combat", "*",
+        new("NPC", "Combat", "*",
             "NPC Combat section evolves across prototype builds",
             (a, b) => IsPrototype(a) || IsPrototype(b)),
-        new DriftRule("NPC", "FaceGen Morph Data", "FGGS Controls",
+        new("NPC", "FaceGen Morph Data", "FGGS Controls",
             "FaceGen geometry coefficient controls retuned across builds"),
-        new DriftRule("NPC", "FaceGen Morph Data", "FGTS Controls",
+        new("NPC", "FaceGen Morph Data", "FGTS Controls",
             "FaceGen texture coefficient controls retuned across builds"),
-        new DriftRule("NPC", "FaceGen Morph Data", "FGGA Controls",
+        new("NPC", "FaceGen Morph Data", "FGGA Controls",
             "FaceGen advance coefficient controls retuned across builds"),
-        new DriftRule("NPC", "Physical Traits", "Hair Length",
+        new("NPC", "Physical Traits", "Hair Length",
             "NPC hair length tweaked across builds"),
 
-        new DriftRule("Cell", "Identity", "Type",
+        new("Cell", "Identity", "Type",
             "Cell Type classification evolves across builds"),
-        new DriftRule("Cell", "Identity", "Has Water",
+        new("Cell", "Identity", "Has Water",
             "Cell water flag flipped across builds"),
 
-        new DriftRule("DialogTopic", "Identity", "Flags",
+        new("DialogTopic", "Identity", "Flags",
             "DialogTopic flags evolve across builds"),
-        new DriftRule("DialogTopic", "Identity", "ResponseCount vs TopLevel",
+        new("DialogTopic", "Identity", "ResponseCount vs TopLevel",
             "DialogTopic Identity subrecord order variant (3-way)"),
 
-        new DriftRule("Weapon", "Combat Stats", "Damage",
+        new("Weapon", "Combat Stats", "Damage",
             "Weapon Damage rebalanced broadly across prototype builds",
             (a, b) => IsPrototype(a) || IsPrototype(b)),
-        new DriftRule("Weapon", "Combat Stats", "DPS",
+        new("Weapon", "Combat Stats", "DPS",
             "Weapon DPS is a derived stat — moves with Damage changes",
             (a, b) => IsPrototype(a) || IsPrototype(b)),
-        new DriftRule("Weapon", "Combat Stats", "Fire Rate",
+        new("Weapon", "Combat Stats", "Fire Rate",
             "Weapon Fire Rate rebalanced broadly across prototype builds",
             (a, b) => IsPrototype(a) || IsPrototype(b)),
 
-        new DriftRule("Script", "Source", "Source",
+        new("Script", "Source", "Source",
             "Script source code tracks edits between builds"),
 
-        new DriftRule("Key", "Stats", "Value",
+        new("Key", "Stats", "Value",
             "Key value rebalanced broadly across builds"),
 
         // --- Legacy Xbox↔PC platform drift (kept from the original seed) ---
 
         // PNAM-only-on-Xbox stripping during conversion.
-        new DriftRule("Dialogue", "PNAM", "*",
+        new("Dialogue", "PNAM", "*",
             "PNAM stripped during Xbox→PC conversion",
             (a, b) => IsXbox(a) ^ IsXbox(b)),
         // AIDT padding: zero on Xbox, non-zero on PC. Documented in CLAUDE.md.
-        new DriftRule("NPC", "AIDT", "Unused 1",
+        new("NPC", "AIDT", "Unused 1",
             "AIDT padding differs Xbox vs PC",
             (a, b) => IsXbox(a) ^ IsXbox(b)),
-        new DriftRule("NPC", "AIDT", "Unused 2",
+        new("NPC", "AIDT", "Unused 2",
             "AIDT padding differs Xbox vs PC",
             (a, b) => IsXbox(a) ^ IsXbox(b)),
         // LVLO padding: FA 06 (Xbox) vs 15 06 (PC). Documented in CLAUDE.md.
-        new DriftRule("LeveledList", "LVLO", "Padding",
+        new("LeveledList", "LVLO", "Padding",
             "LVLO padding bytes differ Xbox vs PC",
             (a, b) => IsXbox(a) ^ IsXbox(b)),
         // FormType +1 enum shift on pre-Dec-2009 prototype builds.
-        new DriftRule("*", "Identity", "FormType",
+        new("*", "Identity", "FormType",
             "Pre-Dec-2009 prototype FormType enum shift",
             (a, b) => IsPreDec2009(a) ^ IsPreDec2009(b))
     ];
@@ -520,5 +483,41 @@ internal static class CrossBuildReportComparer
         // builds we ship samples for (July 2010, Aug 2010), this returns false.
         return label.Contains("nov2009", StringComparison.OrdinalIgnoreCase)
                || label.Contains("oct2009", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    ///     Why a particular field difference is expected and should not count as a regression.
+    ///     The Pair predicate, when present, must match the (buildA, buildB) labels
+    ///     (case-insensitive substring contains). Null = applies to any pair.
+    /// </summary>
+    internal sealed record DriftRule(
+        string RecordType,
+        string SectionName,
+        string FieldKey,
+        string Reason,
+        Func<string, string, bool>? Pair = null);
+
+    internal sealed record FieldDiff(
+        string Section,
+        string Field,
+        string ValueA,
+        string ValueB);
+
+    internal sealed record RecordDiff(
+        string RecordType,
+        uint FormId,
+        string? EditorId,
+        List<FieldDiff> Differences);
+
+    internal sealed class PairResult
+    {
+        internal string BuildA { get; init; } = "";
+        internal string BuildB { get; init; } = "";
+
+        // Per-record-type counts.
+        internal Dictionary<string, int> SharedFormIds { get; } = new(StringComparer.Ordinal);
+        internal Dictionary<string, int> Matching { get; } = new(StringComparer.Ordinal);
+        internal Dictionary<string, int> DriftAllowed { get; } = new(StringComparer.Ordinal);
+        internal Dictionary<string, List<RecordDiff>> Regressions { get; } = new(StringComparer.Ordinal);
     }
 }

@@ -1,7 +1,5 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
-using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
-using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
@@ -230,8 +228,8 @@ internal static class GeckItemWriter
             ? door.EditorId
             : resolver.GetEditorId(door.FormId);
         var baseDisplay = resolver.GetDisplayName(door.BaseFormId);
-        string? displayName = !string.IsNullOrEmpty(baseDisplay) &&
-                              !string.Equals(baseDisplay, baseStr, StringComparison.Ordinal)
+        var displayName = !string.IsNullOrEmpty(baseDisplay) &&
+                          !string.Equals(baseDisplay, baseStr, StringComparison.Ordinal)
             ? baseDisplay
             : null;
 

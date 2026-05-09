@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
-using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Strings;
 using FalloutXbox360Utils.Core.Utils;
 

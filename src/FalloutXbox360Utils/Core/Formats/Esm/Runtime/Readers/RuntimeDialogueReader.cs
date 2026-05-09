@@ -3,7 +3,6 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models.Dialogue;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
-using FalloutXbox360Utils.Core.Formats.Esm.Script;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers;
@@ -18,14 +17,14 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
 
     private readonly InfoOffsets _info = InfoLayout;
 
+    // Delegate condition reading and list walking to the extracted helper class.
+    private RuntimeDialogueConditionReader? _conditionReader;
+
     // Delegate quest/terminal/note reading to the extracted helper class.
     private RuntimeQuestTerminalReader? _questTerminalReader;
 
     private RuntimeQuestTerminalReader QuestTerminal =>
         _questTerminalReader ??= new RuntimeQuestTerminalReader(_context);
-
-    // Delegate condition reading and list walking to the extracted helper class.
-    private RuntimeDialogueConditionReader? _conditionReader;
 
     private RuntimeDialogueConditionReader ConditionReader =>
         _conditionReader ??= new RuntimeDialogueConditionReader(_context);
@@ -516,9 +515,12 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
         if (linkToHead != 0) ConversationDiagnostics.LinkToNonZeroHead++;
         if (followUpHead != 0) ConversationDiagnostics.FollowUpNonZeroHead++;
 
-        results.LinkFromTopicFormIds = ConditionReader.WalkFormIdSimpleList(conversationBuf, ConversationDataLinkFromOffset);
-        results.LinkToTopicFormIds = ConditionReader.WalkFormIdSimpleList(conversationBuf, ConversationDataLinkToOffset);
-        results.FollowUpInfoFormIds = ConditionReader.WalkFormIdSimpleList(conversationBuf, ConversationDataFollowUpInfosOffset);
+        results.LinkFromTopicFormIds =
+            ConditionReader.WalkFormIdSimpleList(conversationBuf, ConversationDataLinkFromOffset);
+        results.LinkToTopicFormIds =
+            ConditionReader.WalkFormIdSimpleList(conversationBuf, ConversationDataLinkToOffset);
+        results.FollowUpInfoFormIds =
+            ConditionReader.WalkFormIdSimpleList(conversationBuf, ConversationDataFollowUpInfosOffset);
 
         if (results.LinkFromTopicFormIds.Count > 0) ConversationDiagnostics.LinkFromPositiveDecodes++;
         if (results.LinkToTopicFormIds.Count > 0) ConversationDiagnostics.LinkToPositiveDecodes++;
@@ -529,21 +531,21 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
 
     private sealed class InfoFieldsResult
     {
-        public ushort InfoIndex;
-        public byte DataType;
-        public byte DataNextSpeaker;
-        public byte DataFlags;
-        public byte DataFlagsExt;
-        public uint? SpeakerFormId;
-        public uint? PerkSkillStatFormId;
-        public uint Difficulty;
-        public uint? QuestFormId;
-        public bool SaidOnce;
-        public uint TesFileOffset;
         public List<uint> AddTopicFormIds = [];
         public RuntimeDialogueConditionReader.RuntimeConditionData ConditionData = new();
         public RuntimeConversationData ConversationData = new();
+        public byte DataFlags;
+        public byte DataFlagsExt;
+        public byte DataNextSpeaker;
+        public byte DataType;
+        public uint Difficulty;
         public string? FormEditorId;
+        public ushort InfoIndex;
+        public uint? PerkSkillStatFormId;
+        public uint? QuestFormId;
+        public bool SaidOnce;
+        public uint? SpeakerFormId;
+        public uint TesFileOffset;
     }
 
     private sealed class RuntimeConversationData

@@ -352,8 +352,8 @@ internal static class GeckWorldWriter
                 baseStr,
                 displayName,
                 referenceEditorId,
-                includeRotation: true,
-                placedReferenceLocations: placedReferenceLocations);
+                true,
+                placedReferenceLocations);
 
             items.Add(BuildPlacedObjectComposite(
                 sourceDoor,
@@ -564,11 +564,6 @@ internal static class GeckWorldWriter
         return (formId & 0xFF000000) != 0xFE000000 &&
                (formId & 0xFF000000) != 0xFF000000;
     }
-
-    private readonly record struct DestinationDoorInfo(
-        PlacedReference Ref,
-        uint CellFormId,
-        string Label);
 
     internal static void AppendPlacedObjects(
         StringBuilder sb, List<PlacedReference> placedObjects, FormIdResolver resolver)
@@ -1011,4 +1006,9 @@ internal static class GeckWorldWriter
 
         return sb.ToString();
     }
+
+    private readonly record struct DestinationDoorInfo(
+        PlacedReference Ref,
+        uint CellFormId,
+        string Label);
 }

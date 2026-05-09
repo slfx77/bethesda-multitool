@@ -5,9 +5,9 @@ namespace FalloutXbox360Utils.Core.Semantic;
 /// </summary>
 internal sealed class EsmFormIdLoadOrderMapper
 {
-    private readonly IReadOnlyDictionary<string, int> _loadIndexByFileName;
     private readonly EsmLoadOrderFile _file;
     private readonly bool _flattenToBase;
+    private readonly IReadOnlyDictionary<string, int> _loadIndexByFileName;
 
     public EsmFormIdLoadOrderMapper(
         EsmLoadOrderFile file,

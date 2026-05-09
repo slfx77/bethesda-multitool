@@ -41,30 +41,19 @@ internal static class ComparisonBlobReader
         "__comparisonExternalChunks\\[\"(?<key>[^\"]+)\"\\]=\"(?<payload>[^\"]*)\"",
         RegexOptions.Compiled);
 
-    internal sealed record DumpInfo(
-        string FileName,
-        string ShortName,
-        DateTime Date,
-        bool IsDmp,
-        bool IsBase,
-        string DateSource = "");
-
-    internal sealed class HtmlPage
-    {
-        internal string RecordType { get; init; } = "";
-        internal List<DumpInfo> Dumps { get; init; } = [];
-        internal Dictionary<uint, Dictionary<int, RecordReport>> Records { get; init; } = [];
-    }
-
     /// <summary>
     ///     Parse a single compare_*.html file, returning the rehydrated record table.
     ///     Handles both layouts emitted by <see cref="CrossDumpJsonHtmlWriter" />:
     ///     <list type="bullet">
-    ///         <item>inline single payload (<c>&lt;script id="record-data"&gt;</c>) with
-    ///             records embedded directly;</item>
-    ///         <item>chunked pages (cells/dialogue/NPC) where the index blob carries
+    ///         <item>
+    ///             inline single payload (<c>&lt;script id="record-data"&gt;</c>) with
+    ///             records embedded directly;
+    ///         </item>
+    ///         <item>
+    ///             chunked pages (cells/dialogue/NPC) where the index blob carries
     ///             <c>"chunked": true</c> + manifest, and record bodies live in sibling
-    ///             <c>&lt;script id="chunk-N" data-z="…"&gt;</c> scripts.</item>
+    ///             <c>&lt;script id="chunk-N" data-z="…"&gt;</c> scripts.
+    ///         </item>
     ///     </list>
     /// </summary>
     internal static HtmlPage? Read(string htmlPath)
@@ -79,7 +68,7 @@ internal static class ComparisonBlobReader
 
         var page = new HtmlPage
         {
-            RecordType = root.TryGetProperty("recordType", out var rt) ? (rt.GetString() ?? "") : ""
+            RecordType = root.TryGetProperty("recordType", out var rt) ? rt.GetString() ?? "" : ""
         };
         ReadDumps(root, page);
 
@@ -266,7 +255,9 @@ internal static class ComparisonBlobReader
     {
         if (el.ValueKind != JsonValueKind.Object) return null;
 
-        var recordType = el.TryGetProperty("recordType", out var rt) ? rt.GetString() ?? fallbackRecordType : fallbackRecordType;
+        var recordType = el.TryGetProperty("recordType", out var rt)
+            ? rt.GetString() ?? fallbackRecordType
+            : fallbackRecordType;
         var editorId = el.TryGetProperty("editorId", out var eid) && eid.ValueKind == JsonValueKind.String
             ? eid.GetString()
             : null;
@@ -396,5 +387,20 @@ internal static class ComparisonBlobReader
             default:
                 return null;
         }
+    }
+
+    internal sealed record DumpInfo(
+        string FileName,
+        string ShortName,
+        DateTime Date,
+        bool IsDmp,
+        bool IsBase,
+        string DateSource = "");
+
+    internal sealed class HtmlPage
+    {
+        internal string RecordType { get; init; } = "";
+        internal List<DumpInfo> Dumps { get; init; } = [];
+        internal Dictionary<uint, Dictionary<int, RecordReport>> Records { get; init; } = [];
     }
 }

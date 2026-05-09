@@ -290,7 +290,8 @@ internal sealed class RuntimeCellReader
             ClimateFormId = worldspaceMetadata?.ClimateFormId,
             WaterFormId = worldspaceMetadata?.WaterFormId,
             DefaultLandHeight = worldspaceMetadata?.DefaultLandHeight,
-            DefaultWaterHeight = WorldHeightNormalizer.NormalizeReportableHeight(worldspaceMetadata?.DefaultWaterHeight),
+            DefaultWaterHeight =
+                WorldHeightNormalizer.NormalizeReportableHeight(worldspaceMetadata?.DefaultWaterHeight),
             MapUsableWidth = worldspaceMetadata?.MapUsableWidth,
             MapUsableHeight = worldspaceMetadata?.MapUsableHeight,
             MapNWCellX = worldspaceMetadata?.MapNWCellX,

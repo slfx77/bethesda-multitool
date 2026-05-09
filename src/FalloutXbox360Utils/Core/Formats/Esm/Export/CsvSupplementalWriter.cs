@@ -143,7 +143,9 @@ internal static class CsvSupplementalWriter
                 sb.AppendLine(string.Join(",",
                     Fmt.FId(obj.FormId),
                     Fmt.FId(obj.BaseFormId),
-                    Fmt.CsvEscape(obj.BaseEditorId) is { Length: > 0 } baseEid ? baseEid : resolver.ResolveCsv(obj.BaseFormId),
+                    Fmt.CsvEscape(obj.BaseEditorId) is { Length: > 0 } baseEid
+                        ? baseEid
+                        : resolver.ResolveCsv(obj.BaseFormId),
                     resolver.ResolveDisplayNameCsv(obj.BaseFormId),
                     Fmt.CsvEscape(instanceEditorId),
                     Fmt.CsvEscape(obj.RecordType),

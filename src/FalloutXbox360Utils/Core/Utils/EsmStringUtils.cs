@@ -127,37 +127,37 @@ public static class EsmStringUtils
     public static bool IsPrintableGameTextByte(byte value)
     {
         return value is >= 0x20 and <= 0x7E
-               or >= 0xA0
-               or (byte)'\n'
-               or (byte)'\r'
-               or (byte)'\t'
-               or 0x80
-               or 0x82
-               or 0x83
-               or 0x84
-               or 0x85
-               or 0x86
-               or 0x87
-               or 0x88
-               or 0x89
-               or 0x8A
-               or 0x8B
-               or 0x8C
-               or 0x8E
-               or 0x91
-               or 0x92
-               or 0x93
-               or 0x94
-               or 0x95
-               or 0x96
-               or 0x97
-               or 0x98
-               or 0x99
-               or 0x9A
-               or 0x9B
-               or 0x9C
-               or 0x9E
-               or 0x9F;
+            or >= 0xA0
+            or (byte)'\n'
+            or (byte)'\r'
+            or (byte)'\t'
+            or 0x80
+            or 0x82
+            or 0x83
+            or 0x84
+            or 0x85
+            or 0x86
+            or 0x87
+            or 0x88
+            or 0x89
+            or 0x8A
+            or 0x8B
+            or 0x8C
+            or 0x8E
+            or 0x91
+            or 0x92
+            or 0x93
+            or 0x94
+            or 0x95
+            or 0x96
+            or 0x97
+            or 0x98
+            or 0x99
+            or 0x9A
+            or 0x9B
+            or 0x9C
+            or 0x9E
+            or 0x9F;
     }
 
     private static char DecodeWindows1252Byte(byte value)
@@ -206,7 +206,7 @@ public static class EsmStringUtils
         var lettersOrDigits = 0;
         foreach (var c in value)
         {
-            if (c == '\uFFFD' || char.IsControl(c) && c is not ('\n' or '\r' or '\t'))
+            if (c == '\uFFFD' || (char.IsControl(c) && c is not ('\n' or '\r' or '\t')))
             {
                 return false;
             }

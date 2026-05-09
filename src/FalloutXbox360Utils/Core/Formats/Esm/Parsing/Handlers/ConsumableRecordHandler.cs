@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 using FalloutXbox360Utils.Core.Utils;

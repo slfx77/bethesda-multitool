@@ -300,13 +300,13 @@ internal static class ComparisonJsonBlobBuilder
     /// </summary>
     internal static (string CompressedIndexPayload, List<(string GroupKey, string CompressedPayload)> Chunks)
         BuildChunked(
-        Dictionary<uint, Dictionary<int, RecordReport>> formIdMap,
-        List<DumpSnapshot> dumps,
-        string recordType,
-        Dictionary<uint, string>? groups,
-        Dictionary<uint, (int X, int Y)>? cellGridCoords,
-        Dictionary<uint, Dictionary<string, string>>? metadata,
-        long maxChunkBytes = 5 * 1024 * 1024)
+            Dictionary<uint, Dictionary<int, RecordReport>> formIdMap,
+            List<DumpSnapshot> dumps,
+            string recordType,
+            Dictionary<uint, string>? groups,
+            Dictionary<uint, (int X, int Y)>? cellGridCoords,
+            Dictionary<uint, Dictionary<string, string>>? metadata,
+            long maxChunkBytes = 5 * 1024 * 1024)
     {
         var compressedIndexPayload = BuildChunkedIndex(
             formIdMap,
@@ -437,7 +437,7 @@ internal static class ComparisonJsonBlobBuilder
             if (recordsInCurrentChunk > 0)
             {
                 yield return (
-                    FormatChunkLabel(groupKey, partNum, hasMoreRecords: false),
+                    FormatChunkLabel(groupKey, partNum, false),
                     FinishAndCompressChunk(currentChunk));
             }
 

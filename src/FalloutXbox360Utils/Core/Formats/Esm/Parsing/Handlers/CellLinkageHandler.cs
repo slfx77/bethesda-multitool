@@ -1,6 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 
@@ -216,7 +215,8 @@ internal static class CellLinkageHandler
         // This gives Phase 1 (ParentCellFormId) and Phase 1.5 (grid lookup) real CellRecords
         // to assign orphans to, instead of falling through to virtual cells.
         var stubsCreated = PersistentRefRedistributor.CreateCellMapStubs(existingCells, cellByFormId, context);
-        var parentSignalStubsCreated = PersistentRefRedistributor.CreateReferencedCellStubs(orphans, existingCells, cellByFormId, context);
+        var parentSignalStubsCreated =
+            PersistentRefRedistributor.CreateReferencedCellStubs(orphans, existingCells, cellByFormId, context);
 
         // Persistent-ref redistribution is hoisted to a separate top-level pass invoked from
         // RecordParser AFTER CreateVirtualCells returns. By then Phase 1 has already moved
@@ -225,7 +225,8 @@ internal static class CellLinkageHandler
         // those refs exist.
 
         // Phase Interior: Group interior orphans by their parent cell FormID.
-        var interiorCellsCreated = PersistentRefRedistributor.AssignInteriorOrphans(interiorOrphans, existingCells, cellByFormId, context);
+        var interiorCellsCreated =
+            PersistentRefRedistributor.AssignInteriorOrphans(interiorOrphans, existingCells, cellByFormId, context);
         if (interiorCellsCreated > 0)
         {
             Logger.Instance.Debug(
@@ -506,5 +507,4 @@ internal static class CellLinkageHandler
             AssignmentSource = assignmentSource
         };
     }
-
 }

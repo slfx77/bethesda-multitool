@@ -84,5 +84,4 @@ internal sealed class NpcCompositionOptions : IEquatable<NpcCompositionOptions>
             AnimOverride = settings.AnimOverride
         };
     }
-
 }

@@ -1,5 +1,3 @@
-using FalloutXbox360Utils.Core.Formats.Esm;
-
 namespace FalloutXbox360Utils.Core.Semantic;
 
 /// <summary>
@@ -127,7 +125,7 @@ internal static class SemanticSourceSetBuilder
             var mapper = new EsmFormIdLoadOrderMapper(
                 descriptor,
                 loadIndexByFileName,
-                flattenToBase: true);
+                true);
             var rebasedRecords = RecordCollectionFormIdRebaser.Rebase(source.Records, mapper.Map);
             rebasedSources.Add(source with
             {

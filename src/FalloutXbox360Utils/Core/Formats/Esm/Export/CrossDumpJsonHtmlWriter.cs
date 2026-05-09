@@ -661,7 +661,7 @@ internal static class CrossDumpJsonHtmlWriter
             $"  <p class=\"summary\">{dumps.Count} builds, {formIdMap.Count:N0} records ({chunkSummary})</p>",
             cancellationToken);
 
-        await WriteControlsAsync(writer, dumps.Count, hasDialogueGroupSelector: false, cancellationToken);
+        await WriteControlsAsync(writer, dumps.Count, false, cancellationToken);
 
         await WriteLineAsync(writer, "  <div id=\"loading\">Loading index...</div>", cancellationToken);
         await WriteLineAsync(writer, "  <div id=\"tables-container\"></div>", cancellationToken);
@@ -711,8 +711,8 @@ internal static class CrossDumpJsonHtmlWriter
             FileMode.Create,
             FileAccess.Write,
             FileShare.None,
-            bufferSize: 1024 * 1024,
-            useAsync: true);
+            1024 * 1024,
+            true);
         await using var writer = CreateHtmlWriter(stream);
         await WriteAsync(
             writer,
@@ -848,13 +848,13 @@ internal static class CrossDumpJsonHtmlWriter
             FileMode.Create,
             FileAccess.Write,
             FileShare.None,
-            bufferSize: 1024 * 1024,
-            useAsync: true);
+            1024 * 1024,
+            true);
     }
 
     private static StreamWriter CreateHtmlWriter(Stream stream)
     {
-        return new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), 1024 * 1024);
+        return new StreamWriter(stream, new UTF8Encoding(false), 1024 * 1024);
     }
 
     private static async Task WriteHtmlHeaderAsync(

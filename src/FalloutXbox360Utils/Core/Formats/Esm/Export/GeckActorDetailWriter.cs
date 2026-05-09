@@ -458,7 +458,8 @@ internal static class GeckActorDetailWriter
     {
         if (!string.IsNullOrEmpty(placement.CellEditorId) && !string.IsNullOrEmpty(placement.CellName))
         {
-            return $"{placement.CellName} - {placement.CellEditorId} ({GeckReportHelpers.FormatFormId(placement.CellFormId)})";
+            return
+                $"{placement.CellName} - {placement.CellEditorId} ({GeckReportHelpers.FormatFormId(placement.CellFormId)})";
         }
 
         if (!string.IsNullOrEmpty(placement.CellEditorId))

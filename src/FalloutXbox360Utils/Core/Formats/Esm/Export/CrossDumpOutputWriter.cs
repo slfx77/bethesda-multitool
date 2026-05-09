@@ -25,7 +25,7 @@ internal static class CrossDumpOutputWriter
                     // (e.g. Cell × N builds) can exceed 2 GB and OOM if materialized
                     // as a single string via Encoding.UTF8.GetString(MemoryStream.ToArray()).
                     await using (var fs = new FileStream(outputFile, FileMode.Create, FileAccess.Write,
-                                     FileShare.None, 81920, useAsync: true))
+                                     FileShare.None, 81920, true))
                     {
                         ReportJsonFormatter.WriteBatch(fs, reports);
                     }

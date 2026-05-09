@@ -1,5 +1,4 @@
 using System.Globalization;
-using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
@@ -21,7 +20,8 @@ internal static class CrossDumpAggregator
         List<(string FilePath, RecordCollection Records, FormIdResolver Resolver, MinidumpInfo? Info)> dumps,
         IReadOnlySet<string>? allowedTypes = null,
         bool releaseInputRecords = false,
-        IReadOnlyDictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<NpcPlacementInfo>>>? npcPlacementIndexes = null,
+        IReadOnlyDictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<NpcPlacementInfo>>>? npcPlacementIndexes =
+            null,
         IReadOnlyDictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<NpcScriptReferenceInfo>>>?
             npcScriptReferenceIndexes = null,
         IReadOnlyDictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<ContainerPlacementInfo>>>?
@@ -344,8 +344,8 @@ internal static class CrossDumpAggregator
                     // provides speaker or quest attribution.
                     var hasExistingNpcGroup = npcGroups.TryGetValue(formId, out var existingNpcGroup);
                     var canUpgradeNoSpeaker = hasExistingNpcGroup
-                        && existingNpcGroup == "(No Speaker)"
-                        && (d.SpeakerFormId.HasValue || d.QuestFormId.HasValue);
+                                              && existingNpcGroup == "(No Speaker)"
+                                              && (d.SpeakerFormId.HasValue || d.QuestFormId.HasValue);
                     if (!hasExistingNpcGroup || canUpgradeNoSpeaker)
                     {
                         npcGroups[formId] = ResolveSpeakerGroupLabel(d, dump.Resolver, speakerLabels);
@@ -1213,22 +1213,6 @@ internal static class CrossDumpAggregator
         }
     }
 
-    internal readonly record struct CellCoordinateKey(uint WorldspaceFormId, int GridX, int GridY);
-
-    internal readonly record struct RealCellCandidate(
-        uint FormId,
-        string? EditorId,
-        string? DisplayName,
-        bool IsSyntheticVirtual);
-
-    private readonly record struct PlacementCellInfo(
-        uint FormId,
-        string? EditorId,
-        string? DisplayName,
-        uint? WorldspaceFormId,
-        int? GridX,
-        int? GridY);
-
     /// <summary>
     ///     Returns true if a resolver-returned name is a real name (not null, empty,
     ///     or a placeholder like "(none)").
@@ -1396,4 +1380,20 @@ internal static class CrossDumpAggregator
             ? $"{editorId} (0x{speakerFormId:X8})"
             : $"NPC 0x{speakerFormId:X8}";
     }
+
+    internal readonly record struct CellCoordinateKey(uint WorldspaceFormId, int GridX, int GridY);
+
+    internal readonly record struct RealCellCandidate(
+        uint FormId,
+        string? EditorId,
+        string? DisplayName,
+        bool IsSyntheticVirtual);
+
+    private readonly record struct PlacementCellInfo(
+        uint FormId,
+        string? EditorId,
+        string? DisplayName,
+        uint? WorldspaceFormId,
+        int? GridX,
+        int? GridY);
 }

@@ -2,7 +2,6 @@ using System.CommandLine;
 using System.Runtime;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
-using FalloutXbox360Utils.Core.Semantic;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI.Commands.Dmp;
@@ -350,7 +349,7 @@ internal static class DmpCompareCommand
 #pragma warning disable S1215
         // This command intentionally runs a one-shot full comparison over many large parsed sources.
         // Compacting before writing output releases transient parser/source buffers before chunk serialization.
-        GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+        GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, true, true);
 #pragma warning restore S1215
     }
 }

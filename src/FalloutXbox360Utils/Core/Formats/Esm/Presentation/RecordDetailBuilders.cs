@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.AI;
@@ -46,7 +47,8 @@ internal static class RecordDetailBuilders
                 RecordDetailHelpers.Link("Template", npc.Template, resolver),
                 RecordDetailHelpers.Link("Combat Style", npc.CombatStyleFormId, resolver)
             ]),
-            RecordDetailHelpers.ListSection("Head Parts", npc.HeadPartFormIds?.Select(id => RecordDetailHelpers.ListLinkItem(id, resolver)).ToList()),
+            RecordDetailHelpers.ListSection("Head Parts",
+                npc.HeadPartFormIds?.Select(id => RecordDetailHelpers.ListLinkItem(id, resolver)).ToList()),
             RecordDetailHelpers.ListSection("SPECIAL", RecordDetailHelpers.BuildStatItems(
                 ["Strength", "Perception", "Endurance", "Charisma", "Intelligence", "Agility", "Luck"],
                 npc.SpecialStats?.Select(value => value.ToString()).ToArray())),
@@ -63,7 +65,8 @@ internal static class RecordDetailBuilders
                 Value = $"x{item.Count}",
                 LinkedFormId = item.ItemFormId
             }).ToList()),
-            RecordDetailHelpers.ListSection("AI Packages", npc.Packages.Select(id => RecordDetailHelpers.ListLinkItem(id, resolver)).ToList())
+            RecordDetailHelpers.ListSection("AI Packages",
+                npc.Packages.Select(id => RecordDetailHelpers.ListLinkItem(id, resolver)).ToList())
         };
 
         return RecordDetailHelpers.Model("NPC_", npc.FormId, npc.EditorId, npc.FullName, sections);
@@ -105,8 +108,10 @@ internal static class RecordDetailBuilders
                 Value = $"Rank {faction.Rank}",
                 LinkedFormId = faction.FactionFormId
             }).ToList()),
-            RecordDetailHelpers.ListSection("Spells & Abilities", creature.Spells.Select(id => RecordDetailHelpers.ListLinkItem(id, resolver)).ToList()),
-            RecordDetailHelpers.ListSection("AI Packages", creature.Packages.Select(id => RecordDetailHelpers.ListLinkItem(id, resolver)).ToList())
+            RecordDetailHelpers.ListSection("Spells & Abilities",
+                creature.Spells.Select(id => RecordDetailHelpers.ListLinkItem(id, resolver)).ToList()),
+            RecordDetailHelpers.ListSection("AI Packages",
+                creature.Packages.Select(id => RecordDetailHelpers.ListLinkItem(id, resolver)).ToList())
         };
 
         return RecordDetailHelpers.Model("CREA", creature.FormId, creature.EditorId, creature.FullName, sections);
@@ -123,7 +128,8 @@ internal static class RecordDetailBuilders
                 RecordDetailHelpers.Scalar("Name", weapon.FullName ?? "(none)"),
                 RecordDetailHelpers.Scalar("Type", weapon.WeaponTypeName),
                 RecordDetailHelpers.Scalar("Equipment", weapon.EquipmentTypeName),
-                RecordDetailHelpers.Scalar("Skill", resolver.GetActorValueName((int)weapon.Skill) ?? $"AV#{weapon.Skill}")
+                RecordDetailHelpers.Scalar("Skill",
+                    resolver.GetActorValueName((int)weapon.Skill) ?? $"AV#{weapon.Skill}")
             ]),
             RecordDetailHelpers.Section("Combat",
             [
@@ -183,7 +189,7 @@ internal static class RecordDetailBuilders
         return RecordDetailHelpers.Model("WEAP", weapon.FormId, weapon.EditorId, weapon.FullName, sections);
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Major Code Smell", "S1172",
+    [SuppressMessage("Major Code Smell", "S1172",
         Justification = "Resolver kept for signature symmetry with sibling Build* methods")]
     internal static RecordDetailModel BuildArmor(ArmorRecord armor, FormIdResolver resolver)
     {
@@ -251,7 +257,8 @@ internal static class RecordDetailBuilders
                 Label = variable.Name ?? $"var_{variable.Index}",
                 Value = $"{variable.TypeName}, idx {variable.Index}"
             }).ToList()),
-            RecordDetailHelpers.ListSection("Related NPCs", quest.RelatedNpcFormIds.Select(id => RecordDetailHelpers.ListLinkItem(id, resolver)).ToList())
+            RecordDetailHelpers.ListSection("Related NPCs",
+                quest.RelatedNpcFormIds.Select(id => RecordDetailHelpers.ListLinkItem(id, resolver)).ToList())
         };
 
         return RecordDetailHelpers.Model("QUST", quest.FormId, quest.EditorId, quest.FullName, sections);
@@ -280,19 +287,25 @@ internal static class RecordDetailBuilders
             ]),
             RecordDetailHelpers.Section("Location",
             [
-                RecordDetailHelpers.Scalar("Primary", RecordDetailHelpers.FormatPackageLocation(package.Location, resolver)),
-                RecordDetailHelpers.Scalar("Secondary", RecordDetailHelpers.FormatPackageLocation(package.Location2, resolver))
+                RecordDetailHelpers.Scalar("Primary",
+                    RecordDetailHelpers.FormatPackageLocation(package.Location, resolver)),
+                RecordDetailHelpers.Scalar("Secondary",
+                    RecordDetailHelpers.FormatPackageLocation(package.Location2, resolver))
             ]),
             RecordDetailHelpers.Section("Target",
             [
-                RecordDetailHelpers.Scalar("Primary", RecordDetailHelpers.FormatPackageTarget(package.Target, resolver)),
-                RecordDetailHelpers.Scalar("Secondary", RecordDetailHelpers.FormatPackageTarget(package.Target2, resolver))
+                RecordDetailHelpers.Scalar("Primary",
+                    RecordDetailHelpers.FormatPackageTarget(package.Target, resolver)),
+                RecordDetailHelpers.Scalar("Secondary",
+                    RecordDetailHelpers.FormatPackageTarget(package.Target2, resolver))
             ]),
             RecordDetailHelpers.Section("Use Weapon",
             [
                 RecordDetailHelpers.Link("Weapon", package.UseWeaponData?.WeaponFormId, resolver),
-                RecordDetailHelpers.Scalar("Always Hit", RecordDetailHelpers.BoolText(package.UseWeaponData?.AlwaysHit)),
-                RecordDetailHelpers.Scalar("Do No Damage", RecordDetailHelpers.BoolText(package.UseWeaponData?.DoNoDamage)),
+                RecordDetailHelpers.Scalar("Always Hit",
+                    RecordDetailHelpers.BoolText(package.UseWeaponData?.AlwaysHit)),
+                RecordDetailHelpers.Scalar("Do No Damage",
+                    RecordDetailHelpers.BoolText(package.UseWeaponData?.DoNoDamage)),
                 RecordDetailHelpers.Scalar("Crouch", RecordDetailHelpers.BoolText(package.UseWeaponData?.Crouch)),
                 RecordDetailHelpers.Scalar("Hold Fire", RecordDetailHelpers.BoolText(package.UseWeaponData?.HoldFire)),
                 RecordDetailHelpers.Scalar("Burst Count", package.UseWeaponData?.BurstCount.ToString()),
@@ -356,7 +369,8 @@ internal static class RecordDetailBuilders
                 RecordDetailHelpers.Scalar("Editor ID", cell.EditorId ?? "(none)"),
                 RecordDetailHelpers.Scalar("Name", cell.FullName ?? "(none)"),
                 RecordDetailHelpers.Scalar("Interior", cell.IsInterior ? "Yes" : "No"),
-                RecordDetailHelpers.Scalar("Grid", cell.GridX.HasValue && cell.GridY.HasValue ? $"({cell.GridX}, {cell.GridY})" : null),
+                RecordDetailHelpers.Scalar("Grid",
+                    cell.GridX.HasValue && cell.GridY.HasValue ? $"({cell.GridX}, {cell.GridY})" : null),
                 RecordDetailHelpers.Link("Worldspace", cell.WorldspaceFormId, resolver)
             ]),
             RecordDetailHelpers.Section("Environment",
@@ -379,7 +393,8 @@ internal static class RecordDetailBuilders
                 RecordDetailHelpers.Scalar("Virtual Cell", cell.IsVirtual ? "Yes" : "No"),
                 RecordDetailHelpers.Scalar("Unresolved Bucket", cell.IsUnresolvedBucket ? "Yes" : "No"),
                 RecordDetailHelpers.Scalar("Heightmap", cell.Heightmap != null ? "Present" : "Absent"),
-                RecordDetailHelpers.Scalar("Runtime Terrain Mesh", cell.RuntimeTerrainMesh != null ? "Present" : "Absent")
+                RecordDetailHelpers.Scalar("Runtime Terrain Mesh",
+                    cell.RuntimeTerrainMesh != null ? "Present" : "Absent")
             ]),
             RecordDetailHelpers.ListSection("Linked Cells",
                 cell.LinkedCellFormIds.Select(id => RecordDetailHelpers.ListLinkItem(id, resolver)).ToList()),
@@ -434,8 +449,10 @@ internal static class RecordDetailBuilders
             [
                 RecordDetailHelpers.Scalar("Usable Width", worldspace.MapUsableWidth?.ToString()),
                 RecordDetailHelpers.Scalar("Usable Height", worldspace.MapUsableHeight?.ToString()),
-                RecordDetailHelpers.Scalar("NW Cell", RecordDetailHelpers.FormatCellCorner(worldspace.MapNWCellX, worldspace.MapNWCellY)),
-                RecordDetailHelpers.Scalar("SE Cell", RecordDetailHelpers.FormatCellCorner(worldspace.MapSECellX, worldspace.MapSECellY)),
+                RecordDetailHelpers.Scalar("NW Cell",
+                    RecordDetailHelpers.FormatCellCorner(worldspace.MapNWCellX, worldspace.MapNWCellY)),
+                RecordDetailHelpers.Scalar("SE Cell",
+                    RecordDetailHelpers.FormatCellCorner(worldspace.MapSECellX, worldspace.MapSECellY)),
                 RecordDetailHelpers.Scalar("Default Land Height", worldspace.DefaultLandHeight?.ToString("F2")),
                 RecordDetailHelpers.Scalar("Default Water Height", worldspace.DefaultWaterHeight?.ToString("F2")),
                 RecordDetailHelpers.Scalar("Map Offset", RecordDetailHelpers.FormatMapOffset(worldspace))
@@ -443,7 +460,8 @@ internal static class RecordDetailBuilders
             RecordDetailHelpers.Section("Bounds & Stats",
             [
                 RecordDetailHelpers.Scalar("Bounds", RecordDetailHelpers.FormatWorldBounds(worldspace)),
-                RecordDetailHelpers.Scalar("Flags", worldspace.Flags.HasValue ? $"0x{worldspace.Flags.Value:X2}" : null),
+                RecordDetailHelpers.Scalar("Flags",
+                    worldspace.Flags.HasValue ? $"0x{worldspace.Flags.Value:X2}" : null),
                 RecordDetailHelpers.Scalar("Parent Use Flags", worldspace.ParentUseFlags.HasValue
                     ? $"0x{worldspace.ParentUseFlags.Value:X4}"
                     : null),

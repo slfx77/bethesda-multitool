@@ -26,38 +26,6 @@ namespace FalloutXbox360Utils;
 /// </summary>
 public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettingsDrawer
 {
-    #region Constructor
-
-    public SingleFileTab()
-    {
-        InitializeComponent();
-        ReorderSubTabsForGameDataWorkflow();
-        ResultsListView.ItemsSource = _carvedFiles;
-        ReportListView.ItemsSource = _reportEntries;
-        InitializeFileTypeCheckboxes();
-        SetupTextBoxContextMenus();
-        WorldMapControl.BeforeNavigate += WorldMap_BeforeNavigate;
-        KeyDown += SingleFileTab_KeyDown;
-        Loaded += SingleFileTab_Loaded;
-        Unloaded += SingleFileTab_Unloaded;
-    }
-
-    private void ReorderSubTabsForGameDataWorkflow()
-    {
-        SubTabView.TabItems.Clear();
-        SubTabView.TabItems.Add(SummaryTab);
-        SubTabView.TabItems.Add(DataBrowserTab);
-        SubTabView.TabItems.Add(WorldMapTab);
-        SubTabView.TabItems.Add(DialogueViewerTab);
-        SubTabView.TabItems.Add(NpcBrowserTab);
-        SubTabView.TabItems.Add(ReportsTab);
-        SubTabView.TabItems.Add(RawViewTab);
-        SubTabView.TabItems.Add(CoverageTab);
-        SubTabView.SelectedItem = SummaryTab;
-    }
-
-    #endregion
-
     #region Properties
 
 #pragma warning disable CA1822, S2325
@@ -139,6 +107,38 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         {
             _ = GenerateReportsAsync();
         }
+    }
+
+    #endregion
+
+    #region Constructor
+
+    public SingleFileTab()
+    {
+        InitializeComponent();
+        ReorderSubTabsForGameDataWorkflow();
+        ResultsListView.ItemsSource = _carvedFiles;
+        ReportListView.ItemsSource = _reportEntries;
+        InitializeFileTypeCheckboxes();
+        SetupTextBoxContextMenus();
+        WorldMapControl.BeforeNavigate += WorldMap_BeforeNavigate;
+        KeyDown += SingleFileTab_KeyDown;
+        Loaded += SingleFileTab_Loaded;
+        Unloaded += SingleFileTab_Unloaded;
+    }
+
+    private void ReorderSubTabsForGameDataWorkflow()
+    {
+        SubTabView.TabItems.Clear();
+        SubTabView.TabItems.Add(SummaryTab);
+        SubTabView.TabItems.Add(DataBrowserTab);
+        SubTabView.TabItems.Add(WorldMapTab);
+        SubTabView.TabItems.Add(DialogueViewerTab);
+        SubTabView.TabItems.Add(NpcBrowserTab);
+        SubTabView.TabItems.Add(ReportsTab);
+        SubTabView.TabItems.Add(RawViewTab);
+        SubTabView.TabItems.Add(CoverageTab);
+        SubTabView.SelectedItem = SummaryTab;
     }
 
     #endregion

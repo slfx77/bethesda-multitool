@@ -3,7 +3,6 @@ using FalloutXbox360Utils.CLI.Rendering.Npc;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Nif;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Animation;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
 

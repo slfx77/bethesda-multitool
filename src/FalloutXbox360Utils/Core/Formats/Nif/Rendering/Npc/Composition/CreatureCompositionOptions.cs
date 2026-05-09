@@ -71,5 +71,4 @@ internal sealed class CreatureCompositionOptions : IEquatable<CreatureCompositio
             AnimOverride = settings.AnimOverride
         };
     }
-
 }

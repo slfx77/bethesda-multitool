@@ -1,6 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
 using Spectre.Console;

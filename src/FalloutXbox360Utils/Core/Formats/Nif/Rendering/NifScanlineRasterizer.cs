@@ -151,23 +151,44 @@ internal static class NifScanlineRasterizer
                             by = tri.By0 * w0 + tri.By1 * w1 + tri.By2 * w2;
                             bz = tri.Bz0 * w0 + tri.Bz1 * w1 + tri.Bz2 * w2;
                             var tLen = MathF.Sqrt(tx * tx + ty * ty + tz * tz);
-                            if (tLen > 0.001f) { tx /= tLen; ty /= tLen; tz /= tLen; }
+                            if (tLen > 0.001f)
+                            {
+                                tx /= tLen;
+                                ty /= tLen;
+                                tz /= tLen;
+                            }
+
                             var bLen = MathF.Sqrt(bx * bx + by * by + bz * bz);
-                            if (bLen > 0.001f) { bx /= bLen; by /= bLen; bz /= bLen; }
+                            if (bLen > 0.001f)
+                            {
+                                bx /= bLen;
+                                by /= bLen;
+                                bz /= bLen;
+                            }
                         }
                         else
                         {
                             if (MathF.Abs(nx) < 0.9f)
                             {
-                                tx = 0f; ty = nz; tz = -ny;
+                                tx = 0f;
+                                ty = nz;
+                                tz = -ny;
                             }
                             else
                             {
-                                tx = -nz; ty = 0f; tz = nx;
+                                tx = -nz;
+                                ty = 0f;
+                                tz = nx;
                             }
 
                             var tLen = MathF.Sqrt(tx * tx + ty * ty + tz * tz);
-                            if (tLen > 0.001f) { tx /= tLen; ty /= tLen; tz /= tLen; }
+                            if (tLen > 0.001f)
+                            {
+                                tx /= tLen;
+                                ty /= tLen;
+                                tz /= tLen;
+                            }
+
                             bx = ny * tz - nz * ty;
                             by = nz * tx - nx * tz;
                             bz = nx * ty - ny * tx;
@@ -354,14 +375,20 @@ internal static class NifScanlineRasterizer
                 var dstB = pixels[pIdx + 2] / 255f;
 
                 pixels[pIdx + 0] = (byte)Math.Clamp(
-                    fr * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, srcR, srcG, srcB, dstR, dstG, dstB, 0) +
-                    pixels[pIdx + 0] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, srcR, srcG, srcB, dstR, dstG, dstB, 0), 0, 255);
+                    fr * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, srcR, srcG, srcB, dstR, dstG,
+                        dstB, 0) +
+                    pixels[pIdx + 0] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, srcR, srcG, srcB,
+                        dstR, dstG, dstB, 0), 0, 255);
                 pixels[pIdx + 1] = (byte)Math.Clamp(
-                    fg * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, srcR, srcG, srcB, dstR, dstG, dstB, 1) +
-                    pixels[pIdx + 1] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, srcR, srcG, srcB, dstR, dstG, dstB, 1), 0, 255);
+                    fg * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, srcR, srcG, srcB, dstR, dstG,
+                        dstB, 1) +
+                    pixels[pIdx + 1] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, srcR, srcG, srcB,
+                        dstR, dstG, dstB, 1), 0, 255);
                 pixels[pIdx + 2] = (byte)Math.Clamp(
-                    fb * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, srcR, srcG, srcB, dstR, dstG, dstB, 2) +
-                    pixels[pIdx + 2] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, srcR, srcG, srcB, dstR, dstG, dstB, 2), 0, 255);
+                    fb * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, srcR, srcG, srcB, dstR, dstG,
+                        dstB, 2) +
+                    pixels[pIdx + 2] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, srcR, srcG, srcB,
+                        dstR, dstG, dstB, 2), 0, 255);
             }
 
             var outAlpha = tri.DstBlendMode == 0
@@ -462,14 +489,20 @@ internal static class NifScanlineRasterizer
                 var dstB2 = pixels[pIdx + 2] / 255f;
 
                 pixels[pIdx + 0] = (byte)Math.Clamp(
-                    fr * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, srcR2, srcG2, srcB2, dstR2, dstG2, dstB2, 0) +
-                    pixels[pIdx + 0] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, srcR2, srcG2, srcB2, dstR2, dstG2, dstB2, 0), 0, 255);
+                    fr * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, srcR2, srcG2, srcB2, dstR2, dstG2,
+                        dstB2, 0) +
+                    pixels[pIdx + 0] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, srcR2, srcG2, srcB2,
+                        dstR2, dstG2, dstB2, 0), 0, 255);
                 pixels[pIdx + 1] = (byte)Math.Clamp(
-                    fg * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, srcR2, srcG2, srcB2, dstR2, dstG2, dstB2, 1) +
-                    pixels[pIdx + 1] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, srcR2, srcG2, srcB2, dstR2, dstG2, dstB2, 1), 0, 255);
+                    fg * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, srcR2, srcG2, srcB2, dstR2, dstG2,
+                        dstB2, 1) +
+                    pixels[pIdx + 1] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, srcR2, srcG2, srcB2,
+                        dstR2, dstG2, dstB2, 1), 0, 255);
                 pixels[pIdx + 2] = (byte)Math.Clamp(
-                    fb * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, srcR2, srcG2, srcB2, dstR2, dstG2, dstB2, 2) +
-                    pixels[pIdx + 2] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, srcR2, srcG2, srcB2, dstR2, dstG2, dstB2, 2), 0, 255);
+                    fb * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, srcR2, srcG2, srcB2, dstR2, dstG2,
+                        dstB2, 2) +
+                    pixels[pIdx + 2] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, srcR2, srcG2, srcB2,
+                        dstR2, dstG2, dstB2, 2), 0, 255);
             }
 
             pixels[pIdx + 3] = Math.Max(pixels[pIdx + 3], (byte)Math.Clamp(srcA * 255f, 0f, 255f));

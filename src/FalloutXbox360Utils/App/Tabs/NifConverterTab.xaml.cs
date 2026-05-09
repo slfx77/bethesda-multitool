@@ -21,9 +21,9 @@ public sealed partial class NifConverterTab : NifFileConverterBase
     // NIF Viewer state
     private NifBrowserService? _nifBrowserService;
     private List<NifTreeViewItem>? _nifViewerAllItems;
-    private bool _nifViewerWebViewInitialized;
-    private string? _nifViewerSourcePath;
     private bool _nifViewerIsBsa;
+    private string? _nifViewerSourcePath;
+    private bool _nifViewerWebViewInitialized;
 
     public NifConverterTab()
     {
@@ -31,14 +31,6 @@ public sealed partial class NifConverterTab : NifFileConverterBase
         ReorderTabsForModelWorkflow();
         SetupTextBoxContextMenus();
         Loaded += NifConverterTab_Loaded;
-    }
-
-    private void ReorderTabsForModelWorkflow()
-    {
-        NifTabView.TabItems.Clear();
-        NifTabView.TabItems.Add(NifViewerTab);
-        NifTabView.TabItems.Add(NifBatchConvertTab);
-        NifTabView.SelectedItem = NifViewerTab;
     }
 
     // Wire abstract properties to XAML-declared elements
@@ -53,6 +45,14 @@ public sealed partial class NifConverterTab : NifFileConverterBase
     protected override FontIcon FormatSortIcon => NifFormatSortIcon;
     protected override FontIcon StatusSortIcon => NifStatusSortIcon;
     protected override Border SettingsDrawerElement => SettingsDrawer;
+
+    private void ReorderTabsForModelWorkflow()
+    {
+        NifTabView.TabItems.Clear();
+        NifTabView.TabItems.Add(NifViewerTab);
+        NifTabView.TabItems.Add(NifBatchConvertTab);
+        NifTabView.SelectedItem = NifViewerTab;
+    }
 
     private async void NifConverterTab_Loaded(object sender, RoutedEventArgs e)
     {

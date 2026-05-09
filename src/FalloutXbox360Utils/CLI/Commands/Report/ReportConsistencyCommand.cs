@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.Text;
 using System.Text.Json;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
@@ -12,7 +13,6 @@ namespace FalloutXbox360Utils.CLI.Commands.Report;
 ///     aligns records by FormID, and runs <see cref="CrossBuildReportComparer" /> pairwise.
 ///     Output highlights field-level regressions while demoting allow-listed drift
 ///     (PNAM-only-on-Xbox, AIDT padding, FormType prototype shift, etc.).
-///
 ///     Inputs may also be a directory of pre-generated comparison HTML pages
 ///     (see <see cref="ComparisonBlobReader" />) using <c>--from-html</c>.
 /// </summary>
@@ -135,7 +135,7 @@ internal static class ReportConsistencyCommand
                 WriteConsistencyJson(writer, results);
             }
 
-            Console.WriteLine(System.Text.Encoding.UTF8.GetString(ms.ToArray()));
+            Console.WriteLine(Encoding.UTF8.GetString(ms.ToArray()));
         }
 
         var totalRegressions = results.Sum(r => r.Regressions.Values.Sum(list => list.Count));
@@ -262,7 +262,7 @@ internal static class ReportConsistencyCommand
     {
         var idx = spec.IndexOf('=');
         if (idx <= 0)
-            return (System.IO.Path.GetFileNameWithoutExtension(spec), spec);
+            return (Path.GetFileNameWithoutExtension(spec), spec);
         return (spec[..idx], spec[(idx + 1)..]);
     }
 

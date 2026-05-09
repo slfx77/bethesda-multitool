@@ -10,7 +10,6 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 /// </summary>
 internal sealed class RuntimeGlobalReader(RuntimeMemoryContext context)
 {
-
     public GlobalRecord? ReadRuntimeGlobal(RuntimeEditorIdEntry entry)
     {
         if (entry.TesFormOffset == null || entry.FormType != GlobFormType)

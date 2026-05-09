@@ -2,7 +2,6 @@ using System.Buffers.Binary;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Core.Minidump;
-using FalloutXbox360Utils.Core.Strings;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.RuntimeBuffer;
@@ -16,8 +15,6 @@ internal sealed class OwnershipVtableResolver
 {
     private const int MaxVtableScanBack = 512;
 
-    private readonly BufferAnalysisContext _ctx;
-
     /// <summary>
     ///     Maps PDB class name to (formType, list of char* pointer field offsets).
     /// </summary>
@@ -29,6 +26,8 @@ internal sealed class OwnershipVtableResolver
     /// </summary>
     private readonly Dictionary<string, (byte FormType, List<(int Offset, string Label)> Fields)>
         _classNameFieldIndex;
+
+    private readonly BufferAnalysisContext _ctx;
 
     /// <summary>
     ///     Hardcoded NiObject class to string field offsets (not in PDB layouts).

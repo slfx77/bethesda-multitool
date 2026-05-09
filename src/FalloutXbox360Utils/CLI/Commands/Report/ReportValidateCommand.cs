@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.Text;
 using System.Text.Json;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
@@ -164,7 +165,7 @@ internal static class ReportValidateCommand
                 writer.WriteEndObject();
             }
 
-            Console.WriteLine(System.Text.Encoding.UTF8.GetString(ms.ToArray()));
+            Console.WriteLine(Encoding.UTF8.GetString(ms.ToArray()));
         }
 
         if (allViolations.Count > 0 || (strict && unknownKeys.Count > 0))
@@ -246,7 +247,8 @@ internal static class ReportValidateCommand
         }
 
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"[bold red]Violations ({violations.Count:N0}, showing {Math.Min(maxPrint, violations.Count)}):[/]");
+        AnsiConsole.MarkupLine(
+            $"[bold red]Violations ({violations.Count:N0}, showing {Math.Min(maxPrint, violations.Count)}):[/]");
         var table = new Table().Border(TableBorder.Minimal);
         table.AddColumn("Record");
         table.AddColumn("FormID");

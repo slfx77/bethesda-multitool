@@ -1,6 +1,6 @@
-namespace FalloutXbox360Utils.Core.Formats.Esm;
-
 using System.Buffers.Binary;
+
+namespace FalloutXbox360Utils.Core.Formats.Esm;
 
 /// <summary>
 ///     Domain guards for values read from mixed ESM/runtime sources before they enter reports.

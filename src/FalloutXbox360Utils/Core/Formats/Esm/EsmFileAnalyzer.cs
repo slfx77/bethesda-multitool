@@ -21,7 +21,7 @@ public static class EsmFileAnalyzer
         IProgress<AnalysisProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        return await AnalyzeAsync(filePath, progress, verbose: false, cancellationToken);
+        return await AnalyzeAsync(filePath, progress, false, cancellationToken);
     }
 
     public static async Task<AnalysisResult> AnalyzeAsync(
@@ -61,143 +61,145 @@ public static class EsmFileAnalyzer
             var fileInfo = new FileInfo(filePath);
             result.FileSize = fileInfo.Length;
 
-        // Phase 1: Load file data (4%)
-        progress?.Report(new AnalysisProgress
-        {
-            Phase = "Loading",
-            PercentComplete = 4,
-            TotalBytes = fileInfo.Length
-        });
+            // Phase 1: Load file data (4%)
+            progress?.Report(new AnalysisProgress
+            {
+                Phase = "Loading",
+                PercentComplete = 4,
+                TotalBytes = fileInfo.Length
+            });
 
-        // Use memory-mapped file for efficient access to large ESM files
-        using var mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-        using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
+            // Use memory-mapped file for efficient access to large ESM files
+            using var mmf =
+                MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+            using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
 
-        var fileData = new byte[fileInfo.Length];
-        accessor.ReadArray(0, fileData, 0, fileData.Length);
+            var fileData = new byte[fileInfo.Length];
+            accessor.ReadArray(0, fileData, 0, fileData.Length);
 
-        cancellationToken.ThrowIfCancellationRequested();
+            cancellationToken.ThrowIfCancellationRequested();
 
-        // Phase 2: Parse file header (8%)
-        progress?.Report(new AnalysisProgress
-        {
-            Phase = "Parsing Header",
-            PercentComplete = 8,
-            TotalBytes = fileInfo.Length
-        });
+            // Phase 2: Parse file header (8%)
+            progress?.Report(new AnalysisProgress
+            {
+                Phase = "Parsing Header",
+                PercentComplete = 8,
+                TotalBytes = fileInfo.Length
+            });
 
-        var header = EsmParser.ParseFileHeader(fileData);
-        var isBigEndian = EsmParser.IsBigEndian(fileData);
-        result.BuildType = isBigEndian ? "Xbox 360 ESM" : "PC ESM";
+            var header = EsmParser.ParseFileHeader(fileData);
+            var isBigEndian = EsmParser.IsBigEndian(fileData);
+            result.BuildType = isBigEndian ? "Xbox 360 ESM" : "PC ESM";
 
-        cancellationToken.ThrowIfCancellationRequested();
+            cancellationToken.ThrowIfCancellationRequested();
 
-        // Phase 3: Enumerate all records (10-55%)
-        progress?.Report(new AnalysisProgress
-        {
-            Phase = "Scanning Records",
-            PercentComplete = 10,
-            TotalBytes = fileInfo.Length
-        });
+            // Phase 3: Enumerate all records (10-55%)
+            progress?.Report(new AnalysisProgress
+            {
+                Phase = "Scanning Records",
+                PercentComplete = 10,
+                TotalBytes = fileInfo.Length
+            });
 
-        var (parsedRecords, grupHeaders) = EsmParser.EnumerateRecordsWithGrups(fileData);
+            var (parsedRecords, grupHeaders) = EsmParser.EnumerateRecordsWithGrups(fileData);
 
-        // Report progress during record processing
-        progress?.Report(new AnalysisProgress
-        {
-            Phase = "Scanning Records",
-            PercentComplete = 55,
-            FilesFound = parsedRecords.Count,
-            TotalBytes = fileInfo.Length
-        });
+            // Report progress during record processing
+            progress?.Report(new AnalysisProgress
+            {
+                Phase = "Scanning Records",
+                PercentComplete = 55,
+                FilesFound = parsedRecords.Count,
+                TotalBytes = fileInfo.Length
+            });
 
-        if (verbose)
-        {
-            logger.Info($"[ESM Analysis] Parsed {grupHeaders.Count:N0} GRUP headers");
-        }
+            if (verbose)
+            {
+                logger.Info($"[ESM Analysis] Parsed {grupHeaders.Count:N0} GRUP headers");
+            }
 
-        cancellationToken.ThrowIfCancellationRequested();
+            cancellationToken.ThrowIfCancellationRequested();
 
-        // Phase 4: Convert to EsmRecordScanResult (58-68%)
-        progress?.Report(new AnalysisProgress
-        {
-            Phase = "Building Index",
-            PercentComplete = 58,
-            FilesFound = parsedRecords.Count
-        });
+            // Phase 4: Convert to EsmRecordScanResult (58-68%)
+            progress?.Report(new AnalysisProgress
+            {
+                Phase = "Building Index",
+                PercentComplete = 58,
+                FilesFound = parsedRecords.Count
+            });
 
-        var (cellToWorldspace, landToWorldspace, cellToRefrMap, topicToInfoMap) =
-            BuildAllMaps(parsedRecords, grupHeaders);
-        if (verbose)
-        {
-            logger.Info($"[ESM Analysis] Cell\u2192Worldspace map: {cellToWorldspace.Count} cells mapped " +
-                        $"(from {grupHeaders.Count(g => g.GroupType == 1)} World Children GRUPs)");
-            logger.Info($"[ESM Analysis] LAND\u2192Worldspace map: {landToWorldspace.Count} LAND records mapped");
-            logger.Info($"[ESM Analysis] Cell\u2192REFR map: {cellToRefrMap.Count} cells with " +
-                        $"{cellToRefrMap.Values.Sum(v => v.Count)} placed references");
-            logger.Info($"[ESM Analysis] Topic\u2192INFO map: {topicToInfoMap.Count} topics with " +
-                        $"{topicToInfoMap.Values.Sum(v => v.Count)} child INFOs");
-        }
-        result.EsmRecords =
-            EsmDataExtractor.ConvertToScanResult(parsedRecords, isBigEndian, cellToWorldspace, landToWorldspace,
-                cellToRefrMap, topicToInfoMap);
-        EsmDataExtractor.ExtractRefrRecordsFromParsed(result.EsmRecords, parsedRecords, isBigEndian);
+            var (cellToWorldspace, landToWorldspace, cellToRefrMap, topicToInfoMap) =
+                BuildAllMaps(parsedRecords, grupHeaders);
+            if (verbose)
+            {
+                logger.Info($"[ESM Analysis] Cell\u2192Worldspace map: {cellToWorldspace.Count} cells mapped " +
+                            $"(from {grupHeaders.Count(g => g.GroupType == 1)} World Children GRUPs)");
+                logger.Info($"[ESM Analysis] LAND\u2192Worldspace map: {landToWorldspace.Count} LAND records mapped");
+                logger.Info($"[ESM Analysis] Cell\u2192REFR map: {cellToRefrMap.Count} cells with " +
+                            $"{cellToRefrMap.Values.Sum(v => v.Count)} placed references");
+                logger.Info($"[ESM Analysis] Topic\u2192INFO map: {topicToInfoMap.Count} topics with " +
+                            $"{topicToInfoMap.Values.Sum(v => v.Count)} child INFOs");
+            }
 
-        // Extract LAND records for heightmap rendering in World tab
-        EsmWorldExtractor.ExtractLandRecords(accessor, fileInfo.Length, result.EsmRecords);
+            result.EsmRecords =
+                EsmDataExtractor.ConvertToScanResult(parsedRecords, isBigEndian, cellToWorldspace, landToWorldspace,
+                    cellToRefrMap, topicToInfoMap);
+            EsmDataExtractor.ExtractRefrRecordsFromParsed(result.EsmRecords, parsedRecords, isBigEndian);
 
-        // Log record counts for debugging
-        var npcRecords = parsedRecords.Where(r => r.Header.Signature == "NPC_").ToList();
-        var npcWithSubrecords = npcRecords.Count(r => r.Subrecords.Count > 0);
-        var firstNpc = npcRecords.FirstOrDefault();
-        var firstNpcSigs = firstNpc?.Subrecords.Take(5).Select(s => s.Signature).ToList() ?? [];
-        if (verbose)
-        {
-            logger.Info(
-                $"[ESM Analysis] Total records: {parsedRecords.Count}, NPC_: {npcRecords.Count}, with subrecords: {npcWithSubrecords}");
-            if (firstNpc != null)
+            // Extract LAND records for heightmap rendering in World tab
+            EsmWorldExtractor.ExtractLandRecords(accessor, fileInfo.Length, result.EsmRecords);
+
+            // Log record counts for debugging
+            var npcRecords = parsedRecords.Where(r => r.Header.Signature == "NPC_").ToList();
+            var npcWithSubrecords = npcRecords.Count(r => r.Subrecords.Count > 0);
+            var firstNpc = npcRecords.FirstOrDefault();
+            var firstNpcSigs = firstNpc?.Subrecords.Take(5).Select(s => s.Signature).ToList() ?? [];
+            if (verbose)
             {
                 logger.Info(
-                    $"[ESM Analysis] First NPC FormId=0x{firstNpc.Header.FormId:X8} has {firstNpc.Subrecords.Count} subrecords: [{string.Join(",", firstNpcSigs)}]");
+                    $"[ESM Analysis] Total records: {parsedRecords.Count}, NPC_: {npcRecords.Count}, with subrecords: {npcWithSubrecords}");
+                if (firstNpc != null)
+                {
+                    logger.Info(
+                        $"[ESM Analysis] First NPC FormId=0x{firstNpc.Header.FormId:X8} has {firstNpc.Subrecords.Count} subrecords: [{string.Join(",", firstNpcSigs)}]");
+                }
             }
-        }
 
-        cancellationToken.ThrowIfCancellationRequested();
+            cancellationToken.ThrowIfCancellationRequested();
 
-        // Phase 5: Build FormID map (68-72%)
-        progress?.Report(new AnalysisProgress
-        {
-            Phase = "Mapping FormIDs",
-            PercentComplete = 68,
-            FilesFound = parsedRecords.Count
-        });
+            // Phase 5: Build FormID map (68-72%)
+            progress?.Report(new AnalysisProgress
+            {
+                Phase = "Mapping FormIDs",
+                PercentComplete = 68,
+                FilesFound = parsedRecords.Count
+            });
 
-        result.FormIdMap = BuildFormIdMap(parsedRecords, verbose);
+            result.FormIdMap = BuildFormIdMap(parsedRecords, verbose);
 
-        // Phase 6: Populate carved files for Memory Map (72-78%)
-        progress?.Report(new AnalysisProgress
-        {
-            Phase = "Building Memory Map",
-            PercentComplete = 72,
-            FilesFound = parsedRecords.Count
-        });
+            // Phase 6: Populate carved files for Memory Map (72-78%)
+            progress?.Report(new AnalysisProgress
+            {
+                Phase = "Building Memory Map",
+                PercentComplete = 72,
+                FilesFound = parsedRecords.Count
+            });
 
-        PopulateCarvedFiles(result, parsedRecords, grupHeaders, header, isBigEndian);
+            PopulateCarvedFiles(result, parsedRecords, grupHeaders, header, isBigEndian);
 
-        stopwatch.Stop();
-        result.AnalysisTime = stopwatch.Elapsed;
+            stopwatch.Stop();
+            result.AnalysisTime = stopwatch.Elapsed;
 
-        progress?.Report(new AnalysisProgress
-        {
-            Phase = "Analysis Complete",
-            PercentComplete = 80,
-            FilesFound = parsedRecords.Count
-        });
+            progress?.Report(new AnalysisProgress
+            {
+                Phase = "Analysis Complete",
+                PercentComplete = 80,
+                FilesFound = parsedRecords.Count
+            });
 
-        if (verbose)
-        {
-            logger.Info($"[ESM Analysis] Complete. Time: {stopwatch.Elapsed}, Records: {parsedRecords.Count}");
-        }
+            if (verbose)
+            {
+                logger.Info($"[ESM Analysis] Complete. Time: {stopwatch.Elapsed}, Records: {parsedRecords.Count}");
+            }
 
             return result;
         }

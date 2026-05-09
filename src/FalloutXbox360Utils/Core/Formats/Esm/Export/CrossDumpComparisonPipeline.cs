@@ -1,7 +1,6 @@
 using System.Runtime;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
-using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Semantic;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
@@ -128,9 +127,9 @@ internal static class CrossDumpComparisonPipeline
         var index = CrossDumpAggregator.Aggregate(
             aggregateInputs,
             allowedTypes,
-            releaseInputRecords: true,
-            npcPlacementIndexes: npcPlacementIndexes,
-            npcScriptReferenceIndexes: npcScriptReferenceIndexes);
+            true,
+            npcPlacementIndexes,
+            npcScriptReferenceIndexes);
         aggregateInputs.Clear();
 
         AppendHeightmaps(index, heightmapSources);
@@ -386,13 +385,6 @@ internal static class CrossDumpComparisonPipeline
         return worldspaceGroup;
     }
 
-    private sealed record HeightmapSource(
-        FormIdResolver Resolver,
-        IReadOnlyDictionary<uint, uint> LandToWorldspaceMap,
-        IReadOnlyList<HeightmapEntry> LandRecords);
-
-    private sealed record HeightmapEntry(uint FormId, LandHeightmap Heightmap, int X, int Y);
-
     private static List<string> DetermineRecordTypes(
         IEnumerable<SemanticSource> sources,
         HashSet<string>? allowedTypes)
@@ -551,7 +543,7 @@ internal static class CrossDumpComparisonPipeline
 #pragma warning disable S1215
         // The streaming comparison path intentionally discards large per-type report payloads.
         // Compact between types so CELL/NPC chunks do not keep the next type's peak inflated.
-        GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+        GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, true, true);
 #pragma warning restore S1215
     }
 
@@ -640,4 +632,11 @@ internal static class CrossDumpComparisonPipeline
             index.StructuredRecords.Remove(key);
         }
     }
+
+    private sealed record HeightmapSource(
+        FormIdResolver Resolver,
+        IReadOnlyDictionary<uint, uint> LandToWorldspaceMap,
+        IReadOnlyList<HeightmapEntry> LandRecords);
+
+    private sealed record HeightmapEntry(uint FormId, LandHeightmap Heightmap, int X, int Y);
 }

@@ -250,7 +250,7 @@ public sealed partial class SingleFileTab
 #pragma warning disable S1075 // URIs should not be hardcoded
                 "https://npc-viewer-assets/npc-viewer.html"
 #pragma warning restore S1075
-                );
+            );
             _webViewInitialized = true;
         }
         catch (Exception ex)
