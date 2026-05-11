@@ -49,6 +49,11 @@ public sealed class ActiEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MODL", acti.ModelPath));
         }
 
+        if (acti.TextureHashData is { Length: > 0 } modt)
+        {
+            subs.Add(NewRecordSubrecords.EncodeByteArraySubrecord("MODT", modt));
+        }
+
         if (acti.Script.HasValue)
         {
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRI", acti.Script.Value));

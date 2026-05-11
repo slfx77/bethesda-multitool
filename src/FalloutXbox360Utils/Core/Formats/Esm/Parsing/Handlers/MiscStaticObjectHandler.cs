@@ -51,6 +51,7 @@ internal sealed class MiscStaticObjectHandler(RecordParserContext context) : Rec
 
         string? editorId = null;
         string? modelPath = null;
+        byte[]? textureHashData = null;
         ObjectBounds? bounds = null;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
@@ -70,6 +71,9 @@ internal sealed class MiscStaticObjectHandler(RecordParserContext context) : Rec
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
                     break;
+                case "MODT" when sub.DataLength > 0:
+                    textureHashData = subData.ToArray();
+                    break;
                 case "OBND" when sub.DataLength == 12:
                     bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
                     break;
@@ -81,6 +85,7 @@ internal sealed class MiscStaticObjectHandler(RecordParserContext context) : Rec
             FormId = record.FormId,
             EditorId = editorId ?? Context.GetEditorId(record.FormId),
             ModelPath = modelPath,
+            TextureHashData = textureHashData,
             Bounds = bounds,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
@@ -134,6 +139,7 @@ internal sealed class MiscStaticObjectHandler(RecordParserContext context) : Rec
         string? editorId = null;
         string? fullName = null;
         string? modelPath = null;
+        byte[]? textureHashData = null;
         ObjectBounds? bounds = null;
         uint? script = null;
         uint markerFlags = 0;
@@ -158,6 +164,9 @@ internal sealed class MiscStaticObjectHandler(RecordParserContext context) : Rec
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
                     break;
+                case "MODT" when sub.DataLength > 0:
+                    textureHashData = subData.ToArray();
+                    break;
                 case "OBND" when sub.DataLength == 12:
                     bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
                     break;
@@ -178,6 +187,7 @@ internal sealed class MiscStaticObjectHandler(RecordParserContext context) : Rec
             EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
             ModelPath = modelPath,
+            TextureHashData = textureHashData,
             Bounds = bounds,
             Script = script != 0 ? script : null,
             MarkerFlags = markerFlags,

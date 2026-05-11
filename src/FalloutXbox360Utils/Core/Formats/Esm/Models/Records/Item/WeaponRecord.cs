@@ -223,6 +223,9 @@ public record WeaponRecord
     /// <summary>Message icon path from MICO subrecord.</summary>
     public string? MessageIconPath { get; init; }
 
+    /// <summary>Texture hash data from MODT subrecord (opaque bytes — engine validates).</summary>
+    public byte[]? TextureHashData { get; init; }
+
     /// <summary>Shell casing model path from MOD2 subrecord.</summary>
     public string? ShellCasingModelPath { get; init; }
 

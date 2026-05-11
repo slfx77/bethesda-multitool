@@ -48,6 +48,11 @@ public sealed class StatEncoder : IRecordEncoder
             warnings.Add($"New STAT 0x{stat.FormId:X8} has no model path — record will not render in-game.");
         }
 
+        if (stat.TextureHashData is { Length: > 0 } modt)
+        {
+            subs.Add(NewRecordSubrecords.EncodeByteArraySubrecord("MODT", modt));
+        }
+
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
     }
 }

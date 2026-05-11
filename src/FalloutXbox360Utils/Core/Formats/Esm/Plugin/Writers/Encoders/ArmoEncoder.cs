@@ -64,6 +64,21 @@ public sealed class ArmoEncoder : IRecordEncoder
             warnings.Add($"New ARMO 0x{armo.FormId:X8} has no model path — armor won't render in-game.");
         }
 
+        if (armo.TextureHashData is { Length: > 0 } modt)
+        {
+            subs.Add(NewRecordSubrecords.EncodeByteArraySubrecord("MODT", modt));
+        }
+
+        if (!string.IsNullOrEmpty(armo.IconPath))
+        {
+            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("ICON", armo.IconPath));
+        }
+
+        if (!string.IsNullOrEmpty(armo.MessageIconPath))
+        {
+            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MICO", armo.MessageIconPath));
+        }
+
         // BMDT — biped slots + general flags. Required for the engine to know where the armor goes.
         var bmdt = new byte[8];
         SubrecordEncoder.WriteUInt32(bmdt, 0, armo.BipedFlags);

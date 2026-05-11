@@ -28,6 +28,15 @@ public record MiscItemRecord
     /// <summary>Object bounds (OBND subrecord).</summary>
     public ObjectBounds? Bounds { get; init; }
 
+    /// <summary>Inventory image path from ICON subrecord.</summary>
+    public string? IconPath { get; init; }
+
+    /// <summary>Message icon path from MICO subrecord.</summary>
+    public string? MessageIconPath { get; init; }
+
+    /// <summary>Texture hash data from MODT subrecord (opaque bytes — engine validates).</summary>
+    public byte[]? TextureHashData { get; init; }
+
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }
 

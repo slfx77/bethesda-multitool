@@ -105,6 +105,7 @@ internal sealed class WeaponRecordHandler(RecordParserContext context) : RecordH
         // Phase 5: Art assets
         string? inventoryIconPath = null;
         string? messageIconPath = null;
+        byte[]? textureHashData = null;
         string? shellCasingModelPath = null;
         uint? repairItemListFormId = null;
         uint? impactDataSetFormIdEsm = null;
@@ -171,6 +172,9 @@ internal sealed class WeaponRecordHandler(RecordParserContext context) : RecordH
                     break;
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODT" when sub.DataLength > 0:
+                    textureHashData = subData.ToArray();
                     break;
                 case "NNAM":
                     embeddedWeaponNode = EsmStringUtils.ReadNullTermString(subData);
@@ -553,6 +557,7 @@ internal sealed class WeaponRecordHandler(RecordParserContext context) : RecordH
             VatsAttack = vatsAttack,
             InventoryIconPath = inventoryIconPath,
             MessageIconPath = messageIconPath,
+            TextureHashData = textureHashData,
             ShellCasingModelPath = shellCasingModelPath,
             RepairItemListFormId = repairItemListFormId,
             ImpactDataSetFormId = impactDataSetFormIdEsm ?? null,

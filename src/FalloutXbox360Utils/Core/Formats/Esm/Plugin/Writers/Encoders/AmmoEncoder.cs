@@ -56,6 +56,21 @@ public sealed class AmmoEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MODL", ammo.ModelPath));
         }
 
+        if (ammo.TextureHashData is { Length: > 0 } modt)
+        {
+            subs.Add(NewRecordSubrecords.EncodeByteArraySubrecord("MODT", modt));
+        }
+
+        if (!string.IsNullOrEmpty(ammo.IconPath))
+        {
+            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("ICON", ammo.IconPath));
+        }
+
+        if (!string.IsNullOrEmpty(ammo.MessageIconPath))
+        {
+            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MICO", ammo.MessageIconPath));
+        }
+
         subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(ammo)));
 
         if (ammo.ProjectileFormId.HasValue || ammo.ProjectileFormIds.Count > 0)

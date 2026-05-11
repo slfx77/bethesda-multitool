@@ -58,6 +58,16 @@ internal static class NewRecordSubrecords
     }
 
     /// <summary>
+    ///     Emit an opaque byte-array subrecord (MODT/MO2T/MO3T texture hashes, ...).
+    ///     The schema marks these as unstructured byte arrays — no endian swap, no parsing.
+    ///     The engine validates the bytes; we pass them through as-is.
+    /// </summary>
+    public static EncodedSubrecord EncodeByteArraySubrecord(string signature, byte[] data)
+    {
+        return new EncodedSubrecord(signature, data);
+    }
+
+    /// <summary>
     ///     Emit OBND — 12 bytes, 6 int16 values: X1, Y1, Z1, X2, Y2, Z2 (min/max bounds).
     ///     Per fopdoc, this is the canonical object-bounds layout for most record types.
     /// </summary>

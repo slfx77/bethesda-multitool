@@ -48,6 +48,21 @@ public sealed class KeymEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MODL", key.ModelPath));
         }
 
+        if (key.TextureHashData is { Length: > 0 } modt)
+        {
+            subs.Add(NewRecordSubrecords.EncodeByteArraySubrecord("MODT", modt));
+        }
+
+        if (!string.IsNullOrEmpty(key.IconPath))
+        {
+            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("ICON", key.IconPath));
+        }
+
+        if (!string.IsNullOrEmpty(key.MessageIconPath))
+        {
+            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MICO", key.MessageIconPath));
+        }
+
         subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(key)));
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };

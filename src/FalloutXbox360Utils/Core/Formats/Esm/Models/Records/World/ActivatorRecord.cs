@@ -33,6 +33,9 @@ public record ActivatorRecord
     /// <summary>Water type FormID (WNAM subrecord).</summary>
     public uint? WaterTypeFormId { get; init; }
 
+    /// <summary>Texture hash data from MODT subrecord (opaque bytes — engine validates).</summary>
+    public byte[]? TextureHashData { get; init; }
+
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }
 

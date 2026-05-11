@@ -57,6 +57,21 @@ public sealed class MiscEncoder : IRecordEncoder
             warnings.Add($"New MISC 0x{misc.FormId:X8} has no model path — record will not render in-game.");
         }
 
+        if (misc.TextureHashData is { Length: > 0 } modt)
+        {
+            subs.Add(NewRecordSubrecords.EncodeByteArraySubrecord("MODT", modt));
+        }
+
+        if (!string.IsNullOrEmpty(misc.IconPath))
+        {
+            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("ICON", misc.IconPath));
+        }
+
+        if (!string.IsNullOrEmpty(misc.MessageIconPath))
+        {
+            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MICO", misc.MessageIconPath));
+        }
+
         subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(misc)));
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };

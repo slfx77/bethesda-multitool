@@ -56,6 +56,7 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context) : Reco
         string? editorId = null;
         string? fullName = null;
         string? modelPath = null;
+        byte[]? textureHashData = null;
         ObjectBounds? bounds = null;
         uint? script = null;
         uint? activationSound = null;
@@ -76,6 +77,9 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context) : Reco
                     break;
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODT" when sub.DataLength > 0:
+                    textureHashData = subData.ToArray();
                     break;
                 case "OBND" when sub.DataLength == 12:
                     bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
@@ -101,6 +105,7 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context) : Reco
             EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
             ModelPath = modelPath,
+            TextureHashData = textureHashData,
             Bounds = bounds,
             Script = script != 0 ? script : null,
             ActivationSoundFormId = activationSound != 0 ? activationSound : null,
@@ -162,6 +167,7 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context) : Reco
         string? editorId = null;
         string? fullName = null;
         string? modelPath = null;
+        byte[]? textureHashData = null;
         ObjectBounds? bounds = null;
         var duration = 0;
         uint radius = 0, color = 0, flags = 0;
@@ -187,6 +193,9 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context) : Reco
                     break;
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODT" when sub.DataLength > 0:
+                    textureHashData = subData.ToArray();
                     break;
                 case "OBND" when sub.DataLength == 12:
                     bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
@@ -229,6 +238,7 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context) : Reco
             EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
             ModelPath = modelPath,
+            TextureHashData = textureHashData,
             Bounds = bounds,
             Duration = duration,
             Radius = radius,
@@ -294,6 +304,7 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context) : Reco
         string? editorId = null;
         string? fullName = null;
         string? modelPath = null;
+        byte[]? textureHashData = null;
         ObjectBounds? bounds = null;
         uint? script = null;
         uint? openSound = null;
@@ -320,6 +331,9 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context) : Reco
                     break;
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODT" when sub.DataLength > 0:
+                    textureHashData = subData.ToArray();
                     break;
                 case "OBND" when sub.DataLength == 12:
                     bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
@@ -348,6 +362,7 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context) : Reco
             EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
             ModelPath = modelPath,
+            TextureHashData = textureHashData,
             Bounds = bounds,
             Script = script != 0 ? script : null,
             OpenSoundFormId = openSound != 0 ? openSound : null,

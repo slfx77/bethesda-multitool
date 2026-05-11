@@ -27,6 +27,9 @@ public record FurnitureRecord
     /// <summary>Furniture marker flags (MNAM subrecord) — active positions bitmask.</summary>
     public uint MarkerFlags { get; init; }
 
+    /// <summary>Texture hash data from MODT subrecord (opaque bytes — engine validates).</summary>
+    public byte[]? TextureHashData { get; init; }
+
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }
 

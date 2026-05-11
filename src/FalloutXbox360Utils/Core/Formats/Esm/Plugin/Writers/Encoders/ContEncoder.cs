@@ -49,6 +49,11 @@ public sealed class ContEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MODL", cont.ModelPath));
         }
 
+        if (cont.TextureHashData is { Length: > 0 } modt)
+        {
+            subs.Add(NewRecordSubrecords.EncodeByteArraySubrecord("MODT", modt));
+        }
+
         if (cont.Script.HasValue)
         {
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRI", cont.Script.Value));

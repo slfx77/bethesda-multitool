@@ -49,6 +49,11 @@ public sealed class DoorEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MODL", door.ModelPath));
         }
 
+        if (door.TextureHashData is { Length: > 0 } modt)
+        {
+            subs.Add(NewRecordSubrecords.EncodeByteArraySubrecord("MODT", modt));
+        }
+
         if (door.Script.HasValue)
         {
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRI", door.Script.Value));

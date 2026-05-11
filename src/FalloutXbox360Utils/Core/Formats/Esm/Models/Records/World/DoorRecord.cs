@@ -36,6 +36,9 @@ public record DoorRecord
     /// <summary>Door flags (FNAM subrecord).</summary>
     public byte Flags { get; init; }
 
+    /// <summary>Texture hash data from MODT subrecord (opaque bytes — engine validates).</summary>
+    public byte[]? TextureHashData { get; init; }
+
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }
 

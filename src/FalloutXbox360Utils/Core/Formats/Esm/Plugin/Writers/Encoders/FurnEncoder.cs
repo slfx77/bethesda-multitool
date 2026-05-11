@@ -49,6 +49,11 @@ public sealed class FurnEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MODL", furn.ModelPath));
         }
 
+        if (furn.TextureHashData is { Length: > 0 } modt)
+        {
+            subs.Add(NewRecordSubrecords.EncodeByteArraySubrecord("MODT", modt));
+        }
+
         if (furn.Script.HasValue)
         {
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRI", furn.Script.Value));

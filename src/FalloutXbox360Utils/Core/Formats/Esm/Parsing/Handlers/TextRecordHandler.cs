@@ -88,6 +88,9 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
         string? fullName = null;
         string? text = null;
         string? modelPath = null;
+        string? iconPath = null;
+        string? messageIconPath = null;
+        byte[]? textureHashData = null;
         ObjectBounds? bounds = null;
         byte flags = 0;
         byte skillTaught = 0;
@@ -111,6 +114,15 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
                     break;
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "ICON":
+                    iconPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MICO":
+                    messageIconPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODT" when sub.DataLength > 0:
+                    textureHashData = subData.ToArray();
                     break;
                 case "OBND" when sub.DataLength == 12:
                     bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
@@ -138,6 +150,9 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
             FullName = fullName,
             Text = text,
             ModelPath = modelPath,
+            IconPath = iconPath,
+            MessageIconPath = messageIconPath,
+            TextureHashData = textureHashData,
             Bounds = bounds,
             Flags = flags,
             SkillTaught = skillTaught,

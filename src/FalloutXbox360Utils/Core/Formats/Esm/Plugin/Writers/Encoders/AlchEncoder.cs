@@ -57,6 +57,21 @@ public sealed class AlchEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MODL", alch.ModelPath));
         }
 
+        if (alch.TextureHashData is { Length: > 0 } modt)
+        {
+            subs.Add(NewRecordSubrecords.EncodeByteArraySubrecord("MODT", modt));
+        }
+
+        if (!string.IsNullOrEmpty(alch.IconPath))
+        {
+            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("ICON", alch.IconPath));
+        }
+
+        if (!string.IsNullOrEmpty(alch.MessageIconPath))
+        {
+            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MICO", alch.MessageIconPath));
+        }
+
         subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(alch)));
 
         // ENIT — 20 bytes per FNV ALCH ENIT schema:

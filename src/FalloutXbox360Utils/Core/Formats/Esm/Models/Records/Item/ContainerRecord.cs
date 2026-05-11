@@ -29,6 +29,9 @@ public record ContainerRecord
     /// <summary>Model path.</summary>
     public string? ModelPath { get; init; }
 
+    /// <summary>Texture hash data from MODT subrecord (opaque bytes — engine validates).</summary>
+    public byte[]? TextureHashData { get; init; }
+
     /// <summary>Script FormID.</summary>
     public uint? Script { get; init; }
 

@@ -36,6 +36,15 @@ public record BookRecord
     /// <summary>Object bounds (OBND subrecord).</summary>
     public ObjectBounds? Bounds { get; init; }
 
+    /// <summary>Inventory image path from ICON subrecord.</summary>
+    public string? IconPath { get; init; }
+
+    /// <summary>Message icon path from MICO subrecord.</summary>
+    public string? MessageIconPath { get; init; }
+
+    /// <summary>Texture hash data from MODT subrecord (opaque bytes — engine validates).</summary>
+    public byte[]? TextureHashData { get; init; }
+
     /// <summary>FormID of enchantment applied to this book (runtime pointer follow).</summary>
     public uint? EnchantmentFormId { get; init; }
 

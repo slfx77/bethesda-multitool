@@ -62,6 +62,11 @@ public sealed class WeapEncoder : IRecordEncoder
             warnings.Add($"New WEAP 0x{weap.FormId:X8} has no model path — weapon won't render in-game.");
         }
 
+        if (weap.TextureHashData is { Length: > 0 } modt)
+        {
+            subs.Add(NewRecordSubrecords.EncodeByteArraySubrecord("MODT", modt));
+        }
+
         if (!string.IsNullOrEmpty(weap.InventoryIconPath))
         {
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("ICON", weap.InventoryIconPath));

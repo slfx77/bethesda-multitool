@@ -57,6 +57,9 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
         string? editorId = null;
         string? fullName = null;
         string? modelPath = null;
+        string? iconPath = null;
+        string? messageIconPath = null;
+        byte[]? textureHashData = null;
         var value = 0;
         float weight = 0;
 
@@ -73,6 +76,15 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
                     break;
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "ICON":
+                    iconPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MICO":
+                    messageIconPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODT" when sub.DataLength > 0:
+                    textureHashData = subData.ToArray();
                     break;
                 case "DATA" when sub.DataLength >= 8:
                 {
@@ -104,6 +116,9 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
             EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
             ModelPath = modelPath,
+            IconPath = iconPath,
+            MessageIconPath = messageIconPath,
+            TextureHashData = textureHashData,
             Value = value,
             Weight = weight,
             Offset = record.Offset,
@@ -166,6 +181,9 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
         string? editorId = null;
         string? fullName = null;
         string? modelPath = null;
+        string? iconPath = null;
+        string? messageIconPath = null;
+        byte[]? textureHashData = null;
         ObjectBounds? bounds = null;
         var value = 0;
         var health = 0;
@@ -190,6 +208,15 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
                     break;
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "ICON":
+                    iconPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MICO":
+                    messageIconPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODT" when sub.DataLength > 0:
+                    textureHashData = subData.ToArray();
                     break;
                 case "OBND" when sub.DataLength == 12:
                     bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
@@ -244,6 +271,9 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
             EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
             ModelPath = modelPath,
+            IconPath = iconPath,
+            MessageIconPath = messageIconPath,
+            TextureHashData = textureHashData,
             Bounds = bounds,
             Value = value,
             Health = health,
@@ -329,6 +359,9 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
         string? editorId = null;
         string? fullName = null;
         string? modelPath = null;
+        string? iconPath = null;
+        string? messageIconPath = null;
+        byte[]? textureHashData = null;
         ObjectBounds? bounds = null;
         var value = 0;
         float weight = 0;
@@ -347,6 +380,15 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
                     break;
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "ICON":
+                    iconPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MICO":
+                    messageIconPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODT" when sub.DataLength > 0:
+                    textureHashData = subData.ToArray();
                     break;
                 case "OBND" when sub.DataLength == 12:
                     bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
@@ -371,6 +413,9 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
             EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
             ModelPath = modelPath,
+            IconPath = iconPath,
+            MessageIconPath = messageIconPath,
+            TextureHashData = textureHashData,
             Bounds = bounds,
             Value = value,
             Weight = weight,
@@ -515,6 +560,7 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
         string? editorId = null;
         string? fullName = null;
         string? modelPath = null;
+        byte[]? textureHashData = null;
         uint? script = null;
         byte flags = 0;
         float weight = 0f;
@@ -534,6 +580,9 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
                     break;
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODT" when sub.DataLength > 0:
+                    textureHashData = subData.ToArray();
                     break;
                 case "SCRI" when sub.DataLength == 4:
                     script = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
@@ -566,6 +615,7 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
             EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
             ModelPath = modelPath,
+            TextureHashData = textureHashData,
             Script = script,
             Flags = flags,
             Weight = weight,

@@ -53,6 +53,11 @@ public sealed class LighEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MODL", ligh.ModelPath));
         }
 
+        if (ligh.TextureHashData is { Length: > 0 } modt)
+        {
+            subs.Add(NewRecordSubrecords.EncodeByteArraySubrecord("MODT", modt));
+        }
+
         if (!string.IsNullOrEmpty(ligh.FullName))
         {
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("FULL", ligh.FullName));

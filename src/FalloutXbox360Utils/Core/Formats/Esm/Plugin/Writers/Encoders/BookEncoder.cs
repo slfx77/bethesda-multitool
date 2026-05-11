@@ -54,6 +54,21 @@ public sealed class BookEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MODL", book.ModelPath));
         }
 
+        if (book.TextureHashData is { Length: > 0 } modt)
+        {
+            subs.Add(NewRecordSubrecords.EncodeByteArraySubrecord("MODT", modt));
+        }
+
+        if (!string.IsNullOrEmpty(book.IconPath))
+        {
+            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("ICON", book.IconPath));
+        }
+
+        if (!string.IsNullOrEmpty(book.MessageIconPath))
+        {
+            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MICO", book.MessageIconPath));
+        }
+
         if (!string.IsNullOrEmpty(book.Text))
         {
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("DESC", book.Text));
