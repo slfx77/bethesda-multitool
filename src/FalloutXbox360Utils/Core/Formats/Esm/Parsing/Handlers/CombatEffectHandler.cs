@@ -37,7 +37,9 @@ internal sealed class CombatEffectHandler(RecordParserContext context) : RecordH
 
         string? editorId = null, fullName = null, modelPath = null;
         float force = 0, damage = 0, radius = 0, isRadius = 0;
+        float radiationLevel = 0, radiationDissipationTime = 0, radiationRadius = 0;
         uint light = 0, sound1 = 0, flags = 0, impactDataSet = 0, sound2 = 0, enchantment = 0;
+        uint soundLevel = 0;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -77,6 +79,11 @@ internal sealed class CombatEffectHandler(RecordParserContext context) : RecordH
                         isRadius = SubrecordDataReader.GetFloat(fields, "IsRadius");
                         impactDataSet = SubrecordDataReader.GetUInt32(fields, "ImpactDataSet");
                         sound2 = SubrecordDataReader.GetUInt32(fields, "Sound2");
+                        radiationLevel = SubrecordDataReader.GetFloat(fields, "RadiationLevel");
+                        radiationDissipationTime =
+                            SubrecordDataReader.GetFloat(fields, "RadiationDissipationTime");
+                        radiationRadius = SubrecordDataReader.GetFloat(fields, "RadiationRadius");
+                        soundLevel = SubrecordDataReader.GetUInt32(fields, "SoundLevel");
                     }
 
                     break;
@@ -100,6 +107,10 @@ internal sealed class CombatEffectHandler(RecordParserContext context) : RecordH
             ImpactDataSet = impactDataSet,
             Sound2 = sound2,
             Enchantment = enchantment,
+            RadiationLevel = radiationLevel,
+            RadiationDissipationTime = radiationDissipationTime,
+            RadiationRadius = radiationRadius,
+            SoundLevel = soundLevel,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };

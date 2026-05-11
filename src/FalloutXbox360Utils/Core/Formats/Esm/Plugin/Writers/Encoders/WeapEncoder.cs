@@ -1,3 +1,5 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
@@ -103,11 +105,9 @@ public sealed class WeapEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("INAM", weap.ImpactDataSetFormId.Value));
         }
 
-        if (weap.ModelVariants.Count > 0)
-        {
-            warnings.Add(
-                $"New WEAP 0x{weap.FormId:X8} has {weap.ModelVariants.Count} model variant(s) — MOD2/MOD3/MOD4 emission deferred to v6.");
-        }
+        // Modded weapon variants — WNAM (base 1st-person STAT FormID) plus WNM1-WNM7 / MWD1-MWD7
+        // for each mod combination. fopdoc canonical order: WNAM then alternating WNM*/MWD* per index.
+        EmitModelVariants(subs, weap.ModelVariants);
 
         if (weap.VatsAttack is not null)
         {
@@ -116,6 +116,53 @@ public sealed class WeapEncoder : IRecordEncoder
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
     }
+
+    private static void EmitModelVariants(List<EncodedSubrecord> subs, List<WeaponModelVariant> variants)
+    {
+        if (variants.Count == 0)
+        {
+            return;
+        }
+
+        // WNAM = base (no mods) 1st-person STAT FormID. Only one variant should have None.
+        var baseVariant = variants.FirstOrDefault(v => v.Combination == WeaponModCombination.None);
+        if (baseVariant?.FirstPersonObjectFormId is { } baseFormId && baseFormId != 0)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("WNAM", baseFormId));
+        }
+
+        // Per-combination WNM*/MWD* — index 1-7 maps to combinations in the order the parser uses.
+        foreach (var variant in variants)
+        {
+            var index = CombinationToIndex(variant.Combination);
+            if (index <= 0)
+            {
+                continue;
+            }
+
+            if (variant.FirstPersonObjectFormId is { } fpFormId && fpFormId != 0)
+            {
+                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord($"WNM{index}", fpFormId));
+            }
+
+            if (!string.IsNullOrEmpty(variant.ThirdPersonModelPath))
+            {
+                subs.Add(NewRecordSubrecords.EncodeStringSubrecord($"MWD{index}", variant.ThirdPersonModelPath));
+            }
+        }
+    }
+
+    private static int CombinationToIndex(WeaponModCombination combination) => combination switch
+    {
+        WeaponModCombination.Mod1 => 1,
+        WeaponModCombination.Mod2 => 2,
+        WeaponModCombination.Mod3 => 3,
+        WeaponModCombination.Mod12 => 4,
+        WeaponModCombination.Mod13 => 5,
+        WeaponModCombination.Mod23 => 6,
+        WeaponModCombination.Mod123 => 7,
+        _ => 0
+    };
 
     private static byte[] BuildDataSubrecord(WeaponRecord weap)
     {

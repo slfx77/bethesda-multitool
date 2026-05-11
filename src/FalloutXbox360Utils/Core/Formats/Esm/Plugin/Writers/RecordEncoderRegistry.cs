@@ -131,6 +131,20 @@ public sealed class RecordEncoderRegistry
     }
 
     /// <summary>
+    ///     Builds a registry for v11 — extends v7 with PROJ (projectile), EXPL (explosion),
+    ///     and IMOD (weapon mod) new-record encoders. All three are new-record-only types
+    ///     whose <see cref="IRecordEncoder.Encode" /> path is a no-op.
+    /// </summary>
+    public static RecordEncoderRegistry CreateV11Default()
+    {
+        var registry = CreateV7Default();
+        registry.Register(new Encoders.ProjEncoder());
+        registry.Register(new Encoders.ExplEncoder());
+        registry.Register(new Encoders.ImodEncoder());
+        return registry;
+    }
+
+    /// <summary>
     ///     Returns true if the record type is a placed-reference type that lives inside a
     ///     parent CELL's child GRUP. These types are excluded from top-level GRUP emission and
     ///     are routed through the cell-children pipeline instead.

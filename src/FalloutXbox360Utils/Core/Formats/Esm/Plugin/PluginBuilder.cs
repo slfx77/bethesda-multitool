@@ -368,6 +368,12 @@ public sealed class PluginBuilder
                     (Models.Records.World.FurnitureRecord)model),
                 "TERM" => Writers.Encoders.TermEncoder.EncodeNew(
                     (Models.Records.World.TerminalRecord)model),
+                "PROJ" => Writers.Encoders.ProjEncoder.EncodeNew(
+                    (Models.Records.Magic.ProjectileRecord)model),
+                "EXPL" => Writers.Encoders.ExplEncoder.EncodeNew(
+                    (Models.Records.Magic.ExplosionRecord)model),
+                "IMOD" => Writers.Encoders.ImodEncoder.EncodeNew(
+                    (Models.Records.Item.WeaponModRecord)model),
                 _ => null
             };
         }
@@ -1083,6 +1089,9 @@ public sealed class PluginBuilder
         yield return ("STAT", records.Statics);
         yield return ("FURN", records.Furniture);
         yield return ("TERM", records.Terminals);
+        yield return ("PROJ", records.Projectiles);
+        yield return ("EXPL", records.Explosions);
+        yield return ("IMOD", records.WeaponMods);
     }
 
     private static uint ExtractFormId(object model)

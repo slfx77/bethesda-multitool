@@ -454,6 +454,18 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
 
                     break;
                 }
+                case "CIS1" when conditions.Count > 0:
+                {
+                    var s = EsmStringUtils.ReadNullTermString(subData);
+                    conditions[^1] = conditions[^1] with { Parameter1String = s };
+                    break;
+                }
+                case "CIS2" when conditions.Count > 0:
+                {
+                    var s = EsmStringUtils.ReadNullTermString(subData);
+                    conditions[^1] = conditions[^1] with { Parameter2String = s };
+                    break;
+                }
             }
         }
 

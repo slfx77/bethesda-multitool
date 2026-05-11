@@ -110,6 +110,15 @@ public sealed class InfoEncoder : IRecordEncoder
         foreach (var condition in info.Conditions)
         {
             subs.Add(new EncodedSubrecord("CTDA", BuildCtdaSubrecord(condition)));
+            if (!string.IsNullOrEmpty(condition.Parameter1String))
+            {
+                subs.Add(NewRecordSubrecords.EncodeStringSubrecord("CIS1", condition.Parameter1String));
+            }
+
+            if (!string.IsNullOrEmpty(condition.Parameter2String))
+            {
+                subs.Add(NewRecordSubrecords.EncodeStringSubrecord("CIS2", condition.Parameter2String));
+            }
         }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };

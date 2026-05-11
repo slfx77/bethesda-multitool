@@ -42,6 +42,18 @@ public record ExplosionRecord
     /// <summary>Enchantment/Object Effect FormID from EITM subrecord.</summary>
     public uint Enchantment { get; init; }
 
+    /// <summary>Radiation level from DATA.</summary>
+    public float RadiationLevel { get; init; }
+
+    /// <summary>Radiation dissipation time from DATA.</summary>
+    public float RadiationDissipationTime { get; init; }
+
+    /// <summary>Radiation radius from DATA.</summary>
+    public float RadiationRadius { get; init; }
+
+    /// <summary>Sound attenuation level from DATA.</summary>
+    public uint SoundLevel { get; init; }
+
     public long Offset { get; init; }
     public bool IsBigEndian { get; init; }
 }
