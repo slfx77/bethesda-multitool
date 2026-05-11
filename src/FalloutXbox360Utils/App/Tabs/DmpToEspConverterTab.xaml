@@ -1,0 +1,318 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<UserControl
+  x:Class="FalloutXbox360Utils.DmpToEspConverterTab"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:local="using:FalloutXbox360Utils">
+
+  <Grid VerticalAlignment="Stretch">
+    <!--  Settings drawer  -->
+    <Border
+      x:Name="SettingsDrawer"
+      Style="{StaticResource SettingsDrawerBorderStyle}">
+      <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="16">
+          <TextBlock Text="Settings" Style="{StaticResource SubtitleTextBlockStyle}"
+                     AutomationProperties.HeadingLevel="Level2" />
+
+          <StackPanel Spacing="8">
+            <TextBlock Text="Plugin metadata" FontWeight="SemiBold" FontSize="13"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <TextBlock x:Name="PluginAuthorLabel" Text="Author" />
+            <TextBox
+              x:Name="PluginAuthorTextBox"
+              AutomationProperties.LabeledBy="{Binding ElementName=PluginAuthorLabel}" />
+            <TextBlock x:Name="PluginDescriptionLabel" Text="Description" />
+            <TextBox
+              x:Name="PluginDescriptionTextBox"
+              AcceptsReturn="True"
+              MaxHeight="80"
+              TextWrapping="Wrap"
+              AutomationProperties.LabeledBy="{Binding ElementName=PluginDescriptionLabel}" />
+          </StackPanel>
+
+          <StackPanel Spacing="4">
+            <TextBlock Text="Record handling" FontWeight="SemiBold" FontSize="13"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <CheckBox
+              x:Name="CompressRecordsCheckBox"
+              Content="Compress records"
+              MinWidth="0" />
+          </StackPanel>
+
+          <StackPanel Spacing="4">
+            <TextBlock Text="Validation" FontWeight="SemiBold" FontSize="13"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <CheckBox
+              x:Name="ValidateOutputCheckBox"
+              Content="Validate output by re-parsing"
+              IsChecked="True"
+              MinWidth="0" />
+            <CheckBox
+              x:Name="VerboseDecisionsCheckBox"
+              Content="Verbose decisions (per-record events)"
+              MinWidth="0" />
+          </StackPanel>
+        </StackPanel>
+      </ScrollViewer>
+    </Border>
+
+    <!--  Main content  -->
+    <Grid Padding="16"
+          VerticalAlignment="Stretch">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
+
+      <!-- Header -->
+      <StackPanel Grid.Row="0" Style="{StaticResource TabHeaderStackPanelStyle}" Margin="0,0,0,8">
+        <TextBlock
+          x:Name="HeaderTextBlock"
+          Text="DMP to ESP Converter"
+          AutomationProperties.HeadingLevel="Level1"
+          Style="{StaticResource SubtitleTextBlockStyle}" />
+        <TextBlock
+          Text="Reverse-engineer Xbox 360 memory dump records into a PC plugin ESP. v1: simple-type overrides only."
+          Style="{StaticResource TabSubtitleStyle}" />
+      </StackPanel>
+
+      <!-- Two-column body -->
+      <Grid Grid.Row="1" ColumnSpacing="16">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="420" MinWidth="360" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- LEFT: Inputs card -->
+        <Border Grid.Column="0" Style="{StaticResource CardBorderStyle}" Padding="16">
+          <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="12">
+              <TextBlock
+                Text="Inputs"
+                FontWeight="SemiBold"
+                AutomationProperties.HeadingLevel="Level2"
+                Style="{StaticResource SubtitleTextBlockStyle}" />
+
+              <StackPanel Spacing="4">
+                <TextBlock x:Name="DmpFileLabel" Text="DMP file" />
+                <Grid ColumnSpacing="6">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <TextBox
+                    x:Name="DmpPathTextBox"
+                    Grid.Column="0"
+                    PlaceholderText="C:\path\to\dump.dmp"
+                    TextChanged="InputPathTextBox_TextChanged"
+                    AutomationProperties.LabeledBy="{Binding ElementName=DmpFileLabel}" />
+                  <Button
+                    Grid.Column="1"
+                    Content="Browse..."
+                    Click="BrowseDmpButton_Click"
+                    AutomationProperties.Name="Browse for DMP file" />
+                </Grid>
+              </StackPanel>
+
+              <StackPanel Spacing="4">
+                <TextBlock x:Name="PcDataDirLabel" Text="PC Data directory" />
+                <Grid ColumnSpacing="6">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <TextBox
+                    x:Name="PcDataDirTextBox"
+                    Grid.Column="0"
+                    PlaceholderText="C:\path\to\Fallout New Vegas\Data"
+                    TextChanged="InputPathTextBox_TextChanged"
+                    AutomationProperties.LabeledBy="{Binding ElementName=PcDataDirLabel}" />
+                  <Button
+                    Grid.Column="1"
+                    Content="Browse..."
+                    Click="BrowsePcDataButton_Click"
+                    AutomationProperties.Name="Browse for PC Data directory" />
+                </Grid>
+                <TextBlock
+                  x:Name="PcDataValidationText"
+                  FontSize="11"
+                  Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                  Text="" />
+              </StackPanel>
+
+              <StackPanel Spacing="4">
+                <TextBlock x:Name="OutputEspLabel" Text="Output ESP path" />
+                <Grid ColumnSpacing="6">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <TextBox
+                    x:Name="OutputEspTextBox"
+                    Grid.Column="0"
+                    PlaceholderText="C:\path\to\output.esp"
+                    TextChanged="InputPathTextBox_TextChanged"
+                    AutomationProperties.LabeledBy="{Binding ElementName=OutputEspLabel}" />
+                  <Button
+                    Grid.Column="1"
+                    Content="Save..."
+                    Click="BrowseOutputButton_Click"
+                    AutomationProperties.Name="Browse for output ESP path" />
+                </Grid>
+              </StackPanel>
+
+              <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+                <Button
+                  x:Name="ConvertButton"
+                  Content="Convert"
+                  Style="{ThemeResource AccentButtonStyle}"
+                  IsEnabled="False"
+                  Click="ConvertButton_Click"
+                  AutomationProperties.Name="Convert DMP to ESP">
+                  <Button.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="R" Modifiers="Control" Invoked="ConvertAccelerator_Invoked" />
+                  </Button.KeyboardAccelerators>
+                </Button>
+                <Button
+                  x:Name="CancelButton"
+                  Content="Cancel"
+                  IsEnabled="False"
+                  Click="CancelButton_Click"
+                  AutomationProperties.Name="Cancel conversion">
+                  <Button.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="Escape" Invoked="CancelAccelerator_Invoked" />
+                  </Button.KeyboardAccelerators>
+                </Button>
+              </StackPanel>
+
+              <ProgressBar
+                x:Name="ConversionProgressBar"
+                Visibility="Collapsed"
+                IsIndeterminate="True" />
+            </StackPanel>
+          </ScrollViewer>
+        </Border>
+
+        <!-- RIGHT: Progress card -->
+        <Border Grid.Column="1" Style="{StaticResource CardBorderStyle}" Padding="16">
+          <Grid RowSpacing="8">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="*" />
+              <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0" ColumnSpacing="12">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBlock
+                Grid.Column="0"
+                Text="Progress"
+                FontWeight="SemiBold"
+                AutomationProperties.HeadingLevel="Level2"
+                Style="{StaticResource SubtitleTextBlockStyle}"
+                VerticalAlignment="Center" />
+              <ComboBox
+                Grid.Column="1"
+                x:Name="FilterComboBox"
+                MinWidth="120"
+                SelectedIndex="0"
+                SelectionChanged="FilterComboBox_SelectionChanged"
+                AutomationProperties.Name="Severity filter">
+                <ComboBoxItem Content="All" />
+                <ComboBoxItem Content="Decisions+" />
+                <ComboBoxItem Content="Warnings+" />
+                <ComboBoxItem Content="Errors only" />
+              </ComboBox>
+              <Button
+                Grid.Column="2"
+                Content="Copy"
+                Click="CopyLogButton_Click"
+                AutomationProperties.Name="Copy filtered log to clipboard" />
+              <Button
+                Grid.Column="3"
+                x:Name="ClearLogButton"
+                Content="Clear"
+                Click="ClearLogButton_Click"
+                AutomationProperties.Name="Clear progress log" />
+            </Grid>
+
+            <TextBlock
+              Grid.Row="1"
+              x:Name="PhaseStatusTextBlock"
+              FontSize="12"
+              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+              Text="Idle." />
+
+            <ListView
+              Grid.Row="2"
+              x:Name="EventsListView"
+              SelectionMode="None"
+              AutomationProperties.Name="Conversion progress events"
+              ScrollViewer.HorizontalScrollMode="Auto"
+              ScrollViewer.HorizontalScrollBarVisibility="Auto">
+              <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem">
+                  <Setter Property="Padding" Value="6,2,6,2" />
+                  <Setter Property="MinHeight" Value="0" />
+                </Style>
+              </ListView.ItemContainerStyle>
+              <ListView.ItemTemplate>
+                <DataTemplate x:DataType="local:ConversionEventEntry">
+                  <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="90" />
+                      <ColumnDefinition Width="50" />
+                      <ColumnDefinition Width="120" />
+                      <ColumnDefinition Width="60" />
+                      <ColumnDefinition Width="100" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="{x:Bind TimeDisplay}" FontFamily="Consolas" FontSize="12" />
+                    <TextBlock Grid.Column="1" Text="{x:Bind SeverityLabel}" FontWeight="SemiBold"
+                               Foreground="{x:Bind SeverityColor}" FontSize="12" />
+                    <TextBlock Grid.Column="2" Text="{x:Bind Phase}" FontSize="12" />
+                    <TextBlock Grid.Column="3" Text="{x:Bind FormTypeDisplay}" FontSize="12"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBlock Grid.Column="4" Text="{x:Bind FormIdDisplay}" FontFamily="Consolas" FontSize="12"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBlock Grid.Column="5" Text="{x:Bind Message}" TextWrapping="Wrap" FontSize="12" />
+                  </Grid>
+                </DataTemplate>
+              </ListView.ItemTemplate>
+            </ListView>
+
+            <TextBlock
+              Grid.Row="3"
+              x:Name="LogFooterTextBlock"
+              FontSize="11"
+              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+              Text="0 events" />
+          </Grid>
+        </Border>
+      </Grid>
+
+      <!-- Result summary (collapsed until completion) -->
+      <Border
+        Grid.Row="2"
+        x:Name="ResultSummaryBorder"
+        Style="{StaticResource CardBorderStyle}"
+        Padding="12"
+        Margin="0,8,0,0"
+        Visibility="Collapsed">
+        <TextBlock
+          x:Name="ResultSummaryTextBlock"
+          TextWrapping="Wrap"
+          FontSize="13" />
+      </Border>
+    </Grid>
+  </Grid>
+</UserControl>

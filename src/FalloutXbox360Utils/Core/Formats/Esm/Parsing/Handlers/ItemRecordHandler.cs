@@ -516,6 +516,8 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
         string? fullName = null;
         string? modelPath = null;
         uint? script = null;
+        byte flags = 0;
+        float weight = 0f;
         var contents = new List<InventoryItem>();
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
@@ -535,6 +537,13 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
                     break;
                 case "SCRI" when sub.DataLength == 4:
                     script = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "DATA" when sub.DataLength >= 5:
+                    // CONT DATA: byte Flags(0) + float Weight(1, packed/unaligned)
+                    flags = subData[0];
+                    weight = record.IsBigEndian
+                        ? System.Buffers.Binary.BinaryPrimitives.ReadSingleBigEndian(subData[1..])
+                        : System.Buffers.Binary.BinaryPrimitives.ReadSingleLittleEndian(subData[1..]);
                     break;
                 case "CNTO" when sub.DataLength >= 8:
                 {
@@ -558,6 +567,8 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
             FullName = fullName,
             ModelPath = modelPath,
             Script = script,
+            Flags = flags,
+            Weight = weight,
             Contents = contents,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian

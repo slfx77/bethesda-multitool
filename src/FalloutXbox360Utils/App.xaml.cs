@@ -55,6 +55,7 @@ public partial class App : Application
     {
         Console.WriteLine($"[CRASH] Unhandled exception: {e.Exception}");
         Console.WriteLine($"[CRASH] Message: {e.Message}");
+        PrintInnerExceptions(e.Exception);
         e.Handled = false; // Let it crash but we logged it
     }
 
@@ -75,7 +76,30 @@ public partial class App : Application
         catch (Exception ex)
         {
             Console.WriteLine($"[CRASH] OnLaunched failed: {ex}");
+            PrintInnerExceptions(ex);
             throw;
+        }
+    }
+
+    /// <summary>
+    ///     WinRT often wraps the actual XAML failure in an outer XamlParseException whose
+    ///     Message is "The text associated with this error code could not be found." The real
+    ///     diagnostic lives in the HResult and any chained inner exception. Print both so the
+    ///     log captures actionable information.
+    /// </summary>
+    internal static void PrintInnerExceptions(Exception? ex)
+    {
+        var depth = 0;
+        while (ex != null)
+        {
+            Console.WriteLine($"[CRASH] [{depth}] HRESULT=0x{ex.HResult:X8} {ex.GetType().FullName}: {ex.Message}");
+            if (ex.StackTrace != null && depth > 0)
+            {
+                Console.WriteLine($"[CRASH] [{depth}] StackTrace: {ex.StackTrace}");
+            }
+
+            ex = ex.InnerException;
+            depth++;
         }
     }
 }

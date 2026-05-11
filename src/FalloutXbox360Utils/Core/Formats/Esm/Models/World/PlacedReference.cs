@@ -107,6 +107,16 @@ public record PlacedReference
     /// <summary>Destination cell FormID resolved from door teleport (XTEL → cell lookup).</summary>
     public uint? DestinationCellFormId { get; init; }
 
+    /// <summary>
+    ///     XTEL teleport position + rotation (6 floats at offsets 4-27 in the on-disk subrecord).
+    ///     Populated by the ESM parser for override refs; null for runtime-only refs until the
+    ///     runtime DoorTeleportData struct layout is verified (deferred to v6).
+    /// </summary>
+    public PositionSubrecord? TeleportPosRot { get; init; }
+
+    /// <summary>XTEL flags byte (offset 28). Bit 0 = unknown; rest reserved.</summary>
+    public byte? TeleportFlags { get; init; }
+
     /// <summary>Whether this is a map marker (has XMRK subrecord).</summary>
     public bool IsMapMarker { get; init; }
 

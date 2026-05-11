@@ -52,6 +52,13 @@ internal sealed class RuntimeContainerReader(RuntimeMemoryContext context)
         // Read flags
         var flags = buffer[ContFlagsOffset];
 
+        // Read weight (TESWeightForm.fWeight at PDB offset 136 = 120 + _s)
+        var weight = BinaryUtils.ReadFloatBE(buffer, ContWeightOffset);
+        if (!RuntimeMemoryContext.IsNormalFloat(weight))
+        {
+            weight = 0f;
+        }
+
         // Read model path
         var modelPath = _context.ReadBsStringT(offset, ContModelPathOffset);
 
@@ -67,6 +74,7 @@ internal sealed class RuntimeContainerReader(RuntimeMemoryContext context)
             EditorId = entry.EditorId,
             FullName = entry.DisplayName,
             Flags = flags,
+            Weight = weight,
             Contents = contents,
             ModelPath = modelPath,
             Script = scriptFormId,
@@ -179,7 +187,8 @@ internal sealed class RuntimeContainerReader(RuntimeMemoryContext context)
     private int ContScriptPtrOffset => 108 + _s; // TESScriptableForm::pFormScript (base+104, field+4)
     private int ContContentsDataOffset => 52 + _s;
     private int ContContentsNextOffset => 56 + _s;
-    private int ContFlagsOffset => 152 + _s; // TESObjectCONT.Data (CONT_DATA flags)
+    private int ContWeightOffset => 120 + _s; // TESWeightForm.fWeight (PDB offset 136)
+    private int ContFlagsOffset => 152 + _s; // TESObjectCONT.Data (CONT_DATA flags, PDB offset 168)
 
     #endregion
 }

@@ -47,6 +47,16 @@ public record ExtractedRefrRecord
     /// <summary>XTEL - Destination door FormID (teleport target).</summary>
     public uint? DestinationDoorFormId { get; init; }
 
+    /// <summary>
+    ///     XTEL - Teleport position + rotation (6 floats at offsets 4-27 of the 32-byte
+    ///     subrecord). Populated from PC ESM XTEL bytes; null until v6 wires up runtime
+    ///     extraction from <c>DoorTeleportData</c>.
+    /// </summary>
+    public PositionSubrecord? TeleportPosRot { get; init; }
+
+    /// <summary>XTEL flags byte (offset 28 of the 32-byte subrecord).</summary>
+    public byte? TeleportFlags { get; init; }
+
     /// <summary>Parent cell FormID (if known).</summary>
     public uint? ParentCellFormId { get; init; }
 

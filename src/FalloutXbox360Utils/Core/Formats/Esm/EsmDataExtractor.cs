@@ -152,6 +152,8 @@ internal static class EsmDataExtractor
             uint? lockNumTries = null;
             uint? lockTimesUnlocked = null;
             uint? destinationDoorFormId = null;
+            PositionSubrecord? teleportPosRot = null;
+            byte? teleportFlags = null;
             uint? enableParentFormId = null;
             byte? enableParentFlags = null;
             uint? linkedRefKeywordFormId = null;
@@ -225,6 +227,22 @@ internal static class EsmDataExtractor
                         destinationDoorFormId = bigEndian
                             ? BinaryPrimitives.ReadUInt32BigEndian(sub.Data)
                             : BinaryPrimitives.ReadUInt32LittleEndian(sub.Data);
+                        // 32-byte XTEL also carries 6-float PosRot @4 + uint8 Flags @28.
+                        if (sub.Data.Length >= 28)
+                        {
+                            float Rd(int o) => bigEndian
+                                ? BinaryPrimitives.ReadSingleBigEndian(sub.Data.AsSpan(o, 4))
+                                : BinaryPrimitives.ReadSingleLittleEndian(sub.Data.AsSpan(o, 4));
+                            teleportPosRot = new PositionSubrecord(
+                                Rd(4), Rd(8), Rd(12), Rd(16), Rd(20), Rd(24),
+                                record.Offset, bigEndian);
+                        }
+
+                        if (sub.Data.Length >= 29)
+                        {
+                            teleportFlags = sub.Data[28];
+                        }
+
                         break;
                     case "XESP" when sub.Data.Length >= 8:
                         enableParentFormId = bigEndian
@@ -288,6 +306,8 @@ internal static class EsmDataExtractor
                 LockNumTries = lockNumTries,
                 LockTimesUnlocked = lockTimesUnlocked,
                 DestinationDoorFormId = destinationDoorFormId,
+                TeleportPosRot = teleportPosRot,
+                TeleportFlags = teleportFlags,
                 EnableParentFormId = enableParentFormId,
                 EnableParentFlags = enableParentFlags,
                 IsMapMarker = isMapMarker,

@@ -17,6 +17,9 @@ public record ContainerRecord
     /// <summary>Container flags.</summary>
     public byte Flags { get; init; }
 
+    /// <summary>Container weight from DATA subrecord (PDB TESWeightForm.fWeight).</summary>
+    public float Weight { get; init; }
+
     /// <summary>Whether this container respawns.</summary>
     public bool Respawns => (Flags & 0x02) != 0;
 

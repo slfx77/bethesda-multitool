@@ -495,6 +495,8 @@ internal static class CellLinkageHandler
             IsPersistent = r.Header.IsPersistent,
             IsInitiallyDisabled = r.Header.IsInitiallyDisabled,
             DestinationDoorFormId = r.DestinationDoorFormId,
+            TeleportPosRot = r.TeleportPosRot,
+            TeleportFlags = r.TeleportFlags,
             IsMapMarker = r.IsMapMarker,
             MarkerType = r.MarkerType.HasValue ? (MapMarkerType)r.MarkerType.Value : null,
             MarkerName = r.MarkerName,

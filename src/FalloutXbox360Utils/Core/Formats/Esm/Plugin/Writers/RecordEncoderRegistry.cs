@@ -1,0 +1,151 @@
+namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
+
+/// <summary>
+///     Registry mapping ESM record-type signatures to encoders.
+/// </summary>
+public sealed class RecordEncoderRegistry
+{
+    private readonly Dictionary<string, IRecordEncoder> _byType = new(StringComparer.Ordinal);
+
+    public void Register(IRecordEncoder encoder)
+    {
+        _byType[encoder.RecordType] = encoder;
+    }
+
+    public bool TryGet(string recordType, out IRecordEncoder? encoder)
+    {
+        return _byType.TryGetValue(recordType, out encoder);
+    }
+
+    public IRecordEncoder? Get(string recordType)
+    {
+        return _byType.GetValueOrDefault(recordType);
+    }
+
+    public IReadOnlyCollection<string> SupportedRecordTypes => _byType.Keys;
+
+    /// <summary>
+    ///     Builds a registry pre-populated with the v1 encoder set.
+    ///
+    ///     Each encoder emits only the subrecord(s) whose byte layout is fully captured by the
+    ///     parsed model — everything else is retained from the source ESM by the merge engine.
+    ///     This conservative strategy guarantees that v1 cannot corrupt unmapped fields.
+    ///
+    ///     Coverage:
+    ///       GMST  (DATA, numeric only)            GLOB  (FLTV)
+    ///       WEAP  (DATA)                          ARMO  (DATA)
+    ///       AMMO  (DATA)                          ALCH  (DATA)
+    ///       BOOK  (DATA)                          MISC  (DATA)
+    ///       KEYM  (DATA)                          FACT  (DATA flags)
+    ///       NPC_  (ACBS)
+    ///
+    ///     CONT is intentionally excluded from v1 overrides: <see cref="Models.Records.Item.ContainerRecord" />
+    ///     historically did not carry the Weight field needed to reconstruct the 5-byte DATA
+    ///     payload. v7 adds Weight to the model and a CONT new-record encoder.
+    /// </summary>
+    public static RecordEncoderRegistry CreateV1Default()
+    {
+        var registry = new RecordEncoderRegistry();
+        registry.Register(new Encoders.GmstEncoder());
+        registry.Register(new Encoders.GlobEncoder());
+        registry.Register(new Encoders.WeapEncoder());
+        registry.Register(new Encoders.ArmoEncoder());
+        registry.Register(new Encoders.AmmoEncoder());
+        registry.Register(new Encoders.AlchEncoder());
+        registry.Register(new Encoders.BookEncoder());
+        registry.Register(new Encoders.MiscEncoder());
+        registry.Register(new Encoders.KeymEncoder());
+        registry.Register(new Encoders.FactEncoder());
+        registry.Register(new Encoders.NpcEncoder());
+        return registry;
+    }
+
+    /// <summary>
+    ///     Builds a registry pre-populated with the v2 encoder set, which extends v1 with
+    ///     placed-reference encoders (REFR/ACHR/ACRE) used by the cell-children override path.
+    ///     These three are NOT emitted as top-level GRUP records — they live inside their
+    ///     parent CELL's child GRUP hierarchy and are dispatched separately from the simple-
+    ///     type override loop.
+    /// </summary>
+    public static RecordEncoderRegistry CreateV2Default()
+    {
+        var registry = CreateV1Default();
+        registry.Register(new Encoders.RefrEncoder());
+        registry.Register(new Encoders.AchrEncoder());
+        registry.Register(new Encoders.AcreEncoder());
+        return registry;
+    }
+
+    /// <summary>
+    ///     Builds a registry for v3 — extends v2 with the <see cref="Encoders.CellEncoder" />
+    ///     used to emit synthetic CELL records for DMP cells that don't exist in the master.
+    ///     Like REFR/ACHR/ACRE, CELL is not a top-level emission type — it's routed through
+    ///     the cell-children pipeline.
+    /// </summary>
+    public static RecordEncoderRegistry CreateV3Default()
+    {
+        var registry = CreateV2Default();
+        registry.Register(new Encoders.CellEncoder());
+        return registry;
+    }
+
+    /// <summary>
+    ///     Builds a registry for v6 — extends v3 with the script and dialogue encoders
+    ///     (SCPT, DIAL, INFO) plus quest and AI-package encoders (QUST, PACK). All five
+    ///     are new-record-only types: their <see cref="IRecordEncoder.Encode" /> path
+    ///     returns no subrecords, so override merging is a no-op (the master ESM retains
+    ///     verbatim bytes). The <c>EncodeNew</c> static methods build full subrecord streams
+    ///     for FormIDs not present in the master.
+    /// </summary>
+    public static RecordEncoderRegistry CreateV6Default()
+    {
+        var registry = CreateV3Default();
+        registry.Register(new Encoders.ScptEncoder());
+        registry.Register(new Encoders.DialEncoder());
+        registry.Register(new Encoders.InfoEncoder());
+        registry.Register(new Encoders.QustEncoder());
+        registry.Register(new Encoders.PackEncoder());
+        return registry;
+    }
+
+    /// <summary>
+    ///     Builds a registry for v7 — extends v6 with world-object new-record encoders
+    ///     (ACTI, DOOR, LIGH, STAT, CONT, FURN, TERM). All seven are new-record-only types:
+    ///     <see cref="IRecordEncoder.Encode" /> is a no-op (master ESM bytes retained verbatim)
+    ///     and <see cref="Encoders.LighEncoder.EncodeNew" /> / sibling methods build the full
+    ///     subrecord stream for FormIDs not present in the master.
+    ///     TERM is a simplified path — embedded result-script bytecode inside menu items is
+    ///     deferred to a future phase (warns when encountered).
+    /// </summary>
+    public static RecordEncoderRegistry CreateV7Default()
+    {
+        var registry = CreateV6Default();
+        registry.Register(new Encoders.ActiEncoder());
+        registry.Register(new Encoders.DoorEncoder());
+        registry.Register(new Encoders.LighEncoder());
+        registry.Register(new Encoders.StatEncoder());
+        registry.Register(new Encoders.ContEncoder());
+        registry.Register(new Encoders.FurnEncoder());
+        registry.Register(new Encoders.TermEncoder());
+        return registry;
+    }
+
+    /// <summary>
+    ///     Returns true if the record type is a placed-reference type that lives inside a
+    ///     parent CELL's child GRUP. These types are excluded from top-level GRUP emission and
+    ///     are routed through the cell-children pipeline instead.
+    /// </summary>
+    public static bool IsCellChildRecordType(string recordType)
+    {
+        return recordType is "REFR" or "ACHR" or "ACRE";
+    }
+
+    /// <summary>
+    ///     Returns true if the record type is a CELL — it's also routed outside the top-level
+    ///     emission loop (it appears inside the cell hierarchy with its child GRUP).
+    /// </summary>
+    public static bool IsCellRecordType(string recordType)
+    {
+        return recordType == "CELL";
+    }
+}

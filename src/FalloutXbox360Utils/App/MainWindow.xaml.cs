@@ -49,6 +49,7 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             Console.WriteLine($"[CRASH] MainWindow constructor failed: {ex}");
+            App.PrintInnerExceptions(ex);
             throw;
         }
     }
@@ -189,6 +190,7 @@ public sealed partial class MainWindow : Window
         if (DdxConverterTabContent.Visibility == Visibility.Visible) return DdxConverterTabContent;
         if (BsaExtractorTabContent.Visibility == Visibility.Visible) return BsaExtractorTabContent;
         if (RepackerTabContent.Visibility == Visibility.Visible) return RepackerTabContent;
+        if (DmpToEspConverterTabContent.Visibility == Visibility.Visible) return DmpToEspConverterTabContent;
         return null;
     }
 
@@ -205,6 +207,7 @@ public sealed partial class MainWindow : Window
             DdxConverterTabContent.CloseSettingsDrawer();
             BsaExtractorTabContent.CloseSettingsDrawer();
             RepackerTabContent.CloseSettingsDrawer();
+            DmpToEspConverterTabContent.CloseSettingsDrawer();
 
             // Hide all content
             SingleFileTabContent.Visibility = Visibility.Collapsed;
@@ -213,6 +216,7 @@ public sealed partial class MainWindow : Window
             DdxConverterTabContent.Visibility = Visibility.Collapsed;
             BsaExtractorTabContent.Visibility = Visibility.Collapsed;
             RepackerTabContent.Visibility = Visibility.Collapsed;
+            DmpToEspConverterTabContent.Visibility = Visibility.Collapsed;
 
             // Clear status bar when switching tabs
             SetStatus("");
@@ -240,6 +244,9 @@ public sealed partial class MainWindow : Window
                     break;
                 case "Repacker":
                     RepackerTabContent.Visibility = Visibility.Visible;
+                    break;
+                case "DmpToEspConverter":
+                    DmpToEspConverterTabContent.Visibility = Visibility.Visible;
                     break;
             }
 

@@ -151,6 +151,15 @@
           </NavigationViewItem.Icon>
         </NavigationViewItem>
 
+        <!--  DMP to ESP Converter  -->
+        <NavigationViewItem
+          x:Uid="Nav_DmpToEspConverter"
+          Tag="DmpToEspConverter">
+          <NavigationViewItem.Icon>
+            <FontIcon Glyph="&#xE74E;" />
+          </NavigationViewItem.Icon>
+        </NavigationViewItem>
+
         <NavigationViewItemSeparator />
 
         <NavigationViewItemHeader x:Uid="NavHeader_MemoryDumps" />
@@ -216,6 +225,10 @@
               Visibility="Collapsed" />
             <tabs:RepackerTab
               x:Name="RepackerTabContent"
+              VerticalAlignment="Stretch"
+              Visibility="Collapsed" />
+            <tabs:DmpToEspConverterTab
+              x:Name="DmpToEspConverterTabContent"
               VerticalAlignment="Stretch"
               Visibility="Collapsed" />
           </Grid>

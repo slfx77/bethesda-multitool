@@ -16,6 +16,7 @@ public static class ReportCommand
 
         command.Subcommands.Add(ReportValidateCommand.Create());
         command.Subcommands.Add(ReportConsistencyCommand.Create());
+        command.Subcommands.Add(ReportParityCommand.Create());
 
         return command;
     }
