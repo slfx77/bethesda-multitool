@@ -76,6 +76,22 @@ public sealed class TermEncoder : IRecordEncoder
         // ITXT — menu-item display text (may be empty if model only carries linkage).
         subs.Add(NewRecordSubrecords.EncodeStringSubrecord("ITXT", item.Text ?? string.Empty));
 
+        // CTDA conditions (with optional CIS1/CIS2 string params) come between ITXT and the
+        // result-script block per fopdoc. Conditions filter when the menu item is visible.
+        foreach (var condition in item.Conditions)
+        {
+            subs.Add(new EncodedSubrecord("CTDA", InfoEncoder.BuildCtdaSubrecord(condition)));
+            if (!string.IsNullOrEmpty(condition.Parameter1String))
+            {
+                subs.Add(NewRecordSubrecords.EncodeStringSubrecord("CIS1", condition.Parameter1String));
+            }
+
+            if (!string.IsNullOrEmpty(condition.Parameter2String))
+            {
+                subs.Add(NewRecordSubrecords.EncodeStringSubrecord("CIS2", condition.Parameter2String));
+            }
+        }
+
         if (item.CompiledData is { Length: > 0 } || !string.IsNullOrEmpty(item.SourceText))
         {
             // Embedded result-script block — same SCHR/SCDA/SCTX/SCRO/SCRV layout as INFO.

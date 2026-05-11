@@ -1,11 +1,12 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Terminal menu item from ITXT/RNAM/SCHR/SCDA/SCTX subrecords.
+///     Terminal menu item from ITXT/CTDA/RNAM/SCHR/SCDA/SCTX subrecords.
 ///     Can carry either an external link (ResultScript FormID, SubTerminal FormID) when
 ///     populated from runtime DMP, or embedded result-script bytecode when parsed from
 ///     the on-disk ESM. The encoder emits the embedded form when CompiledData is present,
-///     otherwise falls back to RNAM with the linked FormID.
+///     otherwise falls back to RNAM with the linked FormID. Conditions (CTDA) filter when
+///     the menu item is visible in-game.
 /// </summary>
 public record TerminalMenuItem
 {
@@ -17,6 +18,13 @@ public record TerminalMenuItem
 
     /// <summary>Sub-terminal FormID (if this links to another terminal).</summary>
     public uint? SubTerminal { get; init; }
+
+    /// <summary>
+    ///     CTDA conditions guarding this menu item's visibility. Multiple conditions ANDed
+    ///     by default; the per-condition <see cref="Records.Quest.DialogueCondition.IsOr" />
+    ///     flag flips the join to OR.
+    /// </summary>
+    public List<Records.Quest.DialogueCondition> Conditions { get; init; } = [];
 
     /// <summary>Embedded result-script compiled bytecode (SCDA). Null when not embedded.</summary>
     public byte[]? CompiledData { get; init; }

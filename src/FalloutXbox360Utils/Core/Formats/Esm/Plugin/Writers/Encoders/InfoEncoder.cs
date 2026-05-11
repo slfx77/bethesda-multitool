@@ -181,7 +181,7 @@ public sealed class InfoEncoder : IRecordEncoder
         return trdt;
     }
 
-    private static byte[] BuildCtdaSubrecord(DialogueCondition condition)
+    internal static byte[] BuildCtdaSubrecord(DialogueCondition condition)
     {
         var ctda = new byte[28];
         ctda[0] = condition.Type;

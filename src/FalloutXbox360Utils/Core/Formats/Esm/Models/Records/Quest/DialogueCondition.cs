@@ -26,6 +26,18 @@ public record DialogueCondition
     /// <summary>Reference FormID for RunOn=Reference/LinkedRef conditions.</summary>
     public uint Reference { get; init; }
 
+    /// <summary>
+    ///     CIS1 — string parameter that replaces <see cref="Parameter1" /> when the condition
+    ///     function expects a string (e.g. scripted GetIsID by EditorID). Null when not set.
+    /// </summary>
+    public string? Parameter1String { get; init; }
+
+    /// <summary>
+    ///     CIS2 — string parameter that replaces <see cref="Parameter2" /> when the condition
+    ///     function expects a string. Null when not set.
+    /// </summary>
+    public string? Parameter2String { get; init; }
+
     /// <summary>Whether this condition is ORed with the previous one.</summary>
     public bool IsOr => (Type & 0x01) != 0;
 

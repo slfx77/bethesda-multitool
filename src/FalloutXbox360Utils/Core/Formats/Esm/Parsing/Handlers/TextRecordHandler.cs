@@ -71,6 +71,7 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
         byte[]? curCompiledData = null;
         string? curSourceText = null;
         var curReferencedObjects = new List<uint>();
+        var curConditions = new List<Models.Records.Quest.DialogueCondition>();
         var curHasMenuItem = false;
 
         void FlushMenuItem()
@@ -81,6 +82,7 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
                 Text = curText,
                 ResultScript = curResultScript,
                 SubTerminal = curSubTerminal,
+                Conditions = curConditions.Count > 0 ? [..curConditions] : [],
                 CompiledData = curCompiledData,
                 SourceText = curSourceText,
                 ReferencedObjects = curReferencedObjects.Count > 0 ? [..curReferencedObjects] : []
@@ -91,6 +93,7 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
             curCompiledData = null;
             curSourceText = null;
             curReferencedObjects.Clear();
+            curConditions.Clear();
             curHasMenuItem = false;
         }
 
@@ -120,6 +123,25 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
                     curText = EsmStringUtils.ReadNullTermString(subData);
                     curHasMenuItem = true;
                     break;
+                case "CTDA" when sub.DataLength >= 28 && curHasMenuItem:
+                    curConditions.Add(ParseCtda(subData, record.IsBigEndian));
+                    break;
+                case "CIS1" when curHasMenuItem && curConditions.Count > 0:
+                {
+                    // CIS1 — string param replacing Parameter1 on the preceding CTDA condition.
+                    var s = EsmStringUtils.ReadNullTermString(subData);
+                    var last = curConditions[^1];
+                    curConditions[^1] = last with { Parameter1String = s };
+                    break;
+                }
+                case "CIS2" when curHasMenuItem && curConditions.Count > 0:
+                {
+                    // CIS2 — string param replacing Parameter2 on the preceding CTDA condition.
+                    var s = EsmStringUtils.ReadNullTermString(subData);
+                    var last = curConditions[^1];
+                    curConditions[^1] = last with { Parameter2String = s };
+                    break;
+                }
                 case "RNAM" when sub.DataLength == 4 && curHasMenuItem:
                     // External script/sub-terminal link. The FormID type isn't disambiguated
                     // in the on-disk format; both possibilities resolve at link time.
@@ -167,6 +189,35 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
             MenuItems = menuItems,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    /// <summary>
+    ///     Parse a 28-byte CTDA condition subrecord. Layout mirrors
+    ///     <see cref="FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.InfoEncoder" />'s
+    ///     BuildCtdaSubrecord: Type(1) + pad(3) + ComparisonValue(f32) + FunctionIndex(u16) +
+    ///     pad(2) + Parameter1(u32) + Parameter2(u32) + RunOn(u32) + Reference(u32).
+    /// </summary>
+    private static Models.Records.Quest.DialogueCondition ParseCtda(
+        ReadOnlySpan<byte> data, bool bigEndian)
+    {
+        return new Models.Records.Quest.DialogueCondition
+        {
+            Type = data[0],
+            ComparisonValue = bigEndian
+                ? BinaryPrimitives.ReadSingleBigEndian(data[4..])
+                : BinaryPrimitives.ReadSingleLittleEndian(data[4..]),
+            FunctionIndex = bigEndian
+                ? BinaryPrimitives.ReadUInt16BigEndian(data[8..])
+                : BinaryPrimitives.ReadUInt16LittleEndian(data[8..]),
+            Parameter1 = RecordParserContext.ReadFormId(data[12..16], bigEndian),
+            Parameter2 = bigEndian
+                ? BinaryPrimitives.ReadUInt32BigEndian(data[16..])
+                : BinaryPrimitives.ReadUInt32LittleEndian(data[16..]),
+            RunOn = bigEndian
+                ? BinaryPrimitives.ReadUInt32BigEndian(data[20..])
+                : BinaryPrimitives.ReadUInt32LittleEndian(data[20..]),
+            Reference = RecordParserContext.ReadFormId(data[24..28], bigEndian)
         };
     }
 
