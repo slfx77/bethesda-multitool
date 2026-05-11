@@ -4,8 +4,8 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
 ///     Encodes a <see cref="LightRecord" /> (LIGH) as PC-format subrecord bytes.
-///     v7 emits the full record from scratch: EDID + OBND? + MODL? + FULL? + DATA(32B).
-///     LIGH DATA is the only 32-byte fixed payload among v7's world objects.
+///     v9 emits the full record from scratch: EDID + OBND? + MODL? + MODT? + SCRI? +
+///     FULL? + ICON? + DATA(32B) + FNAM? + SNAM?.
 ///     Override path is a no-op.
 ///     DATA layout (32 bytes, all PC little-endian):
 ///         int32  Duration(0)        — seconds (0 = infinite)
@@ -29,7 +29,7 @@ public sealed class LighEncoder : IRecordEncoder
 
     /// <summary>
     ///     Encode a new LIGH record from scratch in fopdoc canonical order:
-    ///     EDID, OBND, MODL, FULL, DATA. ICON/FNAM/SNAM/SCRI deferred to v8.
+    ///     EDID, OBND, MODL, MODT, SCRI, FULL, ICON, DATA, FNAM, SNAM.
     /// </summary>
     internal static EncodedRecord EncodeNew(LightRecord ligh)
     {
@@ -58,12 +58,32 @@ public sealed class LighEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeByteArraySubrecord("MODT", modt));
         }
 
+        if (ligh.Script.HasValue)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRI", ligh.Script.Value));
+        }
+
         if (!string.IsNullOrEmpty(ligh.FullName))
         {
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("FULL", ligh.FullName));
         }
 
+        if (!string.IsNullOrEmpty(ligh.IconPath))
+        {
+            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("ICON", ligh.IconPath));
+        }
+
         subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(ligh)));
+
+        if (ligh.Fade.HasValue)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFloatSubrecord("FNAM", ligh.Fade.Value));
+        }
+
+        if (ligh.SoundFormId.HasValue)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SNAM", ligh.SoundFormId.Value));
+        }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
     }

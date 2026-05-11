@@ -49,6 +49,18 @@ public record LightRecord
     /// <summary>Texture hash data from MODT subrecord (opaque bytes — engine validates).</summary>
     public byte[]? TextureHashData { get; init; }
 
+    /// <summary>Inventory icon path (ICON subrecord) — LIGH can be a takable item.</summary>
+    public string? IconPath { get; init; }
+
+    /// <summary>Fade value (FNAM subrecord, 4-byte float per fopdoc).</summary>
+    public float? Fade { get; init; }
+
+    /// <summary>Looping sound FormID (SNAM subrecord).</summary>
+    public uint? SoundFormId { get; init; }
+
+    /// <summary>Script FormID (SCRI subrecord).</summary>
+    public uint? Script { get; init; }
+
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }
 

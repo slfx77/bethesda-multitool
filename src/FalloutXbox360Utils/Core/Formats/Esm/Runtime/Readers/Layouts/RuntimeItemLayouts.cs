@@ -191,6 +191,8 @@ internal sealed class RuntimeItemLayouts
     internal int ArmoStructSize => 400 + _s;
     internal int ArmoBipedModelPathOffset => 144 + _s; // TESBipedModelForm.bipedModel(+140).cModel(+4) BSStringT
     internal int ArmoWorldModelPathOffset => 208 + _s; // TESBipedModelForm.worldModel(+204).cModel(+4) BSStringT
+    internal int ArmoInventoryIconPathOffset => 252 + _s; // TESBipedModelForm.inventoryIcon (PDB 268), BSStringT
+    internal int ArmoMessageIconPathOffset => 276 + _s; // TESBipedModelForm.messageIcon (PDB 292), BSStringT
     internal int ArmoValueOffset => 92 + _s;
     internal int ArmoWeightOffset => 100 + _s;
     internal int ArmoHealthOffset => 108 + _s;
@@ -204,6 +206,8 @@ internal sealed class RuntimeItemLayouts
     #region TESObjectAMMO — PDB size ~220, Debug dump ~224, Release dump 236
 
     internal int AmmoStructSize => 220 + _s;
+    internal int AmmoInventoryIconPathOffset => 96 + _s; // TESTexture.TextureName (PDB 112), BSStringT
+    internal int AmmoMessageIconPathOffset => 108 + _s; // BGSMessageIcon.Icon (PDB 124), TESIcon→BSStringT
     internal int AmmoValueOffset => 124 + _s;
     internal int AmmoClipRoundsOffset => 132 + _s; // TESAmmo.cClipRounds (uint8)
     internal int AmmoSpeedOffset => 168 + _s; // AMMO_DATA.fSpeed (float32, first field)
@@ -216,6 +220,8 @@ internal sealed class RuntimeItemLayouts
 
     internal int AlchStructSize => 216 + _s;
     internal int AlchEffectListOffset => 64 + _s; // BSSimpleList<EffectItem*> (inherited from EffectItemList)
+    internal int AlchInventoryIconPathOffset => 112 + _s; // TESTexture.TextureName (PDB 128), BSStringT
+    internal int AlchMessageIconPathOffset => 204 + _s; // AlchemyItem.MessageIcon (PDB 220), TESIcon→BSStringT
     internal int AlchWeightOffset => 152 + _s;
     internal int AlchValueOffset => 184 + _s;
     internal int AlchFlagsOffset => 188 + _s; // AlchemyItemData.iFlags (byte)
@@ -227,8 +233,17 @@ internal sealed class RuntimeItemLayouts
     #region TESObjectMISC / TESKey — PDB size 172, Debug dump 176, Release dump 188
 
     internal int MiscStructSize => 172 + _s;
+    internal int MiscInventoryIconPathOffset => 96 + _s; // TESTexture.TextureName (PDB 112), BSStringT
+    internal int MiscMessageIconPathOffset => 144 + _s; // BGSMessageIcon.Icon (PDB 160), TESIcon→BSStringT
     internal int MiscValueOffset => 120 + _s;
     internal int MiscWeightOffset => 128 + _s;
+
+    #endregion
+
+    #region TESObjectBOOK — PDB size 196, Debug dump 200, Release dump 212
+
+    internal int BookInventoryIconPathOffset => 96 + _s; // TESTexture.TextureName (PDB 112), BSStringT
+    internal int BookMessageIconPathOffset => 168 + _s; // BGSMessageIcon.Icon (PDB 184), TESIcon→BSStringT
 
     #endregion
 

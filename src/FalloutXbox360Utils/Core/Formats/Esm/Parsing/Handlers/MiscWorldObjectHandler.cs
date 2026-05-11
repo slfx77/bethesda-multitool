@@ -167,12 +167,16 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context) : Reco
         string? editorId = null;
         string? fullName = null;
         string? modelPath = null;
+        string? iconPath = null;
         byte[]? textureHashData = null;
         ObjectBounds? bounds = null;
         var duration = 0;
         uint radius = 0, color = 0, flags = 0;
         float falloffExponent = 0, fov = 0, weight = 0;
         var value = 0;
+        float? fade = null;
+        uint? soundFormId = null;
+        uint? script = null;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -196,6 +200,20 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context) : Reco
                     break;
                 case "MODT" when sub.DataLength > 0:
                     textureHashData = subData.ToArray();
+                    break;
+                case "ICON":
+                    iconPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "FNAM" when sub.DataLength == 4:
+                    fade = record.IsBigEndian
+                        ? BinaryPrimitives.ReadSingleBigEndian(subData)
+                        : BinaryPrimitives.ReadSingleLittleEndian(subData);
+                    break;
+                case "SNAM" when sub.DataLength == 4:
+                    soundFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "SCRI" when sub.DataLength == 4:
+                    script = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
                 case "OBND" when sub.DataLength == 12:
                     bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
@@ -239,6 +257,10 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context) : Reco
             FullName = fullName,
             ModelPath = modelPath,
             TextureHashData = textureHashData,
+            IconPath = iconPath,
+            Fade = fade,
+            SoundFormId = soundFormId,
+            Script = script,
             Bounds = bounds,
             Duration = duration,
             Radius = radius,

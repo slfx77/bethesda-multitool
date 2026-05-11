@@ -3,12 +3,14 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Layouts;
 /// <summary>
 ///     Layout for TESObjectBOOK runtime struct. Offsets are organized by inheritance group:
 ///     Group 0: TESForm (anchored, never shifts)
-///     Group 1: TESFullName through TESEnchantableForm (model, enchantment, etc.)
+///     Group 1: TESFullName through TESEnchantableForm (model, enchantment, icons, etc.)
 ///     Group 2: TESValueForm through OBJ_BOOK (value, weight, book data)
 /// </summary>
 internal readonly record struct RuntimeBookLayout(
     int FullNameOffset,
     int ModelOffset,
+    int InventoryIconPathOffset,
+    int MessageIconPathOffset,
     int EnchantmentPtrOffset,
     int EnchantmentAmountOffset,
     int ValueOffset,
@@ -21,6 +23,8 @@ internal readonly record struct RuntimeBookLayout(
         return new RuntimeBookLayout(
             68,
             80,
+            112, // TESTexture.TextureName (BSStringT) — ICON
+            184, // BGSMessageIcon.Icon (TESIcon→BSStringT) — MICO
             136,
             140,
             152,
@@ -41,6 +45,8 @@ internal readonly record struct RuntimeBookLayout(
         return new RuntimeBookLayout(
             d.FullNameOffset + s1,
             d.ModelOffset + s1,
+            d.InventoryIconPathOffset + s1,
+            d.MessageIconPathOffset + s1,
             d.EnchantmentPtrOffset + s1,
             d.EnchantmentAmountOffset + s1,
             d.ValueOffset + s2,

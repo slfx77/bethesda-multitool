@@ -369,7 +369,7 @@ public class WorldObjectEncoderTests
         Assert.Contains(encoded.Subrecords, s => s.Signature == "ITXT");
         Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "RNAM");
         Assert.Single(encoded.Warnings);
-        Assert.Contains("embedded result-script bytecode is not supported", encoded.Warnings[0]);
+        Assert.Contains("has neither embedded script bytecode nor an external link", encoded.Warnings[0]);
     }
 
     [Fact]

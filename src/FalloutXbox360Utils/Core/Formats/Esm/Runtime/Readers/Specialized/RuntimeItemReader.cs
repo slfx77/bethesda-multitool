@@ -268,6 +268,8 @@ internal sealed class RuntimeItemReader(
 
         // Model paths from TESBipedModelForm.bipedModel / worldModel (TESModelTextureSwap.cModel at +4)
         var modelPath = ReadArmorModelPath(offset, buffer);
+        var iconPath = _context.ReadBsStringT(offset, Layouts.ArmoInventoryIconPathOffset);
+        var messageIconPath = _context.ReadBsStringT(offset, Layouts.ArmoMessageIconPathOffset);
 
         return new ArmorRecord
         {
@@ -282,6 +284,8 @@ internal sealed class RuntimeItemReader(
             DamageThreshold = damageThreshold,
             EquipmentType = equipmentType,
             ModelPath = modelPath,
+            IconPath = iconPath,
+            MessageIconPath = messageIconPath,
             Bounds = ReadBounds(buffer),
             Offset = offset,
             IsBigEndian = true
@@ -329,6 +333,8 @@ internal sealed class RuntimeItemReader(
 
         // Read world model path via BSStringT at TESModel offset (+80)
         var modelPath = _context.ReadBsStringT(offset, Layouts.WeapModelPathOffset);
+        var iconPath = _context.ReadBsStringT(offset, Layouts.AmmoInventoryIconPathOffset);
+        var messageIconPath = _context.ReadBsStringT(offset, Layouts.AmmoMessageIconPathOffset);
 
         // AMMO_DATA: speed (float) + flags (uint32)
         var speed = RuntimeMemoryContext.ReadValidatedFloat(buffer, Layouts.AmmoSpeedOffset, 0, 100000);
@@ -350,6 +356,8 @@ internal sealed class RuntimeItemReader(
             ProjectileFormId = projectileFormId,
             ProjectileFormIds = projectileFormId.HasValue ? [projectileFormId.Value] : [],
             ModelPath = modelPath,
+            IconPath = iconPath,
+            MessageIconPath = messageIconPath,
             Bounds = ReadBounds(buffer),
             Offset = offset,
             IsBigEndian = true
@@ -399,6 +407,8 @@ internal sealed class RuntimeItemReader(
 
         // Read model path via BSStringT at TESModel offset (+80)
         var modelPath = _context.ReadBsStringT(offset, Layouts.WeapModelPathOffset);
+        var iconPath = _context.ReadBsStringT(offset, Layouts.MiscInventoryIconPathOffset);
+        var messageIconPath = _context.ReadBsStringT(offset, Layouts.MiscMessageIconPathOffset);
 
         return new MiscItemRecord
         {
@@ -408,6 +418,8 @@ internal sealed class RuntimeItemReader(
             Value = value,
             Weight = weight,
             ModelPath = modelPath,
+            IconPath = iconPath,
+            MessageIconPath = messageIconPath,
             Bounds = ReadBounds(buffer),
             Offset = offset,
             IsBigEndian = true
@@ -456,8 +468,11 @@ internal sealed class RuntimeItemReader(
 
         var weight = RuntimeMemoryContext.ReadValidatedFloat(buffer, Layouts.MiscWeightOffset, 0, 500);
 
-        // Read model path via BSStringT at TESModel offset (+80)
+        // Read model path via BSStringT at TESModel offset (+80) — TESKey shares MISC's
+        // ICON offsets (TESKey inherits TESObjectMISC).
         var modelPath = _context.ReadBsStringT(offset, Layouts.WeapModelPathOffset);
+        var iconPath = _context.ReadBsStringT(offset, Layouts.MiscInventoryIconPathOffset);
+        var messageIconPath = _context.ReadBsStringT(offset, Layouts.MiscMessageIconPathOffset);
 
         return new KeyRecord
         {
@@ -467,6 +482,8 @@ internal sealed class RuntimeItemReader(
             Value = value,
             Weight = weight,
             ModelPath = modelPath,
+            IconPath = iconPath,
+            MessageIconPath = messageIconPath,
             Offset = offset,
             IsBigEndian = true
         };
@@ -532,6 +549,9 @@ internal sealed class RuntimeItemReader(
         // Walk EffectItem list (BSSimpleList<EffectItem*> at offset 80)
         var effects = RuntimeEffectItemListReader.Read(_context, buffer, Layouts.AlchEffectListOffset, 32);
 
+        var iconPath = _context.ReadBsStringT(offset, Layouts.AlchInventoryIconPathOffset);
+        var messageIconPath = _context.ReadBsStringT(offset, Layouts.AlchMessageIconPathOffset);
+
         return new ConsumableRecord
         {
             FormId = entry.FormId,
@@ -543,6 +563,8 @@ internal sealed class RuntimeItemReader(
             AddictionFormId = addictionFormId,
             AddictionChance = addictionChance,
             Effects = effects,
+            IconPath = iconPath,
+            MessageIconPath = messageIconPath,
             Bounds = ReadBounds(buffer),
             Offset = offset,
             IsBigEndian = true

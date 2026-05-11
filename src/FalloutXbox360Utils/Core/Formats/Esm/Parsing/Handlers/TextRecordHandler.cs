@@ -17,14 +17,7 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
     internal List<TerminalRecord> ParseTerminals()
     {
         var terminals = ParseRecordList<TerminalRecord>("TERM", 256,
-            (record, _) => new TerminalRecord
-            {
-                FormId = record.FormId,
-                EditorId = Context.GetEditorId(record.FormId),
-                FullName = Context.FindFullNameNear(record.Offset),
-                Offset = record.Offset,
-                IsBigEndian = record.IsBigEndian
-            },
+            ParseTerminalFromAccessor,
             record => new TerminalRecord
             {
                 FormId = record.FormId,
@@ -38,6 +31,143 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
             (reader, entry) => reader.ReadRuntimeTerminal(entry), "terminals");
 
         return terminals;
+    }
+
+    /// <summary>
+    ///     Parse a TERM record's subrecord stream. Reads EDID/FULL/DESC/DNAM at the record
+    ///     level, then collects menu items by tracking the per-item subrecord cycle
+    ///     (ITXT → RNAM? → SCHR+SCDA?+SCTX?+SCRO*+SCRV* → NEXT separator). Embedded result
+    ///     scripts are stored on the menu item via CompiledData/SourceText/ReferencedObjects.
+    /// </summary>
+    private TerminalRecord? ParseTerminalFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return new TerminalRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            };
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        string? fullName = null;
+        string? headerText = null;
+        byte difficulty = 0;
+        byte flags = 0;
+        var menuItems = new List<TerminalMenuItem>();
+
+        // Active menu-item accumulator. Reset on each NEXT separator (or on a new ITXT if a
+        // record skips NEXT). Null until the first ITXT is seen.
+        string? curText = null;
+        uint? curResultScript = null;
+        uint? curSubTerminal = null;
+        byte[]? curCompiledData = null;
+        string? curSourceText = null;
+        var curReferencedObjects = new List<uint>();
+        var curHasMenuItem = false;
+
+        void FlushMenuItem()
+        {
+            if (!curHasMenuItem) return;
+            menuItems.Add(new TerminalMenuItem
+            {
+                Text = curText,
+                ResultScript = curResultScript,
+                SubTerminal = curSubTerminal,
+                CompiledData = curCompiledData,
+                SourceText = curSourceText,
+                ReferencedObjects = curReferencedObjects.Count > 0 ? [..curReferencedObjects] : []
+            });
+            curText = null;
+            curResultScript = null;
+            curSubTerminal = null;
+            curCompiledData = null;
+            curSourceText = null;
+            curReferencedObjects.Clear();
+            curHasMenuItem = false;
+        }
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "FULL":
+                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "DESC":
+                    headerText = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "DNAM" when sub.DataLength >= 2:
+                    // TERMINAL_DATA: byte Difficulty(0) + byte Flags(1) + byte ServerType(2) + byte Unused(3).
+                    difficulty = subData[0];
+                    flags = subData[1];
+                    break;
+                case "ITXT":
+                    // Beginning of a new menu item — flush any pending item (no NEXT before this).
+                    FlushMenuItem();
+                    curText = EsmStringUtils.ReadNullTermString(subData);
+                    curHasMenuItem = true;
+                    break;
+                case "RNAM" when sub.DataLength == 4 && curHasMenuItem:
+                    // External script/sub-terminal link. The FormID type isn't disambiguated
+                    // in the on-disk format; both possibilities resolve at link time.
+                    curResultScript = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "SCHR" when sub.DataLength >= 20 && curHasMenuItem:
+                    // SCHR(20B) marks the start of an embedded result-script block. We accept
+                    // it as a signal but don't extract its scalar fields — the encoder rebuilds
+                    // SCHR from the bytecode size and referenced-object count.
+                    break;
+                case "SCDA" when curHasMenuItem:
+                    curCompiledData = subData.ToArray();
+                    break;
+                case "SCTX" when curHasMenuItem:
+                    curSourceText = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "SCRO" when sub.DataLength == 4 && curHasMenuItem:
+                    curReferencedObjects.Add(RecordParserContext.ReadFormId(subData, record.IsBigEndian));
+                    break;
+                case "SCRV" when sub.DataLength == 4 && curHasMenuItem:
+                {
+                    var varIdx = record.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
+                    curReferencedObjects.Add(0x80000000u | (varIdx & 0x7FFFFFFFu));
+                    break;
+                }
+                case "NEXT":
+                    FlushMenuItem();
+                    break;
+            }
+        }
+
+        // Final flush in case the record ends without a trailing NEXT.
+        FlushMenuItem();
+
+        return new TerminalRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            FullName = fullName,
+            HeaderText = headerText,
+            Difficulty = difficulty,
+            Flags = flags,
+            MenuItems = menuItems,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
     }
 
     #endregion

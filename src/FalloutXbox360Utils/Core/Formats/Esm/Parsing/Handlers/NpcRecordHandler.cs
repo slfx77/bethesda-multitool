@@ -160,6 +160,24 @@ internal sealed class NpcRecordHandler(RecordParserContext context) : RecordHand
 
                     break;
                 }
+                case "COED" when sub.DataLength >= 12 && inventory.Count > 0:
+                {
+                    var owner = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    var globalOrRank = record.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData[4..])
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData[4..]);
+                    var condition = record.IsBigEndian
+                        ? BinaryPrimitives.ReadSingleBigEndian(subData[8..])
+                        : BinaryPrimitives.ReadSingleLittleEndian(subData[8..]);
+                    var last = inventory[^1];
+                    inventory[^1] = last with
+                    {
+                        OwnerFormId = owner != 0 ? owner : null,
+                        GlobalOrRank = globalOrRank,
+                        ItemCondition = condition
+                    };
+                    break;
+                }
                 case "DATA" when sub.DataLength == 11:
                 {
                     // NPC_ DATA: Int32 BaseHealth + 7 UInt8 SPECIAL (ST, PE, EN, CH, IN, AG, LK)

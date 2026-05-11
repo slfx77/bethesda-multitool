@@ -56,6 +56,8 @@ internal sealed class RuntimeBookReader
 
         var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, _layout.FullNameOffset);
         var modelPath = _context.ReadBsStringT(offset, _layout.ModelOffset);
+        var iconPath = _context.ReadBsStringT(offset, _layout.InventoryIconPathOffset);
+        var messageIconPath = _context.ReadBsStringT(offset, _layout.MessageIconPathOffset);
 
         var value = RuntimeMemoryContext.ReadInt32BE(buffer, _layout.ValueOffset);
         if (value < 0 || value > 1_000_000)
@@ -79,6 +81,8 @@ internal sealed class RuntimeBookReader
             EditorId = entry.EditorId,
             FullName = fullName,
             ModelPath = modelPath,
+            IconPath = iconPath,
+            MessageIconPath = messageIconPath,
             Value = value,
             Weight = weight,
             Flags = flags,

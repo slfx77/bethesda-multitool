@@ -35,6 +35,15 @@ public record ContainerRecord
     /// <summary>Script FormID.</summary>
     public uint? Script { get; init; }
 
+    /// <summary>Open sound FormID (SNAM subrecord).</summary>
+    public uint? OpenSoundFormId { get; init; }
+
+    /// <summary>Open-sound-loop FormID (QNAM subrecord).</summary>
+    public uint? OpenSoundLoopFormId { get; init; }
+
+    /// <summary>Close sound FormID (RNAM subrecord).</summary>
+    public uint? CloseSoundFormId { get; init; }
+
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }
 

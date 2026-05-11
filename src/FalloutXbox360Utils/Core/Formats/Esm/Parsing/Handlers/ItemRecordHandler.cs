@@ -562,6 +562,9 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
         string? modelPath = null;
         byte[]? textureHashData = null;
         uint? script = null;
+        uint? openSound = null;
+        uint? openSoundLoop = null;
+        uint? closeSound = null;
         byte flags = 0;
         float weight = 0f;
         var contents = new List<InventoryItem>();
@@ -594,6 +597,15 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
                         ? System.Buffers.Binary.BinaryPrimitives.ReadSingleBigEndian(subData[1..])
                         : System.Buffers.Binary.BinaryPrimitives.ReadSingleLittleEndian(subData[1..]);
                     break;
+                case "SNAM" when sub.DataLength == 4:
+                    openSound = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "QNAM" when sub.DataLength == 4:
+                    openSoundLoop = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "RNAM" when sub.DataLength == 4:
+                    closeSound = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
                 case "CNTO" when sub.DataLength >= 8:
                 {
                     var fields = SubrecordDataReader.ReadFields("CNTO", null, subData, record.IsBigEndian);
@@ -604,6 +616,27 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
                         contents.Add(new InventoryItem(itemFormId, count));
                     }
 
+                    break;
+                }
+                case "COED" when sub.DataLength >= 12 && contents.Count > 0:
+                {
+                    // COED applies to the immediately preceding CNTO. Layout: FormID Owner(0) +
+                    // uint32 GlobalOrRank(4) + float ItemCondition(8). Replace the last item
+                    // with a copy that carries ownership data.
+                    var owner = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    var globalOrRank = record.IsBigEndian
+                        ? System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(subData[4..])
+                        : System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(subData[4..]);
+                    var condition = record.IsBigEndian
+                        ? System.Buffers.Binary.BinaryPrimitives.ReadSingleBigEndian(subData[8..])
+                        : System.Buffers.Binary.BinaryPrimitives.ReadSingleLittleEndian(subData[8..]);
+                    var last = contents[^1];
+                    contents[^1] = last with
+                    {
+                        OwnerFormId = owner != 0 ? owner : null,
+                        GlobalOrRank = globalOrRank,
+                        ItemCondition = condition
+                    };
                     break;
                 }
             }
@@ -617,6 +650,9 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
             ModelPath = modelPath,
             TextureHashData = textureHashData,
             Script = script,
+            OpenSoundFormId = openSound,
+            OpenSoundLoopFormId = openSoundLoop,
+            CloseSoundFormId = closeSound,
             Flags = flags,
             Weight = weight,
             Contents = contents,

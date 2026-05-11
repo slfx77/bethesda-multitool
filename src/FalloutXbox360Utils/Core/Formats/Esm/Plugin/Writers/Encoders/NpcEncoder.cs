@@ -116,13 +116,18 @@ public sealed class NpcEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRI", npc.Script.Value));
         }
 
-        // CNTO inventory entries — 8 bytes each: FormID + int32 count.
+        // CNTO inventory entries — 8 bytes each: FormID + int32 count. Each CNTO may be
+        // followed by an optional COED (12 bytes) carrying ownership/condition data.
         foreach (var item in npc.Inventory)
         {
             var cnto = new byte[8];
             SubrecordEncoder.WriteFormId(cnto, 0, item.ItemFormId);
             SubrecordEncoder.WriteInt32(cnto, 4, item.Count);
             subs.Add(new EncodedSubrecord("CNTO", cnto));
+            if (ContEncoder.HasOwnership(item))
+            {
+                subs.Add(new EncodedSubrecord("COED", ContEncoder.BuildCoedSubrecord(item)));
+            }
         }
 
         // AIDT — 20 bytes: AI behavior data.

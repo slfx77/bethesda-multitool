@@ -5,13 +5,12 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
 ///     Encodes a <see cref="TerminalRecord" /> (TERM) as PC-format subrecord bytes.
-///     v7 simplified path: EDID + FULL? + DESC? + DNAM(4B Difficulty + Flags + ServerType + Unused) +
-///     per menu item: ITXT + RNAM(4B FormID — ResultScript or SubTerminal).
-///     Embedded per-menu result-script bytecode (SCHR/SCDA/SCTX) is deferred — surfaces a warning
-///     for menu items that have neither ResultScript nor SubTerminal (would have been embedded).
+///     v9 path: EDID + FULL? + DESC? + DNAM(4B Difficulty + Flags + ServerType + Unused) +
+///     per menu item: ITXT + (RNAM or embedded SCHR+SCDA?+SCTX?+SCRO*+SCRV*) + NEXT separator.
 ///     Override path is a no-op.
 ///     DNAM layout per PDB TERMINAL_DATA (4 bytes):
 ///         byte Difficulty(0) + byte Flags(1) + byte ServerType(2) + byte Unused(3).
+///     Embedded scripts use the same on-disk pattern as INFO result scripts (see InfoEncoder).
 /// </summary>
 public sealed class TermEncoder : IRecordEncoder
 {
@@ -25,8 +24,8 @@ public sealed class TermEncoder : IRecordEncoder
 
     /// <summary>
     ///     Encode a new TERM record from scratch in fopdoc canonical order:
-    ///     EDID, FULL, DESC, DNAM, per menu item: ITXT, RNAM.
-    ///     OBND/MODL/SCRI/SNAM/PNAM and embedded scripts deferred to v8.
+    ///     EDID, FULL, DESC, DNAM, per menu item: ITXT, (RNAM or embedded script block), NEXT.
+    ///     OBND/MODL/SCRI/SNAM/PNAM deferred.
     /// </summary>
     internal static EncodedRecord EncodeNew(TerminalRecord term)
     {
@@ -52,9 +51,9 @@ public sealed class TermEncoder : IRecordEncoder
 
         subs.Add(new EncodedSubrecord("DNAM", BuildDnamSubrecord(term)));
 
-        foreach (var item in term.MenuItems)
+        for (var i = 0; i < term.MenuItems.Count; i++)
         {
-            EmitMenuItem(subs, warnings, term.FormId, item);
+            EmitMenuItem(subs, warnings, term.FormId, term.MenuItems[i], i == term.MenuItems.Count - 1);
         }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
@@ -71,24 +70,77 @@ public sealed class TermEncoder : IRecordEncoder
         List<EncodedSubrecord> subs,
         List<string> warnings,
         uint termFormId,
-        TerminalMenuItem item)
+        TerminalMenuItem item,
+        bool isLast)
     {
         // ITXT — menu-item display text (may be empty if model only carries linkage).
         subs.Add(NewRecordSubrecords.EncodeStringSubrecord("ITXT", item.Text ?? string.Empty));
 
-        // RNAM — FormID linking to either a sub-terminal (TERM) or an external result script (SCPT).
-        // ResultScript takes precedence when both are present (matches the model's parsing intent).
-        var linkFormId = item.ResultScript ?? item.SubTerminal;
-        if (linkFormId.HasValue)
+        if (item.CompiledData is { Length: > 0 } || !string.IsNullOrEmpty(item.SourceText))
         {
-            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("RNAM", linkFormId.Value));
+            // Embedded result-script block — same SCHR/SCDA/SCTX/SCRO/SCRV layout as INFO.
+            EmitEmbeddedScriptBlock(subs, item);
         }
         else
         {
-            warnings.Add(
-                $"TERM 0x{termFormId:X8} menu item '{item.Text ?? "(empty)"}' has no ResultScript or " +
-                "SubTerminal — embedded result-script bytecode is not supported in v7. Item emitted " +
-                "without action linkage.");
+            // External link via RNAM. ResultScript takes precedence when both are present.
+            var linkFormId = item.ResultScript ?? item.SubTerminal;
+            if (linkFormId.HasValue)
+            {
+                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("RNAM", linkFormId.Value));
+            }
+            else
+            {
+                warnings.Add(
+                    $"TERM 0x{termFormId:X8} menu item '{item.Text ?? "(empty)"}' has neither embedded " +
+                    "script bytecode nor an external link — item emitted with no action.");
+            }
+        }
+
+        // NEXT separator after every menu item except the last. Mirrors fopdoc convention.
+        if (!isLast)
+        {
+            subs.Add(new EncodedSubrecord("NEXT", []));
+        }
+    }
+
+    private static void EmitEmbeddedScriptBlock(List<EncodedSubrecord> subs, TerminalMenuItem item)
+    {
+        var compiledSize = item.CompiledData?.Length ?? 0;
+        var refCount = (uint)item.ReferencedObjects.Count;
+
+        // SCHR (20 bytes) per PDB SCRIPT_HEADER. Object-type script (not quest, not magic-effect).
+        var schr = new byte[20];
+        SubrecordEncoder.WriteUInt32(schr, 0, 0); // VariableCount — terminal scripts have no locals.
+        SubrecordEncoder.WriteUInt32(schr, 4, refCount);
+        SubrecordEncoder.WriteUInt32(schr, 8, (uint)compiledSize);
+        SubrecordEncoder.WriteUInt32(schr, 12, 0); // LastVariableId
+        schr[16] = 0; // IsQuestScript
+        schr[17] = 0; // IsMagicEffectScript
+        schr[18] = compiledSize > 0 ? (byte)1 : (byte)0; // IsCompiled
+        subs.Add(new EncodedSubrecord("SCHR", schr));
+
+        if (item.CompiledData is { Length: > 0 } compiled)
+        {
+            subs.Add(new EncodedSubrecord("SCDA", compiled));
+        }
+
+        if (!string.IsNullOrEmpty(item.SourceText))
+        {
+            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("SCTX", item.SourceText));
+        }
+
+        foreach (var refFormId in item.ReferencedObjects)
+        {
+            if ((refFormId & 0x80000000) != 0)
+            {
+                var varIndex = refFormId & 0x7FFFFFFF;
+                subs.Add(NewRecordSubrecords.EncodeUInt32Subrecord("SCRV", varIndex));
+            }
+            else
+            {
+                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRO", refFormId));
+            }
         }
     }
 }

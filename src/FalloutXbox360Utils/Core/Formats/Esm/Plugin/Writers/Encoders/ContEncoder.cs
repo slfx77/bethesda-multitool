@@ -1,15 +1,18 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
 ///     Encodes a <see cref="ContainerRecord" /> (CONT) as PC-format subrecord bytes.
-///     v7 emits the full record from scratch: EDID + OBND? + FULL? + MODL? + SCRI? +
-///     CNTO+ (per item) + DATA(5B Flags + Weight).
+///     v9 emits the full record: EDID + OBND? + FULL? + MODL? + MODT? + SCRI? +
+///     CNTO+COED?+ (per item) + DATA + SNAM? + QNAM? + RNAM?.
 ///     Override path is a no-op.
 ///     DATA layout (5 bytes, packed/unaligned):
 ///         byte  Flags(0)
 ///         float Weight(1) — little-endian
+///     COED layout (12 bytes, optional per CNTO):
+///         FormID Owner(0) + uint32 GlobalOrRank(4) + float ItemCondition(8)
 /// </summary>
 public sealed class ContEncoder : IRecordEncoder
 {
@@ -23,7 +26,7 @@ public sealed class ContEncoder : IRecordEncoder
 
     /// <summary>
     ///     Encode a new CONT record from scratch in fopdoc canonical order:
-    ///     EDID, OBND, FULL, MODL, SCRI, CNTO+, DATA. SNAM/QNAM/RNAM deferred to v8.
+    ///     EDID, OBND, FULL, MODL, MODT, SCRI, [CNTO+COED?]+, DATA, SNAM, QNAM, RNAM.
     /// </summary>
     internal static EncodedRecord EncodeNew(ContainerRecord cont)
     {
@@ -62,9 +65,28 @@ public sealed class ContEncoder : IRecordEncoder
         foreach (var item in cont.Contents)
         {
             subs.Add(new EncodedSubrecord("CNTO", BuildCntoSubrecord(item)));
+            if (HasOwnership(item))
+            {
+                subs.Add(new EncodedSubrecord("COED", BuildCoedSubrecord(item)));
+            }
         }
 
         subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(cont)));
+
+        if (cont.OpenSoundFormId.HasValue)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SNAM", cont.OpenSoundFormId.Value));
+        }
+
+        if (cont.OpenSoundLoopFormId.HasValue)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("QNAM", cont.OpenSoundLoopFormId.Value));
+        }
+
+        if (cont.CloseSoundFormId.HasValue)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("RNAM", cont.CloseSoundFormId.Value));
+        }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
     }
@@ -77,11 +99,25 @@ public sealed class ContEncoder : IRecordEncoder
         return data;
     }
 
-    private static byte[] BuildCntoSubrecord(Models.InventoryItem item)
+    private static byte[] BuildCntoSubrecord(InventoryItem item)
     {
         var data = new byte[8];
         SubrecordEncoder.WriteFormId(data, 0, item.ItemFormId);
         SubrecordEncoder.WriteInt32(data, 4, item.Count);
+        return data;
+    }
+
+    internal static bool HasOwnership(InventoryItem item)
+    {
+        return item.OwnerFormId.HasValue || item.GlobalOrRank.HasValue || item.ItemCondition.HasValue;
+    }
+
+    internal static byte[] BuildCoedSubrecord(InventoryItem item)
+    {
+        var data = new byte[12];
+        SubrecordEncoder.WriteFormId(data, 0, item.OwnerFormId ?? 0);
+        SubrecordEncoder.WriteUInt32(data, 4, item.GlobalOrRank ?? 0);
+        SubrecordEncoder.WriteFloat(data, 8, item.ItemCondition ?? 0f);
         return data;
     }
 }
