@@ -196,6 +196,27 @@ public sealed class RecordEncoderRegistry
     }
 
     /// <summary>
+    ///     Builds a registry for v17 — extends v16 with 9 medium-complexity new-record encoders:
+    ///     CREA (creature), CLAS (class), SOUN (sound), TXST (texture set), CHAL (challenge),
+    ///     BPTD (body part data), ENCH (enchantment), SPEL (spell), PERK (perk).
+    ///     PERK PRKE entry chains and CREA FaceGen are documented gaps — they warn during emission.
+    /// </summary>
+    public static RecordEncoderRegistry CreateV17Default()
+    {
+        var registry = CreateV16Default();
+        registry.Register(new Encoders.CreaEncoder());
+        registry.Register(new Encoders.ClasEncoder());
+        registry.Register(new Encoders.SounEncoder());
+        registry.Register(new Encoders.TxstEncoder());
+        registry.Register(new Encoders.ChalEncoder());
+        registry.Register(new Encoders.BptdEncoder());
+        registry.Register(new Encoders.EnchEncoder());
+        registry.Register(new Encoders.SpelEncoder());
+        registry.Register(new Encoders.PerkEncoder());
+        return registry;
+    }
+
+    /// <summary>
     ///     Returns true if the record type is a placed-reference type that lives inside a
     ///     parent CELL's child GRUP. These types are excluded from top-level GRUP emission and
     ///     are routed through the cell-children pipeline instead.

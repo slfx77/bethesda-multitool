@@ -400,6 +400,24 @@ public sealed class PluginBuilder
                     (Models.Records.Misc.FormListRecord)model),
                 "LVLI" or "LVLN" or "LVLC" => Writers.Encoders.LvliEncoder.EncodeNew(
                     (Models.Records.Item.LeveledListRecord)model),
+                "CREA" => Writers.Encoders.CreaEncoder.EncodeNew(
+                    (Models.Records.Character.CreatureRecord)model),
+                "CLAS" => Writers.Encoders.ClasEncoder.EncodeNew(
+                    (Models.Records.Character.ClassRecord)model),
+                "SOUN" => Writers.Encoders.SounEncoder.EncodeNew(
+                    (Models.Records.Misc.SoundRecord)model),
+                "TXST" => Writers.Encoders.TxstEncoder.EncodeNew(
+                    (Models.Records.Misc.TextureSetRecord)model),
+                "CHAL" => Writers.Encoders.ChalEncoder.EncodeNew(
+                    (Models.Records.Misc.ChallengeRecord)model),
+                "BPTD" => Writers.Encoders.BptdEncoder.EncodeNew(
+                    (Models.Records.Character.BodyPartDataRecord)model),
+                "ENCH" => Writers.Encoders.EnchEncoder.EncodeNew(
+                    (Models.Records.Magic.EnchantmentRecord)model),
+                "SPEL" => Writers.Encoders.SpelEncoder.EncodeNew(
+                    (Models.Records.Magic.SpellRecord)model),
+                "PERK" => Writers.Encoders.PerkEncoder.EncodeNew(
+                    (Models.Records.Magic.PerkRecord)model),
                 _ => null
             };
         }
@@ -1135,6 +1153,15 @@ public sealed class PluginBuilder
         yield return ("LVLI", records.LeveledLists.Where(l => l.ListType == "LVLI"));
         yield return ("LVLN", records.LeveledLists.Where(l => l.ListType == "LVLN"));
         yield return ("LVLC", records.LeveledLists.Where(l => l.ListType == "LVLC"));
+        yield return ("CREA", records.Creatures);
+        yield return ("CLAS", records.Classes);
+        yield return ("SOUN", records.Sounds);
+        yield return ("TXST", records.TextureSets);
+        yield return ("CHAL", records.Challenges);
+        yield return ("BPTD", records.BodyPartData);
+        yield return ("ENCH", records.Enchantments);
+        yield return ("SPEL", records.Spells);
+        yield return ("PERK", records.Perks);
     }
 
     private static uint ExtractFormId(object model)
