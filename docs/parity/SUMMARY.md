@@ -58,8 +58,12 @@ same patterns on both baselines.
 | Note | IconPath | 290 | 7 | DMP runtime | Added `TESTexture.TextureName` (BGSNote +104 PDB) read in [RuntimeQuestTerminalReader](../../src/FalloutXbox360Utils/Core/Formats/Esm/Runtime/Readers/Specialized/RuntimeQuestTerminalReader.cs). |
 | Weapon | StrReq | 136 | 23 | DMP runtime | Added DNAM-relative +168 read in [RuntimeItemFieldHelpers](../../src/FalloutXbox360Utils/Core/Formats/Esm/Runtime/Readers/Specialized/RuntimeItemFieldHelpers.cs). Remainder = content drift. |
 | Consumable | ModelPath | 156 | 0 | DMP runtime | Added `TESModel.cModel` (ALCH +96 PDB) read in [RuntimeItemReader](../../src/FalloutXbox360Utils/Core/Formats/Esm/Runtime/Readers/Specialized/RuntimeItemReader.cs). |
+| Weapon | CritDamage | 0 agree | 113 / 86 | DMP probe | New [`RuntimeWeaponCritProbe`](../../src/FalloutXbox360Utils/Core/Formats/Esm/Runtime/Readers/Probes/RuntimeWeaponCritProbe.cs) found -8 shift on both builds (margin 3-9, high confidence). Numbers are July2010 / MemDebug agree. |
+| Weapon | CritChance | 0 agree | 192 / 180 | DMP probe | Same probe. |
+| Weapon | CritEffect | 0 agree | 50 / 47 | DMP probe | Same probe. |
+| Terminal | MenuItemCount | 0 agree | 114 / 108 | DMP probe | New [`RuntimeTerminalLayoutProbe`](../../src/FalloutXbox360Utils/Core/Formats/Esm/Runtime/Readers/Probes/RuntimeTerminalLayoutProbe.cs) found menu-list +4 shift. Data block shift stayed gated due to low margin (avoided regressing the 230-record Difficulty agreement). |
 
-Five clear-cut parser bugs closed; one near-complete (CombatStyle 56%
+Nine parser bugs closed; one near-complete (CombatStyle 56%
 reduction; the rest is genuine proto data absence).
 
 ### Carry-over: design-level format limits
@@ -133,53 +137,67 @@ offset bugs.
 
 Move from "still deferred" to "format-level semantic mismatches":
 
-- Weapon CRDT (CritDamage / CritChance / CritEffect) — runtime stores
-  scaled or computed crit data, not the raw editor values. Parity not
-  achievable without engine-equivalent calculation.
 - Terminal Flags — runtime byte at TERMINAL_DATA+1 doesn't carry the
   ESM `Leveled / Unlocked` bit values. Probably mutated by the engine
-  during terminal initialization.
+  during terminal initialization (Phase 6 Terminal probe found no
+  offset shift that recovers it).
 
-Reclassify NPC Weight/Height as load-state divergence (similar to
-Cell HasWater) — the runtime only populates these floats for NPCs in
-the active scene. Not fixable without re-running the dump against a
-build that materializes the full NPC roster.
+Reclassify NPC Weight/Height as **load-state divergence** (Phase 6
+raw-byte investigation confirmed) — runtime engine initializes
+fHeight = 1.0 but leaves fWeight at zero until the actor body
+renders. The probe offsets are correct; the bytes are genuinely zero
+for the 89% of NPCs whose body hasn't loaded.
 
-Terminal MenuItemCount remains the one open item worth a targeted
-investigation: list-walk failure could be a build-invariant offset
-bug in `TermMenuItemListOffset` that affects ~half the terminals
-similarly on both DMPs.
+### Phase 6 outcome — probe-based closures
 
-### Current top gaps after fixes
+Phase 6 hypothesis (cross-build "same agreement rate → same root
+cause") got refined: Weapon CRDT and Terminal MenuItemCount turned
+out to be offset bugs the probes could fix, NOT semantic mismatches.
 
-**ESM-only** (runtime reader needs work):
+Net result:
 
-| Type | Field | Count |
-|---|---|---:|
-| NPC | Weight | 2,580 |
-| Note | Text | 739 (format limit) |
-| NPC | Template | 512 (data absence) |
-| NPC | Height | 464 |
-| NPC | Script | 199 (data absence) |
-| Terminal | MenuItemCount | 150 |
-| Weapon | CritChance | 148 |
-| Perk | Description | 115 |
-| NPC | SPECIAL_AG / CH | 112 / 112 |
+- **Weapon CritDamage/CritChance/CritEffect**: -8 shift discovered
+  by [RuntimeWeaponCritProbe](../../src/FalloutXbox360Utils/Core/Formats/Esm/Runtime/Readers/Probes/RuntimeWeaponCritProbe.cs)
+  on both builds. 0 agree → 113/192/50 (July2010) and 86/180/47
+  (MemDebug). Reference `OBJ_WEAP_CRITICAL` position was 8 bytes
+  past actual location.
+- **Terminal MenuItemCount**: +4 shift on menu-list pointer
+  discovered by [RuntimeTerminalLayoutProbe](../../src/FalloutXbox360Utils/Core/Formats/Esm/Runtime/Readers/Probes/RuntimeTerminalLayoutProbe.cs).
+  0 agree → 114 (July2010) and 108 (MemDebug).
+- **Terminal Flags**: probe found data-shift candidate but margin
+  was 0 (multiple candidates tied). Conservative gate blocked
+  application. Adjacent Difficulty's 230-record agreement preserved.
+  Likely true semantic mismatch.
+- **NPC Weight**: raw-byte hexdump on three example NPCs confirmed
+  bytes at the probe-chosen offset are `00 00 00 00` for ~89% of
+  NPCs. Load-state divergence, not parser bug.
+
+### Current top gaps after Phase 6 (July2010↔xex44)
+
+**ESM-only** (runtime reader needs work — known causes in parens):
+
+| Type | Field | Count | Why |
+|---|---|---:|---|
+| NPC | Weight | 2,580 | Load-state — engine doesn't init fWeight until body renders |
+| Note | Text | 739 | Format limit — BGSNote has no Text struct field |
+| NPC | Template | 512 | Proto data absence |
+| NPC | Height | 464 | Load-state (~17% of NPCs) |
+| NPC | Script | 199 | Proto data absence |
+| Perk | Description | 115 | Not yet investigated |
+| NPC | SPECIAL_AG / CH | 112 / 112 | Not yet investigated |
 
 **DMP-only** (ESM handler needs work):
 
-| Type | Field | Count |
-|---|---|---:|
-| NPC | CombatStyle | 1,387 (proto data absence) |
-| Container | Respawns | 589 (content drift) |
-| Terminal | Flags | 173 |
-| Armor | DR | 123 |
-| Weapon | CritEffect | 61 |
-| Armor | DT | 54 |
-| Weapon | CritDamage | 45 |
-| NPC | Flags | 38 |
-| NPC | Confidence | 33 |
-| LeveledList | EntryCount | 14 |
+| Type | Field | Count | Why |
+|---|---|---:|---|
+| NPC | CombatStyle | 1,387 | Proto data absence |
+| Container | Respawns | 589 | Content drift (proto flags differ) |
+| Terminal | Flags | 173 | Engine mutation at load (semantic mismatch) |
+| Armor | DR | 123 | Semantic mismatch (runtime stores scaled combat rating) |
+| Armor | DT | 54 | Same as DR |
+| NPC | Flags | 38 | Content drift |
+| NPC | Confidence | 33 | Not yet investigated |
+| LeveledList | EntryCount | 14 | Not yet investigated |
 
 Disagreements (1,800+ NPC factions/inventory, 510 container contents,
 NPC SPECIAL/skills variances) are content drift between proto and final

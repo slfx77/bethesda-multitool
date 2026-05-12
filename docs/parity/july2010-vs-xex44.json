@@ -1,7 +1,7 @@
 {
   "esmLabel": "FalloutNV_July2010.esm",
   "dmpLabel": "Fallout_Release_Beta.xex44.dmp",
-  "generatedAtUtc": "2026-05-12T18:18:53.6523405Z",
+  "generatedAtUtc": "2026-05-12T20:56:19.9322333Z",
   "recordTypes": [
     {
       "typeName": "Ammo",
@@ -648,10 +648,10 @@
     {
       "typeName": "Cell",
       "esmRecordCount": 35191,
-      "dmpRecordCount": 434,
+      "dmpRecordCount": 436,
       "matchedRecordCount": 426,
       "esmOnlyRecordCount": 34765,
-      "dmpOnlyRecordCount": 8,
+      "dmpOnlyRecordCount": 10,
       "fields": [
         {
           "fieldName": "Flags",
@@ -846,10 +846,10 @@
         },
         {
           "fieldName": "PlacedObjectCount",
-          "esmOnly": 45,
+          "esmOnly": 46,
           "dmpOnly": 6,
           "agree": 4,
-          "disagree": 362,
+          "disagree": 361,
           "examples": [
             {
               "formId": "0x001206D8",
@@ -4481,40 +4481,40 @@
         },
         {
           "fieldName": "MenuItemCount",
-          "esmOnly": 150,
-          "dmpOnly": 0,
-          "agree": 0,
-          "disagree": 0,
+          "esmOnly": 0,
+          "dmpOnly": 158,
+          "agree": 114,
+          "disagree": 36,
           "examples": [
             {
-              "formId": "0x0014E28A",
-              "esmValue": "1",
-              "dmpValue": "0",
-              "status": "EsmOnly"
+              "formId": "0x0014CD2A",
+              "esmValue": "0",
+              "dmpValue": "1",
+              "status": "DmpOnly"
             },
             {
-              "formId": "0x0014DC2A",
-              "esmValue": "1",
-              "dmpValue": "0",
-              "status": "EsmOnly"
+              "formId": "0x0014752E",
+              "esmValue": "2",
+              "dmpValue": "1",
+              "status": "Disagree"
             },
             {
-              "formId": "0x0014DC29",
-              "esmValue": "1",
-              "dmpValue": "0",
-              "status": "EsmOnly"
+              "formId": "0x0014752D",
+              "esmValue": "2",
+              "dmpValue": "1",
+              "status": "Disagree"
             },
             {
-              "formId": "0x0014CD29",
-              "esmValue": "1",
-              "dmpValue": "0",
-              "status": "EsmOnly"
+              "formId": "0x0014752C",
+              "esmValue": "2",
+              "dmpValue": "1",
+              "status": "Disagree"
             },
             {
-              "formId": "0x0014B270",
-              "esmValue": "1",
-              "dmpValue": "0",
-              "status": "EsmOnly"
+              "formId": "0x0014752B",
+              "esmValue": "2",
+              "dmpValue": "1",
+              "status": "Disagree"
             }
           ]
         }
@@ -4680,95 +4680,89 @@
         },
         {
           "fieldName": "CritChance",
-          "esmOnly": 148,
-          "dmpOnly": 2,
-          "agree": 0,
-          "disagree": 49,
+          "esmOnly": 0,
+          "dmpOnly": 1,
+          "agree": 192,
+          "disagree": 5,
           "examples": [
             {
-              "formId": "0x001524B3",
-              "esmValue": "3.00",
-              "dmpValue": "0.00",
-              "status": "EsmOnly"
-            },
-            {
-              "formId": "0x00151D0C",
-              "esmValue": "5.00",
-              "dmpValue": "0.00",
-              "status": "EsmOnly"
-            },
-            {
-              "formId": "0x001519E0",
-              "esmValue": "5.00",
-              "dmpValue": "0.00",
-              "status": "EsmOnly"
-            },
-            {
-              "formId": "0x0014F474",
-              "esmValue": "1.00",
-              "dmpValue": "4.47",
+              "formId": "0x0014D2AA",
+              "esmValue": "2.00",
+              "dmpValue": "1.00",
               "status": "Disagree"
             },
             {
-              "formId": "0x0014F449",
+              "formId": "0x0014D2A7",
+              "esmValue": "4.00",
+              "dmpValue": "2.00",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001479B3",
               "esmValue": "2.00",
-              "dmpValue": "0.00",
-              "status": "EsmOnly"
+              "dmpValue": "1.50",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00127E45",
+              "esmValue": "3.00",
+              "dmpValue": "1.50",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0011A208",
+              "esmValue": "0.00",
+              "dmpValue": "1.00",
+              "status": "DmpOnly"
             }
           ]
         },
         {
           "fieldName": "CritDamage",
-          "esmOnly": 20,
-          "dmpOnly": 45,
-          "agree": 0,
-          "disagree": 140,
+          "esmOnly": 1,
+          "dmpOnly": 3,
+          "agree": 113,
+          "disagree": 46,
           "examples": [
-            {
-              "formId": "0x001524B3",
-              "esmValue": "40",
-              "dmpValue": "256",
-              "status": "Disagree"
-            },
             {
               "formId": "0x00151D0C",
               "esmValue": "72",
-              "dmpValue": "256",
+              "dmpValue": "30",
               "status": "Disagree"
             },
             {
               "formId": "0x001519E0",
               "esmValue": "20",
-              "dmpValue": "256",
+              "dmpValue": "30",
               "status": "Disagree"
             },
             {
-              "formId": "0x0014F474",
+              "formId": "0x0014EB3C",
               "esmValue": "0",
-              "dmpValue": "468",
+              "dmpValue": "1",
               "status": "DmpOnly"
             },
             {
-              "formId": "0x0014F449",
-              "esmValue": "20",
-              "dmpValue": "212",
+              "formId": "0x0014D2AC",
+              "esmValue": "7",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014D2AA",
+              "esmValue": "14",
+              "dmpValue": "7",
               "status": "Disagree"
             }
           ]
         },
         {
           "fieldName": "CritEffect",
-          "esmOnly": 47,
-          "dmpOnly": 61,
-          "agree": 0,
-          "disagree": 8,
+          "esmOnly": 4,
+          "dmpOnly": 0,
+          "agree": 50,
+          "disagree": 1,
           "examples": [
-            {
-              "formId": "0x0014F474",
-              "esmValue": "0x000A73D7",
-              "dmpValue": "",
-              "status": "EsmOnly"
-            },
             {
               "formId": "0x0014EB3C",
               "esmValue": "0x0005C6C3",
@@ -4776,19 +4770,25 @@
               "status": "EsmOnly"
             },
             {
-              "formId": "0x0014EA5A",
-              "esmValue": "",
-              "dmpValue": "0x64477265",
-              "status": "DmpOnly"
+              "formId": "0x0010A6FC",
+              "esmValue": "0x000BDA30",
+              "dmpValue": "0x00092C48",
+              "status": "Disagree"
             },
             {
-              "formId": "0x0014DDDF",
+              "formId": "0x0009073B",
+              "esmValue": "0x000BDA30",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00090727",
               "esmValue": "0x00092C48",
               "dmpValue": "",
               "status": "EsmOnly"
             },
             {
-              "formId": "0x0014DDDE",
+              "formId": "0x000906CF",
               "esmValue": "0x00092C48",
               "dmpValue": "",
               "status": "EsmOnly"
@@ -5604,7 +5604,7 @@
             {
               "formId": "0x00014BE2",
               "esmValue": "64",
-              "dmpValue": "4",
+              "dmpValue": "5",
               "status": "Disagree"
             },
             {
