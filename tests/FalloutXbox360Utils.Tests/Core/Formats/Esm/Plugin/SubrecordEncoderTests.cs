@@ -77,12 +77,14 @@ public class SubrecordEncoderTests
     }
 
     [Fact]
-    public void WriteSubrecord_RejectsPayloadOver64K()
+    public void WriteSubrecord_EmitsXxxxPrefixForPayloadOver64K()
     {
+        // v19 fix: payloads >64KB use the XXXX extended-size form rather than throwing.
+        // Detailed byte-layout assertions live in V19ValidationFixesTests.
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);
         var huge = new byte[ushort.MaxValue + 1];
-        Assert.Throws<InvalidOperationException>(() =>
-            SubrecordEncoder.WriteSubrecord(writer, "DATA", huge));
+        SubrecordEncoder.WriteSubrecord(writer, "DATA", huge);
+        Assert.True(stream.Length > huge.Length);
     }
 }

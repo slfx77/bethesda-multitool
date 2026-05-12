@@ -16,7 +16,9 @@ public static class SubrecordEncoder
 
     /// <summary>
     ///     Writes a complete subrecord: 4-byte signature + 2-byte little-endian length + data bytes.
-    ///     Throws if data length exceeds <see cref="ushort.MaxValue" /> — v1 does not emit XXXX-prefixed records.
+    ///     For payloads &gt; 64KB, prepends an XXXX extended-size subrecord per the FNV plugin
+    ///     format: "XXXX" + uint16(4) + uint32(actualSize), followed by the real subrecord
+    ///     header with size=0 and the payload bytes.
     /// </summary>
     public static void WriteSubrecord(BinaryWriter writer, string signature, ReadOnlySpan<byte> data)
     {
@@ -28,8 +30,26 @@ public static class SubrecordEncoder
 
         if (data.Length > ushort.MaxValue)
         {
-            throw new InvalidOperationException(
-                $"Subrecord {signature} payload {data.Length} bytes exceeds 64KB without XXXX support.");
+            // Emit XXXX prefix: "XXXX" + uint16(4) + uint32(actualSize).
+            Span<byte> xxxx = stackalloc byte[HeaderSize + 4];
+            xxxx[0] = (byte)'X';
+            xxxx[1] = (byte)'X';
+            xxxx[2] = (byte)'X';
+            xxxx[3] = (byte)'X';
+            BinaryPrimitives.WriteUInt16LittleEndian(xxxx[4..6], 4);
+            BinaryPrimitives.WriteUInt32LittleEndian(xxxx[6..10], (uint)data.Length);
+            writer.Write(xxxx);
+
+            // Real subrecord header with size=0 (real size lives in the XXXX prefix).
+            Span<byte> realHeader = stackalloc byte[HeaderSize];
+            realHeader[0] = (byte)signature[0];
+            realHeader[1] = (byte)signature[1];
+            realHeader[2] = (byte)signature[2];
+            realHeader[3] = (byte)signature[3];
+            BinaryPrimitives.WriteUInt16LittleEndian(realHeader[4..], 0);
+            writer.Write(realHeader);
+            writer.Write(data);
+            return;
         }
 
         Span<byte> header = stackalloc byte[HeaderSize];

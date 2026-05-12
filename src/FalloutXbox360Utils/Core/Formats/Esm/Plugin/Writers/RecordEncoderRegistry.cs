@@ -12,6 +12,16 @@ public sealed class RecordEncoderRegistry
         _byType[encoder.RecordType] = encoder;
     }
 
+    /// <summary>
+    ///     Register an encoder under a specific record type, overriding its declared
+    ///     <see cref="IRecordEncoder.RecordType" />. Used by encoders that handle multiple
+    ///     signatures (e.g., <see cref="Encoders.LvliEncoder" /> handles LVLI/LVLN/LVLC).
+    /// </summary>
+    public void Register(string recordType, IRecordEncoder encoder)
+    {
+        _byType[recordType] = encoder;
+    }
+
     public bool TryGet(string recordType, out IRecordEncoder? encoder)
     {
         return _byType.TryGetValue(recordType, out encoder);
@@ -191,7 +201,14 @@ public sealed class RecordEncoderRegistry
         registry.Register(new Encoders.MesgEncoder());
         registry.Register(new Encoders.NoteEncoder());
         registry.Register(new Encoders.FlstEncoder());
-        registry.Register(new Encoders.LvliEncoder());
+
+        // LvliEncoder handles all three leveled-list signatures (LVLI/LVLN/LVLC).
+        // The encoder declares itself as "LVLI"; register it explicitly under the other
+        // two so the override-path registry lookup finds it.
+        var lvli = new Encoders.LvliEncoder();
+        registry.Register(lvli);
+        registry.Register("LVLN", lvli);
+        registry.Register("LVLC", lvli);
         return registry;
     }
 
