@@ -175,6 +175,27 @@ public sealed class RecordEncoderRegistry
     }
 
     /// <summary>
+    ///     Builds a registry for v16 — extends v14 with 9 trivial/small new-record encoders:
+    ///     EYES, HAIR, REPU, AVIF, MUSC, MESG, NOTE, FLST, and the LeveledList trio
+    ///     (LVLI/LVLN/LVLC, sharing one encoder). v15 added subrecord emissions to existing
+    ///     encoders (no registry change), so we skip v15 and jump to v16.
+    /// </summary>
+    public static RecordEncoderRegistry CreateV16Default()
+    {
+        var registry = CreateV14Default();
+        registry.Register(new Encoders.EyesEncoder());
+        registry.Register(new Encoders.HairEncoder());
+        registry.Register(new Encoders.RepuEncoder());
+        registry.Register(new Encoders.AvifEncoder());
+        registry.Register(new Encoders.MuscEncoder());
+        registry.Register(new Encoders.MesgEncoder());
+        registry.Register(new Encoders.NoteEncoder());
+        registry.Register(new Encoders.FlstEncoder());
+        registry.Register(new Encoders.LvliEncoder());
+        return registry;
+    }
+
+    /// <summary>
     ///     Returns true if the record type is a placed-reference type that lives inside a
     ///     parent CELL's child GRUP. These types are excluded from top-level GRUP emission and
     ///     are routed through the cell-children pipeline instead.

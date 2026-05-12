@@ -382,6 +382,24 @@ public sealed class PluginBuilder
                     (Models.Records.Misc.RecipeCategoryRecord)model),
                 "COBJ" => Writers.Encoders.CobjEncoder.EncodeNew(
                     (Models.Records.Item.ConstructibleObjectRecord)model),
+                "EYES" => Writers.Encoders.EyesEncoder.EncodeNew(
+                    (Models.Records.Character.EyesRecord)model),
+                "HAIR" => Writers.Encoders.HairEncoder.EncodeNew(
+                    (Models.Records.Character.HairRecord)model),
+                "REPU" => Writers.Encoders.RepuEncoder.EncodeNew(
+                    (Models.Records.Character.ReputationRecord)model),
+                "AVIF" => Writers.Encoders.AvifEncoder.EncodeNew(
+                    (Models.Records.Character.ActorValueInfoRecord)model),
+                "MUSC" => Writers.Encoders.MuscEncoder.EncodeNew(
+                    (Models.Records.Misc.MusicTypeRecord)model),
+                "MESG" => Writers.Encoders.MesgEncoder.EncodeNew(
+                    (Models.Records.Quest.MessageRecord)model),
+                "NOTE" => Writers.Encoders.NoteEncoder.EncodeNew(
+                    (Models.Records.Item.NoteRecord)model),
+                "FLST" => Writers.Encoders.FlstEncoder.EncodeNew(
+                    (Models.Records.Misc.FormListRecord)model),
+                "LVLI" or "LVLN" or "LVLC" => Writers.Encoders.LvliEncoder.EncodeNew(
+                    (Models.Records.Item.LeveledListRecord)model),
                 _ => null
             };
         }
@@ -1104,6 +1122,19 @@ public sealed class PluginBuilder
         yield return ("RCPE", records.Recipes);
         yield return ("RCCT", records.RecipeCategories);
         yield return ("COBJ", records.ConstructibleObjects);
+        yield return ("EYES", records.Eyes);
+        yield return ("HAIR", records.Hair);
+        yield return ("REPU", records.Reputations);
+        yield return ("AVIF", records.ActorValueInfos);
+        yield return ("MUSC", records.MusicTypes);
+        yield return ("MESG", records.Messages);
+        yield return ("NOTE", records.Notes);
+        yield return ("FLST", records.FormLists);
+        // Leveled lists share one model but three signatures — partition at yield time so
+        // each emits under the right wire signature. The encoder handles all three the same.
+        yield return ("LVLI", records.LeveledLists.Where(l => l.ListType == "LVLI"));
+        yield return ("LVLN", records.LeveledLists.Where(l => l.ListType == "LVLN"));
+        yield return ("LVLC", records.LeveledLists.Where(l => l.ListType == "LVLC"));
     }
 
     private static uint ExtractFormId(object model)
