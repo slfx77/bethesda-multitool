@@ -378,6 +378,10 @@ public sealed class PluginBuilder
                     (Models.Records.Item.ArmaRecord)model),
                 "RCPE" => Writers.Encoders.RcpeEncoder.EncodeNew(
                     (Models.Records.Item.RecipeRecord)model),
+                "RCCT" => Writers.Encoders.RcctEncoder.EncodeNew(
+                    (Models.Records.Misc.RecipeCategoryRecord)model),
+                "COBJ" => Writers.Encoders.CobjEncoder.EncodeNew(
+                    (Models.Records.Item.ConstructibleObjectRecord)model),
                 _ => null
             };
         }
@@ -1098,6 +1102,8 @@ public sealed class PluginBuilder
         yield return ("IMOD", records.WeaponMods);
         yield return ("ARMA", records.ArmorAddons);
         yield return ("RCPE", records.Recipes);
+        yield return ("RCCT", records.RecipeCategories);
+        yield return ("COBJ", records.ConstructibleObjects);
     }
 
     private static uint ExtractFormId(object model)

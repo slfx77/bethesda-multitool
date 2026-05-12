@@ -57,6 +57,23 @@ public sealed class QustEncoder : IRecordEncoder
         SubrecordEncoder.WriteFloat(data, 4, quest.QuestDelay);
         subs.Add(new EncodedSubrecord("DATA", data));
 
+        // Top-level quest conditions — CTDA* + optional CIS1/CIS2 between DATA and the
+        // first INDX. Per-stage and per-objective conditions are not modeled yet (v13's
+        // parser only captures top-level), so all condition emission lives here.
+        foreach (var condition in quest.Conditions)
+        {
+            subs.Add(new EncodedSubrecord("CTDA", InfoEncoder.BuildCtdaSubrecord(condition)));
+            if (!string.IsNullOrEmpty(condition.Parameter1String))
+            {
+                subs.Add(NewRecordSubrecords.EncodeStringSubrecord("CIS1", condition.Parameter1String));
+            }
+
+            if (!string.IsNullOrEmpty(condition.Parameter2String))
+            {
+                subs.Add(NewRecordSubrecords.EncodeStringSubrecord("CIS2", condition.Parameter2String));
+            }
+        }
+
         // Stages: INDX (2-byte little-endian on Xbox AND PC for QUST) then optional QSDT +
         // CNAM. INDX comes before its associated QSDT/CNAM; the parser uses INDX to switch
         // between consecutive stages.

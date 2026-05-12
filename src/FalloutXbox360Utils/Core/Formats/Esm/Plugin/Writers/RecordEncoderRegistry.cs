@@ -159,6 +159,22 @@ public sealed class RecordEncoderRegistry
     }
 
     /// <summary>
+    ///     Builds a registry for v14 — extends v12 with RCCT (recipe category) and COBJ
+    ///     (constructible object) new-record encoders. v14 also enables several subrecord
+    ///     emissions on existing encoders (no registry change needed):
+    ///     - ARMA now emits MODT/MO2T/MO3T/MO4T texture hashes, ICON/MIC2 inventory icons,
+    ///       and DNAM detection sound level when the model carries them.
+    ///     - QUST now emits top-level CTDA + CIS1/CIS2 condition string parameters.
+    /// </summary>
+    public static RecordEncoderRegistry CreateV14Default()
+    {
+        var registry = CreateV12Default();
+        registry.Register(new Encoders.RcctEncoder());
+        registry.Register(new Encoders.CobjEncoder());
+        return registry;
+    }
+
+    /// <summary>
     ///     Returns true if the record type is a placed-reference type that lives inside a
     ///     parent CELL's child GRUP. These types are excluded from top-level GRUP emission and
     ///     are routed through the cell-children pipeline instead.
