@@ -13,13 +13,30 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 ///     Reader for quest, terminal, and note runtime structs from Xbox 360 memory dumps.
 ///     Extracts quest data, terminal menus with menu items, and note content.
 /// </summary>
-internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
+internal sealed class RuntimeQuestTerminalReader(
+    RuntimeMemoryContext context,
+    RuntimeTerminalLayoutProbeResult? terminalLayoutProbe = null)
 {
     private readonly RuntimeMemoryContext _context = context;
 
     // Build-specific offset shift for Note/Quest/Terminal structs.
     private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
         MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
+
+    // Per-dump terminal layout shifts from RuntimeTerminalLayoutProbe.
+    //
+    // The data shift (Difficulty/Flags/ServerType) is gated on high confidence —
+    // a low-margin winner could regress the 230+ records that already agree on
+    // Difficulty at the current hardcoded offset.
+    //
+    // The menu-list shift is applied whenever the probe ran at all (score > 0),
+    // because the pre-probe MenuItemCount baseline is 0 agreement — any positive
+    // signal from the probe is improvement and can't make the metric worse.
+    private readonly int _termDataShift =
+        terminalLayoutProbe is { IsHighConfidence: true } ? terminalLayoutProbe.DataShift : 0;
+
+    private readonly int _termMenuListShift =
+        terminalLayoutProbe is { WinnerScore: > 0 } ? terminalLayoutProbe.MenuListShift : 0;
 
     /// <summary>
     ///     Read extended quest data from a runtime TESQuest struct.
@@ -644,11 +661,11 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
 
     // BGSTerminal: PDB size 168, Debug dump 172, Release dump 184
     private int TermStructSize => 168 + _s;
-    private int TermDifficultyOffset => 116 + _s;
-    private int TermFlagsOffset => 117 + _s;
+    private int TermDifficultyOffset => 116 + _s + _termDataShift;
+    private int TermFlagsOffset => 117 + _s + _termDataShift;
     private int TermPasswordOffset => 120 + _s;
 
-    private int TermMenuItemListOffset => 136 + _s;
+    private int TermMenuItemListOffset => 136 + _s + _termMenuListShift;
 
     #endregion
 }

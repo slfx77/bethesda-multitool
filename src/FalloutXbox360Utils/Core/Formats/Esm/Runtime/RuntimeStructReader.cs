@@ -73,7 +73,7 @@ public sealed class RuntimeStructReader
         _actors = new RuntimeActorReader(_context, npcLayoutProbe);
         _generic = new RuntimeGenericReader(_context, probeResults?.GenericTypeShifts);
         _items = new RuntimeItemReader(_context, probeResults?.WeaponSoundLayout, probeResults?.WeaponCritLayout);
-        _dialogue = new RuntimeDialogueReader(_context);
+        _dialogue = new RuntimeDialogueReader(_context, probeResults?.TerminalLayout);
         _effects = new RuntimeEffectReader(_context, probeResults?.EffectLayout);
         _scripts = new RuntimeScriptReader(_context);
         _world = new RuntimeWorldReader(_context);
@@ -168,6 +168,9 @@ public sealed class RuntimeStructReader
                     msg => Logger.Instance.Info(msg),
                     editorIdsByFormId),
                 WeaponCritLayout = RuntimeWeaponCritProbe.Probe(context, allEntries,
+                    msg => Logger.Instance.Info(msg),
+                    editorIdsByFormId),
+                TerminalLayout = RuntimeTerminalLayoutProbe.Probe(context, allEntries,
                     msg => Logger.Instance.Info(msg),
                     editorIdsByFormId),
                 GenericTypeShifts = RuntimeGenericReader.ProbeAllTypeShifts(context, allEntries)

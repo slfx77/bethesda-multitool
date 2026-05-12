@@ -11,9 +11,12 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers;
 ///     Reader for dialogue, quest, terminal, and note runtime structs from Xbox 360 memory dumps.
 ///     Extracts topic metadata, INFO records, quest data, terminal menus, and note content.
 /// </summary>
-internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
+internal sealed class RuntimeDialogueReader(
+    RuntimeMemoryContext context,
+    RuntimeTerminalLayoutProbeResult? terminalLayoutProbe = null)
 {
     private readonly RuntimeMemoryContext _context = context;
+    private readonly RuntimeTerminalLayoutProbeResult? _terminalLayoutProbe = terminalLayoutProbe;
 
     private readonly InfoOffsets _info = InfoLayout;
 
@@ -24,7 +27,7 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
     private RuntimeQuestTerminalReader? _questTerminalReader;
 
     private RuntimeQuestTerminalReader QuestTerminal =>
-        _questTerminalReader ??= new RuntimeQuestTerminalReader(_context);
+        _questTerminalReader ??= new RuntimeQuestTerminalReader(_context, _terminalLayoutProbe);
 
     private RuntimeDialogueConditionReader ConditionReader =>
         _conditionReader ??= new RuntimeDialogueConditionReader(_context);
