@@ -91,8 +91,12 @@ internal sealed class NpcRecordHandler(RecordParserContext context) : RecordHand
                 case "FULL":
                     fullName = EsmStringUtils.ReadNullTermString(subData);
                     break;
-                case "ACBS" when sub.DataLength == 24:
-                    stats = ActorRecordHandler.ParseActorBase(subData, record.Offset + 24 + sub.DataOffset,
+                case "ACBS" when sub.DataLength >= 24:
+                    // Proto-build ACBS may include trailing bytes beyond the standard 24
+                    // (extra fields the engine ignores). Slice to 24 so length-variant
+                    // subrecords still populate Stats instead of silently dropping the NPC.
+                    stats = ActorRecordHandler.ParseActorBase(subData[..24],
+                        record.Offset + 24 + sub.DataOffset,
                         record.IsBigEndian);
                     break;
                 case "RNAM" when sub.DataLength == 4:

@@ -819,6 +819,44 @@ public class RecordParserHandlerTests
     }
 
     [Fact]
+    public void ParseNpcs_AcbsLongerThan24Bytes_StillPopulatesStats()
+    {
+        // The audit baseline showed 38 NPC records where ESM had no Flags but DMP did,
+        // because the handler used a strict `sub.DataLength == 24` guard on ACBS. Proto
+        // builds occasionally extend ACBS with trailing bytes the engine ignores; the
+        // handler now accepts `>= 24` and slices to the standard 24-byte payload.
+        var edid = NullTermString("AcbsLongNpc");
+        var acbs = new byte[28]; // 24 standard + 4 trailing proto-only bytes
+        BinaryPrimitives.WriteUInt32LittleEndian(acbs.AsSpan(0), 0x00000003u); // flags = 3
+        BinaryPrimitives.WriteUInt16LittleEndian(acbs.AsSpan(4), 5);            // fatigue
+        BinaryPrimitives.WriteUInt16LittleEndian(acbs.AsSpan(6), 0);            // barter gold
+        BinaryPrimitives.WriteInt16LittleEndian(acbs.AsSpan(8), 1);             // level
+        BinaryPrimitives.WriteUInt16LittleEndian(acbs.AsSpan(10), 1);           // calcMin
+        BinaryPrimitives.WriteUInt16LittleEndian(acbs.AsSpan(12), 10);          // calcMax
+        // remaining bytes (14..23) zero; trailing 24..27 garbage (zero-init is fine)
+
+        var recordBytes = BuildRecordBytes(0x000A0004, "NPC_", false,
+            ("EDID", edid),
+            ("ACBS", acbs));
+
+        var mainRecord = new DetectedMainRecord("NPC_",
+            (uint)(recordBytes.Length - 24), 0, 0x000A0004, 0, false);
+        var scanResult = MakeScanResult([mainRecord]);
+
+        using var mmf = MemoryMappedFile.CreateNew(null, recordBytes.Length);
+        using var accessor = mmf.CreateViewAccessor(0, recordBytes.Length);
+        accessor.WriteArray(0, recordBytes, 0, recordBytes.Length);
+
+        var parser = new RecordParser(scanResult, accessor: accessor, fileSize: recordBytes.Length);
+        var npcs = parser.ParseNpcs();
+
+        var npc = Assert.Single(npcs);
+        Assert.NotNull(npc.Stats);
+        Assert.Equal(3u, npc.Stats.Flags);
+        Assert.Equal((short)1, npc.Stats.Level);
+    }
+
+    [Fact]
     public void ParseNpcs_LittleEndian_PopulatesCombatStyleFromZNAM()
     {
         // ZNAM is the NPC combat-style FormID subrecord. The audit baseline
