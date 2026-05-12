@@ -13,4 +13,7 @@ public record QuestObjective
 
     /// <summary>Target stage for completion.</summary>
     public int? TargetStage { get; init; }
+
+    /// <summary>Per-objective targets (QSTA*), each with optional own conditions.</summary>
+    public List<QuestObjectiveTarget> Targets { get; init; } = [];
 }

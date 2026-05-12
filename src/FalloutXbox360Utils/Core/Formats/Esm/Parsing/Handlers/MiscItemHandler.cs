@@ -311,6 +311,8 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
         var value = 0;
         var maxCondition = 0;
         var weight = 0f;
+        var equipmentType = Enums.EquipmentType.None;
+        uint? repairItemListFormId = null;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -376,6 +378,17 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
                 case "DNAM" when sub.DataLength >= 1:
                     detectionSoundLevel = subData[0];
                     break;
+                case "ETYP" when sub.DataLength >= 4:
+                {
+                    var raw = record.IsBigEndian
+                        ? System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(subData)
+                        : System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(subData);
+                    equipmentType = (Enums.EquipmentType)raw;
+                    break;
+                }
+                case "REPL" when sub.DataLength == 4:
+                    repairItemListFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
                 case "DATA" when sub.DataLength >= 12:
                 {
                     var fields = SubrecordDataReader.ReadFields("DATA", "ARMA", subData, record.IsBigEndian);
@@ -408,6 +421,8 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
             MaleIconPath = maleIcon,
             FemaleIconPath = femaleIcon,
             DetectionSoundLevel = detectionSoundLevel,
+            EquipmentType = equipmentType,
+            RepairItemListFormId = repairItemListFormId,
             BipedFlags = bipedFlags,
             GeneralFlags = generalFlags,
             Value = value,

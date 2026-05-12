@@ -359,13 +359,100 @@ internal sealed class DialogueRecordHandler(RecordParserContext context) : Recor
         uint? script = null;
         var stages = new List<QuestStage>();
         var objectives = new List<QuestObjective>();
-        var conditions = new List<DialogueCondition>();
+        var conditions = new List<DialogueCondition>(); // top-level
 
-        // Track current stage/objective being built
+        // Stage being assembled.
         int? currentStageIndex = null;
         string? currentLogEntry = null;
         byte currentStageFlags = 0;
+        var currentStageConditions = new List<DialogueCondition>();
+
+        // Objective being assembled.
         int? currentObjectiveIndex = null;
+        string? currentObjectiveDisplayText = null;
+        var currentObjectiveTargets = new List<QuestObjectiveTarget>();
+
+        // Target being assembled inside the current objective.
+        uint? currentTargetFormId = null;
+        byte currentTargetFlags = 0;
+        var currentTargetConditions = new List<DialogueCondition>();
+
+        void FlushTarget()
+        {
+            if (currentTargetFormId.HasValue)
+            {
+                currentObjectiveTargets.Add(new QuestObjectiveTarget
+                {
+                    TargetFormId = currentTargetFormId.Value,
+                    Flags = currentTargetFlags,
+                    Conditions = currentTargetConditions
+                });
+            }
+
+            currentTargetFormId = null;
+            currentTargetFlags = 0;
+            currentTargetConditions = new List<DialogueCondition>();
+        }
+
+        void FlushObjective()
+        {
+            FlushTarget();
+            if (currentObjectiveIndex.HasValue)
+            {
+                objectives.Add(new QuestObjective
+                {
+                    Index = currentObjectiveIndex.Value,
+                    DisplayText = currentObjectiveDisplayText,
+                    Targets = currentObjectiveTargets
+                });
+            }
+
+            currentObjectiveIndex = null;
+            currentObjectiveDisplayText = null;
+            currentObjectiveTargets = new List<QuestObjectiveTarget>();
+        }
+
+        void FlushStage()
+        {
+            if (currentStageIndex.HasValue)
+            {
+                stages.Add(new QuestStage
+                {
+                    Index = currentStageIndex.Value,
+                    LogEntry = currentLogEntry,
+                    Flags = currentStageFlags,
+                    Conditions = currentStageConditions
+                });
+            }
+
+            currentStageIndex = null;
+            currentLogEntry = null;
+            currentStageFlags = 0;
+            currentStageConditions = new List<DialogueCondition>();
+        }
+
+        // CTDA routing: pick the active scope's condition list, or null if the
+        // condition appears in an unscoped position (inside QOBJ but before QSTA — those
+        // would attach to the objective itself, which fopdoc doesn't define).
+        List<DialogueCondition>? ActiveConditionList()
+        {
+            if (currentTargetFormId.HasValue)
+            {
+                return currentTargetConditions;
+            }
+
+            if (currentObjectiveIndex.HasValue)
+            {
+                return null;
+            }
+
+            if (currentStageIndex.HasValue)
+            {
+                return currentStageConditions;
+            }
+
+            return conditions;
+        }
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -393,103 +480,72 @@ internal sealed class DialogueRecordHandler(RecordParserContext context) : Recor
                 case "SCRI" when sub.DataLength == 4:
                     script = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
-                // Top-level quest conditions (CTDA + optional CIS1/CIS2). Per-stage and
-                // per-objective conditions are deferred — guard ensures we only capture
-                // conditions that appear before any INDX or QOBJ.
-                case "CTDA" when sub.DataLength >= 28
-                                 && currentStageIndex is null
-                                 && currentObjectiveIndex is null:
-                    conditions.Add(CtdaParser.Decode(subData, record.IsBigEndian));
-                    break;
-                case "CIS1" when conditions.Count > 0
-                                 && currentStageIndex is null
-                                 && currentObjectiveIndex is null:
+                case "CTDA" when sub.DataLength >= 28:
                 {
-                    var s = EsmStringUtils.ReadNullTermString(subData);
-                    conditions[^1] = conditions[^1] with { Parameter1String = s };
+                    var ctda = CtdaParser.Decode(subData, record.IsBigEndian);
+                    ActiveConditionList()?.Add(ctda);
                     break;
                 }
-                case "CIS2" when conditions.Count > 0
-                                 && currentStageIndex is null
-                                 && currentObjectiveIndex is null:
+                case "CIS1":
                 {
-                    var s = EsmStringUtils.ReadNullTermString(subData);
-                    conditions[^1] = conditions[^1] with { Parameter2String = s };
+                    var list = ActiveConditionList();
+                    if (list is { Count: > 0 })
+                    {
+                        list[^1] = list[^1] with
+                        {
+                            Parameter1String = EsmStringUtils.ReadNullTermString(subData)
+                        };
+                    }
+
+                    break;
+                }
+                case "CIS2":
+                {
+                    var list = ActiveConditionList();
+                    if (list is { Count: > 0 })
+                    {
+                        list[^1] = list[^1] with
+                        {
+                            Parameter2String = EsmStringUtils.ReadNullTermString(subData)
+                        };
+                    }
+
                     break;
                 }
                 case "INDX" when sub.DataLength >= 2:
-                    // Save previous stage if any
-                    if (currentStageIndex.HasValue)
-                    {
-                        stages.Add(new QuestStage
-                        {
-                            Index = currentStageIndex.Value,
-                            LogEntry = currentLogEntry,
-                            Flags = currentStageFlags
-                        });
-                    }
-
-                    // Start new stage
+                    FlushObjective();
+                    FlushStage();
                     currentStageIndex = record.IsBigEndian
                         ? BinaryPrimitives.ReadInt16BigEndian(subData)
                         : BinaryPrimitives.ReadInt16LittleEndian(subData);
-                    currentLogEntry = null;
-                    currentStageFlags = 0;
                     break;
-                case "CNAM": // Log entry text
+                case "CNAM":
                     currentLogEntry = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "QSDT" when sub.DataLength >= 1:
                     currentStageFlags = subData[0];
                     break;
                 case "QOBJ" when sub.DataLength >= 4:
-                    // Save previous objective if any
-                    if (currentObjectiveIndex.HasValue)
-                    {
-                        objectives.Add(new QuestObjective
-                        {
-                            Index = currentObjectiveIndex.Value
-                        });
-                    }
-
+                    FlushStage();
+                    FlushObjective();
                     currentObjectiveIndex = record.IsBigEndian
                         ? BinaryPrimitives.ReadInt32BigEndian(subData)
                         : BinaryPrimitives.ReadInt32LittleEndian(subData);
                     break;
-                case "NNAM": // Objective display text
-                    if (currentObjectiveIndex.HasValue)
-                    {
-                        objectives.Add(new QuestObjective
-                        {
-                            Index = currentObjectiveIndex.Value,
-                            DisplayText = EsmStringUtils.ReadNullTermString(subData)
-                        });
-                        currentObjectiveIndex = null;
-                    }
-
+                case "NNAM":
+                    currentObjectiveDisplayText = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "QSTA" when sub.DataLength >= 5:
+                    FlushTarget();
+                    currentTargetFormId = RecordParserContext.ReadFormId(subData[..4], record.IsBigEndian);
+                    currentTargetFlags = subData[4];
                     break;
             }
         }
 
-        // Add final stage if any
-        if (currentStageIndex.HasValue)
-        {
-            stages.Add(new QuestStage
-            {
-                Index = currentStageIndex.Value,
-                LogEntry = currentLogEntry,
-                Flags = currentStageFlags
-            });
-        }
-
-        // Add final objective if any
-        if (currentObjectiveIndex.HasValue)
-        {
-            objectives.Add(new QuestObjective
-            {
-                Index = currentObjectiveIndex.Value
-            });
-        }
+        // Final flushes for any in-progress scope at end of record.
+        FlushObjective();
+        FlushStage();
 
         return new QuestRecord
         {

@@ -51,6 +51,12 @@ public record ArmaRecord
     /// <summary>Detection sound level enum from DNAM (Loud=0, Normal=1, Silent=2).</summary>
     public byte DetectionSoundLevel { get; init; }
 
+    /// <summary>Equipment slot category from ETYP subrecord (int32 enum, -1..13).</summary>
+    public Enums.EquipmentType EquipmentType { get; init; } = Enums.EquipmentType.None;
+
+    /// <summary>Repair item list FormID from REPL subrecord (BGSListForm of items used to repair).</summary>
+    public uint? RepairItemListFormId { get; init; }
+
     /// <summary>Biped flags (which body parts this covers) from BMDT.</summary>
     public uint BipedFlags { get; init; }
 

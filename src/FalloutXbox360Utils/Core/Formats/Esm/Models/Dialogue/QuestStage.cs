@@ -1,3 +1,5 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
+
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models.Dialogue;
 
 /// <summary>
@@ -13,4 +15,7 @@ public record QuestStage
 
     /// <summary>Stage flags (from QSDT).</summary>
     public byte Flags { get; init; }
+
+    /// <summary>Per-stage conditions (CTDA* between QSDT and CNAM, with optional CIS1/CIS2).</summary>
+    public List<DialogueCondition> Conditions { get; init; } = [];
 }

@@ -112,6 +112,20 @@ public sealed class ArmaEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeByteSubrecord("DNAM", arma.DetectionSoundLevel));
         }
 
+        // ETYP — equipment type (int32 enum, -1..13). Per WeapEncoder/ArmoEncoder precedent,
+        // the schema registers ETYP as a FormID for endian-swap, but the actual on-disk and
+        // in-memory value is a 4-byte int32. Emit only when not None.
+        if (arma.EquipmentType != Enums.EquipmentType.None)
+        {
+            subs.Add(NewRecordSubrecords.EncodeInt32Subrecord("ETYP", (int)arma.EquipmentType));
+        }
+
+        // REPL — repair item list FormID (BGSListForm).
+        if (arma.RepairItemListFormId.HasValue)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("REPL", arma.RepairItemListFormId.Value));
+        }
+
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
     }
 

@@ -58,9 +58,63 @@ public sealed class QustEncoder : IRecordEncoder
         subs.Add(new EncodedSubrecord("DATA", data));
 
         // Top-level quest conditions — CTDA* + optional CIS1/CIS2 between DATA and the
-        // first INDX. Per-stage and per-objective conditions are not modeled yet (v13's
-        // parser only captures top-level), so all condition emission lives here.
-        foreach (var condition in quest.Conditions)
+        // first INDX. Per-stage and per-target conditions are emitted within their owning
+        // INDX / QSTA blocks below via the same helper.
+        EmitConditions(subs, quest.Conditions);
+
+        // Stages: INDX (2-byte little-endian on Xbox AND PC for QUST) then optional QSDT +
+        // stage CTDA* + CIS1/CIS2 + CNAM. Stage CTDA gates when the log entry triggers.
+        foreach (var stage in quest.Stages)
+        {
+            var indx = new byte[2];
+            SubrecordEncoder.WriteInt16(indx, 0, (short)stage.Index);
+            subs.Add(new EncodedSubrecord("INDX", indx));
+
+            if (stage.Flags != 0)
+            {
+                subs.Add(NewRecordSubrecords.EncodeByteSubrecord("QSDT", stage.Flags));
+            }
+
+            EmitConditions(subs, stage.Conditions);
+
+            if (!string.IsNullOrEmpty(stage.LogEntry))
+            {
+                subs.Add(NewRecordSubrecords.EncodeStringSubrecord("CNAM", stage.LogEntry));
+            }
+        }
+
+        // Objectives: QOBJ (4-byte int32 index) + optional NNAM + per-target QSTA + CTDA*.
+        foreach (var objective in quest.Objectives)
+        {
+            subs.Add(NewRecordSubrecords.EncodeInt32Subrecord("QOBJ", objective.Index));
+
+            if (!string.IsNullOrEmpty(objective.DisplayText))
+            {
+                subs.Add(NewRecordSubrecords.EncodeStringSubrecord("NNAM", objective.DisplayText));
+            }
+
+            foreach (var target in objective.Targets)
+            {
+                var qsta = new byte[8];
+                SubrecordEncoder.WriteFormId(qsta, 0, target.TargetFormId);
+                qsta[4] = target.Flags;
+                // bytes 5-7 padding
+                subs.Add(new EncodedSubrecord("QSTA", qsta));
+
+                EmitConditions(subs, target.Conditions);
+            }
+        }
+
+        return new EncodedRecord { Subrecords = subs, Warnings = warnings };
+    }
+
+    /// <summary>
+    ///     Emit CTDA + optional CIS1/CIS2 for each condition. Shared between top-level,
+    ///     per-stage, and per-target condition lists.
+    /// </summary>
+    private static void EmitConditions(List<EncodedSubrecord> subs, List<DialogueCondition> conditionList)
+    {
+        foreach (var condition in conditionList)
         {
             subs.Add(new EncodedSubrecord("CTDA", InfoEncoder.BuildCtdaSubrecord(condition)));
             if (!string.IsNullOrEmpty(condition.Parameter1String))
@@ -73,38 +127,5 @@ public sealed class QustEncoder : IRecordEncoder
                 subs.Add(NewRecordSubrecords.EncodeStringSubrecord("CIS2", condition.Parameter2String));
             }
         }
-
-        // Stages: INDX (2-byte little-endian on Xbox AND PC for QUST) then optional QSDT +
-        // CNAM. INDX comes before its associated QSDT/CNAM; the parser uses INDX to switch
-        // between consecutive stages.
-        foreach (var stage in quest.Stages)
-        {
-            var indx = new byte[2];
-            SubrecordEncoder.WriteInt16(indx, 0, (short)stage.Index);
-            subs.Add(new EncodedSubrecord("INDX", indx));
-
-            if (stage.Flags != 0)
-            {
-                subs.Add(NewRecordSubrecords.EncodeByteSubrecord("QSDT", stage.Flags));
-            }
-
-            if (!string.IsNullOrEmpty(stage.LogEntry))
-            {
-                subs.Add(NewRecordSubrecords.EncodeStringSubrecord("CNAM", stage.LogEntry));
-            }
-        }
-
-        // Objectives: QOBJ (4-byte int32 index) then optional NNAM (display text).
-        foreach (var objective in quest.Objectives)
-        {
-            subs.Add(NewRecordSubrecords.EncodeInt32Subrecord("QOBJ", objective.Index));
-
-            if (!string.IsNullOrEmpty(objective.DisplayText))
-            {
-                subs.Add(NewRecordSubrecords.EncodeStringSubrecord("NNAM", objective.DisplayText));
-            }
-        }
-
-        return new EncodedRecord { Subrecords = subs, Warnings = warnings };
     }
 }
