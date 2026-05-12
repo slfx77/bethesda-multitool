@@ -29,10 +29,24 @@ the audit, so "both correctly false" looks identical to "both unparsed".
 The numerical agree/disagree counts on true-valued bool fields are still
 meaningful; reading the raw byte is the only way to resolve ambiguity.
 
-## Baseline — `FalloutNV_July2010.esm` ↔ `Fallout_Release_Beta.xex44.dmp`
+## Baselines
 
-July 21 2010 proto ESM compared against April 2010 xex44 DMP, the most
-content-adjacent pair available. JSON: [july2010-vs-xex44.json](july2010-vs-xex44.json).
+Two pairs maintained side-by-side so cross-build comparisons can rule
+out build-specific causes:
+
+- **[july2010-vs-xex44.json](july2010-vs-xex44.json)** —
+  `FalloutNV_July2010.esm` ↔ `Fallout_Release_Beta.xex44.dmp`. Most
+  content-adjacent pair available (July 21 2010 proto ESM, April 2010
+  xex44 DMP). Primary baseline.
+- **[final-vs-memdebug.json](final-vs-memdebug.json)** —
+  `Sample/ESM/360_final/FalloutNV.esm` ↔ `Fallout_Release_MemDebug.xex.dmp`.
+  Shipped Aug 2010 final ESM vs MemDebug DMP — this is the build the
+  runtime readers were originally tuned against. Used to disambiguate
+  build-specific bugs from systematic ones.
+
+Numbers below come from the primary (July2010↔xex44) baseline unless
+noted; Phase 5 confirmed all "still deferred" items below show the
+same patterns on both baselines.
 
 ### Fixes landed (pre → post)
 
@@ -100,18 +114,41 @@ parser-bug fix and one important negative finding.
   design (`RuntimeCellReader` constructs synthetic cell with
   `Flags = entry.IsInterior ? 0x01 : 0x00`).
 
-### Still deferred — needs raw-byte verification
+### Phase 5 outcome — cross-build verification of remaining items
 
-These remain open; methodology is documented below.
+Phase 5 added the final↔MemDebug baseline and verified the still-open
+items against both. Result: every remaining gap shows essentially the
+same pattern on MemDebug as on xex44, ruling out build-specific
+offset bugs.
 
-| Type | Field | After | Hypothesis |
-|---|---|---:|---|
-| NPC | Weight | 2,580 | Per-build TESNPC offset table needed. xex44 reader hits PDB+516 (correct here); MemDebug reader needs PDB+484. |
-| NPC | Height | 464 | Same. |
-| Weapon | CritChance | 148 | 0 records agree despite offsets matching pdb_layouts.json. Most likely **content drift** (proto crit values rebalanced for final), since adjacent Weapon Damage shows 157 agree. |
-| Weapon | CritDamage / CritEffect | 45 / 61 | Same family. 140 disagree on CritDamage is consistent with bulk rebalance, not offset bug. |
-| Terminal | Flags | 173 + 78 disagree | 234 agree on the adjacent Difficulty byte → offset is right. Most likely **content drift** (terminal flag defaults rebalanced) or runtime engine mutates the byte at load. |
-| Terminal | MenuItemCount | 150 | Could be `TermMenuItemListOffset` differing in proto, OR runtime simply hasn't populated those terminals. |
+| Field | xex44 (ESM-only / disagree / agree) | MemDebug (ESM-only / disagree / agree) | Cross-build verdict |
+|---|---|---|---|
+| NPC Weight | 2,580 / 2 / 353 | 2,500 / 2 / 319 | ~11% agree on both — runtime likely lazy-populates `fWeight` only for visible NPCs, not a parser bug |
+| NPC Height | 464 / 36 / 2,435 | 442 / 34 / 2,345 | ~83% agree on both — minority load-state divergence |
+| Weapon CritDamage | 20 ESM, 45 DMP, 140 disagree, 0 agree | 18 / 42 / 133 / **0 agree** | **Semantic mismatch** — runtime stores CRDT differently from ESM bytes (same family as Armor DR/DT) |
+| Weapon CritChance | 148 / 49 / 2 / 0 agree | 183 / – / – / **0 agree** | Same — 0 agree across two builds is the signature |
+| Weapon CritEffect | 47 / 61 / 8 / 0 agree | 43 / 59 / 8 / **0 agree** | Same |
+| Terminal Flags | 30 / 78 / 0 agree | 30 / 74 / **0 agree** | **Semantic mismatch** — runtime engine likely mutates terminal flags at load; adjacent Difficulty agrees 230/293 |
+| Terminal MenuItemCount | 150 | 144 | List walk fails for ~half the terminals on both builds — likely build-invariant offset bug worth a follow-up |
+
+Move from "still deferred" to "format-level semantic mismatches":
+
+- Weapon CRDT (CritDamage / CritChance / CritEffect) — runtime stores
+  scaled or computed crit data, not the raw editor values. Parity not
+  achievable without engine-equivalent calculation.
+- Terminal Flags — runtime byte at TERMINAL_DATA+1 doesn't carry the
+  ESM `Leveled / Unlocked` bit values. Probably mutated by the engine
+  during terminal initialization.
+
+Reclassify NPC Weight/Height as load-state divergence (similar to
+Cell HasWater) — the runtime only populates these floats for NPCs in
+the active scene. Not fixable without re-running the dump against a
+build that materializes the full NPC roster.
+
+Terminal MenuItemCount remains the one open item worth a targeted
+investigation: list-walk failure could be a build-invariant offset
+bug in `TermMenuItemListOffset` that affects ~half the terminals
+similarly on both DMPs.
 
 ### Current top gaps after fixes
 
