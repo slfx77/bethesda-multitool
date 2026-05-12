@@ -72,7 +72,7 @@ public sealed class RuntimeStructReader
         _context = new RuntimeMemoryContext(accessor, fileSize, minidumpInfo);
         _actors = new RuntimeActorReader(_context, npcLayoutProbe);
         _generic = new RuntimeGenericReader(_context, probeResults?.GenericTypeShifts);
-        _items = new RuntimeItemReader(_context, probeResults?.WeaponSoundLayout);
+        _items = new RuntimeItemReader(_context, probeResults?.WeaponSoundLayout, probeResults?.WeaponCritLayout);
         _dialogue = new RuntimeDialogueReader(_context);
         _effects = new RuntimeEffectReader(_context, probeResults?.EffectLayout);
         _scripts = new RuntimeScriptReader(_context);
@@ -165,6 +165,9 @@ public sealed class RuntimeStructReader
                 EffectLayout = RuntimeEffectProbe.Probe(context, allEntries),
                 MagicLayout = RuntimeMagicProbe.Probe(context, allEntries),
                 WeaponSoundLayout = RuntimeWeaponSoundProbe.Probe(context, allEntries,
+                    msg => Logger.Instance.Info(msg),
+                    editorIdsByFormId),
+                WeaponCritLayout = RuntimeWeaponCritProbe.Probe(context, allEntries,
                     msg => Logger.Instance.Info(msg),
                     editorIdsByFormId),
                 GenericTypeShifts = RuntimeGenericReader.ProbeAllTypeShifts(context, allEntries)

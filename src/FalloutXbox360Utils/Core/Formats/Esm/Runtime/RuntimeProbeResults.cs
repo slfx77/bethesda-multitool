@@ -13,6 +13,7 @@ internal sealed class RuntimeProbeResults
     public RuntimeLayoutProbeResult<int[]>? EffectLayout { get; init; }
     public RuntimeLayoutProbeResult<int[]>? MagicLayout { get; init; }
     public RuntimeWeaponSoundProbeResult? WeaponSoundLayout { get; init; }
+    public RuntimeWeaponCritProbeResult? WeaponCritLayout { get; init; }
 
     /// <summary>
     ///     Per-FormType uniform shift for the generic PDB reader.

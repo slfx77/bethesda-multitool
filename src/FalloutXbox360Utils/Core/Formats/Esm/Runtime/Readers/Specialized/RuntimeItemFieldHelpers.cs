@@ -12,11 +12,16 @@ internal sealed class RuntimeItemFieldHelpers
 {
     private readonly RuntimeMemoryContext _context;
     private readonly RuntimeItemLayouts _layouts;
+    private readonly int _weaponCritShift;
 
-    internal RuntimeItemFieldHelpers(RuntimeMemoryContext context, RuntimeItemLayouts layouts)
+    internal RuntimeItemFieldHelpers(
+        RuntimeMemoryContext context,
+        RuntimeItemLayouts layouts,
+        int weaponCritShift = 0)
     {
         _context = context;
         _layouts = layouts;
+        _weaponCritShift = weaponCritShift;
     }
 
     #region Weapon Helper Methods
@@ -132,8 +137,20 @@ internal sealed class RuntimeItemFieldHelpers
 
     internal (short Damage, float Chance, uint? EffectFormId) ReadWeaponCriticalFields(byte[] buffer)
     {
-        var damage = (short)BinaryUtils.ReadUInt16BE(buffer, _layouts.WeapCritDamageOffset);
-        var chance = BinaryUtils.ReadFloatBE(buffer, _layouts.WeapCritChanceOffset);
+        // Apply RuntimeWeaponCritProbe's discovered shift on top of the reference
+        // OBJ_WEAP_CRITICAL position so builds whose criticalData block sits at a
+        // non-default offset still read correctly. Shift is 0 when no probe ran or
+        // confidence was low (no behavior change vs pre-probe baseline).
+        var damageOffset = _layouts.WeapCritDamageOffset + _weaponCritShift;
+        var chanceOffset = _layouts.WeapCritChanceOffset + _weaponCritShift;
+        var effectOffset = _layouts.WeapCritEffectPtrOffset + _weaponCritShift;
+
+        var damage = damageOffset + 2 <= buffer.Length
+            ? (short)BinaryUtils.ReadUInt16BE(buffer, damageOffset)
+            : (short)0;
+        var chance = chanceOffset + 4 <= buffer.Length
+            ? BinaryUtils.ReadFloatBE(buffer, chanceOffset)
+            : 0f;
 
         if (!RuntimeMemoryContext.IsNormalFloat(chance) || chance < 0 || chance > 100)
         {
@@ -146,7 +163,9 @@ internal sealed class RuntimeItemFieldHelpers
         }
 
         // Follow SpellItem* pointer at OBJ_WEAP_CRITICAL+12 to get critical effect FormID
-        var effectFormId = _context.FollowPointerToFormId(buffer, _layouts.WeapCritEffectPtrOffset);
+        var effectFormId = effectOffset + 4 <= buffer.Length
+            ? _context.FollowPointerToFormId(buffer, effectOffset)
+            : null;
 
         return (damage, chance, effectFormId);
     }

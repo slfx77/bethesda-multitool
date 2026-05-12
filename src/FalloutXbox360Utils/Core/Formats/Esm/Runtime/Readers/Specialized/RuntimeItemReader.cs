@@ -15,7 +15,8 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 /// </summary>
 internal sealed class RuntimeItemReader(
     RuntimeMemoryContext context,
-    RuntimeWeaponSoundProbeResult? weaponSoundProbe = null)
+    RuntimeWeaponSoundProbeResult? weaponSoundProbe = null,
+    RuntimeWeaponCritProbeResult? weaponCritProbe = null)
 {
     private readonly RuntimeMemoryContext _context = context;
 
@@ -31,6 +32,13 @@ internal sealed class RuntimeItemReader(
     private readonly RuntimeWeaponSoundLayoutVariant _weaponSoundVariant =
         weaponSoundProbe?.Variant ?? RuntimeWeaponSoundLayoutVariant.V2;
 
+    // Shift applied on top of WeapCritDamageOffset / WeapCritChanceOffset /
+    // WeapCritEffectPtrOffset so the OBJ_WEAP_CRITICAL block reads in builds whose
+    // criticalData sub-struct sits at a different relative offset. Falls back to 0
+    // (no shift) when no probe ran or confidence was low.
+    private readonly int _weaponCritShift =
+        weaponCritProbe is { IsHighConfidence: true } ? weaponCritProbe.CritBlockShift : 0;
+
     // Delegate container reading to dedicated class.
     private RuntimeContainerReader? _containerReader;
 
@@ -43,7 +51,8 @@ internal sealed class RuntimeItemReader(
     private RuntimeItemLayouts Layouts => _layouts ??=
         new RuntimeItemLayouts(_s, _weaponSoundShift, _weaponSoundVariant);
 
-    private RuntimeItemFieldHelpers FieldHelpers => _fieldHelpers ??= new RuntimeItemFieldHelpers(_context, Layouts);
+    private RuntimeItemFieldHelpers FieldHelpers => _fieldHelpers ??=
+        new RuntimeItemFieldHelpers(_context, Layouts, _weaponCritShift);
     private RuntimeContainerReader ContainerReader => _containerReader ??= new RuntimeContainerReader(_context);
 
     /// <summary>
