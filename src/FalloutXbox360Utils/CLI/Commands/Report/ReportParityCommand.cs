@@ -266,10 +266,10 @@ internal static class ReportParityCommand
             .SelectMany(t => t.Fields.Select(f => (Type: t.TypeName, Field: f)))
             .ToList();
 
-        PrintShortlist("Top ESM-only gaps (DMP fills, ESM doesn't)",
+        PrintShortlist("Top ESM-only gaps (ESM fills, DMP doesn't — runtime reader needs work)",
             allGaps.OrderByDescending(g => g.Field.EsmOnly).Take(10), g => g.Field.EsmOnly);
 
-        PrintShortlist("Top DMP-only gaps (ESM fills, DMP doesn't)",
+        PrintShortlist("Top DMP-only gaps (DMP fills, ESM doesn't — ESM handler needs work)",
             allGaps.OrderByDescending(g => g.Field.DmpOnly).Take(10), g => g.Field.DmpOnly);
 
         PrintShortlist("Top disagreements (both fill, values differ)",

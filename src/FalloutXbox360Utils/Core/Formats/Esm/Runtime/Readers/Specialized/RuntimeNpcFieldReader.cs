@@ -404,8 +404,10 @@ internal sealed class RuntimeNpcFieldReader
 
         var value = BinaryUtils.ReadFloatBE(buffer, NpcHeightOffset);
 
-        // Reject subnormal/denormalized floats — likely garbage data.
-        if (!float.IsNormal(value) || value <= 0 || value > 3)
+        // Match NpcRecordHandler.ReadNpcHeight's broader plausibility range so
+        // proto-build NPCs with stretched values aren't filtered out (audit
+        // showed 464 height gaps under the previous <=3 cap).
+        if (!float.IsNormal(value) || value is < 0.1f or > 10.0f)
         {
             return null;
         }
@@ -414,7 +416,7 @@ internal sealed class RuntimeNpcFieldReader
     }
 
     /// <summary>
-    ///     Read NPC weight (fWeight, float 0-100, GECK body morph slider).
+    ///     Read NPC weight (fWeight, float 0-1000, GECK body morph slider).
     ///     Returns null if the value looks invalid.
     /// </summary>
     public float? ReadNpcWeight(byte[] buffer)
@@ -432,8 +434,10 @@ internal sealed class RuntimeNpcFieldReader
 
         var value = BinaryUtils.ReadFloatBE(buffer, NpcWeightOffset);
 
-        // Reject subnormal/denormalized floats — likely garbage data.
-        if (!float.IsNormal(value) || value < 0 || value > 100)
+        // Match NpcRecordHandler.ReadNpcWeight's broader plausibility range
+        // so proto-build NPCs with values above 100 aren't filtered out
+        // (audit showed 2,580 weight gaps under the previous <=100 cap).
+        if (!float.IsNormal(value) || value is < 0f or > 1000f)
         {
             return null;
         }

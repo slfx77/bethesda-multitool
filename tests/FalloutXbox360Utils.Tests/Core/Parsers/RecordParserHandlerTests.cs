@@ -819,6 +819,82 @@ public class RecordParserHandlerTests
     }
 
     [Fact]
+    public void ParseNpcs_LittleEndian_PopulatesCombatStyleFromZNAM()
+    {
+        // ZNAM is the NPC combat-style FormID subrecord. The audit baseline
+        // surfaced 2,471 NPC records where DMP filled CombatStyle but ESM
+        // didn't because the handler was missing the case.
+        var edid = NullTermString("ZNAMTestNpc");
+        var znam = new byte[4];
+        BinaryPrimitives.WriteUInt32LittleEndian(znam, 0x000F4321u);
+
+        var recordBytes = BuildRecordBytes(0x000A0001, "NPC_", false,
+            ("EDID", edid),
+            ("ZNAM", znam));
+
+        var mainRecord = new DetectedMainRecord("NPC_",
+            (uint)(recordBytes.Length - 24), 0, 0x000A0001, 0, false);
+        var scanResult = MakeScanResult([mainRecord]);
+
+        using var mmf = MemoryMappedFile.CreateNew(null, recordBytes.Length);
+        using var accessor = mmf.CreateViewAccessor(0, recordBytes.Length);
+        accessor.WriteArray(0, recordBytes, 0, recordBytes.Length);
+
+        var parser = new RecordParser(scanResult, accessor: accessor, fileSize: recordBytes.Length);
+        var npcs = parser.ParseNpcs();
+
+        var npc = Assert.Single(npcs);
+        Assert.Equal(0x000F4321u, npc.CombatStyleFormId);
+    }
+
+    [Fact]
+    public void ParseNpcs_BigEndian_PopulatesCombatStyleFromZNAM()
+    {
+        var edid = NullTermString("ZNAMTestNpcBE");
+        var znam = new byte[4];
+        BinaryPrimitives.WriteUInt32BigEndian(znam, 0x000F4321u);
+
+        var recordBytes = BuildRecordBytes(0x000A0002, "NPC_", true,
+            ("EDID", edid),
+            ("ZNAM", znam));
+
+        var mainRecord = new DetectedMainRecord("NPC_",
+            (uint)(recordBytes.Length - 24), 0, 0x000A0002, 0, true);
+        var scanResult = MakeScanResult([mainRecord]);
+
+        using var mmf = MemoryMappedFile.CreateNew(null, recordBytes.Length);
+        using var accessor = mmf.CreateViewAccessor(0, recordBytes.Length);
+        accessor.WriteArray(0, recordBytes, 0, recordBytes.Length);
+
+        var parser = new RecordParser(scanResult, accessor: accessor, fileSize: recordBytes.Length);
+        var npcs = parser.ParseNpcs();
+
+        var npc = Assert.Single(npcs);
+        Assert.Equal(0x000F4321u, npc.CombatStyleFormId);
+    }
+
+    [Fact]
+    public void ParseNpcs_WithoutZNAM_LeavesCombatStyleNull()
+    {
+        var edid = NullTermString("NoZNAMNpc");
+        var recordBytes = BuildRecordBytes(0x000A0003, "NPC_", false, ("EDID", edid));
+
+        var mainRecord = new DetectedMainRecord("NPC_",
+            (uint)(recordBytes.Length - 24), 0, 0x000A0003, 0, false);
+        var scanResult = MakeScanResult([mainRecord]);
+
+        using var mmf = MemoryMappedFile.CreateNew(null, recordBytes.Length);
+        using var accessor = mmf.CreateViewAccessor(0, recordBytes.Length);
+        accessor.WriteArray(0, recordBytes, 0, recordBytes.Length);
+
+        var parser = new RecordParser(scanResult, accessor: accessor, fileSize: recordBytes.Length);
+        var npcs = parser.ParseNpcs();
+
+        var npc = Assert.Single(npcs);
+        Assert.Null(npc.CombatStyleFormId);
+    }
+
+    [Fact]
     public void ParseAll_PreservesMethodOrdering_EditorIdEnrichment()
     {
         // Parsing methods enrich _formIdToEditorId as they go.

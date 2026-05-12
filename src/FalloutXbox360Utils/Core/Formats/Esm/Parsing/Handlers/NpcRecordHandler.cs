@@ -67,6 +67,7 @@ internal sealed class NpcRecordHandler(RecordParserContext context) : RecordHand
         float? hairLength = null;
         uint? eyesFormId = null;
         uint? hairColor = null;
+        uint? combatStyle = null;
         float? height = null;
         float? weight = null;
         float[]? fggs = null;
@@ -111,6 +112,9 @@ internal sealed class NpcRecordHandler(RecordParserContext context) : RecordHand
                     break;
                 case "TPLT" when sub.DataLength == 4:
                     template = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "ZNAM" when sub.DataLength == 4:
+                    combatStyle = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
                 case "HNAM" when sub.DataLength == 4:
                     hairFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
@@ -225,6 +229,7 @@ internal sealed class NpcRecordHandler(RecordParserContext context) : RecordHand
             DeathItem = deathItem,
             VoiceType = voiceType,
             Template = template,
+            CombatStyleFormId = combatStyle,
             HairFormId = hairFormId,
             HairLength = hairLength,
             HairColor = hairColor,
