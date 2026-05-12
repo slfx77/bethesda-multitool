@@ -1,7 +1,7 @@
 {
   "esmLabel": "FalloutNV_July2010.esm",
   "dmpLabel": "Fallout_Release_Beta.xex44.dmp",
-  "generatedAtUtc": "2026-05-12T09:31:39.0778826Z",
+  "generatedAtUtc": "2026-05-12T10:41:48.7592824Z",
   "recordTypes": [
     {
       "typeName": "Ammo",
@@ -989,40 +989,40 @@
         },
         {
           "fieldName": "ModelPath",
-          "esmOnly": 156,
+          "esmOnly": 0,
           "dmpOnly": 0,
-          "agree": 0,
-          "disagree": 0,
+          "agree": 136,
+          "disagree": 20,
           "examples": [
             {
-              "formId": "0x00151F7D",
-              "esmValue": "Clutter\\Food\\MoleMeat01.NIF",
-              "dmpValue": "",
-              "status": "EsmOnly"
+              "formId": "0x001449CA",
+              "esmValue": "clutter\\food\\CazadorEgg.NIF",
+              "dmpValue": "Clutter\\Food\\MirelurkMeat01.NIF",
+              "status": "Disagree"
             },
             {
-              "formId": "0x0014C11C",
-              "esmValue": "clutter\\chems\\buffout01.nif",
-              "dmpValue": "",
-              "status": "EsmOnly"
+              "formId": "0x00140A68",
+              "esmValue": "clutter\\RepairKit\\RepairKit.NIF",
+              "dmpValue": "clutter\\Magazine\\MagUnarmed.NIF",
+              "status": "Disagree"
             },
             {
-              "formId": "0x00146CCD",
-              "esmValue": "Clutter\\Chems\\Jet01.NIF",
-              "dmpValue": "",
-              "status": "EsmOnly"
+              "formId": "0x0013D531",
+              "esmValue": "clutter\\junk\\NVLunchbox01.NIF",
+              "dmpValue": "clutter\\junk\\lunchbox.nif",
+              "status": "Disagree"
             },
             {
-              "formId": "0x00146CCB",
-              "esmValue": "Clutter\\Chems\\Mentats01.NIF",
-              "dmpValue": "",
-              "status": "EsmOnly"
+              "formId": "0x0013B2C3",
+              "esmValue": "clutter\\chems\\hydra.NIF",
+              "dmpValue": "clutter\\health\\DoctorBag.NIF",
+              "status": "Disagree"
             },
             {
-              "formId": "0x00146CCA",
-              "esmValue": "Clutter\\Health\\PsychoChem01.NIF",
-              "dmpValue": "",
-              "status": "EsmOnly"
+              "formId": "0x0013B2BA",
+              "esmValue": "clutter\\junk\\NV\\BrocFlowerBud.NIF",
+              "dmpValue": "trees\\prickly_pear_cactus\\NV_pricklypearcactus04.NIF",
+              "status": "Disagree"
             }
           ]
         },
@@ -1538,76 +1538,52 @@
       "fields": [
         {
           "fieldName": "Flags",
-          "esmOnly": 0,
-          "dmpOnly": 406,
-          "agree": 0,
-          "disagree": 0,
+          "esmOnly": 7,
+          "dmpOnly": 0,
+          "agree": 381,
+          "disagree": 25,
           "examples": [
             {
-              "formId": "0x001532B8",
-              "esmValue": "0",
-              "dmpValue": "1",
-              "status": "DmpOnly"
+              "formId": "0x001400F9",
+              "esmValue": "259",
+              "dmpValue": "3",
+              "status": "Disagree"
             },
             {
-              "formId": "0x00152E91",
-              "esmValue": "0",
-              "dmpValue": "257",
-              "status": "DmpOnly"
+              "formId": "0x0013E46E",
+              "esmValue": "257",
+              "dmpValue": "1",
+              "status": "Disagree"
             },
             {
-              "formId": "0x0014F446",
-              "esmValue": "0",
+              "formId": "0x0013E46D",
+              "esmValue": "257",
               "dmpValue": "1",
-              "status": "DmpOnly"
+              "status": "Disagree"
             },
             {
-              "formId": "0x0014F422",
-              "esmValue": "0",
-              "dmpValue": "1",
-              "status": "DmpOnly"
+              "formId": "0x00139B87",
+              "esmValue": "259",
+              "dmpValue": "3",
+              "status": "Disagree"
             },
             {
-              "formId": "0x0014F3FB",
-              "esmValue": "0",
-              "dmpValue": "1",
-              "status": "DmpOnly"
+              "formId": "0x00137324",
+              "esmValue": "257",
+              "dmpValue": "3",
+              "status": "Disagree"
             }
           ]
         },
         {
           "fieldName": "IsHiddenFromPlayer",
           "esmOnly": 0,
-          "dmpOnly": 335,
-          "agree": 0,
+          "dmpOnly": 1,
+          "agree": 334,
           "disagree": 0,
           "examples": [
             {
-              "formId": "0x001532B8",
-              "esmValue": "False",
-              "dmpValue": "True",
-              "status": "DmpOnly"
-            },
-            {
-              "formId": "0x00152E91",
-              "esmValue": "False",
-              "dmpValue": "True",
-              "status": "DmpOnly"
-            },
-            {
-              "formId": "0x0014F446",
-              "esmValue": "False",
-              "dmpValue": "True",
-              "status": "DmpOnly"
-            },
-            {
-              "formId": "0x0014F422",
-              "esmValue": "False",
-              "dmpValue": "True",
-              "status": "DmpOnly"
-            },
-            {
-              "formId": "0x0014F3FB",
+              "formId": "0x0011E38C",
               "esmValue": "False",
               "dmpValue": "True",
               "status": "DmpOnly"
@@ -2226,17 +2202,11 @@
         },
         {
           "fieldName": "CombatStyle",
-          "esmOnly": 0,
-          "dmpOnly": 2471,
-          "agree": 0,
-          "disagree": 0,
+          "esmOnly": 4,
+          "dmpOnly": 1387,
+          "agree": 1044,
+          "disagree": 40,
           "examples": [
-            {
-              "formId": "0x00153A07",
-              "esmValue": "",
-              "dmpValue": "CSRaider (0x0002A44B)",
-              "status": "DmpOnly"
-            },
             {
               "formId": "0x001536DA",
               "esmValue": "",
@@ -2244,21 +2214,27 @@
               "status": "DmpOnly"
             },
             {
-              "formId": "0x0015362A",
+              "formId": "0x001536D3",
+              "esmValue": "DefaultCombatRangedstyle (0x000B2945)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "DefaultCombatRangedstyle (0x000B2945)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00153158",
               "esmValue": "",
-              "dmpValue": "CSRaider (0x0002A44B)",
+              "dmpValue": "DefaultCombatstyle (0x0000003D)",
               "status": "DmpOnly"
             },
             {
-              "formId": "0x00153628",
+              "formId": "0x00153157",
               "esmValue": "",
-              "dmpValue": "CSRaider (0x0002A44B)",
-              "status": "DmpOnly"
-            },
-            {
-              "formId": "0x00153626",
-              "esmValue": "",
-              "dmpValue": "CSRaider (0x0002A44B)",
+              "dmpValue": "DefaultCombatstyle (0x0000003D)",
               "status": "DmpOnly"
             }
           ]
@@ -3661,38 +3637,38 @@
       "fields": [
         {
           "fieldName": "IconPath",
-          "esmOnly": 290,
+          "esmOnly": 7,
           "dmpOnly": 0,
-          "agree": 0,
+          "agree": 283,
           "disagree": 0,
           "examples": [
             {
-              "formId": "0x00154134",
-              "esmValue": "Interface\\Icons\\PipboyImages\\Items\\item_holotap.dds",
+              "formId": "0x0014E32E",
+              "esmValue": "interface\\icons\\pipboyimages\\items\\items_note.dds",
               "dmpValue": "",
               "status": "EsmOnly"
             },
             {
-              "formId": "0x00152C03",
-              "esmValue": "Interface\\Icons\\PipboyImages\\Items\\item_holotap.dds",
+              "formId": "0x0014C122",
+              "esmValue": "interface\\icons\\pipboyimages\\items\\items_note.dds",
               "dmpValue": "",
               "status": "EsmOnly"
             },
             {
-              "formId": "0x00152A49",
-              "esmValue": "Interface\\Icons\\PipboyImages\\Items\\item_holotap.dds",
+              "formId": "0x0014B049",
+              "esmValue": "interface\\icons\\pipboyimages\\items\\items_note.dds",
               "dmpValue": "",
               "status": "EsmOnly"
             },
             {
-              "formId": "0x00152A48",
-              "esmValue": "Interface\\Icons\\PipboyImages\\Items\\item_holotap.dds",
+              "formId": "0x00140CA8",
+              "esmValue": "interface\\icons\\pipboyimages\\items\\items_note.dds",
               "dmpValue": "",
               "status": "EsmOnly"
             },
             {
-              "formId": "0x0014F3B0",
-              "esmValue": "Interface\\Icons\\PipboyImages\\Items\\item_holotap.dds",
+              "formId": "0x00105BCD",
+              "esmValue": "interface\\icons\\pipboyimages\\items\\items_note.dds",
               "dmpValue": "",
               "status": "EsmOnly"
             }
@@ -5484,16 +5460,16 @@
         },
         {
           "fieldName": "StrReq",
-          "esmOnly": 136,
+          "esmOnly": 23,
           "dmpOnly": 0,
-          "agree": 0,
-          "disagree": 0,
+          "agree": 96,
+          "disagree": 17,
           "examples": [
             {
               "formId": "0x001524B3",
               "esmValue": "4",
-              "dmpValue": "0",
-              "status": "EsmOnly"
+              "dmpValue": "1",
+              "status": "Disagree"
             },
             {
               "formId": "0x00151D0C",
@@ -5508,14 +5484,14 @@
               "status": "EsmOnly"
             },
             {
-              "formId": "0x0014EA5A",
-              "esmValue": "2",
-              "dmpValue": "0",
-              "status": "EsmOnly"
+              "formId": "0x00146C79",
+              "esmValue": "1",
+              "dmpValue": "2",
+              "status": "Disagree"
             },
             {
-              "formId": "0x0014DE1D",
-              "esmValue": "2",
+              "formId": "0x00143FBA",
+              "esmValue": "9",
               "dmpValue": "0",
               "status": "EsmOnly"
             }

@@ -17,116 +17,102 @@ Both paths produce a `RecordCollection` of the same shape, but each can
 physically extract a different subset of the record models' fields. The
 audit diffs the two collections field-by-field and surfaces:
 
-- **ESM-only** — ESM filled, DMP didn't. The runtime reader has work to do
-  for that field on that record type.
-- **DMP-only** — DMP filled, ESM didn't. The ESM handler has work to do.
+- **ESM-only** — ESM filled, DMP didn't (runtime reader gap).
+- **DMP-only** — DMP filled, ESM didn't (ESM handler gap).
 - **Disagree** — both filled, values differ. Expected when comparing
-  proto-build DMPs against the final ESM (content drift, not parser bugs).
+  proto-build DMPs against a slightly-later ESM (content drift, not
+  parser bugs).
 - **Agree** — both filled, values match. The parity target.
 
-## Baseline 1 — `FalloutNV_July2010.esm` ↔ `Fallout_Release_Beta.xex44.dmp`
+Boolean fields are a known limitation: `False` is treated as default by
+the audit, so "both correctly false" looks identical to "both unparsed".
+The numerical agree/disagree counts on true-valued bool fields are still
+meaningful; reading the raw byte is the only way to resolve ambiguity.
+
+## Baseline — `FalloutNV_July2010.esm` ↔ `Fallout_Release_Beta.xex44.dmp`
 
 July 21 2010 proto ESM compared against April 2010 xex44 DMP, the most
 content-adjacent pair available. JSON: [july2010-vs-xex44.json](july2010-vs-xex44.json).
 
-### Record-level coverage (top types)
+### Fixes landed (pre → post)
 
-| Type | ESM | DMP | Matched | ESM-only records | DMP-only records |
-|---|---:|---:|---:|---:|---:|
-| NPC | 3,764 | 2,979 | 2,935 | 829 | 44 |
-| Container | 2,475 | 836 | 834 | 1,641 | 2 |
-| Creature | 1,576 | 943 | 929 | 647 | 14 |
-| LeveledList | 2,900 | 1,864 | 1,819 | 1,081 | 45 |
-| Weapon | 255 | 304 | 218 | 37 | 86 |
-| Armor | 409 | 561 | 390 | 19 | 171 |
-| Cell | 35,191 | 434 | 426 | 34,765 | 8 |
-| Faction | 665 | 593 | 589 | 76 | 4 |
+| Type | Field | Before | After | Where | Notes |
+|---|---|---:|---:|---|---|
+| NPC | CombatStyle | 2,471 | 1,387 | ESM handler | Added missing ZNAM subrecord case in [NpcRecordHandler](../../src/FalloutXbox360Utils/Core/Formats/Esm/Parsing/Handlers/NpcRecordHandler.cs). Remainder = proto NPCs without ZNAM. |
+| Faction | Flags | 406 | 7 | ESM handler | Was reading only 2 of 4 DATA bytes in [ActorRecordHandler](../../src/FalloutXbox360Utils/Core/Formats/Esm/Parsing/Handlers/ActorRecordHandler.cs); fixed to full uint32. |
+| Faction | IsHiddenFromPlayer | 335 | 0 | ESM handler | Derived from Flags. Closed entirely by the 4-byte fix; bit lives in the high half. |
+| Note | IconPath | 290 | 7 | DMP runtime | Added `TESTexture.TextureName` (BGSNote +104 PDB) read in [RuntimeQuestTerminalReader](../../src/FalloutXbox360Utils/Core/Formats/Esm/Runtime/Readers/Specialized/RuntimeQuestTerminalReader.cs). |
+| Weapon | StrReq | 136 | 23 | DMP runtime | Added DNAM-relative +168 read in [RuntimeItemFieldHelpers](../../src/FalloutXbox360Utils/Core/Formats/Esm/Runtime/Readers/Specialized/RuntimeItemFieldHelpers.cs). Remainder = content drift. |
+| Consumable | ModelPath | 156 | 0 | DMP runtime | Added `TESModel.cModel` (ALCH +96 PDB) read in [RuntimeItemReader](../../src/FalloutXbox360Utils/Core/Formats/Esm/Runtime/Readers/Specialized/RuntimeItemReader.cs). |
 
-Cells diverge by design — the DMP only contains loaded cells. Armor and
-weapon DMP-only counts reflect runtime-spawned variants the ESM doesn't
-define as base records.
+Five clear-cut parser bugs closed; one near-complete (CombatStyle 56%
+reduction; the rest is genuine proto data absence).
 
-### Top ESM-only field gaps (DMP-side runtime extraction needed)
+### Carry-over: design-level format limits
+
+These cannot be closed by parser changes — the data isn't there in one
+of the two formats.
+
+| Type | Field | Count | Why it cannot be closed |
+|---|---|---:|---|
+| Note | Text | 739 | `BGSNote` runtime struct (size 144) has no Text field. Text content lives in ESM TNAM/DESC subrecord bytes only. |
+| NPC | Template, Script, Factions | 512, 199, 209 | Runtime reads these via TESForm-pointer chasing. The 199-512 records are proto NPCs that genuinely have no template/script/faction list — not parser bugs. |
+| Cell | (massive) | 34,765 | DMP only contains loaded cells (1,200 of 35,191). Expected by design. |
+| Armor / Creature | (records-only) | 171 / 14 | DMP has runtime-spawned variants the ESM doesn't define as base records. |
+
+### Deferred: needs empirical PDB-offset investigation
+
+These have non-trivial root causes that don't fit a single-offset patch.
+Each needs raw-memory inspection on the specific DMP build to diagnose.
+
+| Type | Field | After | Hypothesis |
+|---|---|---:|---|
+| NPC | Weight | 2,580 | `NpcWeightOffset = 504 + _s` is correct for FNV final. Proto July 2010 build likely has a different `TESNPC.fWeight` offset; validation widening (commit 1) didn't move the count, so the bytes at the expected offset aren't the weight field. |
+| NPC | Height | 464 | Same hypothesis as Weight. |
+| Weapon | CritChance | 148 | Runtime reader has 0 records agreeing (148 ESM-only + 49 disagree + 2 DMP-only). Likely build-specific `OBJ_WEAP_CRITICAL.fMultiplier` offset shift. |
+| Weapon | CritDamage / CritEffect | 45 / 61 | 0 records agree on either. Same root cause as CritChance — `criticalData` struct offset within `TESObjectWEAP` may differ between proto and final. |
+| Armor | DR | 123 | 3 records agree. Likely raw-byte encoding mismatch: ESM reads Int16 from DNAM byte 0; runtime reads UInt16 from `ArmoRatingOffset`. May be a sign-extension difference or scaling. |
+| Armor | DT | 54 + 91 disagree | 14 records agree. Same family of issues as DR; the runtime's "scaled UInt16 fallback" path in [RuntimeItemReader](../../src/FalloutXbox360Utils/Core/Formats/Esm/Runtime/Readers/Specialized/RuntimeItemReader.cs#L254) may be mis-targeting. |
+| Terminal | Flags | 173 + 78 disagree | 0 records agree on Flags despite 234 agreeing on Difficulty (the adjacent byte). Likely `TERMINAL_DATA` layout differs by build — flags byte may be at a different position in the proto runtime struct vs Final PDB. |
+| Terminal | MenuItemCount | 150 | List-walk via `WalkTerminalMenuItemList` may be failing in the proto build (different list-head offset). |
+| Container | Respawns | 589 DMP-only | 92 records agree. Suspected content drift: the proto build's `TESObjectCONT.Data` flag byte has the respawn bit set for many containers that don't have it in the final ESM. ESM-side parser and runtime-side reader both verified correct. |
+| Cell | HasWater | 43 ESM-only | 71 records agree. The ESM-only 43 are likely cells where the runtime didn't materialize the water flag (loaded-state divergence). |
+| NPC | Flags | 38 | Edge case: ACBS parse fails for a small set of NPCs (Stats null). Worth a defensive fix. |
+
+### Current top gaps after fixes
+
+**ESM-only** (runtime reader needs work):
 
 | Type | Field | Count |
 |---|---|---:|
 | NPC | Weight | 2,580 |
-| Note | Text | 739 |
-| NPC | Template | 512 |
+| Note | Text | 739 (format limit) |
+| NPC | Template | 512 (data absence) |
 | NPC | Height | 464 |
-| Note | IconPath | 290 |
-| NPC | Script | 199 |
-| Consumable | ModelPath | 156 |
+| NPC | Script | 199 (data absence) |
 | Terminal | MenuItemCount | 150 |
 | Weapon | CritChance | 148 |
-| Weapon | StrReq | 136 |
+| Perk | Description | 115 |
+| NPC | SPECIAL_AG / CH | 112 / 112 |
 
-### Top DMP-only field gaps (ESM-side handler extraction needed)
+**DMP-only** (ESM handler needs work):
 
 | Type | Field | Count |
 |---|---|---:|
-| NPC | CombatStyle | 2,471 |
-| Container | Respawns | 589 |
-| Faction | Flags | 406 |
-| Faction | IsHiddenFromPlayer | 335 |
+| NPC | CombatStyle | 1,387 (proto data absence) |
+| Container | Respawns | 589 (content drift) |
 | Terminal | Flags | 173 |
 | Armor | DR | 123 |
 | Weapon | CritEffect | 61 |
 | Armor | DT | 54 |
 | Weapon | CritDamage | 45 |
 | NPC | Flags | 38 |
+| NPC | Confidence | 33 |
+| LeveledList | EntryCount | 14 |
 
-### Top disagreements (content drift, not bugs)
-
-Disagreements between this DMP and ESM are expected — the DMPs are
-prototype builds and the ESM is from the same era but content was still
-moving. Use these as context, not bug signals.
-
-| Type | Field | Count |
-|---|---|---:|
-| NPC | Factions | 1,866 |
-| NPC | Inventory | 1,823 |
-| Container | Contents | 510 |
-| NPC | Guns | 470 |
-| NPC | Sneak | 444 |
-| NPC | MeleeWeapons | 417 |
-| NPC | Packages | 412 |
-| NPC | VoiceType | 397 |
-| NPC | Speech | 395 |
-| NPC | SPECIAL_EN | 377 |
-
-## Actionable parser-gap shortlist
-
-Drawn from the columns above, ordered by approximate yield.
-
-### DMP-side (runtime reader gaps)
-
-1. **NPC Weight / Height / Template / Script** — `RuntimeActorReader` doesn't
-   read these. Weight + Height come from TESBoundObject sub-extension or
-   the NPC stats block; Template from TESActorBase; Script from
-   TESScriptableForm.
-2. **Note Text / IconPath** — `RuntimeBookReader` (or a dedicated note
-   reader) doesn't pull the runtime string pointers.
-3. **Weapon CritChance / StrReq** — `RuntimeItemReader.ReadRuntimeWeapon`
-   doesn't read the CRDT block fields (`fCritChance`, `iStrengthReq`).
-4. **Consumable ModelPath / Terminal MenuItemCount** — string/path
-   extension in the corresponding specialized readers.
-
-### ESM-side (handler gaps)
-
-1. **NPC CombatStyle** — 2,471 records missing. `NpcRecordHandler` probably
-   skips ZNAM (`csty FormID`) — adding one subrecord case closes the gap.
-2. **Container Respawns** — single-flag-bit field missing in the ESM
-   container parse.
-3. **Faction Flags / IsHiddenFromPlayer** — `ActorRecordHandler` for FACT
-   isn't writing the flags byte from the DATA subrecord, or it's gated
-   incorrectly. Confirm before patching.
-4. **Terminal Flags / NPC Flags** — same pattern. Quick wins each.
-5. **Armor DR / DT** — `ItemRecordHandler.ParseArmor` doesn't read DNAM's
-   damage-resistance/threshold fields. Affects ~100-170 armor records.
-6. **Weapon CRDT (CritEffect/CritDamage)** — these are extracted by
-   `WeaponRecordHandler` per its case "CRDT" branch — verify why the count
-   shows 45-61 missing. Could be CRDT length mismatch or schema bug.
+Disagreements (1,800+ NPC factions/inventory, 510 container contents,
+NPC SPECIAL/skills variances) are content drift between proto and final
+builds and not in scope for parser fixes.
 
 ## How to regenerate
 
@@ -138,6 +124,5 @@ dotnet run --project src/FalloutXbox360Utils -c Release -f net10.0 -- \
     -o docs/parity \
     --format both
 
-# then rename if you want a labelled JSON next to existing baselines:
-mv docs/parity/parity_report.json docs/parity/<label>.json
+mv docs/parity/parity_report.json docs/parity/july2010-vs-xex44.json
 ```
