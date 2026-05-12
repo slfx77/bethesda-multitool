@@ -85,6 +85,7 @@ internal sealed class RuntimeItemLayouts
     internal const int DnamSemiAutoDelayMaxRelOffset = 132;
     internal const int DnamCookTimerRelOffset = 136;
     internal const int DnamPowerAttackOverrideRelOffset = 164;
+    internal const int DnamStrengthRequirementRelOffset = 168; // OBJ_WEAP.iStrengthReq (uint32)
     internal const int DnamModReloadClipAnimationRelOffset = 172;
     internal const int DnamModFireAnimationRelOffset = 173;
     internal const int DnamAmmoRegenRateRelOffset = 176;
@@ -220,6 +221,7 @@ internal sealed class RuntimeItemLayouts
 
     internal int AlchStructSize => 216 + _s;
     internal int AlchEffectListOffset => 64 + _s; // BSSimpleList<EffectItem*> (inherited from EffectItemList)
+    internal int AlchModelPathOffset => 80 + _s; // TESModel.cModel (PDB 96), BSStringT
     internal int AlchInventoryIconPathOffset => 112 + _s; // TESTexture.TextureName (PDB 128), BSStringT
     internal int AlchMessageIconPathOffset => 204 + _s; // AlchemyItem.MessageIcon (PDB 220), TESIcon→BSStringT
     internal int AlchWeightOffset => 152 + _s;

@@ -142,6 +142,7 @@ internal sealed class RuntimeItemReader(
             NumProjectiles = combatFields.NumProjectiles,
             AmmoPerShot = combatFields.AmmoPerShot,
             Skill = combatFields.Skill,
+            StrengthRequirement = combatFields.StrengthRequirement,
             AmmoFormId = ammoFormId,
             ProjectileFormId = _context.FollowPointerToFormId(buffer,
                 Layouts.WeapDataStart + RuntimeItemLayouts.DnamProjectileRelOffset),
@@ -549,6 +550,7 @@ internal sealed class RuntimeItemReader(
         // Walk EffectItem list (BSSimpleList<EffectItem*> at offset 80)
         var effects = RuntimeEffectItemListReader.Read(_context, buffer, Layouts.AlchEffectListOffset, 32);
 
+        var modelPath = _context.ReadBsStringT(offset, Layouts.AlchModelPathOffset);
         var iconPath = _context.ReadBsStringT(offset, Layouts.AlchInventoryIconPathOffset);
         var messageIconPath = _context.ReadBsStringT(offset, Layouts.AlchMessageIconPathOffset);
 
@@ -563,6 +565,7 @@ internal sealed class RuntimeItemReader(
             AddictionFormId = addictionFormId,
             AddictionChance = addictionChance,
             Effects = effects,
+            ModelPath = modelPath,
             IconPath = iconPath,
             MessageIconPath = messageIconPath,
             Bounds = ReadBounds(buffer),

@@ -60,7 +60,8 @@ internal sealed class RuntimeItemFieldHelpers
     internal (WeaponType WeaponType, uint AnimationType, float Speed, float Reach,
         float MinSpread, float Spread, float MinRange, float MaxRange,
         byte VatsChance, float ActionPoints, float ShotsPerSec,
-        byte NumProjectiles, byte AmmoPerShot, uint Skill) ReadWeaponCombatFields(byte[] buffer)
+        byte NumProjectiles, byte AmmoPerShot, uint Skill, uint StrengthRequirement)
+        ReadWeaponCombatFields(byte[] buffer)
     {
         // animationType is stored as uint8 at the first byte of a 4-byte aligned field
         var animTypeByte = buffer[_layouts.WeapAnimTypeOffset];
@@ -117,9 +118,16 @@ internal sealed class RuntimeItemFieldHelpers
             skill = 0;
         }
 
+        var strengthRequirement =
+            BinaryUtils.ReadUInt32BE(buffer, dataStart + RuntimeItemLayouts.DnamStrengthRequirementRelOffset);
+        if (strengthRequirement > 10)
+        {
+            strengthRequirement = 0;
+        }
+
         return (weaponType, animationType, speed, reach, minSpread, spread,
             minRange, maxRange, vatsChance, actionPoints, shotsPerSec,
-            numProjectiles, ammoPerShot, skill);
+            numProjectiles, ammoPerShot, skill, strengthRequirement);
     }
 
     internal (short Damage, float Chance, uint? EffectFormId) ReadWeaponCriticalFields(byte[] buffer)
