@@ -374,6 +374,10 @@ public sealed class PluginBuilder
                     (Models.Records.Magic.ExplosionRecord)model),
                 "IMOD" => Writers.Encoders.ImodEncoder.EncodeNew(
                     (Models.Records.Item.WeaponModRecord)model),
+                "ARMA" => Writers.Encoders.ArmaEncoder.EncodeNew(
+                    (Models.Records.Item.ArmaRecord)model),
+                "RCPE" => Writers.Encoders.RcpeEncoder.EncodeNew(
+                    (Models.Records.Item.RecipeRecord)model),
                 _ => null
             };
         }
@@ -1092,6 +1096,8 @@ public sealed class PluginBuilder
         yield return ("PROJ", records.Projectiles);
         yield return ("EXPL", records.Explosions);
         yield return ("IMOD", records.WeaponMods);
+        yield return ("ARMA", records.ArmorAddons);
+        yield return ("RCPE", records.Recipes);
     }
 
     private static uint ExtractFormId(object model)

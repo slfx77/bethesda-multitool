@@ -30,11 +30,20 @@ public record ArmaRecord
     /// <summary>Female first-person model path (MOD4 subrecord).</summary>
     public string? FemaleFirstPersonModelPath { get; init; }
 
-    /// <summary>Biped flags (which body parts this covers).</summary>
+    /// <summary>Biped flags (which body parts this covers) from BMDT.</summary>
     public uint BipedFlags { get; init; }
 
-    /// <summary>General flags.</summary>
-    public uint GeneralFlags { get; init; }
+    /// <summary>General flags from BMDT.</summary>
+    public byte GeneralFlags { get; init; }
+
+    /// <summary>Inventory value in caps (DATA Int32).</summary>
+    public int Value { get; init; }
+
+    /// <summary>Maximum condition value (DATA Int32).</summary>
+    public int MaxCondition { get; init; }
+
+    /// <summary>Weight in pounds (DATA Float).</summary>
+    public float Weight { get; init; }
 
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }

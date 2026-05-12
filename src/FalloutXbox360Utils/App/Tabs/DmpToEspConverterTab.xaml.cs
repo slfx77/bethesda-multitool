@@ -191,7 +191,7 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
 
         try
         {
-            var registry = RecordEncoderRegistry.CreateV11Default();
+            var registry = RecordEncoderRegistry.CreateV12Default();
             var builder = new PluginBuilder(registry, sink);
 
             // Run the engine on a worker thread so the UI thread stays free.

@@ -109,12 +109,29 @@ public sealed class WeapEncoder : IRecordEncoder
         // for each mod combination. fopdoc canonical order: WNAM then alternating WNM*/MWD* per index.
         EmitModelVariants(subs, weap.ModelVariants);
 
-        if (weap.VatsAttack is not null)
+        if (weap.VatsAttack is { } vats)
         {
-            warnings.Add($"New WEAP 0x{weap.FormId:X8} has VATS attack data — VATS subrecord emission deferred to v6.");
+            subs.Add(new EncodedSubrecord("VATS", BuildVatsSubrecord(vats)));
         }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
+    }
+
+    private static byte[] BuildVatsSubrecord(VatsAttackData vats)
+    {
+        // VATS (20 bytes) per PDB OBJ_WEAP_VATS_SPECIAL:
+        //   FormID Effect(0) + float AP(4) + float Multiplier(8) + float SkillRequired(12) +
+        //   bool IsSilent(16) + bool RequiresMod(17) + uint8 Flags(18) + padding(19).
+        var data = new byte[20];
+        SubrecordEncoder.WriteFormId(data, 0, vats.EffectFormId);
+        SubrecordEncoder.WriteFloat(data, 4, vats.ActionPointCost);
+        SubrecordEncoder.WriteFloat(data, 8, vats.DamageMultiplier);
+        SubrecordEncoder.WriteFloat(data, 12, vats.SkillRequired);
+        data[16] = vats.IsSilent ? (byte)1 : (byte)0;
+        data[17] = vats.RequiresMod ? (byte)1 : (byte)0;
+        data[18] = vats.ExtraFlags;
+        // byte 19 padding (zero)
+        return data;
     }
 
     private static void EmitModelVariants(List<EncodedSubrecord> subs, List<WeaponModelVariant> variants)

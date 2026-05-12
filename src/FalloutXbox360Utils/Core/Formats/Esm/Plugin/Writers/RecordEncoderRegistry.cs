@@ -145,6 +145,20 @@ public sealed class RecordEncoderRegistry
     }
 
     /// <summary>
+    ///     Builds a registry for v12 — extends v11 with ARMA (armor addon) and RCPE (recipe)
+    ///     new-record encoders. v12 also enables WEAP VATS subrecord emission (no registry
+    ///     change needed — the existing WeapEncoder now emits VATS when the model carries
+    ///     <see cref="Models.VatsAttackData" />, replacing the v6-deferred warning).
+    /// </summary>
+    public static RecordEncoderRegistry CreateV12Default()
+    {
+        var registry = CreateV11Default();
+        registry.Register(new Encoders.ArmaEncoder());
+        registry.Register(new Encoders.RcpeEncoder());
+        return registry;
+    }
+
+    /// <summary>
     ///     Returns true if the record type is a placed-reference type that lives inside a
     ///     parent CELL's child GRUP. These types are excluded from top-level GRUP emission and
     ///     are routed through the cell-children pipeline instead.

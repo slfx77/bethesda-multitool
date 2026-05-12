@@ -302,7 +302,11 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
         string? editorId = null, fullName = null;
         string? maleModel = null, femaleModel = null, maleFp = null, femaleFp = null;
         ObjectBounds? bounds = null;
-        uint bipedFlags = 0, generalFlags = 0;
+        uint bipedFlags = 0;
+        byte generalFlags = 0;
+        var value = 0;
+        var maxCondition = 0;
+        var weight = 0f;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -324,6 +328,17 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
                 case "OBND" when sub.DataLength == 12:
                     bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
                     break;
+                case "BMDT" when sub.DataLength >= 8:
+                {
+                    var fields = SubrecordDataReader.ReadFields("BMDT", null, subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        bipedFlags = SubrecordDataReader.GetUInt32(fields, "BipedFlags");
+                        generalFlags = SubrecordDataReader.GetByte(fields, "GeneralFlags");
+                    }
+
+                    break;
+                }
                 case "MODL":
                     maleModel = EsmStringUtils.ReadNullTermString(subData);
                     break;
@@ -341,8 +356,9 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
                     var fields = SubrecordDataReader.ReadFields("DATA", "ARMA", subData, record.IsBigEndian);
                     if (fields.Count > 0)
                     {
-                        bipedFlags = SubrecordDataReader.GetUInt32(fields, "BipedFlags");
-                        generalFlags = SubrecordDataReader.GetUInt32(fields, "GeneralFlags");
+                        value = SubrecordDataReader.GetInt32(fields, "Value");
+                        maxCondition = SubrecordDataReader.GetInt32(fields, "MaxCondition");
+                        weight = SubrecordDataReader.GetFloat(fields, "Weight");
                     }
 
                     break;
@@ -362,6 +378,9 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
             FemaleFirstPersonModelPath = femaleFp,
             BipedFlags = bipedFlags,
             GeneralFlags = generalFlags,
+            Value = value,
+            MaxCondition = maxCondition,
+            Weight = weight,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
