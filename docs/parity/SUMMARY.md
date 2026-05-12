@@ -185,24 +185,57 @@ Disagreements (1,800+ NPC factions/inventory, 510 container contents,
 NPC SPECIAL/skills variances) are content drift between proto and final
 builds and not in scope for parser fixes.
 
+## Build-layout caveat
+
+Three dump build types are in play (per `MinidumpAnalyzer.DetectBuildType`):
+
+- **Release Beta** — `Fallout_Release_Beta.xex*.dmp`. The largest
+  corpus and the production target. The runtime readers should be
+  tuned here first.
+- **Release MemDebug** — `Fallout_Release_MemDebug.xex.dmp`. The
+  build the PDB ([`pdb_layouts.json`](../../src/FalloutXbox360Utils/Core/Formats/Esm/Runtime/pdb_layouts.json))
+  was generated from.
+- **Debug** — separate debug DMPs, distinct layout from both above.
+
+**MemDebug/Debug DMPs typically have different struct layouts than
+Release_Beta.** Even within the MemDebug family, the actual dump
+layout can differ from the PDB definitions (debug builds add
+instrumentation padding). Treat `pdb_layouts.json` as a starting
+point, not ground truth for any specific dump.
+
+The infrastructure for per-build offsets already exists:
+[`RuntimeBuildOffsets.GetPdbShift(buildType)`](../../src/FalloutXbox360Utils/Core/Formats/Esm/Runtime/RuntimeBuildOffsets.cs#L47)
+accepts the build-type string but currently returns 16 for everything.
+The detection plumbing (`MinidumpAnalyzer.DetectBuildType` returns
+`"Release Beta"` / `"Release MemDebug"` / `"Debug"` / `"Release"`) is
+also in place. Wiring these together is the right path for adding
+per-build offset support.
+
 ## Methodology for the still-deferred items
 
 1. Pick an example FormID from the audit JSON (the `examples` array
-   on each `FieldParity`).
+   on each `FieldParity`) — **prefer one from the Release Beta
+   baseline since it's the production target**.
 2. Use `falloutu dmp hexdump <file> <virtual-address>` to dump 64
    bytes around the expected struct location. The VA is the form's
    `TesFormOffset` from the scan plus the expected field offset.
-3. Compare the byte pattern against the ESM-side value and the
-   `pdb_layouts.json` field definition. Two outcomes:
+3. Compare the byte pattern against the ESM-side value. Three
+   outcomes:
    - **Bytes match expected layout, value differs from ESM** → content
-     drift. Move from "Still deferred" to "Format limits".
-   - **Bytes don't match expected layout (e.g., zeros where a float
-     should be)** → build-specific offset bug. Add a per-build entry
-     to `RuntimeBuildOffsets` rather than editing the base constant.
+     drift OR semantic mismatch (engine mutation). Move to "Format
+     limits".
+   - **Bytes don't match expected layout for THIS build** → add a
+     build-specific entry to `RuntimeBuildOffsets.GetPdbShift` or
+     per-struct overrides. Do not assume MemDebug PDB offsets apply
+     to Release_Beta.
+   - **Bytes match for Release_Beta but differ for MemDebug** →
+     either accept the MemDebug regression (Release_Beta is the
+     priority corpus) or add per-build branching.
 
 The NPC Weight/Height aborted patch (commit `8fe83ae`) is the
 cautionary tale — the MemDebug PDB is NOT the authoritative reference
-for every dump under test. Per-build verification is mandatory.
+for every dump under test. Per-build verification against the
+Release_Beta corpus is mandatory before any offset change lands.
 
 ## How to regenerate
 
