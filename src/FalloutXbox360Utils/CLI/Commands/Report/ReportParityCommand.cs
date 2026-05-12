@@ -16,8 +16,6 @@ namespace FalloutXbox360Utils.CLI.Commands.Report;
 /// </summary>
 internal static class ReportParityCommand
 {
-    private static readonly JsonSerializerOptions IndentedJsonOptions = new() { WriteIndented = true };
-
     internal static Command Create()
     {
         var esmOpt = new Option<string>("--esm")
@@ -136,14 +134,75 @@ internal static class ReportParityCommand
             Directory.CreateDirectory(outputDir);
             var jsonPath = Path.Combine(outputDir, "parity_report.json");
             await using var fs = File.Create(jsonPath);
-            await JsonSerializer.SerializeAsync(fs, result, IndentedJsonOptions, cancellationToken);
+            await using var writer = new Utf8JsonWriter(fs, new JsonWriterOptions { Indented = true });
+            WriteParityJson(writer, result);
+            await writer.FlushAsync(cancellationToken);
             AnsiConsole.MarkupLine($"[green]Wrote:[/] {Markup.Escape(jsonPath)}");
         }
         else if (emitJson)
         {
-            var json = JsonSerializer.Serialize(result, IndentedJsonOptions);
-            Console.WriteLine(json);
+            using var ms = new MemoryStream();
+            using (var writer = new Utf8JsonWriter(ms, new JsonWriterOptions { Indented = true }))
+            {
+                WriteParityJson(writer, result);
+            }
+
+            Console.WriteLine(System.Text.Encoding.UTF8.GetString(ms.ToArray()));
         }
+    }
+
+    private static void WriteParityJson(Utf8JsonWriter writer, ParityAuditResult result)
+    {
+        writer.WriteStartObject();
+        writer.WriteString("esmLabel", result.EsmLabel);
+        writer.WriteString("dmpLabel", result.DmpLabel);
+        writer.WriteString("generatedAtUtc", result.GeneratedAtUtc.ToString("O"));
+
+        writer.WritePropertyName("recordTypes");
+        writer.WriteStartArray();
+        foreach (var typeParity in result.RecordTypes)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("typeName", typeParity.TypeName);
+            writer.WriteNumber("esmRecordCount", typeParity.EsmRecordCount);
+            writer.WriteNumber("dmpRecordCount", typeParity.DmpRecordCount);
+            writer.WriteNumber("matchedRecordCount", typeParity.MatchedRecordCount);
+            writer.WriteNumber("esmOnlyRecordCount", typeParity.EsmOnlyRecordCount);
+            writer.WriteNumber("dmpOnlyRecordCount", typeParity.DmpOnlyRecordCount);
+
+            writer.WritePropertyName("fields");
+            writer.WriteStartArray();
+            foreach (var field in typeParity.Fields)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("fieldName", field.FieldName);
+                writer.WriteNumber("esmOnly", field.EsmOnly);
+                writer.WriteNumber("dmpOnly", field.DmpOnly);
+                writer.WriteNumber("agree", field.Agree);
+                writer.WriteNumber("disagree", field.Disagree);
+
+                writer.WritePropertyName("examples");
+                writer.WriteStartArray();
+                foreach (var ex in field.Examples)
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("formId", $"0x{ex.FormId:X8}");
+                    writer.WriteString("esmValue", ex.EsmValue);
+                    writer.WriteString("dmpValue", ex.DmpValue);
+                    writer.WriteString("status", ex.Status.ToString());
+                    writer.WriteEndObject();
+                }
+
+                writer.WriteEndArray();
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
+        writer.WriteEndObject();
     }
 
     private static void PrintTextReport(ParityAuditResult result)
