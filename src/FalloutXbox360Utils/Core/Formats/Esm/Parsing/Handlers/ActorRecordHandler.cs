@@ -220,8 +220,12 @@ internal sealed class ActorRecordHandler(RecordParserContext context) : RecordHa
                     fullName = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "DATA" when sub.DataLength >= 4:
-                    // FACT DATA: 2 flag bytes + 2 unused
-                    flags = (uint)(subData[0] | (subData[1] << 8));
+                    // FACT DATA: TESFaction.flags is a 4-byte uint32 (see SubrecordActorSchemas
+                    // "DATA, FACT, 4" → Simple4Byte). FNV encodes hidden-from-player and
+                    // tracks-crime in the high two bytes, so reading just 2 bytes drops them.
+                    flags = record.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
                     break;
                 case "XNAM" when sub.DataLength == 12:
                 {
