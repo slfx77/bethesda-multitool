@@ -297,6 +297,8 @@ public sealed class RecordParser
         var baseEffects = _effects.ParseBaseEffects();
         var weaponMods = _miscItems.ParseWeaponMods();
         var recipes = _miscItems.ParseRecipes();
+        var recipeCategories = _miscBasicTypes.ParseRecipeCategories();
+        var constructibleObjects = _miscItems.ParseConstructibleObjects();
         var challenges = _miscBasicTypes.ParseChallenges();
         var reputations = _miscBasicTypes.ParseReputations();
         var projectiles = _combatEffects.ParseProjectiles();
@@ -414,6 +416,8 @@ public sealed class RecordParser
             BaseEffects = baseEffects,
             WeaponMods = weaponMods,
             Recipes = recipes,
+            RecipeCategories = recipeCategories,
+            ConstructibleObjects = constructibleObjects,
             Challenges = challenges,
             Reputations = reputations,
             Projectiles = projectiles,

@@ -301,9 +301,13 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
 
         string? editorId = null, fullName = null;
         string? maleModel = null, femaleModel = null, maleFp = null, femaleFp = null;
+        string? maleIcon = null, femaleIcon = null;
+        byte[]? maleTextureHash = null, femaleTextureHash = null;
+        byte[]? maleFpTextureHash = null, femaleFpTextureHash = null;
         ObjectBounds? bounds = null;
         uint bipedFlags = 0;
         byte generalFlags = 0;
+        byte detectionSoundLevel = 0;
         var value = 0;
         var maxCondition = 0;
         var weight = 0f;
@@ -342,14 +346,35 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
                 case "MODL":
                     maleModel = EsmStringUtils.ReadNullTermString(subData);
                     break;
+                case "MODT":
+                    maleTextureHash = subData.ToArray();
+                    break;
                 case "MOD2":
                     femaleModel = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MO2T":
+                    femaleTextureHash = subData.ToArray();
                     break;
                 case "MOD3":
                     maleFp = EsmStringUtils.ReadNullTermString(subData);
                     break;
+                case "MO3T":
+                    maleFpTextureHash = subData.ToArray();
+                    break;
                 case "MOD4":
                     femaleFp = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MO4T":
+                    femaleFpTextureHash = subData.ToArray();
+                    break;
+                case "ICON":
+                    maleIcon = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MIC2":
+                    femaleIcon = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "DNAM" when sub.DataLength >= 1:
+                    detectionSoundLevel = subData[0];
                     break;
                 case "DATA" when sub.DataLength >= 12:
                 {
@@ -376,11 +401,130 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
             FemaleModelPath = femaleModel,
             MaleFirstPersonModelPath = maleFp,
             FemaleFirstPersonModelPath = femaleFp,
+            MaleTextureHashData = maleTextureHash,
+            FemaleTextureHashData = femaleTextureHash,
+            MaleFirstPersonTextureHashData = maleFpTextureHash,
+            FemaleFirstPersonTextureHashData = femaleFpTextureHash,
+            MaleIconPath = maleIcon,
+            FemaleIconPath = femaleIcon,
+            DetectionSoundLevel = detectionSoundLevel,
             BipedFlags = bipedFlags,
             GeneralFlags = generalFlags,
             Value = value,
             MaxCondition = maxCondition,
             Weight = weight,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
+    #region Constructible Objects
+
+    /// <summary>
+    ///     Parse all Constructible Object (COBJ) records.
+    ///     fopdoc canonical subrecord order:
+    ///         EDID, OBND?, FULL?, MODL?, MODT?, COCT, CNTO*, CTDA*, CNAM, BNAM?.
+    /// </summary>
+    internal List<ConstructibleObjectRecord> ParseConstructibleObjects()
+    {
+        return ParseAccessorOnly("COBJ", 2048, ParseConstructibleObjectFromAccessor);
+    }
+
+    private ConstructibleObjectRecord? ParseConstructibleObjectFromAccessor(
+        DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return null;
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null, fullName = null, modelPath = null;
+        byte[]? textureHash = null;
+        ObjectBounds? bounds = null;
+        var ingredients = new List<InventoryItem>();
+        var conditions = new List<Models.Records.Quest.DialogueCondition>();
+        uint? createdItem = null;
+        uint? workbenchKeyword = null;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "OBND" when sub.DataLength == 12:
+                    bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
+                    break;
+                case "FULL":
+                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODL":
+                    modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODT":
+                    textureHash = subData.ToArray();
+                    break;
+                case "COCT":
+                    // Ingredient count — we count from the actual CNTOs that follow, so ignore.
+                    break;
+                case "CNTO" when sub.DataLength >= 8:
+                {
+                    var itemId = RecordParserContext.ReadFormId(subData[..4], record.IsBigEndian);
+                    var count = record.IsBigEndian
+                        ? System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(subData[4..8])
+                        : System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(subData[4..8]);
+                    ingredients.Add(new InventoryItem(itemId, count));
+                    break;
+                }
+                case "CTDA" when sub.DataLength >= 28:
+                    conditions.Add(CtdaParser.Decode(subData, record.IsBigEndian));
+                    break;
+                case "CIS1" when conditions.Count > 0:
+                {
+                    var s = EsmStringUtils.ReadNullTermString(subData);
+                    conditions[^1] = conditions[^1] with { Parameter1String = s };
+                    break;
+                }
+                case "CIS2" when conditions.Count > 0:
+                {
+                    var s = EsmStringUtils.ReadNullTermString(subData);
+                    conditions[^1] = conditions[^1] with { Parameter2String = s };
+                    break;
+                }
+                case "CNAM" when sub.DataLength == 4:
+                    createdItem = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "BNAM" when sub.DataLength == 4:
+                    workbenchKeyword = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+            }
+        }
+
+        return new ConstructibleObjectRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            FullName = fullName,
+            Bounds = bounds,
+            ModelPath = modelPath,
+            TextureHashData = textureHash,
+            Ingredients = ingredients,
+            Conditions = conditions,
+            CreatedItemFormId = createdItem,
+            WorkbenchKeywordFormId = workbenchKeyword,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };

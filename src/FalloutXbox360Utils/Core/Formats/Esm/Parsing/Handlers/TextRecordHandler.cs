@@ -124,7 +124,7 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
                     curHasMenuItem = true;
                     break;
                 case "CTDA" when sub.DataLength >= 28 && curHasMenuItem:
-                    curConditions.Add(ParseCtda(subData, record.IsBigEndian));
+                    curConditions.Add(CtdaParser.Decode(subData, record.IsBigEndian));
                     break;
                 case "CIS1" when curHasMenuItem && curConditions.Count > 0:
                 {
@@ -189,35 +189,6 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
             MenuItems = menuItems,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
-        };
-    }
-
-    /// <summary>
-    ///     Parse a 28-byte CTDA condition subrecord. Layout mirrors
-    ///     <see cref="FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.InfoEncoder" />'s
-    ///     BuildCtdaSubrecord: Type(1) + pad(3) + ComparisonValue(f32) + FunctionIndex(u16) +
-    ///     pad(2) + Parameter1(u32) + Parameter2(u32) + RunOn(u32) + Reference(u32).
-    /// </summary>
-    private static Models.Records.Quest.DialogueCondition ParseCtda(
-        ReadOnlySpan<byte> data, bool bigEndian)
-    {
-        return new Models.Records.Quest.DialogueCondition
-        {
-            Type = data[0],
-            ComparisonValue = bigEndian
-                ? BinaryPrimitives.ReadSingleBigEndian(data[4..])
-                : BinaryPrimitives.ReadSingleLittleEndian(data[4..]),
-            FunctionIndex = bigEndian
-                ? BinaryPrimitives.ReadUInt16BigEndian(data[8..])
-                : BinaryPrimitives.ReadUInt16LittleEndian(data[8..]),
-            Parameter1 = RecordParserContext.ReadFormId(data[12..16], bigEndian),
-            Parameter2 = bigEndian
-                ? BinaryPrimitives.ReadUInt32BigEndian(data[16..])
-                : BinaryPrimitives.ReadUInt32LittleEndian(data[16..]),
-            RunOn = bigEndian
-                ? BinaryPrimitives.ReadUInt32BigEndian(data[20..])
-                : BinaryPrimitives.ReadUInt32LittleEndian(data[20..]),
-            Reference = RecordParserContext.ReadFormId(data[24..28], bigEndian)
         };
     }
 

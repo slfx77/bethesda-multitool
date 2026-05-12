@@ -586,6 +586,8 @@ internal static class CrossDumpAggregator
         records.BaseEffects.Clear();
         records.WeaponMods.Clear();
         records.Recipes.Clear();
+        records.RecipeCategories.Clear();
+        records.ConstructibleObjects.Clear();
         records.Challenges.Clear();
         records.Reputations.Clear();
         records.Projectiles.Clear();

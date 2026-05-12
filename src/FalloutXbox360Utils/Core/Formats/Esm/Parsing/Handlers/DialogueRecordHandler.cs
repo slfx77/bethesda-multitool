@@ -359,6 +359,7 @@ internal sealed class DialogueRecordHandler(RecordParserContext context) : Recor
         uint? script = null;
         var stages = new List<QuestStage>();
         var objectives = new List<QuestObjective>();
+        var conditions = new List<DialogueCondition>();
 
         // Track current stage/objective being built
         int? currentStageIndex = null;
@@ -392,6 +393,30 @@ internal sealed class DialogueRecordHandler(RecordParserContext context) : Recor
                 case "SCRI" when sub.DataLength == 4:
                     script = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
+                // Top-level quest conditions (CTDA + optional CIS1/CIS2). Per-stage and
+                // per-objective conditions are deferred — guard ensures we only capture
+                // conditions that appear before any INDX or QOBJ.
+                case "CTDA" when sub.DataLength >= 28
+                                 && currentStageIndex is null
+                                 && currentObjectiveIndex is null:
+                    conditions.Add(CtdaParser.Decode(subData, record.IsBigEndian));
+                    break;
+                case "CIS1" when conditions.Count > 0
+                                 && currentStageIndex is null
+                                 && currentObjectiveIndex is null:
+                {
+                    var s = EsmStringUtils.ReadNullTermString(subData);
+                    conditions[^1] = conditions[^1] with { Parameter1String = s };
+                    break;
+                }
+                case "CIS2" when conditions.Count > 0
+                                 && currentStageIndex is null
+                                 && currentObjectiveIndex is null:
+                {
+                    var s = EsmStringUtils.ReadNullTermString(subData);
+                    conditions[^1] = conditions[^1] with { Parameter2String = s };
+                    break;
+                }
                 case "INDX" when sub.DataLength >= 2:
                     // Save previous stage if any
                     if (currentStageIndex.HasValue)
@@ -475,6 +500,7 @@ internal sealed class DialogueRecordHandler(RecordParserContext context) : Recor
             Priority = priority,
             QuestDelay = questDelay,
             Script = script,
+            Conditions = conditions,
             Stages = stages.OrderBy(s => s.Index).ToList(),
             Objectives = objectives.OrderBy(o => o.Index).ToList(),
             Offset = record.Offset,

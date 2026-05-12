@@ -30,6 +30,27 @@ public record ArmaRecord
     /// <summary>Female first-person model path (MOD4 subrecord).</summary>
     public string? FemaleFirstPersonModelPath { get; init; }
 
+    /// <summary>Texture-hash blob for MODL (MODT subrecord, opaque byte-array passthrough).</summary>
+    public byte[]? MaleTextureHashData { get; init; }
+
+    /// <summary>Texture-hash blob for MOD2 (MO2T subrecord).</summary>
+    public byte[]? FemaleTextureHashData { get; init; }
+
+    /// <summary>Texture-hash blob for MOD3 (MO3T subrecord).</summary>
+    public byte[]? MaleFirstPersonTextureHashData { get; init; }
+
+    /// <summary>Texture-hash blob for MOD4 (MO4T subrecord).</summary>
+    public byte[]? FemaleFirstPersonTextureHashData { get; init; }
+
+    /// <summary>Male inventory icon path (ICON subrecord).</summary>
+    public string? MaleIconPath { get; init; }
+
+    /// <summary>Female inventory icon path (MIC2 subrecord).</summary>
+    public string? FemaleIconPath { get; init; }
+
+    /// <summary>Detection sound level enum from DNAM (Loud=0, Normal=1, Silent=2).</summary>
+    public byte DetectionSoundLevel { get; init; }
+
     /// <summary>Biped flags (which body parts this covers) from BMDT.</summary>
     public uint BipedFlags { get; init; }
 

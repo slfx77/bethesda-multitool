@@ -115,6 +115,12 @@ public record RecordCollection
     /// <summary>Parsed Recipe (RCPE) records.</summary>
     public List<RecipeRecord> Recipes { get; init; } = [];
 
+    /// <summary>Parsed Recipe Category (RCCT) records.</summary>
+    public List<Records.Misc.RecipeCategoryRecord> RecipeCategories { get; init; } = [];
+
+    /// <summary>Parsed Constructible Object (COBJ) records.</summary>
+    public List<ConstructibleObjectRecord> ConstructibleObjects { get; init; } = [];
+
     /// <summary>Parsed Challenge (CHAL) records.</summary>
     public List<ChallengeRecord> Challenges { get; init; } = [];
 
@@ -230,7 +236,8 @@ public record RecordCollection
         Weapons.Count + Armor.Count + Ammo.Count + Consumables.Count + MiscItems.Count + Keys.Count + Containers.Count +
         Perks.Count + Spells.Count + Cells.Count + Worldspaces.Count + MapMarkers.Count + LeveledLists.Count +
         GameSettings.Count + Globals.Count + Enchantments.Count + BaseEffects.Count +
-        WeaponMods.Count + Recipes.Count + Challenges.Count + Reputations.Count +
+        WeaponMods.Count + Recipes.Count + RecipeCategories.Count + ConstructibleObjects.Count +
+        Challenges.Count + Reputations.Count +
         Projectiles.Count + Explosions.Count + Messages.Count + Classes.Count +
         Eyes.Count + Hair.Count +
         FormLists.Count + Activators.Count +
@@ -298,6 +305,8 @@ public record RecordCollection
             BaseEffects = MergeList(BaseEffects, overlay.BaseEffects, r => r.FormId),
             WeaponMods = MergeList(WeaponMods, overlay.WeaponMods, r => r.FormId),
             Recipes = MergeList(Recipes, overlay.Recipes, r => r.FormId),
+            RecipeCategories = MergeList(RecipeCategories, overlay.RecipeCategories, r => r.FormId),
+            ConstructibleObjects = MergeList(ConstructibleObjects, overlay.ConstructibleObjects, r => r.FormId),
             Challenges = MergeList(Challenges, overlay.Challenges, r => r.FormId),
             Reputations = MergeList(Reputations, overlay.Reputations, r => r.FormId),
             Projectiles = MergeList(Projectiles, overlay.Projectiles, r => r.FormId),

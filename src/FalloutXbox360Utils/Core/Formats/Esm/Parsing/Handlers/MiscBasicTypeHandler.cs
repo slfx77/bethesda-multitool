@@ -484,4 +484,62 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context) : Record
     }
 
     #endregion
+
+    #region Recipe Categories
+
+    /// <summary>
+    ///     Parse all Recipe Category (RCCT) records.
+    ///     Subrecord layout: EDID + FULL? + DATA(1 byte flags). PDB: TESRecipeCategory (56 bytes).
+    /// </summary>
+    internal List<RecipeCategoryRecord> ParseRecipeCategories()
+    {
+        return ParseAccessorOnly("RCCT", 256, ParseRecipeCategoryFromAccessor);
+    }
+
+    private RecipeCategoryRecord? ParseRecipeCategoryFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return null;
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null, fullName = null;
+        byte flags = 0;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "FULL":
+                    fullName = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    break;
+                case "DATA" when sub.DataLength >= 1:
+                    flags = data[sub.DataOffset];
+                    break;
+            }
+        }
+
+        return new RecipeCategoryRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId,
+            FullName = fullName,
+            Flags = flags,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
 }

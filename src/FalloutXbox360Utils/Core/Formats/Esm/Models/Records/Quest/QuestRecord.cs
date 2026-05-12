@@ -35,6 +35,10 @@ public record QuestRecord
     /// <summary>Quest objectives (QOBJ + display text).</summary>
     public List<QuestObjective> Objectives { get; init; } = [];
 
+    /// <summary>Top-level quest conditions (CTDA* with optional CIS1/CIS2 string parameters).
+    ///     Per-stage and per-objective conditions are deferred to a future phase.</summary>
+    public List<DialogueCondition> Conditions { get; init; } = [];
+
     /// <summary>Script local variables from the quest's SCPT record (cross-referenced via SCRI).</summary>
     public List<ScriptVariableInfo> Variables { get; init; } = [];
 
