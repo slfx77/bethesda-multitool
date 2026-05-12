@@ -234,6 +234,24 @@ public sealed class RecordEncoderRegistry
     }
 
     /// <summary>
+    ///     Builds a registry for v18b — extends v18 with previously-blocked parser-deficient
+    ///     types. CSTY/LGTM/WATR use a shared schema-dictionary serializer
+    ///     (<see cref="Encoders.SchemaDictionarySerializer" />) to re-emit the dictionaries the
+    ///     parser already populates. WTHR emits only its narrow typed fields (warns that
+    ///     visual subrecords are missing). NAVI remains unencoded — the parser only captures
+    ///     counts, not the vertex/triangle/portal arrays needed for a real navmesh.
+    /// </summary>
+    public static RecordEncoderRegistry CreateV18bDefault()
+    {
+        var registry = CreateV18Default();
+        registry.Register(new Encoders.CstyEncoder());
+        registry.Register(new Encoders.LgtmEncoder());
+        registry.Register(new Encoders.WatrEncoder());
+        registry.Register(new Encoders.WthrEncoder());
+        return registry;
+    }
+
+    /// <summary>
     ///     Returns true if the record type is a placed-reference type that lives inside a
     ///     parent CELL's child GRUP. These types are excluded from top-level GRUP emission and
     ///     are routed through the cell-children pipeline instead.
