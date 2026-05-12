@@ -418,6 +418,12 @@ public sealed class PluginBuilder
                     (Models.Records.Magic.SpellRecord)model),
                 "PERK" => Writers.Encoders.PerkEncoder.EncodeNew(
                     (Models.Records.Magic.PerkRecord)model),
+                "MGEF" => Writers.Encoders.MgefEncoder.EncodeNew(
+                    (Models.Records.Magic.BaseEffectRecord)model),
+                "WRLD" => Writers.Encoders.WrldEncoder.EncodeNew(
+                    (Models.Records.World.WorldspaceRecord)model),
+                "RACE" => Writers.Encoders.RaceEncoder.EncodeNew(
+                    (Models.Records.Character.RaceRecord)model),
                 _ => null
             };
         }
@@ -1162,6 +1168,9 @@ public sealed class PluginBuilder
         yield return ("ENCH", records.Enchantments);
         yield return ("SPEL", records.Spells);
         yield return ("PERK", records.Perks);
+        yield return ("MGEF", records.BaseEffects);
+        yield return ("WRLD", records.Worldspaces);
+        yield return ("RACE", records.Races);
     }
 
     private static uint ExtractFormId(object model)

@@ -116,7 +116,7 @@ public static class DmpToEspCommand
         AnsiConsole.MarkupLine($"[cyan]Output:[/] {Markup.Escape(outputPath)}");
         AnsiConsole.WriteLine();
 
-        var registry = RecordEncoderRegistry.CreateV17Default();
+        var registry = RecordEncoderRegistry.CreateV18Default();
         var sink = new ConsoleProgressSink(verbose);
         var builder = new PluginBuilder(registry, sink);
 

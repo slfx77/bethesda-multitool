@@ -217,6 +217,23 @@ public sealed class RecordEncoderRegistry
     }
 
     /// <summary>
+    ///     Builds a registry for v18 — extends v17 with the three large new-record encoders:
+    ///     MGEF (base effect, DATA 72B), WRLD (worldspace header — child cells flow via the
+    ///     cell-children pipeline), RACE (the largest encoder by field count: gendered head/body
+    ///     part hierarchies, FaceGen morphs, hair/eyes references, skill boosts).
+    ///     Parser-deficient types (CSTY/LGTM/WTHR/WATR/NAVI) still pending — they emit nothing
+    ///     until their parsers are fixed in a future phase.
+    /// </summary>
+    public static RecordEncoderRegistry CreateV18Default()
+    {
+        var registry = CreateV17Default();
+        registry.Register(new Encoders.MgefEncoder());
+        registry.Register(new Encoders.WrldEncoder());
+        registry.Register(new Encoders.RaceEncoder());
+        return registry;
+    }
+
+    /// <summary>
     ///     Returns true if the record type is a placed-reference type that lives inside a
     ///     parent CELL's child GRUP. These types are excluded from top-level GRUP emission and
     ///     are routed through the cell-children pipeline instead.
