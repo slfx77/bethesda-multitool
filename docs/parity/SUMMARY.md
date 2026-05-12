@@ -60,24 +60,58 @@ of the two formats.
 | Cell | (massive) | 34,765 | DMP only contains loaded cells (1,200 of 35,191). Expected by design. |
 | Armor / Creature | (records-only) | 171 / 14 | DMP has runtime-spawned variants the ESM doesn't define as base records. |
 
-### Deferred: needs empirical PDB-offset investigation
+### Phase 4 outcome — what was investigated
 
-These have non-trivial root causes that don't fit a single-offset patch.
-Each needs raw-memory inspection on the specific DMP build to diagnose.
+Three parallel investigations targeted the original "deferred" list.
+Most resolved to either documentation or "leave alone", with one real
+parser-bug fix and one important negative finding.
+
+**Landed**:
+
+- **NPC ACBS length-variant defensive parse** (`140afdc`). The
+  handler had `case "ACBS" when sub.DataLength == 24` — strict
+  equality silently drops proto ACBS with trailing bytes. Switched
+  to `>= 24` and slice to the standard 24-byte payload. Audit count
+  for NPC Flags didn't move (those 38 are content drift, not
+  length-variant), but the fix prevents a real future-build risk.
+
+- **`NpcHeightOffset` / `NpcWeightOffset` comment guard** (`8fe83ae`).
+  Phase 4 planned changing `500/504 + _lateAppearanceShift` to
+  `468/472 + _lateAppearanceShift` to match the MemDebug PDB's
+  fHeight/fWeight at +484/+488. Audit verified this REGRESSED the
+  xex44 baseline catastrophically (Weight 353 agree → 0, Height
+  2,435 agree → 0). The xex44 build has different TESNPC layout
+  than MemDebug. Code reverted; permanent warning comment left in
+  place so the next investigator doesn't redo this. Closing the
+  Weight/Height gaps requires per-build offset tables, not a flat
+  patch.
+
+**Confirmed non-parser-bugs** (move to "format limits"):
+
+- **Armor DR**: runtime `sRating` is a scaled combat rating, not the
+  raw editor DR. ESM and DMP store semantically different values.
+  Parity not achievable without lossy conversion.
+- **Armor DT**: same family — runtime fallback `rawRating / 200f`
+  confirms scaled storage.
+- **Container Respawns** (589 DMP-only): content drift between proto
+  and final. Both code paths verified correct via example tuples.
+- **Cell HasWater** (43 ESM-only): runtime cell objects that weren't
+  loaded carry only the interior/exterior bit, never water. By
+  design (`RuntimeCellReader` constructs synthetic cell with
+  `Flags = entry.IsInterior ? 0x01 : 0x00`).
+
+### Still deferred — needs raw-byte verification
+
+These remain open; methodology is documented below.
 
 | Type | Field | After | Hypothesis |
 |---|---|---:|---|
-| NPC | Weight | 2,580 | `NpcWeightOffset = 504 + _s` is correct for FNV final. Proto July 2010 build likely has a different `TESNPC.fWeight` offset; validation widening (commit 1) didn't move the count, so the bytes at the expected offset aren't the weight field. |
-| NPC | Height | 464 | Same hypothesis as Weight. |
-| Weapon | CritChance | 148 | Runtime reader has 0 records agreeing (148 ESM-only + 49 disagree + 2 DMP-only). Likely build-specific `OBJ_WEAP_CRITICAL.fMultiplier` offset shift. |
-| Weapon | CritDamage / CritEffect | 45 / 61 | 0 records agree on either. Same root cause as CritChance — `criticalData` struct offset within `TESObjectWEAP` may differ between proto and final. |
-| Armor | DR | 123 | 3 records agree. Likely raw-byte encoding mismatch: ESM reads Int16 from DNAM byte 0; runtime reads UInt16 from `ArmoRatingOffset`. May be a sign-extension difference or scaling. |
-| Armor | DT | 54 + 91 disagree | 14 records agree. Same family of issues as DR; the runtime's "scaled UInt16 fallback" path in [RuntimeItemReader](../../src/FalloutXbox360Utils/Core/Formats/Esm/Runtime/Readers/Specialized/RuntimeItemReader.cs#L254) may be mis-targeting. |
-| Terminal | Flags | 173 + 78 disagree | 0 records agree on Flags despite 234 agreeing on Difficulty (the adjacent byte). Likely `TERMINAL_DATA` layout differs by build — flags byte may be at a different position in the proto runtime struct vs Final PDB. |
-| Terminal | MenuItemCount | 150 | List-walk via `WalkTerminalMenuItemList` may be failing in the proto build (different list-head offset). |
-| Container | Respawns | 589 DMP-only | 92 records agree. Suspected content drift: the proto build's `TESObjectCONT.Data` flag byte has the respawn bit set for many containers that don't have it in the final ESM. ESM-side parser and runtime-side reader both verified correct. |
-| Cell | HasWater | 43 ESM-only | 71 records agree. The ESM-only 43 are likely cells where the runtime didn't materialize the water flag (loaded-state divergence). |
-| NPC | Flags | 38 | Edge case: ACBS parse fails for a small set of NPCs (Stats null). Worth a defensive fix. |
+| NPC | Weight | 2,580 | Per-build TESNPC offset table needed. xex44 reader hits PDB+516 (correct here); MemDebug reader needs PDB+484. |
+| NPC | Height | 464 | Same. |
+| Weapon | CritChance | 148 | 0 records agree despite offsets matching pdb_layouts.json. Most likely **content drift** (proto crit values rebalanced for final), since adjacent Weapon Damage shows 157 agree. |
+| Weapon | CritDamage / CritEffect | 45 / 61 | Same family. 140 disagree on CritDamage is consistent with bulk rebalance, not offset bug. |
+| Terminal | Flags | 173 + 78 disagree | 234 agree on the adjacent Difficulty byte → offset is right. Most likely **content drift** (terminal flag defaults rebalanced) or runtime engine mutates the byte at load. |
+| Terminal | MenuItemCount | 150 | Could be `TermMenuItemListOffset` differing in proto, OR runtime simply hasn't populated those terminals. |
 
 ### Current top gaps after fixes
 
@@ -113,6 +147,25 @@ Each needs raw-memory inspection on the specific DMP build to diagnose.
 Disagreements (1,800+ NPC factions/inventory, 510 container contents,
 NPC SPECIAL/skills variances) are content drift between proto and final
 builds and not in scope for parser fixes.
+
+## Methodology for the still-deferred items
+
+1. Pick an example FormID from the audit JSON (the `examples` array
+   on each `FieldParity`).
+2. Use `falloutu dmp hexdump <file> <virtual-address>` to dump 64
+   bytes around the expected struct location. The VA is the form's
+   `TesFormOffset` from the scan plus the expected field offset.
+3. Compare the byte pattern against the ESM-side value and the
+   `pdb_layouts.json` field definition. Two outcomes:
+   - **Bytes match expected layout, value differs from ESM** → content
+     drift. Move from "Still deferred" to "Format limits".
+   - **Bytes don't match expected layout (e.g., zeros where a float
+     should be)** → build-specific offset bug. Add a per-build entry
+     to `RuntimeBuildOffsets` rather than editing the base constant.
+
+The NPC Weight/Height aborted patch (commit `8fe83ae`) is the
+cautionary tale — the MemDebug PDB is NOT the authoritative reference
+for every dump under test. Per-build verification is mandatory.
 
 ## How to regenerate
 
