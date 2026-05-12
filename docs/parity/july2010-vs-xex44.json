@@ -1,0 +1,5755 @@
+{
+  "esmLabel": "FalloutNV_July2010.esm",
+  "dmpLabel": "Fallout_Release_Beta.xex44.dmp",
+  "generatedAtUtc": "2026-05-12T09:31:39.0778826Z",
+  "recordTypes": [
+    {
+      "typeName": "Ammo",
+      "esmRecordCount": 90,
+      "dmpRecordCount": 70,
+      "matchedRecordCount": 67,
+      "esmOnlyRecordCount": 23,
+      "dmpOnlyRecordCount": 3,
+      "fields": [
+        {
+          "fieldName": "ClipRounds",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 67,
+          "disagree": 0,
+          "examples": []
+        },
+        {
+          "fieldName": "Flags",
+          "esmOnly": 12,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x0014F44A",
+              "esmValue": "2",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000615AF",
+              "esmValue": "2",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000615A8",
+              "esmValue": "2",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00056634",
+              "esmValue": "2",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000B8791",
+              "esmValue": "2",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "ModelPath",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 57,
+          "disagree": 10,
+          "examples": [
+            {
+              "formId": "0x001429CF",
+              "esmValue": "clutter\\ammo\\127mmAmmoBox.NIF",
+              "dmpValue": "Ammo\\44MagnumAmmo.NIF",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00140AA1",
+              "esmValue": "clutter\\ammo\\50mgAmmoBox.NIF",
+              "dmpValue": "ammo\\5mmammo.nif",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0013E448",
+              "esmValue": "clutter\\ammo\\20GaugeAmmoBox.NIF",
+              "dmpValue": "ammo\\shotgunshellbox.nif",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0013E445",
+              "esmValue": "clutter\\ammo\\50mgAmmoBox.NIF",
+              "dmpValue": "ammo\\5mmammo.nif",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0013E444",
+              "esmValue": "clutter\\ammo\\50mgAmmoBox.NIF",
+              "dmpValue": "ammo\\5mmammo.nif",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Projectile",
+          "esmOnly": 11,
+          "dmpOnly": 3,
+          "agree": 14,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x001429CF",
+              "esmValue": "",
+              "dmpValue": "127mmPistolBulletProjectile (0x00152C62)",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x0013E44C",
+              "esmValue": "MissileProjectileHV (0x001582EB)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0013E44B",
+              "esmValue": "MissileProjectileHE (0x00158317)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0013E449",
+              "esmValue": "25mmGrenadeProjectileHE (0x00158316)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0013E448",
+              "esmValue": "20GaSlugProjectile (0x00155E08)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "Projectiles",
+          "esmOnly": 0,
+          "dmpOnly": 6,
+          "agree": 1,
+          "disagree": 4,
+          "examples": [
+            {
+              "formId": "0x0007EA26",
+              "esmValue": "",
+              "dmpValue": "40mmGrenadeProjectile (0x0007EA30); AtomicBabyProjectile (0x00094BDE); 40mmGrenLaunchProjectile (0x00136F97); 40mmGrenadeProjectileUnique (0x001429EA)",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x0006B53E",
+              "esmValue": "BeamLaserAutoProjectile (0x0003BF08); DLC03TeslaChainProjectile (0x000E2C21); DLC03TeslaChainProjectile02 (0x000E2C22); DLC03TeslaChainProjectile03 (0x000E2C23); DLC03TeslaChainProjectile04 (0x000E2C24)",
+              "dmpValue": "BeamLaserAutoProjectile (0x0003BF08); DLC03TeslaCannonProjectile (0x000E2C20); DLC03TeslaChainProjectile (0x000E2C21); DLC03TeslaChainProjectile02 (0x000E2C22); DLC03TeslaChainProjectile03 (0x000E2C23); DLC03TeslaChainProjectile04 (0x000E2C24); ContiniousBeamLaserProjectile (0x001213AC)",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0006B53D",
+              "esmValue": "",
+              "dmpValue": "556mmRifleBulletProjectile (0x0000426D); MinigunBulletProjectile (0x00031DE8)",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x00029383",
+              "esmValue": "MissileProjectile (0x00001BB6); GrenadeFragProjectile (0x000043F9); SatcomNukeProjectile (0x0005DEEB); SecuritronMissLauncherProjectile (0x0010BA96)",
+              "dmpValue": "MLMissileProjectile (0x00001BB6); GrenadeFragProjectile (0x000043F9); SatcomNukeProjectile (0x0005DEEB); SecuritronMissLauncherProjectile (0x0010BA96)",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0002937E",
+              "esmValue": "",
+              "dmpValue": "44MagnumPistolBulletProjectile (0x0003BF0C); Stranger44MagnumBulletProjectile (0x000651D0)",
+              "status": "DmpOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "Speed",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 66,
+          "disagree": 0,
+          "examples": []
+        },
+        {
+          "fieldName": "Value",
+          "esmOnly": 2,
+          "dmpOnly": 1,
+          "agree": 33,
+          "disagree": 24,
+          "examples": [
+            {
+              "formId": "0x001429CF",
+              "esmValue": "3",
+              "dmpValue": "2",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00140AA1",
+              "esmValue": "8",
+              "dmpValue": "1",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00140AA0",
+              "esmValue": "6",
+              "dmpValue": "3",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00140A9F",
+              "esmValue": "2",
+              "dmpValue": "1",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00140A9E",
+              "esmValue": "2",
+              "dmpValue": "1",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Weight",
+          "esmOnly": 59,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x001429CF",
+              "esmValue": "0.01",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00140AA8",
+              "esmValue": "0.03",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00140AA1",
+              "esmValue": "0.25",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00140AA0",
+              "esmValue": "0.05",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00140A9F",
+              "esmValue": "0.03",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "typeName": "Armor",
+      "esmRecordCount": 409,
+      "dmpRecordCount": 561,
+      "matchedRecordCount": 390,
+      "esmOnlyRecordCount": 19,
+      "dmpOnlyRecordCount": 171,
+      "fields": [
+        {
+          "fieldName": "DR",
+          "esmOnly": 0,
+          "dmpOnly": 123,
+          "agree": 3,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x00153A0E",
+              "esmValue": "0",
+              "dmpValue": "200",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x0014B054",
+              "esmValue": "0",
+              "dmpValue": "100",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x00146F23",
+              "esmValue": "0",
+              "dmpValue": "200",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x0013F80F",
+              "esmValue": "0",
+              "dmpValue": "200",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x0013F80E",
+              "esmValue": "0",
+              "dmpValue": "200",
+              "status": "DmpOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "DT",
+          "esmOnly": 93,
+          "dmpOnly": 54,
+          "agree": 14,
+          "disagree": 91,
+          "examples": [
+            {
+              "formId": "0x0014B053",
+              "esmValue": "10.0",
+              "dmpValue": "12.0",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014823E",
+              "esmValue": "6.0",
+              "dmpValue": "0.0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014722A",
+              "esmValue": "4.0",
+              "dmpValue": "0.0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00146F23",
+              "esmValue": "2.0",
+              "dmpValue": "0.0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00145EC5",
+              "esmValue": "4.0",
+              "dmpValue": "0.0",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "Health",
+          "esmOnly": 1,
+          "dmpOnly": 0,
+          "agree": 380,
+          "disagree": 6,
+          "examples": [
+            {
+              "formId": "0x00140D46",
+              "esmValue": "150",
+              "dmpValue": "50",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00133F31",
+              "esmValue": "400",
+              "dmpValue": "100",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00133168",
+              "esmValue": "400",
+              "dmpValue": "1500",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00133166",
+              "esmValue": "400",
+              "dmpValue": "1200",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001264FF",
+              "esmValue": "250",
+              "dmpValue": "750",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "ModelPath",
+          "esmOnly": 2,
+          "dmpOnly": 1,
+          "agree": 369,
+          "disagree": 12,
+          "examples": [
+            {
+              "formId": "0x0014823E",
+              "esmValue": "armor\\veronicaoutfits\\oasisoutfit_m.NIF",
+              "dmpValue": "Armor\\OasisDruid\\outfitm.NIF",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014722A",
+              "esmValue": "armor\\headgear\\combatarmorhelmet\\m\\combatMark1Helm.NIF",
+              "dmpValue": "Armor\\HeadGear\\CombatArmorHelmet\\M\\CombatArmorHelmetM.NIF",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00138DC3",
+              "esmValue": "armor\\headgear\\vaultsecurityhelmet\\m\\vaultsecurityhelmet_skinned.nif",
+              "dmpValue": "Armor\\HeadGear\\VaultSecurityHelmet\\M\\VaultSecurityHelmet.NIF",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001350EF",
+              "esmValue": "",
+              "dmpValue": "armor\\Cass\\Cass_companion.NIF",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x00126500",
+              "esmValue": "armor\\combatarmor\\m\\mark1combat.NIF",
+              "dmpValue": "Armor\\CombatArmor\\M\\OutfitM.NIF",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Value",
+          "esmOnly": 3,
+          "dmpOnly": 0,
+          "agree": 358,
+          "disagree": 3,
+          "examples": [
+            {
+              "formId": "0x0013E25A",
+              "esmValue": "250",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00133F31",
+              "esmValue": "8200",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00133168",
+              "esmValue": "8200",
+              "dmpValue": "820",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x000CEE21",
+              "esmValue": "200",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000CE552",
+              "esmValue": "800",
+              "dmpValue": "100",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Weight",
+          "esmOnly": 1,
+          "dmpOnly": 0,
+          "agree": 351,
+          "disagree": 1,
+          "examples": [
+            {
+              "formId": "0x0013E25A",
+              "esmValue": "2.00",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000B7F53",
+              "esmValue": "0.10",
+              "dmpValue": "1.00",
+              "status": "Disagree"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "typeName": "Book",
+      "esmRecordCount": 27,
+      "dmpRecordCount": 26,
+      "matchedRecordCount": 26,
+      "esmOnlyRecordCount": 1,
+      "dmpOnlyRecordCount": 0,
+      "fields": [
+        {
+          "fieldName": "Flags",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 24,
+          "disagree": 2,
+          "examples": [
+            {
+              "formId": "0x000AB2EF",
+              "esmValue": "0x02",
+              "dmpValue": "0x00",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0002D3B2",
+              "esmValue": "0x02",
+              "dmpValue": "0x00",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "ModelPath",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 25,
+          "disagree": 0,
+          "examples": []
+        },
+        {
+          "fieldName": "Text",
+          "esmOnly": 25,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x000C5634",
+              "esmValue": "Wasteland Survival Guide",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000BACFE",
+              "esmValue": "Paradise Lost",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0006A80C",
+              "esmValue": "Duck and Cover!",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00034048",
+              "esmValue": "U.S. Army: 30 Handy Flamethrower Recipes",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00034046",
+              "esmValue": "Tumblers Today",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "Value",
+          "esmOnly": 24,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x000C5634",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000BACFE",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0006A80C",
+              "esmValue": "50",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00034048",
+              "esmValue": "50",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00034046",
+              "esmValue": "50",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "Weight",
+          "esmOnly": 24,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x000C5634",
+              "esmValue": "2.00",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000BACFE",
+              "esmValue": "2.00",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0006A80C",
+              "esmValue": "2.00",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00034048",
+              "esmValue": "2.00",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00034046",
+              "esmValue": "2.00",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "typeName": "Cell",
+      "esmRecordCount": 35191,
+      "dmpRecordCount": 434,
+      "matchedRecordCount": 426,
+      "esmOnlyRecordCount": 34765,
+      "dmpOnlyRecordCount": 8,
+      "fields": [
+        {
+          "fieldName": "Flags",
+          "esmOnly": 36,
+          "dmpOnly": 0,
+          "agree": 357,
+          "disagree": 33,
+          "examples": [
+            {
+              "formId": "0x000FB680",
+              "esmValue": "33",
+              "dmpValue": "1",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00129ADA",
+              "esmValue": "3",
+              "dmpValue": "1",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0010108B",
+              "esmValue": "35",
+              "dmpValue": "3",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00133E37",
+              "esmValue": "33",
+              "dmpValue": "1",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00141AA5",
+              "esmValue": "33",
+              "dmpValue": "1",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "GridX",
+          "esmOnly": 3,
+          "dmpOnly": 1,
+          "agree": 28,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x00113863",
+              "esmValue": "0",
+              "dmpValue": "5",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x000DADC6",
+              "esmValue": "-16",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000E1AAE",
+              "esmValue": "-17",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000E19B4",
+              "esmValue": "-15",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "GridY",
+          "esmOnly": 3,
+          "dmpOnly": 1,
+          "agree": 22,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x00113863",
+              "esmValue": "0",
+              "dmpValue": "-8",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x000DADC6",
+              "esmValue": "1",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000E1AAE",
+              "esmValue": "-2",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000E19B4",
+              "esmValue": "-2",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "HasHeightmap",
+          "esmOnly": 44,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x00014BE3",
+              "esmValue": "True",
+              "dmpValue": "False",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000FF571",
+              "esmValue": "True",
+              "dmpValue": "False",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000DA727",
+              "esmValue": "True",
+              "dmpValue": "False",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000846EA",
+              "esmValue": "True",
+              "dmpValue": "False",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0010D903",
+              "esmValue": "True",
+              "dmpValue": "False",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "HasWater",
+          "esmOnly": 43,
+          "dmpOnly": 1,
+          "agree": 71,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x00129ADA",
+              "esmValue": "True",
+              "dmpValue": "False",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0010D4ED",
+              "esmValue": "True",
+              "dmpValue": "False",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0012BE12",
+              "esmValue": "True",
+              "dmpValue": "False",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0012428E",
+              "esmValue": "False",
+              "dmpValue": "True",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x0010F23C",
+              "esmValue": "True",
+              "dmpValue": "False",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "IsInterior",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 379,
+          "disagree": 0,
+          "examples": []
+        },
+        {
+          "fieldName": "PlacedObjectCount",
+          "esmOnly": 45,
+          "dmpOnly": 6,
+          "agree": 4,
+          "disagree": 362,
+          "examples": [
+            {
+              "formId": "0x001206D8",
+              "esmValue": "3974",
+              "dmpValue": "231",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00121484",
+              "esmValue": "87",
+              "dmpValue": "10",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x000B9352",
+              "esmValue": "74",
+              "dmpValue": "4",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x000E2DBA",
+              "esmValue": "35",
+              "dmpValue": "2",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x000F0820",
+              "esmValue": "161",
+              "dmpValue": "4",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Worldspace",
+          "esmOnly": 13,
+          "dmpOnly": 0,
+          "agree": 25,
+          "disagree": 9,
+          "examples": [
+            {
+              "formId": "0x00014BE3",
+              "esmValue": "0x00014BE2",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00031E2A",
+              "esmValue": "0x00031E12",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00048965",
+              "esmValue": "0x00048964",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000FF571",
+              "esmValue": "0x000D703C",
+              "dmpValue": "0x00014F5B",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x000DA727",
+              "esmValue": "0x000D705D",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "typeName": "Consumable",
+      "esmRecordCount": 188,
+      "dmpRecordCount": 176,
+      "matchedRecordCount": 156,
+      "esmOnlyRecordCount": 32,
+      "dmpOnlyRecordCount": 20,
+      "fields": [
+        {
+          "fieldName": "Addiction",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 29,
+          "disagree": 0,
+          "examples": []
+        },
+        {
+          "fieldName": "AddictionChance",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 27,
+          "disagree": 0,
+          "examples": []
+        },
+        {
+          "fieldName": "Effects",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 52,
+          "disagree": 104,
+          "examples": [
+            {
+              "formId": "0x00151F7D",
+              "esmValue": "0x0000014E; 0x00020516; 0x00162BCC; 0x00032DE5",
+              "dmpValue": "0x0000014E; 0x0000014E; 0x00020516",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001449CA",
+              "esmValue": "0x0000014E; 0x00020516; 0x00162BCC",
+              "dmpValue": "0x0000014E; 0x0000014E; 0x00020516",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00143FF2",
+              "esmValue": "0x0000014E; 0x00020516; 0x00161F36; 0x00162BCC",
+              "dmpValue": "0x0000014E; 0x00020516",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00143FF1",
+              "esmValue": "0x0000014E; 0x00020516; 0x00161F36; 0x00161F36",
+              "dmpValue": "0x0000014E; 0x0000014E; 0x00020516",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00143FF0",
+              "esmValue": "0x0000014E; 0x00020516; 0x00031D77; 0x00162BCC",
+              "dmpValue": "0x0000014E; 0x00020516; 0x00031D77",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "ModelPath",
+          "esmOnly": 156,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x00151F7D",
+              "esmValue": "Clutter\\Food\\MoleMeat01.NIF",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014C11C",
+              "esmValue": "clutter\\chems\\buffout01.nif",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00146CCD",
+              "esmValue": "Clutter\\Chems\\Jet01.NIF",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00146CCB",
+              "esmValue": "Clutter\\Chems\\Mentats01.NIF",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00146CCA",
+              "esmValue": "Clutter\\Health\\PsychoChem01.NIF",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "Value",
+          "esmOnly": 6,
+          "dmpOnly": 0,
+          "agree": 139,
+          "disagree": 2,
+          "examples": [
+            {
+              "formId": "0x00136A1D",
+              "esmValue": "5",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000EC01E",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000EACA3",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000A29D6",
+              "esmValue": "5",
+              "dmpValue": "2",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x000E2F6D",
+              "esmValue": "40",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "Weight",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 108,
+          "disagree": 8,
+          "examples": [
+            {
+              "formId": "0x0013B2B4",
+              "esmValue": "0.02",
+              "dmpValue": "1.00",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x000EC01E",
+              "esmValue": "0.25",
+              "dmpValue": "1.00",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x000EC01C",
+              "esmValue": "0.20",
+              "dmpValue": "1.00",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x000EACA4",
+              "esmValue": "0.50",
+              "dmpValue": "1.00",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x000E9AD1",
+              "esmValue": "0.25",
+              "dmpValue": "1.00",
+              "status": "Disagree"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "typeName": "Container",
+      "esmRecordCount": 2475,
+      "dmpRecordCount": 836,
+      "matchedRecordCount": 834,
+      "esmOnlyRecordCount": 1641,
+      "dmpOnlyRecordCount": 2,
+      "fields": [
+        {
+          "fieldName": "Contents",
+          "esmOnly": 0,
+          "dmpOnly": 1,
+          "agree": 206,
+          "disagree": 510,
+          "examples": [
+            {
+              "formId": "0x001538C0",
+              "esmValue": "LootArmorCombat75x1; LootArmorCombatHelmet50x1",
+              "dmpValue": "LootArmorCombatHelmet50x1; LootArmorCombat75x1",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001538BC",
+              "esmValue": "LootArmorLeather75x1; LootArmorLeather75x1",
+              "dmpValue": "LootArmorLeather75x2",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001538BB",
+              "esmValue": "LootArmorMetalHelmet50x1; LootArmorMetal75x1",
+              "dmpValue": "LootArmorMetal75x1; LootArmorMetalHelmet50x1",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001538BA",
+              "esmValue": "LootArmorPowerHelmet50x1; LootArmorPower75x1; LootStealthBoy10x1",
+              "dmpValue": "LootStealthBoy10x1; LootArmorPower75x1; LootArmorPowerHelmet50x1",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001538B7",
+              "esmValue": "LootArmorFiend1ArmorAllx1; LootArmorFiendHelmetAll25x2",
+              "dmpValue": "LootArmorFiendHelmetAll25x2; LootArmorFiend1ArmorAllx1",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "ItemCount",
+          "esmOnly": 0,
+          "dmpOnly": 1,
+          "agree": 647,
+          "disagree": 69,
+          "examples": [
+            {
+              "formId": "0x001538BC",
+              "esmValue": "2",
+              "dmpValue": "1",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014CCDC",
+              "esmValue": "8",
+              "dmpValue": "5",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00146CBE",
+              "esmValue": "25",
+              "dmpValue": "1",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00141289",
+              "esmValue": "6",
+              "dmpValue": "7",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0013744B",
+              "esmValue": "6",
+              "dmpValue": "5",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "ModelPath",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 831,
+          "disagree": 3,
+          "examples": [
+            {
+              "formId": "0x0014B05F",
+              "esmValue": "clutter\\NV_Mojave-Express_Dropbox\\NV_Mojave-Express_Dropbox.NIF",
+              "dmpValue": "clutter\\footlocker\\footlocker01.nif",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x000CE88A",
+              "esmValue": "clutter\\chest\\ExteriorHiddenChest.nif",
+              "dmpValue": "Clutter\\Chest\\SteamerTrunk01.NIF",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x000CAFBF",
+              "esmValue": "landscape\\NV_Rocks\\NVN_RockCanyon10.nif",
+              "dmpValue": "Landscape\\Rocks\\RockCanyon03.NIF",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Respawns",
+          "esmOnly": 11,
+          "dmpOnly": 589,
+          "agree": 92,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x001522CE",
+              "esmValue": "True",
+              "dmpValue": "False",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00151F0D",
+              "esmValue": "True",
+              "dmpValue": "False",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014CCDC",
+              "esmValue": "True",
+              "dmpValue": "False",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00146F19",
+              "esmValue": "True",
+              "dmpValue": "False",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00146CBE",
+              "esmValue": "True",
+              "dmpValue": "False",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "Script",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 93,
+          "disagree": 0,
+          "examples": []
+        }
+      ]
+    },
+    {
+      "typeName": "Creature",
+      "esmRecordCount": 1576,
+      "dmpRecordCount": 943,
+      "matchedRecordCount": 929,
+      "esmOnlyRecordCount": 647,
+      "dmpOnlyRecordCount": 14,
+      "fields": [
+        {
+          "fieldName": "AttackDamage",
+          "esmOnly": 7,
+          "dmpOnly": 1,
+          "agree": 682,
+          "disagree": 24,
+          "examples": [
+            {
+              "formId": "0x001532FF",
+              "esmValue": "85",
+              "dmpValue": "70",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151828",
+              "esmValue": "20",
+              "dmpValue": "30",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151827",
+              "esmValue": "20",
+              "dmpValue": "30",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014F477",
+              "esmValue": "45",
+              "dmpValue": "40",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014F400",
+              "esmValue": "65",
+              "dmpValue": "60",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "CombatSkill",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 903,
+          "disagree": 26,
+          "examples": [
+            {
+              "formId": "0x0014F479",
+              "esmValue": "100",
+              "dmpValue": "40",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014F42B",
+              "esmValue": "100",
+              "dmpValue": "60",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00136B11",
+              "esmValue": "40",
+              "dmpValue": "50",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001365B5",
+              "esmValue": "55",
+              "dmpValue": "50",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001365A6",
+              "esmValue": "65",
+              "dmpValue": "50",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "CreatureType",
+          "esmOnly": 7,
+          "dmpOnly": 0,
+          "agree": 657,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x00136B11",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001365B5",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001365A6",
+              "esmValue": "3",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00135F44",
+              "esmValue": "2",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00135BCF",
+              "esmValue": "2",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "Factions",
+          "esmOnly": 7,
+          "dmpOnly": 2,
+          "agree": 432,
+          "disagree": 372,
+          "examples": [
+            {
+              "formId": "0x001532FE",
+              "esmValue": "0x0007E276:Rank0; 0x0002147A:Rank0",
+              "dmpValue": "0x0002147A:Rank0; 0x0007E276:Rank0",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151828",
+              "esmValue": "0x0011A9F4:Rank0; 0x00140713:Rank0; 0x00140A88:Rank0",
+              "dmpValue": "0x00140A88:Rank0; 0x00140713:Rank0; 0x0011A9F4:Rank0",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151827",
+              "esmValue": "0x0011A9F4:Rank0; 0x00140713:Rank0; 0x00140A88:Rank0",
+              "dmpValue": "0x00140A88:Rank0; 0x00140713:Rank0; 0x0011A9F4:Rank0",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014F482",
+              "esmValue": "0x00000013:Rank0; 0x0002147A:Rank0; 0x0007E276:Rank0",
+              "dmpValue": "0x0007E276:Rank0; 0x0002147A:Rank0; 0x00000013:Rank0",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014F481",
+              "esmValue": "0x0007E26B:Rank0; 0x0005FF9F:Rank0; 0x00021479:Rank0; 0x00000013:Rank0",
+              "dmpValue": "0x00000013:Rank0; 0x00021479:Rank0; 0x0005FF9F:Rank0; 0x0007E26B:Rank0",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Level",
+          "esmOnly": 35,
+          "dmpOnly": 2,
+          "agree": 826,
+          "disagree": 54,
+          "examples": [
+            {
+              "formId": "0x001532FF",
+              "esmValue": "18",
+              "dmpValue": "17",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151828",
+              "esmValue": "7",
+              "dmpValue": "10",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151827",
+              "esmValue": "7",
+              "dmpValue": "10",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014F477",
+              "esmValue": "11",
+              "dmpValue": "9",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014F476",
+              "esmValue": "9",
+              "dmpValue": "11",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "MagicSkill",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 929,
+          "disagree": 0,
+          "examples": []
+        },
+        {
+          "fieldName": "ModelPath",
+          "esmOnly": 30,
+          "dmpOnly": 1,
+          "agree": 715,
+          "disagree": 2,
+          "examples": [
+            {
+              "formId": "0x0013A2AD",
+              "esmValue": "marker_creature.nif",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00136B11",
+              "esmValue": "creatures\\NVgiantrat\\skeleton.nif",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001365B5",
+              "esmValue": "creatures\\NVGecko\\skeleton.nif",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001365A6",
+              "esmValue": "creatures\\NightStalker\\Skeleton.nif",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00135F44",
+              "esmValue": "creatures\\NVCazadores\\Skeleton.nif",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "StealthSkill",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 929,
+          "disagree": 0,
+          "examples": []
+        }
+      ]
+    },
+    {
+      "typeName": "Faction",
+      "esmRecordCount": 665,
+      "dmpRecordCount": 593,
+      "matchedRecordCount": 589,
+      "esmOnlyRecordCount": 76,
+      "dmpOnlyRecordCount": 4,
+      "fields": [
+        {
+          "fieldName": "Flags",
+          "esmOnly": 0,
+          "dmpOnly": 406,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x001532B8",
+              "esmValue": "0",
+              "dmpValue": "1",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x00152E91",
+              "esmValue": "0",
+              "dmpValue": "257",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x0014F446",
+              "esmValue": "0",
+              "dmpValue": "1",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x0014F422",
+              "esmValue": "0",
+              "dmpValue": "1",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x0014F3FB",
+              "esmValue": "0",
+              "dmpValue": "1",
+              "status": "DmpOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "IsHiddenFromPlayer",
+          "esmOnly": 0,
+          "dmpOnly": 335,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x001532B8",
+              "esmValue": "False",
+              "dmpValue": "True",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x00152E91",
+              "esmValue": "False",
+              "dmpValue": "True",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x0014F446",
+              "esmValue": "False",
+              "dmpValue": "True",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x0014F422",
+              "esmValue": "False",
+              "dmpValue": "True",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x0014F3FB",
+              "esmValue": "False",
+              "dmpValue": "True",
+              "status": "DmpOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "RankCount",
+          "esmOnly": 56,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x001164B4",
+              "esmValue": "2",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0010C6F8",
+              "esmValue": "3",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0008D395",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000805A3",
+              "esmValue": "5",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0007FC25",
+              "esmValue": "5",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "Ranks",
+          "esmOnly": 56,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x001164B4",
+              "esmValue": "0:Straight; 1:Gay",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0010C6F8",
+              "esmValue": "0:(unnamed); 1:Muscle; 2:Boss",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0008D395",
+              "esmValue": "0:(unnamed)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000805A3",
+              "esmValue": "0:Grunt; 1:Taskmaster; 2:Spinebreaker; 3:Monstrosity; 4:Behemoth",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0007FC25",
+              "esmValue": "0:Grunt; 1:Taskmaster; 2:Spinebreaker; 3:Monstrosity; 4:Behemoth",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "RelationCount",
+          "esmOnly": 2,
+          "dmpOnly": 0,
+          "agree": 310,
+          "disagree": 62,
+          "examples": [
+            {
+              "formId": "0x00152E91",
+              "esmValue": "4",
+              "dmpValue": "2",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014F446",
+              "esmValue": "2",
+              "dmpValue": "1",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014F422",
+              "esmValue": "4",
+              "dmpValue": "1",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014F3FB",
+              "esmValue": "3",
+              "dmpValue": "1",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014F3FA",
+              "esmValue": "3",
+              "dmpValue": "1",
+              "status": "Disagree"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "typeName": "Key",
+      "esmRecordCount": 283,
+      "dmpRecordCount": 228,
+      "matchedRecordCount": 227,
+      "esmOnlyRecordCount": 56,
+      "dmpOnlyRecordCount": 1,
+      "fields": [
+        {
+          "fieldName": "ModelPath",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 211,
+          "disagree": 0,
+          "examples": []
+        },
+        {
+          "fieldName": "Value",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 210,
+          "disagree": 0,
+          "examples": []
+        }
+      ]
+    },
+    {
+      "typeName": "LeveledList",
+      "esmRecordCount": 2900,
+      "dmpRecordCount": 1864,
+      "matchedRecordCount": 1819,
+      "esmOnlyRecordCount": 1081,
+      "dmpOnlyRecordCount": 45,
+      "fields": [
+        {
+          "fieldName": "ChanceNone",
+          "esmOnly": 3,
+          "dmpOnly": 1,
+          "agree": 365,
+          "disagree": 8,
+          "examples": [
+            {
+              "formId": "0x0014DE52",
+              "esmValue": "25",
+              "dmpValue": "75",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014DE50",
+              "esmValue": "25",
+              "dmpValue": "75",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014DE3F",
+              "esmValue": "25",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014DE33",
+              "esmValue": "25",
+              "dmpValue": "23",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014DE31",
+              "esmValue": "25",
+              "dmpValue": "23",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "EntryCount",
+          "esmOnly": 1,
+          "dmpOnly": 14,
+          "agree": 1610,
+          "disagree": 160,
+          "examples": [
+            {
+              "formId": "0x00152DFB",
+              "esmValue": "2",
+              "dmpValue": "3",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014E770",
+              "esmValue": "5",
+              "dmpValue": "3",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014E76D",
+              "esmValue": "5",
+              "dmpValue": "4",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014E76B",
+              "esmValue": "2",
+              "dmpValue": "5",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014E769",
+              "esmValue": "1",
+              "dmpValue": "2",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Flags",
+          "esmOnly": 2,
+          "dmpOnly": 4,
+          "agree": 1404,
+          "disagree": 15,
+          "examples": [
+            {
+              "formId": "0x0014DE5A",
+              "esmValue": "4",
+              "dmpValue": "3",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014DE59",
+              "esmValue": "4",
+              "dmpValue": "3",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014DE58",
+              "esmValue": "4",
+              "dmpValue": "3",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014DE57",
+              "esmValue": "4",
+              "dmpValue": "3",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014DE56",
+              "esmValue": "4",
+              "dmpValue": "3",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "ListType",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 1819,
+          "disagree": 0,
+          "examples": []
+        }
+      ]
+    },
+    {
+      "typeName": "MiscItem",
+      "esmRecordCount": 505,
+      "dmpRecordCount": 411,
+      "matchedRecordCount": 407,
+      "esmOnlyRecordCount": 98,
+      "dmpOnlyRecordCount": 4,
+      "fields": [
+        {
+          "fieldName": "ModelPath",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 355,
+          "disagree": 21,
+          "examples": [
+            {
+              "formId": "0x0013D52F",
+              "esmValue": "clutter\\hides\\NVGeckohideTanned.NIF",
+              "dmpValue": "Clutter\\QuestItems\\Radscorpiongland.NIF",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0013D52E",
+              "esmValue": "clutter\\hides\\NVGeckohideGoldenTanned.NIF",
+              "dmpValue": "Clutter\\QuestItems\\Radscorpiongland.NIF",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0013D52D",
+              "esmValue": "clutter\\hides\\NVGeckohideFireTanned.NIF",
+              "dmpValue": "Clutter\\QuestItems\\Radscorpiongland.NIF",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0013B2B7",
+              "esmValue": "clutter\\hides\\NVGeckohideFire.NIF",
+              "dmpValue": "Clutter\\QuestItems\\Radscorpiongland.NIF",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0013B2B6",
+              "esmValue": "clutter\\hides\\NVGeckohideGolden.NIF",
+              "dmpValue": "Clutter\\QuestItems\\Radscorpiongland.NIF",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Value",
+          "esmOnly": 5,
+          "dmpOnly": 0,
+          "agree": 272,
+          "disagree": 2,
+          "examples": [
+            {
+              "formId": "0x0013B2B2",
+              "esmValue": "5",
+              "dmpValue": "1",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001349C2",
+              "esmValue": "100",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001343E8",
+              "esmValue": "100",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000EE6CC",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0008E665",
+              "esmValue": "3",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "Weight",
+          "esmOnly": 1,
+          "dmpOnly": 4,
+          "agree": 244,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x00148C25",
+              "esmValue": "0.00",
+              "dmpValue": "1.00",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x00144EB6",
+              "esmValue": "0.00",
+              "dmpValue": "1.00",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x00144674",
+              "esmValue": "0.00",
+              "dmpValue": "1.00",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x000E7C18",
+              "esmValue": "0.00",
+              "dmpValue": "1.00",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x0008E664",
+              "esmValue": "0.10",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "typeName": "NPC",
+      "esmRecordCount": 3764,
+      "dmpRecordCount": 2979,
+      "matchedRecordCount": 2935,
+      "esmOnlyRecordCount": 829,
+      "dmpOnlyRecordCount": 44,
+      "fields": [
+        {
+          "fieldName": "Aggression",
+          "esmOnly": 53,
+          "dmpOnly": 7,
+          "agree": 1607,
+          "disagree": 48,
+          "examples": [
+            {
+              "formId": "0x00151DC8",
+              "esmValue": "0",
+              "dmpValue": "1",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x0014F48B",
+              "esmValue": "0",
+              "dmpValue": "1",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x00145F8A",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00144EB7",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0013D7E1",
+              "esmValue": "1",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "Barter",
+          "esmOnly": 12,
+          "dmpOnly": 0,
+          "agree": 2558,
+          "disagree": 365,
+          "examples": [
+            {
+              "formId": "0x001536D3",
+              "esmValue": "12",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "12",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00151E1C",
+              "esmValue": "15",
+              "dmpValue": "12",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151A6A",
+              "esmValue": "15",
+              "dmpValue": "12",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151824",
+              "esmValue": "15",
+              "dmpValue": "12",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "CalcMax",
+          "esmOnly": 93,
+          "dmpOnly": 0,
+          "agree": 66,
+          "disagree": 3,
+          "examples": [
+            {
+              "formId": "0x00152CC3",
+              "esmValue": "20",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152CC2",
+              "esmValue": "20",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152CC1",
+              "esmValue": "20",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152CC0",
+              "esmValue": "20",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152CBF",
+              "esmValue": "20",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "CalcMin",
+          "esmOnly": 86,
+          "dmpOnly": 3,
+          "agree": 1274,
+          "disagree": 39,
+          "examples": [
+            {
+              "formId": "0x001536D3",
+              "esmValue": "1",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "1",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152CC3",
+              "esmValue": "10",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152CC2",
+              "esmValue": "10",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152CC1",
+              "esmValue": "10",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "Class",
+          "esmOnly": 12,
+          "dmpOnly": 0,
+          "agree": 2870,
+          "disagree": 53,
+          "examples": [
+            {
+              "formId": "0x001536D3",
+              "esmValue": "WastelandAdventurer (0x0001873D)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "WastelandAdventurer (0x0001873D)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00144EB7",
+              "esmValue": "Legionary (0x00127736)",
+              "dmpValue": "VaultDweller (0x00000801)",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0013D7E1",
+              "esmValue": "NCRRanger (0x0008D424)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001344FF",
+              "esmValue": "RaiderGuns (0x0001945E)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "CombatStyle",
+          "esmOnly": 0,
+          "dmpOnly": 2471,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x00153A07",
+              "esmValue": "",
+              "dmpValue": "CSRaider (0x0002A44B)",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x001536DA",
+              "esmValue": "",
+              "dmpValue": "DefaultCombatstyle (0x0000003D)",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x0015362A",
+              "esmValue": "",
+              "dmpValue": "CSRaider (0x0002A44B)",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x00153628",
+              "esmValue": "",
+              "dmpValue": "CSRaider (0x0002A44B)",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x00153626",
+              "esmValue": "",
+              "dmpValue": "CSRaider (0x0002A44B)",
+              "status": "DmpOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "Confidence",
+          "esmOnly": 17,
+          "dmpOnly": 33,
+          "agree": 2497,
+          "disagree": 74,
+          "examples": [
+            {
+              "formId": "0x001536D3",
+              "esmValue": "3",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "3",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00151E1C",
+              "esmValue": "0",
+              "dmpValue": "3",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x00151E1B",
+              "esmValue": "0",
+              "dmpValue": "3",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x00151E1A",
+              "esmValue": "0",
+              "dmpValue": "3",
+              "status": "DmpOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "EnergyLevel",
+          "esmOnly": 13,
+          "dmpOnly": 0,
+          "agree": 2900,
+          "disagree": 14,
+          "examples": [
+            {
+              "formId": "0x001536D3",
+              "esmValue": "100",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "100",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0013D7E1",
+              "esmValue": "50",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001344FF",
+              "esmValue": "100",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00129550",
+              "esmValue": "20",
+              "dmpValue": "50",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "EnergyWeapons",
+          "esmOnly": 12,
+          "dmpOnly": 0,
+          "agree": 2890,
+          "disagree": 33,
+          "examples": [
+            {
+              "formId": "0x001536D3",
+              "esmValue": "47",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "47",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0013D7E1",
+              "esmValue": "47",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001344FF",
+              "esmValue": "47",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00127955",
+              "esmValue": "5",
+              "dmpValue": "12",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Explosives",
+          "esmOnly": 12,
+          "dmpOnly": 0,
+          "agree": 2553,
+          "disagree": 370,
+          "examples": [
+            {
+              "formId": "0x001536D3",
+              "esmValue": "14",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "14",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00151E1C",
+              "esmValue": "15",
+              "dmpValue": "16",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151A6A",
+              "esmValue": "15",
+              "dmpValue": "16",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151824",
+              "esmValue": "15",
+              "dmpValue": "16",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Factions",
+          "esmOnly": 44,
+          "dmpOnly": 13,
+          "agree": 546,
+          "disagree": 1866,
+          "examples": [
+            {
+              "formId": "0x00153792",
+              "esmValue": "0x000711A6:Rank0; 0x0011A9F2:Rank0; 0x00134B6C:Rank0; 0x000A46E7:Rank0; 0x0013F8B6:Rank0; 0x0013F8B3:Rank0; 0x00140A88:Rank0",
+              "dmpValue": "0x00140A88:Rank0; 0x0013F8B3:Rank0; 0x0013F8B6:Rank0; 0x000A46E7:Rank0; 0x00134B6C:Rank0; 0x0011A9F2:Rank0; 0x000711A6:Rank0",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001536DA",
+              "esmValue": "0x0013F8A4:Rank0; 0x0013F89B:Rank0; 0x00152E91:Rank0; 0x000711A6:Rank0",
+              "dmpValue": "0x000711A6:Rank0; 0x0013F8B6:Rank0; 0x0013F8B4:Rank0",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001536D3",
+              "esmValue": "0x0013F8A4:Rank0; 0x0013F89B:Rank0; 0x00152E91:Rank0; 0x000711A6:Rank0",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0015362A",
+              "esmValue": "0x000448D1:Rank0; 0x000B87B3:Rank0; 0x00021476:Rank0; 0x000711A6:Rank0; 0x000711A4:Rank0",
+              "dmpValue": "0x000711A4:Rank0; 0x000711A6:Rank0; 0x00021476:Rank0; 0x000B87B3:Rank0; 0x000448D1:Rank0",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00153628",
+              "esmValue": "0x000448D1:Rank0; 0x000B87B3:Rank0; 0x00021476:Rank0; 0x000711A6:Rank0; 0x000711A4:Rank0",
+              "dmpValue": "0x000711A4:Rank0; 0x000711A6:Rank0; 0x00021476:Rank0; 0x000B87B3:Rank0; 0x000448D1:Rank0",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Flags",
+          "esmOnly": 53,
+          "dmpOnly": 38,
+          "agree": 2139,
+          "disagree": 216,
+          "examples": [
+            {
+              "formId": "0x001536DA",
+              "esmValue": "17",
+              "dmpValue": "145",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001536D3",
+              "esmValue": "513",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "512",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152CC3",
+              "esmValue": "665",
+              "dmpValue": "537",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00152CC2",
+              "esmValue": "665",
+              "dmpValue": "537",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Gender",
+          "esmOnly": 12,
+          "dmpOnly": 0,
+          "agree": 2918,
+          "disagree": 5,
+          "examples": [
+            {
+              "formId": "0x001536D3",
+              "esmValue": "Female",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "Male",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00145CFD",
+              "esmValue": "Female",
+              "dmpValue": "Male",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00145CFC",
+              "esmValue": "Female",
+              "dmpValue": "Male",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0013D7E1",
+              "esmValue": "Male",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "Guns",
+          "esmOnly": 12,
+          "dmpOnly": 0,
+          "agree": 2453,
+          "disagree": 470,
+          "examples": [
+            {
+              "formId": "0x001536D3",
+              "esmValue": "14",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "14",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152DF9",
+              "esmValue": "15",
+              "dmpValue": "46",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00152DF8",
+              "esmValue": "15",
+              "dmpValue": "46",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00152DF6",
+              "esmValue": "15",
+              "dmpValue": "46",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Height",
+          "esmOnly": 464,
+          "dmpOnly": 0,
+          "agree": 2435,
+          "disagree": 36,
+          "examples": [
+            {
+              "formId": "0x00153792",
+              "esmValue": "1.00",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001536D3",
+              "esmValue": "1.00",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "1.00",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152E06",
+              "esmValue": "1.00",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152CC4",
+              "esmValue": "1.00",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "Inventory",
+          "esmOnly": 18,
+          "dmpOnly": 1,
+          "agree": 619,
+          "disagree": 1823,
+          "examples": [
+            {
+              "formId": "0x00153A07",
+              "esmValue": "0x0011F3E6x1; 0x0011F3E0x1; 0x000F9DCFx1",
+              "dmpValue": "0x000F9DCFx1; 0x0011F3E0x1; 0x0011F3E6x1",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001536DA",
+              "esmValue": "0x00162963x1; 0x00162957x1; 0x00162962x1; 0x0016295Fx1; 0x00162960x1; 0x0016295Cx1; 0x0016295Dx1; 0x00162959x1; 0x0016295Ax1; 0x0012D511x1; 0x0012D513x1; 0x0012D512x1; 0x00162956x1",
+              "dmpValue": "0x000E3983x1; 0x0002B385x1; 0x00078648x1",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001536D3",
+              "esmValue": "0x00162956x1; 0x0012D512x1; 0x0012D513x1; 0x0012D511x1; 0x0016295Ax1; 0x00162959x1; 0x0016295Dx1; 0x0016295Cx1; 0x00162960x1; 0x0016295Fx1; 0x00162962x1; 0x00162957x1; 0x00162963x1",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0015362A",
+              "esmValue": "0x000C5C23x1; 0x000CEA95x1; 0x000239D4x1; 0x000BDA3Bx1",
+              "dmpValue": "0x000BDA3Bx1; 0x000239D4x1; 0x000CEA95x1; 0x000C5C23x1",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00153628",
+              "esmValue": "0x000C5C23x1; 0x000CEA95x1; 0x000239D4x1; 0x000BDA3Bx1",
+              "dmpValue": "0x000BDA3Bx1; 0x000239D4x1; 0x000CEA95x1; 0x000C5C23x1",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Level",
+          "esmOnly": 12,
+          "dmpOnly": 11,
+          "agree": 2687,
+          "disagree": 216,
+          "examples": [
+            {
+              "formId": "0x001536DA",
+              "esmValue": "1",
+              "dmpValue": "1000",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001536D3",
+              "esmValue": "6",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "6",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152CC3",
+              "esmValue": "1000",
+              "dmpValue": "15",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00152CC2",
+              "esmValue": "1000",
+              "dmpValue": "15",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Lockpick",
+          "esmOnly": 12,
+          "dmpOnly": 0,
+          "agree": 2568,
+          "disagree": 355,
+          "examples": [
+            {
+              "formId": "0x001536D3",
+              "esmValue": "14",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "14",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00151E1C",
+              "esmValue": "15",
+              "dmpValue": "16",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151A6A",
+              "esmValue": "15",
+              "dmpValue": "16",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151824",
+              "esmValue": "15",
+              "dmpValue": "16",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Medicine",
+          "esmOnly": 12,
+          "dmpOnly": 0,
+          "agree": 2562,
+          "disagree": 361,
+          "examples": [
+            {
+              "formId": "0x001536D3",
+              "esmValue": "12",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "12",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00151E1C",
+              "esmValue": "15",
+              "dmpValue": "12",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151A6A",
+              "esmValue": "15",
+              "dmpValue": "12",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151824",
+              "esmValue": "15",
+              "dmpValue": "12",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "MeleeWeapons",
+          "esmOnly": 12,
+          "dmpOnly": 0,
+          "agree": 2506,
+          "disagree": 417,
+          "examples": [
+            {
+              "formId": "0x001536D3",
+              "esmValue": "51",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "51",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00151E1C",
+              "esmValue": "46",
+              "dmpValue": "16",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151A6A",
+              "esmValue": "46",
+              "dmpValue": "16",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151824",
+              "esmValue": "46",
+              "dmpValue": "16",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Mood",
+          "esmOnly": 1,
+          "dmpOnly": 1,
+          "agree": 217,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x0013FE79",
+              "esmValue": "7",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00127955",
+              "esmValue": "0",
+              "dmpValue": "5",
+              "status": "DmpOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "Packages",
+          "esmOnly": 64,
+          "dmpOnly": 10,
+          "agree": 1866,
+          "disagree": 412,
+          "examples": [
+            {
+              "formId": "0x001536D3",
+              "esmValue": "0x000FDA92; 0x00025754",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0015362A",
+              "esmValue": "",
+              "dmpValue": "0x00023619; 0x00074FE6",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "0x000FDA92; 0x00025754",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152E04",
+              "esmValue": "0x00018E6A",
+              "dmpValue": "0x0002FA29",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00152E03",
+              "esmValue": "0x00018E6A",
+              "dmpValue": "0x0002FA29",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Race",
+          "esmOnly": 12,
+          "dmpOnly": 0,
+          "agree": 2888,
+          "disagree": 35,
+          "examples": [
+            {
+              "formId": "0x001536D3",
+              "esmValue": "Caucasian (0x00000019)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "Caucasian (0x00000019)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00145CFD",
+              "esmValue": "Hispanic (0x000038E5)",
+              "dmpValue": "Caucasian (0x00000019)",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00145CFA",
+              "esmValue": "AfricanAmerican (0x0000424A)",
+              "dmpValue": "Caucasian (0x00000019)",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00143924",
+              "esmValue": "Hispanic (0x000038E5)",
+              "dmpValue": "Caucasian (0x00000019)",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Repair",
+          "esmOnly": 12,
+          "dmpOnly": 0,
+          "agree": 2569,
+          "disagree": 354,
+          "examples": [
+            {
+              "formId": "0x001536D3",
+              "esmValue": "12",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "12",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00151E1C",
+              "esmValue": "15",
+              "dmpValue": "12",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151A6A",
+              "esmValue": "15",
+              "dmpValue": "12",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151824",
+              "esmValue": "15",
+              "dmpValue": "12",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Responsibility",
+          "esmOnly": 12,
+          "dmpOnly": 0,
+          "agree": 2874,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x001536D3",
+              "esmValue": "50",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "50",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0013D7E1",
+              "esmValue": "50",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001344FF",
+              "esmValue": "50",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000F512D",
+              "esmValue": "50",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "SPECIAL_AG",
+          "esmOnly": 112,
+          "dmpOnly": 0,
+          "agree": 2773,
+          "disagree": 50,
+          "examples": [
+            {
+              "formId": "0x001536D3",
+              "esmValue": "6",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "6",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014F48B",
+              "esmValue": "5",
+              "dmpValue": "9",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014F3C3",
+              "esmValue": "5",
+              "dmpValue": "9",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014C614",
+              "esmValue": "5",
+              "dmpValue": "7",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "SPECIAL_CH",
+          "esmOnly": 112,
+          "dmpOnly": 0,
+          "agree": 2475,
+          "disagree": 347,
+          "examples": [
+            {
+              "formId": "0x001536D3",
+              "esmValue": "4",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "4",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00151E1C",
+              "esmValue": "5",
+              "dmpValue": "4",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151A6A",
+              "esmValue": "5",
+              "dmpValue": "4",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151824",
+              "esmValue": "5",
+              "dmpValue": "4",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "SPECIAL_EN",
+          "esmOnly": 112,
+          "dmpOnly": 0,
+          "agree": 2446,
+          "disagree": 377,
+          "examples": [
+            {
+              "formId": "0x001536D3",
+              "esmValue": "5",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "5",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00151E1C",
+              "esmValue": "5",
+              "dmpValue": "6",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151A6A",
+              "esmValue": "5",
+              "dmpValue": "6",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151824",
+              "esmValue": "5",
+              "dmpValue": "6",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "SPECIAL_IN",
+          "esmOnly": 112,
+          "dmpOnly": 0,
+          "agree": 2485,
+          "disagree": 338,
+          "examples": [
+            {
+              "formId": "0x001536D3",
+              "esmValue": "4",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "4",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00151E1C",
+              "esmValue": "5",
+              "dmpValue": "4",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151A6A",
+              "esmValue": "5",
+              "dmpValue": "4",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151824",
+              "esmValue": "5",
+              "dmpValue": "4",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "SPECIAL_LK",
+          "esmOnly": 112,
+          "dmpOnly": 0,
+          "agree": 2493,
+          "disagree": 330,
+          "examples": [
+            {
+              "formId": "0x001536D3",
+              "esmValue": "4",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "4",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00151E1C",
+              "esmValue": "5",
+              "dmpValue": "4",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151A6A",
+              "esmValue": "5",
+              "dmpValue": "4",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151824",
+              "esmValue": "5",
+              "dmpValue": "4",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "SPECIAL_PE",
+          "esmOnly": 112,
+          "dmpOnly": 0,
+          "agree": 2490,
+          "disagree": 333,
+          "examples": [
+            {
+              "formId": "0x001536D3",
+              "esmValue": "6",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "6",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00151E1C",
+              "esmValue": "5",
+              "dmpValue": "6",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151A6A",
+              "esmValue": "5",
+              "dmpValue": "6",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151824",
+              "esmValue": "5",
+              "dmpValue": "6",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "SPECIAL_ST",
+          "esmOnly": 112,
+          "dmpOnly": 0,
+          "agree": 2482,
+          "disagree": 341,
+          "examples": [
+            {
+              "formId": "0x001536D3",
+              "esmValue": "6",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "6",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00151E1C",
+              "esmValue": "5",
+              "dmpValue": "6",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151A6A",
+              "esmValue": "5",
+              "dmpValue": "6",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151824",
+              "esmValue": "5",
+              "dmpValue": "6",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Science",
+          "esmOnly": 12,
+          "dmpOnly": 0,
+          "agree": 2547,
+          "disagree": 376,
+          "examples": [
+            {
+              "formId": "0x001536D3",
+              "esmValue": "12",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "12",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00151E1C",
+              "esmValue": "15",
+              "dmpValue": "12",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151A6A",
+              "esmValue": "15",
+              "dmpValue": "12",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151824",
+              "esmValue": "15",
+              "dmpValue": "12",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Script",
+          "esmOnly": 199,
+          "dmpOnly": 3,
+          "agree": 603,
+          "disagree": 60,
+          "examples": [
+            {
+              "formId": "0x00152CC3",
+              "esmValue": "NCRSnifferScript (0x00126775)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152CC2",
+              "esmValue": "NCRSnifferScript (0x00126775)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152CC1",
+              "esmValue": "NCRSnifferScript (0x00126775)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152CC0",
+              "esmValue": "NCRSnifferScript (0x00126775)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152CBF",
+              "esmValue": "NCRSnifferScript (0x00126775)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "Sneak",
+          "esmOnly": 12,
+          "dmpOnly": 0,
+          "agree": 2479,
+          "disagree": 444,
+          "examples": [
+            {
+              "formId": "0x001536D3",
+              "esmValue": "51",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "51",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152CC3",
+              "esmValue": "68",
+              "dmpValue": "88",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00152CC2",
+              "esmValue": "68",
+              "dmpValue": "88",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00152CC1",
+              "esmValue": "68",
+              "dmpValue": "88",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Speech",
+          "esmOnly": 12,
+          "dmpOnly": 0,
+          "agree": 2528,
+          "disagree": 395,
+          "examples": [
+            {
+              "formId": "0x001536D3",
+              "esmValue": "51",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "51",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152CC3",
+              "esmValue": "68",
+              "dmpValue": "88",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00152CC2",
+              "esmValue": "68",
+              "dmpValue": "88",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00152CC1",
+              "esmValue": "68",
+              "dmpValue": "88",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Spells",
+          "esmOnly": 1,
+          "dmpOnly": 13,
+          "agree": 78,
+          "disagree": 36,
+          "examples": [
+            {
+              "formId": "0x0014EF5C",
+              "esmValue": "0x00094EC0; 0x00031D7D",
+              "dmpValue": "0x00031D7D; 0x00094EC0",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001474CC",
+              "esmValue": "0x00031D7D; 0x00094EC0",
+              "dmpValue": "0x00094EC0; 0x00031D7D",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001428ED",
+              "esmValue": "0x000617BE; 0x000617BD",
+              "dmpValue": "0x000617BD; 0x000617BE",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001300AA",
+              "esmValue": "0x00060C16; 0x000B7CC9; 0x0007D4F3",
+              "dmpValue": "0x0007D4F3; 0x000B7CC9; 0x00060C16",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0010C0BE",
+              "esmValue": "0x00031D7D; 0x00094EC0",
+              "dmpValue": "0x00094EC0; 0x00031D7D",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Survival",
+          "esmOnly": 12,
+          "dmpOnly": 0,
+          "agree": 2560,
+          "disagree": 363,
+          "examples": [
+            {
+              "formId": "0x001536D3",
+              "esmValue": "12",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "12",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00151E1C",
+              "esmValue": "15",
+              "dmpValue": "12",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151A6A",
+              "esmValue": "15",
+              "dmpValue": "12",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151824",
+              "esmValue": "15",
+              "dmpValue": "12",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Template",
+          "esmOnly": 512,
+          "dmpOnly": 14,
+          "agree": 1291,
+          "disagree": 110,
+          "examples": [
+            {
+              "formId": "0x00153792",
+              "esmValue": "VarStreetFluffTravelerB (0x00120B6E)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001536D3",
+              "esmValue": "NVProspectorMale (0x001532FD)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152E06",
+              "esmValue": "VarMojaveCivilianAddict (0x00152E05)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152DF9",
+              "esmValue": "LegionaryRecruitAAMTemplate (0x00139385)",
+              "dmpValue": "LegionRecruitAAMTemplate (0x00139385)",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00152DF8",
+              "esmValue": "LegionaryRecruitAAMTemplate (0x00139385)",
+              "dmpValue": "LegionRecruitAAMTemplate (0x00139385)",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Unarmed",
+          "esmOnly": 12,
+          "dmpOnly": 0,
+          "agree": 2536,
+          "disagree": 356,
+          "examples": [
+            {
+              "formId": "0x001536D3",
+              "esmValue": "12",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "12",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00151E1C",
+              "esmValue": "15",
+              "dmpValue": "12",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151A6A",
+              "esmValue": "15",
+              "dmpValue": "12",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151824",
+              "esmValue": "15",
+              "dmpValue": "12",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "VoiceType",
+          "esmOnly": 12,
+          "dmpOnly": 0,
+          "agree": 2526,
+          "disagree": 397,
+          "examples": [
+            {
+              "formId": "0x001536DA",
+              "esmValue": "FemaleAdult02 (0x00019FCB)",
+              "dmpValue": "FemaleAdult04 (0x00019FCD)",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001536D3",
+              "esmValue": "FemaleAdult10 (0x0013C8D3)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001532FD",
+              "esmValue": "MaleAdult04 (0x00019FCA)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152CC3",
+              "esmValue": "FemaleAdult03 (0x0013C8CD)",
+              "dmpValue": "FemaleAdult09 (0x0013C8D2)",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00152CC2",
+              "esmValue": "FemaleAdult03 (0x0013C8CD)",
+              "dmpValue": "FemaleAdult05 (0x0013C8CE)",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Weight",
+          "esmOnly": 2580,
+          "dmpOnly": 0,
+          "agree": 353,
+          "disagree": 2,
+          "examples": [
+            {
+              "formId": "0x00153A07",
+              "esmValue": "1.00",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00153792",
+              "esmValue": "1.00",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001536DA",
+              "esmValue": "1.00",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001536D3",
+              "esmValue": "1.00",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0015362A",
+              "esmValue": "1.00",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "typeName": "Note",
+      "esmRecordCount": 892,
+      "dmpRecordCount": 798,
+      "matchedRecordCount": 781,
+      "esmOnlyRecordCount": 111,
+      "dmpOnlyRecordCount": 17,
+      "fields": [
+        {
+          "fieldName": "IconPath",
+          "esmOnly": 290,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x00154134",
+              "esmValue": "Interface\\Icons\\PipboyImages\\Items\\item_holotap.dds",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152C03",
+              "esmValue": "Interface\\Icons\\PipboyImages\\Items\\item_holotap.dds",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152A49",
+              "esmValue": "Interface\\Icons\\PipboyImages\\Items\\item_holotap.dds",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152A48",
+              "esmValue": "Interface\\Icons\\PipboyImages\\Items\\item_holotap.dds",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014F3B0",
+              "esmValue": "Interface\\Icons\\PipboyImages\\Items\\item_holotap.dds",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "ModelPath",
+          "esmOnly": 1,
+          "dmpOnly": 0,
+          "agree": 228,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x0014E32E",
+              "esmValue": "clutter\\office\\paper01.nif",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "NoteType",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 780,
+          "disagree": 1,
+          "examples": [
+            {
+              "formId": "0x0010291E",
+              "esmValue": "Voice",
+              "dmpValue": "Text",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "ObjectFormId",
+          "esmOnly": 67,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x00154134",
+              "esmValue": "0x0015412F",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00154133",
+              "esmValue": "0x0015412F",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152C03",
+              "esmValue": "0x0014F3B1",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152A49",
+              "esmValue": "0x0014F3B1",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152A48",
+              "esmValue": "0x0014F3B1",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "SoundFormId",
+          "esmOnly": 8,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x0013DBEB",
+              "esmValue": "0x0013DBEC",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0010291E",
+              "esmValue": "0x0010291D",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000E9AC1",
+              "esmValue": "0x000E9AC0",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000E8B22",
+              "esmValue": "0x000E8B1F",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000E8B21",
+              "esmValue": "0x000E8B20",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "Text",
+          "esmOnly": 739,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x00154134",
+              "esmValue": "Data Log #10.44.78\r\n\r\nThe Vault has been breached. There was not enough power to level Five!\r\n\r\nGod have mercy on our souls.",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00154133",
+              "esmValue": "Data Log #10.44.78\r\n\r\nThe Vault has been breached. There was not enough power to level Five!\r\n\r\nGod have mercy on our souls.",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152C03",
+              "esmValue": "This holotape is a list of battle reports and other incidents that have occurred at Ranger Station Foxtrot in the last few months. By Ranger Kudlow\u0027s account, things have been uneventful at the station.\r\n",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152A49",
+              "esmValue": "This holotape contains an list of NCR personnel on active duty at Ranger Station Alpha. Aside from one Ranger who suffered a fractured ankle during a fall, the station has been at full strength for months.",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00152A48",
+              "esmValue": "This holotape contains a list a patrol reports dating back the last few months. Aside from an incident where an NCR patrol was wiped out by one of its own grenades - the result of trooper negligence - the reports are otherwise unremarkable.\r\n",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "TexturePath",
+          "esmOnly": 5,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x000C0C7E",
+              "esmValue": "Architecture\\Urban\\MetroMap.dds",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0005C6DE",
+              "esmValue": "Clutter\\LOBEcam01.dds",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000300C8",
+              "esmValue": "Interface\\Notes\\DunwichDrawing.dds",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0002E38F",
+              "esmValue": "Interface\\Notes\\CG04ReconNote.dds",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0002E38E",
+              "esmValue": "Interface\\Notes\\CG04ReconNote02.dds",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "TopicFormId",
+          "esmOnly": 32,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x0013DBEB",
+              "esmValue": "0x000000C8",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0010291E",
+              "esmValue": "0x00143867",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000E9AC1",
+              "esmValue": "0x000E9ABB",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000E8B22",
+              "esmValue": "0x000E8B19",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000E8B21",
+              "esmValue": "0x000E8B1A",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "typeName": "Perk",
+      "esmRecordCount": 175,
+      "dmpRecordCount": 119,
+      "matchedRecordCount": 119,
+      "esmOnlyRecordCount": 56,
+      "dmpOnlyRecordCount": 0,
+      "fields": [
+        {
+          "fieldName": "Description",
+          "esmOnly": 115,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x0014CCE1",
+              "esmValue": "Your regenerative ability has been enhanced by the PHOENIX Monocyte Breeder implant, causing you to slowly regenerate lost hit points.",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014CCDF",
+              "esmValue": "Your skin has been toughened by the NEMEAN Sub-Dermal Armor, increasing your total Damage Threshold by 4.",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014C134",
+              "esmValue": "Your frontal lobe has been enhanced with the Probability Calculator, increasing your Luck by 1.",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014C132",
+              "esmValue": "Your cerebral cortex has been enhanced with the Logic Co-Processor, increasing your Intelligence by 1.",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014C130",
+              "esmValue": "Your prefrontal cortex has been enhanced with the Empathy Synthesizer, increasing your Charisma by 1.",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "MinLevel",
+          "esmOnly": 6,
+          "dmpOnly": 0,
+          "agree": 74,
+          "disagree": 2,
+          "examples": [
+            {
+              "formId": "0x00138562",
+              "esmValue": "8",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00135F05",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00135EC9",
+              "esmValue": "12",
+              "dmpValue": "14",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00135EC8",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00135EC7",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "Playable",
+          "esmOnly": 7,
+          "dmpOnly": 1,
+          "agree": 73,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x00137AFE",
+              "esmValue": "True",
+              "dmpValue": "False",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00135F05",
+              "esmValue": "True",
+              "dmpValue": "False",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00135EC8",
+              "esmValue": "True",
+              "dmpValue": "False",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00135EC7",
+              "esmValue": "True",
+              "dmpValue": "False",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00135EC6",
+              "esmValue": "True",
+              "dmpValue": "False",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "Ranks",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 118,
+          "disagree": 1,
+          "examples": [
+            {
+              "formId": "0x00031DE0",
+              "esmValue": "2",
+              "dmpValue": "1",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Trait",
+          "esmOnly": 1,
+          "dmpOnly": 0,
+          "agree": 8,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x00135EC6",
+              "esmValue": "True",
+              "dmpValue": "False",
+              "status": "EsmOnly"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "typeName": "Quest",
+      "esmRecordCount": 416,
+      "dmpRecordCount": 326,
+      "matchedRecordCount": 302,
+      "esmOnlyRecordCount": 114,
+      "dmpOnlyRecordCount": 24,
+      "fields": [
+        {
+          "fieldName": "Flags",
+          "esmOnly": 1,
+          "dmpOnly": 12,
+          "agree": 213,
+          "disagree": 8,
+          "examples": [
+            {
+              "formId": "0x00154151",
+              "esmValue": "17",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014D2C3",
+              "esmValue": "21",
+              "dmpValue": "17",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014788B",
+              "esmValue": "0",
+              "dmpValue": "17",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x0014788A",
+              "esmValue": "0",
+              "dmpValue": "17",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x00147889",
+              "esmValue": "0",
+              "dmpValue": "17",
+              "status": "DmpOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "ObjectiveCount",
+          "esmOnly": 1,
+          "dmpOnly": 0,
+          "agree": 55,
+          "disagree": 43,
+          "examples": [
+            {
+              "formId": "0x00154234",
+              "esmValue": "6",
+              "dmpValue": "5",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00154233",
+              "esmValue": "7",
+              "dmpValue": "6",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014F3B1",
+              "esmValue": "18",
+              "dmpValue": "15",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014788A",
+              "esmValue": "4",
+              "dmpValue": "3",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00147888",
+              "esmValue": "4",
+              "dmpValue": "2",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Objectives",
+          "esmOnly": 1,
+          "dmpOnly": 0,
+          "agree": 42,
+          "disagree": 56,
+          "examples": [
+            {
+              "formId": "0x00154234",
+              "esmValue": "Obj10:Go to the Control Room in Hoover Dam and install the override chip.; Obj20:Activate the eastern power plant to power the Securitron Army.; Obj30:Exit out to the east side of the Dam.; Obj40:Head to the Legate\u0027s camp and deal with the Legate and Caesar\u0027s Legion.; Obj50:Deal with General Oliver and the NCR.; Obj90:Return to Mr House with news of your victory.",
+              "dmpValue": "Obj10:Go to the Control Room inside Hoover Dam.; Obj20:Activate the eastern power plant to activate the Securitron Army.; Obj30:Head back up topside.; Obj40:Head to the Legate\u0027s camp and deal with the Legate and Caesar\u0027s Legion.; Obj50:Deal with General Oliver and the NCR.",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00154233",
+              "esmValue": "Obj10:Go to the Control Room in Hoover Dam and install the override chip.; Obj20:Activate the eastern power plant to power the Securitron Army.; Obj25:Destroy the dam generators.; Obj30:Exit out to the east side of the Dam.; Obj40:Head to the Legate\u0027s camp and deal with the Legate and Caesar\u0027s Legion.; Obj50:Deal with General Oliver and the NCR.; Obj90:Return to Yes Man with news of your victory.",
+              "dmpValue": "Obj10:Go to the Control Room inside Hoover Dam.; Obj20:Activate the eastern power plant to activate the Securitron Army.; Obj25:Destroy the dam generators.; Obj30:Head back up topside.; Obj40:Head to the Legate\u0027s camp and deal with the Legate and Caesar\u0027s Legion.; Obj50:Deal with General Oliver and the NCR.",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014F3B1",
+              "esmValue": "Obj10:Deliver the radio security upgrade codes to each of the Ranger Stations.; Obj11:Upgrade Ranger Station Alpha.; Obj12:Upgrade Ranger Station Bravo.; Obj13:Upgrade Ranger Station Charlie.; Obj14:Upgrade Ranger Station Delta.; Obj15:Upgrade Ranger Station Echo.; Obj16:Upgrade Ranger Station Foxtrot.; Obj20:Return to Sergeant Reyes and let her know the radio security upgrade is complete.; Obj30:Find out what else Sergeant Reyes needs you to do.; Obj40:Confirm Sergeant Reyes\u0027 suspicions about the reports from Camp Golf.; Obj41:Ask Ranger Lineholm about the battle losses at Ranger Station Alpha.; Obj42:Find out about the Super Mutant Legionary attack at Ranger Station Delta.; Obj43:Investigate the Deathclaw attacks on Ranger Station Foxtrot.; Obj50:Tell Sergeant Reyes that her suspicions about misinformation being fed to the NCR was correct.; Obj60:Inform Chief Hanlon what you and Sergeant Reyes discovered.; Obj70:Speak to Chief Hanlon in his office.; Obj80:Find a ranger to take Chief Hanlon into custody.; Obj90:Kill Chief Hanlon.",
+              "dmpValue": "Obj10:Deliver the radio security upgrade codes to each of the Ranger Stations.; Obj11:Upgrade Ranger Station Alpha.; Obj12:Upgrade Ranger Station Bravo.; Obj13:Upgrade Ranger Station Charlie.; Obj14:Upgrade Ranger Station Delta.; Obj15:Upgrade Ranger Station Echo.; Obj16:Upgrade Ranger Station Foxtrot.; Obj20:Return to Sergeant Reyes and let her know the radio security upgrade is complete.; Obj30:Find out what else Sergeant Reyes needs you to do.; Obj40:Confirm Sergeant Reyes\u0027 suspicions about the reports from Camp Golf.; Obj41:Ask Ranger Lineholm about the battle losses at Ranger Station Alpha.; Obj42:Find out about the Super Mutant Legionary attack at Ranger Station Delta.; Obj43:Investigate the Deathclaw attacks on Ranger Station Foxtrot.; Obj50:Tell Sergeant Reyes that her suspicions about misinformation being fed to the NCR was correct.; Obj60:Inform Chief Hanlon what you and Sergeant Reyes discovered.",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014788B",
+              "esmValue": "Obj80:Return to Mr. House when you\u0027re ready to fight the battle for Hoover Dam.",
+              "dmpValue": "Obj80:Go to Hoover Dam and defeat Caesar\u0027s Legion.",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014788A",
+              "esmValue": "Obj70:Go to Hoover Dam and protect President Kimball during his visit.; Obj71:Inform Mr. House that President Kimball\u0027s visit was cancelled.; Obj72:Inform Mr. House that President Kimball survived the assassination attempt.; Obj74:Inform Mr. House that President Kimball is dead.",
+              "dmpValue": "Obj70:Go to Hoover Dam and protect President Kimball during his visit.; Obj72:Inform Mr. House that President Kimball survived the assassination attempt.; Obj74:Inform Mr. House that President Kimball is dead.",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Priority",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 264,
+          "disagree": 8,
+          "examples": [
+            {
+              "formId": "0x00154151",
+              "esmValue": "56",
+              "dmpValue": "50",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00144F34",
+              "esmValue": "60",
+              "dmpValue": "50",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001176B7",
+              "esmValue": "50",
+              "dmpValue": "55",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0010D2C6",
+              "esmValue": "51",
+              "dmpValue": "50",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00105BD0",
+              "esmValue": "45",
+              "dmpValue": "50",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "StageCount",
+          "esmOnly": 11,
+          "dmpOnly": 1,
+          "agree": 63,
+          "disagree": 41,
+          "examples": [
+            {
+              "formId": "0x00154234",
+              "esmValue": "7",
+              "dmpValue": "6",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00154233",
+              "esmValue": "8",
+              "dmpValue": "7",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151403",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014F3B1",
+              "esmValue": "10",
+              "dmpValue": "7",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014EF5F",
+              "esmValue": "4",
+              "dmpValue": "3",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Stages",
+          "esmOnly": 11,
+          "dmpOnly": 1,
+          "agree": 1,
+          "disagree": 103,
+          "examples": [
+            {
+              "formId": "0x00154234",
+              "esmValue": "Stage2560(flags=0); Stage5120(flags=0); Stage7680(flags=0); Stage10240(flags=0); Stage12800(flags=0); Stage23040(flags=0); Stage25600(flags=1)",
+              "dmpValue": "Stage10(flags=0); Stage20(flags=0); Stage30(flags=0); Stage40(flags=0); Stage50(flags=0); Stage100(flags=1)",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00154233",
+              "esmValue": "Stage2560(flags=0); Stage5120(flags=0); Stage6400(flags=0); Stage7680(flags=0); Stage10240(flags=0); Stage12800(flags=0); Stage23040(flags=0); Stage25600(flags=1)",
+              "dmpValue": "Stage10(flags=0); Stage20(flags=0); Stage25(flags=0); Stage30(flags=0); Stage40(flags=0); Stage50(flags=0); Stage100(flags=0)",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00154151",
+              "esmValue": "Stage2560(flags=0); Stage23040(flags=0); Stage25600(flags=0)",
+              "dmpValue": "Stage10(flags=0); Stage90(flags=0); Stage100(flags=0)",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0015412F",
+              "esmValue": "Stage2560(flags=0); Stage25600(flags=1)",
+              "dmpValue": "Stage10(flags=0); Stage100(flags=1)",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151403",
+              "esmValue": "Stage-256(flags=2)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "typeName": "Race",
+      "esmRecordCount": 22,
+      "dmpRecordCount": 22,
+      "matchedRecordCount": 22,
+      "esmOnlyRecordCount": 0,
+      "dmpOnlyRecordCount": 0,
+      "fields": [
+        {
+          "fieldName": "DataFlags",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 8,
+          "disagree": 0,
+          "examples": []
+        },
+        {
+          "fieldName": "IsPlayable",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 4,
+          "disagree": 0,
+          "examples": []
+        }
+      ]
+    },
+    {
+      "typeName": "Spell",
+      "esmRecordCount": 271,
+      "dmpRecordCount": 242,
+      "matchedRecordCount": 241,
+      "esmOnlyRecordCount": 30,
+      "dmpOnlyRecordCount": 1,
+      "fields": [
+        {
+          "fieldName": "EffectCount",
+          "esmOnly": 1,
+          "dmpOnly": 0,
+          "agree": 228,
+          "disagree": 12,
+          "examples": [
+            {
+              "formId": "0x000B878F",
+              "esmValue": "3",
+              "dmpValue": "1",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00045656",
+              "esmValue": "4",
+              "dmpValue": "2",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0006533A",
+              "esmValue": "2",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00044CA4",
+              "esmValue": "1",
+              "dmpValue": "2",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00032DF0",
+              "esmValue": "4",
+              "dmpValue": "3",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Flags",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 50,
+          "disagree": 0,
+          "examples": []
+        },
+        {
+          "fieldName": "SpellType",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 241,
+          "disagree": 0,
+          "examples": []
+        }
+      ]
+    },
+    {
+      "typeName": "Terminal",
+      "esmRecordCount": 352,
+      "dmpRecordCount": 332,
+      "matchedRecordCount": 308,
+      "esmOnlyRecordCount": 44,
+      "dmpOnlyRecordCount": 24,
+      "fields": [
+        {
+          "fieldName": "Difficulty",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 234,
+          "disagree": 74,
+          "examples": [
+            {
+              "formId": "0x0014E28A",
+              "esmValue": "Average",
+              "dmpValue": "Very Easy",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014DC2A",
+              "esmValue": "Hard",
+              "dmpValue": "Very Easy",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014CD29",
+              "esmValue": "Easy",
+              "dmpValue": "Very Easy",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014B08E",
+              "esmValue": "Hard",
+              "dmpValue": "Very Easy",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014B048",
+              "esmValue": "Unknown (5)",
+              "dmpValue": "Very Easy",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Flags",
+          "esmOnly": 30,
+          "dmpOnly": 173,
+          "agree": 0,
+          "disagree": 78,
+          "examples": [
+            {
+              "formId": "0x0014E28A",
+              "esmValue": "0",
+              "dmpValue": "153",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x0014DC2A",
+              "esmValue": "0",
+              "dmpValue": "153",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x0014DC29",
+              "esmValue": "2",
+              "dmpValue": "153",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014CD2A",
+              "esmValue": "2",
+              "dmpValue": "153",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014CD29",
+              "esmValue": "0",
+              "dmpValue": "153",
+              "status": "DmpOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "MenuItemCount",
+          "esmOnly": 150,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x0014E28A",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014DC2A",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014DC29",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014CD29",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014B270",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "typeName": "Weapon",
+      "esmRecordCount": 255,
+      "dmpRecordCount": 304,
+      "matchedRecordCount": 218,
+      "esmOnlyRecordCount": 37,
+      "dmpOnlyRecordCount": 86,
+      "fields": [
+        {
+          "fieldName": "APCost",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 155,
+          "disagree": 10,
+          "examples": [
+            {
+              "formId": "0x0014D2A7",
+              "esmValue": "17.0",
+              "dmpValue": "18.0",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001479B3",
+              "esmValue": "20.0",
+              "dmpValue": "18.0",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00143FBA",
+              "esmValue": "35.0",
+              "dmpValue": "38.0",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0013E4DE",
+              "esmValue": "35.0",
+              "dmpValue": "38.0",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00127E45",
+              "esmValue": "18.0",
+              "dmpValue": "20.0",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Ammo",
+          "esmOnly": 1,
+          "dmpOnly": 0,
+          "agree": 102,
+          "disagree": 28,
+          "examples": [
+            {
+              "formId": "0x0014EB3C",
+              "esmValue": "AmmoNVArchimedesII (0x0016AEF9)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001479B3",
+              "esmValue": "AmmoListMicroFusionCell (0x0015831A)",
+              "dmpValue": "AmmoMicroFusionCell (0x00004485)",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001429E2",
+              "esmValue": "AmmoList40mmGrenade (0x00158308)",
+              "dmpValue": "Ammo40mmGrenade (0x0007EA26)",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001429E1",
+              "esmValue": "AmmoList308 (0x001537E9)",
+              "dmpValue": "Ammo308 (0x0006B53C)",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001429D1",
+              "esmValue": "AmmoList127mm (0x001613D5)",
+              "dmpValue": "Ammo127mm (0x001429CF)",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "AmmoPerShot",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 200,
+          "disagree": 4,
+          "examples": [
+            {
+              "formId": "0x001479B3",
+              "esmValue": "2",
+              "dmpValue": "1",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001251CC",
+              "esmValue": "2",
+              "dmpValue": "1",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00103B1D",
+              "esmValue": "15",
+              "dmpValue": "1",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00090727",
+              "esmValue": "3",
+              "dmpValue": "1",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "ClipSize",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 211,
+          "disagree": 7,
+          "examples": [
+            {
+              "formId": "0x0014EB3C",
+              "esmValue": "1",
+              "dmpValue": "30",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0012ADB8",
+              "esmValue": "1",
+              "dmpValue": "12",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001251CC",
+              "esmValue": "24",
+              "dmpValue": "12",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0010A6FC",
+              "esmValue": "30",
+              "dmpValue": "16",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x000E5B17",
+              "esmValue": "8",
+              "dmpValue": "10",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "CritChance",
+          "esmOnly": 148,
+          "dmpOnly": 2,
+          "agree": 0,
+          "disagree": 49,
+          "examples": [
+            {
+              "formId": "0x001524B3",
+              "esmValue": "3.00",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00151D0C",
+              "esmValue": "5.00",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001519E0",
+              "esmValue": "5.00",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014F474",
+              "esmValue": "1.00",
+              "dmpValue": "4.47",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014F449",
+              "esmValue": "2.00",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "CritDamage",
+          "esmOnly": 20,
+          "dmpOnly": 45,
+          "agree": 0,
+          "disagree": 140,
+          "examples": [
+            {
+              "formId": "0x001524B3",
+              "esmValue": "40",
+              "dmpValue": "256",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00151D0C",
+              "esmValue": "72",
+              "dmpValue": "256",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001519E0",
+              "esmValue": "20",
+              "dmpValue": "256",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014F474",
+              "esmValue": "0",
+              "dmpValue": "468",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x0014F449",
+              "esmValue": "20",
+              "dmpValue": "212",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "CritEffect",
+          "esmOnly": 47,
+          "dmpOnly": 61,
+          "agree": 0,
+          "disagree": 8,
+          "examples": [
+            {
+              "formId": "0x0014F474",
+              "esmValue": "0x000A73D7",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014EB3C",
+              "esmValue": "0x0005C6C3",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014EA5A",
+              "esmValue": "",
+              "dmpValue": "0x64477265",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x0014DDDF",
+              "esmValue": "0x00092C48",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014DDDE",
+              "esmValue": "0x00092C48",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "DPS",
+          "esmOnly": 0,
+          "dmpOnly": 3,
+          "agree": 137,
+          "disagree": 40,
+          "examples": [
+            {
+              "formId": "0x00151D0C",
+              "esmValue": "54.0",
+              "dmpValue": "40.0",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014EB3C",
+              "esmValue": "0.0",
+              "dmpValue": "6.0",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x0014D2A7",
+              "esmValue": "8.0",
+              "dmpValue": "5.0",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001479B3",
+              "esmValue": "22.0",
+              "dmpValue": "14.0",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001429D1",
+              "esmValue": "288.0",
+              "dmpValue": "297.0",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Damage",
+          "esmOnly": 0,
+          "dmpOnly": 3,
+          "agree": 157,
+          "disagree": 44,
+          "examples": [
+            {
+              "formId": "0x00151D0C",
+              "esmValue": "27",
+              "dmpValue": "20",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014EB3C",
+              "esmValue": "0",
+              "dmpValue": "2",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x0014D2AA",
+              "esmValue": "14",
+              "dmpValue": "7",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014D2A7",
+              "esmValue": "8",
+              "dmpValue": "5",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001479B3",
+              "esmValue": "22",
+              "dmpValue": "14",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Drift",
+          "esmOnly": 72,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x0014F449",
+              "esmValue": "1.00",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014EA5A",
+              "esmValue": "1.00",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014DDDF",
+              "esmValue": "4.00",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014DDDE",
+              "esmValue": "4.00",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014D2AC",
+              "esmValue": "1.00",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "FireRate",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 190,
+          "disagree": 3,
+          "examples": [
+            {
+              "formId": "0x0014EB3C",
+              "esmValue": "0.10",
+              "dmpValue": "3.00",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001429D1",
+              "esmValue": "8.00",
+              "dmpValue": "9.00",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00103B1D",
+              "esmValue": "8.00",
+              "dmpValue": "10.00",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Health",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 170,
+          "disagree": 43,
+          "examples": [
+            {
+              "formId": "0x00151D0C",
+              "esmValue": "75",
+              "dmpValue": "600",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001519E0",
+              "esmValue": "60",
+              "dmpValue": "600",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014D2A7",
+              "esmValue": "90",
+              "dmpValue": "75",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001479B3",
+              "esmValue": "35",
+              "dmpValue": "225",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001429E1",
+              "esmValue": "160",
+              "dmpValue": "300",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "ImpactDataSet",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 191,
+          "disagree": 4,
+          "examples": [
+            {
+              "formId": "0x0014EB3C",
+              "esmValue": "EnergyImpactDataSet (0x00019086)",
+              "dmpValue": "ExplosionImpactDataSet (0x00093BA4)",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001479B3",
+              "esmValue": "EnergyImpactGreenDataSet (0x000361E7)",
+              "dmpValue": "EnergyImpactDataSet (0x00019086)",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0010A6FC",
+              "esmValue": "EnergyImpactDataSet (0x00019086)",
+              "dmpValue": "EnergyImpactGreenDataSet (0x000361E7)",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00004349",
+              "esmValue": "RipperImpactDataSet (0x00171E56)",
+              "dmpValue": "PhysicalLargeImpactDataSet (0x00019085)",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "MaxRange",
+          "esmOnly": 1,
+          "dmpOnly": 0,
+          "agree": 217,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x000E07D1",
+              "esmValue": "250000",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "MinRange",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 179,
+          "disagree": 3,
+          "examples": [
+            {
+              "formId": "0x0014F474",
+              "esmValue": "48",
+              "dmpValue": "128",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00113248",
+              "esmValue": "48",
+              "dmpValue": "128",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0010A70A",
+              "esmValue": "10",
+              "dmpValue": "50",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "MinSpread",
+          "esmOnly": 7,
+          "dmpOnly": 0,
+          "agree": 108,
+          "disagree": 9,
+          "examples": [
+            {
+              "formId": "0x001479B3",
+              "esmValue": "0.02",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001429E1",
+              "esmValue": "0.02",
+              "dmpValue": "0.01",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001251CD",
+              "esmValue": "0.03",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00121154",
+              "esmValue": "0.02",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00121148",
+              "esmValue": "0.20",
+              "dmpValue": "0.25",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "ModelPath",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 159,
+          "disagree": 12,
+          "examples": [
+            {
+              "formId": "0x0014DE1D",
+              "esmValue": "weapons\\1handgrenadethrow\\Throwingaxe.NIF",
+              "dmpValue": "weapons\\1handmelee\\Throwingaxe.NIF",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0013D534",
+              "esmValue": "weapons\\1handgrenadethrow\\TimeBomb.NIF",
+              "dmpValue": "weapons\\1handminedrop\\C4.NIF",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00121168",
+              "esmValue": "weapons\\2handrifle\\MultiPlasRifle.nif",
+              "dmpValue": "weapons\\2handrifle\\plasmarifle.nif",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0010A6FC",
+              "esmValue": "weapons\\1handpistol\\laserpistol.nif",
+              "dmpValue": "Weapons\\1HandPistol\\PlasmaPistolstatic.NIF",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00109A0C",
+              "esmValue": "weapons\\1handgrenadethrow\\dynamiteLongFuse.NIF",
+              "dmpValue": "weapons\\1handgrenadethrow\\dynamite.NIF",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "NumProjectiles",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 214,
+          "disagree": 1,
+          "examples": [
+            {
+              "formId": "0x00103B1D",
+              "esmValue": "1",
+              "dmpValue": "2",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "ProjForce",
+          "esmOnly": 1,
+          "dmpOnly": 2,
+          "agree": 113,
+          "disagree": 1,
+          "examples": [
+            {
+              "formId": "0x0010A6FC",
+              "esmValue": "0.0",
+              "dmpValue": "18.0",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x00090A6B",
+              "esmValue": "0.0",
+              "dmpValue": "2.0",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x0009073B",
+              "esmValue": "2.0",
+              "dmpValue": "0.0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0007EA24",
+              "esmValue": "3.0",
+              "dmpValue": "9.0",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "ProjGravity",
+          "esmOnly": 4,
+          "dmpOnly": 0,
+          "agree": 70,
+          "disagree": 1,
+          "examples": [
+            {
+              "formId": "0x001429E2",
+              "esmValue": "1.5000",
+              "dmpValue": "0.0000",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001056D3",
+              "esmValue": "1.5000",
+              "dmpValue": "0.0000",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000FF576",
+              "esmValue": "1.5000",
+              "dmpValue": "0.0000",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0007EA25",
+              "esmValue": "1.5000",
+              "dmpValue": "0.0000",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0007EA24",
+              "esmValue": "0.4000",
+              "dmpValue": "9.0000",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "ProjRange",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 147,
+          "disagree": 3,
+          "examples": [
+            {
+              "formId": "0x00090A6B",
+              "esmValue": "10000",
+              "dmpValue": "1240",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0009073B",
+              "esmValue": "10000",
+              "dmpValue": "2000",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0007EA24",
+              "esmValue": "10000",
+              "dmpValue": "33920",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "ProjSpeed",
+          "esmOnly": 1,
+          "dmpOnly": 0,
+          "agree": 134,
+          "disagree": 14,
+          "examples": [
+            {
+              "formId": "0x0014EA5A",
+              "esmValue": "1500.0",
+              "dmpValue": "1200.0",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0012701F",
+              "esmValue": "600.0",
+              "dmpValue": "0.0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001251CC",
+              "esmValue": "7500.0",
+              "dmpValue": "5000.0",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00121168",
+              "esmValue": "7500.0",
+              "dmpValue": "4500.0",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0010A6FC",
+              "esmValue": "10000.0",
+              "dmpValue": "4500.0",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Projectile",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 134,
+          "disagree": 16,
+          "examples": [
+            {
+              "formId": "0x0014EA5A",
+              "esmValue": "GrenadeFragHolyProjectile (0x0016201A)",
+              "dmpValue": "GrenadeFragProjectile (0x000043F9)",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001479B3",
+              "esmValue": "BeamLaserGreenProjectile (0x00172AAB)",
+              "dmpValue": "BeamLaserProjectile (0x00014B0F)",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0010A6FC",
+              "esmValue": "BeamLaserProjectile (0x00014B0F)",
+              "dmpValue": "PlasmaProjectile02 (0x000A73D6)",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001056D2",
+              "esmValue": "MissileProjectile (0x00001BB6)",
+              "dmpValue": "MLMissileProjectile (0x00001BB6)",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x000F0B12",
+              "esmValue": "BuckshotProjectile (0x0003BF07)",
+              "dmpValue": "ShotgunShellProjectile (0x0003BF07)",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Reach",
+          "esmOnly": 1,
+          "dmpOnly": 0,
+          "agree": 180,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x0011324C",
+              "esmValue": "3000.00",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "Skill",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 213,
+          "disagree": 5,
+          "examples": [
+            {
+              "formId": "0x0014EB3C",
+              "esmValue": "Energy Weapons",
+              "dmpValue": "Explosives",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x000B8793",
+              "esmValue": "Barter",
+              "dmpValue": "Big Guns - OBSOLETE",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x000A0C02",
+              "esmValue": "Barter",
+              "dmpValue": "Big Guns - OBSOLETE",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0006E8CE",
+              "esmValue": "Barter",
+              "dmpValue": "Big Guns - OBSOLETE",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00039550",
+              "esmValue": "Barter",
+              "dmpValue": "Big Guns - OBSOLETE",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "SkillReq",
+          "esmOnly": 96,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x001524B3",
+              "esmValue": "75",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00151D0C",
+              "esmValue": "25",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001519E0",
+              "esmValue": "25",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014DE1D",
+              "esmValue": "25",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014DDDF",
+              "esmValue": "25",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "Speed",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 217,
+          "disagree": 1,
+          "examples": [
+            {
+              "formId": "0x001524B3",
+              "esmValue": "1.16",
+              "dmpValue": "1.00",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Spread",
+          "esmOnly": 1,
+          "dmpOnly": 1,
+          "agree": 130,
+          "disagree": 1,
+          "examples": [
+            {
+              "formId": "0x0010A6FC",
+              "esmValue": "0.00",
+              "dmpValue": "2.20",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x00103B1D",
+              "esmValue": "0.03",
+              "dmpValue": "4.00",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0009073B",
+              "esmValue": "0.50",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "StrReq",
+          "esmOnly": 136,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x001524B3",
+              "esmValue": "4",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00151D0C",
+              "esmValue": "5",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001519E0",
+              "esmValue": "5",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014EA5A",
+              "esmValue": "2",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014DE1D",
+              "esmValue": "2",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "Value",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 181,
+          "disagree": 19,
+          "examples": [
+            {
+              "formId": "0x00151D0C",
+              "esmValue": "800",
+              "dmpValue": "150",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014D2AA",
+              "esmValue": "800",
+              "dmpValue": "20",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0014D2A7",
+              "esmValue": "400",
+              "dmpValue": "35",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001479B3",
+              "esmValue": "2200",
+              "dmpValue": "1000",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x001429E1",
+              "esmValue": "6200",
+              "dmpValue": "2000",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "WeaponType",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 215,
+          "disagree": 3,
+          "examples": [
+            {
+              "formId": "0x00121154",
+              "esmValue": "Automatic (2H)",
+              "dmpValue": "Rifle (Energy)",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00090727",
+              "esmValue": "Pistol (Energy)",
+              "dmpValue": "Pistol",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0008ED0A",
+              "esmValue": "Automatic (2H)",
+              "dmpValue": "Rifle",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Weight",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 205,
+          "disagree": 2,
+          "examples": [
+            {
+              "formId": "0x000E6346",
+              "esmValue": "1.50",
+              "dmpValue": "2.00",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x000E5B17",
+              "esmValue": "4.50",
+              "dmpValue": "5.50",
+              "status": "Disagree"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "typeName": "Worldspace",
+      "esmRecordCount": 20,
+      "dmpRecordCount": 21,
+      "matchedRecordCount": 19,
+      "esmOnlyRecordCount": 1,
+      "dmpOnlyRecordCount": 2,
+      "fields": [
+        {
+          "fieldName": "CellCount",
+          "esmOnly": 15,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 4,
+          "examples": [
+            {
+              "formId": "0x00014BE2",
+              "esmValue": "64",
+              "dmpValue": "4",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00014F5B",
+              "esmValue": "5",
+              "dmpValue": "2",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00031E12",
+              "esmValue": "87",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00048964",
+              "esmValue": "240",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000B3625",
+              "esmValue": "28",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "Climate",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 11,
+          "disagree": 7,
+          "examples": [
+            {
+              "formId": "0x0010BEEA",
+              "esmValue": "0x00174006",
+              "dmpValue": "0x0008809B",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00110628",
+              "esmValue": "0x00174006",
+              "dmpValue": "0x0008809B",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0012A914",
+              "esmValue": "0x00174006",
+              "dmpValue": "0x0008809B",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0012D94D",
+              "esmValue": "0x00174006",
+              "dmpValue": "0x0008809B",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0012D94E",
+              "esmValue": "0x00174006",
+              "dmpValue": "0x0008809B",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "DefaultLandHeight",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 19,
+          "disagree": 0,
+          "examples": []
+        },
+        {
+          "fieldName": "DefaultWaterHeight",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 6,
+          "disagree": 0,
+          "examples": []
+        },
+        {
+          "fieldName": "Flags",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 19,
+          "disagree": 0,
+          "examples": []
+        },
+        {
+          "fieldName": "Parent",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 12,
+          "disagree": 0,
+          "examples": []
+        },
+        {
+          "fieldName": "Water",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 17,
+          "disagree": 2,
+          "examples": [
+            {
+              "formId": "0x000D705D",
+              "esmValue": "0x00030009",
+              "dmpValue": "0x00000018",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0013B308",
+              "esmValue": "0x0016663E",
+              "dmpValue": "0x00030009",
+              "status": "Disagree"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
