@@ -194,9 +194,13 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
             noteType = 0; // invalid, default to Sound
         }
 
-        // BGSNote has TESModel at +64, TESFullName at +88 (reversed vs MISC/KEYM)
+        // BGSNote has TESModel at +64, TESFullName at +88 (reversed vs MISC/KEYM).
+        // TESTexture.TextureName at +104 holds the icon path that maps to the ESM
+        // ICON subrecord on disk. Text content (TNAM/DESC) is not exposed as a
+        // BGSNote struct field — it lives only in the original ESM bytes.
         var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, NoteFullNameOffset);
         var modelPath = _context.ReadBsStringT(offset, NoteModelPathOffset);
+        var iconPath = _context.ReadBsStringT(offset, NoteIconPathOffset);
 
         return new NoteRecord
         {
@@ -204,6 +208,7 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
             EditorId = entry.EditorId,
             FullName = fullName,
             ModelPath = modelPath,
+            IconPath = iconPath,
             NoteType = noteType,
             Offset = offset,
             IsBigEndian = true
@@ -628,6 +633,10 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
     private int NoteTypeOffset => 124 + _s;
     private int NoteModelPathOffset => 52 + _s;
     private int NoteFullNameOffset => 76 + _s;
+
+    // TESTexture.TextureName (BSStringT) inside BGSNote at PDB +104 — the
+    // texture/icon path slot that mirrors the ESM ICON subrecord on disk.
+    private int NoteIconPathOffset => 88 + _s;
 
     #endregion
 
