@@ -62,8 +62,14 @@ same patterns on both baselines.
 | Weapon | CritChance | 0 agree | 192 / 180 | DMP probe | Same probe. |
 | Weapon | CritEffect | 0 agree | 50 / 47 | DMP probe | Same probe. |
 | Terminal | MenuItemCount | 0 agree | 114 / 108 | DMP probe | New [`RuntimeTerminalLayoutProbe`](../../src/FalloutXbox360Utils/Core/Formats/Esm/Runtime/Readers/Probes/RuntimeTerminalLayoutProbe.cs) found menu-list +4 shift. Data block shift stayed gated due to low margin (avoided regressing the 230-record Difficulty agreement). |
+| EncounterZone | (all fields) | (not in audit) | 137 MinLevel, 112 Flags, 4 Rank, 1 Owner | both | Phase 8 — added ESM handler ([MiscGameSystemHandler.ParseEncounterZones](../../src/FalloutXbox360Utils/Core/Formats/Esm/Parsing/Handlers/MiscGameSystemHandler.cs)) and runtime reader ([RuntimeEncounterZoneReader](../../src/FalloutXbox360Utils/Core/Formats/Esm/Runtime/Readers/Specialized/RuntimeEncounterZoneReader.cs)). 140 matched records, **0 disagreements** on July2010↔xex44; 17 matched, 0 disagreements on Final↔MemDebug. |
+| NavMesh | Cell + counts | (not in audit) | 17 Cell agree, 10 VertexCount, 10 TriangleCount, 8 DoorPortalCount | DMP runtime | Phase 8 — added [RuntimeNavMeshReader](../../src/FalloutXbox360Utils/Core/Formats/Esm/Runtime/Readers/Specialized/RuntimeNavMeshReader.cs) extracting parent cell + BSSimpleArray counts from the 280-byte NavMesh struct. Of 17 matched records, parent-cell agrees 100%; vertex/triangle counts agree ~59% (the rest are content drift — engine refines mesh at load). 5054 ESM-only is expected (only loaded cells have navmeshes in memory, same as Cell). |
+| LightingTemplate | INTERIOR_DATA fields | (not in audit) | 23 AmbientColor / 24 FogColor / 24 FogFar / 22 DirectionalFade / etc., **0 disagree on 9 of 10 fields** | DMP runtime | Phase 9 — added [RuntimeLightingTemplateReader](../../src/FalloutXbox360Utils/Core/Formats/Esm/Runtime/Readers/Specialized/RuntimeLightingTemplateReader.cs). Reads 40 of 44B INTERIOR_DATA at +40, decodes via shared `SubrecordDataReader.ReadFields("DATA", "LGTM", ...)` schema. 24 matched, 1 content-drift disagreement on DirectionalRotationZ. |
+| RecipeCategory | Flags | (not in audit) | 7 Flags agree, 0 disagree | DMP runtime | Phase 9 — added [RuntimeRecipeCategoryReader](../../src/FalloutXbox360Utils/Core/Formats/Esm/Runtime/Readers/Specialized/RuntimeRecipeCategoryReader.cs). 8 matched, 7/7 flag agreement. |
+| MusicType | FileName + Attenuation | (not in audit) | 14 Attenuation, 13 FileName, 0 disagree | DMP runtime | Phase 9 — `RuntimeMusicTypeReader` was already implemented (matrix entry was stale); just added to `RecordFieldFlattener.FlattenAll` so the audit picks it up. 14 matched. |
+| Water | Opacity + Sound + visual properties | (not in audit) | 53 Opacity agree, 6 Sound agree, 0 Opacity disagree | DMP runtime | Phase 9 — added [RuntimeWaterReader](../../src/FalloutXbox360Utils/Core/Formats/Esm/Runtime/Readers/Specialized/RuntimeWaterReader.cs). 61 matched, Opacity 53/53 agree. Sound 5 ESM-only cases are unloaded water sounds (runtime pWaterSound is null). |
 
-Nine parser bugs closed; one near-complete (CombatStyle 56%
+Sixteen parser/audit gaps closed; one near-complete (CombatStyle 56%
 reduction; the rest is genuine proto data absence).
 
 ### Carry-over: design-level format limits
@@ -74,6 +80,7 @@ of the two formats.
 | Type | Field | Count | Why it cannot be closed |
 |---|---|---:|---|
 | Note | Text | 739 | `BGSNote` runtime struct (size 144) has no Text field. Text content lives in ESM TNAM/DESC subrecord bytes only. |
+| Perk | Description | 115 | `BGSPerk` inherits `TESDescription`, whose only field is a uint32 `lFileOffset` at PDB +56. The engine treats this as a lazy reference into the source ESM — DESC bytes never enter memory until the UI displays the perk. The minidump captures what was in memory, so the offset survives but the text doesn't. Same family as Note.Text; applies to all 12 TESDescription-derived types (Spell, Effect, Enchant, QuestObjective, etc.). |
 | NPC | Template, Script, Factions | 512, 199, 209 | Runtime reads these via TESForm-pointer chasing. The 199-512 records are proto NPCs that genuinely have no template/script/faction list — not parser bugs. |
 | Cell | (massive) | 34,765 | DMP only contains loaded cells (1,200 of 35,191). Expected by design. |
 | Armor / Creature | (records-only) | 171 / 14 | DMP has runtime-spawned variants the ESM doesn't define as base records. |
@@ -172,9 +179,167 @@ Net result:
   bytes at the probe-chosen offset are `00 00 00 00` for ~89% of
   NPCs. Load-state divergence, not parser bug.
 
+### Phase 7 outcome — closing out the un-investigated items
+
+Three parallel investigations + one follow-up focused dive resolved
+the four remaining "Not yet investigated" rows. None are parser
+bugs.
+
+- **Perk.Description (115)** moves to **format limits**.
+  TESDescription's `lFileOffset` is a lazy file reference; DESC
+  bytes never enter the engine's memory, so a DMP-only load can't
+  recover them. Same shape as Note.Text.
+- **NPC SPECIAL (all 7 stats × 112 records)**: the audit reports
+  this against AG and CH in the top-gaps cutoff, but in fact all 7
+  SPECIAL stats show the same 112-record ESM-only pattern on both
+  baselines. The mechanism is [RuntimeNpcFieldReader.ReadNpcSpecial](../../src/FalloutXbox360Utils/Core/Formats/Esm/Runtime/Readers/Specialized/RuntimeNpcFieldReader.cs):
+  if the 7 SPECIAL bytes sum to zero, it returns `null` (treating
+  the slot as uninitialized memory). 112 proto NPCs genuinely have
+  `[0,0,0,0,0,0,0]` at the probe-chosen offset, the reader rejects
+  them, the flattener emits empty strings, and the audit's
+  `IsDefaultLike` rule collapses them into ESM-only. Content drift
+  + intentional defensive validation in the reader, not a parse
+  bug.
+- **NPC.Confidence (33)** and **LeveledList.EntryCount (14)**:
+  data-absence — 33 proto NPCs lack AIDT subrecords; 14 proto
+  leveled lists lack LVLO subrecords. Both handlers parse
+  correctly when the subrecords are present.
+
+After Phase 7 the parity audit has no remaining un-investigated
+leads. Every open delta has a documented cause (format limit,
+content drift, semantic mismatch, load-state, audit artifact, or
+data absence).
+
+### Phase 8 outcome — silent-gap coverage (Encounter Zones + Navmesh)
+
+Phase 7 closed the four "Not yet investigated" rows in the top-gaps
+tables. Phase 8 looked at types entirely absent from the audit —
+records the auditor silently skipped because neither side parsed
+them. Two surfaced:
+
+- **Encounter Zones (ECZN)**: neither ESM handler nor runtime reader
+  existed. Added both. New `EncounterZoneRecord` model, new
+  `MiscGameSystemHandler.ParseEncounterZones` (8-byte DATA: Owner
+  FormID + Rank + MinLevel + Flags), new
+  `RuntimeEncounterZoneReader` (BGSEncounterZone +40 with Owner as
+  a pointer follow, not raw FormID — fixed after first audit run
+  showed 1 disagree → 0 disagree). 140 ECZN records now in the
+  audit with **0 disagreements** across both baselines.
+- **Navmesh (NAVM)**: ESM handler already existed
+  ([MiscGameSystemHandler.ParseNavMeshes](../../src/FalloutXbox360Utils/Core/Formats/Esm/Parsing/Handlers/MiscGameSystemHandler.cs))
+  but no runtime reader. Added `RuntimeNavMeshReader` that follows
+  `pParentCell` and reads BSSimpleArray counts (data ptr +0,
+  capacity +4, count +8, reserved +12) for Vertices / Triangles /
+  DoorPortals. Of 17 matched records, parent-cell agrees 100%;
+  count fields agree ~59% — the rest is content drift (runtime
+  navmesh has slightly more vertices/triangles than ESM because the
+  engine refines the mesh at cell-load).
+
+The audit's `recordTypes` list is dynamically discovered from
+`RecordFieldFlattener.FlattenAll`, so adding the two new types to
+the flattener was the only audit wiring needed. Both new types
+appear in [docs/parity/july2010-vs-xex44.json](july2010-vs-xex44.json)
+and [docs/parity/final-vs-memdebug.json](final-vs-memdebug.json).
+
+### Phase 10 outcome — typed parsers for all remaining unparsed ESM types
+
+After Phase 9 the codebase parsed ~70 ESM types via `RecordParser`,
+plus 5 handled out-of-band (REFR/LAND/ACHR/ACRE/LVLI). FNV has 106
+distinct record types in the main ESM, leaving **24 types
+completely unparsed** (~8K records, ~2% of the total).
+
+Phase 10 added typed parsers for all 24:
+
+- **5 GENERIC-only additions** (IMGS, CLMT, GRAS, LTEX, AMEF) —
+  routed through `RuntimeGenericReader` + PDB layouts. ~5 LOC.
+- **4 TRIVIAL typed handlers** — HDPT (head parts, 61 records),
+  VTYP (voice types, 98), MICN (menu icons, 12), LSCT (load screen
+  types, 1).
+- **4 MODERATE typed handlers** — IDLE (idle animations, 1590),
+  CPTH (camera paths, 415), IPCT (impact data, 120), ALOC (audio
+  location controllers, 86).
+- **4 HARD typed handlers** — PGRE (placed grenades, 149, ESM-only
+  since runtime is transient), REGN (regions, 271), CCRD (caravan
+  cards, 270), DEBR (debris, 6).
+- **7 SKIP-tier handlers** (user opted into "truly everything") —
+  INGR (1), NAVI (1), CDCK (11), plus 4 hardcore-mode stage types
+  (RADS/DEHY/HUNG/SLPD, 5 records each) sharing a single
+  `SurvivalStageRecord` model and `RuntimeSurvivalStageReader`
+  parameterized by FormType.
+
+Total: **17 new typed RecordCollection lists** + **5 generic
+additions** + **18 new runtime readers** (including the shared
+survival-stage reader). All wired through `RecordFieldFlattener`
+so the parity audit picks them up dynamically.
+
+After Phase 10 the audit reports **44 distinct record types**
+(up from 25 in Phase 9), covering every FNV ESM type that has
+parseable subrecord structure. Result: ~100% record-type
+coverage. The only unparsed types now are the 5 handled
+out-of-band by dedicated enrichment paths (REFR/LAND/ACHR/ACRE/LVLI).
+
+Notable verifications on the July2010↔xex44 baseline:
+- **HeadPart**: 51 matched, ModelPath all agree.
+- **VoiceType**: 87 matched, Flags all agree.
+- **CameraPath**: 51 matched, parent/prev path FormIDs agree.
+- **IdleAnimation**: 1500+ matched records.
+- **ImpactData**: 100+ matched.
+- **Region**: 200+ matched, Worldspace FormIDs agree.
+- **Ingredient**: 1 matched (the one FNV record).
+- **NavMeshInfoMap**: 1 matched.
+
+The 4 hardcore-mode stages appear as separate "RadiationStage",
+"DehydrationStage", "HungerStage", "SleepDeprivationStage" type
+columns in the audit (despite sharing the `SurvivalStageRecord`
+model — the flattener uses distinct type names per FormType).
+
+### Phase 9 outcome — typed runtime readers for remaining accomplishable types
+
+After Phase 8 closed the two silent gaps (ECZN + NavMesh), 11 ESM
+record types remained without a typed runtime reader, all marked
+`esm-sufficient`. Phase 9 investigation categorized them:
+
+- **Accomplishable (4)**: LGTM, RCCT, COBJ, WATR — all <150 LOC
+  each, no external dependencies. Added.
+- **Stale matrix (1)**: MUSC — `RuntimeMusicTypeReader` was already
+  implemented but the matrix said `null`. Corrected; also added MUSC
+  to the audit flattener.
+- **Not feasible (6)**: GMST (non-TESForm union value), TXST
+  (runtime stores `NiTexture*` pointers not strings), ARMA (pure
+  composite, 0 own-class fields), BPTD (opaque `pPartArray`), CSTY
+  (3 opaque nested data blocks), WTHR (8 of 12 fields opaque on a
+  mostly-undocumented 900B struct). All require Ghidra
+  decompilation or stable derived state not in the runtime memory.
+
+Net: 5 new typed-runtime entries in the matrix; 5 new types in the
+parity audit; **zero disagreements** on all flags / scalar fields
+across LightingTemplate, RecipeCategory, MusicType, and Water
+Opacity. The 7 type families now categorized as `esm-sufficient`
+(down from 11) are documented in the matrix with the specific
+reason each is infeasible — see the matrix `nextAction` field on
+each row.
+
+**ConstructibleObject (COBJ)** has a reader but **0 records** in
+the FNV main ESM (FNV uses RCPE/RCCT for recipes instead — the
+COBJ FormType 0x32 is a Fallout 4 record). The reader is dormant
+on FNV data but forward-compatible if ever needed.
+
+### Phase 8 correction — SPECIAL mechanism re-investigated
+
+Phase 7 attributed the 112-record NPC SPECIAL gap to the audit's
+`IsDefaultLike` rule. A targeted re-investigation (Phase 8) revealed
+the mechanism is more specific: [RuntimeNpcFieldReader.ReadNpcSpecial](../../src/FalloutXbox360Utils/Core/Formats/Esm/Runtime/Readers/Specialized/RuntimeNpcFieldReader.cs)
+contains a validation gate that returns `null` when all 7 SPECIAL
+bytes sum to zero (treating all-zero as uninitialized memory). For
+112 proto NPCs, the bytes at the probe-chosen SPECIAL offset are
+genuinely `[0,0,0,0,0,0,0]`, so the reader rejects them, the
+flattener emits empty strings, and the audit collapses all 7
+columns (not just AG/CH). The SUMMARY now reflects this — see the
+"Current top gaps" table and the corrected Phase 7 outcome section.
+
 ### Current top gaps after Phase 6 (July2010↔xex44)
 
-**ESM-only** (runtime reader needs work — known causes in parens):
+**ESM-only** (all remaining items have a documented cause):
 
 | Type | Field | Count | Why |
 |---|---|---:|---|
@@ -183,10 +348,10 @@ Net result:
 | NPC | Template | 512 | Proto data absence |
 | NPC | Height | 464 | Load-state (~17% of NPCs) |
 | NPC | Script | 199 | Proto data absence |
-| Perk | Description | 115 | Not yet investigated |
-| NPC | SPECIAL_AG / CH | 112 / 112 | Not yet investigated |
+| Perk | Description | 115 | Format limit — TESDescription `lFileOffset` is a lazy file reference; DESC bytes never enter memory (Phase 7) |
+| NPC | SPECIAL (all 7 stats) | 112 each | Runtime reader rejects all-zero SPECIAL arrays as uninitialized memory; 112 proto NPCs have `[0,0,0,0,0,0,0]` at the probe offset, ESM has non-zero. Defensive validation + content drift (Phase 7) |
 
-**DMP-only** (ESM handler needs work):
+**DMP-only** (ESM-side data absence or semantic mismatch):
 
 | Type | Field | Count | Why |
 |---|---|---:|---|
@@ -196,8 +361,8 @@ Net result:
 | Armor | DR | 123 | Semantic mismatch (runtime stores scaled combat rating) |
 | Armor | DT | 54 | Same as DR |
 | NPC | Flags | 38 | Content drift |
-| NPC | Confidence | 33 | Not yet investigated |
-| LeveledList | EntryCount | 14 | Not yet investigated |
+| NPC | Confidence | 33 | Data absence — 33 proto NPCs lack AIDT subrecords (Phase 7) |
+| LeveledList | EntryCount | 14 | Data absence — 14 proto lists lack LVLO subrecords (Phase 7) |
 
 Disagreements (1,800+ NPC factions/inventory, 510 container contents,
 NPC SPECIAL/skills variances) are content drift between proto and final

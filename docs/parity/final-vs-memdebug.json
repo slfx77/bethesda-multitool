@@ -1,7 +1,7 @@
 {
   "esmLabel": "FalloutNV.esm",
   "dmpLabel": "Fallout_Release_MemDebug.xex.dmp",
-  "generatedAtUtc": "2026-05-12T20:56:46.4528119Z",
+  "generatedAtUtc": "2026-05-13T05:36:47.2825817Z",
   "recordTypes": [
     {
       "typeName": "Ammo",
@@ -539,6 +539,15 @@
       ]
     },
     {
+      "typeName": "AudioLocationController",
+      "esmRecordCount": 89,
+      "dmpRecordCount": 0,
+      "matchedRecordCount": 0,
+      "esmOnlyRecordCount": 89,
+      "dmpOnlyRecordCount": 0,
+      "fields": []
+    },
+    {
       "typeName": "Book",
       "esmRecordCount": 27,
       "dmpRecordCount": 26,
@@ -693,6 +702,135 @@
           ]
         }
       ]
+    },
+    {
+      "typeName": "CameraPath",
+      "esmRecordCount": 418,
+      "dmpRecordCount": 404,
+      "matchedRecordCount": 400,
+      "esmOnlyRecordCount": 18,
+      "dmpOnlyRecordCount": 4,
+      "fields": [
+        {
+          "fieldName": "Flags",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 348,
+          "disagree": 0,
+          "examples": []
+        },
+        {
+          "fieldName": "ParentPath",
+          "esmOnly": 0,
+          "dmpOnly": 1,
+          "agree": 375,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x000A35BC",
+              "esmValue": "",
+              "dmpValue": "LeftIsOpenFatal (0x000A35B5)",
+              "status": "DmpOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "PrevPath",
+          "esmOnly": 0,
+          "dmpOnly": 246,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x00120D97",
+              "esmValue": "",
+              "dmpValue": "DEMOCams (0x0005C77A)",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x00120D96",
+              "esmValue": "",
+              "dmpValue": "MeleeFatalLeftPlayerKC (0x00120D95)",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x00120D94",
+              "esmValue": "",
+              "dmpValue": "MeleeFatalRight01PlayerKC (0x00120D93)",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x00120D92",
+              "esmValue": "",
+              "dmpValue": "MeleeDismemberRightKC (0x00120D91)",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x00120D90",
+              "esmValue": "",
+              "dmpValue": "WeirdFaceCamKC (0x00120D8F)",
+              "status": "DmpOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "ShotCount",
+          "esmOnly": 249,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x00120D96",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00120D95",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00120D94",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00120D93",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00120D92",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "typeName": "CaravanCard",
+      "esmRecordCount": 270,
+      "dmpRecordCount": 0,
+      "matchedRecordCount": 0,
+      "esmOnlyRecordCount": 270,
+      "dmpOnlyRecordCount": 0,
+      "fields": []
+    },
+    {
+      "typeName": "CaravanDeck",
+      "esmRecordCount": 13,
+      "dmpRecordCount": 0,
+      "matchedRecordCount": 0,
+      "esmOnlyRecordCount": 13,
+      "dmpOnlyRecordCount": 0,
+      "fields": []
     },
     {
       "typeName": "Cell",
@@ -878,8 +1016,8 @@
           "fieldName": "PlacedObjectCount",
           "esmOnly": 18,
           "dmpOnly": 2,
-          "agree": 8,
-          "disagree": 323,
+          "agree": 9,
+          "disagree": 322,
           "examples": [
             {
               "formId": "0x001206D8",
@@ -917,15 +1055,9 @@
           "fieldName": "Worldspace",
           "esmOnly": 0,
           "dmpOnly": 0,
-          "agree": 10,
-          "disagree": 37,
+          "agree": 45,
+          "disagree": 2,
           "examples": [
-            {
-              "formId": "0x000DDF33",
-              "esmValue": "0x000DA726",
-              "dmpValue": "0x00014BE2",
-              "status": "Disagree"
-            },
             {
               "formId": "0x000DDF34",
               "esmValue": "0x000DA726",
@@ -936,18 +1068,6 @@
               "formId": "0x000DDF35",
               "esmValue": "0x000DA726",
               "dmpValue": "0x000ECAC5",
-              "status": "Disagree"
-            },
-            {
-              "formId": "0x000DDF3B",
-              "esmValue": "0x000DA726",
-              "dmpValue": "0x00014BE2",
-              "status": "Disagree"
-            },
-            {
-              "formId": "0x000DDF43",
-              "esmValue": "0x000DA726",
-              "dmpValue": "0x0012A914",
               "status": "Disagree"
             }
           ]
@@ -1616,6 +1736,67 @@
       ]
     },
     {
+      "typeName": "Debris",
+      "esmRecordCount": 6,
+      "dmpRecordCount": 6,
+      "matchedRecordCount": 6,
+      "esmOnlyRecordCount": 0,
+      "dmpOnlyRecordCount": 0,
+      "fields": [
+        {
+          "fieldName": "VariantCount",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 6,
+          "disagree": 0,
+          "examples": []
+        }
+      ]
+    },
+    {
+      "typeName": "DehydrationStage",
+      "esmRecordCount": 5,
+      "dmpRecordCount": 0,
+      "matchedRecordCount": 0,
+      "esmOnlyRecordCount": 5,
+      "dmpOnlyRecordCount": 0,
+      "fields": []
+    },
+    {
+      "typeName": "EncounterZone",
+      "esmRecordCount": 17,
+      "dmpRecordCount": 141,
+      "matchedRecordCount": 17,
+      "esmOnlyRecordCount": 0,
+      "dmpOnlyRecordCount": 124,
+      "fields": [
+        {
+          "fieldName": "Flags",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 11,
+          "disagree": 0,
+          "examples": []
+        },
+        {
+          "fieldName": "MinLevel",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 16,
+          "disagree": 0,
+          "examples": []
+        },
+        {
+          "fieldName": "Rank",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 2,
+          "disagree": 0,
+          "examples": []
+        }
+      ]
+    },
+    {
       "typeName": "Faction",
       "esmRecordCount": 679,
       "dmpRecordCount": 572,
@@ -1797,6 +1978,422 @@
       ]
     },
     {
+      "typeName": "HeadPart",
+      "esmRecordCount": 61,
+      "dmpRecordCount": 61,
+      "matchedRecordCount": 61,
+      "esmOnlyRecordCount": 0,
+      "dmpOnlyRecordCount": 0,
+      "fields": [
+        {
+          "fieldName": "ExtraPartCount",
+          "esmOnly": 15,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x000BCC01",
+              "esmValue": "3",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000BCC00",
+              "esmValue": "3",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000BCBFF",
+              "esmValue": "3",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000BCBFE",
+              "esmValue": "2",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000BCBFD",
+              "esmValue": "2",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "Flags",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 47,
+          "disagree": 0,
+          "examples": []
+        },
+        {
+          "fieldName": "ModelPath",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 46,
+          "disagree": 0,
+          "examples": []
+        }
+      ]
+    },
+    {
+      "typeName": "HungerStage",
+      "esmRecordCount": 5,
+      "dmpRecordCount": 0,
+      "matchedRecordCount": 0,
+      "esmOnlyRecordCount": 5,
+      "dmpOnlyRecordCount": 0,
+      "fields": []
+    },
+    {
+      "typeName": "IdleAnimation",
+      "esmRecordCount": 1594,
+      "dmpRecordCount": 1491,
+      "matchedRecordCount": 1483,
+      "esmOnlyRecordCount": 111,
+      "dmpOnlyRecordCount": 8,
+      "fields": [
+        {
+          "fieldName": "AnimData",
+          "esmOnly": 1,
+          "dmpOnly": 1,
+          "agree": 1429,
+          "disagree": 23,
+          "examples": [
+            {
+              "formId": "0x0013A23A",
+              "esmValue": "192",
+              "dmpValue": "128",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0010DFF7",
+              "esmValue": "20",
+              "dmpValue": "7",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0010DFF5",
+              "esmValue": "20",
+              "dmpValue": "7",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0010DFF4",
+              "esmValue": "20",
+              "dmpValue": "7",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0010DFF3",
+              "esmValue": "20",
+              "dmpValue": "7",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "FlagsEx",
+          "esmOnly": 2,
+          "dmpOnly": 0,
+          "agree": 42,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x000FC1F0",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000FC1EF",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "LoopMax",
+          "esmOnly": 3,
+          "dmpOnly": 0,
+          "agree": 247,
+          "disagree": 5,
+          "examples": [
+            {
+              "formId": "0x0013F5A4",
+              "esmValue": "4",
+              "dmpValue": "6",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0013A23C",
+              "esmValue": "255",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0013395F",
+              "esmValue": "4",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0012CF9D",
+              "esmValue": "4",
+              "dmpValue": "255",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00119083",
+              "esmValue": "6",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "LoopMin",
+          "esmOnly": 3,
+          "dmpOnly": 0,
+          "agree": 237,
+          "disagree": 6,
+          "examples": [
+            {
+              "formId": "0x0013A23C",
+              "esmValue": "255",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0013395F",
+              "esmValue": "2",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0012CF9D",
+              "esmValue": "4",
+              "dmpValue": "255",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00119083",
+              "esmValue": "3",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000B5EA6",
+              "esmValue": "1",
+              "dmpValue": "3",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "ModelPath",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 1480,
+          "disagree": 3,
+          "examples": [
+            {
+              "formId": "0x0013DAF6",
+              "esmValue": "Characters\\_Male\\IdleAnims\\SpecialIdle_NVCrucifiedIdleFidget.kf",
+              "dmpValue": "Characters\\_Male\\IdleAnims\\SpecialIdle_NVCrucifiedSoldierScream.kf",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0013A818",
+              "esmValue": "creatures\\NVMrHouse\\IdleAnims\\OverloadLifeSupport.kf",
+              "dmpValue": "creatures\\NVMrHouse\\IdleAnims\\SpecialIdle_OverloadLifeSupport.kf",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0010D505",
+              "esmValue": "creatures\\NVSecuritron\\IdleAnims\\SpecialIdle_FingerTwitch.kf",
+              "dmpValue": "creatures\\NVSecuritron\\IdleAnims",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "ParentIdle",
+          "esmOnly": 0,
+          "dmpOnly": 2,
+          "agree": 991,
+          "disagree": 8,
+          "examples": [
+            {
+              "formId": "0x0013DAF7",
+              "esmValue": "NVCrucifixIdles (0x00151B80)",
+              "dmpValue": "NVCrucifixHang (0x0012A25B)",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0013DAF6",
+              "esmValue": "NVCrucifixIdles (0x00151B80)",
+              "dmpValue": "NVCrucifixHang (0x0012A25B)",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0013DAF4",
+              "esmValue": "NVCrucifixIdles (0x00151B80)",
+              "dmpValue": "NVCrucifixHang (0x0012A25B)",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0013A23D",
+              "esmValue": "MrHouseUnplugged (0x0013A23E)",
+              "dmpValue": "MrHouseClose (0x0013A23E)",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0013A23C",
+              "esmValue": "MrHouseUnplugged (0x0013A23E)",
+              "dmpValue": "MrHouseClose (0x0013A23E)",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "PrevIdle",
+          "esmOnly": 774,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x0014C118",
+              "esmValue": "NVOnBackBedWakeUp (0x0014C114)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014C117",
+              "esmValue": "NVOnBackBedLeftGetUp (0x0014C116)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014C116",
+              "esmValue": "NVONBackBedExitFast (0x0014C115)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014C114",
+              "esmValue": "NVBedOnBackSleep (0x0014C111)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0014C113",
+              "esmValue": "NVBedOnBackLeft (0x0014C112)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "ReplayDelay",
+          "esmOnly": 2,
+          "dmpOnly": 0,
+          "agree": 38,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x0011A33A",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00055B51",
+              "esmValue": "10",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "typeName": "ImpactData",
+      "esmRecordCount": 125,
+      "dmpRecordCount": 108,
+      "matchedRecordCount": 108,
+      "esmOnlyRecordCount": 17,
+      "dmpOnlyRecordCount": 0,
+      "fields": [
+        {
+          "fieldName": "DecalTextureSet",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 78,
+          "disagree": 0,
+          "examples": []
+        },
+        {
+          "fieldName": "ModelPath",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 82,
+          "disagree": 0,
+          "examples": []
+        },
+        {
+          "fieldName": "Sound1",
+          "esmOnly": 1,
+          "dmpOnly": 2,
+          "agree": 93,
+          "disagree": 1,
+          "examples": [
+            {
+              "formId": "0x000553E1",
+              "esmValue": "NPCFeralGhoulImpact (0x00152401)",
+              "dmpValue": "FXMeleeHandFleshTear (0x00075329)",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x000AAE62",
+              "esmValue": "FXBulletImpactWater (0x0016731C)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00083D79",
+              "esmValue": "",
+              "dmpValue": "FXLaserImpactLibertyPrime (0x00083D77)",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x00083D78",
+              "esmValue": "",
+              "dmpValue": "FXLaserImpactLibertyPrime (0x00083D77)",
+              "status": "DmpOnly"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "typeName": "Ingredient",
+      "esmRecordCount": 1,
+      "dmpRecordCount": 1,
+      "matchedRecordCount": 1,
+      "esmOnlyRecordCount": 0,
+      "dmpOnlyRecordCount": 0,
+      "fields": []
+    },
+    {
       "typeName": "Key",
       "esmRecordCount": 283,
       "dmpRecordCount": 226,
@@ -1958,6 +2555,242 @@
       ]
     },
     {
+      "typeName": "LightingTemplate",
+      "esmRecordCount": 31,
+      "dmpRecordCount": 24,
+      "matchedRecordCount": 24,
+      "esmOnlyRecordCount": 7,
+      "dmpOnlyRecordCount": 0,
+      "fields": [
+        {
+          "fieldName": "AmbientColor",
+          "esmOnly": 1,
+          "dmpOnly": 0,
+          "agree": 21,
+          "disagree": 2,
+          "examples": [
+            {
+              "formId": "0x0008E6BC",
+              "esmValue": "3220000",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00099DD0",
+              "esmValue": "8017490",
+              "dmpValue": "3953041",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00095F0F",
+              "esmValue": "3086359",
+              "dmpValue": "1517359",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "DirectionalColor",
+          "esmOnly": 12,
+          "dmpOnly": 0,
+          "agree": 11,
+          "disagree": 1,
+          "examples": [
+            {
+              "formId": "0x000F3D41",
+              "esmValue": "1322028",
+              "dmpValue": "594707",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0008E6BC",
+              "esmValue": "2302755",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0007918E",
+              "esmValue": "3947580",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00099DD0",
+              "esmValue": "3026478",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0005C6D8",
+              "esmValue": "2894892",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "DirectionalFade",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 22,
+          "disagree": 0,
+          "examples": []
+        },
+        {
+          "fieldName": "DirectionalRotationXY",
+          "esmOnly": 0,
+          "dmpOnly": 2,
+          "agree": 4,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x0002B0D7",
+              "esmValue": "0",
+              "dmpValue": "90",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x0008F584",
+              "esmValue": "0",
+              "dmpValue": "300",
+              "status": "DmpOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "DirectionalRotationZ",
+          "esmOnly": 12,
+          "dmpOnly": 0,
+          "agree": 6,
+          "disagree": 6,
+          "examples": [
+            {
+              "formId": "0x001403A4",
+              "esmValue": "270",
+              "dmpValue": "90",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x000F3D41",
+              "esmValue": "270",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0008E6BC",
+              "esmValue": "270",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0007918E",
+              "esmValue": "270",
+              "dmpValue": "90",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0002B0D7",
+              "esmValue": "270",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "FogClipDist",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 23,
+          "disagree": 0,
+          "examples": []
+        },
+        {
+          "fieldName": "FogColor",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 20,
+          "disagree": 4,
+          "examples": [
+            {
+              "formId": "0x0008E6BC",
+              "esmValue": "3153942",
+              "dmpValue": "4592384",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00099DD0",
+              "esmValue": "3352616",
+              "dmpValue": "2176314",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0005C6D8",
+              "esmValue": "4339251",
+              "dmpValue": "2835530",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00095F0F",
+              "esmValue": "3285796",
+              "dmpValue": "2368560",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "FogFar",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 23,
+          "disagree": 0,
+          "examples": []
+        },
+        {
+          "fieldName": "FogNear",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 22,
+          "disagree": 0,
+          "examples": []
+        },
+        {
+          "fieldName": "FogPower",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 23,
+          "disagree": 0,
+          "examples": []
+        }
+      ]
+    },
+    {
+      "typeName": "LoadScreenType",
+      "esmRecordCount": 1,
+      "dmpRecordCount": 0,
+      "matchedRecordCount": 0,
+      "esmOnlyRecordCount": 1,
+      "dmpOnlyRecordCount": 0,
+      "fields": []
+    },
+    {
+      "typeName": "MenuIcon",
+      "esmRecordCount": 12,
+      "dmpRecordCount": 16,
+      "matchedRecordCount": 3,
+      "esmOnlyRecordCount": 9,
+      "dmpOnlyRecordCount": 13,
+      "fields": [
+        {
+          "fieldName": "IconPath",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 3,
+          "disagree": 0,
+          "examples": []
+        }
+      ]
+    },
+    {
       "typeName": "MiscItem",
       "esmRecordCount": 507,
       "dmpRecordCount": 411,
@@ -2079,6 +2912,94 @@
               "esmValue": "0.00",
               "dmpValue": "1.00",
               "status": "DmpOnly"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "typeName": "MusicType",
+      "esmRecordCount": 20,
+      "dmpRecordCount": 46,
+      "matchedRecordCount": 13,
+      "esmOnlyRecordCount": 7,
+      "dmpOnlyRecordCount": 33,
+      "fields": [
+        {
+          "fieldName": "Attenuation",
+          "esmOnly": 13,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x00119D2E",
+              "esmValue": "-6.00",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00058FF0",
+              "esmValue": "-6.00",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000C348B",
+              "esmValue": "-6.00",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x000BAD30",
+              "esmValue": "-6.00",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00090CE7",
+              "esmValue": "-6.00",
+              "dmpValue": "0.00",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "FileName",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 6,
+          "disagree": 6,
+          "examples": [
+            {
+              "formId": "0x00119D2E",
+              "esmValue": "freeside\\freeside_01.mp3",
+              "dmpValue": "D:\\Data\\Music\\freeside\\freeside_01.mp3",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00058FF0",
+              "esmValue": "special\\mus_projpurityactivate.mp3",
+              "dmpValue": "D:\\Data\\Music\\special\\mus_projpurityactivate.mp3",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x000C348B",
+              "esmValue": "endgame\\endgame_01.mp3",
+              "dmpValue": "D:\\Data\\Music\\endgame\\endgame_01.mp3",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0008F640",
+              "esmValue": "tenpenny\\mus_tenpenny_01_lp.wav",
+              "dmpValue": "D:\\Data\\Music\\tenpenny\\mus_tenpenny_01_lp.wav",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x00089580",
+              "esmValue": "special\\success.mp3",
+              "dmpValue": "D:\\Data\\Music\\special\\success.mp3",
+              "status": "Disagree"
             }
           ]
         }
@@ -3733,6 +4654,63 @@
       ]
     },
     {
+      "typeName": "NavMesh",
+      "esmRecordCount": 4782,
+      "dmpRecordCount": 4,
+      "matchedRecordCount": 1,
+      "esmOnlyRecordCount": 4781,
+      "dmpOnlyRecordCount": 3,
+      "fields": [
+        {
+          "fieldName": "Cell",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 1,
+          "disagree": 0,
+          "examples": []
+        },
+        {
+          "fieldName": "TriangleCount",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 1,
+          "examples": [
+            {
+              "formId": "0x000EB92A",
+              "esmValue": "346",
+              "dmpValue": "357",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "VertexCount",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 1,
+          "examples": [
+            {
+              "formId": "0x000EB92A",
+              "esmValue": "214",
+              "dmpValue": "224",
+              "status": "Disagree"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "typeName": "NavMeshInfoMap",
+      "esmRecordCount": 1,
+      "dmpRecordCount": 0,
+      "matchedRecordCount": 0,
+      "esmOnlyRecordCount": 1,
+      "dmpOnlyRecordCount": 0,
+      "fields": []
+    },
+    {
       "typeName": "Note",
       "esmRecordCount": 894,
       "dmpRecordCount": 787,
@@ -4157,6 +5135,15 @@
       ]
     },
     {
+      "typeName": "PlacedGrenade",
+      "esmRecordCount": 174,
+      "dmpRecordCount": 0,
+      "matchedRecordCount": 0,
+      "esmOnlyRecordCount": 174,
+      "dmpOnlyRecordCount": 0,
+      "fields": []
+    },
+    {
       "typeName": "Quest",
       "esmRecordCount": 431,
       "dmpRecordCount": 309,
@@ -4427,6 +5414,271 @@
       ]
     },
     {
+      "typeName": "RadiationStage",
+      "esmRecordCount": 5,
+      "dmpRecordCount": 5,
+      "matchedRecordCount": 5,
+      "esmOnlyRecordCount": 0,
+      "dmpOnlyRecordCount": 0,
+      "fields": [
+        {
+          "fieldName": "Modifier",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 5,
+          "examples": [
+            {
+              "formId": "0x000335A2",
+              "esmValue": "208366",
+              "dmpValue": "1149459456",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x000335A1",
+              "esmValue": "208368",
+              "dmpValue": "1149459200",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x000335A0",
+              "esmValue": "210327",
+              "dmpValue": "1149458560",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0003359F",
+              "esmValue": "208365",
+              "dmpValue": "1149459584",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0003359E",
+              "esmValue": "208367",
+              "dmpValue": "1149459328",
+              "status": "Disagree"
+            }
+          ]
+        },
+        {
+          "fieldName": "Threshold",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 5,
+          "disagree": 0,
+          "examples": []
+        }
+      ]
+    },
+    {
+      "typeName": "RecipeCategory",
+      "esmRecordCount": 10,
+      "dmpRecordCount": 7,
+      "matchedRecordCount": 7,
+      "esmOnlyRecordCount": 3,
+      "dmpOnlyRecordCount": 0,
+      "fields": [
+        {
+          "fieldName": "Flags",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 6,
+          "disagree": 0,
+          "examples": []
+        }
+      ]
+    },
+    {
+      "typeName": "Region",
+      "esmRecordCount": 276,
+      "dmpRecordCount": 167,
+      "matchedRecordCount": 167,
+      "esmOnlyRecordCount": 109,
+      "dmpOnlyRecordCount": 0,
+      "fields": [
+        {
+          "fieldName": "DataBlockCount",
+          "esmOnly": 104,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x001489D2",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00148159",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00148158",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001479CC",
+              "esmValue": "2",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00144C22",
+              "esmValue": "1",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "EmittanceB",
+          "esmOnly": 158,
+          "dmpOnly": 0,
+          "agree": 0,
+          "disagree": 2,
+          "examples": [
+            {
+              "formId": "0x001489D2",
+              "esmValue": "15",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00148159",
+              "esmValue": "128",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00148158",
+              "esmValue": "128",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001479CC",
+              "esmValue": "128",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00144C22",
+              "esmValue": "15",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "EmittanceG",
+          "esmOnly": 142,
+          "dmpOnly": 1,
+          "agree": 0,
+          "disagree": 1,
+          "examples": [
+            {
+              "formId": "0x001489D2",
+              "esmValue": "200",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00148159",
+              "esmValue": "64",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00148158",
+              "esmValue": "64",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00144C22",
+              "esmValue": "200",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00144AA8",
+              "esmValue": "200",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "EmittanceR",
+          "esmOnly": 0,
+          "dmpOnly": 2,
+          "agree": 0,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x00123CE3",
+              "esmValue": "0",
+              "dmpValue": "255",
+              "status": "DmpOnly"
+            },
+            {
+              "formId": "0x00104160",
+              "esmValue": "0",
+              "dmpValue": "255",
+              "status": "DmpOnly"
+            }
+          ]
+        },
+        {
+          "fieldName": "Worldspace",
+          "esmOnly": 3,
+          "dmpOnly": 0,
+          "agree": 17,
+          "disagree": 1,
+          "examples": [
+            {
+              "formId": "0x000CD89D",
+              "esmValue": "WastelandNV (0x000DA726)",
+              "dmpValue": "ExtWorldTst02 (0x000842E5)",
+              "status": "Disagree"
+            },
+            {
+              "formId": "0x0007EA0E",
+              "esmValue": "WastelandNV (0x000DA726)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0007EA0A",
+              "esmValue": "WastelandNV (0x000DA726)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0007E70D",
+              "esmValue": "WastelandNV (0x000DA726)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "typeName": "SleepDeprivationStage",
+      "esmRecordCount": 5,
+      "dmpRecordCount": 0,
+      "matchedRecordCount": 0,
+      "esmOnlyRecordCount": 5,
+      "dmpOnlyRecordCount": 0,
+      "fields": []
+    },
+    {
       "typeName": "Spell",
       "esmRecordCount": 269,
       "dmpRecordCount": 239,
@@ -4613,6 +5865,88 @@
               "esmValue": "2",
               "dmpValue": "1",
               "status": "Disagree"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "typeName": "VoiceType",
+      "esmRecordCount": 100,
+      "dmpRecordCount": 121,
+      "matchedRecordCount": 72,
+      "esmOnlyRecordCount": 28,
+      "dmpOnlyRecordCount": 49,
+      "fields": [
+        {
+          "fieldName": "Flags",
+          "esmOnly": 1,
+          "dmpOnly": 0,
+          "agree": 34,
+          "disagree": 0,
+          "examples": [
+            {
+              "formId": "0x00143779",
+              "esmValue": "2",
+              "dmpValue": "0",
+              "status": "EsmOnly"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "typeName": "Water",
+      "esmRecordCount": 78,
+      "dmpRecordCount": 61,
+      "matchedRecordCount": 61,
+      "esmOnlyRecordCount": 17,
+      "dmpOnlyRecordCount": 0,
+      "fields": [
+        {
+          "fieldName": "Opacity",
+          "esmOnly": 0,
+          "dmpOnly": 0,
+          "agree": 53,
+          "disagree": 0,
+          "examples": []
+        },
+        {
+          "fieldName": "Sound",
+          "esmOnly": 16,
+          "dmpOnly": 0,
+          "agree": 6,
+          "disagree": 1,
+          "examples": [
+            {
+              "formId": "0x00128922",
+              "esmValue": "AMBULPoolLP (0x0016CBEC)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x00127902",
+              "esmValue": "AMBLucky38BasementWaterLP (0x0016B3C2)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0011CB36",
+              "esmValue": "AMBULBathDryLP (0x0016B3D4)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x001009CA",
+              "esmValue": "AMBWaterLakeLP (0x00167340)",
+              "dmpValue": "",
+              "status": "EsmOnly"
+            },
+            {
+              "formId": "0x0006BC6D",
+              "esmValue": "AMBWaterUtilityLP (0x00174310)",
+              "dmpValue": "",
+              "status": "EsmOnly"
             }
           ]
         }
@@ -5753,10 +7087,10 @@
       "fields": [
         {
           "fieldName": "CellCount",
-          "esmOnly": 1,
+          "esmOnly": 2,
           "dmpOnly": 0,
           "agree": 0,
-          "disagree": 11,
+          "disagree": 10,
           "examples": [
             {
               "formId": "0x00031E12",
@@ -5767,8 +7101,8 @@
             {
               "formId": "0x000B3625",
               "esmValue": "28",
-              "dmpValue": "17",
-              "status": "Disagree"
+              "dmpValue": "0",
+              "status": "EsmOnly"
             },
             {
               "formId": "0x000D703C",
@@ -5779,7 +7113,7 @@
             {
               "formId": "0x000DA726",
               "esmValue": "16397",
-              "dmpValue": "552",
+              "dmpValue": "587",
               "status": "Disagree"
             },
             {
