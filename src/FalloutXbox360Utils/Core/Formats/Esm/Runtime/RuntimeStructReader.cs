@@ -22,29 +22,50 @@ public sealed class RuntimeStructReader
 {
     private readonly RuntimeActorReader _actors;
     private readonly RuntimeActorWeaponReader _actorWeapons;
+    private readonly RuntimeAudioLocationControllerReader _audioLocationControllers;
     private readonly RuntimeCharacterAppearanceReader _appearance;
     private readonly RuntimeBookReader _books;
+    private readonly RuntimeCameraPathReader _cameraPaths;
+    private readonly RuntimeCaravanCardReader _caravanCards;
+    private readonly RuntimeCaravanDeckReader _caravanDecks;
     private readonly RuntimeCellReader _cells;
     private readonly RuntimeChallengeReader _challenges;
     private readonly RuntimeClassReader _classes;
     private readonly RuntimeCollectionReader _collections;
+    private readonly RuntimeConstructibleObjectReader _constructibleObjects;
     private readonly RuntimeMemoryContext _context;
+    private readonly RuntimeDebrisReader _debris;
     private readonly RuntimeDialogueReader _dialogue;
     private readonly RuntimeEffectReader _effects;
+    private readonly RuntimeEncounterZoneReader _encounterZones;
     private readonly RuntimeExplosionReader _explosions;
     private readonly RuntimeGenericReader _generic;
     private readonly RuntimeGlobalReader _globals;
+    private readonly RuntimeHeadPartReader _headParts;
+    private readonly RuntimeIdleAnimationReader _idleAnimations;
+    private readonly RuntimeImpactDataReader _impactData;
+    private readonly RuntimeIngredientReader _ingredients;
+    private readonly RuntimeNavMeshInfoMapReader _navMeshInfoMaps;
+    private readonly RuntimeSurvivalStageReader _survivalStages;
     private readonly RuntimeItemReader _items;
+    private readonly RuntimeLightingTemplateReader _lightingTemplates;
+    private readonly RuntimeLoadScreenTypeReader _loadScreenTypes;
     private readonly RuntimeMagicReader _magic;
+    private readonly RuntimeMenuIconReader _menuIcons;
     private readonly RuntimeMessageReader _messages;
     private readonly RuntimeMusicTypeReader _musicTypes;
+    private readonly RuntimeNavMeshReader _navMeshes;
     private readonly RuntimePackageReader _packages;
     private readonly RuntimeRaceReader _races;
+    private readonly RuntimeRecipeCategoryReader _recipeCategories;
+    private readonly RuntimeRegionReader _regions;
     private readonly RuntimeRecipeReader _recipes;
+    private readonly RuntimeVoiceTypeReader _voiceTypes;
     private readonly RuntimeRefrReader _refrs;
     private readonly RuntimeReputationReader _reputations;
     private readonly RuntimeScriptReader _scripts;
     private readonly RuntimeSoundReader _sounds;
+    private readonly RuntimeWaterReader _water;
     private readonly RuntimeWeaponModReader _weaponMods;
     private readonly RuntimeWorldReader _world;
     private readonly RuntimeWorldObjectReader _worldObjects;
@@ -97,6 +118,27 @@ public sealed class RuntimeStructReader
         _challenges = new RuntimeChallengeReader(_context);
         _explosions = new RuntimeExplosionReader(_context);
         _messages = new RuntimeMessageReader(_context);
+        _encounterZones = new RuntimeEncounterZoneReader(_context);
+        _navMeshes = new RuntimeNavMeshReader(_context);
+        _lightingTemplates = new RuntimeLightingTemplateReader(_context);
+        _recipeCategories = new RuntimeRecipeCategoryReader(_context);
+        _constructibleObjects = new RuntimeConstructibleObjectReader(_context);
+        _water = new RuntimeWaterReader(_context);
+        _headParts = new RuntimeHeadPartReader(_context);
+        _voiceTypes = new RuntimeVoiceTypeReader(_context);
+        _menuIcons = new RuntimeMenuIconReader(_context);
+        _loadScreenTypes = new RuntimeLoadScreenTypeReader(_context);
+        _idleAnimations = new RuntimeIdleAnimationReader(_context);
+        _cameraPaths = new RuntimeCameraPathReader(_context);
+        _impactData = new RuntimeImpactDataReader(_context);
+        _audioLocationControllers = new RuntimeAudioLocationControllerReader(_context);
+        _regions = new RuntimeRegionReader(_context);
+        _caravanCards = new RuntimeCaravanCardReader(_context);
+        _debris = new RuntimeDebrisReader(_context);
+        _ingredients = new RuntimeIngredientReader(_context);
+        _navMeshInfoMaps = new RuntimeNavMeshInfoMapReader(_context);
+        _caravanDecks = new RuntimeCaravanDeckReader(_context);
+        _survivalStages = new RuntimeSurvivalStageReader(_context);
     }
 
     public bool IsEarlyBuild { get; }
@@ -459,6 +501,139 @@ public sealed class RuntimeStructReader
     /// <summary>Accumulated diagnostics for TESConversationData link list population.</summary>
     internal RuntimeDialogueReader.ConversationDataDiagnostics DialogueConversationDiagnostics =>
         _dialogue.ConversationDiagnostics;
+
+    #endregion
+
+    #region Encounter Zones
+
+    public EncounterZoneRecord? ReadRuntimeEncounterZone(RuntimeEditorIdEntry entry)
+    {
+        return _encounterZones.ReadRuntimeEncounterZone(entry);
+    }
+
+    #endregion
+
+    #region Navmeshes
+
+    public NavMeshRecord? ReadRuntimeNavMesh(RuntimeEditorIdEntry entry)
+    {
+        return _navMeshes.ReadRuntimeNavMesh(entry);
+    }
+
+    #endregion
+
+    #region Lighting Templates
+
+    public LightingTemplateRecord? ReadRuntimeLightingTemplate(RuntimeEditorIdEntry entry)
+    {
+        return _lightingTemplates.ReadRuntimeLightingTemplate(entry);
+    }
+
+    #endregion
+
+    #region Recipe Categories
+
+    public RecipeCategoryRecord? ReadRuntimeRecipeCategory(RuntimeEditorIdEntry entry)
+    {
+        return _recipeCategories.ReadRuntimeRecipeCategory(entry);
+    }
+
+    #endregion
+
+    #region Constructible Objects
+
+    public ConstructibleObjectRecord? ReadRuntimeConstructibleObject(RuntimeEditorIdEntry entry)
+    {
+        return _constructibleObjects.ReadRuntimeConstructibleObject(entry);
+    }
+
+    #endregion
+
+    #region Water
+
+    public WaterRecord? ReadRuntimeWater(RuntimeEditorIdEntry entry)
+    {
+        return _water.ReadRuntimeWater(entry);
+    }
+
+    #endregion
+
+    #region Head Parts / Voice Types
+
+    public HeadPartRecord? ReadRuntimeHeadPart(RuntimeEditorIdEntry entry)
+    {
+        return _headParts.ReadRuntimeHeadPart(entry);
+    }
+
+    public VoiceTypeRecord? ReadRuntimeVoiceType(RuntimeEditorIdEntry entry)
+    {
+        return _voiceTypes.ReadRuntimeVoiceType(entry);
+    }
+
+    public MenuIconRecord? ReadRuntimeMenuIcon(RuntimeEditorIdEntry entry)
+    {
+        return _menuIcons.ReadRuntimeMenuIcon(entry);
+    }
+
+    public LoadScreenTypeRecord? ReadRuntimeLoadScreenType(RuntimeEditorIdEntry entry)
+    {
+        return _loadScreenTypes.ReadRuntimeLoadScreenType(entry);
+    }
+
+    public IdleAnimationRecord? ReadRuntimeIdleAnimation(RuntimeEditorIdEntry entry)
+    {
+        return _idleAnimations.ReadRuntimeIdleAnimation(entry);
+    }
+
+    public CameraPathRecord? ReadRuntimeCameraPath(RuntimeEditorIdEntry entry)
+    {
+        return _cameraPaths.ReadRuntimeCameraPath(entry);
+    }
+
+    public ImpactDataRecord? ReadRuntimeImpactData(RuntimeEditorIdEntry entry)
+    {
+        return _impactData.ReadRuntimeImpactData(entry);
+    }
+
+    public AudioLocationControllerRecord? ReadRuntimeAudioLocationController(RuntimeEditorIdEntry entry)
+    {
+        return _audioLocationControllers.ReadRuntimeAudioLocationController(entry);
+    }
+
+    public RegionRecord? ReadRuntimeRegion(RuntimeEditorIdEntry entry)
+    {
+        return _regions.ReadRuntimeRegion(entry);
+    }
+
+    public CaravanCardRecord? ReadRuntimeCaravanCard(RuntimeEditorIdEntry entry)
+    {
+        return _caravanCards.ReadRuntimeCaravanCard(entry);
+    }
+
+    public DebrisRecord? ReadRuntimeDebris(RuntimeEditorIdEntry entry)
+    {
+        return _debris.ReadRuntimeDebris(entry);
+    }
+
+    public IngredientRecord? ReadRuntimeIngredient(RuntimeEditorIdEntry entry)
+    {
+        return _ingredients.ReadRuntimeIngredient(entry);
+    }
+
+    public NavMeshInfoMapRecord? ReadRuntimeNavMeshInfoMap(RuntimeEditorIdEntry entry)
+    {
+        return _navMeshInfoMaps.ReadRuntimeNavMeshInfoMap(entry);
+    }
+
+    public CaravanDeckRecord? ReadRuntimeCaravanDeck(RuntimeEditorIdEntry entry)
+    {
+        return _caravanDecks.ReadRuntimeCaravanDeck(entry);
+    }
+
+    public SurvivalStageRecord? ReadRuntimeSurvivalStage(RuntimeEditorIdEntry entry, byte expectedFormType)
+    {
+        return _survivalStages.ReadRuntimeSurvivalStage(entry, expectedFormType);
+    }
 
     #endregion
 

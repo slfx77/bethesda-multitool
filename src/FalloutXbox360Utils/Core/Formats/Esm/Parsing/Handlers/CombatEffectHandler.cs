@@ -1,5 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Magic;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
@@ -304,6 +305,78 @@ internal sealed class CombatEffectHandler(RecordParserContext context) : RecordH
                 $"  [Semantic] Enriched {enrichedCount}/{projectiles.Count} projectiles with runtime data " +
                 $"({projectileEntries.Count} PROJ entries in hash table)");
         }
+    }
+
+    #endregion
+
+    #region Impact Data
+
+    /// <summary>
+    ///     Parse all Impact Data (IPCT) records.
+    /// </summary>
+    internal List<ImpactDataRecord> ParseImpactData()
+    {
+        var impactData = ParseAccessorOnly("IPCT", 512, ParseImpactDataFromAccessor);
+
+        Context.MergeRuntimeRecords(impactData, 0x5E, i => i.FormId,
+            (reader, entry) => reader.ReadRuntimeImpactData(entry), "impact data");
+
+        return impactData;
+    }
+
+    private ImpactDataRecord? ParseImpactDataFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return null;
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null, modelPath = null;
+        uint decalTextureSet = 0, sound1 = 0, sound2 = 0;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId =
+                        EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "MODL":
+                    modelPath =
+                        EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    break;
+                case "DNAM" when sub.DataLength >= 4:
+                    decalTextureSet = BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian);
+                    break;
+                case "SNAM" when sub.DataLength >= 4:
+                    sound1 = BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian);
+                    break;
+                case "NAM1" when sub.DataLength >= 4:
+                    sound2 = BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian);
+                    break;
+            }
+        }
+
+        return new ImpactDataRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            ModelPath = modelPath,
+            DecalTextureSetFormId = decalTextureSet,
+            Sound1FormId = sound1,
+            Sound2FormId = sound2,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
     }
 
     #endregion

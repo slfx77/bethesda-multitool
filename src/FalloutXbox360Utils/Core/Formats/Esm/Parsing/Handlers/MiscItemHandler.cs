@@ -1,6 +1,7 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
@@ -444,7 +445,12 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
     /// </summary>
     internal List<ConstructibleObjectRecord> ParseConstructibleObjects()
     {
-        return ParseAccessorOnly("COBJ", 2048, ParseConstructibleObjectFromAccessor);
+        var objects = ParseAccessorOnly("COBJ", 2048, ParseConstructibleObjectFromAccessor);
+
+        Context.MergeRuntimeRecords(objects, 0x32, c => c.FormId,
+            (reader, entry) => reader.ReadRuntimeConstructibleObject(entry), "constructible objects");
+
+        return objects;
     }
 
     private ConstructibleObjectRecord? ParseConstructibleObjectFromAccessor(
@@ -644,6 +650,80 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
             PartNames = partNames,
             NodeNames = nodeNames,
             TextureCount = textureCount,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
+    #region Ingredients
+
+    /// <summary>
+    ///     Parse all Ingredient (INGR) records.
+    /// </summary>
+    internal List<IngredientRecord> ParseIngredients()
+    {
+        var ingredients = ParseAccessorOnly("INGR", 512, ParseIngredientFromAccessor);
+
+        Context.MergeRuntimeRecords(ingredients, 0x1D, i => i.FormId,
+            (reader, entry) => reader.ReadRuntimeIngredient(entry), "ingredients");
+
+        return ingredients;
+    }
+
+    private IngredientRecord? ParseIngredientFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return null;
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null, fullName = null, modelPath = null;
+        float weight = 0;
+        uint equipType = 0;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId =
+                        EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "FULL":
+                    fullName =
+                        EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    break;
+                case "MODL":
+                    modelPath =
+                        EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    break;
+                case "DATA" when sub.DataLength >= 8:
+                    weight = BinaryUtils.ReadFloat(data, sub.DataOffset, record.IsBigEndian);
+                    break;
+                case "ETYP" when sub.DataLength >= 4:
+                    equipType = BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian);
+                    break;
+            }
+        }
+
+        return new IngredientRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            FullName = fullName,
+            ModelPath = modelPath,
+            Weight = weight,
+            EquipType = equipType,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };

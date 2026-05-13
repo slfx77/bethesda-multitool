@@ -29,6 +29,9 @@ public record RecordCollection
     /// <summary>Parsed Faction records.</summary>
     public List<FactionRecord> Factions { get; init; } = [];
 
+    /// <summary>Parsed Encounter Zone (ECZN) records.</summary>
+    public List<EncounterZoneRecord> EncounterZones { get; init; } = [];
+
     // Quests and Dialogue
     /// <summary>Parsed Quest records.</summary>
     public List<QuestRecord> Quests { get; init; } = [];
@@ -145,6 +148,63 @@ public record RecordCollection
     /// <summary>Parsed Hair (HAIR) records.</summary>
     public List<HairRecord> Hair { get; init; } = [];
 
+    /// <summary>Parsed Head Part (HDPT) records.</summary>
+    public List<HeadPartRecord> HeadParts { get; init; } = [];
+
+    /// <summary>Parsed Voice Type (VTYP) records.</summary>
+    public List<VoiceTypeRecord> VoiceTypes { get; init; } = [];
+
+    /// <summary>Parsed Menu Icon (MICN) records.</summary>
+    public List<MenuIconRecord> MenuIcons { get; init; } = [];
+
+    /// <summary>Parsed Load Screen Type (LSCT) records.</summary>
+    public List<LoadScreenTypeRecord> LoadScreenTypes { get; init; } = [];
+
+    /// <summary>Parsed Idle Animation (IDLE) records.</summary>
+    public List<IdleAnimationRecord> IdleAnimations { get; init; } = [];
+
+    /// <summary>Parsed Camera Path (CPTH) records.</summary>
+    public List<CameraPathRecord> CameraPaths { get; init; } = [];
+
+    /// <summary>Parsed Impact Data (IPCT) records.</summary>
+    public List<ImpactDataRecord> ImpactData { get; init; } = [];
+
+    /// <summary>Parsed Audio Location Controller (ALOC) records.</summary>
+    public List<AudioLocationControllerRecord> AudioLocationControllers { get; init; } = [];
+
+    /// <summary>Parsed Placed Grenade (PGRE) records (ESM-side only).</summary>
+    public List<PlacedGrenadeRecord> PlacedGrenades { get; init; } = [];
+
+    /// <summary>Parsed Region (REGN) records.</summary>
+    public List<RegionRecord> Regions { get; init; } = [];
+
+    /// <summary>Parsed Caravan Card (CCRD) records.</summary>
+    public List<CaravanCardRecord> CaravanCards { get; init; } = [];
+
+    /// <summary>Parsed Debris (DEBR) records.</summary>
+    public List<DebrisRecord> Debris { get; init; } = [];
+
+    /// <summary>Parsed Ingredient (INGR) records.</summary>
+    public List<IngredientRecord> Ingredients { get; init; } = [];
+
+    /// <summary>Parsed NavMesh Info Map (NAVI) records.</summary>
+    public List<NavMeshInfoMapRecord> NavMeshInfoMaps { get; init; } = [];
+
+    /// <summary>Parsed Caravan Deck (CDCK) records.</summary>
+    public List<CaravanDeckRecord> CaravanDecks { get; init; } = [];
+
+    /// <summary>Parsed Radiation Stage (RADS) records.</summary>
+    public List<SurvivalStageRecord> RadiationStages { get; init; } = [];
+
+    /// <summary>Parsed Dehydration Stage (DEHY) records.</summary>
+    public List<SurvivalStageRecord> DehydrationStages { get; init; } = [];
+
+    /// <summary>Parsed Hunger Stage (HUNG) records.</summary>
+    public List<SurvivalStageRecord> HungerStages { get; init; } = [];
+
+    /// <summary>Parsed Sleep Deprivation Stage (SLPD) records.</summary>
+    public List<SurvivalStageRecord> SleepDeprivationStages { get; init; } = [];
+
     /// <summary>Parsed Form ID List (FLST) records.</summary>
     public List<FormListRecord> FormLists { get; init; } = [];
 
@@ -230,7 +290,7 @@ public record RecordCollection
 
     /// <summary>Number of records successfully parsed.</summary>
     public int TotalRecordsParsed =>
-        Npcs.Count + Creatures.Count + Races.Count + Factions.Count +
+        Npcs.Count + Creatures.Count + Races.Count + Factions.Count + EncounterZones.Count +
         Quests.Count + DialogTopics.Count + Dialogues.Count + Notes.Count + Books.Count + Terminals.Count +
         Scripts.Count +
         Weapons.Count + Armor.Count + Ammo.Count + Consumables.Count + MiscItems.Count + Keys.Count + Containers.Count +
@@ -239,7 +299,11 @@ public record RecordCollection
         WeaponMods.Count + Recipes.Count + RecipeCategories.Count + ConstructibleObjects.Count +
         Challenges.Count + Reputations.Count +
         Projectiles.Count + Explosions.Count + Messages.Count + Classes.Count +
-        Eyes.Count + Hair.Count +
+        Eyes.Count + Hair.Count + HeadParts.Count + VoiceTypes.Count + MenuIcons.Count + LoadScreenTypes.Count +
+        IdleAnimations.Count + CameraPaths.Count + ImpactData.Count + AudioLocationControllers.Count +
+        PlacedGrenades.Count + Regions.Count + CaravanCards.Count + Debris.Count +
+        Ingredients.Count + NavMeshInfoMaps.Count + CaravanDecks.Count +
+        RadiationStages.Count + DehydrationStages.Count + HungerStages.Count + SleepDeprivationStages.Count +
         FormLists.Count + Activators.Count +
         Lights.Count + Doors.Count + Statics.Count + Furniture.Count +
         Packages.Count +
@@ -268,6 +332,7 @@ public record RecordCollection
             Creatures = MergeList(Creatures, overlay.Creatures, r => r.FormId),
             Races = MergeList(Races, overlay.Races, r => r.FormId),
             Factions = MergeList(Factions, overlay.Factions, r => r.FormId),
+            EncounterZones = MergeList(EncounterZones, overlay.EncounterZones, r => r.FormId),
 
             // Quests and Dialogue
             Quests = MergeList(Quests, overlay.Quests, r => r.FormId),
@@ -313,6 +378,27 @@ public record RecordCollection
             Explosions = MergeList(Explosions, overlay.Explosions, r => r.FormId),
             Messages = MergeList(Messages, overlay.Messages, r => r.FormId),
             Classes = MergeList(Classes, overlay.Classes, r => r.FormId),
+            HeadParts = MergeList(HeadParts, overlay.HeadParts, r => r.FormId),
+            VoiceTypes = MergeList(VoiceTypes, overlay.VoiceTypes, r => r.FormId),
+            MenuIcons = MergeList(MenuIcons, overlay.MenuIcons, r => r.FormId),
+            LoadScreenTypes = MergeList(LoadScreenTypes, overlay.LoadScreenTypes, r => r.FormId),
+            IdleAnimations = MergeList(IdleAnimations, overlay.IdleAnimations, r => r.FormId),
+            CameraPaths = MergeList(CameraPaths, overlay.CameraPaths, r => r.FormId),
+            ImpactData = MergeList(ImpactData, overlay.ImpactData, r => r.FormId),
+            AudioLocationControllers =
+                MergeList(AudioLocationControllers, overlay.AudioLocationControllers, r => r.FormId),
+            PlacedGrenades = MergeList(PlacedGrenades, overlay.PlacedGrenades, r => r.FormId),
+            Regions = MergeList(Regions, overlay.Regions, r => r.FormId),
+            CaravanCards = MergeList(CaravanCards, overlay.CaravanCards, r => r.FormId),
+            Debris = MergeList(Debris, overlay.Debris, r => r.FormId),
+            Ingredients = MergeList(Ingredients, overlay.Ingredients, r => r.FormId),
+            NavMeshInfoMaps = MergeList(NavMeshInfoMaps, overlay.NavMeshInfoMaps, r => r.FormId),
+            CaravanDecks = MergeList(CaravanDecks, overlay.CaravanDecks, r => r.FormId),
+            RadiationStages = MergeList(RadiationStages, overlay.RadiationStages, r => r.FormId),
+            DehydrationStages = MergeList(DehydrationStages, overlay.DehydrationStages, r => r.FormId),
+            HungerStages = MergeList(HungerStages, overlay.HungerStages, r => r.FormId),
+            SleepDeprivationStages =
+                MergeList(SleepDeprivationStages, overlay.SleepDeprivationStages, r => r.FormId),
             FormLists = MergeList(FormLists, overlay.FormLists, r => r.FormId),
             Activators = MergeList(Activators, overlay.Activators, r => r.FormId),
             Lights = MergeList(Lights, overlay.Lights, r => r.FormId),

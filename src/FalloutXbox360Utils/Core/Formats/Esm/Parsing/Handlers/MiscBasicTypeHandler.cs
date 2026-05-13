@@ -316,6 +316,199 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context) : Record
 
     #endregion
 
+    #region Head Parts
+
+    /// <summary>
+    ///     Parse all Head Part (HDPT) records.
+    /// </summary>
+    internal List<HeadPartRecord> ParseHeadParts()
+    {
+        var headParts = ParseAccessorOnly("HDPT", 512, ParseHeadPartFromAccessor);
+
+        Context.MergeRuntimeRecords(headParts, 0x09, h => h.FormId,
+            (reader, entry) => reader.ReadRuntimeHeadPart(entry), "head parts");
+
+        return headParts;
+    }
+
+    private HeadPartRecord? ParseHeadPartFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return null;
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null, fullName = null, modelPath = null;
+        byte[]? textureHashData = null;
+        byte flags = 0;
+        var extraParts = new List<uint>();
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "FULL":
+                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODL":
+                    modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODT" when sub.DataLength > 0:
+                    textureHashData = subData.ToArray();
+                    break;
+                case "DATA" when sub.DataLength >= 1:
+                    flags = data[sub.DataOffset];
+                    break;
+                case "HNAM" when sub.DataLength >= 4:
+                    extraParts.Add(BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian));
+                    break;
+            }
+        }
+
+        return new HeadPartRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            FullName = fullName,
+            ModelPath = modelPath,
+            TextureHashData = textureHashData,
+            Flags = flags,
+            ExtraParts = extraParts,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
+    #region Menu Icons
+
+    /// <summary>
+    ///     Parse all Menu Icon (MICN) records.
+    /// </summary>
+    internal List<MenuIconRecord> ParseMenuIcons()
+    {
+        var icons = ParseAccessorOnly("MICN", 256, ParseMenuIconFromAccessor);
+
+        Context.MergeRuntimeRecords(icons, 0x05, m => m.FormId,
+            (reader, entry) => reader.ReadRuntimeMenuIcon(entry), "menu icons");
+
+        return icons;
+    }
+
+    private MenuIconRecord? ParseMenuIconFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return null;
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        string? iconPath = null;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "ICON":
+                    iconPath = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    break;
+            }
+        }
+
+        return new MenuIconRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            IconPath = iconPath,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
+    #region Voice Types
+
+    /// <summary>
+    ///     Parse all Voice Type (VTYP) records.
+    /// </summary>
+    internal List<VoiceTypeRecord> ParseVoiceTypes()
+    {
+        var voiceTypes = ParseAccessorOnly("VTYP", 256, ParseVoiceTypeFromAccessor);
+
+        Context.MergeRuntimeRecords(voiceTypes, 0x5D, v => v.FormId,
+            (reader, entry) => reader.ReadRuntimeVoiceType(entry), "voice types");
+
+        return voiceTypes;
+    }
+
+    private VoiceTypeRecord? ParseVoiceTypeFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return null;
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        byte flags = 0;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "DNAM" when sub.DataLength >= 1:
+                    flags = data[sub.DataOffset];
+                    break;
+            }
+        }
+
+        return new VoiceTypeRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            Flags = flags,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
     #region Challenges
 
     /// <summary>
@@ -493,7 +686,12 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context) : Record
     /// </summary>
     internal List<RecipeCategoryRecord> ParseRecipeCategories()
     {
-        return ParseAccessorOnly("RCCT", 256, ParseRecipeCategoryFromAccessor);
+        var categories = ParseAccessorOnly("RCCT", 256, ParseRecipeCategoryFromAccessor);
+
+        Context.MergeRuntimeRecords(categories, 0x6B, c => c.FormId,
+            (reader, entry) => reader.ReadRuntimeRecipeCategory(entry), "recipe categories");
+
+        return categories;
     }
 
     private RecipeCategoryRecord? ParseRecipeCategoryFromAccessor(DetectedMainRecord record, byte[] buffer)

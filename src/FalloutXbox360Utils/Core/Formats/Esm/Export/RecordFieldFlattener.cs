@@ -2,6 +2,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Magic;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 
@@ -35,6 +36,60 @@ internal static class RecordFieldFlattener
             yield return ("Quest", q.FormId, q.EditorId, q.FullName, FlattenQuest(q));
         foreach (var f in records.Factions)
             yield return ("Faction", f.FormId, f.EditorId, f.FullName, FlattenFaction(f));
+        foreach (var ez in records.EncounterZones)
+            yield return ("EncounterZone", ez.FormId, ez.EditorId, ez.FullName, FlattenEncounterZone(ez, resolver));
+        foreach (var nm in records.NavMeshes)
+            yield return ("NavMesh", nm.FormId, nm.EditorId, null, FlattenNavMesh(nm, resolver));
+        foreach (var lt in records.LightingTemplates)
+            yield return ("LightingTemplate", lt.FormId, lt.EditorId, null, FlattenLightingTemplate(lt));
+        foreach (var rc in records.RecipeCategories)
+            yield return ("RecipeCategory", rc.FormId, rc.EditorId, rc.FullName, FlattenRecipeCategory(rc));
+        foreach (var co in records.ConstructibleObjects)
+            yield return ("ConstructibleObject", co.FormId, co.EditorId, co.FullName, FlattenConstructibleObject(co, resolver));
+        foreach (var w in records.Water)
+            yield return ("Water", w.FormId, w.EditorId, w.FullName, FlattenWater(w, resolver));
+        foreach (var mt in records.MusicTypes)
+            yield return ("MusicType", mt.FormId, mt.EditorId, null, FlattenMusicType(mt));
+        foreach (var hp in records.HeadParts)
+            yield return ("HeadPart", hp.FormId, hp.EditorId, hp.FullName, FlattenHeadPart(hp));
+        foreach (var vt in records.VoiceTypes)
+            yield return ("VoiceType", vt.FormId, vt.EditorId, null, FlattenVoiceType(vt));
+        foreach (var mi in records.MenuIcons)
+            yield return ("MenuIcon", mi.FormId, mi.EditorId, null, FlattenMenuIcon(mi));
+        foreach (var ls in records.LoadScreenTypes)
+            yield return ("LoadScreenType", ls.FormId, ls.EditorId, null, FlattenLoadScreenType(ls));
+        foreach (var id in records.IdleAnimations)
+            yield return ("IdleAnimation", id.FormId, id.EditorId, null, FlattenIdleAnimation(id, resolver));
+        foreach (var cp in records.CameraPaths)
+            yield return ("CameraPath", cp.FormId, cp.EditorId, null, FlattenCameraPath(cp, resolver));
+        foreach (var ip in records.ImpactData)
+            yield return ("ImpactData", ip.FormId, ip.EditorId, null, FlattenImpactData(ip, resolver));
+        foreach (var ac in records.AudioLocationControllers)
+            yield return ("AudioLocationController", ac.FormId, ac.EditorId, ac.FullName,
+                FlattenAudioLocationController(ac));
+        foreach (var pg in records.PlacedGrenades)
+            yield return ("PlacedGrenade", pg.FormId, pg.EditorId, null, FlattenPlacedGrenade(pg, resolver));
+        foreach (var r in records.Regions)
+            yield return ("Region", r.FormId, r.EditorId, null, FlattenRegion(r, resolver));
+        foreach (var cc in records.CaravanCards)
+            yield return ("CaravanCard", cc.FormId, cc.EditorId, cc.FullName,
+                FlattenCaravanCard(cc, resolver));
+        foreach (var db in records.Debris)
+            yield return ("Debris", db.FormId, db.EditorId, null, FlattenDebris(db));
+        foreach (var ig in records.Ingredients)
+            yield return ("Ingredient", ig.FormId, ig.EditorId, ig.FullName, FlattenIngredient(ig));
+        foreach (var ni in records.NavMeshInfoMaps)
+            yield return ("NavMeshInfoMap", ni.FormId, ni.EditorId, null, FlattenNavMeshInfoMap(ni));
+        foreach (var cd in records.CaravanDecks)
+            yield return ("CaravanDeck", cd.FormId, cd.EditorId, null, FlattenCaravanDeck(cd));
+        foreach (var ss in records.RadiationStages)
+            yield return ("RadiationStage", ss.FormId, ss.EditorId, null, FlattenSurvivalStage(ss));
+        foreach (var ss in records.DehydrationStages)
+            yield return ("DehydrationStage", ss.FormId, ss.EditorId, null, FlattenSurvivalStage(ss));
+        foreach (var ss in records.HungerStages)
+            yield return ("HungerStage", ss.FormId, ss.EditorId, null, FlattenSurvivalStage(ss));
+        foreach (var ss in records.SleepDeprivationStages)
+            yield return ("SleepDeprivationStage", ss.FormId, ss.EditorId, null, FlattenSurvivalStage(ss));
         foreach (var c in records.Cells)
             yield return ("Cell", c.FormId, c.EditorId, c.FullName, FlattenCell(c));
         foreach (var w in records.Worldspaces)
@@ -251,6 +306,261 @@ internal static class RecordFieldFlattener
                 q.Objectives.Select(o => $"Obj{o.Index}:{Fmt.CsvEscape(o.DisplayText)}"));
 
         return d;
+    }
+
+    internal static Dictionary<string, string> FlattenConstructibleObject(
+        ConstructibleObjectRecord co, FormIdResolver resolver)
+    {
+        return new Dictionary<string, string>
+        {
+            ["CreatedItem"] = ResolveRef(co.CreatedItemFormId, resolver)
+        };
+    }
+
+    internal static Dictionary<string, string> FlattenWater(WaterRecord w, FormIdResolver resolver)
+    {
+        return new Dictionary<string, string>
+        {
+            ["Opacity"] = w.Opacity.ToString(),
+            ["Damage"] = w.Damage.ToString(),
+            ["Sound"] = ResolveRef(w.SoundFormId, resolver)
+        };
+    }
+
+    internal static Dictionary<string, string> FlattenMusicType(MusicTypeRecord mt)
+    {
+        return new Dictionary<string, string>
+        {
+            ["FileName"] = mt.FileName ?? "",
+            ["Attenuation"] = mt.Attenuation.ToString("F2")
+        };
+    }
+
+    internal static Dictionary<string, string> FlattenHeadPart(HeadPartRecord hp)
+    {
+        return new Dictionary<string, string>
+        {
+            ["ModelPath"] = hp.ModelPath ?? "",
+            ["Flags"] = hp.Flags.ToString(),
+            ["ExtraPartCount"] = hp.ExtraParts.Count.ToString()
+        };
+    }
+
+    internal static Dictionary<string, string> FlattenVoiceType(VoiceTypeRecord vt)
+    {
+        return new Dictionary<string, string>
+        {
+            ["Flags"] = vt.Flags.ToString()
+        };
+    }
+
+    internal static Dictionary<string, string> FlattenMenuIcon(MenuIconRecord mi)
+    {
+        return new Dictionary<string, string>
+        {
+            ["IconPath"] = mi.IconPath ?? ""
+        };
+    }
+
+    internal static Dictionary<string, string> FlattenIdleAnimation(
+        IdleAnimationRecord id, FormIdResolver resolver)
+    {
+        return new Dictionary<string, string>
+        {
+            ["ModelPath"] = id.ModelPath ?? "",
+            ["ParentIdle"] = ResolveRef(id.ParentIdleFormId, resolver),
+            ["PrevIdle"] = ResolveRef(id.PreviousIdleFormId, resolver),
+            ["AnimData"] = id.AnimData.ToString(),
+            ["LoopMin"] = id.LoopMin.ToString(),
+            ["LoopMax"] = id.LoopMax.ToString(),
+            ["ReplayDelay"] = id.ReplayDelay.ToString(),
+            ["FlagsEx"] = id.FlagsEx.ToString()
+        };
+    }
+
+    internal static Dictionary<string, string> FlattenCameraPath(
+        CameraPathRecord cp, FormIdResolver resolver)
+    {
+        return new Dictionary<string, string>
+        {
+            ["Flags"] = cp.Flags.ToString(),
+            ["ParentPath"] = ResolveRef(cp.ParentPathFormId, resolver),
+            ["PrevPath"] = ResolveRef(cp.PreviousPathFormId, resolver),
+            ["ShotCount"] = cp.CameraShotFormIds.Count.ToString()
+        };
+    }
+
+    internal static Dictionary<string, string> FlattenImpactData(
+        ImpactDataRecord ip, FormIdResolver resolver)
+    {
+        return new Dictionary<string, string>
+        {
+            ["ModelPath"] = ip.ModelPath ?? "",
+            ["DecalTextureSet"] = ResolveRef(ip.DecalTextureSetFormId, resolver),
+            ["Sound1"] = ResolveRef(ip.Sound1FormId, resolver),
+            ["Sound2"] = ResolveRef(ip.Sound2FormId, resolver)
+        };
+    }
+
+    internal static Dictionary<string, string> FlattenAudioLocationController(
+        AudioLocationControllerRecord ac)
+    {
+        return new Dictionary<string, string>
+        {
+            ["LocationDelay"] = ac.LocationDelay.ToString(),
+            ["LayerTime"] = ac.LayerTime.ToString(),
+            ["LoopTime"] = ac.LoopTime.ToString(),
+            ["MediaStartTime"] = ac.MediaStartTime.ToString()
+        };
+    }
+
+    internal static Dictionary<string, string> FlattenPlacedGrenade(
+        PlacedGrenadeRecord pg, FormIdResolver resolver)
+    {
+        return new Dictionary<string, string>
+        {
+            ["Base"] = ResolveRef(pg.BaseFormId, resolver),
+            ["X"] = pg.PositionX.ToString("F0"),
+            ["Y"] = pg.PositionY.ToString("F0"),
+            ["Z"] = pg.PositionZ.ToString("F0")
+        };
+    }
+
+    internal static Dictionary<string, string> FlattenRegion(RegionRecord r, FormIdResolver resolver)
+    {
+        return new Dictionary<string, string>
+        {
+            ["Worldspace"] = ResolveRef(r.WorldspaceFormId, resolver),
+            ["EmittanceR"] = r.EmittanceColorR.ToString(),
+            ["EmittanceG"] = r.EmittanceColorG.ToString(),
+            ["EmittanceB"] = r.EmittanceColorB.ToString(),
+            ["DataBlockCount"] = r.DataBlockCount.ToString()
+        };
+    }
+
+    internal static Dictionary<string, string> FlattenCaravanCard(
+        CaravanCardRecord cc, FormIdResolver resolver)
+    {
+        return new Dictionary<string, string>
+        {
+            ["ModelPath"] = cc.ModelPath ?? "",
+            ["Value"] = cc.Value.ToString(),
+            ["Script"] = ResolveRef(cc.ScriptFormId, resolver),
+            ["PickupSound"] = ResolveRef(cc.PickupSoundFormId, resolver),
+            ["PutdownSound"] = ResolveRef(cc.PutdownSoundFormId, resolver)
+        };
+    }
+
+    internal static Dictionary<string, string> FlattenDebris(DebrisRecord db)
+    {
+        return new Dictionary<string, string>
+        {
+            ["VariantCount"] = db.VariantCount.ToString(),
+            ["ModelCount"] = db.ModelPaths.Count.ToString()
+        };
+    }
+
+    internal static Dictionary<string, string> FlattenIngredient(IngredientRecord ig)
+    {
+        return new Dictionary<string, string>
+        {
+            ["ModelPath"] = ig.ModelPath ?? "",
+            ["Weight"] = ig.Weight.ToString("F2"),
+            ["EquipType"] = ig.EquipType.ToString()
+        };
+    }
+
+    internal static Dictionary<string, string> FlattenNavMeshInfoMap(NavMeshInfoMapRecord ni)
+    {
+        return new Dictionary<string, string>
+        {
+            ["UpdateAll"] = ni.UpdateAll.ToString(),
+            ["Initialized"] = ni.Initialized.ToString()
+        };
+    }
+
+    internal static Dictionary<string, string> FlattenCaravanDeck(CaravanDeckRecord cd)
+    {
+        return new Dictionary<string, string>
+        {
+            ["CardCount"] = cd.CardCount.ToString(),
+            ["JokerCount"] = cd.JokerCount.ToString()
+        };
+    }
+
+    internal static Dictionary<string, string> FlattenSurvivalStage(SurvivalStageRecord ss)
+    {
+        return new Dictionary<string, string>
+        {
+            ["Threshold"] = ss.Threshold.ToString(),
+            ["Modifier"] = ss.Modifier.ToString()
+        };
+    }
+
+    internal static Dictionary<string, string> FlattenLoadScreenType(LoadScreenTypeRecord ls)
+    {
+        var d = new Dictionary<string, string>();
+        if (ls.LayoutData == null) return d;
+
+        foreach (var (k, v) in ls.LayoutData)
+        {
+            d[k] = v switch
+            {
+                null => "",
+                float f => f.ToString("F2"),
+                _ => v.ToString() ?? ""
+            };
+        }
+
+        return d;
+    }
+
+    internal static Dictionary<string, string> FlattenRecipeCategory(RecipeCategoryRecord rc)
+    {
+        return new Dictionary<string, string>
+        {
+            ["Flags"] = rc.Flags.ToString()
+        };
+    }
+
+    internal static Dictionary<string, string> FlattenLightingTemplate(LightingTemplateRecord lt)
+    {
+        var d = new Dictionary<string, string>();
+        if (lt.LightingData == null) return d;
+
+        foreach (var (k, v) in lt.LightingData)
+        {
+            d[k] = v switch
+            {
+                null => "",
+                float f => f.ToString("F2"),
+                _ => v.ToString() ?? ""
+            };
+        }
+
+        return d;
+    }
+
+    internal static Dictionary<string, string> FlattenNavMesh(NavMeshRecord nm, FormIdResolver resolver)
+    {
+        return new Dictionary<string, string>
+        {
+            ["Cell"] = ResolveRef(nm.CellFormId, resolver),
+            ["VertexCount"] = nm.VertexCount.ToString(),
+            ["TriangleCount"] = nm.TriangleCount.ToString(),
+            ["DoorPortalCount"] = nm.DoorPortalCount.ToString()
+        };
+    }
+
+    internal static Dictionary<string, string> FlattenEncounterZone(EncounterZoneRecord ez, FormIdResolver resolver)
+    {
+        return new Dictionary<string, string>
+        {
+            ["Owner"] = ResolveRef(ez.OwnerFormId, resolver),
+            ["Rank"] = ez.Rank.ToString(),
+            ["MinLevel"] = ez.MinimumLevel.ToString(),
+            ["Flags"] = ez.Flags.ToString()
+        };
     }
 
     internal static Dictionary<string, string> FlattenFaction(FactionRecord f)

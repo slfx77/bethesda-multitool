@@ -1,6 +1,7 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.AI;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Utils;
 
@@ -88,6 +89,102 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
             Description = description,
             Icon = icon,
             Abbreviation = abbreviation,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
+    #region Encounter Zones
+
+    /// <summary>
+    ///     Parse all Encounter Zone (ECZN) records.
+    /// </summary>
+    internal List<EncounterZoneRecord> ParseEncounterZones()
+    {
+        var zones = ParseRecordList("ECZN", 512,
+            ParseEncounterZoneFromAccessor,
+            record => new EncounterZoneRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FormIdToFullName.GetValueOrDefault(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
+
+        Context.MergeRuntimeRecords(zones, 0x61, z => z.FormId,
+            (reader, entry) => reader.ReadRuntimeEncounterZone(entry), "encounter zones");
+
+        return zones;
+    }
+
+    private EncounterZoneRecord? ParseEncounterZoneFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return new EncounterZoneRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FormIdToFullName.GetValueOrDefault(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            };
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        string? fullName = null;
+        uint ownerFormId = 0;
+        sbyte rank = 0;
+        sbyte minLevel = 0;
+        byte flags = 0;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "FULL":
+                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "DATA" when sub.DataLength >= 8:
+                {
+                    var fields = SubrecordDataReader.ReadFields("DATA", "ECZN", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        ownerFormId = SubrecordDataReader.GetUInt32(fields, "Owner");
+                        rank = SubrecordDataReader.GetSByte(fields, "Rank");
+                        minLevel = SubrecordDataReader.GetSByte(fields, "MinimumLevel");
+                        flags = SubrecordDataReader.GetByte(fields, "Flags");
+                    }
+
+                    break;
+                }
+            }
+        }
+
+        return new EncounterZoneRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            FullName = fullName,
+            OwnerFormId = ownerFormId,
+            Rank = rank,
+            MinimumLevel = minLevel,
+            Flags = flags,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
@@ -202,7 +299,7 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
     /// </summary>
     internal List<LightingTemplateRecord> ParseLightingTemplates()
     {
-        return ParseRecordList("LGTM", 1024,
+        var templates = ParseRecordList("LGTM", 1024,
             ParseLightingTemplateFromAccessor,
             record => new LightingTemplateRecord
             {
@@ -211,6 +308,11 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
                 Offset = record.Offset,
                 IsBigEndian = record.IsBigEndian
             });
+
+        Context.MergeRuntimeRecords(templates, 0x65, t => t.FormId,
+            (reader, entry) => reader.ReadRuntimeLightingTemplate(entry), "lighting templates");
+
+        return templates;
     }
 
     private LightingTemplateRecord? ParseLightingTemplateFromAccessor(DetectedMainRecord record, byte[] buffer)
@@ -278,7 +380,7 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
     /// </summary>
     internal List<NavMeshRecord> ParseNavMeshes()
     {
-        return ParseRecordList("NAVM", 8192,
+        var navMeshes = ParseRecordList("NAVM", 8192,
             ParseNavMeshFromAccessor,
             record => new NavMeshRecord
             {
@@ -287,6 +389,11 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
                 Offset = record.Offset,
                 IsBigEndian = record.IsBigEndian
             });
+
+        Context.MergeRuntimeRecords(navMeshes, 0x43, n => n.FormId,
+            (reader, entry) => reader.ReadRuntimeNavMesh(entry), "navmeshes");
+
+        return navMeshes;
     }
 
     private NavMeshRecord? ParseNavMeshFromAccessor(DetectedMainRecord record, byte[] buffer)
@@ -354,6 +461,285 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
             VertexCount = vertexCount,
             TriangleCount = triangleCount,
             DoorPortalCount = doorPortalCount,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
+    #region NAVI
+
+    /// <summary>
+    ///     Parse the single NavMesh Info Map (NAVI) record per ESM.
+    /// </summary>
+    internal List<NavMeshInfoMapRecord> ParseNavMeshInfoMaps()
+    {
+        var maps = ParseAccessorOnly("NAVI", 8192, ParseNavMeshInfoMapFromAccessor);
+
+        Context.MergeRuntimeRecords(maps, 0x38, n => n.FormId,
+            (reader, entry) => reader.ReadRuntimeNavMeshInfoMap(entry), "navmesh info maps");
+
+        return maps;
+    }
+
+    private NavMeshInfoMapRecord? ParseNavMeshInfoMapFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return null;
+        }
+
+        var (data, dataSize) = recordData.Value;
+        string? editorId = null;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            if (sub.Signature == "EDID")
+            {
+                editorId = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                if (!string.IsNullOrEmpty(editorId))
+                {
+                    Context.FormIdToEditorId[record.FormId] = editorId;
+                }
+            }
+        }
+
+        return new NavMeshInfoMapRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
+    #region Caravan Deck
+
+    /// <summary>
+    ///     Parse all Caravan Deck (CDCK) records.
+    /// </summary>
+    internal List<CaravanDeckRecord> ParseCaravanDecks()
+    {
+        var decks = ParseAccessorOnly("CDCK", 512, ParseCaravanDeckFromAccessor);
+
+        Context.MergeRuntimeRecords(decks, 0x75, d => d.FormId,
+            (reader, entry) => reader.ReadRuntimeCaravanDeck(entry), "caravan decks");
+
+        return decks;
+    }
+
+    private CaravanDeckRecord? ParseCaravanDeckFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return null;
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        var cardCount = 0;
+        uint jokerCount = 0;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId =
+                        EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "CARD":
+                case "CNTO":
+                    cardCount++;
+                    break;
+                case "DATA" when sub.DataLength >= 4:
+                    jokerCount = BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian);
+                    break;
+            }
+        }
+
+        return new CaravanDeckRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            CardCount = cardCount,
+            JokerCount = jokerCount,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
+    #region Survival Stages (RADS / DEHY / HUNG / SLPD)
+
+    /// <summary>
+    ///     Parse all hardcore-mode survival stage records of a given type.
+    ///     Shared shape: EDID + DATA(8B) tuple (threshold, modifier).
+    /// </summary>
+    private List<SurvivalStageRecord> ParseSurvivalStages(string recordType, byte formType)
+    {
+        var stages = ParseAccessorOnly(recordType, 128,
+            (record, buffer) => ParseSurvivalStageFromAccessor(record, buffer));
+
+        Context.MergeRuntimeRecords(stages, formType, s => s.FormId,
+            (reader, entry) => reader.ReadRuntimeSurvivalStage(entry, formType),
+            $"{recordType.ToLowerInvariant()} stages");
+
+        return stages;
+    }
+
+    internal List<SurvivalStageRecord> ParseRadiationStages()
+    {
+        return ParseSurvivalStages("RADS", 0x5A);
+    }
+
+    internal List<SurvivalStageRecord> ParseDehydrationStages()
+    {
+        return ParseSurvivalStages("DEHY", 0x76);
+    }
+
+    internal List<SurvivalStageRecord> ParseHungerStages()
+    {
+        return ParseSurvivalStages("HUNG", 0x77);
+    }
+
+    internal List<SurvivalStageRecord> ParseSleepDeprivationStages()
+    {
+        return ParseSurvivalStages("SLPD", 0x78);
+    }
+
+    private SurvivalStageRecord? ParseSurvivalStageFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return null;
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        uint threshold = 0, modifier = 0;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId =
+                        EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "DATA" when sub.DataLength >= 8:
+                    threshold = BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian);
+                    modifier = BinaryUtils.ReadUInt32(data, sub.DataOffset + 4, record.IsBigEndian);
+                    break;
+            }
+        }
+
+        return new SurvivalStageRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            Threshold = threshold,
+            Modifier = modifier,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
+    #region Caravan Cards
+
+    /// <summary>
+    ///     Parse all Caravan Card (CCRD) records.
+    /// </summary>
+    internal List<CaravanCardRecord> ParseCaravanCards()
+    {
+        var cards = ParseAccessorOnly("CCRD", 1024, ParseCaravanCardFromAccessor);
+
+        Context.MergeRuntimeRecords(cards, 0x73, c => c.FormId,
+            (reader, entry) => reader.ReadRuntimeCaravanCard(entry), "caravan cards");
+
+        return cards;
+    }
+
+    private CaravanCardRecord? ParseCaravanCardFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return null;
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null, fullName = null, modelPath = null;
+        uint value = 0, scriptFormId = 0, pickupSound = 0, putdownSound = 0;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId =
+                        EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "FULL":
+                    fullName =
+                        EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    break;
+                case "MODL":
+                    modelPath =
+                        EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    break;
+                case "DATA" when sub.DataLength >= 4:
+                    value = BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian);
+                    break;
+                case "SCRI" when sub.DataLength >= 4:
+                    scriptFormId = BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian);
+                    break;
+                case "YNAM" when sub.DataLength >= 4:
+                    pickupSound = BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian);
+                    break;
+                case "ZNAM" when sub.DataLength >= 4:
+                    putdownSound = BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian);
+                    break;
+            }
+        }
+
+        return new CaravanCardRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            FullName = fullName,
+            ModelPath = modelPath,
+            Value = value,
+            ScriptFormId = scriptFormId,
+            PickupSoundFormId = pickupSound,
+            PutdownSoundFormId = putdownSound,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };

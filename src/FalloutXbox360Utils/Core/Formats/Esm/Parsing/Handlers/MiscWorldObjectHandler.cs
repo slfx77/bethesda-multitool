@@ -453,4 +453,76 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context) : Reco
     }
 
     #endregion
+
+    #region Debris
+
+    /// <summary>
+    ///     Parse all Debris (DEBR) records.
+    /// </summary>
+    internal List<DebrisRecord> ParseDebris()
+    {
+        var debris = ParseAccessorOnly("DEBR", 1024, ParseDebrisFromAccessor);
+
+        Context.MergeRuntimeRecords(debris, 0x52, d => d.FormId,
+            (reader, entry) => reader.ReadRuntimeDebris(entry), "debris");
+
+        return debris;
+    }
+
+    private DebrisRecord? ParseDebrisFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return null;
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        var variantCount = 0;
+        var modelPaths = new List<string>();
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId =
+                        EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "DATA":
+                    variantCount++;
+                    break;
+                case "MODL":
+                {
+                    var path =
+                        EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        modelPaths.Add(path);
+                    }
+
+                    break;
+                }
+            }
+        }
+
+        return new DebrisRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            VariantCount = variantCount,
+            ModelPaths = modelPaths,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
 }

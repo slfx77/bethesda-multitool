@@ -102,7 +102,7 @@ public sealed class RecordParser
         // Parsed record types
         var parsedTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "NPC_", "CREA", "RACE", "FACT",
+            "NPC_", "CREA", "RACE", "FACT", "ECZN",
             "QUST", "DIAL", "INFO", "NOTE", "BOOK", "TERM", "SCPT",
             "WEAP", "ARMO", "AMMO", "ALCH", "MISC", "KEYM", "CONT",
             "PERK", "SPEL", "CELL", "WRLD", "GMST",
@@ -115,7 +115,13 @@ public sealed class RecordParser
             "ASPC", "MSET", "CHIP", "CSNO", "DOBJ", "ADDN", "TREE", "IMAD",
             "IDLM", "SCOL", "PWAT",
             // Specialized record types (Phase 2)
-            "SOUN", "MUSC", "TXST", "ARMA", "WATR", "BPTD", "AVIF", "CSTY", "LGTM", "NAVM", "WTHR"
+            "SOUN", "MUSC", "TXST", "ARMA", "WATR", "BPTD", "AVIF", "CSTY", "LGTM", "NAVM", "WTHR",
+            // Phase 10 generic-only additions
+            "IMGS", "CLMT", "GRAS", "LTEX", "AMEF",
+            // Phase 10 typed handlers
+            "HDPT", "VTYP", "MICN", "LSCT", "IDLE", "CPTH", "IPCT", "ALOC",
+            "PGRE", "REGN", "CCRD", "DEBR",
+            "INGR", "NAVI", "CDCK", "RADS", "DEHY", "HUNG", "SLPD"
         };
 
         // Count all record types and compute unparsed counts
@@ -279,6 +285,17 @@ public sealed class RecordParser
                 $"  [Semantic] Redistributed {redistributed} persistent ref(s) to owning exterior tiles");
         }
 
+        // Engine-time duplicate cleanup: when several runtime grid cells of the same worldspace
+        // each contain a copy of the same persistent ref (same FormID + same position), keep it
+        // in the grid-correct cell and drop the rest. Driven by Bethesda engine sharing
+        // persistent refs into every currently-loaded grid cell's listReferences array.
+        var deduplicated = PersistentRefRedistributor.DeduplicateRuntimeCellRefs(cells, _context);
+        if (deduplicated > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] Deduplicated {deduplicated} runtime-shared ref copy(s) across grid cells");
+        }
+
         WorldRecordHandler.EnsureWorldspacesForCells(cells, worldspaces, _context);
         WorldRecordHandler.LinkCellsToWorldspaces(cells, worldspaces);
         var packages = _ai.ParsePackages();
@@ -308,6 +325,9 @@ public sealed class RecordParser
         var classes = _miscBasicTypes.ParseClasses();
         var eyes = _miscBasicTypes.ParseEyes();
         var hair = _miscBasicTypes.ParseHair();
+        var headParts = _miscBasicTypes.ParseHeadParts();
+        var voiceTypes = _miscBasicTypes.ParseVoiceTypes();
+        var menuIcons = _miscBasicTypes.ParseMenuIcons();
         var formLists = _miscCollections.ParseFormLists();
         // activators, doors, furniture already parsed above (before script cross-ref chains)
         var lights = _miscWorldObjects.ParseLights();
@@ -320,7 +340,9 @@ public sealed class RecordParser
         {
             "MSTT", "TACT", "CAMS", "ANIO", "IPDS", "EFSH", "RGDL", "LSCR",
             "ASPC", "MSET", "CHIP", "CSNO", "DOBJ", "ADDN", "TREE", "IMAD",
-            "IDLM", "SCOL", "PWAT"
+            "IDLM", "SCOL", "PWAT",
+            // Phase 10: small PDB-defined types with no parity-relevant fields beyond identity
+            "IMGS", "CLMT", "GRAS", "LTEX", "AMEF"
         };
         var genericRecords = new List<GenericEsmRecord>();
         foreach (var type in genericTypes)
@@ -354,13 +376,30 @@ public sealed class RecordParser
         var combatStyles = _miscGameSystems.ParseCombatStyles();
         var lightingTemplates = _miscGameSystems.ParseLightingTemplates();
         var navMeshes = _miscGameSystems.ParseNavMeshes();
+        var encounterZones = _miscGameSystems.ParseEncounterZones();
         var weather = _miscEnvironment.ParseWeather();
+        var loadScreenTypes = _miscEnvironment.ParseLoadScreenTypes();
+        var audioLocationControllers = _miscEnvironment.ParseAudioLocationControllers();
+        var idleAnimations = _ai.ParseIdleAnimations();
+        var cameraPaths = _world.ParseCameraPaths();
+        var impactData = _combatEffects.ParseImpactData();
+        var placedGrenades = _world.ParsePlacedGrenades();
+        var regions = _world.ParseRegions();
+        var caravanCards = _miscGameSystems.ParseCaravanCards();
+        var debris = _miscWorldObjects.ParseDebris();
+        var ingredients = _miscItems.ParseIngredients();
+        var navMeshInfoMaps = _miscGameSystems.ParseNavMeshInfoMaps();
+        var caravanDecks = _miscGameSystems.ParseCaravanDecks();
+        var radiationStages = _miscGameSystems.ParseRadiationStages();
+        var dehydrationStages = _miscGameSystems.ParseDehydrationStages();
+        var hungerStages = _miscGameSystems.ParseHungerStages();
+        var sleepDeprivationStages = _miscGameSystems.ParseSleepDeprivationStages();
         Logger.Instance.Debug(
             $"  [Semantic] Specialized records: {phaseSw.Elapsed} " +
             $"(SOUN: {sounds.Count}, MUSC: {musicTypes.Count}, TXST: {textureSets.Count}, ARMA: {armorAddons.Count}, " +
             $"WATR: {water.Count}, BPTD: {bodyPartData.Count}, AVIF: {actorValueInfos.Count}, " +
             $"CSTY: {combatStyles.Count}, LGTM: {lightingTemplates.Count}, " +
-            $"NAVM: {navMeshes.Count}, WTHR: {weather.Count})");
+            $"NAVM: {navMeshes.Count}, ECZN: {encounterZones.Count}, WTHR: {weather.Count})");
 
         // === Build object bounds/model indexes and enrich placed references ===
         var modelIndex = new Dictionary<uint, string>();
@@ -426,6 +465,25 @@ public sealed class RecordParser
             Classes = classes,
             Eyes = eyes,
             Hair = hair,
+            HeadParts = headParts,
+            VoiceTypes = voiceTypes,
+            MenuIcons = menuIcons,
+            LoadScreenTypes = loadScreenTypes,
+            IdleAnimations = idleAnimations,
+            CameraPaths = cameraPaths,
+            ImpactData = impactData,
+            AudioLocationControllers = audioLocationControllers,
+            PlacedGrenades = placedGrenades,
+            Regions = regions,
+            CaravanCards = caravanCards,
+            Debris = debris,
+            Ingredients = ingredients,
+            NavMeshInfoMaps = navMeshInfoMaps,
+            CaravanDecks = caravanDecks,
+            RadiationStages = radiationStages,
+            DehydrationStages = dehydrationStages,
+            HungerStages = hungerStages,
+            SleepDeprivationStages = sleepDeprivationStages,
             FormLists = formLists,
             Activators = activators,
             Lights = lights,
@@ -450,6 +508,7 @@ public sealed class RecordParser
             CombatStyles = combatStyles,
             LightingTemplates = lightingTemplates,
             NavMeshes = navMeshes,
+            EncounterZones = encounterZones,
             Weather = weather,
 
             ModelPathIndex = modelIndex,

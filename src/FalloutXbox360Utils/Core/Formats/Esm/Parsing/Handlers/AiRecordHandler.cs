@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.AI;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
@@ -267,6 +268,92 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
             FormIdOrType = formIdOrType,
             CountDistance = countDistance,
             AcquireRadius = acquireRadius
+        };
+    }
+
+    /// <summary>
+    ///     Parse all Idle Animation (IDLE) records.
+    /// </summary>
+    internal List<IdleAnimationRecord> ParseIdleAnimations()
+    {
+        var idles = ParseAccessorOnly("IDLE", 1024, ParseIdleAnimationFromAccessor);
+
+        Context.MergeRuntimeRecords(idles, 0x48, i => i.FormId,
+            (reader, entry) => reader.ReadRuntimeIdleAnimation(entry), "idle animations");
+
+        return idles;
+    }
+
+    private IdleAnimationRecord? ParseIdleAnimationFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return null;
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null, modelPath = null;
+        uint parentIdle = 0, previousIdle = 0;
+        byte animData = 0, loopMin = 0, loopMax = 0, flagsEx = 0;
+        ushort replayDelay = 0;
+        var conditionCount = 0;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "MODL":
+                    modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "ANAM" when sub.DataLength >= 8:
+                {
+                    var fields = SubrecordDataReader.ReadFields("ANAM", "IDLE", subData, record.IsBigEndian);
+                    parentIdle = SubrecordDataReader.GetUInt32(fields, "Parent");
+                    previousIdle = SubrecordDataReader.GetUInt32(fields, "Previous");
+                    break;
+                }
+                case "DATA" when sub.DataLength is 8 or 6:
+                {
+                    var fields = SubrecordDataReader.ReadFields("DATA", "IDLE", subData, record.IsBigEndian);
+                    animData = SubrecordDataReader.GetByte(fields, "AnimData");
+                    loopMin = SubrecordDataReader.GetByte(fields, "LoopMin");
+                    loopMax = SubrecordDataReader.GetByte(fields, "LoopMax");
+                    replayDelay = SubrecordDataReader.GetUInt16(fields, "ReplayDelay");
+                    flagsEx = SubrecordDataReader.GetByte(fields, "FlagsEx");
+                    break;
+                }
+                case "CTDA":
+                    conditionCount++;
+                    break;
+            }
+        }
+
+        return new IdleAnimationRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            ModelPath = modelPath,
+            ParentIdleFormId = parentIdle,
+            PreviousIdleFormId = previousIdle,
+            AnimData = animData,
+            LoopMin = loopMin,
+            LoopMax = loopMax,
+            ReplayDelay = replayDelay,
+            FlagsEx = flagsEx,
+            ConditionCount = conditionCount,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
         };
     }
 

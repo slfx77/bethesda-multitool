@@ -655,4 +655,216 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
     }
 
     #endregion
+
+    #region Regions
+
+    /// <summary>
+    ///     Parse all Region (REGN) records.
+    /// </summary>
+    internal List<RegionRecord> ParseRegions()
+    {
+        var regions = ParseAccessorOnly("REGN", 4096, ParseRegionFromAccessor);
+
+        Context.MergeRuntimeRecords(regions, 0x37, r => r.FormId,
+            (reader, entry) => reader.ReadRuntimeRegion(entry), "regions");
+
+        return regions;
+    }
+
+    private RegionRecord? ParseRegionFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return null;
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        uint worldspaceFormId = 0;
+        byte r = 0, g = 0, b = 0;
+        var dataBlockCount = 0;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId =
+                        EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "WNAM" when sub.DataLength >= 4:
+                    worldspaceFormId = BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian);
+                    break;
+                case "RCLR" when sub.DataLength >= 3:
+                    r = data[sub.DataOffset];
+                    g = data[sub.DataOffset + 1];
+                    b = data[sub.DataOffset + 2];
+                    break;
+                case "RDAT":
+                    dataBlockCount++;
+                    break;
+            }
+        }
+
+        return new RegionRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            WorldspaceFormId = worldspaceFormId,
+            EmittanceColorR = r,
+            EmittanceColorG = g,
+            EmittanceColorB = b,
+            DataBlockCount = dataBlockCount,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
+    #region Placed Grenades
+
+    /// <summary>
+    ///     Parse all Placed Grenade (PGRE) records. ESM-side only — runtime grenades
+    ///     are transient projectiles not persisted in TESForm hash tables.
+    /// </summary>
+    internal List<PlacedGrenadeRecord> ParsePlacedGrenades()
+    {
+        return ParseAccessorOnly("PGRE", 1024, ParsePlacedGrenadeFromAccessor);
+    }
+
+    private PlacedGrenadeRecord? ParsePlacedGrenadeFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return null;
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        uint baseFormId = 0;
+        float x = 0, y = 0, z = 0;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId =
+                        EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "NAME" when sub.DataLength >= 4:
+                    baseFormId = BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian);
+                    break;
+                case "DATA" when sub.DataLength >= 24:
+                    // 6 floats: posX, posY, posZ, rotX, rotY, rotZ
+                    x = BinaryUtils.ReadFloat(data, sub.DataOffset, record.IsBigEndian);
+                    y = BinaryUtils.ReadFloat(data, sub.DataOffset + 4, record.IsBigEndian);
+                    z = BinaryUtils.ReadFloat(data, sub.DataOffset + 8, record.IsBigEndian);
+                    break;
+            }
+        }
+
+        return new PlacedGrenadeRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            BaseFormId = baseFormId,
+            PositionX = x,
+            PositionY = y,
+            PositionZ = z,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
+    #region Camera Paths
+
+    /// <summary>
+    ///     Parse all Camera Path (CPTH) records.
+    /// </summary>
+    internal List<CameraPathRecord> ParseCameraPaths()
+    {
+        var paths = ParseAccessorOnly("CPTH", 1024, ParseCameraPathFromAccessor);
+
+        Context.MergeRuntimeRecords(paths, 0x5C, p => p.FormId,
+            (reader, entry) => reader.ReadRuntimeCameraPath(entry), "camera paths");
+
+        return paths;
+    }
+
+    private CameraPathRecord? ParseCameraPathFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return null;
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        byte flags = 0;
+        uint parentPath = 0;
+        var conditionCount = 0;
+        var shotFormIds = new List<uint>();
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId =
+                        EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "ANAM" when sub.DataLength >= 4:
+                    parentPath = BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian);
+                    break;
+                case "DATA" when sub.DataLength >= 1:
+                    flags = data[sub.DataOffset];
+                    break;
+                case "SNAM" when sub.DataLength >= 4:
+                    shotFormIds.Add(BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian));
+                    break;
+                case "CTDA":
+                    conditionCount++;
+                    break;
+            }
+        }
+
+        return new CameraPathRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            Flags = flags,
+            ParentPathFormId = parentPath,
+            CameraShotFormIds = shotFormIds,
+            ConditionCount = conditionCount,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
 }

@@ -15,7 +15,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     /// </summary>
     internal List<WaterRecord> ParseWater()
     {
-        return ParseRecordList("WATR", 4096,
+        var water = ParseRecordList("WATR", 4096,
             ParseWaterFromAccessor,
             record => new WaterRecord
             {
@@ -25,6 +25,11 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 Offset = record.Offset,
                 IsBigEndian = record.IsBigEndian
             });
+
+        Context.MergeRuntimeRecords(water, 0x4E, w => w.FormId,
+            (reader, entry) => reader.ReadRuntimeWater(entry), "water records");
+
+        return water;
     }
 
     private WaterRecord? ParseWaterFromAccessor(DetectedMainRecord record, byte[] buffer)
@@ -495,6 +500,150 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             ParallaxTexture = tx04,
             EnvironmentMapTexture = tx05,
             Flags = txstFlags,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
+    #region Audio Location Controllers
+
+    /// <summary>
+    ///     Parse all Audio Location Controller (ALOC) records.
+    /// </summary>
+    internal List<AudioLocationControllerRecord> ParseAudioLocationControllers()
+    {
+        var controllers = ParseAccessorOnly("ALOC", 512, ParseAudioLocationControllerFromAccessor);
+
+        Context.MergeRuntimeRecords(controllers, 0x70, c => c.FormId,
+            (reader, entry) => reader.ReadRuntimeAudioLocationController(entry),
+            "audio location controllers");
+
+        return controllers;
+    }
+
+    private AudioLocationControllerRecord? ParseAudioLocationControllerFromAccessor(
+        DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return null;
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null, fullName = null;
+        uint locationDelay = 0, layerTime = 0, loopTime = 0, mediaStartTime = 0;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId =
+                        EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "FULL":
+                    fullName =
+                        EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    break;
+                case "NAM3" when sub.DataLength >= 4:
+                    locationDelay = BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian);
+                    break;
+                case "NAM4" when sub.DataLength >= 4:
+                    layerTime = BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian);
+                    break;
+                case "NAM5" when sub.DataLength >= 4:
+                    loopTime = BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian);
+                    break;
+                case "NAM6" when sub.DataLength >= 4:
+                    mediaStartTime = BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian);
+                    break;
+            }
+        }
+
+        return new AudioLocationControllerRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            FullName = fullName,
+            LocationDelay = locationDelay,
+            LayerTime = layerTime,
+            LoopTime = loopTime,
+            MediaStartTime = mediaStartTime,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
+    #region Load Screen Types
+
+    /// <summary>
+    ///     Parse all Load Screen Type (LSCT) records.
+    /// </summary>
+    internal List<LoadScreenTypeRecord> ParseLoadScreenTypes()
+    {
+        var types = ParseAccessorOnly("LSCT", 256, ParseLoadScreenTypeFromAccessor);
+
+        Context.MergeRuntimeRecords(types, 0x6E, t => t.FormId,
+            (reader, entry) => reader.ReadRuntimeLoadScreenType(entry), "load screen types");
+
+        return types;
+    }
+
+    private LoadScreenTypeRecord? ParseLoadScreenTypeFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return null;
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        Dictionary<string, object?>? layoutData = null;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "DATA" when sub.DataLength == 88:
+                {
+                    var fields = SubrecordDataReader.ReadFields("DATA", "LSCT", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        layoutData = fields;
+                    }
+
+                    break;
+                }
+            }
+        }
+
+        return new LoadScreenTypeRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            LayoutData = layoutData,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
