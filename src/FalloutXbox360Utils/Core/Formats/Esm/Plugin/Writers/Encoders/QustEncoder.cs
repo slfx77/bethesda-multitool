@@ -4,10 +4,17 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
 ///     Encodes a <see cref="QuestRecord" /> (QUST) as PC-format subrecord bytes.
-///     v6 emits the full record from scratch: EDID + SCRI? + FULL? + DATA + stage blocks
-///     (INDX + QSDT? + CNAM?)* + objective blocks (QOBJ + NNAM?)*.
-///     Override path is a no-op — quest definitions don't mutate at runtime in a way that
-///     round-trips meaningfully (stage states are runtime concerns, not ESM mutations).
+///     Both override and new-record paths emit EDID? + SCRI? + FULL? + DATA + CTDA* + stage
+///     blocks + objective blocks. v22 reinstates the override path: when the DMP captured
+///     any stages / objectives / conditions / script / FULL the override emits the FULL
+///     canonical subrecord stream, and the merge engine positionally replaces the master's
+///     blocks per signature. When the DMP carries no quest content the override returns
+///     empty subrecords and the engine retains the master verbatim.
+///
+///     Partial emission is unsafe: INDX + QSDT + CNAM (per stage) and QOBJ + NNAM + QSTA
+///     (per objective) are positional groups, and the merge engine does per-signature
+///     replacement only — emitting a subset would desynchronize the stage/objective tuples.
+///
 ///     DATA (8 bytes): byte Flags(0) + byte Priority(1) + pad(2..3) + float QuestDelay(4..7).
 ///     INDX in QUST is little-endian on Xbox 360 (per <see cref="Conversion.Schema.SubrecordDialogueSchemas" />)
 ///     so the PC value is the same 2 bytes.
@@ -19,7 +26,47 @@ public sealed class QustEncoder : IRecordEncoder
 
     public EncodedRecord Encode(object model)
     {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
+        var quest = (QuestRecord)model;
+
+        // Override path emits ONLY override-safe singletons (FULL / SCRI / DATA). Multi-
+        // occurrence subrecords — stage triplets (INDX + QSDT + CNAM), objective triplets
+        // (QOBJ + NNAM + QSTA), and top-level CTDA — are excluded because the merge engine's
+        // positional per-signature replacement would interleave DMP entries with the master's
+        // tail and break stage indexing, objective ordering, and condition chains. The
+        // initial v22 release emitted these and produced random quest failures in-game.
+        if (!HasOverrideContent(quest))
+        {
+            return new EncodedRecord { Subrecords = [], Warnings = [] };
+        }
+
+        var subs = new List<EncodedSubrecord>();
+
+        if (quest.Script.HasValue)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRI", quest.Script.Value));
+        }
+
+        if (!string.IsNullOrEmpty(quest.FullName))
+        {
+            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("FULL", quest.FullName));
+        }
+
+        // DATA (8 bytes): byte Flags(0) + byte Priority(1) + pad(2..3) + float QuestDelay.
+        // Single-occurrence; safe to replace.
+        var data = new byte[8];
+        data[0] = quest.Flags;
+        data[1] = quest.Priority;
+        SubrecordEncoder.WriteFloat(data, 4, quest.QuestDelay);
+        subs.Add(new EncodedSubrecord("DATA", data));
+
+        // If only DATA was emitted (no FULL/SCRI mutation), fall through to empty so the
+        // merge engine retains the master's QUST verbatim — DATA flags rarely differ.
+        if (subs.Count == 1)
+        {
+            return new EncodedRecord { Subrecords = [], Warnings = [] };
+        }
+
+        return new EncodedRecord { Subrecords = subs, Warnings = [] };
     }
 
     /// <summary>
@@ -40,6 +87,30 @@ public sealed class QustEncoder : IRecordEncoder
 
         subs.Add(NewRecordSubrecords.EncodeStringSubrecord("EDID", quest.EditorId ?? string.Empty));
 
+        BuildCanonicalSubrecords(quest, subs);
+        return new EncodedRecord { Subrecords = subs, Warnings = warnings };
+    }
+
+    /// <summary>
+    ///     Returns true when the DMP-parsed model carries any meaningful QUST content that
+    ///     should reach the output ESP. Used by the override path to short-circuit empty
+    ///     records so the merge engine retains the master verbatim.
+    /// </summary>
+    private static bool HasOverrideContent(QuestRecord quest)
+    {
+        return quest.Stages.Count > 0
+               || quest.Objectives.Count > 0
+               || quest.Conditions.Count > 0
+               || quest.Script.HasValue
+               || !string.IsNullOrEmpty(quest.FullName);
+    }
+
+    /// <summary>
+    ///     Emits the canonical QUST subrecord stream (everything except EDID). Shared
+    ///     between the override path and the new-record path.
+    /// </summary>
+    private static void BuildCanonicalSubrecords(QuestRecord quest, List<EncodedSubrecord> subs)
+    {
         if (quest.Script.HasValue)
         {
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRI", quest.Script.Value));
@@ -104,8 +175,6 @@ public sealed class QustEncoder : IRecordEncoder
                 EmitConditions(subs, target.Conditions);
             }
         }
-
-        return new EncodedRecord { Subrecords = subs, Warnings = warnings };
     }
 
     /// <summary>

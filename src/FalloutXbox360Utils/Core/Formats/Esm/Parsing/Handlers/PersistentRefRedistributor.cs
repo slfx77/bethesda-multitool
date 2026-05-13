@@ -207,6 +207,252 @@ internal static class PersistentRefRedistributor
         return moved;
     }
 
+    /// <summary>
+    ///     Cross-cell deduplication for runtime-sourced refs. When the same REFR FormID appears
+    ///     in multiple non-persistent cells of the same worldspace at the same world position,
+    ///     either the engine has copied a persistent ref into every loaded grid cell's
+    ///     listReferences array (RuntimeCellList) or the DMP proximity fallback's offset
+    ///     window has picked up overlapping REFRs for adjacent cell records (Proximity).
+    ///     Consolidate each duplicate set into a single cell using this priority:
+    ///       1. Existing cell whose grid contains the ref's world position.
+    ///       2. Synthetic virtual exterior tile at the position's grid, if any duplicate's
+    ///          target grid is otherwise unrepresented in the worldspace.
+    ///       3. The worldspace's persistent cell.
+    ///       4. The first cell the ref was seen in (fallback).
+    /// </summary>
+    internal static int DeduplicateRuntimeCellRefs(
+        List<CellRecord> existingCells,
+        RecordParserContext context)
+    {
+        if (existingCells.Count == 0)
+        {
+            return 0;
+        }
+
+        var cellByFormId = new Dictionary<uint, CellRecord>(existingCells.Count);
+        var gridToCellByWs = new Dictionary<uint, Dictionary<(int, int), uint>>();
+        var persistentCellByWs = new Dictionary<uint, uint>();
+        var maxSyntheticFormId = 0xFE800000u;
+        foreach (var cell in existingCells)
+        {
+            cellByFormId.TryAdd(cell.FormId, cell);
+
+            if (cell.FormId is >= 0xFE800000u and < 0xFE900000u && cell.FormId > maxSyntheticFormId)
+            {
+                maxSyntheticFormId = cell.FormId;
+            }
+
+            if (cell.WorldspaceFormId is not uint wsId)
+            {
+                continue;
+            }
+
+            if (cell.IsPersistentCell)
+            {
+                persistentCellByWs.TryAdd(wsId, cell.FormId);
+            }
+
+            if (!cell.IsInterior && cell.GridX.HasValue && cell.GridY.HasValue)
+            {
+                if (!gridToCellByWs.TryGetValue(wsId, out var gridMap))
+                {
+                    gridMap = [];
+                    gridToCellByWs[wsId] = gridMap;
+                }
+                gridMap.TryAdd((cell.GridX.Value, cell.GridY.Value), cell.FormId);
+            }
+        }
+
+        var nextSyntheticFormId = maxSyntheticFormId + 1;
+
+        // Per-worldspace occurrence index: refFormId -> [(cellFormId, ref)]
+        var occurrencesByWs =
+            new Dictionary<uint, Dictionary<uint, List<(uint CellFormId, PlacedReference Ref)>>>();
+        foreach (var cell in existingCells)
+        {
+            if (cell.WorldspaceFormId is not uint wsId || cell.PlacedObjects.Count == 0)
+            {
+                continue;
+            }
+
+            foreach (var pref in cell.PlacedObjects)
+            {
+                // Limit dedup to sources that can produce engine/parser-time duplicates:
+                //   RuntimeCellList — runtime cell shares persistent refs across loaded grids.
+                //   Proximity       — DMP fallback uses offset binary search; adjacent cell
+                //                     records pick up overlapping REFR windows.
+                if (pref.AssignmentSource is not ("RuntimeCellList" or "Proximity"))
+                {
+                    continue;
+                }
+
+                if (!occurrencesByWs.TryGetValue(wsId, out var refOcc))
+                {
+                    refOcc = [];
+                    occurrencesByWs[wsId] = refOcc;
+                }
+
+                if (!refOcc.TryGetValue(pref.FormId, out var list))
+                {
+                    list = [];
+                    refOcc[pref.FormId] = list;
+                }
+                list.Add((cell.FormId, pref));
+            }
+        }
+
+        var refsToRemoveFromCell = new Dictionary<uint, HashSet<uint>>();
+        var refsToAddToCell = new Dictionary<uint, List<PlacedReference>>();
+        var syntheticCellsAdded = new List<CellRecord>();
+        var deduplicated = 0;
+
+        foreach (var (wsId, refOcc) in occurrencesByWs)
+        {
+            if (!gridToCellByWs.TryGetValue(wsId, out var gridMap))
+            {
+                gridMap = [];
+                gridToCellByWs[wsId] = gridMap;
+            }
+            persistentCellByWs.TryGetValue(wsId, out var persistentCellFormId);
+
+            foreach (var (refFormId, occurrences) in refOcc)
+            {
+                if (occurrences.Count <= 1)
+                {
+                    continue;
+                }
+
+                // Only treat as engine-time duplicates if all copies share the same position.
+                var first = occurrences[0].Ref;
+                var samePosition = true;
+                for (var i = 1; i < occurrences.Count; i++)
+                {
+                    var r = occurrences[i].Ref;
+                    if (MathF.Abs(r.X - first.X) > 0.5f ||
+                        MathF.Abs(r.Y - first.Y) > 0.5f ||
+                        MathF.Abs(r.Z - first.Z) > 0.5f)
+                    {
+                        samePosition = false;
+                        break;
+                    }
+                }
+
+                if (!samePosition)
+                {
+                    continue;
+                }
+
+                uint destCellFormId;
+                var (gx, gy) = CellUtils.WorldToCellCoordinates(first.X, first.Y);
+                if (gridMap.TryGetValue((gx, gy), out var gridCell))
+                {
+                    destCellFormId = gridCell;
+                }
+                else if (MathF.Abs(first.X) > 1f || MathF.Abs(first.Y) > 1f)
+                {
+                    // Synthesize a virtual exterior tile so the ref lands on the actual map
+                    // grid that contains its world position, instead of being dumped into
+                    // the persistent cell at (0,0).
+                    var wsName = context.GetEditorId(wsId) ?? $"0x{wsId:X8}";
+                    var synthetic = new CellRecord
+                    {
+                        FormId = nextSyntheticFormId++,
+                        EditorId = $"[Virtual {gx},{gy} {wsName}]",
+                        GridX = gx,
+                        GridY = gy,
+                        WorldspaceFormId = wsId,
+                        PlacedObjects = [],
+                        IsVirtual = true,
+                        IsBigEndian = first.IsBigEndian
+                    };
+                    cellByFormId[synthetic.FormId] = synthetic;
+                    syntheticCellsAdded.Add(synthetic);
+                    gridMap[(gx, gy)] = synthetic.FormId;
+                    destCellFormId = synthetic.FormId;
+                }
+                else if (persistentCellFormId != 0)
+                {
+                    destCellFormId = persistentCellFormId;
+                }
+                else
+                {
+                    destCellFormId = occurrences[0].CellFormId;
+                }
+
+                var destHasRef = false;
+                foreach (var (cellFormId, _) in occurrences)
+                {
+                    if (cellFormId == destCellFormId)
+                    {
+                        destHasRef = true;
+                        continue;
+                    }
+
+                    if (!refsToRemoveFromCell.TryGetValue(cellFormId, out var removeSet))
+                    {
+                        removeSet = [];
+                        refsToRemoveFromCell[cellFormId] = removeSet;
+                    }
+                    removeSet.Add(refFormId);
+                    deduplicated++;
+                }
+
+                if (!destHasRef)
+                {
+                    if (!refsToAddToCell.TryGetValue(destCellFormId, out var addList))
+                    {
+                        addList = [];
+                        refsToAddToCell[destCellFormId] = addList;
+                    }
+                    addList.Add(first);
+                }
+            }
+        }
+
+        if (deduplicated == 0)
+        {
+            return 0;
+        }
+
+        if (syntheticCellsAdded.Count > 0)
+        {
+            existingCells.AddRange(syntheticCellsAdded);
+        }
+
+        for (var i = 0; i < existingCells.Count; i++)
+        {
+            var cell = existingCells[i];
+            var hasRemovals = refsToRemoveFromCell.TryGetValue(cell.FormId, out var removeSet);
+            var hasAdditions = refsToAddToCell.TryGetValue(cell.FormId, out var addList);
+
+            if (!hasRemovals && !hasAdditions)
+            {
+                continue;
+            }
+
+            var newObjects = new List<PlacedReference>(cell.PlacedObjects.Count);
+            foreach (var pref in cell.PlacedObjects)
+            {
+                if (hasRemovals
+                    && pref.AssignmentSource is "RuntimeCellList" or "Proximity"
+                    && removeSet!.Contains(pref.FormId))
+                {
+                    continue;
+                }
+                newObjects.Add(pref);
+            }
+
+            if (hasAdditions)
+            {
+                newObjects.AddRange(addList!);
+            }
+
+            existingCells[i] = cell with { PlacedObjects = newObjects };
+        }
+
+        return deduplicated;
+    }
+
     private static bool ShouldRedistributePersistentRef(CellRecord cell, PlacedReference pref)
     {
         // Refs placed via runtime cell lists or runtime grid lookup are explicit engine

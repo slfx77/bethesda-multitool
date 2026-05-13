@@ -34,6 +34,18 @@ public sealed class ScptEncoder : IRecordEncoder
         var subs = new List<EncodedSubrecord>();
         var warnings = new List<string>();
 
+        // Skip stub scripts entirely — empty EditorID plus no bytecode means the parser
+        // detected a SCPT signature on stale memory; the FNV runtime would print "Script
+        // '' has not been compiled" and refuse to bind any SCRI references.
+        if (string.IsNullOrEmpty(script.EditorId)
+            && (script.CompiledData is null || script.CompiledData.Length == 0)
+            && script.Variables.Count == 0
+            && script.ReferencedObjects.Count == 0)
+        {
+            warnings.Add($"New SCPT 0x{script.FormId:X8} has no EditorId, bytecode, or vars — skipping stub.");
+            return new EncodedRecord { Subrecords = subs, Warnings = warnings };
+        }
+
         if (string.IsNullOrEmpty(script.EditorId))
         {
             warnings.Add($"New SCPT 0x{script.FormId:X8} has no EditorId — emitting empty EDID.");

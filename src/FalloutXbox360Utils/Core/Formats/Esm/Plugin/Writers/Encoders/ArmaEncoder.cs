@@ -45,11 +45,11 @@ public sealed class ArmaEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("FULL", arma.FullName));
         }
 
-        // BMDT — required for the engine to know which biped slots this addon covers.
-        var bmdt = new byte[8];
+        // BMDT is 4 bytes in the FNV runtime's chunk table even though vanilla files emit 8.
+        // Writing 8 triggers "Chunk size 8 too big in chunk BMDT_ID — Max size is 4" warnings
+        // for every new ARMA record. See ArmoEncoder for the full rationale.
+        var bmdt = new byte[4];
         SubrecordEncoder.WriteUInt32(bmdt, 0, arma.BipedFlags);
-        bmdt[4] = arma.GeneralFlags;
-        // bytes 5-7 padding (zero)
         subs.Add(new EncodedSubrecord("BMDT", bmdt));
 
         if (!string.IsNullOrEmpty(arma.MaleModelPath))

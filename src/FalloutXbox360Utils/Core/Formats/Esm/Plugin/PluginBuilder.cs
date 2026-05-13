@@ -31,6 +31,68 @@ public sealed class PluginBuilder
     private readonly RecordEncoderRegistry _encoderRegistry;
     private readonly IConversionProgressSink _sink;
 
+    /// <summary>
+    ///     Master ESM FormID set, populated at the start of <c>Build</c>. Used by post-encode
+    ///     FormID validation (e.g., dropping SCRI subrecords whose script FormID doesn't
+    ///     exist in master). Null until Build sets it; consumers must tolerate that.
+    /// </summary>
+    private HashSet<uint>? _masterFormIds;
+
+    /// <summary>
+    ///     Per-record-type subset of <see cref="_masterFormIds" />. Lets validators answer
+    ///     "is FormID X a SCPT in the master?" rather than the weaker "is FormID X anything
+    ///     in the master?" — the loose check let SCRI references through that pointed at
+    ///     STAT/ACTI/etc. FormIDs and produced "Unable to find script" load-time errors
+    ///     (master FormID exists, but it's the wrong record type).
+    /// </summary>
+    private Dictionary<string, HashSet<uint>>? _masterFormIdsByType;
+
+    /// <summary>
+    ///     FormIDs being emitted via the new-record path in the current <c>Build</c> run.
+    ///     Populated as records dispatch through <c>TryEncodeNewTopLevelRecord</c>. Used by
+    ///     <see cref="ValidateScriRefs" /> so an override-NPC's SCRI pointing at a freshly
+    ///     emitted SCPT (which won't be in <see cref="_masterFormIds" />) survives the
+    ///     dangling-ref drop. Reset to empty at the start of each Build.
+    /// </summary>
+    private readonly HashSet<uint> _emittedNewFormIds = [];
+
+    /// <summary>
+    ///     Per-record-type subset of <see cref="_emittedNewFormIds" />. Used by SCRI's
+    ///     type-aware validator so it accepts new SCPT FormIDs but rejects new STAT/etc.
+    /// </summary>
+    private readonly Dictionary<string, HashSet<uint>> _emittedNewFormIdsByType = new();
+
+    /// <summary>
+    ///     New worldspaces (not in master) whose DMP carries child cells. These are
+    ///     pre-encoded so the cell-children pipeline can emit them as full WRLD GRUPs
+    ///     (anchor record + World Children GRUP containing the captured cells). Keyed by
+    ///     the ORIGINAL DMP-source FormID of the worldspace so cell-children grouping by
+    ///     <c>dmpCell.WorldspaceFormId</c> finds them directly. Null until pre-encode runs.
+    /// </summary>
+    private Dictionary<uint, NewWorldspaceEntry>? _newWorldspacesForCellPipeline;
+
+
+    /// <summary>
+    ///     Engine runtime-state FormIDs that should NEVER be re-emitted from a DMP capture.
+    ///     The DMP snapshots live gameplay state, so these records carry whatever transient
+    ///     value they had at capture time (player position, current in-game date/hour, last
+    ///     equipped weapon, etc.). Re-emitting them as overrides clobbers the engine's
+    ///     freshly-initialized runtime state during plugin load and was the cause of the
+    ///     v20.x EXCEPTION_ACCESS_VIOLATION crash at FalloutNV+0x46025A.
+    /// </summary>
+    private static readonly HashSet<uint> RuntimeStateFormIds =
+    [
+        0x00000007, // Player NPC
+        0x00000014, // PlayerRef ACHR (player's placed-actor instance)
+        0x00000035, // GameYear GLOB
+        0x00000036, // GameMonth GLOB
+        0x00000037, // GameDay GLOB
+        0x00000038, // GameHour GLOB
+        0x00000039, // GameDaysPassed GLOB
+        0x0000003A, // TimeScale GLOB
+        0x000001F4  // Hand-to-Hand WEAP (engine default unarmed fallback)
+    ];
+
     public PluginBuilder(RecordEncoderRegistry registry, IConversionProgressSink? sink = null)
     {
         _encoderRegistry = registry;
@@ -62,10 +124,33 @@ public sealed class PluginBuilder
                 .Where(r => r.Header.Signature != "TES4")
                 .ToDictionary(r => r.Header.FormId);
 
+            // Populate the validation set used by post-encode FormID checks (e.g. SCRI
+            // dangling-ref nullification). Any FormID an emitted subrecord points at that
+            // isn't in this set (and isn't sentinel-0 or 0xFFFFFFFF) is unresolvable at
+            // runtime and gets dropped to avoid null-deref during master-binding.
+            _masterFormIds = new HashSet<uint>(pcRecordsByFormId.Keys);
+            _masterFormIdsByType = pcRecordsList
+                .Where(r => r.Header.Signature != "TES4")
+                .GroupBy(r => r.Header.Signature, StringComparer.Ordinal)
+                .ToDictionary(
+                    g => g.Key,
+                    g => new HashSet<uint>(g.Select(r => r.Header.FormId)),
+                    StringComparer.Ordinal);
+            _emittedNewFormIds.Clear();
+            _emittedNewFormIdsByType.Clear();
+
             // Build the parent-cell index by walking records in offset order. Children always
             // appear after their parent CELL in the file, so the "most recent CELL" tracker
             // gives correct parentage without needing GRUP context.
             var refToCell = BuildRefToCellIndex(pcRecordsList);
+
+            // NAVM (NavMesh) records live in each cell's Temporary Children GRUP. When a
+            // plugin overrides a cell, FNV's full-GRUP-replacement semantics drop the
+            // master's NAVMs unless we re-emit them — and a cell with no navmesh leaves
+            // idle NPCs unanchored (they sink under physics when standing still while
+            // pathfinding still works mid-walk). Build a per-cell NAVM index so override
+            // bundles can copy these records verbatim.
+            var navmsByCell = BuildNavmByCellIndex(pcRecordsList);
 
             // Build the cell-context index — maps each CELL FormID to its master GRUP context
             // (block/subblock labels, parent worldspace if exterior). Plugin overrides reuse
@@ -85,11 +170,31 @@ public sealed class PluginBuilder
             _sink.OnPhaseEnd("Reading DMP", stats);
             ct.ThrowIfCancellationRequested();
 
+            // v22 asset-rename pass: rewrite record paths in-place when fuzzy resolution
+            // matches a differently-named asset in an indexed Data folder. Runs BEFORE
+            // encoding so the output ESP carries the unified paths. No-op when the user
+            // didn't configure rename folders.
+            TryApplyAssetRenames(dmpRecords, inputs.Options, ct);
+
             var classifier = new NewVsOverrideClassifier(pcRecordsByFormId.Keys);
 
             // Single allocator shared across phases — Phase 3 (new top-level records) and
             // Phase 4 (new cells/refs). NextObjectId in TES4 reflects the high-water mark.
             var allocator = new FormIdAllocator(inputs.Options.NewRecordBaseFormId);
+
+            // Pre-Phase-3 step: identify new WRLDs (not in master) that have at least one
+            // captured child cell in the DMP, allocate their FormIDs upfront, and encode
+            // their record bytes. The per-type emit loop skips these — they'll be emitted
+            // by the cell-children pipeline instead, so each new WRLD's record sits
+            // immediately above its World Children GRUP (the canonical ESM layout).
+            _newWorldspacesForCellPipeline = PreEncodeNewWorldspacesWithCells(
+                dmpRecords, classifier, allocator, inputs.Options, stats);
+            if (_newWorldspacesForCellPipeline.Count > 0)
+            {
+                _sink.Info("Merging top-level records",
+                    $"Deferred {_newWorldspacesForCellPipeline.Count:N0} new WRLD(s) with child cells " +
+                    "to the cell-children pipeline (so their child cells emit under the right WRLD).");
+            }
 
             // Phase 3: top-level record merging (GMST, GLOB, WEAP, …).
             _sink.OnPhaseStart("Merging top-level records", null);
@@ -124,6 +229,29 @@ public sealed class PluginBuilder
                 }
             }
 
+            // DIAL+INFO are not in EnumerateModelsByType — emit them as a single nested
+            // section so each DIAL is followed by its type-7 Topic Children GRUP of INFOs.
+            // Master FormIDs feed the FormID validator inside the builder: any FormID
+            // reference (QSTI/ANAM/NAME/TCLT/TCLF/SCRO/CTDA-FormID-params) that isn't a
+            // known master record AND isn't one of our newly-allocated FormIDs is replaced
+            // with 0 to keep the runtime from null-deref'ing on dangling cross-refs.
+            var dialogResult = DialogGrupBuilder.BuildDialogSection(
+                dmpRecords.DialogTopics, dmpRecords.Dialogues, classifier, allocator,
+                pcRecordsByFormId.Keys, stats, _sink);
+            if (dialogResult.DialogSection.Length > 0)
+            {
+                grupBytesByType["DIAL"] = dialogResult.DialogSection;
+            }
+
+            // The placeholder DIAL needs a parent quest or the FNV runtime refuses to attach
+            // INFOs to it. DialogGrupBuilder allocated + encoded the placeholder QUST; inject
+            // it into the QUST GRUP body so it loads as a normal top-level record.
+            if (dialogResult.PlaceholderQustRecord is { Length: > 0 } placeholderQust)
+            {
+                grupBytesByType["QUST"] = AppendOrCreateQustGrup(
+                    grupBytesByType.GetValueOrDefault("QUST"), placeholderQust);
+            }
+
             _sink.OnPhaseEnd("Merging top-level records", stats);
             ct.ThrowIfCancellationRequested();
 
@@ -133,8 +261,8 @@ public sealed class PluginBuilder
             _sink.OnPhaseStart("Merging cell children", null);
             var pcRefFormIds = new HashSet<uint>(refToCell.Keys);
             var bundles = BuildCellOverrideBundles(
-                dmpRecords, pcRecordsByFormId, refToCell, pcRefFormIds, cellContexts, allocator,
-                inputs.Options, stats, ct);
+                dmpRecords, pcRecordsByFormId, refToCell, pcRefFormIds, cellContexts,
+                navmsByCell, allocator, inputs.Options, stats, ct);
             _sink.Info("Merging cell children",
                 $"Built {bundles.Count:N0} cell-override bundle(s); allocated {allocator.NextLocalId - allocator.BaseLocalId:N0} new FormID(s).");
             _sink.OnPhaseEnd("Merging cell children", stats);
@@ -197,6 +325,75 @@ public sealed class PluginBuilder
         }
     }
 
+    /// <summary>
+    ///     Pre-encode every new (non-master) worldspace that has at least one captured child
+    ///     cell. The cell-children pipeline emits these alongside their World Children GRUP
+    ///     so the WRLD record sits directly above its cells (canonical ESM layout). New WRLDs
+    ///     with no child cells stay in the standard top-level emit path.
+    /// </summary>
+    private Dictionary<uint, NewWorldspaceEntry> PreEncodeNewWorldspacesWithCells(
+        Models.RecordCollection dmpRecords,
+        NewVsOverrideClassifier classifier,
+        FormIdAllocator allocator,
+        PluginBuildOptions options,
+        ConversionPipelineStats stats)
+    {
+        var result = new Dictionary<uint, NewWorldspaceEntry>();
+
+        // Build the set of worldspace FormIDs that have at least one DMP cell pointing at
+        // them. Cheap pass — we only need membership, not counts.
+        var worldspacesWithCells = new HashSet<uint>();
+        foreach (var cell in dmpRecords.Cells)
+        {
+            if (cell.WorldspaceFormId is uint wsId)
+            {
+                worldspacesWithCells.Add(wsId);
+            }
+        }
+
+        if (worldspacesWithCells.Count == 0)
+        {
+            return result;
+        }
+
+        foreach (var wrld in dmpRecords.Worldspaces)
+        {
+            // Only new WRLDs (not in master) need this special handling. Override WRLDs go
+            // through the standard cell-children pipeline already.
+            if (classifier.IsOverride(wrld.FormId))
+            {
+                continue;
+            }
+
+            if (!worldspacesWithCells.Contains(wrld.FormId))
+            {
+                continue;
+            }
+
+            var encoded = Writers.Encoders.WrldEncoder.EncodeNew(wrld);
+            if (encoded.Subrecords.Count == 0)
+            {
+                continue; // Encoder declined this WRLD (rare; e.g., insufficient metadata).
+            }
+
+            var emittedFormId = allocator.Allocate();
+            var flags = options.CompressRecords ? 0x00040000u : 0u;
+            var recordBytes = BuildNewRecordBytes("WRLD", emittedFormId, flags, encoded.Subrecords);
+
+            result[wrld.FormId] = new NewWorldspaceEntry(emittedFormId, recordBytes);
+
+            if (options.VerboseDecisions)
+            {
+                _sink.Decision("Merging top-level records",
+                    $"Pre-encoded new WRLD 0x{wrld.FormId:X8} → emitted 0x{emittedFormId:X8} " +
+                    "(deferred to cell-children pipeline so child cells nest under it).",
+                    "WRLD", wrld.FormId, code: "v22.wrld.deferred-with-cells");
+            }
+        }
+
+        return result;
+    }
+
     private byte[] BuildGrupForType(
         string recordType,
         IRecordEncoder encoder,
@@ -218,6 +415,35 @@ public sealed class PluginBuilder
 
             var formId = ExtractFormId(model);
 
+            if (RuntimeStateFormIds.Contains(formId))
+            {
+                stats.IncrementSkipped(recordType);
+                _sink.Decision("Merging top-level records",
+                    $"Skipping runtime-state record 0x{formId:X8} — DMP captures live gameplay " +
+                    "state for engine-reserved records; re-emitting would clobber the engine's " +
+                    "runtime setup (player / clock / default weapon).",
+                    recordType, formId, code: "v20.runtime-state.skip");
+                continue;
+            }
+
+            // Deferred WRLD: pre-encoded into _newWorldspacesForCellPipeline so it can emit
+            // alongside its captured child cells in the cell-children pipeline. Skipping here
+            // prevents double-emission.
+            if (recordType == "WRLD"
+                && _newWorldspacesForCellPipeline is not null
+                && _newWorldspacesForCellPipeline.ContainsKey(formId))
+            {
+                stats.IncrementEmitted(recordType);
+                stats.NewRecordsEmitted++;
+                continue;
+            }
+
+            // (v20.13a-j bisection diagnostic removed. The bug was traced to AVIF: the DMP
+            // parser identifies engine-hardcoded actor values as "new" records, but emitting
+            // them with only an EDID subrecord (no FULL/DESC/ANAM, since the parser doesn't
+            // capture metadata) crashed FNV at startup. Fix lives in AvifEncoder.EncodeNew
+            // which now skips new AVIF emission entirely.)
+
             if (!classifier.IsOverride(formId))
             {
                 // v4: route through new-record path if this type has a new-record encoder.
@@ -227,6 +453,17 @@ public sealed class PluginBuilder
                     anyEmitted = true;
                     stats.IncrementEmitted(recordType);
                     stats.NewRecordsEmitted++;
+                    // v22: track FormIDs emitted via the new-record path so ValidateScriRefs
+                    // accepts SCRI references to freshly-emitted SCPTs (or other new records).
+                    // Without this, an override-NPC pointing at a new prototype script would
+                    // have its SCRI dropped because the target isn't in _masterFormIds.
+                    _emittedNewFormIds.Add(formId);
+                    if (!_emittedNewFormIdsByType.TryGetValue(recordType, out var typeSet))
+                    {
+                        typeSet = [];
+                        _emittedNewFormIdsByType[recordType] = typeSet;
+                    }
+                    typeSet.Add(formId);
                 }
                 else
                 {
@@ -457,14 +694,20 @@ public sealed class PluginBuilder
             _sink.Warn("Merging top-level records", w, recordType, ExtractFormId(model));
         }
 
-        if (encoded.Subrecords.Count == 0)
+        // Drop SCRI subrecords whose script FormID isn't in the master. The DMP often carries
+        // SCRI references to FO3-vintage scripts that don't exist in the FNV master and would
+        // cause the engine to log "Unable to find script (XXXXXXXX) on owner object" warnings
+        // plus null-deref later during script-binding setup.
+        var validatedSubrecords = ValidateScriRefs(encoded.Subrecords, recordType, ExtractFormId(model));
+
+        if (validatedSubrecords.Count == 0)
         {
             return false;
         }
 
         var allocatedFormId = allocator.Allocate();
         var flags = options.CompressRecords ? 0x00040000u : 0u;
-        recordBytes = BuildNewRecordBytes(recordType, allocatedFormId, flags, encoded.Subrecords);
+        recordBytes = BuildNewRecordBytes(recordType, allocatedFormId, flags, validatedSubrecords);
 
         if (options.VerboseDecisions)
         {
@@ -490,6 +733,7 @@ public sealed class PluginBuilder
         Dictionary<uint, uint> refToCell,
         IReadOnlySet<uint> pcRefFormIds,
         Dictionary<uint, PcEsmCellContext> cellContexts,
+        Dictionary<uint, List<uint>> navmsByCell,
         FormIdAllocator allocator,
         PluginBuildOptions options,
         ConversionPipelineStats stats,
@@ -582,6 +826,38 @@ public sealed class PluginBuilder
                 stats.RecordsConsidered++;
                 dmpRefFormIdsInCell.Add(placed.FormId);
 
+                if (RuntimeStateFormIds.Contains(placed.FormId))
+                {
+                    stats.IncrementSkipped(placed.RecordType);
+                    _sink.Decision("Merging cell children",
+                        $"Skipping runtime-state ref 0x{placed.FormId:X8} — DMP captures live " +
+                        "gameplay state for engine-reserved records.",
+                        placed.RecordType, placed.FormId, code: "v20.runtime-state.skip-ref");
+                    continue;
+                }
+
+                // Filter NEW placed refs whose base FormID points at a record that doesn't
+                // exist in the master ESM. ~26% of new-ref bases in prototype DMPs (FO3-era
+                // statics, NPCs, doors that didn't survive to FNV release) are unresolvable
+                // and at runtime the engine has to fall back to a phantom record — which
+                // looks suspiciously like the consistent "TESObjectSTAT FormID: 0000008B"
+                // we've seen in every crash log's frame 27. Override refs are fine (the
+                // base is already known to exist by definition); just filter new refs.
+                var refIsInMaster = pcRecordsByFormId.ContainsKey(placed.FormId);
+
+                if (!refIsInMaster
+                    && placed.BaseFormId != 0
+                    && _masterFormIds is not null
+                    && !_masterFormIds.Contains(placed.BaseFormId))
+                {
+                    stats.IncrementSkipped(placed.RecordType);
+                    _sink.Decision("Merging cell children",
+                        $"Skipping new ref 0x{placed.FormId:X8} — base 0x{placed.BaseFormId:X8} " +
+                        "not in master ESM (FO3-vintage / deleted in released FNV).",
+                        placed.RecordType, placed.FormId, code: "v20.refr.dangling-base");
+                    continue;
+                }
+
                 // Mode A (PersistentOnly): skip non-persistent overrides — DMP didn't actually
                 // load this cell, so we can't trust temporary refs. New persistent refs are still
                 // allowed (user spec).
@@ -663,6 +939,57 @@ public sealed class PluginBuilder
                 continue;
             }
 
+            // For new exterior cells with captured heightmap, emit a LAND record at the
+            // start of Temporary Children. Without LAND, the engine renders the cell at
+            // worldspace-default land elevation and any DMP-captured XCLW water height
+            // floods the cell (cf. "underwater Strip" symptom in v21).
+            if (!pcCellExists
+                && !dmpCell.IsInterior
+                && options.NewRecordBaseFormId != 0u  // sanity (allocator exists)
+                && TryEncodeLandForCell(dmpCell, allocator, options, stats, out var landBytes))
+            {
+                // Prepend: LAND must come before REFR/ACHR records in Temporary Children.
+                temporaryRecords.Insert(0, landBytes);
+            }
+
+            // For override cells, copy vanilla's NAVM (NavMesh) records verbatim into our
+            // Temporary Children. FNV's plugin format replaces a master cell's Temporary
+            // Children GRUP wholesale when a plugin overrides it — so without this step,
+            // every override cell loses its navmesh and NPCs in those cells sink under
+            // physics when standing still (idle actors aren't snapped to terrain without
+            // a navmesh to anchor them; they pathfind fine mid-walk).
+            if (pcCellExists
+                && navmsByCell.TryGetValue(dmpCell.FormId, out var masterNavmFormIds))
+            {
+                var prependedCount = 0;
+                foreach (var navmFormId in masterNavmFormIds)
+                {
+                    if (!pcRecordsByFormId.TryGetValue(navmFormId, out var navmRecord))
+                    {
+                        continue;
+                    }
+
+                    // Reuse the cell-record reconstruction path; it just emits a
+                    // ParsedMainRecord back to its on-disk bytes (header + subrecord
+                    // stream). NAVM records are opaque payloads as far as we're concerned.
+                    var navmBytes = CellGrupBuilder.ReconstructRecordBytes(navmRecord);
+                    temporaryRecords.Insert(prependedCount, navmBytes);
+                    prependedCount++;
+                }
+
+                if (prependedCount > 0)
+                {
+                    stats.IncrementEmitted("NAVM");
+                    if (options.VerboseDecisions)
+                    {
+                        _sink.Decision("Merging cell children",
+                            $"Preserved {prependedCount} vanilla NAVM record(s) in override cell " +
+                            $"0x{dmpCell.FormId:X8} so idle NPCs stay anchored.",
+                            "CELL", dmpCell.FormId, code: "v22.navm.preserved");
+                    }
+                }
+            }
+
             bundles.Add(new CellOverrideBundle
             {
                 CellFormId = emittedCellFormId,
@@ -676,6 +1003,61 @@ public sealed class PluginBuilder
         }
 
         return bundles;
+    }
+
+    /// <summary>
+    ///     Build a LAND record (header + DATA/VNML/VHGT subrecords) for a new exterior
+    ///     cell with captured heightmap data. Prefers the runtime mesh's exact heights
+    ///     when present (lossless), falling back to the parsed VHGT-style heightmap.
+    /// </summary>
+    private bool TryEncodeLandForCell(
+        Models.Records.World.CellRecord dmpCell,
+        FormIdAllocator allocator,
+        PluginBuildOptions options,
+        ConversionPipelineStats stats,
+        out byte[] landBytes)
+    {
+        landBytes = [];
+
+        Models.World.LandHeightmap? heightmap = dmpCell.Heightmap;
+        if (heightmap is null && dmpCell.RuntimeTerrainMesh is not null)
+        {
+            try
+            {
+                heightmap = dmpCell.RuntimeTerrainMesh.ToLandHeightmap();
+            }
+            catch
+            {
+                heightmap = null;
+            }
+        }
+
+        if (heightmap is null)
+        {
+            return false;
+        }
+
+        var subs = Writers.Encoders.LandEncoder.Encode(heightmap);
+        if (subs is null)
+        {
+            return false;
+        }
+
+        var landFormId = allocator.Allocate();
+        var flags = options.CompressRecords ? 0x00040000u : 0u;
+        landBytes = BuildNewRecordBytes("LAND", landFormId, flags, subs);
+        stats.NewRecordsEmitted++;
+        stats.IncrementEmitted("LAND");
+
+        if (options.VerboseDecisions)
+        {
+            _sink.Decision("Merging cell children",
+                $"Emitted LAND 0x{landFormId:X8} for new exterior cell 0x{dmpCell.FormId:X8} " +
+                $"(grid {dmpCell.GridX}, {dmpCell.GridY}).",
+                "LAND", landFormId, code: "v22.land.new-cell");
+        }
+
+        return true;
     }
 
     /// <summary>Encode an override ref (FormID matches PC ESM master).</summary>
@@ -783,6 +1165,166 @@ public sealed class PluginBuilder
         // CELL flags don't carry persistent/initially-disabled bits like REFR — start at 0.
         var flags = options.CompressRecords ? 0x00040000u : 0u;
         return BuildNewRecordBytes("CELL", emittedFormId, flags, encoded.Subrecords);
+    }
+
+    /// <summary>
+    ///     v22: run the asset-path rename pass when the user has configured secondary data
+    ///     folders + a baseline folder. Mutates record string fields in-place when fuzzy
+    ///     resolution matches a differently-named asset.
+    /// </summary>
+    private void TryApplyAssetRenames(
+        Models.RecordCollection dmpRecords,
+        PluginBuildOptions options,
+        CancellationToken ct)
+    {
+        if (options.AssetRenameBaselineFolder is null
+            || options.AssetRenameSecondaryFolders.Count == 0)
+        {
+            return;
+        }
+
+        if (!Directory.Exists(options.AssetRenameBaselineFolder))
+        {
+            _sink.Warn("AssetRename",
+                $"Baseline folder not found, skipping rename pass: {options.AssetRenameBaselineFolder}");
+            return;
+        }
+
+        _sink.Info("AssetRename",
+            $"Indexing baseline: {options.AssetRenameBaselineFolder}");
+        using var baseline = new AssetPacking.DataFolderIndex(
+            options.AssetRenameBaselineFolder, xbox360FormatHint: false);
+        baseline.Build();
+
+        var secondaryIndexes = new List<AssetPacking.DataFolderIndex>();
+        try
+        {
+            foreach (var secondary in options.AssetRenameSecondaryFolders)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (!Directory.Exists(secondary.Path))
+                {
+                    _sink.Warn("AssetRename",
+                        $"Secondary folder not found, skipping: {secondary.Path}");
+                    continue;
+                }
+
+                _sink.Info("AssetRename",
+                    $"Indexing {(secondary.IsXbox360Format ? "Xbox 360" : "PC")} secondary: {secondary.Path}");
+                var idx = new AssetPacking.DataFolderIndex(secondary.Path, secondary.IsXbox360Format);
+                idx.Build();
+                secondaryIndexes.Add(idx);
+            }
+
+            if (secondaryIndexes.Count == 0)
+            {
+                _sink.Warn("AssetRename",
+                    "No secondary folders available — rename pass has no candidates.");
+                return;
+            }
+
+            var resolver = new AssetPacking.DataFolderResolver(baseline, secondaryIndexes);
+            var result = AssetPacking.AssetPathRewriter.ApplyRewrites(dmpRecords, resolver, _sink);
+
+            _sink.Info("AssetRename",
+                $"Considered={result.Considered:N0}, rewritten={result.Rewritten:N0}, " +
+                $"exact={result.SkippedExact:N0}, missing={result.SkippedMissing:N0}");
+        }
+        finally
+        {
+            foreach (var idx in secondaryIndexes)
+            {
+                idx.Dispose();
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Returns true when an SCRI subrecord's target FormID would resolve at runtime:
+    ///     the sentinel null FormIDs (0 / 0xFFFFFFFF), anything in the master ESM, and
+    ///     anything being freshly emitted via the new-record path in the current Build.
+    ///     v22 added the new-emit case so reintroduced prototype NPCs can bind to their
+    ///     reintroduced scripts. Extracted as a static helper for unit testability.
+    /// </summary>
+    internal static bool IsValidScriTarget(
+        uint formId,
+        IReadOnlySet<uint>? masterFormIds,
+        IReadOnlySet<uint>? emittedNewFormIds)
+    {
+        if (formId == 0 || formId == 0xFFFFFFFFu)
+        {
+            return true;
+        }
+
+        if (masterFormIds is not null && masterFormIds.Contains(formId))
+        {
+            return true;
+        }
+
+        if (emittedNewFormIds is not null && emittedNewFormIds.Contains(formId))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    ///     Drop SCRI subrecords whose script FormID isn't in the master ESM. Returns the
+    ///     original list when nothing was dropped to avoid unnecessary allocation. Logs one
+    ///     warning per drop so the user can see what was nulled and which records lose
+    ///     scripts.
+    /// </summary>
+    private IReadOnlyList<Writers.EncodedSubrecord> ValidateScriRefs(
+        IReadOnlyList<Writers.EncodedSubrecord> subrecords,
+        string recordType,
+        uint? sourceFormId)
+    {
+        if (_masterFormIds is null || _masterFormIds.Count == 0)
+        {
+            return subrecords;
+        }
+
+        List<Writers.EncodedSubrecord>? filtered = null;
+        for (var i = 0; i < subrecords.Count; i++)
+        {
+            var sub = subrecords[i];
+            if (sub.Signature != "SCRI" || sub.Bytes.Length != 4)
+            {
+                filtered?.Add(sub);
+                continue;
+            }
+
+            var formId = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(sub.Bytes);
+            // v22.scri.typed: validate against the SCPT-typed subsets, not the generic union.
+            // The loose union check let through SCRI FormIDs that pointed at non-SCPT master
+            // records (STAT/ACTI/etc.), and the runtime then logged "Unable to find script"
+            // at load time. Falls back to the generic union when the typed maps aren't built.
+            var masterScpts = _masterFormIdsByType?.GetValueOrDefault("SCPT") ?? _masterFormIds;
+            var emittedScpts = _emittedNewFormIdsByType.GetValueOrDefault("SCPT");
+            if (IsValidScriTarget(formId, masterScpts, emittedScpts))
+            {
+                filtered?.Add(sub);
+                continue;
+            }
+
+            // Dangling script ref — initialize the copy if we haven't already, then skip
+            // this subrecord so the engine sees no SCRI on this record.
+            filtered ??= new List<Writers.EncodedSubrecord>(subrecords.Count);
+            if (filtered.Count == 0)
+            {
+                for (var j = 0; j < i; j++)
+                {
+                    filtered.Add(subrecords[j]);
+                }
+            }
+
+            _sink.Warn("Merging top-level records",
+                $"Dropping SCRI 0x{formId:X8} — script FormID not in master ESM or newly emitted set.",
+                recordType, sourceFormId, code: "v22.scri.dangling");
+        }
+
+        return filtered ?? subrecords;
     }
 
     private static byte[] BuildNewRecordBytes(
@@ -902,13 +1444,27 @@ public sealed class PluginBuilder
         emittedCellFormId = 0;
         context = null;
 
-        if (!dmpCell.WorldspaceFormId.HasValue
-            || !pcRecordsByFormId.TryGetValue(dmpCell.WorldspaceFormId.Value, out var wrldRecord)
-            || wrldRecord!.Header.Signature != "WRLD")
+        if (!dmpCell.WorldspaceFormId.HasValue)
         {
             stats.IncrementSkipped("CELL");
             _sink.Warn("Merging cell children",
-                $"New exterior CELL 0x{dmpCell.FormId:X8} skipped — parent worldspace {dmpCell.WorldspaceFormId:X8} not in master ESM.",
+                $"New exterior CELL 0x{dmpCell.FormId:X8} skipped — missing parent worldspace FormID.",
+                "CELL", dmpCell.FormId, code: "v4.skipped:no-master-worldspace");
+            return false;
+        }
+
+        var parentWrldFormId = dmpCell.WorldspaceFormId.Value;
+        var inMaster = pcRecordsByFormId.TryGetValue(parentWrldFormId, out var wrldRecord)
+                       && wrldRecord!.Header.Signature == "WRLD";
+        var inNewWrldSet = _newWorldspacesForCellPipeline is not null
+                           && _newWorldspacesForCellPipeline.ContainsKey(parentWrldFormId);
+
+        if (!inMaster && !inNewWrldSet)
+        {
+            stats.IncrementSkipped("CELL");
+            _sink.Warn("Merging cell children",
+                $"New exterior CELL 0x{dmpCell.FormId:X8} skipped — parent worldspace " +
+                $"{parentWrldFormId:X8} not in master ESM and not in deferred new-WRLD set.",
                 "CELL", dmpCell.FormId, code: "v4.skipped:no-master-worldspace");
             return false;
         }
@@ -992,6 +1548,44 @@ public sealed class PluginBuilder
     }
 
     /// <summary>
+    ///     Walk PC ESM records in offset order and group NAVM (NavMesh) FormIDs by their
+    ///     parent CELL FormID. NAVMs live in a cell's Temporary Children GRUP alongside
+    ///     REFRs; when a plugin overrides that cell, FNV's GRUP-replacement semantics drop
+    ///     the master's NAVM records unless we re-emit them. Returns a per-cell list (the
+    ///     same cell can host multiple NAVM records — one per nav-island).
+    /// </summary>
+    private static Dictionary<uint, List<uint>> BuildNavmByCellIndex(List<ParsedMainRecord> records)
+    {
+        var navmsByCell = new Dictionary<uint, List<uint>>();
+        uint? currentCell = null;
+
+        foreach (var record in records.OrderBy(r => r.Offset))
+        {
+            switch (record.Header.Signature)
+            {
+                case "CELL":
+                    currentCell = record.Header.FormId;
+                    break;
+                case "NAVM":
+                    if (currentCell.HasValue)
+                    {
+                        if (!navmsByCell.TryGetValue(currentCell.Value, out var list))
+                        {
+                            list = [];
+                            navmsByCell[currentCell.Value] = list;
+                        }
+
+                        list.Add(record.Header.FormId);
+                    }
+
+                    break;
+            }
+        }
+
+        return navmsByCell;
+    }
+
+    /// <summary>
     ///     Builds the bytes for a single override record: 24-byte header + subrecord stream.
     ///     Inherits flags and metadata from the source ESM record, forces version 0x000F,
     ///     clears the compressed flag (overrides are emitted uncompressed for v1/v2).
@@ -1054,6 +1648,29 @@ public sealed class PluginBuilder
     }
 
     /// <summary>
+    ///     Append the placeholder QUST record to an existing QUST GRUP body (rewrapping with
+    ///     a fresh group header for the new size), or build a brand-new top-level QUST GRUP
+    ///     when no QUST records were emitted.
+    /// </summary>
+    private static byte[] AppendOrCreateQustGrup(byte[]? existingQustGrup, byte[] extraRecord)
+    {
+        if (existingQustGrup is null || existingQustGrup.Length == 0)
+        {
+            return WrapInTopLevelGrup("QUST", extraRecord);
+        }
+
+        // Strip the existing GRUP's 24-byte header, append the new record, then rewrap so
+        // the GroupSize field reflects the new total. RecordHeaderProcessor.FinalizeGrupSize
+        // handles the size calculation.
+        const int grupHeaderSize = 24;
+        var oldBody = existingQustGrup.AsSpan(grupHeaderSize).ToArray();
+        var combined = new byte[oldBody.Length + extraRecord.Length];
+        oldBody.CopyTo(combined, 0);
+        extraRecord.CopyTo(combined, oldBody.Length);
+        return WrapInTopLevelGrup("QUST", combined);
+    }
+
+    /// <summary>
     ///     Concatenates TES4 + each emitted top-level GRUP + the cell-children section
     ///     (top-level CELL GRUP for interior bundles + one top-level WRLD GRUP per affected
     ///     worldspace). Top-level GRUP order follows the registry's declared order.
@@ -1085,7 +1702,8 @@ public sealed class PluginBuilder
             }
         }
 
-        var cellSectionBytes = CellGrupBuilder.BuildCellSection(bundles, pcRecordsByFormId);
+        var cellSectionBytes = CellGrupBuilder.BuildCellSection(
+            bundles, pcRecordsByFormId, _newWorldspacesForCellPipeline);
 
         // NextObjectId tells GECK where to start allocating new FormIDs when the user adds
         // records via the editor. v3 uses the allocator's high-water mark so GECK won't
@@ -1129,8 +1747,9 @@ public sealed class PluginBuilder
         yield return ("FACT", records.Factions);
         yield return ("NPC_", records.Npcs);
         yield return ("SCPT", records.Scripts);
-        yield return ("DIAL", records.DialogTopics);
-        yield return ("INFO", records.Dialogues);
+        // DIAL and INFO are handled separately by DialogGrupBuilder so INFOs get nested
+        // as type-7 Topic Children GRUPs under each DIAL. Emitting them as two flat
+        // top-level GRUPs crashes the FNV runtime on dialog tree walks.
         yield return ("QUST", records.Quests);
         yield return ("PACK", records.Packages);
         yield return ("ACTI", records.Activators);

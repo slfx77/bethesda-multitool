@@ -110,8 +110,12 @@ public class V16EncoderTests
     // ====================================================================================
 
     [Fact]
-    public void AvifEncoder_EncodeNew_CanonicalOrder()
+    public void AvifEncoder_EncodeNew_SkipsAllAvifEmission()
     {
+        // v20.13: new AVIF emission was disabled — actor values are engine-hardcoded
+        // and emitting any new AVIF crashes FNV at startup (~17 iterations of bisection
+        // pinned the crash to this encoder). The encoder now always returns an empty
+        // subrecord list with a "skipping" warning, regardless of the input fields.
         var avif = new ActorValueInfoRecord
         {
             FormId = 0x1400,
@@ -123,9 +127,9 @@ public class V16EncoderTests
         };
 
         var encoded = AvifEncoder.EncodeNew(avif);
-        var sigs = encoded.Subrecords.Select(s => s.Signature).ToList();
 
-        Assert.Equal(["EDID", "FULL", "DESC", "ICON", "ANAM"], sigs);
+        Assert.Empty(encoded.Subrecords);
+        Assert.Contains(encoded.Warnings, w => w.Contains("engine-hardcoded"));
     }
 
     // ====================================================================================
@@ -366,8 +370,8 @@ public class V16EncoderTests
             w => w.Contains("has no EditorId"));
         Assert.Contains(RepuEncoder.EncodeNew(new ReputationRecord { FormId = 1 }).Warnings,
             w => w.Contains("has no EditorId"));
-        Assert.Contains(AvifEncoder.EncodeNew(new ActorValueInfoRecord { FormId = 1 }).Warnings,
-            w => w.Contains("has no EditorId"));
+        // AVIF excluded — post-v20, new AVIF emission is always skipped (regardless of
+        // EditorId presence) because the actor-value table is engine-hardcoded.
         Assert.Contains(MuscEncoder.EncodeNew(new MusicTypeRecord { FormId = 1 }).Warnings,
             w => w.Contains("has no EditorId"));
         Assert.Contains(MesgEncoder.EncodeNew(new MessageRecord { FormId = 1 }).Warnings,

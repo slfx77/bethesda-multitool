@@ -144,6 +144,23 @@ internal static class RuntimeDataEnricher
         var cellMaps = context.RuntimeReader.ReadAllWorldspaceCellMaps(wrldEntries);
         if (cellMaps.Count > 0)
         {
+            // Trust the parent worldspace's pCellMap as authoritative for cell ownership.
+            // RuntimeCellMapWalker fills each entry's WorldspaceFormId from the cell's own
+            // pWorldSpace pointer, which can be unreadable or point at a stale worldspace
+            // (e.g. Lucky38TSW / GomorrahTSW resolving to GreenhouseWorld01 even though
+            // TheStripWorld's pCellMap holds them). Override here, after the layout probe
+            // has already scored layouts using the raw pWorldSpace reads.
+            foreach (var (wsFormId, wsData) in cellMaps)
+            {
+                for (var i = 0; i < wsData.Cells.Count; i++)
+                {
+                    if (wsData.Cells[i].WorldspaceFormId != wsFormId)
+                    {
+                        wsData.Cells[i] = wsData.Cells[i] with { WorldspaceFormId = wsFormId };
+                    }
+                }
+            }
+
             context.RuntimeWorldspaceCellMaps = cellMaps;
             var totalCells = cellMaps.Values.Sum(w => w.Cells.Count);
             Logger.Instance.Debug(

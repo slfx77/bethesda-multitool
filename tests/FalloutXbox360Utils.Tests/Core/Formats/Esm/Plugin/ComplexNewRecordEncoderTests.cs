@@ -84,10 +84,13 @@ public class ComplexNewRecordEncoderTests
 
         var encoded = ArmoEncoder.EncodeNew(armo);
 
+        // v20.11: BMDT is now 4 bytes (BipedFlags only). The FNV runtime's chunk table
+        // caps BMDT at 4 bytes anyway; the extra GeneralFlags byte we used to emit was
+        // truncated by the engine and triggered "Chunk size 8 too big" warnings on every
+        // new ARMO record.
         var bmdt = Assert.Single(encoded.Subrecords, s => s.Signature == "BMDT");
-        Assert.Equal(8, bmdt.Bytes.Length);
+        Assert.Equal(4, bmdt.Bytes.Length);
         Assert.Equal(0x12345678u, BinaryPrimitives.ReadUInt32LittleEndian(bmdt.Bytes.AsSpan(0, 4)));
-        Assert.Equal(0x04, bmdt.Bytes[4]);
 
         var dnam = Assert.Single(encoded.Subrecords, s => s.Signature == "DNAM");
         Assert.Equal(12, dnam.Bytes.Length);
@@ -227,14 +230,28 @@ public class ComplexNewRecordEncoderTests
     }
 
     [Fact]
-    public void NpcEncoder_EncodeNew_NoStats_StillEmitsZeroAcbsWithWarning()
+    public void NpcEncoder_EncodeNew_NoStats_EmitsAcbsWithSensibleDefaultsAndWarning()
     {
+        // The earlier zero-fill default produced "Speed multiplier is zero" warnings for every
+        // template-spawned NPC. v20 fix: emit Level=1 + SpeedMult=100 so the engine treats the
+        // NPC as a real actor rather than refusing to move/initialize it.
         var npc = new NpcRecord { FormId = 0x800, EditorId = "Npc", Stats = null };
         var encoded = NpcEncoder.EncodeNew(npc);
 
         var acbs = Assert.Single(encoded.Subrecords, s => s.Signature == "ACBS");
         Assert.Equal(24, acbs.Bytes.Length);
-        Assert.All(acbs.Bytes, b => Assert.Equal(0, b));
+        // Level (int16 @ 8) = 1; SpeedMult (uint16 @ 14) = 100; everything else zero.
+        for (var i = 0; i < acbs.Bytes.Length; i++)
+        {
+            var expected = i switch
+            {
+                8 => 1, // Level low byte
+                14 => 100, // SpeedMult low byte
+                _ => 0
+            };
+            Assert.Equal((byte)expected, acbs.Bytes[i]);
+        }
+
         Assert.Contains(encoded.Warnings, w => w.Contains("ACBS"));
     }
 

@@ -16,6 +16,7 @@ The current merge keeps the `01` prefix, so `0x01092BDC` never matches `0x00092B
 ### ESM Load Order and FormID Prefixes
 
 In Bethesda's engine, FormIDs are prefixed with the load order index:
+
 - `00` = base game ESM (Fallout3.esm or FalloutNV.esm)
 - `01` = first DLC/plugin
 - `02` = second DLC/plugin
@@ -30,6 +31,7 @@ Not all FO3 DLC content was reused. Only specific assets (weapons, armor, NPCs) 
 ### MAST Subrecords and Load Order
 
 Each DLC ESM lists its masters in MAST subrecords:
+
 - `Anchorage.esm`: MAST = `Fallout3.esm` (load order index 1)
 - `BrokenSteel.esm`: MAST = `Fallout3.esm` (load order index 1)
 - etc.
@@ -53,6 +55,7 @@ This rebases all DLC records to the `00` prefix, matching how FNV references the
 **`src/FalloutXbox360Utils/CLI/Commands/Dmp/DmpCompareCommand.cs`** — `ProcessBaseDirectoryAsync` method
 
 After parsing each DLC ESM, before merging into the base RecordCollection:
+
 1. Detect which records have non-zero high bytes (DLC-defined records)
 2. Remap their FormIDs: `newFormId = oldFormId & 0x00FFFFFF`
 3. Also remap any internal FormID references (base object refs, faction refs, etc.)
@@ -60,6 +63,7 @@ After parsing each DLC ESM, before merging into the base RecordCollection:
 ### Complexity Warning
 
 FormID rebasing is not trivial:
+
 - **Record FormIDs** need remapping (the record's own FormID)
 - **Internal references** need remapping (e.g., a weapon's ProjectileFormId, an NPC's FactionFormId)
 - **Collision detection** needed — a rebased DLC FormID might collide with an existing base game FormID
@@ -68,6 +72,7 @@ FormID rebasing is not trivial:
 ### Simpler Alternative
 
 Instead of rebasing FormIDs in the parser, do it in the aggregator:
+
 1. After aggregation, scan for records where FormID `0x00XXXXXX` exists in FNV builds and `0x01XXXXXX`–`0x05XXXXXX` exists in the FO3 base
 2. Merge them: treat the DLC version as the base build's entry for that FormID
 3. This avoids modifying the parser and keeps the rebasing logic isolated

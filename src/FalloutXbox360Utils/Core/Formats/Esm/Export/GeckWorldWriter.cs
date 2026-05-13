@@ -580,15 +580,25 @@ internal static class GeckWorldWriter
         {
             var baseStr = !string.IsNullOrEmpty(obj.BaseEditorId)
                 ? obj.BaseEditorId
-                : resolver.GetBestName(obj.BaseFormId)
+                : resolver.GetEditorId(obj.BaseFormId)
+                  ?? resolver.GetDisplayName(obj.BaseFormId)
                   ?? GeckReportHelpers.FormatFormId(obj.BaseFormId);
             var referenceEditorId = !string.IsNullOrEmpty(obj.EditorId)
                 ? obj.EditorId
                 : resolver.GetEditorId(obj.FormId);
+            var displayName = !string.IsNullOrEmpty(obj.MarkerName)
+                ? obj.MarkerName
+                : resolver.GetDisplayName(obj.BaseFormId);
             var objectLabel = !string.IsNullOrEmpty(referenceEditorId) &&
                               !string.Equals(referenceEditorId, baseStr, StringComparison.Ordinal)
                 ? $"{referenceEditorId} ({baseStr})"
                 : baseStr;
+            if (!string.IsNullOrEmpty(displayName) &&
+                !string.Equals(displayName, baseStr, StringComparison.Ordinal) &&
+                !string.Equals(displayName, referenceEditorId, StringComparison.Ordinal))
+            {
+                objectLabel = $"{objectLabel} \"{displayName}\"";
+            }
             var disabledStr = obj.IsInitiallyDisabled ? " [DISABLED]" : "";
             sb.AppendLine(
                 $"  - {objectLabel} ({obj.RecordType}) [{GeckReportHelpers.FormatFormId(obj.FormId)}]{disabledStr}");
@@ -655,7 +665,10 @@ internal static class GeckWorldWriter
                     var wsName = wsGroup.Key != 0
                         ? resolver.GetBestName(wsGroup.Key) ?? GeckReportHelpers.FormatFormId(wsGroup.Key)
                         : "(Unlinked)";
-                    var wsTitle = $"Worldspace: {wsName} ({wsGroup.Count()} cells)";
+                    var wsFormIdStr = wsGroup.Key != 0
+                        ? $" [{GeckReportHelpers.FormatFormId(wsGroup.Key)}]"
+                        : "";
+                    var wsTitle = $"Worldspace: {wsName}{wsFormIdStr} ({wsGroup.Count()} cells)";
                     sb.AppendLine();
                     sb.AppendLine(new string('=', 80));
                     sb.AppendLine($"  {wsTitle}");
@@ -731,6 +744,39 @@ internal static class GeckWorldWriter
         var sb = new StringBuilder();
         AppendCellsSection(sb, cells, resolver ?? FormIdResolver.Empty);
         return sb.ToString();
+    }
+
+    /// <summary>
+    ///     Generate one cell report per worldspace, plus a single "Interior" report for cells
+    ///     that lack a worldspace link. Returned dictionary is keyed by a worldspace label
+    ///     (EditorID / display name / formatted FormID, or "Interior" / "Unlinked").
+    /// </summary>
+    public static Dictionary<string, string> GenerateCellsReportsByWorldspace(
+        List<CellRecord> cells,
+        FormIdResolver? resolver = null)
+    {
+        resolver ??= FormIdResolver.Empty;
+        var results = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        var exteriorByWs = cells
+            .Where(c => !c.IsInterior && c.GridX.HasValue)
+            .GroupBy(c => c.WorldspaceFormId ?? 0);
+
+        foreach (var wsGroup in exteriorByWs)
+        {
+            var wsLabel = wsGroup.Key != 0
+                ? resolver.GetBestName(wsGroup.Key) ?? GeckReportHelpers.FormatFormId(wsGroup.Key)
+                : "Unlinked";
+            results[wsLabel] = GenerateCellsReport([.. wsGroup], resolver);
+        }
+
+        var interiorCells = cells.Where(c => c.IsInterior || !c.GridX.HasValue).ToList();
+        if (interiorCells.Count > 0)
+        {
+            results["Interior"] = GenerateCellsReport(interiorCells, resolver);
+        }
+
+        return results;
     }
 
     internal static void AppendWorldspacesSection(StringBuilder sb, List<WorldspaceRecord> worldspaces,

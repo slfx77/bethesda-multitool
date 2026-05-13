@@ -1,5 +1,6 @@
 using System.CommandLine;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
 using FalloutXbox360Utils.Core.Formats.Esm.Reporting;
 using Spectre.Console;
@@ -38,6 +39,23 @@ public static class DmpToEspCommand
         {
             Description = "Emit per-record decision events (very chatty)"
         };
+        var secondaryDataOpt = new Option<string[]>("--secondary-data")
+        {
+            Description = "Repeatable: secondary data folder (PC format) to pull missing assets from, " +
+                          "in priority order (first wins). Use with --pack-assets."
+        };
+        var secondaryData360Opt = new Option<string[]>("--secondary-data-360")
+        {
+            Description = "Repeatable: secondary data folder containing Xbox 360 BSAs. " +
+                          "Assets resolved here are converted to PC format on the fly. " +
+                          "Use with --pack-assets."
+        };
+        var packAssetsOpt = new Option<string?>("--pack-assets")
+        {
+            Description = "Output BSA path. When set, after the ESP is written the converter scans " +
+                          "the ESP + DMP for referenced assets, resolves them against --secondary-data / " +
+                          "--secondary-data-360 folders, and packs the missing ones into this BSA."
+        };
 
         var command = new Command("to-esp", "Convert a DMP to a PC plugin ESP overlay against a master ESM");
         command.Arguments.Add(dmpArg);
@@ -48,6 +66,9 @@ public static class DmpToEspCommand
         command.Options.Add(compressOpt);
         command.Options.Add(validateOpt);
         command.Options.Add(verboseOpt);
+        command.Options.Add(secondaryDataOpt);
+        command.Options.Add(secondaryData360Opt);
+        command.Options.Add(packAssetsOpt);
 
         command.SetAction(async (parseResult, ct) =>
         {
@@ -59,8 +80,12 @@ public static class DmpToEspCommand
             var compress = parseResult.GetValue(compressOpt);
             var validate = parseResult.GetValue(validateOpt);
             var verbose = parseResult.GetValue(verboseOpt);
+            var secondaryData = parseResult.GetValue(secondaryDataOpt) ?? [];
+            var secondaryData360 = parseResult.GetValue(secondaryData360Opt) ?? [];
+            var packAssets = parseResult.GetValue(packAssetsOpt);
 
-            await RunAsync(dmp, pcEsm, output, author, description, compress, validate, verbose, ct);
+            await RunAsync(dmp, pcEsm, output, author, description, compress, validate, verbose,
+                secondaryData, secondaryData360, packAssets, ct);
         });
 
         return command;
@@ -75,6 +100,9 @@ public static class DmpToEspCommand
         bool compress,
         bool validate,
         bool verbose,
+        string[] secondaryDataFolders,
+        string[] secondaryDataFolders360,
+        string? packAssetsBsaPath,
         CancellationToken ct)
     {
         if (!File.Exists(dmpPath))
@@ -92,6 +120,14 @@ public static class DmpToEspCommand
         }
 
         var pcEsmFileSize = new FileInfo(pcEsmPath).Length;
+
+        // v22 asset-rename: when any secondary data folder is supplied, also feed the
+        // PluginBuilder so it can rewrite record paths in-place to match unified asset
+        // names that survived in the indexed Data folders under different filenames.
+        // Baseline = the directory containing the master ESM (the user's FNV PC Data\).
+        var baselineDataFolder = Path.GetDirectoryName(pcEsmPath);
+        var renameFolders = BuildRenameFolders(secondaryDataFolders, secondaryDataFolders360);
+
         var options = new PluginBuildOptions
         {
             MasterFileName = Path.GetFileName(pcEsmPath),
@@ -100,7 +136,9 @@ public static class DmpToEspCommand
             Description = string.IsNullOrEmpty(description) ? null : description,
             CompressRecords = compress,
             ValidateOutput = validate,
-            VerboseDecisions = verbose
+            VerboseDecisions = verbose,
+            AssetRenameBaselineFolder = renameFolders.Count > 0 ? baselineDataFolder : null,
+            AssetRenameSecondaryFolders = renameFolders
         };
 
         var inputs = new DmpToEspInputs
@@ -140,10 +178,159 @@ public static class DmpToEspCommand
                 AnsiConsole.MarkupLine("[bold]Validation:[/]");
                 AnsiConsole.WriteLine(result.ValidationReport);
             }
+
+            // If --pack-assets was provided, run the asset packer against the freshly-
+            // written ESP. The baseline data folder is derived from the master ESM's
+            // location (FNV PC Data\).
+            if (!string.IsNullOrEmpty(packAssetsBsaPath))
+            {
+                await RunAssetPackingAsync(
+                    outputPath, dmpPath, pcEsmPath,
+                    secondaryDataFolders, secondaryDataFolders360,
+                    packAssetsBsaPath, verbose, sink, ct);
+            }
         }
         else
         {
             AnsiConsole.MarkupLine($"[red]✗ Conversion failed:[/] {Markup.Escape(result.ErrorMessage ?? "(unknown)")}");
+            Environment.Exit(1);
+        }
+    }
+
+    /// <summary>
+    ///     Build the list of (path, isXbox360) pairs shared by the v22 asset-rename pass
+    ///     and the v21 asset packer. Missing folders are dropped with a console warning
+    ///     (the rename + pack paths each guard against an empty list).
+    /// </summary>
+    private static IReadOnlyList<SecondaryDataFolder> BuildRenameFolders(
+        string[] secondaryDataFolders,
+        string[] secondaryDataFolders360)
+    {
+        var folders = new List<SecondaryDataFolder>(
+            secondaryDataFolders.Length + secondaryDataFolders360.Length);
+
+        foreach (var folder in secondaryDataFolders)
+        {
+            if (Directory.Exists(folder))
+            {
+                folders.Add(new SecondaryDataFolder { Path = folder, IsXbox360Format = false });
+            }
+        }
+
+        foreach (var folder in secondaryDataFolders360)
+        {
+            if (Directory.Exists(folder))
+            {
+                folders.Add(new SecondaryDataFolder { Path = folder, IsXbox360Format = true });
+            }
+        }
+
+        return folders;
+    }
+
+    private static async Task RunAssetPackingAsync(
+        string espPath,
+        string dmpPath,
+        string pcEsmPath,
+        string[] secondaryDataFolders,
+        string[] secondaryDataFolders360,
+        string outputBsaPath,
+        bool verbose,
+        IConversionProgressSink sink,
+        CancellationToken ct)
+    {
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine("[bold cyan]▶ Asset packing[/]");
+
+        var baselineDataFolder = Path.GetDirectoryName(pcEsmPath)!;
+        if (string.IsNullOrEmpty(baselineDataFolder) || !Directory.Exists(baselineDataFolder))
+        {
+            AnsiConsole.MarkupLine(
+                $"[red]Error:[/] Cannot derive baseline Data folder from --pc-esm path: " +
+                $"{Markup.Escape(pcEsmPath)}");
+            Environment.Exit(1);
+            return;
+        }
+
+        var secondaries = new List<SecondaryDataFolder>(
+            secondaryDataFolders.Length + secondaryDataFolders360.Length);
+
+        foreach (var folder in secondaryDataFolders)
+        {
+            if (!Directory.Exists(folder))
+            {
+                AnsiConsole.MarkupLine(
+                    $"[yellow]Warning:[/] --secondary-data folder not found, skipping: " +
+                    $"{Markup.Escape(folder)}");
+                continue;
+            }
+
+            secondaries.Add(new SecondaryDataFolder { Path = folder, IsXbox360Format = false });
+        }
+
+        foreach (var folder in secondaryDataFolders360)
+        {
+            if (!Directory.Exists(folder))
+            {
+                AnsiConsole.MarkupLine(
+                    $"[yellow]Warning:[/] --secondary-data-360 folder not found, skipping: " +
+                    $"{Markup.Escape(folder)}");
+                continue;
+            }
+
+            secondaries.Add(new SecondaryDataFolder { Path = folder, IsXbox360Format = true });
+        }
+
+        if (secondaries.Count == 0)
+        {
+            AnsiConsole.MarkupLine(
+                "[yellow]Warning:[/] --pack-assets was set but no --secondary-data / " +
+                "--secondary-data-360 folders were provided. Nothing to pack.");
+            return;
+        }
+
+        var options = new AssetPackingOptions
+        {
+            ConvertedEspPath = espPath,
+            DmpPath = dmpPath,
+            BaselineDataFolder = baselineDataFolder,
+            SecondaryDataFolders = secondaries,
+            OutputBsaPath = outputBsaPath,
+            VerbosePerAsset = verbose
+        };
+
+        var service = new AssetPackingService();
+        var result = await service.PackAsync(options, sink, ct);
+
+        AnsiConsole.WriteLine();
+        if (result.Success)
+        {
+            var s = result.Stats;
+            AnsiConsole.MarkupLine("[green]✓ Asset packing succeeded.[/]");
+            AnsiConsole.MarkupLine(
+                $"  Paths scanned: {s.TotalPathsScanned:N0}  " +
+                $"(baseline-already-has={s.AlreadyInBaseline:N0}, " +
+                $"resolved-exact={s.ResolvedExact:N0}, " +
+                $"resolved-fuzzy={s.ResolvedFuzzy:N0}, " +
+                $"converted-360={s.Converted360:N0}, " +
+                $"conversion-failed={s.ConversionFailed:N0}, " +
+                $"missing={s.Missing:N0})");
+            if (result.OutputPath is not null)
+            {
+                AnsiConsole.MarkupLine(
+                    $"  Packed: {s.PackedAssetCount:N0} assets in {s.OutputBsaSizeBytes:N0} bytes " +
+                    $"({s.Elapsed.TotalSeconds:F2}s)");
+                AnsiConsole.MarkupLine($"  Output: {Markup.Escape(result.OutputPath)}");
+            }
+            else
+            {
+                AnsiConsole.MarkupLine("  [grey]No BSA was written (no assets needed packing).[/]");
+            }
+        }
+        else
+        {
+            AnsiConsole.MarkupLine(
+                $"[red]✗ Asset packing failed:[/] {Markup.Escape(result.ErrorMessage ?? "(unknown)")}");
             Environment.Exit(1);
         }
     }

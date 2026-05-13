@@ -1,3 +1,5 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
+
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 
 /// <summary>
@@ -46,4 +48,19 @@ public sealed record PluginBuildOptions
     ///     GECK convention that local IDs below 0x800 are reserved for the engine.
     /// </summary>
     public uint NewRecordBaseFormId { get; init; } = FormIdAllocator.DefaultBaseLocalId;
+
+    /// <summary>
+    ///     v22 asset-rename pass. When non-empty (and <see cref="AssetRenameBaselineFolder" />
+    ///     is set), <c>PluginBuilder.BuildAsync</c> resolves every record-sourced asset path
+    ///     against these folders before encoding. Paths that fuzzy-match to a differently-
+    ///     named asset get their record field rewritten in-place so the output ESP carries
+    ///     the matched filename. Mirror the same folders passed to <c>AssetPackingService</c>.
+    /// </summary>
+    public IReadOnlyList<SecondaryDataFolder> AssetRenameSecondaryFolders { get; init; } = [];
+
+    /// <summary>
+    ///     The user's FNV PC Data folder used as the "baseline" for the rename pass. Assets
+    ///     already exact-matchable here are not rewritten. Null disables the rename pass.
+    /// </summary>
+    public string? AssetRenameBaselineFolder { get; init; }
 }

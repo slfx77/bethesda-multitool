@@ -4,10 +4,23 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
 ///     Encodes a placed-reference record (REFR) as PC-format subrecord bytes from a parsed
-///     <see cref="PlacedReference" />. The override path emits DATA + XSCL only and lets the
-///     merge engine pull NAME and other subrecords from the master ESM. The new-record path
-///     emits a complete subrecord stream (no master to merge with).
+///     <see cref="PlacedReference" />. Both the override path and the new-record path emit
+///     DATA carrying the DMP-captured X/Y/Z/RotX/RotY/RotZ — when a FormID matches the
+///     master ESM, the DMP position takes precedence over vanilla's editor placement.
+///
+///     The override path emits DATA + XSCL (when scale is non-default). The merge engine
+///     retains NAME / XEZN / XLOC / XOWN / XLKR / XESP / XTEL / XCNT from the master ESM by
+///     positional per-signature replacement.
+///
+///     The new-record path emits a complete subrecord stream (no master to merge with).
+///
 ///     DATA layout: float X(0) + float Y(4) + float Z(8) + float RotX(12) + float RotY(16) + float RotZ(20).
+///
+///     History: v1-v21 dropped DATA on overrides because the DMP captures live runtime
+///     state and we suspected mid-walk/mid-fall positions caused NPC sinking. v22 reinstates
+///     DATA on overrides — the sinking root cause was traced to dropped vanilla NAVMs
+///     (addressed in v21 via the CellGrupBuilder NAVM preservation path), not transient
+///     captured positions.
 /// </summary>
 public sealed class RefrEncoder : IRecordEncoder
 {
@@ -21,14 +34,17 @@ public sealed class RefrEncoder : IRecordEncoder
     }
 
     /// <summary>
-    ///     Shared encoding logic for REFR/ACHR/ACRE override records — emits only DATA + XSCL.
-    ///     The merge engine fills in NAME and the other subrecords from the master ESM.
+    ///     Shared encoding logic for REFR/ACHR/ACRE override records. Emits DATA carrying
+    ///     the DMP-captured position + optional XSCL. The merge engine retains all other
+    ///     subrecords (NAME / XEZN / XLOC / XOWN / XLKR / XESP / XTEL / XCNT) from the
+    ///     master ESM via positional per-signature replacement.
     /// </summary>
     internal static EncodedRecord EncodePlacedReference(PlacedReference placed)
     {
-        var subs = new List<EncodedSubrecord>(2);
-
-        subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(placed)));
+        var subs = new List<EncodedSubrecord>(2)
+        {
+            new("DATA", BuildDataSubrecord(placed))
+        };
 
         if (Math.Abs(placed.Scale - 1.0f) > float.Epsilon)
         {

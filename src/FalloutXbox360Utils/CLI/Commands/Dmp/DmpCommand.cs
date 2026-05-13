@@ -23,6 +23,7 @@ public static class DmpCommand
         command.Subcommands.Add(CreateVa2OffsetCommand());
         command.Subcommands.Add(CreateHexDumpCommand());
         command.Subcommands.Add(DmpAnalyzeCommand.Create());
+        command.Subcommands.Add(DmpCellReportsCommand.Create());
         command.Subcommands.Add(DmpFormTypeCensusCommand.Create());
         command.Subcommands.Add(BuffersCommand.Create());
         command.Subcommands.Add(CoverageCommand.Create());

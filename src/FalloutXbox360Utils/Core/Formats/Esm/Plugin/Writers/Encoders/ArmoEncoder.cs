@@ -27,7 +27,10 @@ public sealed class ArmoEncoder : IRecordEncoder
 
     /// <summary>
     ///     Encode a new ARMO record from scratch. fopdoc canonical order:
-    ///     EDID, OBND?, FULL?, MODL?, BMDT, DATA, DNAM. ETYP/MODT/MODS/RNAM are deferred.
+    ///     EDID, OBND?, FULL?, BMDT, MODL?, MODT?, ICON?, MICO?, ETYP?, DATA, DNAM.
+    ///     BMDT must appear before MODL — placing it after MODL trips the FNV runtime's
+    ///     post-model BMDT_ID chunk table (max=4) instead of the pre-model one (max=8),
+    ///     causing GeneralFlags to be truncated.
     /// </summary>
     /// <remarks>
     ///     DNAM (12 bytes) per the schema: int16 DR + 2 padding + float DT + 4 unknown bytes.
@@ -55,6 +58,16 @@ public sealed class ArmoEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("FULL", armo.FullName));
         }
 
+        // BMDT is 4 bytes in the FNV runtime's chunk table even though vanilla files emit 8.
+        // Writing 8 triggers "Chunk size 8 too big in chunk BMDT_ID — Max size is 4" warnings
+        // for every new ARMO record. The extra 4 bytes (uint8 GeneralFlags + 3 pad) get
+        // truncated by the engine anyway, so dropping them costs the GeneralFlags byte
+        // (PowerArmor/HeavyArmor classification) but the engine wasn't using it from the
+        // file regardless. Net result: cleaner load log, same runtime behavior.
+        var bmdt = new byte[4];
+        SubrecordEncoder.WriteUInt32(bmdt, 0, armo.BipedFlags);
+        subs.Add(new EncodedSubrecord("BMDT", bmdt));
+
         if (!string.IsNullOrEmpty(armo.ModelPath))
         {
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MODL", armo.ModelPath));
@@ -79,14 +92,6 @@ public sealed class ArmoEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MICO", armo.MessageIconPath));
         }
 
-        // BMDT — biped slots + general flags. Required for the engine to know where the armor goes.
-        var bmdt = new byte[8];
-        SubrecordEncoder.WriteUInt32(bmdt, 0, armo.BipedFlags);
-        bmdt[4] = armo.GeneralFlags;
-        // bytes 5-7 padding (zero)
-        subs.Add(new EncodedSubrecord("BMDT", bmdt));
-
-        // ETYP — 4-byte int32 enum (-1..13). Per parser, FNV reads ETYP as int32, not FormID.
         if (armo.EquipmentType != Enums.EquipmentType.None)
         {
             subs.Add(NewRecordSubrecords.EncodeInt32Subrecord("ETYP", (int)armo.EquipmentType));

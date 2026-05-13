@@ -58,12 +58,11 @@ public class V12EncoderTests
         var encoded = ArmaEncoder.EncodeNew(arma);
         var bmdt = Assert.Single(encoded.Subrecords, s => s.Signature == "BMDT").Bytes;
 
-        Assert.Equal(8, bmdt.Length);
+        // v20.11: BMDT shrunk to 4 bytes (BipedFlags only). The FNV runtime caps BMDT at
+        // 4 bytes in its chunk table — writing 8 triggered "Chunk size 8 too big" warnings
+        // and the GeneralFlags byte was truncated by the engine anyway.
+        Assert.Equal(4, bmdt.Length);
         Assert.Equal(0x12345678u, BinaryPrimitives.ReadUInt32LittleEndian(bmdt.AsSpan(0, 4)));
-        Assert.Equal(0x42, bmdt[4]);
-        Assert.Equal(0, bmdt[5]);
-        Assert.Equal(0, bmdt[6]);
-        Assert.Equal(0, bmdt[7]);
     }
 
     [Fact]

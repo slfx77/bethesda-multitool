@@ -1,6 +1,7 @@
 using System.Threading.Channels;
 using Windows.Storage.Pickers;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
 using FalloutXbox360Utils.Core.Formats.Esm.Reporting;
 using Microsoft.UI.Dispatching;
@@ -28,6 +29,7 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
     private SeverityFilter _filter = SeverityFilter.All;
     private bool _isPcDataValid;
     private PluginBuildResult? _lastResult;
+    private AssetPackingResult? _lastAssetPackingResult;
 
     public DmpToEspConverterTab()
     {
@@ -104,6 +106,86 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
         }
     }
 
+    private void PackAssetsCheckBox_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (PackAssetsPanel is null)
+        {
+            return; // Fires once during InitializeComponent before the panel exists.
+        }
+
+        PackAssetsPanel.Visibility = PackAssetsCheckBox.IsChecked == true
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+        // Suggest a sensible default BSA path the first time the user enables packing.
+        if (PackAssetsCheckBox.IsChecked == true &&
+            string.IsNullOrEmpty(OutputBsaTextBox.Text) &&
+            !string.IsNullOrEmpty(OutputEspTextBox.Text))
+        {
+            OutputBsaTextBox.Text = Path.ChangeExtension(OutputEspTextBox.Text, ".bsa");
+        }
+    }
+
+    private async void BrowseOutputBsaButton_Click(object sender, RoutedEventArgs e)
+    {
+        var picker = new FileSavePicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
+        picker.FileTypeChoices.Add("BSA archive", new List<string> { ".bsa" });
+
+        var defaultName = "PrototypeAssets";
+        if (!string.IsNullOrEmpty(OutputEspTextBox.Text))
+        {
+            defaultName = Path.GetFileNameWithoutExtension(OutputEspTextBox.Text);
+        }
+
+        picker.SuggestedFileName = defaultName;
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(App.Current.MainWindow));
+
+        var file = await picker.PickSaveFileAsync();
+        if (file != null)
+        {
+            OutputBsaTextBox.Text = file.Path;
+        }
+    }
+
+    /// <summary>
+    ///     Parse the secondary-folders TextBox: each non-blank line is one folder. Lines
+    ///     beginning with "360:" are flagged as Xbox 360 format (the converter will run
+    ///     per-asset 360→PC conversion when reading from them).
+    /// </summary>
+    private static List<SecondaryDataFolder> ParseSecondaryFolders(string text)
+    {
+        var result = new List<SecondaryDataFolder>();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return result;
+        }
+
+        foreach (var rawLine in text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var line = rawLine.Trim();
+            if (line.Length == 0)
+            {
+                continue;
+            }
+
+            var is360 = false;
+            if (line.StartsWith("360:", StringComparison.OrdinalIgnoreCase))
+            {
+                is360 = true;
+                line = line[4..].Trim();
+            }
+
+            if (line.Length == 0)
+            {
+                continue;
+            }
+
+            result.Add(new SecondaryDataFolder { Path = line, IsXbox360Format = is360 });
+        }
+
+        return result;
+    }
+
     private void InputPathTextBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         UpdatePcDataValidation();
@@ -150,6 +232,15 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
         var outputPath = OutputEspTextBox.Text;
 
         var pcEsmFileSize = new FileInfo(pcEsmPath).Length;
+
+        // v22 asset-rename: when the user has configured secondary data folders for asset
+        // packing, reuse them for the pre-encode rename pass so the output ESP carries
+        // unified paths for assets that survived under different names. Baseline = the
+        // PC Data folder containing FalloutNV.esm.
+        var renameFolders = PackAssetsCheckBox.IsChecked == true
+            ? ParseSecondaryFolders(SecondaryFoldersTextBox.Text)
+            : new List<SecondaryDataFolder>();
+
         var options = new PluginBuildOptions
         {
             MasterFileName = "FalloutNV.esm",
@@ -158,7 +249,9 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
             Description = string.IsNullOrEmpty(PluginDescriptionTextBox.Text) ? null : PluginDescriptionTextBox.Text,
             CompressRecords = CompressRecordsCheckBox.IsChecked == true,
             ValidateOutput = ValidateOutputCheckBox.IsChecked == true,
-            VerboseDecisions = VerboseDecisionsCheckBox.IsChecked == true
+            VerboseDecisions = VerboseDecisionsCheckBox.IsChecked == true,
+            AssetRenameBaselineFolder = renameFolders.Count > 0 ? PcDataDirTextBox.Text : null,
+            AssetRenameSecondaryFolders = renameFolders
         };
 
         // Set up a buffered channel for progress events.
@@ -175,6 +268,7 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
         EventsListView.ItemsSource = null;
         UpdateLogFooter();
         ResultSummaryBorder.Visibility = Visibility.Collapsed;
+        _lastAssetPackingResult = null;
 
         _cts = new CancellationTokenSource();
         UpdateButtonStates();
@@ -197,6 +291,13 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
             // Run the engine on a worker thread so the UI thread stays free.
             var result = await Task.Run(() => builder.BuildAsync(inputs, _cts.Token), _cts.Token);
             _lastResult = result;
+
+            // After a successful conversion, optionally run the asset packer. Progress
+            // events flow into the same channel-backed log under phase = "AssetPacking".
+            if (result.Success && PackAssetsCheckBox.IsChecked == true)
+            {
+                _lastAssetPackingResult = await RunAssetPackingAsync(result, sink, _cts.Token);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -354,8 +455,83 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
             summary += "\n\nValidation:\n" + _lastResult.ValidationReport;
         }
 
+        if (_lastAssetPackingResult is not null)
+        {
+            var ps = _lastAssetPackingResult.Stats;
+            if (_lastAssetPackingResult.Success)
+            {
+                summary +=
+                    $"\n\nAsset packing: " +
+                    $"already-in-baseline={ps.AlreadyInBaseline:N0}, " +
+                    $"resolved-exact={ps.ResolvedExact:N0}, " +
+                    $"resolved-fuzzy={ps.ResolvedFuzzy:N0}, " +
+                    $"converted-360={ps.Converted360:N0}, " +
+                    $"missing={ps.Missing:N0}." +
+                    $"\nPacked {ps.PackedAssetCount:N0} asset(s) into " +
+                    $"{(string.IsNullOrEmpty(_lastAssetPackingResult.OutputPath) ? "(no BSA written — nothing to pack)" : _lastAssetPackingResult.OutputPath)}";
+            }
+            else
+            {
+                summary += $"\n\nAsset packing failed: {_lastAssetPackingResult.ErrorMessage}";
+            }
+        }
+
         ResultSummaryTextBlock.Text = summary;
         ResultSummaryBorder.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>
+    ///     Invoke the asset packer after a successful conversion. Called from the UI thread
+    ///     so XAML field reads are safe; the heavy work is moved off-thread internally.
+    ///     Progress events flow into the same channel-backed log under phase = "AssetPacking".
+    /// </summary>
+    private async Task<AssetPackingResult?> RunAssetPackingAsync(
+        PluginBuildResult conversionResult,
+        IConversionProgressSink sink,
+        CancellationToken cancellationToken)
+    {
+        if (conversionResult.OutputPath is null)
+        {
+            sink.Warn("AssetPacking", "Skipping asset packing — no ESP output path");
+            return null;
+        }
+
+        // We're on the UI thread here (the builder Task.Run already awaited back). Safe
+        // to read XAML fields directly.
+        var secondaries = ParseSecondaryFolders(SecondaryFoldersTextBox.Text);
+        var outputBsa = OutputBsaTextBox.Text;
+        var baselineDataFolder = PcDataDirTextBox.Text;
+        var dmpPath = DmpPathTextBox.Text;
+        var verbose = VerboseDecisionsCheckBox.IsChecked == true;
+
+        if (secondaries.Count == 0)
+        {
+            sink.Warn("AssetPacking",
+                "Asset packing was enabled but no secondary data folders were provided");
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(outputBsa))
+        {
+            sink.Warn("AssetPacking", "Asset packing was enabled but no output BSA path was provided");
+            return null;
+        }
+
+        var options = new AssetPackingOptions
+        {
+            ConvertedEspPath = conversionResult.OutputPath,
+            DmpPath = string.IsNullOrEmpty(dmpPath) ? null : dmpPath,
+            BaselineDataFolder = baselineDataFolder,
+            SecondaryDataFolders = secondaries,
+            OutputBsaPath = outputBsa,
+            VerbosePerAsset = verbose
+        };
+
+        var service = new AssetPackingService();
+        // Run on a worker thread to keep the UI responsive during the BSA scan/write.
+        return await Task.Run(
+            () => service.PackAsync(options, sink, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

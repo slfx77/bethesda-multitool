@@ -216,8 +216,11 @@ public class TextureHashIconEncoderTests
     }
 
     [Fact]
-    public void ArmoEncoder_EncodeNew_EmitsModtIconMicoBeforeBmdt()
+    public void ArmoEncoder_EncodeNew_EmitsBmdtBeforeModlModtIconMico()
     {
+        // fopdoc canonical for FNV ARMO is EDID, OBND?, FULL?, BMDT, MODL?, MODT?, ICON?, MICO?
+        // — BMDT before MODL. The earlier "MODL-first" ordering tripped the runtime's
+        // post-model BMDT_ID size table (max=4), truncating GeneralFlags at load.
         var armo = new ArmorRecord
         {
             FormId = 0x100,
@@ -230,7 +233,6 @@ public class TextureHashIconEncoderTests
 
         var encoded = ArmoEncoder.EncodeNew(armo);
 
-        // Expect order: EDID, MODL, MODT, ICON, MICO, BMDT, DATA, DNAM
         var sigs = encoded.Subrecords.Select(s => s.Signature).ToList();
         var modlIdx = sigs.IndexOf("MODL");
         var modtIdx = sigs.IndexOf("MODT");
@@ -238,10 +240,10 @@ public class TextureHashIconEncoderTests
         var micoIdx = sigs.IndexOf("MICO");
         var bmdtIdx = sigs.IndexOf("BMDT");
 
+        Assert.True(bmdtIdx < modlIdx);
         Assert.True(modlIdx < modtIdx);
         Assert.True(modtIdx < iconIdx);
         Assert.True(iconIdx < micoIdx);
-        Assert.True(micoIdx < bmdtIdx);
     }
 
     [Fact]

@@ -82,6 +82,20 @@ public sealed class CellEncoder : IRecordEncoder
             subs.Add(new EncodedSubrecord("XCLW", xclw));
         }
 
+        // XCLR — array of REGN FormIDs supplying per-area radiation. Emit when the cell
+        // captured at least one region. Without this, radiation regions don't carry over
+        // to the override and irradiated cells lose their hazard.
+        if (cell.RadiationRegionFormIds.Count > 0)
+        {
+            var xclr = new byte[cell.RadiationRegionFormIds.Count * 4];
+            for (var i = 0; i < cell.RadiationRegionFormIds.Count; i++)
+            {
+                SubrecordEncoder.WriteFormId(xclr, i * 4, cell.RadiationRegionFormIds[i]);
+            }
+
+            subs.Add(new EncodedSubrecord("XCLR", xclr));
+        }
+
         if (cell.EncounterZoneFormId.HasValue)
         {
             subs.Add(EncodeFormIdSubrecord("XEZN", cell.EncounterZoneFormId.Value));

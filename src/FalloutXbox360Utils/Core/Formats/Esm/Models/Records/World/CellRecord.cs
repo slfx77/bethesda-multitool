@@ -56,6 +56,10 @@ public record CellRecord
     /// <summary>Lighting template inheritance flags (LTMP data / iLightingTemplateInheritanceFlags).</summary>
     public uint? LightingTemplateInheritanceFlags { get; init; }
 
+    /// <summary>Radiation region FormIDs (XCLR subrecord, array of REGN FormIDs). Each region
+    /// supplies per-area radiation strength to the cell. Empty when the cell has no XCLR.</summary>
+    public IReadOnlyList<uint> RadiationRegionFormIds { get; init; } = [];
+
     /// <summary>Placed objects in this cell (REFR, ACHR, ACRE records).</summary>
     public List<PlacedReference> PlacedObjects { get; init; } = [];
 

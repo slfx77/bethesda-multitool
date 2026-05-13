@@ -90,10 +90,10 @@ public sealed class AlchEncoder : IRecordEncoder
             subs.Add(new EncodedSubrecord("ENIT", enit));
         }
 
-        if (alch.Effects.Count > 0)
+        foreach (var effect in alch.Effects)
         {
-            warnings.Add(
-                $"New ALCH 0x{alch.FormId:X8} has {alch.Effects.Count} effect(s) — EFID/EFIT pair emission deferred to v6.");
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("EFID", effect.EffectFormId));
+            subs.Add(new EncodedSubrecord("EFIT", EnchEncoder.BuildEfitSubrecord(effect)));
         }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };

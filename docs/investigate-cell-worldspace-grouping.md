@@ -8,25 +8,25 @@
 
 When generating cross-dump HTML comparison pages for cells, several worldspaces had seemingly high cell counts:
 
-| Worldspace | Cell Count | Originally Expected |
-|---|---|---|
-| Lucky38World | 4,097 | ~20-50 |
-| TheStripWorldNew | 4,097 | ~200-400 |
-| WastelandNVmini | 4,097 | small |
-| WastelandNVStrip | 4,139 (Xbox only) | ~200-400 |
-| WastelandNV | 16,397 | ~25,000+ |
+| Worldspace       | Cell Count        | Originally Expected |
+| ---------------- | ----------------- | ------------------- |
+| Lucky38World     | 4,097             | ~20-50              |
+| TheStripWorldNew | 4,097             | ~200-400            |
+| WastelandNVmini  | 4,097             | small               |
+| WastelandNVStrip | 4,139 (Xbox only) | ~200-400            |
+| WastelandNV      | 16,397            | ~25,000+            |
 
 ## Finding: Cell Counts Are Correct
 
 Verified by comparing Xbox 360 and PC reference ESMs — both produce **identical** cell-to-worldspace distributions:
 
-| FormID | EditorID | Xbox Cells | PC Cells |
-|---|---|---|---|
-| 0x000DA726 | WastelandNV | 16,397 | 16,397 |
-| 0x0013B308 | TheStripWorldNew | 4,097 | 4,097 |
-| 0x00148C05 | WastelandNVmini | 4,097 | 4,097 |
-| 0x0016D714 | Lucky38World | 4,097 | 4,097 |
-| 0x0011375B | WastelandNVStrip | 4,139 | (not present) |
+| FormID     | EditorID         | Xbox Cells | PC Cells      |
+| ---------- | ---------------- | ---------- | ------------- |
+| 0x000DA726 | WastelandNV      | 16,397     | 16,397        |
+| 0x0013B308 | TheStripWorldNew | 4,097      | 4,097         |
+| 0x00148C05 | WastelandNVmini  | 4,097      | 4,097         |
+| 0x0016D714 | Lucky38World     | 4,097      | 4,097         |
+| 0x0011375B | WastelandNVStrip | 4,139      | (not present) |
 
 ### Root Cause of Confusion: Bethesda Child Worldspaces
 
@@ -44,6 +44,7 @@ Cells at coordinates like `(23, 31)` exist in **both** WastelandNV and Lucky38Wo
 ### Potential HTML UX Improvement
 
 While there's no parsing bug, the cross-dump HTML could be improved for child worldspaces:
+
 - Consider visually grouping child worldspaces under their parent (WastelandNV)
 - Or adding a note indicating these are child worldspaces with inherited cell grids
 - The WRLD record's parent worldspace FormID (WNAM subrecord) can identify the relationship

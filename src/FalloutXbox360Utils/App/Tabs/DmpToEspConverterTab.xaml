@@ -164,6 +164,49 @@
                 </Grid>
               </StackPanel>
 
+              <StackPanel Spacing="6" Margin="0,8,0,0">
+                <CheckBox
+                  x:Name="PackAssetsCheckBox"
+                  Content="Pack missing assets into BSA after conversion"
+                  Checked="PackAssetsCheckBox_Toggled"
+                  Unchecked="PackAssetsCheckBox_Toggled"
+                  MinWidth="0" />
+                <StackPanel x:Name="PackAssetsPanel" Spacing="6" Visibility="Collapsed">
+                  <TextBlock
+                    x:Name="SecondaryFoldersLabel"
+                    Text="Secondary data folders (one per line; prefix with '360:' for Xbox 360 BSAs)"
+                    TextWrapping="Wrap"
+                    FontSize="11"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                  <TextBox
+                    x:Name="SecondaryFoldersTextBox"
+                    AcceptsReturn="True"
+                    TextWrapping="Wrap"
+                    MinHeight="60"
+                    FontFamily="Consolas"
+                    FontSize="12"
+                    PlaceholderText="C:\path\to\Fallout 3\Data&#x0a;360:C:\path\to\July 2010 360\Data"
+                    AutomationProperties.LabeledBy="{Binding ElementName=SecondaryFoldersLabel}" />
+                  <TextBlock x:Name="OutputBsaLabel" Text="Output BSA path" />
+                  <Grid ColumnSpacing="6">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox
+                      x:Name="OutputBsaTextBox"
+                      Grid.Column="0"
+                      PlaceholderText="C:\path\to\output.bsa"
+                      AutomationProperties.LabeledBy="{Binding ElementName=OutputBsaLabel}" />
+                    <Button
+                      Grid.Column="1"
+                      Content="Save..."
+                      Click="BrowseOutputBsaButton_Click"
+                      AutomationProperties.Name="Browse for output BSA path" />
+                  </Grid>
+                </StackPanel>
+              </StackPanel>
+
               <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
                 <Button
                   x:Name="ConvertButton"

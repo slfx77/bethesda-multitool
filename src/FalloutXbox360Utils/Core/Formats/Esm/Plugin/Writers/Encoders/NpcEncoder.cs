@@ -23,20 +23,70 @@ public sealed class NpcEncoder : IRecordEncoder
     public EncodedRecord Encode(object model)
     {
         var npc = (NpcRecord)model;
-        if (npc.Stats is null)
+        var subs = new List<EncodedSubrecord>();
+        var warnings = new List<string>();
+
+        if (npc.Stats is not null)
         {
-            return new EncodedRecord
-            {
-                Subrecords = [],
-                Warnings = [$"NPC 0x{npc.FormId:X8} has no parsed ACBS — record retains ESM verbatim."]
-            };
+            subs.Add(new EncodedSubrecord("ACBS", BuildAcbsSubrecord(npc.Stats)));
+        }
+        else
+        {
+            warnings.Add($"NPC 0x{npc.FormId:X8} has no parsed ACBS — ACBS retained from ESM.");
         }
 
-        return new EncodedRecord
+        // Override-mode FaceGen + appearance subrecords. RecordMergeEngine picks DMP bytes
+        // when both ESM and DMP have the same signature (subject to SubrecordMergePolicy),
+        // so emitting these here lets the prototype's captured FaceGen data override the
+        // vanilla NPC's face. Without this, only ACBS would override — vanilla's FGGS/
+        // FGGA/FGTS/HCLR/ENAM would persist and the NPC would look like the released NV
+        // version even when the DMP captured prototype-era appearance.
+        AppendAppearanceSubrecords(npc, subs);
+
+        return new EncodedRecord { Subrecords = subs, Warnings = warnings };
+    }
+
+    /// <summary>
+    ///     Emit the appearance subrecords (hair / eyes / hair color / FaceGen morphs) that
+    ///     a runtime NPC capture carries. Shared between override <see cref="Encode"/> and
+    ///     new-record <see cref="EncodeNew"/>.
+    /// </summary>
+    private static void AppendAppearanceSubrecords(NpcRecord npc, List<EncodedSubrecord> subs)
+    {
+        if (npc.HairFormId.HasValue)
         {
-            Subrecords = [new EncodedSubrecord("ACBS", BuildAcbsSubrecord(npc.Stats))],
-            Warnings = []
-        };
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("HNAM", npc.HairFormId.Value));
+        }
+
+        if (npc.HairLength.HasValue)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFloatSubrecord("LNAM", npc.HairLength.Value));
+        }
+
+        if (npc.EyesFormId.HasValue)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("ENAM", npc.EyesFormId.Value));
+        }
+
+        if (npc.HairColor.HasValue)
+        {
+            subs.Add(NewRecordSubrecords.EncodeUInt32Subrecord("HCLR", npc.HairColor.Value));
+        }
+
+        if (npc.FaceGenGeometrySymmetric is { Length: 50 } fggs)
+        {
+            subs.Add(BuildFloatArraySubrecord("FGGS", fggs));
+        }
+
+        if (npc.FaceGenGeometryAsymmetric is { Length: 30 } fgga)
+        {
+            subs.Add(BuildFloatArraySubrecord("FGGA", fgga));
+        }
+
+        if (npc.FaceGenTextureSymmetric is { Length: 50 } fgts)
+        {
+            subs.Add(BuildFloatArraySubrecord("FGTS", fgts));
+        }
     }
 
     /// <summary>
@@ -63,8 +113,8 @@ public sealed class NpcEncoder : IRecordEncoder
 
         if (npc.Stats is null)
         {
-            warnings.Add($"New NPC 0x{npc.FormId:X8} has no ACBS — emitting zero-filled actor base stats.");
-            subs.Add(new EncodedSubrecord("ACBS", new byte[24]));
+            warnings.Add($"New NPC 0x{npc.FormId:X8} has no ACBS — emitting default actor base stats.");
+            subs.Add(new EncodedSubrecord("ACBS", BuildDefaultAcbsSubrecord()));
         }
         else
         {
@@ -158,25 +208,9 @@ public sealed class NpcEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("CNAM", npc.Class.Value));
         }
 
-        if (npc.HairFormId.HasValue)
-        {
-            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("HNAM", npc.HairFormId.Value));
-        }
-
-        if (npc.HairLength.HasValue)
-        {
-            subs.Add(NewRecordSubrecords.EncodeFloatSubrecord("LNAM", npc.HairLength.Value));
-        }
-
-        if (npc.EyesFormId.HasValue)
-        {
-            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("ENAM", npc.EyesFormId.Value));
-        }
-
-        if (npc.HairColor.HasValue)
-        {
-            subs.Add(NewRecordSubrecords.EncodeUInt32Subrecord("HCLR", npc.HairColor.Value));
-        }
+        // Appearance subrecords (HNAM/LNAM/ENAM/HCLR/FGGS/FGGA/FGTS) emit via the shared
+        // helper so override and new paths stay in lockstep.
+        AppendAppearanceSubrecords(npc, subs);
 
         if (npc.CombatStyleFormId.HasValue)
         {
@@ -204,22 +238,8 @@ public sealed class NpcEncoder : IRecordEncoder
             subs.Add(new EncodedSubrecord("DNAM", dnam));
         }
 
-        // FaceGen morphs — float arrays of fixed sizes per schema:
-        //   FGGS=200 bytes (50 floats), FGGA=120 bytes (30 floats), FGTS=200 bytes (50 floats).
-        if (npc.FaceGenGeometrySymmetric is { Length: 50 } fggs)
-        {
-            subs.Add(BuildFloatArraySubrecord("FGGS", fggs));
-        }
-
-        if (npc.FaceGenGeometryAsymmetric is { Length: 30 } fgga)
-        {
-            subs.Add(BuildFloatArraySubrecord("FGGA", fgga));
-        }
-
-        if (npc.FaceGenTextureSymmetric is { Length: 50 } fgts)
-        {
-            subs.Add(BuildFloatArraySubrecord("FGTS", fgts));
-        }
+        // (FGGS/FGGA/FGTS now emitted by AppendAppearanceSubrecords above so override and
+        // new paths share the same FaceGen emit logic.)
 
         if (npc.HeadPartFormIds is { Count: > 0 })
         {
@@ -250,10 +270,19 @@ public sealed class NpcEncoder : IRecordEncoder
         SubrecordEncoder.WriteInt16(acbs, 8, s.Level);
         SubrecordEncoder.WriteUInt16(acbs, 10, s.CalcMin);
         SubrecordEncoder.WriteUInt16(acbs, 12, s.CalcMax);
-        SubrecordEncoder.WriteUInt16(acbs, 14, s.SpeedMultiplier);
+        SubrecordEncoder.WriteUInt16(acbs, 14, s.SpeedMultiplier == 0 ? (ushort)100 : s.SpeedMultiplier);
         SubrecordEncoder.WriteFloat(acbs, 16, s.KarmaAlignment);
         SubrecordEncoder.WriteInt16(acbs, 20, s.DispositionBase);
         SubrecordEncoder.WriteUInt16(acbs, 22, s.TemplateFlags);
+        return acbs;
+    }
+
+    private static byte[] BuildDefaultAcbsSubrecord()
+    {
+        // FNV engine defaults when ACBS data is missing: SpeedMult=100, Level=1, others zero.
+        var acbs = new byte[24];
+        SubrecordEncoder.WriteInt16(acbs, 8, 1);
+        SubrecordEncoder.WriteUInt16(acbs, 14, 100);
         return acbs;
     }
 }

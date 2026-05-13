@@ -19,36 +19,26 @@ public sealed class AvifEncoder : IRecordEncoder
 
     internal static EncodedRecord EncodeNew(ActorValueInfoRecord avif)
     {
-        var subs = new List<EncodedSubrecord>();
-        var warnings = new List<string>();
-
-        if (string.IsNullOrEmpty(avif.EditorId))
+        // Actor values in FNV are engine-hardcoded — AVIF records define metadata for
+        // built-in stats (Strength, Guns, Health, AVEmpResist, AVVariable02-10, etc.).
+        // The vanilla AVIF set already covers every engine AV; new ones can't be created
+        // because the engine's AV table is fixed. The DMP parser sees AVIF references in
+        // captured memory but their FormIDs don't match the master (these are engine-
+        // internal records with no on-disk equivalent), so the converter classifies them
+        // as "new" and tries to emit them. Doing so with only an EDID subrecord and no
+        // FULL/DESC/ANAM crashes the engine at FalloutNV+0x46025A during plugin load —
+        // confirmed by 14 iterations of bisection in v20.13.
+        //
+        // The safe answer is to never emit AVIF as a new record. Vanilla AVIF records
+        // pass through the override path verbatim from master, so we don't lose anything.
+        return new EncodedRecord
         {
-            warnings.Add($"New AVIF 0x{avif.FormId:X8} has no EditorId — emitting empty EDID.");
-        }
-
-        subs.Add(NewRecordSubrecords.EncodeStringSubrecord("EDID", avif.EditorId ?? string.Empty));
-
-        if (!string.IsNullOrEmpty(avif.FullName))
-        {
-            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("FULL", avif.FullName));
-        }
-
-        if (!string.IsNullOrEmpty(avif.Description))
-        {
-            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("DESC", avif.Description));
-        }
-
-        if (!string.IsNullOrEmpty(avif.Icon))
-        {
-            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("ICON", avif.Icon));
-        }
-
-        if (!string.IsNullOrEmpty(avif.Abbreviation))
-        {
-            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("ANAM", avif.Abbreviation));
-        }
-
-        return new EncodedRecord { Subrecords = subs, Warnings = warnings };
+            Subrecords = [],
+            Warnings =
+            [
+                $"Skipping AVIF 0x{avif.FormId:X8} ({avif.EditorId ?? "no-EditorId"}) — actor values " +
+                "are engine-hardcoded; emitting new AVIF crashes the FNV runtime."
+            ]
+        };
     }
 }

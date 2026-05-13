@@ -23,6 +23,7 @@ The weapon parser likely hardcodes the FNV DNAM layout and doesn't handle FO3's 
 ### Skill Index Difference
 
 FO3 skill indices differ from FNV:
+
 - FO3: Big Guns = 1, Small Guns = 9, Energy Weapons = 2 (13 skills total)
 - FNV: Guns = 9 (replaces Small Guns), Energy Weapons = 2, no Big Guns (renamed to Guns)
 

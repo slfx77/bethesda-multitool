@@ -275,6 +275,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         uint? imageSpaceFormId = null;
         uint? lightingTemplateFormId = null;
         uint? lightingTemplateInheritanceFlags = null;
+        List<uint>? radiationRegionFormIds = null;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -328,6 +329,17 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                         ? BinaryPrimitives.ReadUInt32BigEndian(subData)
                         : BinaryPrimitives.ReadUInt32LittleEndian(subData);
                     break;
+                case "XCLR" when sub.DataLength >= 4 && sub.DataLength % 4 == 0:
+                    // XCLR is a FormID array: every 4 bytes is one REGN reference. The
+                    // engine sums radiation contributions across all listed regions.
+                    radiationRegionFormIds ??= new List<uint>(sub.DataLength / 4);
+                    for (var i = 0; i < sub.DataLength; i += 4)
+                    {
+                        radiationRegionFormIds.Add(
+                            RecordParserContext.ReadFormId(subData.Slice(i, 4), record.IsBigEndian));
+                    }
+
+                    break;
             }
         }
 
@@ -371,6 +383,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             ImageSpaceFormId = imageSpaceFormId,
             LightingTemplateFormId = lightingTemplateFormId,
             LightingTemplateInheritanceFlags = lightingTemplateInheritanceFlags,
+            RadiationRegionFormIds = radiationRegionFormIds ?? (IReadOnlyList<uint>)[],
             PlacedObjects = cellRefs,
             HasPersistentObjects = isPersistentCell || cellRefs.Exists(r => r.IsPersistent),
             IsPersistentCell = isPersistentCell,

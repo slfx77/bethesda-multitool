@@ -47,9 +47,13 @@ public static class CellGrupBuilder
     /// <param name="bundles">Bundles in any order; this method groups them by interior vs
     ///     exterior worldspace.</param>
     /// <param name="pcRecordsByFormId">PC ESM record lookup, used to fetch WRLD anchor bytes.</param>
+    /// <param name="newWorldspacesByDmpFormId">Optional fallback: when an exterior bundle's
+    ///     parent worldspace isn't in master, look here for the pre-encoded new-WRLD record.
+    ///     Keys are the ORIGINAL DMP FormID (matches <c>CellOverrideBundle.Context.WorldspaceFormId</c>).</param>
     public static byte[]? BuildCellSection(
         IReadOnlyList<CellOverrideBundle> bundles,
-        IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId)
+        IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId,
+        IReadOnlyDictionary<uint, NewWorldspaceEntry>? newWorldspacesByDmpFormId = null)
     {
         if (bundles.Count == 0)
         {
@@ -71,7 +75,7 @@ public static class CellGrupBuilder
 
         foreach (var group in exteriorByWrld)
         {
-            var wrldBytes = BuildWrldGrup(group.Key, group.ToList(), pcRecordsByFormId);
+            var wrldBytes = BuildWrldGrup(group.Key, group.ToList(), pcRecordsByFormId, newWorldspacesByDmpFormId);
             if (wrldBytes is not null)
             {
                 stream.Write(wrldBytes);
@@ -106,20 +110,37 @@ public static class CellGrupBuilder
     ///     Emit a top-level WRLD GRUP for one worldspace. Layout:
     ///     <code>
     ///       GRUP type=0 label="WRLD"
-    ///         WRLD record (master anchor)
+    ///         WRLD record (master anchor OR pre-encoded new WRLD)
     ///         GRUP type=1 label=wrldFormId       (world children)
     ///           [persistent CELL records — no block/subblock wrapper]
     ///           [exterior block/subblock GRUPs with their CELL records]
     ///     </code>
-    ///     Returns null if the WRLD record isn't in the PC ESM index (can't anchor the GRUP).
+    ///     For a new (non-master) WRLD, anchor bytes come from <paramref name="newWorldspacesByDmpFormId"/>
+    ///     and the World Children GRUP label uses the EMITTED FormID (matches the FormID encoded
+    ///     inside the anchor record bytes). Returns null if neither source has the WRLD.
     /// </summary>
     private static byte[]? BuildWrldGrup(
         uint wrldFormId,
         IReadOnlyList<CellOverrideBundle> bundlesInWrld,
-        IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId)
+        IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId,
+        IReadOnlyDictionary<uint, NewWorldspaceEntry>? newWorldspacesByDmpFormId)
     {
-        if (!pcRecordsByFormId.TryGetValue(wrldFormId, out var wrldRecord)
-            || wrldRecord.Header.Signature != "WRLD")
+        byte[] wrldAnchorBytes;
+        uint emittedWrldFormId;
+
+        if (pcRecordsByFormId.TryGetValue(wrldFormId, out var wrldRecord)
+            && wrldRecord.Header.Signature == "WRLD")
+        {
+            wrldAnchorBytes = ReconstructRecordBytes(wrldRecord);
+            emittedWrldFormId = wrldFormId;
+        }
+        else if (newWorldspacesByDmpFormId is not null
+                 && newWorldspacesByDmpFormId.TryGetValue(wrldFormId, out var newEntry))
+        {
+            wrldAnchorBytes = newEntry.RecordBytes;
+            emittedWrldFormId = newEntry.EmittedFormId;
+        }
+        else
         {
             return null;
         }
@@ -131,11 +152,11 @@ public static class CellGrupBuilder
         var topPos = WriteGrupHeader(stream, topLabel, groupType: 0);
 
         // WRLD anchor record.
-        stream.Write(ReconstructRecordBytes(wrldRecord));
+        stream.Write(wrldAnchorBytes);
 
-        // World children GRUP (type 1, label = WRLD FormID).
+        // World children GRUP (type 1, label = EMITTED WRLD FormID — matches the anchor bytes).
         var wrldLabel = new byte[4];
-        BinaryPrimitives.WriteUInt32LittleEndian(wrldLabel, wrldFormId);
+        BinaryPrimitives.WriteUInt32LittleEndian(wrldLabel, emittedWrldFormId);
         var childrenPos = WriteGrupHeader(stream, wrldLabel, groupType: 1);
 
         // Persistent CELL containers go directly under world children, no block wrapping.
