@@ -621,39 +621,13 @@ internal static class CrossDumpAggregator
         IEnumerable<CellRecord> cells,
         IReadOnlyDictionary<CellCoordinateKey, RealCellCandidate> virtualCellCanonicalFormIds)
     {
-        var map = new Dictionary<uint, PlacedReferenceLocation>();
-        foreach (var cell in cells)
-        {
-            var cellInfo = ResolvePlacementCellInfo(cell, virtualCellCanonicalFormIds);
-
-            foreach (var obj in cell.PlacedObjects)
-            {
-                if (obj.FormId == 0)
-                {
-                    continue;
-                }
-
-                map[obj.FormId] = new PlacedReferenceLocation(obj, cellInfo.FormId);
-            }
-        }
-
-        return map;
+        return CrossDumpPlacementIndexBuilder.BuildPlacedReferenceLocations(cells, virtualCellCanonicalFormIds);
     }
 
     internal static IReadOnlyDictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<NpcPlacementInfo>>>
         BuildNpcPlacementIndexes(IEnumerable<(string FilePath, RecordCollection Records)> sources)
     {
-        var sourceList = sources.ToList();
-        var virtualCellCanonicalFormIds = BuildVirtualCellCanonicalFormIds(sourceList.Select(source => source.Records));
-        var result = new Dictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<NpcPlacementInfo>>>(
-            StringComparer.OrdinalIgnoreCase);
-
-        foreach (var (filePath, records) in sourceList)
-        {
-            result[filePath] = BuildNpcPlacementIndex(records, virtualCellCanonicalFormIds);
-        }
-
-        return result;
+        return CrossDumpPlacementIndexBuilder.BuildNpcPlacementIndexes(sources);
     }
 
     internal static IReadOnlyDictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<KeyLockedDoorInfo>>>
@@ -661,17 +635,7 @@ internal static class CrossDumpAggregator
             IEnumerable<(string FilePath, RecordCollection Records)> sources,
             IReadOnlyDictionary<CellCoordinateKey, RealCellCandidate>? virtualCellCanonicalFormIds = null)
     {
-        var sourceList = sources.ToList();
-        virtualCellCanonicalFormIds ??= BuildVirtualCellCanonicalFormIds(sourceList.Select(source => source.Records));
-        var result = new Dictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<KeyLockedDoorInfo>>>(
-            StringComparer.OrdinalIgnoreCase);
-
-        foreach (var (filePath, records) in sourceList)
-        {
-            result[filePath] = BuildKeyLockedDoorIndex(records, virtualCellCanonicalFormIds);
-        }
-
-        return result;
+        return CrossDumpPlacementIndexBuilder.BuildKeyLockedDoorIndexes(sources, virtualCellCanonicalFormIds);
     }
 
     internal static IReadOnlyDictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<ContainerPlacementInfo>>>
@@ -679,379 +643,19 @@ internal static class CrossDumpAggregator
             IEnumerable<(string FilePath, RecordCollection Records)> sources,
             IReadOnlyDictionary<CellCoordinateKey, RealCellCandidate>? virtualCellCanonicalFormIds = null)
     {
-        var sourceList = sources.ToList();
-        virtualCellCanonicalFormIds ??= BuildVirtualCellCanonicalFormIds(sourceList.Select(source => source.Records));
-        var result = new Dictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<ContainerPlacementInfo>>>(
-            StringComparer.OrdinalIgnoreCase);
-
-        foreach (var (filePath, records) in sourceList)
-        {
-            result[filePath] = BuildContainerPlacementIndex(records, virtualCellCanonicalFormIds);
-        }
-
-        return result;
+        return CrossDumpPlacementIndexBuilder.BuildContainerPlacementIndexes(sources, virtualCellCanonicalFormIds);
     }
 
     internal static IReadOnlyDictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<NpcScriptReferenceInfo>>>
         BuildNpcScriptReferenceIndexes(IEnumerable<(string FilePath, RecordCollection Records)> sources)
     {
-        var result = new Dictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<NpcScriptReferenceInfo>>>(
-            StringComparer.OrdinalIgnoreCase);
-
-        foreach (var (filePath, records) in sources)
-        {
-            result[filePath] = BuildNpcScriptReferenceIndex(records);
-        }
-
-        return result;
-    }
-
-    private static Dictionary<uint, IReadOnlyList<NpcScriptReferenceInfo>> BuildNpcScriptReferenceIndex(
-        RecordCollection records)
-    {
-        var npcFormIds = records.Npcs.Select(npc => npc.FormId).ToHashSet();
-        if (npcFormIds.Count == 0 || records.Scripts.Count == 0)
-        {
-            return new Dictionary<uint, IReadOnlyList<NpcScriptReferenceInfo>>();
-        }
-
-        var map = new Dictionary<uint, List<NpcScriptReferenceInfo>>();
-        foreach (var script in records.Scripts)
-        {
-            if (script.ReferencedObjects.Count == 0)
-            {
-                continue;
-            }
-
-            var reference = new NpcScriptReferenceInfo(
-                script.FormId,
-                script.EditorId,
-                script.ScriptType,
-                script.OwnerQuestFormId);
-            foreach (var referencedFormId in script.ReferencedObjects.Distinct())
-            {
-                if (!npcFormIds.Contains(referencedFormId))
-                {
-                    continue;
-                }
-
-                if (!map.TryGetValue(referencedFormId, out var scripts))
-                {
-                    scripts = [];
-                    map[referencedFormId] = scripts;
-                }
-
-                scripts.Add(reference);
-            }
-        }
-
-        return map.ToDictionary(
-            entry => entry.Key,
-            entry => (IReadOnlyList<NpcScriptReferenceInfo>)entry.Value
-                .OrderBy(reference => reference.ScriptEditorId ?? "", StringComparer.OrdinalIgnoreCase)
-                .ThenBy(reference => reference.ScriptFormId)
-                .ToList());
-    }
-
-    private static Dictionary<uint, IReadOnlyList<NpcPlacementInfo>> BuildNpcPlacementIndex(
-        RecordCollection records,
-        IReadOnlyDictionary<CellCoordinateKey, RealCellCandidate> virtualCellCanonicalFormIds)
-    {
-        var npcFormIds = records.Npcs.Select(npc => npc.FormId).ToHashSet();
-        if (npcFormIds.Count == 0 || records.Cells.Count == 0)
-        {
-            return new Dictionary<uint, IReadOnlyList<NpcPlacementInfo>>();
-        }
-
-        var map = new Dictionary<uint, List<NpcPlacementInfo>>();
-        foreach (var cell in records.Cells)
-        {
-            var cellInfo = ResolvePlacementCellInfo(cell, virtualCellCanonicalFormIds);
-
-            foreach (var obj in cell.PlacedObjects)
-            {
-                if (!string.Equals(obj.RecordType, "ACHR", StringComparison.OrdinalIgnoreCase) ||
-                    obj.BaseFormId == 0 ||
-                    !npcFormIds.Contains(obj.BaseFormId))
-                {
-                    continue;
-                }
-
-                if (!map.TryGetValue(obj.BaseFormId, out var placements))
-                {
-                    placements = [];
-                    map[obj.BaseFormId] = placements;
-                }
-
-                placements.Add(new NpcPlacementInfo(
-                    obj,
-                    cellInfo.FormId,
-                    cellInfo.EditorId,
-                    cellInfo.DisplayName,
-                    cellInfo.WorldspaceFormId,
-                    cellInfo.GridX,
-                    cellInfo.GridY));
-            }
-        }
-
-        return map.ToDictionary(
-            entry => entry.Key,
-            entry => (IReadOnlyList<NpcPlacementInfo>)entry.Value
-                .OrderBy(placement => ResolveCellSortName(placement), StringComparer.OrdinalIgnoreCase)
-                .ThenBy(placement => placement.GridY ?? int.MaxValue)
-                .ThenBy(placement => placement.GridX ?? int.MaxValue)
-                .ThenBy(placement => placement.Ref.FormId)
-                .ToList());
-    }
-
-    private static Dictionary<uint, IReadOnlyList<KeyLockedDoorInfo>> BuildKeyLockedDoorIndex(
-        RecordCollection records,
-        IReadOnlyDictionary<CellCoordinateKey, RealCellCandidate> virtualCellCanonicalFormIds)
-    {
-        if (records.Keys.Count == 0 || records.Cells.Count == 0)
-        {
-            return new Dictionary<uint, IReadOnlyList<KeyLockedDoorInfo>>();
-        }
-
-        var keyFormIds = records.Keys.Select(key => key.FormId).ToHashSet();
-        var map = new Dictionary<uint, List<KeyLockedDoorInfo>>();
-        foreach (var cell in records.Cells)
-        {
-            var cellInfo = ResolvePlacementCellInfo(cell, virtualCellCanonicalFormIds);
-
-            foreach (var obj in cell.PlacedObjects)
-            {
-                if (obj.LockKeyFormId is not > 0 ||
-                    !keyFormIds.Contains(obj.LockKeyFormId.Value))
-                {
-                    continue;
-                }
-
-                if (!map.TryGetValue(obj.LockKeyFormId.Value, out var doors))
-                {
-                    doors = [];
-                    map[obj.LockKeyFormId.Value] = doors;
-                }
-
-                doors.Add(new KeyLockedDoorInfo(
-                    obj,
-                    cellInfo.FormId,
-                    cellInfo.EditorId,
-                    cellInfo.DisplayName,
-                    cellInfo.WorldspaceFormId,
-                    cellInfo.GridX,
-                    cellInfo.GridY));
-            }
-        }
-
-        return map.ToDictionary(
-            entry => entry.Key,
-            entry => (IReadOnlyList<KeyLockedDoorInfo>)entry.Value
-                .OrderBy(info => ResolveCellSortName(info), StringComparer.OrdinalIgnoreCase)
-                .ThenBy(info => info.GridY ?? int.MaxValue)
-                .ThenBy(info => info.GridX ?? int.MaxValue)
-                .ThenBy(info => info.Ref.FormId)
-                .ToList());
-    }
-
-    private static Dictionary<uint, IReadOnlyList<ContainerPlacementInfo>> BuildContainerPlacementIndex(
-        RecordCollection records,
-        IReadOnlyDictionary<CellCoordinateKey, RealCellCandidate> virtualCellCanonicalFormIds)
-    {
-        if (records.Containers.Count == 0 || records.Cells.Count == 0)
-        {
-            return new Dictionary<uint, IReadOnlyList<ContainerPlacementInfo>>();
-        }
-
-        var containerFormIds = records.Containers.Select(container => container.FormId).ToHashSet();
-        var map = new Dictionary<uint, List<ContainerPlacementInfo>>();
-        foreach (var cell in records.Cells)
-        {
-            var cellInfo = ResolvePlacementCellInfo(cell, virtualCellCanonicalFormIds);
-
-            foreach (var obj in cell.PlacedObjects)
-            {
-                if (!string.Equals(obj.RecordType, "REFR", StringComparison.OrdinalIgnoreCase) ||
-                    obj.BaseFormId == 0 ||
-                    !containerFormIds.Contains(obj.BaseFormId))
-                {
-                    continue;
-                }
-
-                if (!map.TryGetValue(obj.BaseFormId, out var placements))
-                {
-                    placements = [];
-                    map[obj.BaseFormId] = placements;
-                }
-
-                placements.Add(new ContainerPlacementInfo(
-                    obj,
-                    cellInfo.FormId,
-                    cellInfo.EditorId,
-                    cellInfo.DisplayName,
-                    cellInfo.WorldspaceFormId,
-                    cellInfo.GridX,
-                    cellInfo.GridY));
-            }
-        }
-
-        return map.ToDictionary(
-            entry => entry.Key,
-            entry => (IReadOnlyList<ContainerPlacementInfo>)entry.Value
-                .OrderBy(placement => ResolveCellSortName(placement), StringComparer.OrdinalIgnoreCase)
-                .ThenBy(placement => placement.GridY ?? int.MaxValue)
-                .ThenBy(placement => placement.GridX ?? int.MaxValue)
-                .ThenBy(placement => placement.Ref.FormId)
-                .ToList());
-    }
-
-    private static string ResolveCellSortName(NpcPlacementInfo placement)
-    {
-        if (!string.IsNullOrWhiteSpace(placement.CellEditorId))
-        {
-            return placement.CellEditorId;
-        }
-
-        if (!string.IsNullOrWhiteSpace(placement.CellName))
-        {
-            return placement.CellName;
-        }
-
-        return "";
-    }
-
-    private static string ResolveCellSortName(KeyLockedDoorInfo info)
-    {
-        if (!string.IsNullOrWhiteSpace(info.CellEditorId))
-        {
-            return info.CellEditorId;
-        }
-
-        if (!string.IsNullOrWhiteSpace(info.CellName))
-        {
-            return info.CellName;
-        }
-
-        return "";
-    }
-
-    private static string ResolveCellSortName(ContainerPlacementInfo placement)
-    {
-        if (!string.IsNullOrWhiteSpace(placement.CellEditorId))
-        {
-            return placement.CellEditorId;
-        }
-
-        if (!string.IsNullOrWhiteSpace(placement.CellName))
-        {
-            return placement.CellName;
-        }
-
-        return "";
-    }
-
-    private static PlacementCellInfo ResolvePlacementCellInfo(
-        CellRecord cell,
-        IReadOnlyDictionary<CellCoordinateKey, RealCellCandidate> virtualCellCanonicalFormIds)
-    {
-        if (TryGetVirtualCellCanonicalFormId(cell, virtualCellCanonicalFormIds, out var canonicalCell))
-        {
-            return new PlacementCellInfo(
-                canonicalCell.FormId,
-                canonicalCell.IsSyntheticVirtual ? null : canonicalCell.EditorId ?? cell.EditorId,
-                canonicalCell.IsSyntheticVirtual ? null : canonicalCell.DisplayName ?? cell.FullName,
-                cell.WorldspaceFormId,
-                cell.GridX,
-                cell.GridY);
-        }
-
-        return new PlacementCellInfo(
-            cell.FormId,
-            cell.EditorId,
-            cell.FullName,
-            cell.WorldspaceFormId,
-            cell.GridX,
-            cell.GridY);
+        return CrossDumpPlacementIndexBuilder.BuildNpcScriptReferenceIndexes(sources);
     }
 
     private static Dictionary<CellCoordinateKey, RealCellCandidate> BuildVirtualCellCanonicalFormIds(
         IEnumerable<RecordCollection> recordCollections)
     {
-        var candidates = new Dictionary<CellCoordinateKey, Dictionary<uint, RealCellCandidate>>();
-        var virtualOnlyKeys = new HashSet<CellCoordinateKey>();
-        var allCellFormIds = new HashSet<uint>();
-        foreach (var collection in recordCollections)
-        {
-            foreach (var cell in collection.Cells)
-            {
-                allCellFormIds.Add(cell.FormId);
-                if (cell.IsVirtual &&
-                    !cell.IsInterior &&
-                    !cell.IsPersistentCell &&
-                    !cell.IsUnresolvedBucket &&
-                    TryGetCellCoordinateKey(cell, out var virtualKey))
-                {
-                    virtualOnlyKeys.Add(virtualKey);
-                }
-
-                if (!IsStableRealExteriorCell(cell) ||
-                    !TryGetCellCoordinateKey(cell, out var key))
-                {
-                    continue;
-                }
-
-                if (!candidates.TryGetValue(key, out var formIds))
-                {
-                    formIds = [];
-                    candidates[key] = formIds;
-                }
-
-                if (!formIds.TryGetValue(cell.FormId, out var existingCandidate))
-                {
-                    formIds[cell.FormId] = new RealCellCandidate(cell.FormId, cell.EditorId, cell.FullName, false);
-                }
-                else
-                {
-                    formIds[cell.FormId] = existingCandidate with
-                    {
-                        EditorId = existingCandidate.EditorId ?? cell.EditorId,
-                        DisplayName = existingCandidate.DisplayName ?? cell.FullName
-                    };
-                }
-            }
-        }
-
-        var canonical = new Dictionary<CellCoordinateKey, RealCellCandidate>();
-        foreach (var (key, formIds) in candidates)
-        {
-            if (formIds.Count == 1)
-            {
-                canonical[key] = formIds.Values.Single();
-            }
-        }
-
-        var nextSyntheticFormId = 0xFD000001u;
-        foreach (var key in virtualOnlyKeys
-                     .OrderBy(key => key.WorldspaceFormId)
-                     .ThenBy(key => key.GridY)
-                     .ThenBy(key => key.GridX))
-        {
-            if (canonical.ContainsKey(key))
-            {
-                continue;
-            }
-
-            while (allCellFormIds.Contains(nextSyntheticFormId))
-            {
-                nextSyntheticFormId++;
-            }
-
-            canonical[key] = new RealCellCandidate(nextSyntheticFormId, null, null, true);
-            allCellFormIds.Add(nextSyntheticFormId);
-            nextSyntheticFormId++;
-        }
-
-        return canonical;
+        return VirtualCellCanonicalizer.BuildVirtualCellCanonicalFormIds(recordCollections);
     }
 
     private static bool TryGetVirtualCellCanonicalFormId(
@@ -1059,103 +663,12 @@ internal static class CrossDumpAggregator
         IReadOnlyDictionary<CellCoordinateKey, RealCellCandidate> canonicalFormIds,
         out RealCellCandidate canonicalCell)
     {
-        canonicalCell = default;
-        if (!cell.IsVirtual ||
-            cell.IsInterior ||
-            cell.IsPersistentCell ||
-            cell.IsUnresolvedBucket ||
-            !TryGetCellCoordinateKey(cell, out var key))
-        {
-            return false;
-        }
-
-        return canonicalFormIds.TryGetValue(key, out canonicalCell);
-    }
-
-    private static bool IsStableRealExteriorCell(CellRecord cell)
-    {
-        return !cell.IsInterior
-               && !cell.IsVirtual
-               && !cell.IsPersistentCell
-               && !cell.IsUnresolvedBucket
-               && cell.FormId is > 0 and < 0xFE000000
-               && cell.WorldspaceFormId.HasValue
-               && cell.GridX.HasValue
-               && cell.GridY.HasValue;
-    }
-
-    private static bool TryGetCellCoordinateKey(CellRecord cell, out CellCoordinateKey key)
-    {
-        if (cell.WorldspaceFormId.HasValue &&
-            cell.GridX.HasValue &&
-            cell.GridY.HasValue)
-        {
-            key = new CellCoordinateKey(cell.WorldspaceFormId.Value, cell.GridX.Value, cell.GridY.Value);
-            return true;
-        }
-
-        key = default;
-        return false;
+        return VirtualCellCanonicalizer.TryGetVirtualCellCanonicalFormId(cell, canonicalFormIds, out canonicalCell);
     }
 
     private static RecordReport RebaseVirtualCellReport(RecordReport report, RealCellCandidate canonicalCell)
     {
-        var sections = new List<ReportSection>(report.Sections.Count);
-        foreach (var section in report.Sections)
-        {
-            var fields = new List<ReportField>(section.Fields.Count);
-            foreach (var field in section.Fields)
-            {
-                if (field.Key == "FormID")
-                {
-                    fields.Add(field with { Value = ReportValue.String($"0x{canonicalCell.FormId:X8}") });
-                }
-                else if (field.Key == "Editor ID")
-                {
-                    if (canonicalCell.EditorId != null)
-                    {
-                        fields.Add(field with { Value = ReportValue.String(canonicalCell.EditorId) });
-                    }
-                }
-                else if (field.Key == "Display Name")
-                {
-                    if (canonicalCell.DisplayName != null)
-                    {
-                        fields.Add(field with { Value = ReportValue.String(canonicalCell.DisplayName) });
-                    }
-                }
-                else
-                {
-                    fields.Add(field);
-                }
-            }
-
-            if (section.Name.Equals("Identity", StringComparison.OrdinalIgnoreCase))
-            {
-                if (canonicalCell.EditorId != null && fields.All(field => field.Key != "Editor ID"))
-                {
-                    fields.Add(new ReportField("Editor ID", ReportValue.String(canonicalCell.EditorId)));
-                }
-
-                if (canonicalCell.DisplayName != null && fields.All(field => field.Key != "Display Name"))
-                {
-                    fields.Add(new ReportField("Display Name", ReportValue.String(canonicalCell.DisplayName)));
-                }
-            }
-
-            if (fields.Count > 0)
-            {
-                sections.Add(section with { Fields = fields });
-            }
-        }
-
-        return report with
-        {
-            FormId = canonicalCell.FormId,
-            EditorId = canonicalCell.EditorId,
-            DisplayName = canonicalCell.DisplayName,
-            Sections = sections
-        };
+        return VirtualCellCanonicalizer.RebaseVirtualCellReport(report, canonicalCell);
     }
 
     private static void AddUpgradedVirtualCellForDump(
@@ -1164,19 +677,11 @@ internal static class CrossDumpAggregator
         int dumpIdx,
         uint originalVirtualFormId)
     {
-        if (!upgradedVirtualCellIdsByDump.TryGetValue(realFormId, out var dumpMap))
-        {
-            dumpMap = [];
-            upgradedVirtualCellIdsByDump[realFormId] = dumpMap;
-        }
-
-        if (!dumpMap.TryGetValue(dumpIdx, out var originalIds))
-        {
-            originalIds = [];
-            dumpMap[dumpIdx] = originalIds;
-        }
-
-        originalIds.Add(originalVirtualFormId);
+        VirtualCellCanonicalizer.AddUpgradedVirtualCellForDump(
+            upgradedVirtualCellIdsByDump,
+            realFormId,
+            dumpIdx,
+            originalVirtualFormId);
     }
 
     private static void AppendVirtualCellAuditMetadata(
@@ -1184,39 +689,11 @@ internal static class CrossDumpAggregator
         Dictionary<uint, SortedSet<uint>> upgradedVirtualCellIds,
         Dictionary<uint, SortedDictionary<int, SortedSet<uint>>> upgradedVirtualCellIdsByDump)
     {
-        if (upgradedVirtualCellIds.Count == 0)
-        {
-            return;
-        }
-
-        if (!index.RecordMetadata.TryGetValue("Cell", out var cellMetadata))
-        {
-            cellMetadata = new Dictionary<uint, Dictionary<string, string>>();
-            index.RecordMetadata["Cell"] = cellMetadata;
-        }
-
-        foreach (var (realFormId, originalVirtualFormIds) in upgradedVirtualCellIds)
-        {
-            if (!cellMetadata.TryGetValue(realFormId, out var metadata))
-            {
-                metadata = new Dictionary<string, string>();
-                cellMetadata[realFormId] = metadata;
-            }
-
-            metadata["upgradedVirtualFormIds"] =
-                string.Join(", ", originalVirtualFormIds.Select(formId => $"0x{formId:X8}"));
-            if (upgradedVirtualCellIdsByDump.TryGetValue(realFormId, out var dumpMap))
-            {
-                metadata["upgradedVirtualFormIdsByDump"] = string.Join(
-                    ";",
-                    dumpMap.Select(dumpEntry =>
-                        $"{dumpEntry.Key}:{string.Join(", ", dumpEntry.Value.Select(formId => $"0x{formId:X8}"))}"));
-            }
-        }
+        VirtualCellCanonicalizer.AppendVirtualCellAuditMetadata(
+            index,
+            upgradedVirtualCellIds,
+            upgradedVirtualCellIdsByDump);
     }
-
-    /// <summary>
-    ///     Returns true if a resolver-returned name is a real name (not null, empty,
     ///     or a placeholder like "(none)").
     /// </summary>
     private static bool IsRealName(string? name)
@@ -1383,19 +860,4 @@ internal static class CrossDumpAggregator
             : $"NPC 0x{speakerFormId:X8}";
     }
 
-    internal readonly record struct CellCoordinateKey(uint WorldspaceFormId, int GridX, int GridY);
-
-    internal readonly record struct RealCellCandidate(
-        uint FormId,
-        string? EditorId,
-        string? DisplayName,
-        bool IsSyntheticVirtual);
-
-    private readonly record struct PlacementCellInfo(
-        uint FormId,
-        string? EditorId,
-        string? DisplayName,
-        uint? WorldspaceFormId,
-        int? GridX,
-        int? GridY);
 }
