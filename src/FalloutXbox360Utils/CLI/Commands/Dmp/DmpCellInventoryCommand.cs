@@ -60,11 +60,20 @@ internal static class DmpCellInventoryCommand
                 "hierarchy is used as the authoritative cell→worldspace map (resolves cells " +
                 "the DMP runtime pCellMap doesn't anchor)."
         };
+        var authorityOpt = new Option<string?>("--cell-authority")
+        {
+            Description =
+                "Optional path to a corpus-derived authority JSON (built with " +
+                "`dmp build-cell-authority`). Loaded in addition to --pc-esm; covers cells the " +
+                "shipped PC ESM lacks (e.g. cut prototype worldspaces). Defaults to " +
+                "data/cell_worldspace_authority.json next to the executable if it exists."
+        };
 
         command.Arguments.Add(pathArg);
         command.Options.Add(outputOpt);
         command.Options.Add(typesOpt);
         command.Options.Add(pcEsmOpt);
+        command.Options.Add(authorityOpt);
 
         command.SetAction(async (parseResult, ct) =>
         {
@@ -77,7 +86,8 @@ internal static class DmpCellInventoryCommand
                 .Select(t => t.ToUpperInvariant())
                 .ToHashSet(StringComparer.Ordinal);
             var pcEsm = parseResult.GetValue(pcEsmOpt);
-            await RunAsync(path, output, types, pcEsm, ct);
+            var authority = parseResult.GetValue(authorityOpt);
+            await RunAsync(path, output, types, pcEsm, authority, ct);
         });
 
         return command;
@@ -88,6 +98,7 @@ internal static class DmpCellInventoryCommand
         string outputDir,
         HashSet<string> targetTypes,
         string? pcEsmPath,
+        string? authorityJsonPath,
         CancellationToken cancellationToken)
     {
         List<string> dmpFiles;
@@ -125,6 +136,22 @@ internal static class DmpCellInventoryCommand
         // (cells DMPs preserve at runtime never carry Type 1 GRUPs, so the master is the only
         // source for cells the runtime pCellMap doesn't anchor).
         var pcCellToWorldspace = await LoadPcEsmCellMapAsync(pcEsmPath, cancellationToken);
+
+        // Corpus-derived authority JSON: covers cells the shipped PC ESM lacks (e.g. cut
+        // prototype worldspaces such as TheStripWorld). Merged on top of the PC ESM map.
+        var authorityLoad = CellWorldspaceAuthorityJson.Load(authorityJsonPath);
+        if (authorityLoad.Warning is not null)
+        {
+            AnsiConsole.MarkupLine($"[yellow]{Markup.Escape(authorityLoad.Warning)}[/]");
+        }
+        else if (authorityLoad.Cells is not null && authorityLoad.Path is not null)
+        {
+            AnsiConsole.MarkupLine(
+                $"[blue]Cell authority loaded: {authorityLoad.Cells.Count:N0} entries from " +
+                $"{Markup.Escape(Path.GetFileName(authorityLoad.Path))}.[/]");
+        }
+
+        var combinedAuthority = CellWorldspaceAuthorityJson.Merge(pcCellToWorldspace, authorityLoad.Cells);
         AnsiConsole.WriteLine();
 
         var processed = 0;
@@ -256,7 +283,7 @@ internal static class DmpCellInventoryCommand
                 {
                     // Worldspace bucket selection rules — see WorldspaceBucketKey.
                     var byWs = matchedCells
-                        .GroupBy(x => WorldspaceBucketKey(x.Cell, runtimeCellOwner, fidRangeIndex, pcCellToWorldspace))
+                        .GroupBy(x => WorldspaceBucketKey(x.Cell, runtimeCellOwner, fidRangeIndex, combinedAuthority))
                         .OrderBy(g => g.Key switch
                         {
                             InteriorBucket => "Interior",
@@ -388,9 +415,9 @@ internal static class DmpCellInventoryCommand
 
     private static uint WorldspaceBucketKey(
         CellRecord cell,
-        IReadOnlyDictionary<uint, uint> runtimeCellOwner,
+        Dictionary<uint, uint> runtimeCellOwner,
         WorldspaceFormIdRangeIndex fidRangeIndex,
-        IReadOnlyDictionary<uint, uint>? pcCellToWorldspace)
+        Dictionary<uint, uint>? pcCellToWorldspace)
     {
         if (cell.IsInterior)
         {

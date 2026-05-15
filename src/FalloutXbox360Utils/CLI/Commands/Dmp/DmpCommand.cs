@@ -25,6 +25,7 @@ public static class DmpCommand
         command.Subcommands.Add(DmpAnalyzeCommand.Create());
         command.Subcommands.Add(DmpCellReportsCommand.Create());
         command.Subcommands.Add(DmpCellInventoryCommand.Create());
+        command.Subcommands.Add(DmpCellAuthorityBuildCommand.Create());
         command.Subcommands.Add(DmpFormTypeCensusCommand.Create());
         command.Subcommands.Add(BuffersCommand.Create());
         command.Subcommands.Add(CoverageCommand.Create());

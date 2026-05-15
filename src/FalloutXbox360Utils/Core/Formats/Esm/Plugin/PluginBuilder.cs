@@ -218,28 +218,46 @@ public sealed class PluginBuilder
             // cells at load time and any REFR placed in them becomes orphaned — which is the
             // root cause of the WastelandNV render crashes we hit when a prototype DMP cell
             // had a fresh FormID but happened to share grid coords with a final-build cell.
+            var indexedExteriorCells = 0;
+            var skippedNoXclc = 0;
+            var skippedNoWorldspace = 0;
+            var skippedNoRecord = 0;
             foreach (var (cellFormId, ctx) in cellContexts)
             {
-                if (ctx.IsInterior || !ctx.WorldspaceFormId.HasValue)
+                if (ctx.IsInterior)
                 {
+                    continue;
+                }
+
+                if (!ctx.WorldspaceFormId.HasValue)
+                {
+                    skippedNoWorldspace++;
                     continue;
                 }
 
                 if (!pcRecordsByFormId.TryGetValue(cellFormId, out var cellRec))
                 {
+                    skippedNoRecord++;
                     continue;
                 }
 
                 if (!TryReadCellGridCoords(cellRec, out var gridX, out var gridY))
                 {
+                    skippedNoXclc++;
                     continue;
                 }
 
                 _masterExteriorCellByGrid[(ctx.WorldspaceFormId.Value, gridX, gridY)] = cellFormId;
+                indexedExteriorCells++;
             }
 
             _sink.Info("Loading PC ESM",
                 $"Loaded {pcRecordsByFormId.Count:N0} PC records, {refToCell.Count:N0} child→cell links, {cellContexts.Count:N0} cell contexts.");
+
+            _sink.Info("Loading PC ESM",
+                $"Master exterior-cell-by-grid index: {indexedExteriorCells:N0} entries " +
+                $"(skipped: {skippedNoWorldspace} no-worldspace, {skippedNoRecord} no-record, " +
+                $"{skippedNoXclc} no-XCLC).");
             _sink.OnPhaseEnd("Loading PC ESM", stats);
             ct.ThrowIfCancellationRequested();
 
