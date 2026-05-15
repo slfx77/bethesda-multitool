@@ -26,6 +26,14 @@ public sealed class RecordEncoderRegistry
         _byType[recordType] = encoder;
     }
 
+    private void RegisterAll(params IRecordEncoder[] encoders)
+    {
+        foreach (var encoder in encoders)
+        {
+            Register(encoder);
+        }
+    }
+
     public bool TryGet(string recordType, out IRecordEncoder? encoder)
     {
         return _byType.TryGetValue(recordType, out encoder);
@@ -55,17 +63,18 @@ public sealed class RecordEncoderRegistry
     public static RecordEncoderRegistry CreateV1Default()
     {
         var registry = new RecordEncoderRegistry();
-        registry.Register(new GmstEncoder());
-        registry.Register(new GlobEncoder());
-        registry.Register(new WeapEncoder());
-        registry.Register(new ArmoEncoder());
-        registry.Register(new AmmoEncoder());
-        registry.Register(new AlchEncoder());
-        registry.Register(new BookEncoder());
-        registry.Register(new MiscEncoder());
-        registry.Register(new KeymEncoder());
-        registry.Register(new FactEncoder());
-        registry.Register(new NpcEncoder());
+        registry.RegisterAll(
+            new GmstEncoder(),
+            new GlobEncoder(),
+            new WeapEncoder(),
+            new ArmoEncoder(),
+            new AmmoEncoder(),
+            new AlchEncoder(),
+            new BookEncoder(),
+            new MiscEncoder(),
+            new KeymEncoder(),
+            new FactEncoder(),
+            new NpcEncoder());
         return registry;
     }
 
@@ -79,9 +88,10 @@ public sealed class RecordEncoderRegistry
     public static RecordEncoderRegistry CreateV2Default()
     {
         var registry = CreateV1Default();
-        registry.Register(new RefrEncoder());
-        registry.Register(new AchrEncoder());
-        registry.Register(new AcreEncoder());
+        registry.RegisterAll(
+            new RefrEncoder(),
+            new AchrEncoder(),
+            new AcreEncoder());
         return registry;
     }
 
@@ -109,11 +119,12 @@ public sealed class RecordEncoderRegistry
     public static RecordEncoderRegistry CreateV6Default()
     {
         var registry = CreateV3Default();
-        registry.Register(new ScptEncoder());
-        registry.Register(new DialEncoder());
-        registry.Register(new InfoEncoder());
-        registry.Register(new QustEncoder());
-        registry.Register(new PackEncoder());
+        registry.RegisterAll(
+            new ScptEncoder(),
+            new DialEncoder(),
+            new InfoEncoder(),
+            new QustEncoder(),
+            new PackEncoder());
         return registry;
     }
 
@@ -129,13 +140,14 @@ public sealed class RecordEncoderRegistry
     public static RecordEncoderRegistry CreateV7Default()
     {
         var registry = CreateV6Default();
-        registry.Register(new ActiEncoder());
-        registry.Register(new DoorEncoder());
-        registry.Register(new LighEncoder());
-        registry.Register(new StatEncoder());
-        registry.Register(new ContEncoder());
-        registry.Register(new FurnEncoder());
-        registry.Register(new TermEncoder());
+        registry.RegisterAll(
+            new ActiEncoder(),
+            new DoorEncoder(),
+            new LighEncoder(),
+            new StatEncoder(),
+            new ContEncoder(),
+            new FurnEncoder(),
+            new TermEncoder());
         return registry;
     }
 
@@ -147,9 +159,10 @@ public sealed class RecordEncoderRegistry
     public static RecordEncoderRegistry CreateV11Default()
     {
         var registry = CreateV7Default();
-        registry.Register(new ProjEncoder());
-        registry.Register(new ExplEncoder());
-        registry.Register(new ImodEncoder());
+        registry.RegisterAll(
+            new ProjEncoder(),
+            new ExplEncoder(),
+            new ImodEncoder());
         return registry;
     }
 
@@ -162,8 +175,9 @@ public sealed class RecordEncoderRegistry
     public static RecordEncoderRegistry CreateV12Default()
     {
         var registry = CreateV11Default();
-        registry.Register(new ArmaEncoder());
-        registry.Register(new RcpeEncoder());
+        registry.RegisterAll(
+            new ArmaEncoder(),
+            new RcpeEncoder());
         return registry;
     }
 
@@ -178,8 +192,9 @@ public sealed class RecordEncoderRegistry
     public static RecordEncoderRegistry CreateV14Default()
     {
         var registry = CreateV12Default();
-        registry.Register(new RcctEncoder());
-        registry.Register(new CobjEncoder());
+        registry.RegisterAll(
+            new RcctEncoder(),
+            new CobjEncoder());
         return registry;
     }
 
@@ -192,14 +207,15 @@ public sealed class RecordEncoderRegistry
     public static RecordEncoderRegistry CreateV16Default()
     {
         var registry = CreateV14Default();
-        registry.Register(new EyesEncoder());
-        registry.Register(new HairEncoder());
-        registry.Register(new RepuEncoder());
-        registry.Register(new AvifEncoder());
-        registry.Register(new MuscEncoder());
-        registry.Register(new MesgEncoder());
-        registry.Register(new NoteEncoder());
-        registry.Register(new FlstEncoder());
+        registry.RegisterAll(
+            new EyesEncoder(),
+            new HairEncoder(),
+            new RepuEncoder(),
+            new AvifEncoder(),
+            new MuscEncoder(),
+            new MesgEncoder(),
+            new NoteEncoder(),
+            new FlstEncoder());
 
         // LvliEncoder handles all three leveled-list signatures (LVLI/LVLN/LVLC).
         // The encoder declares itself as "LVLI"; register it explicitly under the other
@@ -220,16 +236,17 @@ public sealed class RecordEncoderRegistry
     public static RecordEncoderRegistry CreateV17Default()
     {
         var registry = CreateV16Default();
-        registry.Register(new CreaEncoder());
-        registry.Register(new ClasEncoder());
-        registry.Register(new SounEncoder());
-        registry.Register(new TxstEncoder());
-        registry.Register(new LtexEncoder());
-        registry.Register(new ChalEncoder());
-        registry.Register(new BptdEncoder());
-        registry.Register(new EnchEncoder());
-        registry.Register(new SpelEncoder());
-        registry.Register(new PerkEncoder());
+        registry.RegisterAll(
+            new CreaEncoder(),
+            new ClasEncoder(),
+            new SounEncoder(),
+            new TxstEncoder(),
+            new LtexEncoder(),
+            new ChalEncoder(),
+            new BptdEncoder(),
+            new EnchEncoder(),
+            new SpelEncoder(),
+            new PerkEncoder());
         return registry;
     }
 
@@ -244,9 +261,10 @@ public sealed class RecordEncoderRegistry
     public static RecordEncoderRegistry CreateV18Default()
     {
         var registry = CreateV17Default();
-        registry.Register(new MgefEncoder());
-        registry.Register(new WrldEncoder());
-        registry.Register(new RaceEncoder());
+        registry.RegisterAll(
+            new MgefEncoder(),
+            new WrldEncoder(),
+            new RaceEncoder());
         return registry;
     }
 
@@ -261,10 +279,11 @@ public sealed class RecordEncoderRegistry
     public static RecordEncoderRegistry CreateV18bDefault()
     {
         var registry = CreateV18Default();
-        registry.Register(new CstyEncoder());
-        registry.Register(new LgtmEncoder());
-        registry.Register(new WatrEncoder());
-        registry.Register(new WthrEncoder());
+        registry.RegisterAll(
+            new CstyEncoder(),
+            new LgtmEncoder(),
+            new WatrEncoder(),
+            new WthrEncoder());
         return registry;
     }
 

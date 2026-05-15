@@ -687,7 +687,7 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
     {
         var vertexArrays = ReadDoubleIndirectedFloatArraySlots(
             loadedDataBuffer, LoadedDataVerticesPtrOffset,
-            TerrainQuadrantCount, 3, TerrainQuadrantVertexCount, 200_000, 0.5);
+            TerrainQuadrantCount, 3, RuntimeTerrainQuadrantMeshBuilder.QuadrantVertexCount, 200_000, 0.5);
 
         if (vertexArrays.Count == 0)
         {
@@ -695,117 +695,16 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
         }
 
         var normalArrays = ReadDoubleIndirectedFloatArraySlots(
-                loadedDataBuffer, LoadedDataNormalsPtrOffset,
-                TerrainQuadrantCount, 3, TerrainQuadrantVertexCount, 2.0f, 0.25)
-            .ToDictionary(a => a.Slot);
+            loadedDataBuffer, LoadedDataNormalsPtrOffset,
+            TerrainQuadrantCount, 3, RuntimeTerrainQuadrantMeshBuilder.QuadrantVertexCount, 2.0f, 0.25);
         var colorArrays = ReadDoubleIndirectedFloatArraySlots(
-                loadedDataBuffer, LoadedDataColorsPtrOffset,
-                TerrainQuadrantCount, 4, TerrainQuadrantVertexCount, 2.0f, 0.25)
-            .ToDictionary(a => a.Slot);
+            loadedDataBuffer, LoadedDataColorsPtrOffset,
+            TerrainQuadrantCount, 4, RuntimeTerrainQuadrantMeshBuilder.QuadrantVertexCount, 2.0f, 0.25);
 
-        var vertices = new float[RuntimeTerrainMesh.VertexCount * 3];
-        var normals = new float[RuntimeTerrainMesh.VertexCount * 3];
-        var colors = new float[RuntimeTerrainMesh.VertexCount * 4];
-        var occupied = new bool[RuntimeTerrainMesh.VertexCount];
-        var fitErrors = Enumerable.Repeat(float.MaxValue, RuntimeTerrainMesh.VertexCount).ToArray();
-        var hasNormals = false;
-        var hasColors = false;
-        long vertexDataOffset = 0;
-
-        foreach (var vertexArray in vertexArrays)
-        {
-            if (vertexDataOffset == 0)
-            {
-                vertexDataOffset = vertexArray.FileOffset;
-            }
-
-            normalArrays.TryGetValue(vertexArray.Slot, out var normalArray);
-            colorArrays.TryGetValue(vertexArray.Slot, out var colorArray);
-
-            for (var i = 0; i < TerrainQuadrantVertexCount; i++)
-            {
-                var vertexOffset = i * 3;
-                var x = vertexArray.Data[vertexOffset];
-                var y = vertexArray.Data[vertexOffset + 1];
-                var z = vertexArray.Data[vertexOffset + 2];
-                if (!IsValidTerrainVertex(x, y, z))
-                {
-                    continue;
-                }
-
-                var mapped = TryMapLocalTerrainVertexToCanonicalCell(x, y);
-                if (mapped == null)
-                {
-                    continue;
-                }
-
-                var (gridX, gridY, fitError) = mapped.Value;
-                var canonicalIndex = gridY * RuntimeTerrainMesh.GridSize + gridX;
-                if (fitError >= fitErrors[canonicalIndex])
-                {
-                    continue;
-                }
-
-                fitErrors[canonicalIndex] = fitError;
-                occupied[canonicalIndex] = true;
-                var canonicalVertexOffset = canonicalIndex * 3;
-                vertices[canonicalVertexOffset] = x;
-                vertices[canonicalVertexOffset + 1] = y;
-                vertices[canonicalVertexOffset + 2] = z;
-
-                if (normalArray != null)
-                {
-                    var normalOffset = i * 3;
-                    if (normalOffset + 2 < normalArray.Data.Length &&
-                        IsValidCompanionVector(normalArray.Data[normalOffset],
-                            normalArray.Data[normalOffset + 1],
-                            normalArray.Data[normalOffset + 2]))
-                    {
-                        normals[canonicalVertexOffset] = normalArray.Data[normalOffset];
-                        normals[canonicalVertexOffset + 1] = normalArray.Data[normalOffset + 1];
-                        normals[canonicalVertexOffset + 2] = normalArray.Data[normalOffset + 2];
-                        hasNormals = true;
-                    }
-                }
-
-                if (colorArray != null)
-                {
-                    var colorOffset = i * 4;
-                    if (colorOffset + 2 < colorArray.Data.Length &&
-                        IsValidColor(colorArray.Data[colorOffset],
-                            colorArray.Data[colorOffset + 1],
-                            colorArray.Data[colorOffset + 2]))
-                    {
-                        var canonicalColorOffset = canonicalIndex * 4;
-                        colors[canonicalColorOffset] = colorArray.Data[colorOffset];
-                        colors[canonicalColorOffset + 1] = colorArray.Data[colorOffset + 1];
-                        colors[canonicalColorOffset + 2] = colorArray.Data[colorOffset + 2];
-                        colors[canonicalColorOffset + 3] = colorOffset + 3 < colorArray.Data.Length
-                            ? colorArray.Data[colorOffset + 3]
-                            : 1f;
-                        hasColors = true;
-                    }
-                }
-            }
-        }
-
-        if (occupied.Count(value => value) < 12)
-        {
-            return null;
-        }
-
-        var terrainMesh = new RuntimeTerrainMesh
-        {
-            Vertices = vertices,
-            Normals = hasNormals ? normals : null,
-            Colors = hasColors ? colors : null,
-            VertexDataOffset = vertexDataOffset
-        };
-
-        return RuntimeTerrainGridReconstructionService.Reconstruct(terrainMesh) == null ? null : terrainMesh;
+        return RuntimeTerrainQuadrantMeshBuilder.TryBuild(vertexArrays, normalArrays, colorArrays);
     }
 
-    private List<RuntimeFloatArraySlot> ReadDoubleIndirectedFloatArraySlots(
+    private List<RuntimeTerrainFloatArraySlot> ReadDoubleIndirectedFloatArraySlots(
         byte[] loadedDataBuffer,
         int ptrOffset,
         int slotCount,
@@ -814,7 +713,7 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
         float maxAbsValue,
         double minValidFraction)
     {
-        var result = new List<RuntimeFloatArraySlot>(slotCount);
+        var result = new List<RuntimeTerrainFloatArraySlot>(slotCount);
         if (ptrOffset + 4 > loadedDataBuffer.Length)
         {
             return result;
@@ -876,48 +775,10 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
                 continue;
             }
 
-            result.Add(new RuntimeFloatArraySlot(slot, data, dataFileOffset.Value));
+            result.Add(new RuntimeTerrainFloatArraySlot(slot, data, dataFileOffset.Value));
         }
 
         return result;
-    }
-
-    private static bool IsValidTerrainVertex(float x, float y, float z)
-    {
-        return IsNormalFinite(x) &&
-               IsNormalFinite(y) &&
-               IsNormalFinite(z) &&
-               MathF.Abs(x) <= TerrainLocalCoordinateLimit &&
-               MathF.Abs(y) <= TerrainLocalCoordinateLimit &&
-               MathF.Abs(z) <= TerrainHeightLimit &&
-               !(MathF.Abs(x) < 0.001f && MathF.Abs(y) < 0.001f && MathF.Abs(z) < 0.001f);
-    }
-
-    private static bool IsValidCompanionVector(float x, float y, float z)
-    {
-        return IsNormalFinite(x) && IsNormalFinite(y) && IsNormalFinite(z) &&
-               MathF.Abs(x) <= 2f && MathF.Abs(y) <= 2f && MathF.Abs(z) <= 2f;
-    }
-
-    private static bool IsValidColor(float r, float g, float b)
-    {
-        return IsNormalFinite(r) && IsNormalFinite(g) && IsNormalFinite(b) &&
-               r is >= 0f and <= 2f &&
-               g is >= 0f and <= 2f &&
-               b is >= 0f and <= 2f;
-    }
-
-    private static bool IsNormalFinite(float value)
-    {
-        return !float.IsNaN(value) && !float.IsInfinity(value);
-    }
-
-    private static (int X, int Y, float FitError)? TryMapLocalTerrainVertexToCanonicalCell(float x, float y)
-    {
-        var mapped = TerrainCoordinateMapper.TryMapLocalVertexToCanonicalCell(x, y);
-        return mapped == null
-            ? null
-            : (mapped.Value.X, mapped.Value.Y, mapped.Value.FitError);
     }
 
     /// <summary>
@@ -1209,8 +1070,6 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
         long Offset,
         byte[] Buffer);
 
-    private sealed record RuntimeFloatArraySlot(int Slot, float[] Data, long FileOffset);
-
     private sealed record RuntimeLandVisualExtraction(
         LandVisualData? VisualData,
         IReadOnlyList<LandscapeTextureRecord> LandTextures);
@@ -1257,11 +1116,7 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
     private const int RuntimeLandTextureHavokDataOffset = 44;
     private const int RuntimeLandTextureSpecularOffset = 47;
     private const int RuntimeLandTextureGrassListOffset = 48;
-    private const int TerrainQuadrantCount = 4;
-    private const int TerrainQuadrantVertexCount = 17 * 17;
-    private const float TerrainCellWorldSize = TerrainConstants.LandCellWorldSize;
-    private const float TerrainLocalCoordinateLimit = TerrainCellWorldSize;
-    private const float TerrainHeightLimit = 20_000f;
+    private const int TerrainQuadrantCount = RuntimeTerrainQuadrantMeshBuilder.QuadrantCount;
 
     #endregion
 }
