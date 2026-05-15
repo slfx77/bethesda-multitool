@@ -183,6 +183,8 @@ internal static class DmpCellAuthorityBuildCommand
             var label = $"dmp:{Path.GetFileName(dmpPath)}";
             var addedCells = 0;
             var observedCells = 0;
+
+            // Pass 1: raw runtime pCellMap (canonical for cells the runtime had loaded).
             foreach (var (worldspaceFormId, wsData) in loaded.Records.RuntimeWorldspaceMaps)
             {
                 foreach (var entry in wsData.Cells)
@@ -195,6 +197,27 @@ internal static class DmpCellAuthorityBuildCommand
                 }
             }
 
+            // Pass 2: cells the parsing pipeline resolved via high-confidence anchored runs
+            // (CellLinkageHandler.ResolveRuntimeAnchoredCellRuns). These cells aren't directly
+            // in the pCellMap, but they're members of a connected FormID/grid component anchored
+            // by a runtime-known cell — strong enough to treat as authoritative. Skips
+            // bounds-only inference (NoBoundsFallback / UniqueBounds / AmbiguousBounds), which
+            // are heuristics, not canonical signals.
+            foreach (var c in loaded.Records.Cells)
+            {
+                if (c.IsInterior ||
+                    c.WorldspaceFormId is not { } wsfId || wsfId == 0u ||
+                    c.WorldspaceAssignmentSource is not ("CellGrup" or "RuntimeCellMap" or "FragmentRun"))
+                {
+                    continue;
+                }
+                observedCells++;
+                if (authority.TryAddOrFlag(c.FormId, wsfId, label))
+                {
+                    addedCells++;
+                }
+            }
+
             foreach (var ws in loaded.Records.Worldspaces)
             {
                 authority.AddWorldspaceName(ws.FormId, ws.EditorId);
@@ -203,11 +226,12 @@ internal static class DmpCellAuthorityBuildCommand
             authority.AddSource("dmp", dmpPath, addedCells, observedCells);
             if (observedCells > 0)
             {
-                AnsiConsole.MarkupLine($"  added {addedCells} new cell→ws (of {observedCells} in pCellMap)");
+                AnsiConsole.MarkupLine(
+                    $"  added {addedCells} new cell→ws (of {observedCells} canonical observations)");
             }
             else
             {
-                AnsiConsole.MarkupLine("  [dim]no pCellMap entries, skipping[/]");
+                AnsiConsole.MarkupLine("  [dim]no canonical observations, skipping[/]");
             }
         }
         catch (Exception ex)
