@@ -103,6 +103,8 @@
     <EmbeddedResource Include="Core\Formats\Nif\nif.xml" LogicalName="FalloutXbox360Utils.nif.xml" />
     <EmbeddedResource Include="Core\Formats\Esm\Runtime\pdb_layouts.json"
                       LogicalName="FalloutXbox360Utils.pdb_layouts.json" />
+    <EmbeddedResource Include="Core\Formats\Esm\Export\Resources\comparison-renderer.js"
+                      LogicalName="FalloutXbox360Utils.comparison-renderer.js" />
     <EmbeddedResource Include="Core\Formats\Nif\Rendering\Gpu\Shaders\*.glsl" />
     <EmbeddedResource Include="Assets\MapMarkers\*.png" />
   </ItemGroup>
