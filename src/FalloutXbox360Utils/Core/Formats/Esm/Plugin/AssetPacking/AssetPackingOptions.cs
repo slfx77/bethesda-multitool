@@ -56,4 +56,21 @@ public sealed record AssetPackingOptions
     ///     If false (default), only summary counts are emitted.
     /// </summary>
     public bool VerbosePerAsset { get; init; }
+
+    /// <summary>
+    ///     If true, write a human-reviewable per-asset audit text file at
+    ///     <c>&lt;OutputBsaPath&gt;.missing.txt</c> with sections for missing, fuzzy-matched,
+    ///     and conversion-failed paths. Defaults to false — opt-in so the CLI/GUI can offer
+    ///     it as a deliberate choice.
+    /// </summary>
+    public bool WriteAuditFile { get; init; }
+
+    /// <summary>
+    ///     If true, the resolver consults secondary data folders before the FNV baseline.
+    ///     When a secondary has an asset that the baseline also has, the secondary's bytes
+    ///     are packed and the baseline copy is overridden at runtime. Defaults to false,
+    ///     which preserves the safer "baseline wins; only pack what the runtime is missing"
+    ///     behavior.
+    /// </summary>
+    public bool OverrideVanillaBaseline { get; init; }
 }

@@ -12,7 +12,7 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Plugin;
 
 /// <summary>
 ///     v17 tests covering the medium-tier encoder batch:
-///     CREA, CLAS, SOUN, TXST, CHAL, BPTD, ENCH, SPEL, PERK.
+///     CREA, CLAS, SOUN, TXST, LTEX, CHAL, BPTD, ENCH, SPEL, PERK.
 /// </summary>
 public class V17EncoderTests
 {
@@ -159,6 +159,36 @@ public class V17EncoderTests
         var encoded = TxstEncoder.EncodeNew(txst);
         var sigs = encoded.Subrecords.Select(s => s.Signature).ToList();
         Assert.Equal(["EDID", "TX00", "DNAM"], sigs);
+    }
+
+    [Fact]
+    public void LtexEncoder_EncodeNew_EmitsLandscapeTextureReferences()
+    {
+        var ltex = new LandscapeTextureRecord
+        {
+            FormId = 0x2450,
+            EditorId = "StripDirt",
+            IconPath = "textures/landscape/dirt.dds",
+            SmallIconPath = "textures/landscape/dirt_small.dds",
+            TextureSetFormId = 0x01020304,
+            HavokData = [1, 2, 3],
+            SpecularData = [4],
+            GrassFormIds = [0x11111111, 0x22222222]
+        };
+
+        var encoded = LtexEncoder.EncodeNew(ltex);
+        var sigs = encoded.Subrecords.Select(s => s.Signature).ToList();
+
+        Assert.Equal(["EDID", "ICON", "MICO", "TNAM", "HNAM", "SNAM", "GNAM", "GNAM"], sigs);
+        var tnam = Assert.Single(encoded.Subrecords, s => s.Signature == "TNAM").Bytes;
+        Assert.Equal(0x01020304u, BinaryPrimitives.ReadUInt32LittleEndian(tnam));
+        Assert.Equal(new byte[] { 1, 2, 3 }, Assert.Single(encoded.Subrecords, s => s.Signature == "HNAM").Bytes);
+        Assert.Equal(new byte[] { 4 }, Assert.Single(encoded.Subrecords, s => s.Signature == "SNAM").Bytes);
+        Assert.Equal([0x11111111u, 0x22222222u],
+            encoded.Subrecords
+                .Where(s => s.Signature == "GNAM")
+                .Select(s => BinaryPrimitives.ReadUInt32LittleEndian(s.Bytes))
+                .ToList());
     }
 
     // ====================================================================================
@@ -420,6 +450,8 @@ public class V17EncoderTests
         Assert.Contains(SounEncoder.EncodeNew(new SoundRecord { FormId = 1 }).Warnings,
             w => w.Contains("has no EditorId"));
         Assert.Contains(TxstEncoder.EncodeNew(new TextureSetRecord { FormId = 1 }).Warnings,
+            w => w.Contains("has no EditorId"));
+        Assert.Contains(LtexEncoder.EncodeNew(new LandscapeTextureRecord { FormId = 1 }).Warnings,
             w => w.Contains("has no EditorId"));
         Assert.Contains(ChalEncoder.EncodeNew(new ChallengeRecord { FormId = 1 }).Warnings,
             w => w.Contains("has no EditorId"));

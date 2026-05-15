@@ -75,9 +75,9 @@ public static class CellUtils
     public static (int worldX, int worldY) CellToWorldCoordinates(int cellX, int cellY, int localX = 0, int localY = 0)
     {
         var worldX = cellX * EsmConstants.CellWorldUnits +
-                     localX * EsmConstants.CellWorldUnits / EsmConstants.LandGridSize;
+                     (int)MathF.Round(localX * EsmConstants.UnitsPerVertex);
         var worldY = cellY * EsmConstants.CellWorldUnits +
-                     localY * EsmConstants.CellWorldUnits / EsmConstants.LandGridSize;
+                     (int)MathF.Round(localY * EsmConstants.UnitsPerVertex);
         return (worldX, worldY);
     }
 

@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 using Xunit;
 
@@ -90,10 +91,15 @@ public class CellEncoderExteriorTests
             FormId = 0xC0,
             EditorId = "Edid",
             FullName = "Display",
-            Flags = 0x00,
+            Flags = 0x02,
             GridX = 1,
             GridY = 2,
-            WaterHeight = -50f
+            WaterHeight = -50f,
+            Heightmap = new LandHeightmap
+            {
+                HeightOffset = 0f,
+                HeightDeltas = new sbyte[33 * 33]
+            }
         };
 
         var encoded = new CellEncoder().Encode(cell);

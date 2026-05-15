@@ -1,5 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Terrain;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Records;
 
@@ -12,10 +13,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Records;
 internal static class TerrainMeshIdentifier
 {
     private const int TerrainVertexCount = RuntimeTerrainMesh.VertexCount; // 1089
-    private const float CellWorldSize = 4096f;
-    private const float MinCellRange = 3500f;
-    private const float MaxCellRange = 5000f;
-    private const float MaxCoordinate = 200_000f;
+    private const float CellWorldSize = TerrainConstants.LandCellWorldSize;
 
     /// <summary>
     ///     Find terrain meshes among geometry-scanned results and create synthetic LAND records.
@@ -55,36 +53,6 @@ internal static class TerrainMeshIdentifier
 
             candidateCount++;
 
-            // Compute XY range and min values from valid vertices
-            var (minX, maxX, minY, maxY, validCount) = ComputeXYBounds(mesh.Vertices);
-
-            // Require 90% valid XY coordinates
-            if (validCount < TerrainVertexCount * 0.9)
-            {
-                continue;
-            }
-
-            var rangeX = maxX - minX;
-            var rangeY = maxY - minY;
-
-            // Terrain cells span ~4096 units in each dimension
-            if (rangeX < MinCellRange || rangeX > MaxCellRange ||
-                rangeY < MinCellRange || rangeY > MaxCellRange)
-            {
-                continue;
-            }
-
-            // Derive cell coordinates from minimum vertex positions
-            var cellX = (int)Math.Floor(minX / CellWorldSize);
-            var cellY = (int)Math.Floor(minY / CellWorldSize);
-
-            // Skip if this cell already exists
-            if (!existingCells.Add((cellX, cellY)))
-            {
-                duplicateCount++;
-                continue;
-            }
-
             // Convert ExtractedMesh → RuntimeTerrainMesh
             var terrainMesh = new RuntimeTerrainMesh
             {
@@ -94,14 +62,31 @@ internal static class TerrainMeshIdentifier
                 VertexDataOffset = mesh.VertexDataFileOffset > 0 ? mesh.VertexDataFileOffset : mesh.SourceOffset
             };
 
+            var reconstruction = RuntimeTerrainGridReconstructionService.Reconstruct(terrainMesh);
+            if (reconstruction == null)
+            {
+                continue;
+            }
+
+            // Derive cell coordinates from the reconstructed terrain bounds.
+            var cellX = (int)Math.Floor(reconstruction.MinX / CellWorldSize);
+            var cellY = (int)Math.Floor(reconstruction.MinY / CellWorldSize);
+
+            // Skip if this cell already exists.
+            if (!existingCells.Add((cellX, cellY)))
+            {
+                duplicateCount++;
+                continue;
+            }
+
             // Diagnose quality before sanitization
-            var preDiag = terrainMesh.DiagnoseQuality(cellX, cellY);
+            var preDiag = RuntimeTerrainDiagnosticService.DiagnoseQuality(terrainMesh, cellX, cellY);
 
             // Sanitize vertices
-            var sanitized = terrainMesh.SanitizeVertices();
+            var sanitized = RuntimeTerrainSanitizationService.Sanitize(terrainMesh);
 
             // Synthesize heightmap from sanitized mesh
-            var heightmap = sanitized.ToLandHeightmap();
+            var heightmap = RuntimeTerrainHeightmapEncoder.Encode(sanitized);
 
             results.Add(new ExtractedLandRecord
             {
@@ -121,32 +106,5 @@ internal static class TerrainMeshIdentifier
         }
 
         return results;
-    }
-
-    private static (float MinX, float MaxX, float MinY, float MaxY, int ValidCount) ComputeXYBounds(float[] vertices)
-    {
-        var minX = float.MaxValue;
-        var maxX = float.MinValue;
-        var minY = float.MaxValue;
-        var maxY = float.MinValue;
-        var validCount = 0;
-
-        for (var i = 0; i < TerrainVertexCount; i++)
-        {
-            var x = vertices[i * 3];
-            var y = vertices[i * 3 + 1];
-
-            if (!float.IsNaN(x) && !float.IsInfinity(x) && Math.Abs(x) <= MaxCoordinate &&
-                !float.IsNaN(y) && !float.IsInfinity(y) && Math.Abs(y) <= MaxCoordinate)
-            {
-                minX = Math.Min(minX, x);
-                maxX = Math.Max(maxX, x);
-                minY = Math.Min(minY, y);
-                maxY = Math.Max(maxY, y);
-                validCount++;
-            }
-        }
-
-        return (minX, maxX, minY, maxY, validCount);
     }
 }

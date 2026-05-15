@@ -6,6 +6,7 @@ using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
+using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
@@ -112,8 +113,10 @@ public sealed class NpcCompositionCoreTests(SampleFileFixture samples)
     }
 
     [Fact]
+    [Trait("Category", GpuTestGuard.Category)]
     public void VeronicaHeadPlan_DrivesCpuGpuAndGlbAdaptersFromSamePlan()
     {
+        GpuTestGuard.SkipUnlessEnabled();
         Assert.SkipWhen(samples.PcFinalEsm is null, "PC final ESM not available");
 
         using var assets = CreatePcAssets();

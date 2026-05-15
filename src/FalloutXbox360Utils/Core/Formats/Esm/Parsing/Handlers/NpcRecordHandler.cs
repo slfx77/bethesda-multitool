@@ -17,6 +17,15 @@ internal sealed class NpcRecordHandler(RecordParserContext context) : RecordHand
     {
         var npcs = ParseRecordList("NPC_", 16384, ParseNpcFromAccessor, ParseNpcFromScanResult);
 
+        // v22: the memory carver finds the same NPC signature at multiple offsets when the
+        // runtime keeps mirror copies (template instances, runtime spawns, etc.). Keeping
+        // them all would emit duplicate NPC records in the output plugin. Dedup by FormID
+        // first-wins — accessor-found records are richer than scan-only fallbacks anyway.
+        if (npcs.Count > 1)
+        {
+            npcs = npcs.GroupBy(n => n.FormId).Select(g => g.First()).ToList();
+        }
+
         Context.MergeRuntimeRecords(npcs, 0x2A, n => n.FormId,
             (reader, entry) => reader.ReadRuntimeNpc(entry), "NPCs");
 
@@ -55,6 +64,7 @@ internal sealed class NpcRecordHandler(RecordParserContext context) : RecordHand
         string? fullName = null;
         ActorBaseSubrecord? stats = null;
         byte[]? specialStats = null;
+        int? baseHealth = null;
         byte[]? skills = null;
         uint? race = null;
         uint? script = null;
@@ -189,6 +199,14 @@ internal sealed class NpcRecordHandler(RecordParserContext context) : RecordHand
                 case "DATA" when sub.DataLength == 11:
                 {
                     // NPC_ DATA: Int32 BaseHealth + 7 UInt8 SPECIAL (ST, PE, EN, CH, IN, AG, LK)
+                    var rawHealth = record.IsBigEndian
+                        ? BinaryPrimitives.ReadInt32BigEndian(subData)
+                        : BinaryPrimitives.ReadInt32LittleEndian(subData);
+                    if (rawHealth > 0)
+                    {
+                        baseHealth = rawHealth;
+                    }
+
                     specialStats =
                         [subData[4], subData[5], subData[6], subData[7], subData[8], subData[9], subData[10]];
                     break;
@@ -225,6 +243,7 @@ internal sealed class NpcRecordHandler(RecordParserContext context) : RecordHand
             FullName = fullName,
             Stats = stats,
             SpecialStats = specialStats,
+            BaseHealth = baseHealth,
             Skills = skills,
             AiData = aiData,
             Race = race,

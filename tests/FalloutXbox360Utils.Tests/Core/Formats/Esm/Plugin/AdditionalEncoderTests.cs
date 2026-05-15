@@ -128,7 +128,11 @@ public class AdditionalEncoderTests
         var acbs = Assert.Single(encoded.Subrecords);
         Assert.Equal("ACBS", acbs.Signature);
         Assert.Equal(24, acbs.Bytes.Length);
-        Assert.Equal(0x12345678u, BinaryPrimitives.ReadUInt32LittleEndian(acbs.Bytes.AsSpan(0, 4)));
+        // NpcEncoder.Encode (override path) forces ACBS bit 0x10 (AutoCalcStats) so the
+        // engine derives HP/AP from Level + Class + SPECIAL rather than trusting the
+        // captured runtime Flags (which routinely have AutoCalc cleared after computation).
+        // Bit 0x01 is Female — do NOT force it; that would sex-swap every male NPC.
+        Assert.Equal(0x12345678u | 0x10u, BinaryPrimitives.ReadUInt32LittleEndian(acbs.Bytes.AsSpan(0, 4)));
         Assert.Equal((ushort)100, BinaryPrimitives.ReadUInt16LittleEndian(acbs.Bytes.AsSpan(4, 2)));
         Assert.Equal((ushort)250, BinaryPrimitives.ReadUInt16LittleEndian(acbs.Bytes.AsSpan(6, 2)));
         Assert.Equal((short)-5, BinaryPrimitives.ReadInt16LittleEndian(acbs.Bytes.AsSpan(8, 2)));

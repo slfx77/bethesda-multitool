@@ -28,7 +28,14 @@ public sealed class NpcEncoder : IRecordEncoder
 
         if (npc.Stats is not null)
         {
-            subs.Add(new EncodedSubrecord("ACBS", BuildAcbsSubrecord(npc.Stats)));
+            // v22: force AutoCalcStats on override ACBS too. The override path replaces the
+            // master's ACBS Flags wholesale, which would clear master's AutoCalcStats bit if
+            // the captured runtime Flags doesn't include it (we routinely see captured
+            // Flags = 0x01 / Biped-only). Without AutoCalc the engine reads manual stats
+            // from captured CalcMin/Max + Level, which for prototype runtime values often
+            // produces 0 HP and the NPC spawns dead. Forcing AutoCalc makes the engine
+            // recompute HP from Class + Level + SPECIAL so the NPC stays alive.
+            subs.Add(new EncodedSubrecord("ACBS", BuildAcbsSubrecord(npc.Stats, forceAutoCalc: true)));
         }
         else
         {
@@ -99,12 +106,19 @@ public sealed class NpcEncoder : IRecordEncoder
         var subs = new List<EncodedSubrecord>();
         var warnings = new List<string>();
 
+        // v22: GECK and in-game tooltips show the FormID as the NPC's name when the EDID
+        // is empty, which leaves the user without a searchable handle in the Object Window.
+        // Synthesize one from the captured FullName (preferred) or fall back to a stable
+        // FormID-suffixed prefix so the NPC is at least listable and sortable.
+        var editorId = !string.IsNullOrEmpty(npc.EditorId)
+            ? npc.EditorId
+            : SynthesizeEditorId(npc);
+        subs.Add(NewRecordSubrecords.EncodeStringSubrecord("EDID", editorId));
         if (string.IsNullOrEmpty(npc.EditorId))
         {
-            warnings.Add($"New NPC 0x{npc.FormId:X8} has no EditorId — emitting empty EDID.");
+            warnings.Add(
+                $"New NPC 0x{npc.FormId:X8} had no EditorId in the DMP — synthesized '{editorId}'.");
         }
-
-        subs.Add(NewRecordSubrecords.EncodeStringSubrecord("EDID", npc.EditorId ?? string.Empty));
 
         if (!string.IsNullOrEmpty(npc.FullName))
         {
@@ -118,7 +132,12 @@ public sealed class NpcEncoder : IRecordEncoder
         }
         else
         {
-            subs.Add(new EncodedSubrecord("ACBS", BuildAcbsSubrecord(npc.Stats)));
+            // v22: force AutoCalcStats (bit 0x10) on new NPCs so the engine derives HP / AP
+            // from Level + Class + SPECIAL instead of trusting the captured runtime Flags.
+            // Without AutoCalc, prototype NPCs (e.g. Ulysses) spawn dead because the
+            // captured Flags is just 0x01 (Biped only) and the manual stats path computes
+            // 0 health when class derived-attributes don't match the captured level.
+            subs.Add(new EncodedSubrecord("ACBS", BuildAcbsSubrecord(npc.Stats, forceAutoCalc: true)));
         }
 
         // SNAM faction memberships — 8 bytes each: FormID + uint8 rank + 3 padding.
@@ -219,11 +238,14 @@ public sealed class NpcEncoder : IRecordEncoder
 
         // NPC_ DATA — 11 bytes per FNV schema: int32 BaseHealth + 7 SPECIAL bytes
         // (Strength, Perception, Endurance, Charisma, Intelligence, Agility, Luck).
-        // BaseHealth not in model — leave as zero (engine computes from Endurance + level).
+        // BaseHealth resolves from: model-captured (on-disk DATA or runtime iHealth) →
+        // synthesized from SPECIAL Endurance + Stats Level via the CsvActorWriter formula.
+        // AutoCalcStats alone (v22) was insufficient; emitting a non-zero value gives the
+        // engine a usable fallback when AutoCalc doesn't fire for new NPCs.
         if (npc.SpecialStats is { Length: 7 } special)
         {
             var data = new byte[11];
-            // bytes 0-3 = BaseHealth (zero)
+            SubrecordEncoder.WriteInt32(data, 0, ResolveBaseHealth(npc, special));
             Array.Copy(special, 0, data, 4, 7);
             subs.Add(new EncodedSubrecord("DATA", data));
         }
@@ -250,6 +272,24 @@ public sealed class NpcEncoder : IRecordEncoder
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
     }
 
+    /// <summary>
+    ///     Resolve the BaseHealth int32 to emit in the NPC_ DATA subrecord (bytes 0-3).
+    ///     Priority: model-captured value (on-disk DATA or runtime iHealth at PDB +196) →
+    ///     synthesized from SPECIAL Endurance + Stats Level using the same formula as
+    ///     CsvActorWriter (Endurance × 5 + 50 + Level × 10).
+    /// </summary>
+    private static int ResolveBaseHealth(NpcRecord npc, byte[] special)
+    {
+        if (npc.BaseHealth is > 0)
+        {
+            return npc.BaseHealth.Value;
+        }
+
+        var endurance = special[2];
+        var level = npc.Stats?.Level ?? 1;
+        return endurance * 5 + 50 + level * 10;
+    }
+
     private static EncodedSubrecord BuildFloatArraySubrecord(string signature, float[] values)
     {
         var bytes = new byte[values.Length * 4];
@@ -261,10 +301,28 @@ public sealed class NpcEncoder : IRecordEncoder
         return new EncodedSubrecord(signature, bytes);
     }
 
-    private static byte[] BuildAcbsSubrecord(ActorBaseSubrecord s)
+    private static byte[] BuildAcbsSubrecord(ActorBaseSubrecord s, bool forceAutoCalc = false)
     {
+        // ACBS Flags bits (per FlagRegistry.ActorBaseFlags / fopdoc):
+        //   0x01=Female, 0x02=Essential, 0x04=IsCharGenFacePreset, 0x08=Respawn,
+        //   0x10=AutoCalcStats, 0x20=PCLevelMult, 0x40=UseTemplate,
+        //   0x80=NoLowLevelProcessing, etc.
+        var flags = s.Flags;
+        if (forceAutoCalc)
+        {
+            // Force AutoCalcStats (bit 0x10) so the engine derives HP / AP from Level +
+            // Class + SPECIAL instead of trusting the captured runtime Flags. The DMP often
+            // captures Flags = 0x00 because the runtime cleared AutoCalc once stats were
+            // computed; without re-setting it, the engine reads the manual-stat path which
+            // can yield 0 HP on prototype data and spawn the NPC dead.
+            //
+            // DO NOT OR in 0x01 here — that bit is Female (NOT Biped, despite an earlier
+            // misreading of the spec). Forcing 0x01 sex-swaps every male NPC in the output.
+            flags |= 0x00000010u;
+        }
+
         var acbs = new byte[24];
-        SubrecordEncoder.WriteUInt32(acbs, 0, s.Flags);
+        SubrecordEncoder.WriteUInt32(acbs, 0, flags);
         SubrecordEncoder.WriteUInt16(acbs, 4, s.FatigueBase);
         SubrecordEncoder.WriteUInt16(acbs, 6, s.BarterGold);
         SubrecordEncoder.WriteInt16(acbs, 8, s.Level);
@@ -284,5 +342,48 @@ public sealed class NpcEncoder : IRecordEncoder
         SubrecordEncoder.WriteInt16(acbs, 8, 1);
         SubrecordEncoder.WriteUInt16(acbs, 14, 100);
         return acbs;
+    }
+
+    /// <summary>
+    ///     Build a fallback EditorID for a new NPC whose DMP capture didn't include one.
+    ///     Uses the captured FullName when present (kebab-cased + FormID-suffixed) so the
+    ///     name remains stable across runs; otherwise emits a plain <c>DmpNpc_NNNNNNNN</c>
+    ///     prefix so the GECK Object Window can still list/sort/search the record.
+    /// </summary>
+    private static string SynthesizeEditorId(NpcRecord npc)
+    {
+        var suffix = $"_{npc.FormId:X8}";
+        if (string.IsNullOrEmpty(npc.FullName))
+        {
+            return "DmpNpc" + suffix;
+        }
+
+        // Sanitize: keep alnum + underscore, collapse runs, cap length so EDID + suffix
+        // stays under the engine's 64-byte cap with slack to spare.
+        var maxBaseLen = Math.Max(1, 40 - suffix.Length);
+        var buffer = new char[maxBaseLen];
+        var write = 0;
+        var lastWasUnderscore = false;
+        foreach (var c in npc.FullName!)
+        {
+            if (write >= maxBaseLen)
+            {
+                break;
+            }
+
+            if (char.IsLetterOrDigit(c))
+            {
+                buffer[write++] = c;
+                lastWasUnderscore = false;
+            }
+            else if (!lastWasUnderscore && write > 0)
+            {
+                buffer[write++] = '_';
+                lastWasUnderscore = true;
+            }
+        }
+
+        var baseName = write > 0 ? new string(buffer, 0, write).TrimEnd('_') : "DmpNpc";
+        return baseName + suffix;
     }
 }

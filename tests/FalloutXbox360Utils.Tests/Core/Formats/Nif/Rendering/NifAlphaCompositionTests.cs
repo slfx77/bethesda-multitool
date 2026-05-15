@@ -1,6 +1,7 @@
 using FalloutXbox360Utils.Core.Formats.Dds;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
+using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
@@ -55,8 +56,10 @@ public sealed class NifAlphaCompositionTests
     }
 
     [Fact]
+    [Trait("Category", GpuTestGuard.Category)]
     public void Render_CpuAndGpu_PreserveOpaqueBaseThroughTransparentGrime()
     {
+        GpuTestGuard.SkipUnlessEnabled();
         using var _ = new RendererStateScope();
         using var textureResolver = new NifTextureResolver();
         textureResolver.InjectTexture(BackTexturePath, CreateTexture(1, 1, (0, 0, 255, 255)));
@@ -105,8 +108,10 @@ public sealed class NifAlphaCompositionTests
     }
 
     [Fact]
+    [Trait("Category", GpuTestGuard.Category)]
     public void Render_Gpu_CutoutWritesSolidAlphaAfterDiscard()
     {
+        GpuTestGuard.SkipUnlessEnabled();
         using var _ = new RendererStateScope();
         using var textureResolver = new NifTextureResolver();
         textureResolver.InjectTexture(
@@ -144,6 +149,7 @@ public sealed class NifAlphaCompositionTests
     }
 
     [Theory]
+    [Trait("Category", GpuTestGuard.Category)]
     [InlineData((byte)0, (byte)1)]
     [InlineData((byte)2, (byte)3)]
     [InlineData((byte)6, (byte)7)]
@@ -151,6 +157,7 @@ public sealed class NifAlphaCompositionTests
         byte srcBlendMode,
         byte dstBlendMode)
     {
+        GpuTestGuard.SkipUnlessEnabled();
         using var _ = new RendererStateScope();
         using var textureResolver = new NifTextureResolver();
         textureResolver.InjectTexture(BackTexturePath, CreateTexture(1, 1, (0, 0, 255, 255)));
@@ -208,8 +215,10 @@ public sealed class NifAlphaCompositionTests
     }
 
     [Fact]
+    [Trait("Category", GpuTestGuard.Category)]
     public void Render_EmissiveWithoutVertexColorFlag_PreservesAlphaButNeutralizesRgb()
     {
+        GpuTestGuard.SkipUnlessEnabled();
         using var _ = new RendererStateScope();
         using var textureResolver = new NifTextureResolver();
         textureResolver.InjectTexture(

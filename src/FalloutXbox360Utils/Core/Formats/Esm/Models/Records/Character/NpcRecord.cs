@@ -54,6 +54,14 @@ public record NpcRecord
     public byte[]? SpecialStats { get; init; }
 
     /// <summary>
+    ///     Base health value. On-disk source: NPC_ DATA bytes 0-3 (Int32, little-endian).
+    ///     Runtime source: TESActorBase iHealth via TESHealthForm base class at PDB
+    ///     offset 196 + build shift. Null when neither path captured a non-zero value;
+    ///     consumers should synthesize from SPECIAL Endurance + Level when emitting.
+    /// </summary>
+    public int? BaseHealth { get; init; }
+
+    /// <summary>
     ///     Skills (14 bytes at dump +211, within TESNPCData struct after SPECIAL).
     ///     Order: Barter, BigGuns, EnergyWeapons, Explosives, Lockpick, Medicine, MeleeWeapons,
     ///     Repair, Science, Guns, Sneak, Speech, Survival, Unarmed.

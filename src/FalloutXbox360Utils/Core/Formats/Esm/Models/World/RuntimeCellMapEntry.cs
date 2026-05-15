@@ -27,6 +27,12 @@ public record RuntimeCellMapEntry
     /// <summary>FormID of the parent worldspace (from pWorldSpace pointer).</summary>
     public uint? WorldspaceFormId { get; init; }
 
+    /// <summary>
+    ///     Raw FormID read from the cell's own pWorldSpace pointer before the owning pCellMap
+    ///     is used as the effective worldspace.
+    /// </summary>
+    public uint? RawWorldspaceFormId { get; init; }
+
     /// <summary>FormID of the associated LAND record (from pCellLand pointer).</summary>
     public uint? LandFormId { get; init; }
 

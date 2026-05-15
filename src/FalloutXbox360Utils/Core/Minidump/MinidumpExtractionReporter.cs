@@ -70,6 +70,8 @@ internal static class MinidumpExtractionReporter
             if (supplementaryRecords != null)
                 semanticResult = supplementaryRecords.MergeWith(semanticResult);
 
+            var worldspaceNames = WorldspaceNameIndex.Build(semanticResult, analysisResult.FormIdMap);
+
             // Generate all GECK-style reports (split CSVs + assets + runtime EditorIDs)
             var sources = new ReportDataSources(
                 semanticResult, analysisResult.FormIdMap,
@@ -105,39 +107,68 @@ internal static class MinidumpExtractionReporter
             });
 
             // Export heightmaps as PNG images (grayscale - individual cells lack context for color gradients)
-            if (analysisResult.EsmRecords.Heightmaps.Count > 0)
+            var hasStandaloneHeightmaps = analysisResult.EsmRecords.Heightmaps.Count > 0;
+            var hasLandHeightmaps = analysisResult.EsmRecords.LandRecords.Any(l => l.Heightmap != null);
+            var hasLandVisuals = analysisResult.EsmRecords.LandRecords.Any(l =>
+                l.VisualData?.HasAny == true || l.RuntimeTerrainMesh?.HasColors == true);
+            if (hasStandaloneHeightmaps || hasLandHeightmaps || hasLandVisuals)
             {
                 var heightmapsDir = Path.Combine(esmDir, "heightmaps");
-                await HeightmapPngExporter.ExportAsync(
-                    analysisResult.EsmRecords.Heightmaps,
-                    analysisResult.EsmRecords.CellGrids,
-                    heightmapsDir,
-                    false);
-                heightmapsExported = analysisResult.EsmRecords.Heightmaps.Count;
+                var standaloneHeightmaps = analysisResult.EsmRecords.Heightmaps;
+                var heightmapExportService = new HeightmapExportService();
+                if (hasStandaloneHeightmaps)
+                {
+                    var standaloneMatches = StandaloneHeightmapResolver.Resolve(
+                        analysisResult.EsmRecords.Heightmaps,
+                        analysisResult.EsmRecords.LandRecords);
+                    StandaloneHeightmapResolver.WriteCsv(
+                        Path.Combine(heightmapsDir, "standalone_heightmap_diagnostics.csv"),
+                        standaloneMatches,
+                        worldspaceNames);
+                    standaloneHeightmaps = standaloneMatches
+                        .Where(row => row.Status != StandaloneHeightmapStatus.ExactLandMatch)
+                        .Select(row => row.Heightmap)
+                        .ToList();
+
+                    await heightmapExportService.ExportStandaloneHeightmapsAsync(
+                        standaloneHeightmaps,
+                        analysisResult.EsmRecords.CellGrids,
+                        heightmapsDir,
+                        false);
+                }
+
+                if (hasLandHeightmaps)
+                {
+                    await heightmapExportService.ExportLandRecordsAsync(
+                        analysisResult.EsmRecords.LandRecords,
+                        heightmapsDir,
+                        false,
+                        worldspaceNames);
+                }
+
+                if (hasLandVisuals)
+                {
+                    await heightmapExportService.ExportLandVisualsAsync(
+                        analysisResult.EsmRecords.LandRecords,
+                        heightmapsDir,
+                        worldspaceNames);
+                }
+
+                heightmapsExported = standaloneHeightmaps.Count +
+                                     analysisResult.EsmRecords.LandRecords.Count(l => l.Heightmap != null);
 
                 // Also try to generate composite worldmap (grayscale for consistency)
                 // Use LAND records as primary positioning source when available
                 if (analysisResult.EsmRecords.CellGrids.Count > 0 ||
                     analysisResult.EsmRecords.LandRecords.Count > 0)
                 {
-                    var worldmapPath = Path.Combine(esmDir, "worldmap_composite.png");
-                    if (analysisResult.EsmRecords.LandRecords.Count > 0)
-                    {
-                        await HeightmapPngExporter.ExportCompositeWorldmapAsync(
-                            analysisResult.EsmRecords.Heightmaps,
-                            analysisResult.EsmRecords.CellGrids,
-                            analysisResult.EsmRecords.LandRecords,
-                            worldmapPath,
-                            false);
-                    }
-                    else
-                    {
-                        await HeightmapPngExporter.ExportCompositeWorldmapAsync(
-                            analysisResult.EsmRecords.Heightmaps,
-                            analysisResult.EsmRecords.CellGrids,
-                            worldmapPath,
-                            false);
-                    }
+                    await heightmapExportService.ExportWorldspaceCompositeWorldmapsAsync(
+                        standaloneHeightmaps,
+                        analysisResult.EsmRecords.CellGrids,
+                        analysisResult.EsmRecords.LandRecords,
+                        heightmapsDir,
+                        false,
+                        worldspaceNames);
                 }
             }
 
@@ -310,4 +341,5 @@ internal static class MinidumpExtractionReporter
             await CarveManifest.SaveAsync(extractDir, entries);
         }
     }
+
 }

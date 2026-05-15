@@ -11,6 +11,12 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
 /// </summary>
 internal static class CellLinkageHandler
 {
+    private const string SourceNoBoundsFallback = "NoBoundsFallback";
+    private const string SourceUniqueBounds = "UniqueBounds";
+    private const string SourceAmbiguousBounds = "AmbiguousBounds";
+    private const string SourceFragmentRun = "FragmentRun";
+    private const string SourceRuntimeCellMap = "RuntimeCellMap";
+
     /// <summary>
     ///     DMP fallback: infer worldspace membership for exterior cells by testing grid coordinates
     ///     against worldspace bounds (NAM0/NAM9 or MNAM cell ranges). Called when no GRUP hierarchy
@@ -23,35 +29,7 @@ internal static class CellLinkageHandler
             return;
         }
 
-        // Build bounding boxes in cell grid coordinates from each worldspace's bounds data.
-        // Prefer MNAM (explicit cell ranges) over NAM0/NAM9 (world unit coordinates).
-        var worldspaceBounds =
-            new List<(WorldspaceRecord Ws, int MinCellX, int MinCellY, int MaxCellX, int MaxCellY)>();
-        foreach (var ws in worldspaces)
-        {
-            int minCellX, minCellY, maxCellX, maxCellY;
-
-            if (ws.MapNWCellX.HasValue && ws.MapSECellX.HasValue)
-            {
-                // MNAM: explicit cell ranges (NW = top-left, SE = bottom-right)
-                minCellX = Math.Min(ws.MapNWCellX.Value, ws.MapSECellX.Value);
-                maxCellX = Math.Max(ws.MapNWCellX.Value, ws.MapSECellX.Value);
-                minCellY = Math.Min(ws.MapNWCellY!.Value, ws.MapSECellY!.Value);
-                maxCellY = Math.Max(ws.MapNWCellY.Value, ws.MapSECellY.Value);
-            }
-            else if (ws.BoundsMinX.HasValue && ws.BoundsMaxX.HasValue)
-            {
-                // NAM0/NAM9: world unit coordinates, convert to cell grid
-                (minCellX, minCellY) = CellUtils.WorldToCellCoordinates(ws.BoundsMinX.Value, ws.BoundsMinY!.Value);
-                (maxCellX, maxCellY) = CellUtils.WorldToCellCoordinates(ws.BoundsMaxX.Value, ws.BoundsMaxY!.Value);
-            }
-            else
-            {
-                continue; // No bounds data available
-            }
-
-            worldspaceBounds.Add((ws, minCellX, minCellY, maxCellX, maxCellY));
-        }
+        var worldspaceBounds = BuildWorldspaceBounds(worldspaces);
 
         if (worldspaceBounds.Count == 0)
         {
@@ -63,7 +41,12 @@ internal static class CellLinkageHandler
                 var cell = cells[i];
                 if (!cell.IsInterior && cell.GridX.HasValue && cell.WorldspaceFormId is null or 0)
                 {
-                    cells[i] = cell with { WorldspaceFormId = fallback.FormId };
+                    cells[i] = cell with
+                    {
+                        WorldspaceFormId = fallback.FormId,
+                        WorldspaceAssignmentSource = SourceNoBoundsFallback,
+                        CandidateWorldspaceFormIds = [fallback.FormId]
+                    };
                 }
             }
 
@@ -72,17 +55,8 @@ internal static class CellLinkageHandler
             return;
         }
 
-        // Sort by area ascending so the smallest (most specific) containing worldspace
-        // wins for nested worldspaces (e.g. DLC zones inside the main Wasteland WRLD).
-        // Matches the disambiguation order used by BuildWorldspaceBoundsFromCellMaps.
-        worldspaceBounds.Sort((a, b) =>
-        {
-            var areaA = (long)(a.MaxCellX - a.MinCellX) * (a.MaxCellY - a.MinCellY);
-            var areaB = (long)(b.MaxCellX - b.MinCellX) * (b.MaxCellY - b.MinCellY);
-            return areaA.CompareTo(areaB);
-        });
-
         var inferredCount = 0;
+        var ambiguousCount = 0;
         for (var i = 0; i < cells.Count; i++)
         {
             var cell = cells[i];
@@ -93,23 +67,245 @@ internal static class CellLinkageHandler
 
             var gx = cell.GridX.Value;
             var gy = cell.GridY!.Value;
-
-            // Find matching worldspace (prefer smallest by area = first in sorted list,
-            // so a child worldspace wins over its parent when their bounds overlap).
-            foreach (var (ws, minX, minY, maxX, maxY) in worldspaceBounds)
+            var candidates = FindCandidateWorldspaces(worldspaceBounds, gx, gy);
+            if (candidates.Count == 0)
             {
-                if (gx >= minX && gx <= maxX && gy >= minY && gy <= maxY)
+                continue;
+            }
+
+            if (candidates.Count == 1)
+            {
+                cells[i] = cell with
                 {
-                    cells[i] = cell with { WorldspaceFormId = ws.FormId };
-                    inferredCount++;
-                    break;
-                }
+                    WorldspaceFormId = candidates[0],
+                    WorldspaceAssignmentSource = SourceUniqueBounds,
+                    CandidateWorldspaceFormIds = candidates
+                };
+                inferredCount++;
+            }
+            else
+            {
+                cells[i] = cell with
+                {
+                    WorldspaceAssignmentSource = SourceAmbiguousBounds,
+                    CandidateWorldspaceFormIds = candidates
+                };
+                ambiguousCount++;
             }
         }
 
         Logger.Instance.Debug(
-            $"  [Semantic] InferCellWorldspaces: inferred {inferredCount} cells across {worldspaceBounds.Count} worldspaces");
+            $"  [Semantic] InferCellWorldspaces: inferred {inferredCount} cells, left {ambiguousCount} ambiguous across {worldspaceBounds.Count} worldspaces");
     }
+
+    /// <summary>
+    ///     Resolve ambiguous DMP cells by connected FormID/grid runs anchored by runtime pCellMap ownership.
+    /// </summary>
+    internal static int ResolveRuntimeAnchoredCellRuns(
+        List<CellRecord> cells,
+        List<WorldspaceRecord> worldspaces,
+        IReadOnlyDictionary<uint, RuntimeWorldspaceData>? runtimeWorldspaceMaps)
+    {
+        if (cells.Count == 0 || runtimeWorldspaceMaps is not { Count: > 0 })
+        {
+            return 0;
+        }
+
+        var bounds = BuildWorldspaceBounds(worldspaces);
+        var runtimeOwnerByCell = new Dictionary<uint, uint>();
+        foreach (var (worldspaceFormId, worldspaceData) in runtimeWorldspaceMaps)
+        {
+            foreach (var entry in worldspaceData.Cells)
+            {
+                runtimeOwnerByCell.TryAdd(entry.CellFormId, worldspaceFormId);
+            }
+        }
+
+        if (runtimeOwnerByCell.Count == 0)
+        {
+            return 0;
+        }
+
+        var indexByFormId = new Dictionary<uint, int>();
+        for (var i = 0; i < cells.Count; i++)
+        {
+            if (!cells[i].IsInterior && cells[i].GridX.HasValue && cells[i].GridY.HasValue)
+            {
+                indexByFormId.TryAdd(cells[i].FormId, i);
+            }
+        }
+
+        var visited = new HashSet<uint>();
+        var reassigned = 0;
+        var startFormIds = cells
+            .Where(c => indexByFormId.ContainsKey(c.FormId))
+            .Select(c => c.FormId)
+            .ToList();
+        foreach (var startFormId in startFormIds)
+        {
+            if (!visited.Add(startFormId))
+            {
+                continue;
+            }
+
+            var component = BuildAdjacentFormIdComponent(startFormId, cells, indexByFormId, visited);
+            var anchorWorldspaces = component
+                .Select(index => cells[index].FormId)
+                .Where(runtimeOwnerByCell.ContainsKey)
+                .Select(formId => runtimeOwnerByCell[formId])
+                .Distinct()
+                .ToList();
+            if (anchorWorldspaces.Count != 1)
+            {
+                continue;
+            }
+
+            var anchorWorldspace = anchorWorldspaces[0];
+            foreach (var index in component)
+            {
+                var candidate = cells[index];
+                if (runtimeOwnerByCell.ContainsKey(candidate.FormId) ||
+                    candidate.WorldspaceAssignmentSource is "CellGrup" or SourceRuntimeCellMap)
+                {
+                    continue;
+                }
+
+                if (!CanAssignToAnchoredWorldspace(candidate, anchorWorldspace, bounds))
+                {
+                    continue;
+                }
+
+                var candidates = candidate.CandidateWorldspaceFormIds.Count > 0
+                    ? candidate.CandidateWorldspaceFormIds
+                    : FindCandidateWorldspaces(bounds, candidate.GridX!.Value, candidate.GridY!.Value);
+                cells[index] = candidate with
+                {
+                    WorldspaceFormId = anchorWorldspace,
+                    WorldspaceAssignmentSource = SourceFragmentRun,
+                    CandidateWorldspaceFormIds = candidates.Count > 0 ? candidates : [anchorWorldspace]
+                };
+                reassigned++;
+            }
+        }
+
+        if (reassigned > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] ResolveRuntimeAnchoredCellRuns: reassigned {reassigned} ambiguous cells from runtime-anchored fragments");
+        }
+
+        return reassigned;
+    }
+
+    private static List<int> BuildAdjacentFormIdComponent(
+        uint startFormId,
+        IReadOnlyList<CellRecord> cells,
+        IReadOnlyDictionary<uint, int> indexByFormId,
+        ISet<uint> visited)
+    {
+        var component = new List<int>();
+        var queue = new Queue<uint>();
+        queue.Enqueue(startFormId);
+
+        while (queue.Count > 0)
+        {
+            var formId = queue.Dequeue();
+            if (!indexByFormId.TryGetValue(formId, out var index))
+            {
+                continue;
+            }
+
+            component.Add(index);
+            foreach (var neighborFormId in new[] { formId - 1, formId + 1 })
+            {
+                if (!indexByFormId.TryGetValue(neighborFormId, out var neighborIndex))
+                {
+                    continue;
+                }
+
+                var cell = cells[index];
+                var neighbor = cells[neighborIndex];
+                var manhattan = Math.Abs(cell.GridX!.Value - neighbor.GridX!.Value) +
+                                Math.Abs(cell.GridY!.Value - neighbor.GridY!.Value);
+                if (manhattan == 1 && visited.Add(neighborFormId))
+                {
+                    queue.Enqueue(neighborFormId);
+                }
+            }
+        }
+
+        return component;
+    }
+
+    private static bool CanAssignToAnchoredWorldspace(
+        CellRecord cell,
+        uint anchorWorldspace,
+        IReadOnlyList<WorldspaceBounds> bounds)
+    {
+        if (!cell.GridX.HasValue || !cell.GridY.HasValue)
+        {
+            return false;
+        }
+
+        if (cell.CandidateWorldspaceFormIds.Count > 0)
+        {
+            return cell.CandidateWorldspaceFormIds.Contains(anchorWorldspace);
+        }
+
+        var candidates = FindCandidateWorldspaces(bounds, cell.GridX.Value, cell.GridY.Value);
+        return candidates.Count == 0 || candidates.Contains(anchorWorldspace);
+    }
+
+    private static List<WorldspaceBounds> BuildWorldspaceBounds(IEnumerable<WorldspaceRecord> worldspaces)
+    {
+        var bounds = new List<WorldspaceBounds>();
+        foreach (var ws in worldspaces)
+        {
+            int minCellX, minCellY, maxCellX, maxCellY;
+
+            if (ws.MapNWCellX.HasValue && ws.MapSECellX.HasValue)
+            {
+                minCellX = Math.Min(ws.MapNWCellX.Value, ws.MapSECellX.Value);
+                maxCellX = Math.Max(ws.MapNWCellX.Value, ws.MapSECellX.Value);
+                minCellY = Math.Min(ws.MapNWCellY!.Value, ws.MapSECellY!.Value);
+                maxCellY = Math.Max(ws.MapNWCellY.Value, ws.MapSECellY.Value);
+            }
+            else if (ws.BoundsMinX.HasValue && ws.BoundsMaxX.HasValue)
+            {
+                (minCellX, minCellY) = CellUtils.WorldToCellCoordinates(ws.BoundsMinX.Value, ws.BoundsMinY!.Value);
+                (maxCellX, maxCellY) = CellUtils.WorldToCellCoordinates(ws.BoundsMaxX.Value, ws.BoundsMaxY!.Value);
+            }
+            else
+            {
+                continue;
+            }
+
+            bounds.Add(new WorldspaceBounds(ws.FormId, minCellX, minCellY, maxCellX, maxCellY));
+        }
+
+        return bounds;
+    }
+
+    private static List<uint> FindCandidateWorldspaces(
+        IReadOnlyList<WorldspaceBounds> bounds,
+        int gridX,
+        int gridY)
+    {
+        return bounds
+            .Where(b => gridX >= b.MinCellX && gridX <= b.MaxCellX &&
+                        gridY >= b.MinCellY && gridY <= b.MaxCellY)
+            .Select(b => b.FormId)
+            .Distinct()
+            .Order()
+            .ToList();
+    }
+
+    private readonly record struct WorldspaceBounds(
+        uint FormId,
+        int MinCellX,
+        int MinCellY,
+        int MaxCellX,
+        int MaxCellY);
 
     /// <summary>
     ///     Links parsed cells to their parent worldspace's Cells list

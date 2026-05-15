@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Coverage;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 
 namespace FalloutXbox360Utils.Core.RuntimeBuffer;
 
@@ -64,12 +65,18 @@ internal sealed class RuntimeBufferPointerAnalyzer
                     OwnerName = claim.OwnerName,
                     OwnerFormId = claim.OwnerFormId,
                     OwnerFileOffset = claim.OwnerFileOffset,
+                    ClaimSource = claim.ClaimSource,
+                    OwnerRecordType = claim.OwnerRecordType,
+                    OwnerFieldOrSubrecord = claim.OwnerFieldOrSubrecord,
                     ReferrerVa = referrerInfo?.ReferrerVa,
                     ReferrerFileOffset = referrerInfo?.ReferrerFileOffset,
                     ReferrerContext = referrerInfo?.ReferrerContext,
                     AllReferrers = referrerInfo?.AllReferrers
                 };
                 analysis.OwnedHits.Add(hit);
+
+                analysis.ClaimSourceCounts.TryGetValue(claim.ClaimSource, out var sourceCount);
+                analysis.ClaimSourceCounts[claim.ClaimSource] = sourceCount + 1;
             }
             else if (referrerInfo != null)
             {
@@ -297,6 +304,46 @@ internal sealed class RuntimeBufferPointerAnalyzer
             }
 
             claims.TryAdd(claim.StringFileOffset, claim);
+        }
+
+        if (_ctx.RuntimeEditorIds is { Count: > 0 })
+        {
+            var memoryContext = new RuntimeMemoryContext(
+                new MmfMemoryAccessor(_ctx.Accessor),
+                _ctx.FileSize,
+                _ctx.MinidumpInfo);
+
+            foreach (var claim in RuntimeStructStringClaimExtractor.ExtractClaims(_ctx.RuntimeEditorIds,
+                         memoryContext))
+            {
+                if (hitsByFileOffset.ContainsKey(claim.StringFileOffset))
+                {
+                    claims.TryAdd(claim.StringFileOffset, claim);
+                }
+            }
+
+            foreach (var claim in RuntimeNestedStringClaimExtractor.ExtractClaims(_ctx.RuntimeEditorIds,
+                         memoryContext))
+            {
+                if (hitsByFileOffset.ContainsKey(claim.StringFileOffset))
+                {
+                    claims.TryAdd(claim.StringFileOffset, claim);
+                }
+            }
+        }
+
+        if (_ctx.MainRecords is { Count: > 0 })
+        {
+            foreach (var claim in RawRecordStringClaimExtractor.ExtractClaims(
+                         _ctx.MainRecords,
+                         _ctx.Accessor,
+                         _ctx.FileSize))
+            {
+                if (hitsByFileOffset.ContainsKey(claim.StringFileOffset))
+                {
+                    claims.TryAdd(claim.StringFileOffset, claim);
+                }
+            }
         }
 
         return claims;

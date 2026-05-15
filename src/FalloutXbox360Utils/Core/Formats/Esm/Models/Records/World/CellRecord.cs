@@ -26,6 +26,15 @@ public record CellRecord
     /// <summary>Parent worldspace FormID (null for interior cells).</summary>
     public uint? WorldspaceFormId { get; init; }
 
+    /// <summary>Diagnostic source for the current worldspace assignment.</summary>
+    public string? WorldspaceAssignmentSource { get; init; }
+
+    /// <summary>
+    ///     Candidate worldspaces considered during fallback inference. Multiple entries
+    ///     mean bounds alone were ambiguous and a stronger signal was needed.
+    /// </summary>
+    public IReadOnlyList<uint> CandidateWorldspaceFormIds { get; init; } = [];
+
     /// <summary>Cell flags from DATA subrecord.</summary>
     public byte Flags { get; init; }
 
@@ -56,6 +65,9 @@ public record CellRecord
     /// <summary>Lighting template inheritance flags (LTMP data / iLightingTemplateInheritanceFlags).</summary>
     public uint? LightingTemplateInheritanceFlags { get; init; }
 
+    /// <summary>Direct cell lighting fields from XCLL. Used when a new DMP-only cell has no master CELL to inherit.</summary>
+    public IReadOnlyDictionary<string, object?>? LightingData { get; init; }
+
     /// <summary>Radiation region FormIDs (XCLR subrecord, array of REGN FormIDs). Each region
     /// supplies per-area radiation strength to the cell. Empty when the cell has no XCLR.</summary>
     public IReadOnlyList<uint> RadiationRegionFormIds { get; init; } = [];
@@ -68,6 +80,9 @@ public record CellRecord
 
     /// <summary>Associated LAND record heightmap (if found).</summary>
     public LandHeightmap? Heightmap { get; init; }
+
+    /// <summary>Associated LAND visual subrecords (VCLR/VTEX/BTXT/ATXT/VTXT), if found.</summary>
+    public LandVisualData? LandVisualData { get; init; }
 
     /// <summary>Runtime terrain mesh extracted from LoadedLandData heap pointers (if available).</summary>
     public RuntimeTerrainMesh? RuntimeTerrainMesh { get; init; }

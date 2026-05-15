@@ -134,6 +134,14 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
         CellLinkageHandler.InferCellWorldspaces(cells, worldspaces);
     }
 
+    internal static int ResolveRuntimeAnchoredCellRuns(
+        List<CellRecord> cells,
+        List<WorldspaceRecord> worldspaces,
+        IReadOnlyDictionary<uint, RuntimeWorldspaceData>? runtimeWorldspaceMaps)
+    {
+        return CellLinkageHandler.ResolveRuntimeAnchoredCellRuns(cells, worldspaces, runtimeWorldspaceMaps);
+    }
+
     /// <summary>
     ///     Links parsed cells to their parent worldspace's Cells list.
     ///     Delegates to <see cref="CellLinkageHandler" />.

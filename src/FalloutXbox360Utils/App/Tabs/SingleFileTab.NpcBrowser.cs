@@ -875,7 +875,7 @@ public sealed partial class SingleFileTab
 
     private static nint NpcGetWindowHandle()
     {
-        return WindowNative.GetWindowHandle(App.Current.MainWindow);
+        return WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow);
     }
 
     private void ResetNpcBrowser()

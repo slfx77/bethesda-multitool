@@ -3,6 +3,7 @@
 
 using System.IO.Compression;
 using System.Text;
+using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Bsa;
 
@@ -162,6 +163,19 @@ public sealed class BsaWriter : IDisposable
         {
             files = [];
             _folders[folderName] = files;
+        }
+
+        // Dedup: BSA stores files by (folder hash, file hash) and two registrations with
+        // the same lowercased filename would hash to the same slot, collide on the engine's
+        // hash-based lookup, and lose one copy when extracted (overwriting on disk). First
+        // registration wins — log the second as a warning so the caller can investigate
+        // the source of the duplicate.
+        if (files.Any(f => string.Equals(f.Name, fileName, StringComparison.Ordinal)))
+        {
+            Logger.Instance.Warn(
+                $"BsaWriter: dropping duplicate registration for '{folderName}\\{fileName}' " +
+                "(first-wins; second copy ignored to avoid hash collision)");
+            return;
         }
 
         files.Add(new PendingFile(fileName, relativePath.Replace('/', '\\').TrimStart('\\'), data));

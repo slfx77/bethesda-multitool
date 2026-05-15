@@ -103,7 +103,11 @@ public sealed class RecordParserContext
             .GroupBy(r => r.FormId)
             .ToDictionary(g => g.Key, g => g.First());
 
-        // Build record type index for O(1) GetRecordsByType lookups
+        // Build record type index for O(1) GetRecordsByType lookups. Intentionally keeps
+        // multiple records per (RecordType, FormID) tuple — Xbox 360 ESM splits INFO into
+        // two halves with the same FormID, and DialogueConditionParser relies on iterating
+        // both halves through this index. Per-type dedup is the responsibility of each
+        // record handler (see NpcRecordHandler.ParseNpcs which dedups its accessor results).
         _recordsByType = scanResult.MainRecords
             .GroupBy(r => r.RecordType)
             .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);

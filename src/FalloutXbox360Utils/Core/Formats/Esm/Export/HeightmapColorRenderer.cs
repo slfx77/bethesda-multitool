@@ -74,6 +74,28 @@ internal static class HeightmapColorRenderer
     }
 
     /// <summary>
+    ///     Generates grayscale pixels using a fixed height scale. This preserves real terrain relief
+    ///     better than per-image stretching and keeps one gray step aligned to VHGT quantization.
+    /// </summary>
+    internal static byte[] GenerateFixedScaleGrayscalePixels(float[,] heights, HeightmapGrayscaleScale scale)
+    {
+        var pixels = new byte[33 * 33];
+
+        for (var y = 0; y < 33; y++)
+        {
+            for (var x = 0; x < 33; x++)
+            {
+                // Row 0 = south edge, row 32 = north edge.
+                // Flip Y so north is at the top of the image.
+                var height = heights[32 - y, x];
+                pixels[y * 33 + x] = scale.ToByte(height);
+            }
+        }
+
+        return pixels;
+    }
+
+    /// <summary>
     ///     Returns the min and max height values from a 33x33 height grid.
     /// </summary>
     internal static (float min, float max) GetHeightRange(float[,] heights)
@@ -302,4 +324,27 @@ internal static class HeightmapColorRenderer
     }
 
     #endregion
+}
+
+public readonly record struct HeightmapGrayscaleScale(
+    float BaseHeight,
+    float UnitsPerGray,
+    float MinHeight,
+    float MaxHeight,
+    int ClippedLowCount,
+    int ClippedHighCount,
+    int SampleCount)
+{
+    public float MaxEncodedHeight => BaseHeight + UnitsPerGray * 255f;
+
+    public byte ToByte(float height)
+    {
+        if (float.IsNaN(height) || float.IsInfinity(height))
+        {
+            return 0;
+        }
+
+        var value = (int)MathF.Round((height - BaseHeight) / UnitsPerGray);
+        return (byte)Math.Clamp(value, 0, 255);
+    }
 }

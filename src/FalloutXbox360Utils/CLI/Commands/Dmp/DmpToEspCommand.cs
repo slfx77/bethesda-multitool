@@ -56,6 +56,29 @@ public static class DmpToEspCommand
                           "the ESP + DMP for referenced assets, resolves them against --secondary-data / " +
                           "--secondary-data-360 folders, and packs the missing ones into this BSA."
         };
+        var writeMissingListOpt = new Option<bool>("--write-missing-list")
+        {
+            Description = "Write a human-reviewable per-asset audit file at <pack-assets>.missing.txt " +
+                          "alongside the packed BSA. Sections: missing, fuzzy-matched, conversion-failed."
+        };
+        var overrideVanillaOpt = new Option<bool>("--override-vanilla")
+        {
+            Description = "When resolving assets, consult --secondary-data folders BEFORE the PC Data " +
+                          "baseline. Assets present in a secondary override the vanilla copy at runtime. " +
+                          "Applied to both the asset-rename rewriter and the BSA packer."
+        };
+        var disableRefrEditorIdRemapOpt = new Option<bool>("--disable-refr-editorid-remap")
+        {
+            Description = "Disable the EditorID-stem rename fallback that rescues otherwise-dropped " +
+                          "REFRs whose prototype base FormID matches a same-type master record by stem " +
+                          "(e.g. SCOLParkingLotChunk03 → master SCOLParkingLotChunk03b). On by default."
+        };
+        var replaceCellTemporariesOpt = new Option<bool>("--replace-cell-temporaries")
+        {
+            Description = "Diagnostic mode: when a cell already exists in master AND the DMP captured " +
+                          "placements for it, delete every master temporary ref not in the DMP. Master " +
+                          "persistent refs (and therefore quest-bound objects) are preserved. Off by default."
+        };
 
         var command = new Command("to-esp", "Convert a DMP to a PC plugin ESP overlay against a master ESM");
         command.Arguments.Add(dmpArg);
@@ -69,6 +92,10 @@ public static class DmpToEspCommand
         command.Options.Add(secondaryDataOpt);
         command.Options.Add(secondaryData360Opt);
         command.Options.Add(packAssetsOpt);
+        command.Options.Add(writeMissingListOpt);
+        command.Options.Add(overrideVanillaOpt);
+        command.Options.Add(disableRefrEditorIdRemapOpt);
+        command.Options.Add(replaceCellTemporariesOpt);
 
         command.SetAction(async (parseResult, ct) =>
         {
@@ -83,9 +110,14 @@ public static class DmpToEspCommand
             var secondaryData = parseResult.GetValue(secondaryDataOpt) ?? [];
             var secondaryData360 = parseResult.GetValue(secondaryData360Opt) ?? [];
             var packAssets = parseResult.GetValue(packAssetsOpt);
+            var writeMissingList = parseResult.GetValue(writeMissingListOpt);
+            var overrideVanilla = parseResult.GetValue(overrideVanillaOpt);
+            var disableRefrEditorIdRemap = parseResult.GetValue(disableRefrEditorIdRemapOpt);
+            var replaceCellTemporaries = parseResult.GetValue(replaceCellTemporariesOpt);
 
             await RunAsync(dmp, pcEsm, output, author, description, compress, validate, verbose,
-                secondaryData, secondaryData360, packAssets, ct);
+                secondaryData, secondaryData360, packAssets, writeMissingList, overrideVanilla,
+                disableRefrEditorIdRemap, replaceCellTemporaries, ct);
         });
 
         return command;
@@ -103,6 +135,10 @@ public static class DmpToEspCommand
         string[] secondaryDataFolders,
         string[] secondaryDataFolders360,
         string? packAssetsBsaPath,
+        bool writeMissingList,
+        bool overrideVanilla,
+        bool disableRefrEditorIdRemap,
+        bool replaceCellTemporaries,
         CancellationToken ct)
     {
         if (!File.Exists(dmpPath))
@@ -138,7 +174,10 @@ public static class DmpToEspCommand
             ValidateOutput = validate,
             VerboseDecisions = verbose,
             AssetRenameBaselineFolder = renameFolders.Count > 0 ? baselineDataFolder : null,
-            AssetRenameSecondaryFolders = renameFolders
+            AssetRenameSecondaryFolders = renameFolders,
+            AssetRenameOverrideVanilla = overrideVanilla,
+            EnableRefrBaseEditorIdRemap = !disableRefrEditorIdRemap,
+            ReplaceCellTemporariesOnOverride = replaceCellTemporaries
         };
 
         var inputs = new DmpToEspInputs
@@ -154,11 +193,11 @@ public static class DmpToEspCommand
         AnsiConsole.MarkupLine($"[cyan]Output:[/] {Markup.Escape(outputPath)}");
         AnsiConsole.WriteLine();
 
-        var registry = RecordEncoderRegistry.CreateV18bDefault();
+        var registry = RecordEncoderRegistry.CreateV22Default();
         var sink = new ConsoleProgressSink(verbose);
-        var builder = new PluginBuilder(registry, sink);
+        var pipeline = new PluginConversionPipeline(registry, sink);
 
-        var result = await builder.BuildAsync(inputs, ct);
+        var result = await pipeline.BuildAsync(inputs, ct);
 
         AnsiConsole.WriteLine();
         if (result.Success)
@@ -171,6 +210,18 @@ public static class DmpToEspCommand
             AnsiConsole.MarkupLine($"  Overrides={s.OverridesEmitted:N0}, new={s.NewRecordsEmitted:N0}, " +
                                    $"cells={s.CellsMerged:N0}");
             AnsiConsole.MarkupLine($"  Output: {s.OutputBytes:N0} bytes in {s.Elapsed.TotalSeconds:F2}s");
+
+            if (s.Scols.TotalParsed > 0)
+            {
+                AnsiConsole.WriteLine();
+                AnsiConsole.MarkupLine("[bold]SCOL Census[/]");
+                AnsiConsole.MarkupLine(
+                    $"  Parsed={s.Scols.TotalParsed:N0}  InMaster={s.Scols.InMaster:N0}  " +
+                    $"NewEmitted={s.Scols.NewEmitted:N0}  AllUnreachableDropped={s.Scols.DroppedAllPartsUnreachable:N0}");
+                AnsiConsole.MarkupLine(
+                    $"  PartsDroppedTotal={s.Scols.PartsDroppedTotal:N0}  " +
+                    $"OverrideDeltaObserved={s.Scols.OverrideDeltaObserved:N0}");
+            }
 
             if (!string.IsNullOrEmpty(result.ValidationReport))
             {
@@ -187,7 +238,7 @@ public static class DmpToEspCommand
                 await RunAssetPackingAsync(
                     outputPath, dmpPath, pcEsmPath,
                     secondaryDataFolders, secondaryDataFolders360,
-                    packAssetsBsaPath, verbose, sink, ct);
+                    packAssetsBsaPath, verbose, writeMissingList, overrideVanilla, sink, ct);
             }
         }
         else
@@ -236,6 +287,8 @@ public static class DmpToEspCommand
         string[] secondaryDataFolders360,
         string outputBsaPath,
         bool verbose,
+        bool writeMissingList,
+        bool overrideVanilla,
         IConversionProgressSink sink,
         CancellationToken ct)
     {
@@ -296,7 +349,9 @@ public static class DmpToEspCommand
             BaselineDataFolder = baselineDataFolder,
             SecondaryDataFolders = secondaries,
             OutputBsaPath = outputBsaPath,
-            VerbosePerAsset = verbose
+            VerbosePerAsset = verbose,
+            WriteAuditFile = writeMissingList,
+            OverrideVanillaBaseline = overrideVanilla
         };
 
         var service = new AssetPackingService();

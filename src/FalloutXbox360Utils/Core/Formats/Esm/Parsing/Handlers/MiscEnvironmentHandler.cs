@@ -507,6 +507,104 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
 
     #endregion
 
+    #region Landscape Textures
+
+    /// <summary>
+    ///     Parse all Landscape Texture (LTEX) records used by LAND texture layers.
+    /// </summary>
+    internal List<LandscapeTextureRecord> ParseLandscapeTextures()
+    {
+        return ParseRecordList("LTEX", 2048,
+            ParseLandscapeTextureFromAccessor,
+            record => new LandscapeTextureRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
+    }
+
+    private LandscapeTextureRecord? ParseLandscapeTextureFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return new LandscapeTextureRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            };
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        string? iconPath = null;
+        string? smallIconPath = null;
+        uint? textureSetFormId = null;
+        byte[]? havokData = null;
+        byte[]? specularData = null;
+        var grassFormIds = new List<uint>();
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "ICON":
+                    iconPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MICO":
+                    smallIconPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "TNAM" when sub.DataLength == 4:
+                    textureSetFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "HNAM" when sub.DataLength > 0:
+                    havokData = subData.ToArray();
+                    break;
+                case "SNAM" when sub.DataLength > 0:
+                    specularData = subData.ToArray();
+                    break;
+                case "GNAM" when sub.DataLength >= 4:
+                    for (var i = 0; i + 4 <= sub.DataLength; i += 4)
+                    {
+                        grassFormIds.Add(RecordParserContext.ReadFormId(subData.Slice(i, 4), record.IsBigEndian));
+                    }
+
+                    break;
+            }
+        }
+
+        return new LandscapeTextureRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            IconPath = iconPath,
+            SmallIconPath = smallIconPath,
+            TextureSetFormId = textureSetFormId is > 0 ? textureSetFormId : null,
+            HavokData = havokData,
+            SpecularData = specularData,
+            GrassFormIds = grassFormIds,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
     #region Audio Location Controllers
 
     /// <summary>

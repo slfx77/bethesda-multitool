@@ -34,9 +34,11 @@ public static class DeletedRefSynthesizer
     /// </summary>
     /// <param name="masterRefsInCell">All master ESM REFR/ACHR/ACRE records belonging to this cell.</param>
     /// <param name="dmpFormIdsInCell">Set of FormIDs the DMP has for refs in this cell.</param>
+    /// <param name="preserveMissingRef">Optional predicate for missing master refs that must not be deleted.</param>
     public static DeletedRefBundle Synthesize(
         IEnumerable<ParsedMainRecord> masterRefsInCell,
-        ISet<uint> dmpFormIdsInCell)
+        ISet<uint> dmpFormIdsInCell,
+        Func<ParsedMainRecord, bool>? preserveMissingRef = null)
     {
         var persistent = new List<byte[]>();
         var temporary = new List<byte[]>();
@@ -44,6 +46,11 @@ public static class DeletedRefSynthesizer
         foreach (var masterRef in masterRefsInCell)
         {
             if (dmpFormIdsInCell.Contains(masterRef.Header.FormId))
+            {
+                continue;
+            }
+
+            if (preserveMissingRef?.Invoke(masterRef) == true)
             {
                 continue;
             }

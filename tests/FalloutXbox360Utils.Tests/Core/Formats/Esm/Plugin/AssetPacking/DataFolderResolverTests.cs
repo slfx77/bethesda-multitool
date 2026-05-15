@@ -187,4 +187,89 @@ public class DataFolderResolverTests : IDisposable
         Assert.True(idx.TryResolveExact("meshes\\test.nif", out var source));
         Assert.IsType<LooseFileAssetSource>(source);
     }
+
+    [Fact]
+    public void Resolve_OverrideVanilla_SecondaryWinsOverBaselineExact()
+    {
+        var baselineDir = MakeDataFolder("baseline");
+        WriteLooseFile(baselineDir, "meshes\\shared.nif", [0xBA]);
+        var secondaryDir = MakeDataFolder("override");
+        WriteLooseFile(secondaryDir, "meshes\\shared.nif", [0x5E]);
+
+        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        baseline.Build();
+        using var secondary = new DataFolderIndex(secondaryDir, xbox360FormatHint: false);
+        secondary.Build();
+
+        var resolver = new DataFolderResolver(baseline, [secondary], overrideBaseline: true);
+        var result = resolver.Resolve("meshes\\shared.nif");
+
+        Assert.Equal(AssetResolutionKind.ResolvedExact, result.Kind);
+        Assert.NotNull(result.Source);
+        Assert.Equal(0, result.SourceFolderIndex);
+        Assert.Equal("meshes\\shared.nif", result.ResolvedPath);
+    }
+
+    [Fact]
+    public void Resolve_OverrideVanilla_SecondaryExtensionSwapWinsOverBaselineExact()
+    {
+        // Baseline has the .dds; secondary has the .ddx. Override mode should prefer the
+        // secondary's extension-swap match (ResolvedFuzzy) over the baseline's exact match
+        // — otherwise the override flag is half-broken (baseline wins, override never fires).
+        var baselineDir = MakeDataFolder("baseline");
+        WriteLooseFile(baselineDir, "textures\\sand.dds", [0xBA]);
+        var secondaryDir = MakeDataFolder("proto");
+        WriteLooseFile(secondaryDir, "textures\\sand.ddx", [0x5E]);
+
+        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        baseline.Build();
+        using var secondary = new DataFolderIndex(secondaryDir, xbox360FormatHint: false);
+        secondary.Build();
+
+        var resolver = new DataFolderResolver(baseline, [secondary], overrideBaseline: true);
+        var result = resolver.Resolve("textures\\sand.dds");
+
+        Assert.Equal(AssetResolutionKind.ResolvedFuzzy, result.Kind);
+        Assert.Equal("textures\\sand.ddx", result.ResolvedPath);
+        Assert.Equal(0, result.SourceFolderIndex);
+    }
+
+    [Fact]
+    public void Resolve_OverrideVanilla_FallsBackToBaselineWhenNoSecondaryHasIt()
+    {
+        var baselineDir = MakeDataFolder("baseline");
+        WriteLooseFile(baselineDir, "meshes\\baselineonly.nif", [0xBA]);
+        var secondaryDir = MakeDataFolder("secondary");
+        WriteLooseFile(secondaryDir, "meshes\\somethingelse.nif", [0x5E]);
+
+        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        baseline.Build();
+        using var secondary = new DataFolderIndex(secondaryDir, xbox360FormatHint: false);
+        secondary.Build();
+
+        var resolver = new DataFolderResolver(baseline, [secondary], overrideBaseline: true);
+        var result = resolver.Resolve("meshes\\baselineonly.nif");
+
+        Assert.Equal(AssetResolutionKind.AlreadyInBaseline, result.Kind);
+        Assert.Equal("meshes\\baselineonly.nif", result.ResolvedPath);
+    }
+
+    [Fact]
+    public void Resolve_OverrideVanilla_ReturnsMissingWhenNeitherHas()
+    {
+        var baselineDir = MakeDataFolder("baseline");
+        Directory.CreateDirectory(baselineDir);
+        var secondaryDir = MakeDataFolder("secondary");
+        Directory.CreateDirectory(secondaryDir);
+
+        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        baseline.Build();
+        using var secondary = new DataFolderIndex(secondaryDir, xbox360FormatHint: false);
+        secondary.Build();
+
+        var resolver = new DataFolderResolver(baseline, [secondary], overrideBaseline: true);
+        var result = resolver.Resolve("meshes\\nowhere.nif");
+
+        Assert.Equal(AssetResolutionKind.Missing, result.Kind);
+    }
 }

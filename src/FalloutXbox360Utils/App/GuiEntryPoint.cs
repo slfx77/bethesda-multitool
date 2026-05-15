@@ -36,7 +36,7 @@ public static class GuiEntryPoint
                 var context = new DispatcherQueueSynchronizationContext(
                     DispatcherQueue.GetForCurrentThread());
                 SynchronizationContext.SetSynchronizationContext(context);
-                _ = new App();
+                _ = new FalloutApp();
             });
 
             return 0;

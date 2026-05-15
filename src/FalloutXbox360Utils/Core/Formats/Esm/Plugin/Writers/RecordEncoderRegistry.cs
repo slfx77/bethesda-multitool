@@ -225,6 +225,7 @@ public sealed class RecordEncoderRegistry
         registry.Register(new Encoders.ClasEncoder());
         registry.Register(new Encoders.SounEncoder());
         registry.Register(new Encoders.TxstEncoder());
+        registry.Register(new Encoders.LtexEncoder());
         registry.Register(new Encoders.ChalEncoder());
         registry.Register(new Encoders.BptdEncoder());
         registry.Register(new Encoders.EnchEncoder());
@@ -265,6 +266,19 @@ public sealed class RecordEncoderRegistry
         registry.Register(new Encoders.LgtmEncoder());
         registry.Register(new Encoders.WatrEncoder());
         registry.Register(new Encoders.WthrEncoder());
+        return registry;
+    }
+
+    /// <summary>
+    ///     Builds a registry for v22 — extends v18b with SCOL (Static Collection) emission.
+    ///     SCOL groups multiple instances of one or more STAT bases under a single record
+    ///     so prototype-only collections can carry their (ONAM + DATA placement-list)* part
+    ///     stream forward; the override path stays a no-op (master bytes retained verbatim).
+    /// </summary>
+    public static RecordEncoderRegistry CreateV22Default()
+    {
+        var registry = CreateV18bDefault();
+        registry.Register(new Encoders.ScolEncoder());
         return registry;
     }
 

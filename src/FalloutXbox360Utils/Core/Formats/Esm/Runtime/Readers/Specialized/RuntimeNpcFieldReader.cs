@@ -740,6 +740,12 @@ internal sealed class RuntimeNpcFieldReader
     // Probe reads a fixed window so appearance-tail candidates can move independently.
     public int NpcStructSize => _layout.ReadSize;
     public int NpcAcbsOffset => 52 + _coreShift;
+
+    // TESActorBase inherits TESHealthForm at PDB offset 192 (per MemDebug types_full.txt
+    // fieldlist 0x00015773 list[6]); iHealth is a private uint32 at offset 4 within
+    // TESHealthForm, giving PDB-MemDebug offset 196. The Proto-Debug-base value is
+    // 196 - 16 (TESForm-size delta) = 180; _coreShift restores the runtime offset.
+    public int NpcBaseHealthOffset => 180 + _coreShift;
     public int NpcDeathItemPtrOffset => 76 + _coreShift;
     public int NpcVoiceTypePtrOffset => 80 + _coreShift;
     public int NpcTemplatePtrOffset => 84 + _coreShift;

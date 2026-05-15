@@ -447,6 +447,12 @@ public static class GeckReportGenerator
             files["worldspace_report.txt"] = GeckWorldWriter.GenerateWorldspacesReport(result.Worldspaces, resolver);
         }
 
+        if (result.RuntimeWorldspaceMaps.Count > 0)
+        {
+            files["runtime_worldspace_cells.csv"] =
+                CsvMiscWriter.GenerateRuntimeWorldspaceCellsCsv(result.RuntimeWorldspaceMaps, resolver);
+        }
+
         if (result.MapMarkers.Count > 0)
         {
             files["map_markers.csv"] = CsvSupplementalWriter.GenerateMapMarkersCsv(result.MapMarkers, resolver);

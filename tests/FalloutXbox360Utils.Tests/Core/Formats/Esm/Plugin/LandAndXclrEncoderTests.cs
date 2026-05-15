@@ -83,6 +83,36 @@ public class LandAndXclrEncoderTests
     }
 
     [Fact]
+    public void Land_Encode_VnmlUsesHeightSlope()
+    {
+        var exactHeights = new float[33, 33];
+        for (var y = 0; y < 33; y++)
+        {
+            for (var x = 0; x < 33; x++)
+            {
+                exactHeights[y, x] = x * 16f;
+            }
+        }
+
+        var heightmap = new LandHeightmap
+        {
+            HeightOffset = 0f,
+            HeightDeltas = new sbyte[33 * 33],
+            ExactHeights = exactHeights
+        };
+
+        var subs = LandEncoder.Encode(heightmap);
+        Assert.NotNull(subs);
+        var vnml = Assert.Single(subs, s => s.Signature == "VNML").Bytes;
+        var center = (16 * 33 + 16) * 3;
+
+        Assert.Equal(33 * 33 * 3, vnml.Length);
+        Assert.NotEqual(0, (sbyte)vnml[center]);
+        Assert.Equal(0, (sbyte)vnml[center + 1]);
+        Assert.InRange((sbyte)vnml[center + 2], 120, 127);
+    }
+
+    [Fact]
     public void Land_Encode_DataIsFourZeroBytes()
     {
         var heightmap = new LandHeightmap
@@ -110,6 +140,73 @@ public class LandAndXclrEncoderTests
 
         var subs = LandEncoder.Encode(heightmap);
         Assert.Null(subs);
+    }
+
+    [Fact]
+    public void Land_Encode_EmitsVisualSubrecordsAfterVhgt()
+    {
+        var heightmap = new LandHeightmap
+        {
+            HeightOffset = 0f,
+            HeightDeltas = new sbyte[33 * 33]
+        };
+        var vclr = Enumerable.Range(0, 33 * 33 * 3).Select(i => (byte)(i % 251)).ToArray();
+        var visual = new LandVisualData
+        {
+            VertexColors = vclr,
+            TextureIndices = [0x1000u, 0x2000u],
+            TextureLayers =
+            [
+                new LandTextureLayer
+                {
+                    Kind = LandTextureLayerKind.Base,
+                    TextureFormId = 0x11111111,
+                    Quadrant = 1,
+                    PlatformFlag = 2,
+                    Layer = 0
+                },
+                new LandTextureLayer
+                {
+                    Kind = LandTextureLayerKind.Alpha,
+                    TextureFormId = 0x22222222,
+                    Quadrant = 3,
+                    PlatformFlag = 4,
+                    Layer = 5,
+                    BlendEntries =
+                    [
+                        new LandTextureBlendEntry(12, 0xAA, 0xBB, 0.5f)
+                    ]
+                }
+            ]
+        };
+
+        var subs = LandEncoder.Encode(heightmap, visual);
+
+        Assert.NotNull(subs);
+        Assert.Equal(["DATA", "VNML", "VHGT", "VCLR", "BTXT", "ATXT", "VTXT", "VTEX"],
+            subs.Select(s => s.Signature).ToList());
+        Assert.Equal(vclr, subs[3].Bytes);
+
+        var btxt = subs[4].Bytes;
+        Assert.Equal(0x11111111u, BinaryPrimitives.ReadUInt32LittleEndian(btxt.AsSpan(0, 4)));
+        Assert.Equal(1, btxt[4]);
+        Assert.Equal(2, btxt[5]);
+
+        var atxt = subs[5].Bytes;
+        Assert.Equal(0x22222222u, BinaryPrimitives.ReadUInt32LittleEndian(atxt.AsSpan(0, 4)));
+        Assert.Equal(3, atxt[4]);
+        Assert.Equal(4, atxt[5]);
+        Assert.Equal((ushort)5, BinaryPrimitives.ReadUInt16LittleEndian(atxt.AsSpan(6, 2)));
+
+        var vtxt = subs[6].Bytes;
+        Assert.Equal((ushort)12, BinaryPrimitives.ReadUInt16LittleEndian(vtxt.AsSpan(0, 2)));
+        Assert.Equal(0xAA, vtxt[2]);
+        Assert.Equal(0xBB, vtxt[3]);
+        Assert.Equal(0.5f, BinaryPrimitives.ReadSingleLittleEndian(vtxt.AsSpan(4, 4)));
+
+        var vtex = subs[7].Bytes;
+        Assert.Equal(0x1000u, BinaryPrimitives.ReadUInt32LittleEndian(vtex.AsSpan(0, 4)));
+        Assert.Equal(0x2000u, BinaryPrimitives.ReadUInt32LittleEndian(vtex.AsSpan(4, 4)));
     }
 
     // ===================================================================================
@@ -168,7 +265,7 @@ public class LandAndXclrEncoderTests
             EditorId = "TestCell",
             GridX = 0,
             GridY = 0,
-            Flags = 0x02, // HasWater
+            Flags = 0x03, // Interior + HasWater
             WaterHeight = 100.0f,
             RadiationRegionFormIds = [0x1u]
         };

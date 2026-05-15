@@ -76,7 +76,7 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable, IHasSett
         picker.FileTypeFilter.Add(".ba2");
         picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
 
-        var hwnd = WindowNative.GetWindowHandle(App.Current.MainWindow);
+        var hwnd = WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow);
         InitializeWithWindow.Initialize(picker, hwnd);
 
         var file = await picker.PickSingleFileAsync();
@@ -320,7 +320,7 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable, IHasSett
         picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
         picker.FileTypeFilter.Add("*");
 
-        var hwnd = WindowNative.GetWindowHandle(App.Current.MainWindow);
+        var hwnd = WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow);
         InitializeWithWindow.Initialize(picker, hwnd);
 
         var folder = await picker.PickSingleFolderAsync();

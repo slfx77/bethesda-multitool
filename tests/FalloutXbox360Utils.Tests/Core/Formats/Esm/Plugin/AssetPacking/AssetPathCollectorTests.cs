@@ -1,6 +1,7 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
 using FalloutXbox360Utils.Core.Formats.Esm.Reporting;
 using Xunit;
@@ -94,7 +95,8 @@ public class AssetPathCollectorTests
             payload.Add(0);
         }
 
-        // Real paths with no garbage — pass through.
+        // Real paths with no garbage — pass through, except global human skeleton assets
+        // that must not be packed over the PC animation graph.
         AppendNullTerm("meshes\\characters\\_male\\skeleton.nif");
         AppendNullTerm("meshes\\creatures\\centaur\\skeleton.nif");
         AppendNullTerm("textures\\armor\\helm.dds");
@@ -109,8 +111,8 @@ public class AssetPathCollectorTests
         var paths = AssetPathCollector.Collect(new RecordCollection(), tempFile.Path,
             NullConversionProgressSink.Instance);
 
-        // Clean paths kept.
-        Assert.Contains("meshes\\characters\\_male\\skeleton.nif", paths);
+        // Creature skeletons and ordinary assets are kept; human skeleton globals are not.
+        Assert.DoesNotContain("meshes\\characters\\_male\\skeleton.nif", paths);
         Assert.Contains("meshes\\creatures\\centaur\\skeleton.nif", paths);
         Assert.Contains("textures\\armor\\helm.dds", paths);
 
@@ -118,6 +120,59 @@ public class AssetPathCollectorTests
         Assert.DoesNotContain("zcharacters\\_male\\skeleton.nif", paths);
         Assert.DoesNotContain("meshes\\zcharacters\\_male\\skeleton.nif", paths);
         Assert.DoesNotContain("eegxeegxcharacters\\_male\\skeleton.nif", paths);
+    }
+
+    [Fact]
+    public void Collect_FiltersEngineGlobalHumanSkeletonsAndAnimations()
+    {
+        using var tempFile = new TempFile();
+        var payload = new List<byte>();
+
+        void AppendNullTerm(string s)
+        {
+            payload.AddRange(System.Text.Encoding.ASCII.GetBytes(s));
+            payload.Add(0);
+        }
+
+        AppendNullTerm("meshes\\characters\\_male\\skeleton.nif");
+        AppendNullTerm("meshes\\characters\\_male\\h2hidle.kf");
+        AppendNullTerm("meshes\\characters\\_male\\idleanims\\dialoguegesture.kf");
+        AppendNullTerm("meshes\\characters\\_1stperson\\1hpistolidle.kf");
+        AppendNullTerm("meshes\\characters\\head\\headhuman.nif");
+        AppendNullTerm("meshes\\creatures\\centaur\\skeleton.nif");
+        File.WriteAllBytes(tempFile.Path, payload.ToArray());
+
+        var records = new RecordCollection
+        {
+            IdleAnimations =
+            [
+                new IdleAnimationRecord
+                {
+                    FormId = 0x100,
+                    EditorId = "HumanIdle",
+                    ModelPath = "characters\\_male\\mtidle.kf"
+                }
+            ],
+            ModelPathIndex =
+            {
+                [0x200] = "characters\\_female\\skeleton.nif",
+                [0x201] = "characters\\_male\\upperbodyhuman.nif"
+            }
+        };
+
+        var paths = AssetPathCollector.Collect(records, tempFile.Path,
+            NullConversionProgressSink.Instance);
+
+        Assert.DoesNotContain("meshes\\characters\\_male\\skeleton.nif", paths);
+        Assert.DoesNotContain("meshes\\characters\\_female\\skeleton.nif", paths);
+        Assert.DoesNotContain("meshes\\characters\\_male\\h2hidle.kf", paths);
+        Assert.DoesNotContain("meshes\\characters\\_male\\mtidle.kf", paths);
+        Assert.DoesNotContain("meshes\\characters\\_male\\idleanims\\dialoguegesture.kf", paths);
+        Assert.DoesNotContain("meshes\\characters\\_1stperson\\1hpistolidle.kf", paths);
+
+        Assert.Contains("meshes\\characters\\head\\headhuman.nif", paths);
+        Assert.Contains("meshes\\characters\\_male\\upperbodyhuman.nif", paths);
+        Assert.Contains("meshes\\creatures\\centaur\\skeleton.nif", paths);
     }
 
     [Fact]
@@ -193,20 +248,39 @@ public class AssetPathCollectorTests
     }
 
     [Fact]
-    public void Collect_DerivesEgmEgtTriSiblingsForEveryNif()
+    public void Collect_DerivesEgmEgtTriSiblings_ForHeadAndHeadgear()
     {
+        // v22: sibling derivation is limited to NIFs under directories that actually carry
+        // facegen sidecars in FNV/FO3 — `\head\`, `\headgear\`, `\facegen\`. The hair NIF
+        // case from earlier passes was a false positive; hair doesn't have .egm/.egt/.tri
+        // siblings in the BSAs, and emitting requests for them flooded the missing-asset
+        // audit with thousands of bogus entries.
         var records = new RecordCollection
         {
-            ModelPathIndex = { [0x500] = "Characters\\Hair\\HairSpikey.nif" }
+            ModelPathIndex =
+            {
+                [0x500] = "Characters\\Head\\headhuman.nif",
+                [0x501] = "Armor\\Headgear\\Cowboyhat\\cowboyhat.nif",
+                [0x502] = "Characters\\Hair\\HairSpikey.nif",
+                [0x503] = "Creatures\\Brahmin\\skeleton.nif"
+            }
         };
 
         var paths = AssetPathCollector.Collect(records, dmpFilePath: null, NullConversionProgressSink.Instance);
 
-        // After prefix inference, all four siblings live under meshes\.
+        // Head + headgear → siblings derived.
+        Assert.Contains("meshes\\characters\\head\\headhuman.nif", paths);
+        Assert.Contains("meshes\\characters\\head\\headhuman.egm", paths);
+        Assert.Contains("meshes\\characters\\head\\headhuman.egt", paths);
+        Assert.Contains("meshes\\characters\\head\\headhuman.tri", paths);
+        Assert.Contains("meshes\\armor\\headgear\\cowboyhat\\cowboyhat.egm", paths);
+
+        // Hair + brahmin skeleton → siblings NOT derived (no facegen data for these).
         Assert.Contains("meshes\\characters\\hair\\hairspikey.nif", paths);
-        Assert.Contains("meshes\\characters\\hair\\hairspikey.egm", paths);
-        Assert.Contains("meshes\\characters\\hair\\hairspikey.egt", paths);
-        Assert.Contains("meshes\\characters\\hair\\hairspikey.tri", paths);
+        Assert.DoesNotContain("meshes\\characters\\hair\\hairspikey.egm", paths);
+        Assert.DoesNotContain("meshes\\creatures\\brahmin\\skeleton.egm", paths);
+        Assert.DoesNotContain("meshes\\creatures\\brahmin\\skeleton.egt", paths);
+        Assert.DoesNotContain("meshes\\creatures\\brahmin\\skeleton.tri", paths);
     }
 
     [Fact]

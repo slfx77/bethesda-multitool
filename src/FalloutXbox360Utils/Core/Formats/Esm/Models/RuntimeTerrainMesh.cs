@@ -1,26 +1,37 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Terrain;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
 ///     Runtime terrain mesh data extracted from TESObjectLAND::LoadedLandData heap pointers.
-///     Contains 33×33 = 1089 vertices per cell (standard Gamebryo terrain grid).
+///     Contains up to 33x33 = 1089 vertices per cell (standard Gamebryo terrain grid).
 /// </summary>
 public record RuntimeTerrainMesh
 {
     /// <summary>Terrain grid dimension (33 vertices per side).</summary>
-    public const int GridSize = 33;
+    public const int GridSize = TerrainConstants.LandGridSize;
 
-    /// <summary>Total vertex count per terrain cell (33×33 = 1089).</summary>
-    public const int VertexCount = GridSize * GridSize;
+    /// <summary>Total vertex count per terrain cell (33x33 = 1089).</summary>
+    public const int VertexCount = TerrainConstants.LandVertexCount;
 
-    /// <summary>1089 vertex positions as flat [x,y,z, x,y,z, ...] array (3267 floats).</summary>
+    private const float AxisBucketSize = 32f;
+    private const float MaxTerrainCoordinate = 200_000f;
+    private const float MaxTerrainHeight = 20_000f;
+    private const float MinTerrainOutlierWindow = 1_024f;
+    private const float MinTerrainSpan = 1_000f;
+    private const float MaxTerrainSpan = 10_000f;
+    private const float TerrainCellWorldSize = TerrainConstants.LandCellWorldSize;
+    private const float TerrainVertexSpacing = TerrainConstants.LandVertexSpacing;
+    private static readonly int[] CandidateGridSizes = [33, 17, 16, 9, 8, 5, 4];
+
+    /// <summary>Vertex positions as flat [x,y,z, x,y,z, ...] array.</summary>
     public required float[] Vertices { get; init; }
 
-    /// <summary>1089 vertex normals as flat [x,y,z, ...] array, or null if not available.</summary>
+    /// <summary>Vertex normals as flat [x,y,z, ...] array, or null if not available.</summary>
     public float[]? Normals { get; init; }
 
-    /// <summary>1089 vertex colors as flat [r,g,b,a, ...] array, or null if not available.</summary>
+    /// <summary>Vertex colors as flat [r,g,b,a, ...] array, or null if not available.</summary>
     public float[]? Colors { get; init; }
 
     /// <summary>File offset where vertex data was read from.</summary>
@@ -42,128 +53,119 @@ public record RuntimeTerrainMesh
     public bool HasColors => Colors != null;
 
     /// <summary>
-    ///     Detect the LOD level of this terrain mesh based on vertex XY grid analysis.
-    ///     The 1089-vertex buffer is shared across LOD levels:
-    ///     LOD 0 = 33×33 at 128-unit spacing, LOD 1 = 17×17 at 256, LOD 2 = 9×9 at 512, LOD 3 = 5×5 at 1024.
-    ///     Returns (lodLevel, verticesPerRow, measuredSpacing).
+    ///     Detect the LOD level of this terrain mesh from valid XY samples.
+    ///     Supports both vertex-count grids (33, 17, 9, 5) and observed quad-count captures (16, 8, 4).
     /// </summary>
     public (int Level, int VerticesPerRow, float Spacing) DetectLodLevel()
     {
-        // Collect valid X positions from vertices, bucketed to 64-unit resolution
-        // to handle float imprecision while still distinguishing 128 vs 256 spacing.
-        var xBuckets = new SortedSet<int>();
-        for (var i = 0; i < VertexCount; i++)
+        var reconstruction = TryReconstructHeightGrid();
+        if (reconstruction == null)
         {
-            var x = Vertices[i * 3];
-            var y = Vertices[i * 3 + 1];
+            return (-1, 0, 0f);
+        }
 
-            // Skip garbage vertices near origin (unmapped memory)
-            if (MathF.Abs(x) < 10f && MathF.Abs(y) < 10f)
+        return (GridSizeToLodLevel(reconstruction.SourceGridSize), reconstruction.SourceGridSize, reconstruction.SourceSpacing);
+    }
+
+    /// <summary>
+    ///     Reconstruct a canonical 33x33 height grid from runtime terrain vertices.
+    ///     Valid source samples are mapped by XY position, so dense lower-LOD captures and strided 33-slot captures
+    ///     both reconstruct without relying on fixed buffer indices.
+    /// </summary>
+    internal TerrainGridReconstruction? TryReconstructHeightGrid()
+    {
+        var samples = CollectValidSamples();
+        if (samples.Count < 12)
+        {
+            return null;
+        }
+
+        var bounds = TerrainBounds.FromSamples(samples);
+        if (!bounds.IsPlausible)
+        {
+            return null;
+        }
+
+        var localReconstruction = TryReconstructLocalCanonicalGrid(samples, bounds);
+        if (localReconstruction != null)
+        {
+            return localReconstruction;
+        }
+
+        TerrainGridCandidate? bestCandidate = null;
+        foreach (var gridSize in CandidateGridSizes)
+        {
+            var candidate = TryBuildCandidate(samples, bounds, gridSize);
+            if (candidate == null)
             {
                 continue;
             }
 
-            // Skip extreme/invalid values
-            if (MathF.Abs(x) > 100_000f || float.IsNaN(x) || float.IsInfinity(x))
+            if (bestCandidate == null || candidate.Score > bestCandidate.Score)
             {
-                continue;
-            }
-
-            // Bucket to nearest 64 units to group close-but-not-exact values
-            xBuckets.Add((int)MathF.Round(x / 64f));
-        }
-
-        if (xBuckets.Count < 3)
-        {
-            return (-1, xBuckets.Count, 0f);
-        }
-
-        // Count unique X buckets — this directly indicates grid resolution.
-        // Use the mode spacing between consecutive buckets to determine actual step size.
-        var bucketList = xBuckets.ToList();
-        var gapCounts = new Dictionary<int, int>();
-        for (var i = 1; i < bucketList.Count; i++)
-        {
-            var gap = bucketList[i] - bucketList[i - 1];
-            if (gap > 0)
-            {
-                gapCounts[gap] = gapCounts.GetValueOrDefault(gap) + 1;
+                bestCandidate = candidate;
             }
         }
 
-        // Find the most frequent gap (mode)
-        var modeGap = gapCounts.OrderByDescending(kv => kv.Value).First().Key;
-        var modeSpacing = modeGap * 64f;
-
-        // Count vertices that fall on the regular grid defined by the mode spacing.
-        // The grid-consistent unique X count determines LOD level.
-        var gridMinX = bucketList[0];
-        var gridConsistentCount = 0;
-        foreach (var bucket in bucketList)
+        if (bestCandidate == null)
         {
-            var distFromGrid = (bucket - gridMinX) % modeGap;
-            if (distFromGrid == 0)
-            {
-                gridConsistentCount++;
-            }
+            return null;
         }
 
-        // Map grid-consistent X count to LOD level:
-        // LOD 0: ~33 unique X positions, LOD 1: ~17, LOD 2: ~9, LOD 3: ~5
-        int level;
-        if (gridConsistentCount >= 28) // LOD 0: 33 (allow some missing)
-        {
-            level = 0;
-        }
-        else if (gridConsistentCount >= 14) // LOD 1: 17
-        {
-            level = 1;
-        }
-        else if (gridConsistentCount >= 7) // LOD 2: 9
-        {
-            level = 2;
-        }
-        else if (gridConsistentCount >= 4) // LOD 3: 5
-        {
-            level = 3;
-        }
-        else
-        {
-            level = -1;
-        }
+        var sourceHeights = BuildSourceGrid(bestCandidate);
+        var heights = InterpolateToCanonicalGrid(sourceHeights, bestCandidate.SourceGridSize);
 
-        return (level, gridConsistentCount, modeSpacing);
+        return new TerrainGridReconstruction
+        {
+            Heights = heights,
+            SourceGridSize = bestCandidate.SourceGridSize,
+            SourceSampleCount = bestCandidate.OccupiedCount,
+            SourceCoveragePercent = bestCandidate.CoveragePercent,
+            SourceCoverageMask = BuildCanonicalCoverageMask(bestCandidate),
+            SourceSpacing = (bestCandidate.SpacingX + bestCandidate.SpacingY) * 0.5f,
+            AverageFitError = bestCandidate.AverageFitError,
+            MaxFitError = bestCandidate.MaxFitError,
+            MinX = bounds.MinX,
+            MaxX = bounds.MaxX,
+            MinY = bounds.MinY,
+            MaxY = bounds.MaxY
+        };
+    }
+
+    /// <summary>
+    ///     Return the canonical 33x33 source sample occupancy mask used for runtime terrain reconstruction.
+    ///     True entries came from actual mesh vertices; false entries were interpolated or filled.
+    /// </summary>
+    internal bool[,]? TryGetCanonicalSourceCoverageMask()
+    {
+        return TryReconstructHeightGrid()?.SourceCoverageMask;
     }
 
     /// <summary>
     ///     Create a sanitized copy of this mesh with garbage Z values repaired.
-    ///     Handles both extreme outliers (|Z| > maxAbsZ, NaN, Infinity) and
-    ///     unmapped memory zeros (Z == 0.0 when > 20% of vertices are zero).
+    ///     Handles both extreme outliers (|Z| &gt; maxAbsZ, NaN, Infinity) and
+    ///     unmapped memory zeros (Z == 0.0 when &gt; 20% of vertices are zero).
     ///     Uses iterative neighbor interpolation to fill gaps from the edges inward.
     /// </summary>
-    public RuntimeTerrainMesh SanitizeVertices(float maxAbsZ = 100_000f)
+    public RuntimeTerrainMesh SanitizeVertices(float maxAbsZ = MaxTerrainHeight)
     {
         var sanitized = (float[])Vertices.Clone();
+        var vertexCount = Math.Min(VertexCount, sanitized.Length / 3);
 
-        // Build a boolean grid of which Z values are bad
+        // Build a boolean grid of which Z values are bad.
         var isBad = new bool[VertexCount];
-        var extremeCount = 0;
 
-        // Phase 1: Mark extreme garbage (NaN, Infinity, out-of-range)
-        for (var i = 0; i < VertexCount; i++)
+        for (var i = 0; i < vertexCount; i++)
         {
             var z = sanitized[i * 3 + 2];
             if (MathF.Abs(z) > maxAbsZ || float.IsNaN(z) || float.IsInfinity(z))
             {
                 isBad[i] = true;
-                extremeCount++;
             }
         }
 
-        // Phase 2: Also mark Z == 0.0 as unmapped memory if the cell has many zeros.
-        // Natural terrain rarely has > 20% of vertices at exactly 0.000.
         var zeroCount = 0;
-        for (var i = 0; i < VertexCount; i++)
+        for (var i = 0; i < vertexCount; i++)
         {
             if (!isBad[i] && MathF.Abs(sanitized[i * 3 + 2]) < 0.001f)
             {
@@ -171,12 +173,17 @@ public record RuntimeTerrainMesh
             }
         }
 
-        var zeroPercent = zeroCount * 100.0f / VertexCount;
+        var zeroPercent = vertexCount > 0 ? zeroCount * 100.0f / vertexCount : 0f;
         if (zeroPercent > 20.0f)
         {
-            for (var i = 0; i < VertexCount; i++)
+            for (var i = 0; i < vertexCount; i++)
             {
-                if (!isBad[i] && MathF.Abs(sanitized[i * 3 + 2]) < 0.001f)
+                var x = sanitized[i * 3];
+                var y = sanitized[i * 3 + 1];
+                if (!isBad[i] &&
+                    MathF.Abs(sanitized[i * 3 + 2]) < 0.001f &&
+                    MathF.Abs(x) < 0.001f &&
+                    MathF.Abs(y) < 0.001f)
                 {
                     isBad[i] = true;
                 }
@@ -184,7 +191,7 @@ public record RuntimeTerrainMesh
         }
 
         var totalBad = 0;
-        for (var i = 0; i < VertexCount; i++)
+        for (var i = 0; i < vertexCount; i++)
         {
             if (isBad[i])
             {
@@ -197,13 +204,8 @@ public record RuntimeTerrainMesh
             return this;
         }
 
-        // Snapshot the original bad mask before interpolation modifies it.
-        // This preserves which vertices were originally garbage for downstream analysis.
         var originalBadMask = (bool[])isBad.Clone();
 
-        // Iterative neighbor interpolation: repeat passes until no more progress.
-        // Each pass fills bad vertices that have >= 2 valid neighbors, gradually
-        // expanding the valid region inward from the edges of good data.
         bool madeProgress;
         do
         {
@@ -213,7 +215,7 @@ public record RuntimeTerrainMesh
                 for (var col = 0; col < GridSize; col++)
                 {
                     var idx = row * GridSize + col;
-                    if (!isBad[idx])
+                    if (idx >= vertexCount || !isBad[idx])
                     {
                         continue;
                     }
@@ -231,14 +233,16 @@ public record RuntimeTerrainMesh
 
                             var ny = row + dy;
                             var nx = col + dx;
-                            if (ny >= 0 && ny < GridSize && nx >= 0 && nx < GridSize)
+                            if (ny < 0 || ny >= GridSize || nx < 0 || nx >= GridSize)
                             {
-                                var nIdx = ny * GridSize + nx;
-                                if (!isBad[nIdx])
-                                {
-                                    sum += sanitized[nIdx * 3 + 2];
-                                    count++;
-                                }
+                                continue;
+                            }
+
+                            var nIdx = ny * GridSize + nx;
+                            if (nIdx < vertexCount && !isBad[nIdx])
+                            {
+                                sum += sanitized[nIdx * 3 + 2];
+                                count++;
                             }
                         }
                     }
@@ -253,10 +257,9 @@ public record RuntimeTerrainMesh
             }
         } while (madeProgress);
 
-        // Fill any remaining bad vertices (isolated with < 2 neighbors) with cell average
         var validSum = 0f;
         var validCount = 0;
-        for (var i = 0; i < VertexCount; i++)
+        for (var i = 0; i < vertexCount; i++)
         {
             if (!isBad[i])
             {
@@ -266,7 +269,7 @@ public record RuntimeTerrainMesh
         }
 
         var fillValue = validCount > 0 ? validSum / validCount : 0f;
-        for (var i = 0; i < VertexCount; i++)
+        for (var i = 0; i < vertexCount; i++)
         {
             if (isBad[i])
             {
@@ -283,12 +286,13 @@ public record RuntimeTerrainMesh
     }
 
     /// <summary>
-    ///     Count the number of garbage Z vertices (|Z| > maxAbsZ, NaN, or Infinity).
+    ///     Count the number of garbage Z vertices (|Z| &gt; maxAbsZ, NaN, or Infinity).
     /// </summary>
-    public int CountGarbageZ(float maxAbsZ = 100_000f)
+    public int CountGarbageZ(float maxAbsZ = MaxTerrainHeight)
     {
         var count = 0;
-        for (var i = 0; i < VertexCount; i++)
+        var vertexCount = Math.Min(VertexCount, Vertices.Length / 3);
+        for (var i = 0; i < vertexCount; i++)
         {
             var z = Vertices[i * 3 + 2];
             if (MathF.Abs(z) > maxAbsZ || float.IsNaN(z) || float.IsInfinity(z))
@@ -302,40 +306,30 @@ public record RuntimeTerrainMesh
 
     /// <summary>
     ///     Analyze raw vertex Z data quality for diagnostic purposes.
-    ///     Detects partial captures, flat/corrupt data, and abrupt cutoffs.
+    ///     Detects partial captures, flat/corrupt data, and the reconstructed source LOD.
     /// </summary>
-    public TerrainMeshDiagnostic DiagnoseQuality(int cellX = 0, int cellY = 0, uint formId = 0)
+    public TerrainMeshDiagnostic DiagnoseQuality(int cellX = 0, int cellY = 0, uint formId = 0, float baseHeight = 0f)
     {
-        // Extract all Z values
-        var zValues = new float[VertexCount];
-        for (var i = 0; i < VertexCount; i++)
-        {
-            zValues[i] = Vertices[i * 3 + 2];
-        }
+        var reconstruction = TryReconstructHeightGrid();
+        var analysisHeights = ApplyHeightOffset(
+            reconstruction?.Heights ?? ExtractDenseHeightsForDiagnostics(),
+            baseHeight);
+        var zValues = FlattenHeights(analysisHeights);
 
         var minZ = zValues.Min();
         var maxZ = zValues.Max();
         var zRange = maxZ - minZ;
-
-        // Standard deviation
         var mean = zValues.Average();
-        var variance = zValues.Sum(z => (z - mean) * (z - mean)) / VertexCount;
+        var variance = zValues.Sum(z => (z - mean) * (z - mean)) / zValues.Length;
         var stdDev = MathF.Sqrt(variance);
-
-        // Unique Z count (using small epsilon for float comparison)
         var uniqueZCount = zValues.Select(z => MathF.Round(z, 2)).Distinct().Count();
-
-        // Zero Z count
         var zeroZCount = zValues.Count(z => MathF.Abs(z) < 0.001f);
-
-        // Dominant Z value — most common Z (rounded to 1 decimal)
         var dominantGroup = zValues
             .GroupBy(z => MathF.Round(z, 1))
             .OrderByDescending(g => g.Count())
             .First();
-        var dominantZPercent = dominantGroup.Count() * 100.0f / VertexCount;
+        var dominantZPercent = dominantGroup.Count() * 100.0f / zValues.Length;
 
-        // Per-row analysis: find last row with meaningful variation and detect discontinuities
         var rowRanges = new float[GridSize];
         for (var y = 0; y < GridSize; y++)
         {
@@ -343,7 +337,7 @@ public record RuntimeTerrainMesh
             var rowMax = float.MinValue;
             for (var x = 0; x < GridSize; x++)
             {
-                var z = zValues[y * GridSize + x];
+                var z = analysisHeights[y, x];
                 if (z < rowMin) rowMin = z;
                 if (z > rowMax) rowMax = z;
             }
@@ -351,7 +345,6 @@ public record RuntimeTerrainMesh
             rowRanges[y] = rowMax - rowMin;
         }
 
-        // Last active row: highest row with Z range > 1.0 (meaningful terrain variation)
         var lastActiveRow = 0;
         for (var y = GridSize - 1; y >= 0; y--)
         {
@@ -362,7 +355,6 @@ public record RuntimeTerrainMesh
             }
         }
 
-        // Row discontinuities: count transitions where row range drops by >80%
         var discontinuities = 0;
         for (var y = 1; y < GridSize; y++)
         {
@@ -374,43 +366,35 @@ public record RuntimeTerrainMesh
             }
         }
 
-        // Use pre-sanitization count if available, otherwise count current garbage
-        var garbageZCount = SanitizedZCount > 0
-            ? SanitizedZCount
-            : zValues.Count(z => MathF.Abs(z) > 100_000f || float.IsNaN(z) || float.IsInfinity(z));
+        var garbageZCount = SanitizedZCount > 0 ? SanitizedZCount : CountGarbageZ();
         var sanitizedPercent = SanitizedZCount * 100.0f / VertexCount;
+        var encodedRoundTripMaxError = reconstruction != null
+            ? EncodeHeightmap(analysisHeights).EncodedRoundTripMaxError
+            : 0f;
+        var inferredCell = reconstruction != null
+            ? InferCellCoordinates(reconstruction.MinX, reconstruction.MaxX, reconstruction.MinY, reconstruction.MaxY)
+            : null;
 
-        // Classification — check corruption first, then quality categories.
-        // "Corrupt" means significant sanitization was needed, indicating the raw data was garbage.
-        // "Flat" only applies to genuinely flat terrain (low sanitization).
         string classification;
-        if (sanitizedPercent > 30.0f)
+        if (reconstruction == null)
         {
             classification = "Corrupt";
         }
-        else if (zRange < 0.1f && sanitizedPercent < 5.0f)
-        {
-            classification = "Flat"; // Genuinely flat terrain (rare but valid)
-        }
         else if (zRange < 0.1f)
         {
-            classification = "Corrupt"; // Garbage data flattened by sanitization
+            classification = "Flat";
         }
         else if (dominantZPercent > 95.0f)
         {
             classification = "FewPixels";
         }
-        else if (lastActiveRow < 28 && discontinuities > 0)
+        else if (reconstruction.SourceCoveragePercent < 99.0f)
         {
             classification = "Partial";
-        }
-        else if (uniqueZCount > 100 && lastActiveRow >= 28)
-        {
-            classification = "Complete";
         }
         else
         {
-            classification = "Partial";
+            classification = "Complete";
         }
 
         return new TerrainMeshDiagnostic
@@ -418,6 +402,12 @@ public record RuntimeTerrainMesh
             CellX = cellX,
             CellY = cellY,
             FormId = formId,
+            MeshMinX = reconstruction?.MinX,
+            MeshMaxX = reconstruction?.MaxX,
+            MeshMinY = reconstruction?.MinY,
+            MeshMaxY = reconstruction?.MaxY,
+            MeshInferredCellX = inferredCell?.X,
+            MeshInferredCellY = inferredCell?.Y,
             MinZ = minZ,
             MaxZ = maxZ,
             ZRange = zRange,
@@ -429,115 +419,819 @@ public record RuntimeTerrainMesh
             RowDiscontinuities = discontinuities,
             GarbageZCount = garbageZCount,
             SanitizedPercent = sanitizedPercent,
+            HeightSource = reconstruction != null ? "RuntimeMESH" : "None",
+            DetectedGridSize = reconstruction?.SourceGridSize ?? 0,
+            DetectedLodLevel = reconstruction != null ? GridSizeToLodLevel(reconstruction.SourceGridSize) : -1,
+            SourceSampleCount = reconstruction?.SourceSampleCount ?? 0,
+            SourceCoveragePercent = reconstruction?.SourceCoveragePercent ?? 0f,
+            EncodedRoundTripMaxError = encodedRoundTripMaxError,
+            HasRuntimeVertexColors = HasColors,
             Classification = classification
         };
     }
 
-    /// <summary>
-    ///     Convert runtime vertex heights to a LandHeightmap (VHGT-compatible format).
-    ///     Detects LOD level and interpolates to 33×33 if needed, then reverse-encodes
-    ///     as cumulative sbyte deltas with a base height offset.
-    /// </summary>
-    public LandHeightmap ToLandHeightmap()
+    internal (int X, int Y)? TryInferCellCoordinates()
     {
-        // Detect LOD level: LOD 1+ terrain has fewer valid vertices in the 1089-element buffer.
-        // Reading the full buffer as 33×33 would include garbage from adjacent memory.
-        var (lodLevel, verticesPerRow, _) = DetectLodLevel();
-        if (lodLevel > 0 && verticesPerRow >= 5)
-        {
-            return ToLandHeightmapFromLod(verticesPerRow);
-        }
-
-        // LOD 0 (or detection failed): standard 33×33 grid
-        var heights = ExtractHeightsFullGrid();
-        return EncodeHeightmap(heights);
+        var reconstruction = TryReconstructHeightGrid();
+        return reconstruction == null
+            ? null
+            : InferCellCoordinates(reconstruction.MinX, reconstruction.MaxX, reconstruction.MinY, reconstruction.MaxY);
     }
 
     /// <summary>
-    ///     Extract heights from LOD terrain (fewer than 33 valid vertices per row).
-    ///     Extracts the sparse subgrid and bilinear-interpolates to 33×33.
+    ///     Convert runtime vertex heights to a LandHeightmap (VHGT-compatible format).
+    ///     Lower LOD grids are reconstructed by XY position and bilinear interpolation.
     /// </summary>
-    private LandHeightmap ToLandHeightmapFromLod(int verticesPerRow)
+    public LandHeightmap ToLandHeightmap(float baseHeight = 0f)
     {
-        // LOD terrain uses every Nth vertex. The step between LOD vertices in the 33-wide buffer:
-        // LOD 1: 17 vertices → step 2 (indices 0,2,4,...,32)
-        // LOD 2: 9 vertices  → step 4
-        // LOD 3: 5 vertices  → step 8
-        var step = (GridSize - 1) / (verticesPerRow - 1);
-        if (step < 1)
+        var reconstruction = TryReconstructHeightGrid();
+        if (reconstruction == null)
         {
-            step = 1;
+            throw new InvalidOperationException("Runtime terrain mesh does not contain a reconstructable terrain grid.");
         }
 
-        // Extract the sparse subgrid Z values
-        var sparse = new float[verticesPerRow, verticesPerRow];
-        for (var sy = 0; sy < verticesPerRow; sy++)
+        return EncodeHeightmap(ApplyHeightOffset(reconstruction.Heights, baseHeight));
+    }
+
+    /// <summary>
+    ///     Reconstruct VCLR bytes from runtime vertex colors using the same detected terrain grid as height data.
+    ///     Alpha is ignored; output is RGB triplets in canonical 33x33 LAND vertex order.
+    /// </summary>
+    public byte[]? ToLandVertexColorBytes()
+    {
+        if (Colors is null || Colors.Length < 3)
         {
-            for (var sx = 0; sx < verticesPerRow; sx++)
+            return null;
+        }
+
+        var reconstruction = TryReconstructHeightGrid();
+        if (reconstruction == null)
+        {
+            return null;
+        }
+
+        var samples = CollectValidSamples();
+        if (samples.Count == 0)
+        {
+            return null;
+        }
+
+        var sourceGridSize = reconstruction.SourceGridSize;
+        if (reconstruction.UsesCanonicalLocalFrame)
+        {
+            return ToLandVertexColorBytesFromCanonicalLocalSamples(samples);
+        }
+
+        var spacingX = (reconstruction.MaxX - reconstruction.MinX) / (sourceGridSize - 1);
+        var spacingY = (reconstruction.MaxY - reconstruction.MinY) / (sourceGridSize - 1);
+        if (spacingX <= 0f || spacingY <= 0f)
+        {
+            return null;
+        }
+
+        var cells = new TerrainColorCell?[sourceGridSize, sourceGridSize];
+        var tolerance = Math.Max(24f, Math.Max(spacingX, spacingY) * 0.28f);
+        var colorStride = Colors.Length >= VertexCount * 4 ? 4 : 3;
+
+        foreach (var sample in samples)
+        {
+            var colorOffset = sample.Index * colorStride;
+            if (colorOffset + 2 >= Colors.Length)
             {
-                var srcIdx = sy * step * GridSize + sx * step;
-                if (srcIdx < VertexCount)
+                continue;
+            }
+
+            var r = Colors[colorOffset];
+            var g = Colors[colorOffset + 1];
+            var b = Colors[colorOffset + 2];
+            if (!IsFinite(r) || !IsFinite(g) || !IsFinite(b))
+            {
+                continue;
+            }
+
+            var gridX = (int)MathF.Round((sample.X - reconstruction.MinX) / spacingX);
+            var gridY = (int)MathF.Round((sample.Y - reconstruction.MinY) / spacingY);
+            if (gridX < 0 || gridX >= sourceGridSize || gridY < 0 || gridY >= sourceGridSize)
+            {
+                continue;
+            }
+
+            var expectedX = reconstruction.MinX + gridX * spacingX;
+            var expectedY = reconstruction.MinY + gridY * spacingY;
+            var dx = sample.X - expectedX;
+            var dy = sample.Y - expectedY;
+            var fitError = MathF.Sqrt(dx * dx + dy * dy);
+            if (fitError > tolerance)
+            {
+                continue;
+            }
+
+            var existing = cells[gridY, gridX];
+            if (existing == null || fitError < existing.FitError)
+            {
+                cells[gridY, gridX] = new TerrainColorCell(r, g, b, fitError);
+            }
+        }
+
+        var sourceColors = BuildSourceColorGrid(cells, sourceGridSize);
+        if (sourceColors == null)
+        {
+            return null;
+        }
+
+        return InterpolateColorsToVclr(sourceColors, sourceGridSize);
+    }
+
+    private byte[]? ToLandVertexColorBytesFromCanonicalLocalSamples(List<TerrainVertexSample> samples)
+    {
+        var cells = new TerrainColorCell?[GridSize, GridSize];
+        var colorStride = Colors!.Length >= VertexCount * 4 ? 4 : 3;
+        foreach (var sample in samples)
+        {
+            var mapped = TryMapLocalSampleToCanonicalCell(sample);
+            if (mapped == null)
+            {
+                continue;
+            }
+
+            var colorOffset = sample.Index * colorStride;
+            if (colorOffset + 2 >= Colors.Length)
+            {
+                continue;
+            }
+
+            var r = Colors[colorOffset];
+            var g = Colors[colorOffset + 1];
+            var b = Colors[colorOffset + 2];
+            if (!IsFinite(r) || !IsFinite(g) || !IsFinite(b))
+            {
+                continue;
+            }
+
+            var (gridX, gridY, fitError) = mapped.Value;
+            var existing = cells[gridY, gridX];
+            if (existing == null || fitError < existing.FitError)
+            {
+                cells[gridY, gridX] = new TerrainColorCell(r, g, b, fitError);
+            }
+        }
+
+        var sourceColors = BuildSourceColorGrid(cells, GridSize);
+        return sourceColors == null ? null : InterpolateColorsToVclr(sourceColors, GridSize);
+    }
+
+    private List<TerrainVertexSample> CollectValidSamples()
+    {
+        var samples = new List<TerrainVertexSample>();
+        var vertexCount = Math.Min(VertexCount, Vertices.Length / 3);
+
+        for (var i = 0; i < vertexCount; i++)
+        {
+            if (SanitizedMask != null && i < SanitizedMask.Length && SanitizedMask[i])
+            {
+                continue;
+            }
+
+            var x = Vertices[i * 3];
+            var y = Vertices[i * 3 + 1];
+            var z = Vertices[i * 3 + 2];
+
+            if (!IsFinite(x) || !IsFinite(y) || !IsFinite(z))
+            {
+                continue;
+            }
+
+            if (MathF.Abs(x) > MaxTerrainCoordinate || MathF.Abs(y) > MaxTerrainCoordinate ||
+                MathF.Abs(z) > MaxTerrainHeight)
+            {
+                continue;
+            }
+
+            if (MathF.Abs(x) < 0.001f && MathF.Abs(y) < 0.001f && MathF.Abs(z) < 0.001f)
+            {
+                continue;
+            }
+
+            samples.Add(new TerrainVertexSample(i, x, y, z));
+        }
+
+        return FilterZOutliers(samples);
+    }
+
+    private static List<TerrainVertexSample> FilterZOutliers(List<TerrainVertexSample> samples)
+    {
+        if (samples.Count < 64)
+        {
+            return samples;
+        }
+
+        var heights = samples.Select(sample => sample.Z).Order().ToArray();
+        var q1 = Percentile(heights, 0.25f);
+        var q3 = Percentile(heights, 0.75f);
+        var iqr = q3 - q1;
+        var window = Math.Max(MinTerrainOutlierWindow, iqr * 3f);
+        var minZ = q1 - window;
+        var maxZ = q3 + window;
+
+        var filtered = samples
+            .Where(sample => sample.Z >= minZ && sample.Z <= maxZ)
+            .ToList();
+
+        return filtered.Count >= 12 ? filtered : samples;
+    }
+
+    private static float Percentile(IReadOnlyList<float> sortedValues, float percentile)
+    {
+        if (sortedValues.Count == 1)
+        {
+            return sortedValues[0];
+        }
+
+        var index = Math.Clamp(percentile, 0f, 1f) * (sortedValues.Count - 1);
+        var lower = (int)MathF.Floor(index);
+        var upper = Math.Min(lower + 1, sortedValues.Count - 1);
+        var fraction = index - lower;
+        return sortedValues[lower] * (1f - fraction) + sortedValues[upper] * fraction;
+    }
+
+    private static TerrainGridCandidate? TryBuildCandidate(
+        List<TerrainVertexSample> samples,
+        TerrainBounds bounds,
+        int gridSize)
+    {
+        var spacingX = bounds.RangeX / (gridSize - 1);
+        var spacingY = bounds.RangeY / (gridSize - 1);
+        if (spacingX <= 0f || spacingY <= 0f)
+        {
+            return null;
+        }
+
+        var cells = new TerrainGridCell?[gridSize, gridSize];
+        var tolerance = Math.Max(24f, Math.Max(spacingX, spacingY) * 0.28f);
+
+        foreach (var sample in samples)
+        {
+            var gridX = (int)MathF.Round((sample.X - bounds.MinX) / spacingX);
+            var gridY = (int)MathF.Round((sample.Y - bounds.MinY) / spacingY);
+            if (gridX < 0 || gridX >= gridSize || gridY < 0 || gridY >= gridSize)
+            {
+                continue;
+            }
+
+            var expectedX = bounds.MinX + gridX * spacingX;
+            var expectedY = bounds.MinY + gridY * spacingY;
+            var dx = sample.X - expectedX;
+            var dy = sample.Y - expectedY;
+            var fitError = MathF.Sqrt(dx * dx + dy * dy);
+            if (fitError > tolerance)
+            {
+                continue;
+            }
+
+            var existing = cells[gridY, gridX];
+            if (existing == null || fitError < existing.FitError)
+            {
+                cells[gridY, gridX] = new TerrainGridCell(sample.Z, fitError);
+            }
+        }
+
+        var occupied = 0;
+        var fitSum = 0f;
+        var maxFit = 0f;
+        for (var y = 0; y < gridSize; y++)
+        {
+            for (var x = 0; x < gridSize; x++)
+            {
+                var cell = cells[y, x];
+                if (cell == null)
                 {
-                    sparse[sy, sx] = Vertices[srcIdx * 3 + 2];
+                    continue;
+                }
+
+                occupied++;
+                fitSum += cell.FitError;
+                maxFit = Math.Max(maxFit, cell.FitError);
+            }
+        }
+
+        var coveragePercent = occupied * 100.0f / (gridSize * gridSize);
+        if (coveragePercent < RequiredCoveragePercent(gridSize) || !HasAdequateEdgeCoverage(cells, gridSize))
+        {
+            return null;
+        }
+
+        var averageFit = occupied > 0 ? fitSum / occupied : 0f;
+        var score = occupied * 1000f + gridSize * 10f - averageFit;
+
+        return new TerrainGridCandidate
+        {
+            SourceGridSize = gridSize,
+            Cells = cells,
+            OccupiedCount = occupied,
+            CoveragePercent = coveragePercent,
+            SpacingX = spacingX,
+            SpacingY = spacingY,
+            AverageFitError = averageFit,
+            MaxFitError = maxFit,
+            Score = score
+        };
+    }
+
+    private static TerrainGridReconstruction? TryReconstructLocalCanonicalGrid(
+        List<TerrainVertexSample> samples,
+        TerrainBounds bounds)
+    {
+        if (!UsesLocalCellCoordinates(bounds))
+        {
+            return null;
+        }
+
+        var cells = new TerrainGridCell?[GridSize, GridSize];
+        var fitSum = 0f;
+        var maxFit = 0f;
+        foreach (var sample in samples)
+        {
+            var mapped = TryMapLocalSampleToCanonicalCell(sample);
+            if (mapped == null)
+            {
+                continue;
+            }
+
+            var (gridX, gridY, fitError) = mapped.Value;
+            var existing = cells[gridY, gridX];
+            if (existing == null || fitError < existing.FitError)
+            {
+                cells[gridY, gridX] = new TerrainGridCell(sample.Z, fitError);
+            }
+        }
+
+        var occupied = 0;
+        for (var y = 0; y < GridSize; y++)
+        {
+            for (var x = 0; x < GridSize; x++)
+            {
+                var cell = cells[y, x];
+                if (cell == null)
+                {
+                    continue;
+                }
+
+                occupied++;
+                fitSum += cell.FitError;
+                maxFit = Math.Max(maxFit, cell.FitError);
+            }
+        }
+
+        if (occupied < 12)
+        {
+            return null;
+        }
+
+        var heights = BuildSourceGrid(new TerrainGridCandidate
+        {
+            SourceGridSize = GridSize,
+            Cells = cells,
+            OccupiedCount = occupied,
+            CoveragePercent = occupied * 100.0f / VertexCount,
+            SpacingX = TerrainVertexSpacing,
+            SpacingY = TerrainVertexSpacing,
+            AverageFitError = occupied > 0 ? fitSum / occupied : 0f,
+            MaxFitError = maxFit,
+            Score = occupied
+        });
+
+        return new TerrainGridReconstruction
+        {
+            Heights = heights,
+            SourceGridSize = EstimateSourceGridSize(cells),
+            SourceSampleCount = occupied,
+            SourceCoveragePercent = occupied * 100.0f / VertexCount,
+            SourceCoverageMask = BuildCanonicalCoverageMask(cells),
+            SourceSpacing = TerrainVertexSpacing,
+            AverageFitError = occupied > 0 ? fitSum / occupied : 0f,
+            MaxFitError = maxFit,
+            MinX = bounds.MinX,
+            MaxX = bounds.MaxX,
+            MinY = bounds.MinY,
+            MaxY = bounds.MaxY,
+            UsesCanonicalLocalFrame = true
+        };
+    }
+
+    private static bool[,] BuildCanonicalCoverageMask(TerrainGridCandidate candidate)
+    {
+        var mask = new bool[GridSize, GridSize];
+        if (candidate.SourceGridSize <= 1)
+        {
+            return mask;
+        }
+
+        for (var y = 0; y < candidate.SourceGridSize; y++)
+        {
+            for (var x = 0; x < candidate.SourceGridSize; x++)
+            {
+                if (candidate.Cells[y, x] == null)
+                {
+                    continue;
+                }
+
+                var canonicalX = (int)MathF.Round(x * (GridSize - 1) / (float)(candidate.SourceGridSize - 1));
+                var canonicalY = (int)MathF.Round(y * (GridSize - 1) / (float)(candidate.SourceGridSize - 1));
+                mask[canonicalY, canonicalX] = true;
+            }
+        }
+
+        return mask;
+    }
+
+    private static bool[,] BuildCanonicalCoverageMask(TerrainGridCell?[,] cells)
+    {
+        var mask = new bool[GridSize, GridSize];
+        for (var y = 0; y < GridSize; y++)
+        {
+            for (var x = 0; x < GridSize; x++)
+            {
+                mask[y, x] = cells[y, x] != null;
+            }
+        }
+
+        return mask;
+    }
+
+    private static bool UsesLocalCellCoordinates(TerrainBounds bounds)
+    {
+        return TerrainCoordinateMapper.IsWithinLocalCellBounds(
+            bounds.MinX,
+            bounds.MaxX,
+            bounds.MinY,
+            bounds.MaxY);
+    }
+
+    private static (int X, int Y, float FitError)? TryMapLocalSampleToCanonicalCell(TerrainVertexSample sample)
+    {
+        var mapped = TerrainCoordinateMapper.TryMapLocalVertexToCanonicalCell(sample.X, sample.Y);
+        return mapped == null
+            ? null
+            : (mapped.Value.X, mapped.Value.Y, mapped.Value.FitError);
+    }
+
+    private static int EstimateSourceGridSize(TerrainGridCell?[,] cells)
+    {
+        var xCount = 0;
+        var yCount = 0;
+        for (var x = 0; x < GridSize; x++)
+        {
+            for (var y = 0; y < GridSize; y++)
+            {
+                if (cells[y, x] != null)
+                {
+                    xCount++;
+                    break;
                 }
             }
         }
 
-        // Bilinear interpolate sparse grid to 33×33
-        var heights = new float[GridSize, GridSize];
         for (var y = 0; y < GridSize; y++)
         {
             for (var x = 0; x < GridSize; x++)
             {
-                // Map output (0..32) to sparse grid coordinates
-                var srcX = x * (verticesPerRow - 1) / (float)(GridSize - 1);
-                var srcY = y * (verticesPerRow - 1) / (float)(GridSize - 1);
-
-                var x0 = (int)MathF.Floor(srcX);
-                var y0 = (int)MathF.Floor(srcY);
-                var x1 = Math.Min(x0 + 1, verticesPerRow - 1);
-                var y1 = Math.Min(y0 + 1, verticesPerRow - 1);
-
-                var fx = srcX - x0;
-                var fy = srcY - y0;
-
-                heights[y, x] = sparse[y0, x0] * (1 - fx) * (1 - fy)
-                                + sparse[y0, x1] * fx * (1 - fy)
-                                + sparse[y1, x0] * (1 - fx) * fy
-                                + sparse[y1, x1] * fx * fy;
+                if (cells[y, x] != null)
+                {
+                    yCount++;
+                    break;
+                }
             }
         }
 
-        return EncodeHeightmap(heights);
+        var observed = Math.Max(xCount, yCount);
+        return CandidateGridSizes
+            .OrderBy(size => Math.Abs(size - observed))
+            .ThenByDescending(size => size)
+            .First();
     }
 
-    /// <summary>
-    ///     Extract Z (height) values from the full 33×33 vertex array.
-    /// </summary>
-    private float[,] ExtractHeightsFullGrid()
+    private static float[,] BuildSourceGrid(TerrainGridCandidate candidate)
+    {
+        var gridSize = candidate.SourceGridSize;
+        var source = new float[gridSize, gridSize];
+        var hasValue = new bool[gridSize, gridSize];
+        var sum = 0f;
+        var count = 0;
+
+        for (var y = 0; y < gridSize; y++)
+        {
+            for (var x = 0; x < gridSize; x++)
+            {
+                var cell = candidate.Cells[y, x];
+                if (cell == null)
+                {
+                    continue;
+                }
+
+                source[y, x] = cell.Z;
+                hasValue[y, x] = true;
+                sum += cell.Z;
+                count++;
+            }
+        }
+
+        var fallback = count > 0 ? sum / count : 0f;
+        bool madeProgress;
+        do
+        {
+            madeProgress = false;
+            for (var y = 0; y < gridSize; y++)
+            {
+                for (var x = 0; x < gridSize; x++)
+                {
+                    if (hasValue[y, x])
+                    {
+                        continue;
+                    }
+
+                    var neighborSum = 0f;
+                    var neighborCount = 0;
+                    for (var dy = -1; dy <= 1; dy++)
+                    {
+                        for (var dx = -1; dx <= 1; dx++)
+                        {
+                            if (dx == 0 && dy == 0)
+                            {
+                                continue;
+                            }
+
+                            var nx = x + dx;
+                            var ny = y + dy;
+                            if (nx < 0 || nx >= gridSize || ny < 0 || ny >= gridSize || !hasValue[ny, nx])
+                            {
+                                continue;
+                            }
+
+                            neighborSum += source[ny, nx];
+                            neighborCount++;
+                        }
+                    }
+
+                    if (neighborCount >= 2)
+                    {
+                        source[y, x] = neighborSum / neighborCount;
+                        hasValue[y, x] = true;
+                        madeProgress = true;
+                    }
+                }
+            }
+        } while (madeProgress);
+
+        for (var y = 0; y < gridSize; y++)
+        {
+            for (var x = 0; x < gridSize; x++)
+            {
+                if (!hasValue[y, x])
+                {
+                    source[y, x] = fallback;
+                }
+            }
+        }
+
+        return source;
+    }
+
+    private static float[,] InterpolateToCanonicalGrid(float[,] source, int sourceGridSize)
     {
         var heights = new float[GridSize, GridSize];
         for (var y = 0; y < GridSize; y++)
         {
             for (var x = 0; x < GridSize; x++)
             {
-                heights[y, x] = Vertices[(y * GridSize + x) * 3 + 2];
+                var srcX = x * (sourceGridSize - 1) / (float)(GridSize - 1);
+                var srcY = y * (sourceGridSize - 1) / (float)(GridSize - 1);
+
+                var x0 = (int)MathF.Floor(srcX);
+                var y0 = (int)MathF.Floor(srcY);
+                var x1 = Math.Min(x0 + 1, sourceGridSize - 1);
+                var y1 = Math.Min(y0 + 1, sourceGridSize - 1);
+                var fx = srcX - x0;
+                var fy = srcY - y0;
+
+                heights[y, x] = source[y0, x0] * (1 - fx) * (1 - fy)
+                                + source[y0, x1] * fx * (1 - fy)
+                                + source[y1, x0] * (1 - fx) * fy
+                                + source[y1, x1] * fx * fy;
             }
         }
 
         return heights;
     }
 
+    private static (float R, float G, float B)[,]? BuildSourceColorGrid(
+        TerrainColorCell?[,] cells,
+        int gridSize)
+    {
+        var source = new (float R, float G, float B)[gridSize, gridSize];
+        var hasValue = new bool[gridSize, gridSize];
+        var sumR = 0f;
+        var sumG = 0f;
+        var sumB = 0f;
+        var count = 0;
+
+        for (var y = 0; y < gridSize; y++)
+        {
+            for (var x = 0; x < gridSize; x++)
+            {
+                var cell = cells[y, x];
+                if (cell == null)
+                {
+                    continue;
+                }
+
+                source[y, x] = (cell.R, cell.G, cell.B);
+                hasValue[y, x] = true;
+                sumR += cell.R;
+                sumG += cell.G;
+                sumB += cell.B;
+                count++;
+            }
+        }
+
+        if (count == 0)
+        {
+            return null;
+        }
+
+        var fallback = (R: sumR / count, G: sumG / count, B: sumB / count);
+        bool madeProgress;
+        do
+        {
+            madeProgress = false;
+            for (var y = 0; y < gridSize; y++)
+            {
+                for (var x = 0; x < gridSize; x++)
+                {
+                    if (hasValue[y, x])
+                    {
+                        continue;
+                    }
+
+                    var r = 0f;
+                    var g = 0f;
+                    var b = 0f;
+                    var neighborCount = 0;
+                    for (var dy = -1; dy <= 1; dy++)
+                    {
+                        for (var dx = -1; dx <= 1; dx++)
+                        {
+                            if (dx == 0 && dy == 0)
+                            {
+                                continue;
+                            }
+
+                            var nx = x + dx;
+                            var ny = y + dy;
+                            if (nx < 0 || nx >= gridSize || ny < 0 || ny >= gridSize || !hasValue[ny, nx])
+                            {
+                                continue;
+                            }
+
+                            r += source[ny, nx].R;
+                            g += source[ny, nx].G;
+                            b += source[ny, nx].B;
+                            neighborCount++;
+                        }
+                    }
+
+                    if (neighborCount >= 2)
+                    {
+                        source[y, x] = (r / neighborCount, g / neighborCount, b / neighborCount);
+                        hasValue[y, x] = true;
+                        madeProgress = true;
+                    }
+                }
+            }
+        } while (madeProgress);
+
+        for (var y = 0; y < gridSize; y++)
+        {
+            for (var x = 0; x < gridSize; x++)
+            {
+                if (!hasValue[y, x])
+                {
+                    source[y, x] = fallback;
+                }
+            }
+        }
+
+        return source;
+    }
+
+    private static byte[] InterpolateColorsToVclr((float R, float G, float B)[,] source, int sourceGridSize)
+    {
+        var bytes = new byte[VertexCount * 3];
+        for (var y = 0; y < GridSize; y++)
+        {
+            for (var x = 0; x < GridSize; x++)
+            {
+                var srcX = x * (sourceGridSize - 1) / (float)(GridSize - 1);
+                var srcY = y * (sourceGridSize - 1) / (float)(GridSize - 1);
+
+                var x0 = (int)MathF.Floor(srcX);
+                var y0 = (int)MathF.Floor(srcY);
+                var x1 = Math.Min(x0 + 1, sourceGridSize - 1);
+                var y1 = Math.Min(y0 + 1, sourceGridSize - 1);
+                var fx = srcX - x0;
+                var fy = srcY - y0;
+
+                var c00 = source[y0, x0];
+                var c10 = source[y0, x1];
+                var c01 = source[y1, x0];
+                var c11 = source[y1, x1];
+
+                var r = Bilinear(c00.R, c10.R, c01.R, c11.R, fx, fy);
+                var g = Bilinear(c00.G, c10.G, c01.G, c11.G, fx, fy);
+                var b = Bilinear(c00.B, c10.B, c01.B, c11.B, fx, fy);
+
+                var index = (y * GridSize + x) * 3;
+                bytes[index] = ToColorByte(r);
+                bytes[index + 1] = ToColorByte(g);
+                bytes[index + 2] = ToColorByte(b);
+            }
+        }
+
+        return bytes;
+    }
+
+    private static float Bilinear(float c00, float c10, float c01, float c11, float fx, float fy)
+    {
+        return c00 * (1 - fx) * (1 - fy)
+               + c10 * fx * (1 - fy)
+               + c01 * (1 - fx) * fy
+               + c11 * fx * fy;
+    }
+
+    private static byte ToColorByte(float value)
+    {
+        var scaled = value > 1.5f ? value : value * 255f;
+        return (byte)Math.Clamp((int)MathF.Round(scaled), 0, 255);
+    }
+
+    private float[,] ExtractDenseHeightsForDiagnostics()
+    {
+        var heights = new float[GridSize, GridSize];
+        var vertexCount = Math.Min(VertexCount, Vertices.Length / 3);
+        for (var y = 0; y < GridSize; y++)
+        {
+            for (var x = 0; x < GridSize; x++)
+            {
+                var index = y * GridSize + x;
+                var z = index < vertexCount ? Vertices[index * 3 + 2] : 0f;
+                heights[y, x] = IsFinite(z) && MathF.Abs(z) <= MaxTerrainHeight ? z : 0f;
+            }
+        }
+
+        return heights;
+    }
+
+    private static float[] FlattenHeights(float[,] heights)
+    {
+        var values = new float[VertexCount];
+        var index = 0;
+        for (var y = 0; y < GridSize; y++)
+        {
+            for (var x = 0; x < GridSize; x++)
+            {
+                values[index++] = heights[y, x];
+            }
+        }
+
+        return values;
+    }
+
+    private static float[,] ApplyHeightOffset(float[,] heights, float offset)
+    {
+        if (MathF.Abs(offset) < 0.001f)
+        {
+            return heights;
+        }
+
+        var adjusted = new float[GridSize, GridSize];
+        for (var y = 0; y < GridSize; y++)
+        {
+            for (var x = 0; x < GridSize; x++)
+            {
+                adjusted[y, x] = heights[y, x] + offset;
+            }
+        }
+
+        return adjusted;
+    }
+
     /// <summary>
-    ///     Encode a 33×33 height grid as a VHGT-compatible LandHeightmap with cumulative sbyte deltas.
+    ///     Encode a 33x33 height grid as a VHGT-compatible LandHeightmap with cumulative sbyte deltas.
     /// </summary>
     private LandHeightmap EncodeHeightmap(float[,] heights)
     {
         var heightOffset = heights[0, 0] / 8.0f;
         var deltas = new sbyte[VertexCount];
 
-        // Track the decoder's parsed column-0 value (not original heights)
-        // to prevent compounding row-start drift from rounding errors.
         var decoderCol0 = heightOffset * 8.0f;
         for (var y = 0; y < GridSize; y++)
         {
@@ -554,12 +1248,177 @@ public record RuntimeTerrainMesh
             decoderCol0 += deltas[y * GridSize] * 8.0f;
         }
 
+        var decodedHeights = DecodeHeightmap(heightOffset, deltas);
+        var maxError = 0f;
+        for (var y = 0; y < GridSize; y++)
+        {
+            for (var x = 0; x < GridSize; x++)
+            {
+                maxError = Math.Max(maxError, MathF.Abs(decodedHeights[y, x] - heights[y, x]));
+            }
+        }
+
         return new LandHeightmap
         {
             HeightOffset = heightOffset,
             HeightDeltas = deltas,
             Offset = VertexDataOffset,
-            ExactHeights = heights
+            ExactHeights = heights,
+            EncodedRoundTripMaxError = maxError
         };
+    }
+
+    private static float[,] DecodeHeightmap(float heightOffset, sbyte[] deltas)
+    {
+        var heights = new float[GridSize, GridSize];
+        var rowStart = heightOffset * 8f;
+
+        for (var y = 0; y < GridSize; y++)
+        {
+            var height = rowStart;
+            for (var x = 0; x < GridSize; x++)
+            {
+                height += deltas[y * GridSize + x] * 8f;
+                heights[y, x] = height;
+            }
+
+            rowStart = heights[y, 0];
+        }
+
+        return heights;
+    }
+
+    private static bool HasAdequateEdgeCoverage(TerrainGridCell?[,] cells, int gridSize)
+    {
+        var required = Math.Max(2, gridSize / 3);
+        var top = 0;
+        var bottom = 0;
+        var left = 0;
+        var right = 0;
+
+        for (var i = 0; i < gridSize; i++)
+        {
+            if (cells[0, i] != null) top++;
+            if (cells[gridSize - 1, i] != null) bottom++;
+            if (cells[i, 0] != null) left++;
+            if (cells[i, gridSize - 1] != null) right++;
+        }
+
+        return top >= required && bottom >= required && left >= required && right >= required;
+    }
+
+    private static float RequiredCoveragePercent(int gridSize) => gridSize <= 5 ? 75f : 80f;
+
+    private static int GridSizeToLodLevel(int gridSize) => gridSize switch
+    {
+        >= 33 => 0,
+        >= 16 => 1,
+        >= 8 => 2,
+        >= 4 => 3,
+        _ => -1
+    };
+
+    private static bool IsFinite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
+
+    private static (int X, int Y)? InferCellCoordinates(float minX, float maxX, float minY, float maxY)
+    {
+        var rangeX = maxX - minX;
+        var rangeY = maxY - minY;
+        if (rangeX < MinTerrainSpan || rangeY < MinTerrainSpan ||
+            rangeX > MaxTerrainSpan || rangeY > MaxTerrainSpan)
+        {
+            return null;
+        }
+
+        var centerX = (minX + maxX) * 0.5f;
+        var centerY = (minY + maxY) * 0.5f;
+        if (MathF.Abs(centerX) < TerrainCellWorldSize && MathF.Abs(centerY) < TerrainCellWorldSize)
+        {
+            return null;
+        }
+
+        return (
+            (int)MathF.Floor(centerX / TerrainCellWorldSize),
+            (int)MathF.Floor(centerY / TerrainCellWorldSize));
+    }
+
+    internal sealed record TerrainGridReconstruction
+    {
+        public required float[,] Heights { get; init; }
+        public int SourceGridSize { get; init; }
+        public int SourceSampleCount { get; init; }
+        public float SourceCoveragePercent { get; init; }
+        public bool[,]? SourceCoverageMask { get; init; }
+        public float SourceSpacing { get; init; }
+        public float AverageFitError { get; init; }
+        public float MaxFitError { get; init; }
+        public float MinX { get; init; }
+        public float MaxX { get; init; }
+        public float MinY { get; init; }
+        public float MaxY { get; init; }
+        public bool UsesCanonicalLocalFrame { get; init; }
+    }
+
+    private sealed record TerrainVertexSample(int Index, float X, float Y, float Z);
+
+    private sealed record TerrainGridCell(float Z, float FitError);
+
+    private sealed record TerrainColorCell(float R, float G, float B, float FitError);
+
+    private sealed record TerrainGridCandidate
+    {
+        public int SourceGridSize { get; init; }
+        public required TerrainGridCell?[,] Cells { get; init; }
+        public int OccupiedCount { get; init; }
+        public float CoveragePercent { get; init; }
+        public float SpacingX { get; init; }
+        public float SpacingY { get; init; }
+        public float AverageFitError { get; init; }
+        public float MaxFitError { get; init; }
+        public float Score { get; init; }
+    }
+
+    private readonly record struct TerrainBounds(float MinX, float MaxX, float MinY, float MaxY)
+    {
+        public float RangeX => MaxX - MinX;
+        public float RangeY => MaxY - MinY;
+
+        public bool IsPlausible =>
+            RangeX >= MinTerrainSpan &&
+            RangeY >= MinTerrainSpan &&
+            RangeX <= MaxTerrainSpan &&
+            RangeY <= MaxTerrainSpan;
+
+        public static TerrainBounds FromSamples(List<TerrainVertexSample> samples)
+        {
+            var (minX, maxX) = AxisBounds(samples.Select(s => s.X));
+            var (minY, maxY) = AxisBounds(samples.Select(s => s.Y));
+            return new TerrainBounds(minX, maxX, minY, maxY);
+        }
+
+        private static (float Min, float Max) AxisBounds(IEnumerable<float> values)
+        {
+            var valueList = values.ToList();
+            var buckets = new Dictionary<int, int>();
+            foreach (var value in valueList)
+            {
+                var bucket = (int)MathF.Round(value / AxisBucketSize);
+                buckets[bucket] = buckets.GetValueOrDefault(bucket) + 1;
+            }
+
+            var repeatedBuckets = buckets
+                .Where(kv => kv.Value >= 3)
+                .Select(kv => kv.Key)
+                .OrderBy(bucket => bucket)
+                .ToList();
+
+            if (repeatedBuckets.Count >= 4)
+            {
+                return (repeatedBuckets[0] * AxisBucketSize, repeatedBuckets[^1] * AxisBucketSize);
+            }
+
+            valueList.Sort();
+            return (valueList[0], valueList[^1]);
+        }
     }
 }

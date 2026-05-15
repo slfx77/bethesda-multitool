@@ -298,7 +298,7 @@ internal static class EsmWorldExtractor
                 }
 
                 var land = ExtractLandFromBuffer(workBuffer, workSize, header);
-                if (land?.Heightmap != null)
+                if (land != null)
                 {
                     scanResult.LandRecords.Add(land);
                 }
@@ -309,35 +309,65 @@ internal static class EsmWorldExtractor
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        // Match LAND records to nearby XCLC cell grids for cell coordinates.
-        // In ESM structure, CELL (containing XCLC) precedes its child LAND record by ~100-150 bytes.
-        if (scanResult.CellGrids.Count > 0 && scanResult.LandRecords.Count > 0)
+        // Match LAND records to nearby parent CELL/XCLC metadata for cell coordinates and worldspace.
+        // In ESM structure, CELL (containing XCLC) precedes its child LAND record by ~100-500 bytes.
+        // DMP fragments are less orderly, so keep a bounded proximity search but preserve the exact
+        // parent CELL FormID whenever it is recoverable. That prevents later worldspace/cell matching
+        // from collapsing unrelated worldspaces that share the same grid coordinate.
+        if (scanResult.LandRecords.Count > 0 &&
+            (scanResult.CellGrids.Count > 0 || scanResult.MainRecords.Any(r => r.RecordType == "CELL") ||
+             scanResult.LandToWorldspaceMap.Count > 0))
         {
             var sortedGrids = scanResult.CellGrids.OrderBy(g => g.Offset).ToList();
+            var sortedCells = scanResult.MainRecords
+                .Where(r => r.RecordType == "CELL")
+                .OrderBy(r => r.Offset)
+                .ToList();
             var enriched = new List<ExtractedLandRecord>();
 
             foreach (var land in scanResult.LandRecords)
             {
-                // Find the XCLC that is closest before this LAND record.
-                // In ESM structure, CELL (containing XCLC) precedes its child LAND by ~100-500 bytes.
-                // In DMP files, 10KB is generous enough without matching unrelated cells.
-                CellGridSubrecord? match = null;
-                foreach (var grid in sortedGrids)
+                var match = FindClosestGridBefore(land.Header.Offset, sortedGrids);
+                var parentCell = FindClosestCellBefore(land.Header.Offset, sortedCells);
+                var parentCellFormId = match?.CellFormId ?? parentCell?.FormId;
+
+                uint? worldspaceFormId = null;
+                if (scanResult.LandToWorldspaceMap.TryGetValue(land.Header.FormId, out var landWorldspace))
                 {
-                    var gap = land.Header.Offset - grid.Offset;
-                    if (gap is > 0 and < 10_000)
-                    {
-                        match = grid;
-                    }
-                    else if (grid.Offset > land.Header.Offset)
-                    {
-                        break;
-                    }
+                    worldspaceFormId = landWorldspace;
                 }
 
-                if (match != null)
+                uint? parentCellWorldspace = null;
+                if (parentCellFormId.HasValue &&
+                    scanResult.CellToWorldspaceMap.TryGetValue(parentCellFormId.Value, out var cellWorldspace))
                 {
-                    enriched.Add(land with { CellX = match.GridX, CellY = match.GridY });
+                    parentCellWorldspace = cellWorldspace;
+                }
+
+                if (worldspaceFormId is null && parentCellWorldspace.HasValue)
+                {
+                    worldspaceFormId = parentCellWorldspace;
+                }
+
+                var parentConflictsWithLandWorldspace =
+                    worldspaceFormId.HasValue &&
+                    parentCellWorldspace.HasValue &&
+                    worldspaceFormId.Value != parentCellWorldspace.Value;
+                if (parentConflictsWithLandWorldspace)
+                {
+                    match = null;
+                    parentCellFormId = null;
+                }
+
+                if (match != null || parentCellFormId.HasValue || worldspaceFormId.HasValue)
+                {
+                    enriched.Add(land with
+                    {
+                        CellX = match?.GridX ?? land.CellX,
+                        CellY = match?.GridY ?? land.CellY,
+                        ParentCellFormId = parentCellFormId ?? land.ParentCellFormId,
+                        WorldspaceFormId = worldspaceFormId ?? land.WorldspaceFormId
+                    });
                 }
                 else
                 {
@@ -350,10 +380,63 @@ internal static class EsmWorldExtractor
         }
     }
 
-    private static ExtractedLandRecord? ExtractLandFromBuffer(byte[] data, int dataSize, DetectedMainRecord header)
+    private static CellGridSubrecord? FindClosestGridBefore(
+        long recordOffset,
+        IReadOnlyList<CellGridSubrecord> sortedGrids)
+    {
+        CellGridSubrecord? match = null;
+        foreach (var grid in sortedGrids)
+        {
+            var gap = recordOffset - grid.Offset;
+            if (gap is > 0 and < 10_000)
+            {
+                match = grid;
+            }
+            else if (grid.Offset > recordOffset)
+            {
+                break;
+            }
+        }
+
+        return match;
+    }
+
+    private static DetectedMainRecord? FindClosestCellBefore(
+        long recordOffset,
+        IReadOnlyList<DetectedMainRecord> sortedCells)
+    {
+        DetectedMainRecord? match = null;
+        foreach (var cell in sortedCells)
+        {
+            var gap = recordOffset - cell.Offset;
+            if (gap is > 0 and < 10_000)
+            {
+                match = cell;
+            }
+            else if (cell.Offset > recordOffset)
+            {
+                break;
+            }
+        }
+
+        return match;
+    }
+
+    internal static ExtractedLandRecord? ExtractLandFromBuffer(byte[] data, int dataSize, DetectedMainRecord header)
     {
         LandHeightmap? heightmap = null;
         var textureLayers = new List<LandTextureLayer>();
+        var vclrBlocks = new List<byte[]>();
+        var vtexValues = new List<uint>();
+        var vclrByteCount = 0;
+        var vtexCount = 0;
+        var btxtCount = 0;
+        var atxtCount = 0;
+        var vtxtCount = 0;
+        var vtxtByteCount = 0;
+        var unattachedVtxtCount = 0;
+        var unattachedVtxtByteCount = 0;
+        int? lastAtxtLayerIndex = null;
 
         // Iterate through subrecords using the standard subrecord header format
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, header.IsBigEndian))
@@ -374,34 +457,165 @@ internal static class EsmWorldExtractor
                     };
                 }
             }
-            else if (sub.Signature is "ATXT" or "BTXT" && sub.DataLength >= 8)
+            else if (sub.Signature is "ATXT" or "BTXT")
             {
+                var isAlpha = sub.Signature == "ATXT";
+                if (sub.Signature == "ATXT")
+                {
+                    atxtCount++;
+                }
+                else
+                {
+                    btxtCount++;
+                }
+
+                if (sub.DataLength < 8)
+                {
+                    continue;
+                }
+
                 // Use schema reader for texture layer FormID
                 var textureFormId = SubrecordSchemaReader.ReadNameFormId(subData, header.IsBigEndian);
                 if (textureFormId.HasValue)
                 {
                     var quadrant = subData[4];
+                    var platformFlag = subData[5];
                     var layer = header.IsBigEndian
-                        ? BinaryPrimitives.ReadInt16BigEndian(subData[6..])
-                        : BinaryPrimitives.ReadInt16LittleEndian(subData[6..]);
+                        ? BinaryPrimitives.ReadUInt16BigEndian(subData[6..])
+                        : BinaryPrimitives.ReadUInt16LittleEndian(subData[6..]);
 
-                    textureLayers.Add(new LandTextureLayer(textureFormId.Value, quadrant, layer,
-                        header.Offset + 24 + sub.DataOffset));
+                    textureLayers.Add(new LandTextureLayer
+                    {
+                        Kind = isAlpha ? LandTextureLayerKind.Alpha : LandTextureLayerKind.Base,
+                        TextureFormId = textureFormId.Value,
+                        Quadrant = quadrant,
+                        PlatformFlag = platformFlag,
+                        Layer = layer,
+                        Offset = header.Offset + 24 + sub.DataOffset
+                    });
+
+                    lastAtxtLayerIndex = isAlpha ? textureLayers.Count - 1 : null;
+                }
+            }
+            else if (sub.Signature == "VCLR")
+            {
+                vclrByteCount += sub.DataLength;
+                if (sub.DataLength > 0)
+                {
+                    vclrBlocks.Add(subData.ToArray());
+                }
+            }
+            else if (sub.Signature == "VTEX")
+            {
+                vtexCount += sub.DataLength / 4;
+                for (var i = 0; i + 4 <= sub.DataLength; i += 4)
+                {
+                    vtexValues.Add(header.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData.Slice(i, 4))
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData.Slice(i, 4)));
+                }
+            }
+            else if (sub.Signature == "VTXT")
+            {
+                vtxtCount++;
+                vtxtByteCount += sub.DataLength;
+
+                var entries = ParseLandTextureBlendEntries(subData, header.IsBigEndian);
+                if (lastAtxtLayerIndex.HasValue && lastAtxtLayerIndex.Value < textureLayers.Count)
+                {
+                    textureLayers[lastAtxtLayerIndex.Value].BlendEntries.AddRange(entries);
+                }
+                else
+                {
+                    unattachedVtxtCount++;
+                    unattachedVtxtByteCount += sub.DataLength;
                 }
             }
         }
 
-        if (heightmap == null)
+        if (heightmap == null && vclrByteCount == 0 && vtexCount == 0 &&
+            btxtCount == 0 && atxtCount == 0 && vtxtCount == 0)
         {
             return null;
         }
+
+        var visualData = new LandVisualData
+        {
+            VertexColors = CombineBlocks(vclrBlocks),
+            TextureIndices = vtexValues.Count > 0 ? vtexValues.ToArray() : null,
+            TextureLayers = textureLayers,
+            UnattachedVtxtCount = unattachedVtxtCount,
+            UnattachedVtxtByteCount = unattachedVtxtByteCount,
+            Source = header.IsBigEndian ? "DMP" : "ESM"
+        };
 
         return new ExtractedLandRecord
         {
             Header = header,
             Heightmap = heightmap,
-            TextureLayers = textureLayers
+            ParsedHeightmap = heightmap,
+            TextureLayers = textureLayers,
+            VisualData = visualData.HasAny || visualData.UnattachedVtxtCount > 0 ? visualData : null,
+            VclrByteCount = vclrByteCount,
+            VtexCount = vtexCount,
+            BtxtCount = btxtCount,
+            AtxtCount = atxtCount,
+            VtxtCount = vtxtCount,
+            VtxtByteCount = vtxtByteCount
         };
+    }
+
+    private static List<LandTextureBlendEntry> ParseLandTextureBlendEntries(
+        ReadOnlySpan<byte> data,
+        bool isBigEndian)
+    {
+        var entries = new List<LandTextureBlendEntry>(data.Length / 8);
+        for (var i = 0; i + 8 <= data.Length; i += 8)
+        {
+            var position = isBigEndian
+                ? BinaryPrimitives.ReadUInt16BigEndian(data.Slice(i, 2))
+                : BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(i, 2));
+            if (position > 288)
+            {
+                continue;
+            }
+
+            var opacity = isBigEndian
+                ? BinaryPrimitives.ReadSingleBigEndian(data.Slice(i + 4, 4))
+                : BinaryPrimitives.ReadSingleLittleEndian(data.Slice(i + 4, 4));
+            if (!float.IsFinite(opacity))
+            {
+                continue;
+            }
+
+            entries.Add(new LandTextureBlendEntry(position, data[i + 2], data[i + 3], opacity));
+        }
+
+        return entries;
+    }
+
+    private static byte[]? CombineBlocks(List<byte[]> blocks)
+    {
+        if (blocks.Count == 0)
+        {
+            return null;
+        }
+
+        if (blocks.Count == 1)
+        {
+            return blocks[0];
+        }
+
+        var total = blocks.Sum(b => b.Length);
+        var combined = new byte[total];
+        var offset = 0;
+        foreach (var block in blocks)
+        {
+            Buffer.BlockCopy(block, 0, combined, offset, block.Length);
+            offset += block.Length;
+        }
+
+        return combined;
     }
 
     #endregion

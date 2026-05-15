@@ -16,51 +16,6 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
 internal static class AssetPathCollector
 {
     /// <summary>
-    ///     Known asset file extensions (lowercase, with leading dot) considered "packable" —
-    ///     present in BSAs and resolvable from disk.
-    /// </summary>
-    private static readonly HashSet<string> AssetExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".nif", ".dds", ".ddx", ".kf", ".wav", ".lip", ".egm", ".egt",
-        ".xwm", ".ogg", ".bik", ".psa", ".tri"
-    };
-
-    /// <summary>
-    ///     Property-name fragments that signal a string property holds an asset path.
-    ///     Matched case-insensitively as substrings.
-    /// </summary>
-    private static readonly string[] PathLikePropertyTokens =
-    [
-        "Path", "FileName", "Texture", "Model", "Icon", "Mesh"
-    ];
-
-    /// <summary>
-    ///     File-extension → canonical Data\ subdirectory. Record fields (ModelPath, IconPath,
-    ///     SoundRecord.FileName, …) typically store paths RELATIVE to the asset-type folder
-    ///     (e.g. <c>weapons\mygun.nif</c>), but the runtime queries the full path including
-    ///     <c>meshes\</c>. We use the extension to drive both the expected-prefix detection
-    ///     (trimming garbage that precedes a real path in DMP byte scans) and the prepend
-    ///     step (for record fields that omitted the prefix).
-    /// </summary>
-    private static readonly Dictionary<string, string> ExtensionToPrefix =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            [".nif"] = "meshes\\",
-            [".kf"] = "meshes\\",
-            [".egm"] = "meshes\\",
-            [".egt"] = "meshes\\",
-            [".tri"] = "meshes\\",
-            [".psa"] = "meshes\\",
-            [".dds"] = "textures\\",
-            [".ddx"] = "textures\\",
-            [".wav"] = "sound\\",
-            [".lip"] = "sound\\",
-            [".ogg"] = "sound\\",
-            [".xwm"] = "sound\\",
-            [".bik"] = "video\\"
-        };
-
-    /// <summary>
     ///     Collect every asset path referenced by the converted plugin's record collection
     ///     and (optionally) the raw bytes of the source DMP.
     /// </summary>
@@ -297,7 +252,7 @@ internal static class AssetPathCollector
 
         private static bool IsPathLikeProperty(string name)
         {
-            foreach (var token in PathLikePropertyTokens)
+            foreach (var token in AssetPathRules.PathLikePropertyTokens)
             {
                 if (name.Contains(token, StringComparison.OrdinalIgnoreCase))
                 {
@@ -393,12 +348,6 @@ internal static class AssetPathCollector
     ///     Unlike record-field paths, DMP strings are NOT prefix-inferred because there's
     ///     no way to distinguish an unprefixed real path from byte noise.
     /// </summary>
-    private static readonly string[] DmpScanStrictPrefixes =
-    [
-        "meshes\\", "textures\\", "sound\\", "music\\", "video\\",
-        "data\\meshes\\", "data\\textures\\", "data\\sound\\", "data\\music\\", "data\\video\\"
-    ];
-
     private static void TryRecordCandidate(ReadOnlySpan<byte> bytes, HashSet<string> paths)
     {
         // Quick check: must contain a '.' followed by a known extension before the end.
@@ -421,7 +370,7 @@ internal static class AssetPathCollector
             extBuf[i] = (char)bytes[dotIndex + i];
         }
 
-        if (!AssetExtensions.Contains(new string(extBuf)))
+        if (!AssetPathRules.AssetExtensions.Contains(new string(extBuf)))
         {
             return;
         }
@@ -455,7 +404,7 @@ internal static class AssetPathCollector
 
         var firstSegStr = new string(firstSeg);
         var hasKnownPrefix = false;
-        foreach (var prefix in DmpScanStrictPrefixes)
+        foreach (var prefix in AssetPathRules.DmpScanStrictPrefixes)
         {
             // Match against just the first segment (everything up to and including the first '\').
             // If the path's first segment matches "<prefix>" (e.g., "meshes\"), accept.
@@ -494,15 +443,18 @@ internal static class AssetPathCollector
     // ====================================================================================
 
     /// <summary>
-    ///     For every .nif path in the set, add the matching .egm, .egt, and .tri siblings
-    ///     in the same directory. FNV loads these automatically when the NIF references
-    ///     a head or face mesh.
+    ///     For every facegen-eligible .nif path in the set, add the matching .egm, .egt,
+    ///     and .tri siblings in the same directory. FNV loads these automatically only for
+    ///     head/face meshes — adding them for every NIF (weapons, ammo, statics, etc.)
+    ///     floods the missing-asset list with thousands of bogus entries that no asset on
+    ///     disk would ever satisfy.
     /// </summary>
     private static void DeriveNifSiblings(HashSet<string> paths)
     {
         // Snapshot the current set — we're going to add to it.
         var nifPaths = paths
-            .Where(p => p.EndsWith(".nif", StringComparison.OrdinalIgnoreCase))
+            .Where(p => p.EndsWith(".nif", StringComparison.OrdinalIgnoreCase)
+                        && IsFaceGenEligibleNif(p))
             .ToList();
 
         foreach (var nif in nifPaths)
@@ -512,6 +464,28 @@ internal static class AssetPathCollector
             paths.Add(prefix + ".egt");
             paths.Add(prefix + ".tri");
         }
+    }
+
+    /// <summary>
+    ///     Heuristic: a .nif path is "facegen-eligible" (has .egm/.egt/.tri siblings) when
+    ///     it lives under one of the *specific* directories the engine loads facegen data
+    ///     for. Inspecting FNV PC Data the actual locations are limited to:
+    ///     <list type="bullet">
+    ///         <item><description><c>meshes\characters\head\</c> — race head meshes (headhuman, headold, eyelefthuman, …)</description></item>
+    ///         <item><description><c>meshes\armor\headgear\…\</c> — hat/helmet face-morph data</description></item>
+    ///         <item><description><c>meshes\dlc*\armor\</c> — DLC headgear variants</description></item>
+    ///     </list>
+    ///     Notably <c>meshes\creatures\</c> never has facegen siblings (brahmin skeletons,
+    ///     gecko skeletons, etc. are 4-legged body meshes, no face), and generic body NIFs
+    ///     under <c>meshes\characters\</c> don't either. Earlier passes that auto-derived
+    ///     siblings for everything under <c>characters\</c> / <c>creatures\</c> flooded the
+    ///     missing-asset audit with thousands of bogus entries.
+    /// </summary>
+    private static bool IsFaceGenEligibleNif(string normalizedPath)
+    {
+        return normalizedPath.Contains("\\head\\", StringComparison.OrdinalIgnoreCase)
+               || normalizedPath.Contains("\\headgear\\", StringComparison.OrdinalIgnoreCase)
+               || normalizedPath.Contains("\\facegen\\", StringComparison.OrdinalIgnoreCase);
     }
 
     // ====================================================================================
@@ -525,7 +499,20 @@ internal static class AssetPathCollector
     private static bool TryAddPath(string? raw, HashSet<string> paths)
     {
         var normalized = TryNormalizeRequestPath(raw);
-        return normalized is not null && paths.Add(normalized);
+        return normalized is not null
+               && !IsEngineGlobalCharacterAsset(normalized)
+               && paths.Add(normalized);
+    }
+
+    /// <summary>
+    ///     Do not pack engine-global human skeleton or KF animation files from a DMP.
+    ///     These paths are shared by the player and all human actors; when an output BSA
+    ///     supplies Xbox/prototype bytes at the vanilla path, the PC animation graph can
+    ///     fall back to a bind/A pose for every human actor.
+    /// </summary>
+    internal static bool IsEngineGlobalCharacterAsset(string normalizedPath)
+    {
+        return AssetPathRules.IsEngineGlobalCharacterAsset(normalizedPath);
     }
 
     /// <summary>
@@ -545,60 +532,7 @@ internal static class AssetPathCollector
     /// <returns>Canonical normalized path, or null if the input can't be made into a valid asset reference.</returns>
     internal static string? TryNormalizeRequestPath(string? raw)
     {
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            return null;
-        }
-
-        var lower = raw.Trim().Replace('/', '\\').ToLowerInvariant();
-        if (lower.StartsWith("data\\", StringComparison.Ordinal))
-        {
-            lower = lower[5..];
-        }
-
-        // The file extension drives the expected prefix. Reject paths that don't have a
-        // packable asset extension before doing any directory work.
-        var ext = Path.GetExtension(lower);
-        if (string.IsNullOrEmpty(ext) || !AssetExtensions.Contains(ext))
-        {
-            return null;
-        }
-
-        if (!ExtensionToPrefix.TryGetValue(ext, out var expectedPrefix))
-        {
-            return null;
-        }
-
-        // 1) Expected prefix present anywhere → trim everything before its first occurrence.
-        var prefixIdx = lower.IndexOf(expectedPrefix, StringComparison.Ordinal);
-        if (prefixIdx >= 0)
-        {
-            lower = lower[prefixIdx..];
-        }
-        else
-        {
-            // 2) Record field relative to the asset-type folder. Strip stray leading
-            //    backslashes and prepend the expected prefix.
-            while (lower.Length > 0 && lower[0] == '\\')
-            {
-                lower = lower[1..];
-            }
-
-            if (lower.Length == 0)
-            {
-                return null;
-            }
-
-            // Basename-only paths are too ambiguous — refuse to guess a directory.
-            if (!lower.Contains('\\'))
-            {
-                return null;
-            }
-
-            lower = expectedPrefix + lower;
-        }
-
-        return lower;
+        return AssetPathRules.TryNormalizeRequestPath(raw);
     }
 
     /// <summary>
@@ -608,26 +542,6 @@ internal static class AssetPathCollector
     /// </summary>
     internal static string NormalizePath(string raw)
     {
-        var trimmed = raw.Trim().Replace('/', '\\');
-
-        // Strip leading backslashes.
-        var firstNonSeparator = 0;
-        while (firstNonSeparator < trimmed.Length && trimmed[firstNonSeparator] == '\\')
-        {
-            firstNonSeparator++;
-        }
-
-        if (firstNonSeparator > 0)
-        {
-            trimmed = trimmed[firstNonSeparator..];
-        }
-
-        // Strip leading "data\" if present — game records sometimes carry it.
-        if (trimmed.StartsWith("data\\", StringComparison.OrdinalIgnoreCase))
-        {
-            trimmed = trimmed[5..];
-        }
-
-        return trimmed.ToLowerInvariant();
+        return AssetPathRules.NormalizeDataRelativePath(raw);
     }
 }

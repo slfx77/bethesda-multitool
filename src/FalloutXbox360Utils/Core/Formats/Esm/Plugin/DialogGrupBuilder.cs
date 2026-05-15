@@ -71,10 +71,10 @@ internal static class DialogGrupBuilder
         if (newTopics.Count > 0 || newInfos.Count > 0)
         {
             sink.Warn("Building dialog section",
-                $"v20.7 baseline: skipping {newTopics.Count} new DIAL + {newInfos.Count} new INFO record(s) " +
+                $"Skipping {newTopics.Count} new DIAL + {newInfos.Count} new INFO record(s) " +
                 "to avoid the dialog-tree-assembly crash in prototype-vs-vanilla quest conflicts. " +
                 "Override DIAL/INFO records (if any) pass through unchanged via the per-type pipeline.",
-                code: "v20.dialog.skip-all-new");
+                code: "dialog.skip-all-new");
             foreach (var _ in newTopics)
             {
                 stats.IncrementSkipped("DIAL");

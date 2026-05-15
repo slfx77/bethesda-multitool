@@ -76,6 +76,148 @@ public sealed class RuntimeStringOwnershipAnalysisTests
     }
 
     [Fact]
+    public void ExtractStringDataOnly_RuntimeScriptVariableClaimMarksHitAsOwned()
+    {
+        var data = new byte[0x400];
+        const string variableName = "bAcceptedMortimerQuest";
+        WriteCString(data, 0x40, variableName);
+
+        const int scriptOffset = 0x100;
+        const int variableOffset = 0x200;
+        WriteBeUInt32(data, scriptOffset + 12, 0x00111111);
+        WriteBeUInt32(data, scriptOffset + 40, 1); // Script.variableCount, PDB + 16 shift
+        WriteBeUInt32(data, scriptOffset + 92, BaseVa + variableOffset); // Script.listVariables
+
+        WriteBeUInt32(data, variableOffset, 42);
+        WriteBeUInt32(data, variableOffset + 12, 0);
+        WriteBsStringT(data, variableOffset + 24, BaseVa + 0x40, variableName.Length);
+
+        var result = Analyze(
+            data,
+            CreateCoverage(data.Length, StringGap(0, data.Length)),
+            [
+                new RuntimeEditorIdEntry
+                {
+                    EditorId = "TestScript",
+                    FormId = 0x00111111,
+                    FormType = 0x11,
+                    TesFormOffset = scriptOffset,
+                    TesFormPointer = BaseVa + scriptOffset
+                }
+            ]);
+
+        var hit = Assert.Single(result.OwnershipAnalysis.OwnedHits, h => h.Text == variableName);
+        Assert.Equal("SCPT", hit.OwnerResolution?.OwnerRecordType);
+        Assert.Equal("ScriptVariable.cName", hit.OwnerResolution?.OwnerFieldOrSubrecord);
+        Assert.Equal(ClaimSource.RuntimeStructField, hit.OwnerResolution?.ClaimSource);
+    }
+
+    [Fact]
+    public void ExtractStringDataOnly_RuntimeQuestObjectiveClaimMarksHitAsOwned()
+    {
+        var data = new byte[0x500];
+        const string objectiveText = "Ask around the saloon in Goodsprings for information about your attackers.";
+        WriteCString(data, 0x40, objectiveText);
+
+        const int questOffset = 0x120;
+        const int objectiveOffset = 0x260;
+        WriteBeUInt32(data, questOffset + 12, 0x00222222);
+        WriteBeUInt32(data, questOffset + 92, BaseVa + objectiveOffset); // TESQuest.m_listObjectives
+
+        WriteBeUInt32(data, objectiveOffset + 4, 20);
+        WriteBsStringT(data, objectiveOffset + 8, BaseVa + 0x40, objectiveText.Length);
+        WriteBeUInt32(data, objectiveOffset + 16, BaseVa + questOffset);
+        data[objectiveOffset + 28] = 1;
+        WriteBeUInt32(data, objectiveOffset + 32, 1);
+
+        var result = Analyze(
+            data,
+            CreateCoverage(data.Length, StringGap(0, data.Length)),
+            [
+                new RuntimeEditorIdEntry
+                {
+                    EditorId = "TestQuest",
+                    FormId = 0x00222222,
+                    FormType = 0x47,
+                    TesFormOffset = questOffset,
+                    TesFormPointer = BaseVa + questOffset
+                }
+            ]);
+
+        var hit = Assert.Single(result.OwnershipAnalysis.OwnedHits, h => h.Text == objectiveText);
+        Assert.Equal("QUST", hit.OwnerResolution?.OwnerRecordType);
+        Assert.Equal("BGSQuestObjective.displayText", hit.OwnerResolution?.OwnerFieldOrSubrecord);
+        Assert.Equal(0x00222222u, hit.OwnerResolution?.OwnerFormId);
+    }
+
+    [Fact]
+    public void ExtractStringDataOnly_RuntimeMessageButtonClaimMarksHitAsOwned()
+    {
+        var data = new byte[0x500];
+        const string buttonText = "Added the infected Brahmin meat to the mix.";
+        WriteCString(data, 0x40, buttonText);
+
+        const int messageOffset = 0x140;
+        const int buttonOffset = 0x280;
+        WriteBeUInt32(data, messageOffset + 12, 0x00333333);
+        WriteBeUInt32(data, messageOffset + 64, BaseVa + buttonOffset); // BGSMessage.ButtonList
+        WriteBsStringT(data, buttonOffset + 8, BaseVa + 0x40, buttonText.Length);
+
+        var result = Analyze(
+            data,
+            CreateCoverage(data.Length, StringGap(0, data.Length)),
+            [
+                new RuntimeEditorIdEntry
+                {
+                    EditorId = "TestMessage",
+                    FormId = 0x00333333,
+                    FormType = 0x62,
+                    TesFormOffset = messageOffset,
+                    TesFormPointer = BaseVa + messageOffset
+                }
+            ]);
+
+        var hit = Assert.Single(result.OwnershipAnalysis.OwnedHits, h => h.Text == buttonText);
+        Assert.Equal("MESG", hit.OwnerResolution?.OwnerRecordType);
+        Assert.Equal("MESSAGEBOX_BUTTON.text", hit.OwnerResolution?.OwnerFieldOrSubrecord);
+        Assert.Equal(ClaimSource.RuntimeStructField, hit.OwnerResolution?.ClaimSource);
+    }
+
+    [Fact]
+    public void ExtractStringDataOnly_RawRecordStringSubrecordClaimMarksHitAsOwned()
+    {
+        var data = new byte[128];
+        const string fullName = "California Sunset Drive-in";
+        const int recordOffset = 0;
+        const int recordDataOffset = recordOffset + 24;
+        const int subrecordDataOffset = recordDataOffset + 6;
+
+        Encoding.ASCII.GetBytes("FULL").CopyTo(data, recordDataOffset);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(recordDataOffset + 4, 2), (ushort)(fullName.Length + 1));
+        WriteCString(data, subrecordDataOffset, fullName);
+
+        var result = Analyze(
+            data,
+            CreateCoverage(data.Length, StringGap(0, data.Length)),
+            mainRecords:
+            [
+                new DetectedMainRecord(
+                    "CELL",
+                    (uint)(6 + fullName.Length + 1),
+                    0,
+                    0x00444444,
+                    recordOffset,
+                    false)
+            ]);
+
+        var hit = Assert.Single(result.OwnershipAnalysis.OwnedHits, h => h.Text == fullName);
+        Assert.Equal("CELL", hit.OwnerResolution?.OwnerRecordType);
+        Assert.Equal("FULL", hit.OwnerResolution?.OwnerFieldOrSubrecord);
+        Assert.Equal(ClaimSource.RawRecordSubrecord, hit.OwnerResolution?.ClaimSource);
+        Assert.Equal(0x00444444u, hit.OwnerResolution?.OwnerFormId);
+    }
+
+    [Fact]
     public void ExtractStringDataOnly_InboundPointerWithoutOwner_IsReferencedOwnerUnknown()
     {
         var data = new byte[256];
@@ -107,7 +249,8 @@ public sealed class RuntimeStringOwnershipAnalysisTests
     private static RuntimeStringReportData Analyze(
         byte[] data,
         CoverageResult coverage,
-        IReadOnlyList<RuntimeEditorIdEntry>? runtimeEditorIds = null)
+        IReadOnlyList<RuntimeEditorIdEntry>? runtimeEditorIds = null,
+        IReadOnlyList<DetectedMainRecord>? mainRecords = null)
     {
         var tempFile = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
         try
@@ -124,7 +267,8 @@ public sealed class RuntimeStringOwnershipAnalysisTests
                 CreateMinidumpInfo(data.Length),
                 coverage,
                 null,
-                runtimeEditorIds);
+                runtimeEditorIds,
+                mainRecords: mainRecords);
 
             return analyzer.ExtractStringDataOnly();
         }
@@ -187,5 +331,17 @@ public sealed class RuntimeStringOwnershipAnalysisTests
     private static void WriteBeUInt32(byte[] buffer, int offset, uint value)
     {
         BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan(offset, 4), value);
+    }
+
+    private static void WriteBeUInt16(byte[] buffer, int offset, ushort value)
+    {
+        BinaryPrimitives.WriteUInt16BigEndian(buffer.AsSpan(offset, 2), value);
+    }
+
+    private static void WriteBsStringT(byte[] buffer, int offset, uint stringVa, int length)
+    {
+        WriteBeUInt32(buffer, offset, stringVa);
+        WriteBeUInt16(buffer, offset + 4, (ushort)length);
+        WriteBeUInt16(buffer, offset + 6, (ushort)length);
     }
 }

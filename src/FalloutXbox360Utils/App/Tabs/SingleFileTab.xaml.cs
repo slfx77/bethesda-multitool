@@ -352,7 +352,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         picker.FileTypeFilter.Add(".fxs");
         picker.FileTypeFilter.Add(".fos");
         InitializeWithWindow.Initialize(picker,
-            WindowNative.GetWindowHandle(App.Current.MainWindow));
+            WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow));
 
         var file = await picker.PickSingleFileAsync();
         if (file == null) return;
@@ -371,7 +371,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
         picker.FileTypeFilter.Add("*");
         InitializeWithWindow.Initialize(picker,
-            WindowNative.GetWindowHandle(App.Current.MainWindow));
+            WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow));
         var folder = await picker.PickSingleFolderAsync();
         if (folder != null)
         {

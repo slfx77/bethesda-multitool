@@ -47,7 +47,7 @@ public sealed class AssetPackingService
 
             if (requested.Count == 0)
             {
-                return BuildEmptyResult(options, sink, resolutions, stopwatch);
+                return BuildEmptyResult(options, sink, resolutions, stopwatch, runningStats: null);
             }
 
             // 3) Build baseline and secondary folder indexes.
@@ -71,7 +71,8 @@ public sealed class AssetPackingService
                     secondaryDisposables.Add(idx);
                 }
 
-                var resolver = new DataFolderResolver(baseline, secondaryDisposables);
+                var resolver = new DataFolderResolver(
+                    baseline, secondaryDisposables, options.OverrideVanillaBaseline);
                 var converter = new PrototypeAssetConverter();
 
                 // 4) Resolve + convert + collect bytes to pack.
@@ -130,7 +131,7 @@ public sealed class AssetPackingService
 
                 if (packedFiles.Count == 0)
                 {
-                    return BuildEmptyResult(options, sink, resolutions, stopwatch);
+                    return BuildEmptyResult(options, sink, resolutions, stopwatch, runningStats: stats);
                 }
 
                 // 5) Write the output BSA.
@@ -152,8 +153,11 @@ public sealed class AssetPackingService
 
                 // Drop a per-asset audit next to the BSA so the user can review what
                 // resolved, what fuzzy-matched, and what stayed missing. Sorted, deduped,
-                // one path per line within each section.
-                TryWriteAuditFile(options.OutputBsaPath, resolutions, stats, sink);
+                // one path per line within each section. Opt-in via WriteAuditFile.
+                if (options.WriteAuditFile)
+                {
+                    TryWriteAuditFile(options.OutputBsaPath, resolutions, stats, sink);
+                }
 
                 sink.OnPhaseEnd("AssetPacking", new ConversionPipelineStats());
                 sink.Info("AssetPacking",
@@ -365,16 +369,41 @@ public sealed class AssetPackingService
         AssetPackingOptions options,
         IConversionProgressSink sink,
         List<AssetResolution> resolutions,
-        Stopwatch stopwatch)
+        Stopwatch stopwatch,
+        RunningStats? runningStats)
     {
         stopwatch.Stop();
         sink.Info("AssetPacking", "No assets needed packing — output BSA not written");
+
+        // Even when no BSA is written, drop the audit file next to where it would have
+        // gone so the user can still review the resolution outcome (especially missing
+        // paths — those are the most important diagnostic). Opt-in via WriteAuditFile.
+        if (runningStats is not null && options.WriteAuditFile)
+        {
+            TryWriteAuditFile(options.OutputBsaPath, resolutions, runningStats, sink);
+        }
+
         sink.OnPhaseEnd("AssetPacking", new ConversionPipelineStats());
+        var stats = runningStats is null
+            ? new AssetPackingStats { Elapsed = stopwatch.Elapsed }
+            : new AssetPackingStats
+            {
+                TotalPathsScanned = runningStats.Total,
+                AlreadyInBaseline = runningStats.AlreadyInBaseline,
+                ResolvedExact = runningStats.ResolvedExact,
+                ResolvedFuzzy = runningStats.ResolvedFuzzy,
+                Converted360 = runningStats.Converted360,
+                ConversionFailed = runningStats.ConversionFailed,
+                Missing = runningStats.Missing,
+                PackedAssetCount = 0,
+                OutputBsaSizeBytes = 0,
+                Elapsed = stopwatch.Elapsed
+            };
         return new AssetPackingResult
         {
             Success = true,
             OutputPath = null,
-            Stats = new AssetPackingStats { Elapsed = stopwatch.Elapsed },
+            Stats = stats,
             Resolutions = resolutions
         };
     }

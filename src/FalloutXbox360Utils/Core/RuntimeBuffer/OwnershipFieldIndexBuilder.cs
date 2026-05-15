@@ -109,6 +109,7 @@ internal static class OwnershipFieldIndexBuilder
         index["TESTexture"] = [(4, "TESTexture.texture")];
         index["TESIcon"] = [(4, "TESIcon.icon")];
         index["TESModel"] = [(4, "TESModel.model")];
+        index["TESFullName"] = [(4, "TESFullName.cFullName")];
         index["TESModelTextureSwap"] =
         [
             (4, "TESModelTextureSwap.model"),

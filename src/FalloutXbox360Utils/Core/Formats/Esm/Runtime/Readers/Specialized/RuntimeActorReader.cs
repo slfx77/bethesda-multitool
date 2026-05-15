@@ -72,6 +72,19 @@ internal sealed class RuntimeActorReader
             return CreateMinimalNpc(entry, offset, scriptFormId);
         }
 
+        // Read iHealth from the TESHealthForm base class (PDB offset 196 + build shift).
+        // Sanity-gate to discard reads that overshoot the struct or capture cleared
+        // memory; zero is treated as "unknown — let the encoder synthesize from SPECIAL".
+        int? baseHealth = null;
+        if (NpcFields.NpcBaseHealthOffset + 4 <= buffer.Length)
+        {
+            var rawHealth = (int)BinaryUtils.ReadUInt32BE(buffer, NpcFields.NpcBaseHealthOffset);
+            if (rawHealth is > 0 and < 100_000)
+            {
+                baseHealth = rawHealth;
+            }
+        }
+
         // Follow pointer fields to get FormIDs
         var race = _context.FollowPointerToFormId(buffer, NpcFields.NpcRacePtrOffset, 0x0C);
         var classFormId = _context.FollowPointerToFormId(buffer, NpcFields.NpcClassPtrOffset, 0x07);
@@ -138,6 +151,7 @@ internal sealed class RuntimeActorReader
             EditorId = entry.EditorId,
             FullName = entry.DisplayName,
             Stats = stats,
+            BaseHealth = baseHealth,
             Race = race,
             Class = classFormId,
             DeathItem = deathItem,

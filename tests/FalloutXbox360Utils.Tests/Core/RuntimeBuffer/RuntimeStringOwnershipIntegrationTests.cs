@@ -1,6 +1,4 @@
-using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Minidump;
-using FalloutXbox360Utils.Core.RuntimeBuffer;
 using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 
@@ -12,23 +10,18 @@ public sealed class RuntimeStringOwnershipIntegrationTests(SampleFileFixture sam
     private readonly SampleFileFixture _samples = samples;
 
     [Fact]
-    public async Task Xex44Dump_StringOwnershipReports_AreNonEmptyAndFlowThroughExtractionReporter()
+    public async Task Xex44Dump_StringOwnershipSummary_FlowsThroughExtractionReporter()
     {
         Assert.SkipWhen(_samples.ReleaseDumpXex44 is null, "Release xex44 dump not available");
 
         var dumpPath = _samples.ReleaseDumpXex44!;
         var analyzer = new MinidumpAnalyzer();
-        var analysis = await analyzer.AnalyzeAsync(dumpPath, null, true, false, CancellationToken.None);
-
-        using var mmf = MemoryMappedFile.CreateFromFile(dumpPath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-        using var accessor = mmf.CreateViewAccessor(0, new FileInfo(dumpPath).Length, MemoryMappedFileAccess.Read);
-
-        var stringData = RuntimeStringReportHelper.Extract(analysis, accessor);
-        Assert.NotNull(stringData);
-        Assert.NotEmpty(stringData!.OwnershipAnalysis.AllHits);
-        Assert.True(
-            stringData.OwnershipAnalysis.ReferencedOwnerUnknownHits.Count > 0 ||
-            stringData.OwnershipAnalysis.UnreferencedHits.Count > 0);
+        var analysis = await analyzer.AnalyzeAsync(
+            dumpPath,
+            null,
+            true,
+            false,
+            TestContext.Current.CancellationToken);
 
         var extractDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
         Directory.CreateDirectory(extractDir);
@@ -51,6 +44,12 @@ public sealed class RuntimeStringOwnershipIntegrationTests(SampleFileFixture sam
             var ownershipSummary =
                 await File.ReadAllTextAsync(ownershipSummaryPath, TestContext.Current.CancellationToken);
             Assert.Contains("Runtime String Ownership Summary", ownershipSummary);
+            Assert.DoesNotContain("Analyzed String Hits: 0", ownershipSummary);
+
+            Assert.True(
+                File.Exists(Path.Combine(esmDir, "string_unknown_owners.csv")) ||
+                File.Exists(Path.Combine(esmDir, "string_unreferenced.csv")),
+                "Expected at least one non-owned string ownership CSV.");
         }
         finally
         {

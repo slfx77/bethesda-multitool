@@ -1,3 +1,4 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Schema;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
@@ -8,7 +9,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     exterior cells (with synthetic XCLC).
 ///
 ///     Subrecords emitted in fopdoc-canonical CELL order:
-///     EDID, FULL?, DATA, XCLC?, LTMP?, LNAM?, XCLW?, XEZN?, XCAS?, XCMO?, XCIM?.
+///     EDID, FULL?, DATA, XCLC?, LTMP?, LNAM?, XCLW?, XCLR?, XCLL?, XEZN?, XCAS?, XCMO?, XCIM?.
 ///     For interior cells (v3+), bit 0 of DATA is set and XCLC is omitted.
 ///     For exterior cells (v4+), bit 0 of DATA is cleared and XCLC carries the grid coords.
 /// </summary>
@@ -75,10 +76,10 @@ public sealed class CellEncoder : IRecordEncoder
             subs.Add(new EncodedSubrecord("LNAM", lnam));
         }
 
-        if (cell.WaterHeight.HasValue)
+        if (ShouldEmitCellWater(cell, warnings))
         {
             var xclw = new byte[4];
-            SubrecordEncoder.WriteFloat(xclw, 0, cell.WaterHeight.Value);
+            SubrecordEncoder.WriteFloat(xclw, 0, cell.WaterHeight.GetValueOrDefault());
             subs.Add(new EncodedSubrecord("XCLW", xclw));
         }
 
@@ -94,6 +95,23 @@ public sealed class CellEncoder : IRecordEncoder
             }
 
             subs.Add(new EncodedSubrecord("XCLR", xclr));
+        }
+
+        // XCLL — direct cell lighting. Existing master cells inherit their original XCLL
+        // because PluginBuilder emits the master CELL anchor verbatim; this matters for
+        // new DMP-only cells where no master CELL exists to supply ambient/fog lighting.
+        if (cell.LightingData is not null)
+        {
+            var schema = SubrecordSchemaRegistry.GetSchema("XCLL", "CELL", 40);
+            if (schema is not null)
+            {
+                subs.Add(new EncodedSubrecord("XCLL",
+                    SchemaDictionarySerializer.Serialize(schema, cell.LightingData)));
+            }
+            else
+            {
+                warnings.Add($"CELL 0x{cell.FormId:X8} has XCLL lighting data but no schema was registered.");
+            }
         }
 
         if (cell.EncounterZoneFormId.HasValue)
@@ -121,6 +139,73 @@ public sealed class CellEncoder : IRecordEncoder
             Subrecords = subs,
             Warnings = warnings
         };
+    }
+
+    private static bool ShouldEmitCellWater(CellRecord cell, List<string> warnings)
+    {
+        if (!cell.WaterHeight.HasValue)
+        {
+            return false;
+        }
+
+        // XCLW is only meaningful for cells marked as water-bearing. Runtime CELL captures
+        // often expose a stale fWaterHeight while the DATA water flag is clear; emitting
+        // that value makes dry cells render as flooded.
+        if (!cell.HasWater)
+        {
+            warnings.Add(
+                $"CELL 0x{cell.FormId:X8} XCLW {cell.WaterHeight.Value:F1} ignored because DATA has no water flag.");
+            return false;
+        }
+
+        if (!IsPlausibleCellWater(cell.WaterHeight.Value, cell.Heightmap, cell.IsInterior))
+        {
+            warnings.Add(
+                $"CELL 0x{cell.FormId:X8} XCLW {cell.WaterHeight.Value:F1} would submerge the " +
+                $"captured terrain — suppressed so the cell inherits the worldspace default.");
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    ///     Decide whether the captured XCLW water height is plausible for the cell. Uses
+    ///     the heightmap (when present) to compute the cell's max terrain elevation and
+    ///     rejects any water level more than <c>WaterAboveTerrainTolerance</c> above it.
+    ///     Exterior cells without captured terrain are rejected because inheriting the
+    ///     worldspace default is safer than trusting a runtime-only water-height float.
+    /// </summary>
+    private static bool IsPlausibleCellWater(
+        float waterHeight,
+        Models.World.LandHeightmap? heightmap,
+        bool isInterior)
+    {
+        // Allow water a bit above the highest terrain vertex (shorelines, lake-edges,
+        // and rounding slack). Cells where water is plainly above the whole landform get
+        // rejected so the engine inherits the worldspace default instead.
+        const float WaterAboveTerrainTolerance = 256.0f;
+        const float UnknownTerrainAbsCeiling = 10_000.0f;
+
+        if (heightmap is not null)
+        {
+            var heights = heightmap.CalculateHeights();
+            var maxTerrain = float.NegativeInfinity;
+            for (var y = 0; y < heights.GetLength(0); y++)
+            {
+                for (var x = 0; x < heights.GetLength(1); x++)
+                {
+                    if (heights[y, x] > maxTerrain)
+                    {
+                        maxTerrain = heights[y, x];
+                    }
+                }
+            }
+
+            return waterHeight <= maxTerrain + WaterAboveTerrainTolerance;
+        }
+
+        return isInterior && MathF.Abs(waterHeight) <= UnknownTerrainAbsCeiling;
     }
 
     private static EncodedSubrecord EncodeStringSubrecord(string signature, string value)

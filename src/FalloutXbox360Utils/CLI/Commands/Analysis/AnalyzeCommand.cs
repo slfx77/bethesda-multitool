@@ -6,9 +6,11 @@ using System.Text.Json;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
+using FalloutXbox360Utils.Core.Formats.Esm.Terrain;
 using FalloutXbox360Utils.Core.Json;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Strings;
@@ -169,7 +171,7 @@ public static class AnalyzeCommand
 
             if (opts.TerrainDiag)
             {
-                RunTerrainDiagnostic(result.EsmRecords, opts.ExtractEsm, Path.GetFileName(opts.Input));
+                RunTerrainDiagnostic(result.EsmRecords, opts.ExtractEsm, Path.GetFileName(opts.Input), result.FormIdMap);
             }
         }
 
@@ -341,48 +343,63 @@ public static class AnalyzeCommand
     }
 
     private static void RunTerrainDiagnostic(
-        EsmRecordScanResult esmRecords, string outputDir, string dumpFilename)
+        EsmRecordScanResult esmRecords,
+        string outputDir,
+        string dumpFilename,
+        IReadOnlyDictionary<uint, string>? formIdMap = null)
     {
-        var cellsWithMesh = esmRecords.LandRecords
-            .Where(l => l.RuntimeTerrainMesh != null && l.BestCellX.HasValue && l.BestCellY.HasValue)
+        var terrainRecords = esmRecords.LandRecords
+            .Where(l => l.BestCellX.HasValue && l.BestCellY.HasValue)
+            .Where(l => l.RuntimeTerrainMesh != null || l.Heightmap != null ||
+                        l.VclrByteCount > 0 || l.VtexCount > 0 ||
+                        l.BtxtCount > 0 || l.AtxtCount > 0 || l.VtxtCount > 0)
             .ToList();
 
-        if (cellsWithMesh.Count == 0)
+        if (terrainRecords.Count == 0)
         {
-            AnsiConsole.MarkupLine("[yellow]Terrain diagnostic:[/] No cells with runtime terrain meshes.");
+            AnsiConsole.MarkupLine("[yellow]Terrain diagnostic:[/] No LAND terrain data found.");
             return;
         }
 
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[blue]Terrain mesh data quality diagnostic[/]");
+        AnsiConsole.MarkupLine("[blue]Terrain data quality diagnostic[/]");
 
-        var diagnostics = cellsWithMesh
-            .Select(l => l.PreSanitizationDiagnostic
-                         ?? l.RuntimeTerrainMesh!.DiagnoseQuality(
-                             l.BestCellX!.Value, l.BestCellY!.Value, l.Header.FormId))
-            .OrderBy(d => d.CellX)
-            .ThenBy(d => d.CellY)
+        var rows = terrainRecords
+            .Select(l => new TerrainDiagnosticRow(l, BuildTerrainDiagnostic(l)))
+            .OrderBy(r => r.Diagnostic.CellX)
+            .ThenBy(r => r.Diagnostic.CellY)
             .ToList();
 
         // Console table
         var table = new Table();
         table.AddColumn("Cell");
+        table.AddColumn("Worldspace");
         table.AddColumn("FormID");
+        table.AddColumn("Source");
+        table.AddColumn(new TableColumn("Grid").RightAligned());
+        table.AddColumn(new TableColumn("Cover%").RightAligned());
         table.AddColumn(new TableColumn("ZRange").RightAligned());
-        table.AddColumn(new TableColumn("UniqueZ").RightAligned());
-        table.AddColumn(new TableColumn("ZeroZ%").RightAligned());
+        table.AddColumn(new TableColumn("VHGTerr").RightAligned());
         table.AddColumn(new TableColumn("GarbZ").RightAligned());
-        table.AddColumn(new TableColumn("DomZ%").RightAligned());
-        table.AddColumn(new TableColumn("LastRow").RightAligned());
-        table.AddColumn(new TableColumn("Discont").RightAligned());
+        table.AddColumn("RTColor");
+        table.AddColumn("Visual");
+        table.AddColumn(new TableColumn("VCLR").RightAligned());
+        table.AddColumn(new TableColumn("VTEX").RightAligned());
+        table.AddColumn(new TableColumn("BTXT").RightAligned());
+        table.AddColumn(new TableColumn("ATXT").RightAligned());
+        table.AddColumn(new TableColumn("VTXT").RightAligned());
         table.AddColumn("Class");
 
-        foreach (var d in diagnostics)
+        foreach (var row in rows)
         {
+            var d = row.Diagnostic;
+            var land = row.Land;
             var classColor = d.Classification switch
             {
                 "Complete" => "green",
                 "Partial" => "yellow",
+                "ESM_VHGT" => "green",
+                "VisualOnly" => "yellow",
                 "Flat" => "red",
                 "FewPixels" => "red",
                 "Corrupt" => "red",
@@ -393,50 +410,361 @@ public static class AnalyzeCommand
 
             table.AddRow(
                 $"{d.CellX},{d.CellY}",
+                GetWorldspaceEditorId(land.WorldspaceFormId, formIdMap) ?? "-",
                 $"0x{d.FormId:X8}",
+                d.HeightSource,
+                d.DetectedGridSize > 0 ? $"{d.DetectedGridSize}x{d.DetectedGridSize}" : "-",
+                $"{d.SourceCoveragePercent:F0}",
                 $"{d.ZRange:F1}",
-                $"{d.UniqueZCount}",
-                $"{d.ZeroZCount * 100.0f / RuntimeTerrainMesh.VertexCount:F1}",
+                $"{d.EncodedRoundTripMaxError:F1}",
                 $"[{garbColor}]{d.GarbageZCount}[/]",
-                $"{d.DominantZPercent:F1}",
-                $"{d.LastActiveRow}",
-                $"{d.RowDiscontinuities}",
+                d.HasRuntimeVertexColors ? "yes" : "no",
+                land.VisualData?.Source ?? "-",
+                $"{land.VclrByteCount}",
+                $"{land.VtexCount}",
+                $"{land.BtxtCount}",
+                $"{land.AtxtCount}",
+                $"{land.VtxtCount}",
                 $"[{classColor}]{d.Classification}[/]");
         }
 
         AnsiConsole.Write(table);
 
         // Summary counts
+        var diagnostics = rows.Select(r => r.Diagnostic).ToList();
         var complete = diagnostics.Count(d => d.Classification == "Complete");
         var partial = diagnostics.Count(d => d.Classification == "Partial");
+        var esmVhgt = diagnostics.Count(d => d.Classification == "ESM_VHGT");
+        var visualOnly = diagnostics.Count(d => d.Classification == "VisualOnly");
         var flat = diagnostics.Count(d => d.Classification == "Flat");
         var fewPixels = diagnostics.Count(d => d.Classification == "FewPixels");
         var corrupt = diagnostics.Count(d => d.Classification == "Corrupt");
         AnsiConsole.MarkupLine(
             $"  [green]Complete: {complete}[/]  [yellow]Partial: {partial}[/]  " +
+            $"[green]ESM VHGT: {esmVhgt}[/]  [yellow]Visual-only: {visualOnly}[/]  " +
             $"[red]Flat: {flat}  FewPixels: {fewPixels}  Corrupt: {corrupt}[/]  Total: {diagnostics.Count}");
 
         // Export CSV
         var csvPath = Path.Combine(outputDir, "terrain_diagnostics.csv");
         var csv = new StringBuilder();
-        csv.AppendLine("DumpFile,CellX,CellY,FormID,MinZ,MaxZ,ZRange,ZStdDev," +
+        csv.AppendLine("DumpFile,WorldspaceFormID,WorldspaceEditorID,ParentCellFormID,CellX,CellY,RecordCellX,RecordCellY," +
+                       "RuntimeCellX,RuntimeCellY,MeshMinX,MeshMaxX,MeshMinY,MeshMaxY," +
+                       "MeshInferredCellX,MeshInferredCellY,FormID,MinZ,MaxZ,ZRange,ZStdDev," +
                        "UniqueZCount,ZeroZCount,ZeroZPct,GarbageZCount,DominantZPct," +
-                       "LastActiveRow,RowDiscontinuities,Classification");
-        foreach (var d in diagnostics)
+                       "LastActiveRow,RowDiscontinuities,HeightSource,DetectedLodLevel,DetectedGridSize," +
+                       "SourceSampleCount,SourceCoveragePct,EncodedRoundTripMaxError,HasRuntimeVertexColors," +
+                       "LandVisualSource,VclrByteCount,VtexCount,BtxtCount,AtxtCount,VtxtCount,VtxtByteCount," +
+                       "UnattachedVtxtCount,UnattachedVtxtByteCount,Classification");
+        foreach (var row in rows)
         {
+            var d = row.Diagnostic;
+            var land = row.Land;
             csv.AppendLine(CultureInfo.InvariantCulture,
-                $"{dumpFilename},{d.CellX},{d.CellY},0x{d.FormId:X8}," +
+                $"{dumpFilename},{FormatNullableFormId(land.WorldspaceFormId)}," +
+                $"{Fmt.CsvEscape(GetWorldspaceEditorId(land.WorldspaceFormId, formIdMap))}," +
+                $"{FormatNullableFormId(land.ParentCellFormId)}," +
+                $"{d.CellX},{d.CellY},{FormatNullableInt(land.CellX)},{FormatNullableInt(land.CellY)}," +
+                $"{FormatNullableInt(land.RuntimeCellX)},{FormatNullableInt(land.RuntimeCellY)}," +
+                $"{FormatNullableFloat(d.MeshMinX)},{FormatNullableFloat(d.MeshMaxX)}," +
+                $"{FormatNullableFloat(d.MeshMinY)},{FormatNullableFloat(d.MeshMaxY)}," +
+                $"{FormatNullableInt(d.MeshInferredCellX)},{FormatNullableInt(d.MeshInferredCellY)}," +
+                $"0x{d.FormId:X8}," +
                 $"{d.MinZ:F2},{d.MaxZ:F2},{d.ZRange:F2},{d.ZStdDev:F2}," +
                 $"{d.UniqueZCount},{d.ZeroZCount}," +
                 $"{d.ZeroZCount * 100.0f / RuntimeTerrainMesh.VertexCount:F1}," +
                 $"{d.GarbageZCount},{d.DominantZPercent:F1},{d.LastActiveRow}," +
-                $"{d.RowDiscontinuities},{d.Classification}");
+                $"{d.RowDiscontinuities},{d.HeightSource},{d.DetectedLodLevel},{d.DetectedGridSize}," +
+                $"{d.SourceSampleCount},{d.SourceCoveragePercent:F1},{d.EncodedRoundTripMaxError:F2}," +
+                $"{d.HasRuntimeVertexColors},{land.VisualData?.Source ?? ""},{land.VclrByteCount}," +
+                $"{land.VtexCount},{land.BtxtCount},{land.AtxtCount},{land.VtxtCount},{land.VtxtByteCount}," +
+                $"{land.VisualData?.UnattachedVtxtCount ?? 0},{land.VisualData?.UnattachedVtxtByteCount ?? 0}," +
+                $"{d.Classification}");
         }
 
         Directory.CreateDirectory(outputDir);
         File.WriteAllText(csvPath, csv.ToString());
         AnsiConsole.MarkupLine($"  CSV exported: {csvPath}");
+
+        WriteRuntimeLandDataDiagnostics(rows, outputDir, dumpFilename, formIdMap);
     }
+
+    private static void WriteRuntimeLandDataDiagnostics(
+        IReadOnlyList<TerrainDiagnosticRow> rows,
+        string outputDir,
+        string dumpFilename,
+        IReadOnlyDictionary<uint, string>? formIdMap)
+    {
+        var diagnosticRows = rows
+            .Where(r => r.Land.RuntimeLandDiagnostics != null)
+            .ToList();
+        if (diagnosticRows.Count == 0)
+        {
+            return;
+        }
+
+        var csvPath = Path.Combine(outputDir, "runtime_land_data_diagnostics.csv");
+        var csv = new StringBuilder();
+        csv.AppendLine("DumpFile,WorldspaceFormID,WorldspaceEditorID,ParentCellFormID,FormID," +
+                       "RecordCellX,RecordCellY,RuntimeCellX,RuntimeCellY,BestCellX,BestCellY," +
+                       "RuntimeLandOffset,RuntimeLoadedDataOffset,RuntimeBaseHeight,HeightSource," +
+                       "MeshOuterVA,MeshOuterFileOffset,MeshDataVA,MeshDataFileOffset," +
+                       "VerticesOuterVA,VerticesOuterFileOffset,VerticesDataVA,VerticesDataFileOffset,VerticesArrayDataVAs,VerticesArrayDataFileOffsets," +
+                       "NormalsOuterVA,NormalsOuterFileOffset,NormalsDataVA,NormalsDataFileOffset,NormalsArrayDataVAs,NormalsArrayDataFileOffsets," +
+                       "ColorsOuterVA,ColorsOuterFileOffset,ColorsDataVA,ColorsDataFileOffset,ColorsArrayDataVAs,ColorsArrayDataFileOffsets," +
+                       "NormalsSetOuterVA,NormalsSetOuterFileOffset,NormalsSetDataVA,NormalsSetDataFileOffset," +
+                       "BorderVA,BorderFileOffset,MoppCodeVA,MoppCodeFileOffset,LandRigidBodyVA,LandRigidBodyFileOffset," +
+                       "DefaultTextureMappedCount,DefaultTextureFormIDs,DefaultTextureNames,DefaultTextureQuadrants," +
+                       "QuadTextureArrayMappedCount,QuadTextureArraySampledPointers,QuadTextureArrayResolvedTextures," +
+                       "QuadTextureArrayFormIDs,QuadTextureArrayNames,QuadTextureArrayQuadrants," +
+                       "PercentArrayMappedCount,PercentArraySampledCount,PercentArrayNormalFloatCount," +
+                       "PercentArrayUnitRangeCount,PercentArrayNonZeroUnitRangeCount,PercentArrayMin,PercentArrayMax," +
+                       "PercentArrayQuadrants,GrassMapNonZeroWordCount,GrassMapWords");
+
+        foreach (var row in diagnosticRows)
+        {
+            var land = row.Land;
+            var d = row.Diagnostic;
+            var diag = land.RuntimeLandDiagnostics!;
+            var defaultTextureIds = diag.DefaultQuadTextures
+                .Select(t => t.TextureFormId)
+                .Where(id => id.HasValue)
+                .Select(id => id!.Value)
+                .ToList();
+            var arrayTextureIds = diag.QuadTextureArrays
+                .SelectMany(a => a.TextureFormIds)
+                .ToList();
+            var percentMin = diag.PercentArrays
+                .Where(p => p.MinValue.HasValue)
+                .Select(p => p.MinValue!.Value)
+                .DefaultIfEmpty()
+                .Min();
+            var percentMax = diag.PercentArrays
+                .Where(p => p.MaxValue.HasValue)
+                .Select(p => p.MaxValue!.Value)
+                .DefaultIfEmpty()
+                .Max();
+            var hasPercentValues = diag.PercentArrays.Any(p => p.MinValue.HasValue || p.MaxValue.HasValue);
+            var grassNonZeroWords = diag.GrassMapWords.Count(w => w != 0);
+
+            csv.AppendLine(CultureInfo.InvariantCulture,
+                $"{dumpFilename},{FormatNullableFormId(land.WorldspaceFormId)}," +
+                $"{Fmt.CsvEscape(GetWorldspaceEditorId(land.WorldspaceFormId, formIdMap))}," +
+                $"{FormatNullableFormId(land.ParentCellFormId)},0x{land.Header.FormId:X8}," +
+                $"{FormatNullableInt(land.CellX)},{FormatNullableInt(land.CellY)}," +
+                $"{FormatNullableInt(land.RuntimeCellX)},{FormatNullableInt(land.RuntimeCellY)}," +
+                $"{FormatNullableInt(land.BestCellX)},{FormatNullableInt(land.BestCellY)}," +
+                $"{FormatOffset(land.RuntimeLandOffset)},{FormatOffset(land.RuntimeLoadedDataOffset)}," +
+                $"{FormatNullableFloat(land.RuntimeBaseHeight)},{d.HeightSource}," +
+                $"{FormatPointerVa(diag.Mesh.Pointer)},{FormatOffset(diag.Mesh.FileOffset)}," +
+                $"{FormatPointerVa(diag.Mesh.DereferencedPointer)},{FormatOffset(diag.Mesh.DereferencedFileOffset)}," +
+                $"{FormatPointerVa(diag.Vertices.Pointer)},{FormatOffset(diag.Vertices.FileOffset)}," +
+                $"{FormatPointerVa(diag.Vertices.DereferencedPointer)},{FormatOffset(diag.Vertices.DereferencedFileOffset)}," +
+                $"{Fmt.CsvEscape(FormatPointerArrayVas(diag.VertexArrays))},{Fmt.CsvEscape(FormatPointerArrayOffsets(diag.VertexArrays))}," +
+                $"{FormatPointerVa(diag.Normals.Pointer)},{FormatOffset(diag.Normals.FileOffset)}," +
+                $"{FormatPointerVa(diag.Normals.DereferencedPointer)},{FormatOffset(diag.Normals.DereferencedFileOffset)}," +
+                $"{Fmt.CsvEscape(FormatPointerArrayVas(diag.NormalArrays))},{Fmt.CsvEscape(FormatPointerArrayOffsets(diag.NormalArrays))}," +
+                $"{FormatPointerVa(diag.Colors.Pointer)},{FormatOffset(diag.Colors.FileOffset)}," +
+                $"{FormatPointerVa(diag.Colors.DereferencedPointer)},{FormatOffset(diag.Colors.DereferencedFileOffset)}," +
+                $"{Fmt.CsvEscape(FormatPointerArrayVas(diag.ColorArrays))},{Fmt.CsvEscape(FormatPointerArrayOffsets(diag.ColorArrays))}," +
+                $"{FormatPointerVa(diag.NormalsSet.Pointer)},{FormatOffset(diag.NormalsSet.FileOffset)}," +
+                $"{FormatPointerVa(diag.NormalsSet.DereferencedPointer)},{FormatOffset(diag.NormalsSet.DereferencedFileOffset)}," +
+                $"{FormatPointerVa(diag.Border.Pointer)},{FormatOffset(diag.Border.FileOffset)}," +
+                $"{FormatPointerVa(diag.MoppCode.Pointer)},{FormatOffset(diag.MoppCode.FileOffset)}," +
+                $"{FormatPointerVa(diag.LandRigidBody.Pointer)},{FormatOffset(diag.LandRigidBody.FileOffset)}," +
+                $"{diag.DefaultQuadTextures.Count(t => t.Pointer.IsMapped)}," +
+                $"{Fmt.CsvEscape(FormatFormIds(defaultTextureIds))}," +
+                $"{Fmt.CsvEscape(FormatFormIdNames(defaultTextureIds, formIdMap))}," +
+                $"{Fmt.CsvEscape(FormatDefaultTextureQuadrants(diag.DefaultQuadTextures))}," +
+                $"{diag.QuadTextureArrays.Count(a => a.Pointer.IsMapped)}," +
+                $"{diag.QuadTextureArrays.Sum(a => a.SampledPointerCount)}," +
+                $"{diag.QuadTextureArrays.Sum(a => a.ResolvedTextureCount)}," +
+                $"{Fmt.CsvEscape(FormatFormIds(arrayTextureIds))}," +
+                $"{Fmt.CsvEscape(FormatFormIdNames(arrayTextureIds, formIdMap))}," +
+                $"{Fmt.CsvEscape(FormatTextureArrayQuadrants(diag.QuadTextureArrays))}," +
+                $"{diag.PercentArrays.Count(p => p.Pointer.DereferencedIsMapped)}," +
+                $"{diag.PercentArrays.Sum(p => p.SampledCount)}," +
+                $"{diag.PercentArrays.Sum(p => p.NormalFloatCount)}," +
+                $"{diag.PercentArrays.Sum(p => p.UnitRangeCount)}," +
+                $"{diag.PercentArrays.Sum(p => p.NonZeroUnitRangeCount)}," +
+                $"{(hasPercentValues ? percentMin.ToString("F6", CultureInfo.InvariantCulture) : "")}," +
+                $"{(hasPercentValues ? percentMax.ToString("F6", CultureInfo.InvariantCulture) : "")}," +
+                $"{Fmt.CsvEscape(FormatPercentArrayQuadrants(diag.PercentArrays))}," +
+                $"{grassNonZeroWords},{Fmt.CsvEscape(FormatWords(diag.GrassMapWords))}");
+        }
+
+        File.WriteAllText(csvPath, csv.ToString());
+        AnsiConsole.MarkupLine($"  Runtime LAND data CSV exported: {csvPath}");
+    }
+
+    private static TerrainMeshDiagnostic BuildTerrainDiagnostic(ExtractedLandRecord land)
+    {
+        if (land.RuntimeTerrainMesh != null)
+        {
+            var diagnostic = land.PreSanitizationDiagnostic
+                             ?? RuntimeTerrainDiagnosticService.DiagnoseQuality(
+                                 land.RuntimeTerrainMesh,
+                                 land.BestCellX!.Value,
+                                 land.BestCellY!.Value,
+                                 land.Header.FormId,
+                                 land.RuntimeBaseHeight ?? 0f);
+
+            return diagnostic with { HasRuntimeVertexColors = land.RuntimeTerrainMesh.HasColors };
+        }
+
+        if (land.Heightmap == null)
+        {
+            return new TerrainMeshDiagnostic
+            {
+                CellX = land.BestCellX!.Value,
+                CellY = land.BestCellY!.Value,
+                FormId = land.Header.FormId,
+                HeightSource = "LAND_VisualOnly",
+                DetectedLodLevel = -1,
+                Classification = "VisualOnly"
+            };
+        }
+
+        var heights = land.Heightmap.CalculateHeights();
+        var values = FlattenHeightGrid(heights);
+        var minZ = values.Min();
+        var maxZ = values.Max();
+        var mean = values.Average();
+        var variance = values.Sum(z => (z - mean) * (z - mean)) / values.Length;
+        var dominantGroup = values
+            .GroupBy(z => MathF.Round(z, 1))
+            .OrderByDescending(g => g.Count())
+            .First();
+
+        return new TerrainMeshDiagnostic
+        {
+            CellX = land.BestCellX!.Value,
+            CellY = land.BestCellY!.Value,
+            FormId = land.Header.FormId,
+            MinZ = minZ,
+            MaxZ = maxZ,
+            ZRange = maxZ - minZ,
+            ZStdDev = MathF.Sqrt(variance),
+            UniqueZCount = values.Select(z => MathF.Round(z, 2)).Distinct().Count(),
+            ZeroZCount = values.Count(z => MathF.Abs(z) < 0.001f),
+            DominantZPercent = dominantGroup.Count() * 100.0f / values.Length,
+            LastActiveRow = 32,
+            HeightSource = "ESM_VHGT",
+            DetectedGridSize = RuntimeTerrainMesh.GridSize,
+            DetectedLodLevel = 0,
+            SourceSampleCount = RuntimeTerrainMesh.VertexCount,
+            SourceCoveragePercent = 100f,
+            EncodedRoundTripMaxError = land.Heightmap.EncodedRoundTripMaxError,
+            Classification = "ESM_VHGT"
+        };
+    }
+
+    private static float[] FlattenHeightGrid(float[,] heights)
+    {
+        var values = new float[RuntimeTerrainMesh.VertexCount];
+        var index = 0;
+        for (var y = 0; y < RuntimeTerrainMesh.GridSize; y++)
+        {
+            for (var x = 0; x < RuntimeTerrainMesh.GridSize; x++)
+            {
+                values[index++] = heights[y, x];
+            }
+        }
+
+        return values;
+    }
+
+    private static string FormatNullableFormId(uint? formId)
+    {
+        return formId.HasValue ? $"0x{formId.Value:X8}" : "";
+    }
+
+    private static string FormatNullableInt(int? value)
+    {
+        return value.HasValue ? value.Value.ToString(CultureInfo.InvariantCulture) : "";
+    }
+
+    private static string FormatNullableFloat(float? value)
+    {
+        return value.HasValue ? value.Value.ToString("F2", CultureInfo.InvariantCulture) : "";
+    }
+
+    private static string FormatPointerVa(uint? pointer)
+    {
+        return pointer.HasValue && pointer.Value != 0 ? $"0x{pointer.Value:X8}" : "";
+    }
+
+    private static string FormatOffset(long? offset)
+    {
+        return offset.HasValue && offset.Value > 0 ? $"0x{offset.Value:X}" : "";
+    }
+
+    private static string FormatFormIds(IEnumerable<uint> formIds)
+    {
+        return string.Join(';', formIds.Distinct().Select(id => $"0x{id:X8}"));
+    }
+
+    private static string FormatFormIdNames(IEnumerable<uint> formIds, IReadOnlyDictionary<uint, string>? formIdMap)
+    {
+        if (formIdMap == null)
+        {
+            return "";
+        }
+
+        return string.Join(';', formIds
+            .Distinct()
+            .Select(id => formIdMap.TryGetValue(id, out var editorId) ? editorId : "")
+            .Where(name => !string.IsNullOrWhiteSpace(name)));
+    }
+
+    private static string FormatPointerArrayVas(IReadOnlyList<RuntimePointerDiagnostic> pointers)
+    {
+        return string.Join(';', pointers.Select((p, index) => $"q{index}={FormatPointerVa(p.DereferencedPointer)}"));
+    }
+
+    private static string FormatPointerArrayOffsets(IReadOnlyList<RuntimePointerDiagnostic> pointers)
+    {
+        return string.Join(';', pointers.Select((p, index) => $"q{index}={FormatOffset(p.DereferencedFileOffset)}"));
+    }
+
+    private static string FormatDefaultTextureQuadrants(
+        IReadOnlyList<RuntimeLandTexturePointerDiagnostic> textures)
+    {
+        return string.Join(';', textures.Select(t =>
+            $"q{t.Quadrant}:ptr={FormatPointerVa(t.Pointer.Pointer)}:fid={FormatNullableFormId(t.TextureFormId)}"));
+    }
+
+    private static string FormatTextureArrayQuadrants(
+        IReadOnlyList<RuntimeLandTextureArrayDiagnostic> arrays)
+    {
+        return string.Join(';', arrays.Select(a =>
+            $"q{a.Quadrant}:ptr={FormatPointerVa(a.Pointer.Pointer)}:sampled={a.SampledPointerCount}:resolved={a.ResolvedTextureCount}:ids={FormatFormIds(a.TextureFormIds).Replace(';', '|')}"));
+    }
+
+    private static string FormatPercentArrayQuadrants(
+        IReadOnlyList<RuntimePercentArrayDiagnostic> arrays)
+    {
+        return string.Join(';', arrays.Select(a =>
+            $"q{a.Quadrant}:outer={FormatPointerVa(a.Pointer.Pointer)}:data={FormatPointerVa(a.Pointer.DereferencedPointer)}:sampled={a.SampledCount}:unit={a.UnitRangeCount}:nonzero={a.NonZeroUnitRangeCount}:range={FormatNullableFloat(a.MinValue)}..{FormatNullableFloat(a.MaxValue)}"));
+    }
+
+    private static string FormatWords(IReadOnlyList<uint> words)
+    {
+        return string.Join(';', words.Select(word => word == 0 ? "0" : $"0x{word:X8}"));
+    }
+
+    private static string? GetWorldspaceEditorId(uint? worldspaceFormId, IReadOnlyDictionary<uint, string>? formIdMap)
+    {
+        if (worldspaceFormId is not uint id || formIdMap == null)
+        {
+            return null;
+        }
+
+        return formIdMap.TryGetValue(id, out var editorId) && !string.IsNullOrWhiteSpace(editorId)
+            ? editorId
+            : null;
+    }
+
+    private sealed record TerrainDiagnosticRow(ExtractedLandRecord Land, TerrainMeshDiagnostic Diagnostic);
 
     private sealed record AnalyzeOptions
     {

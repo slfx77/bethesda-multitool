@@ -112,6 +112,6 @@ internal sealed class FormIdValidator
             $"Replaced {TotalSubstitutions} dangling FormID reference(s) with null. Breakdown: {breakdown}. " +
             "Cause: source DMP references records that don't exist in declared masters " +
             "(typical when converting an FO3 prototype DMP against an FNV master ESM).",
-            code: "v20.formid.placeholder-summary");
+            code: "formid.placeholder-summary");
     }
 }

@@ -1,6 +1,8 @@
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Terrain;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Records;
 
@@ -47,9 +49,16 @@ internal static class EsmLandEnricher
                 // Create new record with runtime cell coordinates and terrain mesh
                 scanResult.LandRecords[i] = landRecord with
                 {
+                    ParentCellFormId = runtimeData.ParentCellFormId ?? landRecord.ParentCellFormId,
                     RuntimeCellX = runtimeData.CellX,
                     RuntimeCellY = runtimeData.CellY,
-                    RuntimeTerrainMesh = runtimeData.TerrainMesh
+                    RuntimeBaseHeight = runtimeData.BaseHeight,
+                    RuntimeLandOffset = runtimeData.LandOffset,
+                    RuntimeLoadedDataOffset = runtimeData.LoadedDataOffset,
+                    RuntimeTerrainMesh = runtimeData.TerrainMesh,
+                    VisualData = LandVisualData.MergeCategories(landRecord.VisualData, runtimeData.VisualData),
+                    RuntimeLandTextures = runtimeData.RuntimeLandTextures,
+                    RuntimeLandDiagnostics = runtimeData.Diagnostics
                 };
             }
         }
@@ -63,10 +72,16 @@ internal static class EsmLandEnricher
                 scanResult.LandRecords.Add(new ExtractedLandRecord
                 {
                     Header = new DetectedMainRecord("LAND", 0, 0, formId, data.LandOffset, true),
+                    ParentCellFormId = data.ParentCellFormId,
                     RuntimeCellX = data.CellX,
                     RuntimeCellY = data.CellY,
                     RuntimeBaseHeight = data.BaseHeight,
-                    RuntimeTerrainMesh = data.TerrainMesh
+                    RuntimeLandOffset = data.LandOffset,
+                    RuntimeLoadedDataOffset = data.LoadedDataOffset,
+                    RuntimeTerrainMesh = data.TerrainMesh,
+                    VisualData = data.VisualData,
+                    RuntimeLandTextures = data.RuntimeLandTextures,
+                    RuntimeLandDiagnostics = data.Diagnostics
                 });
             }
         }
@@ -78,8 +93,12 @@ internal static class EsmLandEnricher
             var record = scanResult.LandRecords[i];
             if (record.RuntimeTerrainMesh != null)
             {
-                var diag = record.RuntimeTerrainMesh.DiagnoseQuality(
-                    record.BestCellX ?? 0, record.BestCellY ?? 0, record.Header.FormId);
+                var diag = RuntimeTerrainDiagnosticService.DiagnoseQuality(
+                    record.RuntimeTerrainMesh,
+                    record.BestCellX ?? 0,
+                    record.BestCellY ?? 0,
+                    record.Header.FormId,
+                    record.RuntimeBaseHeight ?? 0f);
                 scanResult.LandRecords[i] = record with { PreSanitizationDiagnostic = diag };
             }
         }
@@ -91,7 +110,7 @@ internal static class EsmLandEnricher
             var record = scanResult.LandRecords[i];
             if (record.RuntimeTerrainMesh != null)
             {
-                var sanitized = record.RuntimeTerrainMesh.SanitizeVertices();
+                var sanitized = RuntimeTerrainSanitizationService.Sanitize(record.RuntimeTerrainMesh);
                 if (sanitized != record.RuntimeTerrainMesh)
                 {
                     scanResult.LandRecords[i] = record with { RuntimeTerrainMesh = sanitized };
@@ -107,11 +126,109 @@ internal static class EsmLandEnricher
             var record = scanResult.LandRecords[i];
             if (record.RuntimeTerrainMesh != null)
             {
-                scanResult.LandRecords[i] = record with
+                try
                 {
-                    Heightmap = record.RuntimeTerrainMesh.ToLandHeightmap()
-                };
+                    scanResult.LandRecords[i] = record with
+                    {
+                        Heightmap = RuntimeTerrainHeightmapEncoder.Encode(
+                            record.RuntimeTerrainMesh,
+                            record.RuntimeBaseHeight ?? 0f)
+                    };
+                }
+                catch (InvalidOperationException)
+                {
+                    // Keep any ESM VHGT that was already present; diagnostics record the rejected runtime mesh.
+                }
             }
         }
+    }
+
+    /// <summary>
+    ///     Backfills LAND worldspace metadata from the semantic cell list after DMP cell/worldspace inference.
+    /// </summary>
+    internal static void EnrichLandRecordsWithCellWorldspaces(
+        EsmRecordScanResult scanResult,
+        IEnumerable<CellRecord> cells)
+    {
+        if (scanResult.LandRecords.Count == 0)
+        {
+            return;
+        }
+
+        var cellsByFormId = cells
+            .GroupBy(c => c.FormId)
+            .ToDictionary(g => g.Key, SelectBestCellForLandEnrichment);
+        var cellsByGrid = cells
+            .Where(c => !c.IsInterior &&
+                        !c.IsVirtual &&
+                        c.GridX.HasValue &&
+                        c.GridY.HasValue &&
+                        c.WorldspaceFormId is > 0)
+            .GroupBy(c => (c.GridX!.Value, c.GridY!.Value))
+            .ToDictionary(
+                g => g.Key,
+                g => g.ToList());
+
+        for (var i = 0; i < scanResult.LandRecords.Count; i++)
+        {
+            var land = scanResult.LandRecords[i];
+            var updated = land;
+
+            if (land.ParentCellFormId is uint parentCellFormId &&
+                cellsByFormId.TryGetValue(parentCellFormId, out var parentCell))
+            {
+                updated = updated with
+                {
+                    CellX = parentCell.GridX ?? land.CellX,
+                    CellY = parentCell.GridY ?? land.CellY,
+                    WorldspaceFormId = land.WorldspaceFormId ?? parentCell.WorldspaceFormId
+                };
+            }
+
+            if (updated.WorldspaceFormId is null &&
+                scanResult.LandToWorldspaceMap.TryGetValue(land.Header.FormId, out var landWorldspace))
+            {
+                updated = updated with { WorldspaceFormId = landWorldspace };
+            }
+
+            if (updated.WorldspaceFormId is null &&
+                updated.ParentCellFormId is uint cellFormId &&
+                scanResult.CellToWorldspaceMap.TryGetValue(cellFormId, out var cellWorldspace))
+            {
+                updated = updated with { WorldspaceFormId = cellWorldspace };
+            }
+
+            if (updated.WorldspaceFormId is null &&
+                updated.BestCellX.HasValue &&
+                updated.BestCellY.HasValue &&
+                cellsByGrid.TryGetValue((updated.BestCellX.Value, updated.BestCellY.Value), out var candidates))
+            {
+                var worldspaces = candidates
+                    .Select(c => c.WorldspaceFormId!.Value)
+                    .Distinct()
+                    .ToList();
+                if (worldspaces.Count == 1)
+                {
+                    updated = updated with { WorldspaceFormId = worldspaces[0] };
+                    if (candidates.Count == 1)
+                    {
+                        updated = updated with { ParentCellFormId = candidates[0].FormId };
+                    }
+                }
+            }
+
+            scanResult.LandRecords[i] = updated;
+        }
+    }
+
+    private static CellRecord SelectBestCellForLandEnrichment(IEnumerable<CellRecord> cells)
+    {
+        return cells
+            .OrderByDescending(c => !c.IsVirtual && !c.IsUnresolvedBucket)
+            .ThenByDescending(c => c.WorldspaceFormId is > 0)
+            .ThenByDescending(c => c.GridX.HasValue && c.GridY.HasValue)
+            .ThenByDescending(c => !c.IsInterior)
+            .ThenByDescending(c => c.PlacedObjects.Count)
+            .First();
     }
 }

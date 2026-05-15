@@ -49,7 +49,7 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             Console.WriteLine($"[CRASH] MainWindow constructor failed: {ex}");
-            App.PrintInnerExceptions(ex);
+            FalloutApp.PrintInnerExceptions(ex);
             throw;
         }
     }

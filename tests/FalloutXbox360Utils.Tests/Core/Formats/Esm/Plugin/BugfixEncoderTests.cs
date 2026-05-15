@@ -107,8 +107,9 @@ public class BugfixEncoderTests
 
         var data = Assert.Single(encoded.Subrecords, s => s.Signature == "DATA");
         Assert.Equal(11, data.Bytes.Length);
-        // bytes 0-3 = BaseHealth (zero)
-        Assert.Equal(0, BinaryPrimitives.ReadInt32LittleEndian(data.Bytes.AsSpan(0, 4)));
+        // bytes 0-3 = BaseHealth synthesized from Endurance × 5 + 50 + Level × 10.
+        // Endurance (SPECIAL[2]) = 7, Level (from MakeMinimalAcbs) = 1 → 7*5 + 50 + 10 = 95.
+        Assert.Equal(95, BinaryPrimitives.ReadInt32LittleEndian(data.Bytes.AsSpan(0, 4)));
         // bytes 4-10 = SPECIAL
         Assert.Equal((byte)5, data.Bytes[4]);
         Assert.Equal((byte)6, data.Bytes[5]);
@@ -117,6 +118,60 @@ public class BugfixEncoderTests
         Assert.Equal((byte)9, data.Bytes[8]);
         Assert.Equal((byte)4, data.Bytes[9]);
         Assert.Equal((byte)3, data.Bytes[10]);
+    }
+
+    [Fact]
+    public void NpcEncoder_EncodeNew_WithExplicitBaseHealth_EmitsThatValue()
+    {
+        var npc = new NpcRecord
+        {
+            FormId = 0x801,
+            EditorId = "Npc",
+            Stats = MakeMinimalAcbs(),
+            SpecialStats = [5, 6, 7, 8, 9, 4, 3],
+            BaseHealth = 250
+        };
+
+        var encoded = NpcEncoder.EncodeNew(npc);
+
+        var data = Assert.Single(encoded.Subrecords, s => s.Signature == "DATA");
+        Assert.Equal(250, BinaryPrimitives.ReadInt32LittleEndian(data.Bytes.AsSpan(0, 4)));
+    }
+
+    [Fact]
+    public void NpcEncoder_EncodeNew_WithZeroBaseHealth_FallsBackToSynthesis()
+    {
+        var npc = new NpcRecord
+        {
+            FormId = 0x802,
+            EditorId = "Npc",
+            Stats = MakeMinimalAcbs(),
+            SpecialStats = [5, 6, 7, 8, 9, 4, 3],
+            BaseHealth = 0 // Treated as "unknown" — synthesize.
+        };
+
+        var encoded = NpcEncoder.EncodeNew(npc);
+
+        var data = Assert.Single(encoded.Subrecords, s => s.Signature == "DATA");
+        Assert.Equal(95, BinaryPrimitives.ReadInt32LittleEndian(data.Bytes.AsSpan(0, 4)));
+    }
+
+    [Fact]
+    public void NpcEncoder_EncodeNew_WithNullStats_SynthesizesWithLevelOne()
+    {
+        var npc = new NpcRecord
+        {
+            FormId = 0x803,
+            EditorId = "Npc",
+            // No Stats — synthesis treats Level as 1.
+            SpecialStats = [5, 6, 10, 8, 9, 4, 3] // Endurance = 10
+        };
+
+        var encoded = NpcEncoder.EncodeNew(npc);
+
+        var data = Assert.Single(encoded.Subrecords, s => s.Signature == "DATA");
+        // 10*5 + 50 + 1*10 = 110.
+        Assert.Equal(110, BinaryPrimitives.ReadInt32LittleEndian(data.Bytes.AsSpan(0, 4)));
     }
 
     [Fact]

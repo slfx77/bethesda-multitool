@@ -5,6 +5,39 @@
   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
   xmlns:local="using:FalloutXbox360Utils">
+  <UserControl.Resources>
+    <DataTemplate x:Key="SecondaryFolderRowTemplate" x:DataType="local:SecondaryFolderEntry">
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto" Margin="0,2" ColumnSpacing="8">
+        <TextBlock
+          Grid.Column="0"
+          VerticalAlignment="Center"
+          Opacity="0.6"
+          Text="&#x2261;"
+          FontSize="16" />
+        <TextBlock
+          Grid.Column="1"
+          VerticalAlignment="Center"
+          Text="{Binding Path}"
+          TextTrimming="CharacterEllipsis"
+          ToolTipService.ToolTip="{Binding Path}" />
+        <CheckBox
+          Grid.Column="2"
+          VerticalAlignment="Center"
+          Content="Xbox 360 format"
+          MinWidth="0"
+          IsChecked="{Binding IsXbox360Format, Mode=TwoWay}" />
+        <Button
+          Grid.Column="3"
+          Content="&#xE711;"
+          FontFamily="Segoe MDL2 Assets"
+          FontSize="10"
+          Padding="6,4"
+          Background="Transparent"
+          Tag="{Binding}"
+          AutomationProperties.Name="Remove folder" />
+      </Grid>
+    </DataTemplate>
+  </UserControl.Resources>
 
   <Grid VerticalAlignment="Stretch">
     <!--  Settings drawer  -->
@@ -54,6 +87,28 @@
               Content="Verbose decisions (per-record events)"
               MinWidth="0" />
           </StackPanel>
+
+          <StackPanel Spacing="4">
+            <TextBlock Text="Asset packing" FontWeight="SemiBold" FontSize="13"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <CheckBox
+              x:Name="WriteMissingListCheckBox"
+              Content="Write missing-assets list (.missing.txt next to BSA)"
+              MinWidth="0" />
+            <CheckBox
+              x:Name="OverrideVanillaCheckBox"
+              Content="Override vanilla assets with secondary folders"
+              MinWidth="0" />
+            <CheckBox
+              x:Name="RefrEditorIdRemapCheckBox"
+              Content="Rescue dangling REFRs via EditorID-stem remap"
+              IsChecked="True"
+              MinWidth="0" />
+            <CheckBox
+              x:Name="ReplaceCellTemporariesCheckBox"
+              Content="Replace cell temporaries (clean diff; keeps persistent refs)"
+              MinWidth="0" />
+          </StackPanel>
         </StackPanel>
       </ScrollViewer>
     </Border>
@@ -75,7 +130,7 @@
           AutomationProperties.HeadingLevel="Level1"
           Style="{StaticResource SubtitleTextBlockStyle}" />
         <TextBlock
-          Text="Reverse-engineer Xbox 360 memory dump records into a PC plugin ESP. v1: simple-type overrides only."
+          Text="Reverse-engineer Xbox 360 memory dump records into a PC plugin ESP, with optional asset packing from secondary data folders."
           Style="{StaticResource TabSubtitleStyle}" />
       </StackPanel>
 
@@ -165,46 +220,68 @@
               </StackPanel>
 
               <StackPanel Spacing="6" Margin="0,8,0,0">
+                <TextBlock
+                  x:Name="SecondaryFoldersLabel"
+                  Text="Secondary data folders (drag to reorder; top = highest priority)"
+                  TextWrapping="Wrap"
+                  FontSize="11"
+                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <ListView
+                  x:Name="SecondariesListView"
+                  CanReorderItems="True"
+                  AllowDrop="True"
+                  ItemTemplate="{StaticResource SecondaryFolderRowTemplate}"
+                  SelectionMode="None"
+                  MinHeight="80"
+                  MaxHeight="180"
+                  BorderThickness="1"
+                  BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                  AutomationProperties.Name="Secondary data folders"
+                  AutomationProperties.LabeledBy="{Binding ElementName=SecondaryFoldersLabel}">
+                  <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem">
+                      <Setter Property="Padding" Value="6,4,6,4" />
+                      <Setter Property="MinHeight" Value="0" />
+                      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    </Style>
+                  </ListView.ItemContainerStyle>
+                </ListView>
+                <TextBlock
+                  x:Name="SecondariesEmptyHint"
+                  Text="No secondary folders. Click &quot;Add folder…&quot; to add one."
+                  FontStyle="Italic"
+                  FontSize="11"
+                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Button
+                  x:Name="AddSecondaryFolderButton"
+                  Content="Add folder…"
+                  Click="AddSecondaryFolderButton_Click"
+                  HorizontalAlignment="Left"
+                  AutomationProperties.Name="Add secondary data folder" />
                 <CheckBox
                   x:Name="PackAssetsCheckBox"
                   Content="Pack missing assets into BSA after conversion"
                   Checked="PackAssetsCheckBox_Toggled"
                   Unchecked="PackAssetsCheckBox_Toggled"
-                  MinWidth="0" />
-                <StackPanel x:Name="PackAssetsPanel" Spacing="6" Visibility="Collapsed">
-                  <TextBlock
-                    x:Name="SecondaryFoldersLabel"
-                    Text="Secondary data folders (one per line; prefix with '360:' for Xbox 360 BSAs)"
-                    TextWrapping="Wrap"
-                    FontSize="11"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                  MinWidth="0"
+                  Margin="0,4,0,0" />
+                <TextBlock x:Name="OutputBsaLabel" Text="Output BSA path" />
+                <Grid ColumnSpacing="6">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
                   <TextBox
-                    x:Name="SecondaryFoldersTextBox"
-                    AcceptsReturn="True"
-                    TextWrapping="Wrap"
-                    MinHeight="60"
-                    FontFamily="Consolas"
-                    FontSize="12"
-                    PlaceholderText="C:\path\to\Fallout 3\Data&#x0a;360:C:\path\to\July 2010 360\Data"
-                    AutomationProperties.LabeledBy="{Binding ElementName=SecondaryFoldersLabel}" />
-                  <TextBlock x:Name="OutputBsaLabel" Text="Output BSA path" />
-                  <Grid ColumnSpacing="6">
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="*" />
-                      <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBox
-                      x:Name="OutputBsaTextBox"
-                      Grid.Column="0"
-                      PlaceholderText="C:\path\to\output.bsa"
-                      AutomationProperties.LabeledBy="{Binding ElementName=OutputBsaLabel}" />
-                    <Button
-                      Grid.Column="1"
-                      Content="Save..."
-                      Click="BrowseOutputBsaButton_Click"
-                      AutomationProperties.Name="Browse for output BSA path" />
-                  </Grid>
-                </StackPanel>
+                    x:Name="OutputBsaTextBox"
+                    Grid.Column="0"
+                    PlaceholderText="C:\path\to\output.bsa"
+                    AutomationProperties.LabeledBy="{Binding ElementName=OutputBsaLabel}" />
+                  <Button
+                    Grid.Column="1"
+                    Content="Save..."
+                    Click="BrowseOutputBsaButton_Click"
+                    AutomationProperties.Name="Browse for output BSA path" />
+                </Grid>
               </StackPanel>
 
               <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">

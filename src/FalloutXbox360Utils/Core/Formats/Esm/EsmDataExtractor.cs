@@ -96,7 +96,13 @@ internal static class EsmDataExtractor
                         var gridY = bigEndian
                             ? BinaryPrimitives.ReadInt32BigEndian(sub.Data.AsSpan(4))
                             : BinaryPrimitives.ReadInt32LittleEndian(sub.Data.AsSpan(4));
-                        cellGrids.Add(new CellGridSubrecord { GridX = gridX, GridY = gridY, Offset = record.Offset });
+                        cellGrids.Add(new CellGridSubrecord
+                        {
+                            GridX = gridX,
+                            GridY = gridY,
+                            CellFormId = record.Header.FormId,
+                            Offset = record.Offset
+                        });
                     }
                         break;
                 }

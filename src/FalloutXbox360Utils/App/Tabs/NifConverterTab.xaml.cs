@@ -443,7 +443,7 @@ public sealed partial class NifConverterTab : NifFileConverterBase
         filePicker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
         filePicker.FileTypeFilter.Add(".bsa");
         InitializeWithWindow.Initialize(filePicker,
-            WindowNative.GetWindowHandle(App.Current.MainWindow));
+            WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow));
 
         var file = await filePicker.PickSingleFileAsync();
         if (file != null)
@@ -458,7 +458,7 @@ public sealed partial class NifConverterTab : NifFileConverterBase
         filePicker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
         filePicker.FileTypeFilter.Add(".bsa");
         InitializeWithWindow.Initialize(filePicker,
-            WindowNative.GetWindowHandle(App.Current.MainWindow));
+            WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow));
 
         var file = await filePicker.PickSingleFileAsync();
         if (file == null) return;
@@ -645,7 +645,7 @@ public sealed partial class NifConverterTab : NifFileConverterBase
         picker.SuggestedFileName = Path.ChangeExtension(
             Path.GetFileName(_currentNifViewerPath), ".glb");
         InitializeWithWindow.Initialize(picker,
-            WindowNative.GetWindowHandle(App.Current.MainWindow));
+            WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow));
 
         var file = await picker.PickSaveFileAsync();
         if (file == null) return;
@@ -691,7 +691,7 @@ public sealed partial class NifConverterTab : NifFileConverterBase
         picker.SuggestedFileName = Path.ChangeExtension(
             Path.GetFileName(_currentNifViewerPath), ".png");
         InitializeWithWindow.Initialize(picker,
-            WindowNative.GetWindowHandle(App.Current.MainWindow));
+            WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow));
 
         var file = await picker.PickSaveFileAsync();
         if (file == null) return;

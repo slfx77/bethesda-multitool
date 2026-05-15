@@ -85,7 +85,7 @@
 
   <!-- Windows GUI packages -->
   <ItemGroup Condition="$(TargetFramework.Contains('windows'))">
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260101001" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260317003" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.4654" />
     <PackageReference Include="CommunityToolkit.WinUI.Controls.Primitives" Version="8.2.250402" />
     <PackageReference Include="CommunityToolkit.WinUI.Controls.Sizers" Version="8.2.250402" />
@@ -109,6 +109,8 @@
 
   <!-- App icon for title bar (unpackaged apps need explicit Content inclusion) -->
   <ItemGroup Condition="$(TargetFramework.Contains('windows'))">
+    <ApplicationDefinition Remove="App.xaml" />
+    <Page Include="App.xaml" />
     <Content Include="Assets\AppIcon.png" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="App\Assets\npc-viewer.html" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="App\Assets\model-viewer.min.js" CopyToOutputDirectory="PreserveNewest" />

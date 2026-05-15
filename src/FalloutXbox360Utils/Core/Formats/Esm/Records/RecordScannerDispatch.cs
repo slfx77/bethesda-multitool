@@ -67,6 +67,7 @@ internal static class RecordScannerDispatch
         "DOOR", // Door
         "LIGH", // Light
         "STAT", // Static
+        "SCOL", // Static Collection (groups instances of STATs)
         "TERM", // Terminal
         "FURN", // Furniture
 

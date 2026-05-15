@@ -51,16 +51,30 @@ internal sealed record BsaAssetSource : AssetSource
 /// </summary>
 internal sealed class DataFolderIndex : IDisposable
 {
-    private static readonly HashSet<string> AssetExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".nif", ".dds", ".ddx", ".kf", ".wav", ".lip", ".egm", ".egt",
-        ".xwm", ".ogg", ".bik", ".psa", ".tri"
-    };
-
     private readonly Dictionary<string, AssetSource> _byPath = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly Dictionary<string, List<AssetSource>> _byBasename =
         new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    ///     v22: filename-without-extension reduced to lowercase letters/digits only — every
+    ///     space, underscore, dash, and apostrophe is dropped. Lets the resolver catch
+    ///     renames between the prototype and final FNV that only changed separator style
+    ///     (e.g. <c>monorailplatform.nif</c> ↔ <c>monorail_platform.nif</c>, or
+    ///     <c>Lucky38Sign.nif</c> ↔ <c>lucky_38_sign.nif</c>).
+    /// </summary>
+    private readonly Dictionary<string, List<AssetSource>> _byLooseBasename =
+        new(StringComparer.Ordinal);
+
+    /// <summary>
+    ///     Entries keyed by last directory token (lowercase). Used by the resolver's
+    ///     substring-suffix pass to cheaply gather "candidates in the same folder as the
+    ///     request" without walking every indexed entry per query. Catches the common
+    ///     case where a final-build mesh got a prefix added in its filename but stayed
+    ///     in the same folder — e.g. <c>rubble\ibeam02.nif</c> ↔ <c>rubble\c_ibeam02.nif</c>.
+    /// </summary>
+    private readonly Dictionary<string, List<AssetSource>> _byLastDirectory =
+        new(StringComparer.Ordinal);
 
     private readonly List<BsaExtractor> _ownedExtractors = [];
 
@@ -123,6 +137,54 @@ internal sealed class DataFolderIndex : IDisposable
         return _byBasename.TryGetValue(basename, out var list) ? list : [];
     }
 
+    /// <summary>
+    ///     v22: return every indexed asset whose filename, with extension stripped and
+    ///     separators (space / underscore / dash / apostrophe) removed and case-folded,
+    ///     matches the given <paramref name="looseBasename"/>. The caller is responsible
+    ///     for normalizing its key via <see cref="ComputeLooseBasename"/>.
+    /// </summary>
+    public IReadOnlyList<AssetSource> EnumerateByLooseBasename(string looseBasename)
+    {
+        return _byLooseBasename.TryGetValue(looseBasename, out var list) ? list : [];
+    }
+
+    /// <summary>
+    ///     v22: return every indexed asset whose immediate parent directory matches
+    ///     <paramref name="lastDirectory"/> (case-insensitive). Used by the substring-
+    ///     suffix loose pass so the search stays bounded to "same folder" candidates
+    ///     instead of walking every indexed entry.
+    /// </summary>
+    public IReadOnlyList<AssetSource> EnumerateByLastDirectory(string lastDirectory)
+    {
+        return _byLastDirectory.TryGetValue(lastDirectory, out var list) ? list : [];
+    }
+
+    /// <summary>
+    ///     Reduce a filename to a separator-free, case-folded comparison key. Drops the
+    ///     extension and every <c>' '</c>, <c>'_'</c>, <c>'-'</c>, <c>'\''</c> character.
+    ///     Returns the empty string when the input has no comparable characters left.
+    /// </summary>
+    public static string ComputeLooseBasename(string fileNameWithExtension)
+    {
+        return AssetPathRules.ComputeLooseBasename(fileNameWithExtension);
+    }
+
+    /// <summary>
+    ///     v22: like <see cref="ComputeLooseBasename"/> but additionally strips a leading
+    ///     and/or trailing <c>nv</c> token from the loose stem. The FNV final build
+    ///     occasionally removed the <c>nv</c> namespace token that prototype filenames
+    ///     carried (e.g. <c>nv_slotmachine</c> ↔ <c>slotmachine</c>,
+    ///     <c>rockcanyonrubblepile05nv</c> ↔ <c>rockcanyonrubblepile05</c>). This variant
+    ///     is queried only as a fallback after the strict loose match fails, so unrelated
+    ///     <c>nv*</c> prototype assets aren't conflated with same-named final assets.
+    ///     Returns <see cref="string.Empty"/> when the input has no leading/trailing
+    ///     <c>nv</c> to strip (caller can skip the secondary lookup entirely in that case).
+    /// </summary>
+    public static string ComputeLooseBasenameWithoutNvAffix(string fileNameWithExtension)
+    {
+        return AssetPathRules.ComputeLooseBasenameWithoutNvAffix(fileNameWithExtension);
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -145,6 +207,8 @@ internal sealed class DataFolderIndex : IDisposable
         _ownedExtractors.Clear();
         _byPath.Clear();
         _byBasename.Clear();
+        _byLooseBasename.Clear();
+        _byLastDirectory.Clear();
         _disposed = true;
     }
 
@@ -180,13 +244,13 @@ internal sealed class DataFolderIndex : IDisposable
         foreach (var fullPath in looseFiles)
         {
             var ext = Path.GetExtension(fullPath);
-            if (!AssetExtensions.Contains(ext))
+            if (!AssetPathRules.AssetExtensions.Contains(ext))
             {
                 continue;
             }
 
             var relativeRaw = fullPath.Length > rootLen ? fullPath[rootLen..] : fullPath;
-            var normalized = AssetPathCollector.NormalizePath(relativeRaw);
+            var normalized = AssetPathRules.NormalizeDataRelativePath(relativeRaw);
             if (normalized.Length == 0)
             {
                 continue;
@@ -243,12 +307,12 @@ internal sealed class DataFolderIndex : IDisposable
 
                 var fullPath = record.FullPath;
                 var ext = Path.GetExtension(fullPath);
-                if (!AssetExtensions.Contains(ext))
+                if (!AssetPathRules.AssetExtensions.Contains(ext))
                 {
                     continue;
                 }
 
-                var normalized = AssetPathCollector.NormalizePath(fullPath);
+                var normalized = AssetPathRules.NormalizeDataRelativePath(fullPath);
                 if (normalized.Length == 0)
                 {
                     continue;
@@ -288,6 +352,62 @@ internal sealed class DataFolderIndex : IDisposable
         }
 
         list.Add(source);
+
+        // Loose-basename index — same accumulation strategy. Skip when normalization
+        // leaves nothing (e.g. a filename consisting purely of separators).
+        var loose = ComputeLooseBasename(basename);
+        if (loose.Length == 0)
+        {
+            return;
+        }
+
+        if (!_byLooseBasename.TryGetValue(loose, out var looseList))
+        {
+            looseList = [];
+            _byLooseBasename[loose] = looseList;
+        }
+
+        looseList.Add(source);
+
+        // v22: when the basename carries a leading/trailing 'nv' token (the FNV namespace
+        // affix), ALSO index the asset under the stripped form so lookups for the
+        // un-namespaced variant can find it (e.g. request `slot.nif` finds candidate
+        // `nv_slot.nif` indexed under both `nvslot` and `slot`). The request side has its
+        // own nv-strip pass in DataFolderResolver — together they cover both directions.
+        var looseNoNv = ComputeLooseBasenameWithoutNvAffix(basename);
+        if (looseNoNv.Length > 0 && !string.Equals(looseNoNv, loose, StringComparison.Ordinal))
+        {
+            if (!_byLooseBasename.TryGetValue(looseNoNv, out var looseNoNvList))
+            {
+                looseNoNvList = [];
+                _byLooseBasename[looseNoNv] = looseNoNvList;
+            }
+
+            looseNoNvList.Add(source);
+        }
+
+        // Last-directory index: bucket by the immediate parent folder (lowercased).
+        var lastSep = normalizedPath.LastIndexOf('\\');
+        if (lastSep <= 0)
+        {
+            return;
+        }
+
+        var dirEnd = lastSep;
+        var dirStart = normalizedPath.LastIndexOf('\\', dirEnd - 1) + 1;
+        var lastDir = normalizedPath.Substring(dirStart, dirEnd - dirStart);
+        if (lastDir.Length == 0)
+        {
+            return;
+        }
+
+        if (!_byLastDirectory.TryGetValue(lastDir, out var dirList))
+        {
+            dirList = [];
+            _byLastDirectory[lastDir] = dirList;
+        }
+
+        dirList.Add(source);
     }
 
     private void Clear()
@@ -307,5 +427,7 @@ internal sealed class DataFolderIndex : IDisposable
         _ownedExtractors.Clear();
         _byPath.Clear();
         _byBasename.Clear();
+        _byLooseBasename.Clear();
+        _byLastDirectory.Clear();
     }
 }

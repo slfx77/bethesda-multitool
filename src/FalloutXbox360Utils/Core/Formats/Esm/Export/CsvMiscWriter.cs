@@ -4,6 +4,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Magic;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
@@ -166,7 +167,7 @@ internal static class CsvMiscWriter
     {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "RowType,CellFormID,CellEditorID,CellName,GridX,GridY,IsInterior,HasWater,Flags,HasHeightmap,PlacedObjectCount,Endianness,Offset,ObjectFormID,ObjectEditorID,ObjectRecordType,BaseFormID,BaseEditorID,BaseDisplayName,X,Y,Z,RotX,RotY,RotZ,Scale,OwnerFormID,BoundsX1,BoundsY1,BoundsZ1,BoundsX2,BoundsY2,BoundsZ2,ModelPath");
+            "RowType,CellFormID,CellEditorID,CellName,GridX,GridY,IsInterior,HasWater,Flags,HasHeightmap,WorldspaceFormID,WorldspaceEditorID,WorldspaceAssignmentSource,CandidateWorldspaceFormIDs,CandidateWorldspaceEditorIDs,PlacedObjectCount,Endianness,Offset,ObjectFormID,ObjectEditorID,ObjectRecordType,BaseFormID,BaseEditorID,BaseDisplayName,X,Y,Z,RotX,RotY,RotZ,Scale,OwnerFormID,BoundsX1,BoundsY1,BoundsZ1,BoundsX2,BoundsY2,BoundsZ2,ModelPath");
 
         foreach (var cell in cells.OrderBy(c => c.GridX ?? int.MaxValue).ThenBy(c => c.GridY ?? int.MaxValue))
         {
@@ -181,6 +182,11 @@ internal static class CsvMiscWriter
                 cell.HasWater.ToString(),
                 cell.Flags.ToString(),
                 (cell.Heightmap != null).ToString(),
+                Fmt.FIdN(cell.WorldspaceFormId),
+                resolver.ResolveCsv(cell.WorldspaceFormId ?? 0),
+                Fmt.CsvEscape(cell.WorldspaceAssignmentSource),
+                Fmt.CsvEscape(FormatFormIdList(cell.CandidateWorldspaceFormIds)),
+                Fmt.CsvEscape(FormatResolvedList(cell.CandidateWorldspaceFormIds, resolver)),
                 cell.PlacedObjects.Count.ToString(),
                 Fmt.Endian(cell.IsBigEndian),
                 cell.Offset.ToString(),
@@ -192,7 +198,7 @@ internal static class CsvMiscWriter
                 sb.AppendLine(string.Join(",",
                     "OBJ",
                     Fmt.FId(cell.FormId),
-                    "", "", "", "", "", "", "", "", "",
+                    "", "", "", "", "", "", "", "", "", "", "", "", "", "",
                     "", "",
                     Fmt.FId(obj.FormId),
                     Fmt.CsvEscape(obj.BaseEditorId),
@@ -256,6 +262,59 @@ internal static class CsvMiscWriter
         }
 
         return sb.ToString();
+    }
+
+    public static string GenerateRuntimeWorldspaceCellsCsv(
+        Dictionary<uint, RuntimeWorldspaceData> runtimeWorldspaceMaps,
+        FormIdResolver resolver)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine(
+            "MapWorldspaceFormID,MapWorldspaceEditorID,CellFormID,GridX,GridY,IsInterior,IsPersistent," +
+            "RawWorldspaceFormID,RawWorldspaceEditorID,EffectiveWorldspaceFormID,EffectiveWorldspaceEditorID," +
+            "LandFormID,CellPointer,ReferenceCount");
+
+        foreach (var (mapWorldspaceFormId, worldspaceData) in runtimeWorldspaceMaps
+                     .OrderBy(kvp => kvp.Key))
+        {
+            foreach (var cell in worldspaceData.Cells
+                         .OrderBy(c => c.GridX)
+                         .ThenBy(c => c.GridY)
+                         .ThenBy(c => c.CellFormId))
+            {
+                sb.AppendLine(string.Join(",",
+                    Fmt.FId(mapWorldspaceFormId),
+                    resolver.ResolveCsv(mapWorldspaceFormId),
+                    Fmt.FId(cell.CellFormId),
+                    cell.GridX.ToString(),
+                    cell.GridY.ToString(),
+                    cell.IsInterior.ToString(),
+                    cell.IsPersistent.ToString(),
+                    Fmt.FIdN(cell.RawWorldspaceFormId),
+                    resolver.ResolveCsv(cell.RawWorldspaceFormId ?? 0),
+                    Fmt.FIdN(cell.WorldspaceFormId),
+                    resolver.ResolveCsv(cell.WorldspaceFormId ?? 0),
+                    Fmt.FIdN(cell.LandFormId),
+                    cell.CellPointer.HasValue ? $"0x{cell.CellPointer.Value:X8}" : "",
+                    cell.ReferenceFormIds.Count.ToString()));
+            }
+        }
+
+        return sb.ToString();
+    }
+
+    private static string FormatFormIdList(IReadOnlyList<uint> formIds)
+    {
+        return formIds.Count == 0
+            ? ""
+            : string.Join(";", formIds.Select(id => Fmt.FId(id)));
+    }
+
+    private static string FormatResolvedList(IReadOnlyList<uint> formIds, FormIdResolver resolver)
+    {
+        return formIds.Count == 0
+            ? ""
+            : string.Join(";", formIds.Select(resolver.ResolveCsv));
     }
 
     public static string GeneratePerksCsv(List<PerkRecord> perks, FormIdResolver resolver)

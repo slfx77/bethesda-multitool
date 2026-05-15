@@ -4,6 +4,7 @@ using FalloutXbox360Utils.CLI.Rendering.Npc;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
+using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
@@ -14,8 +15,10 @@ public sealed class NpcRenderSmokeTests(SampleFileFixture samples)
     private const string LucyOutfitNormalPath = @"textures\armor\lucassimms\OutfitF_n.dds";
 
     [Fact]
+    [Trait("Category", GpuTestGuard.Category)]
     public void BuildAndRenderVeronicaHead_CpuAndGpuReturnNonEmptySprites()
     {
+        GpuTestGuard.SkipUnlessEnabled();
         Assert.SkipWhen(samples.PcFinalEsm is null, "PC final ESM not available");
 
         using var assets = CreatePcAssets();

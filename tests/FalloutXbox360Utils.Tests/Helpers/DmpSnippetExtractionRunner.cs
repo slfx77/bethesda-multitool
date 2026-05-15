@@ -19,7 +19,7 @@ public sealed class DmpSnippetExtractionRunner(SampleFileFixture samples)
     ///     Extract snippets from all available dump files.
     ///     Exercises all code paths used by slow DMP tests.
     /// </summary>
-    [Fact]
+    [Fact(Explicit = true)]
     [Trait("Category", "Extraction")]
     public async Task ExtractAllSnippets()
     {

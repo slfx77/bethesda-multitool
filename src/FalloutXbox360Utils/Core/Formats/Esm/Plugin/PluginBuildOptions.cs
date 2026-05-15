@@ -63,4 +63,37 @@ public sealed record PluginBuildOptions
     ///     already exact-matchable here are not rewritten. Null disables the rename pass.
     /// </summary>
     public string? AssetRenameBaselineFolder { get; init; }
+
+    /// <summary>
+    ///     If true, the rename pass consults the secondary folders before the baseline,
+    ///     mirroring <c>AssetPackingOptions.OverrideVanillaBaseline</c>. Use both flags
+    ///     together so the rewritten ESP fields and the packed BSA agree on which secondary
+    ///     path wins. Defaults to false.
+    /// </summary>
+    public bool AssetRenameOverrideVanilla { get; init; }
+
+    /// <summary>
+    ///     When true (default), prototype REFRs whose base FormID is missing from master
+    ///     AND not freshly emitted get a last-chance rename remap by EditorID stem against
+    ///     the master ESM. Same-type discipline + single-candidate gate + ambiguity-refusal
+    ///     logging. Set false to suppress the remap (e.g. for diagnostic runs comparing
+    ///     baseline-vs-remap REFR drop counts).
+    /// </summary>
+    public bool EnableRefrBaseEditorIdRemap { get; init; } = true;
+
+    /// <summary>
+    ///     Diagnostic mode: when a CELL exists in master AND the DMP captured placements
+    ///     for it, emit deletion overrides for every master <i>temporary</i> ref that
+    ///     isn't in the DMP snapshot — so the in-game / GECK view of that cell shows
+    ///     only the prototype's static placements (plus master persistent refs, which
+    ///     stay untouched to avoid breaking quest scripts / enable-parent chains).
+    ///     <br/>
+    ///     Off by default. When on, this overrides the classifier's
+    ///     <c>PersistentOnly</c> mode for DMP cells that captured placements, and
+    ///     bypasses <c>PreserveMissingStructuralCellRefs</c> so structural markers /
+    ///     doors / NAVMs not in the DMP also get wiped. Markers + fast-travel teleports
+    ///     in affected cells may disappear; persistent refs (and therefore quest-bound
+    ///     objects) are preserved.
+    /// </summary>
+    public bool ReplaceCellTemporariesOnOverride { get; init; }
 }

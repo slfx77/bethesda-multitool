@@ -220,6 +220,9 @@ public record RecordCollection
     /// <summary>Parsed Static (STAT) records.</summary>
     public List<StaticRecord> Statics { get; init; } = [];
 
+    /// <summary>Parsed Static Collection (SCOL) records.</summary>
+    public List<StaticCollectionRecord> StaticCollections { get; init; } = [];
+
     /// <summary>Parsed Furniture (FURN) records.</summary>
     public List<FurnitureRecord> Furniture { get; init; } = [];
 
@@ -240,6 +243,9 @@ public record RecordCollection
 
     /// <summary>Parsed Texture Set (TXST) records.</summary>
     public List<TextureSetRecord> TextureSets { get; init; } = [];
+
+    /// <summary>Parsed Landscape Texture (LTEX) records.</summary>
+    public List<LandscapeTextureRecord> LandTextures { get; init; } = [];
 
     /// <summary>Parsed Armor Addon (ARMA) records.</summary>
     public List<ArmaRecord> ArmorAddons { get; init; } = [];
@@ -305,10 +311,10 @@ public record RecordCollection
         Ingredients.Count + NavMeshInfoMaps.Count + CaravanDecks.Count +
         RadiationStages.Count + DehydrationStages.Count + HungerStages.Count + SleepDeprivationStages.Count +
         FormLists.Count + Activators.Count +
-        Lights.Count + Doors.Count + Statics.Count + Furniture.Count +
+        Lights.Count + Doors.Count + Statics.Count + StaticCollections.Count + Furniture.Count +
         Packages.Count +
         GenericRecords.Count +
-        Sounds.Count + MusicTypes.Count + TextureSets.Count + ArmorAddons.Count + Water.Count +
+        Sounds.Count + MusicTypes.Count + TextureSets.Count + LandTextures.Count + ArmorAddons.Count + Water.Count +
         BodyPartData.Count + ActorValueInfos.Count + CombatStyles.Count +
         LightingTemplates.Count + NavMeshes.Count + Weather.Count;
 
@@ -404,6 +410,7 @@ public record RecordCollection
             Lights = MergeList(Lights, overlay.Lights, r => r.FormId),
             Doors = MergeList(Doors, overlay.Doors, r => r.FormId),
             Statics = MergeList(Statics, overlay.Statics, r => r.FormId),
+            StaticCollections = MergeList(StaticCollections, overlay.StaticCollections, r => r.FormId),
             Furniture = MergeList(Furniture, overlay.Furniture, r => r.FormId),
 
             // AI
@@ -416,6 +423,7 @@ public record RecordCollection
             Sounds = MergeList(Sounds, overlay.Sounds, r => r.FormId),
             MusicTypes = MergeList(MusicTypes, overlay.MusicTypes, r => r.FormId),
             TextureSets = MergeList(TextureSets, overlay.TextureSets, r => r.FormId),
+            LandTextures = MergeList(LandTextures, overlay.LandTextures, r => r.FormId),
             ArmorAddons = MergeList(ArmorAddons, overlay.ArmorAddons, r => r.FormId),
             Water = MergeList(Water, overlay.Water, r => r.FormId),
             BodyPartData = MergeList(BodyPartData, overlay.BodyPartData, r => r.FormId),

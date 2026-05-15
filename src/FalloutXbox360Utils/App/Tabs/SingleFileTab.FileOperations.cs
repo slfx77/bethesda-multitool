@@ -157,7 +157,7 @@ public sealed partial class SingleFileTab
         var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
         picker.FileTypeFilter.Add("*");
         InitializeWithWindow.Initialize(picker,
-            WindowNative.GetWindowHandle(App.Current.MainWindow));
+            WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow));
 
         var folder = await picker.PickSingleFolderAsync();
         if (folder == null) return;
@@ -181,7 +181,7 @@ public sealed partial class SingleFileTab
         picker.FileTypeChoices.Add("Text file", [".txt", ".csv"]);
         picker.SuggestedFileName = report.FileName;
         InitializeWithWindow.Initialize(picker,
-            WindowNative.GetWindowHandle(App.Current.MainWindow));
+            WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow));
 
         var file = await picker.PickSaveFileAsync();
         if (file != null)

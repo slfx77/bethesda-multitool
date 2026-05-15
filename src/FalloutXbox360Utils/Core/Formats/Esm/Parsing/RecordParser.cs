@@ -110,14 +110,16 @@ public sealed class RecordParser
             "PROJ", "EXPL", "MESG", "CLAS",
             "FLST", "ACTI", "LIGH", "DOOR", "STAT", "FURN",
             "PACK",
+            // SCOL has a typed handler (see _miscStaticObjects.ParseStaticCollections).
             // Generic record types (Phase 1)
             "MSTT", "TACT", "CAMS", "ANIO", "IPDS", "EFSH", "RGDL", "LSCR",
             "ASPC", "MSET", "CHIP", "CSNO", "DOBJ", "ADDN", "TREE", "IMAD",
-            "IDLM", "SCOL", "PWAT",
+            "IDLM", "PWAT",
+            "SCOL",
             // Specialized record types (Phase 2)
-            "SOUN", "MUSC", "TXST", "ARMA", "WATR", "BPTD", "AVIF", "CSTY", "LGTM", "NAVM", "WTHR",
+            "SOUN", "MUSC", "TXST", "LTEX", "ARMA", "WATR", "BPTD", "AVIF", "CSTY", "LGTM", "NAVM", "WTHR",
             // Phase 10 generic-only additions
-            "IMGS", "CLMT", "GRAS", "LTEX", "AMEF",
+            "IMGS", "CLMT", "GRAS", "AMEF",
             // Phase 10 typed handlers
             "HDPT", "VTYP", "MICN", "LSCT", "IDLE", "CPTH", "IPCT", "ALOC",
             "PGRE", "REGN", "CCRD", "DEBR",
@@ -256,6 +258,7 @@ public sealed class RecordParser
         if (_context.ScanResult.CellToWorldspaceMap.Count == 0 && worldspaces.Count > 0)
         {
             WorldRecordHandler.InferCellWorldspaces(cells, worldspaces);
+            WorldRecordHandler.ResolveRuntimeAnchoredCellRuns(cells, worldspaces, _context.RuntimeWorldspaceCellMaps);
         }
 
         // DMP fallback: create virtual cells for orphan REFR/ACHR/ACRE not assigned to any cell
@@ -269,8 +272,12 @@ public sealed class RecordParser
             if (_context.ScanResult.CellToWorldspaceMap.Count == 0 && worldspaces.Count > 0)
             {
                 WorldRecordHandler.InferCellWorldspaces(cells, worldspaces);
+                WorldRecordHandler.ResolveRuntimeAnchoredCellRuns(cells, worldspaces, _context.RuntimeWorldspaceCellMaps);
             }
         }
+
+        EsmLandEnricher.EnrichLandRecordsWithCellWorldspaces(_context.ScanResult, cells);
+        CellRecordHandler.AttachTerrainDataFromLandRecords(cells, _context.ScanResult);
 
         // Persistent-ref redistribution: move persistent refs with valid world positions into
         // their real exterior tile (per-worldspace grid lookup with parsed-cell fallback and
@@ -294,6 +301,13 @@ public sealed class RecordParser
         {
             Logger.Instance.Debug(
                 $"  [Semantic] Deduplicated {deduplicated} runtime-shared ref copy(s) across grid cells");
+        }
+
+        var globallyDeduplicated = PersistentRefRedistributor.DeduplicatePlacedRefsToBestCell(cells);
+        if (globallyDeduplicated > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] Deduplicated {globallyDeduplicated} duplicate placed ref copy(s) across cells");
         }
 
         WorldRecordHandler.EnsureWorldspacesForCells(cells, worldspaces, _context);
@@ -332,6 +346,7 @@ public sealed class RecordParser
         // activators, doors, furniture already parsed above (before script cross-ref chains)
         var lights = _miscWorldObjects.ParseLights();
         var statics = _miscStaticObjects.ParseStatics();
+        var staticCollections = _miscStaticObjects.ParseStaticCollections();
         Logger.Instance.Debug($"  [Semantic] Game data: {phaseSw.Elapsed} (16 types)");
 
         progress?.Report((85, "Parseing generic records..."));
@@ -340,9 +355,10 @@ public sealed class RecordParser
         {
             "MSTT", "TACT", "CAMS", "ANIO", "IPDS", "EFSH", "RGDL", "LSCR",
             "ASPC", "MSET", "CHIP", "CSNO", "DOBJ", "ADDN", "TREE", "IMAD",
-            "IDLM", "SCOL", "PWAT",
+            "IDLM", "PWAT",
+            // SCOL is parsed via the typed _miscStaticObjects.ParseStaticCollections() path.
             // Phase 10: small PDB-defined types with no parity-relevant fields beyond identity
-            "IMGS", "CLMT", "GRAS", "LTEX", "AMEF"
+            "IMGS", "CLMT", "GRAS", "AMEF"
         };
         var genericRecords = new List<GenericEsmRecord>();
         foreach (var type in genericTypes)
@@ -369,6 +385,8 @@ public sealed class RecordParser
         var sounds = _miscEnvironment.ParseSounds();
         var musicTypes = _miscEnvironment.ParseMusicTypes();
         var textureSets = _miscEnvironment.ParseTextureSets();
+        var landTextures = _miscEnvironment.ParseLandscapeTextures();
+        MergeRuntimeLandTextures(landTextures);
         var armorAddons = _miscItems.ParseArmorAddons();
         var water = _miscEnvironment.ParseWater();
         var bodyPartData = _miscItems.ParseBodyPartData();
@@ -396,7 +414,7 @@ public sealed class RecordParser
         var sleepDeprivationStages = _miscGameSystems.ParseSleepDeprivationStages();
         Logger.Instance.Debug(
             $"  [Semantic] Specialized records: {phaseSw.Elapsed} " +
-            $"(SOUN: {sounds.Count}, MUSC: {musicTypes.Count}, TXST: {textureSets.Count}, ARMA: {armorAddons.Count}, " +
+            $"(SOUN: {sounds.Count}, MUSC: {musicTypes.Count}, TXST: {textureSets.Count}, LTEX: {landTextures.Count}, ARMA: {armorAddons.Count}, " +
             $"WATR: {water.Count}, BPTD: {bodyPartData.Count}, AVIF: {actorValueInfos.Count}, " +
             $"CSTY: {combatStyles.Count}, LGTM: {lightingTemplates.Count}, " +
             $"NAVM: {navMeshes.Count}, ECZN: {encounterZones.Count}, WTHR: {weather.Count})");
@@ -489,6 +507,7 @@ public sealed class RecordParser
             Lights = lights,
             Doors = doors,
             Statics = statics,
+            StaticCollections = staticCollections,
             Furniture = furniture,
 
             // AI
@@ -501,6 +520,7 @@ public sealed class RecordParser
             Sounds = sounds,
             MusicTypes = musicTypes,
             TextureSets = textureSets,
+            LandTextures = landTextures,
             ArmorAddons = armorAddons,
             Water = water,
             BodyPartData = bodyPartData,
@@ -527,6 +547,39 @@ public sealed class RecordParser
 
         progress?.Report((100, "Complete"));
         return result;
+    }
+
+    private void MergeRuntimeLandTextures(List<LandscapeTextureRecord> landTextures)
+    {
+        if (_context.ScanResult.LandRecords.Count == 0)
+        {
+            return;
+        }
+
+        var knownFormIds = new HashSet<uint>(landTextures.Select(l => l.FormId));
+        var added = 0;
+        foreach (var runtimeTexture in _context.ScanResult.LandRecords.SelectMany(l => l.RuntimeLandTextures))
+        {
+            if (runtimeTexture.FormId == 0 || !knownFormIds.Add(runtimeTexture.FormId))
+            {
+                continue;
+            }
+
+            landTextures.Add(runtimeTexture);
+            added++;
+
+            if (!string.IsNullOrEmpty(runtimeTexture.EditorId))
+            {
+                _context.FormIdToEditorId.TryAdd(runtimeTexture.FormId, runtimeTexture.EditorId);
+            }
+        }
+
+        if (added > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] Added {added} LTEX record(s) from runtime LAND texture pointers " +
+                $"(total: {landTextures.Count})");
+        }
     }
 
     public string? GetEditorId(uint formId)
@@ -768,6 +821,11 @@ public sealed class RecordParser
     public List<StaticRecord> ParseStatics()
     {
         return _miscStaticObjects.ParseStatics();
+    }
+
+    public List<StaticCollectionRecord> ParseStaticCollections()
+    {
+        return _miscStaticObjects.ParseStaticCollections();
     }
 
     public List<FurnitureRecord> ParseFurniture()

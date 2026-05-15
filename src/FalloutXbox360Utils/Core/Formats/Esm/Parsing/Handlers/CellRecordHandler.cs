@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Core.Utils;
 
@@ -52,17 +53,47 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         // Key includes worldspace FormID to prevent cross-worldspace pollution
         // (different worldspaces can share the same cell grid coordinates).
         var landWorldMap = Context.ScanResult.LandToWorldspaceMap;
+        var heightmapByCellFormId = new Dictionary<uint, LandHeightmap>();
+        var visualDataByCellFormId = new Dictionary<uint, LandVisualData>();
+        var terrainMeshByCellFormId = new Dictionary<uint, RuntimeTerrainMesh>();
         var heightmapByGrid = new Dictionary<(uint, int, int), LandHeightmap>();
+        var visualDataByGrid = new Dictionary<(uint, int, int), LandVisualData>();
         var terrainMeshByGrid = new Dictionary<(uint, int, int), RuntimeTerrainMesh>();
         foreach (var land in Context.ScanResult.LandRecords)
         {
+            if (land.ParentCellFormId is uint parentCellFormId)
+            {
+                if (land.Heightmap != null)
+                {
+                    heightmapByCellFormId.TryAdd(parentCellFormId, land.Heightmap);
+                }
+
+                if (land.VisualData != null)
+                {
+                    visualDataByCellFormId.TryAdd(parentCellFormId, land.VisualData);
+                }
+
+                if (land.RuntimeTerrainMesh != null)
+                {
+                    terrainMeshByCellFormId.TryAdd(parentCellFormId, land.RuntimeTerrainMesh);
+                }
+            }
+
             if (land.BestCellX.HasValue && land.BestCellY.HasValue)
             {
-                landWorldMap.TryGetValue(land.Header.FormId, out var ws);
+                uint ws = land.WorldspaceFormId ??
+                          (landWorldMap.TryGetValue(land.Header.FormId, out var mappedWorldspace)
+                              ? mappedWorldspace
+                              : 0u);
                 var gridKey = (ws, land.BestCellX.Value, land.BestCellY.Value);
                 if (land.Heightmap != null)
                 {
                     heightmapByGrid.TryAdd(gridKey, land.Heightmap);
+                }
+
+                if (land.VisualData != null)
+                {
+                    visualDataByGrid.TryAdd(gridKey, land.VisualData);
                 }
 
                 if (land.RuntimeTerrainMesh != null)
@@ -84,7 +115,11 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                 {
                     if (cellWs > 0)
                     {
-                        cell = cell with { WorldspaceFormId = cellWs };
+                        cell = cell with
+                        {
+                            WorldspaceFormId = cellWs,
+                            WorldspaceAssignmentSource = "CellGrup"
+                        };
                     }
 
                     cells.Add(cell);
@@ -101,13 +136,18 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                     cellWorldMap.TryGetValue(record.FormId, out var cellWs);
                     var cell = ParseCellFromAccessor(record, refrByFormId,
                         hasGrupMapping ? cellToRefrMap : null, refrOffsetIndex, refrSortedByOffset,
-                        heightmapByGrid, terrainMeshByGrid, cellWs, buffer,
+                        heightmapByCellFormId, visualDataByCellFormId, terrainMeshByCellFormId,
+                        heightmapByGrid, visualDataByGrid, terrainMeshByGrid, cellWs, buffer,
                         runtimeCellMapEntries.GetValueOrDefault(record.FormId));
                     if (cell != null)
                     {
                         if (cellWs > 0)
                         {
-                            cell = cell with { WorldspaceFormId = cellWs };
+                            cell = cell with
+                            {
+                                WorldspaceFormId = cellWs,
+                                WorldspaceAssignmentSource = "CellGrup"
+                            };
                         }
 
                         cells.Add(cell);
@@ -120,7 +160,16 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             }
         }
 
-        MergeRuntimeCells(cells, heightmapByGrid, terrainMeshByGrid, runtimeCellMapEntries, refrByFormId);
+        MergeRuntimeCells(
+            cells,
+            heightmapByCellFormId,
+            visualDataByCellFormId,
+            terrainMeshByCellFormId,
+            heightmapByGrid,
+            visualDataByGrid,
+            terrainMeshByGrid,
+            runtimeCellMapEntries,
+            refrByFormId);
 
         // Post-processing: resolve door destinations to linked cells
         ResolveDoorLinks(cells);
@@ -248,7 +297,11 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         Dictionary<uint, List<uint>>? cellToRefrMap,
         long[]? refrOffsetIndex,
         ExtractedRefrRecord[]? refrSortedByOffset,
+        Dictionary<uint, LandHeightmap> heightmapByCellFormId,
+        Dictionary<uint, LandVisualData> visualDataByCellFormId,
+        Dictionary<uint, RuntimeTerrainMesh> terrainMeshByCellFormId,
         Dictionary<(uint, int, int), LandHeightmap> heightmapByGrid,
+        Dictionary<(uint, int, int), LandVisualData> visualDataByGrid,
         Dictionary<(uint, int, int), RuntimeTerrainMesh> terrainMeshByGrid,
         uint cellWorldspace,
         byte[] buffer,
@@ -275,6 +328,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         uint? imageSpaceFormId = null;
         uint? lightingTemplateFormId = null;
         uint? lightingTemplateInheritanceFlags = null;
+        Dictionary<string, object?>? lightingData = null;
         List<uint>? radiationRegionFormIds = null;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
@@ -300,9 +354,9 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                         gridX = SubrecordDataReader.GetInt32(fields, "X");
                         gridY = SubrecordDataReader.GetInt32(fields, "Y");
                     }
-                }
 
                     break;
+                }
                 case "XCLW" when sub.DataLength >= 4:
                     var rawWaterHeight = record.IsBigEndian
                         ? BinaryPrimitives.ReadSingleBigEndian(subData)
@@ -329,6 +383,16 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                         ? BinaryPrimitives.ReadUInt32BigEndian(subData)
                         : BinaryPrimitives.ReadUInt32LittleEndian(subData);
                     break;
+                case "XCLL" when sub.DataLength == 40:
+                {
+                    var fields = SubrecordDataReader.ReadFields("XCLL", "CELL", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        lightingData = fields;
+                    }
+
+                    break;
+                }
                 case "XCLR" when sub.DataLength >= 4 && sub.DataLength % 4 == 0:
                     // XCLR is a FormID array: every 4 bytes is one REGN reference. The
                     // engine sums radiation contributions across all listed regions.
@@ -347,21 +411,28 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             refrOffsetIndex, refrSortedByOffset, runtimeCellMapEntry);
 
         // Find associated heightmap and terrain mesh via O(1) dictionary lookups.
-        // Key includes worldspace to prevent cross-worldspace pollution.
+        // Exact parent CELL FormID wins; grid lookups are only a fallback for runtime-only captures.
+        // Grid keys include worldspace to prevent cross-worldspace pollution.
         // Falls back to worldspace 0 for DMP mode (no GRUP hierarchy).
-        LandHeightmap? heightmap = null;
-        RuntimeTerrainMesh? terrainMesh = null;
+        heightmapByCellFormId.TryGetValue(record.FormId, out var heightmap);
+        visualDataByCellFormId.TryGetValue(record.FormId, out var visualData);
+        terrainMeshByCellFormId.TryGetValue(record.FormId, out var terrainMesh);
         if (gridX.HasValue && gridY.HasValue)
         {
             var gridKey = (cellWorldspace, gridX.Value, gridY.Value);
-            if (!heightmapByGrid.TryGetValue(gridKey, out heightmap) && cellWorldspace != 0)
+            if (cellWorldspace != 0 && heightmap == null)
             {
-                heightmapByGrid.TryGetValue((0u, gridX.Value, gridY.Value), out heightmap);
+                heightmapByGrid.TryGetValue(gridKey, out heightmap);
             }
 
-            if (!terrainMeshByGrid.TryGetValue(gridKey, out terrainMesh) && cellWorldspace != 0)
+            if (cellWorldspace != 0 && visualData == null)
             {
-                terrainMeshByGrid.TryGetValue((0u, gridX.Value, gridY.Value), out terrainMesh);
+                visualDataByGrid.TryGetValue(gridKey, out visualData);
+            }
+
+            if (cellWorldspace != 0 && terrainMesh == null)
+            {
+                terrainMeshByGrid.TryGetValue(gridKey, out terrainMesh);
             }
         }
 
@@ -375,6 +446,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             GridX = gridX,
             GridY = gridY,
             WorldspaceFormId = cellWorldspace > 0 ? cellWorldspace : null,
+            WorldspaceAssignmentSource = cellWorldspace > 0 ? "CellGrup" : null,
             Flags = flags,
             WaterHeight = waterHeight,
             EncounterZoneFormId = encounterZoneFormId,
@@ -383,11 +455,13 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             ImageSpaceFormId = imageSpaceFormId,
             LightingTemplateFormId = lightingTemplateFormId,
             LightingTemplateInheritanceFlags = lightingTemplateInheritanceFlags,
+            LightingData = lightingData,
             RadiationRegionFormIds = radiationRegionFormIds ?? (IReadOnlyList<uint>)[],
             PlacedObjects = cellRefs,
             HasPersistentObjects = isPersistentCell || cellRefs.Exists(r => r.IsPersistent),
             IsPersistentCell = isPersistentCell,
             Heightmap = heightmap,
+            LandVisualData = visualData,
             RuntimeTerrainMesh = terrainMesh,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
@@ -418,6 +492,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             GridX = cellGrid?.GridX,
             GridY = cellGrid?.GridY,
             WorldspaceFormId = cellWorldspace > 0 ? cellWorldspace : null,
+            WorldspaceAssignmentSource = cellWorldspace > 0 ? "CellGrup" : null,
             PlacedObjects = cellRefs,
             HasPersistentObjects = isPersistentCell || cellRefs.Exists(r => r.IsPersistent),
             IsPersistentCell = isPersistentCell,
@@ -434,7 +509,11 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
 
     private void MergeRuntimeCells(
         List<CellRecord> cells,
+        Dictionary<uint, LandHeightmap> heightmapByCellFormId,
+        Dictionary<uint, LandVisualData> visualDataByCellFormId,
+        Dictionary<uint, RuntimeTerrainMesh> terrainMeshByCellFormId,
         Dictionary<(uint, int, int), LandHeightmap> heightmapByGrid,
+        Dictionary<(uint, int, int), LandVisualData> visualDataByGrid,
         Dictionary<(uint, int, int), RuntimeTerrainMesh> terrainMeshByGrid,
         Dictionary<uint, RuntimeCellMapEntry> runtimeCellMapEntries,
         Dictionary<uint, ExtractedRefrRecord> refrByFormId)
@@ -510,13 +589,94 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
 
         for (var i = 0; i < cells.Count; i++)
         {
-            cells[i] = AttachTerrainData(cells[i], heightmapByGrid, terrainMeshByGrid);
+            cells[i] = AttachTerrainData(
+                cells[i],
+                heightmapByCellFormId,
+                visualDataByCellFormId,
+                terrainMeshByCellFormId,
+                heightmapByGrid,
+                visualDataByGrid,
+                terrainMeshByGrid);
+        }
+    }
+
+    internal static void AttachTerrainDataFromLandRecords(
+        List<CellRecord> cells,
+        EsmRecordScanResult scanResult)
+    {
+        if (cells.Count == 0 || scanResult.LandRecords.Count == 0)
+        {
+            return;
+        }
+
+        var heightmapByCellFormId = new Dictionary<uint, LandHeightmap>();
+        var visualDataByCellFormId = new Dictionary<uint, LandVisualData>();
+        var terrainMeshByCellFormId = new Dictionary<uint, RuntimeTerrainMesh>();
+        var heightmapByGrid = new Dictionary<(uint, int, int), LandHeightmap>();
+        var visualDataByGrid = new Dictionary<(uint, int, int), LandVisualData>();
+        var terrainMeshByGrid = new Dictionary<(uint, int, int), RuntimeTerrainMesh>();
+
+        foreach (var land in scanResult.LandRecords)
+        {
+            if (land.ParentCellFormId is uint parentCellFormId)
+            {
+                if (land.Heightmap != null)
+                {
+                    heightmapByCellFormId.TryAdd(parentCellFormId, land.Heightmap);
+                }
+
+                if (land.VisualData != null)
+                {
+                    visualDataByCellFormId.TryAdd(parentCellFormId, land.VisualData);
+                }
+
+                if (land.RuntimeTerrainMesh != null)
+                {
+                    terrainMeshByCellFormId.TryAdd(parentCellFormId, land.RuntimeTerrainMesh);
+                }
+            }
+
+            if (land.WorldspaceFormId is not uint worldspaceFormId ||
+                !land.BestCellX.HasValue ||
+                !land.BestCellY.HasValue)
+            {
+                continue;
+            }
+
+            var key = (worldspaceFormId, land.BestCellX.Value, land.BestCellY.Value);
+            if (land.Heightmap != null)
+            {
+                heightmapByGrid.TryAdd(key, land.Heightmap);
+            }
+
+            if (land.VisualData != null)
+            {
+                visualDataByGrid.TryAdd(key, land.VisualData);
+            }
+
+            if (land.RuntimeTerrainMesh != null)
+            {
+                terrainMeshByGrid.TryAdd(key, land.RuntimeTerrainMesh);
+            }
+        }
+
+        for (var i = 0; i < cells.Count; i++)
+        {
+            cells[i] = AttachTerrainData(
+                cells[i],
+                heightmapByCellFormId,
+                visualDataByCellFormId,
+                terrainMeshByCellFormId,
+                heightmapByGrid,
+                visualDataByGrid,
+                terrainMeshByGrid);
         }
     }
 
     private Dictionary<uint, RuntimeCellMapEntry> BuildRuntimeCellMapIndex()
     {
         var entries = new Dictionary<uint, RuntimeCellMapEntry>();
+        var owningWorldspaceByCell = new Dictionary<uint, uint>();
         if (Context.RuntimeWorldspaceCellMaps is not { Count: > 0 })
         {
             return entries;
@@ -526,7 +686,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         {
             foreach (var entry in worldData.Cells)
             {
-                entries.TryAdd(entry.CellFormId, entry);
+                AddOrReplaceRuntimeCellMapEntry(entries, owningWorldspaceByCell, entry, worldData.FormId);
             }
 
             if (worldData.PersistentCellFormId is > 0 &&
@@ -540,10 +700,41 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                     IsPersistent = true,
                     WorldspaceFormId = worldData.FormId
                 };
+                owningWorldspaceByCell[worldData.PersistentCellFormId.Value] = worldData.FormId;
             }
         }
 
         return entries;
+    }
+
+    private static void AddOrReplaceRuntimeCellMapEntry(
+        Dictionary<uint, RuntimeCellMapEntry> entries,
+        Dictionary<uint, uint> owningWorldspaceByCell,
+        RuntimeCellMapEntry entry,
+        uint owningWorldspaceFormId)
+    {
+        if (!entries.TryGetValue(entry.CellFormId, out var existing))
+        {
+            entries[entry.CellFormId] = entry;
+            owningWorldspaceByCell[entry.CellFormId] = owningWorldspaceFormId;
+            return;
+        }
+
+        owningWorldspaceByCell.TryGetValue(entry.CellFormId, out var existingOwningWorldspace);
+        var newIsSelfConsistent = entry.WorldspaceFormId == owningWorldspaceFormId;
+        var existingIsSelfConsistent = existing.WorldspaceFormId == existingOwningWorldspace;
+        if (newIsSelfConsistent && !existingIsSelfConsistent)
+        {
+            entries[entry.CellFormId] = entry;
+            owningWorldspaceByCell[entry.CellFormId] = owningWorldspaceFormId;
+            return;
+        }
+
+        if (entry.WorldspaceFormId.HasValue && !existing.WorldspaceFormId.HasValue)
+        {
+            entries[entry.CellFormId] = entry;
+            owningWorldspaceByCell[entry.CellFormId] = owningWorldspaceFormId;
+        }
     }
 
     private static List<PlacedReference> ResolvePlacedObjects(CellRecord esm, CellRecord runtime)
@@ -564,7 +755,13 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             FullName = esm.FullName ?? runtime.FullName,
             GridX = esm.GridX ?? runtime.GridX,
             GridY = esm.GridY ?? runtime.GridY,
-            WorldspaceFormId = esm.WorldspaceFormId ?? runtime.WorldspaceFormId,
+            WorldspaceFormId = runtime.WorldspaceFormId ?? esm.WorldspaceFormId,
+            WorldspaceAssignmentSource = runtime.WorldspaceFormId.HasValue
+                ? runtime.WorldspaceAssignmentSource ?? "Runtime"
+                : esm.WorldspaceAssignmentSource,
+            CandidateWorldspaceFormIds = runtime.CandidateWorldspaceFormIds.Count > 0
+                ? runtime.CandidateWorldspaceFormIds
+                : esm.CandidateWorldspaceFormIds,
             Flags = esm.Flags != 0 ? esm.Flags : runtime.Flags,
             WaterHeight = WorldHeightNormalizer.NormalizeReportableHeight(esm.WaterHeight ?? runtime.WaterHeight),
             EncounterZoneFormId = esm.EncounterZoneFormId ?? runtime.EncounterZoneFormId,
@@ -574,9 +771,11 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             LightingTemplateFormId = esm.LightingTemplateFormId ?? runtime.LightingTemplateFormId,
             LightingTemplateInheritanceFlags =
             esm.LightingTemplateInheritanceFlags ?? runtime.LightingTemplateInheritanceFlags,
+            LightingData = esm.LightingData ?? runtime.LightingData,
             PlacedObjects = ResolvePlacedObjects(esm, runtime),
             LinkedCellFormIds = esm.LinkedCellFormIds.Count > 0 ? esm.LinkedCellFormIds : runtime.LinkedCellFormIds,
             Heightmap = esm.Heightmap ?? runtime.Heightmap,
+            LandVisualData = esm.LandVisualData ?? runtime.LandVisualData,
             RuntimeTerrainMesh = esm.RuntimeTerrainMesh ?? runtime.RuntimeTerrainMesh,
             HasPersistentObjects = esm.HasPersistentObjects || runtime.HasPersistentObjects,
             IsPersistentCell = esm.IsPersistentCell || runtime.IsPersistentCell,
@@ -613,6 +812,13 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         {
             return null;
         }
+
+        mergedCell = mergedCell with
+        {
+            WorldspaceAssignmentSource = mapEntry.WorldspaceFormId.HasValue
+                ? "RuntimeCellMap"
+                : mergedCell.WorldspaceAssignmentSource
+        };
 
         var placedObjects = ResolvePlacedReferencesByFormIds(
             mapEntry.ReferenceFormIds,
@@ -681,7 +887,11 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
 
     private static CellRecord AttachTerrainData(
         CellRecord cell,
+        Dictionary<uint, LandHeightmap> heightmapByCellFormId,
+        Dictionary<uint, LandVisualData> visualDataByCellFormId,
+        Dictionary<uint, RuntimeTerrainMesh> terrainMeshByCellFormId,
         Dictionary<(uint, int, int), LandHeightmap> heightmapByGrid,
+        Dictionary<(uint, int, int), LandVisualData> visualDataByGrid,
         Dictionary<(uint, int, int), RuntimeTerrainMesh> terrainMeshByGrid)
     {
         if (!cell.GridX.HasValue || !cell.GridY.HasValue)
@@ -690,23 +900,42 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         }
 
         var heightmap = cell.Heightmap;
+        var visualData = cell.LandVisualData;
         var terrainMesh = cell.RuntimeTerrainMesh;
+
+        if (heightmap == null)
+        {
+            heightmapByCellFormId.TryGetValue(cell.FormId, out heightmap);
+        }
+
+        if (visualData == null)
+        {
+            visualDataByCellFormId.TryGetValue(cell.FormId, out visualData);
+        }
+
+        if (terrainMesh == null)
+        {
+            terrainMeshByCellFormId.TryGetValue(cell.FormId, out terrainMesh);
+        }
 
         var worldspaceFormId = cell.WorldspaceFormId ?? 0;
         var key = (worldspaceFormId, cell.GridX.Value, cell.GridY.Value);
-        if (heightmap == null &&
-            !heightmapByGrid.TryGetValue(key, out heightmap) && worldspaceFormId != 0)
+        if (worldspaceFormId != 0 && heightmap == null)
         {
-            heightmapByGrid.TryGetValue((0u, cell.GridX.Value, cell.GridY.Value), out heightmap);
+            heightmapByGrid.TryGetValue(key, out heightmap);
         }
 
-        if (terrainMesh == null &&
-            !terrainMeshByGrid.TryGetValue(key, out terrainMesh) && worldspaceFormId != 0)
+        if (worldspaceFormId != 0 && visualData == null)
         {
-            terrainMeshByGrid.TryGetValue((0u, cell.GridX.Value, cell.GridY.Value), out terrainMesh);
+            visualDataByGrid.TryGetValue(key, out visualData);
         }
 
-        if (heightmap == null && terrainMesh == null)
+        if (worldspaceFormId != 0 && terrainMesh == null)
+        {
+            terrainMeshByGrid.TryGetValue(key, out terrainMesh);
+        }
+
+        if (heightmap == null && visualData == null && terrainMesh == null)
         {
             return cell;
         }
@@ -714,6 +943,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         return cell with
         {
             Heightmap = heightmap ?? cell.Heightmap,
+            LandVisualData = visualData ?? cell.LandVisualData,
             RuntimeTerrainMesh = terrainMesh ?? cell.RuntimeTerrainMesh
         };
     }

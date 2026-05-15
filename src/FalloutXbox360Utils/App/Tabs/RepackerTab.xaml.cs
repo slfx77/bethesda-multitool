@@ -133,7 +133,7 @@ public sealed partial class RepackerTab : UserControl, IDisposable, IHasSettings
         picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
         picker.FileTypeFilter.Add("*");
 
-        var hwnd = WindowNative.GetWindowHandle(App.Current.MainWindow);
+        var hwnd = WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow);
         InitializeWithWindow.Initialize(picker, hwnd);
 
         var folder = await picker.PickSingleFolderAsync();
@@ -257,7 +257,7 @@ public sealed partial class RepackerTab : UserControl, IDisposable, IHasSettings
         picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
         picker.FileTypeFilter.Add("*");
 
-        var hwnd = WindowNative.GetWindowHandle(App.Current.MainWindow);
+        var hwnd = WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow);
         InitializeWithWindow.Initialize(picker, hwnd);
 
         var folder = await picker.PickSingleFolderAsync();

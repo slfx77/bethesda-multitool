@@ -1,3 +1,5 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Terrain;
+
 namespace FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 
 /// <summary>
@@ -12,22 +14,22 @@ public static class EsmConstants
     /// <summary>
     ///     Grid size for LAND vertex data (33×33 vertices per cell).
     /// </summary>
-    public const int LandGridSize = 33;
+    public const int LandGridSize = TerrainConstants.LandGridSize;
 
     /// <summary>
     ///     Total points in a LAND grid (33×33 = 1089).
     /// </summary>
-    public const int LandGridArea = LandGridSize * LandGridSize;
+    public const int LandGridArea = TerrainConstants.LandVertexCount;
 
     /// <summary>
     ///     World units per cell (4096 units).
     /// </summary>
-    public const int CellWorldUnits = 4096;
+    public const int CellWorldUnits = (int)TerrainConstants.LandCellWorldSize;
 
     /// <summary>
     ///     World units per LAND grid vertex.
     /// </summary>
-    public const float UnitsPerVertex = (float)CellWorldUnits / LandGridSize;
+    public const float UnitsPerVertex = TerrainConstants.LandVertexSpacing;
 
     // =====================================================================
     // VHGT Subrecord Constants

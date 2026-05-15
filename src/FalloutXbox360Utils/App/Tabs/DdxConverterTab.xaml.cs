@@ -108,7 +108,7 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable, IHasSett
         var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
         picker.FileTypeFilter.Add("*");
         InitializeWithWindow.Initialize(picker,
-            WindowNative.GetWindowHandle(App.Current.MainWindow));
+            WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow));
 
         var folder = await picker.PickSingleFolderAsync();
         if (folder == null) return;
@@ -155,7 +155,7 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable, IHasSett
         var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
         picker.FileTypeFilter.Add("*");
         InitializeWithWindow.Initialize(picker,
-            WindowNative.GetWindowHandle(App.Current.MainWindow));
+            WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow));
 
         var folder = await picker.PickSingleFolderAsync();
         if (folder != null)

@@ -157,6 +157,7 @@ internal sealed class RuntimeCellMapWalker(
             GridY = gridY,
             IsInterior = (snapshot.Flags & 0x01) != 0,
             WorldspaceFormId = snapshot.WorldspaceFormId,
+            RawWorldspaceFormId = snapshot.WorldspaceFormId,
             LandFormId = snapshot.LandFormId,
             ReferenceFormIds = snapshot.ReferenceFormIds.ToList()
         };

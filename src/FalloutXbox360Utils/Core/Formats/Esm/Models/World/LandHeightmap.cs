@@ -21,6 +21,9 @@ public record LandHeightmap
     /// </summary>
     public float[,]? ExactHeights { get; init; }
 
+    /// <summary>Maximum absolute height error after encoding this heightmap to VHGT deltas and decoding it back.</summary>
+    public float EncodedRoundTripMaxError { get; init; }
+
     /// <summary>
     ///     Calculate actual heights for visualization.
     ///     Heights are cumulative: each row starts from the previous row's end value.

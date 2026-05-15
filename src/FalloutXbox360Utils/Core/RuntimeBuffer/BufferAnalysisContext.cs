@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Coverage;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Pdb;
 using FalloutXbox360Utils.Core.Utils;
@@ -22,7 +23,8 @@ internal sealed class BufferAnalysisContext
         IReadOnlyList<RuntimeEditorIdEntry>? runtimeEditorIds,
         uint moduleStart,
         uint moduleEnd,
-        IReadOnlyList<GmstRecord>? gameSettings = null)
+        IReadOnlyList<GmstRecord>? gameSettings = null,
+        IReadOnlyList<DetectedMainRecord>? mainRecords = null)
     {
         Accessor = accessor;
         FileSize = fileSize;
@@ -33,6 +35,7 @@ internal sealed class BufferAnalysisContext
         ModuleStart = moduleStart;
         ModuleEnd = moduleEnd;
         GameSettings = gameSettings;
+        MainRecords = mainRecords;
     }
 
     public MemoryMappedViewAccessor Accessor { get; }
@@ -44,6 +47,7 @@ internal sealed class BufferAnalysisContext
     public uint ModuleStart { get; }
     public uint ModuleEnd { get; }
     public IReadOnlyList<GmstRecord>? GameSettings { get; }
+    public IReadOnlyList<DetectedMainRecord>? MainRecords { get; }
 
     /// <summary>
     ///     Check if a 32-bit value is a valid pointer in the minidump.

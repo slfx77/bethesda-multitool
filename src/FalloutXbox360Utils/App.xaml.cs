@@ -7,14 +7,14 @@ namespace FalloutXbox360Utils;
 /// <summary>
 ///     Provides application-specific behavior to supplement the default Application class.
 /// </summary>
-public partial class App : Application
+public sealed class FalloutApp : Application
 {
     private const int ATTACH_PARENT_PROCESS = -1;
 
     /// <summary>
     ///     Initializes the singleton application object.
     /// </summary>
-    public App()
+    public FalloutApp()
     {
         // Attach to parent console if launched from terminal
         AttachConsole(ATTACH_PARENT_PROCESS);
@@ -25,7 +25,7 @@ public partial class App : Application
 
         try
         {
-            InitializeComponent();
+            LoadComponent(this, new Uri("ms-appx:///App.xaml"));
             Console.WriteLine("[FalloutXbox360Utils] App initialized");
         }
         catch (Exception ex)
@@ -38,7 +38,7 @@ public partial class App : Application
     /// <summary>
     ///     Gets the current application instance.
     /// </summary>
-    public new static App Current => (App)Application.Current;
+    public new static FalloutApp Current => (FalloutApp)Application.Current;
 
     /// <summary>
     ///     Gets the main application window.

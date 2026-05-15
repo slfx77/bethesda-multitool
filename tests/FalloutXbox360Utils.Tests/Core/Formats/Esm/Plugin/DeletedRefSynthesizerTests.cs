@@ -95,6 +95,68 @@ public class DeletedRefSynthesizerTests
         Assert.Equal(0u, dataSize);
     }
 
+    [Fact]
+    public void Synthesize_PreservePredicate_SkipsDeletedOverride()
+    {
+        var masterRefs = new[] { MakeRef(0x600, persistent: false, "PortalMarker") };
+        var dmpFormIds = new HashSet<uint>();
+
+        var bundle = DeletedRefSynthesizer.Synthesize(
+            masterRefs,
+            dmpFormIds,
+            masterRef => masterRef.Header.FormId == 0x600);
+
+        Assert.Empty(bundle.Persistent);
+        Assert.Empty(bundle.Temporary);
+    }
+
+    [Fact]
+    public void Synthesize_PersistentOnlyPreserveFilter_KeepsPersistentDeletesTemporary()
+    {
+        // Models the ReplaceCellTemporariesOnOverride filter: pass true for persistent refs
+        // so they're preserved, false for temporary refs so they get deletion markers.
+        var masterRefs = new[]
+        {
+            MakeRef(0x700, persistent: true,  "QuestItem_Persistent"),
+            MakeRef(0x701, persistent: false, "Clutter_Temporary"),
+            MakeRef(0x702, persistent: true,  "DoorMarker_Persistent"),
+            MakeRef(0x703, persistent: false, "Streetlight_Temporary")
+        };
+        var dmpFormIds = new HashSet<uint>(); // none in DMP → all "missing"
+
+        var bundle = DeletedRefSynthesizer.Synthesize(
+            masterRefs,
+            dmpFormIds,
+            masterRef => (masterRef.Header.Flags & PersistentFlag) != 0);
+
+        // Persistent refs preserved entirely (no deletion markers emitted).
+        Assert.Empty(bundle.Persistent);
+        // Both temporary refs got deletion markers.
+        Assert.Equal(2, bundle.Temporary.Count);
+    }
+
+    [Fact]
+    public void Synthesize_PersistentOnlyPreserveFilter_DmpOverrideStillSuppressesDeletion()
+    {
+        // If a temporary master ref IS in the DMP snapshot it's an override (not a deletion).
+        // Filter should never even be consulted for those — they're already handled.
+        var masterRefs = new[]
+        {
+            MakeRef(0x800, persistent: false, "TempRef_InDmp"),
+            MakeRef(0x801, persistent: false, "TempRef_NotInDmp")
+        };
+        var dmpFormIds = new HashSet<uint> { 0x800 };
+
+        var bundle = DeletedRefSynthesizer.Synthesize(
+            masterRefs,
+            dmpFormIds,
+            masterRef => (masterRef.Header.Flags & PersistentFlag) != 0);
+
+        // Only the not-in-DMP temporary gets a deletion marker.
+        Assert.Empty(bundle.Persistent);
+        Assert.Single(bundle.Temporary);
+    }
+
     private static ParsedMainRecord MakeRef(uint formId, bool persistent, string editorId)
     {
         return new ParsedMainRecord

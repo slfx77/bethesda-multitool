@@ -15,6 +15,9 @@ public record CellGridSubrecord
     /// <summary>Land flags byte.</summary>
     public byte LandFlags { get; init; }
 
+    /// <summary>Parent CELL FormID when this XCLC was read from a full CELL record.</summary>
+    public uint? CellFormId { get; init; }
+
     /// <summary>Offset in the dump where XCLC was found.</summary>
     public long Offset { get; init; }
 

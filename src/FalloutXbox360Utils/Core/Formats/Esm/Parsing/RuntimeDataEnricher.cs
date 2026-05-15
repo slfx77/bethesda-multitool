@@ -156,7 +156,12 @@ internal static class RuntimeDataEnricher
                 {
                     if (wsData.Cells[i].WorldspaceFormId != wsFormId)
                     {
-                        wsData.Cells[i] = wsData.Cells[i] with { WorldspaceFormId = wsFormId };
+                        wsData.Cells[i] = wsData.Cells[i] with
+                        {
+                            RawWorldspaceFormId = wsData.Cells[i].RawWorldspaceFormId ??
+                                                  wsData.Cells[i].WorldspaceFormId,
+                            WorldspaceFormId = wsFormId
+                        };
                     }
                 }
             }

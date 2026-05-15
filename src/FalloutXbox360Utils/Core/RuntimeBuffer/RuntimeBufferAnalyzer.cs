@@ -1,6 +1,7 @@
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Coverage;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Pdb;
 using FalloutXbox360Utils.Core.Strings;
@@ -26,7 +27,8 @@ internal sealed class RuntimeBufferAnalyzer
         CoverageResult coverage,
         PdbAnalysisResult? pdbAnalysis,
         IReadOnlyList<RuntimeEditorIdEntry>? runtimeEditorIds = null,
-        IReadOnlyList<GmstRecord>? gameSettings = null)
+        IReadOnlyList<GmstRecord>? gameSettings = null,
+        IReadOnlyList<DetectedMainRecord>? mainRecords = null)
     {
         var gameModule = MinidumpAnalyzer.FindGameModule(minidumpInfo);
         uint moduleStart = 0;
@@ -39,7 +41,7 @@ internal sealed class RuntimeBufferAnalyzer
 
         _ctx = new BufferAnalysisContext(
             accessor, fileSize, minidumpInfo, coverage, pdbAnalysis, runtimeEditorIds,
-            moduleStart, moduleEnd, gameSettings);
+            moduleStart, moduleEnd, gameSettings, mainRecords);
 
         var stringExtractor = new RuntimeBufferStringExtractor(_ctx);
         _pointerAnalyzer = new RuntimeBufferPointerAnalyzer(_ctx);

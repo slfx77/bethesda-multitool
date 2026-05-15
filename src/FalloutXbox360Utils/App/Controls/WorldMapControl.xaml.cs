@@ -198,7 +198,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
             picker.FileTypeFilter.Add("*");
             InitializeWithWindow.Initialize(picker,
-                WindowNative.GetWindowHandle(App.Current.MainWindow));
+                WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow));
 
             var folder = await picker.PickSingleFolderAsync();
             if (folder != null)
@@ -427,7 +427,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         var picker = new FileSavePicker { SuggestedStartLocation = PickerLocationId.PicturesLibrary };
         picker.FileTypeChoices.Add("PNG Image", [".png"]);
         picker.SuggestedFileName = $"{wsName}_map";
-        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(App.Current.MainWindow));
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow));
 
         var file = await picker.PickSaveFileAsync();
         if (file == null) return;

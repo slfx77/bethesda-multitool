@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Threading.Channels;
 using Windows.Storage.Pickers;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
@@ -24,6 +25,7 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
 
     private readonly List<ConversionEventEntry> _allEvents = [];
     private readonly DispatcherTimer _logDrainTimer;
+    private readonly ObservableCollection<SecondaryFolderEntry> _secondaries = [];
     private CancellationTokenSource? _cts;
     private Channel<ConversionEventEntry>? _channel;
     private SeverityFilter _filter = SeverityFilter.All;
@@ -39,6 +41,45 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
             Interval = TimeSpan.FromMilliseconds(LogBatchTickMs)
         };
         _logDrainTimer.Tick += LogDrainTimer_Tick;
+
+        SecondariesListView.ItemsSource = _secondaries;
+        SecondariesListView.ContainerContentChanging += SecondariesListView_ContainerContentChanging;
+        _secondaries.CollectionChanged += (_, _) => UpdateSecondariesEmptyHint();
+        UpdateSecondariesEmptyHint();
+    }
+
+    private void UpdateSecondariesEmptyHint()
+    {
+        SecondariesEmptyHint.Visibility = _secondaries.Count == 0
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
+    private void SecondariesListView_ContainerContentChanging(
+        ListViewBase sender, ContainerContentChangingEventArgs args)
+    {
+        if (args.Phase != 0)
+        {
+            return;
+        }
+
+        var root = args.ItemContainer.ContentTemplateRoot as Grid;
+        var removeBtn = root?.Children.OfType<Button>().FirstOrDefault();
+        if (removeBtn == null)
+        {
+            return;
+        }
+
+        removeBtn.Click -= RemoveSecondaryClick;
+        removeBtn.Click += RemoveSecondaryClick;
+    }
+
+    private void RemoveSecondaryClick(object sender, RoutedEventArgs _)
+    {
+        if (sender is Button btn && btn.Tag is SecondaryFolderEntry entry)
+        {
+            _secondaries.Remove(entry);
+        }
     }
 
     private enum SeverityFilter
@@ -63,7 +104,7 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
         var picker = new FileOpenPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
         picker.FileTypeFilter.Add(".dmp");
         picker.FileTypeFilter.Add("*");
-        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(App.Current.MainWindow));
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow));
 
         var file = await picker.PickSingleFileAsync();
         if (file != null)
@@ -76,7 +117,7 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
     {
         var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.ComputerFolder };
         picker.FileTypeFilter.Add("*");
-        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(App.Current.MainWindow));
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow));
 
         var folder = await picker.PickSingleFolderAsync();
         if (folder != null)
@@ -97,7 +138,7 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
         }
 
         picker.SuggestedFileName = defaultName;
-        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(App.Current.MainWindow));
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow));
 
         var file = await picker.PickSaveFileAsync();
         if (file != null)
@@ -108,22 +149,51 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
 
     private void PackAssetsCheckBox_Toggled(object sender, RoutedEventArgs e)
     {
-        if (PackAssetsPanel is null)
+        // The folder list and output BSA path are always visible — the checkbox now
+        // only controls whether the packer runs on Convert. Still suggest a default
+        // BSA path the first time the user enables packing if one isn't set.
+        if (OutputBsaTextBox is null || OutputEspTextBox is null)
         {
-            return; // Fires once during InitializeComponent before the panel exists.
+            return; // Fires once during InitializeComponent before sibling controls exist.
         }
 
-        PackAssetsPanel.Visibility = PackAssetsCheckBox.IsChecked == true
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-
-        // Suggest a sensible default BSA path the first time the user enables packing.
         if (PackAssetsCheckBox.IsChecked == true &&
             string.IsNullOrEmpty(OutputBsaTextBox.Text) &&
             !string.IsNullOrEmpty(OutputEspTextBox.Text))
         {
             OutputBsaTextBox.Text = Path.ChangeExtension(OutputEspTextBox.Text, ".bsa");
         }
+    }
+
+    private async void AddSecondaryFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.ComputerFolder };
+        picker.FileTypeFilter.Add("*");
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow));
+
+        var folder = await picker.PickSingleFolderAsync();
+        if (folder is null)
+        {
+            return;
+        }
+
+        var path = folder.Path;
+        if (_secondaries.Any(entry =>
+                string.Equals(entry.Path, path, StringComparison.OrdinalIgnoreCase)))
+        {
+            return; // Already in the list.
+        }
+
+        // Sniff the folder synchronously off the UI thread — Xbox360FolderDetector reads
+        // at most one 4-byte ESM head + one BSA header, so it's cheap, but Directory.
+        // EnumerateFiles on a network share could stall the UI just enough to notice.
+        var isXbox360 = await Task.Run(() => Xbox360FolderDetector.DetectIsXbox360Format(path));
+
+        _secondaries.Add(new SecondaryFolderEntry
+        {
+            Path = path,
+            IsXbox360Format = isXbox360
+        });
     }
 
     private async void BrowseOutputBsaButton_Click(object sender, RoutedEventArgs e)
@@ -138,7 +208,7 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
         }
 
         picker.SuggestedFileName = defaultName;
-        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(App.Current.MainWindow));
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow));
 
         var file = await picker.PickSaveFileAsync();
         if (file != null)
@@ -148,39 +218,24 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
     }
 
     /// <summary>
-    ///     Parse the secondary-folders TextBox: each non-blank line is one folder. Lines
-    ///     beginning with "360:" are flagged as Xbox 360 format (the converter will run
-    ///     per-asset 360→PC conversion when reading from them).
+    ///     Snapshot the current secondary-folders ObservableCollection into the immutable
+    ///     <see cref="SecondaryDataFolder"/> list that the engine consumes.
     /// </summary>
-    private static List<SecondaryDataFolder> ParseSecondaryFolders(string text)
+    private List<SecondaryDataFolder> SnapshotSecondaryFolders()
     {
-        var result = new List<SecondaryDataFolder>();
-        if (string.IsNullOrWhiteSpace(text))
+        var result = new List<SecondaryDataFolder>(_secondaries.Count);
+        foreach (var entry in _secondaries)
         {
-            return result;
-        }
-
-        foreach (var rawLine in text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
-        {
-            var line = rawLine.Trim();
-            if (line.Length == 0)
+            if (string.IsNullOrWhiteSpace(entry.Path))
             {
                 continue;
             }
 
-            var is360 = false;
-            if (line.StartsWith("360:", StringComparison.OrdinalIgnoreCase))
+            result.Add(new SecondaryDataFolder
             {
-                is360 = true;
-                line = line[4..].Trim();
-            }
-
-            if (line.Length == 0)
-            {
-                continue;
-            }
-
-            result.Add(new SecondaryDataFolder { Path = line, IsXbox360Format = is360 });
+                Path = entry.Path,
+                IsXbox360Format = entry.IsXbox360Format
+            });
         }
 
         return result;
@@ -238,7 +293,7 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
         // unified paths for assets that survived under different names. Baseline = the
         // PC Data folder containing FalloutNV.esm.
         var renameFolders = PackAssetsCheckBox.IsChecked == true
-            ? ParseSecondaryFolders(SecondaryFoldersTextBox.Text)
+            ? SnapshotSecondaryFolders()
             : new List<SecondaryDataFolder>();
 
         var options = new PluginBuildOptions
@@ -251,7 +306,10 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
             ValidateOutput = ValidateOutputCheckBox.IsChecked == true,
             VerboseDecisions = VerboseDecisionsCheckBox.IsChecked == true,
             AssetRenameBaselineFolder = renameFolders.Count > 0 ? PcDataDirTextBox.Text : null,
-            AssetRenameSecondaryFolders = renameFolders
+            AssetRenameSecondaryFolders = renameFolders,
+            AssetRenameOverrideVanilla = OverrideVanillaCheckBox.IsChecked == true,
+            EnableRefrBaseEditorIdRemap = RefrEditorIdRemapCheckBox.IsChecked == true,
+            ReplaceCellTemporariesOnOverride = ReplaceCellTemporariesCheckBox.IsChecked == true
         };
 
         // Set up a buffered channel for progress events.
@@ -282,22 +340,17 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
             OutputEspPath = outputPath,
             Options = options
         };
+        var job = new DmpToEspConversionJob(
+            inputs,
+            PackAssetsCheckBox.IsChecked == true,
+            BuildAssetPackingOptions(outputPath));
 
         try
         {
-            var registry = RecordEncoderRegistry.CreateV18bDefault();
-            var builder = new PluginBuilder(registry, sink);
-
-            // Run the engine on a worker thread so the UI thread stays free.
-            var result = await Task.Run(() => builder.BuildAsync(inputs, _cts.Token), _cts.Token);
-            _lastResult = result;
-
-            // After a successful conversion, optionally run the asset packer. Progress
-            // events flow into the same channel-backed log under phase = "AssetPacking".
-            if (result.Success && PackAssetsCheckBox.IsChecked == true)
-            {
-                _lastAssetPackingResult = await RunAssetPackingAsync(result, sink, _cts.Token);
-            }
+            var service = new DmpToEspConversionJobService();
+            var result = await service.RunAsync(job, sink, _cts.Token);
+            _lastResult = result.ConversionResult;
+            _lastAssetPackingResult = result.AssetPackingResult;
         }
         catch (OperationCanceledException)
         {
@@ -480,58 +533,20 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
         ResultSummaryBorder.Visibility = Visibility.Visible;
     }
 
-    /// <summary>
-    ///     Invoke the asset packer after a successful conversion. Called from the UI thread
-    ///     so XAML field reads are safe; the heavy work is moved off-thread internally.
-    ///     Progress events flow into the same channel-backed log under phase = "AssetPacking".
-    /// </summary>
-    private async Task<AssetPackingResult?> RunAssetPackingAsync(
-        PluginBuildResult conversionResult,
-        IConversionProgressSink sink,
-        CancellationToken cancellationToken)
+    private AssetPackingOptions? BuildAssetPackingOptions(string outputEspPath)
     {
-        if (conversionResult.OutputPath is null)
+        var secondaries = SnapshotSecondaryFolders();
+        return new AssetPackingOptions
         {
-            sink.Warn("AssetPacking", "Skipping asset packing — no ESP output path");
-            return null;
-        }
-
-        // We're on the UI thread here (the builder Task.Run already awaited back). Safe
-        // to read XAML fields directly.
-        var secondaries = ParseSecondaryFolders(SecondaryFoldersTextBox.Text);
-        var outputBsa = OutputBsaTextBox.Text;
-        var baselineDataFolder = PcDataDirTextBox.Text;
-        var dmpPath = DmpPathTextBox.Text;
-        var verbose = VerboseDecisionsCheckBox.IsChecked == true;
-
-        if (secondaries.Count == 0)
-        {
-            sink.Warn("AssetPacking",
-                "Asset packing was enabled but no secondary data folders were provided");
-            return null;
-        }
-
-        if (string.IsNullOrWhiteSpace(outputBsa))
-        {
-            sink.Warn("AssetPacking", "Asset packing was enabled but no output BSA path was provided");
-            return null;
-        }
-
-        var options = new AssetPackingOptions
-        {
-            ConvertedEspPath = conversionResult.OutputPath,
-            DmpPath = string.IsNullOrEmpty(dmpPath) ? null : dmpPath,
-            BaselineDataFolder = baselineDataFolder,
+            ConvertedEspPath = outputEspPath,
+            DmpPath = string.IsNullOrEmpty(DmpPathTextBox.Text) ? null : DmpPathTextBox.Text,
+            BaselineDataFolder = PcDataDirTextBox.Text,
             SecondaryDataFolders = secondaries,
-            OutputBsaPath = outputBsa,
-            VerbosePerAsset = verbose
+            OutputBsaPath = OutputBsaTextBox.Text,
+            VerbosePerAsset = VerboseDecisionsCheckBox.IsChecked == true,
+            WriteAuditFile = WriteMissingListCheckBox.IsChecked == true,
+            OverrideVanillaBaseline = OverrideVanillaCheckBox.IsChecked == true
         };
-
-        var service = new AssetPackingService();
-        // Run on a worker thread to keep the UI responsive during the BSA scan/write.
-        return await Task.Run(
-            () => service.PackAsync(options, sink, cancellationToken),
-            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

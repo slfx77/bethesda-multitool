@@ -25,7 +25,7 @@ public sealed record ConversionProgressEvent
 
     /// <summary>
     ///     Optional aggregation key — used by the GUI to coalesce repetitive events
-    ///     (e.g., "v1.skipped:CELL"). Null for one-off events.
+    ///     (e.g., "skipped:CELL"). Null for one-off events.
     /// </summary>
     public string? Code { get; init; }
 }

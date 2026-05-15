@@ -90,15 +90,21 @@ internal static class AnalysisExtractionHelper
                                $"Quests: {semanticResult.Quests.Count}, Dialogue: {semanticResult.Dialogues.Count}, " +
                                $"Cells: {semanticResult.Cells.Count}");
 
-        await ExportHeightmapPngsAsync(result.EsmRecords!, extractEsm);
+        var worldspaceNames = WorldspaceNameIndex.Build(semanticResult, result.FormIdMap);
+        await ExportHeightmapPngsAsync(result.EsmRecords!, extractEsm, worldspaceNames);
     }
 
-    internal static async Task ExportHeightmapPngsAsync(EsmRecordScanResult esmRecords, string extractEsm)
+    internal static async Task ExportHeightmapPngsAsync(
+        EsmRecordScanResult esmRecords,
+        string extractEsm,
+        IReadOnlyDictionary<uint, string>? worldspaceNames = null)
     {
         var hasStandaloneHeightmaps = esmRecords.Heightmaps.Count > 0;
         var hasLandHeightmaps = esmRecords.LandRecords.Any(l => l.Heightmap != null);
+        var hasLandVisuals = esmRecords.LandRecords.Any(l =>
+            l.VisualData?.HasAny == true || l.RuntimeTerrainMesh?.HasColors == true);
 
-        if (!hasStandaloneHeightmaps && !hasLandHeightmaps)
+        if (!hasStandaloneHeightmaps && !hasLandHeightmaps && !hasLandVisuals)
         {
             return;
         }
@@ -106,22 +112,53 @@ internal static class AnalysisExtractionHelper
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[blue]Exporting heightmap PNG images...[/]");
         var heightmapsDir = Path.Combine(extractEsm, "heightmaps");
+        var standaloneHeightmaps = esmRecords.Heightmaps;
+        var heightmapExportService = new HeightmapExportService();
 
         if (hasStandaloneHeightmaps)
         {
-            await HeightmapPngExporter.ExportAsync(
-                esmRecords.Heightmaps, esmRecords.CellGrids, heightmapsDir);
+            var standaloneMatches = StandaloneHeightmapResolver.Resolve(
+                esmRecords.Heightmaps,
+                esmRecords.LandRecords);
+            StandaloneHeightmapResolver.WriteCsv(
+                Path.Combine(heightmapsDir, "standalone_heightmap_diagnostics.csv"),
+                standaloneMatches,
+                worldspaceNames);
+            standaloneHeightmaps = standaloneMatches
+                .Where(row => row.Status != StandaloneHeightmapStatus.ExactLandMatch)
+                .Select(row => row.Heightmap)
+                .ToList();
+
+            await heightmapExportService.ExportStandaloneHeightmapsAsync(
+                standaloneHeightmaps, esmRecords.CellGrids, heightmapsDir, false);
+            var resolvedCount = esmRecords.Heightmaps.Count - standaloneHeightmaps.Count;
             AnsiConsole.MarkupLine(
-                $"[green]Heightmaps exported:[/] {esmRecords.Heightmaps.Count} images to {heightmapsDir}");
+                $"[green]Standalone heightmaps exported:[/] {standaloneHeightmaps.Count} unresolved image" +
+                $"{(standaloneHeightmaps.Count == 1 ? "" : "s")} to {heightmapsDir} " +
+                $"({resolvedCount} exact LAND duplicate{(resolvedCount == 1 ? "" : "s")} resolved)");
         }
 
         // Export LAND record heightmaps as PNGs (includes runtime-synthesized heightmaps)
         if (hasLandHeightmaps)
         {
-            await HeightmapPngExporter.ExportLandRecordsAsync(esmRecords.LandRecords, heightmapsDir);
+            await heightmapExportService.ExportLandRecordsAsync(
+                esmRecords.LandRecords,
+                heightmapsDir,
+                false,
+                worldspaceNames: worldspaceNames);
             var landHeightmapCount = esmRecords.LandRecords.Count(l => l.Heightmap != null);
             AnsiConsole.MarkupLine(
                 $"[green]LAND heightmaps exported:[/] {landHeightmapCount} images to {heightmapsDir}");
+        }
+
+        if (hasLandVisuals)
+        {
+            await heightmapExportService.ExportLandVisualsAsync(
+                esmRecords.LandRecords,
+                heightmapsDir,
+                worldspaceNames);
+            AnsiConsole.MarkupLine(
+                $"[green]LAND visual verification exported:[/] {Path.Combine(heightmapsDir, "land_visuals")}");
         }
 
         // Export a composite worldmap if we have correlated heightmaps
@@ -130,26 +167,24 @@ internal static class AnalysisExtractionHelper
             return;
         }
 
-        var compositePath = Path.Combine(heightmapsDir, "worldmap_composite.png");
-        if (esmRecords.LandRecords.Count > 0)
-        {
-            await HeightmapPngExporter.ExportCompositeWorldmapAsync(
-                esmRecords.Heightmaps, esmRecords.CellGrids,
-                esmRecords.LandRecords, compositePath);
-        }
-        else
-        {
-            await HeightmapPngExporter.ExportCompositeWorldmapAsync(
-                esmRecords.Heightmaps, esmRecords.CellGrids, compositePath);
-        }
+        var worldspaceCompositePaths = await heightmapExportService.ExportWorldspaceCompositeWorldmapsAsync(
+            standaloneHeightmaps,
+            esmRecords.CellGrids,
+            esmRecords.LandRecords,
+            heightmapsDir,
+            false,
+            worldspaceNames: worldspaceNames);
 
-        if (File.Exists(compositePath))
+        if (worldspaceCompositePaths.Count > 0)
         {
-            AnsiConsole.MarkupLine($"[green]Composite worldmap:[/] {compositePath}");
+            var worldspaceGroupCount = worldspaceCompositePaths.Count / 2;
+            AnsiConsole.MarkupLine(
+                $"[green]Worldspace composite maps:[/] {Path.Combine(heightmapsDir, "worldspaces")} " +
+                $"({worldspaceGroupCount} group{(worldspaceGroupCount == 1 ? "" : "s")})");
         }
         else
         {
-            AnsiConsole.MarkupLine("[yellow]Composite worldmap:[/] not generated (no correlated heightmaps)");
+            AnsiConsole.MarkupLine("[yellow]Worldspace composite maps:[/] not generated (no correlated heightmaps)");
         }
     }
 

@@ -291,7 +291,7 @@ internal static class LoadOrderDialogService
             picker.FileTypeFilter.Add(ext);
         }
 
-        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(App.Current.MainWindow));
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow));
 
         var file = await picker.PickSingleFileAsync();
         return file?.Path;
@@ -305,7 +305,7 @@ internal static class LoadOrderDialogService
             picker.FileTypeFilter.Add(ext);
         }
 
-        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(App.Current.MainWindow));
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow));
 
         var files = await picker.PickMultipleFilesAsync();
         if (files == null || files.Count == 0)
