@@ -23,7 +23,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     // --- Legend / Browser ---
     private readonly HashSet<PlacedObjectCategory> _hiddenCategories = [];
-    private BrowserMode _activeBrowser = BrowserMode.None;
+    private readonly WorldMapNavigationController _navigation = new();
 
     // --- Cell browser ---
     private List<CellListItem> _allCellItems = [];
@@ -56,7 +56,6 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private Dictionary<MapMarkerType, CanvasBitmap>? _markerIconBitmaps;
 
     // --- State ---
-    private ViewMode _mode = ViewMode.WorldOverview;
     private Vector2 _panOffset;
     private Vector2 _panOffsetAtStart;
     private Vector2 _panStartScreen;
@@ -237,8 +236,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         _unlinkedCells = null;
         _selectedCell = null;
         _selectedObject = null;
-        _mode = ViewMode.WorldOverview;
-        _activeBrowser = BrowserMode.None;
+        _navigation.Reset();
         _hiddenCategories.Clear();
         _hideDisabledActors = true;
         _showWater = true;
@@ -295,8 +293,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     private void ApplyWorldspaceSwitch()
     {
-        _mode = ViewMode.WorldOverview;
-        _activeBrowser = BrowserMode.None;
+        _navigation.EnterWorldOverview();
         _selectedCell = null;
         _selectedObject = null;
         _worldHeightmapBitmap?.Dispose();
@@ -330,7 +327,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     }
 
     internal WorldNavState CaptureNavState() => new(
-        _mode, _activeBrowser,
+        _navigation.Mode,
+        _navigation.ActiveBrowser,
         WorldspaceComboBox.SelectedIndex,
         _selectedCell?.FormId);
 
@@ -402,7 +400,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     private void ZoomFit_Click(object sender, RoutedEventArgs e)
     {
-        if (_mode == ViewMode.CellDetail && _selectedCell != null)
+        if (_navigation.Mode == ViewMode.CellDetail && _selectedCell != null)
         {
             WorldMapViewportHelper.ZoomToFitCell(_selectedCell,
                 (float)MapCanvas.ActualWidth, (float)MapCanvas.ActualHeight,
@@ -470,8 +468,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         NotifyBeforeNavigate();
         _selectedWorldspace = null;
         _unlinkedCells = null;
-        _mode = ViewMode.CellBrowser;
-        _activeBrowser = browser;
+        _navigation.EnterBrowser(browser);
         _selectedCell = null;
         _filteredMarkers = [];
         SetCanvasMode(false);
@@ -510,7 +507,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         var canvasW = (float)sender.ActualWidth;
         var canvasH = (float)sender.ActualHeight;
 
-        if (_mode == ViewMode.WorldOverview)
+        if (_navigation.Mode == ViewMode.WorldOverview)
         {
             EnsureMarkerIcons(sender);
             WorldMapOverviewRenderer.DrawWorldOverview(
@@ -567,7 +564,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             _panOffset = _panOffsetAtStart + delta;
             MapCanvas.Invalidate();
         }
-        else if (_mode == ViewMode.CellDetail && _selectedCell != null)
+        else if (_navigation.Mode == ViewMode.CellDetail && _selectedCell != null)
         {
             var hitObj = WorldMapHitTester.HitTestPlacedObject(
                 worldPos, _selectedCell, _data!, _hiddenCategories, _hideDisabledActors, _zoom);
@@ -585,7 +582,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
             SetInteractiveCursor(hitObj != null);
         }
-        else if (_mode == ViewMode.WorldOverview && _data != null)
+        else if (_navigation.Mode == ViewMode.WorldOverview && _data != null)
         {
             var hover = WorldMapHitTester.ProcessOverviewHover(
                 worldPos, _data, GetActiveCells(), _filteredMarkers, _cellGridLookup,
@@ -608,7 +605,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         if (_isPanning && !_pointerWasDragged)
         {
             var result = WorldMapHitTester.HandleClick(
-                _pointerDownScreen, _mode, _data, GetActiveCells(), _selectedCell,
+                _pointerDownScreen, _navigation.Mode, _data, GetActiveCells(), _selectedCell,
                 _filteredMarkers, _cellGridLookup, _hiddenCategories, _hideDisabledActors,
                 _zoom, _panOffset);
 
@@ -658,7 +655,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     {
         NotifyBeforeNavigate();
         _selectedCell = cell;
-        _mode = ViewMode.CellDetail;
+        _navigation.EnterCellDetail();
         _hoveredObject = null;
         _selectedObject = null;
         SetCanvasMode(true);
@@ -728,9 +725,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     private void EnsureOverviewMode()
     {
-        if (_mode == ViewMode.CellDetail)
+        if (_navigation.ReturnToOverviewFromDetail())
         {
-            _mode = ViewMode.WorldOverview;
             _selectedCell = null;
             _cellHeightmapBitmap?.Dispose();
             _cellHeightmapBitmap = null;

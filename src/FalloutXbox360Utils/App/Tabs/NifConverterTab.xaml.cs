@@ -1,7 +1,5 @@
 using Windows.Storage.Pickers;
 using FalloutXbox360Utils.CLI;
-using FalloutXbox360Utils.Core.Formats.Nif;
-using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -162,82 +160,23 @@ public sealed partial class NifConverterTab : NifFileConverterBase
     private async Task<NifFileEntry[]> ScanAndCreateNifEntriesAsync(string directory,
         CancellationToken cancellationToken)
     {
-        return await Task.Run(() =>
+        var progress = new Progress<NifScanProgress>(p =>
         {
-            var nifFiles = Directory.EnumerateFiles(directory, "*.nif", SearchOption.AllDirectories).ToList();
-            if (nifFiles.Count == 0 || cancellationToken.IsCancellationRequested) return [];
+            if (p.Total > 0 && Math.Abs(ConversionProgressBar.Maximum - p.Total) > 0.1)
+            {
+                ConversionProgressBar.IsIndeterminate = false;
+                ConversionProgressBar.Maximum = p.Total;
+                ConversionProgressBar.Value = 0;
+                StatusTextBlock.Text = $"Scanning {p.Total} NIF files...";
+            }
 
-            InitializeScanProgress(nifFiles.Count);
+            ConversionProgressBar.Value = p.Current;
+        });
 
-            var entries = new NifFileEntry[nifFiles.Count];
-            var processedCount = 0;
-            var dispatcher = DispatcherQueue;
-
-            Parallel.ForEach(
-                Enumerable.Range(0, nifFiles.Count),
-                new ParallelOptions
-                {
-                    MaxDegreeOfParallelism = Environment.ProcessorCount * 2,
-                    CancellationToken = cancellationToken
-                },
-                index =>
-                {
-                    var filePath = nifFiles[index];
-                    var relativePath = Path.GetRelativePath(directory, filePath);
-                    var (fileSize, formatDesc) = ReadNifFileHeaderSync(filePath);
-                    var isXbox360 = formatDesc == "Xbox 360 (BE)";
-
-                    entries[index] = new NifFileEntry
-                    {
-                        FullPath = filePath,
-                        RelativePath = relativePath,
-                        FileSize = fileSize,
-                        FormatDescription = formatDesc,
-                        IsSelected = isXbox360
-                    };
-
-                    var current = Interlocked.Increment(ref processedCount);
-                    if (current % 100 == 0 || current == nifFiles.Count)
-                        dispatcher.TryEnqueue(() => ConversionProgressBar.Value = current);
-                });
-
-            return entries;
-        }, cancellationToken);
-    }
-
-    private static (long fileSize, string formatDesc) ReadNifFileHeaderSync(string filePath)
-    {
-        try
-        {
-            var fileInfo = new FileInfo(filePath);
-            var fileSize = fileInfo.Length;
-
-            Span<byte> headerBytes = stackalloc byte[50];
-            using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 64);
-            var bytesRead = fs.Read(headerBytes);
-
-            var formatDesc = DetermineNifFormat(headerBytes[..bytesRead]);
-            return (fileSize, formatDesc);
-        }
-        catch
-        {
-            return (0, "Error");
-        }
-    }
-
-    private static string DetermineNifFormat(ReadOnlySpan<byte> headerBytes)
-    {
-        if (headerBytes.Length < 50) return "Invalid";
-
-        var newlinePos = headerBytes[..50].IndexOf((byte)0x0A);
-        if (newlinePos <= 0 || newlinePos + 5 >= 50) return "Invalid";
-
-        return headerBytes[newlinePos + 5] switch
-        {
-            0 => "Xbox 360 (BE)",
-            1 => "PC (LE)",
-            _ => "Unknown"
-        };
+        return await NifConverterWorkflowService.ScanNifEntriesAsync(
+            directory,
+            progress,
+            cancellationToken);
     }
 
     #endregion
@@ -260,10 +199,11 @@ public sealed partial class NifConverterTab : NifFileConverterBase
             return;
         }
 
-        var outputDir = OutputDirectoryTextBox.Text;
-        var inputDir = InputDirectoryTextBox.Text;
-        var preserveStructure = PreserveStructureCheckBox.IsChecked == true;
-        var overwrite = OverwriteExistingCheckBox.IsChecked == true;
+        var options = new NifConversionOptions(
+            InputDirectoryTextBox.Text,
+            OutputDirectoryTextBox.Text,
+            PreserveStructureCheckBox.IsChecked == true,
+            OverwriteExistingCheckBox.IsChecked == true);
         var verbose = VerboseOutputCheckBox.IsChecked == true;
 
         if (verbose) Core.Logger.Instance.Level = Core.LogLevel.Debug;
@@ -276,73 +216,21 @@ public sealed partial class NifConverterTab : NifFileConverterBase
         ConversionProgressBar.Maximum = selectedFiles.Count;
         ConversionProgressBar.Value = 0;
 
-        var converted = 0;
-        var skipped = 0;
-        var failed = 0;
-
         try
         {
-            Directory.CreateDirectory(outputDir);
-
-            for (var i = 0; i < selectedFiles.Count; i++)
+            var progress = new Progress<NifConversionProgress>(p =>
             {
-                if (ConversionCts.Token.IsCancellationRequested) break;
+                StatusTextBlock.Text = $"Converting {p.Current}/{p.Total}: {p.RelativePath}";
+                ConversionProgressBar.Value = p.Current;
+            });
+            var summary = await NifConverterWorkflowService.ConvertFilesAsync(
+                selectedFiles,
+                options,
+                progress,
+                ConversionCts.Token);
 
-                var file = selectedFiles[i];
-                StatusTextBlock.Text = $"Converting {i + 1}/{selectedFiles.Count}: {file.RelativePath}";
-                file.Status = "Converting...";
-
-                try
-                {
-                    string outputPath;
-                    if (preserveStructure)
-                    {
-                        var relativePath = Path.GetRelativePath(inputDir, file.FullPath);
-                        outputPath = Path.Combine(outputDir, relativePath);
-                        Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
-                    }
-                    else
-                    {
-                        outputPath = Path.Combine(outputDir, Path.GetFileName(file.FullPath));
-                    }
-
-                    if (File.Exists(outputPath) && !overwrite)
-                    {
-                        file.Status = "Skipped (exists)";
-                        skipped++;
-                        continue;
-                    }
-
-                    var inputData = await File.ReadAllBytesAsync(file.FullPath, ConversionCts.Token);
-                    var result = await Task.Run(() => NifConverter.Convert(inputData), ConversionCts.Token);
-
-                    if (result.Success && result.OutputData != null)
-                    {
-                        await File.WriteAllBytesAsync(outputPath, result.OutputData, ConversionCts.Token);
-                        file.Status = "Converted";
-                        converted++;
-                    }
-                    else
-                    {
-                        file.Status = result.ErrorMessage ?? "Failed";
-                        failed++;
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    file.Status = "Cancelled";
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    file.Status = $"Error: {ex.Message}";
-                    failed++;
-                }
-
-                ConversionProgressBar.Value = i + 1;
-            }
-
-            StatusTextBlock.Text = $"Conversion complete. Converted: {converted}, Skipped: {skipped}, Failed: {failed}";
+            StatusTextBlock.Text =
+                $"Conversion complete. Converted: {summary.Converted}, Skipped: {summary.Skipped}, Failed: {summary.Failed}";
         }
         catch (OperationCanceledException)
         {
@@ -481,20 +369,16 @@ public sealed partial class NifConverterTab : NifFileConverterBase
         {
             var overrideText = NifViewerTextureBsaTextBox.Text?.Trim();
             var hasOverride = !string.IsNullOrEmpty(overrideText);
-            var texturePathsOverride = hasOverride ? new[] { overrideText! } : null;
-
-            _nifBrowserService = isBsa
-                ? await Task.Run(() => NifBrowserService.CreateFromBsa(path, texturePathsOverride))
-                : await Task.Run(() => NifBrowserService.CreateFromDirectory(path, texturePathsOverride));
+            var result = await NifConverterWorkflowService.LoadSourceAsync(path, isBsa, overrideText);
+            _nifBrowserService = result.Service;
 
             // Reflect the auto-detected textures path in the UI when the user hasn't overridden it.
             if (!hasOverride)
             {
-                NifViewerTextureBsaTextBox.Text = string.Join("; ", _nifBrowserService.TexturePaths);
+                NifViewerTextureBsaTextBox.Text = result.TexturePathsDisplay;
             }
 
-            var entries = await Task.Run(() => _nifBrowserService.ListNifFiles());
-            _nifViewerAllItems = NifTreeViewItem.FromTreeEntries(entries);
+            _nifViewerAllItems = result.Items;
             PopulateNifTree(_nifViewerAllItems);
 
             var fileCount = _nifViewerAllItems.Sum(i => i.IsDirectory ? i.Children.Count : 1);
@@ -516,44 +400,7 @@ public sealed partial class NifConverterTab : NifFileConverterBase
         if (_nifViewerAllItems == null) return;
 
         var search = NifViewerSearchBox.Text?.Trim();
-        if (string.IsNullOrEmpty(search))
-        {
-            PopulateNifTree(_nifViewerAllItems);
-            return;
-        }
-
-        var filtered = new List<NifTreeViewItem>();
-        foreach (var item in _nifViewerAllItems)
-        {
-            if (item.IsDirectory)
-            {
-                var matchingChildren = item.Children
-                    .Where(c => c.DisplayName.Contains(search, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-                if (matchingChildren.Count > 0)
-                {
-                    var clone = new NifTreeViewItem
-                    {
-                        DisplayName = item.DisplayName,
-                        FullPath = item.FullPath,
-                        IsDirectory = true,
-                        IsExpanded = true
-                    };
-                    foreach (var child in matchingChildren)
-                    {
-                        clone.Children.Add(child);
-                    }
-
-                    filtered.Add(clone);
-                }
-            }
-            else if (item.DisplayName.Contains(search, StringComparison.OrdinalIgnoreCase))
-            {
-                filtered.Add(item);
-            }
-        }
-
-        PopulateNifTree(filtered);
+        PopulateNifTree(NifConverterWorkflowService.FilterTreeItems(_nifViewerAllItems, search));
     }
 
     private async void NifViewerTree_ItemInvoked(TreeView sender, TreeViewItemInvokedEventArgs args)
@@ -575,31 +422,29 @@ public sealed partial class NifConverterTab : NifFileConverterBase
         {
             await NifModelViewer.ExecuteScriptAsync("setStatus('Loading model...')");
 
-            var nifData = await Task.Run(() => _nifBrowserService.ReadNifData(item.FullPath));
-            if (nifData == null)
+            var result = await NifConverterWorkflowService.LoadModelAsync(_nifBrowserService, item);
+            if (result.ErrorMessage != null)
             {
-                await NifModelViewer.ExecuteScriptAsync("setStatus('Failed to read NIF file')");
+                await NifModelViewer.ExecuteScriptAsync($"setStatus('{EscapeJsString(result.ErrorMessage)}')");
                 NifModelLoadingRing.Visibility = Visibility.Collapsed;
                 return;
             }
 
             // Update info panel
-            var info = await Task.Run(() => NifBrowserService.GetNifInfo(nifData, item.DisplayName));
-            if (info != null)
+            if (result.Info != null)
             {
                 NifViewerInfoText.Text =
-                    $"File: {info.FileName}\n" +
-                    $"Size: {info.FileSize:N0} bytes\n" +
-                    $"Format: {info.Format}\n" +
-                    $"Blocks: {info.BlockCount}\n" +
-                    $"BS Version: {info.BsVersion}\n" +
-                    $"User Version: {info.UserVersion}";
-                NifViewerBlockTypesText.Text = string.Join(", ", info.BlockTypeNames);
+                    $"File: {result.Info.FileName}\n" +
+                    $"Size: {result.Info.FileSize:N0} bytes\n" +
+                    $"Format: {result.Info.Format}\n" +
+                    $"Blocks: {result.Info.BlockCount}\n" +
+                    $"BS Version: {result.Info.BsVersion}\n" +
+                    $"User Version: {result.Info.UserVersion}";
+                NifViewerBlockTypesText.Text = string.Join(", ", result.Info.BlockTypeNames);
             }
 
             // Build GLB for 3D viewer
-            var glbBytes = await Task.Run(() => _nifBrowserService.BuildGlb(nifData, item.DisplayName));
-            if (glbBytes == null)
+            if (result.GlbBytes == null)
             {
                 await NifModelViewer.ExecuteScriptAsync("setStatus('No exportable geometry')");
                 NifModelLoadingRing.Visibility = Visibility.Collapsed;
@@ -608,7 +453,7 @@ public sealed partial class NifConverterTab : NifFileConverterBase
                 return;
             }
 
-            var base64 = Convert.ToBase64String(glbBytes);
+            var base64 = Convert.ToBase64String(result.GlbBytes);
             await NifModelViewer.ExecuteScriptAsync($"loadModel('{base64}')");
 
             NifViewerExportGlbButton.IsEnabled = true;
@@ -653,14 +498,7 @@ public sealed partial class NifConverterTab : NifFileConverterBase
         NifViewerExportGlbButton.IsEnabled = false;
         try
         {
-            var nifData = await Task.Run(() => _nifBrowserService.ReadNifData(_currentNifViewerPath));
-            if (nifData == null)
-            {
-                StatusTextBlock.Text = "Failed to read NIF file.";
-                return;
-            }
-
-            var glbBytes = await Task.Run(() => _nifBrowserService.BuildGlb(nifData, _currentNifViewerPath));
+            var glbBytes = await NifConverterWorkflowService.BuildGlbAsync(_nifBrowserService, _currentNifViewerPath);
             if (glbBytes != null)
             {
                 await File.WriteAllBytesAsync(file.Path, glbBytes);
@@ -699,52 +537,16 @@ public sealed partial class NifConverterTab : NifFileConverterBase
         NifViewerRenderPngButton.IsEnabled = false;
         try
         {
-            var nifData = await Task.Run(() => _nifBrowserService.ReadNifData(_currentNifViewerPath));
-            if (nifData == null)
-            {
-                StatusTextBlock.Text = "Failed to read NIF file.";
-                return;
-            }
-
             var spriteSize = Math.Clamp((int)NifViewerSizeNumberBox.Value, 64, 4096);
             var camera = BuildNifViewerCameraConfig();
-            var views = camera.ResolveViews(defaultAzimuth: 90f);
+            var viewCount = await NifConverterWorkflowService.RenderPngViewsAsync(
+                _nifBrowserService,
+                _currentNifViewerPath,
+                file.Path,
+                spriteSize,
+                camera);
 
-            foreach (var (suffix, azimuth, elevation) in views)
-            {
-                var pngBytes = await Task.Run(() =>
-                    _nifBrowserService.RenderPng(nifData, _currentNifViewerPath, spriteSize, azimuth, elevation));
-
-                if (pngBytes != null)
-                {
-                    var outputPath = views.Length > 1
-                        ? Path.Combine(
-                            Path.GetDirectoryName(file.Path) ?? ".",
-                            Path.GetFileNameWithoutExtension(file.Path) + suffix + ".png")
-                        : file.Path;
-                    await File.WriteAllBytesAsync(outputPath, pngBytes);
-                }
-            }
-
-            // FileSavePicker reserves the chosen path. In multi-view mode we write only to
-            // suffixed filenames, so delete the empty placeholder left at the base path.
-            if (views.Length > 1)
-            {
-                try
-                {
-                    File.Delete(file.Path);
-                }
-                catch (IOException)
-                {
-                    // Best-effort cleanup only; export already wrote the suffixed views.
-                }
-                catch (UnauthorizedAccessException)
-                {
-                    // Best-effort cleanup only; export already wrote the suffixed views.
-                }
-            }
-
-            StatusTextBlock.Text = $"Rendered: {(views.Length > 1 ? $"{views.Length} views" : file.Name)}";
+            StatusTextBlock.Text = $"Rendered: {(viewCount > 1 ? $"{viewCount} views" : file.Name)}";
         }
         catch (Exception ex)
         {

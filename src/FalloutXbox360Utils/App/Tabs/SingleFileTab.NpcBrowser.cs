@@ -104,17 +104,9 @@ public sealed partial class SingleFileTab
         {
             var esmPath = _session.FilePath!;
 
-            // If user configured a BSA directory, discover from there instead
-            BsaDiscoveryResult bsaPaths;
-            if (_session.NpcBsaDirectory != null)
-            {
-                var pseudoEsmPath = Path.Combine(_session.NpcBsaDirectory, Path.GetFileName(esmPath));
-                bsaPaths = await Task.Run(() => BsaDiscovery.Discover(pseudoEsmPath));
-            }
-            else
-            {
-                bsaPaths = await Task.Run(() => BsaDiscovery.Discover(esmPath));
-            }
+            var bsaPaths = await NpcBrowserWorkflowService.DiscoverBsaPathsAsync(
+                esmPath,
+                _session.NpcBsaDirectory);
 
             if (!bsaPaths.HasMeshes)
             {
@@ -137,9 +129,7 @@ public sealed partial class SingleFileTab
                 NpcBrowserStatusText.Text = "Scanning NPC records...";
 
                 var bigEndian = _session.AnalysisResult?.EsmRecords?.BigEndianRecords > 0;
-                var esmData = await Task.Run(() => File.ReadAllBytes(esmPath));
-                service = await Task.Run(() =>
-                    NpcBrowserService.TryCreate(esmData, bigEndian, esmPath, bsaPaths));
+                service = await NpcBrowserWorkflowService.CreateFromEsmAsync(esmPath, bigEndian, bsaPaths);
             }
 
             if (service == null)
@@ -172,7 +162,7 @@ public sealed partial class SingleFileTab
         // Find ESM file in the configured game Data directory
         NpcBrowserStatusText.Text = "Locating ESM file...";
         var dataDir = _session.NpcBsaDirectory!;
-        var esmFile = DiscoverEsmFile(dataDir);
+        var esmFile = NpcBrowserWorkflowService.DiscoverEsmFile(dataDir);
 
         if (esmFile == null)
         {
@@ -193,39 +183,13 @@ public sealed partial class SingleFileTab
 
         NpcBrowserStatusText.Text = "Reading ESM and resolving NPC appearances from memory dump...";
 
-        var accessor = _session.Accessor;
-        var fileSize = _session.FileSize;
-
-        return await Task.Run(() =>
-        {
-            var esmData = File.ReadAllBytes(esmFile);
-            var esmBigEndian = NpcBrowserService.DetectEsmBigEndian(esmData);
-
-            return NpcBrowserService.TryCreateFromDmp(
-                accessor,
-                fileSize,
-                minidumpInfo,
-                scanResult,
-                esmData,
-                esmBigEndian,
-                esmFile,
-                bsaPaths);
-        });
-    }
-
-    /// <summary>
-    ///     Finds an ESM file in a game Data directory. Prefers FalloutNV.esm, falls back to any *.esm.
-    /// </summary>
-    private static string? DiscoverEsmFile(string dataDir)
-    {
-        var preferred = Path.Combine(dataDir, "FalloutNV.esm");
-        if (File.Exists(preferred))
-        {
-            return preferred;
-        }
-
-        var esmFiles = Directory.GetFiles(dataDir, "*.esm");
-        return esmFiles.Length > 0 ? esmFiles[0] : null;
+        return await NpcBrowserWorkflowService.CreateFromDmpAsync(
+            dataDir,
+            _session.Accessor,
+            _session.FileSize,
+            minidumpInfo,
+            scanResult,
+            bsaPaths);
     }
 
     private async Task InitializeWebViewAsync()
@@ -275,25 +239,7 @@ public sealed partial class SingleFileTab
         var namedOnly = NpcNamedOnlyCheckBox.IsChecked == true;
         var searchText = NpcSearchBox.Text?.Trim();
 
-        _npcFilteredList = _npcFullList
-            .Where(n =>
-            {
-                if (namedOnly && string.IsNullOrEmpty(n.FullName))
-                {
-                    return false;
-                }
-
-                if (!string.IsNullOrEmpty(searchText))
-                {
-                    return n.DisplayName.Contains(searchText, StringComparison.OrdinalIgnoreCase)
-                           || (n.EditorId?.Contains(searchText, StringComparison.OrdinalIgnoreCase) == true)
-                           || $"0x{n.FormId:X8}".Contains(searchText, StringComparison.OrdinalIgnoreCase);
-                }
-
-                return true;
-            })
-            .OrderBy(n => n.DisplayName, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        _npcFilteredList = NpcBrowserWorkflowService.FilterNpcList(_npcFullList, namedOnly, searchText);
 
         NpcListView.ItemsSource = _npcFilteredList;
 
@@ -342,13 +288,10 @@ public sealed partial class SingleFileTab
 
         _selectedNpcFormId = npc.FormId;
         NpcDetailName.Text = npc.DisplayName;
+        NpcDetailInfo.Text = NpcBrowserWorkflowService.BuildDetailText(npc);
 
         if (npc.IsCreature)
         {
-            NpcDetailInfo.Text = $"FormID: 0x{npc.FormId:X8}\n" +
-                                 $"Editor ID: {npc.EditorId ?? "(none)"}\n" +
-                                 $"Type: {npc.CreatureTypeName}\n" +
-                                 $"Model: {npc.ModelPath ?? "(none)"}";
             NpcFullBodyCheckBox.IsEnabled = false;
             NpcArmorCheckBox.IsEnabled = false;
             NpcWeaponCheckBox.IsEnabled = false;
@@ -356,9 +299,6 @@ public sealed partial class SingleFileTab
         }
         else
         {
-            NpcDetailInfo.Text = $"FormID: 0x{npc.FormId:X8}\n" +
-                                 $"Editor ID: {npc.EditorId ?? "(none)"}\n" +
-                                 $"Gender: {(npc.IsFemale ? "Female" : "Male")}";
             NpcFullBodyCheckBox.IsEnabled = true;
             NpcArmorCheckBox.IsEnabled = true;
             NpcWeaponCheckBox.IsEnabled = true;
@@ -388,22 +328,10 @@ public sealed partial class SingleFileTab
         {
             await NpcModelViewer.ExecuteScriptAsync("setStatus('Building model...')");
 
-            byte[]? glbBytes;
-            if (npc.IsCreature)
-            {
-                glbBytes = await Task.Run(() =>
-                    _npcBrowserService.BuildCreatureGlb(npc.FormId));
-            }
-            else
-            {
-                var headOnly = NpcFullBodyCheckBox.IsChecked != true;
-                var noEquip = NpcArmorCheckBox.IsChecked != true;
-                var noWeapon = NpcWeaponCheckBox.IsChecked != true;
-                var bindPose = NpcIdlePoseCheckBox.IsChecked != true;
-
-                glbBytes = await Task.Run(() =>
-                    _npcBrowserService.BuildGlb(npc.FormId, headOnly, noEquip, noWeapon, bindPose));
-            }
+            var glbBytes = await NpcBrowserWorkflowService.BuildGlbAsync(
+                _npcBrowserService,
+                npc,
+                BuildNpcRenderOptions());
 
             if (glbBytes == null)
             {
@@ -479,9 +407,12 @@ public sealed partial class SingleFileTab
         picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
         picker.FileTypeChoices.Add("GLB File", [".glb"]);
         var npc = NpcListView.SelectedItem as NpcListItem;
-        picker.SuggestedFileName = npc != null
-            ? $"{npc.EditorId ?? $"npc_{npc.FormId:X8}"}.glb"
-            : "npc.glb";
+        if (npc == null)
+        {
+            return;
+        }
+
+        picker.SuggestedFileName = $"{npc.EditorId ?? $"npc_{npc.FormId:X8}"}.glb";
         InitializeWithWindow.Initialize(picker, NpcGetWindowHandle());
 
         var file = await picker.PickSaveFileAsync();
@@ -493,22 +424,10 @@ public sealed partial class SingleFileTab
         NpcExportGlbButton.IsEnabled = false;
         try
         {
-            byte[]? glbBytes;
-            if (npc is { IsCreature: true })
-            {
-                glbBytes = await Task.Run(() =>
-                    _npcBrowserService.BuildCreatureGlb(npc.FormId));
-            }
-            else
-            {
-                var headOnly = NpcFullBodyCheckBox.IsChecked != true;
-                var noEquip = NpcArmorCheckBox.IsChecked != true;
-                var noWeapon = NpcWeaponCheckBox.IsChecked != true;
-                var bindPose = NpcIdlePoseCheckBox.IsChecked != true;
-
-                glbBytes = await Task.Run(() =>
-                    _npcBrowserService.BuildGlb(_selectedNpcFormId.Value, headOnly, noEquip, noWeapon, bindPose));
-            }
+            var glbBytes = await NpcBrowserWorkflowService.BuildGlbAsync(
+                _npcBrowserService,
+                npc,
+                BuildNpcRenderOptions());
 
             if (glbBytes != null)
             {
@@ -555,50 +474,18 @@ public sealed partial class SingleFileTab
         NpcRenderPngButton.IsEnabled = false;
         try
         {
-            var headOnly = NpcFullBodyCheckBox.IsChecked != true;
-            var noEquip = NpcArmorCheckBox.IsChecked != true;
-            var noWeapon = NpcWeaponCheckBox.IsChecked != true;
+            var options = BuildNpcRenderOptions();
             var spriteSize = GetSelectedSpriteSize();
             var camera = BuildCameraConfig();
-            var views = camera.ResolveViews(defaultAzimuth: 90f);
+            var viewCount = await NpcBrowserWorkflowService.RenderPngViewsAsync(
+                _npcBrowserService,
+                _selectedNpcFormId.Value,
+                file.Path,
+                options,
+                spriteSize,
+                camera);
 
-            foreach (var (suffix, azimuth, elevation) in views)
-            {
-                var pngBytes = await Task.Run(() =>
-                    _npcBrowserService.RenderPng(
-                        _selectedNpcFormId.Value, headOnly, noEquip, noWeapon,
-                        spriteSize, azimuth, elevation));
-
-                if (pngBytes != null)
-                {
-                    var outputPath = views.Length > 1
-                        ? Path.Combine(
-                            Path.GetDirectoryName(file.Path) ?? ".",
-                            Path.GetFileNameWithoutExtension(file.Path) + suffix + ".png")
-                        : file.Path;
-                    await File.WriteAllBytesAsync(outputPath, pngBytes);
-                }
-            }
-
-            // FileSavePicker reserves the chosen path. In multi-view mode we write only to
-            // suffixed filenames, so delete the empty placeholder left at the base path.
-            if (views.Length > 1)
-            {
-                try
-                {
-                    File.Delete(file.Path);
-                }
-                catch (IOException)
-                {
-                    // Best-effort cleanup only; export already wrote the suffixed views.
-                }
-                catch (UnauthorizedAccessException)
-                {
-                    // Best-effort cleanup only; export already wrote the suffixed views.
-                }
-            }
-
-            StatusTextBlock.Text = $"Rendered: {(views.Length > 1 ? $"{views.Length} views" : file.Name)}";
+            StatusTextBlock.Text = $"Rendered: {(viewCount > 1 ? $"{viewCount} views" : file.Name)}";
         }
         catch (Exception ex)
         {
@@ -625,12 +512,10 @@ public sealed partial class SingleFileTab
         var selectedIds = GetSelectedNpcFormIds();
         await RunBatchOperationAsync("Exporting GLBs", async (progress, ct) =>
         {
-            var headOnly = NpcFullBodyCheckBox.IsChecked != true;
-            var noEquip = NpcArmorCheckBox.IsChecked != true;
-            var noWeapon = NpcWeaponCheckBox.IsChecked != true;
+            var options = BuildNpcRenderOptions();
 
             await _npcBrowserService.BatchExportGlbAsync(
-                outputDir, headOnly, noEquip, noWeapon, progress, ct, selectedIds);
+                outputDir, options.HeadOnly, options.NoEquip, options.NoWeapon, progress, ct, selectedIds);
         });
     }
 
@@ -645,14 +530,20 @@ public sealed partial class SingleFileTab
         var selectedIds = GetSelectedNpcFormIds();
         await RunBatchOperationAsync("Rendering PNGs", async (progress, ct) =>
         {
-            var headOnly = NpcFullBodyCheckBox.IsChecked != true;
-            var noEquip = NpcArmorCheckBox.IsChecked != true;
-            var noWeapon = NpcWeaponCheckBox.IsChecked != true;
+            var options = BuildNpcRenderOptions();
             var spriteSize = GetSelectedSpriteSize();
             var camera = BuildCameraConfig();
 
             await _npcBrowserService.BatchRenderPngAsync(
-                outputDir, headOnly, noEquip, noWeapon, spriteSize, camera, progress, ct, selectedIds);
+                outputDir,
+                options.HeadOnly,
+                options.NoEquip,
+                options.NoWeapon,
+                spriteSize,
+                camera,
+                progress,
+                ct,
+                selectedIds);
         });
     }
 
@@ -727,11 +618,7 @@ public sealed partial class SingleFileTab
             return;
         }
 
-        foreach (var item in _npcFilteredList)
-        {
-            item.IsSelected = selected;
-        }
-
+        NpcBrowserWorkflowService.SetAllSelected(_npcFilteredList, selected);
         UpdateNpcSelectionCountText();
     }
 
@@ -742,8 +629,7 @@ public sealed partial class SingleFileTab
             return null;
         }
 
-        var selected = _npcFilteredList.Where(n => n.IsSelected).Select(n => n.FormId).ToList();
-        return selected.Count > 0 ? selected : null;
+        return NpcBrowserWorkflowService.GetSelectedFormIds(_npcFilteredList);
     }
 
     private void UpdateNpcSelectionCountText()
@@ -753,13 +639,7 @@ public sealed partial class SingleFileTab
             return;
         }
 
-        var selectedCount = _npcFilteredList.Count(n => n.IsSelected);
-        var filterNote = _npcFullList.Count != _npcFilteredList.Count
-            ? $" (of {_npcFullList.Count})"
-            : "";
-        NpcCountText.Text = selectedCount > 0
-            ? $"{_npcFilteredList.Count} actors{filterNote} — {selectedCount} selected"
-            : $"{_npcFilteredList.Count} actors{filterNote}";
+        NpcCountText.Text = NpcBrowserWorkflowService.BuildSelectionCountText(_npcFilteredList, _npcFullList);
     }
 
     #endregion
@@ -838,6 +718,15 @@ public sealed partial class SingleFileTab
     {
         var value = (int)NpcSizeNumberBox.Value;
         return Math.Clamp(value, 64, 4096);
+    }
+
+    private NpcRenderOptions BuildNpcRenderOptions()
+    {
+        return new NpcRenderOptions(
+            NpcFullBodyCheckBox.IsChecked != true,
+            NpcArmorCheckBox.IsChecked != true,
+            NpcWeaponCheckBox.IsChecked != true,
+            NpcIdlePoseCheckBox.IsChecked != true);
     }
 
     private CameraConfig BuildCameraConfig()
