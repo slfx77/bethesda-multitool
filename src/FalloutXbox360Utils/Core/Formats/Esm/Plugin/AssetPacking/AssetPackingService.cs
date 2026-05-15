@@ -7,14 +7,25 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
 
 /// <summary>
 ///     Orchestrates the prototype asset packer:
-///
 ///     <list type="number">
-///         <item><description>Loads the converted ESP into a <see cref="Models.RecordCollection"/>.</description></item>
-///         <item><description>Collects every referenced asset path from records + raw DMP bytes.</description></item>
-///         <item><description>Builds a <see cref="DataFolderIndex"/> for the FNV baseline and each secondary folder.</description></item>
-///         <item><description>Resolves each requested path through <see cref="DataFolderResolver"/>.</description></item>
-///         <item><description>Converts 360-format bytes to PC format on the fly via <see cref="PrototypeAssetConverter"/>.</description></item>
-///         <item><description>Writes the resolved set to a new BSA via <see cref="BsaWriter"/>.</description></item>
+///         <item>
+///             <description>Loads the converted ESP into a <see cref="Models.RecordCollection" />.</description>
+///         </item>
+///         <item>
+///             <description>Collects every referenced asset path from records + raw DMP bytes.</description>
+///         </item>
+///         <item>
+///             <description>Builds a <see cref="DataFolderIndex" /> for the FNV baseline and each secondary folder.</description>
+///         </item>
+///         <item>
+///             <description>Resolves each requested path through <see cref="DataFolderResolver" />.</description>
+///         </item>
+///         <item>
+///             <description>Converts 360-format bytes to PC format on the fly via <see cref="PrototypeAssetConverter" />.</description>
+///         </item>
+///         <item>
+///             <description>Writes the resolved set to a new BSA via <see cref="BsaWriter" />.</description>
+///         </item>
 ///     </list>
 /// </summary>
 public sealed class AssetPackingService
@@ -47,12 +58,12 @@ public sealed class AssetPackingService
 
             if (requested.Count == 0)
             {
-                return BuildEmptyResult(options, sink, resolutions, stopwatch, runningStats: null);
+                return BuildEmptyResult(options, sink, resolutions, stopwatch, null);
             }
 
             // 3) Build baseline and secondary folder indexes.
             sink.Info("AssetPacking", $"Indexing baseline data folder: {options.BaselineDataFolder}");
-            using var baseline = new DataFolderIndex(options.BaselineDataFolder, xbox360FormatHint: false);
+            using var baseline = new DataFolderIndex(options.BaselineDataFolder, false);
             baseline.Build();
             sink.Info("AssetPacking", $"Baseline indexed {baseline.EntryCount} entries");
 
@@ -131,7 +142,7 @@ public sealed class AssetPackingService
 
                 if (packedFiles.Count == 0)
                 {
-                    return BuildEmptyResult(options, sink, resolutions, stopwatch, runningStats: stats);
+                    return BuildEmptyResult(options, sink, resolutions, stopwatch, stats);
                 }
 
                 // 5) Write the output BSA.
@@ -408,7 +419,10 @@ public sealed class AssetPackingService
         };
     }
 
-    private static AssetPackingStats EmptyStats(TimeSpan elapsed) => new() { Elapsed = elapsed };
+    private static AssetPackingStats EmptyStats(TimeSpan elapsed)
+    {
+        return new AssetPackingStats { Elapsed = elapsed };
+    }
 
     /// <summary>
     ///     Writes a human-reviewable per-asset audit next to the output BSA. Sections:
@@ -453,7 +467,7 @@ public sealed class AssetPackingService
                 resolutions.Where(r =>
                     r.Kind is AssetResolutionKind.ResolvedFuzzy
                         or AssetResolutionKind.ResolvedFuzzyConverted),
-                includeResolved: true);
+                true);
 
             sink.Info("AssetPacking", $"Audit file written: {auditPath}");
         }
@@ -500,12 +514,12 @@ public sealed class AssetPackingService
     /// <summary>Mutable counters used while iterating; copied into the immutable Stats record at the end.</summary>
     private sealed class RunningStats
     {
-        public int Total;
         public int AlreadyInBaseline;
+        public int ConversionFailed;
+        public int Converted360;
+        public int Missing;
         public int ResolvedExact;
         public int ResolvedFuzzy;
-        public int Converted360;
-        public int ConversionFailed;
-        public int Missing;
+        public int Total;
     }
 }

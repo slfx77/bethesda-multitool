@@ -5,12 +5,12 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Probes;
 /// <summary>
 ///     Probe for BGSTerminal layout. Two independently-shifting groups:
 ///     - Group 1 covers TERMINAL_DATA (Difficulty / Flags / ServerType / Unused) at the
-///       reference position +132. Difficulty agrees 230/293 records under the current
-///       hardcoded offset on July2010↔xex44, so the reference is empirically strong;
-///       the probe sweeps ±8 to refine or confirm.
+///     reference position +132. Difficulty agrees 230/293 records under the current
+///     hardcoded offset on July2010↔xex44, so the reference is empirically strong;
+///     the probe sweeps ±8 to refine or confirm.
 ///     - Group 2 covers MenuItemList (BSSimpleList head) at the reference position
-///       +152. Currently 0 records agree on MenuItemCount across both audit baselines,
-///       suggesting the list head is at a different offset; ±8 sweep may locate it.
+///     +152. Currently 0 records agree on MenuItemCount across both audit baselines,
+///     suggesting the list head is at a different offset; ±8 sweep may locate it.
 ///     Note the BaseOffset values match the EXISTING reader (116/117/134 + _s=16 = 132/133/134
 ///     for the data block, 136 + _s = 152 for the list head). These differ from
 ///     pdb_layouts.json which puts TERMINAL_DATA at +180 and MenuItemList at +168 —
@@ -38,7 +38,7 @@ internal static class RuntimeTerminalLayoutProbe
 
         // Group 2: MenuItemList head pointer — must resolve to a plausible heap address.
         new("MenuItemListHead", 152, 2, RuntimeReaderFieldProbe.FieldCheck.NonZeroUInt32,
-            3, null)
+            3)
     ];
 
     public static RuntimeTerminalLayoutProbeResult? Probe(
@@ -60,7 +60,7 @@ internal static class RuntimeTerminalLayoutProbe
             context,
             termEntries,
             TerminalFields,
-            groupCount: 2,
+            2,
             // RuntimeReaderFieldProbe.GenerateCandidates uses the same shiftOptions array
             // for every variable group, so a single combined set works for both.
             DataShiftOptions,

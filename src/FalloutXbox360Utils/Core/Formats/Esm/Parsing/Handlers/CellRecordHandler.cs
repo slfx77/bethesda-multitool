@@ -81,10 +81,10 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
 
             if (land.BestCellX.HasValue && land.BestCellY.HasValue)
             {
-                uint ws = land.WorldspaceFormId ??
-                          (landWorldMap.TryGetValue(land.Header.FormId, out var mappedWorldspace)
-                              ? mappedWorldspace
-                              : 0u);
+                var ws = land.WorldspaceFormId ??
+                         (landWorldMap.TryGetValue(land.Header.FormId, out var mappedWorldspace)
+                             ? mappedWorldspace
+                             : 0u);
                 var gridKey = (ws, land.BestCellX.Value, land.BestCellY.Value);
                 if (land.Heightmap != null)
                 {

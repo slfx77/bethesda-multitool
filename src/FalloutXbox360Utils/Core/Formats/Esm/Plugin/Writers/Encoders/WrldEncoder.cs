@@ -8,10 +8,10 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     existing cell-children pipeline ([CellEncoder.cs](CellEncoder.cs)), not via this
 ///     encoder. v18 supplies the WRLD header so DMP-only worldspaces can be created.
 ///     fopdoc canonical order:
-///         EDID, FULL?, XEZN?, WNAM?(parent), PNAM?(parent use flags, 2B), CNAM?(climate),
-///         NAM2?(water), ICON?(map icon — not modeled), MNAM?(16B world map data),
-///         DATA?(1B flags), NAM0?(8B bounds min), NAM9?(8B bounds max),
-///         ONAM?(12B map-offset data), INAM?(image space), ZNAM?(music type), DNAM?(8B heights).
+///     EDID, FULL?, XEZN?, WNAM?(parent), PNAM?(parent use flags, 2B), CNAM?(climate),
+///     NAM2?(water), ICON?(map icon — not modeled), MNAM?(16B world map data),
+///     DATA?(1B flags), NAM0?(8B bounds min), NAM9?(8B bounds max),
+///     ONAM?(12B map-offset data), INAM?(image space), ZNAM?(music type), DNAM?(8B heights).
 /// </summary>
 public sealed class WrldEncoder : IRecordEncoder
 {
@@ -129,13 +129,17 @@ public sealed class WrldEncoder : IRecordEncoder
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
     }
 
-    private static bool HasMapData(WorldspaceRecord wrld) =>
-        wrld.MapUsableWidth.HasValue || wrld.MapUsableHeight.HasValue
-        || wrld.MapNWCellX.HasValue || wrld.MapNWCellY.HasValue
-        || wrld.MapSECellX.HasValue || wrld.MapSECellY.HasValue;
+    private static bool HasMapData(WorldspaceRecord wrld)
+    {
+        return wrld.MapUsableWidth.HasValue || wrld.MapUsableHeight.HasValue
+                                            || wrld.MapNWCellX.HasValue || wrld.MapNWCellY.HasValue
+                                            || wrld.MapSECellX.HasValue || wrld.MapSECellY.HasValue;
+    }
 
-    private static bool HasMapOffset(WorldspaceRecord wrld) =>
-        wrld.MapOffsetScaleX.HasValue || wrld.MapOffsetScaleY.HasValue || wrld.MapOffsetZ.HasValue;
+    private static bool HasMapOffset(WorldspaceRecord wrld)
+    {
+        return wrld.MapOffsetScaleX.HasValue || wrld.MapOffsetScaleY.HasValue || wrld.MapOffsetZ.HasValue;
+    }
 
     private static byte[] BuildMnamSubrecord(WorldspaceRecord wrld)
     {

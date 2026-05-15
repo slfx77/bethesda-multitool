@@ -198,7 +198,7 @@ internal static class NpcBoundaryVertexStitcher
         // Pack three 21-bit integers into a 64-bit key
         return ((long)(ix & 0x1FFFFF) << 42) |
                ((long)(iy & 0x1FFFFF) << 21) |
-               (long)(iz & 0x1FFFFF);
+               iz & 0x1FFFFF;
     }
 
     private static void ClearBindPoseData(List<RenderableSubmesh> submeshes)

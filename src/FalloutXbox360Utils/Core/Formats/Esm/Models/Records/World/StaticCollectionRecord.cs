@@ -48,4 +48,10 @@ public record StaticCollectionPart
 ///     A single per-instance placement inside a SCOL part: 7 floats = X, Y, Z, RotX, RotY, RotZ, Scale.
 /// </summary>
 public readonly record struct StaticCollectionPlacement(
-    float X, float Y, float Z, float RotX, float RotY, float RotZ, float Scale);
+    float X,
+    float Y,
+    float Z,
+    float RotX,
+    float RotY,
+    float RotZ,
+    float Scale);

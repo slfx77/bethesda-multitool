@@ -341,5 +341,4 @@ internal static class MinidumpExtractionReporter
             await CarveManifest.SaveAsync(extractDir, entries);
         }
     }
-
 }

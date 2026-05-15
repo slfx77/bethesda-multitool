@@ -1,3 +1,4 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
@@ -92,7 +93,7 @@ public sealed class ArmoEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MICO", armo.MessageIconPath));
         }
 
-        if (armo.EquipmentType != Enums.EquipmentType.None)
+        if (armo.EquipmentType != EquipmentType.None)
         {
             subs.Add(NewRecordSubrecords.EncodeInt32Subrecord("ETYP", (int)armo.EquipmentType));
         }

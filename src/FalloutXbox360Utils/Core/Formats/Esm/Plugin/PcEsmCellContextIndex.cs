@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 
 /// <summary>
@@ -111,18 +113,18 @@ public static class PcEsmCellContextIndex
         {
             switch (g.GroupType)
             {
-                case 3 when subblockGrup is null:    // interior subblock
-                case 5 when subblockGrup is null:    // exterior subblock
+                case 3 when subblockGrup is null: // interior subblock
+                case 5 when subblockGrup is null: // exterior subblock
                     subblockGrup = g;
                     break;
-                case 2 when blockGrup is null:       // interior block
-                case 4 when blockGrup is null:       // exterior block
+                case 2 when blockGrup is null: // interior block
+                case 4 when blockGrup is null: // exterior block
                     blockGrup = g;
                     break;
-                case 1 when worldChildrenGrup is null:   // world children
+                case 1 when worldChildrenGrup is null: // world children
                     worldChildrenGrup = g;
                     break;
-                case 0 when topLevelGrup is null:    // top-level CELL or WRLD
+                case 0 when topLevelGrup is null: // top-level CELL or WRLD
                     topLevelGrup = g;
                     break;
             }
@@ -133,7 +135,7 @@ public static class PcEsmCellContextIndex
         uint? worldspaceFormId = null;
         if (worldChildrenGrup is not null && worldChildrenGrup.Label.Length >= 4)
         {
-            worldspaceFormId = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(worldChildrenGrup.Label);
+            worldspaceFormId = BinaryPrimitives.ReadUInt32LittleEndian(worldChildrenGrup.Label);
         }
 
         return new PcEsmCellContext

@@ -8,8 +8,8 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     Water has a mix of typed fields (NNAM/ANAM/FNAM/SNAM/DATA) and schema-parsed dictionaries
 ///     (DNAM 196B for visual properties, GNAM 12B for related-water FormID triple).
 ///     fopdoc canonical order:
-///         EDID, FULL?, NNAM?(noise texture), ANAM(1B opacity), FNAM(byte array flags),
-///         SNAM?(sound FormID), DATA(2B damage), DNAM(196B visuals), GNAM(12B related).
+///     EDID, FULL?, NNAM?(noise texture), ANAM(1B opacity), FNAM(byte array flags),
+///     SNAM?(sound FormID), DATA(2B damage), DNAM(196B visuals), GNAM(12B related).
 /// </summary>
 public sealed class WatrEncoder : IRecordEncoder
 {

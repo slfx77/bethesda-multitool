@@ -6,8 +6,8 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     Encodes a <see cref="TextureSetRecord" /> (TXST) as PC-format subrecord bytes.
 ///     Defines a set of textures (diffuse, normal, glow, etc.) used by objects and terrain.
 ///     fopdoc canonical order:
-///         EDID, OBND?, TX00?(diffuse), TX01?(normal), TX02?(env mask), TX03?(glow),
-///         TX04?(parallax), TX05?(environment map), DNAM(2B flags).
+///     EDID, OBND?, TX00?(diffuse), TX01?(normal), TX02?(env mask), TX03?(glow),
+///     TX04?(parallax), TX05?(environment map), DNAM(2B flags).
 /// </summary>
 public sealed class TxstEncoder : IRecordEncoder
 {

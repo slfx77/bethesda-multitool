@@ -34,7 +34,7 @@ internal sealed class AssetRenameService(IConversionProgressSink sink)
         }
 
         sink.Info("AssetRename", $"Indexing baseline: {options.AssetRenameBaselineFolder}");
-        using var baseline = new DataFolderIndex(options.AssetRenameBaselineFolder, xbox360FormatHint: false);
+        using var baseline = new DataFolderIndex(options.AssetRenameBaselineFolder, false);
         baseline.Build();
 
         var secondaryIndexes = new List<DataFolderIndex>();

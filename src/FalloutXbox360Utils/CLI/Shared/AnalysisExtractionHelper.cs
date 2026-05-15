@@ -145,7 +145,7 @@ internal static class AnalysisExtractionHelper
                 esmRecords.LandRecords,
                 heightmapsDir,
                 false,
-                worldspaceNames: worldspaceNames);
+                worldspaceNames);
             var landHeightmapCount = esmRecords.LandRecords.Count(l => l.Heightmap != null);
             AnsiConsole.MarkupLine(
                 $"[green]LAND heightmaps exported:[/] {landHeightmapCount} images to {heightmapsDir}");
@@ -173,7 +173,7 @@ internal static class AnalysisExtractionHelper
             esmRecords.LandRecords,
             heightmapsDir,
             false,
-            worldspaceNames: worldspaceNames);
+            worldspaceNames);
 
         if (worldspaceCompositePaths.Count > 0)
         {

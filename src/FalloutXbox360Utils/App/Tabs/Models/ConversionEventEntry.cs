@@ -41,10 +41,10 @@ public sealed class ConversionEventEntry
 
     public string SeverityGlyph => Severity switch
     {
-        ConversionEventSeverity.Info => "",      // information
-        ConversionEventSeverity.Decision => "",  // shapes (path)
-        ConversionEventSeverity.Warning => "",   // warning triangle
-        ConversionEventSeverity.Error => "",     // error circle
+        ConversionEventSeverity.Info => "", // information
+        ConversionEventSeverity.Decision => "", // shapes (path)
+        ConversionEventSeverity.Warning => "", // warning triangle
+        ConversionEventSeverity.Error => "", // error circle
         _ => ""
     };
 

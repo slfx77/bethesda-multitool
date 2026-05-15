@@ -6,7 +6,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     Encodes a <see cref="SpellRecord" /> (SPEL) as PC-format subrecord bytes.
 ///     fopdoc canonical order: EDID, FULL?, SPIT(16B), (EFID + EFIT)*.
 ///     SPIT layout (16B): uint32 Type(0) + uint32 Cost(4) + uint32 Level(8) +
-///         uint8 Flags(12) + pad(3).
+///     uint8 Flags(12) + pad(3).
 ///     EFID/EFIT pairs reuse the shared <see cref="EnchEncoder.BuildEfitSubrecord" /> helper.
 /// </summary>
 public sealed class SpelEncoder : IRecordEncoder

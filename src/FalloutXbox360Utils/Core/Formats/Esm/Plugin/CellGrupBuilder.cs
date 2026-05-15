@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Schema;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
 
@@ -44,12 +45,16 @@ public static class CellGrupBuilder
     ///     bundles plus one top-level WRLD GRUP per affected worldspace. Returns null when
     ///     there are no bundles to emit.
     /// </summary>
-    /// <param name="bundles">Bundles in any order; this method groups them by interior vs
-    ///     exterior worldspace.</param>
+    /// <param name="bundles">
+    ///     Bundles in any order; this method groups them by interior vs
+    ///     exterior worldspace.
+    /// </param>
     /// <param name="pcRecordsByFormId">PC ESM record lookup, used to fetch WRLD anchor bytes.</param>
-    /// <param name="newWorldspacesByDmpFormId">Optional fallback: when an exterior bundle's
+    /// <param name="newWorldspacesByDmpFormId">
+    ///     Optional fallback: when an exterior bundle's
     ///     parent worldspace isn't in master, look here for the pre-encoded new-WRLD record.
-    ///     Keys are the ORIGINAL DMP FormID (matches <c>CellOverrideBundle.Context.WorldspaceFormId</c>).</param>
+    ///     Keys are the ORIGINAL DMP FormID (matches <c>CellOverrideBundle.Context.WorldspaceFormId</c>).
+    /// </param>
     public static byte[]? BuildCellSection(
         IReadOnlyList<CellOverrideBundle> bundles,
         IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId,
@@ -98,9 +103,9 @@ public static class CellGrupBuilder
 
         using var stream = new MemoryStream();
         var topLabel = "CELL"u8.ToArray();
-        var topPos = WriteGrupHeader(stream, topLabel, groupType: 0);
+        var topPos = WriteGrupHeader(stream, topLabel, 0);
 
-        EmitBlocksAndSubblocks(stream, interiorBundles, blockGroupType: 2, subblockGroupType: 3);
+        EmitBlocksAndSubblocks(stream, interiorBundles, 2, 3);
 
         RecordHeaderProcessor.FinalizeGrupSize(stream, topPos);
         return stream.ToArray();
@@ -115,7 +120,7 @@ public static class CellGrupBuilder
     ///           [persistent CELL records — no block/subblock wrapper]
     ///           [exterior block/subblock GRUPs with their CELL records]
     ///     </code>
-    ///     For a new (non-master) WRLD, anchor bytes come from <paramref name="newWorldspacesByDmpFormId"/>
+    ///     For a new (non-master) WRLD, anchor bytes come from <paramref name="newWorldspacesByDmpFormId" />
     ///     and the World Children GRUP label uses the EMITTED FormID (matches the FormID encoded
     ///     inside the anchor record bytes). Returns null if neither source has the WRLD.
     /// </summary>
@@ -149,7 +154,7 @@ public static class CellGrupBuilder
 
         // Top-level WRLD GRUP.
         var topLabel = "WRLD"u8.ToArray();
-        var topPos = WriteGrupHeader(stream, topLabel, groupType: 0);
+        var topPos = WriteGrupHeader(stream, topLabel, 0);
 
         // WRLD anchor record.
         stream.Write(wrldAnchorBytes);
@@ -157,7 +162,7 @@ public static class CellGrupBuilder
         // World children GRUP (type 1, label = EMITTED WRLD FormID — matches the anchor bytes).
         var wrldLabel = new byte[4];
         BinaryPrimitives.WriteUInt32LittleEndian(wrldLabel, emittedWrldFormId);
-        var childrenPos = WriteGrupHeader(stream, wrldLabel, groupType: 1);
+        var childrenPos = WriteGrupHeader(stream, wrldLabel, 1);
 
         // Persistent CELL containers go directly under world children, no block wrapping.
         foreach (var bundle in bundlesInWrld.Where(b => b.Context.IsPersistentCellContainer))
@@ -169,7 +174,7 @@ public static class CellGrupBuilder
         var blockBound = bundlesInWrld.Where(b => !b.Context.IsPersistentCellContainer).ToList();
         if (blockBound.Count > 0)
         {
-            EmitBlocksAndSubblocks(stream, blockBound, blockGroupType: 4, subblockGroupType: 5);
+            EmitBlocksAndSubblocks(stream, blockBound, 4, 5);
         }
 
         RecordHeaderProcessor.FinalizeGrupSize(stream, childrenPos);
@@ -245,12 +250,12 @@ public static class CellGrupBuilder
         // 2. Child GRUP (type 6) labeled with cell FormID.
         var cellLabel = new byte[4];
         BinaryPrimitives.WriteUInt32LittleEndian(cellLabel, bundle.CellFormId);
-        var childPos = WriteGrupHeader(stream, cellLabel, groupType: 6);
+        var childPos = WriteGrupHeader(stream, cellLabel, 6);
 
         // Canonical sub-GRUP order per fopdoc: persistent (8) → VWD (10) → temporary (9).
         if (bundle.PersistentChildRecords.Count > 0)
         {
-            var persistentPos = WriteGrupHeader(stream, cellLabel, groupType: 8);
+            var persistentPos = WriteGrupHeader(stream, cellLabel, 8);
             foreach (var record in bundle.PersistentChildRecords)
             {
                 stream.Write(record);
@@ -261,7 +266,7 @@ public static class CellGrupBuilder
 
         if (bundle.VwdChildRecords.Count > 0)
         {
-            var vwdPos = WriteGrupHeader(stream, cellLabel, groupType: 10);
+            var vwdPos = WriteGrupHeader(stream, cellLabel, 10);
             foreach (var record in bundle.VwdChildRecords)
             {
                 stream.Write(record);
@@ -272,7 +277,7 @@ public static class CellGrupBuilder
 
         if (bundle.TemporaryChildRecords.Count > 0)
         {
-            var temporaryPos = WriteGrupHeader(stream, cellLabel, groupType: 9);
+            var temporaryPos = WriteGrupHeader(stream, cellLabel, 9);
             foreach (var record in bundle.TemporaryChildRecords)
             {
                 stream.Write(record);
@@ -309,7 +314,7 @@ public static class CellGrupBuilder
     public static byte[] ReconstructRecordBytes(ParsedMainRecord parsed)
     {
         using var subStream = new MemoryStream();
-        using (var subWriter = new BinaryWriter(subStream, System.Text.Encoding.Latin1, true))
+        using (var subWriter = new BinaryWriter(subStream, Encoding.Latin1, true))
         {
             foreach (var sub in parsed.Subrecords)
             {

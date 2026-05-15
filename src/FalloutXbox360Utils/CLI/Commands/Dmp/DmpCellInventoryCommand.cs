@@ -2,6 +2,7 @@ using System.CommandLine;
 using System.Globalization;
 using System.Text;
 using FalloutXbox360Utils.Core;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Semantic;
 using Spectre.Console;
 
@@ -15,6 +16,22 @@ namespace FalloutXbox360Utils.CLI.Commands.Dmp;
 /// </summary>
 internal static class DmpCellInventoryCommand
 {
+    /// <summary>
+    ///     Selects the worldspace bucket for an inventory row. Order of trust:
+    ///     1. Interior flag set → <see cref="InteriorBucket" />.
+    ///     2. <c>WorldspaceFormId</c> already resolved by the parsing pipeline
+    ///     (<c>CellLinkageHandler.InferCellWorldspaces</c> + <c>ResolveRuntimeAnchoredCellRuns</c>).
+    ///     3. Direct runtime <c>pCellMap</c> ownership (RuntimeWorldspaceData.Cells),
+    ///     in case the cell slipped through the linkage handler's connected-component logic.
+    ///     4. <c>CandidateWorldspaceFormIds</c> populated but unresolved → <see cref="AmbiguousExteriorBucket" />.
+    ///     5. Otherwise <see cref="UnlinkedExteriorBucket" />.
+    /// </summary>
+    private const uint InteriorBucket = 1u;
+
+    private const uint AmbiguousExteriorBucket = 2u;
+
+    private const uint UnlinkedExteriorBucket = 0u;
+
     public static Command Create()
     {
         var command = new Command("cell-inventory",
@@ -120,10 +137,12 @@ internal static class DmpCellInventoryCommand
                 {
                     foreach (var s in records.Statics) baseTypeMap[s.FormId] = "STAT";
                 }
+
                 if (targetTypes.Contains("SCOL"))
                 {
                     foreach (var s in records.StaticCollections) baseTypeMap[s.FormId] = "SCOL";
                 }
+
                 // MSTT (and any other targeted generic types) live in GenericRecords.
                 foreach (var g in records.GenericRecords)
                 {
@@ -141,9 +160,10 @@ internal static class DmpCellInventoryCommand
                 foreach (var ws in records.Worldspaces)
                 {
                     wsName[ws.FormId] = ws.EditorId
-                                         ?? ws.FullName
-                                         ?? $"0x{ws.FormId:X8}";
+                                        ?? ws.FullName
+                                        ?? $"0x{ws.FormId:X8}";
                 }
+
                 // Runtime pCellMap → direct CellFormId -> WorldspaceFormId lookup. This is the
                 // strongest signal for DMP worldspace ownership: it comes from the game's live
                 // TESWorldSpace::pCellMap hash tables captured at dump time. CellLinkageHandler
@@ -162,7 +182,8 @@ internal static class DmpCellInventoryCommand
                 sb.AppendLine($"# Cell inventory: {dmpStem}");
                 sb.AppendLine();
                 sb.AppendLine($"Source DMP: `{dmpFile.Replace('\\', '/')}`  ");
-                sb.AppendLine($"Filter: base type in {{ {string.Join(", ", targetTypes)} }}, non-persistent placements only  ");
+                sb.AppendLine(
+                    $"Filter: base type in {{ {string.Join(", ", targetTypes)} }}, non-persistent placements only  ");
                 // SCOL records can land in either records.StaticCollections (ESM-embedded path) or
                 // records.GenericRecords (DMP runtime path — formtype 0x21 has no specialized PDB
                 // reader, so MergeRuntimeGenericRecords sweeps them into the generic bucket).
@@ -249,14 +270,16 @@ internal static class DmpCellInventoryCommand
                                 sb.AppendLine($"Candidate worldspaces: {string.Join(" \\| ", candidateLabels)}");
                                 sb.AppendLine();
                             }
+
                             sb.AppendLine($"{hits.Count} placement(s)");
                             sb.AppendLine();
-                            sb.AppendLine("| Type | BaseEditorID | DisplayName | InstanceEditorID | X | Y | Z | Scale | FormID |");
+                            sb.AppendLine(
+                                "| Type | BaseEditorID | DisplayName | InstanceEditorID | X | Y | Z | Scale | FormID |");
                             sb.AppendLine("|---|---|---|---:|---:|---:|---:|---:|---|");
 
                             foreach (var p in hits
-                                .OrderBy(p => baseTypeMap[p.BaseFormId], StringComparer.Ordinal)
-                                .ThenBy(p => p.BaseEditorId ?? "", StringComparer.OrdinalIgnoreCase))
+                                         .OrderBy(p => baseTypeMap[p.BaseFormId], StringComparer.Ordinal)
+                                         .ThenBy(p => p.BaseEditorId ?? "", StringComparer.OrdinalIgnoreCase))
                             {
                                 var bType = baseTypeMap[p.BaseFormId];
                                 var bEid = !string.IsNullOrEmpty(p.BaseEditorId)
@@ -299,42 +322,30 @@ internal static class DmpCellInventoryCommand
             $"{Markup.Escape(outputDir)}[/]");
     }
 
-    /// <summary>
-    ///     Selects the worldspace bucket for an inventory row. Order of trust:
-    ///     1. Interior flag set → <see cref="InteriorBucket"/>.
-    ///     2. <c>WorldspaceFormId</c> already resolved by the parsing pipeline
-    ///        (<c>CellLinkageHandler.InferCellWorldspaces</c> + <c>ResolveRuntimeAnchoredCellRuns</c>).
-    ///     3. Direct runtime <c>pCellMap</c> ownership (RuntimeWorldspaceData.Cells),
-    ///        in case the cell slipped through the linkage handler's connected-component logic.
-    ///     4. <c>CandidateWorldspaceFormIds</c> populated but unresolved → <see cref="AmbiguousExteriorBucket"/>.
-    ///     5. Otherwise <see cref="UnlinkedExteriorBucket"/>.
-    /// </summary>
-    private const uint InteriorBucket = 1u;
-
-    private const uint AmbiguousExteriorBucket = 2u;
-
-    private const uint UnlinkedExteriorBucket = 0u;
-
     private static uint WorldspaceBucketKey(
-        Core.Formats.Esm.Models.Records.World.CellRecord cell,
+        CellRecord cell,
         IReadOnlyDictionary<uint, uint> runtimeCellOwner)
     {
         if (cell.IsInterior)
         {
             return InteriorBucket;
         }
+
         if (cell.WorldspaceFormId is { } wf && wf != 0u)
         {
             return wf;
         }
+
         if (runtimeCellOwner.TryGetValue(cell.FormId, out var ownerWs))
         {
             return ownerWs;
         }
+
         if (cell.CandidateWorldspaceFormIds.Count > 0)
         {
             return AmbiguousExteriorBucket;
         }
+
         return UnlinkedExteriorBucket;
     }
 
@@ -355,7 +366,7 @@ internal static class DmpCellInventoryCommand
     {
         if (string.IsNullOrEmpty(s)) return "";
         return s.Replace("|", "\\|", StringComparison.Ordinal)
-                .Replace("\r", "", StringComparison.Ordinal)
-                .Replace("\n", " ", StringComparison.Ordinal);
+            .Replace("\r", "", StringComparison.Ordinal)
+            .Replace("\n", " ", StringComparison.Ordinal);
     }
 }

@@ -68,8 +68,10 @@ public record CellRecord
     /// <summary>Direct cell lighting fields from XCLL. Used when a new DMP-only cell has no master CELL to inherit.</summary>
     public IReadOnlyDictionary<string, object?>? LightingData { get; init; }
 
-    /// <summary>Radiation region FormIDs (XCLR subrecord, array of REGN FormIDs). Each region
-    /// supplies per-area radiation strength to the cell. Empty when the cell has no XCLR.</summary>
+    /// <summary>
+    ///     Radiation region FormIDs (XCLR subrecord, array of REGN FormIDs). Each region
+    ///     supplies per-area radiation strength to the cell. Empty when the cell has no XCLR.
+    /// </summary>
     public IReadOnlyList<uint> RadiationRegionFormIds { get; init; } = [];
 
     /// <summary>Placed objects in this cell (REFR, ACHR, ACRE records).</summary>

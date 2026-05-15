@@ -338,11 +338,11 @@ internal static class ReportFieldDomain
 
         // Asset path / model-ish fields — any non-empty string.
         foreach (var s in new[] { "path", "model", "icon", "texture", "nif" })
-            f[s] = new StringNonEmpty(4096);
+            f[s] = new StringNonEmpty();
 
         // Name-like — free text, non-empty.
         foreach (var s in new[] { "name", "editorid", "description", "notes" })
-            f[s] = new StringNonEmpty(4096);
+            f[s] = new StringNonEmpty();
 
         // Numeric-family suffixes: producers may store as Int OR Float, so family
         // rules are type-permissive. Specific ranges live in explicit tuple rules.
@@ -383,7 +383,7 @@ internal static class ReportFieldDomain
 
             // Asset path (contains a slash AND a known extension).
             (new Regex(@"[\\/].+\.(nif|dds|ddx|bsa|wav|xwm|xma|mp3|lip|kf|ini|txt|esp|esm|bmp|jpg|png)\b",
-                RegexOptions.IgnoreCase | opts), new StringNonEmpty(4096)),
+                RegexOptions.IgnoreCase | opts), new StringNonEmpty()),
 
             // Any bare number — int OR float. Display alone can't tell them apart
             // (FloatVal with whole number formats the same as IntVal). End-anchored so

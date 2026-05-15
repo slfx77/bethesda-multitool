@@ -1,3 +1,5 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
+
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 
 /// <summary>
@@ -52,7 +54,7 @@ public record ArmaRecord
     public byte DetectionSoundLevel { get; init; }
 
     /// <summary>Equipment slot category from ETYP subrecord (int32 enum, -1..13).</summary>
-    public Enums.EquipmentType EquipmentType { get; init; } = Enums.EquipmentType.None;
+    public EquipmentType EquipmentType { get; init; } = EquipmentType.None;
 
     /// <summary>Repair item list FormID from REPL subrecord (BGSListForm of items used to repair).</summary>
     public uint? RepairItemListFormId { get; init; }

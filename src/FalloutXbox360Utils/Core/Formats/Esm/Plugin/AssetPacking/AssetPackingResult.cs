@@ -44,7 +44,7 @@ public sealed record AssetResolution
     /// <summary>For fuzzy matches, the number of path tokens that matched from the right.</summary>
     public int FuzzySuffixTokens { get; init; }
 
-    /// <summary>Set when <see cref="Kind"/> is <see cref="AssetResolutionKind.ConversionFailed"/>.</summary>
+    /// <summary>Set when <see cref="Kind" /> is <see cref="AssetResolutionKind.ConversionFailed" />.</summary>
     public string? ConversionError { get; init; }
 }
 

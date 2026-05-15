@@ -8,15 +8,15 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     PTD2? + PKPT? + PKW3? + CNAM (combat style FormID, deferred — not in model).
 ///     Override path is a no-op.
 ///     PKDT (12 bytes) per PDB PACKAGE_DATA:
-///         uint32 iPackFlags(0) + uint8 cPackType(4) + uint8 unused(5) +
-///         uint16 iFOBehaviorFlags(6) + uint16 iPackageSpecificFlags(8) + 2 unknown bytes(10,11).
+///     uint32 iPackFlags(0) + uint8 cPackType(4) + uint8 unused(5) +
+///     uint16 iFOBehaviorFlags(6) + uint16 iPackageSpecificFlags(8) + 2 unknown bytes(10,11).
 ///     PSDT (8 bytes): int8 Month(0) + int8 DayOfWeek(1) + int8 Date(2) + int8 Time(3) +
-///                     int32 Duration(4).
+///     int32 Duration(4).
 ///     PLDT/PLD2 (12 bytes): byte Type + pad(3) + uint32 Union + int32 Radius.
 ///     PTDT/PTD2 (16 bytes): byte Type + pad(3) + uint32 Union + int32 CountDistance + float Unknown.
 ///     PKW3 (24 bytes): 6 bool bytes(0..5) + uint16 BurstCount(6) + uint16 VolleyShotsMin(8) +
-///                      uint16 VolleyShotsMax(10) + float VolleyWaitMin(12) + float VolleyWaitMax(16) +
-///                      uint32 Weapon(20).
+///     uint16 VolleyShotsMax(10) + float VolleyWaitMin(12) + float VolleyWaitMax(16) +
+///     uint32 Weapon(20).
 ///     PKPT (2 bytes): bool Repeatable(0) + bool StartingLocationLinkedRef(1).
 /// </summary>
 public sealed class PackEncoder : IRecordEncoder

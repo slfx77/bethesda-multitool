@@ -7,7 +7,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 ///     ties ingredient list (CNTO*) and crafting conditions (CTDA*) to a created item (CNAM).
 ///     PDB struct: BGSConstructibleObject (196 bytes).
 ///     fopdoc canonical subrecord order:
-///         EDID, OBND?, FULL?, MODL?, MODT?, COCT, CNTO*, CTDA*, CNAM, BNAM?.
+///     EDID, OBND?, FULL?, MODL?, MODT?, COCT, CNTO*, CTDA*, CNAM, BNAM?.
 /// </summary>
 public record ConstructibleObjectRecord
 {

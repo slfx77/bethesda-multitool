@@ -44,17 +44,24 @@ internal sealed record BsaAssetSource : AssetSource
 ///     Indexes one game-data folder (loose files + every <c>*.bsa</c> at the top level)
 ///     for fast exact-path and basename lookup. Disposable — owns the underlying memory-
 ///     mapped BSA extractors.
-///
 ///     Loose files take priority over BSA entries (mirrors FNV's runtime override rules).
 ///     BSAs are scanned in alphabetical filename order; later entries with the same
 ///     normalized path are ignored.
 /// </summary>
 internal sealed class DataFolderIndex : IDisposable
 {
-    private readonly Dictionary<string, AssetSource> _byPath = new(StringComparer.OrdinalIgnoreCase);
-
     private readonly Dictionary<string, List<AssetSource>> _byBasename =
         new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    ///     Entries keyed by last directory token (lowercase). Used by the resolver's
+    ///     substring-suffix pass to cheaply gather "candidates in the same folder as the
+    ///     request" without walking every indexed entry per query. Catches the common
+    ///     case where a final-build mesh got a prefix added in its filename but stayed
+    ///     in the same folder — e.g. <c>rubble\ibeam02.nif</c> ↔ <c>rubble\c_ibeam02.nif</c>.
+    /// </summary>
+    private readonly Dictionary<string, List<AssetSource>> _byLastDirectory =
+        new(StringComparer.Ordinal);
 
     /// <summary>
     ///     v22: filename-without-extension reduced to lowercase letters/digits only — every
@@ -66,15 +73,7 @@ internal sealed class DataFolderIndex : IDisposable
     private readonly Dictionary<string, List<AssetSource>> _byLooseBasename =
         new(StringComparer.Ordinal);
 
-    /// <summary>
-    ///     Entries keyed by last directory token (lowercase). Used by the resolver's
-    ///     substring-suffix pass to cheaply gather "candidates in the same folder as the
-    ///     request" without walking every indexed entry per query. Catches the common
-    ///     case where a final-build mesh got a prefix added in its filename but stayed
-    ///     in the same folder — e.g. <c>rubble\ibeam02.nif</c> ↔ <c>rubble\c_ibeam02.nif</c>.
-    /// </summary>
-    private readonly Dictionary<string, List<AssetSource>> _byLastDirectory =
-        new(StringComparer.Ordinal);
+    private readonly Dictionary<string, AssetSource> _byPath = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly List<BsaExtractor> _ownedExtractors = [];
 
@@ -98,6 +97,33 @@ internal sealed class DataFolderIndex : IDisposable
 
     /// <summary>How many entries were indexed across loose files + all BSAs.</summary>
     public int EntryCount => _byPath.Count;
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        foreach (var extractor in _ownedExtractors)
+        {
+            try
+            {
+                extractor.Dispose();
+            }
+            catch
+            {
+                // Best-effort cleanup
+            }
+        }
+
+        _ownedExtractors.Clear();
+        _byPath.Clear();
+        _byBasename.Clear();
+        _byLooseBasename.Clear();
+        _byLastDirectory.Clear();
+        _disposed = true;
+    }
 
     /// <summary>
     ///     Walk the data folder, indexing every loose asset and every BSA's contents.
@@ -140,8 +166,8 @@ internal sealed class DataFolderIndex : IDisposable
     /// <summary>
     ///     v22: return every indexed asset whose filename, with extension stripped and
     ///     separators (space / underscore / dash / apostrophe) removed and case-folded,
-    ///     matches the given <paramref name="looseBasename"/>. The caller is responsible
-    ///     for normalizing its key via <see cref="ComputeLooseBasename"/>.
+    ///     matches the given <paramref name="looseBasename" />. The caller is responsible
+    ///     for normalizing its key via <see cref="ComputeLooseBasename" />.
     /// </summary>
     public IReadOnlyList<AssetSource> EnumerateByLooseBasename(string looseBasename)
     {
@@ -150,7 +176,7 @@ internal sealed class DataFolderIndex : IDisposable
 
     /// <summary>
     ///     v22: return every indexed asset whose immediate parent directory matches
-    ///     <paramref name="lastDirectory"/> (case-insensitive). Used by the substring-
+    ///     <paramref name="lastDirectory" /> (case-insensitive). Used by the substring-
     ///     suffix loose pass so the search stays bounded to "same folder" candidates
     ///     instead of walking every indexed entry.
     /// </summary>
@@ -170,46 +196,19 @@ internal sealed class DataFolderIndex : IDisposable
     }
 
     /// <summary>
-    ///     v22: like <see cref="ComputeLooseBasename"/> but additionally strips a leading
+    ///     v22: like <see cref="ComputeLooseBasename" /> but additionally strips a leading
     ///     and/or trailing <c>nv</c> token from the loose stem. The FNV final build
     ///     occasionally removed the <c>nv</c> namespace token that prototype filenames
     ///     carried (e.g. <c>nv_slotmachine</c> ↔ <c>slotmachine</c>,
     ///     <c>rockcanyonrubblepile05nv</c> ↔ <c>rockcanyonrubblepile05</c>). This variant
     ///     is queried only as a fallback after the strict loose match fails, so unrelated
     ///     <c>nv*</c> prototype assets aren't conflated with same-named final assets.
-    ///     Returns <see cref="string.Empty"/> when the input has no leading/trailing
+    ///     Returns <see cref="string.Empty" /> when the input has no leading/trailing
     ///     <c>nv</c> to strip (caller can skip the secondary lookup entirely in that case).
     /// </summary>
     public static string ComputeLooseBasenameWithoutNvAffix(string fileNameWithExtension)
     {
         return AssetPathRules.ComputeLooseBasenameWithoutNvAffix(fileNameWithExtension);
-    }
-
-    public void Dispose()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        foreach (var extractor in _ownedExtractors)
-        {
-            try
-            {
-                extractor.Dispose();
-            }
-            catch
-            {
-                // Best-effort cleanup
-            }
-        }
-
-        _ownedExtractors.Clear();
-        _byPath.Clear();
-        _byBasename.Clear();
-        _byLooseBasename.Clear();
-        _byLastDirectory.Clear();
-        _disposed = true;
     }
 
     // ====================================================================================

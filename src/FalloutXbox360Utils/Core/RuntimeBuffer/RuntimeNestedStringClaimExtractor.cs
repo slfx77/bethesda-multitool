@@ -13,6 +13,42 @@ namespace FalloutXbox360Utils.Core.RuntimeBuffer;
 /// </summary>
 internal static class RuntimeNestedStringClaimExtractor
 {
+    private const byte ScriptFormType = 0x11;
+    private const byte TerminalFormType = 0x17;
+    private const byte QuestFormType = 0x47;
+    private const byte MessageFormType = 0x62;
+
+    private const int TesFormIdOffset = 12;
+
+    private const int ScriptStructPdbSize = 84;
+    private const int ScriptVariableCountOffset = 24;
+    private const int ScriptRefObjectCountOffset = 28;
+    private const int ScriptRefObjectsListOffset = 68;
+    private const int ScriptVariablesListOffset = 76;
+    private const int ScriptVariableStructSize = 32;
+    private const int ScriptVariableNameOffset = 24;
+    private const int ScriptReferencedObjectStructSize = 16;
+    private const int ScriptReferencedObjectEditorIdOffset = 0;
+    private const uint MaxScriptVariableIndex = 10000;
+
+    private const int TerminalStructPdbSize = 168;
+    private const int TerminalMenuItemListOffset = 136;
+    private const int TerminalMenuItemResponseTextOffset = 0;
+
+    private const int QuestStructPdbSize = 108;
+    private const int QuestObjectiveListOffset = 76;
+    private const int QuestObjectiveStructSize = 36;
+    private const int QuestObjectiveIndexOffset = 4;
+    private const int QuestObjectiveDisplayTextOffset = 8;
+    private const int QuestObjectiveOwnerQuestPtrOffset = 16;
+    private const int QuestObjectiveStateOffset = 32;
+    private const int MaxQuestObjectiveIndex = 4096;
+    private const int MaxQuestObjectiveState = 8;
+
+    private const int MessageStructSize = 80;
+    private const int MessageButtonListOffset = 64;
+    private const int MessageButtonTextOffset = 8;
+
     internal static List<RuntimeStringOwnershipClaim> ExtractClaims(
         IReadOnlyList<RuntimeEditorIdEntry> runtimeEditorIds,
         RuntimeMemoryContext memCtx)
@@ -332,40 +368,4 @@ internal static class RuntimeNestedStringClaimExtractor
     {
         return (int)Math.Min(Math.Max(expectedCount + 10, RuntimeMemoryContext.MaxListItems), 200);
     }
-
-    private const byte ScriptFormType = 0x11;
-    private const byte TerminalFormType = 0x17;
-    private const byte QuestFormType = 0x47;
-    private const byte MessageFormType = 0x62;
-
-    private const int TesFormIdOffset = 12;
-
-    private const int ScriptStructPdbSize = 84;
-    private const int ScriptVariableCountOffset = 24;
-    private const int ScriptRefObjectCountOffset = 28;
-    private const int ScriptRefObjectsListOffset = 68;
-    private const int ScriptVariablesListOffset = 76;
-    private const int ScriptVariableStructSize = 32;
-    private const int ScriptVariableNameOffset = 24;
-    private const int ScriptReferencedObjectStructSize = 16;
-    private const int ScriptReferencedObjectEditorIdOffset = 0;
-    private const uint MaxScriptVariableIndex = 10000;
-
-    private const int TerminalStructPdbSize = 168;
-    private const int TerminalMenuItemListOffset = 136;
-    private const int TerminalMenuItemResponseTextOffset = 0;
-
-    private const int QuestStructPdbSize = 108;
-    private const int QuestObjectiveListOffset = 76;
-    private const int QuestObjectiveStructSize = 36;
-    private const int QuestObjectiveIndexOffset = 4;
-    private const int QuestObjectiveDisplayTextOffset = 8;
-    private const int QuestObjectiveOwnerQuestPtrOffset = 16;
-    private const int QuestObjectiveStateOffset = 32;
-    private const int MaxQuestObjectiveIndex = 4096;
-    private const int MaxQuestObjectiveState = 8;
-
-    private const int MessageStructSize = 80;
-    private const int MessageButtonListOffset = 64;
-    private const int MessageButtonTextOffset = 8;
 }

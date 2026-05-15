@@ -10,11 +10,9 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     canonical subrecord stream, and the merge engine positionally replaces the master's
 ///     blocks per signature. When the DMP carries no quest content the override returns
 ///     empty subrecords and the engine retains the master verbatim.
-///
 ///     Partial emission is unsafe: INDX + QSDT + CNAM (per stage) and QOBJ + NNAM + QSTA
 ///     (per objective) are positional groups, and the merge engine does per-signature
 ///     replacement only — emitting a subset would desynchronize the stage/objective tuples.
-///
 ///     DATA (8 bytes): byte Flags(0) + byte Priority(1) + pad(2..3) + float QuestDelay(4..7).
 ///     INDX in QUST is little-endian on Xbox 360 (per <see cref="Conversion.Schema.SubrecordDialogueSchemas" />)
 ///     so the PC value is the same 2 bytes.

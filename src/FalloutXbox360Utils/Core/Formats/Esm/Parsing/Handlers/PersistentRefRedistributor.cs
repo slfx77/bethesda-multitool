@@ -214,11 +214,11 @@ internal static class PersistentRefRedistributor
     ///     listReferences array (RuntimeCellList) or the DMP proximity fallback's offset
     ///     window has picked up overlapping REFRs for adjacent cell records (Proximity).
     ///     Consolidate each duplicate set into a single cell using this priority:
-    ///       1. Existing cell whose grid contains the ref's world position.
-    ///       2. Synthetic virtual exterior tile at the position's grid, if any duplicate's
-    ///          target grid is otherwise unrepresented in the worldspace.
-    ///       3. The worldspace's persistent cell.
-    ///       4. The first cell the ref was seen in (fallback).
+    ///     1. Existing cell whose grid contains the ref's world position.
+    ///     2. Synthetic virtual exterior tile at the position's grid, if any duplicate's
+    ///     target grid is otherwise unrepresented in the worldspace.
+    ///     3. The worldspace's persistent cell.
+    ///     4. The first cell the ref was seen in (fallback).
     /// </summary>
     internal static int DeduplicateRuntimeCellRefs(
         List<CellRecord> existingCells,
@@ -259,6 +259,7 @@ internal static class PersistentRefRedistributor
                     gridMap = [];
                     gridToCellByWs[wsId] = gridMap;
                 }
+
                 gridMap.TryAdd((cell.GridX.Value, cell.GridY.Value), cell.FormId);
             }
         }
@@ -297,6 +298,7 @@ internal static class PersistentRefRedistributor
                     list = [];
                     refOcc[pref.FormId] = list;
                 }
+
                 list.Add((cell.FormId, pref));
             }
         }
@@ -313,6 +315,7 @@ internal static class PersistentRefRedistributor
                 gridMap = [];
                 gridToCellByWs[wsId] = gridMap;
             }
+
             persistentCellByWs.TryGetValue(wsId, out var persistentCellFormId);
 
             foreach (var (refFormId, occurrences) in refOcc)
@@ -393,6 +396,7 @@ internal static class PersistentRefRedistributor
                         removeSet = [];
                         refsToRemoveFromCell[cellFormId] = removeSet;
                     }
+
                     removeSet.Add(refFormId);
                     deduplicated++;
                 }
@@ -404,6 +408,7 @@ internal static class PersistentRefRedistributor
                         addList = [];
                         refsToAddToCell[destCellFormId] = addList;
                     }
+
                     addList.Add(first);
                 }
             }
@@ -439,6 +444,7 @@ internal static class PersistentRefRedistributor
                 {
                     continue;
                 }
+
                 newObjects.Add(pref);
             }
 
@@ -610,12 +616,6 @@ internal static class PersistentRefRedistributor
         var (gridX, gridY) = CellUtils.WorldToCellCoordinates(pref.X, pref.Y);
         return cell.GridX.Value == gridX && cell.GridY.Value == gridY;
     }
-
-    private readonly record struct RefOccurrence(
-        int CellIndex,
-        int ObjectIndex,
-        CellRecord Cell,
-        PlacedReference Ref);
 
     private static bool ShouldRedistributePersistentRef(CellRecord cell, PlacedReference pref)
     {
@@ -1014,4 +1014,10 @@ internal static class PersistentRefRedistributor
         result.Sort((a, b) => a.CellCount.CompareTo(b.CellCount));
         return result;
     }
+
+    private readonly record struct RefOccurrence(
+        int CellIndex,
+        int ObjectIndex,
+        CellRecord Cell,
+        PlacedReference Ref);
 }

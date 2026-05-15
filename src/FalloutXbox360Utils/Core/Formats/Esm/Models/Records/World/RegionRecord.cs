@@ -15,6 +15,7 @@ public record RegionRecord
 
     /// <summary>EmittanceColor RGB (NiColor at +60 — first 3 floats × 255).</summary>
     public byte EmittanceColorR { get; init; }
+
     public byte EmittanceColorG { get; init; }
     public byte EmittanceColorB { get; init; }
 

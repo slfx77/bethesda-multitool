@@ -21,7 +21,7 @@ internal sealed class LandOverrideBuilder(
     {
         landBytes = [];
 
-        LandHeightmap? heightmap = dmpCell.Heightmap;
+        var heightmap = dmpCell.Heightmap;
         if (heightmap is null && dmpCell.RuntimeTerrainMesh is not null)
         {
             try
@@ -90,7 +90,7 @@ internal sealed class LandOverrideBuilder(
                 $"Emitted LAND 0x{landFormId:X8} ({action}) for exterior cell 0x{dmpCell.FormId:X8} " +
                 $"(grid {dmpCell.GridX}, {dmpCell.GridY}).",
                 "LAND", landFormId,
-                code: existingLandFormId.HasValue ? "land.override" : "land.new-cell");
+                existingLandFormId.HasValue ? "land.override" : "land.new-cell");
         }
 
         return true;

@@ -6,10 +6,9 @@ using FalloutXbox360Utils.Core.Formats.Esm.Reporting;
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
 
 /// <summary>
-///     Walks a <see cref="RecordCollection"/> and a raw DMP file to gather every
+///     Walks a <see cref="RecordCollection" /> and a raw DMP file to gather every
 ///     referenced asset path (.nif/.dds/.wav/.kf/.egm/.egt/...) that the plugin needs
 ///     in order to render and play correctly.
-///
 ///     Output paths are normalized to lowercase + backslash separators, with no
 ///     leading separator and no "Data\" prefix. This matches BSA-internal convention.
 /// </summary>
@@ -27,7 +26,7 @@ internal static class AssetPathCollector
         var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         var beforeRecords = paths.Count;
-        ScanRecords(records, paths, sources: null);
+        ScanRecords(records, paths, null);
         sink.Info("AssetCollect", $"ESP records contributed {paths.Count - beforeRecords} unique asset paths");
 
         if (dmpFilePath is not null && File.Exists(dmpFilePath))
@@ -68,7 +67,7 @@ internal static class AssetPathCollector
     /// <summary>
     ///     Walks every public list property on the RecordCollection. For each record in each
     ///     list, scans the record's path-shaped string properties for values that look like
-    ///     asset paths (have a known extension). When <paramref name="sources"/> is non-null,
+    ///     asset paths (have a known extension). When <paramref name="sources" /> is non-null,
     ///     each path is also recorded as an <see cref="AssetPathReference" /> so a later
     ///     pass can mutate the originating record field.
     /// </summary>
@@ -116,7 +115,7 @@ internal static class AssetPathCollector
                     continue;
                 }
 
-                ScanRecordObject(record, paths, sources, depth: 0);
+                ScanRecordObject(record, paths, sources, 0);
             }
         }
     }
@@ -222,48 +221,6 @@ internal static class AssetPathCollector
         };
     }
 
-    /// <summary>
-    ///     Per-type cache of (property, isPathLike) tuples. Avoids re-running the
-    ///     name-token check on every record instance.
-    /// </summary>
-    private static class TypePathAccessorCache
-    {
-        private static readonly Dictionary<Type, (PropertyInfo Prop, bool IsPathLike)[]> Cache = new();
-
-        public static (PropertyInfo Prop, bool IsPathLike)[] GetOrAdd(Type type)
-        {
-            lock (Cache)
-            {
-                if (Cache.TryGetValue(type, out var existing))
-                {
-                    return existing;
-                }
-
-                var properties = type
-                    .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                    .Where(p => p.CanRead)
-                    .Select(p => (Prop: p, IsPathLike: IsPathLikeProperty(p.Name)))
-                    .ToArray();
-
-                Cache[type] = properties;
-                return properties;
-            }
-        }
-
-        private static bool IsPathLikeProperty(string name)
-        {
-            foreach (var token in AssetPathRules.PathLikePropertyTokens)
-            {
-                if (name.Contains(token, StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-    }
-
     // ====================================================================================
     // DMP raw-string scanning
     // ====================================================================================
@@ -274,7 +231,7 @@ internal static class AssetPathCollector
     /// </summary>
     private static void ScanDmpFile(string dmpFilePath, HashSet<string> paths)
     {
-        const int MaxLen = 260;   // Windows MAX_PATH
+        const int MaxLen = 260; // Windows MAX_PATH
         const int ChunkSize = 4 * 1024 * 1024;
 
         using var stream = File.OpenRead(dmpFilePath);
@@ -291,7 +248,7 @@ internal static class AssetPathCollector
             }
 
             var spanLen = leftover + read;
-            ScanBufferForStrings(buffer.AsSpan(0, spanLen), paths, isLastChunk: read == 0);
+            ScanBufferForStrings(buffer.AsSpan(0, spanLen), paths, read == 0);
             fileOffset += read;
 
             if (read == 0)
@@ -308,7 +265,7 @@ internal static class AssetPathCollector
 
     /// <summary>
     ///     Walks a buffer and emits every null-terminated printable-ASCII string that ends
-    ///     in a known asset extension. Adds matches to <paramref name="paths"/>.
+    ///     in a known asset extension. Adds matches to <paramref name="paths" />.
     /// </summary>
     private static void ScanBufferForStrings(ReadOnlySpan<byte> buffer, HashSet<string> paths, bool isLastChunk)
     {
@@ -471,9 +428,15 @@ internal static class AssetPathCollector
     ///     it lives under one of the *specific* directories the engine loads facegen data
     ///     for. Inspecting FNV PC Data the actual locations are limited to:
     ///     <list type="bullet">
-    ///         <item><description><c>meshes\characters\head\</c> — race head meshes (headhuman, headold, eyelefthuman, …)</description></item>
-    ///         <item><description><c>meshes\armor\headgear\…\</c> — hat/helmet face-morph data</description></item>
-    ///         <item><description><c>meshes\dlc*\armor\</c> — DLC headgear variants</description></item>
+    ///         <item>
+    ///             <description><c>meshes\characters\head\</c> — race head meshes (headhuman, headold, eyelefthuman, …)</description>
+    ///         </item>
+    ///         <item>
+    ///             <description><c>meshes\armor\headgear\…\</c> — hat/helmet face-morph data</description>
+    ///         </item>
+    ///         <item>
+    ///             <description><c>meshes\dlc*\armor\</c> — DLC headgear variants</description>
+    ///         </item>
     ///     </list>
     ///     Notably <c>meshes\creatures\</c> never has facegen siblings (brahmin skeletons,
     ///     gecko skeletons, etc. are 4-legged body meshes, no face), and generic body NIFs
@@ -518,15 +481,24 @@ internal static class AssetPathCollector
     /// <summary>
     ///     Normalize a raw path string captured from a record field or DMP byte scan into
     ///     a runtime-queryable BSA-internal path (full path relative to <c>Data\</c>).
-    ///
     ///     The asset type is decided by the file extension (<c>.nif</c> → <c>meshes\</c>,
     ///     <c>.dds</c> → <c>textures\</c>, …). Two cases:
-    ///
     ///     <list type="number">
-    ///         <item><description><b>String already contains its expected prefix</b> — common in DMP raw-byte scans, where the runtime cached the full path. Anything before the expected prefix is garbage (printf format bytes, register saves bleeding into the string) and gets trimmed.</description></item>
-    ///         <item><description><b>String lacks the expected prefix</b> — common in record fields like <c>WeaponRecord.ModelPath</c> that store paths relative to the asset-type folder. Prepend the expected prefix.</description></item>
+    ///         <item>
+    ///             <description>
+    ///                 <b>String already contains its expected prefix</b> — common in DMP raw-byte scans, where the
+    ///                 runtime cached the full path. Anything before the expected prefix is garbage (printf format bytes,
+    ///                 register saves bleeding into the string) and gets trimmed.
+    ///             </description>
+    ///         </item>
+    ///         <item>
+    ///             <description>
+    ///                 <b>String lacks the expected prefix</b> — common in record fields like
+    ///                 <c>WeaponRecord.ModelPath</c> that store paths relative to the asset-type folder. Prepend the expected
+    ///                 prefix.
+    ///             </description>
+    ///         </item>
     ///     </list>
-    ///
     ///     Basename-only paths (no directory component) are rejected as too ambiguous.
     /// </summary>
     /// <returns>Canonical normalized path, or null if the input can't be made into a valid asset reference.</returns>
@@ -543,5 +515,47 @@ internal static class AssetPathCollector
     internal static string NormalizePath(string raw)
     {
         return AssetPathRules.NormalizeDataRelativePath(raw);
+    }
+
+    /// <summary>
+    ///     Per-type cache of (property, isPathLike) tuples. Avoids re-running the
+    ///     name-token check on every record instance.
+    /// </summary>
+    private static class TypePathAccessorCache
+    {
+        private static readonly Dictionary<Type, (PropertyInfo Prop, bool IsPathLike)[]> Cache = new();
+
+        public static (PropertyInfo Prop, bool IsPathLike)[] GetOrAdd(Type type)
+        {
+            lock (Cache)
+            {
+                if (Cache.TryGetValue(type, out var existing))
+                {
+                    return existing;
+                }
+
+                var properties = type
+                    .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                    .Where(p => p.CanRead)
+                    .Select(p => (Prop: p, IsPathLike: IsPathLikeProperty(p.Name)))
+                    .ToArray();
+
+                Cache[type] = properties;
+                return properties;
+            }
+        }
+
+        private static bool IsPathLikeProperty(string name)
+        {
+            foreach (var token in AssetPathRules.PathLikePropertyTokens)
+            {
+                if (name.Contains(token, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
     }
 }

@@ -7,7 +7,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     Determines NPC skill growth and tag skills.
 ///     fopdoc canonical order: EDID, FULL?, DESC?, ICON?, DATA(28B), ATTR?(7B SPECIAL weights).
 ///     DATA layout (28B): int32 TagSkill1-4 + uint32 Flags + uint32 BuysServices +
-///         int8 Teaches + uint8 MaxTrainingLevel + 2 pad.
+///     int8 Teaches + uint8 MaxTrainingLevel + 2 pad.
 /// </summary>
 public sealed class ClasEncoder : IRecordEncoder
 {

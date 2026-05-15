@@ -1,3 +1,4 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
@@ -8,7 +9,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     wire format is identical; only the record-level signature differs. The PluginBuilder
 ///     switch routes all three signatures to this encoder.
 ///     fopdoc canonical order: EDID, LVLD?(1B ChanceNone), LVLF?(1B flags), LVLG?(FormID glob),
-///         LVLO* (12B entry: uint16 Level + pad(2) + FormID + uint16 Count + pad(2)).
+///     LVLO* (12B entry: uint16 Level + pad(2) + FormID + uint16 Count + pad(2)).
 /// </summary>
 public sealed class LvliEncoder : IRecordEncoder
 {
@@ -56,7 +57,7 @@ public sealed class LvliEncoder : IRecordEncoder
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
     }
 
-    private static byte[] BuildLvloSubrecord(Models.LeveledEntry entry)
+    private static byte[] BuildLvloSubrecord(LeveledEntry entry)
     {
         // LVLO (12 bytes): uint16 Level(0) + pad(2..3) + FormID Entry(4..7) +
         //                  uint16 Count(8) + pad(10..11).

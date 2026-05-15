@@ -1,25 +1,38 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Terrain;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Terrain;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
 ///     Encodes the LAND record subrecords for one exterior cell from the parsed
-///     <see cref="LandHeightmap"/>.
-///
+///     <see cref="LandHeightmap" />.
 ///     LAND records in FNV plugins carry the per-cell heightmap, vertex normals, and
 ///     (optionally) vertex colors / texture layers. They nest inside the cell's Temporary
 ///     Children GRUP (type 9), immediately before any REFR/ACHR records, with the LAND
 ///     record's own FormID allocated independently from the cell's FormID.
-///
 ///     Emits terrain height plus visual subrecords when available:
 ///     <list type="bullet">
-///         <item><description><c>DATA</c> — 4 bytes (flag byte + 3 padding). Always 0/zero for our output.</description></item>
-///         <item><description><c>VNML</c> — 3267 bytes (1089 x 3 sbyte). Normals generated from the reconstructed height grid.</description></item>
-///         <item><description><c>VHGT</c> — 1096 bytes (float offset + 1089 sbyte deltas + 3 padding).</description></item>
-///         <item><description><c>VCLR</c> — optional 3267 bytes (1089 x RGB).</description></item>
-///         <item><description><c>BTXT/ATXT/VTXT</c> — optional ordered texture layers.</description></item>
-///         <item><description><c>VTEX</c> — optional texture index/FormID list.</description></item>
+///         <item>
+///             <description><c>DATA</c> — 4 bytes (flag byte + 3 padding). Always 0/zero for our output.</description>
+///         </item>
+///         <item>
+///             <description>
+///                 <c>VNML</c> — 3267 bytes (1089 x 3 sbyte). Normals generated from the reconstructed height
+///                 grid.
+///             </description>
+///         </item>
+///         <item>
+///             <description><c>VHGT</c> — 1096 bytes (float offset + 1089 sbyte deltas + 3 padding).</description>
+///         </item>
+///         <item>
+///             <description><c>VCLR</c> — optional 3267 bytes (1089 x RGB).</description>
+///         </item>
+///         <item>
+///             <description><c>BTXT/ATXT/VTXT</c> — optional ordered texture layers.</description>
+///         </item>
+///         <item>
+///             <description><c>VTEX</c> — optional texture index/FormID list.</description>
+///         </item>
 ///     </list>
 /// </summary>
 public static class LandEncoder
@@ -57,6 +70,7 @@ public static class LandEncoder
         {
             vhgt[4 + i] = unchecked((byte)heightmap.HeightDeltas[i]);
         }
+
         // Bytes [4+1089 .. 4+1089+3] stay zero — VHGT padding.
         subs.Add(new EncodedSubrecord("VHGT", vhgt));
 

@@ -1,3 +1,5 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
+
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
 
 /// <summary>
@@ -6,6 +8,8 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
 public sealed class RecordEncoderRegistry
 {
     private readonly Dictionary<string, IRecordEncoder> _byType = new(StringComparer.Ordinal);
+
+    public IReadOnlyCollection<string> SupportedRecordTypes => _byType.Keys;
 
     public void Register(IRecordEncoder encoder)
     {
@@ -32,23 +36,18 @@ public sealed class RecordEncoderRegistry
         return _byType.GetValueOrDefault(recordType);
     }
 
-    public IReadOnlyCollection<string> SupportedRecordTypes => _byType.Keys;
-
     /// <summary>
     ///     Builds a registry pre-populated with the v1 encoder set.
-    ///
     ///     Each encoder emits only the subrecord(s) whose byte layout is fully captured by the
     ///     parsed model — everything else is retained from the source ESM by the merge engine.
     ///     This conservative strategy guarantees that v1 cannot corrupt unmapped fields.
-    ///
     ///     Coverage:
-    ///       GMST  (DATA, numeric only)            GLOB  (FLTV)
-    ///       WEAP  (DATA)                          ARMO  (DATA)
-    ///       AMMO  (DATA)                          ALCH  (DATA)
-    ///       BOOK  (DATA)                          MISC  (DATA)
-    ///       KEYM  (DATA)                          FACT  (DATA flags)
-    ///       NPC_  (ACBS)
-    ///
+    ///     GMST  (DATA, numeric only)            GLOB  (FLTV)
+    ///     WEAP  (DATA)                          ARMO  (DATA)
+    ///     AMMO  (DATA)                          ALCH  (DATA)
+    ///     BOOK  (DATA)                          MISC  (DATA)
+    ///     KEYM  (DATA)                          FACT  (DATA flags)
+    ///     NPC_  (ACBS)
     ///     CONT is intentionally excluded from v1 overrides: <see cref="Models.Records.Item.ContainerRecord" />
     ///     historically did not carry the Weight field needed to reconstruct the 5-byte DATA
     ///     payload. v7 adds Weight to the model and a CONT new-record encoder.
@@ -56,17 +55,17 @@ public sealed class RecordEncoderRegistry
     public static RecordEncoderRegistry CreateV1Default()
     {
         var registry = new RecordEncoderRegistry();
-        registry.Register(new Encoders.GmstEncoder());
-        registry.Register(new Encoders.GlobEncoder());
-        registry.Register(new Encoders.WeapEncoder());
-        registry.Register(new Encoders.ArmoEncoder());
-        registry.Register(new Encoders.AmmoEncoder());
-        registry.Register(new Encoders.AlchEncoder());
-        registry.Register(new Encoders.BookEncoder());
-        registry.Register(new Encoders.MiscEncoder());
-        registry.Register(new Encoders.KeymEncoder());
-        registry.Register(new Encoders.FactEncoder());
-        registry.Register(new Encoders.NpcEncoder());
+        registry.Register(new GmstEncoder());
+        registry.Register(new GlobEncoder());
+        registry.Register(new WeapEncoder());
+        registry.Register(new ArmoEncoder());
+        registry.Register(new AmmoEncoder());
+        registry.Register(new AlchEncoder());
+        registry.Register(new BookEncoder());
+        registry.Register(new MiscEncoder());
+        registry.Register(new KeymEncoder());
+        registry.Register(new FactEncoder());
+        registry.Register(new NpcEncoder());
         return registry;
     }
 
@@ -80,9 +79,9 @@ public sealed class RecordEncoderRegistry
     public static RecordEncoderRegistry CreateV2Default()
     {
         var registry = CreateV1Default();
-        registry.Register(new Encoders.RefrEncoder());
-        registry.Register(new Encoders.AchrEncoder());
-        registry.Register(new Encoders.AcreEncoder());
+        registry.Register(new RefrEncoder());
+        registry.Register(new AchrEncoder());
+        registry.Register(new AcreEncoder());
         return registry;
     }
 
@@ -95,7 +94,7 @@ public sealed class RecordEncoderRegistry
     public static RecordEncoderRegistry CreateV3Default()
     {
         var registry = CreateV2Default();
-        registry.Register(new Encoders.CellEncoder());
+        registry.Register(new CellEncoder());
         return registry;
     }
 
@@ -110,11 +109,11 @@ public sealed class RecordEncoderRegistry
     public static RecordEncoderRegistry CreateV6Default()
     {
         var registry = CreateV3Default();
-        registry.Register(new Encoders.ScptEncoder());
-        registry.Register(new Encoders.DialEncoder());
-        registry.Register(new Encoders.InfoEncoder());
-        registry.Register(new Encoders.QustEncoder());
-        registry.Register(new Encoders.PackEncoder());
+        registry.Register(new ScptEncoder());
+        registry.Register(new DialEncoder());
+        registry.Register(new InfoEncoder());
+        registry.Register(new QustEncoder());
+        registry.Register(new PackEncoder());
         return registry;
     }
 
@@ -130,13 +129,13 @@ public sealed class RecordEncoderRegistry
     public static RecordEncoderRegistry CreateV7Default()
     {
         var registry = CreateV6Default();
-        registry.Register(new Encoders.ActiEncoder());
-        registry.Register(new Encoders.DoorEncoder());
-        registry.Register(new Encoders.LighEncoder());
-        registry.Register(new Encoders.StatEncoder());
-        registry.Register(new Encoders.ContEncoder());
-        registry.Register(new Encoders.FurnEncoder());
-        registry.Register(new Encoders.TermEncoder());
+        registry.Register(new ActiEncoder());
+        registry.Register(new DoorEncoder());
+        registry.Register(new LighEncoder());
+        registry.Register(new StatEncoder());
+        registry.Register(new ContEncoder());
+        registry.Register(new FurnEncoder());
+        registry.Register(new TermEncoder());
         return registry;
     }
 
@@ -148,9 +147,9 @@ public sealed class RecordEncoderRegistry
     public static RecordEncoderRegistry CreateV11Default()
     {
         var registry = CreateV7Default();
-        registry.Register(new Encoders.ProjEncoder());
-        registry.Register(new Encoders.ExplEncoder());
-        registry.Register(new Encoders.ImodEncoder());
+        registry.Register(new ProjEncoder());
+        registry.Register(new ExplEncoder());
+        registry.Register(new ImodEncoder());
         return registry;
     }
 
@@ -163,8 +162,8 @@ public sealed class RecordEncoderRegistry
     public static RecordEncoderRegistry CreateV12Default()
     {
         var registry = CreateV11Default();
-        registry.Register(new Encoders.ArmaEncoder());
-        registry.Register(new Encoders.RcpeEncoder());
+        registry.Register(new ArmaEncoder());
+        registry.Register(new RcpeEncoder());
         return registry;
     }
 
@@ -173,14 +172,14 @@ public sealed class RecordEncoderRegistry
     ///     (constructible object) new-record encoders. v14 also enables several subrecord
     ///     emissions on existing encoders (no registry change needed):
     ///     - ARMA now emits MODT/MO2T/MO3T/MO4T texture hashes, ICON/MIC2 inventory icons,
-    ///       and DNAM detection sound level when the model carries them.
+    ///     and DNAM detection sound level when the model carries them.
     ///     - QUST now emits top-level CTDA + CIS1/CIS2 condition string parameters.
     /// </summary>
     public static RecordEncoderRegistry CreateV14Default()
     {
         var registry = CreateV12Default();
-        registry.Register(new Encoders.RcctEncoder());
-        registry.Register(new Encoders.CobjEncoder());
+        registry.Register(new RcctEncoder());
+        registry.Register(new CobjEncoder());
         return registry;
     }
 
@@ -193,19 +192,19 @@ public sealed class RecordEncoderRegistry
     public static RecordEncoderRegistry CreateV16Default()
     {
         var registry = CreateV14Default();
-        registry.Register(new Encoders.EyesEncoder());
-        registry.Register(new Encoders.HairEncoder());
-        registry.Register(new Encoders.RepuEncoder());
-        registry.Register(new Encoders.AvifEncoder());
-        registry.Register(new Encoders.MuscEncoder());
-        registry.Register(new Encoders.MesgEncoder());
-        registry.Register(new Encoders.NoteEncoder());
-        registry.Register(new Encoders.FlstEncoder());
+        registry.Register(new EyesEncoder());
+        registry.Register(new HairEncoder());
+        registry.Register(new RepuEncoder());
+        registry.Register(new AvifEncoder());
+        registry.Register(new MuscEncoder());
+        registry.Register(new MesgEncoder());
+        registry.Register(new NoteEncoder());
+        registry.Register(new FlstEncoder());
 
         // LvliEncoder handles all three leveled-list signatures (LVLI/LVLN/LVLC).
         // The encoder declares itself as "LVLI"; register it explicitly under the other
         // two so the override-path registry lookup finds it.
-        var lvli = new Encoders.LvliEncoder();
+        var lvli = new LvliEncoder();
         registry.Register(lvli);
         registry.Register("LVLN", lvli);
         registry.Register("LVLC", lvli);
@@ -221,16 +220,16 @@ public sealed class RecordEncoderRegistry
     public static RecordEncoderRegistry CreateV17Default()
     {
         var registry = CreateV16Default();
-        registry.Register(new Encoders.CreaEncoder());
-        registry.Register(new Encoders.ClasEncoder());
-        registry.Register(new Encoders.SounEncoder());
-        registry.Register(new Encoders.TxstEncoder());
-        registry.Register(new Encoders.LtexEncoder());
-        registry.Register(new Encoders.ChalEncoder());
-        registry.Register(new Encoders.BptdEncoder());
-        registry.Register(new Encoders.EnchEncoder());
-        registry.Register(new Encoders.SpelEncoder());
-        registry.Register(new Encoders.PerkEncoder());
+        registry.Register(new CreaEncoder());
+        registry.Register(new ClasEncoder());
+        registry.Register(new SounEncoder());
+        registry.Register(new TxstEncoder());
+        registry.Register(new LtexEncoder());
+        registry.Register(new ChalEncoder());
+        registry.Register(new BptdEncoder());
+        registry.Register(new EnchEncoder());
+        registry.Register(new SpelEncoder());
+        registry.Register(new PerkEncoder());
         return registry;
     }
 
@@ -245,9 +244,9 @@ public sealed class RecordEncoderRegistry
     public static RecordEncoderRegistry CreateV18Default()
     {
         var registry = CreateV17Default();
-        registry.Register(new Encoders.MgefEncoder());
-        registry.Register(new Encoders.WrldEncoder());
-        registry.Register(new Encoders.RaceEncoder());
+        registry.Register(new MgefEncoder());
+        registry.Register(new WrldEncoder());
+        registry.Register(new RaceEncoder());
         return registry;
     }
 
@@ -262,10 +261,10 @@ public sealed class RecordEncoderRegistry
     public static RecordEncoderRegistry CreateV18bDefault()
     {
         var registry = CreateV18Default();
-        registry.Register(new Encoders.CstyEncoder());
-        registry.Register(new Encoders.LgtmEncoder());
-        registry.Register(new Encoders.WatrEncoder());
-        registry.Register(new Encoders.WthrEncoder());
+        registry.Register(new CstyEncoder());
+        registry.Register(new LgtmEncoder());
+        registry.Register(new WatrEncoder());
+        registry.Register(new WthrEncoder());
         return registry;
     }
 
@@ -278,7 +277,7 @@ public sealed class RecordEncoderRegistry
     public static RecordEncoderRegistry CreateV22Default()
     {
         var registry = CreateV18bDefault();
-        registry.Register(new Encoders.ScolEncoder());
+        registry.Register(new ScolEncoder());
         return registry;
     }
 

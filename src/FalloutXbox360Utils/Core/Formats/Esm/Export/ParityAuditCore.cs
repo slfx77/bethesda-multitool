@@ -222,10 +222,10 @@ internal static class ParityAuditCore
 
     private sealed class FieldStats
     {
-        public int EsmOnly;
-        public int DmpOnly;
         public int Agree;
         public int Disagree;
+        public int DmpOnly;
+        public int EsmOnly;
         public List<FieldExample> Examples { get; } = [];
     }
 }

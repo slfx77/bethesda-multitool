@@ -26,12 +26,12 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
     private readonly List<ConversionEventEntry> _allEvents = [];
     private readonly DispatcherTimer _logDrainTimer;
     private readonly ObservableCollection<SecondaryFolderEntry> _secondaries = [];
-    private CancellationTokenSource? _cts;
     private Channel<ConversionEventEntry>? _channel;
+    private CancellationTokenSource? _cts;
     private SeverityFilter _filter = SeverityFilter.All;
     private bool _isPcDataValid;
-    private PluginBuildResult? _lastResult;
     private AssetPackingResult? _lastAssetPackingResult;
+    private PluginBuildResult? _lastResult;
 
     public DmpToEspConverterTab()
     {
@@ -80,14 +80,6 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
         {
             _secondaries.Remove(entry);
         }
-    }
-
-    private enum SeverityFilter
-    {
-        All,
-        DecisionsAndAbove,
-        WarningsAndAbove,
-        ErrorsOnly
     }
 
     public void ToggleSettingsDrawer() => SettingsDrawerHelper.Toggle(SettingsDrawer);
@@ -219,7 +211,7 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
 
     /// <summary>
     ///     Snapshot the current secondary-folders ObservableCollection into the immutable
-    ///     <see cref="SecondaryDataFolder"/> list that the engine consumes.
+    ///     <see cref="SecondaryDataFolder" /> list that the engine consumes.
     /// </summary>
     private List<SecondaryDataFolder> SnapshotSecondaryFolders()
     {
@@ -261,7 +253,8 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
         if (File.Exists(esmPath))
         {
             _isPcDataValid = true;
-            PcDataValidationText.Text = $"FalloutNV.esm found ({new FileInfo(esmPath).Length / (1024.0 * 1024.0):F1} MB).";
+            PcDataValidationText.Text =
+                $"FalloutNV.esm found ({new FileInfo(esmPath).Length / (1024.0 * 1024.0):F1} MB).";
         }
         else
         {
@@ -549,6 +542,14 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
         };
     }
 
+    private enum SeverityFilter
+    {
+        All,
+        DecisionsAndAbove,
+        WarningsAndAbove,
+        ErrorsOnly
+    }
+
     /// <summary>
     ///     Bridge between the engine's <see cref="IConversionProgressSink" /> contract and the
     ///     UI's buffered channel. Events flow from the engine thread into the channel without
@@ -556,9 +557,9 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
     /// </summary>
     private sealed class ChannelProgressSink : IConversionProgressSink
     {
-        private readonly ChannelWriter<ConversionEventEntry> _writer;
         private readonly DispatcherQueue _dispatcher;
         private readonly Action<string> _phaseUpdate;
+        private readonly ChannelWriter<ConversionEventEntry> _writer;
 
         public ChannelProgressSink(ChannelWriter<ConversionEventEntry> writer,
             DispatcherQueue dispatcher,

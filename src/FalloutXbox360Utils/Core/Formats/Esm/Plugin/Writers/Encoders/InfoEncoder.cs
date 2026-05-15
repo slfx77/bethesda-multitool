@@ -1,3 +1,4 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Dialogue;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
@@ -7,7 +8,6 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     Both override and new-record paths emit DATA + QSTI? + TPIC? + PNAM? + TRDT/NAM1 groups +
 ///     TCLT* + TCLF* + RNAM? + DNAM? + result-script blocks + ANAM? + NAME* + CTDA*.
 ///     INFO records typically have no EDID (the parent DIAL's EDID identifies the topic).
-///
 ///     Override path emits the FULL canonical subrecord stream whenever the DMP captured
 ///     any meaningful content (responses / conditions / result scripts / prompt / etc.).
 ///     The merge engine does positional per-signature replacement and INFO has paired
@@ -15,15 +15,14 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     block), so partial emission would desynchronize the pairs — full-replace is the
 ///     only safe pattern. When the DMP has no content, override returns empty subrecords
 ///     and the engine retains all of the master's INFO verbatim.
-///
 ///     DATA (4 bytes): DialType(0) + NextSpeaker(1) + Flags(2) + Flags2(3) — raw bytes.
 ///     TRDT (24 bytes) per PDB RESPONSE_DATA:
-///         uint32 EmotionType(0) + int32 EmotionValue(4) + FormID ConvTopic(8) +
-///         uint8 ResponseID(12) + pad(13..15) + FormID Sound(16) + bool UseEmotion(20) + pad(21..23).
+///     uint32 EmotionType(0) + int32 EmotionValue(4) + FormID ConvTopic(8) +
+///     uint8 ResponseID(12) + pad(13..15) + FormID Sound(16) + bool UseEmotion(20) + pad(21..23).
 ///     CTDA (28 bytes) per PDB CONDITION_ITEM_DATA:
-///         uint8 Type(0) + pad(1..3) + float ComparisonValue(4) + uint16 FunctionIndex(8) +
-///         pad(10..11) + FormID Parameter1(12) + uint32 Parameter2(16) + uint32 RunOn(20) +
-///         FormID Reference(24).
+///     uint8 Type(0) + pad(1..3) + float ComparisonValue(4) + uint16 FunctionIndex(8) +
+///     pad(10..11) + FormID Parameter1(12) + uint32 Parameter2(16) + uint32 RunOn(20) +
+///     FormID Reference(24).
 /// </summary>
 public sealed class InfoEncoder : IRecordEncoder
 {
@@ -135,7 +134,7 @@ public sealed class InfoEncoder : IRecordEncoder
 
         // New-record path needs a well-formed TRDT/NAM1 even if Responses is empty —
         // the runtime crashes iterating an empty response list on a fresh INFO record.
-        BuildCanonicalSubrecords(info, subs, emitPlaceholderOnEmptyResponses: true);
+        BuildCanonicalSubrecords(info, subs, true);
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
     }
 
@@ -242,7 +241,7 @@ public sealed class InfoEncoder : IRecordEncoder
         // optional SCDA + SCTX, and zero or more SCRO/SCRV referenced-object entries.
         for (var i = 0; i < info.ResultScripts.Count; i++)
         {
-            EmitResultScriptBlock(subs, info.ResultScripts[i], isLast: i == info.ResultScripts.Count - 1);
+            EmitResultScriptBlock(subs, info.ResultScripts[i], i == info.ResultScripts.Count - 1);
         }
 
         if (info.SpeakerFormId.HasValue)
@@ -322,7 +321,7 @@ public sealed class InfoEncoder : IRecordEncoder
         }
     }
 
-    private static byte[] BuildTrdtSubrecord(Models.Dialogue.DialogueResponse response)
+    private static byte[] BuildTrdtSubrecord(DialogueResponse response)
     {
         var trdt = new byte[24];
         SubrecordEncoder.WriteUInt32(trdt, 0, response.EmotionType);

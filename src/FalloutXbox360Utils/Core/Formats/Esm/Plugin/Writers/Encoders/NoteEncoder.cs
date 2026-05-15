@@ -7,8 +7,8 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     Holotapes / written notes / recordings / images. NoteType decides which content
 ///     subrecord is meaningful.
 ///     fopdoc canonical order: EDID, FULL?, MODL?, ICON?, MICO?, YNAM?, DATA(1B note type),
-///         TNAM (variable: 4B FormID when NoteType=Voice/topic ref, else string body),
-///         SNAM?(sound FormID), ONAM?(linked object FormID).
+///     TNAM (variable: 4B FormID when NoteType=Voice/topic ref, else string body),
+///     SNAM?(sound FormID), ONAM?(linked object FormID).
 /// </summary>
 public sealed class NoteEncoder : IRecordEncoder
 {

@@ -1,11 +1,19 @@
 using System.Buffers.Binary;
 using System.Diagnostics;
-using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Schema;
 using FalloutXbox360Utils.Core.Formats.Esm.Merge;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.AI;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Magic;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Validation;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Formats.Esm.Reporting;
 using FalloutXbox360Utils.Core.Semantic;
@@ -15,24 +23,86 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 /// <summary>
 ///     Orchestrator that converts an Xbox 360 DMP into a PC plugin ESP using a base
 ///     FalloutNV.esm as the source of subrecord data the DMP doesn't carry.
-///
 ///     Pipeline:
-///       1. Load PC ESM (raw + semantic) and index FormIDs.
-///       2. Load DMP semantically (cells with placed objects, simple-type record lists).
-///       3. Merge top-level records: GMST/GLOB/WEAP/ARMO/AMMO/etc. become override records
-///          inside their respective top-level GRUPs.
-///       4. Merge cell-children (v2): for each DMP cell that maps to a PC ESM cell, classify
-///          the merge mode (persistent-only vs has-temporary), encode REFR/ACHR/ACRE
-///          overrides, and bundle by parent cell.
-///       5. Assemble ESP: TES4 header + top-level GRUPs + CELL hierarchy with cell-children
-///          overrides.
-///       6. Optionally validate by re-parsing.
+///     1. Load PC ESM (raw + semantic) and index FormIDs.
+///     2. Load DMP semantically (cells with placed objects, simple-type record lists).
+///     3. Merge top-level records: GMST/GLOB/WEAP/ARMO/AMMO/etc. become override records
+///     inside their respective top-level GRUPs.
+///     4. Merge cell-children (v2): for each DMP cell that maps to a PC ESM cell, classify
+///     the merge mode (persistent-only vs has-temporary), encode REFR/ACHR/ACRE
+///     overrides, and bundle by parent cell.
+///     5. Assemble ESP: TES4 header + top-level GRUPs + CELL hierarchy with cell-children
+///     overrides.
+///     6. Optionally validate by re-parsing.
 /// </summary>
 [Obsolete("Use PluginConversionPipeline as the conversion orchestration entrypoint.")]
 public sealed class PluginBuilder
 {
+    /// <summary>
+    ///     Record types eligible to be referenced as the "base" of a REFR/ACHR/ACRE placed
+    ///     reference. Shared with <see cref="ReferenceBaseRemapper" /> so the master index
+    ///     and runtime REFR rescue policy use identical type gates.
+    /// </summary>
+    private static readonly HashSet<string> RefrBaseEligibleTypes = ReferenceBaseRemapper.RefrBaseEligibleTypes;
+
+    /// <summary>
+    ///     Tracks every new exterior cell emitted by <c>TryBuildSyntheticExteriorContext</c>,
+    ///     keyed by (parent-worldspace FormID, gridX, gridY). The FNV runtime rejects two
+    ///     cells claiming the same grid coords within one worldspace ("Cell ... already
+    ///     exists at coord", "Error adding cell ... will be destroyed"), so we dedup at
+    ///     emit time — first cell wins, subsequent ones are skipped with a v22 warning.
+    ///     Reset to empty at the start of each <see cref="BuildAsync" />.
+    /// </summary>
+    private readonly Dictionary<(uint Worldspace, int GridX, int GridY), uint> _emittedExteriorCellCoords = new();
+
+    /// <summary>
+    ///     FormIDs being emitted via the new-record path in the current <c>Build</c> run.
+    ///     Populated as records dispatch through <c>TryEncodeNewTopLevelRecord</c>. Used by
+    ///     <see cref="ValidateScriRefs" /> so an override-NPC's SCRI pointing at a freshly
+    ///     emitted SCPT (which won't be in <see cref="_masterFormIds" />) survives the
+    ///     dangling-ref drop. Reset to empty at the start of each Build.
+    /// </summary>
+    private readonly HashSet<uint> _emittedNewFormIds = [];
+
+    /// <summary>
+    ///     Per-record-type subset of <see cref="_emittedNewFormIds" />. Used by SCRI's
+    ///     type-aware validator so it accepts new SCPT FormIDs but rejects new STAT/etc.
+    /// </summary>
+    private readonly Dictionary<string, HashSet<uint>> _emittedNewFormIdsByType = new();
+
     private readonly RecordEncoderRegistry _encoderRegistry;
+
+    /// <summary>
+    ///     DMP-source FormID → freshly-allocated plugin-local FormID, populated as new
+    ///     top-level records (STAT, NPC_, WEAP, etc.) flow through
+    ///     <see cref="TryEncodeNewTopLevelRecord" />. The downstream cell-children pipeline
+    ///     uses it to rewrite each new REFR's NAME (base FormID) before encoding — without
+    ///     this remap the REFR's NAME stays pointing at the DMP source, which doesn't exist
+    ///     in either master or the freshly-allocated 0x01xxxxxx plugin range, and the
+    ///     runtime fails to bind the placement to its base. Reset at each Build entry.
+    /// </summary>
+    private readonly Dictionary<uint, uint> _newRecordSourceToAllocated = new();
+
     private readonly IConversionProgressSink _sink;
+
+    /// <summary>
+    ///     Phase C: DMP-prototype FormID → record-type signature. Built once at
+    ///     <see cref="BuildAsync" /> entry from the typed <see cref="RecordCollection" />
+    ///     lists. The REFR remap predicate uses it to pick the expected base type when
+    ///     scanning master candidates (a STAT-typed prototype base remaps to STAT only,
+    ///     not to ACTI / SCOL / etc.).
+    /// </summary>
+    private Dictionary<uint, string>? _dmpBaseFormIdToRecordType;
+
+    /// <summary>
+    ///     Per-type EditorID → master FormID lookup for the master ESM, built lazily at
+    ///     <see cref="BuildAsync" /> entry. Used to skip new-record emission of an NPC (or
+    ///     other type) whose EditorID already names a master record — those are duplicate
+    ///     captures of the same logical entity, and emitting both makes the engine show
+    ///     two NPCs in-game ("Arcade Gannon" + "Arcade Gannon (10024)"). The override path
+    ///     for the master record handles the prototype's mutations cleanly.
+    /// </summary>
+    private Dictionary<string, Dictionary<string, uint>>? _masterEditorIdToFormIdByType;
 
     /// <summary>
     ///     Master ESM FormID set, populated at the start of <c>Build</c>. Used by post-encode
@@ -51,69 +121,14 @@ public sealed class PluginBuilder
     private Dictionary<string, HashSet<uint>>? _masterFormIdsByType;
 
     /// <summary>
-    ///     FormIDs being emitted via the new-record path in the current <c>Build</c> run.
-    ///     Populated as records dispatch through <c>TryEncodeNewTopLevelRecord</c>. Used by
-    ///     <see cref="ValidateScriRefs" /> so an override-NPC's SCRI pointing at a freshly
-    ///     emitted SCPT (which won't be in <see cref="_masterFormIds" />) survives the
-    ///     dangling-ref drop. Reset to empty at the start of each Build.
-    /// </summary>
-    private readonly HashSet<uint> _emittedNewFormIds = [];
-
-    /// <summary>
-    ///     Per-record-type subset of <see cref="_emittedNewFormIds" />. Used by SCRI's
-    ///     type-aware validator so it accepts new SCPT FormIDs but rejects new STAT/etc.
-    /// </summary>
-    private readonly Dictionary<string, HashSet<uint>> _emittedNewFormIdsByType = new();
-
-    /// <summary>
-    ///     Tracks every new exterior cell emitted by <c>TryBuildSyntheticExteriorContext</c>,
-    ///     keyed by (parent-worldspace FormID, gridX, gridY). The FNV runtime rejects two
-    ///     cells claiming the same grid coords within one worldspace ("Cell ... already
-    ///     exists at coord", "Error adding cell ... will be destroyed"), so we dedup at
-    ///     emit time — first cell wins, subsequent ones are skipped with a v22 warning.
-    ///     Reset to empty at the start of each <see cref="BuildAsync" />.
-    /// </summary>
-    private readonly Dictionary<(uint Worldspace, int GridX, int GridY), uint> _emittedExteriorCellCoords = new();
-
-    /// <summary>
-    ///     Per-type EditorID → master FormID lookup for the master ESM, built lazily at
-    ///     <see cref="BuildAsync" /> entry. Used to skip new-record emission of an NPC (or
-    ///     other type) whose EditorID already names a master record — those are duplicate
-    ///     captures of the same logical entity, and emitting both makes the engine show
-    ///     two NPCs in-game ("Arcade Gannon" + "Arcade Gannon (10024)"). The override path
-    ///     for the master record handles the prototype's mutations cleanly.
-    /// </summary>
-    private Dictionary<string, Dictionary<string, uint>>? _masterEditorIdToFormIdByType;
-
-    /// <summary>
     ///     Phase C: per-type normalized-EditorID-stem → list of master FormIDs sharing
-    ///     that stem. Built alongside <see cref="_masterEditorIdToFormIdByType"/>. Used by
+    ///     that stem. Built alongside <see cref="_masterEditorIdToFormIdByType" />. Used by
     ///     the REFR base-EditorID remap fallback to find rename-suffix candidates (e.g. a
     ///     prototype <c>SCOLParkingLotChunk03</c> mapping to master
     ///     <c>SCOLParkingLotChunk03b</c>). Values are lists so ambiguity (multiple master
     ///     records sharing the same stem) can be detected and refused.
     /// </summary>
     private Dictionary<string, Dictionary<string, List<uint>>>? _masterStemToFormIdsByType;
-
-    /// <summary>
-    ///     Phase C: DMP-prototype FormID → record-type signature. Built once at
-    ///     <see cref="BuildAsync"/> entry from the typed <see cref="RecordCollection"/>
-    ///     lists. The REFR remap predicate uses it to pick the expected base type when
-    ///     scanning master candidates (a STAT-typed prototype base remaps to STAT only,
-    ///     not to ACTI / SCOL / etc.).
-    /// </summary>
-    private Dictionary<uint, string>? _dmpBaseFormIdToRecordType;
-
-    /// <summary>
-    ///     DMP-source FormID → freshly-allocated plugin-local FormID, populated as new
-    ///     top-level records (STAT, NPC_, WEAP, etc.) flow through
-    ///     <see cref="TryEncodeNewTopLevelRecord" />. The downstream cell-children pipeline
-    ///     uses it to rewrite each new REFR's NAME (base FormID) before encoding — without
-    ///     this remap the REFR's NAME stays pointing at the DMP source, which doesn't exist
-    ///     in either master or the freshly-allocated 0x01xxxxxx plugin range, and the
-    ///     runtime fails to bind the placement to its base. Reset at each Build entry.
-    /// </summary>
-    private readonly Dictionary<uint, uint> _newRecordSourceToAllocated = new();
 
     /// <summary>
     ///     New worldspaces (not in master) whose DMP carries child cells. These are
@@ -123,47 +138,6 @@ public sealed class PluginBuilder
     ///     <c>dmpCell.WorldspaceFormId</c> finds them directly. Null until pre-encode runs.
     /// </summary>
     private Dictionary<uint, NewWorldspaceEntry>? _newWorldspacesForCellPipeline;
-
-
-    /// <summary>
-    ///     Engine runtime-state FormIDs that should NEVER be re-emitted from a DMP capture.
-    ///     The DMP snapshots live gameplay state, so these records carry whatever transient
-    ///     value they had at capture time (player position, current in-game date/hour, last
-    ///     equipped weapon, etc.). Re-emitting them as overrides clobbers the engine's
-    ///     freshly-initialized runtime state during plugin load and was the cause of the
-    ///     v20.x EXCEPTION_ACCESS_VIOLATION crash at FalloutNV+0x46025A.
-    /// </summary>
-    private static readonly HashSet<uint> RuntimeStateFormIds =
-    [
-        0x00000007, // Player NPC
-        0x00000014, // PlayerRef ACHR (player's placed-actor instance)
-        0x00000035, // GameYear GLOB
-        0x00000036, // GameMonth GLOB
-        0x00000037, // GameDay GLOB
-        0x00000038, // GameHour GLOB
-        0x00000039, // GameDaysPassed GLOB
-        0x0000003A, // TimeScale GLOB
-        0x000001F4  // Hand-to-Hand WEAP (engine default unarmed fallback)
-    ];
-
-    private static readonly HashSet<string> StructuralCellRefSubrecords = new(StringComparer.Ordinal)
-    {
-        "XPOD", // room/portal connection
-        "XOCP", // occlusion plane geometry
-        "XORD", // linked occlusion planes
-        "XMBO", // room/bound marker extents
-        "XPRM", // primitive marker geometry
-        "XNDP"  // navigation door portal
-    };
-
-    private static readonly string[] StructuralBaseEditorIdNeedles =
-    [
-        "RoomMarker",
-        "PortalMarker",
-        "Occlusion",
-        "MultiBound",
-        "Culling"
-    ];
 
     public PluginBuilder(RecordEncoderRegistry registry, IConversionProgressSink? sink = null)
     {
@@ -359,7 +333,7 @@ public sealed class PluginBuilder
             if (inputs.Options.ValidateOutput)
             {
                 _sink.OnPhaseStart("Validating output", null);
-                validationReport = Validation.PluginRoundTripValidator.Validate(outputBytes, stats.RecordsEmitted);
+                validationReport = PluginRoundTripValidator.Validate(outputBytes, stats.RecordsEmitted);
                 _sink.Info("Validating output", validationReport);
                 _sink.OnPhaseEnd("Validating output", stats);
             }
@@ -411,7 +385,7 @@ public sealed class PluginBuilder
     ///     with no child cells stay in the standard top-level emit path.
     /// </summary>
     private Dictionary<uint, NewWorldspaceEntry> PreEncodeNewWorldspacesWithCells(
-        Models.RecordCollection dmpRecords,
+        RecordCollection dmpRecords,
         NewVsOverrideClassifier classifier,
         FormIdAllocator allocator,
         PluginBuildOptions options)
@@ -448,7 +422,7 @@ public sealed class PluginBuilder
                 continue;
             }
 
-            var encoded = Writers.Encoders.WrldEncoder.EncodeNew(wrld);
+            var encoded = WrldEncoder.EncodeNew(wrld);
             if (encoded.Subrecords.Count == 0)
             {
                 continue; // Encoder declined this WRLD (rare; e.g., insufficient metadata).
@@ -456,7 +430,8 @@ public sealed class PluginBuilder
 
             var emittedFormId = allocator.Allocate();
             var flags = options.CompressRecords ? 0x00040000u : 0u;
-            var recordBytes = PluginRecordByteBuilder.BuildNewRecordBytes("WRLD", emittedFormId, flags, encoded.Subrecords);
+            var recordBytes =
+                PluginRecordByteBuilder.BuildNewRecordBytes("WRLD", emittedFormId, flags, encoded.Subrecords);
 
             result[wrld.FormId] = new NewWorldspaceEntry(emittedFormId, recordBytes);
 
@@ -465,7 +440,7 @@ public sealed class PluginBuilder
                 _sink.Decision("Merging top-level records",
                     $"Pre-encoded new WRLD 0x{wrld.FormId:X8} → emitted 0x{emittedFormId:X8} " +
                     "(deferred to cell-children pipeline so child cells nest under it).",
-                    "WRLD", wrld.FormId, code: "wrld.deferred-with-cells");
+                    "WRLD", wrld.FormId, "wrld.deferred-with-cells");
             }
         }
 
@@ -499,14 +474,14 @@ public sealed class PluginBuilder
 
             var formId = ExtractFormId(model);
 
-            if (RuntimeStateFormIds.Contains(formId))
+            if (RuntimeStateRecordPolicy.IsRuntimeStateFormId(formId))
             {
                 stats.IncrementSkipped(recordType);
                 _sink.Decision("Merging top-level records",
                     $"Skipping runtime-state record 0x{formId:X8} — DMP captures live gameplay " +
                     "state for engine-reserved records; re-emitting would clobber the engine's " +
                     "runtime setup (player / clock / default weapon).",
-                    recordType, formId, code: "runtime-state.skip");
+                    recordType, formId, "runtime-state.skip");
                 continue;
             }
 
@@ -547,7 +522,7 @@ public sealed class PluginBuilder
                     _sink.Decision("Merging top-level records",
                         $"Skipping new {recordType} 0x{formId:X8} — its EditorID already names " +
                         $"master record 0x{masterFormId:X8}. Override path handles the master's mutations.",
-                        recordType, formId, code: "new-record.dup-editor-id");
+                        recordType, formId, "new-record.dup-editor-id");
                     continue;
                 }
 
@@ -562,6 +537,7 @@ public sealed class PluginBuilder
                     {
                         stats.Scols.NewEmitted++;
                     }
+
                     // v22: track FormIDs emitted via the new-record path so ValidateScriRefs
                     // accepts SCRI references to freshly-emitted SCPTs (or other new records).
                     // Without this, an override-NPC pointing at a new prototype script would
@@ -572,6 +548,7 @@ public sealed class PluginBuilder
                         typeSet = [];
                         _emittedNewFormIdsByType[recordType] = typeSet;
                     }
+
                     typeSet.Add(formId);
                 }
                 else
@@ -586,7 +563,7 @@ public sealed class PluginBuilder
             // anything. Counts toward the Phase D gate (only implement SCOL override emission
             // once non-zero deltas are observed across the active DMP corpus).
             if (recordType == "SCOL"
-                && model is Models.Records.World.StaticCollectionRecord dmpScol)
+                && model is StaticCollectionRecord dmpScol)
             {
                 stats.Scols.InMaster++;
                 if (pcRecords.TryGetValue(formId, out var masterScolRecord)
@@ -598,7 +575,7 @@ public sealed class PluginBuilder
                         $"DMP SCOL 0x{formId:X8} differs from master ({deltaReason}). " +
                         "Override-emission for SCOL is currently a no-op; this run captured the delta " +
                         "as evidence that the override path may be worth implementing.",
-                        recordType, formId, code: "scol.override-delta-observed");
+                        recordType, formId, "scol.override-delta-observed");
                 }
             }
 
@@ -645,7 +622,7 @@ public sealed class PluginBuilder
                 _sink.Warn("Merging top-level records", w, recordType, formId);
             }
 
-            var recordBytes = BuildRecordBytes(esmRecord, merge.SubrecordBytes, options);
+            var recordBytes = PluginRecordByteBuilder.BuildOverrideRecordBytes(esmRecord, merge.SubrecordBytes, options);
             grupBodyStream.Write(recordBytes);
 
             stats.IncrementEmitted(recordType);
@@ -688,116 +665,116 @@ public sealed class PluginBuilder
         {
             encoded = recordType switch
             {
-                "GMST" => Writers.Encoders.GmstEncoder.EncodeNew(
-                    (Models.Records.Misc.GameSettingRecord)model),
-                "GLOB" => Writers.Encoders.GlobEncoder.EncodeNew(
-                    (Models.Records.Misc.GlobalRecord)model),
-                "MISC" => Writers.Encoders.MiscEncoder.EncodeNew(
-                    (Models.Records.Item.MiscItemRecord)model),
-                "KEYM" => Writers.Encoders.KeymEncoder.EncodeNew(
-                    (Models.Records.Item.KeyRecord)model),
-                "ALCH" => Writers.Encoders.AlchEncoder.EncodeNew(
-                    (Models.Records.Item.ConsumableRecord)model),
-                "BOOK" => Writers.Encoders.BookEncoder.EncodeNew(
-                    (Models.Records.Item.BookRecord)model),
-                "AMMO" => Writers.Encoders.AmmoEncoder.EncodeNew(
-                    (Models.Records.Item.AmmoRecord)model),
-                "WEAP" => Writers.Encoders.WeapEncoder.EncodeNew(
-                    (Models.Records.Item.WeaponRecord)model),
-                "ARMO" => Writers.Encoders.ArmoEncoder.EncodeNew(
-                    (Models.Records.Item.ArmorRecord)model),
-                "FACT" => Writers.Encoders.FactEncoder.EncodeNew(
-                    (Models.Records.Character.FactionRecord)model),
-                "NPC_" => Writers.Encoders.NpcEncoder.EncodeNew(
-                    (Models.Records.Character.NpcRecord)model),
-                "SCPT" => Writers.Encoders.ScptEncoder.EncodeNew(
-                    (Models.Records.Quest.ScriptRecord)model),
-                "DIAL" => Writers.Encoders.DialEncoder.EncodeNew(
-                    (Models.Records.Quest.DialogTopicRecord)model),
-                "INFO" => Writers.Encoders.InfoEncoder.EncodeNew(
-                    (Models.Records.Quest.DialogueRecord)model),
-                "QUST" => Writers.Encoders.QustEncoder.EncodeNew(
-                    (Models.Records.Quest.QuestRecord)model),
-                "PACK" => Writers.Encoders.PackEncoder.EncodeNew(
-                    (Models.Records.AI.PackageRecord)model),
-                "ACTI" => Writers.Encoders.ActiEncoder.EncodeNew(
-                    (Models.Records.World.ActivatorRecord)model),
-                "DOOR" => Writers.Encoders.DoorEncoder.EncodeNew(
-                    (Models.Records.World.DoorRecord)model),
-                "LIGH" => Writers.Encoders.LighEncoder.EncodeNew(
-                    (Models.Records.World.LightRecord)model),
-                "STAT" => Writers.Encoders.StatEncoder.EncodeNew(
-                    (Models.Records.World.StaticRecord)model),
-                "SCOL" => Writers.Encoders.ScolEncoder.EncodeNew(
-                    (Models.Records.World.StaticCollectionRecord)model,
+                "GMST" => GmstEncoder.EncodeNew(
+                    (GameSettingRecord)model),
+                "GLOB" => GlobEncoder.EncodeNew(
+                    (GlobalRecord)model),
+                "MISC" => MiscEncoder.EncodeNew(
+                    (MiscItemRecord)model),
+                "KEYM" => KeymEncoder.EncodeNew(
+                    (KeyRecord)model),
+                "ALCH" => AlchEncoder.EncodeNew(
+                    (ConsumableRecord)model),
+                "BOOK" => BookEncoder.EncodeNew(
+                    (BookRecord)model),
+                "AMMO" => AmmoEncoder.EncodeNew(
+                    (AmmoRecord)model),
+                "WEAP" => WeapEncoder.EncodeNew(
+                    (WeaponRecord)model),
+                "ARMO" => ArmoEncoder.EncodeNew(
+                    (ArmorRecord)model),
+                "FACT" => FactEncoder.EncodeNew(
+                    (FactionRecord)model),
+                "NPC_" => NpcEncoder.EncodeNew(
+                    (NpcRecord)model),
+                "SCPT" => ScptEncoder.EncodeNew(
+                    (ScriptRecord)model),
+                "DIAL" => DialEncoder.EncodeNew(
+                    (DialogTopicRecord)model),
+                "INFO" => InfoEncoder.EncodeNew(
+                    (DialogueRecord)model),
+                "QUST" => QustEncoder.EncodeNew(
+                    (QuestRecord)model),
+                "PACK" => PackEncoder.EncodeNew(
+                    (PackageRecord)model),
+                "ACTI" => ActiEncoder.EncodeNew(
+                    (ActivatorRecord)model),
+                "DOOR" => DoorEncoder.EncodeNew(
+                    (DoorRecord)model),
+                "LIGH" => LighEncoder.EncodeNew(
+                    (LightRecord)model),
+                "STAT" => StatEncoder.EncodeNew(
+                    (StaticRecord)model),
+                "SCOL" => ScolEncoder.EncodeNew(
+                    (StaticCollectionRecord)model,
                     _masterFormIds ?? new HashSet<uint>(),
                     _emittedNewFormIdsByType.TryGetValue("STAT", out var statSet)
                         ? statSet
                         : new HashSet<uint>()),
-                "CONT" => Writers.Encoders.ContEncoder.EncodeNew(
-                    (Models.Records.Item.ContainerRecord)model),
-                "FURN" => Writers.Encoders.FurnEncoder.EncodeNew(
-                    (Models.Records.World.FurnitureRecord)model),
-                "TERM" => Writers.Encoders.TermEncoder.EncodeNew(
-                    (Models.Records.World.TerminalRecord)model),
-                "PROJ" => Writers.Encoders.ProjEncoder.EncodeNew(
-                    (Models.Records.Magic.ProjectileRecord)model),
-                "EXPL" => Writers.Encoders.ExplEncoder.EncodeNew(
-                    (Models.Records.Magic.ExplosionRecord)model),
-                "IMOD" => Writers.Encoders.ImodEncoder.EncodeNew(
-                    (Models.Records.Item.WeaponModRecord)model),
-                "ARMA" => Writers.Encoders.ArmaEncoder.EncodeNew(
-                    (Models.Records.Item.ArmaRecord)model),
-                "RCPE" => Writers.Encoders.RcpeEncoder.EncodeNew(
-                    (Models.Records.Item.RecipeRecord)model),
-                "RCCT" => Writers.Encoders.RcctEncoder.EncodeNew(
-                    (Models.Records.Misc.RecipeCategoryRecord)model),
-                "COBJ" => Writers.Encoders.CobjEncoder.EncodeNew(
-                    (Models.Records.Item.ConstructibleObjectRecord)model),
-                "EYES" => Writers.Encoders.EyesEncoder.EncodeNew(
-                    (Models.Records.Character.EyesRecord)model),
-                "HAIR" => Writers.Encoders.HairEncoder.EncodeNew(
-                    (Models.Records.Character.HairRecord)model),
-                "REPU" => Writers.Encoders.RepuEncoder.EncodeNew(
-                    (Models.Records.Character.ReputationRecord)model),
-                "AVIF" => Writers.Encoders.AvifEncoder.EncodeNew(
-                    (Models.Records.Character.ActorValueInfoRecord)model),
-                "MUSC" => Writers.Encoders.MuscEncoder.EncodeNew(
-                    (Models.Records.Misc.MusicTypeRecord)model),
-                "MESG" => Writers.Encoders.MesgEncoder.EncodeNew(
-                    (Models.Records.Quest.MessageRecord)model),
-                "NOTE" => Writers.Encoders.NoteEncoder.EncodeNew(
-                    (Models.Records.Item.NoteRecord)model),
-                "FLST" => Writers.Encoders.FlstEncoder.EncodeNew(
-                    (Models.Records.Misc.FormListRecord)model),
-                "LVLI" or "LVLN" or "LVLC" => Writers.Encoders.LvliEncoder.EncodeNew(
-                    (Models.Records.Item.LeveledListRecord)model),
-                "CREA" => Writers.Encoders.CreaEncoder.EncodeNew(
-                    (Models.Records.Character.CreatureRecord)model),
-                "CLAS" => Writers.Encoders.ClasEncoder.EncodeNew(
-                    (Models.Records.Character.ClassRecord)model),
-                "SOUN" => Writers.Encoders.SounEncoder.EncodeNew(
-                    (Models.Records.Misc.SoundRecord)model),
-                "TXST" => Writers.Encoders.TxstEncoder.EncodeNew(
-                    (Models.Records.Misc.TextureSetRecord)model),
-                "LTEX" => Writers.Encoders.LtexEncoder.EncodeNew(
-                    (Models.Records.Misc.LandscapeTextureRecord)model),
-                "CHAL" => Writers.Encoders.ChalEncoder.EncodeNew(
-                    (Models.Records.Misc.ChallengeRecord)model),
-                "BPTD" => Writers.Encoders.BptdEncoder.EncodeNew(
-                    (Models.Records.Character.BodyPartDataRecord)model),
-                "ENCH" => Writers.Encoders.EnchEncoder.EncodeNew(
-                    (Models.Records.Magic.EnchantmentRecord)model),
-                "SPEL" => Writers.Encoders.SpelEncoder.EncodeNew(
-                    (Models.Records.Magic.SpellRecord)model),
-                "PERK" => Writers.Encoders.PerkEncoder.EncodeNew(
-                    (Models.Records.Magic.PerkRecord)model),
-                "MGEF" => Writers.Encoders.MgefEncoder.EncodeNew(
-                    (Models.Records.Magic.BaseEffectRecord)model),
-                "WRLD" => Writers.Encoders.WrldEncoder.EncodeNew(
-                    (Models.Records.World.WorldspaceRecord)model),
-                "RACE" => Writers.Encoders.RaceEncoder.EncodeNew(
-                    (Models.Records.Character.RaceRecord)model),
+                "CONT" => ContEncoder.EncodeNew(
+                    (ContainerRecord)model),
+                "FURN" => FurnEncoder.EncodeNew(
+                    (FurnitureRecord)model),
+                "TERM" => TermEncoder.EncodeNew(
+                    (TerminalRecord)model),
+                "PROJ" => ProjEncoder.EncodeNew(
+                    (ProjectileRecord)model),
+                "EXPL" => ExplEncoder.EncodeNew(
+                    (ExplosionRecord)model),
+                "IMOD" => ImodEncoder.EncodeNew(
+                    (WeaponModRecord)model),
+                "ARMA" => ArmaEncoder.EncodeNew(
+                    (ArmaRecord)model),
+                "RCPE" => RcpeEncoder.EncodeNew(
+                    (RecipeRecord)model),
+                "RCCT" => RcctEncoder.EncodeNew(
+                    (RecipeCategoryRecord)model),
+                "COBJ" => CobjEncoder.EncodeNew(
+                    (ConstructibleObjectRecord)model),
+                "EYES" => EyesEncoder.EncodeNew(
+                    (EyesRecord)model),
+                "HAIR" => HairEncoder.EncodeNew(
+                    (HairRecord)model),
+                "REPU" => RepuEncoder.EncodeNew(
+                    (ReputationRecord)model),
+                "AVIF" => AvifEncoder.EncodeNew(
+                    (ActorValueInfoRecord)model),
+                "MUSC" => MuscEncoder.EncodeNew(
+                    (MusicTypeRecord)model),
+                "MESG" => MesgEncoder.EncodeNew(
+                    (MessageRecord)model),
+                "NOTE" => NoteEncoder.EncodeNew(
+                    (NoteRecord)model),
+                "FLST" => FlstEncoder.EncodeNew(
+                    (FormListRecord)model),
+                "LVLI" or "LVLN" or "LVLC" => LvliEncoder.EncodeNew(
+                    (LeveledListRecord)model),
+                "CREA" => CreaEncoder.EncodeNew(
+                    (CreatureRecord)model),
+                "CLAS" => ClasEncoder.EncodeNew(
+                    (ClassRecord)model),
+                "SOUN" => SounEncoder.EncodeNew(
+                    (SoundRecord)model),
+                "TXST" => TxstEncoder.EncodeNew(
+                    (TextureSetRecord)model),
+                "LTEX" => LtexEncoder.EncodeNew(
+                    (LandscapeTextureRecord)model),
+                "CHAL" => ChalEncoder.EncodeNew(
+                    (ChallengeRecord)model),
+                "BPTD" => BptdEncoder.EncodeNew(
+                    (BodyPartDataRecord)model),
+                "ENCH" => EnchEncoder.EncodeNew(
+                    (EnchantmentRecord)model),
+                "SPEL" => SpelEncoder.EncodeNew(
+                    (SpellRecord)model),
+                "PERK" => PerkEncoder.EncodeNew(
+                    (PerkRecord)model),
+                "MGEF" => MgefEncoder.EncodeNew(
+                    (BaseEffectRecord)model),
+                "WRLD" => WrldEncoder.EncodeNew(
+                    (WorldspaceRecord)model),
+                "RACE" => RaceEncoder.EncodeNew(
+                    (RaceRecord)model),
                 _ => null
             };
         }
@@ -819,7 +796,7 @@ public sealed class PluginBuilder
             {
                 _sink.Decision("Merging top-level records",
                     "New-record emission deferred for this type — skipped.",
-                    recordType, ExtractFormId(model), code: $"skipped:new-{recordType}");
+                    recordType, ExtractFormId(model), $"skipped:new-{recordType}");
             }
 
             return false;
@@ -872,7 +849,8 @@ public sealed class PluginBuilder
 
         var allocatedFormId = allocator.Allocate();
         var flags = options.CompressRecords ? 0x00040000u : 0u;
-        recordBytes = PluginRecordByteBuilder.BuildNewRecordBytes(recordType, allocatedFormId, flags, validatedSubrecords);
+        recordBytes =
+            PluginRecordByteBuilder.BuildNewRecordBytes(recordType, allocatedFormId, flags, validatedSubrecords);
 
         var dmpSourceFormId = ExtractFormId(model);
         if (dmpSourceFormId != 0 && dmpSourceFormId != allocatedFormId)
@@ -890,6 +868,7 @@ public sealed class PluginBuilder
             allocTypeSet = [];
             _emittedNewFormIdsByType[recordType] = allocTypeSet;
         }
+
         allocTypeSet.Add(allocatedFormId);
 
         if (options.VerboseDecisions)
@@ -904,113 +883,12 @@ public sealed class PluginBuilder
 
     /// <summary>
     ///     Build cell-children bundles. v3 handles three cases:
-    ///       1. Cell exists in PC ESM, ref exists in PC ESM → override (v2 path)
-    ///       2. Cell exists in PC ESM, ref doesn't → new ref allocated under existing cell
-    ///       3. Cell doesn't exist in PC ESM → new CELL with new refs as children
+    ///     1. Cell exists in PC ESM, ref exists in PC ESM → override (v2 path)
+    ///     2. Cell exists in PC ESM, ref doesn't → new ref allocated under existing cell
+    ///     3. Cell doesn't exist in PC ESM → new CELL with new refs as children
     ///     Plus, for HasTemporary cells with a master, master refs missing from DMP get
     ///     deleted-flag overrides via <see cref="DeletedRefSynthesizer" />.
     /// </summary>
-    /// <summary>
-    ///     Group <see cref="Models.Records.World.CellRecord" /> captures by their logical
-    ///     identity (master FormID for overrides, (worldspace, gridX, gridY) for new
-    ///     exterior cells, EditorID for new interior cells) and union their
-    ///     <c>PlacedObjects</c> lists deduped by REFR FormID. First-capture-wins for every
-    ///     other field. Returns one merged <see cref="Models.Records.World.CellRecord" />
-    ///     per logical cell. Single-capture cells pass through unchanged.
-    /// </summary>
-    private List<Models.Records.World.CellRecord> UnionCellPlacementsAcrossCaptures(
-        IReadOnlyList<Models.Records.World.CellRecord> cells,
-        PluginBuildOptions options)
-    {
-        var groups = new Dictionary<string, List<Models.Records.World.CellRecord>>(StringComparer.Ordinal);
-        var orderedKeys = new List<string>();
-        foreach (var cell in cells)
-        {
-            var key = ComputeCellIdentityKey(cell);
-            if (!groups.TryGetValue(key, out var list))
-            {
-                list = [];
-                groups[key] = list;
-                orderedKeys.Add(key);
-            }
-            list.Add(cell);
-        }
-
-        var merged = new List<Models.Records.World.CellRecord>(orderedKeys.Count);
-        var totalUnioned = 0;
-        var totalGroupsWithMerges = 0;
-        foreach (var key in orderedKeys)
-        {
-            var captures = groups[key];
-            if (captures.Count == 1)
-            {
-                merged.Add(captures[0]);
-                continue;
-            }
-
-            var primary = captures[0];
-            var seen = new HashSet<uint>(capacity: primary.PlacedObjects.Count);
-            var unionList = new List<Models.World.PlacedReference>(primary.PlacedObjects.Count);
-            foreach (var capture in captures)
-            {
-                foreach (var placed in capture.PlacedObjects)
-                {
-                    if (seen.Add(placed.FormId))
-                    {
-                        unionList.Add(placed);
-                    }
-                }
-            }
-
-            var added = unionList.Count - primary.PlacedObjects.Count;
-            if (added > 0)
-            {
-                totalUnioned += added;
-                totalGroupsWithMerges++;
-            }
-
-            merged.Add(primary with { PlacedObjects = unionList });
-
-            if (options.VerboseDecisions && added > 0)
-            {
-                _sink.Decision("Merging cell children",
-                    $"Cell {key} unioned {captures.Count} captures: " +
-                    $"primary had {primary.PlacedObjects.Count}, union has {unionList.Count} (+{added} from secondary captures).",
-                    "CELL", primary.FormId, code: "cell.capture-union");
-            }
-        }
-
-        if (totalUnioned > 0)
-        {
-            _sink.Info("Merging cell children",
-                $"Multi-capture cell union: gained {totalUnioned:N0} placement(s) across " +
-                $"{totalGroupsWithMerges:N0} cell(s) (was first-capture-only).");
-        }
-
-        return merged;
-    }
-
-    /// <summary>
-    ///     Stable identity key per logical cell. Cells with a real master-style FormID
-    ///     are keyed by FormID. Virtual cells (parser-synthesized; FormID 0xFE-prefixed)
-    ///     fall through to grid coords + worldspace. Interior cells without coords use
-    ///     EditorID.
-    /// </summary>
-    private static string ComputeCellIdentityKey(Models.Records.World.CellRecord cell)
-    {
-        if (cell.FormId != 0 && (cell.FormId & 0xFF000000u) != 0xFE000000u)
-        {
-            return $"FID:{cell.FormId:X8}";
-        }
-
-        if (cell.IsInterior)
-        {
-            return $"INT:{cell.EditorId ?? "(none)"}";
-        }
-
-        return $"EXT:{cell.WorldspaceFormId ?? 0:X8}:{cell.GridX ?? 0}:{cell.GridY ?? 0}";
-    }
-
     private List<CellOverrideBundle> BuildCellOverrideBundles(
         RecordCollection dmpRecords,
         Dictionary<uint, ParsedMainRecord> pcRecordsByFormId,
@@ -1038,7 +916,27 @@ public sealed class PluginBuilder
         // PlacedObjects lists diverge. Without unioning, we'd emit only the FIRST capture's
         // placements and silently drop the rest — observed losing 20+ placements per cell
         // when secondary captures held additional content.
-        var mergedCells = UnionCellPlacementsAcrossCaptures(dmpRecords.Cells, options);
+        var unionResult = CellCaptureUnioner.Union(dmpRecords.Cells);
+        var mergedCells = unionResult.Cells;
+        if (unionResult.TotalUnionedPlacements > 0)
+        {
+            _sink.Info("Merging cell children",
+                $"Multi-capture cell union: gained {unionResult.TotalUnionedPlacements:N0} placement(s) across " +
+                $"{unionResult.CellGroupsWithMerges:N0} cell(s) (was first-capture-only).");
+        }
+
+        if (options.VerboseDecisions)
+        {
+            foreach (var diagnostic in unionResult.Diagnostics)
+            {
+                _sink.Decision("Merging cell children",
+                    $"Cell {diagnostic.CellKey} unioned {diagnostic.CaptureCount:N0} captures: primary had " +
+                    $"{diagnostic.PrimaryPlacementCount:N0}, union has {diagnostic.UnionPlacementCount:N0} " +
+                    $"(+{diagnostic.AddedPlacementCount:N0} from secondary captures).",
+                    "CELL", diagnostic.PrimaryFormId, "cell.capture-union");
+            }
+        }
+
         var landOverrideBuilder = new LandOverrideBuilder(_sink, RewriteLandTextureFormIds);
 
         foreach (var dmpCell in mergedCells)
@@ -1060,7 +958,7 @@ public sealed class PluginBuilder
                     stats.IncrementSkipped("CELL");
                     _sink.Warn("Merging cell children",
                         "Cell has no master GRUP context — skipped.",
-                        "CELL", dmpCell.FormId, code: "skipped:no-context");
+                        "CELL", dmpCell.FormId, "skipped:no-context");
                     continue;
                 }
 
@@ -1076,7 +974,7 @@ public sealed class PluginBuilder
                     stats.IncrementSkipped("CELL");
                     _sink.Warn("Merging cell children",
                         "Registry missing CellEncoder — new cell skipped.",
-                        "CELL", dmpCell.FormId, code: "skipped:no-cell-encoder");
+                        "CELL", dmpCell.FormId, "skipped:no-cell-encoder");
                     continue;
                 }
 
@@ -1124,8 +1022,8 @@ public sealed class PluginBuilder
             // preservation filter passed to the deletion synthesizer below, this wipes master's
             // temporary refs from the view while keeping persistent refs alive.
             var replaceTemporaries = options.ReplaceCellTemporariesOnOverride
-                && pcCellExists
-                && dmpCell.PlacedObjects.Count > 0;
+                                     && pcCellExists
+                                     && dmpCell.PlacedObjects.Count > 0;
             if (replaceTemporaries)
             {
                 mode = CellMergeMode.HasTemporary;
@@ -1175,13 +1073,13 @@ public sealed class PluginBuilder
                 stats.RecordsConsidered++;
                 dmpRefFormIdsInCell.Add(placed.FormId);
 
-                if (RuntimeStateFormIds.Contains(placed.FormId))
+                if (RuntimeStateRecordPolicy.IsRuntimeStateFormId(placed.FormId))
                 {
                     stats.IncrementSkipped(placed.RecordType);
                     _sink.Decision("Merging cell children",
                         $"Skipping runtime-state ref 0x{placed.FormId:X8} — DMP captures live " +
                         "gameplay state for engine-reserved records.",
-                        placed.RecordType, placed.FormId, code: "runtime-state.skip-ref");
+                        placed.RecordType, placed.FormId, "runtime-state.skip-ref");
                     continue;
                 }
 
@@ -1226,7 +1124,7 @@ public sealed class PluginBuilder
                     // SCOLParkingLotChunk03 → master SCOLParkingLotChunk03b), rewrite the
                     // REFR's NAME to point at that master record and keep the placement.
                     if (options.EnableRefrBaseEditorIdRemap
-                        && this.TryRemapRefrBaseByEditorIdStem(placed, placedForEmit, stats, out var remapped))
+                        && TryRemapRefrBaseByEditorIdStem(placed, placedForEmit, stats, out var remapped))
                     {
                         placedForEmit = remapped;
                     }
@@ -1237,7 +1135,7 @@ public sealed class PluginBuilder
                         _sink.Decision("Merging cell children",
                             $"Skipping new ref 0x{placed.FormId:X8} — base 0x{placedForEmit.BaseFormId:X8} " +
                             "not in master ESM and not freshly emitted (FO3-vintage / deleted in released FNV).",
-                            placed.RecordType, placed.FormId, code: "refr.dangling-base");
+                            placed.RecordType, placed.FormId, "refr.dangling-base");
                         continue;
                     }
                 }
@@ -1310,7 +1208,7 @@ public sealed class PluginBuilder
                 // use a persistent-only filter for the deletion synthesizer so all temporary
                 // master refs (structural or not) get a deletion override while every
                 // persistent master ref survives untouched.
-                int preservedStructural = 0;
+                var preservedStructural = 0;
                 Func<ParsedMainRecord, bool>? preserveFilter;
                 if (replaceTemporaries)
                 {
@@ -1328,7 +1226,7 @@ public sealed class PluginBuilder
                             return true;
                         }
 
-                        var baseFormId = ReadNameFormId(masterRef);
+                        var baseFormId = CellStructuralReferencePreserver.ReadNameFormId(masterRef);
                         if (!baseFormId.HasValue
                             || !pcRecordsByFormId.TryGetValue(baseFormId.Value, out var baseRec))
                         {
@@ -1341,10 +1239,11 @@ public sealed class PluginBuilder
                 }
                 else
                 {
-                    preservedStructural = PreserveMissingStructuralCellRefs(
+                    preservedStructural = CellStructuralReferencePreserver.PreserveMissing(
                         masterRefs!, dmpRefFormIdsInCell, pcRecordsByFormId,
                         persistentRecords, temporaryRecords, stats);
-                    preserveFilter = masterRef => IsStructuralCellRef(masterRef, pcRecordsByFormId);
+                    preserveFilter = masterRef => CellStructuralReferencePreserver.IsStructuralCellRef(
+                        masterRef, pcRecordsByFormId);
                 }
 
                 var deleted = DeletedRefSynthesizer.Synthesize(
@@ -1361,14 +1260,14 @@ public sealed class PluginBuilder
                     _sink.Decision("Merging cell children",
                         $"{label}: {deleted.Persistent.Count} persistent + {deleted.Temporary.Count} temporary master refs marked deleted{typeSuffix}.",
                         "CELL", dmpCell.FormId,
-                        code: replaceTemporaries ? "cell.full-replace-on-override" : null);
+                        replaceTemporaries ? "cell.full-replace-on-override" : null);
                 }
 
                 if (preservedStructural > 0 && options.VerboseDecisions)
                 {
                     _sink.Decision("Merging cell children",
                         $"Preserved {preservedStructural} structural marker ref(s) missing from DMP cell snapshot.",
-                        "CELL", dmpCell.FormId, code: "cell.structural-preserved");
+                        "CELL", dmpCell.FormId, "cell.structural-preserved");
                 }
             }
 
@@ -1432,7 +1331,7 @@ public sealed class PluginBuilder
                     {
                         _sink.Decision("Merging cell children",
                             $"Preserved vanilla LAND 0x{masterLandFormId.Value:X8} in override cell 0x{dmpCell.FormId:X8}.",
-                            "LAND", masterLandFormId.Value, code: "land.preserved");
+                            "LAND", masterLandFormId.Value, "land.preserved");
                     }
                 }
             }
@@ -1470,7 +1369,7 @@ public sealed class PluginBuilder
                         _sink.Decision("Merging cell children",
                             $"Preserved {prependedCount} vanilla NAVM record(s) in override cell " +
                             $"0x{dmpCell.FormId:X8} so idle NPCs stay anchored.",
-                            "CELL", dmpCell.FormId, code: "navm.preserved");
+                            "CELL", dmpCell.FormId, "navm.preserved");
                     }
                 }
             }
@@ -1583,8 +1482,8 @@ public sealed class PluginBuilder
 
     /// <summary>Encode an override ref (FormID matches PC ESM master).</summary>
     private bool TryEncodeOverrideRef(
-        Models.World.PlacedReference placed,
-        Writers.IRecordEncoder encoder,
+        PlacedReference placed,
+        IRecordEncoder encoder,
         ParsedMainRecord pcRefRecord,
         SubrecordMergePolicy policy,
         PluginBuildOptions options,
@@ -1621,13 +1520,13 @@ public sealed class PluginBuilder
             _sink.Warn("Merging cell children", w, placed.RecordType, placed.FormId);
         }
 
-        bytes = BuildRecordBytes(pcRefRecord, merge.SubrecordBytes, options);
+        bytes = PluginRecordByteBuilder.BuildOverrideRecordBytes(pcRefRecord, merge.SubrecordBytes, options);
         return true;
     }
 
     /// <summary>Encode a new ref (FormID not in PC ESM — v3 new-record path).</summary>
     private bool TryEncodeNewRef(
-        Models.World.PlacedReference placed,
+        PlacedReference placed,
         FormIdAllocator allocator,
         PluginBuildOptions options,
         ConversionPipelineStats stats,
@@ -1638,7 +1537,7 @@ public sealed class PluginBuilder
         EncodedRecord encoded;
         try
         {
-            encoded = Writers.Encoders.RefrEncoder.EncodeNewPlacedReference(placed);
+            encoded = RefrEncoder.EncodeNewPlacedReference(placed);
         }
         catch (Exception ex)
         {
@@ -1658,7 +1557,8 @@ public sealed class PluginBuilder
 
         var allocatedFormId = allocator.Allocate();
         var flags = ComputeNewRefFlags(placed, options);
-        bytes = PluginRecordByteBuilder.BuildNewRecordBytes(placed.RecordType, allocatedFormId, flags, encoded.Subrecords);
+        bytes = PluginRecordByteBuilder.BuildNewRecordBytes(placed.RecordType, allocatedFormId, flags,
+            encoded.Subrecords);
 
         if (options.VerboseDecisions)
         {
@@ -1671,9 +1571,9 @@ public sealed class PluginBuilder
     }
 
     private static byte[] BuildNewCellRecordBytes(
-        Models.Records.World.CellRecord dmpCell,
+        CellRecord dmpCell,
         uint emittedFormId,
-        Writers.IRecordEncoder cellEncoder,
+        IRecordEncoder cellEncoder,
         PluginBuildOptions options,
         ConversionPipelineStats stats)
     {
@@ -1694,11 +1594,11 @@ public sealed class PluginBuilder
     ///     resolution matches a differently-named asset.
     /// </summary>
     private void TryApplyAssetRenames(
-        Models.RecordCollection dmpRecords,
+        RecordCollection dmpRecords,
         PluginBuildOptions options,
         CancellationToken ct)
     {
-        var renameService = new AssetPacking.AssetRenameService(_sink);
+        var renameService = new AssetRenameService(_sink);
         renameService.Apply(dmpRecords, options, ct);
     }
 
@@ -1729,17 +1629,10 @@ public sealed class PluginBuilder
     }
 
     /// <summary>
-    ///     Record types eligible to be referenced as the "base" of a REFR/ACHR/ACRE placed
-    ///     reference. Shared with <see cref="ReferenceBaseRemapper"/> so the master index
-    ///     and runtime REFR rescue policy use identical type gates.
-    /// </summary>
-    private static readonly HashSet<string> RefrBaseEligibleTypes = ReferenceBaseRemapper.RefrBaseEligibleTypes;
-
-    /// <summary>
-    ///     Phase C: locate a single master record of <paramref name="expectedBaseType"/>
-    ///     whose normalized EditorID stem matches <paramref name="prototypeBaseEditorId"/>.
+    ///     Phase C: locate a single master record of <paramref name="expectedBaseType" />
+    ///     whose normalized EditorID stem matches <paramref name="prototypeBaseEditorId" />.
     ///     Returns the master FormID on a unique hit; null on no hit, empty stem, or
-    ///     mismatched type; null + <paramref name="ambiguous"/>=true on multiple-candidate
+    ///     mismatched type; null + <paramref name="ambiguous" />=true on multiple-candidate
     ///     hits so the caller can log a refusal decision. Extracted as a static helper
     ///     for unit testability — the instance overload wraps it with the builder's
     ///     pre-built stem lookup.
@@ -1828,17 +1721,17 @@ public sealed class PluginBuilder
     /// <summary>
     ///     Phase C: attempt to rescue an otherwise-orphaned REFR by remapping its
     ///     base FormID to a master record with a matching normalized EditorID stem.
-    ///     Returns true (and produces a <paramref name="remapped"/> reference with the
+    ///     Returns true (and produces a <paramref name="remapped" /> reference with the
     ///     updated <c>BaseFormId</c>) when a unique same-type stem match exists;
     ///     returns false on no match, ambiguity, or missing prototype EditorID. Counters
     ///     and decision logs are emitted as a side-effect so callers don't need to
     ///     duplicate that bookkeeping.
     /// </summary>
     private bool TryRemapRefrBaseByEditorIdStem(
-        Models.World.PlacedReference placed,
-        Models.World.PlacedReference placedForEmit,
+        PlacedReference placed,
+        PlacedReference placedForEmit,
         ConversionPipelineStats stats,
-        out Models.World.PlacedReference remapped)
+        out PlacedReference remapped)
     {
         remapped = placedForEmit;
 
@@ -1900,7 +1793,7 @@ public sealed class PluginBuilder
                 $"Refusing EditorID-stem remap for new ref 0x{placed.FormId:X8} base " +
                 $"0x{placedForEmit.BaseFormId:X8} \"{placed.BaseEditorId}\" — stem matches " +
                 $"{ambiguousCount} master {ambiguousType} records, ambiguous.",
-                placed.RecordType, placed.FormId, code: "refr.editorid-remap-ambiguous");
+                placed.RecordType, placed.FormId, "refr.editorid-remap-ambiguous");
             return false;
         }
 
@@ -1917,7 +1810,7 @@ public sealed class PluginBuilder
                 $"0x{placedForEmit.BaseFormId:X8} \"{placed.BaseEditorId}\" — stem matches " +
                 $"master records in {hits.Count} different types " +
                 $"({string.Join(", ", hits.Select(h => h.Type))}); cross-type ambiguity.",
-                placed.RecordType, placed.FormId, code: "refr.editorid-remap-ambiguous");
+                placed.RecordType, placed.FormId, "refr.editorid-remap-ambiguous");
             return false;
         }
 
@@ -1928,14 +1821,14 @@ public sealed class PluginBuilder
             $"Remapped new ref 0x{placed.FormId:X8} base 0x{placedForEmit.BaseFormId:X8} " +
             $"\"{placed.BaseEditorId}\" → master {winningType} 0x{winningFormId:X8} by " +
             "EditorID-stem fallback.",
-            placed.RecordType, placed.FormId, code: "refr.editorid-remap");
+            placed.RecordType, placed.FormId, "refr.editorid-remap");
 
         remapped = placedForEmit with { BaseFormId = winningFormId };
         return true;
     }
 
-    private Models.World.PlacedReference RemapNewPlacedActorBase(
-        Models.World.PlacedReference placed,
+    private PlacedReference RemapNewPlacedActorBase(
+        PlacedReference placed,
         IReadOnlyDictionary<uint, uint> actorBaseRemap,
         PluginBuildOptions options)
     {
@@ -1946,7 +1839,7 @@ public sealed class PluginBuilder
             return placed;
         }
 
-        uint? masterBaseFormId = actorBaseRemap.TryGetValue(placed.BaseFormId, out var mappedBase)
+        var masterBaseFormId = actorBaseRemap.TryGetValue(placed.BaseFormId, out var mappedBase)
             ? mappedBase
             : TryFindMasterActorBaseByEditorId(placed);
 
@@ -1961,13 +1854,13 @@ public sealed class PluginBuilder
                 $"New {placed.RecordType} 0x{placed.FormId:X8} base remapped " +
                 $"0x{placed.BaseFormId:X8} → master 0x{masterBaseFormId.Value:X8} " +
                 "to avoid partial runtime actor-base emission.",
-                placed.RecordType, placed.FormId, code: "refr.actor-base-remap");
+                placed.RecordType, placed.FormId, "refr.actor-base-remap");
         }
 
         return placed with { BaseFormId = masterBaseFormId.Value };
     }
 
-    private uint? TryFindMasterActorBaseByEditorId(Models.World.PlacedReference placed)
+    private uint? TryFindMasterActorBaseByEditorId(PlacedReference placed)
     {
         if (_masterEditorIdToFormIdByType is null || string.IsNullOrEmpty(placed.BaseEditorId))
         {
@@ -1999,20 +1892,21 @@ public sealed class PluginBuilder
     ///     avoid flapping from float-precision noise.
     /// </summary>
     internal static bool TryDetectScolOverrideDelta(
-        Models.Records.World.StaticCollectionRecord dmp,
+        StaticCollectionRecord dmp,
         ParsedMainRecord master,
         out string reason)
     {
         const float epsilon = 0.01f;
-        var masterParts = new List<(uint OnamFormId, List<Models.Records.World.StaticCollectionPlacement> Placements)>();
-        var currentPart = (-1);
+        var masterParts = new List<(uint OnamFormId, List<StaticCollectionPlacement> Placements)>();
+        var currentPart = -1;
 
         foreach (var sub in master.Subrecords)
         {
             switch (sub.Signature)
             {
                 case "ONAM" when sub.Data.Length == 4:
-                    masterParts.Add((BinaryPrimitives.ReadUInt32LittleEndian(sub.Data), new()));
+                    masterParts.Add((BinaryPrimitives.ReadUInt32LittleEndian(sub.Data),
+                        new List<StaticCollectionPlacement>()));
                     currentPart = masterParts.Count - 1;
                     break;
                 case "DATA" when sub.Data.Length > 0 && sub.Data.Length % 28 == 0 && currentPart >= 0:
@@ -2021,7 +1915,7 @@ public sealed class PluginBuilder
                     for (var i = 0; i < count; i++)
                     {
                         var span = sub.Data.AsSpan(i * 28, 28);
-                        placements.Add(new Models.Records.World.StaticCollectionPlacement(
+                        placements.Add(new StaticCollectionPlacement(
                             BinaryPrimitives.ReadSingleLittleEndian(span[..4]),
                             BinaryPrimitives.ReadSingleLittleEndian(span[4..8]),
                             BinaryPrimitives.ReadSingleLittleEndian(span[8..12]),
@@ -2045,13 +1939,15 @@ public sealed class PluginBuilder
         {
             if (dmp.Parts[i].OnamFormId != masterParts[i].OnamFormId)
             {
-                reason = $"part #{i} ONAM dmp=0x{dmp.Parts[i].OnamFormId:X8} vs master=0x{masterParts[i].OnamFormId:X8}";
+                reason =
+                    $"part #{i} ONAM dmp=0x{dmp.Parts[i].OnamFormId:X8} vs master=0x{masterParts[i].OnamFormId:X8}";
                 return true;
             }
 
             if (dmp.Parts[i].Placements.Count != masterParts[i].Placements.Count)
             {
-                reason = $"part #{i} placement count dmp={dmp.Parts[i].Placements.Count} vs master={masterParts[i].Placements.Count}";
+                reason =
+                    $"part #{i} placement count dmp={dmp.Parts[i].Placements.Count} vs master={masterParts[i].Placements.Count}";
                 return true;
             }
 
@@ -2060,9 +1956,11 @@ public sealed class PluginBuilder
                 var dp = dmp.Parts[i].Placements[p];
                 var mp = masterParts[i].Placements[p];
                 if (MathF.Abs(dp.X - mp.X) > epsilon || MathF.Abs(dp.Y - mp.Y) > epsilon
-                    || MathF.Abs(dp.Z - mp.Z) > epsilon || MathF.Abs(dp.RotX - mp.RotX) > epsilon
-                    || MathF.Abs(dp.RotY - mp.RotY) > epsilon || MathF.Abs(dp.RotZ - mp.RotZ) > epsilon
-                    || MathF.Abs(dp.Scale - mp.Scale) > epsilon)
+                                                     || MathF.Abs(dp.Z - mp.Z) > epsilon ||
+                                                     MathF.Abs(dp.RotX - mp.RotX) > epsilon
+                                                     || MathF.Abs(dp.RotY - mp.RotY) > epsilon ||
+                                                     MathF.Abs(dp.RotZ - mp.RotZ) > epsilon
+                                                     || MathF.Abs(dp.Scale - mp.Scale) > epsilon)
                 {
                     reason = $"part #{i} placement #{p} floats differ beyond {epsilon} tolerance";
                     return true;
@@ -2110,8 +2008,8 @@ public sealed class PluginBuilder
     ///     warning per drop so the user can see what was nulled and which records lose
     ///     scripts.
     /// </summary>
-    private IReadOnlyList<Writers.EncodedSubrecord> ValidateScriRefs(
-        IReadOnlyList<Writers.EncodedSubrecord> subrecords,
+    private IReadOnlyList<EncodedSubrecord> ValidateScriRefs(
+        IReadOnlyList<EncodedSubrecord> subrecords,
         string recordType,
         uint? sourceFormId)
     {
@@ -2120,7 +2018,7 @@ public sealed class PluginBuilder
             return subrecords;
         }
 
-        List<Writers.EncodedSubrecord>? filtered = null;
+        List<EncodedSubrecord>? filtered = null;
         for (var i = 0; i < subrecords.Count; i++)
         {
             var sub = subrecords[i];
@@ -2130,7 +2028,7 @@ public sealed class PluginBuilder
                 continue;
             }
 
-            var formId = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(sub.Bytes);
+            var formId = BinaryPrimitives.ReadUInt32LittleEndian(sub.Bytes);
             // v22.scri.typed: validate against the SCPT-typed subsets, not the generic union.
             // The loose union check let through SCRI FormIDs that pointed at non-SCPT master
             // records (STAT/ACTI/etc.), and the runtime then logged "Unable to find script"
@@ -2145,7 +2043,7 @@ public sealed class PluginBuilder
 
             // Dangling script ref — initialize the copy if we haven't already, then skip
             // this subrecord so the engine sees no SCRI on this record.
-            filtered ??= new List<Writers.EncodedSubrecord>(subrecords.Count);
+            filtered ??= new List<EncodedSubrecord>(subrecords.Count);
             if (filtered.Count == 0)
             {
                 for (var j = 0; j < i; j++)
@@ -2156,17 +2054,17 @@ public sealed class PluginBuilder
 
             _sink.Warn("Merging top-level records",
                 $"Dropping SCRI 0x{formId:X8} — script FormID not in master ESM or newly emitted set.",
-                recordType, sourceFormId, code: "scri.dangling");
+                recordType, sourceFormId, "scri.dangling");
         }
 
         return filtered ?? subrecords;
     }
 
-    private IReadOnlyList<Writers.EncodedSubrecord> ValidateLtexRefs(
-        IReadOnlyList<Writers.EncodedSubrecord> subrecords,
+    private IReadOnlyList<EncodedSubrecord> ValidateLtexRefs(
+        IReadOnlyList<EncodedSubrecord> subrecords,
         uint sourceFormId)
     {
-        List<Writers.EncodedSubrecord>? rewritten = null;
+        List<EncodedSubrecord>? rewritten = null;
         for (var i = 0; i < subrecords.Count; i++)
         {
             var sub = subrecords[i];
@@ -2183,7 +2081,7 @@ public sealed class PluginBuilder
                 continue;
             }
 
-            var rawFormId = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(sub.Bytes);
+            var rawFormId = BinaryPrimitives.ReadUInt32LittleEndian(sub.Bytes);
             var formId = _newRecordSourceToAllocated.GetValueOrDefault(rawFormId, rawFormId);
             if (IsKnownFormIdForType(formId, targetType))
             {
@@ -2192,7 +2090,7 @@ public sealed class PluginBuilder
                 continue;
             }
 
-            rewritten ??= new List<Writers.EncodedSubrecord>(subrecords.Count);
+            rewritten ??= new List<EncodedSubrecord>(subrecords.Count);
             if (rewritten.Count == 0)
             {
                 for (var j = 0; j < i; j++)
@@ -2204,7 +2102,7 @@ public sealed class PluginBuilder
             _sink.Warn("Merging top-level records",
                 $"Dropping LTEX {sub.Signature} 0x{rawFormId:X8} — target {targetType} FormID " +
                 "not in master ESM or newly emitted set.",
-                "LTEX", sourceFormId, code: "ltex.dangling-ref");
+                "LTEX", sourceFormId, "ltex.dangling-ref");
         }
 
         return rewritten ?? subrecords;
@@ -2252,18 +2150,18 @@ public sealed class PluginBuilder
         return _emittedNewFormIdsByType.TryGetValue(recordType, out var emittedIds) && emittedIds.Contains(formId);
     }
 
-    private static Writers.EncodedSubrecord RewriteFormIdSubrecord(string signature, uint formId)
+    private static EncodedSubrecord RewriteFormIdSubrecord(string signature, uint formId)
     {
         var bytes = new byte[4];
-        Writers.SubrecordEncoder.WriteFormId(bytes, 0, formId);
-        return new Writers.EncodedSubrecord(signature, bytes);
+        SubrecordEncoder.WriteFormId(bytes, 0, formId);
+        return new EncodedSubrecord(signature, bytes);
     }
 
     /// <summary>
     ///     Compute the record header flags for a newly-emitted placed ref. Captures persistent
     ///     and initially-disabled flags from the parsed model.
     /// </summary>
-    private static uint ComputeNewRefFlags(Models.World.PlacedReference placed, PluginBuildOptions options)
+    private static uint ComputeNewRefFlags(PlacedReference placed, PluginBuildOptions options)
     {
         uint flags = 0;
         if (placed.IsPersistent)
@@ -2305,80 +2203,6 @@ public sealed class PluginBuilder
     }
 
     /// <summary>
-    ///     Preserve master refs that carry room/portal/occlusion marker data when a loaded
-    ///     DMP cell is in wipeout mode. These refs are often editor/runtime infrastructure
-    ///     rather than visible objects, so they may not appear in the DMP snapshot even
-    ///     though dropping them breaks interior culling and navigation portal behavior.
-    /// </summary>
-    private static int PreserveMissingStructuralCellRefs(
-        IReadOnlyList<ParsedMainRecord> masterRefs,
-        ISet<uint> dmpFormIdsInCell,
-        IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId,
-        List<byte[]> persistentRecords,
-        List<byte[]> temporaryRecords,
-        ConversionPipelineStats stats)
-    {
-        var preserved = 0;
-        foreach (var masterRef in masterRefs)
-        {
-            if (dmpFormIdsInCell.Contains(masterRef.Header.FormId)
-                || !IsStructuralCellRef(masterRef, pcRecordsByFormId))
-            {
-                continue;
-            }
-
-            var bytes = CellGrupBuilder.ReconstructRecordBytes(masterRef);
-            if ((masterRef.Header.Flags & 0x00000400u) != 0)
-            {
-                persistentRecords.Add(bytes);
-            }
-            else
-            {
-                temporaryRecords.Add(bytes);
-            }
-
-            preserved++;
-            stats.IncrementEmitted(masterRef.Header.Signature);
-        }
-
-        return preserved;
-    }
-
-    private static bool IsStructuralCellRef(
-        ParsedMainRecord masterRef,
-        IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId)
-    {
-        if (masterRef.Header.Signature != "REFR")
-        {
-            return false;
-        }
-
-        if (masterRef.Subrecords.Any(sub => StructuralCellRefSubrecords.Contains(sub.Signature)))
-        {
-            return true;
-        }
-
-        var baseFormId = ReadNameFormId(masterRef);
-        if (!baseFormId.HasValue
-            || !pcRecordsByFormId.TryGetValue(baseFormId.Value, out var baseRecord)
-            || string.IsNullOrEmpty(baseRecord.EditorId))
-        {
-            return false;
-        }
-
-        return StructuralBaseEditorIdNeedles.Any(needle =>
-            baseRecord.EditorId!.Contains(needle, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static uint? ReadNameFormId(ParsedMainRecord record)
-    {
-        var name = record.Subrecords.FirstOrDefault(sub => sub.Signature == "NAME" && sub.Data.Length >= 4);
-        return name is null
-            ? null
-            : System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(name.Data);
-    }
-
-    /// <summary>
     ///     Synthetic context for a newly-allocated interior cell. Goes under block 0 / subblock 0
     ///     (no master to mirror). FNVEdit may flag the placement as non-canonical but the engine
     ///     resolves cells by FormID, not GRUP position.
@@ -2390,7 +2214,7 @@ public sealed class PluginBuilder
             CellFormId = cellFormId,
             IsInterior = true,
             WorldspaceFormId = null,
-            BlockLabel = new byte[4],    // value = 0
+            BlockLabel = new byte[4], // value = 0
             SubblockLabel = new byte[4], // value = 0
             BlockGroupType = 2,
             SubblockGroupType = 3
@@ -2405,7 +2229,7 @@ public sealed class PluginBuilder
     ///     parent worldspace isn't present in the master ESM.
     /// </summary>
     private bool TryBuildSyntheticExteriorContext(
-        Models.Records.World.CellRecord dmpCell,
+        CellRecord dmpCell,
         FormIdAllocator allocator,
         Dictionary<uint, ParsedMainRecord> pcRecordsByFormId,
         ConversionPipelineStats stats,
@@ -2420,7 +2244,7 @@ public sealed class PluginBuilder
             stats.IncrementSkipped("CELL");
             _sink.Warn("Merging cell children",
                 $"New exterior CELL 0x{dmpCell.FormId:X8} skipped — missing parent worldspace FormID.",
-                "CELL", dmpCell.FormId, code: "skipped:no-master-worldspace");
+                "CELL", dmpCell.FormId, "skipped:no-master-worldspace");
             return false;
         }
 
@@ -2436,7 +2260,7 @@ public sealed class PluginBuilder
             _sink.Warn("Merging cell children",
                 $"New exterior CELL 0x{dmpCell.FormId:X8} skipped — parent worldspace " +
                 $"{parentWrldFormId:X8} not in master ESM and not in deferred new-WRLD set.",
-                "CELL", dmpCell.FormId, code: "skipped:no-master-worldspace");
+                "CELL", dmpCell.FormId, "skipped:no-master-worldspace");
             return false;
         }
 
@@ -2445,7 +2269,7 @@ public sealed class PluginBuilder
             stats.IncrementSkipped("CELL");
             _sink.Warn("Merging cell children",
                 $"New exterior CELL 0x{dmpCell.FormId:X8} skipped — missing grid coordinates.",
-                "CELL", dmpCell.FormId, code: "skipped:no-grid-coords");
+                "CELL", dmpCell.FormId, "skipped:no-grid-coords");
             return false;
         }
 
@@ -2466,7 +2290,7 @@ public sealed class PluginBuilder
                 $"New exterior CELL 0x{dmpCell.FormId:X8} skipped — worldspace " +
                 $"0x{coordKey.Item1:X8} already has cell 0x{existingCellFormId:X8} at " +
                 $"grid ({gridX}, {gridY}). First-wins dedup.",
-                "CELL", dmpCell.FormId, code: "cell.coord-dup");
+                "CELL", dmpCell.FormId, "cell.coord-dup");
             return false;
         }
 
@@ -2502,40 +2326,10 @@ public sealed class PluginBuilder
         unchecked
         {
             var packed = (ushort)y | ((uint)(ushort)x << 16);
-            System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(label, packed);
+            BinaryPrimitives.WriteUInt32LittleEndian(label, packed);
         }
 
         return label;
-    }
-
-    /// <summary>
-    ///     Builds the bytes for a single override record: 24-byte header + subrecord stream.
-    ///     Inherits flags and metadata from the source ESM record, forces version 0x000F,
-    ///     clears the compressed flag (overrides are emitted uncompressed for v1/v2).
-    /// </summary>
-    private static byte[] BuildRecordBytes(ParsedMainRecord esmRecord, byte[] subrecordBytes, PluginBuildOptions options)
-    {
-        var flags = esmRecord.Header.Flags;
-        if (!options.CompressRecords)
-        {
-            flags &= ~0x00040000u;
-        }
-        else
-        {
-            flags |= 0x00040000u;
-        }
-
-        var header = esmRecord.Header with
-        {
-            DataSize = (uint)subrecordBytes.Length,
-            Flags = flags,
-            Version = Tes4HeaderBuilder.RecordVersion
-        };
-
-        using var stream = new MemoryStream();
-        RecordHeaderProcessor.WriteRecordHeader(stream, header);
-        stream.Write(subrecordBytes);
-        return stream.ToArray();
     }
 
     /// <summary>

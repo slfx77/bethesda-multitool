@@ -16,9 +16,9 @@ internal sealed class RuntimeDialogueReader(
     RuntimeTerminalLayoutProbeResult? terminalLayoutProbe = null)
 {
     private readonly RuntimeMemoryContext _context = context;
-    private readonly RuntimeTerminalLayoutProbeResult? _terminalLayoutProbe = terminalLayoutProbe;
 
     private readonly InfoOffsets _info = InfoLayout;
+    private readonly RuntimeTerminalLayoutProbeResult? _terminalLayoutProbe = terminalLayoutProbe;
 
     // Delegate condition reading and list walking to the extracted helper class.
     private RuntimeDialogueConditionReader? _conditionReader;

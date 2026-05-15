@@ -1,17 +1,14 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
-using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Merge;
 
 /// <summary>
 ///     Merges DMP-encoded subrecords into a parsed ESM record's subrecord stream.
-///
 ///     Algorithm:
-///       1. Walk ESM subrecords in their original order.
-///       2. For each, if an unconsumed DMP subrecord with the same signature exists AND the
-///          policy doesn't force the ESM version, emit DMP bytes; otherwise emit ESM bytes.
-///       3. Append any DMP-only subrecords at the end in encoder-defined canonical order.
-///
+///     1. Walk ESM subrecords in their original order.
+///     2. For each, if an unconsumed DMP subrecord with the same signature exists AND the
+///     policy doesn't force the ESM version, emit DMP bytes; otherwise emit ESM bytes.
+///     3. Append any DMP-only subrecords at the end in encoder-defined canonical order.
 ///     Repeated signatures in the ESM (e.g., multiple OBND in some types) are matched
 ///     positionally — the Nth occurrence in ESM consumes the Nth DMP candidate of that signature.
 /// </summary>

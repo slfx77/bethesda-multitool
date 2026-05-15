@@ -101,78 +101,99 @@ internal static class SchemaDictionarySerializer
         }
     }
 
-    private static byte AsByte(object? v) => v switch
+    private static byte AsByte(object? v)
     {
-        byte b => b,
-        sbyte sb => (byte)sb,
-        ushort us => (byte)us,
-        short s => (byte)s,
-        uint u => (byte)u,
-        int i => (byte)i,
-        _ => 0
-    };
+        return v switch
+        {
+            byte b => b,
+            sbyte sb => (byte)sb,
+            ushort us => (byte)us,
+            short s => (byte)s,
+            uint u => (byte)u,
+            int i => (byte)i,
+            _ => 0
+        };
+    }
 
-    private static sbyte AsSByte(object? v) => v switch
+    private static sbyte AsSByte(object? v)
     {
-        sbyte sb => sb,
-        byte b => (sbyte)b,
-        short s => (sbyte)s,
-        ushort us => (sbyte)us,
-        int i => (sbyte)i,
-        uint u => (sbyte)u,
-        _ => 0
-    };
+        return v switch
+        {
+            sbyte sb => sb,
+            byte b => (sbyte)b,
+            short s => (sbyte)s,
+            ushort us => (sbyte)us,
+            int i => (sbyte)i,
+            uint u => (sbyte)u,
+            _ => 0
+        };
+    }
 
-    private static ushort AsUShort(object? v) => v switch
+    private static ushort AsUShort(object? v)
     {
-        ushort us => us,
-        short s => (ushort)s,
-        uint u => (ushort)u,
-        int i => (ushort)i,
-        byte b => b,
-        sbyte sb => (ushort)sb,
-        _ => 0
-    };
+        return v switch
+        {
+            ushort us => us,
+            short s => (ushort)s,
+            uint u => (ushort)u,
+            int i => (ushort)i,
+            byte b => b,
+            sbyte sb => (ushort)sb,
+            _ => 0
+        };
+    }
 
-    private static short AsShort(object? v) => v switch
+    private static short AsShort(object? v)
     {
-        short s => s,
-        ushort us => (short)us,
-        int i => (short)i,
-        uint u => (short)u,
-        byte b => b,
-        sbyte sb => sb,
-        _ => 0
-    };
+        return v switch
+        {
+            short s => s,
+            ushort us => (short)us,
+            int i => (short)i,
+            uint u => (short)u,
+            byte b => b,
+            sbyte sb => sb,
+            _ => 0
+        };
+    }
 
-    private static uint AsUInt(object? v) => v switch
+    private static uint AsUInt(object? v)
     {
-        uint u => u,
-        int i => (uint)i,
-        ushort us => us,
-        short s => (uint)s,
-        byte b => b,
-        sbyte sb => (uint)sb,
-        _ => 0
-    };
+        return v switch
+        {
+            uint u => u,
+            int i => (uint)i,
+            ushort us => us,
+            short s => (uint)s,
+            byte b => b,
+            sbyte sb => (uint)sb,
+            _ => 0
+        };
+    }
 
-    private static int AsInt(object? v) => v switch
+    private static int AsInt(object? v)
     {
-        int i => i,
-        uint u => (int)u,
-        short s => s,
-        ushort us => us,
-        byte b => b,
-        sbyte sb => sb,
-        _ => 0
-    };
+        return v switch
+        {
+            int i => i,
+            uint u => (int)u,
+            short s => s,
+            ushort us => us,
+            byte b => b,
+            sbyte sb => sb,
+            _ => 0
+        };
+    }
 
-    private static float AsFloat(object? v) => v switch
+    private static float AsFloat(object? v)
     {
-        float f => f,
-        double d => (float)d,
-        int i => i,
-        uint u => u,
-        _ => 0f
-    };
+        return v switch
+        {
+            float f => f,
+            double d => (float)d,
+            int i => i,
+            uint u => u,
+            _ => 0f
+        };
+    }
 }

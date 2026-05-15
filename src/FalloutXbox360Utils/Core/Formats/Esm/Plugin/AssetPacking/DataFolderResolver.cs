@@ -1,13 +1,16 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
 
 /// <summary>
-///     Outcome of <see cref="DataFolderResolver.Resolve"/>.
+///     Outcome of <see cref="DataFolderResolver.Resolve" />.
 /// </summary>
 internal sealed record DataFolderResolution
 {
     public required AssetResolutionKind Kind { get; init; }
 
-    /// <summary>Source bytes location (null when <see cref="Kind"/> is <see cref="AssetResolutionKind.Missing"/> or <see cref="AssetResolutionKind.AlreadyInBaseline"/>).</summary>
+    /// <summary>
+    ///     Source bytes location (null when <see cref="Kind" /> is <see cref="AssetResolutionKind.Missing" /> or
+    ///     <see cref="AssetResolutionKind.AlreadyInBaseline" />).
+    /// </summary>
     public AssetSource? Source { get; init; }
 
     /// <summary>The resolved (possibly different from requested) normalized path. Null when missing.</summary>
@@ -23,14 +26,28 @@ internal sealed record DataFolderResolution
 /// <summary>
 ///     Resolves requested asset paths against a baseline (FNV PC Data) plus an ordered
 ///     list of secondary data folders. Default strategy:
-///
 ///     <list type="number">
-///         <item><description>Check the baseline for exact match. If present, return <c>AlreadyInBaseline</c> — the FNV runtime can find this asset on its own; don't pack it.</description></item>
-///         <item><description>Walk secondaries in priority order. First exact match wins (<c>ResolvedExact</c>).</description></item>
-///         <item><description>If no exact match anywhere, gather every basename-matching candidate across all secondaries. If 1 candidate, return it (<c>ResolvedFuzzy</c>). If multiple, score each by the longest path-token suffix shared with the requested path; pick the highest-scoring candidate; ties broken by folder priority.</description></item>
-///         <item><description>If still nothing, return <c>Missing</c>.</description></item>
+///         <item>
+///             <description>
+///                 Check the baseline for exact match. If present, return <c>AlreadyInBaseline</c> — the FNV
+///                 runtime can find this asset on its own; don't pack it.
+///             </description>
+///         </item>
+///         <item>
+///             <description>Walk secondaries in priority order. First exact match wins (<c>ResolvedExact</c>).</description>
+///         </item>
+///         <item>
+///             <description>
+///                 If no exact match anywhere, gather every basename-matching candidate across all secondaries.
+///                 If 1 candidate, return it (<c>ResolvedFuzzy</c>). If multiple, score each by the longest path-token
+///                 suffix shared with the requested path; pick the highest-scoring candidate; ties broken by folder
+///                 priority.
+///             </description>
+///         </item>
+///         <item>
+///             <description>If still nothing, return <c>Missing</c>.</description>
+///         </item>
 ///     </list>
-///
 ///     When <c>overrideBaseline</c> is true (constructor arg), the order flips: secondaries
 ///     are consulted first (exact, then extension-swap) and the baseline becomes a fallback.
 ///     A secondary win in override mode returns <c>ResolvedExact</c>/<c>ResolvedFuzzy</c>
@@ -40,8 +57,8 @@ internal sealed record DataFolderResolution
 internal sealed class DataFolderResolver
 {
     private readonly DataFolderIndex _baseline;
-    private readonly IReadOnlyList<DataFolderIndex> _secondaries;
     private readonly bool _overrideBaseline;
+    private readonly IReadOnlyList<DataFolderIndex> _secondaries;
 
     public DataFolderResolver(
         DataFolderIndex baseline,
@@ -71,7 +88,7 @@ internal sealed class DataFolderResolver
 
         var requestedTokens = TokenizePath(normalizedPath);
 
-        var best = FindBestFuzzyCandidate(_secondaries, basename, requestedTokens, useLoose: false);
+        var best = FindBestFuzzyCandidate(_secondaries, basename, requestedTokens, false);
         // v22: when exact-basename match fails, try loose basename (case-folded with
         // spaces, underscores, dashes, apostrophes stripped). Catches renames between
         // prototype and final where only separator style or capitalization changed —
@@ -79,7 +96,7 @@ internal sealed class DataFolderResolver
         // scoring so directory context still breaks ties.
         if (best is null)
         {
-            best = FindBestFuzzyCandidate(_secondaries, basename, requestedTokens, useLoose: true);
+            best = FindBestFuzzyCandidate(_secondaries, basename, requestedTokens, true);
         }
 
         // Also extend baseline against loose matches — many renames live in the user's
@@ -88,7 +105,7 @@ internal sealed class DataFolderResolver
         // skips packing it, but the rename rewriter still updates the record field.
         if (best is null)
         {
-            var baselineLoose = FindBestFuzzyCandidate([_baseline], basename, requestedTokens, useLoose: true);
+            var baselineLoose = FindBestFuzzyCandidate([_baseline], basename, requestedTokens, true);
             if (baselineLoose is not null)
             {
                 return new DataFolderResolution
@@ -196,10 +213,9 @@ internal sealed class DataFolderResolver
 
     /// <summary>
     ///     Walk every secondary folder gathering candidate sources keyed by either exact
-    ///     basename (<paramref name="useLoose"/> = false) or loose basename (separator-
+    ///     basename (<paramref name="useLoose" /> = false) or loose basename (separator-
     ///     stripped, case-folded). Returns the candidate with the highest path-suffix
     ///     token overlap, breaking ties by folder priority (first-index wins).
-    ///
     ///     For the loose variant, candidates whose extension is incompatible with the
     ///     request (e.g., a <c>.dds</c> texture when a <c>.nif</c> mesh was requested)
     ///     are filtered out — same-stem cross-format matches were producing nonsense
@@ -217,39 +233,15 @@ internal sealed class DataFolderResolver
             return null;
         }
 
-        var requestedExt = Path.GetExtension(basename);
-
-        FuzzyCandidate? best = null;
-        for (var i = 0; i < folders.Count; i++)
-        {
-            var candidates = useLoose
-                ? folders[i].EnumerateByLooseBasename(key)
-                : folders[i].EnumerateByBasename(key);
-            foreach (var candidate in candidates)
-            {
-                if (useLoose && !AssetPathRules.ExtensionsAreCompatible(requestedExt, candidate.NormalizedPath))
-                {
-                    continue;
-                }
-
-                var candidateTokens = TokenizePath(candidate.NormalizedPath);
-                var suffixScore = CountMatchingSuffixTokens(requestedTokens, candidateTokens);
-
-                if (best is null ||
-                    suffixScore > best.SuffixScore ||
-                    (suffixScore == best.SuffixScore && i < best.FolderIndex))
-                {
-                    best = new FuzzyCandidate
-                    {
-                        Source = candidate,
-                        FolderIndex = i,
-                        SuffixScore = suffixScore
-                    };
-                }
-            }
-        }
-
-        return best;
+        return FindBestIndexedCandidate(
+            folders,
+            key,
+            Path.GetExtension(basename),
+            requestedTokens,
+            useLoose
+                ? static (folder, lookupKey) => folder.EnumerateByLooseBasename(lookupKey)
+                : static (folder, lookupKey) => folder.EnumerateByBasename(lookupKey),
+            requireCompatibleExtension: useLoose);
     }
 
     /// <summary>
@@ -257,7 +249,7 @@ internal sealed class DataFolderResolver
     ///     the one whose path suffix tokens overlap the request the most. Used for the
     ///     nv-stripped fallback where the key is computed off the request basename's
     ///     nv-affix-stripped form. Cross-class extensions are filtered out per the
-    ///     existing <see cref="AssetPathRules.ExtensionsAreCompatible"/> rules.
+    ///     existing <see cref="AssetPathRules.ExtensionsAreCompatible" /> rules.
     /// </summary>
     private static FuzzyCandidate? FindCandidateByLooseKey(
         IReadOnlyList<DataFolderIndex> folders,
@@ -270,15 +262,30 @@ internal sealed class DataFolderResolver
             return null;
         }
 
-        var requestedExt = Path.GetExtension(requestedBasename);
+        return FindBestIndexedCandidate(
+            folders,
+            looseKey,
+            Path.GetExtension(requestedBasename),
+            requestedTokens,
+            static (folder, lookupKey) => folder.EnumerateByLooseBasename(lookupKey),
+            requireCompatibleExtension: true);
+    }
 
+    private static FuzzyCandidate? FindBestIndexedCandidate(
+        IReadOnlyList<DataFolderIndex> folders,
+        string lookupKey,
+        string requestedExtension,
+        string[] requestedTokens,
+        Func<DataFolderIndex, string, IEnumerable<AssetSource>> enumerateCandidates,
+        bool requireCompatibleExtension)
+    {
         FuzzyCandidate? best = null;
         for (var i = 0; i < folders.Count; i++)
         {
-            var candidates = folders[i].EnumerateByLooseBasename(looseKey);
-            foreach (var candidate in candidates)
+            foreach (var candidate in enumerateCandidates(folders[i], lookupKey))
             {
-                if (!AssetPathRules.ExtensionsAreCompatible(requestedExt, candidate.NormalizedPath))
+                if (requireCompatibleExtension &&
+                    !AssetPathRules.ExtensionsAreCompatible(requestedExtension, candidate.NormalizedPath))
                 {
                     continue;
                 }
@@ -412,11 +419,14 @@ internal sealed class DataFolderResolver
         };
     }
 
-    private static DataFolderResolution Miss(string normalizedPath) => new()
+    private static DataFolderResolution Miss(string normalizedPath)
     {
-        Kind = AssetResolutionKind.Missing,
-        ResolvedPath = normalizedPath
-    };
+        return new DataFolderResolution
+        {
+            Kind = AssetResolutionKind.Missing,
+            ResolvedPath = normalizedPath
+        };
+    }
 
     /// <summary>
     ///     Split a normalized path on backslashes. Returns the path components from left to
@@ -428,7 +438,7 @@ internal sealed class DataFolderResolver
     }
 
     /// <summary>
-    ///     Count how many trailing tokens of <paramref name="a"/> and <paramref name="b"/>
+    ///     Count how many trailing tokens of <paramref name="a" /> and <paramref name="b" />
     ///     match (case-insensitive). The filename itself is always part of the suffix when
     ///     this resolver is called, so the minimum return is 1.
     /// </summary>
@@ -487,7 +497,8 @@ internal sealed class DataFolderResolver
         }
     }
 
-    private sealed class SecondaryExactResolutionStrategy(IReadOnlyList<DataFolderIndex> secondaries) : IAssetResolutionStrategy
+    private sealed class SecondaryExactResolutionStrategy(IReadOnlyList<DataFolderIndex> secondaries)
+        : IAssetResolutionStrategy
     {
         public DataFolderResolution? Resolve(string normalizedPath)
         {

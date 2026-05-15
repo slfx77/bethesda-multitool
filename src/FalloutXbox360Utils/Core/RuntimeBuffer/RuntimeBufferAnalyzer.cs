@@ -1,7 +1,6 @@
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Coverage;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
-using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Pdb;
 using FalloutXbox360Utils.Core.Strings;

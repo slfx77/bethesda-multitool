@@ -1,5 +1,7 @@
+using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Schema;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
@@ -7,7 +9,6 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     Encodes a new <see cref="CellRecord" /> as PC-format CELL subrecord bytes — used for
 ///     DMP cells that don't exist in the master ESM. v4 supports both interior cells and
 ///     exterior cells (with synthetic XCLC).
-///
 ///     Subrecords emitted in fopdoc-canonical CELL order:
 ///     EDID, FULL?, DATA, XCLC?, LTMP?, LNAM?, XCLW?, XCLR?, XCLL?, XEZN?, XCAS?, XCMO?, XCIM?.
 ///     For interior cells (v3+), bit 0 of DATA is set and XCLC is omitted.
@@ -178,7 +179,7 @@ public sealed class CellEncoder : IRecordEncoder
     /// </summary>
     private static bool IsPlausibleCellWater(
         float waterHeight,
-        Models.World.LandHeightmap? heightmap,
+        LandHeightmap? heightmap,
         bool isInterior)
     {
         // Allow water a bit above the highest terrain vertex (shorelines, lake-edges,
@@ -210,9 +211,9 @@ public sealed class CellEncoder : IRecordEncoder
 
     private static EncodedSubrecord EncodeStringSubrecord(string signature, string value)
     {
-        var byteCount = System.Text.Encoding.Latin1.GetByteCount(value);
+        var byteCount = Encoding.Latin1.GetByteCount(value);
         var buffer = new byte[byteCount + 1];
-        System.Text.Encoding.Latin1.GetBytes(value, buffer);
+        Encoding.Latin1.GetBytes(value, buffer);
         // Final byte already 0 (null terminator).
         return new EncodedSubrecord(signature, buffer);
     }

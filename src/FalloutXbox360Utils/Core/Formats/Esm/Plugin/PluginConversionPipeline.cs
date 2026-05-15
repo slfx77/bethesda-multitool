@@ -5,7 +5,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 
 /// <summary>
 ///     Public orchestration entrypoint for DMP-to-ESP conversion. The pipeline owns the
-///     composed conversion services; legacy <see cref="PluginBuilder"/> remains as the
+///     composed conversion services; legacy <see cref="PluginBuilder" /> remains as the
 ///     lower-level implementation while the remaining emission stages are extracted.
 /// </summary>
 public sealed class PluginConversionPipeline

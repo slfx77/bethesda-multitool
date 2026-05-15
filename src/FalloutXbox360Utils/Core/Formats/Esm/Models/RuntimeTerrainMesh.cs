@@ -64,7 +64,8 @@ public record RuntimeTerrainMesh
             return (-1, 0, 0f);
         }
 
-        return (GridSizeToLodLevel(reconstruction.SourceGridSize), reconstruction.SourceGridSize, reconstruction.SourceSpacing);
+        return (GridSizeToLodLevel(reconstruction.SourceGridSize), reconstruction.SourceGridSize,
+            reconstruction.SourceSpacing);
     }
 
     /// <summary>
@@ -447,7 +448,8 @@ public record RuntimeTerrainMesh
         var reconstruction = TryReconstructHeightGrid();
         if (reconstruction == null)
         {
-            throw new InvalidOperationException("Runtime terrain mesh does not contain a reconstructable terrain grid.");
+            throw new InvalidOperationException(
+                "Runtime terrain mesh does not contain a reconstructable terrain grid.");
         }
 
         return EncodeHeightmap(ApplyHeightOffset(reconstruction.Heights, baseHeight));
@@ -1307,18 +1309,27 @@ public record RuntimeTerrainMesh
         return top >= required && bottom >= required && left >= required && right >= required;
     }
 
-    private static float RequiredCoveragePercent(int gridSize) => gridSize <= 5 ? 75f : 80f;
-
-    private static int GridSizeToLodLevel(int gridSize) => gridSize switch
+    private static float RequiredCoveragePercent(int gridSize)
     {
-        >= 33 => 0,
-        >= 16 => 1,
-        >= 8 => 2,
-        >= 4 => 3,
-        _ => -1
-    };
+        return gridSize <= 5 ? 75f : 80f;
+    }
 
-    private static bool IsFinite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
+    private static int GridSizeToLodLevel(int gridSize)
+    {
+        return gridSize switch
+        {
+            >= 33 => 0,
+            >= 16 => 1,
+            >= 8 => 2,
+            >= 4 => 3,
+            _ => -1
+        };
+    }
+
+    private static bool IsFinite(float value)
+    {
+        return !float.IsNaN(value) && !float.IsInfinity(value);
+    }
 
     private static (int X, int Y)? InferCellCoordinates(float minX, float maxX, float minY, float maxY)
     {

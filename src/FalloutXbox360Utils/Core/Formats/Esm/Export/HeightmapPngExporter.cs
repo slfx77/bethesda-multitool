@@ -199,13 +199,15 @@ public static class HeightmapPngExporter
                 var pixels = VclrToImagePixels(vclr);
                 GetRgbWorldspaceGroup(vclrCellsByWorldspace, land.WorldspaceFormId ?? 0u)
                     .TryAdd(cellKey, pixels);
-                var path = Path.Combine(vclrDir, HeightmapExportPathBuilder.BuildCellArtifactName(land, "vclr", ".png", worldspaceNames));
+                var path = Path.Combine(vclrDir,
+                    HeightmapExportPathBuilder.BuildCellArtifactName(land, "vclr", ".png", worldspaceNames));
                 tasks.Add(Task.Run(() => HeightmapColorRenderer.SaveRgb(pixels, 33, 33, path)));
             }
 
             if (visualData.TextureLayers is { Count: > 0 } layers)
             {
-                foreach (var layer in layers.Where(l => l.Kind == LandTextureLayerKind.Alpha && l.BlendEntries.Count > 0))
+                foreach (var layer in layers.Where(l =>
+                             l.Kind == LandTextureLayerKind.Alpha && l.BlendEntries.Count > 0))
                 {
                     var masksDir = Path.Combine(worldspaceDir, "texture_masks");
                     Directory.CreateDirectory(masksDir);
@@ -233,7 +235,7 @@ public static class HeightmapPngExporter
                         "worldspaces",
                         HeightmapExportPathBuilder.BuildWorldspaceDirName(worldspaceFormId, worldspaceNames),
                         "vclr_composite.png"),
-                    drawGrid: true));
+                    true));
             }
         }
 
@@ -266,7 +268,7 @@ public static class HeightmapPngExporter
                         "worldspaces",
                         HeightmapExportPathBuilder.BuildWorldspaceDirName(worldspaceFormId, worldspaceNames),
                         "texture_id_composite.png"),
-                    drawGrid: true));
+                    true));
             }
         }
 
@@ -459,7 +461,7 @@ public static class HeightmapPngExporter
             return;
         }
 
-        await RenderCompositeFromHeightsAsync(precomputedHeights, outputPath, useColorGradient, drawGrid: true);
+        await RenderCompositeFromHeightsAsync(precomputedHeights, outputPath, useColorGradient, true);
     }
 
     /// <summary>
@@ -489,13 +491,14 @@ public static class HeightmapPngExporter
                 continue;
             }
 
-            var dir = Path.Combine(outputDir, "worldspaces", HeightmapExportPathBuilder.BuildWorldspaceDirName(worldspaceFormId, worldspaceNames));
+            var dir = Path.Combine(outputDir, "worldspaces",
+                HeightmapExportPathBuilder.BuildWorldspaceDirName(worldspaceFormId, worldspaceNames));
             var compositePath = Path.Combine(dir, "worldmap_composite.png");
             var gridPath = Path.Combine(dir, "worldmap_composite_grid.png");
             written.Add(compositePath);
             written.Add(gridPath);
             tasks.Add(RenderCompositeFromHeightsAsync(heightsByCell, compositePath, useColorGradient));
-            tasks.Add(RenderCompositeFromHeightsAsync(heightsByCell, gridPath, useColorGradient, drawGrid: true));
+            tasks.Add(RenderCompositeFromHeightsAsync(heightsByCell, gridPath, useColorGradient, true));
         }
 
         var groupedCoverage = BuildWorldspaceRuntimeCoverageGroups(landRecords);
@@ -506,13 +509,14 @@ public static class HeightmapPngExporter
                 continue;
             }
 
-            var dir = Path.Combine(outputDir, "worldspaces", HeightmapExportPathBuilder.BuildWorldspaceDirName(worldspaceFormId, worldspaceNames));
+            var dir = Path.Combine(outputDir, "worldspaces",
+                HeightmapExportPathBuilder.BuildWorldspaceDirName(worldspaceFormId, worldspaceNames));
             var coveragePath = Path.Combine(dir, "runtime_source_coverage.png");
             var coverageGridPath = Path.Combine(dir, "runtime_source_coverage_grid.png");
             written.Add(coveragePath);
             written.Add(coverageGridPath);
-            tasks.Add(RenderCoverageCompositeAsync(coverageByCell, coveragePath, drawGrid: false));
-            tasks.Add(RenderCoverageCompositeAsync(coverageByCell, coverageGridPath, drawGrid: true));
+            tasks.Add(RenderCoverageCompositeAsync(coverageByCell, coveragePath, false));
+            tasks.Add(RenderCoverageCompositeAsync(coverageByCell, coverageGridPath, true));
         }
 
         await Task.WhenAll(tasks);
@@ -530,7 +534,8 @@ public static class HeightmapPngExporter
                 continue;
             }
 
-            var coverage = RuntimeTerrainGridReconstructionService.GetCanonicalSourceCoverageMask(land.RuntimeTerrainMesh);
+            var coverage =
+                RuntimeTerrainGridReconstructionService.GetCanonicalSourceCoverageMask(land.RuntimeTerrainMesh);
             if (coverage == null)
             {
                 continue;
@@ -667,8 +672,8 @@ public static class HeightmapPngExporter
         var grayscaleScale = useColorGradient
             ? null
             : CalculateVhgtGrayscaleScale(allHeights);
-        if (useColorGradient && normalization == null ||
-            !useColorGradient && grayscaleScale == null)
+        if ((useColorGradient && normalization == null) ||
+            (!useColorGradient && grayscaleScale == null))
         {
             return;
         }
@@ -784,8 +789,8 @@ public static class HeightmapPngExporter
         var grayscaleScale = useColorGradient
             ? null
             : CalculateVhgtGrayscaleScale(precomputedHeights.Values);
-        if (useColorGradient && normalization == null ||
-            !useColorGradient && grayscaleScale == null)
+        if ((useColorGradient && normalization == null) ||
+            (!useColorGradient && grayscaleScale == null))
         {
             return;
         }
@@ -907,7 +912,7 @@ public static class HeightmapPngExporter
 
         if (drawGrid)
         {
-            DrawGridOverlay(pixels, imgWidth, imgHeight, rgb: true, LandCellStride);
+            DrawGridOverlay(pixels, imgWidth, imgHeight, true, LandCellStride);
         }
 
         await Task.Run(() =>
@@ -964,7 +969,7 @@ public static class HeightmapPngExporter
 
         if (drawGrid)
         {
-            DrawGridOverlay(compositePixels, imgWidth, imgHeight, rgb: true, LandCellStride);
+            DrawGridOverlay(compositePixels, imgWidth, imgHeight, true, LandCellStride);
         }
 
         await Task.Run(() =>
@@ -989,7 +994,7 @@ public static class HeightmapPngExporter
             }
         }
 
-        return LandVisualData.MergeForEmission(land.VisualData, runtimeVertexColors, fallback: null);
+        return LandVisualData.MergeForEmission(land.VisualData, runtimeVertexColors, null);
     }
 
     private static HeightmapGrayscaleScale? CalculateVhgtGrayscaleScale(IEnumerable<float[,]> heightmaps)
@@ -1247,14 +1252,17 @@ public static class HeightmapPngExporter
         return pixels;
     }
 
-    private static (int X, int Y) QuadrantBase(byte quadrant) => quadrant switch
+    private static (int X, int Y) QuadrantBase(byte quadrant)
     {
-        0 => (0, 0),
-        1 => (16, 0),
-        2 => (0, 16),
-        3 => (16, 16),
-        _ => (0, 0)
-    };
+        return quadrant switch
+        {
+            0 => (0, 0),
+            1 => (16, 0),
+            2 => (0, 16),
+            3 => (16, 16),
+            _ => (0, 0)
+        };
+    }
 
     private static (float R, float G, float B) TextureIdColor(uint formId)
     {

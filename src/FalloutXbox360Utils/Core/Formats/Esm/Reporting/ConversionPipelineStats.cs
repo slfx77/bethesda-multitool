@@ -49,8 +49,8 @@ public sealed class ConversionPipelineStats
 
     /// <summary>
     ///     Record a decision-coded reason (e.g., a drop code, a remap code, an
-    ///     instrumentation-only code). Does not affect <see cref="RecordsSkipped"/>;
-    ///     call <see cref="IncrementSkipped"/> separately when the decision is a drop.
+    ///     instrumentation-only code). Does not affect <see cref="RecordsSkipped" />;
+    ///     call <see cref="IncrementSkipped" /> separately when the decision is a drop.
     /// </summary>
     public void IncrementDropReason(string code)
     {

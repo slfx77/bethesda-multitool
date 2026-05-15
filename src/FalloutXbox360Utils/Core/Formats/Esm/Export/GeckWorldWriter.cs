@@ -599,6 +599,7 @@ internal static class GeckWorldWriter
             {
                 objectLabel = $"{objectLabel} \"{displayName}\"";
             }
+
             var disabledStr = obj.IsInitiallyDisabled ? " [DISABLED]" : "";
             sb.AppendLine(
                 $"  - {objectLabel} ({obj.RecordType}) [{GeckReportHelpers.FormatFormId(obj.FormId)}]{disabledStr}");

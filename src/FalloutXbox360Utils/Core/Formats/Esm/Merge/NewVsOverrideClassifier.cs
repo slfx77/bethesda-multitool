@@ -13,6 +13,9 @@ public sealed class NewVsOverrideClassifier
         _esmFormIds = new HashSet<uint>(esmFormIds);
     }
 
+    /// <summary>Total count of FormIDs from the base ESM.</summary>
+    public int EsmFormIdCount => _esmFormIds.Count;
+
     /// <summary>True if a record with this FormID exists in the base ESM.</summary>
     public bool IsOverride(uint formId)
     {
@@ -24,7 +27,4 @@ public sealed class NewVsOverrideClassifier
     {
         return !_esmFormIds.Contains(formId);
     }
-
-    /// <summary>Total count of FormIDs from the base ESM.</summary>
-    public int EsmFormIdCount => _esmFormIds.Count;
 }

@@ -300,13 +300,6 @@ internal static class CellLinkageHandler
             .ToList();
     }
 
-    private readonly record struct WorldspaceBounds(
-        uint FormId,
-        int MinCellX,
-        int MinCellY,
-        int MaxCellX,
-        int MaxCellY);
-
     /// <summary>
     ///     Links parsed cells to their parent worldspace's Cells list
     ///     based on CellRecord.WorldspaceFormId.
@@ -705,4 +698,11 @@ internal static class CellLinkageHandler
             AssignmentSource = assignmentSource
         };
     }
+
+    private readonly record struct WorldspaceBounds(
+        uint FormId,
+        int MinCellX,
+        int MinCellY,
+        int MaxCellX,
+        int MaxCellY);
 }

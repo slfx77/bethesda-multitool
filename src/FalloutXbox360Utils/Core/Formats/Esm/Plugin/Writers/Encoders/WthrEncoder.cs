@@ -9,8 +9,8 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     exist (EDID, INAM image space modifier, SNAM* sound entries). Records emitted this
 ///     way will be GECK-loadable but lose all visual configuration; we warn explicitly.
 ///     fopdoc canonical (full) order: EDID, DNAM/CNAM/ANAM/BNAM colors, FNAM fog distances,
-///         PNAM cloud colors, ONAM cloud speeds, NAM0 (4 cloud textures), INAM (image space),
-///         DATA (15B wind+trans), SNAM*(sound + type).
+///     PNAM cloud colors, ONAM cloud speeds, NAM0 (4 cloud textures), INAM (image space),
+///     DATA (15B wind+trans), SNAM*(sound + type).
 /// </summary>
 public sealed class WthrEncoder : IRecordEncoder
 {

@@ -171,7 +171,8 @@ public static class AnalyzeCommand
 
             if (opts.TerrainDiag)
             {
-                RunTerrainDiagnostic(result.EsmRecords, opts.ExtractEsm, Path.GetFileName(opts.Input), result.FormIdMap);
+                RunTerrainDiagnostic(result.EsmRecords, opts.ExtractEsm, Path.GetFileName(opts.Input),
+                    result.FormIdMap);
             }
         }
 
@@ -447,14 +448,15 @@ public static class AnalyzeCommand
         // Export CSV
         var csvPath = Path.Combine(outputDir, "terrain_diagnostics.csv");
         var csv = new StringBuilder();
-        csv.AppendLine("DumpFile,WorldspaceFormID,WorldspaceEditorID,ParentCellFormID,CellX,CellY,RecordCellX,RecordCellY," +
-                       "RuntimeCellX,RuntimeCellY,MeshMinX,MeshMaxX,MeshMinY,MeshMaxY," +
-                       "MeshInferredCellX,MeshInferredCellY,FormID,MinZ,MaxZ,ZRange,ZStdDev," +
-                       "UniqueZCount,ZeroZCount,ZeroZPct,GarbageZCount,DominantZPct," +
-                       "LastActiveRow,RowDiscontinuities,HeightSource,DetectedLodLevel,DetectedGridSize," +
-                       "SourceSampleCount,SourceCoveragePct,EncodedRoundTripMaxError,HasRuntimeVertexColors," +
-                       "LandVisualSource,VclrByteCount,VtexCount,BtxtCount,AtxtCount,VtxtCount,VtxtByteCount," +
-                       "UnattachedVtxtCount,UnattachedVtxtByteCount,Classification");
+        csv.AppendLine(
+            "DumpFile,WorldspaceFormID,WorldspaceEditorID,ParentCellFormID,CellX,CellY,RecordCellX,RecordCellY," +
+            "RuntimeCellX,RuntimeCellY,MeshMinX,MeshMaxX,MeshMinY,MeshMaxY," +
+            "MeshInferredCellX,MeshInferredCellY,FormID,MinZ,MaxZ,ZRange,ZStdDev," +
+            "UniqueZCount,ZeroZCount,ZeroZPct,GarbageZCount,DominantZPct," +
+            "LastActiveRow,RowDiscontinuities,HeightSource,DetectedLodLevel,DetectedGridSize," +
+            "SourceSampleCount,SourceCoveragePct,EncodedRoundTripMaxError,HasRuntimeVertexColors," +
+            "LandVisualSource,VclrByteCount,VtexCount,BtxtCount,AtxtCount,VtxtCount,VtxtByteCount," +
+            "UnattachedVtxtCount,UnattachedVtxtByteCount,Classification");
         foreach (var row in rows)
         {
             var d = row.Diagnostic;

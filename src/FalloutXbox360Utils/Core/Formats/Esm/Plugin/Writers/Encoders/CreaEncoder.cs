@@ -6,9 +6,9 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     Encodes a <see cref="CreatureRecord" /> (CREA) as PC-format subrecord bytes.
 ///     Non-human actors. Closely parallels NPC_ but with the creature-specific DATA layout.
 ///     fopdoc canonical order: EDID, FULL?, MODL?, ACBS(24B), SNAM*(faction memberships, 8B each),
-///         INAM?(death item), SCRI?, AIDT?(20B), PKID*, SPLO*, DATA(17B), CSDC?.
+///     INAM?(death item), SCRI?, AIDT?(20B), PKID*, SPLO*, DATA(17B), CSDC?.
 ///     DATA layout (17B): uint8 CreatureType + uint8 CombatSkill + uint8 MagicSkill +
-///         uint8 StealthSkill + int32 Health + int16 AttackDamage + 7 bytes unused.
+///     uint8 StealthSkill + int32 Health + int16 AttackDamage + 7 bytes unused.
 ///     FaceGen / NIFZ / NIFT / KFFZ / KFNM etc. NOT modeled yet — deferred.
 /// </summary>
 public sealed class CreaEncoder : IRecordEncoder

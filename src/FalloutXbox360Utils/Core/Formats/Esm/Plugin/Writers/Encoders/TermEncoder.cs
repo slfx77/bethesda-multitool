@@ -9,7 +9,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     per menu item: ITXT + (RNAM or embedded SCHR+SCDA?+SCTX?+SCRO*+SCRV*) + NEXT separator.
 ///     Override path is a no-op.
 ///     DNAM layout per PDB TERMINAL_DATA (4 bytes):
-///         byte Difficulty(0) + byte Flags(1) + byte ServerType(2) + byte Unused(3).
+///     byte Difficulty(0) + byte Flags(1) + byte ServerType(2) + byte Unused(3).
 ///     Embedded scripts use the same on-disk pattern as INFO result scripts (see InfoEncoder).
 /// </summary>
 public sealed class TermEncoder : IRecordEncoder

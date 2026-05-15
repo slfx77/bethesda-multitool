@@ -5,8 +5,11 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Probes;
 /// <summary>
 ///     Probe for TESObjectWEAP.criticalData (OBJ_WEAP_CRITICAL, 16 bytes at PDB +464).
 ///     Layout per the CRDT schema:
-///     <c>UInt16 CritDamage(+0) | Float CritChance(+4) | UInt8 EffectOnDeath(+8) |
-///     Padding(3) | FormID CritEffect(+12)</c>.
+///     <c>
+///         UInt16 CritDamage(+0) | Float CritChance(+4) | UInt8 EffectOnDeath(+8) |
+///         Padding(3) | FormID CritEffect(+12)
+///     </c>
+///     .
 ///     The audit shows 0 records agree on CritDamage / CritChance / CritEffect across
 ///     both baselines while adjacent fields (Weapon Damage at +176, sound pointers
 ///     at +252/+256) agree healthily — strong evidence the OBJ_WEAP_DATA block before
@@ -57,7 +60,7 @@ internal static class RuntimeWeaponCritProbe
             context,
             weapEntries,
             CriticalFields,
-            groupCount: 1,
+            1,
             CritShiftOptions,
             BaseStructSize,
             "WeaponCritLayout",

@@ -149,11 +149,14 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
         {
             Mesh = ReadDoublePointerDiagnostic(loadedDataBuffer, LoadedDataMeshPtrOffset),
             Vertices = ReadDoublePointerDiagnostic(loadedDataBuffer, LoadedDataVerticesPtrOffset),
-            VertexArrays = ReadDoublePointerArrayDiagnostics(loadedDataBuffer, LoadedDataVerticesPtrOffset, TerrainQuadrantCount),
+            VertexArrays =
+                ReadDoublePointerArrayDiagnostics(loadedDataBuffer, LoadedDataVerticesPtrOffset, TerrainQuadrantCount),
             Normals = ReadDoublePointerDiagnostic(loadedDataBuffer, LoadedDataNormalsPtrOffset),
-            NormalArrays = ReadDoublePointerArrayDiagnostics(loadedDataBuffer, LoadedDataNormalsPtrOffset, TerrainQuadrantCount),
+            NormalArrays =
+                ReadDoublePointerArrayDiagnostics(loadedDataBuffer, LoadedDataNormalsPtrOffset, TerrainQuadrantCount),
             Colors = ReadDoublePointerDiagnostic(loadedDataBuffer, LoadedDataColorsPtrOffset),
-            ColorArrays = ReadDoublePointerArrayDiagnostics(loadedDataBuffer, LoadedDataColorsPtrOffset, TerrainQuadrantCount),
+            ColorArrays =
+                ReadDoublePointerArrayDiagnostics(loadedDataBuffer, LoadedDataColorsPtrOffset, TerrainQuadrantCount),
             NormalsSet = ReadDoublePointerDiagnostic(loadedDataBuffer, LoadedDataNormalsSetPtrOffset),
             Border = ReadPointerDiagnostic(loadedDataBuffer, LoadedDataBorderPtrOffset),
             MoppCode = ReadPointerDiagnostic(loadedDataBuffer, LoadedDataMoppCodePtrOffset),
@@ -361,7 +364,9 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
     private static List<uint> ReadGrassMapWords(byte[] buffer)
     {
         var words = new List<uint>(LoadedDataGrassMapSize / 4);
-        for (var offset = LoadedDataGrassMapOffset; offset + 4 <= LoadedDataGrassMapOffset + LoadedDataGrassMapSize; offset += 4)
+        for (var offset = LoadedDataGrassMapOffset;
+             offset + 4 <= LoadedDataGrassMapOffset + LoadedDataGrassMapSize;
+             offset += 4)
         {
             if (offset + 4 > buffer.Length)
             {
@@ -658,7 +663,8 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var companionValidFraction = Math.Max(0.01, reconstruction.SourceSampleCount / (double)RuntimeTerrainMesh.VertexCount * 0.5);
+        var companionValidFraction = Math.Max(0.01,
+            reconstruction.SourceSampleCount / (double)RuntimeTerrainMesh.VertexCount * 0.5);
 
         // Try normals (NiPoint3, components should be in [-1, 1] but allow some tolerance)
         var (normals, _) = ReadDoubleIndirectedFloatArray(

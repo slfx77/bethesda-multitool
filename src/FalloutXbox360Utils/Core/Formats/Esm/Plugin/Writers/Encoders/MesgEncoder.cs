@@ -6,7 +6,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     Encodes a <see cref="MessageRecord" /> (MESG) as PC-format subrecord bytes.
 ///     In-game popup messages, tutorials, and notifications.
 ///     fopdoc canonical order:
-///         EDID, FULL?, DESC?, ICON?, QNAM?(quest), DNAM?(flags u32), TNAM?(display time u32), ITXT*(buttons).
+///     EDID, FULL?, DESC?, ICON?, QNAM?(quest), DNAM?(flags u32), TNAM?(display time u32), ITXT*(buttons).
 ///     Per-button CTDA conditions are not modeled yet (v17+ extension if needed).
 /// </summary>
 public sealed class MesgEncoder : IRecordEncoder

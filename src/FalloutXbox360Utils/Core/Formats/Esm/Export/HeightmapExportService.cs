@@ -60,34 +60,3 @@ public sealed class HeightmapExportService
 }
 
 #pragma warning restore CA1822, S2325
-
-internal static class WorldspaceCompositeRenderer
-{
-    public static Task<IReadOnlyList<string>> ExportAsync(
-        List<DetectedVhgtHeightmap> heightmaps,
-        List<CellGridSubrecord> cellGrids,
-        List<ExtractedLandRecord> landRecords,
-        string outputDir,
-        bool useColorGradient = true,
-        IReadOnlyDictionary<uint, string>? worldspaceNames = null)
-    {
-        return HeightmapPngExporter.ExportWorldspaceCompositeWorldmapsAsync(
-            heightmaps,
-            cellGrids,
-            landRecords,
-            outputDir,
-            useColorGradient,
-            worldspaceNames);
-    }
-}
-
-internal static class LandVisualPreviewRenderer
-{
-    public static Task ExportAsync(
-        List<ExtractedLandRecord> landRecords,
-        string outputDir,
-        IReadOnlyDictionary<uint, string>? worldspaceNames = null)
-    {
-        return HeightmapPngExporter.ExportLandVisualsAsync(landRecords, outputDir, worldspaceNames);
-    }
-}

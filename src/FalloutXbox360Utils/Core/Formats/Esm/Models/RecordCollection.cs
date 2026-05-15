@@ -119,7 +119,7 @@ public record RecordCollection
     public List<RecipeRecord> Recipes { get; init; } = [];
 
     /// <summary>Parsed Recipe Category (RCCT) records.</summary>
-    public List<Records.Misc.RecipeCategoryRecord> RecipeCategories { get; init; } = [];
+    public List<RecipeCategoryRecord> RecipeCategories { get; init; } = [];
 
     /// <summary>Parsed Constructible Object (COBJ) records.</summary>
     public List<ConstructibleObjectRecord> ConstructibleObjects { get; init; } = [];

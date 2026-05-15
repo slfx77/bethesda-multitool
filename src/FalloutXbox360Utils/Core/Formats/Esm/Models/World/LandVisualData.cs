@@ -80,11 +80,15 @@ public record LandVisualData
             VertexColors = vertexColors,
             TextureIndices = textureIndices,
             TextureLayers = new List<LandTextureLayer>(textureLayers),
-            Source = BuildEmissionSourceLabel(primary, runtimeVertexColors, fallback, vertexColors, textureIndices, textureLayers)
+            Source = BuildEmissionSourceLabel(primary, runtimeVertexColors, fallback, vertexColors, textureIndices,
+                textureLayers)
         };
     }
 
-    private static bool IsValidVclr(byte[]? bytes) => bytes is { Length: 33 * 33 * 3 };
+    private static bool IsValidVclr(byte[]? bytes)
+    {
+        return bytes is { Length: 33 * 33 * 3 };
+    }
 
     private static byte[]? ChooseValidVclr(params byte[]?[] candidates)
     {

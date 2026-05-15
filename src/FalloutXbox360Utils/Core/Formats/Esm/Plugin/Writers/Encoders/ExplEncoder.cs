@@ -7,10 +7,10 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     New-record-only path: override emission is a no-op (master ESM bytes retained verbatim).
 ///     fopdoc canonical order: EDID, OBND?, FULL?, MODL?, EITM?, DATA.
 ///     DATA layout (52 bytes per PDB BGSExplosionData):
-///         float Force(0) + float Damage(4) + float Radius(8) + FormID Light(12) +
-///         FormID Sound1(16) + uint32 Flags(20) + float IsRadius(24) + FormID ImpactDataSet(28) +
-///         FormID Sound2(32) + float RadiationLevel(36) + float RadiationDissipationTime(40) +
-///         float RadiationRadius(44) + uint32 SoundLevel(48).
+///     float Force(0) + float Damage(4) + float Radius(8) + FormID Light(12) +
+///     FormID Sound1(16) + uint32 Flags(20) + float IsRadius(24) + FormID ImpactDataSet(28) +
+///     FormID Sound2(32) + float RadiationLevel(36) + float RadiationDissipationTime(40) +
+///     float RadiationRadius(44) + uint32 SoundLevel(48).
 /// </summary>
 public sealed class ExplEncoder : IRecordEncoder
 {

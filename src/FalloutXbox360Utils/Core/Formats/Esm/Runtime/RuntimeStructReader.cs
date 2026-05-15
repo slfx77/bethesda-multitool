@@ -22,8 +22,8 @@ public sealed class RuntimeStructReader
 {
     private readonly RuntimeActorReader _actors;
     private readonly RuntimeActorWeaponReader _actorWeapons;
-    private readonly RuntimeAudioLocationControllerReader _audioLocationControllers;
     private readonly RuntimeCharacterAppearanceReader _appearance;
+    private readonly RuntimeAudioLocationControllerReader _audioLocationControllers;
     private readonly RuntimeBookReader _books;
     private readonly RuntimeCameraPathReader _cameraPaths;
     private readonly RuntimeCaravanCardReader _caravanCards;
@@ -45,8 +45,6 @@ public sealed class RuntimeStructReader
     private readonly RuntimeIdleAnimationReader _idleAnimations;
     private readonly RuntimeImpactDataReader _impactData;
     private readonly RuntimeIngredientReader _ingredients;
-    private readonly RuntimeNavMeshInfoMapReader _navMeshInfoMaps;
-    private readonly RuntimeSurvivalStageReader _survivalStages;
     private readonly RuntimeItemReader _items;
     private readonly RuntimeLightingTemplateReader _lightingTemplates;
     private readonly RuntimeLoadScreenTypeReader _loadScreenTypes;
@@ -55,16 +53,18 @@ public sealed class RuntimeStructReader
     private readonly RuntimeMessageReader _messages;
     private readonly RuntimeMusicTypeReader _musicTypes;
     private readonly RuntimeNavMeshReader _navMeshes;
+    private readonly RuntimeNavMeshInfoMapReader _navMeshInfoMaps;
     private readonly RuntimePackageReader _packages;
     private readonly RuntimeRaceReader _races;
     private readonly RuntimeRecipeCategoryReader _recipeCategories;
-    private readonly RuntimeRegionReader _regions;
     private readonly RuntimeRecipeReader _recipes;
-    private readonly RuntimeVoiceTypeReader _voiceTypes;
     private readonly RuntimeRefrReader _refrs;
+    private readonly RuntimeRegionReader _regions;
     private readonly RuntimeReputationReader _reputations;
     private readonly RuntimeScriptReader _scripts;
     private readonly RuntimeSoundReader _sounds;
+    private readonly RuntimeSurvivalStageReader _survivalStages;
+    private readonly RuntimeVoiceTypeReader _voiceTypes;
     private readonly RuntimeWaterReader _water;
     private readonly RuntimeWeaponModReader _weaponMods;
     private readonly RuntimeWorldReader _world;
@@ -292,6 +292,60 @@ public sealed class RuntimeStructReader
 
     #endregion
 
+    #region Encounter Zones
+
+    public EncounterZoneRecord? ReadRuntimeEncounterZone(RuntimeEditorIdEntry entry)
+    {
+        return _encounterZones.ReadRuntimeEncounterZone(entry);
+    }
+
+    #endregion
+
+    #region Navmeshes
+
+    public NavMeshRecord? ReadRuntimeNavMesh(RuntimeEditorIdEntry entry)
+    {
+        return _navMeshes.ReadRuntimeNavMesh(entry);
+    }
+
+    #endregion
+
+    #region Lighting Templates
+
+    public LightingTemplateRecord? ReadRuntimeLightingTemplate(RuntimeEditorIdEntry entry)
+    {
+        return _lightingTemplates.ReadRuntimeLightingTemplate(entry);
+    }
+
+    #endregion
+
+    #region Recipe Categories
+
+    public RecipeCategoryRecord? ReadRuntimeRecipeCategory(RuntimeEditorIdEntry entry)
+    {
+        return _recipeCategories.ReadRuntimeRecipeCategory(entry);
+    }
+
+    #endregion
+
+    #region Constructible Objects
+
+    public ConstructibleObjectRecord? ReadRuntimeConstructibleObject(RuntimeEditorIdEntry entry)
+    {
+        return _constructibleObjects.ReadRuntimeConstructibleObject(entry);
+    }
+
+    #endregion
+
+    #region Water
+
+    public WaterRecord? ReadRuntimeWater(RuntimeEditorIdEntry entry)
+    {
+        return _water.ReadRuntimeWater(entry);
+    }
+
+    #endregion
+
     #region Effects
 
     public ProjectilePhysicsData? ReadProjectilePhysics(long fileOffset, uint expectedFormId)
@@ -501,60 +555,6 @@ public sealed class RuntimeStructReader
     /// <summary>Accumulated diagnostics for TESConversationData link list population.</summary>
     internal RuntimeDialogueReader.ConversationDataDiagnostics DialogueConversationDiagnostics =>
         _dialogue.ConversationDiagnostics;
-
-    #endregion
-
-    #region Encounter Zones
-
-    public EncounterZoneRecord? ReadRuntimeEncounterZone(RuntimeEditorIdEntry entry)
-    {
-        return _encounterZones.ReadRuntimeEncounterZone(entry);
-    }
-
-    #endregion
-
-    #region Navmeshes
-
-    public NavMeshRecord? ReadRuntimeNavMesh(RuntimeEditorIdEntry entry)
-    {
-        return _navMeshes.ReadRuntimeNavMesh(entry);
-    }
-
-    #endregion
-
-    #region Lighting Templates
-
-    public LightingTemplateRecord? ReadRuntimeLightingTemplate(RuntimeEditorIdEntry entry)
-    {
-        return _lightingTemplates.ReadRuntimeLightingTemplate(entry);
-    }
-
-    #endregion
-
-    #region Recipe Categories
-
-    public RecipeCategoryRecord? ReadRuntimeRecipeCategory(RuntimeEditorIdEntry entry)
-    {
-        return _recipeCategories.ReadRuntimeRecipeCategory(entry);
-    }
-
-    #endregion
-
-    #region Constructible Objects
-
-    public ConstructibleObjectRecord? ReadRuntimeConstructibleObject(RuntimeEditorIdEntry entry)
-    {
-        return _constructibleObjects.ReadRuntimeConstructibleObject(entry);
-    }
-
-    #endregion
-
-    #region Water
-
-    public WaterRecord? ReadRuntimeWater(RuntimeEditorIdEntry entry)
-    {
-        return _water.ReadRuntimeWater(entry);
-    }
 
     #endregion
 

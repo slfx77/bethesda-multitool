@@ -7,13 +7,13 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     This is the largest encoder yet — RACE carries body part hierarchies, FaceGen morph
 ///     coefficients (gendered), default hair/eyes, voice types, and 30+ optional fields.
 ///     fopdoc canonical order:
-///         EDID, FULL?, DESC?, DATA(36B), ONAM?(older race), YNAM?(younger race),
-///         VTCK*(voice types — pair of FormIDs), DNAM?(default hair pair), CNAM?(hair color),
-///         PNAM?(face gen main clamp), UNAM?(face gen face clamp), ATTR? (not modeled),
-///         NAM0 + (INDX + MODL + ICON)* + NAM1 + (INDX + MODL + ICON)* (head + body parts),
-///         HNAM*(hair styles, FormID array), ENAM*(eye colors, FormID array),
-///         MNAM + FGGS + FGGA + FGTS (male facegen morphs),
-///         FNAM + FGGS + FGGA + FGTS (female facegen morphs), SNAM?.
+///     EDID, FULL?, DESC?, DATA(36B), ONAM?(older race), YNAM?(younger race),
+///     VTCK*(voice types — pair of FormIDs), DNAM?(default hair pair), CNAM?(hair color),
+///     PNAM?(face gen main clamp), UNAM?(face gen face clamp), ATTR? (not modeled),
+///     NAM0 + (INDX + MODL + ICON)* + NAM1 + (INDX + MODL + ICON)* (head + body parts),
+///     HNAM*(hair styles, FormID array), ENAM*(eye colors, FormID array),
+///     MNAM + FGGS + FGGA + FGTS (male facegen morphs),
+///     FNAM + FGGS + FGGA + FGTS (female facegen morphs), SNAM?.
 ///     Skill boosts (DATA bytes 0-13) pack as 7 pairs of (int8 SkillIndex + int8 Boost).
 /// </summary>
 public sealed class RaceEncoder : IRecordEncoder
@@ -172,10 +172,11 @@ public sealed class RaceEncoder : IRecordEncoder
             }
             else
             {
-                data[i * 2] = 0xFF;  // -1 sentinel for unused slot
+                data[i * 2] = 0xFF; // -1 sentinel for unused slot
                 data[i * 2 + 1] = 0; // zero boost
             }
         }
+
         // bytes 14-15 padding
         SubrecordEncoder.WriteFloat(data, 16, race.MaleHeight);
         SubrecordEncoder.WriteFloat(data, 20, race.FemaleHeight);
@@ -235,15 +236,19 @@ public sealed class RaceEncoder : IRecordEncoder
         }
     }
 
-    private static bool HasMaleFaceGen(RaceRecord race) =>
-        race.MaleFaceGenGeometrySymmetric is not null
-        || race.MaleFaceGenGeometryAsymmetric is not null
-        || race.MaleFaceGenTextureSymmetric is not null;
+    private static bool HasMaleFaceGen(RaceRecord race)
+    {
+        return race.MaleFaceGenGeometrySymmetric is not null
+               || race.MaleFaceGenGeometryAsymmetric is not null
+               || race.MaleFaceGenTextureSymmetric is not null;
+    }
 
-    private static bool HasFemaleFaceGen(RaceRecord race) =>
-        race.FemaleFaceGenGeometrySymmetric is not null
-        || race.FemaleFaceGenGeometryAsymmetric is not null
-        || race.FemaleFaceGenTextureSymmetric is not null;
+    private static bool HasFemaleFaceGen(RaceRecord race)
+    {
+        return race.FemaleFaceGenGeometrySymmetric is not null
+               || race.FemaleFaceGenGeometryAsymmetric is not null
+               || race.FemaleFaceGenTextureSymmetric is not null;
+    }
 
     private static void EmitFaceGenMorphs(
         List<EncodedSubrecord> subs,

@@ -7,9 +7,9 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     FNV achievement-like goals.
 ///     fopdoc canonical order: EDID, FULL?, DESC?, ICON?, SCRI?, DATA(24B).
 ///     DATA layout (24B per PDB CHALLENGE_DATA):
-///         int32 ChallengeType(0) + int32 Threshold(4) + uint16 Flags(8) + pad(2) +
-///         int32 Interval(12) + uint16 SpecialDataOne(16) + uint16 SpecialDataTwo(18) +
-///         uint16 SpecialDataThree(20) + pad(2).
+///     int32 ChallengeType(0) + int32 Threshold(4) + uint16 Flags(8) + pad(2) +
+///     int32 Interval(12) + uint16 SpecialDataOne(16) + uint16 SpecialDataTwo(18) +
+///     uint16 SpecialDataThree(20) + pad(2).
 /// </summary>
 public sealed class ChalEncoder : IRecordEncoder
 {

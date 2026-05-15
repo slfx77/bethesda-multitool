@@ -1,3 +1,4 @@
+using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Schema;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
 
@@ -28,7 +29,7 @@ public static class Tes4HeaderBuilder
     {
         // Build subrecord stream first so we know its size.
         using var subrecordStream = new MemoryStream();
-        using (var subrecordWriter = new BinaryWriter(subrecordStream, System.Text.Encoding.Latin1, true))
+        using (var subrecordWriter = new BinaryWriter(subrecordStream, Encoding.Latin1, true))
         {
             WriteHedr(subrecordWriter, numRecords, nextObjectId);
 

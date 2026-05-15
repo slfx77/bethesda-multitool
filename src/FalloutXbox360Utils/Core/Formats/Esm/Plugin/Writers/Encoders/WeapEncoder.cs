@@ -82,7 +82,7 @@ public sealed class WeapEncoder : IRecordEncoder
         // ETYP — 4-byte int32 (enum -1..13). Emit when not None, after FULL/MODL.
         // Despite the schema registering ETYP as a FormID type for endian-swap purposes,
         // FNV's parser reads it as int32 — see WeaponRecordHandler.cs:313-320.
-        if (weap.EquipmentType != Enums.EquipmentType.None)
+        if (weap.EquipmentType != EquipmentType.None)
         {
             subs.Add(NewRecordSubrecords.EncodeInt32Subrecord("ETYP", (int)weap.EquipmentType));
         }
@@ -169,17 +169,20 @@ public sealed class WeapEncoder : IRecordEncoder
         }
     }
 
-    private static int CombinationToIndex(WeaponModCombination combination) => combination switch
+    private static int CombinationToIndex(WeaponModCombination combination)
     {
-        WeaponModCombination.Mod1 => 1,
-        WeaponModCombination.Mod2 => 2,
-        WeaponModCombination.Mod3 => 3,
-        WeaponModCombination.Mod12 => 4,
-        WeaponModCombination.Mod13 => 5,
-        WeaponModCombination.Mod23 => 6,
-        WeaponModCombination.Mod123 => 7,
-        _ => 0
-    };
+        return combination switch
+        {
+            WeaponModCombination.Mod1 => 1,
+            WeaponModCombination.Mod2 => 2,
+            WeaponModCombination.Mod3 => 3,
+            WeaponModCombination.Mod12 => 4,
+            WeaponModCombination.Mod13 => 5,
+            WeaponModCombination.Mod23 => 6,
+            WeaponModCombination.Mod123 => 7,
+            _ => 0
+        };
+    }
 
     private static byte[] BuildDataSubrecord(WeaponRecord weap)
     {

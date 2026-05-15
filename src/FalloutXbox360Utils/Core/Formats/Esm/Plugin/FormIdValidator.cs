@@ -5,11 +5,9 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 /// <summary>
 ///     Replaces dangling FormID references with <c>0x00000000</c> (engine null) so the
 ///     runtime doesn't null-deref while binding cross-record links during load.
-///
 ///     A FormID is "dangling" when it isn't in the master ESM's record set AND isn't one of
 ///     the FormIDs this conversion has allocated for new records. The 0/0xFFFFFFFF sentinels
 ///     are pass-through (the engine handles those).
-///
 ///     The validator aggregates substitution counts and emits one summary warning per
 ///     <see cref="EmitSummary" /> call, so a few thousand dangling refs don't drown the log
 ///     with per-substitution noise.

@@ -8,12 +8,22 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
 ///     Per-asset Xbox 360 → PC conversion bridge for the asset packer. Wraps the existing
 ///     in-memory converters used by <c>BsaProcessor</c> behind a single byte[] in / byte[] out
 ///     surface keyed off the file extension.
-///
 ///     <list type="bullet">
-///         <item><description><c>.ddx</c> → <c>.dds</c> via <see cref="DdxConverter.ConvertFromMemoryWithResult"/>.</description></item>
-///         <item><description><c>.nif</c> / <c>.kf</c> / <c>.psa</c> → little-endian via <see cref="NifConverter.Convert"/> (no-op for already-LE files).</description></item>
-///         <item><description><c>.xma</c> → <c>.wav</c> via <see cref="XmaWavConverter.ConvertAsync"/> (requires FFmpeg).</description></item>
-///         <item><description>Anything else: passed through unchanged with the original extension.</description></item>
+///         <item>
+///             <description><c>.ddx</c> → <c>.dds</c> via <see cref="DdxConverter.ConvertFromMemoryWithResult" />.</description>
+///         </item>
+///         <item>
+///             <description>
+///                 <c>.nif</c> / <c>.kf</c> / <c>.psa</c> → little-endian via <see cref="NifConverter.Convert" />
+///                 (no-op for already-LE files).
+///             </description>
+///         </item>
+///         <item>
+///             <description><c>.xma</c> → <c>.wav</c> via <see cref="XmaWavConverter.ConvertAsync" /> (requires FFmpeg).</description>
+///         </item>
+///         <item>
+///             <description>Anything else: passed through unchanged with the original extension.</description>
+///         </item>
 ///     </list>
 /// </summary>
 internal sealed class PrototypeAssetConverter
@@ -127,25 +137,34 @@ internal sealed record ConvertedAsset
 
     public bool Success => FailureReason is null;
 
-    public static ConvertedAsset Converted(byte[] data, string outputPath) => new()
+    public static ConvertedAsset Converted(byte[] data, string outputPath)
     {
-        Data = data,
-        OutputPath = outputPath,
-        WasConverted = true
-    };
+        return new ConvertedAsset
+        {
+            Data = data,
+            OutputPath = outputPath,
+            WasConverted = true
+        };
+    }
 
-    public static ConvertedAsset PassThrough(byte[] data, string outputPath) => new()
+    public static ConvertedAsset PassThrough(byte[] data, string outputPath)
     {
-        Data = data,
-        OutputPath = outputPath,
-        WasConverted = false
-    };
+        return new ConvertedAsset
+        {
+            Data = data,
+            OutputPath = outputPath,
+            WasConverted = false
+        };
+    }
 
-    public static ConvertedAsset Failure(byte[] data, string outputPath, string reason) => new()
+    public static ConvertedAsset Failure(byte[] data, string outputPath, string reason)
     {
-        Data = data,
-        OutputPath = outputPath,
-        WasConverted = false,
-        FailureReason = reason
-    };
+        return new ConvertedAsset
+        {
+            Data = data,
+            OutputPath = outputPath,
+            WasConverted = false,
+            FailureReason = reason
+        };
+    }
 }

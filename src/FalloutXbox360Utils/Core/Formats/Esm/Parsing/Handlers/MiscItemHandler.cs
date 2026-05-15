@@ -1,7 +1,10 @@
+using System.Buffers.Binary;
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
@@ -312,7 +315,7 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
         var value = 0;
         var maxCondition = 0;
         var weight = 0f;
-        var equipmentType = Enums.EquipmentType.None;
+        var equipmentType = EquipmentType.None;
         uint? repairItemListFormId = null;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
@@ -382,9 +385,9 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
                 case "ETYP" when sub.DataLength >= 4:
                 {
                     var raw = record.IsBigEndian
-                        ? System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(subData)
-                        : System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(subData);
-                    equipmentType = (Enums.EquipmentType)raw;
+                        ? BinaryPrimitives.ReadInt32BigEndian(subData)
+                        : BinaryPrimitives.ReadInt32LittleEndian(subData);
+                    equipmentType = (EquipmentType)raw;
                     break;
                 }
                 case "REPL" when sub.DataLength == 4:
@@ -441,7 +444,7 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
     /// <summary>
     ///     Parse all Constructible Object (COBJ) records.
     ///     fopdoc canonical subrecord order:
-    ///         EDID, OBND?, FULL?, MODL?, MODT?, COCT, CNTO*, CTDA*, CNAM, BNAM?.
+    ///     EDID, OBND?, FULL?, MODL?, MODT?, COCT, CNTO*, CTDA*, CNAM, BNAM?.
     /// </summary>
     internal List<ConstructibleObjectRecord> ParseConstructibleObjects()
     {
@@ -468,7 +471,7 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
         byte[]? textureHash = null;
         ObjectBounds? bounds = null;
         var ingredients = new List<InventoryItem>();
-        var conditions = new List<Models.Records.Quest.DialogueCondition>();
+        var conditions = new List<DialogueCondition>();
         uint? createdItem = null;
         uint? workbenchKeyword = null;
 
@@ -505,8 +508,8 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
                 {
                     var itemId = RecordParserContext.ReadFormId(subData[..4], record.IsBigEndian);
                     var count = record.IsBigEndian
-                        ? System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(subData[4..8])
-                        : System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(subData[4..8]);
+                        ? BinaryPrimitives.ReadInt32BigEndian(subData[4..8])
+                        : BinaryPrimitives.ReadInt32LittleEndian(subData[4..8]);
                     ingredients.Add(new InventoryItem(itemId, count));
                     break;
                 }

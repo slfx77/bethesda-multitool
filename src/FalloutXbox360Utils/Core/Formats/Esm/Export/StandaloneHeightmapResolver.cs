@@ -154,13 +154,16 @@ internal static class StandaloneHeightmapResolver
                land.Offset == standalone.Offset + EsmSubrecordUtils.SubrecordHeaderSize;
     }
 
-    private static string FormatStatus(StandaloneHeightmapStatus status) => status switch
+    private static string FormatStatus(StandaloneHeightmapStatus status)
     {
-        StandaloneHeightmapStatus.OffsetLandMatch => "OffsetLAND",
-        StandaloneHeightmapStatus.ExactLandMatch => "ExactLAND",
-        StandaloneHeightmapStatus.AmbiguousLandMatch => "AmbiguousLAND",
-        _ => "Unresolved"
-    };
+        return status switch
+        {
+            StandaloneHeightmapStatus.OffsetLandMatch => "OffsetLAND",
+            StandaloneHeightmapStatus.ExactLandMatch => "ExactLAND",
+            StandaloneHeightmapStatus.AmbiguousLandMatch => "AmbiguousLAND",
+            _ => "Unresolved"
+        };
+    }
 
     private static string FormatNullableFormId(uint? formId)
     {

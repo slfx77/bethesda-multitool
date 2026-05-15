@@ -7,13 +7,13 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     New-record-only path: override emission is a no-op (master ESM bytes retained verbatim).
 ///     fopdoc canonical order: EDID, OBND?, FULL?, MODL?, DATA, VNAM?.
 ///     DATA layout (84 bytes per PDB BGSProjectileData):
-///         uint16 Flags(0) + uint16 ProjectileType(2) + float Gravity(4) + float Speed(8) +
-///         float Range(12) + FormID Light(16) + FormID MuzzleFlashLight(20) + float TracerChance(24) +
-///         float ExplosionProximity(28) + float ExplosionTimer(32) + FormID Explosion(36) +
-///         FormID Sound(40) + float MuzzleFlashDuration(44) + float FadeDuration(48) +
-///         float ImpactForce(52) + FormID CountdownSound(56) + FormID DeactivateSound(60) +
-///         FormID DefaultWeaponSource(64) + float RotationX(68) + float RotationY(72) +
-///         float RotationZ(76) + float BounceMultiplier(80).
+///     uint16 Flags(0) + uint16 ProjectileType(2) + float Gravity(4) + float Speed(8) +
+///     float Range(12) + FormID Light(16) + FormID MuzzleFlashLight(20) + float TracerChance(24) +
+///     float ExplosionProximity(28) + float ExplosionTimer(32) + FormID Explosion(36) +
+///     FormID Sound(40) + float MuzzleFlashDuration(44) + float FadeDuration(48) +
+///     float ImpactForce(52) + FormID CountdownSound(56) + FormID DeactivateSound(60) +
+///     FormID DefaultWeaponSource(64) + float RotationX(68) + float RotationY(72) +
+///     float RotationZ(76) + float BounceMultiplier(80).
 /// </summary>
 public sealed class ProjEncoder : IRecordEncoder
 {

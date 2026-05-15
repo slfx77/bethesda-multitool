@@ -8,11 +8,11 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     SCRO/SCRV referenced objects. Override path is a no-op — script bytecode in the DMP
 ///     matches the master ESM's bytecode and is retained verbatim.
 ///     SCHR (20 bytes) per PDB SCRIPT_HEADER:
-///         uint32 VariableCount(0) + uint32 RefObjectCount(4) + uint32 CompiledSize(8) +
-///         uint32 LastVariableId(12) + bool IsQuestScript(16) + bool IsMagicEffectScript(17) +
-///         bool IsCompiled(18) + pad(19).
+///     uint32 VariableCount(0) + uint32 RefObjectCount(4) + uint32 CompiledSize(8) +
+///     uint32 LastVariableId(12) + bool IsQuestScript(16) + bool IsMagicEffectScript(17) +
+///     bool IsCompiled(18) + pad(19).
 ///     SLSD (24 bytes) per PDB SCRIPT_LOCAL:
-///         uint32 Index(0) + pad(4..7) + double Value(8..15) + bool IsInteger(16) + pad(17..23).
+///     uint32 Index(0) + pad(4..7) + double Value(8..15) + bool IsInteger(16) + pad(17..23).
 /// </summary>
 public sealed class ScptEncoder : IRecordEncoder
 {

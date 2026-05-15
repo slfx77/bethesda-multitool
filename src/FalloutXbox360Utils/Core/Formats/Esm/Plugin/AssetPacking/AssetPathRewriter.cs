@@ -10,7 +10,6 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
 ///     matched filename. This unifies prototype-era references with assets that survived
 ///     under different names in the final builds and shrinks the BSA the packer needs to
 ///     produce.
-///
 ///     The rewriter runs BEFORE encoding so the output ESP already carries the renamed
 ///     paths. Records are <c>record</c> types with <c>init</c>-only setters, but reflection
 ///     <c>PropertyInfo.SetValue</c> bypasses the compile-time <c>init</c> modreq and the
@@ -18,17 +17,6 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
 /// </summary>
 internal static class AssetPathRewriter
 {
-    /// <summary>
-    ///     Result of a rewrite pass — useful for the progress sink + tests.
-    /// </summary>
-    public sealed record RewriteResult
-    {
-        public int Considered { get; init; }
-        public int Rewritten { get; init; }
-        public int SkippedExact { get; init; }
-        public int SkippedMissing { get; init; }
-    }
-
     /// <summary>
     ///     Walk every record-sourced asset path. For each path the resolver classifies as
     ///     <see cref="AssetResolutionKind.ResolvedFuzzy" /> with a different filename than
@@ -112,5 +100,16 @@ internal static class AssetPathRewriter
     internal static string DenormalizeForField(string normalizedNewPath, string originalRawPath)
     {
         return AssetPathRules.DenormalizeForField(normalizedNewPath, originalRawPath);
+    }
+
+    /// <summary>
+    ///     Result of a rewrite pass — useful for the progress sink + tests.
+    /// </summary>
+    public sealed record RewriteResult
+    {
+        public int Considered { get; init; }
+        public int Rewritten { get; init; }
+        public int SkippedExact { get; init; }
+        public int SkippedMissing { get; init; }
     }
 }

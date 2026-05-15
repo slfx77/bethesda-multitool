@@ -5,8 +5,8 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
 /// <summary>
 ///     Sniffs a data folder to guess whether it holds Xbox 360 assets. Tries any
 ///     <c>.esm</c>/<c>.esp</c> first (cheap big-endian magic check via
-///     <see cref="EsmParser.IsBigEndian"/>), then falls back to any <c>.bsa</c> header
-///     flag (<see cref="BsaHeader.IsXbox360"/>). Default false (PC) when neither is
+///     <see cref="EsmParser.IsBigEndian" />), then falls back to any <c>.bsa</c> header
+///     flag (<see cref="BsaHeader.IsXbox360" />). Default false (PC) when neither is
 ///     present or none are readable.
 /// </summary>
 public static class Xbox360FolderDetector

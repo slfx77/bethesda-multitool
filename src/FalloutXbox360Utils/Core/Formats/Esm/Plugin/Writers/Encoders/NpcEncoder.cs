@@ -11,9 +11,9 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     source ESM. ACBS is the most frequently mutated runtime block and the only one the
 ///     parsed <see cref="ActorBaseSubrecord" /> covers byte-for-byte.
 ///     ACBS layout: uint32 Flags(0) + uint16 Fatigue(4) + uint16 BarterGold(6) +
-///                  int16 Level(8) + uint16 CalcMin(10) + uint16 CalcMax(12) +
-///                  uint16 SpeedMult(14) + float KarmaAlignment(16) +
-///                  int16 DispositionBase(20) + uint16 TemplateFlags(22).
+///     int16 Level(8) + uint16 CalcMin(10) + uint16 CalcMax(12) +
+///     uint16 SpeedMult(14) + float KarmaAlignment(16) +
+///     int16 DispositionBase(20) + uint16 TemplateFlags(22).
 /// </summary>
 public sealed class NpcEncoder : IRecordEncoder
 {
@@ -35,7 +35,7 @@ public sealed class NpcEncoder : IRecordEncoder
             // from captured CalcMin/Max + Level, which for prototype runtime values often
             // produces 0 HP and the NPC spawns dead. Forcing AutoCalc makes the engine
             // recompute HP from Class + Level + SPECIAL so the NPC stays alive.
-            subs.Add(new EncodedSubrecord("ACBS", BuildAcbsSubrecord(npc.Stats, forceAutoCalc: true)));
+            subs.Add(new EncodedSubrecord("ACBS", BuildAcbsSubrecord(npc.Stats, true)));
         }
         else
         {
@@ -55,8 +55,8 @@ public sealed class NpcEncoder : IRecordEncoder
 
     /// <summary>
     ///     Emit the appearance subrecords (hair / eyes / hair color / FaceGen morphs) that
-    ///     a runtime NPC capture carries. Shared between override <see cref="Encode"/> and
-    ///     new-record <see cref="EncodeNew"/>.
+    ///     a runtime NPC capture carries. Shared between override <see cref="Encode" /> and
+    ///     new-record <see cref="EncodeNew" />.
     /// </summary>
     private static void AppendAppearanceSubrecords(NpcRecord npc, List<EncodedSubrecord> subs)
     {
@@ -137,7 +137,7 @@ public sealed class NpcEncoder : IRecordEncoder
             // Without AutoCalc, prototype NPCs (e.g. Ulysses) spawn dead because the
             // captured Flags is just 0x01 (Biped only) and the manual stats path computes
             // 0 health when class derived-attributes don't match the captured level.
-            subs.Add(new EncodedSubrecord("ACBS", BuildAcbsSubrecord(npc.Stats, forceAutoCalc: true)));
+            subs.Add(new EncodedSubrecord("ACBS", BuildAcbsSubrecord(npc.Stats, true)));
         }
 
         // SNAM faction memberships — 8 bytes each: FormID + uint8 rank + 3 padding.

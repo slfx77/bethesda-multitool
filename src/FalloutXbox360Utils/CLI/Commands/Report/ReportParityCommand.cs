@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.Text;
 using System.Text.Json;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
@@ -147,7 +148,7 @@ internal static class ReportParityCommand
                 WriteParityJson(writer, result);
             }
 
-            Console.WriteLine(System.Text.Encoding.UTF8.GetString(ms.ToArray()));
+            Console.WriteLine(Encoding.UTF8.GetString(ms.ToArray()));
         }
     }
 

@@ -9,6 +9,127 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
 
 internal sealed class TextRecordHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
+    #region Books
+
+    /// <summary>
+    ///     Parse all Book records from the scan result.
+    /// </summary>
+    internal List<BookRecord> ParseBooks()
+    {
+        var books = ParseRecordList("BOOK", 16384, ParseBookFromAccessor,
+            record => new BookRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
+
+        Context.MergeRuntimeRecords(books, 0x19, b => b.FormId,
+            (reader, entry) => reader.ReadRuntimeBook(entry), "books");
+
+        return books;
+    }
+
+    #endregion
+
+    private BookRecord? ParseBookFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return new BookRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                FullName = Context.FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            };
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        string? fullName = null;
+        string? text = null;
+        string? modelPath = null;
+        string? iconPath = null;
+        string? messageIconPath = null;
+        byte[]? textureHashData = null;
+        ObjectBounds? bounds = null;
+        byte flags = 0;
+        byte skillTaught = 0;
+        var value = 0;
+        float weight = 0;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "FULL":
+                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "DESC":
+                    text = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODL":
+                    modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "ICON":
+                    iconPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MICO":
+                    messageIconPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODT" when sub.DataLength > 0:
+                    textureHashData = subData.ToArray();
+                    break;
+                case "OBND" when sub.DataLength == 12:
+                    bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
+                    break;
+                case "DATA" when sub.DataLength >= 10:
+                {
+                    // BOOK DATA: Flags(1) + SkillTaught(1) + Value(int32) + Weight(float)
+                    flags = subData[0];
+                    skillTaught = subData[1];
+                    value = record.IsBigEndian
+                        ? BinaryPrimitives.ReadInt32BigEndian(subData[2..])
+                        : BinaryPrimitives.ReadInt32LittleEndian(subData[2..]);
+                    weight = record.IsBigEndian
+                        ? BinaryPrimitives.ReadSingleBigEndian(subData[6..])
+                        : BinaryPrimitives.ReadSingleLittleEndian(subData[6..]);
+                    break;
+                }
+            }
+        }
+
+        return new BookRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            FullName = fullName,
+            Text = text,
+            ModelPath = modelPath,
+            IconPath = iconPath,
+            MessageIconPath = messageIconPath,
+            TextureHashData = textureHashData,
+            Bounds = bounds,
+            Flags = flags,
+            SkillTaught = skillTaught,
+            Value = value,
+            Weight = weight,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
     #region Terminals
 
     /// <summary>
@@ -71,7 +192,7 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
         byte[]? curCompiledData = null;
         string? curSourceText = null;
         var curReferencedObjects = new List<uint>();
-        var curConditions = new List<Models.Records.Quest.DialogueCondition>();
+        var curConditions = new List<DialogueCondition>();
         var curHasMenuItem = false;
 
         void FlushMenuItem()
@@ -193,127 +314,6 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
     }
 
     #endregion
-
-    #region Books
-
-    /// <summary>
-    ///     Parse all Book records from the scan result.
-    /// </summary>
-    internal List<BookRecord> ParseBooks()
-    {
-        var books = ParseRecordList("BOOK", 16384, ParseBookFromAccessor,
-            record => new BookRecord
-            {
-                FormId = record.FormId,
-                EditorId = Context.GetEditorId(record.FormId),
-                FullName = Context.FindFullNameNear(record.Offset),
-                Offset = record.Offset,
-                IsBigEndian = record.IsBigEndian
-            });
-
-        Context.MergeRuntimeRecords(books, 0x19, b => b.FormId,
-            (reader, entry) => reader.ReadRuntimeBook(entry), "books");
-
-        return books;
-    }
-
-    #endregion
-
-    private BookRecord? ParseBookFromAccessor(DetectedMainRecord record, byte[] buffer)
-    {
-        var recordData = Context.ReadRecordData(record, buffer);
-        if (recordData == null)
-        {
-            return new BookRecord
-            {
-                FormId = record.FormId,
-                EditorId = Context.GetEditorId(record.FormId),
-                FullName = Context.FindFullNameNear(record.Offset),
-                Offset = record.Offset,
-                IsBigEndian = record.IsBigEndian
-            };
-        }
-
-        var (data, dataSize) = recordData.Value;
-
-        string? editorId = null;
-        string? fullName = null;
-        string? text = null;
-        string? modelPath = null;
-        string? iconPath = null;
-        string? messageIconPath = null;
-        byte[]? textureHashData = null;
-        ObjectBounds? bounds = null;
-        byte flags = 0;
-        byte skillTaught = 0;
-        var value = 0;
-        float weight = 0;
-
-        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
-        {
-            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
-
-            switch (sub.Signature)
-            {
-                case "EDID":
-                    editorId = EsmStringUtils.ReadNullTermString(subData);
-                    break;
-                case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(subData);
-                    break;
-                case "DESC":
-                    text = EsmStringUtils.ReadNullTermString(subData);
-                    break;
-                case "MODL":
-                    modelPath = EsmStringUtils.ReadNullTermString(subData);
-                    break;
-                case "ICON":
-                    iconPath = EsmStringUtils.ReadNullTermString(subData);
-                    break;
-                case "MICO":
-                    messageIconPath = EsmStringUtils.ReadNullTermString(subData);
-                    break;
-                case "MODT" when sub.DataLength > 0:
-                    textureHashData = subData.ToArray();
-                    break;
-                case "OBND" when sub.DataLength == 12:
-                    bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
-                    break;
-                case "DATA" when sub.DataLength >= 10:
-                {
-                    // BOOK DATA: Flags(1) + SkillTaught(1) + Value(int32) + Weight(float)
-                    flags = subData[0];
-                    skillTaught = subData[1];
-                    value = record.IsBigEndian
-                        ? BinaryPrimitives.ReadInt32BigEndian(subData[2..])
-                        : BinaryPrimitives.ReadInt32LittleEndian(subData[2..]);
-                    weight = record.IsBigEndian
-                        ? BinaryPrimitives.ReadSingleBigEndian(subData[6..])
-                        : BinaryPrimitives.ReadSingleLittleEndian(subData[6..]);
-                    break;
-                }
-            }
-        }
-
-        return new BookRecord
-        {
-            FormId = record.FormId,
-            EditorId = editorId ?? Context.GetEditorId(record.FormId),
-            FullName = fullName,
-            Text = text,
-            ModelPath = modelPath,
-            IconPath = iconPath,
-            MessageIconPath = messageIconPath,
-            TextureHashData = textureHashData,
-            Bounds = bounds,
-            Flags = flags,
-            SkillTaught = skillTaught,
-            Value = value,
-            Weight = weight,
-            Offset = record.Offset,
-            IsBigEndian = record.IsBigEndian
-        };
-    }
 
     #region Messages
 

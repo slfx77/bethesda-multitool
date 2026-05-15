@@ -1,3 +1,4 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
@@ -7,7 +8,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     ARMA defines the visual model for an armor piece, with separate male/female and
 ///     third/first-person mesh paths. New-record-only path: override emission is a no-op.
 ///     fopdoc canonical order: EDID, OBND?, FULL?, BMDT, MODL?, MODT?, MOD2?, MO2T?,
-///         MOD3?, MO3T?, MOD4?, MO4T?, ICON?, MIC2?, DATA, DNAM?.
+///     MOD3?, MO3T?, MOD4?, MO4T?, ICON?, MIC2?, DATA, DNAM?.
 ///     BMDT layout (8 bytes): uint32 BipedFlags(0) + uint8 GeneralFlags(4) + 3 padding.
 ///     DATA layout (12 bytes): int32 Value(0) + int32 MaxCondition(4) + float Weight(8).
 ///     DNAM (1 byte): detection sound level enum (Loud=0, Normal=1, Silent=2).
@@ -115,7 +116,7 @@ public sealed class ArmaEncoder : IRecordEncoder
         // ETYP — equipment type (int32 enum, -1..13). Per WeapEncoder/ArmoEncoder precedent,
         // the schema registers ETYP as a FormID for endian-swap, but the actual on-disk and
         // in-memory value is a 4-byte int32. Emit only when not None.
-        if (arma.EquipmentType != Enums.EquipmentType.None)
+        if (arma.EquipmentType != EquipmentType.None)
         {
             subs.Add(NewRecordSubrecords.EncodeInt32Subrecord("ETYP", (int)arma.EquipmentType));
         }

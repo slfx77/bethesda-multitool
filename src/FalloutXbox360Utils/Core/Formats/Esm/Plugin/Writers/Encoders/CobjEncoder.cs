@@ -1,3 +1,4 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
@@ -8,7 +9,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     to a created item (CNAM).
 ///     New-record-only path: override emission is a no-op.
 ///     fopdoc canonical order: EDID, OBND?, FULL?, MODL?, MODT?, COCT, CNTO*,
-///         CTDA* (with optional CIS1/CIS2), CNAM, BNAM?.
+///     CTDA* (with optional CIS1/CIS2), CNAM, BNAM?.
 ///     COCT (4 bytes): uint32 count of CNTO entries that follow.
 ///     CNTO (8 bytes): FormID Item(0) + int32 Count(4) — emitted via InventoryItem.
 ///     CNAM (4 bytes): FormID of the item produced by crafting.
@@ -102,7 +103,7 @@ public sealed class CobjEncoder : IRecordEncoder
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
     }
 
-    private static byte[] BuildCntoSubrecord(Models.InventoryItem item)
+    private static byte[] BuildCntoSubrecord(InventoryItem item)
     {
         var bytes = new byte[8];
         SubrecordEncoder.WriteFormId(bytes, 0, item.ItemFormId);

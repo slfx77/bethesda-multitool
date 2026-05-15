@@ -5,7 +5,6 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 ///     FormID has the high byte set to <c>0x01</c> (placeholder plugin index — the engine
 ///     remaps this to the actual load-order index when the player enables the plugin) and the
 ///     low 24 bits taken from a monotonically-incrementing counter.
-///
 ///     The starting local ID defaults to <c>0x800</c>, matching the convention used by GECK
 ///     and other Bethesda authoring tools — local IDs below 0x800 are reserved for the engine.
 /// </summary>
@@ -17,8 +16,6 @@ public sealed class FormIdAllocator
     /// <summary>Default first local ID (0x800) — matches GECK convention.</summary>
     public const uint DefaultBaseLocalId = 0x800;
 
-    private uint _nextLocalId;
-
     public FormIdAllocator(uint baseLocalId = DefaultBaseLocalId)
     {
         if (baseLocalId > 0x00FFFFFF)
@@ -28,14 +25,14 @@ public sealed class FormIdAllocator
         }
 
         BaseLocalId = baseLocalId;
-        _nextLocalId = baseLocalId;
+        NextLocalId = baseLocalId;
     }
 
     /// <summary>The first local ID this allocator started from.</summary>
     public uint BaseLocalId { get; }
 
     /// <summary>The local ID that will be returned by the next call to <see cref="Allocate" />.</summary>
-    public uint NextLocalId => _nextLocalId;
+    public uint NextLocalId { get; private set; }
 
     /// <summary>
     ///     The local ID one past the highest already-allocated ID. Suitable as the value of
@@ -43,23 +40,23 @@ public sealed class FormIdAllocator
     ///     when the user adds new records via the editor. Returns <see cref="BaseLocalId" />
     ///     when nothing has been allocated yet.
     /// </summary>
-    public uint NextObjectId => _nextLocalId;
+    public uint NextObjectId => NextLocalId;
 
     /// <summary>True if <see cref="Allocate" /> has been called at least once.</summary>
-    public bool HasAllocations => _nextLocalId > BaseLocalId;
+    public bool HasAllocations => NextLocalId > BaseLocalId;
 
     /// <summary>
     ///     Allocate a fresh FormID with plugin index <see cref="PluginIndex" /> in the high byte.
     /// </summary>
     public uint Allocate()
     {
-        if (_nextLocalId > 0x00FFFFFF)
+        if (NextLocalId > 0x00FFFFFF)
         {
             throw new InvalidOperationException("FormID allocator exhausted (24-bit local ID space).");
         }
 
-        var formId = ((uint)PluginIndex << 24) | _nextLocalId;
-        _nextLocalId++;
+        var formId = ((uint)PluginIndex << 24) | NextLocalId;
+        NextLocalId++;
         return formId;
     }
 }

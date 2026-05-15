@@ -7,7 +7,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     Encodes an <see cref="EnchantmentRecord" /> (ENCH) as PC-format subrecord bytes.
 ///     fopdoc canonical order: EDID, FULL?, ENIT(16B), (EFID + EFIT)*.
 ///     ENIT layout (16B): uint32 Type(0) + uint32 ChargeAmount(4) + uint32 EnchantCost(8) +
-///         uint8 Flags(12) + pad(3).
+///     uint8 Flags(12) + pad(3).
 ///     EFID is the 4-byte base-effect FormID; EFIT is the 20-byte effect-item block.
 /// </summary>
 public sealed class EnchEncoder : IRecordEncoder

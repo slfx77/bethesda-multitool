@@ -9,10 +9,10 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     CNTO+COED?+ (per item) + DATA + SNAM? + QNAM? + RNAM?.
 ///     Override path is a no-op.
 ///     DATA layout (5 bytes, packed/unaligned):
-///         byte  Flags(0)
-///         float Weight(1) — little-endian
+///     byte  Flags(0)
+///     float Weight(1) — little-endian
 ///     COED layout (12 bytes, optional per CNTO):
-///         FormID Owner(0) + uint32 GlobalOrRank(4) + float ItemCondition(8)
+///     FormID Owner(0) + uint32 GlobalOrRank(4) + float ItemCondition(8)
 /// </summary>
 public sealed class ContEncoder : IRecordEncoder
 {

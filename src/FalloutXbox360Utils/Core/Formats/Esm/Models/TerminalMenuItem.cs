@@ -1,3 +1,5 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
+
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
@@ -24,7 +26,7 @@ public record TerminalMenuItem
     ///     by default; the per-condition <see cref="Records.Quest.DialogueCondition.IsOr" />
     ///     flag flips the join to OR.
     /// </summary>
-    public List<Records.Quest.DialogueCondition> Conditions { get; init; } = [];
+    public List<DialogueCondition> Conditions { get; init; } = [];
 
     /// <summary>Embedded result-script compiled bytecode (SCDA). Null when not embedded.</summary>
     public byte[]? CompiledData { get; init; }

@@ -10,9 +10,9 @@ public static class PluginRoundTripValidator
 {
     /// <summary>
     ///     Re-parse the emitted bytes and verify:
-    ///       1. The file starts with TES4 (PC little-endian).
-    ///       2. <see cref="EsmParser.EnumerateRecords" /> reads the file without throwing.
-    ///       3. The expected total override count is present.
+    ///     1. The file starts with TES4 (PC little-endian).
+    ///     2. <see cref="EsmParser.EnumerateRecords" /> reads the file without throwing.
+    ///     3. The expected total override count is present.
     /// </summary>
     /// <returns>A short human-readable validation report.</returns>
     public static string Validate(byte[] espBytes, int expectedOverrideCount)

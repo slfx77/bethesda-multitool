@@ -87,7 +87,7 @@ public sealed record PluginBuildOptions
     ///     isn't in the DMP snapshot — so the in-game / GECK view of that cell shows
     ///     only the prototype's static placements (plus master persistent refs, which
     ///     stay untouched to avoid breaking quest scripts / enable-parent chains).
-    ///     <br/>
+    ///     <br />
     ///     Off by default. When on, this overrides the classifier's
     ///     <c>PersistentOnly</c> mode for DMP cells that captured placements, and
     ///     bypasses <c>PreserveMissingStructuralCellRefs</c> so structural markers /

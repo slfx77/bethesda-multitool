@@ -785,7 +785,9 @@ internal sealed class RuntimeNpcFieldReader
     private int NpcRaceFacePresetOffset => 464 + _appearanceShift; // PDB 432 + 32: sLastRaceFaceNum (uint16)
     private int NpcBloodImpactMaterialOffset => 484 + _appearanceShift; // PDB 452 + 32: eBloodImpactMaterial (enum)
     public int NpcOriginalRacePtrOffset => 492 + _lateAppearanceShift; // PDB 460 + 32: pOriginalRace (TESRace*)
+
     public int NpcFaceNpcPtrOffset => 496 + _lateAppearanceShift; // PDB 464 + 32: pFaceNPC (TESNPC*)
+
     // NOTE: Empirically verified — base 500/504 is correct for the Release Beta
     // xex44 build. The MemDebug PDB shows fHeight at +484 / fWeight at +488, but
     // that's a different build's layout. Do not "correct" these to PDB values

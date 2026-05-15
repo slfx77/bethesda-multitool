@@ -65,7 +65,8 @@ public sealed class FactEncoder : IRecordEncoder
             SubrecordEncoder.WriteFloat(crva, 0, fact.CrimeGoldMultiplier);
             // bytes 4-19 unknown (zero)
             subs.Add(new EncodedSubrecord("CRVA", crva));
-            warnings.Add($"New FACT 0x{fact.FormId:X8} CRVA emitted with multiplier only — remaining 16 bytes are zero.");
+            warnings.Add(
+                $"New FACT 0x{fact.FormId:X8} CRVA emitted with multiplier only — remaining 16 bytes are zero.");
         }
 
         // Rank tables: each rank emits RNAM (4 bytes int32 rank number), MNAM (string male title),

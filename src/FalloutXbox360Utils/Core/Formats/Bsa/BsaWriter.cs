@@ -3,7 +3,6 @@
 
 using System.IO.Compression;
 using System.Text;
-using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Bsa;
 

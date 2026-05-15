@@ -8,14 +8,14 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     FULL? + ICON? + DATA(32B) + FNAM? + SNAM?.
 ///     Override path is a no-op.
 ///     DATA layout (32 bytes, all PC little-endian):
-///         int32  Duration(0)        — seconds (0 = infinite)
-///         uint32 Radius(4)
-///         uint32 Color(8)           — RGBA packed
-///         uint32 Flags(12)          — can-take, flicker, off-by-default, ...
-///         float  FalloffExponent(16)
-///         float  Fov(20)
-///         int32  Value(24)
-///         float  Weight(28)
+///     int32  Duration(0)        — seconds (0 = infinite)
+///     uint32 Radius(4)
+///     uint32 Color(8)           — RGBA packed
+///     uint32 Flags(12)          — can-take, flicker, off-by-default, ...
+///     float  FalloffExponent(16)
+///     float  Fov(20)
+///     int32  Value(24)
+///     float  Weight(28)
 /// </summary>
 public sealed class LighEncoder : IRecordEncoder
 {

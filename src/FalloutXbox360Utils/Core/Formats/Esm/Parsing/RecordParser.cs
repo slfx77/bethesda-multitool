@@ -272,7 +272,8 @@ public sealed class RecordParser
             if (_context.ScanResult.CellToWorldspaceMap.Count == 0 && worldspaces.Count > 0)
             {
                 WorldRecordHandler.InferCellWorldspaces(cells, worldspaces);
-                WorldRecordHandler.ResolveRuntimeAnchoredCellRuns(cells, worldspaces, _context.RuntimeWorldspaceCellMaps);
+                WorldRecordHandler.ResolveRuntimeAnchoredCellRuns(cells, worldspaces,
+                    _context.RuntimeWorldspaceCellMaps);
             }
         }
 

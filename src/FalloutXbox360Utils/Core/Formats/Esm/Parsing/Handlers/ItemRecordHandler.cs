@@ -566,7 +566,7 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
         uint? openSoundLoop = null;
         uint? closeSound = null;
         byte flags = 0;
-        float weight = 0f;
+        var weight = 0f;
         var contents = new List<InventoryItem>();
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
@@ -594,8 +594,8 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
                     // CONT DATA: byte Flags(0) + float Weight(1, packed/unaligned)
                     flags = subData[0];
                     weight = record.IsBigEndian
-                        ? System.Buffers.Binary.BinaryPrimitives.ReadSingleBigEndian(subData[1..])
-                        : System.Buffers.Binary.BinaryPrimitives.ReadSingleLittleEndian(subData[1..]);
+                        ? BinaryPrimitives.ReadSingleBigEndian(subData[1..])
+                        : BinaryPrimitives.ReadSingleLittleEndian(subData[1..]);
                     break;
                 case "SNAM" when sub.DataLength == 4:
                     openSound = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
@@ -625,11 +625,11 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
                     // with a copy that carries ownership data.
                     var owner = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     var globalOrRank = record.IsBigEndian
-                        ? System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(subData[4..])
-                        : System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(subData[4..]);
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData[4..])
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData[4..]);
                     var condition = record.IsBigEndian
-                        ? System.Buffers.Binary.BinaryPrimitives.ReadSingleBigEndian(subData[8..])
-                        : System.Buffers.Binary.BinaryPrimitives.ReadSingleLittleEndian(subData[8..]);
+                        ? BinaryPrimitives.ReadSingleBigEndian(subData[8..])
+                        : BinaryPrimitives.ReadSingleLittleEndian(subData[8..]);
                     var last = contents[^1];
                     contents[^1] = last with
                     {

@@ -7,15 +7,11 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     <see cref="PlacedReference" />. Both the override path and the new-record path emit
 ///     DATA carrying the DMP-captured X/Y/Z/RotX/RotY/RotZ — when a FormID matches the
 ///     master ESM, the DMP position takes precedence over vanilla's editor placement.
-///
 ///     The override path emits DATA + XSCL (when scale is non-default). The merge engine
 ///     retains NAME / XEZN / XLOC / XOWN / XLKR / XESP / XTEL / XCNT from the master ESM by
 ///     positional per-signature replacement.
-///
 ///     The new-record path emits a complete subrecord stream (no master to merge with).
-///
 ///     DATA layout: float X(0) + float Y(4) + float Z(8) + float RotX(12) + float RotY(16) + float RotZ(20).
-///
 ///     History: v1-v21 dropped DATA on overrides because the DMP captures live runtime
 ///     state and we suspected mid-walk/mid-fall positions caused NPC sinking. v22 reinstates
 ///     DATA on overrides — the sinking root cause was traced to dropped vanilla NAVMs

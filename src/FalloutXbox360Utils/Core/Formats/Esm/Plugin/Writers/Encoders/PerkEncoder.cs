@@ -1,3 +1,4 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Magic;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
@@ -5,7 +6,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 /// <summary>
 ///     Encodes a <see cref="PerkRecord" /> (PERK) as PC-format subrecord bytes.
 ///     fopdoc canonical order: EDID, FULL?, DESC?, ICON?, DATA(5B), CTDA*(top-level),
-///         then per perk entry: PRKE + DATA(small) + (CTDA*) + EPFT + (EPFD or EPF2 or EPF3)? + PRKF.
+///     then per perk entry: PRKE + DATA(small) + (CTDA*) + EPFT + (EPFD or EPF2 or EPF3)? + PRKF.
 ///     DATA layout (5B): byte Trait + byte MinLevel + byte Ranks + byte Playable + byte HiddenFromPC.
 ///     Top-level CTDA conditions are emitted; per-PRKE-entry chains are NOT emitted (the model
 ///     captures them but the on-disk PRKE/PRKC layout is complex enough that v17 defers it).
@@ -73,7 +74,7 @@ public sealed class PerkEncoder : IRecordEncoder
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
     }
 
-    private static byte[] BuildPerkCtdaSubrecord(Models.PerkCondition condition)
+    private static byte[] BuildPerkCtdaSubrecord(PerkCondition condition)
     {
         // CTDA (28B) per PDB CONDITION_ITEM_DATA. Operator is the low 5 bits of byte 0
         // (high 3 bits are reserved for run-on / OR flags which v17 leaves zero).

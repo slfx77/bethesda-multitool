@@ -45,7 +45,8 @@ internal static class RecordFieldFlattener
         foreach (var rc in records.RecipeCategories)
             yield return ("RecipeCategory", rc.FormId, rc.EditorId, rc.FullName, FlattenRecipeCategory(rc));
         foreach (var co in records.ConstructibleObjects)
-            yield return ("ConstructibleObject", co.FormId, co.EditorId, co.FullName, FlattenConstructibleObject(co, resolver));
+            yield return ("ConstructibleObject", co.FormId, co.EditorId, co.FullName,
+                FlattenConstructibleObject(co, resolver));
         foreach (var w in records.Water)
             yield return ("Water", w.FormId, w.EditorId, w.FullName, FlattenWater(w, resolver));
         foreach (var mt in records.MusicTypes)

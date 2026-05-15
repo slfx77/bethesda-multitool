@@ -24,6 +24,13 @@ internal sealed class RuntimeItemReader(
     private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
         MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
 
+    // Shift applied on top of WeapCritDamageOffset / WeapCritChanceOffset /
+    // WeapCritEffectPtrOffset so the OBJ_WEAP_CRITICAL block reads in builds whose
+    // criticalData sub-struct sits at a different relative offset. Falls back to 0
+    // (no shift) when no probe ran or confidence was low.
+    private readonly int _weaponCritShift =
+        weaponCritProbe is { IsHighConfidence: true } ? weaponCritProbe.CritBlockShift : 0;
+
     // Fine-grained shift on top of the chosen layout (for builds that drift slightly).
     private readonly int _weaponSoundShift = weaponSoundProbe?.FineShift ?? 0;
 
@@ -31,13 +38,6 @@ internal sealed class RuntimeItemReader(
     // The probe picks whichever pattern-matches better; default to V2 if no probe result.
     private readonly RuntimeWeaponSoundLayoutVariant _weaponSoundVariant =
         weaponSoundProbe?.Variant ?? RuntimeWeaponSoundLayoutVariant.V2;
-
-    // Shift applied on top of WeapCritDamageOffset / WeapCritChanceOffset /
-    // WeapCritEffectPtrOffset so the OBJ_WEAP_CRITICAL block reads in builds whose
-    // criticalData sub-struct sits at a different relative offset. Falls back to 0
-    // (no shift) when no probe ran or confidence was low.
-    private readonly int _weaponCritShift =
-        weaponCritProbe is { IsHighConfidence: true } ? weaponCritProbe.CritBlockShift : 0;
 
     // Delegate container reading to dedicated class.
     private RuntimeContainerReader? _containerReader;
@@ -53,6 +53,7 @@ internal sealed class RuntimeItemReader(
 
     private RuntimeItemFieldHelpers FieldHelpers => _fieldHelpers ??=
         new RuntimeItemFieldHelpers(_context, Layouts, _weaponCritShift);
+
     private RuntimeContainerReader ContainerReader => _containerReader ??= new RuntimeContainerReader(_context);
 
     /// <summary>

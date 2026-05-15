@@ -236,9 +236,13 @@ internal static class EsmDataExtractor
                         // 32-byte XTEL also carries 6-float PosRot @4 + uint8 Flags @28.
                         if (sub.Data.Length >= 28)
                         {
-                            float Rd(int o) => bigEndian
-                                ? BinaryPrimitives.ReadSingleBigEndian(sub.Data.AsSpan(o, 4))
-                                : BinaryPrimitives.ReadSingleLittleEndian(sub.Data.AsSpan(o, 4));
+                            float Rd(int o)
+                            {
+                                return bigEndian
+                                    ? BinaryPrimitives.ReadSingleBigEndian(sub.Data.AsSpan(o, 4))
+                                    : BinaryPrimitives.ReadSingleLittleEndian(sub.Data.AsSpan(o, 4));
+                            }
+
                             teleportPosRot = new PositionSubrecord(
                                 Rd(4), Rd(8), Rd(12), Rd(16), Rd(20), Rd(24),
                                 record.Offset, bigEndian);

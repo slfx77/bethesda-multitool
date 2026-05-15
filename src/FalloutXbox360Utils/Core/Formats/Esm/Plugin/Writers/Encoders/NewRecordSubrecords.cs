@@ -1,3 +1,6 @@
+using System.Text;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
+
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
@@ -12,9 +15,9 @@ internal static class NewRecordSubrecords
     /// </summary>
     public static EncodedSubrecord EncodeStringSubrecord(string signature, string value)
     {
-        var byteCount = System.Text.Encoding.Latin1.GetByteCount(value);
+        var byteCount = Encoding.Latin1.GetByteCount(value);
         var buffer = new byte[byteCount + 1];
-        System.Text.Encoding.Latin1.GetBytes(value, buffer);
+        Encoding.Latin1.GetBytes(value, buffer);
         // Final byte already 0 (null terminator).
         return new EncodedSubrecord(signature, buffer);
     }
@@ -71,7 +74,7 @@ internal static class NewRecordSubrecords
     ///     Emit OBND — 12 bytes, 6 int16 values: X1, Y1, Z1, X2, Y2, Z2 (min/max bounds).
     ///     Per fopdoc, this is the canonical object-bounds layout for most record types.
     /// </summary>
-    public static EncodedSubrecord EncodeObndSubrecord(Models.ObjectBounds bounds)
+    public static EncodedSubrecord EncodeObndSubrecord(ObjectBounds bounds)
     {
         var data = new byte[12];
         SubrecordEncoder.WriteInt16(data, 0, bounds.X1);
