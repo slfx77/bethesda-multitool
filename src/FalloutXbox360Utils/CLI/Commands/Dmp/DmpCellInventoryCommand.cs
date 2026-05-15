@@ -2,6 +2,7 @@ using System.CommandLine;
 using System.Globalization;
 using System.Text;
 using FalloutXbox360Utils.Core;
+using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Semantic;
 using Spectre.Console;
@@ -19,12 +20,15 @@ internal static class DmpCellInventoryCommand
     /// <summary>
     ///     Selects the worldspace bucket for an inventory row. Order of trust:
     ///     1. Interior flag set → <see cref="InteriorBucket" />.
-    ///     2. <c>WorldspaceFormId</c> already resolved by the parsing pipeline
-    ///     (<c>CellLinkageHandler.InferCellWorldspaces</c> + <c>ResolveRuntimeAnchoredCellRuns</c>).
-    ///     3. Direct runtime <c>pCellMap</c> ownership (RuntimeWorldspaceData.Cells),
-    ///     in case the cell slipped through the linkage handler's connected-component logic.
-    ///     4. <c>CandidateWorldspaceFormIds</c> populated but unresolved → <see cref="AmbiguousExteriorBucket" />.
-    ///     5. Otherwise <see cref="UnlinkedExteriorBucket" />.
+    ///     2. PC master ESM authority (when --pc-esm is supplied) — canonical GRUP-derived owner.
+    ///     3. <c>WorldspaceFormId</c> already resolved by the parsing pipeline
+    ///        (<c>CellLinkageHandler.InferCellWorldspaces</c> + <c>ResolveRuntimeAnchoredCellRuns</c>).
+    ///     4. Direct runtime <c>pCellMap</c> ownership (RuntimeWorldspaceData.Cells),
+    ///        in case the cell slipped through the linkage handler's connected-component logic.
+    ///     5. Per-DMP FormID-range fallback constrained to <c>CandidateWorldspaceFormIds</c>
+    ///        (only when exactly one candidate matches the observed range).
+    ///     6. <c>CandidateWorldspaceFormIds</c> populated but unresolved → <see cref="AmbiguousExteriorBucket" />.
+    ///     7. Otherwise <see cref="UnlinkedExteriorBucket" />.
     /// </summary>
     private const uint InteriorBucket = 1u;
 
@@ -49,10 +53,18 @@ internal static class DmpCellInventoryCommand
         {
             Description = "Comma-separated base record types to include (default: STAT,MSTT,SCOL)"
         };
+        var pcEsmOpt = new Option<string?>("--pc-esm")
+        {
+            Description =
+                "Optional path to a reference PC FalloutNV.esm. When supplied, its GRUP " +
+                "hierarchy is used as the authoritative cell→worldspace map (resolves cells " +
+                "the DMP runtime pCellMap doesn't anchor)."
+        };
 
         command.Arguments.Add(pathArg);
         command.Options.Add(outputOpt);
         command.Options.Add(typesOpt);
+        command.Options.Add(pcEsmOpt);
 
         command.SetAction(async (parseResult, ct) =>
         {
@@ -64,7 +76,8 @@ internal static class DmpCellInventoryCommand
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Select(t => t.ToUpperInvariant())
                 .ToHashSet(StringComparer.Ordinal);
-            await RunAsync(path, output, types, ct);
+            var pcEsm = parseResult.GetValue(pcEsmOpt);
+            await RunAsync(path, output, types, pcEsm, ct);
         });
 
         return command;
@@ -74,6 +87,7 @@ internal static class DmpCellInventoryCommand
         string path,
         string outputDir,
         HashSet<string> targetTypes,
+        string? pcEsmPath,
         CancellationToken cancellationToken)
     {
         List<string> dmpFiles;
@@ -104,6 +118,13 @@ internal static class DmpCellInventoryCommand
         AnsiConsole.MarkupLine(
             $"[blue]Cell inventory for {dmpFiles.Count} DMP(s) -> {Markup.Escape(outputDir)} " +
             $"(base types: {string.Join(",", targetTypes)})[/]");
+
+        // PC ESM authority: when a reference plugin is provided, load its GRUP hierarchy once
+        // and build an authoritative CellFormId → WorldspaceFormId map. This is the same map
+        // EsmFileAnalyzer constructs from World Children (Type 1) GRUPs in the master ESM
+        // (cells DMPs preserve at runtime never carry Type 1 GRUPs, so the master is the only
+        // source for cells the runtime pCellMap doesn't anchor).
+        var pcCellToWorldspace = await LoadPcEsmCellMapAsync(pcEsmPath, cancellationToken);
         AnsiConsole.WriteLine();
 
         var processed = 0;
@@ -178,6 +199,16 @@ internal static class DmpCellInventoryCommand
                     }
                 }
 
+                // FormID-range fallback: Bethesda assigns cell FormIDs in roughly contiguous runs
+                // per worldspace (GRUP ordering during plugin authoring). Learn per-worldspace
+                // [min, max] intervals from all resolved authored cells, then use those ranges
+                // only when an unresolved cell lands in exactly one candidate range.
+                var fidRangeIndex = new WorldspaceFormIdRangeIndex();
+                foreach (var c in records.Cells)
+                {
+                    fidRangeIndex.ObserveCell(c, runtimeCellOwner);
+                }
+
                 var sb = new StringBuilder();
                 sb.AppendLine($"# Cell inventory: {dmpStem}");
                 sb.AppendLine();
@@ -225,7 +256,7 @@ internal static class DmpCellInventoryCommand
                 {
                     // Worldspace bucket selection rules — see WorldspaceBucketKey.
                     var byWs = matchedCells
-                        .GroupBy(x => WorldspaceBucketKey(x.Cell, runtimeCellOwner))
+                        .GroupBy(x => WorldspaceBucketKey(x.Cell, runtimeCellOwner, fidRangeIndex, pcCellToWorldspace))
                         .OrderBy(g => g.Key switch
                         {
                             InteriorBucket => "Interior",
@@ -322,13 +353,56 @@ internal static class DmpCellInventoryCommand
             $"{Markup.Escape(outputDir)}[/]");
     }
 
+    /// <summary>
+    ///     Loads the authoritative <c>CellFormId → WorldspaceFormId</c> map from a reference
+    ///     master ESM. Uses the same GRUP-walking path <c>EsmFileAnalyzer</c> uses, which
+    ///     extracts the mapping from Type 1 (World Children) GRUPs — the canonical source.
+    ///     Returns null when no path was supplied.
+    /// </summary>
+    private static async Task<IReadOnlyDictionary<uint, uint>?> LoadPcEsmCellMapAsync(
+        string? pcEsmPath,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(pcEsmPath))
+        {
+            return null;
+        }
+        if (!File.Exists(pcEsmPath))
+        {
+            AnsiConsole.MarkupLine($"[yellow]--pc-esm not found, skipping authoritative map: {Markup.Escape(pcEsmPath)}[/]");
+            return null;
+        }
+
+        AnsiConsole.MarkupLine($"[blue]Loading PC ESM authority: {Markup.Escape(Path.GetFileName(pcEsmPath))}...[/]");
+        var analysis = await EsmFileAnalyzer.AnalyzeAsync(pcEsmPath, cancellationToken: cancellationToken);
+        if (analysis?.EsmRecords is { } esmRecords && esmRecords.CellToWorldspaceMap.Count > 0)
+        {
+            AnsiConsole.MarkupLine(
+                $"[blue]PC ESM authority: {esmRecords.CellToWorldspaceMap.Count:N0} cell→worldspace entries.[/]");
+            return esmRecords.CellToWorldspaceMap;
+        }
+
+        AnsiConsole.MarkupLine($"[yellow]PC ESM produced no cell→worldspace map (file empty or unparseable).[/]");
+        return null;
+    }
+
     private static uint WorldspaceBucketKey(
         CellRecord cell,
-        IReadOnlyDictionary<uint, uint> runtimeCellOwner)
+        IReadOnlyDictionary<uint, uint> runtimeCellOwner,
+        WorldspaceFormIdRangeIndex fidRangeIndex,
+        IReadOnlyDictionary<uint, uint>? pcCellToWorldspace)
     {
         if (cell.IsInterior)
         {
             return InteriorBucket;
+        }
+
+        // Authoritative reference: when a PC master ESM is supplied, its GRUP hierarchy is
+        // the canonical source for cell ownership. Consulted before any heuristic.
+        if (pcCellToWorldspace is not null &&
+            pcCellToWorldspace.TryGetValue(cell.FormId, out var pcWs) && pcWs != 0u)
+        {
+            return pcWs;
         }
 
         if (cell.WorldspaceFormId is { } wf && wf != 0u)
@@ -339,6 +413,16 @@ internal static class DmpCellInventoryCommand
         if (runtimeCellOwner.TryGetValue(cell.FormId, out var ownerWs))
         {
             return ownerWs;
+        }
+
+        // FormID-range fallback: if the cell's FormID falls inside exactly one resolved
+        // worldspace's [min, max] interval, assign it to that worldspace. Constrained to the
+        // cell's CandidateWorldspaceFormIds when those exist (so an irrelevant worldspace
+        // whose range happens to overlap doesn't block resolution). Empty candidate set falls
+        // through to a global search over all observed ranges.
+        if (fidRangeIndex.ResolveUniqueOwner(cell) is { } rangeOwner)
+        {
+            return rangeOwner;
         }
 
         if (cell.CandidateWorldspaceFormIds.Count > 0)

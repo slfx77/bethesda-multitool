@@ -54,10 +54,10 @@
     "winnerScore": 185,
     "runnerUpScore": 182,
     "sampleCount": 20,
-    "worldCellMapCount": 0,
+    "worldCellMapCount": 21,
     "cellEntryCount": 388,
     "runtimeCellSignalCount": 388,
-    "notes": "Late release-beta variant lands on a distinct zero-shift CELL layout, but map walking stays disabled when the probe margin is low."
+    "notes": "Late release-beta variant lands on a distinct zero-shift CELL layout; the high absolute winner score allows map walking despite the low probe margin."
   },
   {
     "label": "MemDebug",

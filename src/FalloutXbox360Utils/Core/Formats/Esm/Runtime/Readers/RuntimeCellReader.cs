@@ -32,7 +32,7 @@ internal sealed class RuntimeCellReader
         : this(
             context,
             ResolveLayout(useProtoOffsets, layoutProbe),
-            ResolveAllowStructuralReads(useProtoOffsets, layoutProbe))
+            RuntimeCellLayoutReadPolicy.ShouldAllowStructuralReads(useProtoOffsets, layoutProbe))
     {
     }
 
@@ -84,29 +84,6 @@ internal sealed class RuntimeCellReader
         }
 
         return probe.Layout;
-    }
-
-    /// <summary>
-    ///     Structural reads (cell map walking) require either high-confidence probe results
-    ///     or RTTI-backed knowledge of the correct layout (early builds).
-    ///     Low-confidence probes on non-early builds disable structural reads to avoid
-    ///     walking memory with potentially wrong offsets.
-    /// </summary>
-    private static bool ResolveAllowStructuralReads(
-        bool useProtoOffsets, RuntimeWorldCellLayoutProbeResult? probe)
-    {
-        if (probe is { IsHighConfidence: true })
-        {
-            return true;
-        }
-
-        // Early builds: RTTI provides the correct worldShift, so structural reads are safe
-        if (useProtoOffsets && probe is { WinnerScore: > 0 })
-        {
-            return true;
-        }
-
-        return probe?.IsHighConfidence != false;
     }
 
     public WorldspaceRecord? ReadRuntimeWorldspace(RuntimeEditorIdEntry entry)

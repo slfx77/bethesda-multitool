@@ -56,6 +56,17 @@ public sealed class PluginBuilder
     private readonly Dictionary<(uint Worldspace, int GridX, int GridY), uint> _emittedExteriorCellCoords = new();
 
     /// <summary>
+    ///     Master ESM exterior cells indexed by (worldspace, gridX, gridY). Populated at
+    ///     <see cref="BuildAsync" /> entry by walking <c>pcRecordsByFormId</c> + the cell
+    ///     contexts. Used to detect grid collisions: when a DMP cell has a fresh FormID but
+    ///     master already has a cell at the same grid in the same worldspace, we redirect
+    ///     to override master's cell instead of allocating a duplicate (the FNV runtime
+    ///     destroys duplicate-grid cells at load time, orphaning every REFR we placed in
+    ///     them). Reset at each Build entry.
+    /// </summary>
+    private readonly Dictionary<(uint Worldspace, int GridX, int GridY), uint> _masterExteriorCellByGrid = new();
+
+    /// <summary>
     ///     FormIDs being emitted via the new-record path in the current <c>Build</c> run.
     ///     Populated as records dispatch through <c>TryEncodeNewTopLevelRecord</c>. Used by
     ///     <see cref="ValidateScriRefs" /> so an override-NPC's SCRI pointing at a freshly
@@ -178,6 +189,7 @@ public sealed class PluginBuilder
             _emittedNewFormIds.Clear();
             _emittedNewFormIdsByType.Clear();
             _emittedExteriorCellCoords.Clear();
+            _masterExteriorCellByGrid.Clear();
             _newRecordSourceToAllocated.Clear();
             _masterEditorIdToFormIdByType = masterIndex.EditorIdToFormIdByType;
             _masterStemToFormIdsByType = masterIndex.StemToFormIdsByType;
@@ -200,6 +212,31 @@ public sealed class PluginBuilder
             // (block/subblock labels, parent worldspace if exterior). Plugin overrides reuse
             // these labels verbatim so we reproduce the master's exact layout.
             var cellContexts = masterIndex.CellContexts;
+
+            // Build the (worldspace, gridX, gridY) → master CELL FormID index so the new-cell
+            // allocation path can detect grid collisions. The FNV runtime destroys duplicate
+            // cells at load time and any REFR placed in them becomes orphaned — which is the
+            // root cause of the WastelandNV render crashes we hit when a prototype DMP cell
+            // had a fresh FormID but happened to share grid coords with a final-build cell.
+            foreach (var (cellFormId, ctx) in cellContexts)
+            {
+                if (ctx.IsInterior || !ctx.WorldspaceFormId.HasValue)
+                {
+                    continue;
+                }
+
+                if (!pcRecordsByFormId.TryGetValue(cellFormId, out var cellRec))
+                {
+                    continue;
+                }
+
+                if (!TryReadCellGridCoords(cellRec, out var gridX, out var gridY))
+                {
+                    continue;
+                }
+
+                _masterExteriorCellByGrid[(ctx.WorldspaceFormId.Value, gridX, gridY)] = cellFormId;
+            }
 
             _sink.Info("Loading PC ESM",
                 $"Loaded {pcRecordsByFormId.Count:N0} PC records, {refToCell.Count:N0} child→cell links, {cellContexts.Count:N0} cell contexts.");
@@ -661,122 +698,14 @@ public sealed class PluginBuilder
         recordBytes = [];
 
         EncodedRecord? encoded;
+        var context = new NewTopLevelRecordEncodingContext(
+            _masterFormIds ?? new HashSet<uint>(),
+            _emittedNewFormIdsByType.TryGetValue("STAT", out var statSet)
+                ? statSet
+                : new HashSet<uint>());
         try
         {
-            encoded = recordType switch
-            {
-                "GMST" => GmstEncoder.EncodeNew(
-                    (GameSettingRecord)model),
-                "GLOB" => GlobEncoder.EncodeNew(
-                    (GlobalRecord)model),
-                "MISC" => MiscEncoder.EncodeNew(
-                    (MiscItemRecord)model),
-                "KEYM" => KeymEncoder.EncodeNew(
-                    (KeyRecord)model),
-                "ALCH" => AlchEncoder.EncodeNew(
-                    (ConsumableRecord)model),
-                "BOOK" => BookEncoder.EncodeNew(
-                    (BookRecord)model),
-                "AMMO" => AmmoEncoder.EncodeNew(
-                    (AmmoRecord)model),
-                "WEAP" => WeapEncoder.EncodeNew(
-                    (WeaponRecord)model),
-                "ARMO" => ArmoEncoder.EncodeNew(
-                    (ArmorRecord)model),
-                "FACT" => FactEncoder.EncodeNew(
-                    (FactionRecord)model),
-                "NPC_" => NpcEncoder.EncodeNew(
-                    (NpcRecord)model),
-                "SCPT" => ScptEncoder.EncodeNew(
-                    (ScriptRecord)model),
-                "DIAL" => DialEncoder.EncodeNew(
-                    (DialogTopicRecord)model),
-                "INFO" => InfoEncoder.EncodeNew(
-                    (DialogueRecord)model),
-                "QUST" => QustEncoder.EncodeNew(
-                    (QuestRecord)model),
-                "PACK" => PackEncoder.EncodeNew(
-                    (PackageRecord)model),
-                "ACTI" => ActiEncoder.EncodeNew(
-                    (ActivatorRecord)model),
-                "DOOR" => DoorEncoder.EncodeNew(
-                    (DoorRecord)model),
-                "LIGH" => LighEncoder.EncodeNew(
-                    (LightRecord)model),
-                "STAT" => StatEncoder.EncodeNew(
-                    (StaticRecord)model),
-                "SCOL" => ScolEncoder.EncodeNew(
-                    (StaticCollectionRecord)model,
-                    _masterFormIds ?? new HashSet<uint>(),
-                    _emittedNewFormIdsByType.TryGetValue("STAT", out var statSet)
-                        ? statSet
-                        : new HashSet<uint>()),
-                "CONT" => ContEncoder.EncodeNew(
-                    (ContainerRecord)model),
-                "FURN" => FurnEncoder.EncodeNew(
-                    (FurnitureRecord)model),
-                "TERM" => TermEncoder.EncodeNew(
-                    (TerminalRecord)model),
-                "PROJ" => ProjEncoder.EncodeNew(
-                    (ProjectileRecord)model),
-                "EXPL" => ExplEncoder.EncodeNew(
-                    (ExplosionRecord)model),
-                "IMOD" => ImodEncoder.EncodeNew(
-                    (WeaponModRecord)model),
-                "ARMA" => ArmaEncoder.EncodeNew(
-                    (ArmaRecord)model),
-                "RCPE" => RcpeEncoder.EncodeNew(
-                    (RecipeRecord)model),
-                "RCCT" => RcctEncoder.EncodeNew(
-                    (RecipeCategoryRecord)model),
-                "COBJ" => CobjEncoder.EncodeNew(
-                    (ConstructibleObjectRecord)model),
-                "EYES" => EyesEncoder.EncodeNew(
-                    (EyesRecord)model),
-                "HAIR" => HairEncoder.EncodeNew(
-                    (HairRecord)model),
-                "REPU" => RepuEncoder.EncodeNew(
-                    (ReputationRecord)model),
-                "AVIF" => AvifEncoder.EncodeNew(
-                    (ActorValueInfoRecord)model),
-                "MUSC" => MuscEncoder.EncodeNew(
-                    (MusicTypeRecord)model),
-                "MESG" => MesgEncoder.EncodeNew(
-                    (MessageRecord)model),
-                "NOTE" => NoteEncoder.EncodeNew(
-                    (NoteRecord)model),
-                "FLST" => FlstEncoder.EncodeNew(
-                    (FormListRecord)model),
-                "LVLI" or "LVLN" or "LVLC" => LvliEncoder.EncodeNew(
-                    (LeveledListRecord)model),
-                "CREA" => CreaEncoder.EncodeNew(
-                    (CreatureRecord)model),
-                "CLAS" => ClasEncoder.EncodeNew(
-                    (ClassRecord)model),
-                "SOUN" => SounEncoder.EncodeNew(
-                    (SoundRecord)model),
-                "TXST" => TxstEncoder.EncodeNew(
-                    (TextureSetRecord)model),
-                "LTEX" => LtexEncoder.EncodeNew(
-                    (LandscapeTextureRecord)model),
-                "CHAL" => ChalEncoder.EncodeNew(
-                    (ChallengeRecord)model),
-                "BPTD" => BptdEncoder.EncodeNew(
-                    (BodyPartDataRecord)model),
-                "ENCH" => EnchEncoder.EncodeNew(
-                    (EnchantmentRecord)model),
-                "SPEL" => SpelEncoder.EncodeNew(
-                    (SpellRecord)model),
-                "PERK" => PerkEncoder.EncodeNew(
-                    (PerkRecord)model),
-                "MGEF" => MgefEncoder.EncodeNew(
-                    (BaseEffectRecord)model),
-                "WRLD" => WrldEncoder.EncodeNew(
-                    (WorldspaceRecord)model),
-                "RACE" => RaceEncoder.EncodeNew(
-                    (RaceRecord)model),
-                _ => null
-            };
+            encoded = NewTopLevelRecordEncoderDispatcher.TryEncode(recordType, model, context);
         }
         catch (Exception ex)
         {
@@ -946,6 +875,37 @@ public sealed class PluginBuilder
             var pcCellExists = pcRecordsByFormId.TryGetValue(dmpCell.FormId, out var pcCellRecord)
                                && pcCellRecord!.Header.Signature == "CELL";
 
+            // Grid-collision redirect: if the DMP cell's FormID isn't in master but master
+            // already has an exterior cell at the same (worldspace, gridX, gridY), treat the
+            // DMP cell as an override of master's cell. Without this redirect the FNV runtime
+            // would see two cells claiming the same grid, destroy the duplicate, and orphan
+            // every REFR we placed in it (which then crashes on render walk).
+            uint? gridRedirectedToMasterFormId = null;
+            if (!pcCellExists
+                && !dmpCell.IsInterior
+                && dmpCell.WorldspaceFormId.HasValue
+                && dmpCell.GridX.HasValue
+                && dmpCell.GridY.HasValue
+                && _masterExteriorCellByGrid.TryGetValue(
+                    (dmpCell.WorldspaceFormId.Value, dmpCell.GridX.Value, dmpCell.GridY.Value),
+                    out var masterCellAtGrid)
+                && pcRecordsByFormId.TryGetValue(masterCellAtGrid, out var masterCellRec)
+                && masterCellRec!.Header.Signature == "CELL")
+            {
+                pcCellRecord = masterCellRec;
+                pcCellExists = true;
+                gridRedirectedToMasterFormId = masterCellAtGrid;
+
+                if (options.VerboseDecisions)
+                {
+                    _sink.Decision("Merging cell children",
+                        $"DMP cell 0x{dmpCell.FormId:X8} at grid ({dmpCell.GridX}, {dmpCell.GridY}) " +
+                        $"redirected to override master cell 0x{masterCellAtGrid:X8} (same worldspace, " +
+                        "same grid coords) — avoids duplicate-cell destruction at load time.",
+                        "CELL", dmpCell.FormId, "cell.grid-collision-redirect");
+                }
+            }
+
             // Build the cell's anchor record bytes + GRUP context.
             byte[] cellRecordBytes;
             PcEsmCellContext context;
@@ -953,7 +913,8 @@ public sealed class PluginBuilder
 
             if (pcCellExists)
             {
-                if (!cellContexts.TryGetValue(dmpCell.FormId, out var existingContext))
+                var contextLookupFormId = gridRedirectedToMasterFormId ?? dmpCell.FormId;
+                if (!cellContexts.TryGetValue(contextLookupFormId, out var existingContext))
                 {
                     stats.IncrementSkipped("CELL");
                     _sink.Warn("Merging cell children",
@@ -964,7 +925,7 @@ public sealed class PluginBuilder
 
                 cellRecordBytes = CellGrupBuilder.ReconstructRecordBytes(pcCellRecord!);
                 context = existingContext;
-                emittedCellFormId = dmpCell.FormId;
+                emittedCellFormId = gridRedirectedToMasterFormId ?? dmpCell.FormId;
             }
             else
             {
@@ -1029,36 +990,24 @@ public sealed class PluginBuilder
                 mode = CellMergeMode.HasTemporary;
             }
 
-            // Build set of base-record types the DMP could have captured for this cell.
-            // The DMP only snapshots TESObjectREFRs the engine has allocated for runtime
-            // state (NPCs, containers, doors, interactive furniture). Pure statics
-            // (STAT/ACTI/LIGH/MSTT/TREE/TXST) are never in the heap, so master refs of
-            // base types absent from this set must be preserved during wipeout.
-            HashSet<string>? dmpBaseTypesInCell = null;
+            // Build a base-FormID → DMP placements index for the per-ref replacement check.
+            // A master REFR is considered "replaced" by the DMP only when the DMP has a
+            // placement of the same base record at the same world position (within
+            // PositionMatchTolerance units). Master refs without such a same-base-at-same-spot
+            // match are preserved during wipeout, since the DMP carries no replacement for
+            // them — that's the difference between "DMP authoritatively removed this object"
+            // and "DMP never had this object in memory in the first place" (the latter is
+            // the common case for walls/floor/ceiling and other non-instantiated geometry).
+            //
+            // Note: we normalize the index key through _newRecordSourceToAllocated so DMP
+            // placements pointing at base FormIDs we've freshly allocated under new plugin-
+            // local IDs still match against master records that use the source ID.
+            Dictionary<uint, List<PlacedReference>>? dmpPlacementsByBase = null;
             if (replaceTemporaries)
             {
-                dmpBaseTypesInCell = new HashSet<string>(StringComparer.Ordinal);
-                foreach (var placed in dmpCell.PlacedObjects)
-                {
-                    if (placed.BaseFormId == 0)
-                    {
-                        continue;
-                    }
-
-                    if (pcRecordsByFormId.TryGetValue(placed.BaseFormId, out var basePc))
-                    {
-                        dmpBaseTypesInCell.Add(basePc.Header.Signature);
-                    }
-                    else if (_newRecordSourceToAllocated.TryGetValue(placed.BaseFormId, out var allocatedBase)
-                             && pcRecordsByFormId.TryGetValue(allocatedBase, out var basePc2))
-                    {
-                        dmpBaseTypesInCell.Add(basePc2.Header.Signature);
-                    }
-                    else if (TryGetNewRecordType(placed.BaseFormId, out var newType))
-                    {
-                        dmpBaseTypesInCell.Add(newType);
-                    }
-                }
+                dmpPlacementsByBase = CellReplacementPreservationPolicy.BuildPlacementsByBase(
+                    dmpCell.PlacedObjects,
+                    _newRecordSourceToAllocated);
             }
 
             var persistentRecords = new List<byte[]>();
@@ -1194,10 +1143,13 @@ public sealed class PluginBuilder
             }
 
             // Mode B (HasTemporary) + cell has a master: synthesize deletion-flag overrides for
-            // master refs that weren't in the DMP snapshot.
+            // master refs that weren't in the DMP snapshot. When the cell was redirected via
+            // grid-collision, look up master refs by the *master* cell FormID (= emittedCellFormId)
+            // rather than the DMP source FormID.
+            var masterChildLookupFormId = gridRedirectedToMasterFormId ?? dmpCell.FormId;
             if (mode == CellMergeMode.HasTemporary
                 && pcCellExists
-                && cellToRefs.TryGetValue(dmpCell.FormId, out var masterRefIds))
+                && cellToRefs.TryGetValue(masterChildLookupFormId, out var masterRefIds))
             {
                 var masterRefs = masterRefIds
                     .Select(id => pcRecordsByFormId.GetValueOrDefault(id))
@@ -1212,30 +1164,17 @@ public sealed class PluginBuilder
                 Func<ParsedMainRecord, bool>? preserveFilter;
                 if (replaceTemporaries)
                 {
-                    // Always preserve persistent refs (quest-bound, scripts reference them).
-                    // Also preserve master refs whose base type the DMP could not have
-                    // captured — see dmpBaseTypesInCell construction above. Without this
-                    // filter, master STAT/ACTI/LIGH refs get deleted whenever the DMP
-                    // captures *any* placement in the cell, leaving interiors gutted.
-                    var capturedTypes = dmpBaseTypesInCell ?? new HashSet<string>(StringComparer.Ordinal);
-                    preserveFilter = masterRef =>
-                    {
-                        // 0x00000400 = Persistent flag on FNV record headers.
-                        if ((masterRef.Header.Flags & 0x00000400u) != 0)
-                        {
-                            return true;
-                        }
-
-                        var baseFormId = CellStructuralReferencePreserver.ReadNameFormId(masterRef);
-                        if (!baseFormId.HasValue
-                            || !pcRecordsByFormId.TryGetValue(baseFormId.Value, out var baseRec))
-                        {
-                            // Can't classify the base — preserve rather than risk over-deletion.
-                            return true;
-                        }
-
-                        return !capturedTypes.Contains(baseRec.Header.Signature);
-                    };
+                    // Per-ref position-matching filter. A master ref is wipe-eligible only
+                    // when the DMP carries a placement of the *same base record* at the
+                    // *same world position* (within PositionMatchTolerance). Master refs
+                    // with no such same-base+same-spot replacement are preserved — that's
+                    // the difference between "DMP authoritatively replaced this object" and
+                    // "DMP never had this object in memory". The latter is the common case
+                    // for walls/floor/ceiling/clutter the engine didn't instantiate
+                    // TESObjectREFRs for, and wiping them leaves interiors gutted.
+                    var placementsByBase = dmpPlacementsByBase
+                                           ?? new Dictionary<uint, List<PlacedReference>>();
+                    preserveFilter = CellReplacementPreservationPolicy.CreatePreserveFilter(placementsByBase);
                 }
                 else
                 {
@@ -1254,11 +1193,11 @@ public sealed class PluginBuilder
                 if (deleted.Persistent.Count + deleted.Temporary.Count > 0 && options.VerboseDecisions)
                 {
                     var label = replaceTemporaries ? "Full-replace" : "Wipeout";
-                    var typeSuffix = replaceTemporaries && dmpBaseTypesInCell is { Count: > 0 }
-                        ? $" across base types [{string.Join(", ", dmpBaseTypesInCell.OrderBy(s => s, StringComparer.Ordinal))}]"
+                    var matchSuffix = replaceTemporaries
+                        ? $" via per-ref base+position match (tolerance {CellReplacementPreservationPolicy.PositionMatchTolerance:F0}u)"
                         : string.Empty;
                     _sink.Decision("Merging cell children",
-                        $"{label}: {deleted.Persistent.Count} persistent + {deleted.Temporary.Count} temporary master refs marked deleted{typeSuffix}.",
+                        $"{label}: {deleted.Persistent.Count} persistent + {deleted.Temporary.Count} temporary master refs marked deleted{matchSuffix}.",
                         "CELL", dmpCell.FormId,
                         replaceTemporaries ? "cell.full-replace-on-override" : null);
                 }
@@ -1288,7 +1227,7 @@ public sealed class PluginBuilder
             {
                 uint? masterLandFormId = null;
                 if (pcCellExists
-                    && landsByCell.TryGetValue(dmpCell.FormId, out var masterLandFormIds)
+                    && landsByCell.TryGetValue(masterChildLookupFormId, out var masterLandFormIds)
                     && masterLandFormIds.Count > 0)
                 {
                     masterLandFormId = masterLandFormIds[0];
@@ -1343,7 +1282,7 @@ public sealed class PluginBuilder
             // physics when standing still (idle actors aren't snapped to terrain without
             // a navmesh to anchor them; they pathfind fine mid-walk).
             if (pcCellExists
-                && navmsByCell.TryGetValue(dmpCell.FormId, out var masterNavmFormIds))
+                && navmsByCell.TryGetValue(masterChildLookupFormId, out var masterNavmFormIds))
             {
                 var prependedCount = 0;
                 foreach (var navmFormId in masterNavmFormIds)
@@ -2109,25 +2048,23 @@ public sealed class PluginBuilder
     }
 
     /// <summary>
-    ///     Resolve the record-type signature of a freshly-emitted FormID. The caller
-    ///     supplies either the DMP source FormID or the allocated plugin-local FormID;
-    ///     both are searched against <see cref="_emittedNewFormIdsByType" />.
+    ///     Read the (gridX, gridY) tile coords from an exterior CELL record's XCLC
+    ///     subrecord. XCLC is at least 8 bytes little-endian: int32 X, int32 Y, optional
+    ///     uint32 land flags. Returns false when XCLC is missing or undersized — interior
+    ///     cells never have XCLC.
     /// </summary>
-    private bool TryGetNewRecordType(uint formId, out string recordType)
+    private static bool TryReadCellGridCoords(ParsedMainRecord cellRecord, out int gridX, out int gridY)
     {
-        // Normalize through the source→allocated remap so callers can pass either ID.
-        var allocated = _newRecordSourceToAllocated.GetValueOrDefault(formId, formId);
-        foreach (var (type, set) in _emittedNewFormIdsByType)
+        var xclc = cellRecord.Subrecords.FirstOrDefault(s => s.Signature == "XCLC" && s.Data.Length >= 8);
+        if (xclc is null)
         {
-            if (set.Contains(allocated))
-            {
-                recordType = type;
-                return true;
-            }
+            gridX = gridY = 0;
+            return false;
         }
 
-        recordType = string.Empty;
-        return false;
+        gridX = System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(xclc.Data.AsSpan(0, 4));
+        gridY = System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(xclc.Data.AsSpan(4, 4));
+        return true;
     }
 
     private bool IsKnownFormIdForType(uint formId, string recordType)
