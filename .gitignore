@@ -5,6 +5,7 @@ out/
 
 # Reports
 reports/
+/data/cell_worldspace_authority.json
 
 # IDE
 .vs/
