@@ -33,38 +33,17 @@ internal static class CrossDumpJsonHtmlWriter
         int maxInlineCompressedPayloadLength = DefaultMaxInlineCompressedPayloadLength,
         int maxCellJsonPayloadLength = DefaultMaxCellJsonPayloadLength)
     {
-        foreach (var (recordType, formIdMap) in index.StructuredRecords.OrderBy(r => r.Key))
+        foreach (var context in CrossDumpRecordTypePageContext.Enumerate(index))
         {
-            // Resolve groups: dialogue uses dual group sets, others use single group map
-            Dictionary<uint, string>? groups = null;
-            Dictionary<uint, string>? alternateGroups = null;
-            string? defaultGroupMode = null;
-            Dictionary<uint, Dictionary<string, string>>? metadata = null;
-            index.RecordMetadata.TryGetValue(recordType, out metadata);
-
-            if (string.Equals(recordType, "Dialogue", StringComparison.OrdinalIgnoreCase))
-            {
-                index.RecordGroups.TryGetValue("Dialogue_Quest", out groups);
-                index.RecordGroups.TryGetValue("Dialogue_NPC", out alternateGroups);
-                defaultGroupMode = "Quest";
-            }
-            else
-            {
-                index.RecordGroups.TryGetValue(recordType, out groups);
-            }
-
-            var gridCoords = string.Equals(recordType, "Cell", StringComparison.OrdinalIgnoreCase)
-                ? index.CellGridCoords
-                : null;
             foreach (var (filename, html) in GenerateRecordTypeFiles(
-                         recordType,
-                         formIdMap,
+                         context.RecordType,
+                         context.FormIdMap,
                          index.Dumps,
-                         groups,
-                         alternateGroups,
-                         defaultGroupMode,
-                         metadata,
-                         gridCoords,
+                         context.Groups,
+                         context.AlternateGroups,
+                         context.DefaultGroupMode,
+                         context.Metadata,
+                         context.CellGridCoords,
                          maxInlineCompressedPayloadLength,
                          maxCellJsonPayloadLength))
             {
@@ -72,7 +51,7 @@ internal static class CrossDumpJsonHtmlWriter
             }
         }
 
-        yield return ("index.html", GenerateIndexPage(index));
+        yield return ("index.html", CrossDumpComparisonIndexPageBuilder.Generate(index));
     }
 
     internal static Task<IReadOnlyList<string>> WriteFilesAsync(
@@ -98,42 +77,21 @@ internal static class CrossDumpJsonHtmlWriter
         Directory.CreateDirectory(outputPath);
 
         var writtenFiles = new List<string>();
-        foreach (var (recordType, formIdMap) in index.StructuredRecords.OrderBy(r => r.Key))
+        foreach (var context in CrossDumpRecordTypePageContext.Enumerate(index))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            Dictionary<uint, string>? groups = null;
-            Dictionary<uint, string>? alternateGroups = null;
-            string? defaultGroupMode = null;
-            Dictionary<uint, Dictionary<string, string>>? metadata = null;
-            index.RecordMetadata.TryGetValue(recordType, out metadata);
-
-            if (string.Equals(recordType, "Dialogue", StringComparison.OrdinalIgnoreCase))
-            {
-                index.RecordGroups.TryGetValue("Dialogue_Quest", out groups);
-                index.RecordGroups.TryGetValue("Dialogue_NPC", out alternateGroups);
-                defaultGroupMode = "Quest";
-            }
-            else
-            {
-                index.RecordGroups.TryGetValue(recordType, out groups);
-            }
-
-            var gridCoords = string.Equals(recordType, "Cell", StringComparison.OrdinalIgnoreCase)
-                ? index.CellGridCoords
-                : null;
-
-            var outputFile = Path.Combine(outputPath, $"compare_{recordType.ToLowerInvariant()}.html");
+            var outputFile = Path.Combine(outputPath, context.OutputFilename);
             await WriteRecordTypeFileAsync(
                 outputFile,
-                recordType,
-                formIdMap,
+                context.RecordType,
+                context.FormIdMap,
                 index.Dumps,
-                groups,
-                alternateGroups,
-                defaultGroupMode,
-                metadata,
-                gridCoords,
+                context.Groups,
+                context.AlternateGroups,
+                context.DefaultGroupMode,
+                context.Metadata,
+                context.CellGridCoords,
                 maxInlineCompressedPayloadLength,
                 maxCellJsonPayloadLength,
                 cancellationToken);
@@ -141,7 +99,7 @@ internal static class CrossDumpJsonHtmlWriter
         }
 
         var indexFile = Path.Combine(outputPath, "index.html");
-        await File.WriteAllTextAsync(indexFile, GenerateIndexPage(index), cancellationToken);
+        await File.WriteAllTextAsync(indexFile, CrossDumpComparisonIndexPageBuilder.Generate(index), cancellationToken);
         writtenFiles.Add(indexFile);
 
         return writtenFiles;
@@ -170,46 +128,25 @@ internal static class CrossDumpJsonHtmlWriter
         int maxCellJsonPayloadLength = DefaultMaxCellJsonPayloadLength,
         CancellationToken cancellationToken = default)
     {
-        if (!index.StructuredRecords.TryGetValue(recordType, out var formIdMap) ||
-            formIdMap.Count == 0)
+        var context = CrossDumpRecordTypePageContext.TryCreate(index, recordType);
+        if (context == null)
         {
             return null;
         }
 
         Directory.CreateDirectory(outputPath);
 
-        Dictionary<uint, string>? groups = null;
-        Dictionary<uint, string>? alternateGroups = null;
-        string? defaultGroupMode = null;
-        Dictionary<uint, Dictionary<string, string>>? metadata = null;
-        index.RecordMetadata.TryGetValue(recordType, out metadata);
-
-        if (string.Equals(recordType, "Dialogue", StringComparison.OrdinalIgnoreCase))
-        {
-            index.RecordGroups.TryGetValue("Dialogue_Quest", out groups);
-            index.RecordGroups.TryGetValue("Dialogue_NPC", out alternateGroups);
-            defaultGroupMode = "Quest";
-        }
-        else
-        {
-            index.RecordGroups.TryGetValue(recordType, out groups);
-        }
-
-        var gridCoords = string.Equals(recordType, "Cell", StringComparison.OrdinalIgnoreCase)
-            ? index.CellGridCoords
-            : null;
-
-        var outputFile = Path.Combine(outputPath, $"compare_{recordType.ToLowerInvariant()}.html");
+        var outputFile = Path.Combine(outputPath, context.OutputFilename);
         await WriteRecordTypeFileAsync(
             outputFile,
-            recordType,
-            formIdMap,
+            context.RecordType,
+            context.FormIdMap,
             index.Dumps,
-            groups,
-            alternateGroups,
-            defaultGroupMode,
-            metadata,
-            gridCoords,
+            context.Groups,
+            context.AlternateGroups,
+            context.DefaultGroupMode,
+            context.Metadata,
+            context.CellGridCoords,
             maxInlineCompressedPayloadLength,
             maxCellJsonPayloadLength,
             cancellationToken);
@@ -226,7 +163,10 @@ internal static class CrossDumpJsonHtmlWriter
         Directory.CreateDirectory(outputPath);
 
         var indexFile = Path.Combine(outputPath, "index.html");
-        await File.WriteAllTextAsync(indexFile, GenerateIndexPage(dumps, recordTypes), cancellationToken);
+        await File.WriteAllTextAsync(
+            indexFile,
+            CrossDumpComparisonIndexPageBuilder.Generate(dumps, recordTypes),
+            cancellationToken);
         return indexFile;
     }
 
@@ -722,102 +662,12 @@ internal static class CrossDumpJsonHtmlWriter
         await WriteLineAsync(writer, "\";", cancellationToken);
     }
 
-    private static string GenerateIndexPage(CrossDumpRecordIndex index)
-    {
-        var summaries = index.StructuredRecords
-            .OrderBy(entry => entry.Key)
-            .Select(entry => BuildRecordTypeSummary(entry.Key, entry.Value, index.Dumps.Count))
-            .ToList();
-
-        return GenerateIndexPage(index.Dumps, summaries);
-    }
-
-    private static string GenerateIndexPage(
-        IReadOnlyList<DumpSnapshot> dumps,
-        IReadOnlyList<CrossDumpRecordTypeSummary> recordTypes)
-    {
-        var sb = new StringBuilder();
-        ComparisonHtmlHelpers.AppendHtmlHeader(sb, "Cross-Build Comparison Index");
-
-        sb.AppendLine("  <h1>Cross-Build Comparison Index</h1>");
-
-        var total = recordTypes.Sum(summary => summary.FormIdCount);
-        sb.AppendLine(
-            $"  <p class=\"summary\">{dumps.Count} builds, {total:N0} total records</p>");
-
-        // Build info table
-        sb.AppendLine("  <h2>Builds</h2>");
-        sb.AppendLine("  <table class=\"compact\">");
-        sb.AppendLine("    <thead><tr><th>#</th><th>File</th><th>Build Date</th></tr></thead>");
-        sb.AppendLine("    <tbody>");
-        for (var i = 0; i < dumps.Count; i++)
-        {
-            var d = dumps[i];
-            var displayFileName = d.IsBase ? d.ShortName : d.FileName;
-            var displayDate = d.IsBase ? "(base)" : $"{d.FileDate:yyyy-MM-dd HH:mm}";
-            if (!d.IsBase && !string.IsNullOrWhiteSpace(d.DateSource))
-            {
-                displayDate += $"<br><span class=\"muted\">{ComparisonHtmlHelpers.Esc(d.DateSource)}</span>";
-            }
-
-            sb.AppendLine(
-                $"      <tr><td>{i + 1}</td><td>{ComparisonHtmlHelpers.Esc(displayFileName)}</td><td>{displayDate}</td></tr>");
-        }
-
-        sb.AppendLine("    </tbody>");
-        sb.AppendLine("  </table>");
-
-        // Record type summary with links
-        sb.AppendLine("  <h2>Record Types</h2>");
-        sb.AppendLine("  <table class=\"compact\">");
-        sb.AppendLine("    <thead>");
-        sb.AppendLine("      <tr><th>Type</th><th>Records</th>");
-        foreach (var d in dumps)
-            sb.AppendLine($"        <th>{ComparisonHtmlHelpers.Esc(d.ShortName)}</th>");
-        sb.AppendLine("      </tr>");
-        sb.AppendLine("    </thead>");
-        sb.AppendLine("    <tbody>");
-
-        foreach (var summary in recordTypes.OrderBy(summary => summary.RecordType, StringComparer.OrdinalIgnoreCase))
-        {
-            var filename = $"compare_{summary.RecordType.ToLowerInvariant()}.html";
-            sb.Append(
-                $"      <tr><td><a href=\"{filename}\">{ComparisonHtmlHelpers.Esc(summary.RecordType)}</a></td>");
-            sb.Append($"<td>{summary.FormIdCount:N0}</td>");
-            for (var dumpIdx = 0; dumpIdx < dumps.Count; dumpIdx++)
-            {
-                var count = dumpIdx < summary.DumpCounts.Count ? summary.DumpCounts[dumpIdx] : 0;
-                sb.Append($"<td>{count:N0}</td>");
-            }
-
-            sb.AppendLine("</tr>");
-        }
-
-        sb.AppendLine("    </tbody>");
-        sb.AppendLine("  </table>");
-
-        ComparisonHtmlHelpers.AppendHtmlFooter(sb);
-        return sb.ToString();
-    }
-
     internal static CrossDumpRecordTypeSummary BuildRecordTypeSummary(
         string recordType,
         Dictionary<uint, Dictionary<int, RecordReport>> formIdMap,
         int dumpCount)
     {
-        var dumpCounts = new int[dumpCount];
-        foreach (var dumpMap in formIdMap.Values)
-        {
-            foreach (var dumpIndex in dumpMap.Keys)
-            {
-                if ((uint)dumpIndex < (uint)dumpCounts.Length)
-                {
-                    dumpCounts[dumpIndex]++;
-                }
-            }
-        }
-
-        return new CrossDumpRecordTypeSummary(recordType, formIdMap.Count, dumpCounts);
+        return CrossDumpComparisonIndexPageBuilder.BuildRecordTypeSummary(recordType, formIdMap, dumpCount);
     }
 
     private static void AppendPayloadScripts(StringBuilder sb, string compressed)
