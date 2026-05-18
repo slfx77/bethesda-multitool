@@ -153,6 +153,49 @@ internal static class AssetPathRules
                || normalizedPath.StartsWith("meshes\\characters\\_1stperson\\", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    ///     Do not pack pre-baked LOD assets pulled from a prototype DMP / Xbox 360 BSA.
+    ///     Covers both meshes and textures because all LOD assets are baked from one
+    ///     specific build's terrain mesh layout and worldspace bounds:
+    ///     <list type="bullet">
+    ///         <item><description>
+    ///             <c>meshes\landscape\lod\&lt;ws&gt;\(blocks|stinger)\*.nif</c> — LOD block
+    ///             meshes referencing STAT/SCOL base records at the prototype's FormIDs.
+    ///             Loading on top of PC final's terrain produces a scene-graph that
+    ///             references geometry/IDs that don't fit, then crashes during
+    ///             <c>BGSDistantObjectBlock::ApplyObjectsAlphaState</c> (type-3 LOD-object
+    ///             content comes up null).
+    ///         </description></item>
+    ///         <item><description>
+    ///             <c>textures\landscape\lod\&lt;ws&gt;\(diffuse|normals)\*.dds</c> — per-block
+    ///             LOD terrain textures. Coords are encoded in the filename and must match
+    ///             the LOD mesh's expected grid. Mixing prototype LOD textures with PC
+    ///             final's LOD meshes (or vice versa) produces orphaned references that
+    ///             flood the engine's asset pipeline with "Could not get file" lookups.
+    ///         </description></item>
+    ///     </list>
+    ///     The fix is to never repack these files — the engine falls back to master's
+    ///     matching-terrain LOD instead.
+    /// </summary>
+    public static bool IsTerrainBoundLodAsset(string normalizedPath)
+    {
+        // LOD object meshes: meshes\landscape\lod\<ws>\(blocks|stinger)\*.nif
+        if (normalizedPath.StartsWith("meshes\\landscape\\lod\\", StringComparison.OrdinalIgnoreCase)
+            && normalizedPath.EndsWith(".nif", StringComparison.OrdinalIgnoreCase)
+            && (normalizedPath.Contains("\\blocks\\", StringComparison.OrdinalIgnoreCase)
+                || normalizedPath.Contains("\\stinger\\", StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+        // LOD terrain textures: textures\landscape\lod\<ws>\*.dds
+        if (normalizedPath.StartsWith("textures\\landscape\\lod\\", StringComparison.OrdinalIgnoreCase)
+            && normalizedPath.EndsWith(".dds", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+        return false;
+    }
+
     public static string ComputeLooseBasename(string fileNameWithExtension)
     {
         var withoutExt = Path.GetFileNameWithoutExtension(fileNameWithExtension);

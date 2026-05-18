@@ -464,6 +464,7 @@ internal static class AssetPathCollector
         var normalized = TryNormalizeRequestPath(raw);
         return normalized is not null
                && !IsEngineGlobalCharacterAsset(normalized)
+               && !AssetPathRules.IsTerrainBoundLodAsset(normalized)
                && paths.Add(normalized);
     }
 

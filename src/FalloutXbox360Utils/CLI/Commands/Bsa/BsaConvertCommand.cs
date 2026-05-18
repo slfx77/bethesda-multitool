@@ -4,6 +4,7 @@
 using System.CommandLine;
 using FalloutXbox360Utils.Core.Formats.Bsa;
 using FalloutXbox360Utils.Core.Formats.Ddx;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
 using FalloutXbox360Utils.Core.Formats.Xma;
 using Spectre.Console;
 
@@ -195,8 +196,26 @@ internal static class BsaConvertCommand
             }
 
             // Step 5: Repack into PC BSA v104
+            // Filter out pre-baked LOD assets — meshes and textures under
+            // landscape\lod\ are bound to the source build's terrain and FormID layout.
+            // Repacking them produces a BSA that, when paired with PC final's master,
+            // crashes the engine during BGSDistantObjectBlock construction or floods
+            // the asset pipeline with orphaned LOD-texture lookups (OOM in tasklets).
+            // The engine falls back to master's matching-terrain LOD instead.
             AnsiConsole.MarkupLine("[yellow]Step 5:[/] Repacking into PC BSA v104...");
-            var allFiles = Directory.GetFiles(extractDir, "*", SearchOption.AllDirectories);
+            var allFilesUnfiltered = Directory.GetFiles(extractDir, "*", SearchOption.AllDirectories);
+            var allFiles = allFilesUnfiltered
+                .Where(f => !AssetPathRules.IsTerrainBoundLodAsset(
+                    AssetPathRules.NormalizeDataRelativePath(Path.GetRelativePath(extractDir, f))))
+                .ToArray();
+            var lodSkipped = allFilesUnfiltered.Length - allFiles.Length;
+            if (lodSkipped > 0)
+            {
+                AnsiConsole.MarkupLine(
+                    "  [yellow]Skipping {0:N0} prototype-bound LOD asset(s) (meshes\\landscape\\lod\\... and " +
+                    "textures\\landscape\\lod\\...). Engine falls back to master's terrain-matching LOD.[/]",
+                    lodSkipped);
+            }
             var relativePaths = allFiles.Select(f => Path.GetRelativePath(extractDir, f));
             using var writer = BsaWriter.CreateWithAutoFlags(relativePaths, compress);
 
