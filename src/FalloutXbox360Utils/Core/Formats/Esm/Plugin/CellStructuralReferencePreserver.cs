@@ -84,6 +84,16 @@ internal static class CellStructuralReferencePreserver
             return false;
         }
 
+        return IsStructuralMarkerBase(baseRecord);
+    }
+
+    public static bool IsStructuralMarkerBase(ParsedMainRecord baseRecord)
+    {
+        if (string.IsNullOrEmpty(baseRecord.EditorId))
+        {
+            return false;
+        }
+
         return StructuralBaseEditorIdNeedles.Any(needle =>
             baseRecord.EditorId!.Contains(needle, StringComparison.OrdinalIgnoreCase));
     }

@@ -5,11 +5,12 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 /// <summary>
 ///     Encodes a <see cref="CreatureRecord" /> (CREA) as PC-format subrecord bytes.
 ///     Non-human actors. Closely parallels NPC_ but with the creature-specific DATA layout.
-///     fopdoc canonical order: EDID, FULL?, MODL?, ACBS(24B), SNAM*(faction memberships, 8B each),
-///     INAM?(death item), SCRI?, AIDT?(20B), PKID*, SPLO*, DATA(17B), CSDC?.
+///     FNVEdit canonical wbCREA order: EDID, FULL?, MODL?, [NIFZ?, NIFT?], ACBS(24B),
+///     SNAM*(faction memberships, 8B each), INAM?(death item), SCRI?, AIDT?(20B), PKID*,
+///     SPLO*, [KFFZ?, KFNM?], DATA(17B), CSDC?.
 ///     DATA layout (17B): uint8 CreatureType + uint8 CombatSkill + uint8 MagicSkill +
 ///     uint8 StealthSkill + int32 Health + int16 AttackDamage + 7 bytes unused.
-///     FaceGen / NIFZ / NIFT / KFFZ / KFNM etc. NOT modeled yet — deferred.
+///     NIFZ/NIFT/KFFZ/KFNM are captured opaque by the parser and round-tripped verbatim.
 /// </summary>
 public sealed class CreaEncoder : IRecordEncoder
 {
@@ -41,6 +42,19 @@ public sealed class CreaEncoder : IRecordEncoder
         if (!string.IsNullOrEmpty(crea.ModelPath))
         {
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MODL", crea.ModelPath));
+        }
+
+        // NIFZ (model file list) + NIFT (texture file hash blob). Captured opaque by the
+        // parser; emit verbatim. Per FNVEdit wbCREA canonical order, NIFZ/NIFT live between
+        // the MODL/MODT block and ACBS.
+        if (crea.ModelFilesRaw is { Length: > 0 } nifz)
+        {
+            subs.Add(new EncodedSubrecord("NIFZ", nifz));
+        }
+
+        if (crea.TextureFilesRaw is { Length: > 0 } nift)
+        {
+            subs.Add(new EncodedSubrecord("NIFT", nift));
         }
 
         // ACBS — actor base stats. Mirrors NpcEncoder's pattern. Zero-fills if model lacks ACBS.
@@ -105,6 +119,18 @@ public sealed class CreaEncoder : IRecordEncoder
         foreach (var spellId in crea.Spells)
         {
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SPLO", spellId));
+        }
+
+        // KFFZ (animation .kf path list) + KFNM (legacy animation-name list). Captured opaque
+        // by the parser; emit verbatim. KFFZ/KFNM live after PKID/SPLO and before DATA.
+        if (crea.AnimationFilesRaw is { Length: > 0 } kffz)
+        {
+            subs.Add(new EncodedSubrecord("KFFZ", kffz));
+        }
+
+        if (crea.AnimationNamesRaw is { Length: > 0 } kfnm)
+        {
+            subs.Add(new EncodedSubrecord("KFNM", kfnm));
         }
 
         subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(crea)));

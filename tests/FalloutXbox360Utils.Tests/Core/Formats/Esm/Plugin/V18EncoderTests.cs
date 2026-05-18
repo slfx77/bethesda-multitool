@@ -124,9 +124,12 @@ public class V18EncoderTests
         var encoded = WrldEncoder.EncodeNew(wrld);
         var sigs = encoded.Subrecords.Select(s => s.Signature).ToList();
 
+        // FNVEdit canonical wbWRLD order (confirmed against master WastelandNV):
+        // DNAM clusters with the water subrecords (right after NAM2); ONAM/INAM go between
+        // MNAM and DATA; PNAM is paired with WNAM (this fixture supplies both).
         Assert.Equal(
-            ["EDID", "FULL", "XEZN", "WNAM", "PNAM", "CNAM", "NAM2", "MNAM", "DATA",
-                "NAM0", "NAM9", "ONAM", "INAM", "ZNAM", "DNAM"],
+            ["EDID", "FULL", "XEZN", "WNAM", "PNAM", "CNAM", "NAM2", "DNAM", "MNAM",
+                "ONAM", "INAM", "DATA", "NAM0", "NAM9", "ZNAM"],
             sigs);
     }
 

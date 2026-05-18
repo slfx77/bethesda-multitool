@@ -104,21 +104,22 @@ public sealed class InfoEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("RNAM", info.PromptText));
         }
 
-        if (info.Difficulty != 0)
-        {
-            subs.Add(NewRecordSubrecords.EncodeUInt32Subrecord("DNAM", info.Difficulty));
-        }
-
         if (info.SpeakerFormId.HasValue)
         {
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("ANAM", info.SpeakerFormId.Value));
         }
+
+        if (info.Difficulty != 0)
+        {
+            subs.Add(NewRecordSubrecords.EncodeUInt32Subrecord("DNAM", info.Difficulty));
+        }
     }
 
     /// <summary>
-    ///     Encode a new INFO record from scratch in fopdoc canonical order:
-    ///     EDID?, DATA, QSTI?, TPIC?, PNAM?, (TRDT + NAM1)+, TCLT*, TCLF*, RNAM?, DNAM?,
-    ///     (SCHR + SCDA? + SCTX? + SCRO* + SCRV* + NEXT?)*, ANAM?, NAME*, CTDA*.
+    ///     Encode a new INFO record from scratch in xEdit canonical FNV order:
+    ///     EDID?, DATA, QSTI?, TPIC?, PNAM?, NAME*, (TRDT + NAM1)+,
+    ///     (CTDA + CIS1? + CIS2?)*, TCLT*, TCLF*,
+    ///     (SCHR + SCDA? + SCTX? + SCRO* + SCRV* + NEXT?)*, RNAM?, ANAM?, DNAM?.
     /// </summary>
     internal static EncodedRecord EncodeNew(DialogueRecord info)
     {
@@ -193,6 +194,14 @@ public sealed class InfoEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("PNAM", info.PreviousInfo.Value));
         }
 
+        // NAME (Add Topics) appears EARLY in xEdit's FNV INFO definition — before responses,
+        // not at the end. Moving it late produces FNVEdit "unexpected NAME" errors and the
+        // engine's parser misclassifies later subrecords, corrupting form bindings.
+        foreach (var formId in info.AddTopics)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("NAME", formId));
+        }
+
         if (info.Responses.Count == 0)
         {
             // FNV runtime crashes when iterating an INFO's responses if the list is empty.
@@ -217,43 +226,7 @@ public sealed class InfoEncoder : IRecordEncoder
             }
         }
 
-        foreach (var formId in info.LinkToTopics)
-        {
-            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("TCLT", formId));
-        }
-
-        foreach (var formId in info.LinkFromTopics)
-        {
-            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("TCLF", formId));
-        }
-
-        if (!string.IsNullOrEmpty(info.PromptText))
-        {
-            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("RNAM", info.PromptText));
-        }
-
-        if (info.Difficulty != 0)
-        {
-            subs.Add(NewRecordSubrecords.EncodeUInt32Subrecord("DNAM", info.Difficulty));
-        }
-
-        // Result-script blocks (multiple, separated by NEXT). Each block has its own SCHR,
-        // optional SCDA + SCTX, and zero or more SCRO/SCRV referenced-object entries.
-        for (var i = 0; i < info.ResultScripts.Count; i++)
-        {
-            EmitResultScriptBlock(subs, info.ResultScripts[i], i == info.ResultScripts.Count - 1);
-        }
-
-        if (info.SpeakerFormId.HasValue)
-        {
-            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("ANAM", info.SpeakerFormId.Value));
-        }
-
-        foreach (var formId in info.AddTopics)
-        {
-            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("NAME", formId));
-        }
-
+        // CTDA (with CIS1/CIS2) goes AFTER responses, BEFORE TCLT/TCLF per xEdit canonical.
         foreach (var condition in info.Conditions)
         {
             subs.Add(new EncodedSubrecord("CTDA", BuildCtdaSubrecord(condition)));
@@ -267,15 +240,50 @@ public sealed class InfoEncoder : IRecordEncoder
                 subs.Add(NewRecordSubrecords.EncodeStringSubrecord("CIS2", condition.Parameter2String));
             }
         }
+
+        foreach (var formId in info.LinkToTopics)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("TCLT", formId));
+        }
+
+        foreach (var formId in info.LinkFromTopics)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("TCLF", formId));
+        }
+
+        // Result-script blocks: master ALWAYS emits Begin Script + NEXT + End Script in INFO
+        // records, even when both are empty (just bare SCHR headers). Skipping them produces
+        // FNVEdit "unexpected (or out of order) subrecord SCHR" errors when other subrecords
+        // come later in the canonical order, and the engine's parser can lose its alignment
+        // mid-record. Always emit the pair; pad missing blocks with empty SCHR headers.
+        var beginScript = info.ResultScripts.Count > 0 ? info.ResultScripts[0] : null;
+        var endScript = info.ResultScripts.Count > 1 ? info.ResultScripts[1] : null;
+        EmitResultScriptBlock(subs, beginScript);
+        subs.Add(new EncodedSubrecord("NEXT", []));
+        EmitResultScriptBlock(subs, endScript);
+
+        if (!string.IsNullOrEmpty(info.PromptText))
+        {
+            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("RNAM", info.PromptText));
+        }
+
+        if (info.SpeakerFormId.HasValue)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("ANAM", info.SpeakerFormId.Value));
+        }
+
+        if (info.Difficulty != 0)
+        {
+            subs.Add(NewRecordSubrecords.EncodeUInt32Subrecord("DNAM", info.Difficulty));
+        }
     }
 
     private static void EmitResultScriptBlock(
         List<EncodedSubrecord> subs,
-        DialogueResultScript script,
-        bool isLast)
+        DialogueResultScript? script)
     {
-        var compiledSize = script.CompiledData?.Length ?? 0;
-        var refCount = (uint)script.ReferencedObjects.Count;
+        var compiledSize = script?.CompiledData?.Length ?? 0;
+        var refCount = (uint)(script?.ReferencedObjects.Count ?? 0);
 
         // Inline result scripts are Object-type (not quest, not magic-effect). IsCompiled
         // mirrors whether the model carries bytecode — if we have SCDA bytes we'll emit them.
@@ -288,6 +296,11 @@ public sealed class InfoEncoder : IRecordEncoder
         schr[17] = 0; // IsMagicEffectScript
         schr[18] = compiledSize > 0 ? (byte)1 : (byte)0; // IsCompiled
         subs.Add(new EncodedSubrecord("SCHR", schr));
+
+        if (script is null)
+        {
+            return;
+        }
 
         if (script.CompiledData is { Length: > 0 } compiled)
         {
@@ -310,14 +323,6 @@ public sealed class InfoEncoder : IRecordEncoder
             {
                 subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRO", refFormId));
             }
-        }
-
-        // NEXT separator delimits multiple result-script blocks. The final block typically
-        // doesn't carry NEXT — the parser flushes on its own at end-of-record. Honor the
-        // model's flag when present and avoid forcing a trailing separator.
-        if (script.HasNextSeparator && !isLast)
-        {
-            subs.Add(new EncodedSubrecord("NEXT", []));
         }
     }
 

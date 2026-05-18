@@ -4,11 +4,12 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
 ///     Encodes a <see cref="ConsumableRecord" /> (ALCH) as PC-format ALCH subrecord bytes.
-///     v1 emits DATA (4 bytes: float weight) only. ENIT (value/flags/withdrawal/addiction
-///     chance/sound) and EFID/EFIT effect blocks are retained from the source ESM because
-///     reconstructing them requires fields the model captures inconsistently and a stable
-///     understanding of the FNV ENIT byte order.
-///     DATA layout: float Weight(0).
+///     Override path (<see cref="Encode" />) emits DATA (4 bytes: float weight) only — ENIT
+///     and EFID/EFIT effect blocks are retained from the source ESM in that path.
+///     New-record path (<see cref="EncodeNew" />) emits the full chain:
+///     EDID, OBND?, FULL?, MODL?, MODT?, ICON?, MICO?, DATA, ENIT?, (EFID + EFIT)*.
+///     ENIT layout (20 bytes): uint32 Value + bytes Flags(4..7) + FormID Addiction(8..11) +
+///     float AddictionChance(12..15) + FormID UseSoundOrWithdrawalEffect(16..19).
 /// </summary>
 public sealed class AlchEncoder : IRecordEncoder
 {

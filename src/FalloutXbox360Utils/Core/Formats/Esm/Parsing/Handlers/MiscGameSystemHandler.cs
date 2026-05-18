@@ -1,3 +1,4 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Processing;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.AI;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
@@ -415,6 +416,7 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
         string? editorId = null;
         uint cellFormId = 0, vertexCount = 0, triangleCount = 0;
         var doorPortalCount = 0;
+        var rawSubrecords = new List<NavMeshSubrecord>();
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -451,6 +453,10 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
 
                     break;
             }
+
+            // Capture subrecord bytes verbatim (or post-endian-conversion for Xbox 360 source)
+            // so the cell pipeline can re-emit DMP NAVMs in cells master doesn't cover.
+            CaptureNavmSubrecord(record, sub.Signature, subData, rawSubrecords);
         }
 
         return new NavMeshRecord
@@ -461,9 +467,46 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
             VertexCount = vertexCount,
             TriangleCount = triangleCount,
             DoorPortalCount = doorPortalCount,
+            RawSubrecords = rawSubrecords,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
+    }
+
+    /// <summary>
+    ///     Capture one subrecord into the NavMeshSubrecord list, applying the existing
+    ///     Xbox-360→PC endian conversion via the schema-driven subrecord converter when
+    ///     the source record was detected as big-endian. PC-endian sources pass through
+    ///     verbatim.
+    /// </summary>
+    private static void CaptureNavmSubrecord(
+        DetectedMainRecord record,
+        string signature,
+        ReadOnlySpan<byte> subData,
+        List<NavMeshSubrecord> outList)
+    {
+        if (subData.Length == 0)
+        {
+            outList.Add(new NavMeshSubrecord(signature, []));
+            return;
+        }
+
+        if (record.IsBigEndian)
+        {
+            try
+            {
+                var converted = EsmSubrecordConverter.ConvertSubrecordData(signature, subData, "NAVM");
+                outList.Add(new NavMeshSubrecord(signature, converted));
+                return;
+            }
+            catch (NotSupportedException)
+            {
+                // No schema → fall through to passthrough; the engine may still accept the
+                // bytes since most NAVM subrecord variants are byte-stream blobs.
+            }
+        }
+
+        outList.Add(new NavMeshSubrecord(signature, subData.ToArray()));
     }
 
     #endregion

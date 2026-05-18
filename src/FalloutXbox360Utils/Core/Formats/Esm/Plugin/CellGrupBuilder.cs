@@ -42,8 +42,8 @@ public static class CellGrupBuilder
 {
     /// <summary>
     ///     Build the full cell section of the plugin body — top-level CELL GRUP for interior
-    ///     bundles plus one top-level WRLD GRUP per affected worldspace. Returns null when
-    ///     there are no bundles to emit.
+    ///     bundles plus a single top-level WRLD GRUP wrapping every affected worldspace.
+    ///     Returns null when there are no bundles to emit.
     /// </summary>
     /// <param name="bundles">
     ///     Bundles in any order; this method groups them by interior vs
@@ -76,14 +76,33 @@ public static class CellGrupBuilder
         var exteriorByWrld = bundles
             .Where(b => !b.Context.IsInterior && b.Context.WorldspaceFormId.HasValue)
             .GroupBy(b => b.Context.WorldspaceFormId!.Value)
-            .OrderBy(g => g.Key);
+            .OrderBy(g => g.Key)
+            .ToList();
 
-        foreach (var group in exteriorByWrld)
+        if (exteriorByWrld.Count > 0)
         {
-            var wrldBytes = BuildWrldGrup(group.Key, group.ToList(), pcRecordsByFormId, newWorldspacesByDmpFormId);
-            if (wrldBytes is not null)
+            // Single top-level WRLD GRUP wrapping all worldspace anchors + their World
+            // Children GRUPs. Emitting a top-level GRUP per worldspace produces an ESP
+            // that FNVEdit auto-merges with "duplicated top level group" warnings and
+            // that some tools refuse to load.
+            var anyEmitted = false;
+            var topLabel = "WRLD"u8.ToArray();
+            var topPos = WriteGrupHeader(stream, topLabel, 0);
+
+            foreach (var group in exteriorByWrld)
             {
-                stream.Write(wrldBytes);
+                anyEmitted |= EmitWrldRecordAndChildren(
+                    stream, group.Key, group.ToList(), pcRecordsByFormId, newWorldspacesByDmpFormId);
+            }
+
+            if (anyEmitted)
+            {
+                RecordHeaderProcessor.FinalizeGrupSize(stream, topPos);
+            }
+            else
+            {
+                // No worldspace resolved — roll back the empty top-level GRUP header.
+                stream.SetLength(topPos);
             }
         }
 
@@ -112,19 +131,22 @@ public static class CellGrupBuilder
     }
 
     /// <summary>
-    ///     Emit a top-level WRLD GRUP for one worldspace. Layout:
+    ///     Emit one worldspace's anchor record and its world-children GRUP into
+    ///     <paramref name="stream" />. Layout:
     ///     <code>
-    ///       GRUP type=0 label="WRLD"
     ///         WRLD record (master anchor OR pre-encoded new WRLD)
     ///         GRUP type=1 label=wrldFormId       (world children)
     ///           [persistent CELL records — no block/subblock wrapper]
     ///           [exterior block/subblock GRUPs with their CELL records]
     ///     </code>
+    ///     The caller is responsible for wrapping all worldspace emissions in a single
+    ///     top-level WRLD GRUP (see <see cref="BuildCellSection" />).
     ///     For a new (non-master) WRLD, anchor bytes come from <paramref name="newWorldspacesByDmpFormId" />
     ///     and the World Children GRUP label uses the EMITTED FormID (matches the FormID encoded
-    ///     inside the anchor record bytes). Returns null if neither source has the WRLD.
+    ///     inside the anchor record bytes). Returns false (and writes nothing) if neither source has the WRLD.
     /// </summary>
-    private static byte[]? BuildWrldGrup(
+    private static bool EmitWrldRecordAndChildren(
+        Stream stream,
         uint wrldFormId,
         IReadOnlyList<CellOverrideBundle> bundlesInWrld,
         IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId,
@@ -147,14 +169,8 @@ public static class CellGrupBuilder
         }
         else
         {
-            return null;
+            return false;
         }
-
-        using var stream = new MemoryStream();
-
-        // Top-level WRLD GRUP.
-        var topLabel = "WRLD"u8.ToArray();
-        var topPos = WriteGrupHeader(stream, topLabel, 0);
 
         // WRLD anchor record.
         stream.Write(wrldAnchorBytes);
@@ -178,8 +194,7 @@ public static class CellGrupBuilder
         }
 
         RecordHeaderProcessor.FinalizeGrupSize(stream, childrenPos);
-        RecordHeaderProcessor.FinalizeGrupSize(stream, topPos);
-        return stream.ToArray();
+        return true;
     }
 
     /// <summary>

@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
@@ -154,5 +155,69 @@ public class AdditionalEncoderTests
         Assert.Empty(encoded.Subrecords);
         Assert.Single(encoded.Warnings);
         Assert.Contains("ACBS", encoded.Warnings[0]);
+    }
+
+    [Fact]
+    public void NpcEncoder_Override_EmitsCapturedInventoryAndAppearanceWithoutIdentityFields()
+    {
+        var npc = new NpcRecord
+        {
+            FormId = 0x000F83A0,
+            EditorId = "RoseOfSharonCassidy",
+            FullName = "Cass",
+            Stats = new ActorBaseSubrecord(
+                Flags: 0,
+                FatigueBase: 100,
+                BarterGold: 25,
+                Level: 5,
+                CalcMin: 1,
+                CalcMax: 10,
+                SpeedMultiplier: 100,
+                KarmaAlignment: 0,
+                DispositionBase: 35,
+                TemplateFlags: 0,
+                Offset: 0,
+                IsBigEndian: false),
+            Race = 0x00000019,
+            Class = 0x00012345,
+            Script = 0x00023456,
+            DeathItem = 0x00034567,
+            VoiceType = 0x00045678,
+            HairFormId = 0x00056789,
+            EyesFormId = 0x0006789A,
+            CombatStyleFormId = 0x000789AB,
+            HairColor = 0x00181C36,
+            HeadPartFormIds = [0x00011111],
+            Inventory = [new InventoryItem(0x00022222, 2)],
+            Packages = [0x00033333],
+            Spells = [0x00044444],
+            SpecialStats = [5, 6, 7, 8, 9, 10, 4],
+            Skills = Enumerable.Range(1, 14).Select(i => (byte)i).ToArray(),
+            FaceGenGeometrySymmetric = new float[50],
+            FaceGenGeometryAsymmetric = new float[30],
+            FaceGenTextureSymmetric = new float[50]
+        };
+
+        var encoded = new NpcEncoder().Encode(npc);
+        var signatures = encoded.Subrecords.Select(s => s.Signature).ToArray();
+
+        Assert.DoesNotContain("EDID", signatures);
+        Assert.DoesNotContain("FULL", signatures);
+        Assert.Contains("ACBS", signatures);
+        Assert.Contains("CNTO", signatures);
+        Assert.Contains("PKID", signatures);
+        Assert.Contains("RNAM", signatures);
+        Assert.Contains("CNAM", signatures);
+        Assert.Contains("SCRI", signatures);
+        Assert.Contains("VTCK", signatures);
+        Assert.Contains("PNAM", signatures);
+        Assert.Contains("HNAM", signatures);
+        Assert.Contains("ENAM", signatures);
+        Assert.Contains("HCLR", signatures);
+        Assert.Contains("FGGS", signatures);
+        Assert.Contains("FGGA", signatures);
+        Assert.Contains("FGTS", signatures);
+        Assert.Contains("DATA", signatures);
+        Assert.Contains("DNAM", signatures);
     }
 }

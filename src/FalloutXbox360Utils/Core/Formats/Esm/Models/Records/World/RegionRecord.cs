@@ -22,6 +22,31 @@ public record RegionRecord
     /// <summary>Number of RDAT region-data tuples in the ESM-side record.</summary>
     public int DataBlockCount { get; init; }
 
+    /// <summary>
+    ///     RDAT region-data tuples in stream order. Each block is the 8-byte RDAT
+    ///     header (type + flags/priority/reserved as a single uint32) plus the
+    ///     typed payload subrecord(s) that follow it (RDOT/RDMP/RDGS/RDMD/RDSD/RDWT,
+    ///     depending on Type). Captured as opaque payload bytes — the encoder
+    ///     re-emits them verbatim, sidestepping per-type schema work.
+    /// </summary>
+    public List<RegionDataBlock> DataBlocks { get; init; } = [];
+
     public long Offset { get; init; }
     public bool IsBigEndian { get; init; }
 }
+
+/// <summary>
+///     One RDAT region-data tuple. Header is 8 bytes: uint32 Type + uint32 Flags
+///     (Flags packs the priority byte + reserved bytes per FNV layout; captured
+///     as a single uint32 for verbatim round-trip).
+/// </summary>
+public readonly record struct RegionDataBlock(
+    uint Type,
+    uint Flags,
+    List<RegionSubrecord> Payload);
+
+/// <summary>
+///     A single typed subrecord that follows an RDAT header (RDOT/RDMP/RDGS/RDMD/RDSD/RDWT).
+///     Captured verbatim — neither the parser nor the encoder interprets the bytes.
+/// </summary>
+public readonly record struct RegionSubrecord(string Signature, byte[] Bytes);

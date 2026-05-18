@@ -56,6 +56,28 @@ public record CreatureRecord
     /// <summary>AI package FormIDs (PKID subrecords).</summary>
     public List<uint> Packages { get; init; } = [];
 
+    /// <summary>
+    ///     Raw NIFZ subrecord bytes — null-separated list of NIF model paths the creature
+    ///     can swap between. Captured opaque so encoder can round-trip verbatim without
+    ///     needing to understand the internal zstring layout.
+    /// </summary>
+    public byte[]? ModelFilesRaw { get; init; }
+
+    /// <summary>Raw NIFT subrecord bytes — texture file hash blob (engine-validated).</summary>
+    public byte[]? TextureFilesRaw { get; init; }
+
+    /// <summary>
+    ///     Raw KFFZ subrecord bytes — null-separated list of .kf animation file paths.
+    ///     Captured opaque for verbatim round-trip.
+    /// </summary>
+    public byte[]? AnimationFilesRaw { get; init; }
+
+    /// <summary>
+    ///     Raw KFNM subrecord bytes — null-separated list of animation names (legacy F3
+    ///     subrecord, occasionally present in FNV CREA records).
+    /// </summary>
+    public byte[]? AnimationNamesRaw { get; init; }
+
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }
 

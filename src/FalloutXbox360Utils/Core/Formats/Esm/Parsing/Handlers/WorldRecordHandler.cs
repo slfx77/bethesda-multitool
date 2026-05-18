@@ -692,7 +692,15 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
         string? editorId = null;
         uint worldspaceFormId = 0;
         byte r = 0, g = 0, b = 0;
-        var dataBlockCount = 0;
+        var dataBlocks = new List<RegionDataBlock>();
+
+        // RDAT iteration state: once we see an RDAT header, every subsequent non-RDAT
+        // subrecord (until the next RDAT or end-of-record) is part of that block's
+        // typed payload. Each block can have one or more payload subrecords
+        // (RDOT/RDMP/RDGS/RDMD/RDSD/RDWT — preserving boundaries matters for round-trip).
+        uint currentType = 0;
+        uint currentFlags = 0;
+        List<RegionSubrecord>? currentPayload = null;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -715,10 +723,34 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
                     g = data[sub.DataOffset + 1];
                     b = data[sub.DataOffset + 2];
                     break;
-                case "RDAT":
-                    dataBlockCount++;
+                case "RDAT" when sub.DataLength >= 8:
+                    // Finalize any open block before starting a new one.
+                    if (currentPayload is not null)
+                    {
+                        dataBlocks.Add(new RegionDataBlock(currentType, currentFlags, currentPayload));
+                    }
+                    currentType = BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian);
+                    currentFlags = BinaryUtils.ReadUInt32(data, sub.DataOffset + 4, record.IsBigEndian);
+                    currentPayload = [];
+                    break;
+                default:
+                    // RPLI/RPLD boundary polygons or per-type payload (RDOT/RDMP/RDGS/RDMD/RDSD/RDWT)
+                    // following the open RDAT. Capture verbatim — neither parser nor encoder
+                    // interprets the typed bytes.
+                    if (currentPayload is not null)
+                    {
+                        var bytes = new byte[sub.DataLength];
+                        Buffer.BlockCopy(data, sub.DataOffset, bytes, 0, sub.DataLength);
+                        currentPayload.Add(new RegionSubrecord(sub.Signature, bytes));
+                    }
                     break;
             }
+        }
+
+        // Finalize the final open block.
+        if (currentPayload is not null)
+        {
+            dataBlocks.Add(new RegionDataBlock(currentType, currentFlags, currentPayload));
         }
 
         return new RegionRecord
@@ -729,7 +761,8 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
             EmittanceColorR = r,
             EmittanceColorG = g,
             EmittanceColorB = b,
-            DataBlockCount = dataBlockCount,
+            DataBlockCount = dataBlocks.Count,
+            DataBlocks = dataBlocks,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };

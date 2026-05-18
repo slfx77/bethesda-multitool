@@ -44,6 +44,9 @@ public record ContainerRecord
     /// <summary>Close sound FormID (RNAM subrecord).</summary>
     public uint? CloseSoundFormId { get; init; }
 
+    /// <summary>Object bounds (OBND subrecord, 12 bytes int16[6]).</summary>
+    public ObjectBounds? Bounds { get; init; }
+
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }
 

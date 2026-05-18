@@ -5,11 +5,9 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
 ///     Encodes an <see cref="NpcRecord" /> as PC-format NPC_ subrecord bytes.
-///     v1 emits ACBS (24 bytes — actor base stats) only. The many other NPC_ subrecords
-///     (RNAM race, CNAM class, SCRI script, INAM death item, VTCK voice type, faction lists,
-///     SPECIAL stats, skills, AI data, FaceGen morphs, head parts) are retained from the
-///     source ESM. ACBS is the most frequently mutated runtime block and the only one the
-///     parsed <see cref="ActorBaseSubrecord" /> covers byte-for-byte.
+///     Override encoding emits captured actor stats, gameplay references, inventory, AI,
+///     appearance, FaceGen, SPECIAL, and skill data while preserving master identity fields
+///     such as EDID/FULL and the master record FormID.
 ///     ACBS layout: uint32 Flags(0) + uint16 Fatigue(4) + uint16 BarterGold(6) +
 ///     int16 Level(8) + uint16 CalcMin(10) + uint16 CalcMax(12) +
 ///     uint16 SpeedMult(14) + float KarmaAlignment(16) +
@@ -42,104 +40,22 @@ public sealed class NpcEncoder : IRecordEncoder
             warnings.Add($"NPC 0x{npc.FormId:X8} has no parsed ACBS — ACBS retained from ESM.");
         }
 
-        // Override-mode FaceGen + appearance subrecords. RecordMergeEngine picks DMP bytes
-        // when both ESM and DMP have the same signature (subject to SubrecordMergePolicy),
-        // so emitting these here lets the prototype's captured FaceGen data override the
-        // vanilla NPC's face. Without this, only ACBS would override — vanilla's FGGS/
-        // FGGA/FGTS/HCLR/ENAM would persist and the NPC would look like the released NV
-        // version even when the DMP captured prototype-era appearance.
+        // Override-mode runtime/gameplay and appearance subrecords. RecordMergeEngine picks
+        // DMP bytes when both ESM and DMP have the same signature, so emitting these here lets
+        // prototype inventory, packages, class/race, voice, and FaceGen override the final
+        // master NPC while EDID/FULL/FormID remain anchored to the master.
+        AppendActorGameplaySubrecords(npc, subs);
         AppendAppearanceSubrecords(npc, subs);
+        AppendActorTailSubrecords(npc, subs);
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
     }
 
-    /// <summary>
-    ///     Emit the appearance subrecords (hair / eyes / hair color / FaceGen morphs) that
-    ///     a runtime NPC capture carries. Shared between override <see cref="Encode" /> and
-    ///     new-record <see cref="EncodeNew" />.
-    /// </summary>
-    private static void AppendAppearanceSubrecords(NpcRecord npc, List<EncodedSubrecord> subs)
+    private static void AppendActorGameplaySubrecords(
+        NpcRecord npc,
+        List<EncodedSubrecord> subs,
+        uint? resolvedTemplate = null)
     {
-        if (npc.HairFormId.HasValue)
-        {
-            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("HNAM", npc.HairFormId.Value));
-        }
-
-        if (npc.HairLength.HasValue)
-        {
-            subs.Add(NewRecordSubrecords.EncodeFloatSubrecord("LNAM", npc.HairLength.Value));
-        }
-
-        if (npc.EyesFormId.HasValue)
-        {
-            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("ENAM", npc.EyesFormId.Value));
-        }
-
-        if (npc.HairColor.HasValue)
-        {
-            subs.Add(NewRecordSubrecords.EncodeUInt32Subrecord("HCLR", npc.HairColor.Value));
-        }
-
-        if (npc.FaceGenGeometrySymmetric is { Length: 50 } fggs)
-        {
-            subs.Add(BuildFloatArraySubrecord("FGGS", fggs));
-        }
-
-        if (npc.FaceGenGeometryAsymmetric is { Length: 30 } fgga)
-        {
-            subs.Add(BuildFloatArraySubrecord("FGGA", fgga));
-        }
-
-        if (npc.FaceGenTextureSymmetric is { Length: 50 } fgts)
-        {
-            subs.Add(BuildFloatArraySubrecord("FGTS", fgts));
-        }
-    }
-
-    /// <summary>
-    ///     Encode a new NPC_ record from scratch. Includes EDID, FULL?, ACBS, RNAM (race),
-    ///     plus optional FormID / faction / spell / inventory / package / AI subrecords.
-    ///     v5 defers DATA + DNAM (NPC_-specific byte layouts not verified) and FaceGen morphs.
-    /// </summary>
-    internal static EncodedRecord EncodeNew(NpcRecord npc)
-    {
-        var subs = new List<EncodedSubrecord>();
-        var warnings = new List<string>();
-
-        // v22: GECK and in-game tooltips show the FormID as the NPC's name when the EDID
-        // is empty, which leaves the user without a searchable handle in the Object Window.
-        // Synthesize one from the captured FullName (preferred) or fall back to a stable
-        // FormID-suffixed prefix so the NPC is at least listable and sortable.
-        var editorId = !string.IsNullOrEmpty(npc.EditorId)
-            ? npc.EditorId
-            : SynthesizeEditorId(npc);
-        subs.Add(NewRecordSubrecords.EncodeStringSubrecord("EDID", editorId));
-        if (string.IsNullOrEmpty(npc.EditorId))
-        {
-            warnings.Add(
-                $"New NPC 0x{npc.FormId:X8} had no EditorId in the DMP — synthesized '{editorId}'.");
-        }
-
-        if (!string.IsNullOrEmpty(npc.FullName))
-        {
-            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("FULL", npc.FullName));
-        }
-
-        if (npc.Stats is null)
-        {
-            warnings.Add($"New NPC 0x{npc.FormId:X8} has no ACBS — emitting default actor base stats.");
-            subs.Add(new EncodedSubrecord("ACBS", BuildDefaultAcbsSubrecord()));
-        }
-        else
-        {
-            // v22: force AutoCalcStats (bit 0x10) on new NPCs so the engine derives HP / AP
-            // from Level + Class + SPECIAL instead of trusting the captured runtime Flags.
-            // Without AutoCalc, prototype NPCs (e.g. Ulysses) spawn dead because the
-            // captured Flags is just 0x01 (Biped only) and the manual stats path computes
-            // 0 health when class derived-attributes don't match the captured level.
-            subs.Add(new EncodedSubrecord("ACBS", BuildAcbsSubrecord(npc.Stats, true)));
-        }
-
         // SNAM faction memberships — 8 bytes each: FormID + uint8 rank + 3 padding.
         foreach (var membership in npc.Factions)
         {
@@ -160,18 +76,14 @@ public sealed class NpcEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("VTCK", npc.VoiceType.Value));
         }
 
-        if (npc.Template.HasValue)
+        if (resolvedTemplate.HasValue)
         {
-            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("TPLT", npc.Template.Value));
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("TPLT", resolvedTemplate.Value));
         }
 
         if (npc.Race.HasValue)
         {
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("RNAM", npc.Race.Value));
-        }
-        else
-        {
-            warnings.Add($"New NPC 0x{npc.FormId:X8} has no race — racial traits will use engine default.");
         }
 
         // SPLO — spell/ability list. One subrecord per spell.
@@ -226,11 +138,72 @@ public sealed class NpcEncoder : IRecordEncoder
         {
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("CNAM", npc.Class.Value));
         }
+    }
 
-        // Appearance subrecords (HNAM/LNAM/ENAM/HCLR/FGGS/FGGA/FGTS) emit via the shared
-        // helper so override and new paths stay in lockstep.
-        AppendAppearanceSubrecords(npc, subs);
+    /// <summary>
+    ///     Emit the appearance subrecords (head parts / hair / eyes / hair color / FaceGen morphs)
+    ///     that a runtime NPC capture carries. Shared between override <see cref="Encode" /> and
+    ///     new-record <see cref="EncodeNew" />.
+    ///     Canonical order per FNVEdit wbNPC_:
+    ///     PNAM*(head parts, one per HDPT) → HNAM (hair) → LNAM (hair length) → ENAM (eyes) →
+    ///     HCLR (hair color) → FGGS/FGGA/FGTS (FaceGen morphs).
+    /// </summary>
+    private static void AppendAppearanceSubrecords(NpcRecord npc, List<EncodedSubrecord> subs)
+    {
+        // PNAM — head parts. One subrecord per HDPT FormID. Skip zero entries (placeholder).
+        // The renderer attaches each head part to the NPC's head node; missing PNAMs leave
+        // the head subgraph incomplete and can AV in BSFadeNode during render.
+        if (npc.HeadPartFormIds is { Count: > 0 })
+        {
+            foreach (var headPartFormId in npc.HeadPartFormIds)
+            {
+                if (headPartFormId == 0u)
+                {
+                    continue;
+                }
 
+                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("PNAM", headPartFormId));
+            }
+        }
+
+        if (npc.HairFormId.HasValue)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("HNAM", npc.HairFormId.Value));
+        }
+
+        if (npc.HairLength.HasValue)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFloatSubrecord("LNAM", npc.HairLength.Value));
+        }
+
+        if (npc.EyesFormId.HasValue)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("ENAM", npc.EyesFormId.Value));
+        }
+
+        if (npc.HairColor.HasValue)
+        {
+            subs.Add(NewRecordSubrecords.EncodeUInt32Subrecord("HCLR", npc.HairColor.Value));
+        }
+
+        if (npc.FaceGenGeometrySymmetric is { Length: 50 } fggs)
+        {
+            subs.Add(BuildFloatArraySubrecord("FGGS", fggs));
+        }
+
+        if (npc.FaceGenGeometryAsymmetric is { Length: 30 } fgga)
+        {
+            subs.Add(BuildFloatArraySubrecord("FGGA", fgga));
+        }
+
+        if (npc.FaceGenTextureSymmetric is { Length: 50 } fgts)
+        {
+            subs.Add(BuildFloatArraySubrecord("FGTS", fgts));
+        }
+    }
+
+    private static void AppendActorTailSubrecords(NpcRecord npc, List<EncodedSubrecord> subs)
+    {
         if (npc.CombatStyleFormId.HasValue)
         {
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("ZNAM", npc.CombatStyleFormId.Value));
@@ -238,10 +211,6 @@ public sealed class NpcEncoder : IRecordEncoder
 
         // NPC_ DATA — 11 bytes per FNV schema: int32 BaseHealth + 7 SPECIAL bytes
         // (Strength, Perception, Endurance, Charisma, Intelligence, Agility, Luck).
-        // BaseHealth resolves from: model-captured (on-disk DATA or runtime iHealth) →
-        // synthesized from SPECIAL Endurance + Stats Level via the CsvActorWriter formula.
-        // AutoCalcStats alone (v22) was insufficient; emitting a non-zero value gives the
-        // engine a usable fallback when AutoCalc doesn't fire for new NPCs.
         if (npc.SpecialStats is { Length: 7 } special)
         {
             var data = new byte[11];
@@ -259,15 +228,113 @@ public sealed class NpcEncoder : IRecordEncoder
             // bytes 14-27 = mod offsets (zero)
             subs.Add(new EncodedSubrecord("DNAM", dnam));
         }
+    }
 
-        // (FGGS/FGGA/FGTS now emitted by AppendAppearanceSubrecords above so override and
-        // new paths share the same FaceGen emit logic.)
+    /// <summary>
+    ///     ACBS TemplateFlags bit that enables inheriting traits (face / race / weight /
+    ///     height / hair / eyes / facegen) from the Template NPC. Without this bit the
+    ///     engine tries to load the new NPC's own FaceGen .NIF / .dds files, which we don't
+    ///     generate — the missing files leave a half-initialized scene graph that the
+    ///     renderer access-violates while walking. With this bit set, the engine inherits
+    ///     the template's renderable face/body and never tries to load our missing files.
+    /// </summary>
+    private const ushort TemplateFlagUseTraits = 0x0001;
 
-        if (npc.HeadPartFormIds is { Count: > 0 })
+    /// <summary>
+    ///     Encode a new NPC_ record from scratch. Includes EDID, FULL?, ACBS, RNAM (race),
+    ///     plus optional FormID / faction / spell / inventory / package / AI subrecords.
+    ///     The TPLT + ACBS TemplateFlags are forced to inherit-traits-from-template using
+    ///     the supplied lookups so the engine never tries to load our (missing) FaceGen.
+    /// </summary>
+    internal static EncodedRecord EncodeNew(
+        NpcRecord npc,
+        IReadOnlySet<uint>? masterFormIds = null,
+        IReadOnlyDictionary<uint, uint>? masterNpcByRace = null)
+    {
+        var subs = new List<EncodedSubrecord>();
+        var warnings = new List<string>();
+
+        // Pick a renderable master NPC to use as Template so the engine inherits its face/
+        // body instead of trying to load our missing FaceGen files. Strategy:
+        //  1. If npc.Template is already a master NPC, keep it.
+        //  2. Otherwise look up a master NPC of the same race.
+        //  3. If neither is available, fall through with template unset and warn — engine
+        //     will still try to render but at least won't have a TPLT loop into a dead NPC.
+        var resolvedTemplate = npc.Template;
+        var templateIsMaster = resolvedTemplate.HasValue
+                               && masterFormIds is not null
+                               && masterFormIds.Contains(resolvedTemplate.Value);
+        if (!templateIsMaster
+            && masterNpcByRace is not null
+            && npc.Race.HasValue
+            && masterNpcByRace.TryGetValue(npc.Race.Value, out var raceTemplate))
+        {
+            resolvedTemplate = raceTemplate;
+            templateIsMaster = true;
+        }
+
+        // v22: GECK and in-game tooltips show the FormID as the NPC's name when the EDID
+        // is empty, which leaves the user without a searchable handle in the Object Window.
+        // Synthesize one from the captured FullName (preferred) or fall back to a stable
+        // FormID-suffixed prefix so the NPC is at least listable and sortable.
+        var editorId = !string.IsNullOrEmpty(npc.EditorId)
+            ? npc.EditorId
+            : SynthesizeEditorId(npc);
+        subs.Add(NewRecordSubrecords.EncodeStringSubrecord("EDID", editorId));
+        if (string.IsNullOrEmpty(npc.EditorId))
         {
             warnings.Add(
-                $"New NPC 0x{npc.FormId:X8} has {npc.HeadPartFormIds.Count} head part(s) — head-part subrecord structure not verified, deferred.");
+                $"New NPC 0x{npc.FormId:X8} had no EditorId in the DMP — synthesized '{editorId}'.");
         }
+
+        if (!string.IsNullOrEmpty(npc.FullName))
+        {
+            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("FULL", npc.FullName));
+        }
+
+        // OR-in the Use-Traits template-flag bit when a renderable template is in scope.
+        // The renderer needs this to inherit the template's FaceGen instead of loading our
+        // missing _0.NIF / _0.dds files.
+        var extraTemplateFlags = templateIsMaster ? TemplateFlagUseTraits : (ushort)0;
+
+        if (npc.Stats is null)
+        {
+            warnings.Add($"New NPC 0x{npc.FormId:X8} has no ACBS — emitting default actor base stats.");
+            subs.Add(new EncodedSubrecord("ACBS", BuildDefaultAcbsSubrecord(extraTemplateFlags)));
+        }
+        else
+        {
+            // v22: force AutoCalcStats (bit 0x10) on new NPCs so the engine derives HP / AP
+            // from Level + Class + SPECIAL instead of trusting the captured runtime Flags.
+            // Without AutoCalc, prototype NPCs (e.g. Ulysses) spawn dead because the
+            // captured Flags is just 0x01 (Biped only) and the manual stats path computes
+            // 0 health when class derived-attributes don't match the captured level.
+            subs.Add(new EncodedSubrecord("ACBS",
+                BuildAcbsSubrecord(npc.Stats, true, extraTemplateFlags)));
+        }
+
+        if (templateIsMaster && resolvedTemplate.HasValue && resolvedTemplate.Value != npc.Template)
+        {
+            warnings.Add(
+                $"New NPC 0x{npc.FormId:X8} template retargeted from " +
+                $"0x{npc.Template ?? 0u:X8} to master 0x{resolvedTemplate.Value:X8} " +
+                "(same race) — avoids missing-FaceGen render crash.");
+        }
+
+        if (!npc.Race.HasValue)
+        {
+            warnings.Add($"New NPC 0x{npc.FormId:X8} has no race — racial traits will use engine default.");
+        }
+
+        AppendActorGameplaySubrecords(npc, subs, resolvedTemplate);
+
+        // Appearance subrecords (HNAM/LNAM/ENAM/HCLR/FGGS/FGGA/FGTS) emit via the shared
+        // helper so override and new paths stay in lockstep.
+        AppendAppearanceSubrecords(npc, subs);
+        AppendActorTailSubrecords(npc, subs);
+
+        // FGGS/FGGA/FGTS and PNAM (head parts) now emitted by AppendAppearanceSubrecords
+        // above so override and new paths share the same FaceGen / head-part emit logic.
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
     }
@@ -301,7 +368,10 @@ public sealed class NpcEncoder : IRecordEncoder
         return new EncodedSubrecord(signature, bytes);
     }
 
-    private static byte[] BuildAcbsSubrecord(ActorBaseSubrecord s, bool forceAutoCalc = false)
+    private static byte[] BuildAcbsSubrecord(
+        ActorBaseSubrecord s,
+        bool forceAutoCalc = false,
+        ushort extraTemplateFlags = 0)
     {
         // ACBS Flags bits (per FlagRegistry.ActorBaseFlags / fopdoc):
         //   0x01=Female, 0x02=Essential, 0x04=IsCharGenFacePreset, 0x08=Respawn,
@@ -331,16 +401,17 @@ public sealed class NpcEncoder : IRecordEncoder
         SubrecordEncoder.WriteUInt16(acbs, 14, s.SpeedMultiplier == 0 ? (ushort)100 : s.SpeedMultiplier);
         SubrecordEncoder.WriteFloat(acbs, 16, s.KarmaAlignment);
         SubrecordEncoder.WriteInt16(acbs, 20, s.DispositionBase);
-        SubrecordEncoder.WriteUInt16(acbs, 22, s.TemplateFlags);
+        SubrecordEncoder.WriteUInt16(acbs, 22, (ushort)(s.TemplateFlags | extraTemplateFlags));
         return acbs;
     }
 
-    private static byte[] BuildDefaultAcbsSubrecord()
+    private static byte[] BuildDefaultAcbsSubrecord(ushort extraTemplateFlags = 0)
     {
         // FNV engine defaults when ACBS data is missing: SpeedMult=100, Level=1, others zero.
         var acbs = new byte[24];
         SubrecordEncoder.WriteInt16(acbs, 8, 1);
         SubrecordEncoder.WriteUInt16(acbs, 14, 100);
+        SubrecordEncoder.WriteUInt16(acbs, 22, extraTemplateFlags);
         return acbs;
     }
 

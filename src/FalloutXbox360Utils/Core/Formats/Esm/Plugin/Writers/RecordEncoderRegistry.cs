@@ -301,6 +301,52 @@ public sealed class RecordEncoderRegistry
     }
 
     /// <summary>
+    ///     Builds a registry for v23 — closes encoder coverage so every record type with a
+    ///     runtime reader can be emitted to the output ESP. Adds 17 type signatures:
+    ///     ECZN, MICN, VTYP, CCRD, INGR, LSCT, IDLE, IPCT, HDPT, CPTH, ALOC, DEBR, REGN
+    ///     (13 new encoders) plus the four survival-stage signatures (RADS/DEHY/HUNG/SLPD)
+    ///     served by a single shared encoder. REGN further captures its RDAT region-data
+    ///     blocks + RPLI/RPLD boundary polygons as opaque-byte payloads for full round-trip
+    ///     (parser at WorldRecordHandler.ParseRegionFromAccessor).
+    ///     Still deferred:
+    ///     - CDCK — parser doesn't enumerate CNTO cards into the model.
+    ///     - NAVI — global pathfinding lookup table; master FNV.esm's NAVI covers every vanilla
+    ///       navmesh, and the DMP→ESP pipeline emits NAVM records as overrides of master,
+    ///       never as new. Omitting NAVI is therefore safe under current scope. Full NAVI
+    ///       support would require reverse-engineering NVMI/NVCI binary layout (undocumented)
+    ///       and recovering potentially-uninitialized engine state from the DMP. Revisit only
+    ///       if the converter ever adds new NAVM records that need to appear in the navmesh
+    ///       info map.
+    /// </summary>
+    public static RecordEncoderRegistry CreateV23Default()
+    {
+        var registry = CreateV22Default();
+        registry.RegisterAll(
+            new EczEncoder(),
+            new MicnEncoder(),
+            new VtypEncoder(),
+            new CcrdEncoder(),
+            new IngrEncoder(),
+            new LsctEncoder(),
+            new IdleEncoder(),
+            new IpctEncoder(),
+            new HdptEncoder(),
+            new CpthEncoder(),
+            new AlocEncoder(),
+            new DebrEncoder(),
+            new RegnEncoder());
+
+        // SurvivalStageEncoder declares "RADS" as its RecordType; register it explicitly under
+        // the other three survival signatures so override-path lookups resolve.
+        var survival = new SurvivalStageEncoder();
+        registry.Register(survival);
+        registry.Register("DEHY", survival);
+        registry.Register("HUNG", survival);
+        registry.Register("SLPD", survival);
+        return registry;
+    }
+
+    /// <summary>
     ///     Returns true if the record type is a placed-reference type that lives inside a
     ///     parent CELL's child GRUP. These types are excluded from top-level GRUP emission and
     ///     are routed through the cell-children pipeline instead.

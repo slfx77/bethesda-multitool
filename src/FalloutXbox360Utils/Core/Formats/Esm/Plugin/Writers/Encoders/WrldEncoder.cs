@@ -7,11 +7,13 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     This emits only the worldspace header subrecords — child CELLs flow through the
 ///     existing cell-children pipeline ([CellEncoder.cs](CellEncoder.cs)), not via this
 ///     encoder. v18 supplies the WRLD header so DMP-only worldspaces can be created.
-///     fopdoc canonical order:
-///     EDID, FULL?, XEZN?, WNAM?(parent), PNAM?(parent use flags, 2B), CNAM?(climate),
-///     NAM2?(water), ICON?(map icon — not modeled), MNAM?(16B world map data),
-///     DATA?(1B flags), NAM0?(8B bounds min), NAM9?(8B bounds max),
-///     ONAM?(12B map-offset data), INAM?(image space), ZNAM?(music type), DNAM?(8B heights).
+///     FNVEdit canonical order (wbWRLD, confirmed against master WastelandNV):
+///     EDID, FULL?, XEZN?, WNAM?(parent), PNAM?(parent use flags, 2B — only with WNAM),
+///     CNAM?(climate), NAM2?(water), [NAM3/NAM4 LOD-water — not modeled],
+///     DNAM?(8B default land+water heights), ICON?(map icon — not modeled),
+///     MNAM?(16B world map data), ONAM?(12B map-offset data), INAM?(image space),
+///     DATA?(1B flags), NAM0?(8B bounds min), NAM9?(8B bounds max), ZNAM?(music type).
+///     PNAM without a preceding WNAM is "unexpected" per FNVEdit — emit only when paired.
 /// </summary>
 public sealed class WrldEncoder : IRecordEncoder
 {
@@ -50,7 +52,9 @@ public sealed class WrldEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("WNAM", wrld.ParentWorldspaceFormId.Value));
         }
 
-        if (wrld.ParentUseFlags.HasValue)
+        // PNAM (Parent Use Flags) is only meaningful paired with a WNAM parent. FNVEdit
+        // flags lone PNAM as "unexpected (or out of order)".
+        if (wrld.ParentUseFlags.HasValue && wrld.ParentWorldspaceFormId.HasValue)
         {
             var pnam = new byte[2];
             SubrecordEncoder.WriteUInt16(pnam, 0, wrld.ParentUseFlags.Value);
@@ -67,9 +71,34 @@ public sealed class WrldEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("NAM2", wrld.WaterFormId.Value));
         }
 
+        // DNAM (default land + water heights) clusters with the water-related subrecords —
+        // master WastelandNV order is CNAM, NAM2, NAM3, NAM4, DNAM, ICON, MNAM. We don't
+        // emit NAM3/NAM4/ICON, so DNAM lands directly between NAM2 and MNAM.
+        if (wrld.DefaultLandHeight.HasValue || wrld.DefaultWaterHeight.HasValue)
+        {
+            var dnam = new byte[8];
+            SubrecordEncoder.WriteFloat(dnam, 0, wrld.DefaultLandHeight ?? 0f);
+            SubrecordEncoder.WriteFloat(dnam, 4, wrld.DefaultWaterHeight ?? 0f);
+            subs.Add(new EncodedSubrecord("DNAM", dnam));
+        }
+
         if (HasMapData(wrld))
         {
             subs.Add(new EncodedSubrecord("MNAM", BuildMnamSubrecord(wrld)));
+        }
+
+        if (HasMapOffset(wrld))
+        {
+            var onam = new byte[12];
+            SubrecordEncoder.WriteFloat(onam, 0, wrld.MapOffsetScaleX ?? 0f);
+            SubrecordEncoder.WriteFloat(onam, 4, wrld.MapOffsetScaleY ?? 0f);
+            SubrecordEncoder.WriteFloat(onam, 8, wrld.MapOffsetZ ?? 0f);
+            subs.Add(new EncodedSubrecord("ONAM", onam));
+        }
+
+        if (wrld.ImageSpaceFormId.HasValue)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("INAM", wrld.ImageSpaceFormId.Value));
         }
 
         if (wrld.Flags.HasValue)
@@ -93,31 +122,9 @@ public sealed class WrldEncoder : IRecordEncoder
             subs.Add(new EncodedSubrecord("NAM9", nam9));
         }
 
-        if (HasMapOffset(wrld))
-        {
-            var onam = new byte[12];
-            SubrecordEncoder.WriteFloat(onam, 0, wrld.MapOffsetScaleX ?? 0f);
-            SubrecordEncoder.WriteFloat(onam, 4, wrld.MapOffsetScaleY ?? 0f);
-            SubrecordEncoder.WriteFloat(onam, 8, wrld.MapOffsetZ ?? 0f);
-            subs.Add(new EncodedSubrecord("ONAM", onam));
-        }
-
-        if (wrld.ImageSpaceFormId.HasValue)
-        {
-            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("INAM", wrld.ImageSpaceFormId.Value));
-        }
-
         if (wrld.MusicTypeFormId.HasValue)
         {
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("ZNAM", wrld.MusicTypeFormId.Value));
-        }
-
-        if (wrld.DefaultLandHeight.HasValue || wrld.DefaultWaterHeight.HasValue)
-        {
-            var dnam = new byte[8];
-            SubrecordEncoder.WriteFloat(dnam, 0, wrld.DefaultLandHeight ?? 0f);
-            SubrecordEncoder.WriteFloat(dnam, 4, wrld.DefaultWaterHeight ?? 0f);
-            subs.Add(new EncodedSubrecord("DNAM", dnam));
         }
 
         if (wrld.Cells.Count > 0)

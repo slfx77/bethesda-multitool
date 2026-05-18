@@ -6,7 +6,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
 ///     Encodes a <see cref="WeaponRecord" /> as PC-format WEAP subrecord bytes.
-///     v1 emits DATA (15 bytes) only. DNAM (204 bytes), CRDT, ETYP, ENAM, etc. are retained
+///     v1 emits DATA (15 bytes) only. DNAM (204 bytes), CRDT, ETYP, NAM0, etc. are retained
 ///     from the source ESM — those subrecords contain many fields the WeaponRecord model does
 ///     not enumerate, so reconstructing them risks corrupting unmapped bytes.
 ///     DATA layout: int32 Value(0) + int32 Health(4) + float Weight(8) + int16 Damage(12) + uint8 ClipSize(14).
@@ -27,9 +27,11 @@ public sealed class WeapEncoder : IRecordEncoder
     }
 
     /// <summary>
-    ///     Encode a new WEAP record from scratch. fopdoc canonical order:
-    ///     EDID, OBND?, FULL?, MODL?, ICON?, MICO?, DATA, DNAM. ETYP/ENAM/CRDT/SCRI are
-    ///     deferred — model exposes them as enums/derived values rather than raw FormIDs.
+    ///     Encode a new WEAP record from scratch. FNV master canonical order (confirmed
+    ///     against FalloutNV.esm):
+    ///     EDID, OBND?, FULL?, MODL?, MODT?, ICON?, MICO?, NAM0?(ammo), REPL?, ETYP?,
+    ///     DATA, DNAM, CRDT?, INAM?, [WNAM + WNM1-7/MWD1-7], VATS?. SCRI is deferred — the
+    ///     WeaponRecord model lacks a Script field.
     /// </summary>
     /// <remarks>
     ///     DNAM (204 bytes) is emitted with all model-covered fields. Fields the model doesn't
@@ -79,17 +81,12 @@ public sealed class WeapEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MICO", weap.MessageIconPath));
         }
 
-        // ETYP — 4-byte int32 (enum -1..13). Emit when not None, after FULL/MODL.
-        // Despite the schema registering ETYP as a FormID type for endian-swap purposes,
-        // FNV's parser reads it as int32 — see WeaponRecordHandler.cs:313-320.
-        if (weap.EquipmentType != EquipmentType.None)
-        {
-            subs.Add(NewRecordSubrecords.EncodeInt32Subrecord("ETYP", (int)weap.EquipmentType));
-        }
-
+        // FNV master canonical order (confirmed against FalloutNV.esm Weap10mmPistol):
+        // NAM0 (ammo FormID) → REPL (repair list) → ETYP (equipment type). FNVEdit treats
+        // ENAM as legacy F3/Oblivion and flags it as "unexpected" in FNV WEAP records.
         if (weap.AmmoFormId.HasValue)
         {
-            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("ENAM", weap.AmmoFormId.Value));
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("NAM0", weap.AmmoFormId.Value));
         }
 
         if (weap.RepairItemListFormId.HasValue)
@@ -97,8 +94,24 @@ public sealed class WeapEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("REPL", weap.RepairItemListFormId.Value));
         }
 
+        // ETYP — 4-byte int32 (enum -1..13). Emit when not None.
+        // Despite the schema registering ETYP as a FormID type for endian-swap purposes,
+        // FNV's parser reads it as int32 — see WeaponRecordHandler.cs:313-320.
+        if (weap.EquipmentType != EquipmentType.None)
+        {
+            subs.Add(NewRecordSubrecords.EncodeInt32Subrecord("ETYP", (int)weap.EquipmentType));
+        }
+
         subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(weap)));
         subs.Add(new EncodedSubrecord("DNAM", BuildDnamSubrecord(weap)));
+
+        // CRDT — critical-hit data (16 bytes). Master canonical order has CRDT directly
+        // after DNAM and before VATS. Emit only when the model carries non-default values
+        // to avoid bloating new WEAPs that don't need a custom crit.
+        if (weap.CriticalDamage != 0 || weap.CriticalChance != 0f || weap.CriticalEffectFormId.HasValue)
+        {
+            subs.Add(new EncodedSubrecord("CRDT", BuildCrdtSubrecord(weap)));
+        }
 
         if (weap.ImpactDataSetFormId.HasValue)
         {
@@ -115,6 +128,30 @@ public sealed class WeapEncoder : IRecordEncoder
         }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
+    }
+
+    /// <summary>
+    ///     Build the CRDT (Critical Hit Data) subrecord. FNV layout (16 bytes), confirmed
+    ///     against master FalloutNV.esm Weap10mmPistol CRDT block at offset 0x85F420:
+    ///     <list type="bullet">
+    ///         <item>uint16 CritDamage (bytes 0-1)</item>
+    ///         <item>uint16 Unused (bytes 2-3)</item>
+    ///         <item>float CritPercentMult (bytes 4-7)</item>
+    ///         <item>uint8 CritFlags (byte 8) — bit 0 = "On Death"</item>
+    ///         <item>uint8[3] Unused (bytes 9-11)</item>
+    ///         <item>FormID CritEffect (bytes 12-15)</item>
+    ///     </list>
+    /// </summary>
+    private static byte[] BuildCrdtSubrecord(WeaponRecord weap)
+    {
+        var data = new byte[16];
+        SubrecordEncoder.WriteInt16(data, 0, weap.CriticalDamage);
+        // bytes 2-3 unused (zero)
+        SubrecordEncoder.WriteFloat(data, 4, weap.CriticalChance);
+        // byte 8 = CritFlags ("On Death" not modeled, default 0)
+        // bytes 9-11 unused (zero)
+        SubrecordEncoder.WriteFormId(data, 12, weap.CriticalEffectFormId ?? 0u);
+        return data;
     }
 
     private static byte[] BuildVatsSubrecord(VatsAttackData vats)

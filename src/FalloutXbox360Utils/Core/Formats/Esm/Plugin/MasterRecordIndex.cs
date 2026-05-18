@@ -1,4 +1,8 @@
+using System.Buffers.Binary;
+
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin;
+
+internal sealed record MasterChildLocation(uint CellFormId, int GroupType, string RecordType);
 
 internal sealed record MasterRecordIndex
 {
@@ -8,6 +12,7 @@ internal sealed record MasterRecordIndex
     public required Dictionary<string, HashSet<uint>> FormIdsByType { get; init; }
     public required Dictionary<string, Dictionary<string, uint>> EditorIdToFormIdByType { get; init; }
     public required Dictionary<string, Dictionary<string, List<uint>>> StemToFormIdsByType { get; init; }
+    public required Dictionary<uint, MasterChildLocation> ChildLocations { get; init; }
     public required Dictionary<uint, uint> RefToCell { get; init; }
     public required Dictionary<uint, List<uint>> NavmsByCell { get; init; }
     public required Dictionary<uint, List<uint>> LandsByCell { get; init; }
@@ -21,6 +26,7 @@ internal sealed record MasterRecordIndex
             .Where(r => r.Header.Signature != "TES4")
             .ToDictionary(r => r.Header.FormId);
         var editorIdsByType = BuildEditorIdLookup(records);
+        var childLocations = BuildChildRecordLocationIndex(records, grupHeaders);
 
         return new MasterRecordIndex
         {
@@ -36,9 +42,10 @@ internal sealed record MasterRecordIndex
                     StringComparer.Ordinal),
             EditorIdToFormIdByType = editorIdsByType,
             StemToFormIdsByType = BuildStemLookup(editorIdsByType),
-            RefToCell = BuildChildRecordToCellIndex(records),
-            NavmsByCell = BuildChildRecordByCellIndex(records, "NAVM"),
-            LandsByCell = BuildChildRecordByCellIndex(records, "LAND"),
+            ChildLocations = childLocations,
+            RefToCell = BuildChildRecordToCellIndex(childLocations),
+            NavmsByCell = BuildChildRecordByCellIndex(childLocations, "NAVM"),
+            LandsByCell = BuildChildRecordByCellIndex(childLocations, "LAND"),
             CellContexts = PcEsmCellContextIndex.Build(records.ToList(), grupHeaders)
         };
     }
@@ -103,58 +110,91 @@ internal sealed record MasterRecordIndex
         return stemLookup;
     }
 
-    private static Dictionary<uint, uint> BuildChildRecordToCellIndex(IReadOnlyList<ParsedMainRecord> records)
+    private static Dictionary<uint, MasterChildLocation> BuildChildRecordLocationIndex(
+        IReadOnlyList<ParsedMainRecord> records,
+        IReadOnlyList<GrupHeaderInfo> grupHeaders)
     {
-        var refToCell = new Dictionary<uint, uint>();
-        uint? currentCell = null;
-
-        foreach (var record in records.OrderBy(r => r.Offset))
+        var locations = new Dictionary<uint, MasterChildLocation>();
+        var events = new List<(long Offset, GrupHeaderInfo? Grup, ParsedMainRecord? Record)>(
+            grupHeaders.Count + records.Count);
+        events.AddRange(grupHeaders.Select(g => (g.Offset, (GrupHeaderInfo?)g, (ParsedMainRecord?)null)));
+        events.AddRange(records.Select(r => (r.Offset, (GrupHeaderInfo?)null, (ParsedMainRecord?)r)));
+        events.Sort(static (left, right) =>
         {
-            switch (record.Header.Signature)
+            var offsetCompare = left.Offset.CompareTo(right.Offset);
+            if (offsetCompare != 0)
             {
-                case "CELL":
-                    currentCell = record.Header.FormId;
-                    break;
-                case "REFR" or "ACHR" or "ACRE":
-                    if (currentCell.HasValue)
-                    {
-                        refToCell[record.Header.FormId] = currentCell.Value;
-                    }
-
-                    break;
+                return offsetCompare;
             }
+
+            return left.Grup is not null ? -1 : 1;
+        });
+
+        var stack = new Stack<GrupHeaderInfo>();
+
+        foreach (var current in events)
+        {
+            while (stack.Count > 0 && current.Offset >= stack.Peek().Offset + stack.Peek().GroupSize)
+            {
+                stack.Pop();
+            }
+
+            if (current.Grup is not null)
+            {
+                stack.Push(current.Grup);
+                continue;
+            }
+
+            var record = current.Record!;
+            if (record.Header.Signature is not ("REFR" or "ACHR" or "ACRE" or "NAVM" or "LAND"))
+            {
+                continue;
+            }
+
+            var childGroup = stack.FirstOrDefault(static g => g.GroupType is 6 or 8 or 9 or 10);
+            if (childGroup is null || childGroup.Label.Length < 4)
+            {
+                continue;
+            }
+
+            var cellFormId = BinaryPrimitives.ReadUInt32LittleEndian(childGroup.Label);
+            locations[record.Header.FormId] = new MasterChildLocation(
+                cellFormId,
+                childGroup.GroupType,
+                record.Header.Signature);
         }
 
-        return refToCell;
+        return locations;
+    }
+
+    private static Dictionary<uint, uint> BuildChildRecordToCellIndex(
+        IReadOnlyDictionary<uint, MasterChildLocation> childLocations)
+    {
+        return childLocations
+            .Where(kvp => kvp.Value.RecordType is "REFR" or "ACHR" or "ACRE")
+            .ToDictionary(kvp => kvp.Key, kvp => kvp.Value.CellFormId);
     }
 
     private static Dictionary<uint, List<uint>> BuildChildRecordByCellIndex(
-        IReadOnlyList<ParsedMainRecord> records,
+        IReadOnlyDictionary<uint, MasterChildLocation> childLocations,
         string childSignature)
     {
         var recordsByCell = new Dictionary<uint, List<uint>>();
-        uint? currentCell = null;
 
-        foreach (var record in records.OrderBy(r => r.Offset))
+        foreach (var (formId, location) in childLocations)
         {
-            if (record.Header.Signature == "CELL")
-            {
-                currentCell = record.Header.FormId;
-                continue;
-            }
-
-            if (record.Header.Signature != childSignature || !currentCell.HasValue)
+            if (location.RecordType != childSignature)
             {
                 continue;
             }
 
-            if (!recordsByCell.TryGetValue(currentCell.Value, out var list))
+            if (!recordsByCell.TryGetValue(location.CellFormId, out var list))
             {
                 list = [];
-                recordsByCell[currentCell.Value] = list;
+                recordsByCell[location.CellFormId] = list;
             }
 
-            list.Add(record.Header.FormId);
+            list.Add(formId);
         }
 
         return recordsByCell;

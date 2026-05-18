@@ -63,6 +63,10 @@ internal sealed class CreatureRecordHandler(RecordParserContext context) : Recor
         var factions = new List<FactionMembership>();
         var spells = new List<uint>();
         var packages = new List<uint>();
+        byte[]? modelFilesRaw = null;
+        byte[]? textureFilesRaw = null;
+        byte[]? animationFilesRaw = null;
+        byte[]? animationNamesRaw = null;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -130,6 +134,18 @@ internal sealed class CreatureRecordHandler(RecordParserContext context) : Recor
                 case "AIDT" when sub.DataLength >= 12:
                     aiData = ActorRecordHandler.ParseAiData(subData, record.IsBigEndian);
                     break;
+                case "NIFZ":
+                    modelFilesRaw = subData.ToArray();
+                    break;
+                case "NIFT":
+                    textureFilesRaw = subData.ToArray();
+                    break;
+                case "KFFZ":
+                    animationFilesRaw = subData.ToArray();
+                    break;
+                case "KFNM":
+                    animationNamesRaw = subData.ToArray();
+                    break;
             }
         }
 
@@ -151,6 +167,10 @@ internal sealed class CreatureRecordHandler(RecordParserContext context) : Recor
             Factions = factions,
             Spells = spells,
             Packages = packages,
+            ModelFilesRaw = modelFilesRaw,
+            TextureFilesRaw = textureFilesRaw,
+            AnimationFilesRaw = animationFilesRaw,
+            AnimationNamesRaw = animationNamesRaw,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };

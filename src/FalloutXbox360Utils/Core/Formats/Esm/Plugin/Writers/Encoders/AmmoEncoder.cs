@@ -4,9 +4,15 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
 ///     Encodes an <see cref="AmmoRecord" /> as PC-format AMMO subrecord bytes.
-///     v1 emits DATA (13 bytes) only. DAT2 (FNV-specific 20-byte block with projectile/
-///     damage-mult/consumed-pct/value/weight) is retained from the source ESM because the
-///     parsed model does not capture damage-mult or consumed-percentage.
+///     Override path retains DAT2 from the source ESM verbatim. New-record path emits
+///     EDID, OBND?, FULL?, MODL?, MODT?, ICON?, MICO?, DATA. DAT2 (FNV-specific 20 bytes
+///     with projectiles-per-shot/projectile/damage-mult/consumed-pct/consumed-ammo) emit
+///     is still deferred — the model captures only the projectile FormID, and the parser
+///     probes multiple offsets to locate it (see
+///     <see cref="Parsing.Handlers.ConsumableRecordHandler.TryReadAmmoProjectileFromDat2" />)
+///     because the byte layout has never been pinned down. Round-tripping DAT2 requires
+///     verifying the layout against master FalloutNV.esm bytes and extending AmmoRecord
+///     with the missing fields.
 ///     DATA layout: float Speed(0) + uint8 Flags(4) + pad(5..7) + uint32 Value(8) + uint8 ClipRounds(12).
 /// </summary>
 public sealed class AmmoEncoder : IRecordEncoder

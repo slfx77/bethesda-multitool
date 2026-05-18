@@ -71,7 +71,10 @@ public class NewTopLevelRecordEncoderDispatcherTests
                     }
                 ]
             },
-            new NewTopLevelRecordEncodingContext(new HashSet<uint>(), new HashSet<uint> { 0xFF000801 }));
+            new NewTopLevelRecordEncodingContext(
+                new HashSet<uint>(),
+                new HashSet<uint> { 0xFF000801 },
+                new Dictionary<uint, uint>()));
 
         Assert.NotNull(encoded);
         Assert.Equal(["EDID", "ONAM", "DATA"], encoded.Subrecords.Select(s => s.Signature));
@@ -89,6 +92,9 @@ public class NewTopLevelRecordEncoderDispatcherTests
 
     private static NewTopLevelRecordEncodingContext EmptyContext()
     {
-        return new NewTopLevelRecordEncodingContext(new HashSet<uint>(), new HashSet<uint>());
+        return new NewTopLevelRecordEncodingContext(
+            new HashSet<uint>(),
+            new HashSet<uint>(),
+            new Dictionary<uint, uint>());
     }
 }

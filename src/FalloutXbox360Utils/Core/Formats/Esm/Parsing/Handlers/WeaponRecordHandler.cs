@@ -182,12 +182,15 @@ internal sealed class WeaponRecordHandler(RecordParserContext context) : RecordH
                 case "OBND" when sub.DataLength == 12:
                     bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
                     break;
-                case "ENAM" when sub.DataLength == 4:
-                    // FNV: ENAM = Ammo FormID (4 bytes)
+                case "NAM0" when sub.DataLength == 4:
+                    // FNV: NAM0 = Ammo FormID (4 bytes). Confirmed against master FalloutNV.esm
+                    // Weap10mmPistol at offset 0x85F5AC. FNVEdit does not recognize ENAM in
+                    // FNV WEAP records — emission always uses NAM0 (see WeapEncoder.EncodeNew).
                     ammoFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
-                case "NAM0" when sub.DataLength == 4:
-                    // FO3: NAM0 = Ammo FormID (4 bytes) — FO3 uses NAM0 instead of ENAM for ammo
+                case "ENAM" when sub.DataLength == 4:
+                    // Legacy F3/Oblivion: ENAM = Ammo FormID. Kept here so Xbox-side prototype
+                    // dumps that still carry ENAM (older engine build) continue to parse.
                     ammoFormId ??= RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
                 case "DATA" when sub.DataLength >= 15:

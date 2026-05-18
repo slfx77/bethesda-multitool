@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using Xunit;
@@ -275,6 +276,51 @@ public class BugfixEncoderTests
 
         var encoded = NpcEncoder.EncodeNew(npc);
         Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "DATA");
+    }
+
+    [Fact]
+    public void NpcEncoder_EncodeNew_WithMasterRaceTemplate_IsRenderableTemplateSafe()
+    {
+        var npc = new NpcRecord
+        {
+            FormId = 0x800,
+            EditorId = "Npc",
+            Race = 0x33184,
+            Stats = MakeMinimalAcbs()
+        };
+
+        var encoded = NpcEncoder.EncodeNew(
+            npc,
+            new HashSet<uint> { 0x123456 },
+            new Dictionary<uint, uint> { [0x33184] = 0x123456 });
+
+        Assert.True(PluginBuilder.NpcHasRenderableTemplate(encoded.Subrecords));
+        var tplt = Assert.Single(encoded.Subrecords, s => s.Signature == "TPLT");
+        Assert.Equal(0x123456u, BinaryPrimitives.ReadUInt32LittleEndian(tplt.Bytes));
+        var acbs = Assert.Single(encoded.Subrecords, s => s.Signature == "ACBS");
+        Assert.Equal(0x0001, BinaryPrimitives.ReadUInt16LittleEndian(acbs.Bytes.AsSpan(22, 2)));
+    }
+
+    [Fact]
+    public void NpcEncoder_EncodeNew_WithoutMasterTemplate_IsRenderableTemplateUnsafe()
+    {
+        var npc = new NpcRecord
+        {
+            FormId = 0x800,
+            EditorId = "Npc",
+            Race = 0x33184,
+            Stats = MakeMinimalAcbs()
+        };
+
+        var encoded = NpcEncoder.EncodeNew(
+            npc,
+            new HashSet<uint>(),
+            new Dictionary<uint, uint>());
+
+        Assert.False(PluginBuilder.NpcHasRenderableTemplate(encoded.Subrecords));
+        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "TPLT");
+        var acbs = Assert.Single(encoded.Subrecords, s => s.Signature == "ACBS");
+        Assert.Equal(0x0000, BinaryPrimitives.ReadUInt16LittleEndian(acbs.Bytes.AsSpan(22, 2)));
     }
 
     private static ActorBaseSubrecord MakeMinimalAcbs()

@@ -345,7 +345,8 @@ public class V17EncoderTests
 
         var encoded = PerkEncoder.EncodeNew(perk);
         var sigs = encoded.Subrecords.Select(s => s.Signature).ToList();
-        Assert.Equal(["EDID", "FULL", "DESC", "ICON", "DATA", "CTDA"], sigs);
+        // FNVEdit wbPERK canonical order: top-level CTDA conditions precede DATA.
+        Assert.Equal(["EDID", "FULL", "DESC", "ICON", "CTDA", "DATA"], sigs);
 
         var data = Assert.Single(encoded.Subrecords, s => s.Signature == "DATA").Bytes;
         Assert.Equal(5, data.Length);
@@ -362,8 +363,10 @@ public class V17EncoderTests
     }
 
     [Fact]
-    public void PerkEncoder_EncodeNew_WarnsOnPrkeEntriesDeferred()
+    public void PerkEncoder_EncodeNew_EmitsPrkePrkfPerEntry()
     {
+        // Entry-point perk (type 2) with no function — should produce PRKE, DATA, PRKF
+        // (no EPFT/EPFD since FunctionType is null).
         var perk = new PerkRecord
         {
             FormId = 0x2800,
@@ -372,7 +375,14 @@ public class V17EncoderTests
         };
 
         var encoded = PerkEncoder.EncodeNew(perk);
-        Assert.Contains(encoded.Warnings, w => w.Contains("entry chain") && w.Contains("deferred"));
+        var sigs = encoded.Subrecords.Select(s => s.Signature).ToList();
+
+        Assert.Contains("PRKE", sigs);
+        Assert.Contains("PRKF", sigs);
+        // PRKE should precede PRKF.
+        Assert.True(sigs.IndexOf("PRKE") < sigs.IndexOf("PRKF"));
+        // No "deferred" warning should be emitted now that entries are written.
+        Assert.DoesNotContain(encoded.Warnings, w => w.Contains("deferred"));
     }
 
     // ====================================================================================

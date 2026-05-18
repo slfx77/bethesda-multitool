@@ -11,6 +11,17 @@ internal static class ReferenceBaseRemapper
         "NOTE", "BOOK", "TERM", "TXST"
     };
 
+    public static bool CanPlacedRecordUseBaseType(string placedRecordType, string baseRecordType)
+    {
+        return placedRecordType switch
+        {
+            "ACHR" => baseRecordType == "NPC_",
+            "ACRE" => baseRecordType == "CREA",
+            "REFR" => baseRecordType is not ("NPC_" or "CREA"),
+            _ => false
+        };
+    }
+
     public static Dictionary<uint, string> BuildDmpBaseFormIdToRecordType(RecordCollection dmpRecords)
     {
         var index = new Dictionary<uint, string>();

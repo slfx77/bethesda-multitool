@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 using Xunit;
 
@@ -39,29 +40,39 @@ public class PlacedRefEncoderTests
     }
 
     [Fact]
-    public void RefrEncoder_DefaultScale_EmitsDataOnly()
+    public void RefrEncoder_DefaultScale_EmitsNameXsclAndData()
     {
-        // Default scale → XSCL omitted; DATA still emits with the DMP position.
-        var refr = new PlacedReference { FormId = 1, X = 7.0f, Scale = 1.0f };
+        // Default scale must still emit XSCL so override merges can clear a non-default
+        // master scale back to the DMP-observed runtime value.
+        var refr = new PlacedReference
+        {
+            FormId = 1,
+            BaseFormId = 0x0000CAFE,
+            X = 7.0f,
+            Scale = 1.0f
+        };
 
         var encoded = new RefrEncoder().Encode(refr);
 
-        var data = Assert.Single(encoded.Subrecords);
-        Assert.Equal("DATA", data.Signature);
-        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "XSCL");
+        Assert.Equal(3, encoded.Subrecords.Count);
+        Assert.Equal("NAME", encoded.Subrecords[0].Signature);
+        Assert.Equal(0x0000CAFEu, BinaryPrimitives.ReadUInt32LittleEndian(encoded.Subrecords[0].Bytes));
+        Assert.Equal("XSCL", encoded.Subrecords[1].Signature);
+        Assert.Equal(1.0f, BinaryPrimitives.ReadSingleLittleEndian(encoded.Subrecords[1].Bytes));
+        Assert.Equal("DATA", encoded.Subrecords[2].Signature);
     }
 
     [Fact]
-    public void RefrEncoder_NonDefaultScale_EmitsDataAndXscl()
+    public void RefrEncoder_NonDefaultScale_EmitsXsclBeforeData()
     {
         var refr = new PlacedReference { FormId = 1, Scale = 2.5f };
 
         var encoded = new RefrEncoder().Encode(refr);
 
         Assert.Equal(2, encoded.Subrecords.Count);
-        Assert.Equal("DATA", encoded.Subrecords[0].Signature);
-        Assert.Equal("XSCL", encoded.Subrecords[1].Signature);
-        Assert.Equal(2.5f, BinaryPrimitives.ReadSingleLittleEndian(encoded.Subrecords[1].Bytes));
+        Assert.Equal("XSCL", encoded.Subrecords[0].Signature);
+        Assert.Equal(2.5f, BinaryPrimitives.ReadSingleLittleEndian(encoded.Subrecords[0].Bytes));
+        Assert.Equal("DATA", encoded.Subrecords[1].Signature);
     }
 
     [Fact]
@@ -97,5 +108,24 @@ public class PlacedRefEncoderTests
             Assert.Equal(refrOut.Subrecords[i].Signature, acreOut.Subrecords[i].Signature);
             Assert.Equal(refrOut.Subrecords[i].Bytes, acreOut.Subrecords[i].Bytes);
         }
+    }
+
+    [Theory]
+    [InlineData("ACRE", "CREA", true)]
+    [InlineData("ACRE", "ARMO", false)]
+    [InlineData("ACHR", "NPC_", true)]
+    [InlineData("ACHR", "CREA", false)]
+    [InlineData("ACHR", "ARMO", false)]
+    [InlineData("REFR", "ARMO", true)]
+    [InlineData("REFR", "IDLM", true)]
+    [InlineData("REFR", "NPC_", false)]
+    [InlineData("REFR", "CREA", false)]
+    public void PlacedBaseTypeGate_RejectsActorRefsPointingAtNonActorBases(
+        string placedRecordType,
+        string baseRecordType,
+        bool expected)
+    {
+        Assert.Equal(expected,
+            ReferenceBaseRemapper.CanPlacedRecordUseBaseType(placedRecordType, baseRecordType));
     }
 }

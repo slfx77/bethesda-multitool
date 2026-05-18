@@ -63,18 +63,20 @@ public sealed class CellEncoder : IRecordEncoder
             subs.Add(new EncodedSubrecord("XCLC", xclc));
         }
 
-        // LTMP / LNAM — lighting template and inheritance flags. Both are typically present
-        // together; emit in canonical order (LTMP before LNAM).
+        // LTMP / LNAM — lighting template and inheritance flags. LNAM (inheritance flags) is
+        // only meaningful paired with LTMP; FNVEdit flags lone LNAM as "unexpected (or out of
+        // order)". Without an explicit LTMP, the cell inherits the worldspace default — that's
+        // the safe behavior, so we drop a stray LNAM rather than synthesize a zero LTMP.
         if (cell.LightingTemplateFormId.HasValue)
         {
             subs.Add(EncodeFormIdSubrecord("LTMP", cell.LightingTemplateFormId.Value));
-        }
 
-        if (cell.LightingTemplateInheritanceFlags.HasValue)
-        {
-            var lnam = new byte[4];
-            SubrecordEncoder.WriteUInt32(lnam, 0, cell.LightingTemplateInheritanceFlags.Value);
-            subs.Add(new EncodedSubrecord("LNAM", lnam));
+            if (cell.LightingTemplateInheritanceFlags.HasValue)
+            {
+                var lnam = new byte[4];
+                SubrecordEncoder.WriteUInt32(lnam, 0, cell.LightingTemplateInheritanceFlags.Value);
+                subs.Add(new EncodedSubrecord("LNAM", lnam));
+            }
         }
 
         if (ShouldEmitCellWater(cell, warnings))

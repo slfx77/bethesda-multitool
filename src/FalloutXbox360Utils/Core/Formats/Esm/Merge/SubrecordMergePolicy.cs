@@ -12,7 +12,8 @@ public sealed record SubrecordMergePolicy
     public static readonly SubrecordMergePolicy Default = new()
     {
         RetainFromEsm = new HashSet<string>(StringComparer.Ordinal),
-        AlwaysFromDmp = new HashSet<string>(StringComparer.Ordinal)
+        AlwaysFromDmp = new HashSet<string>(StringComparer.Ordinal),
+        DoNotAppendFromDmp = new HashSet<string>(StringComparer.Ordinal)
     };
 
     /// <summary>
@@ -29,6 +30,12 @@ public sealed record SubrecordMergePolicy
     public required IReadOnlySet<string> AlwaysFromDmp { get; init; }
 
     /// <summary>
+    ///     DMP subrecord signatures that should not be appended when the source ESM record has
+    ///     no matching slot or when that matching slot was intentionally retained from ESM.
+    /// </summary>
+    public required IReadOnlySet<string> DoNotAppendFromDmp { get; init; }
+
+    /// <summary>
     ///     Builds the v1 default policy mapping per-record-type ESM-retain rules.
     ///     For texture-mod-related records, MODT/MODS/MO2T/MO3T/MO4T/MO2S/MO3S/MO4S are retained
     ///     from the source ESM because the DMP doesn't carry PC-format texture hashes.
@@ -38,7 +45,7 @@ public sealed record SubrecordMergePolicy
         return recordType switch
         {
             "WEAP" or "ARMO" or "AMMO" or "MISC" or "KEYM" or "ALCH" or "BOOK"
-                or "CONT" or "NPC_" => new SubrecordMergePolicy
+                or "CONT" or "NPC_" or "CREA" => new SubrecordMergePolicy
                 {
                     RetainFromEsm = new HashSet<string>(StringComparer.Ordinal)
                     {
@@ -50,7 +57,29 @@ public sealed record SubrecordMergePolicy
                         // Damage modifier table is parsed from PC ESM only on this version.
                         "DMDT"
                     },
-                    AlwaysFromDmp = new HashSet<string>(StringComparer.Ordinal)
+                    AlwaysFromDmp = new HashSet<string>(StringComparer.Ordinal),
+                    DoNotAppendFromDmp = new HashSet<string>(StringComparer.Ordinal)
+                    {
+                        // COED (inventory item ownership/condition) is positionally paired with
+                        // its preceding CNTO. The merge engine appends unconsumed DMP subrecords
+                        // at the END of the stream, which produces an orphan COED far away from
+                        // any CNTO — FNVEdit flags this as out-of-order and the engine ignores
+                        // it (so the COED metadata wouldn't apply anyway). Drop it instead.
+                        "COED"
+                    }
+                },
+            "CELL" => new SubrecordMergePolicy
+                {
+                    RetainFromEsm = new HashSet<string>(StringComparer.Ordinal)
+                    {
+                        // Preserve master cell structure; runtime captures can misclassify interiors.
+                        "DATA", "XCLC"
+                    },
+                    AlwaysFromDmp = new HashSet<string>(StringComparer.Ordinal),
+                    DoNotAppendFromDmp = new HashSet<string>(StringComparer.Ordinal)
+                    {
+                        "DATA", "XCLC"
+                    }
                 },
             _ => Default
         };

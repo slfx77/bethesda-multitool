@@ -40,7 +40,10 @@ public sealed class ContEncoder : IRecordEncoder
 
         subs.Add(NewRecordSubrecords.EncodeStringSubrecord("EDID", cont.EditorId ?? string.Empty));
 
-        // ContainerRecord has no Bounds field — OBND not emitted.
+        if (cont.Bounds is not null)
+        {
+            subs.Add(NewRecordSubrecords.EncodeObndSubrecord(cont.Bounds));
+        }
 
         if (!string.IsNullOrEmpty(cont.FullName))
         {

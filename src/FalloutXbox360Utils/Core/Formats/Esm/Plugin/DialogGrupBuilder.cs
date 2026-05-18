@@ -1,12 +1,15 @@
+using System.Buffers.Binary;
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Schema;
 using FalloutXbox360Utils.Core.Formats.Esm.Merge;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 using FalloutXbox360Utils.Core.Formats.Esm.Reporting;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 
 /// <summary>
 ///     Builds the top-level DIAL GRUP with INFOs nested as type-7 "Topic Children" GRUPs
-///     under each DIAL. The fopdoc/Bethesda canonical layout is:
+///     under each DIAL. Canonical layout:
 ///     <code>
 ///         Top GRUP "DIAL" (type=0, label="DIAL"):
 ///           DIAL record (FormID = X)
@@ -18,26 +21,16 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 ///           Topic Children GRUP (type=7, label=Y):
 ///             ...
 ///     </code>
-///     The earlier pipeline emitted DIAL and INFO as two SEPARATE top-level GRUPs, which
-///     caused the FNV runtime to null-deref when walking the dialog tree from an INFO with
-///     a TPIC pointing to a non-existent topic. This builder fixes both the structural
-///     layout AND the TPIC remap so each new INFO points to its parent DIAL's
-///     freshly-allocated FormID.
-/// </summary>
-/// <summary>
-///     Bundle returned by <see cref="DialogGrupBuilder.BuildDialogSection" />. Carries the
-///     top-level DIAL GRUP bytes plus an optional placeholder QUST record that PluginBuilder
-///     must inject into the QUST GRUP (the placeholder DIAL needs a parent quest or the
-///     FNV runtime refuses to attach any INFOs to it).
+///     New DIALs get fresh allocator-issued FormIDs; their child INFOs have TPIC patched
+///     to that new ID so the runtime walks them as a coherent topic tree. INFOs pointing
+///     at master DIALs are dropped — nesting them requires emitting an override DIAL anchor
+///     record under the master ID, which this builder doesn't yet do. INFOs with a dangling
+///     or zero TPIC are dropped because the runtime null-derefs on dialog-tree walks.
 /// </summary>
 internal sealed record DialogSectionResult(byte[] DialogSection, byte[]? PlaceholderQustRecord);
 
 internal static class DialogGrupBuilder
 {
-    /// <summary>
-    ///     Build the dialog section bytes (top-level DIAL GRUP with nested INFO children).
-    ///     Returns an empty array when there's nothing to emit.
-    /// </summary>
     public static DialogSectionResult BuildDialogSection(
         IReadOnlyList<DialogTopicRecord> topics,
         IReadOnlyList<DialogueRecord> infos,
@@ -47,41 +40,146 @@ internal static class DialogGrupBuilder
         ConversionPipelineStats stats,
         IConversionProgressSink sink)
     {
-        // v20.7 baseline: drop ALL new DIAL+INFO records entirely. Six prior iterations of
-        // dialog fixes (proper type-7 GRUP nesting, placeholder DIAL/QUST, FormID validator,
-        // response placeholders, aggressive orphan stripping) all hit the same FalloutNV+
-        // 0x46025A crash. The v20.6 diagnostic confirmed even with orphans dropped, real
-        // new DIALs (e.g., QJMelissaOldManSaysHello) still crashed — even though their
-        // FormID refs all resolve to valid FNV records (VFreeformQuarryJunction quest,
-        // real NPCs). The DMP is from a Fallout NV PROTOTYPE BUILD where dialog structure
-        // for shared quests differed from the released version; emitting new DIALs that
-        // claim kinship to existing FNV quests breaks the runtime's dialog tree assembly.
-        //
-        // Override DIAL/INFO are unaffected (none of those exist in current DMP runs anyway).
-        // This trades all dialog content for a loadable ESP. A future v22+ feature can
-        // reintroduce dialog selectively (e.g., FO3 content copy, or only emit dialogs
-        // whose parent quest is also new in our plugin).
         var newTopics = topics.Where(t => !classifier.IsOverride(t.FormId)).ToList();
         var newInfos = infos.Where(i => !classifier.IsOverride(i.FormId)).ToList();
-
-        if (newTopics.Count > 0 || newInfos.Count > 0)
+        if (newTopics.Count == 0 && newInfos.Count == 0)
         {
-            sink.Warn("Building dialog section",
-                $"Skipping {newTopics.Count} new DIAL + {newInfos.Count} new INFO record(s) " +
-                "to avoid the dialog-tree-assembly crash in prototype-vs-vanilla quest conflicts. " +
-                "Override DIAL/INFO records (if any) pass through unchanged via the per-type pipeline.",
-                code: "dialog.skip-all-new");
-            foreach (var _ in newTopics)
+            return new DialogSectionResult([], null);
+        }
+
+        // Pass 1: allocate fresh FormIDs for every new DIAL so we can patch INFO.TPIC
+        // before encoding (the encoder writes TPIC verbatim from the model field).
+        var dialFormIdMap = new Dictionary<uint, uint>();
+        foreach (var topic in newTopics)
+        {
+            dialFormIdMap[topic.FormId] = allocator.Allocate();
+        }
+
+        var masterFormIdSet = masterFormIds as HashSet<uint> ?? new HashSet<uint>(masterFormIds);
+
+        // Group new INFOs by their EMITTED parent DIAL FormID. INFOs whose TPIC points at
+        // a master DIAL or at nothing are dropped — emitting them under a master-DIAL child
+        // GRUP requires an override DIAL anchor this builder doesn't yet emit, and a
+        // dangling TPIC null-derefs the dialog tree walker.
+        var infosByEmittedDial = new Dictionary<uint, List<DialogueRecord>>();
+        var droppedMasterDialInfos = 0;
+        var droppedOrphanInfos = 0;
+        foreach (var info in newInfos)
+        {
+            if (!info.TopicFormId.HasValue || info.TopicFormId.Value == 0)
             {
-                stats.IncrementSkipped("DIAL");
+                droppedOrphanInfos++;
+                continue;
             }
 
-            foreach (var _ in newInfos)
+            var topicId = info.TopicFormId.Value;
+            if (dialFormIdMap.TryGetValue(topicId, out var newDialId))
             {
-                stats.IncrementSkipped("INFO");
+                if (!infosByEmittedDial.TryGetValue(newDialId, out var list))
+                {
+                    list = [];
+                    infosByEmittedDial[newDialId] = list;
+                }
+
+                list.Add(info);
+            }
+            else if (masterFormIdSet.Contains(topicId))
+            {
+                droppedMasterDialInfos++;
+            }
+            else
+            {
+                droppedOrphanInfos++;
             }
         }
 
-        return new DialogSectionResult([], null);
+        using var stream = new MemoryStream();
+        var topLabel = "DIAL"u8.ToArray();
+        var topPos = WriteGrupHeader(stream, topLabel, 0);
+
+        var emittedDials = 0;
+        var emittedInfos = 0;
+        foreach (var topic in newTopics)
+        {
+            var newDialId = dialFormIdMap[topic.FormId];
+            var dialEncoded = DialEncoder.EncodeNew(topic);
+            if (dialEncoded.Subrecords.Count == 0)
+            {
+                stats.IncrementSkipped("DIAL");
+                continue;
+            }
+
+            var dialBytes = PluginRecordByteBuilder.BuildNewRecordBytes(
+                "DIAL", newDialId, flags: 0u, dialEncoded.Subrecords);
+            stream.Write(dialBytes);
+            stats.IncrementEmitted("DIAL");
+            stats.NewRecordsEmitted++;
+            emittedDials++;
+
+            if (!infosByEmittedDial.TryGetValue(newDialId, out var infosForDial) || infosForDial.Count == 0)
+            {
+                continue;
+            }
+
+            var childLabel = new byte[4];
+            BinaryPrimitives.WriteUInt32LittleEndian(childLabel, newDialId);
+            var childrenPos = WriteGrupHeader(stream, childLabel, 7);
+
+            foreach (var info in infosForDial)
+            {
+                var newInfoId = allocator.Allocate();
+                // Patch TPIC to the emitted DIAL FormID so the runtime walks the topic tree correctly.
+                var patched = info with { FormId = newInfoId, TopicFormId = newDialId };
+                var infoEncoded = InfoEncoder.EncodeNew(patched);
+                if (infoEncoded.Subrecords.Count == 0)
+                {
+                    stats.IncrementSkipped("INFO");
+                    continue;
+                }
+
+                var infoBytes = PluginRecordByteBuilder.BuildNewRecordBytes(
+                    "INFO", newInfoId, flags: 0u, infoEncoded.Subrecords);
+                stream.Write(infoBytes);
+                stats.IncrementEmitted("INFO");
+                stats.NewRecordsEmitted++;
+                emittedInfos++;
+            }
+
+            RecordHeaderProcessor.FinalizeGrupSize(stream, childrenPos);
+        }
+
+        if (emittedDials == 0)
+        {
+            // No DIALs survived — roll back the empty top-level GRUP header.
+            stream.SetLength(topPos);
+            sink.Info("Building dialog section",
+                $"No new DIAL records survived encoding. Dropped {droppedMasterDialInfos:N0} INFO(s) " +
+                $"with master-DIAL TPIC and {droppedOrphanInfos:N0} orphan INFO(s).",
+                code: "dialog.empty");
+            return new DialogSectionResult([], null);
+        }
+
+        RecordHeaderProcessor.FinalizeGrupSize(stream, topPos);
+
+        sink.Info("Building dialog section",
+            $"Emitted {emittedDials:N0} new DIAL + {emittedInfos:N0} new INFO record(s). " +
+            $"Dropped {droppedMasterDialInfos:N0} INFO(s) with master-DIAL TPIC and " +
+            $"{droppedOrphanInfos:N0} orphan INFO(s).",
+            code: "dialog.emitted");
+
+        return new DialogSectionResult(stream.ToArray(), null);
+    }
+
+    private static long WriteGrupHeader(Stream stream, byte[] label, int groupType)
+    {
+        var header = new GroupHeader
+        {
+            GroupSize = 0,
+            Label = label,
+            GroupType = groupType,
+            Stamp = 0,
+            Unknown = 0
+        };
+        return RecordHeaderProcessor.WriteGrupHeader(stream, header);
     }
 }

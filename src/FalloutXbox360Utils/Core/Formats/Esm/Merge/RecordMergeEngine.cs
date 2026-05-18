@@ -79,6 +79,11 @@ public static class RecordMergeEngine
             }
 
             var sub = dmpEncoded.Subrecords[i];
+            if (policy.DoNotAppendFromDmp.Contains(sub.Signature))
+            {
+                continue;
+            }
+
             SubrecordEncoder.WriteSubrecord(writer, sub.Signature, sub.Bytes);
             dmpSignaturesAppended.Add(sub.Signature);
         }

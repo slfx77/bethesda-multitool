@@ -112,6 +112,34 @@ public class RecordMergeEngineTests
         Assert.True(edidIdx < dataIdx);
     }
 
+    [Fact]
+    public void Merge_CellPolicy_PreservesMasterStructuralDataAndSkipsDmpOnlyXclc()
+    {
+        var esm = MakeEsmRecord("CELL",
+            ("EDID", new byte[] { (byte)'a', 0 }),
+            ("DATA", [0x21]));
+
+        var dmpEncoded = new EncodedRecord
+        {
+            Subrecords =
+            [
+                new EncodedSubrecord("DATA", [0x54]),
+                new EncodedSubrecord("XCLC", new byte[12])
+            ],
+            Warnings = []
+        };
+
+        var merge = RecordMergeEngine.Merge(esm, dmpEncoded, SubrecordMergePolicy.ForRecordType("CELL"));
+
+        Assert.DoesNotContain("DATA", merge.DmpSignaturesUsed);
+        Assert.Contains("DATA", merge.EsmSignaturesRetained);
+        Assert.DoesNotContain("DATA", merge.DmpSignaturesAppended);
+        Assert.DoesNotContain("XCLC", merge.DmpSignaturesAppended);
+
+        Assert.Equal([0x21], ReadFirstSubrecordPayload(merge.SubrecordBytes, "DATA"));
+        Assert.Equal(-1, FindSubrecordIndex(merge.SubrecordBytes, "XCLC"));
+    }
+
     private static int FindSubrecordIndex(byte[] stream, string sig)
     {
         for (var i = 0; i + 6 <= stream.Length;)

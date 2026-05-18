@@ -57,13 +57,16 @@ public class ComplexNewRecordEncoderTests
     }
 
     [Fact]
-    public void WeapEncoder_EncodeNew_AmmoFormId_EmitsEnam()
+    public void WeapEncoder_EncodeNew_AmmoFormId_EmitsNam0()
     {
+        // FNV uses NAM0 for the ammo FormID — confirmed against master FalloutNV.esm
+        // Weap10mmPistol at offset 0x85F5AC. FNVEdit does not recognize ENAM in FNV WEAP.
         var weap = new WeaponRecord { FormId = 0x800, EditorId = "Weap", AmmoFormId = 0x1234 };
         var encoded = WeapEncoder.EncodeNew(weap);
 
-        var enam = Assert.Single(encoded.Subrecords, s => s.Signature == "ENAM");
-        Assert.Equal(0x1234u, BinaryPrimitives.ReadUInt32LittleEndian(enam.Bytes));
+        var nam0 = Assert.Single(encoded.Subrecords, s => s.Signature == "NAM0");
+        Assert.Equal(0x1234u, BinaryPrimitives.ReadUInt32LittleEndian(nam0.Bytes));
+        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "ENAM");
     }
 
     [Fact]

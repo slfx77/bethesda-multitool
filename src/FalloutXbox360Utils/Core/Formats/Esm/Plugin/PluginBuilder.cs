@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Diagnostics;
+using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Merge;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.AI;
@@ -16,6 +17,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Formats.Esm.Reporting;
+using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using FalloutXbox360Utils.Core.Semantic;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin;
@@ -56,6 +58,26 @@ public sealed class PluginBuilder
     private readonly Dictionary<(uint Worldspace, int GridX, int GridY), uint> _emittedExteriorCellCoords = new();
 
     /// <summary>
+    ///     Master CELL FormIDs we've already emitted an override anchor + children GRUP
+    ///     for. Tracks both direct-FormID-match and grid-collision-redirected emissions so
+    ///     subsequent DMP cells that resolve to the same master cell don't double-emit it.
+    ///     Reset at each Build entry.
+    /// </summary>
+    private readonly HashSet<uint> _emittedOverrideCellFormIds = [];
+
+    /// <summary>
+    ///     Master ESM NPCs indexed by race FormID → first master NPC FormID seen for that
+    ///     race. Used by the new-NPC emit path to retarget a renderable template when a
+    ///     captured prototype NPC's Template chain dead-ends in another new NPC (which
+    ///     would have no FaceGen .NIF / .dds files on disk, so the engine's render walk
+    ///     access-violates in NiAlphaProperty / BSFadeNode when the player gets near).
+    ///     By pointing Template at a renderable master NPC and setting the Use-Traits flag,
+    ///     the engine inherits the master's face/body and skips loading our (missing)
+    ///     FaceGen output. Reset at each Build entry.
+    /// </summary>
+    private readonly Dictionary<uint, uint> _masterNpcByRace = new();
+
+    /// <summary>
     ///     Master ESM exterior cells indexed by (worldspace, gridX, gridY). Populated at
     ///     <see cref="BuildAsync" /> entry by walking <c>pcRecordsByFormId</c> + the cell
     ///     contexts. Used to detect grid collisions: when a DMP cell has a fresh FormID but
@@ -81,18 +103,32 @@ public sealed class PluginBuilder
     /// </summary>
     private readonly Dictionary<string, HashSet<uint>> _emittedNewFormIdsByType = new();
 
+    /// <summary>
+    ///     New NPC_ FormIDs whose encoded record has no master template + UseTraits bit.
+    ///     Placing these as ACHR makes the engine try to load FaceGen assets we do not
+    ///     generate, which has reproduced the WastelandNV render-walk crash class.
+    ///     Contains both DMP-source IDs and allocated plugin-local IDs.
+    /// </summary>
+    private readonly HashSet<uint> _renderUnsafeNewNpcFormIds = [];
+
     private readonly RecordEncoderRegistry _encoderRegistry;
 
     /// <summary>
-    ///     DMP-source FormID → freshly-allocated plugin-local FormID, populated as new
-    ///     top-level records (STAT, NPC_, WEAP, etc.) flow through
-    ///     <see cref="TryEncodeNewTopLevelRecord" />. The downstream cell-children pipeline
-    ///     uses it to rewrite each new REFR's NAME (base FormID) before encoding — without
-    ///     this remap the REFR's NAME stays pointing at the DMP source, which doesn't exist
-    ///     in either master or the freshly-allocated 0x01xxxxxx plugin range, and the
-    ///     runtime fails to bind the placement to its base. Reset at each Build entry.
+    ///     DMP-source FormID → emitted FormID. Values are either freshly-allocated plugin-local
+    ///     IDs for true new records or master FormIDs for same-type EditorID aliases (prototype
+    ///     records that became final master records under a different FormID). The downstream
+    ///     emit paths use it to rewrite each FormID-bearing subrecord before encoding — without
+    ///     this remap the output can point at DMP-only source IDs that exist in neither master
+    ///     nor the freshly-allocated 0x01xxxxxx plugin range. Reset at each Build entry.
     /// </summary>
     private readonly Dictionary<uint, uint> _newRecordSourceToAllocated = new();
+
+    /// <summary>
+    ///     Record type for each DMP-source key in <see cref="_newRecordSourceToAllocated" />.
+    ///     Placed-reference base remapping must be type-aware: an ACRE can only point to
+    ///     CREA, an ACHR can only point to NPC_, and a REFR must not point to actor bases.
+    /// </summary>
+    private readonly Dictionary<uint, string> _newRecordSourceToAllocatedType = new();
 
     private readonly IConversionProgressSink _sink;
 
@@ -188,15 +224,20 @@ public sealed class PluginBuilder
             _masterFormIdsByType = masterIndex.FormIdsByType;
             _emittedNewFormIds.Clear();
             _emittedNewFormIdsByType.Clear();
+            _renderUnsafeNewNpcFormIds.Clear();
             _emittedExteriorCellCoords.Clear();
+            _emittedOverrideCellFormIds.Clear();
             _masterExteriorCellByGrid.Clear();
+            _masterNpcByRace.Clear();
             _newRecordSourceToAllocated.Clear();
+            _newRecordSourceToAllocatedType.Clear();
             _masterEditorIdToFormIdByType = masterIndex.EditorIdToFormIdByType;
             _masterStemToFormIdsByType = masterIndex.StemToFormIdsByType;
 
-            // Build the parent-cell index by walking records in offset order. Children always
-            // appear after their parent CELL in the file, so the "most recent CELL" tracker
-            // gives correct parentage without needing GRUP context.
+            // Build the master child-location index from GRUP ancestry. Existing placed-ref
+            // overrides must be emitted under their master child GRUP, not under whichever
+            // runtime cell snapshot happened to mention them.
+            var masterChildLocations = masterIndex.ChildLocations;
             var refToCell = masterIndex.RefToCell;
 
             // NAVM (NavMesh) records live in each cell's Temporary Children GRUP. When a
@@ -238,9 +279,30 @@ public sealed class PluginBuilder
                 _masterExteriorCellByGrid[(ctx.WorldspaceFormId.Value, gridX, gridY)] = cellFormId;
             }
 
+            // Build the race → master NPC index so the new-NPC emit path can pick a
+            // renderable template fallback. Walks master NPC records, reads each one's
+            // RNAM (race FormID), keeps the first NPC seen for each race. Templates pointing
+            // at master NPCs with valid FaceGen on disk skip the crash class triggered by
+            // missing FaceGen files for our newly-emitted NPCs.
+            foreach (var (formId, record) in pcRecordsByFormId)
+            {
+                if (record.Header.Signature != "NPC_")
+                {
+                    continue;
+                }
+
+                if (!TryReadNpcRaceFormId(record, out var raceFormId))
+                {
+                    continue;
+                }
+
+                _masterNpcByRace.TryAdd(raceFormId, formId);
+            }
+
             _sink.Info("Loading PC ESM",
                 $"Loaded {pcRecordsByFormId.Count:N0} PC records, {refToCell.Count:N0} child→cell links, " +
-                $"{cellContexts.Count:N0} cell contexts, {_masterExteriorCellByGrid.Count:N0} exterior cells indexed by grid.");
+                $"{cellContexts.Count:N0} cell contexts, {_masterExteriorCellByGrid.Count:N0} exterior cells indexed by grid, " +
+                $"{_masterNpcByRace.Count:N0} races with NPC templates.");
             _sink.OnPhaseEnd("Loading PC ESM", stats);
             ct.ThrowIfCancellationRequested();
 
@@ -248,6 +310,8 @@ public sealed class PluginBuilder
             _sink.OnPhaseStart("Reading DMP", null);
             using var unified = await SemanticFileLoader.LoadAsync(inputs.DmpPath, cancellationToken: ct);
             var dmpRecords = unified.Records;
+            ApplyCellWorldspaceAuthority(dmpRecords, inputs.Options.CellWorldspaceAuthority);
+            FilterDmpRecordsByExcludedWorldspaces(dmpRecords, inputs.Options.SkipWorldspaceFormIds);
             _dmpBaseFormIdToRecordType = ReferenceBaseRemapper.BuildDmpBaseFormIdToRecordType(dmpRecords);
             _sink.Info("Reading DMP", "DMP semantic load complete.");
             _sink.OnPhaseEnd("Reading DMP", stats);
@@ -264,6 +328,12 @@ public sealed class PluginBuilder
             // Single allocator shared across phases — Phase 3 (new top-level records) and
             // Phase 4 (new cells/refs). NextObjectId in TES4 reflects the high-water mark.
             var allocator = new FormIdAllocator(inputs.Options.NewRecordBaseFormId);
+
+            // Treat DMP records whose same-type EditorID names a master record as aliases
+            // from prototype/source FormID to final master FormID. This lets carried-over
+            // scripts, inventory, packages, cell refs, and appearance pointers resolve to
+            // the final ID before any bytes are merged or written.
+            RegisterEditorIdMasterAliases(dmpRecords, classifier, inputs.Options);
 
             // Pre-Phase-3 step: identify new WRLDs (not in master) that have at least one
             // captured child cell in the DMP, allocate their FormIDs upfront, and encode
@@ -285,6 +355,24 @@ public sealed class PluginBuilder
             foreach (var (recordType, models) in EnumerateModelsByType(dmpRecords))
             {
                 ct.ThrowIfCancellationRequested();
+                if (inputs.Options.SkipRecordTypes.Contains(recordType))
+                {
+                    var dropped = 0;
+                    foreach (var _ in models)
+                    {
+                        dropped++;
+                        stats.IncrementSkipped(recordType);
+                    }
+
+                    if (dropped > 0)
+                    {
+                        _sink.Info("Merging top-level records",
+                            $"Diagnostic --skip-record-type: dropped {dropped:N0} {recordType} record(s) " +
+                            "from emission.");
+                    }
+                    continue;
+                }
+
                 if (_encoderRegistry.Get(recordType) is not { } encoder)
                 {
                     var skipped = 0;
@@ -344,8 +432,8 @@ public sealed class PluginBuilder
             _sink.OnPhaseStart("Merging cell children", null);
             var pcRefFormIds = new HashSet<uint>(refToCell.Keys);
             var bundles = BuildCellOverrideBundles(
-                dmpRecords, pcRecordsByFormId, refToCell, pcRefFormIds, cellContexts,
-                navmsByCell, landsByCell, allocator, inputs.Options, stats, ct);
+                dmpRecords, pcRecordsByFormId, refToCell, masterChildLocations, pcRefFormIds, cellContexts,
+                navmsByCell, landsByCell, allocator, grupBytesByType, inputs.Options, stats, ct);
             _sink.Info("Merging cell children",
                 $"Built {bundles.Count:N0} cell-override bundle(s); allocated {allocator.NextLocalId - allocator.BaseLocalId:N0} new FormID(s).");
             _sink.OnPhaseEnd("Merging cell children", stats);
@@ -366,13 +454,28 @@ public sealed class PluginBuilder
             stats.OutputBytes = outputBytes.LongLength;
             _sink.OnPhaseEnd("Writing ESP", stats);
 
-            // Phase 6 (optional): validate by re-parsing.
+            // Phase 6 (optional): validate by re-parsing + semantic check.
             string? validationReport = null;
             if (inputs.Options.ValidateOutput)
             {
                 _sink.OnPhaseStart("Validating output", null);
-                validationReport = PluginRoundTripValidator.Validate(outputBytes, stats.RecordsEmitted);
-                _sink.Info("Validating output", validationReport);
+                var roundTrip = PluginRoundTripValidator.Validate(outputBytes, stats.RecordsEmitted);
+                _sink.Info("Validating output", roundTrip);
+
+                // Semantic check catches the structural issues that round-trip parsing alone
+                // misses — duplicate FormIDs, persistent-flag/parent-GRUP-type mismatches,
+                // dangling base FormIDs in NAME subrecords. These were the FNVEdit-class
+                // bugs behind the WastelandNV render crash.
+                var semantic = PluginSemanticValidator.Validate(outputBytes, _masterFormIds, _masterFormIdsByType);
+                _sink.Info("Validating output", semantic.Report);
+                if (semantic.ErrorCount > 0)
+                {
+                    _sink.Warn("Validating output",
+                        $"Semantic validation surfaced {semantic.ErrorCount:N0} error(s) — ESP may crash at load.",
+                        "ESP", 0, "semantic.errors");
+                }
+
+                validationReport = $"{roundTrip}\n\n{semantic.Report}";
                 _sink.OnPhaseEnd("Validating output", stats);
             }
 
@@ -417,9 +520,47 @@ public sealed class PluginBuilder
     }
 
     /// <summary>
-    ///     Pre-encode every new (non-master) worldspace that has at least one captured child
-    ///     cell. The cell-children pipeline emits these alongside their World Children GRUP
-    ///     so the WRLD record sits directly above its cells (canonical ESM layout). New WRLDs
+    ///     Pre-register source FormIDs whose same-type EditorID resolves to a master record.
+    ///     This is required before top-level and cell-child emission so aliases are visible
+    ///     to subrecord remapping regardless of record order.
+    /// </summary>
+    private void RegisterEditorIdMasterAliases(
+        RecordCollection dmpRecords,
+        NewVsOverrideClassifier classifier,
+        PluginBuildOptions options)
+    {
+        foreach (var (recordType, models) in EnumerateModelsByType(dmpRecords))
+        {
+            foreach (var model in models)
+            {
+                var sourceFormId = ExtractFormId(model);
+                if (sourceFormId == 0 || classifier.IsOverride(sourceFormId))
+                {
+                    continue;
+                }
+
+                if (!TryFindMasterByEditorId(recordType, model, out var masterFormId)
+                    || masterFormId == sourceFormId)
+                {
+                    continue;
+                }
+
+                TrackNewRecordSourceAlias(recordType, sourceFormId, masterFormId);
+                if (options.VerboseDecisions)
+                {
+                    _sink.Decision("Merging top-level records",
+                        $"Aliased DMP {recordType} 0x{sourceFormId:X8} to master 0x{masterFormId:X8} " +
+                        "by same-type EditorID match.",
+                        recordType, sourceFormId, "editor-id.alias-master");
+                }
+            }
+        }
+    }
+
+    /// <summary>
+     ///     Pre-encode every new (non-master) worldspace that has at least one captured child
+     ///     cell. The cell-children pipeline emits these alongside their World Children GRUP
+     ///     so the WRLD record sits directly above its cells (canonical ESM layout). New WRLDs
     ///     with no child cells stay in the standard top-level emit path.
     /// </summary>
     private Dictionary<uint, NewWorldspaceEntry> PreEncodeNewWorldspacesWithCells(
@@ -455,6 +596,12 @@ public sealed class PluginBuilder
                 continue;
             }
 
+            if (_newRecordSourceToAllocated.TryGetValue(wrld.FormId, out var masterAlias)
+                && classifier.IsOverride(masterAlias))
+            {
+                continue;
+            }
+
             if (!worldspacesWithCells.Contains(wrld.FormId))
             {
                 continue;
@@ -472,6 +619,7 @@ public sealed class PluginBuilder
                 PluginRecordByteBuilder.BuildNewRecordBytes("WRLD", emittedFormId, flags, encoded.Subrecords);
 
             result[wrld.FormId] = new NewWorldspaceEntry(emittedFormId, recordBytes);
+            TrackNewRecordSourceAlias("WRLD", wrld.FormId, emittedFormId);
 
             if (options.VerboseDecisions)
             {
@@ -500,6 +648,12 @@ public sealed class PluginBuilder
         using var grupBodyStream = new MemoryStream();
         var anyEmitted = false;
 
+        // Per-FormID dedup: the DMP scanner can pick up the same record twice (e.g. when the
+        // dump contains both an in-memory GMST master and a duplicate GRUP snapshot). Emitting
+        // both yields "ESP contains 481 duplicate FormID(s)" — the engine then resolves only
+        // one and may bind ACRE/ACHR base pointers to the wrong copy, causing crashes.
+        var emittedFormIds = new HashSet<uint>();
+
         foreach (var model in models)
         {
             stats.RecordsConsidered++;
@@ -511,6 +665,16 @@ public sealed class PluginBuilder
             }
 
             var formId = ExtractFormId(model);
+
+            if (formId != 0 && !emittedFormIds.Add(formId))
+            {
+                stats.IncrementSkipped(recordType);
+                _sink.Decision("Merging top-level records",
+                    $"Dedup: dropping duplicate {recordType} 0x{formId:X8} — DMP parsing surfaced " +
+                    "two copies; keeping the first.",
+                    recordType, formId, "dedup.duplicate-formid");
+                continue;
+            }
 
             if (RuntimeStateRecordPolicy.IsRuntimeStateFormId(formId))
             {
@@ -543,24 +707,40 @@ public sealed class PluginBuilder
 
             if (!classifier.IsOverride(formId))
             {
-                // v22: when the DMP captured a "new" NPC/CREA whose EditorID matches a
-                // master record, it's almost always a duplicate observation of the same
-                // logical actor in runtime memory. Emitting it produces in-game ghosts
-                // ("Arcade Gannon" + "Arcade Gannon (10024)" side-by-side) because the
-                // engine disambiguates same-named actors by FormID suffix. The master
-                // override path is the right channel for those mutations.
+                // v22: exact FormID remains primary identity. If the source FormID is not
+                // present in master but the same-type EditorID exactly names a master record,
+                // treat the source ID as an alias to that final master ID and emit a normal
+                // override. No stem/fuzzy matching is used here; e.g. RoseOfSharonCassidyOLD
+                // remains a distinct prototype record.
                 if (TryFindMasterByEditorId(recordType, model, out var masterFormId))
                 {
-                    if (recordType == "LTEX")
+                    // Dedup on the ALIASED master FormID — two source models with different
+                    // source FormIDs but the same EditorID would otherwise emit two override
+                    // records pointing at the same master.
+                    if (!emittedFormIds.Add(masterFormId))
                     {
-                        _newRecordSourceToAllocated[formId] = masterFormId;
+                        stats.IncrementSkipped(recordType);
+                        _sink.Decision("Merging top-level records",
+                            $"Dedup: dropping alias override {recordType} 0x{formId:X8} → master 0x{masterFormId:X8} " +
+                            "— another source already aliased to the same master.",
+                            recordType, formId, "dedup.alias-collision");
+                        continue;
                     }
 
-                    stats.IncrementSkipped(recordType);
-                    _sink.Decision("Merging top-level records",
-                        $"Skipping new {recordType} 0x{formId:X8} — its EditorID already names " +
-                        $"master record 0x{masterFormId:X8}. Override path handles the master's mutations.",
-                        recordType, formId, "new-record.dup-editor-id");
+                    TrackNewRecordSourceAlias(recordType, formId, masterFormId);
+                    if (TryEncodeEditorIdAliasOverride(recordType, model, encoder, pcRecords, masterFormId,
+                            policy, options, stats, out var aliasOverrideBytes))
+                    {
+                        grupBodyStream.Write(aliasOverrideBytes);
+                        anyEmitted = true;
+                        stats.IncrementEmitted(recordType);
+                        stats.OverridesEmitted++;
+                    }
+                    else
+                    {
+                        stats.IncrementSkipped(recordType);
+                    }
+
                     continue;
                 }
 
@@ -653,6 +833,20 @@ public sealed class PluginBuilder
                 continue;
             }
 
+            var remappedSubrecords = RemapEncodedFormIds(recordType, encoded.Subrecords);
+            if (recordType == "LTEX")
+            {
+                remappedSubrecords = ValidateLtexRefs(remappedSubrecords, formId);
+            }
+
+            var validatedSubrecords = ValidateScriRefs(remappedSubrecords, recordType, formId);
+            if (validatedSubrecords.Count == 0)
+            {
+                stats.IncrementSkipped(recordType);
+                continue;
+            }
+
+            encoded = encoded with { Subrecords = validatedSubrecords };
             var merge = RecordMergeEngine.Merge(esmRecord, encoded, policy);
             foreach (var w in merge.Warnings)
             {
@@ -683,6 +877,93 @@ public sealed class PluginBuilder
         return TopLevelRecordEmitter.WrapInTopLevelGrup(recordType, grupBodyStream.ToArray());
     }
 
+    private bool TryEncodeEditorIdAliasOverride(
+        string recordType,
+        object model,
+        IRecordEncoder encoder,
+        IReadOnlyDictionary<uint, ParsedMainRecord> pcRecords,
+        uint masterFormId,
+        SubrecordMergePolicy policy,
+        PluginBuildOptions options,
+        ConversionPipelineStats stats,
+        out byte[] recordBytes)
+    {
+        recordBytes = [];
+        var sourceFormId = ExtractFormId(model);
+
+        if (!pcRecords.TryGetValue(masterFormId, out var esmRecord))
+        {
+            _sink.Warn("Merging top-level records",
+                $"EditorID alias target 0x{masterFormId:X8} was not in the PC ESM index.",
+                recordType, sourceFormId, "editor-id.alias-missing-master");
+            return false;
+        }
+
+        EncodedRecord encoded;
+        try
+        {
+            encoded = encoder.Encode(model);
+        }
+        catch (Exception ex)
+        {
+            stats.RecordsFailed++;
+            stats.Errors++;
+            _sink.Error("Merging top-level records",
+                $"Alias override encoder threw {ex.GetType().Name}: {ex.Message}",
+                recordType, sourceFormId);
+            return false;
+        }
+
+        foreach (var warning in encoded.Warnings)
+        {
+            stats.Warnings++;
+            _sink.Warn("Merging top-level records", warning, recordType, sourceFormId);
+        }
+
+        if (encoded.Subrecords.Count == 0)
+        {
+            if (options.VerboseDecisions)
+            {
+                _sink.Decision("Merging top-level records",
+                    $"EditorID alias 0x{sourceFormId:X8} -> 0x{masterFormId:X8} produced no override subrecords.",
+                    recordType, sourceFormId, "editor-id.alias-empty");
+            }
+
+            return false;
+        }
+
+        var subrecords = RemapEncodedFormIds(recordType, encoded.Subrecords);
+        if (recordType == "LTEX")
+        {
+            subrecords = ValidateLtexRefs(subrecords, sourceFormId);
+        }
+
+        subrecords = ValidateScriRefs(subrecords, recordType, sourceFormId);
+        if (subrecords.Count == 0)
+        {
+            return false;
+        }
+
+        encoded = encoded with { Subrecords = subrecords };
+        var merge = RecordMergeEngine.Merge(esmRecord, encoded, policy);
+        foreach (var warning in merge.Warnings)
+        {
+            stats.Warnings++;
+            _sink.Warn("Merging top-level records", warning, recordType, sourceFormId);
+        }
+
+        recordBytes = PluginRecordByteBuilder.BuildOverrideRecordBytes(esmRecord, merge.SubrecordBytes, options);
+        if (options.VerboseDecisions)
+        {
+            _sink.Decision("Merging top-level records",
+                $"EditorID alias override emitted: DMP 0x{sourceFormId:X8} -> master 0x{masterFormId:X8} " +
+                $"({merge.DmpSignaturesUsed.Count} DMP, {merge.EsmSignaturesRetained.Count} ESM).",
+                recordType, sourceFormId, "editor-id.alias-override");
+        }
+
+        return true;
+    }
+
     /// <summary>
     ///     Dispatch a DMP model that lacks a master FormID through the appropriate type-specific
     ///     <c>EncodeNew</c> method. v4 covers GMST, GLOB, MISC, KEYM, ALCH, BOOK, AMMO. Other
@@ -703,7 +984,8 @@ public sealed class PluginBuilder
             _masterFormIds ?? new HashSet<uint>(),
             _emittedNewFormIdsByType.TryGetValue("STAT", out var statSet)
                 ? statSet
-                : new HashSet<uint>());
+                : new HashSet<uint>(),
+            _masterNpcByRace);
         try
         {
             encoded = NewTopLevelRecordEncoderDispatcher.TryEncode(recordType, model, context);
@@ -758,34 +1040,55 @@ public sealed class PluginBuilder
             }
         }
 
+        var encodedSubrecords = RemapEncodedFormIds(recordType, encoded.Subrecords);
         if (recordType == "LTEX")
         {
-            encoded = encoded with
-            {
-                Subrecords = ValidateLtexRefs(encoded.Subrecords, ExtractFormId(model))
-            };
+            encodedSubrecords = ValidateLtexRefs(encodedSubrecords, ExtractFormId(model));
         }
 
         // Drop SCRI subrecords whose script FormID isn't in the master. The DMP often carries
         // SCRI references to FO3-vintage scripts that don't exist in the FNV master and would
         // cause the engine to log "Unable to find script (XXXXXXXX) on owner object" warnings
         // plus null-deref later during script-binding setup.
-        var validatedSubrecords = ValidateScriRefs(encoded.Subrecords, recordType, ExtractFormId(model));
+        var validatedSubrecords = ValidateScriRefs(encodedSubrecords, recordType, ExtractFormId(model));
 
         if (validatedSubrecords.Count == 0)
         {
             return false;
         }
 
+        var dmpSourceFormId = ExtractFormId(model);
+        var renderUnsafeNewNpc = recordType == "NPC_" && !NpcHasRenderableTemplate(validatedSubrecords);
         var allocatedFormId = allocator.Allocate();
         var flags = options.CompressRecords ? 0x00040000u : 0u;
         recordBytes =
             PluginRecordByteBuilder.BuildNewRecordBytes(recordType, allocatedFormId, flags, validatedSubrecords);
 
-        var dmpSourceFormId = ExtractFormId(model);
         if (dmpSourceFormId != 0 && dmpSourceFormId != allocatedFormId)
         {
-            _newRecordSourceToAllocated[dmpSourceFormId] = allocatedFormId;
+            TrackNewRecordSourceAlias(recordType, dmpSourceFormId, allocatedFormId);
+        }
+
+        if (renderUnsafeNewNpc)
+        {
+            _renderUnsafeNewNpcFormIds.Add(allocatedFormId);
+            if (dmpSourceFormId != 0)
+            {
+                _renderUnsafeNewNpcFormIds.Add(dmpSourceFormId);
+            }
+
+            stats.Warnings++;
+            stats.IncrementDropReason("npc.render-unsafe-no-template");
+            if (options.VerboseDecisions)
+            {
+                _sink.Decision("Merging top-level records",
+                    $"New NPC_ 0x{dmpSourceFormId:X8} -> 0x{allocatedFormId:X8} has no master TPLT " +
+                    "with UseTraits; generated ACHR placements using this base will be skipped to avoid " +
+                    "missing-FaceGen renderer crashes.",
+                    recordType,
+                    dmpSourceFormId,
+                    "npc.render-unsafe-no-template");
+            }
         }
 
         // Track BOTH the DMP source and the freshly-allocated FormID as "emitted new"
@@ -823,11 +1126,13 @@ public sealed class PluginBuilder
         RecordCollection dmpRecords,
         Dictionary<uint, ParsedMainRecord> pcRecordsByFormId,
         Dictionary<uint, uint> refToCell,
+        Dictionary<uint, MasterChildLocation> masterChildLocations,
         IReadOnlySet<uint> pcRefFormIds,
         Dictionary<uint, PcEsmCellContext> cellContexts,
         Dictionary<uint, List<uint>> navmsByCell,
         Dictionary<uint, List<uint>> landsByCell,
         FormIdAllocator allocator,
+        Dictionary<string, byte[]> grupBytesByType,
         PluginBuildOptions options,
         ConversionPipelineStats stats,
         CancellationToken ct)
@@ -848,6 +1153,9 @@ public sealed class PluginBuilder
         // when secondary captures held additional content.
         var unionResult = CellCaptureUnioner.Union(dmpRecords.Cells);
         var mergedCells = unionResult.Cells;
+        var seenExistingRefsByMasterCell = BuildSeenExistingRefsByMasterCell(mergedCells, masterChildLocations);
+        var reroutedChildRecordsByCell = new Dictionary<uint, CellChildRecordBuckets>();
+        var staticDoorRepairsByTargetRef = new Dictionary<uint, DoorTeleportRepair>();
         if (unionResult.TotalUnionedPlacements > 0)
         {
             _sink.Info("Merging cell children",
@@ -868,6 +1176,49 @@ public sealed class PluginBuilder
         }
 
         var landOverrideBuilder = new LandOverrideBuilder(_sink, RewriteLandTextureFormIds);
+
+        // Re-parent OVERRIDE refs to their master parent cell when the DMP capture has them
+        // under a different cell. The runtime engine attaches persistent refs (map markers,
+        // quest anchors, named-location refs) to whichever grid cell is currently nearest the
+        // player; master ESM has them in the worldspace's persistent-cell container (or a
+        // different cell entirely). Without this pre-pass the prototype-captured DATA bytes
+        // (position/rotation) get emitted under the wrong parent — two parent assignments at
+        // load time crash the FNV renderer with a NiAlphaProperty access violation.
+        mergedCells = RepartitionPlacementsByMasterParent(mergedCells, pcRecordsByFormId,
+            refToCell, cellContexts, options, stats);
+
+        // Phase A — index DMP-captured NAVMs by their parent cell FormID and allocate
+        // emitted FormIDs upfront. Allocating ahead of the per-cell loop guarantees that
+        // NVEX cross-navmesh links (which reference other NAVMs) can be rewritten to
+        // their emitted FormIDs regardless of cell emission order. NAVMs whose FormID
+        // already exists in master flow through the master-preservation block instead.
+        var dmpNavmsByCell = new Dictionary<uint, List<NavMeshRecord>>();
+        var navmDmpToEmittedFormId = new Dictionary<uint, uint>();
+        foreach (var dmpNavm in dmpRecords.NavMeshes)
+        {
+            if (dmpNavm.CellFormId == 0
+                || dmpNavm.RawSubrecords.Count == 0
+                || pcRecordsByFormId.ContainsKey(dmpNavm.FormId))
+            {
+                continue;
+            }
+            if (!dmpNavmsByCell.TryGetValue(dmpNavm.CellFormId, out var list))
+            {
+                list = [];
+                dmpNavmsByCell[dmpNavm.CellFormId] = list;
+            }
+            list.Add(dmpNavm);
+            if (!navmDmpToEmittedFormId.ContainsKey(dmpNavm.FormId))
+            {
+                navmDmpToEmittedFormId[dmpNavm.FormId] = allocator.Allocate();
+            }
+        }
+        if (dmpNavmsByCell.Count > 0)
+        {
+            _sink.Info("Merging cell children",
+                $"DMP NAVM emission: indexed {dmpNavmsByCell.Values.Sum(l => l.Count):N0} new navmesh(es) " +
+                $"across {dmpNavmsByCell.Count:N0} cell(s) (proto-only worldspaces + master-cell augmentation).");
+        }
 
         foreach (var dmpCell in mergedCells)
         {
@@ -893,6 +1244,27 @@ public sealed class PluginBuilder
                 && pcRecordsByFormId.TryGetValue(masterCellAtGrid, out var masterCellRec)
                 && masterCellRec!.Header.Signature == "CELL")
             {
+                // Bug-2 guard: if another DMP cell already redirected to this same grid,
+                // skip — emitting the same master cell anchor + children GRUP twice
+                // produces duplicate top-level records that desync the engine's cell loader.
+                var gridKey = (dmpCell.WorldspaceFormId.Value, dmpCell.GridX.Value, dmpCell.GridY.Value);
+                if (_emittedExteriorCellCoords.ContainsKey(gridKey))
+                {
+                    stats.IncrementSkipped("CELL");
+                    stats.IncrementDropReason("cell.grid-collision-redirect-dup");
+                    if (options.VerboseDecisions)
+                    {
+                        _sink.Decision("Merging cell children",
+                            $"DMP cell 0x{dmpCell.FormId:X8} at grid ({dmpCell.GridX}, {dmpCell.GridY}) " +
+                            $"skipped — grid already redirected to master cell 0x{masterCellAtGrid:X8} " +
+                            "by an earlier DMP cell.",
+                            "CELL", dmpCell.FormId, "cell.grid-collision-redirect-dup");
+                    }
+
+                    continue;
+                }
+
+                _emittedExteriorCellCoords[gridKey] = masterCellAtGrid;
                 pcCellRecord = masterCellRec;
                 pcCellExists = true;
                 gridRedirectedToMasterFormId = masterCellAtGrid;
@@ -916,6 +1288,28 @@ public sealed class PluginBuilder
             if (pcCellExists)
             {
                 var contextLookupFormId = gridRedirectedToMasterFormId ?? dmpCell.FormId;
+
+                // Bug-2 supplemental dedup: if a previous DMP cell already emitted an
+                // override anchor + children GRUP for this master FormID (via grid-redirect
+                // or direct match), don't emit it again. Two top-level CELL records with the
+                // same FormID is malformed and crashes the FNV cell loader.
+                if (_emittedOverrideCellFormIds.Contains(contextLookupFormId))
+                {
+                    stats.IncrementSkipped("CELL");
+                    stats.IncrementDropReason("cell.override-formid-dup");
+                    if (options.VerboseDecisions)
+                    {
+                        _sink.Decision("Merging cell children",
+                            $"DMP cell 0x{dmpCell.FormId:X8} → master 0x{contextLookupFormId:X8} " +
+                            "skipped — already emitted as override by an earlier DMP cell.",
+                            "CELL", dmpCell.FormId, "cell.override-formid-dup");
+                    }
+
+                    continue;
+                }
+
+                _emittedOverrideCellFormIds.Add(contextLookupFormId);
+
                 if (!cellContexts.TryGetValue(contextLookupFormId, out var existingContext))
                 {
                     stats.IncrementSkipped("CELL");
@@ -925,7 +1319,21 @@ public sealed class PluginBuilder
                     continue;
                 }
 
-                cellRecordBytes = CellGrupBuilder.ReconstructRecordBytes(pcCellRecord!);
+                // Cell-anchor merge: apply DMP-captured metadata (FULL name, water height,
+                // lighting template, encounter zone, etc.) on top of master's anchor subrecords.
+                // For grid-redirected overrides the DMP cell is logically a *different* cell
+                // that happens to share grid coords — its metadata doesn't describe master's
+                // cell, so retain master verbatim. For FormID-matched overrides the DMP did
+                // observe the same cell, so its captures are the authoritative deltas.
+                if (gridRedirectedToMasterFormId is null
+                    && TryEncodeOverrideCellAnchor(dmpCell, pcCellRecord!, options, stats, out var mergedAnchorBytes))
+                {
+                    cellRecordBytes = mergedAnchorBytes;
+                }
+                else
+                {
+                    cellRecordBytes = CellGrupBuilder.ReconstructRecordBytes(pcCellRecord!);
+                }
                 context = existingContext;
                 emittedCellFormId = gridRedirectedToMasterFormId ?? dmpCell.FormId;
             }
@@ -1013,6 +1421,7 @@ public sealed class PluginBuilder
             }
 
             var persistentRecords = new List<byte[]>();
+            var vwdRecords = new List<byte[]>();
             var temporaryRecords = new List<byte[]>();
             var dmpRefFormIdsInCell = new HashSet<uint>();
 
@@ -1039,54 +1448,111 @@ public sealed class PluginBuilder
                     ? RemapNewPlacedActorBase(placed, actorBaseRemap, options)
                     : placed;
 
-                // v22: when the new REFR's base FormID is a DMP-source ID that we've
+                // v22: when a placed ref's base FormID is a DMP-source ID that we've
                 // freshly emitted under a new plugin-local FormID, rewrite the BaseFormId
-                // to point at the allocation. Without this the encoded NAME subrecord
-                // still references the stale DMP FormID and the runtime can't bind it.
-                if (!refIsInMaster
-                    && placedForEmit.BaseFormId != 0
+                // to point at the allocation. This must be type-aware: the source ID space
+                // is not globally unique enough for actor refs to blindly accept any alias
+                // target. An ACRE pointing at an ARMO base is fatal during FNV load.
+                if (placedForEmit.BaseFormId != 0
                     && _newRecordSourceToAllocated.TryGetValue(
                         placedForEmit.BaseFormId, out var allocatedBase))
                 {
-                    placedForEmit = placedForEmit with { BaseFormId = allocatedBase };
+                    if (TryRemapPlacedBaseAlias(placedForEmit, allocatedBase, out var remappedPlaced))
+                    {
+                        placedForEmit = remappedPlaced;
+                    }
+                    else
+                    {
+                        var aliasType = _newRecordSourceToAllocatedType.GetValueOrDefault(
+                            placedForEmit.BaseFormId, "unknown");
+                        stats.IncrementSkipped(placed.RecordType);
+                        stats.IncrementDropReason("refr.base-alias-type-mismatch");
+                        _sink.Decision("Merging cell children",
+                            $"Skipping {placed.RecordType} 0x{placed.FormId:X8} — base " +
+                            $"0x{placedForEmit.BaseFormId:X8} aliases to {aliasType} " +
+                            $"0x{allocatedBase:X8}, which is not a valid base type for " +
+                            $"{placed.RecordType}.",
+                            placed.RecordType, placed.FormId, "refr.base-alias-type-mismatch");
+                        continue;
+                    }
                 }
 
-                // Filter NEW placed refs whose base FormID points at a record that doesn't
-                // exist in the master ESM AND isn't being freshly emitted by us. ~26% of
-                // new-ref bases in prototype DMPs (FO3-era statics, NPCs, doors that didn't
-                // survive to FNV release) are unresolvable and at runtime the engine has to
-                // fall back to a phantom record — which looks suspiciously like the consistent
-                // "TESObjectSTAT FormID: 0000008B" we've seen in every crash log's frame 27.
-                // Override refs are fine (the base is already known to exist by definition).
-                //
-                // v22: also accept bases we emit ourselves via the new-record path. Without
-                // this check, REFRs placing freshly-emitted prototype-only STATs (e.g. the
-                // monorailPlatform 0x0100108F in TheStripWorld) were getting dropped along
-                // with the FO3-vintage dangling ones, leaving the new worldspace empty.
                 if (!refIsInMaster
-                    && placedForEmit.BaseFormId != 0
-                    && _masterFormIds is not null
-                    && !_masterFormIds.Contains(placedForEmit.BaseFormId)
-                    && !_emittedNewFormIds.Contains(placedForEmit.BaseFormId))
+                    && placedForEmit.RecordType == "ACHR"
+                    && _renderUnsafeNewNpcFormIds.Contains(placedForEmit.BaseFormId))
                 {
-                    // Phase C: last-chance EditorID-stem remap. The prototype's base FormID
-                    // doesn't exist in master and isn't being emitted, but if a master record
-                    // of the same kind has a matching normalized EditorID stem (e.g.
-                    // SCOLParkingLotChunk03 → master SCOLParkingLotChunk03b), rewrite the
-                    // REFR's NAME to point at that master record and keep the placement.
-                    if (options.EnableRefrBaseEditorIdRemap
-                        && TryRemapRefrBaseByEditorIdStem(placed, placedForEmit, stats, out var remapped))
+                    stats.IncrementSkipped(placed.RecordType);
+                    stats.IncrementDropReason("achr.render-unsafe-npc-base");
+                    if (options.VerboseDecisions)
+                    {
+                        _sink.Decision("Merging cell children",
+                            $"Skipping new ACHR 0x{placed.FormId:X8} — generated NPC_ base " +
+                            $"0x{placedForEmit.BaseFormId:X8} has no render-safe master template/UseTraits.",
+                            placed.RecordType,
+                            placed.FormId,
+                            "achr.render-unsafe-npc-base");
+                    }
+
+                    continue;
+                }
+
+                if (!refIsInMaster
+                    && IsRuntimeStructuralMarkerPlacement(
+                        placedForEmit,
+                        pcRecordsByFormId,
+                        out var structuralMarkerBaseEditorId))
+                {
+                    stats.IncrementSkipped(placed.RecordType);
+                    stats.IncrementDropReason("refr.runtime-structural-marker");
+                    if (options.VerboseDecisions)
+                    {
+                        _sink.Decision("Merging cell children",
+                            $"Skipping new REFR 0x{placed.FormId:X8} — structural marker base " +
+                            $"0x{placedForEmit.BaseFormId:X8} \"{structuralMarkerBaseEditorId}\" is an " +
+                            "authored-cell marker, not a renderable runtime placement.",
+                            placed.RecordType,
+                            placed.FormId,
+                            "refr.runtime-structural-marker");
+                    }
+
+                    continue;
+                }
+
+                if (placedForEmit.BaseFormId != 0
+                    && !IsValidPlacedBaseForOutput(
+                        placedForEmit, pcRecordsByFormId, out var knownBaseRecordType))
+                {
+                    // Phase C: last-chance EditorID-stem remap for NEW refs only. The
+                    // prototype's base FormID doesn't exist in master and isn't being emitted,
+                    // but if a master record of the same kind has a matching normalized
+                    // EditorID stem (e.g. SCOLParkingLotChunk03 → master SCOLParkingLotChunk03b),
+                    // rewrite the REFR's NAME to point at that master record and keep the
+                    // placement. Overrides with invalid DMP base changes are skipped so the
+                    // master reference remains intact.
+                    if (!refIsInMaster
+                        && knownBaseRecordType is null
+                        && options.EnableRefrBaseEditorIdRemap
+                        && TryRemapRefrBaseByEditorIdStem(placed, placedForEmit, stats, out var remapped)
+                        && IsValidPlacedBaseForOutput(remapped, pcRecordsByFormId, out _))
                     {
                         placedForEmit = remapped;
                     }
                     else
                     {
+                        var reason = knownBaseRecordType is null
+                            ? "refr.dangling-base"
+                            : "refr.base-type-mismatch";
+                        var message = knownBaseRecordType is null
+                            ? $"base 0x{placedForEmit.BaseFormId:X8} is not in master ESM and not " +
+                              "freshly emitted (FO3-vintage / deleted in released FNV)."
+                            : $"base 0x{placedForEmit.BaseFormId:X8} is {knownBaseRecordType}, " +
+                              $"which is not a valid base type for {placedForEmit.RecordType}.";
+
                         stats.IncrementSkipped(placed.RecordType);
-                        stats.IncrementDropReason("refr.dangling-base");
+                        stats.IncrementDropReason(reason);
                         _sink.Decision("Merging cell children",
-                            $"Skipping new ref 0x{placed.FormId:X8} — base 0x{placedForEmit.BaseFormId:X8} " +
-                            "not in master ESM and not freshly emitted (FO3-vintage / deleted in released FNV).",
-                            placed.RecordType, placed.FormId, "refr.dangling-base");
+                            $"Skipping {placed.RecordType} 0x{placed.FormId:X8} — {message}",
+                            placed.RecordType, placed.FormId, reason);
                         continue;
                     }
                 }
@@ -1097,6 +1563,31 @@ public sealed class PluginBuilder
                 if (mode == CellMergeMode.PersistentOnly && !placed.IsPersistent)
                 {
                     continue;
+                }
+
+                uint? allocatedNewRefFormId = null;
+                if (!refIsInMaster)
+                {
+                    allocatedNewRefFormId = allocator.Allocate();
+                    if (!TryRepairStaticDoorTeleport(
+                            placedForEmit,
+                            allocatedNewRefFormId.Value,
+                            pcRecordsByFormId,
+                            masterChildLocations,
+                            reroutedChildRecordsByCell,
+                            grupBytesByType,
+                            staticDoorRepairsByTargetRef,
+                            allocator,
+                            options,
+                            stats,
+                            out placedForEmit))
+                    {
+                        placedForEmit = SanitizeNewRefTeleport(
+                            placedForEmit,
+                            pcRecordsByFormId,
+                            options,
+                            stats);
+                    }
                 }
 
                 if (_encoderRegistry.Get(placed.RecordType) is not { } encoder)
@@ -1110,6 +1601,33 @@ public sealed class PluginBuilder
                 byte[] recordBytes;
                 if (refExistsInPc)
                 {
+                    // Bug-1 guard: for OVERRIDE refs, master is the source of truth for the
+                    // parent-cell relationship. The DMP runtime occasionally attaches
+                    // persistent refs (map markers, quest anchors, named-location refs) to
+                    // the grid cell the player is in, while master has them in the
+                    // worldspace's persistent-cell container. Emitting the override under
+                    // the DMP cell rather than master's parent produces two competing parent
+                    // assignments at load time — and the FNV renderer crashes the next time
+                    // it walks the ref's BSFadeNode through its NiAlphaProperty. Skip the
+                    // mismatched-parent emit; master's data for this ref is unchanged.
+                    var masterParentCell = refToCell.GetValueOrDefault(placed.FormId);
+                    if (masterParentCell != 0 && masterParentCell != emittedCellFormId)
+                    {
+                        stats.IncrementSkipped(placed.RecordType);
+                        stats.IncrementDropReason("refr.parent-cell-mismatch");
+                        if (options.VerboseDecisions)
+                        {
+                            _sink.Decision("Merging cell children",
+                                $"Skipping override of {placed.RecordType} 0x{placed.FormId:X8} — " +
+                                $"master parent is cell 0x{masterParentCell:X8}, but DMP captured it " +
+                                $"under cell 0x{emittedCellFormId:X8}. Emitting in the wrong cell " +
+                                "produces a duplicate parent assignment that crashes the renderer.",
+                                placed.RecordType, placed.FormId, "refr.parent-cell-mismatch");
+                        }
+
+                        continue;
+                    }
+
                     // Existing ref — override path (v2 logic).
                     if (!TryEncodeOverrideRef(placedForEmit, encoder, pcRefRecord!, policy, options, stats,
                             out var bytes))
@@ -1123,7 +1641,12 @@ public sealed class PluginBuilder
                 else
                 {
                     // New ref — full-record path (v3).
-                    if (!TryEncodeNewRef(placedForEmit, allocator, options, stats, out var bytes))
+                    if (!TryEncodeNewRef(
+                            placedForEmit,
+                            allocatedNewRefFormId!.Value,
+                            options,
+                            stats,
+                            out var bytes))
                     {
                         continue;
                     }
@@ -1132,13 +1655,35 @@ public sealed class PluginBuilder
                     stats.NewRecordsEmitted++;
                 }
 
-                if (placed.IsPersistent)
+                var targetCellFormId = emittedCellFormId;
+                var targetGroupType = placed.IsPersistent ? 8 : 9;
+                if (refExistsInPc
+                    && masterChildLocations.TryGetValue(placed.FormId, out var masterChildLocation))
                 {
-                    persistentRecords.Add(recordBytes);
+                    targetCellFormId = masterChildLocation.CellFormId;
+                    targetGroupType = masterChildLocation.GroupType is 8 or 9 or 10
+                        ? masterChildLocation.GroupType
+                        : targetGroupType;
+                }
+
+                if (targetCellFormId == emittedCellFormId)
+                {
+                    AddChildRecordToBuckets(persistentRecords, vwdRecords, temporaryRecords, targetGroupType,
+                        recordBytes);
                 }
                 else
                 {
-                    temporaryRecords.Add(recordBytes);
+                    AddReroutedChildRecord(reroutedChildRecordsByCell, targetCellFormId, targetGroupType,
+                        recordBytes);
+
+                    if (options.VerboseDecisions)
+                    {
+                        _sink.Decision("Merging cell children",
+                            $"Rerouted existing {placed.RecordType} 0x{placed.FormId:X8} override from " +
+                            $"captured cell 0x{emittedCellFormId:X8} to master parent cell " +
+                            $"0x{targetCellFormId:X8}.",
+                            placed.RecordType, placed.FormId, "cell.child-reroute-master-parent");
+                    }
                 }
 
                 stats.IncrementEmitted(placed.RecordType);
@@ -1153,6 +1698,14 @@ public sealed class PluginBuilder
                 && pcCellExists
                 && cellToRefs.TryGetValue(masterChildLookupFormId, out var masterRefIds))
             {
+                var dmpRefFormIdsForDeletion = dmpRefFormIdsInCell;
+                if (seenExistingRefsByMasterCell.TryGetValue(masterChildLookupFormId, out var globallySeenRefs)
+                    && globallySeenRefs.Count > 0)
+                {
+                    dmpRefFormIdsForDeletion = new HashSet<uint>(dmpRefFormIdsInCell);
+                    dmpRefFormIdsForDeletion.UnionWith(globallySeenRefs);
+                }
+
                 var masterRefs = masterRefIds
                     .Select(id => pcRecordsByFormId.GetValueOrDefault(id))
                     .Where(r => r is not null)
@@ -1181,14 +1734,14 @@ public sealed class PluginBuilder
                 else
                 {
                     preservedStructural = CellStructuralReferencePreserver.PreserveMissing(
-                        masterRefs!, dmpRefFormIdsInCell, pcRecordsByFormId,
+                        masterRefs!, dmpRefFormIdsForDeletion, pcRecordsByFormId,
                         persistentRecords, temporaryRecords, stats);
                     preserveFilter = masterRef => CellStructuralReferencePreserver.IsStructuralCellRef(
                         masterRef, pcRecordsByFormId);
                 }
 
                 var deleted = DeletedRefSynthesizer.Synthesize(
-                    masterRefs!, dmpRefFormIdsInCell, preserveFilter);
+                    masterRefs!, dmpRefFormIdsForDeletion, preserveFilter);
                 persistentRecords.AddRange(deleted.Persistent);
                 temporaryRecords.AddRange(deleted.Temporary);
 
@@ -1215,7 +1768,11 @@ public sealed class PluginBuilder
             var hasCapturedTerrain = !dmpCell.IsInterior &&
                                      (dmpCell.Heightmap != null || dmpCell.RuntimeTerrainMesh != null);
 
-            if (persistentRecords.Count == 0 && temporaryRecords.Count == 0 && pcCellExists && !hasCapturedTerrain)
+            if (persistentRecords.Count == 0
+                && vwdRecords.Count == 0
+                && temporaryRecords.Count == 0
+                && pcCellExists
+                && !hasCapturedTerrain)
             {
                 // Nothing to emit for this existing cell.
                 continue;
@@ -1315,12 +1872,45 @@ public sealed class PluginBuilder
                 }
             }
 
+            // Phase B — emit DMP-captured NAVMs whose CellFormId points at this cell.
+            // Covers two cases: cells in proto-only worldspaces (no master NAVMs at all)
+            // and master-cell augmentation (DMP captured a navmesh master doesn't have).
+            // Phase A pre-allocated the emitted FormIDs so NVEX cross-references can
+            // resolve across cells in this emission batch.
+            if (dmpNavmsByCell.TryGetValue(dmpCell.FormId, out var dmpNavmsForCell))
+            {
+                var emittedNavmCount = 0;
+                foreach (var dmpNavm in dmpNavmsForCell)
+                {
+                    if (!navmDmpToEmittedFormId.TryGetValue(dmpNavm.FormId, out var newNavmFormId))
+                    {
+                        continue;
+                    }
+                    var patched = NavMeshByteRewriter.Rewrite(
+                        dmpNavm.RawSubrecords, emittedCellFormId, navmDmpToEmittedFormId);
+                    var navmBytes = PluginRecordByteBuilder.BuildNewRecordBytes(
+                        "NAVM", newNavmFormId, flags: 0u, patched);
+                    temporaryPrefixRecords.Add(navmBytes);
+                    emittedNavmCount++;
+                    stats.IncrementEmitted("NAVM");
+                    stats.NewRecordsEmitted++;
+                }
+
+                if (emittedNavmCount > 0 && options.VerboseDecisions)
+                {
+                    _sink.Decision("Merging cell children",
+                        $"Emitted {emittedNavmCount} DMP NAVM record(s) in cell 0x{emittedCellFormId:X8} " +
+                        $"(DMP source cell 0x{dmpCell.FormId:X8}).",
+                        "CELL", emittedCellFormId, "navm.dmp-emitted");
+                }
+            }
+
             if (temporaryPrefixRecords.Count > 0)
             {
                 temporaryRecords.InsertRange(0, temporaryPrefixRecords);
             }
 
-            if (persistentRecords.Count == 0 && temporaryRecords.Count == 0)
+            if (persistentRecords.Count == 0 && vwdRecords.Count == 0 && temporaryRecords.Count == 0)
             {
                 // Terrain encoding failed and there were no child records to justify emitting this cell.
                 continue;
@@ -1332,14 +1922,488 @@ public sealed class PluginBuilder
                 Context = context,
                 CellRecordBytes = cellRecordBytes,
                 PersistentChildRecords = persistentRecords,
+                VwdChildRecords = vwdRecords,
                 TemporaryChildRecords = temporaryRecords
             });
 
             stats.CellsMerged++;
         }
 
-        return bundles;
+        foreach (var (cellFormId, buckets) in reroutedChildRecordsByCell)
+        {
+            if (buckets.IsEmpty)
+            {
+                continue;
+            }
+
+            if (!pcRecordsByFormId.TryGetValue(cellFormId, out var cellRecord)
+                || cellRecord.Header.Signature != "CELL"
+                || !cellContexts.TryGetValue(cellFormId, out var context))
+            {
+                stats.IncrementSkipped("CELL");
+                _sink.Warn("Merging cell children",
+                    $"Rerouted child override targets master cell 0x{cellFormId:X8}, but no CELL context was available.",
+                    "CELL", cellFormId, "skipped:rerouted-child-no-context");
+                continue;
+            }
+
+            bundles.Add(new CellOverrideBundle
+            {
+                CellFormId = cellFormId,
+                Context = context,
+                CellRecordBytes = CellGrupBuilder.ReconstructRecordBytes(cellRecord),
+                PersistentChildRecords = buckets.Persistent,
+                VwdChildRecords = buckets.Vwd,
+                TemporaryChildRecords = buckets.Temporary
+            });
+        }
+
+        return CoalesceCellOverrideBundles(FilterInvalidPlacedChildRecords(bundles, stats));
     }
+
+    private List<CellOverrideBundle> FilterInvalidPlacedChildRecords(
+        IReadOnlyList<CellOverrideBundle> bundles,
+        ConversionPipelineStats stats)
+    {
+        var filtered = new List<CellOverrideBundle>(bundles.Count);
+        foreach (var bundle in bundles)
+        {
+            var persistent = FilterInvalidPlacedChildRecords(bundle.PersistentChildRecords, stats);
+            var vwd = FilterInvalidPlacedChildRecords(bundle.VwdChildRecords, stats);
+            var temporary = FilterInvalidPlacedChildRecords(bundle.TemporaryChildRecords, stats);
+
+            if (persistent.Count == bundle.PersistentChildRecords.Count
+                && vwd.Count == bundle.VwdChildRecords.Count
+                && temporary.Count == bundle.TemporaryChildRecords.Count)
+            {
+                filtered.Add(bundle);
+                continue;
+            }
+
+            if (persistent.Count == 0 && vwd.Count == 0 && temporary.Count == 0)
+            {
+                continue;
+            }
+
+            filtered.Add(bundle with
+            {
+                PersistentChildRecords = persistent,
+                VwdChildRecords = vwd,
+                TemporaryChildRecords = temporary
+            });
+        }
+
+        return filtered;
+    }
+
+    private List<byte[]> FilterInvalidPlacedChildRecords(
+        IReadOnlyList<byte[]> records,
+        ConversionPipelineStats stats)
+    {
+        var filtered = new List<byte[]>(records.Count);
+        foreach (var recordBytes in records)
+        {
+            if (ShouldDropInvalidPlacedChildRecord(recordBytes, stats))
+            {
+                continue;
+            }
+
+            filtered.Add(recordBytes);
+        }
+
+        return filtered;
+    }
+
+    private bool ShouldDropInvalidPlacedChildRecord(byte[] recordBytes, ConversionPipelineStats stats)
+    {
+        var header = EsmParser.ParseRecordHeader(recordBytes);
+        if (header is null || header.Signature is not ("REFR" or "ACHR" or "ACRE"))
+        {
+            return false;
+        }
+
+        if (recordBytes.Length < EsmParser.MainRecordHeaderSize + header.DataSize)
+        {
+            return false;
+        }
+
+        var recordData = recordBytes.AsSpan(EsmParser.MainRecordHeaderSize, (int)header.DataSize);
+        byte[] subrecordBytes;
+        if ((header.Flags & EsmParser.CompressedFlag) != 0)
+        {
+            subrecordBytes = EsmParser.DecompressRecordData(recordData, false) ?? [];
+        }
+        else
+        {
+            subrecordBytes = recordData.ToArray();
+        }
+
+        if (subrecordBytes.Length == 0)
+        {
+            return false;
+        }
+
+        var name = EsmParser.ParseSubrecords(subrecordBytes)
+            .FirstOrDefault(static s => s.Signature == "NAME" && s.Data.Length >= 4);
+        if (name is null)
+        {
+            return false;
+        }
+
+        var baseFormId = BinaryPrimitives.ReadUInt32LittleEndian(name.Data.AsSpan(0, 4));
+        if (baseFormId == 0 || baseFormId == 0xFFFFFFFFu)
+        {
+            return false;
+        }
+
+        if (IsValidPlacedBaseFormIdForOutput(header.Signature, baseFormId, out var knownBaseRecordType))
+        {
+            return false;
+        }
+
+        var reason = knownBaseRecordType is null
+            ? "refr.dangling-base"
+            : "refr.base-type-mismatch";
+        var message = knownBaseRecordType is null
+            ? $"base 0x{baseFormId:X8} is not in master ESM and not freshly emitted."
+            : $"base 0x{baseFormId:X8} is {knownBaseRecordType}, which is not a valid base type for " +
+              $"{header.Signature}.";
+
+        stats.IncrementSkipped(header.Signature);
+        stats.IncrementDropReason(reason);
+        _sink.Decision("Merging cell children",
+            $"Dropping final {header.Signature} 0x{header.FormId:X8} child record — {message}",
+            header.Signature,
+            header.FormId,
+            reason);
+        return true;
+    }
+
+    /// <summary>
+    ///     Re-partition DMP-captured placements so OVERRIDE refs land under the same parent
+    ///     cell master uses for them. The runtime engine attaches persistent refs (map
+    ///     markers, quest anchors, named-location refs) to whichever grid cell is currently
+    ///     near the player; master ESM has them in the worldspace's persistent-cell
+    ///     container or a different exterior cell entirely. Emitting the override under the
+    ///     DMP-captured cell creates a duplicate parent assignment at load time which
+    ///     crashes the FNV renderer.
+    ///
+    ///     This pre-pass keeps each placement's captured DATA bytes (position/rotation)
+    ///     intact but moves it from the DMP-cell bucket into the master-parent-cell bucket.
+    ///     If the master parent cell isn't present in the input list, a synthetic CellRecord
+    ///     entry is added so the main loop emits its cell-children GRUP. For new (DMP-only)
+    ///     refs (those not in master), the original DMP cell stays the parent — the
+    ///     reroute applies to OVERRIDE refs only.
+    /// </summary>
+    private Dictionary<uint, uint>? _gridRedirectTargets;
+
+    private List<CellRecord> RepartitionPlacementsByMasterParent(
+        IReadOnlyList<CellRecord> mergedCells,
+        Dictionary<uint, ParsedMainRecord> pcRecordsByFormId,
+        Dictionary<uint, uint> refToCell,
+        Dictionary<uint, PcEsmCellContext> cellContexts,
+        PluginBuildOptions options,
+        ConversionPipelineStats stats)
+    {
+        // Resolve grid-redirect targets up-front so the master-parent comparison uses the
+        // effective cell each DMP entry maps to (DMP FormID → master cell at same grid).
+        _gridRedirectTargets = new Dictionary<uint, uint>();
+        foreach (var dmpCell in mergedCells)
+        {
+            if (pcRecordsByFormId.ContainsKey(dmpCell.FormId) || dmpCell.IsInterior
+                || !dmpCell.WorldspaceFormId.HasValue || !dmpCell.GridX.HasValue
+                || !dmpCell.GridY.HasValue)
+            {
+                continue;
+            }
+
+            if (_masterExteriorCellByGrid.TryGetValue(
+                    (dmpCell.WorldspaceFormId.Value, dmpCell.GridX.Value, dmpCell.GridY.Value),
+                    out var redirectTo))
+            {
+                _gridRedirectTargets[dmpCell.FormId] = redirectTo;
+            }
+        }
+
+        // Bucket placements by their *correct* target cell.
+        var refsByTargetCell = new Dictionary<uint, List<PlacedReference>>();
+        var moveCount = 0;
+        var skipDuplicatePersistentCount = 0;
+        var emittedPersistentByCellAndFormId = new Dictionary<(uint Cell, uint FormId), bool>();
+
+        foreach (var dmpCell in mergedCells)
+        {
+            // Effective DMP cell FormID after grid-redirect.
+            var effectiveFormId = _gridRedirectTargets.GetValueOrDefault(dmpCell.FormId, dmpCell.FormId);
+
+            foreach (var placed in dmpCell.PlacedObjects)
+            {
+                var targetCellFormId = effectiveFormId;
+
+                // OVERRIDE refs (in master) — route to master's authoritative parent.
+                if (pcRecordsByFormId.ContainsKey(placed.FormId)
+                    && refToCell.TryGetValue(placed.FormId, out var masterParent)
+                    && masterParent != 0
+                    && masterParent != effectiveFormId)
+                {
+                    targetCellFormId = masterParent;
+                    moveCount++;
+                }
+
+                // Diagnostic skip: if the target cell sits in an excluded worldspace, drop
+                // the placement so we emit nothing under it (matches the upstream
+                // FilterDmpRecordsByExcludedWorldspaces but catches re-parented overrides
+                // that arrive here without a WastelandNV parent in their DMP cell).
+                if (options.SkipWorldspaceFormIds.Count > 0
+                    && cellContexts.TryGetValue(targetCellFormId, out var targetCtx)
+                    && targetCtx.WorldspaceFormId is { } targetWs
+                    && options.SkipWorldspaceFormIds.Contains(targetWs))
+                {
+                    continue;
+                }
+
+                // Dedup: the DMP can capture the same persistent REFR under multiple DMP
+                // cells (because the engine moves it to different grid cells as the player
+                // travels). Emitting the same FormID more than once under one cell creates
+                // an invalid GRUP. First-wins.
+                var dedupKey = (targetCellFormId, placed.FormId);
+                if (emittedPersistentByCellAndFormId.ContainsKey(dedupKey))
+                {
+                    skipDuplicatePersistentCount++;
+                    continue;
+                }
+
+                emittedPersistentByCellAndFormId[dedupKey] = true;
+
+                if (!refsByTargetCell.TryGetValue(targetCellFormId, out var list))
+                {
+                    list = new List<PlacedReference>();
+                    refsByTargetCell[targetCellFormId] = list;
+                }
+
+                list.Add(placed);
+            }
+        }
+
+        // Rebuild the cell list: each placement bucket goes to the FIRST original cell that
+        // maps to it. Subsequent original cells mapping to the same target get empty
+        // placements (the main loop's Bug-2 dedup then skips their emit attempt). This
+        // matters when two DMP captures both target the same master cell — either through
+        // direct FormID match or grid-redirect — without claim-tracking they'd both feed off
+        // the same shared bucket and the engine would see duplicate top-level CELL records.
+        var rebuilt = new List<CellRecord>(mergedCells.Count);
+        var handledFormIds = new HashSet<uint>();
+        var claimedTargets = new HashSet<uint>();
+        foreach (var orig in mergedCells)
+        {
+            var key = _gridRedirectTargets.GetValueOrDefault(orig.FormId, orig.FormId);
+            var placements = claimedTargets.Add(key)
+                ? refsByTargetCell.GetValueOrDefault(key, [])
+                : [];
+            rebuilt.Add(orig with { PlacedObjects = placements });
+            handledFormIds.Add(orig.FormId);
+            handledFormIds.Add(key);
+        }
+
+        var synthesizedCount = 0;
+        foreach (var (cellFormId, placed) in refsByTargetCell)
+        {
+            if (handledFormIds.Contains(cellFormId) || placed.Count == 0)
+            {
+                continue;
+            }
+
+            if (!pcRecordsByFormId.TryGetValue(cellFormId, out var masterCellRec)
+                || masterCellRec.Header.Signature != "CELL")
+            {
+                continue;
+            }
+
+            if (!cellContexts.TryGetValue(cellFormId, out var ctx))
+            {
+                continue;
+            }
+
+            int? gridX = null;
+            int? gridY = null;
+            if (TryReadCellGridCoords(masterCellRec, out var gx, out var gy))
+            {
+                gridX = gx;
+                gridY = gy;
+            }
+
+            rebuilt.Add(new CellRecord
+            {
+                FormId = cellFormId,
+                WorldspaceFormId = ctx.WorldspaceFormId,
+                GridX = gridX,
+                GridY = gridY,
+                Flags = ctx.IsInterior ? (byte)0x01 : (byte)0,
+                PlacedObjects = placed,
+                IsBigEndian = false
+            });
+            synthesizedCount++;
+        }
+
+        if (moveCount > 0 || skipDuplicatePersistentCount > 0 || synthesizedCount > 0)
+        {
+            _sink.Info("Merging cell children",
+                $"Placement re-partition: moved {moveCount:N0} override(s) to master parent cells, " +
+                $"deduped {skipDuplicatePersistentCount:N0} cross-cell persistent capture(s), " +
+                $"synthesized {synthesizedCount:N0} master-cell entr(y/ies) for re-parented refs.");
+        }
+
+        return rebuilt;
+    }
+
+    private static Dictionary<uint, HashSet<uint>> BuildSeenExistingRefsByMasterCell(
+        IReadOnlyList<CellRecord> mergedCells,
+        IReadOnlyDictionary<uint, MasterChildLocation> masterChildLocations)
+    {
+        var seen = new Dictionary<uint, HashSet<uint>>();
+        foreach (var cell in mergedCells)
+        {
+            foreach (var placed in cell.PlacedObjects)
+            {
+                if (!masterChildLocations.TryGetValue(placed.FormId, out var location)
+                    || location.RecordType is not ("REFR" or "ACHR" or "ACRE"))
+                {
+                    continue;
+                }
+
+                if (!seen.TryGetValue(location.CellFormId, out var refsInCell))
+                {
+                    refsInCell = [];
+                    seen[location.CellFormId] = refsInCell;
+                }
+
+                refsInCell.Add(placed.FormId);
+            }
+        }
+
+        return seen;
+    }
+
+    private static void AddReroutedChildRecord(
+        Dictionary<uint, CellChildRecordBuckets> bucketsByCell,
+        uint cellFormId,
+        int groupType,
+        byte[] recordBytes)
+    {
+        if (!bucketsByCell.TryGetValue(cellFormId, out var buckets))
+        {
+            buckets = new CellChildRecordBuckets();
+            bucketsByCell[cellFormId] = buckets;
+        }
+
+        AddChildRecordToBuckets(buckets.Persistent, buckets.Vwd, buckets.Temporary, groupType, recordBytes);
+    }
+
+    private static void AddChildRecordToBuckets(
+        List<byte[]> persistentRecords,
+        List<byte[]> vwdRecords,
+        List<byte[]> temporaryRecords,
+        int groupType,
+        byte[] recordBytes)
+    {
+        switch (groupType)
+        {
+            case 8:
+                persistentRecords.Add(recordBytes);
+                break;
+            case 10:
+                vwdRecords.Add(recordBytes);
+                break;
+            default:
+                temporaryRecords.Add(recordBytes);
+                break;
+        }
+    }
+
+    private static List<CellOverrideBundle> CoalesceCellOverrideBundles(IReadOnlyList<CellOverrideBundle> bundles)
+    {
+        if (bundles.Count <= 1)
+        {
+            return bundles.ToList();
+        }
+
+        var coalesced = new List<CellOverrideBundle>();
+        foreach (var group in bundles.GroupBy(b => b.CellFormId))
+        {
+            var first = group.First();
+            if (group.Count() == 1)
+            {
+                coalesced.Add(first);
+                continue;
+            }
+
+            var seenRecords = new HashSet<RecordIdentity>();
+            var persistent = new List<byte[]>();
+            var vwd = new List<byte[]>();
+            var temporary = new List<byte[]>();
+
+            foreach (var bundle in group)
+            {
+                AppendUniqueRecords(persistent, bundle.PersistentChildRecords, seenRecords);
+                AppendUniqueRecords(vwd, bundle.VwdChildRecords, seenRecords);
+                AppendUniqueRecords(temporary, bundle.TemporaryChildRecords, seenRecords);
+            }
+
+            coalesced.Add(first with
+            {
+                PersistentChildRecords = persistent,
+                VwdChildRecords = vwd,
+                TemporaryChildRecords = temporary
+            });
+        }
+
+        return coalesced;
+    }
+
+    private static void AppendUniqueRecords(
+        List<byte[]> target,
+        IReadOnlyList<byte[]> records,
+        HashSet<RecordIdentity> seenRecords)
+    {
+        foreach (var record in records)
+        {
+            var identity = ReadRecordIdentity(record);
+            if (seenRecords.Add(identity))
+            {
+                target.Add(record);
+            }
+        }
+    }
+
+    private static RecordIdentity ReadRecordIdentity(byte[] recordBytes)
+    {
+        if (recordBytes.Length < 16)
+        {
+            return new RecordIdentity(0, 0);
+        }
+
+        return new RecordIdentity(
+            BinaryPrimitives.ReadUInt32LittleEndian(recordBytes.AsSpan(0, 4)),
+            BinaryPrimitives.ReadUInt32LittleEndian(recordBytes.AsSpan(12, 4)));
+    }
+
+    internal sealed record DoorTeleportRepair(
+        uint StaticTargetRefFormId,
+        uint ReplacementDoorBaseFormId,
+        uint ReplacementRefFormId,
+        uint TargetCellFormId,
+        PositionSubrecord TargetTeleportPosRot);
+
+    internal sealed class CellChildRecordBuckets
+    {
+        public List<byte[]> Persistent { get; } = [];
+        public List<byte[]> Vwd { get; } = [];
+        public List<byte[]> Temporary { get; } = [];
+
+        public bool IsEmpty => Persistent.Count == 0 && Vwd.Count == 0 && Temporary.Count == 0;
+    }
+
+    private readonly record struct RecordIdentity(uint Signature, uint FormId);
 
     private LandVisualData? RewriteLandTextureFormIds(LandVisualData? visualData)
     {
@@ -1421,6 +2485,61 @@ public sealed class PluginBuilder
         return EsmWorldExtractor.ExtractLandFromBuffer(data, dataSize, header)?.VisualData;
     }
 
+    /// <summary>
+    ///     Encode a master CELL anchor as an override that layers DMP-captured metadata
+    ///     subrecords (FULL / DATA flags / XCLW water / XCLL lighting / XCLR regions /
+    ///     XEZN encounter zone / XCAS / XCMO / XCIM / LTMP+LNAM) on top of master's bytes.
+    ///     Mirrors the top-level record override pattern at line 753 and REFR override pattern
+    ///     at line 2125 (see <see cref="TryEncodeOverrideRef" />). Returns false when the
+    ///     CellEncoder isn't registered or produces no subrecords — caller should fall back
+    ///     to <c>CellGrupBuilder.ReconstructRecordBytes</c> in that case (verbatim master).
+    /// </summary>
+    private bool TryEncodeOverrideCellAnchor(
+        CellRecord dmpCell,
+        ParsedMainRecord pcCellRecord,
+        PluginBuildOptions options,
+        ConversionPipelineStats stats,
+        out byte[] bytes)
+    {
+        bytes = [];
+
+        if (_encoderRegistry.Get("CELL") is not { } cellEncoder)
+        {
+            return false;
+        }
+
+        EncodedRecord encoded;
+        try
+        {
+            encoded = cellEncoder.Encode(dmpCell);
+        }
+        catch (Exception ex)
+        {
+            stats.Errors++;
+            _sink.Error("Merging cell children",
+                $"CellEncoder threw {ex.GetType().Name} on override 0x{dmpCell.FormId:X8}: {ex.Message}",
+                "CELL", dmpCell.FormId);
+            return false;
+        }
+
+        if (encoded.Subrecords.Count == 0)
+        {
+            return false;
+        }
+
+        encoded = encoded with { Subrecords = RemapEncodedFormIds("CELL", encoded.Subrecords) };
+        var policy = SubrecordMergePolicy.ForRecordType("CELL");
+        var merge = RecordMergeEngine.Merge(pcCellRecord, encoded, policy);
+        foreach (var w in merge.Warnings)
+        {
+            stats.Warnings++;
+            _sink.Warn("Merging cell children", w, "CELL", dmpCell.FormId);
+        }
+
+        bytes = PluginRecordByteBuilder.BuildOverrideRecordBytes(pcCellRecord, merge.SubrecordBytes, options);
+        return true;
+    }
+
     /// <summary>Encode an override ref (FormID matches PC ESM master).</summary>
     private bool TryEncodeOverrideRef(
         PlacedReference placed,
@@ -1454,6 +2573,12 @@ public sealed class PluginBuilder
             return false;
         }
 
+        encoded = encoded with { Subrecords = RemapEncodedFormIds(placed.RecordType, encoded.Subrecords) };
+        if (!ValidateEncodedPlacedBase(placed.RecordType, placed.FormId, encoded.Subrecords, stats))
+        {
+            return false;
+        }
+
         var merge = RecordMergeEngine.Merge(pcRefRecord, encoded, policy);
         foreach (var w in merge.Warnings)
         {
@@ -1465,10 +2590,569 @@ public sealed class PluginBuilder
         return true;
     }
 
+    internal bool TryRepairStaticDoorTeleport(
+        PlacedReference placed,
+        uint allocatedSourceRefFormId,
+        IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId,
+        IReadOnlyDictionary<uint, MasterChildLocation> masterChildLocations,
+        Dictionary<uint, CellChildRecordBuckets> reroutedChildRecordsByCell,
+        Dictionary<string, byte[]> grupBytesByType,
+        Dictionary<uint, DoorTeleportRepair> repairsByStaticTargetRef,
+        FormIdAllocator allocator,
+        PluginBuildOptions options,
+        ConversionPipelineStats stats,
+        out PlacedReference repaired)
+    {
+        repaired = placed;
+        if (placed.RecordType != "REFR" || !placed.DestinationDoorFormId.HasValue)
+        {
+            return false;
+        }
+
+        if (!pcRecordsByFormId.TryGetValue(placed.BaseFormId, out var sourceDoorBase)
+            || sourceDoorBase.Header.Signature != "DOOR")
+        {
+            return false;
+        }
+
+        var targetRefFormId = placed.DestinationDoorFormId.Value;
+        if (!pcRecordsByFormId.TryGetValue(targetRefFormId, out var targetRef)
+            || targetRef.Header.Signature != "REFR"
+            || !masterChildLocations.TryGetValue(targetRefFormId, out var targetLocation))
+        {
+            return false;
+        }
+
+        var targetBaseFormId = CellStructuralReferencePreserver.ReadNameFormId(targetRef);
+        if (!targetBaseFormId.HasValue
+            || !pcRecordsByFormId.TryGetValue(targetBaseFormId.Value, out var targetStaticBase)
+            || targetStaticBase.Header.Signature != "STAT")
+        {
+            return false;
+        }
+
+        if (!TryReadPlacementData(targetRef, out var targetTransform))
+        {
+            return false;
+        }
+
+        if (repairsByStaticTargetRef.TryGetValue(targetRefFormId, out var existingRepair))
+        {
+            repaired = placed with
+            {
+                DestinationDoorFormId = existingRepair.ReplacementRefFormId,
+                TeleportPosRot = placed.TeleportPosRot ?? existingRepair.TargetTeleportPosRot
+            };
+            stats.IncrementDropReason("refr.static-door-retarget-reuse");
+            return true;
+        }
+
+        var targetModel = targetStaticBase.Subrecords.FirstOrDefault(s => s.Signature == "MODL");
+        if (targetModel is null || targetModel.Data.Length == 0)
+        {
+            return false;
+        }
+
+        var replacementDoorBaseFormId = allocator.Allocate();
+        var replacementRefFormId = allocator.Allocate();
+
+        var doorBaseBytes = BuildSyntheticDoorBaseBytes(
+            replacementDoorBaseFormId,
+            sourceDoorBase,
+            targetStaticBase,
+            targetRefFormId,
+            options);
+        AppendOrCreateTopLevelRecord(grupBytesByType, "DOOR", doorBaseBytes);
+        TrackEmittedNewFormId("DOOR", replacementDoorBaseFormId);
+        stats.NewRecordsEmitted++;
+        stats.IncrementEmitted("DOOR");
+
+        var sourceTeleportPosRot = new PositionSubrecord(
+            placed.X,
+            placed.Y,
+            placed.Z,
+            placed.RotX,
+            placed.RotY,
+            placed.RotZ,
+            placed.Offset,
+            false);
+
+        var replacementDoorRef = new PlacedReference
+        {
+            FormId = replacementRefFormId,
+            BaseFormId = replacementDoorBaseFormId,
+            BaseEditorId = targetStaticBase.EditorId,
+            RecordType = "REFR",
+            X = targetTransform.X,
+            Y = targetTransform.Y,
+            Z = targetTransform.Z,
+            RotX = targetTransform.RotX,
+            RotY = targetTransform.RotY,
+            RotZ = targetTransform.RotZ,
+            Scale = TryReadScale(targetRef, out var scale) ? scale : 1.0f,
+            IsPersistent = true,
+            DestinationDoorFormId = allocatedSourceRefFormId,
+            TeleportPosRot = sourceTeleportPosRot,
+            TeleportFlags = placed.TeleportFlags
+        };
+
+        var replacementRefEncoded = RefrEncoder.EncodeNewPlacedReference(replacementDoorRef);
+        foreach (var warning in replacementRefEncoded.Warnings)
+        {
+            stats.Warnings++;
+            _sink.Warn("Merging cell children", warning, "REFR", replacementRefFormId);
+        }
+
+        var replacementRefBytes = PluginRecordByteBuilder.BuildNewRecordBytes(
+            "REFR",
+            replacementRefFormId,
+            ComputeNewRefFlags(replacementDoorRef, options),
+            replacementRefEncoded.Subrecords);
+        AddReroutedChildRecord(reroutedChildRecordsByCell, targetLocation.CellFormId, 8, replacementRefBytes);
+        TrackEmittedNewFormId("REFR", replacementRefFormId);
+        stats.NewRecordsEmitted++;
+        stats.IncrementEmitted("REFR");
+
+        var deletedStatic = DeletedRefSynthesizer.Synthesize(
+            [targetRef],
+            new HashSet<uint>());
+        var targetGroupType = targetLocation.GroupType is 8 or 9 or 10 ? targetLocation.GroupType : 9;
+        foreach (var deletedBytes in deletedStatic.Persistent.Concat(deletedStatic.Temporary))
+        {
+            AddReroutedChildRecord(reroutedChildRecordsByCell, targetLocation.CellFormId, targetGroupType,
+                deletedBytes);
+            stats.OverridesEmitted++;
+            stats.IncrementEmitted("REFR");
+        }
+
+        var targetTeleportPosRot = placed.TeleportPosRot ?? targetTransform;
+        var repair = new DoorTeleportRepair(
+            targetRefFormId,
+            replacementDoorBaseFormId,
+            replacementRefFormId,
+            targetLocation.CellFormId,
+            targetTeleportPosRot);
+        repairsByStaticTargetRef[targetRefFormId] = repair;
+
+        repaired = placed with
+        {
+            DestinationDoorFormId = replacementRefFormId,
+            TeleportPosRot = targetTeleportPosRot
+        };
+
+        stats.IncrementDropReason("refr.static-door-retarget");
+        if (options.VerboseDecisions)
+        {
+            _sink.Decision("Merging cell children",
+                $"Replaced static teleport target 0x{targetRefFormId:X8} " +
+                $"({targetStaticBase.Header.Signature}:{targetStaticBase.EditorId}) with generated DOOR " +
+                $"base 0x{replacementDoorBaseFormId:X8} + ref 0x{replacementRefFormId:X8}; " +
+                $"retargeted source ref 0x{placed.FormId:X8}.",
+                "REFR",
+                placed.FormId,
+                "refr.static-door-retarget");
+        }
+
+        return true;
+    }
+
+    private static byte[] BuildSyntheticDoorBaseBytes(
+        uint formId,
+        ParsedMainRecord sourceDoorBase,
+        ParsedMainRecord targetStaticBase,
+        uint targetRefFormId,
+        PluginBuildOptions options)
+    {
+        var subrecords = new List<EncodedSubrecord>
+        {
+            new("EDID", NullTerminatedAscii($"DmpDoorStatic{targetRefFormId:X8}"))
+        };
+
+        AddSubrecordCopy(subrecords, "OBND", targetStaticBase, sourceDoorBase);
+        AddSubrecordCopy(subrecords, "FULL", sourceDoorBase);
+        if (!subrecords.Any(s => s.Signature == "FULL"))
+        {
+            subrecords.Add(new EncodedSubrecord("FULL", NullTerminatedAscii("Door")));
+        }
+
+        AddSubrecordCopy(subrecords, "MODL", targetStaticBase);
+        AddSubrecordCopy(subrecords, "MODT", targetStaticBase);
+
+        foreach (var sub in sourceDoorBase.Subrecords)
+        {
+            if (sub.Signature is "EDID" or "OBND" or "FULL" or "MODL" or "MODT")
+            {
+                continue;
+            }
+
+            subrecords.Add(new EncodedSubrecord(sub.Signature, sub.Data));
+        }
+
+        var flags = options.CompressRecords ? 0x00040000u : 0u;
+        return PluginRecordByteBuilder.BuildNewRecordBytes("DOOR", formId, flags, subrecords);
+    }
+
+    private static void AddSubrecordCopy(
+        List<EncodedSubrecord> target,
+        string signature,
+        params ParsedMainRecord[] sources)
+    {
+        foreach (var source in sources)
+        {
+            var sub = source.Subrecords.FirstOrDefault(s => s.Signature == signature);
+            if (sub is null)
+            {
+                continue;
+            }
+
+            target.Add(new EncodedSubrecord(signature, sub.Data));
+            return;
+        }
+    }
+
+    private static void AppendOrCreateTopLevelRecord(
+        Dictionary<string, byte[]> grupBytesByType,
+        string recordType,
+        byte[] recordBytes)
+    {
+        if (!grupBytesByType.TryGetValue(recordType, out var existingGrup) || existingGrup.Length <= 24)
+        {
+            grupBytesByType[recordType] = TopLevelRecordEmitter.WrapInTopLevelGrup(recordType, recordBytes);
+            return;
+        }
+
+        var oldBody = existingGrup.AsSpan(24).ToArray();
+        var combined = new byte[oldBody.Length + recordBytes.Length];
+        oldBody.CopyTo(combined, 0);
+        recordBytes.CopyTo(combined, oldBody.Length);
+        grupBytesByType[recordType] = TopLevelRecordEmitter.WrapInTopLevelGrup(recordType, combined);
+    }
+
+    private static byte[] NullTerminatedAscii(string value)
+    {
+        var bytes = new byte[Encoding.ASCII.GetByteCount(value) + 1];
+        Encoding.ASCII.GetBytes(value, bytes);
+        return bytes;
+    }
+
+    private static bool TryReadPlacementData(ParsedMainRecord record, out PositionSubrecord position)
+    {
+        var data = record.Subrecords.FirstOrDefault(s => s.Signature == "DATA" && s.Data.Length >= 24);
+        if (data is null)
+        {
+            position = new PositionSubrecord(0, 0, 0, 0, 0, 0, 0, false);
+            return false;
+        }
+
+        position = new PositionSubrecord(
+            BinaryPrimitives.ReadSingleLittleEndian(data.Data.AsSpan(0, 4)),
+            BinaryPrimitives.ReadSingleLittleEndian(data.Data.AsSpan(4, 4)),
+            BinaryPrimitives.ReadSingleLittleEndian(data.Data.AsSpan(8, 4)),
+            BinaryPrimitives.ReadSingleLittleEndian(data.Data.AsSpan(12, 4)),
+            BinaryPrimitives.ReadSingleLittleEndian(data.Data.AsSpan(16, 4)),
+            BinaryPrimitives.ReadSingleLittleEndian(data.Data.AsSpan(20, 4)),
+            0,
+            false);
+        return true;
+    }
+
+    private static bool TryReadScale(ParsedMainRecord record, out float scale)
+    {
+        var xscl = record.Subrecords.FirstOrDefault(s => s.Signature == "XSCL" && s.Data.Length >= 4);
+        if (xscl is null)
+        {
+            scale = 1.0f;
+            return false;
+        }
+
+        scale = BinaryPrimitives.ReadSingleLittleEndian(xscl.Data);
+        return true;
+    }
+
+    /// <summary>
+    ///     Runtime DMP captures can carry ExtraTeleport data from prototype doors whose
+    ///     destination refs either no longer exist in the released FNV master or are only
+    ///     interior static marker art. Emitting those as XTEL makes the engine bind a
+    ///     teleport to a null/non-door target during cell attach, which produces
+    ///     MASTERFILE linked-door errors and has shown up in the Goodsprings crash logs.
+    ///     Until generated REFR destinations have a full source→allocated remap pass, only
+    ///     keep teleports whose source and destination both resolve to master/emitted DOOR
+    ///     records.
+    /// </summary>
+    internal PlacedReference SanitizeNewRefTeleport(
+        PlacedReference placed,
+        IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId,
+        PluginBuildOptions options,
+        ConversionPipelineStats stats)
+    {
+        if (!placed.DestinationDoorFormId.HasValue)
+        {
+            return placed;
+        }
+
+        if (!IsKnownDoorBase(placed.BaseFormId, pcRecordsByFormId, out var sourceDescription))
+        {
+            return DropNewRefTeleport(placed,
+                $"source base 0x{placed.BaseFormId:X8} is not a DOOR ({sourceDescription})",
+                options,
+                stats);
+        }
+
+        var targetFormId = placed.DestinationDoorFormId.Value;
+        if (!pcRecordsByFormId.TryGetValue(targetFormId, out var targetRecord))
+        {
+            return DropNewRefTeleport(placed,
+                $"destination ref 0x{targetFormId:X8} is not present in the master ESM",
+                options,
+                stats);
+        }
+
+        if (targetRecord.Header.Signature != "REFR")
+        {
+            return DropNewRefTeleport(placed,
+                $"destination 0x{targetFormId:X8} is {targetRecord.Header.Signature}, not REFR",
+                options,
+                stats);
+        }
+
+        var targetBaseFormId = CellStructuralReferencePreserver.ReadNameFormId(targetRecord);
+        if (!targetBaseFormId.HasValue)
+        {
+            return DropNewRefTeleport(placed,
+                $"destination ref 0x{targetFormId:X8} has no NAME base",
+                options,
+                stats);
+        }
+
+        if (!IsKnownDoorBase(targetBaseFormId.Value, pcRecordsByFormId, out var targetDescription))
+        {
+            return DropNewRefTeleport(placed,
+                $"destination ref 0x{targetFormId:X8} base 0x{targetBaseFormId.Value:X8} " +
+                $"is not a DOOR ({targetDescription})",
+                options,
+                stats);
+        }
+
+        return placed;
+    }
+
+    private PlacedReference DropNewRefTeleport(
+        PlacedReference placed,
+        string reason,
+        PluginBuildOptions options,
+        ConversionPipelineStats stats)
+    {
+        stats.Warnings++;
+        stats.IncrementDropReason("refr.invalid-xtel");
+
+        if (options.VerboseDecisions)
+        {
+            _sink.Decision("Merging cell children",
+                $"Dropping XTEL from new {placed.RecordType} 0x{placed.FormId:X8}: {reason}.",
+                placed.RecordType,
+                placed.FormId,
+                "refr.invalid-xtel");
+        }
+
+        return placed with
+        {
+            DestinationDoorFormId = null,
+            DestinationCellFormId = null,
+            TeleportPosRot = null,
+            TeleportFlags = null
+        };
+    }
+
+    private bool IsKnownDoorBase(
+        uint formId,
+        IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId,
+        out string description)
+    {
+        if (pcRecordsByFormId.TryGetValue(formId, out var record))
+        {
+            description = $"{record.Header.Signature}:{record.EditorId ?? string.Empty}";
+            return record.Header.Signature == "DOOR";
+        }
+
+        if (_emittedNewFormIdsByType.TryGetValue("DOOR", out var emittedDoors)
+            && emittedDoors.Contains(formId))
+        {
+            description = "freshly emitted DOOR";
+            return true;
+        }
+
+        description = "missing";
+        return false;
+    }
+
+    private void TrackEmittedNewFormId(string recordType, uint formId)
+    {
+        if (formId == 0)
+        {
+            return;
+        }
+
+        _emittedNewFormIds.Add(formId);
+        if (!_emittedNewFormIdsByType.TryGetValue(recordType, out var typeSet))
+        {
+            typeSet = [];
+            _emittedNewFormIdsByType[recordType] = typeSet;
+        }
+
+        typeSet.Add(formId);
+    }
+
+    private void TrackNewRecordSourceAlias(string recordType, uint sourceFormId, uint targetFormId)
+    {
+        if (sourceFormId == 0 || sourceFormId == targetFormId)
+        {
+            return;
+        }
+
+        _newRecordSourceToAllocated[sourceFormId] = targetFormId;
+        _newRecordSourceToAllocatedType[sourceFormId] = recordType;
+    }
+
+    private bool TryRemapPlacedBaseAlias(
+        PlacedReference placed,
+        uint allocatedBase,
+        out PlacedReference remapped)
+    {
+        remapped = placed;
+
+        if (!_newRecordSourceToAllocatedType.TryGetValue(placed.BaseFormId, out var aliasRecordType)
+            || !ReferenceBaseRemapper.CanPlacedRecordUseBaseType(placed.RecordType, aliasRecordType))
+        {
+            return false;
+        }
+
+        remapped = placed with { BaseFormId = allocatedBase };
+        return true;
+    }
+
+    private bool IsValidPlacedBaseForOutput(
+        PlacedReference placed,
+        IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId,
+        out string? knownBaseRecordType)
+    {
+        knownBaseRecordType = null;
+
+        if (placed.BaseFormId == 0)
+        {
+            return true;
+        }
+
+        if (pcRecordsByFormId.TryGetValue(placed.BaseFormId, out var masterBase))
+        {
+            knownBaseRecordType = masterBase.Header.Signature;
+            return ReferenceBaseRemapper.CanPlacedRecordUseBaseType(
+                placed.RecordType, knownBaseRecordType);
+        }
+
+        foreach (var (recordType, ids) in _emittedNewFormIdsByType)
+        {
+            if (!ids.Contains(placed.BaseFormId)
+                || _newRecordSourceToAllocated.ContainsKey(placed.BaseFormId))
+            {
+                continue;
+            }
+
+            knownBaseRecordType = recordType;
+            return ReferenceBaseRemapper.CanPlacedRecordUseBaseType(
+                placed.RecordType, knownBaseRecordType);
+        }
+
+        return false;
+    }
+
+    private bool ValidateEncodedPlacedBase(
+        string placedRecordType,
+        uint placedFormId,
+        IReadOnlyList<EncodedSubrecord> subrecords,
+        ConversionPipelineStats stats)
+    {
+        if (placedRecordType is not ("REFR" or "ACHR" or "ACRE"))
+        {
+            return true;
+        }
+
+        var name = subrecords.FirstOrDefault(static s => s.Signature == "NAME" && s.Bytes.Length >= 4);
+        if (name is null)
+        {
+            return true;
+        }
+
+        var baseFormId = BinaryPrimitives.ReadUInt32LittleEndian(name.Bytes.AsSpan(0, 4));
+        if (baseFormId == 0 || baseFormId == 0xFFFFFFFFu)
+        {
+            return true;
+        }
+
+        if (IsValidPlacedBaseFormIdForOutput(placedRecordType, baseFormId, out var knownBaseRecordType))
+        {
+            return true;
+        }
+
+        var reason = knownBaseRecordType is null
+            ? "refr.dangling-base"
+            : "refr.base-type-mismatch";
+        var message = knownBaseRecordType is null
+            ? $"base 0x{baseFormId:X8} is not in master ESM and not freshly emitted."
+            : $"base 0x{baseFormId:X8} is {knownBaseRecordType}, which is not a valid base type for " +
+              $"{placedRecordType}.";
+
+        stats.IncrementSkipped(placedRecordType);
+        stats.IncrementDropReason(reason);
+        _sink.Decision("Merging cell children",
+            $"Skipping {placedRecordType} 0x{placedFormId:X8} after FormID remap — {message}",
+            placedRecordType,
+            placedFormId,
+            reason);
+        return false;
+    }
+
+    private bool IsValidPlacedBaseFormIdForOutput(
+        string placedRecordType,
+        uint baseFormId,
+        out string? knownBaseRecordType)
+    {
+        knownBaseRecordType = null;
+
+        if (_masterFormIdsByType is not null)
+        {
+            foreach (var (recordType, ids) in _masterFormIdsByType)
+            {
+                if (!ids.Contains(baseFormId))
+                {
+                    continue;
+                }
+
+                knownBaseRecordType = recordType;
+                return ReferenceBaseRemapper.CanPlacedRecordUseBaseType(
+                    placedRecordType, knownBaseRecordType);
+            }
+        }
+
+        foreach (var (recordType, ids) in _emittedNewFormIdsByType)
+        {
+            if (!ids.Contains(baseFormId)
+                || _newRecordSourceToAllocated.ContainsKey(baseFormId))
+            {
+                continue;
+            }
+
+            knownBaseRecordType = recordType;
+            return ReferenceBaseRemapper.CanPlacedRecordUseBaseType(
+                placedRecordType, knownBaseRecordType);
+        }
+
+        return false;
+    }
+
     /// <summary>Encode a new ref (FormID not in PC ESM — v3 new-record path).</summary>
     private bool TryEncodeNewRef(
         PlacedReference placed,
-        FormIdAllocator allocator,
+        uint allocatedFormId,
         PluginBuildOptions options,
         ConversionPipelineStats stats,
         out byte[] bytes)
@@ -1496,10 +3180,16 @@ public sealed class PluginBuilder
             _sink.Warn("Merging cell children", w, placed.RecordType, placed.FormId);
         }
 
-        var allocatedFormId = allocator.Allocate();
         var flags = ComputeNewRefFlags(placed, options);
+        var subrecords = RemapEncodedFormIds(placed.RecordType, encoded.Subrecords);
+        if (!ValidateEncodedPlacedBase(placed.RecordType, placed.FormId, subrecords, stats))
+        {
+            return false;
+        }
+
         bytes = PluginRecordByteBuilder.BuildNewRecordBytes(placed.RecordType, allocatedFormId, flags,
-            encoded.Subrecords);
+            subrecords);
+        TrackEmittedNewFormId(placed.RecordType, allocatedFormId);
 
         if (options.VerboseDecisions)
         {
@@ -1511,7 +3201,7 @@ public sealed class PluginBuilder
         return true;
     }
 
-    private static byte[] BuildNewCellRecordBytes(
+    private byte[] BuildNewCellRecordBytes(
         CellRecord dmpCell,
         uint emittedFormId,
         IRecordEncoder cellEncoder,
@@ -1526,7 +3216,8 @@ public sealed class PluginBuilder
 
         // CELL flags don't carry persistent/initially-disabled bits like REFR — start at 0.
         var flags = options.CompressRecords ? 0x00040000u : 0u;
-        return PluginRecordByteBuilder.BuildNewRecordBytes("CELL", emittedFormId, flags, encoded.Subrecords);
+        var subrecords = RemapEncodedFormIds("CELL", encoded.Subrecords);
+        return PluginRecordByteBuilder.BuildNewRecordBytes("CELL", emittedFormId, flags, subrecords);
     }
 
     /// <summary>
@@ -1808,21 +3499,23 @@ public sealed class PluginBuilder
             return null;
         }
 
-        var baseType = placed.RecordType switch
+        var baseTypes = placed.RecordType switch
         {
-            "ACHR" => "NPC_",
-            "ACRE" => "CREA",
-            _ => null
+            "ACHR" => (IReadOnlyList<string>)["NPC_"],
+            "ACRE" => ["CREA"],
+            _ => Array.Empty<string>()
         };
 
-        if (baseType is null
-            || !_masterEditorIdToFormIdByType.TryGetValue(baseType, out var byEditorId)
-            || !byEditorId.TryGetValue(placed.BaseEditorId, out var masterFormId))
+        foreach (var baseType in baseTypes)
         {
-            return null;
+            if (_masterEditorIdToFormIdByType.TryGetValue(baseType, out var byEditorId)
+                && byEditorId.TryGetValue(placed.BaseEditorId, out var masterFormId))
+            {
+                return masterFormId;
+            }
         }
 
-        return masterFormId;
+        return null;
     }
 
     /// <summary>
@@ -1943,6 +3636,52 @@ public sealed class PluginBuilder
         return false;
     }
 
+    internal static bool NpcHasRenderableTemplate(IReadOnlyList<EncodedSubrecord> subrecords)
+    {
+        var hasTemplate = subrecords.Any(s => s.Signature == "TPLT" && s.Bytes.Length >= 4);
+        if (!hasTemplate)
+        {
+            return false;
+        }
+
+        var acbs = subrecords.FirstOrDefault(s => s.Signature == "ACBS" && s.Bytes.Length >= 24);
+        if (acbs is null)
+        {
+            return false;
+        }
+
+        const ushort useTraitsTemplateFlag = 0x0001;
+        var templateFlags = BinaryPrimitives.ReadUInt16LittleEndian(acbs.Bytes.AsSpan(22, 2));
+        return (templateFlags & useTraitsTemplateFlag) != 0;
+    }
+
+    internal static bool IsRuntimeStructuralMarkerPlacement(
+        PlacedReference placed,
+        IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId,
+        out string? baseEditorId)
+    {
+        baseEditorId = null;
+        if (placed.RecordType != "REFR"
+            || placed.BaseFormId == 0
+            || !pcRecordsByFormId.TryGetValue(placed.BaseFormId, out var baseRecord)
+            || !CellStructuralReferencePreserver.IsStructuralMarkerBase(baseRecord))
+        {
+            return false;
+        }
+
+        baseEditorId = baseRecord.EditorId;
+        return true;
+    }
+
+    private IReadOnlyList<EncodedSubrecord> RemapEncodedFormIds(
+        string recordType,
+        IReadOnlyList<EncodedSubrecord> subrecords)
+    {
+        return _newRecordSourceToAllocated.Count == 0
+            ? subrecords
+            : EncodedSubrecordFormIdRemapper.Remap(recordType, subrecords, _newRecordSourceToAllocated);
+    }
+
     /// <summary>
     ///     Drop SCRI subrecords whose script FormID isn't in the master ESM. Returns the
     ///     original list when nothing was dropped to avoid unnecessary allocation. Logs one
@@ -2047,6 +3786,23 @@ public sealed class PluginBuilder
         }
 
         return rewritten ?? subrecords;
+    }
+
+    /// <summary>
+    ///     Read the race FormID from an NPC_ record's RNAM subrecord (4 bytes little-endian).
+    ///     Returns false when RNAM is missing — those NPCs aren't viable template fallbacks.
+    /// </summary>
+    private static bool TryReadNpcRaceFormId(ParsedMainRecord npcRecord, out uint raceFormId)
+    {
+        var rnam = npcRecord.Subrecords.FirstOrDefault(s => s.Signature == "RNAM" && s.Data.Length >= 4);
+        if (rnam is null)
+        {
+            raceFormId = 0;
+            return false;
+        }
+
+        raceFormId = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(rnam.Data.AsSpan(0, 4));
+        return true;
     }
 
     /// <summary>
@@ -2339,6 +4095,31 @@ public sealed class PluginBuilder
         yield return ("MGEF", records.BaseEffects);
         yield return ("WRLD", records.Worldspaces);
         yield return ("RACE", records.Races);
+        // v22r: types whose encoders are already registered (v18b) but were not
+        // previously dispatched. Adding them ensures DMP-captured overrides for these
+        // record types reach the merge engine.
+        yield return ("CSTY", records.CombatStyles);
+        yield return ("LGTM", records.LightingTemplates);
+        yield return ("WATR", records.Water);
+        yield return ("WTHR", records.Weather);
+        // v23: close encoder coverage for every type with a runtime reader.
+        yield return ("ECZN", records.EncounterZones);
+        yield return ("MICN", records.MenuIcons);
+        yield return ("VTYP", records.VoiceTypes);
+        yield return ("CCRD", records.CaravanCards);
+        yield return ("INGR", records.Ingredients);
+        yield return ("LSCT", records.LoadScreenTypes);
+        yield return ("IDLE", records.IdleAnimations);
+        yield return ("IPCT", records.ImpactData);
+        yield return ("HDPT", records.HeadParts);
+        yield return ("CPTH", records.CameraPaths);
+        yield return ("ALOC", records.AudioLocationControllers);
+        yield return ("DEBR", records.Debris);
+        yield return ("REGN", records.Regions);
+        yield return ("RADS", records.RadiationStages);
+        yield return ("DEHY", records.DehydrationStages);
+        yield return ("HUNG", records.HungerStages);
+        yield return ("SLPD", records.SleepDeprivationStages);
     }
 
     private static uint ExtractFormId(object model)
@@ -2347,6 +4128,101 @@ public sealed class PluginBuilder
                    ?? throw new InvalidOperationException(
                        $"Model {model.GetType().Name} has no FormId property.");
         return (uint)prop.GetValue(model)!;
+    }
+
+    /// <summary>
+    ///     Diagnostic: drop every cell whose <c>WorldspaceFormId</c> matches one of the
+    ///     supplied excluded IDs, plus the worldspace records themselves and any NavMesh
+    ///     records anchored to a dropped cell. All nested placements (REFR/ACHR/ACRE) live
+    ///     under <c>CellRecord.PlacedObjects</c> and disappear with the parent cell. Used
+    ///     to bisect crashes that point at a specific worldspace — per-FormID merge keeps
+    ///     master content in effect for the excluded worldspace.
+    /// </summary>
+    private void FilterDmpRecordsByExcludedWorldspaces(
+        Models.RecordCollection records,
+        IReadOnlySet<uint> excluded)
+    {
+        if (excluded is null || excluded.Count == 0)
+        {
+            return;
+        }
+
+        var cellsBefore = records.Cells.Count;
+        var navmsBefore = records.NavMeshes.Count;
+        var worldspacesBefore = records.Worldspaces.Count;
+
+        var droppedCellFormIds = new HashSet<uint>();
+        foreach (var cell in records.Cells)
+        {
+            if (cell.WorldspaceFormId is { } wsFid && excluded.Contains(wsFid))
+            {
+                droppedCellFormIds.Add(cell.FormId);
+            }
+        }
+
+        records.Cells.RemoveAll(c =>
+            c.WorldspaceFormId is { } wsFid && excluded.Contains(wsFid));
+        records.NavMeshes.RemoveAll(n =>
+            droppedCellFormIds.Contains(n.CellFormId));
+        records.Worldspaces.RemoveAll(w => excluded.Contains(w.FormId));
+
+        var cellsDropped = cellsBefore - records.Cells.Count;
+        var navmsDropped = navmsBefore - records.NavMeshes.Count;
+        var worldspacesDropped = worldspacesBefore - records.Worldspaces.Count;
+        _sink.Info("Reading DMP",
+            $"Excluded worldspaces: {string.Join(", ", excluded.Select(f => $"0x{f:X8}"))} — " +
+            $"dropped {cellsDropped:N0} cell(s), {navmsDropped:N0} NAVM(s), " +
+            $"{worldspacesDropped:N0} worldspace(s).");
+    }
+
+    /// <summary>
+    ///     When an authoritative <c>CellFormId → WorldspaceFormId</c> map is supplied, apply
+    ///     it to every parsed CELL before downstream grouping (<c>CellGrupBuilder</c>) keys off
+    ///     <c>cell.WorldspaceFormId</c>. The authority overrides existing values because it is,
+    ///     by construction, more trustworthy than the per-DMP heuristic inference pipeline.
+    /// </summary>
+    private void ApplyCellWorldspaceAuthority(
+        Models.RecordCollection records,
+        IReadOnlyDictionary<uint, uint>? authority)
+    {
+        if (authority is null || authority.Count == 0)
+        {
+            return;
+        }
+        var applied = 0;
+        var overrode = 0;
+        var addedNew = 0;
+        for (var i = 0; i < records.Cells.Count; i++)
+        {
+            var c = records.Cells[i];
+            if (!authority.TryGetValue(c.FormId, out var wsFid) || wsFid == 0u)
+            {
+                continue;
+            }
+            if (c.WorldspaceFormId is { } existing && existing == wsFid)
+            {
+                continue;
+            }
+            if (c.WorldspaceFormId is { } prior && prior != 0u)
+            {
+                overrode++;
+            }
+            else
+            {
+                addedNew++;
+            }
+            records.Cells[i] = c with
+            {
+                WorldspaceFormId = wsFid,
+                WorldspaceAssignmentSource = "Authority"
+            };
+            applied++;
+        }
+        if (applied > 0)
+        {
+            _sink.Info("Reading DMP",
+                $"Cell authority applied: {applied} mapping(s) — {addedNew} added, {overrode} overrode prior inference.");
+        }
     }
 
     private PluginBuildResult Fail(string errorMessage, ConversionPipelineStats stats, Stopwatch sw)

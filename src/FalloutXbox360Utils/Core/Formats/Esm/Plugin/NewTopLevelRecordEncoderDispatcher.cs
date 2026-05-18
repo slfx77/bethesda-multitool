@@ -12,7 +12,8 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 
 internal sealed record NewTopLevelRecordEncodingContext(
     IReadOnlySet<uint> MasterFormIds,
-    IReadOnlySet<uint> EmittedNewStatFormIds);
+    IReadOnlySet<uint> EmittedNewStatFormIds,
+    IReadOnlyDictionary<uint, uint> MasterNpcByRace);
 
 internal static class NewTopLevelRecordEncoderDispatcher
 {
@@ -31,7 +32,10 @@ internal static class NewTopLevelRecordEncoderDispatcher
             ["WEAP"] = (model, _) => WeapEncoder.EncodeNew((WeaponRecord)model),
             ["ARMO"] = (model, _) => ArmoEncoder.EncodeNew((ArmorRecord)model),
             ["FACT"] = (model, _) => FactEncoder.EncodeNew((FactionRecord)model),
-            ["NPC_"] = (model, _) => NpcEncoder.EncodeNew((NpcRecord)model),
+            ["NPC_"] = (model, context) => NpcEncoder.EncodeNew(
+                (NpcRecord)model,
+                context.MasterFormIds,
+                context.MasterNpcByRace),
             ["SCPT"] = (model, _) => ScptEncoder.EncodeNew((ScriptRecord)model),
             ["DIAL"] = (model, _) => DialEncoder.EncodeNew((DialogTopicRecord)model),
             ["INFO"] = (model, _) => InfoEncoder.EncodeNew((DialogueRecord)model),
@@ -78,7 +82,30 @@ internal static class NewTopLevelRecordEncoderDispatcher
             ["PERK"] = (model, _) => PerkEncoder.EncodeNew((PerkRecord)model),
             ["MGEF"] = (model, _) => MgefEncoder.EncodeNew((BaseEffectRecord)model),
             ["WRLD"] = (model, _) => WrldEncoder.EncodeNew((WorldspaceRecord)model),
-            ["RACE"] = (model, _) => RaceEncoder.EncodeNew((RaceRecord)model)
+            ["RACE"] = (model, _) => RaceEncoder.EncodeNew((RaceRecord)model),
+            ["CSTY"] = (model, _) => CstyEncoder.EncodeNew((CombatStyleRecord)model),
+            ["LGTM"] = (model, _) => LgtmEncoder.EncodeNew((LightingTemplateRecord)model),
+            ["WATR"] = (model, _) => WatrEncoder.EncodeNew((WaterRecord)model),
+            ["WTHR"] = (model, _) => WthrEncoder.EncodeNew((WeatherRecord)model),
+            // v23: close encoder coverage for every type with a runtime reader.
+            ["ECZN"] = (model, _) => EczEncoder.EncodeNew((EncounterZoneRecord)model),
+            ["MICN"] = (model, _) => MicnEncoder.EncodeNew((MenuIconRecord)model),
+            ["VTYP"] = (model, _) => VtypEncoder.EncodeNew((VoiceTypeRecord)model),
+            ["CCRD"] = (model, _) => CcrdEncoder.EncodeNew((CaravanCardRecord)model),
+            ["INGR"] = (model, _) => IngrEncoder.EncodeNew((IngredientRecord)model),
+            ["LSCT"] = (model, _) => LsctEncoder.EncodeNew((LoadScreenTypeRecord)model),
+            ["IDLE"] = (model, _) => IdleEncoder.EncodeNew((IdleAnimationRecord)model),
+            ["IPCT"] = (model, _) => IpctEncoder.EncodeNew((ImpactDataRecord)model),
+            ["HDPT"] = (model, _) => HdptEncoder.EncodeNew((HeadPartRecord)model),
+            ["CPTH"] = (model, _) => CpthEncoder.EncodeNew((CameraPathRecord)model),
+            ["ALOC"] = (model, _) => AlocEncoder.EncodeNew((AudioLocationControllerRecord)model),
+            ["DEBR"] = (model, _) => DebrEncoder.EncodeNew((DebrisRecord)model),
+            ["REGN"] = (model, _) => RegnEncoder.EncodeNew((RegionRecord)model),
+            // RADS/DEHY/HUNG/SLPD share one encoder — the model type is identical across all four.
+            ["RADS"] = (model, _) => SurvivalStageEncoder.EncodeNew((SurvivalStageRecord)model),
+            ["DEHY"] = (model, _) => SurvivalStageEncoder.EncodeNew((SurvivalStageRecord)model),
+            ["HUNG"] = (model, _) => SurvivalStageEncoder.EncodeNew((SurvivalStageRecord)model),
+            ["SLPD"] = (model, _) => SurvivalStageEncoder.EncodeNew((SurvivalStageRecord)model)
         };
 
     public static IReadOnlyCollection<string> GetSupportedRecordTypes()

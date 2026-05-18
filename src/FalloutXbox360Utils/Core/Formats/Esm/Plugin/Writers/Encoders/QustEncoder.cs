@@ -39,10 +39,12 @@ public sealed class QustEncoder : IRecordEncoder
 
         var subs = new List<EncodedSubrecord>();
 
-        if (quest.Script.HasValue)
-        {
-            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRI", quest.Script.Value));
-        }
+        // SCRI emission is deliberately omitted from the override path. The merge engine's
+        // Pass-2 step appends any encoder subrecord whose signature isn't present in master
+        // — for quests where master lacks SCRI (e.g. VFreeformVault11 [QUST:000E8875]),
+        // appending SCRI puts it after DATA, which FNVEdit flags as out-of-order. Adding
+        // scripts to scriptless quests is out-of-scope for the DMP override path; if a quest
+        // needs a new script, route it through EncodeNew or a dedicated diagnostic.
 
         if (!string.IsNullOrEmpty(quest.FullName))
         {
@@ -57,7 +59,7 @@ public sealed class QustEncoder : IRecordEncoder
         SubrecordEncoder.WriteFloat(data, 4, quest.QuestDelay);
         subs.Add(new EncodedSubrecord("DATA", data));
 
-        // If only DATA was emitted (no FULL/SCRI mutation), fall through to empty so the
+        // If only DATA was emitted (no FULL mutation), fall through to empty so the
         // merge engine retains the master's QUST verbatim — DATA flags rarely differ.
         if (subs.Count == 1)
         {

@@ -7,8 +7,8 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     <see cref="PlacedReference" />. Both the override path and the new-record path emit
 ///     DATA carrying the DMP-captured X/Y/Z/RotX/RotY/RotZ — when a FormID matches the
 ///     master ESM, the DMP position takes precedence over vanilla's editor placement.
-///     The override path emits DATA + XSCL (when scale is non-default). The merge engine
-///     retains NAME / XEZN / XLOC / XOWN / XLKR / XESP / XTEL / XCNT from the master ESM by
+///     The override path emits NAME when available, XSCL, and DATA. The merge engine
+///     retains XEZN / XLOC / XOWN / XLKR / XESP / XTEL / XCNT from the master ESM by
 ///     positional per-signature replacement.
 ///     The new-record path emits a complete subrecord stream (no master to merge with).
 ///     DATA layout: float X(0) + float Y(4) + float Z(8) + float RotX(12) + float RotY(16) + float RotZ(20).
@@ -30,22 +30,22 @@ public sealed class RefrEncoder : IRecordEncoder
     }
 
     /// <summary>
-    ///     Shared encoding logic for REFR/ACHR/ACRE override records. Emits DATA carrying
-    ///     the DMP-captured position + optional XSCL. The merge engine retains all other
-    ///     subrecords (NAME / XEZN / XLOC / XOWN / XLKR / XESP / XTEL / XCNT) from the
-    ///     master ESM via positional per-signature replacement.
+    ///     Shared encoding logic for REFR/ACHR/ACRE override records. Emits NAME when the
+    ///     DMP captured a base form, XSCL even when the value is the default, and DATA
+    ///     carrying the DMP-captured transform. XSCL must be explicit so the merge engine
+    ///     can clear a non-default master scale back to runtime's 1.0.
     /// </summary>
     internal static EncodedRecord EncodePlacedReference(PlacedReference placed)
     {
-        var subs = new List<EncodedSubrecord>(2)
-        {
-            new("DATA", BuildDataSubrecord(placed))
-        };
+        var subs = new List<EncodedSubrecord>(3);
 
-        if (Math.Abs(placed.Scale - 1.0f) > float.Epsilon)
+        if (placed.BaseFormId != 0)
         {
-            subs.Add(new EncodedSubrecord("XSCL", BuildXsclSubrecord(placed.Scale)));
+            subs.Add(EncodeFormIdSubrecord("NAME", placed.BaseFormId));
         }
+
+        subs.Add(new EncodedSubrecord("XSCL", BuildXsclSubrecord(placed.Scale)));
+        subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(placed)));
 
         return new EncodedRecord
         {

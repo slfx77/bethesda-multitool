@@ -568,6 +568,7 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
         byte flags = 0;
         var weight = 0f;
         var contents = new List<InventoryItem>();
+        ObjectBounds? bounds = null;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -577,6 +578,9 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
             {
                 case "EDID":
                     editorId = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "OBND" when sub.DataLength == 12:
+                    bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
                     break;
                 case "FULL":
                     fullName = EsmStringUtils.ReadNullTermString(subData);
@@ -656,6 +660,7 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
             Flags = flags,
             Weight = weight,
             Contents = contents,
+            Bounds = bounds,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
