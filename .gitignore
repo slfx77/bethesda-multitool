@@ -18,6 +18,7 @@ reports/
 
 # Build artifacts
 build/
+*.csproj.lscache
 
 # Accidental files
 nul
