@@ -109,6 +109,15 @@
     <EmbeddedResource Include="Assets\MapMarkers\*.png" />
   </ItemGroup>
 
+  <!-- Runtime data files used by both CLI and GUI builds. -->
+  <ItemGroup>
+    <Content Include="..\..\data\cell_worldspace_authority.json"
+             Link="data\cell_worldspace_authority.json"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest"
+             Condition="Exists('..\..\data\cell_worldspace_authority.json')" />
+  </ItemGroup>
+
   <!-- App icon for title bar (unpackaged apps need explicit Content inclusion) -->
   <ItemGroup Condition="$(TargetFramework.Contains('windows'))">
     <ApplicationDefinition Remove="App.xaml" />

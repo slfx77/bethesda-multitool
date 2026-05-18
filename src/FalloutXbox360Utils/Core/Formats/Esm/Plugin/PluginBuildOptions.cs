@@ -82,6 +82,17 @@ public sealed record PluginBuildOptions
     public bool EnableRefrBaseEditorIdRemap { get; init; } = true;
 
     /// <summary>
+    ///     Optional authoritative <c>CellFormId → WorldspaceFormId</c> map (built by
+    ///     <c>dmp build-cell-authority</c> from a corpus of ESMs + DMPs). When supplied, the
+    ///     builder applies these assignments to every parsed CELL before grouping into world
+    ///     children GRUPs — so cells whose worldspace the per-DMP inference pipeline left
+    ///     ambiguous or wrong land under the correct WRLD in the output ESP. Authority entries
+    ///     override existing <c>WorldspaceFormId</c> values (the authority is, by construction,
+    ///     more trustworthy than the per-DMP heuristic).
+    /// </summary>
+    public IReadOnlyDictionary<uint, uint>? CellWorldspaceAuthority { get; init; }
+
+    /// <summary>
     ///     Diagnostic mode: when a CELL exists in master AND the DMP captured placements
     ///     for it, emit deletion overrides for every master <i>temporary</i> ref that
     ///     isn't in the DMP snapshot — so the in-game / GECK view of that cell shows
@@ -96,4 +107,25 @@ public sealed record PluginBuildOptions
     ///     objects) are preserved.
     /// </summary>
     public bool ReplaceCellTemporariesOnOverride { get; init; }
+
+    /// <summary>
+    ///     Diagnostic: worldspace FormIDs whose cells (and all nested REFR/ACHR/ACRE
+    ///     placements + per-cell LAND/NAVM) the converter should drop from emission
+    ///     entirely. Used to bisect crashes that point at a specific worldspace —
+    ///     skipping it should leave master's content intact via per-FormID merge.
+    ///     Empty (no skips) by default. The WRLD record itself isn't actively
+    ///     emitted, so removing its child cells removes our entire footprint there.
+    /// </summary>
+    public IReadOnlySet<uint> SkipWorldspaceFormIds { get; init; } = new HashSet<uint>();
+
+    /// <summary>
+    ///     Diagnostic: top-level record-type signatures (e.g. "STAT", "NPC_", "WEAP")
+    ///     that the converter should skip entirely. The DMP-parsed records for these
+    ///     types get dropped from EnumerateModelsByType, so neither overrides nor new
+    ///     records of that type appear in the output ESP. Master's records remain in
+    ///     effect via per-FormID merge for overrides; new records simply aren't emitted.
+    ///     Used to bisect crashes that point at a specific record type.
+    /// </summary>
+    public IReadOnlySet<string> SkipRecordTypes { get; init; } =
+        new HashSet<string>(StringComparer.Ordinal);
 }

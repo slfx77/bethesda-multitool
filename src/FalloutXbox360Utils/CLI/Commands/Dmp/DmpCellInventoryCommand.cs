@@ -4,6 +4,7 @@ using System.Text;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Semantic;
 using Spectre.Console;
 
@@ -130,12 +131,10 @@ internal static class DmpCellInventoryCommand
             $"[blue]Cell inventory for {dmpFiles.Count} DMP(s) -> {Markup.Escape(outputDir)} " +
             $"(base types: {string.Join(",", targetTypes)})[/]");
 
-        // PC ESM authority: when a reference plugin is provided, load its GRUP hierarchy once
-        // and build an authoritative CellFormId → WorldspaceFormId map. This is the same map
-        // EsmFileAnalyzer constructs from World Children (Type 1) GRUPs in the master ESM
-        // (cells DMPs preserve at runtime never carry Type 1 GRUPs, so the master is the only
-        // source for cells the runtime pCellMap doesn't anchor).
-        var pcCellToWorldspace = await LoadPcEsmCellMapAsync(pcEsmPath, cancellationToken);
+        // PC ESM authority: when a reference plugin is provided, load its GRUP hierarchy once.
+        // The cell→worldspace map resolves authored cell ownership, and the ref→cell map lets
+        // inventory reporting mirror dmp-to-esp's master-parent handling for existing refs.
+        var pcAuthority = await LoadPcEsmCellAuthorityAsync(pcEsmPath, cancellationToken);
 
         // Corpus-derived authority JSON: covers cells the shipped PC ESM lacks (e.g. cut
         // prototype worldspaces such as TheStripWorld). Merged on top of the PC ESM map.
@@ -151,7 +150,7 @@ internal static class DmpCellInventoryCommand
                 $"{Markup.Escape(Path.GetFileName(authorityLoad.Path))}.[/]");
         }
 
-        var combinedAuthority = CellWorldspaceAuthorityJson.Merge(pcCellToWorldspace, authorityLoad.Cells);
+        var combinedAuthority = CellWorldspaceAuthorityJson.Merge(pcAuthority?.CellToWorldspace, authorityLoad.Cells);
         AnsiConsole.WriteLine();
 
         var processed = 0;
@@ -261,19 +260,7 @@ internal static class DmpCellInventoryCommand
                 var totalPlacements = 0;
 
                 // Cells that have at least one placement whose base FormID is in our target set.
-                var matchedCells = records.Cells
-                    .Select(c => new
-                    {
-                        Cell = c,
-                        // Persistent refs (XMarker, MapMarker, RoomMarker, etc.) appear in nearly
-                        // every cell and aren't useful "where to look" signal — restrict to the
-                        // non-persistent placements which represent actual scenery.
-                        Hits = c.PlacedObjects
-                            .Where(o => !o.IsPersistent && baseTypeMap.ContainsKey(o.BaseFormId))
-                            .ToList()
-                    })
-                    .Where(x => x.Hits.Count > 0)
-                    .ToList();
+                var matchedCells = BuildMatchedCells(records.Cells, baseTypeMap, pcAuthority);
 
                 if (matchedCells.Count == 0)
                 {
@@ -340,9 +327,10 @@ internal static class DmpCellInventoryCommand
                                          .ThenBy(p => p.BaseEditorId ?? "", StringComparer.OrdinalIgnoreCase))
                             {
                                 var bType = baseTypeMap[p.BaseFormId];
-                                var bEid = !string.IsNullOrEmpty(p.BaseEditorId)
-                                    ? p.BaseEditorId
-                                    : $"0x{p.BaseFormId:X8}";
+                                var bEid = pcAuthority?.EditorIds.GetValueOrDefault(p.BaseFormId)
+                                           ?? resolver.GetEditorId(p.BaseFormId)
+                                           ?? p.BaseEditorId
+                                           ?? $"0x{p.BaseFormId:X8}";
                                 var disp = resolver.GetDisplayName(p.BaseFormId) ?? "";
                                 var iEid = p.EditorId ?? "";
                                 var scale = Math.Abs(p.Scale - 1.0f) > 0.001f
@@ -386,7 +374,7 @@ internal static class DmpCellInventoryCommand
     ///     extracts the mapping from Type 1 (World Children) GRUPs — the canonical source.
     ///     Returns null when no path was supplied.
     /// </summary>
-    private static async Task<IReadOnlyDictionary<uint, uint>?> LoadPcEsmCellMapAsync(
+    private static async Task<PcEsmCellAuthority?> LoadPcEsmCellAuthorityAsync(
         string? pcEsmPath,
         CancellationToken cancellationToken)
     {
@@ -402,15 +390,102 @@ internal static class DmpCellInventoryCommand
 
         AnsiConsole.MarkupLine($"[blue]Loading PC ESM authority: {Markup.Escape(Path.GetFileName(pcEsmPath))}...[/]");
         var analysis = await EsmFileAnalyzer.AnalyzeAsync(pcEsmPath, cancellationToken: cancellationToken);
-        if (analysis?.EsmRecords is { } esmRecords && esmRecords.CellToWorldspaceMap.Count > 0)
+        if (analysis?.EsmRecords is { } esmRecords &&
+            (esmRecords.CellToWorldspaceMap.Count > 0 || esmRecords.CellToRefrMap.Count > 0))
         {
+            var refToCell = BuildRefToCellMap(esmRecords.CellToRefrMap);
             AnsiConsole.MarkupLine(
-                $"[blue]PC ESM authority: {esmRecords.CellToWorldspaceMap.Count:N0} cell→worldspace entries.[/]");
-            return esmRecords.CellToWorldspaceMap;
+                $"[blue]PC ESM authority: {esmRecords.CellToWorldspaceMap.Count:N0} cell→worldspace entries, " +
+                $"{refToCell.Count:N0} ref→cell entries.[/]");
+            return new PcEsmCellAuthority(esmRecords.CellToWorldspaceMap, refToCell, analysis.FormIdMap);
         }
 
-        AnsiConsole.MarkupLine($"[yellow]PC ESM produced no cell→worldspace map (file empty or unparseable).[/]");
+        AnsiConsole.MarkupLine($"[yellow]PC ESM produced no cell/ref authority map (file empty or unparseable).[/]");
         return null;
+    }
+
+    private static Dictionary<uint, uint> BuildRefToCellMap(
+        IReadOnlyDictionary<uint, List<uint>> cellToRefrMap)
+    {
+        var refToCell = new Dictionary<uint, uint>();
+        foreach (var (cellFormId, refs) in cellToRefrMap)
+        {
+            foreach (var refFormId in refs)
+            {
+                if (refFormId != 0)
+                {
+                    refToCell.TryAdd(refFormId, cellFormId);
+                }
+            }
+        }
+
+        return refToCell;
+    }
+
+    private static List<CellInventoryMatch> BuildMatchedCells(
+        IReadOnlyList<CellRecord> cells,
+        IReadOnlyDictionary<uint, string> baseTypeMap,
+        PcEsmCellAuthority? pcAuthority)
+    {
+        var cellByFormId = cells
+            .GroupBy(c => c.FormId)
+            .ToDictionary(g => g.Key, g => g.First());
+        var buckets = new Dictionary<uint, CellInventoryMatch>();
+
+        foreach (var sourceCell in cells)
+        {
+            // Persistent refs (XMarker, MapMarker, RoomMarker, etc.) appear in nearly
+            // every cell and aren't useful "where to look" signal — restrict to the
+            // non-persistent placements which represent actual scenery.
+            foreach (var placed in sourceCell.PlacedObjects.Where(o =>
+                         !o.IsPersistent && baseTypeMap.ContainsKey(o.BaseFormId)))
+            {
+                var effectiveCell = ResolveEffectiveInventoryCell(
+                    sourceCell,
+                    placed,
+                    cellByFormId,
+                    pcAuthority);
+                if (!buckets.TryGetValue(effectiveCell.FormId, out var bucket))
+                {
+                    bucket = new CellInventoryMatch(effectiveCell, []);
+                    buckets[effectiveCell.FormId] = bucket;
+                }
+
+                bucket.Hits.Add(placed);
+            }
+        }
+
+        return buckets.Values
+            .Where(x => x.Hits.Count > 0)
+            .ToList();
+    }
+
+    private static CellRecord ResolveEffectiveInventoryCell(
+        CellRecord sourceCell,
+        PlacedReference placed,
+        IReadOnlyDictionary<uint, CellRecord> cellByFormId,
+        PcEsmCellAuthority? pcAuthority)
+    {
+        if (pcAuthority is null ||
+            !pcAuthority.RefToCell.TryGetValue(placed.FormId, out var masterCellFormId) ||
+            masterCellFormId == 0 ||
+            masterCellFormId == sourceCell.FormId)
+        {
+            return sourceCell;
+        }
+
+        if (cellByFormId.TryGetValue(masterCellFormId, out var masterCell))
+        {
+            return masterCell;
+        }
+
+        pcAuthority.CellToWorldspace.TryGetValue(masterCellFormId, out var worldspaceFormId);
+        return new CellRecord
+        {
+            FormId = masterCellFormId,
+            WorldspaceFormId = worldspaceFormId != 0 ? worldspaceFormId : null,
+            WorldspaceAssignmentSource = worldspaceFormId != 0 ? "PcEsmRefParent" : null
+        };
     }
 
     private static uint WorldspaceBucketKey(
@@ -480,4 +555,13 @@ internal static class DmpCellInventoryCommand
             .Replace("\r", "", StringComparison.Ordinal)
             .Replace("\n", " ", StringComparison.Ordinal);
     }
+
+    private sealed record PcEsmCellAuthority(
+        IReadOnlyDictionary<uint, uint> CellToWorldspace,
+        IReadOnlyDictionary<uint, uint> RefToCell,
+        IReadOnlyDictionary<uint, string> EditorIds);
+
+    private sealed record CellInventoryMatch(
+        CellRecord Cell,
+        List<PlacedReference> Hits);
 }

@@ -81,6 +81,26 @@ internal static class DmpCellAuthorityBuildCommand
 
         var authority = new CellWorldspaceAuthorityBuilder();
 
+        // Seed from any existing output JSON so hand-curated manual entries (e.g. cells the
+        // user has attributed by domain knowledge that no corpus source observed) survive
+        // rebuilds. Seed wins on conflict — corpus discoveries can't silently overwrite a
+        // manual call. To start fresh, delete the output file before running.
+        if (File.Exists(outputPath))
+        {
+            var seed = CellWorldspaceAuthorityJson.Load(outputPath);
+            if (seed.Cells is { Count: > 0 } seedCells)
+            {
+                AnsiConsole.MarkupLine(
+                    $"[cyan]Seed:[/] preserving {seedCells.Count:N0} entries from " +
+                    $"existing {Markup.Escape(outputPath)}");
+                foreach (var (cell, wrld) in seedCells)
+                {
+                    authority.TryAddOrFlag(cell, wrld, $"seed:{Path.GetFileName(outputPath)}");
+                }
+                authority.AddSource("seed", outputPath, seedCells.Count, seedCells.Count);
+            }
+        }
+
         foreach (var esmPath in esmPaths)
         {
             cancellationToken.ThrowIfCancellationRequested();

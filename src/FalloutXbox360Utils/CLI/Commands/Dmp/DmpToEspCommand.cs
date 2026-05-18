@@ -97,6 +97,36 @@ public static class DmpToEspCommand
         command.Options.Add(disableRefrEditorIdRemapOpt);
         command.Options.Add(replaceCellTemporariesOpt);
 
+        var cellAuthorityOpt = new Option<string?>("--cell-authority")
+        {
+            Description =
+                "Optional corpus-derived CellFormId→WorldspaceFormId authority JSON (built with " +
+                "`dmp build-cell-authority`). Applied to parsed cells before grouping so cells " +
+                "land under the correct WRLD in the output ESP. Defaults to " +
+                "data/cell_worldspace_authority.json next to the executable if it exists."
+        };
+        command.Options.Add(cellAuthorityOpt);
+
+        var skipWorldspaceOpt = new Option<string[]>("--skip-worldspace")
+        {
+            Description =
+                "Diagnostic: repeatable WRLD FormID (hex, e.g. 0x000DA726) whose cells and nested " +
+                "placements the converter should drop from emission. Used to bisect crashes that " +
+                "point at a specific worldspace — master content remains in effect via per-FormID " +
+                "merge."
+        };
+        command.Options.Add(skipWorldspaceOpt);
+
+        var skipRecordTypeOpt = new Option<string[]>("--skip-record-type")
+        {
+            Description =
+                "Diagnostic: repeatable record-type signature (e.g. STAT, NPC_, WEAP) whose " +
+                "top-level emission the converter should drop. Master records remain in effect " +
+                "via per-FormID merge; new records of this type aren't emitted at all. Used to " +
+                "bisect crashes that point at a specific record type."
+        };
+        command.Options.Add(skipRecordTypeOpt);
+
         command.SetAction(async (parseResult, ct) =>
         {
             var dmp = parseResult.GetValue(dmpArg)!;
@@ -114,10 +144,18 @@ public static class DmpToEspCommand
             var overrideVanilla = parseResult.GetValue(overrideVanillaOpt);
             var disableRefrEditorIdRemap = parseResult.GetValue(disableRefrEditorIdRemapOpt);
             var replaceCellTemporaries = parseResult.GetValue(replaceCellTemporariesOpt);
+            var cellAuthorityPath = parseResult.GetValue(cellAuthorityOpt);
+            var skipWorldspaceArgs = parseResult.GetValue(skipWorldspaceOpt) ?? [];
+            var skipWorldspaceFormIds = ParseHexFormIdSet(skipWorldspaceArgs);
+            var skipRecordTypeArgs = parseResult.GetValue(skipRecordTypeOpt) ?? [];
+            var skipRecordTypes = new HashSet<string>(
+                skipRecordTypeArgs.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()),
+                StringComparer.Ordinal);
 
             await RunAsync(dmp, pcEsm, output, author, description, compress, validate, verbose,
                 secondaryData, secondaryData360, packAssets, writeMissingList, overrideVanilla,
-                disableRefrEditorIdRemap, replaceCellTemporaries, ct);
+                disableRefrEditorIdRemap, replaceCellTemporaries, cellAuthorityPath,
+                skipWorldspaceFormIds, skipRecordTypes, ct);
         });
 
         return command;
@@ -139,6 +177,9 @@ public static class DmpToEspCommand
         bool overrideVanilla,
         bool disableRefrEditorIdRemap,
         bool replaceCellTemporaries,
+        string? cellAuthorityPath,
+        IReadOnlySet<uint> skipWorldspaceFormIds,
+        IReadOnlySet<string> skipRecordTypes,
         CancellationToken ct)
     {
         if (!File.Exists(dmpPath))
@@ -164,6 +205,20 @@ public static class DmpToEspCommand
         var baselineDataFolder = Path.GetDirectoryName(pcEsmPath);
         var renameFolders = BuildRenameFolders(secondaryDataFolders, secondaryDataFolders360);
 
+        // Cell authority: same loader cell-inventory uses. Auto-probes default paths when
+        // --cell-authority isn't given; emits a one-line status either way.
+        var authorityLoad = CellWorldspaceAuthorityJson.Load(cellAuthorityPath);
+        if (authorityLoad.Warning is not null)
+        {
+            AnsiConsole.MarkupLine($"[yellow]{Markup.Escape(authorityLoad.Warning)}[/]");
+        }
+        else if (authorityLoad.Cells is not null && authorityLoad.Path is not null)
+        {
+            AnsiConsole.MarkupLine(
+                $"[cyan]Cell authority:[/] {authorityLoad.Cells.Count:N0} entries from " +
+                $"{Markup.Escape(Path.GetFileName(authorityLoad.Path))}");
+        }
+
         var options = new PluginBuildOptions
         {
             MasterFileName = Path.GetFileName(pcEsmPath),
@@ -177,8 +232,23 @@ public static class DmpToEspCommand
             AssetRenameSecondaryFolders = renameFolders,
             AssetRenameOverrideVanilla = overrideVanilla,
             EnableRefrBaseEditorIdRemap = !disableRefrEditorIdRemap,
-            ReplaceCellTemporariesOnOverride = replaceCellTemporaries
+            ReplaceCellTemporariesOnOverride = replaceCellTemporaries,
+            CellWorldspaceAuthority = authorityLoad.Cells,
+            SkipWorldspaceFormIds = skipWorldspaceFormIds,
+            SkipRecordTypes = skipRecordTypes
         };
+
+        if (skipWorldspaceFormIds.Count > 0)
+        {
+            AnsiConsole.MarkupLine(
+                $"[yellow]Skipping worldspaces:[/] {string.Join(", ", skipWorldspaceFormIds.Select(f => $"0x{f:X8}"))}");
+        }
+
+        if (skipRecordTypes.Count > 0)
+        {
+            AnsiConsole.MarkupLine(
+                $"[yellow]Skipping record types:[/] {string.Join(", ", skipRecordTypes)}");
+        }
 
         var inputs = new DmpToEspInputs
         {
@@ -193,7 +263,7 @@ public static class DmpToEspCommand
         AnsiConsole.MarkupLine($"[cyan]Output:[/] {Markup.Escape(outputPath)}");
         AnsiConsole.WriteLine();
 
-        var registry = RecordEncoderRegistry.CreateV22Default();
+        var registry = RecordEncoderRegistry.CreateV23Default();
         var sink = new ConsoleProgressSink(verbose);
         var pipeline = new PluginConversionPipeline(registry, sink);
 
@@ -246,6 +316,37 @@ public static class DmpToEspCommand
             AnsiConsole.MarkupLine($"[red]✗ Conversion failed:[/] {Markup.Escape(result.ErrorMessage ?? "(unknown)")}");
             Environment.Exit(1);
         }
+    }
+
+    /// <summary>
+    ///     Parse a list of hex form-id strings (with or without 0x prefix) into a set.
+    ///     Invalid entries are reported and skipped.
+    /// </summary>
+    private static IReadOnlySet<uint> ParseHexFormIdSet(string[] hexStrings)
+    {
+        var set = new HashSet<uint>();
+        foreach (var raw in hexStrings)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                continue;
+            }
+            var s = raw.Trim();
+            if (s.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            {
+                s = s[2..];
+            }
+            if (uint.TryParse(s, System.Globalization.NumberStyles.HexNumber,
+                System.Globalization.CultureInfo.InvariantCulture, out var fid))
+            {
+                set.Add(fid);
+            }
+            else
+            {
+                AnsiConsole.MarkupLine($"[yellow]Warning:[/] could not parse FormID '{Markup.Escape(raw)}', skipping.");
+            }
+        }
+        return set;
     }
 
     /// <summary>
