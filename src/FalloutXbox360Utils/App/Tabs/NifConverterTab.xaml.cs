@@ -13,14 +13,11 @@ namespace FalloutXbox360Utils;
 /// </summary>
 public sealed partial class NifConverterTab : NifFileConverterBase
 {
-    private string? _currentNifViewerPath;
     private bool _dependencyCheckDone;
 
     // NIF Viewer state
     private NifBrowserService? _nifBrowserService;
-    private List<NifTreeViewItem>? _nifViewerAllItems;
-    private bool _nifViewerIsBsa;
-    private string? _nifViewerSourcePath;
+    private readonly NifConverterViewModel _nifViewer = new();
     private bool _nifViewerWebViewInitialized;
 
     public NifConverterTab()
@@ -352,9 +349,9 @@ public sealed partial class NifConverterTab : NifFileConverterBase
         if (file == null) return;
 
         NifViewerTextureBsaTextBox.Text = file.Path;
-        if (!string.IsNullOrEmpty(_nifViewerSourcePath))
+        if (!string.IsNullOrEmpty(_nifViewer.CurrentPath))
         {
-            await LoadNifSourceAsync(_nifViewerSourcePath, _nifViewerIsBsa);
+            await LoadNifSourceAsync(_nifViewer.CurrentPath, _nifViewer.IsBsa);
         }
     }
 
@@ -362,8 +359,6 @@ public sealed partial class NifConverterTab : NifFileConverterBase
     {
         _nifBrowserService?.Dispose();
         NifViewerPathTextBox.Text = path;
-        _nifViewerSourcePath = path;
-        _nifViewerIsBsa = isBsa;
 
         try
         {
@@ -371,18 +366,16 @@ public sealed partial class NifConverterTab : NifFileConverterBase
             var hasOverride = !string.IsNullOrEmpty(overrideText);
             var result = await NifConverterWorkflowService.LoadSourceAsync(path, isBsa, overrideText);
             _nifBrowserService = result.Service;
+            var state = _nifViewer.ApplySource(path, isBsa, result, hasOverride);
 
             // Reflect the auto-detected textures path in the UI when the user hasn't overridden it.
-            if (!hasOverride)
+            if (state.TexturePathsDisplay != null)
             {
-                NifViewerTextureBsaTextBox.Text = result.TexturePathsDisplay;
+                NifViewerTextureBsaTextBox.Text = state.TexturePathsDisplay;
             }
 
-            _nifViewerAllItems = result.Items;
-            PopulateNifTree(_nifViewerAllItems);
-
-            var fileCount = _nifViewerAllItems.Sum(i => i.IsDirectory ? i.Children.Count : 1);
-            NifViewerFileCount.Text = $"{fileCount} NIF files";
+            PopulateNifTree(state.Items);
+            NifViewerFileCount.Text = state.FileCountText;
         }
         catch (Exception ex)
         {
@@ -397,10 +390,7 @@ public sealed partial class NifConverterTab : NifFileConverterBase
 
     private void NifViewerSearchBox_TextChanged(object sender, TextChangedEventArgs e)
     {
-        if (_nifViewerAllItems == null) return;
-
-        var search = NifViewerSearchBox.Text?.Trim();
-        PopulateNifTree(NifConverterWorkflowService.FilterTreeItems(_nifViewerAllItems, search));
+        PopulateNifTree(_nifViewer.FilterTree(NifViewerSearchBox.Text));
     }
 
     private async void NifViewerTree_ItemInvoked(TreeView sender, TreeViewItemInvokedEventArgs args)
@@ -414,7 +404,7 @@ public sealed partial class NifConverterTab : NifFileConverterBase
     {
         if (_nifBrowserService == null || !_nifViewerWebViewInitialized) return;
 
-        _currentNifViewerPath = item.FullPath;
+        _nifViewer.SelectNif(item);
         NifModelLoadingRing.Visibility = Visibility.Visible;
         NifViewerPlaceholderText.Visibility = Visibility.Collapsed;
 
@@ -433,14 +423,8 @@ public sealed partial class NifConverterTab : NifFileConverterBase
             // Update info panel
             if (result.Info != null)
             {
-                NifViewerInfoText.Text =
-                    $"File: {result.Info.FileName}\n" +
-                    $"Size: {result.Info.FileSize:N0} bytes\n" +
-                    $"Format: {result.Info.Format}\n" +
-                    $"Blocks: {result.Info.BlockCount}\n" +
-                    $"BS Version: {result.Info.BsVersion}\n" +
-                    $"User Version: {result.Info.UserVersion}";
-                NifViewerBlockTypesText.Text = string.Join(", ", result.Info.BlockTypeNames);
+                NifViewerInfoText.Text = NifConverterViewModel.FormatModelInfo(result.Info);
+                NifViewerBlockTypesText.Text = NifConverterViewModel.FormatBlockTypes(result.Info);
             }
 
             // Build GLB for 3D viewer
@@ -482,13 +466,13 @@ public sealed partial class NifConverterTab : NifFileConverterBase
 
     private async void NifViewerExportGlb_Click(object sender, RoutedEventArgs e)
     {
-        if (_nifBrowserService == null || _currentNifViewerPath == null) return;
+        if (_nifBrowserService == null || _nifViewer.SelectedNifPath == null) return;
 
         var picker = new FileSavePicker();
         picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
         picker.FileTypeChoices.Add("GLB File", [".glb"]);
         picker.SuggestedFileName = Path.ChangeExtension(
-            Path.GetFileName(_currentNifViewerPath), ".glb");
+            Path.GetFileName(_nifViewer.SelectedNifPath), ".glb");
         InitializeWithWindow.Initialize(picker,
             WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow));
 
@@ -498,7 +482,9 @@ public sealed partial class NifConverterTab : NifFileConverterBase
         NifViewerExportGlbButton.IsEnabled = false;
         try
         {
-            var glbBytes = await NifConverterWorkflowService.BuildGlbAsync(_nifBrowserService, _currentNifViewerPath);
+            var glbBytes = await NifConverterWorkflowService.BuildGlbAsync(
+                _nifBrowserService,
+                _nifViewer.SelectedNifPath);
             if (glbBytes != null)
             {
                 await File.WriteAllBytesAsync(file.Path, glbBytes);
@@ -521,13 +507,13 @@ public sealed partial class NifConverterTab : NifFileConverterBase
 
     private async void NifViewerRenderPng_Click(object sender, RoutedEventArgs e)
     {
-        if (_nifBrowserService == null || _currentNifViewerPath == null) return;
+        if (_nifBrowserService == null || _nifViewer.SelectedNifPath == null) return;
 
         var picker = new FileSavePicker();
         picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
         picker.FileTypeChoices.Add("PNG Image", [".png"]);
         picker.SuggestedFileName = Path.ChangeExtension(
-            Path.GetFileName(_currentNifViewerPath), ".png");
+            Path.GetFileName(_nifViewer.SelectedNifPath), ".png");
         InitializeWithWindow.Initialize(picker,
             WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow));
 
@@ -537,16 +523,16 @@ public sealed partial class NifConverterTab : NifFileConverterBase
         NifViewerRenderPngButton.IsEnabled = false;
         try
         {
-            var spriteSize = Math.Clamp((int)NifViewerSizeNumberBox.Value, 64, 4096);
+            var spriteSize = NifConverterViewModel.ClampSpriteSize(NifViewerSizeNumberBox.Value);
             var camera = BuildNifViewerCameraConfig();
             var viewCount = await NifConverterWorkflowService.RenderPngViewsAsync(
                 _nifBrowserService,
-                _currentNifViewerPath,
+                _nifViewer.SelectedNifPath,
                 file.Path,
                 spriteSize,
                 camera);
 
-            StatusTextBlock.Text = $"Rendered: {(viewCount > 1 ? $"{viewCount} views" : file.Name)}";
+            StatusTextBlock.Text = NifConverterViewModel.FormatRenderStatus(viewCount, file.Name);
         }
         catch (Exception ex)
         {
@@ -577,16 +563,7 @@ public sealed partial class NifConverterTab : NifFileConverterBase
 
         var elevation = (float)NifViewerElevationSlider.Value;
 
-        return perspective switch
-        {
-            "iso" => new CameraConfig
-            {
-                Isometric = true, ElevationDeg = elevation, ElevationOverridden = true
-            },
-            "side" => new CameraConfig { SideProfile = true },
-            "trimetric" => new CameraConfig { Trimetric = true },
-            _ => new CameraConfig { ElevationDeg = elevation, ElevationOverridden = true }
-        };
+        return NifConverterViewModel.BuildCameraConfig(perspective, elevation);
     }
 
     private static string EscapeJsString(string s)
