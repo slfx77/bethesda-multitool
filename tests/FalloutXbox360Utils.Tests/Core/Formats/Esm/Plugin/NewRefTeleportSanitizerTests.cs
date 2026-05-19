@@ -270,7 +270,7 @@ public class NewRefTeleportSanitizerTests
     private static PluginBuilder CreateBuilder()
     {
 #pragma warning disable CS0618
-        return new PluginBuilder(RecordEncoderRegistry.CreateV22Default());
+        return new PluginBuilder(RecordEncoderRegistry.CreateDefault());
 #pragma warning restore CS0618
     }
 

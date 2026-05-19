@@ -113,9 +113,9 @@ public class V19ValidationFixesTests
     // ====================================================================================
 
     [Fact]
-    public void RecordEncoderRegistry_V16Default_RegistersLvliEncoderUnderAllThreeSignatures()
+    public void RecordEncoderRegistry_Default_RegistersLvliEncoderUnderAllThreeSignatures()
     {
-        var registry = RecordEncoderRegistry.CreateV16Default();
+        var registry = RecordEncoderRegistry.CreateDefault();
 
         Assert.True(registry.TryGet("LVLI", out var lvliEncoder));
         Assert.True(registry.TryGet("LVLN", out var lvlnEncoder));

@@ -45,269 +45,13 @@ public sealed class RecordEncoderRegistry
     }
 
     /// <summary>
-    ///     Builds a registry pre-populated with the v1 encoder set.
-    ///     Each encoder emits only the subrecord(s) whose byte layout is fully captured by the
-    ///     parsed model — everything else is retained from the source ESM by the merge engine.
-    ///     This conservative strategy guarantees that v1 cannot corrupt unmapped fields.
-    ///     Coverage:
-    ///     GMST  (DATA, numeric only)            GLOB  (FLTV)
-    ///     WEAP  (DATA)                          ARMO  (DATA)
-    ///     AMMO  (DATA)                          ALCH  (DATA)
-    ///     BOOK  (DATA)                          MISC  (DATA)
-    ///     KEYM  (DATA)                          FACT  (DATA flags)
-    ///     NPC_  (ACBS)
-    ///     CONT is intentionally excluded from v1 overrides: <see cref="Models.Records.Item.ContainerRecord" />
-    ///     historically did not carry the Weight field needed to reconstruct the 5-byte DATA
-    ///     payload. v7 adds Weight to the model and a CONT new-record encoder.
-    /// </summary>
-    public static RecordEncoderRegistry CreateV1Default()
-    {
-        var registry = new RecordEncoderRegistry();
-        registry.RegisterAll(
-            new GmstEncoder(),
-            new GlobEncoder(),
-            new WeapEncoder(),
-            new ArmoEncoder(),
-            new AmmoEncoder(),
-            new AlchEncoder(),
-            new BookEncoder(),
-            new MiscEncoder(),
-            new KeymEncoder(),
-            new FactEncoder(),
-            new NpcEncoder());
-        return registry;
-    }
-
-    /// <summary>
-    ///     Builds a registry pre-populated with the v2 encoder set, which extends v1 with
-    ///     placed-reference encoders (REFR/ACHR/ACRE) used by the cell-children override path.
-    ///     These three are NOT emitted as top-level GRUP records — they live inside their
-    ///     parent CELL's child GRUP hierarchy and are dispatched separately from the simple-
-    ///     type override loop.
-    /// </summary>
-    public static RecordEncoderRegistry CreateV2Default()
-    {
-        var registry = CreateV1Default();
-        registry.RegisterAll(
-            new RefrEncoder(),
-            new AchrEncoder(),
-            new AcreEncoder());
-        return registry;
-    }
-
-    /// <summary>
-    ///     Builds a registry for v3 — extends v2 with the <see cref="Encoders.CellEncoder" />
-    ///     used to emit synthetic CELL records for DMP cells that don't exist in the master.
-    ///     Like REFR/ACHR/ACRE, CELL is not a top-level emission type — it's routed through
-    ///     the cell-children pipeline.
-    /// </summary>
-    public static RecordEncoderRegistry CreateV3Default()
-    {
-        var registry = CreateV2Default();
-        registry.Register(new CellEncoder());
-        return registry;
-    }
-
-    /// <summary>
-    ///     Builds a registry for v6 — extends v3 with the script and dialogue encoders
-    ///     (SCPT, DIAL, INFO) plus quest and AI-package encoders (QUST, PACK). All five
-    ///     are new-record-only types: their <see cref="IRecordEncoder.Encode" /> path
-    ///     returns no subrecords, so override merging is a no-op (the master ESM retains
-    ///     verbatim bytes). The <c>EncodeNew</c> static methods build full subrecord streams
-    ///     for FormIDs not present in the master.
-    /// </summary>
-    public static RecordEncoderRegistry CreateV6Default()
-    {
-        var registry = CreateV3Default();
-        registry.RegisterAll(
-            new ScptEncoder(),
-            new DialEncoder(),
-            new InfoEncoder(),
-            new QustEncoder(),
-            new PackEncoder());
-        return registry;
-    }
-
-    /// <summary>
-    ///     Builds a registry for v7 — extends v6 with world-object new-record encoders
-    ///     (ACTI, DOOR, LIGH, STAT, CONT, FURN, TERM). All seven are new-record-only types:
-    ///     <see cref="IRecordEncoder.Encode" /> is a no-op (master ESM bytes retained verbatim)
-    ///     and <see cref="Encoders.LighEncoder.EncodeNew" /> / sibling methods build the full
-    ///     subrecord stream for FormIDs not present in the master.
-    ///     TERM is a simplified path — embedded result-script bytecode inside menu items is
-    ///     deferred to a future phase (warns when encountered).
-    /// </summary>
-    public static RecordEncoderRegistry CreateV7Default()
-    {
-        var registry = CreateV6Default();
-        registry.RegisterAll(
-            new ActiEncoder(),
-            new DoorEncoder(),
-            new LighEncoder(),
-            new StatEncoder(),
-            new ContEncoder(),
-            new FurnEncoder(),
-            new TermEncoder());
-        return registry;
-    }
-
-    /// <summary>
-    ///     Builds a registry for v11 — extends v7 with PROJ (projectile), EXPL (explosion),
-    ///     and IMOD (weapon mod) new-record encoders. All three are new-record-only types
-    ///     whose <see cref="IRecordEncoder.Encode" /> path is a no-op.
-    /// </summary>
-    public static RecordEncoderRegistry CreateV11Default()
-    {
-        var registry = CreateV7Default();
-        registry.RegisterAll(
-            new ProjEncoder(),
-            new ExplEncoder(),
-            new ImodEncoder());
-        return registry;
-    }
-
-    /// <summary>
-    ///     Builds a registry for v12 — extends v11 with ARMA (armor addon) and RCPE (recipe)
-    ///     new-record encoders. v12 also enables WEAP VATS subrecord emission (no registry
-    ///     change needed — the existing WeapEncoder now emits VATS when the model carries
-    ///     <see cref="Models.VatsAttackData" />, replacing the v6-deferred warning).
-    /// </summary>
-    public static RecordEncoderRegistry CreateV12Default()
-    {
-        var registry = CreateV11Default();
-        registry.RegisterAll(
-            new ArmaEncoder(),
-            new RcpeEncoder());
-        return registry;
-    }
-
-    /// <summary>
-    ///     Builds a registry for v14 — extends v12 with RCCT (recipe category) and COBJ
-    ///     (constructible object) new-record encoders. v14 also enables several subrecord
-    ///     emissions on existing encoders (no registry change needed):
-    ///     - ARMA now emits MODT/MO2T/MO3T/MO4T texture hashes, ICON/MIC2 inventory icons,
-    ///     and DNAM detection sound level when the model carries them.
-    ///     - QUST now emits top-level CTDA + CIS1/CIS2 condition string parameters.
-    /// </summary>
-    public static RecordEncoderRegistry CreateV14Default()
-    {
-        var registry = CreateV12Default();
-        registry.RegisterAll(
-            new RcctEncoder(),
-            new CobjEncoder());
-        return registry;
-    }
-
-    /// <summary>
-    ///     Builds a registry for v16 — extends v14 with 9 trivial/small new-record encoders:
-    ///     EYES, HAIR, REPU, AVIF, MUSC, MESG, NOTE, FLST, and the LeveledList trio
-    ///     (LVLI/LVLN/LVLC, sharing one encoder). v15 added subrecord emissions to existing
-    ///     encoders (no registry change), so we skip v15 and jump to v16.
-    /// </summary>
-    public static RecordEncoderRegistry CreateV16Default()
-    {
-        var registry = CreateV14Default();
-        registry.RegisterAll(
-            new EyesEncoder(),
-            new HairEncoder(),
-            new RepuEncoder(),
-            new AvifEncoder(),
-            new MuscEncoder(),
-            new MesgEncoder(),
-            new NoteEncoder(),
-            new FlstEncoder());
-
-        // LvliEncoder handles all three leveled-list signatures (LVLI/LVLN/LVLC).
-        // The encoder declares itself as "LVLI"; register it explicitly under the other
-        // two so the override-path registry lookup finds it.
-        var lvli = new LvliEncoder();
-        registry.Register(lvli);
-        registry.Register("LVLN", lvli);
-        registry.Register("LVLC", lvli);
-        return registry;
-    }
-
-    /// <summary>
-    ///     Builds a registry for v17 — extends v16 with 9 medium-complexity new-record encoders:
-    ///     CREA (creature), CLAS (class), SOUN (sound), TXST (texture set), CHAL (challenge),
-    ///     BPTD (body part data), ENCH (enchantment), SPEL (spell), PERK (perk).
-    ///     PERK PRKE entry chains and CREA FaceGen are documented gaps — they warn during emission.
-    /// </summary>
-    public static RecordEncoderRegistry CreateV17Default()
-    {
-        var registry = CreateV16Default();
-        registry.RegisterAll(
-            new CreaEncoder(),
-            new ClasEncoder(),
-            new SounEncoder(),
-            new TxstEncoder(),
-            new LtexEncoder(),
-            new ChalEncoder(),
-            new BptdEncoder(),
-            new EnchEncoder(),
-            new SpelEncoder(),
-            new PerkEncoder());
-        return registry;
-    }
-
-    /// <summary>
-    ///     Builds a registry for v18 — extends v17 with the three large new-record encoders:
-    ///     MGEF (base effect, DATA 72B), WRLD (worldspace header — child cells flow via the
-    ///     cell-children pipeline), RACE (the largest encoder by field count: gendered head/body
-    ///     part hierarchies, FaceGen morphs, hair/eyes references, skill boosts).
-    ///     Parser-deficient types (CSTY/LGTM/WTHR/WATR/NAVI) still pending — they emit nothing
-    ///     until their parsers are fixed in a future phase.
-    /// </summary>
-    public static RecordEncoderRegistry CreateV18Default()
-    {
-        var registry = CreateV17Default();
-        registry.RegisterAll(
-            new MgefEncoder(),
-            new WrldEncoder(),
-            new RaceEncoder());
-        return registry;
-    }
-
-    /// <summary>
-    ///     Builds a registry for v18b — extends v18 with previously-blocked parser-deficient
-    ///     types. CSTY/LGTM/WATR use a shared schema-dictionary serializer
-    ///     (<see cref="Encoders.SchemaDictionarySerializer" />) to re-emit the dictionaries the
-    ///     parser already populates. WTHR emits only its narrow typed fields (warns that
-    ///     visual subrecords are missing). NAVI remains unencoded — the parser only captures
-    ///     counts, not the vertex/triangle/portal arrays needed for a real navmesh.
-    /// </summary>
-    public static RecordEncoderRegistry CreateV18bDefault()
-    {
-        var registry = CreateV18Default();
-        registry.RegisterAll(
-            new CstyEncoder(),
-            new LgtmEncoder(),
-            new WatrEncoder(),
-            new WthrEncoder());
-        return registry;
-    }
-
-    /// <summary>
-    ///     Builds a registry for v22 — extends v18b with SCOL (Static Collection) emission.
-    ///     SCOL groups multiple instances of one or more STAT bases under a single record
-    ///     so prototype-only collections can carry their (ONAM + DATA placement-list)* part
-    ///     stream forward; the override path stays a no-op (master bytes retained verbatim).
-    /// </summary>
-    public static RecordEncoderRegistry CreateV22Default()
-    {
-        var registry = CreateV18bDefault();
-        registry.Register(new ScolEncoder());
-        return registry;
-    }
-
-    /// <summary>
-    ///     Builds a registry for v23 — closes encoder coverage so every record type with a
-    ///     runtime reader can be emitted to the output ESP. Adds 17 type signatures:
-    ///     ECZN, MICN, VTYP, CCRD, INGR, LSCT, IDLE, IPCT, HDPT, CPTH, ALOC, DEBR, REGN
-    ///     (13 new encoders) plus the four survival-stage signatures (RADS/DEHY/HUNG/SLPD)
-    ///     served by a single shared encoder. REGN further captures its RDAT region-data
-    ///     blocks + RPLI/RPLD boundary polygons as opaque-byte payloads for full round-trip
-    ///     (parser at WorldRecordHandler.ParseRegionFromAccessor).
+    ///     Builds the full encoder registry. Every record type with a runtime reader has an
+    ///     encoder so its records can be emitted to the output ESP.
+    ///     Encoders either emit overrides (re-emit a subrecord with new model data and let
+    ///     the merge engine retain unmapped subrecords verbatim from the master ESM) or full
+    ///     new records (build the entire subrecord stream from scratch via <c>EncodeNew</c>).
+    ///     Placed-reference types (REFR/ACHR/ACRE) and CELL live inside cell-children GRUPs
+    ///     and are routed through the cell-children pipeline rather than top-level emission.
     ///     Still deferred:
     ///     - CDCK — parser doesn't enumerate CNTO cards into the model.
     ///     - NAVI — global pathfinding lookup table; master FNV.esm's NAVI covers every vanilla
@@ -318,23 +62,98 @@ public sealed class RecordEncoderRegistry
     ///       if the converter ever adds new NAVM records that need to appear in the navmesh
     ///       info map.
     /// </summary>
-    public static RecordEncoderRegistry CreateV23Default()
+    public static RecordEncoderRegistry CreateDefault()
     {
-        var registry = CreateV22Default();
+        var registry = new RecordEncoderRegistry();
+
         registry.RegisterAll(
-            new EczEncoder(),
-            new MicnEncoder(),
-            new VtypEncoder(),
-            new CcrdEncoder(),
-            new IngrEncoder(),
-            new LsctEncoder(),
-            new IdleEncoder(),
-            new IpctEncoder(),
-            new HdptEncoder(),
-            new CpthEncoder(),
+            // Misc
+            new GmstEncoder(),
+            new GlobEncoder(),
+            new FlstEncoder(),
+            new MuscEncoder(),
+            new ChalEncoder(),
+            new SounEncoder(),
+            new TxstEncoder(),
+            new LtexEncoder(),
             new AlocEncoder(),
+            new MicnEncoder(),
+            new IpctEncoder(),
+            new IngrEncoder(),
+            new CcrdEncoder(),
+            new RcctEncoder(),
+            // Item
+            new WeapEncoder(),
+            new ArmoEncoder(),
+            new ArmaEncoder(),
+            new AmmoEncoder(),
+            new AlchEncoder(),
+            new BookEncoder(),
+            new MiscEncoder(),
+            new KeymEncoder(),
+            new ContEncoder(),
+            new NoteEncoder(),
+            new CobjEncoder(),
+            new RcpeEncoder(),
+            new ImodEncoder(),
+            // Magic
+            new SpelEncoder(),
+            new EnchEncoder(),
+            new MgefEncoder(),
+            new PerkEncoder(),
+            new ExplEncoder(),
+            new ProjEncoder(),
+            new AvifEncoder(),
+            // Character / AI
+            new NpcEncoder(),
+            new CreaEncoder(),
+            new RaceEncoder(),
+            new ClasEncoder(),
+            new EyesEncoder(),
+            new HairEncoder(),
+            new BptdEncoder(),
+            new HdptEncoder(),
+            new FactEncoder(),
+            new RepuEncoder(),
+            new VtypEncoder(),
+            new CstyEncoder(),
+            new PackEncoder(),
+            // Quest / Dialogue / Script / Message
+            new QustEncoder(),
+            new DialEncoder(),
+            new InfoEncoder(),
+            new ScptEncoder(),
+            new MesgEncoder(),
+            // World / Cell / Placed
+            new WrldEncoder(),
+            new CellEncoder(),
+            new RefrEncoder(),
+            new AchrEncoder(),
+            new AcreEncoder(),
+            new RegnEncoder(),
+            new StatEncoder(),
+            new ScolEncoder(),
+            new DoorEncoder(),
+            new LighEncoder(),
+            new ActiEncoder(),
+            new FurnEncoder(),
+            new TermEncoder(),
+            new WatrEncoder(),
+            new WthrEncoder(),
+            new LgtmEncoder(),
+            new IdleEncoder(),
             new DebrEncoder(),
-            new RegnEncoder());
+            new EczEncoder(),
+            new CpthEncoder(),
+            new LsctEncoder());
+
+        // LvliEncoder handles all three leveled-list signatures (LVLI/LVLN/LVLC). It declares
+        // itself as "LVLI"; register it explicitly under the other two so override-path lookups
+        // resolve to the same instance.
+        var lvli = new LvliEncoder();
+        registry.Register(lvli);
+        registry.Register("LVLN", lvli);
+        registry.Register("LVLC", lvli);
 
         // SurvivalStageEncoder declares "RADS" as its RecordType; register it explicitly under
         // the other three survival signatures so override-path lookups resolve.
@@ -343,6 +162,7 @@ public sealed class RecordEncoderRegistry
         registry.Register("DEHY", survival);
         registry.Register("HUNG", survival);
         registry.Register("SLPD", survival);
+
         return registry;
     }
 

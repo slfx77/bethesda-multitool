@@ -6,38 +6,75 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Plugin;
 public class RecordEncoderRegistryTests
 {
     [Fact]
-    public void CreateV1Default_RegistersAllExpectedTypes()
+    public void CreateDefault_RegistersSimpleTopLevelTypes()
     {
-        var registry = RecordEncoderRegistry.CreateV1Default();
+        var registry = RecordEncoderRegistry.CreateDefault();
 
         var supported = registry.SupportedRecordTypes;
 
-        // CONT is intentionally not in the registry — see RecordEncoderRegistry.CreateV1Default
-        // for the rationale (ContainerRecord lacks the Weight field).
-        var expected = new[] { "GMST", "GLOB", "WEAP", "ARMO", "AMMO", "ALCH", "BOOK", "MISC", "KEYM", "FACT", "NPC_" };
+        // Spot-check across record-type families.
+        var expected = new[]
+        {
+            "GMST", "GLOB", "FLST",                 // Misc
+            "WEAP", "ARMO", "AMMO", "ALCH", "BOOK", "MISC", "KEYM", "CONT",   // Item
+            "SPEL", "ENCH", "MGEF", "PERK",         // Magic
+            "NPC_", "CREA", "RACE", "FACT",         // Character
+            "QUST", "DIAL", "INFO", "SCPT", "MESG", // Quest / Dialogue
+            "WRLD", "STAT", "DOOR", "LIGH",         // World
+        };
         foreach (var type in expected)
         {
             Assert.Contains(type, supported);
         }
-
-        Assert.DoesNotContain("CONT", supported);
-        Assert.DoesNotContain("REFR", supported);
-        Assert.Equal(expected.Length, supported.Count);
     }
 
     [Fact]
-    public void CreateV2Default_AddsPlacedRefEncoders()
+    public void CreateDefault_RegistersPlacedRefEncoders()
     {
-        var registry = RecordEncoderRegistry.CreateV2Default();
+        var registry = RecordEncoderRegistry.CreateDefault();
         var supported = registry.SupportedRecordTypes;
 
         Assert.Contains("REFR", supported);
         Assert.Contains("ACHR", supported);
         Assert.Contains("ACRE", supported);
+    }
 
-        // v1 types still registered.
-        Assert.Contains("WEAP", supported);
-        Assert.Contains("NPC_", supported);
+    [Fact]
+    public void CreateDefault_RegistersCellEncoder()
+    {
+        var registry = RecordEncoderRegistry.CreateDefault();
+
+        Assert.Contains("CELL", registry.SupportedRecordTypes);
+    }
+
+    [Fact]
+    public void CreateDefault_RegistersLeveledListUnderAllThreeSignatures()
+    {
+        var registry = RecordEncoderRegistry.CreateDefault();
+
+        Assert.True(registry.TryGet("LVLI", out var lvli));
+        Assert.True(registry.TryGet("LVLN", out var lvln));
+        Assert.True(registry.TryGet("LVLC", out var lvlc));
+
+        Assert.NotNull(lvli);
+        Assert.Same(lvli, lvln);
+        Assert.Same(lvli, lvlc);
+    }
+
+    [Fact]
+    public void CreateDefault_RegistersSurvivalStageUnderAllFourSignatures()
+    {
+        var registry = RecordEncoderRegistry.CreateDefault();
+
+        Assert.True(registry.TryGet("RADS", out var rads));
+        Assert.True(registry.TryGet("DEHY", out var dehy));
+        Assert.True(registry.TryGet("HUNG", out var hung));
+        Assert.True(registry.TryGet("SLPD", out var slpd));
+
+        Assert.NotNull(rads);
+        Assert.Same(rads, dehy);
+        Assert.Same(rads, hung);
+        Assert.Same(rads, slpd);
     }
 
     [Fact]
@@ -48,17 +85,6 @@ public class RecordEncoderRegistryTests
         Assert.True(RecordEncoderRegistry.IsCellChildRecordType("ACRE"));
         Assert.False(RecordEncoderRegistry.IsCellChildRecordType("WEAP"));
         Assert.False(RecordEncoderRegistry.IsCellChildRecordType("CELL"));
-    }
-
-    [Fact]
-    public void CreateV3Default_AddsCellEncoder()
-    {
-        var registry = RecordEncoderRegistry.CreateV3Default();
-
-        Assert.Contains("CELL", registry.SupportedRecordTypes);
-        // Sanity: v2 encoders still present.
-        Assert.Contains("REFR", registry.SupportedRecordTypes);
-        Assert.Contains("WEAP", registry.SupportedRecordTypes);
     }
 
     [Fact]

@@ -27,7 +27,7 @@ internal sealed class DmpToEspConversionJobService
         IConversionProgressSink sink,
         CancellationToken cancellationToken)
     {
-        var registry = RecordEncoderRegistry.CreateV23Default();
+        var registry = RecordEncoderRegistry.CreateDefault();
         var pipeline = new PluginConversionPipeline(registry, sink);
 
         var conversion = await Task.Run(
