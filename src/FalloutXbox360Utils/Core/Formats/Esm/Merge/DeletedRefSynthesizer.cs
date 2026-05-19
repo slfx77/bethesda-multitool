@@ -1,6 +1,7 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Schema;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Output;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Merge;

@@ -1,6 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Reporting;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
 
 /// <summary>
 ///     Replaces dangling FormID references with <c>0x00000000</c> (engine null) so the

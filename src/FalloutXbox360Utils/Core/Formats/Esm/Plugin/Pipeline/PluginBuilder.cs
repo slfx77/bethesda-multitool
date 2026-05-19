@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Text;
+using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm.Merge;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.AI;
@@ -12,6 +13,10 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Cell;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Nav;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Output;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Validation;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
@@ -21,7 +26,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Reporting;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using FalloutXbox360Utils.Core.Semantic;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
 
 /// <summary>
 ///     Orchestrator that converts an Xbox 360 DMP into a PC plugin ESP using a base
@@ -31,7 +36,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 ///     2. Load DMP semantically (cells with placed objects, simple-type record lists).
 ///     3. Merge top-level records: GMST/GLOB/WEAP/ARMO/AMMO/etc. become override records
 ///     inside their respective top-level GRUPs.
-///     4. Merge cell-children (v2): for each DMP cell that maps to a PC ESM cell, classify
+///     4. Merge cell-children: for each DMP cell that maps to a PC ESM cell, classify
 ///     the merge mode (persistent-only vs has-temporary), encode REFR/ACHR/ACRE
 ///     overrides, and bundle by parent cell.
 ///     5. Assemble ESP: TES4 header + top-level GRUPs + CELL hierarchy with cell-children
@@ -53,7 +58,7 @@ public sealed class PluginBuilder
     ///     keyed by (parent-worldspace FormID, gridX, gridY). The FNV runtime rejects two
     ///     cells claiming the same grid coords within one worldspace ("Cell ... already
     ///     exists at coord", "Error adding cell ... will be destroyed"), so we dedup at
-    ///     emit time — first cell wins, subsequent ones are skipped with a v22 warning.
+    ///     emit time — first cell wins, subsequent ones are skipped with a warning.
     ///     Reset to empty at the start of each <see cref="BuildAsync" />.
     /// </summary>
     private readonly Dictionary<(uint Worldspace, int GridX, int GridY), uint> _emittedExteriorCellCoords = new();
@@ -309,16 +314,26 @@ public sealed class PluginBuilder
 
             // Phase 2: load DMP and parse semantic records.
             _sink.OnPhaseStart("Reading DMP", null);
-            using var unified = await SemanticFileLoader.LoadAsync(inputs.DmpPath, cancellationToken: ct);
+            using var unified = await SemanticFileLoader.LoadAsync(
+                inputs.DmpPath,
+                new SemanticFileLoadOptions
+                {
+                    FileType = AnalysisFileType.Minidump,
+                    ApplyDefaultCellWorldspaceAuthority = false
+                },
+                ct);
             var dmpRecords = unified.Records;
-            ApplyCellWorldspaceAuthority(dmpRecords, inputs.Options.CellWorldspaceAuthority);
+            ApplyCellWorldspaceAuthority(
+                dmpRecords,
+                inputs.Options.CellWorldspaceAuthority,
+                inputs.Options.CellWorldspaceAuthorityWorldspaceNames);
             FilterDmpRecordsByExcludedWorldspaces(dmpRecords, inputs.Options.SkipWorldspaceFormIds);
             _dmpBaseFormIdToRecordType = ReferenceBaseRemapper.BuildDmpBaseFormIdToRecordType(dmpRecords);
             _sink.Info("Reading DMP", "DMP semantic load complete.");
             _sink.OnPhaseEnd("Reading DMP", stats);
             ct.ThrowIfCancellationRequested();
 
-            // v22 asset-rename pass: rewrite record paths in-place when fuzzy resolution
+            // Asset-rename pass: rewrite record paths in-place when fuzzy resolution
             // matches a differently-named asset in an indexed Data folder. Runs BEFORE
             // encoding so the output ESP carries the unified paths. No-op when the user
             // didn't configure rename folders.
@@ -428,15 +443,41 @@ public sealed class PluginBuilder
             ct.ThrowIfCancellationRequested();
 
             // Phase 4: cell-children merging. Builds CellOverrideBundles for each affected cell.
-            // v3 also allocates plugin-index FormIDs for new cells/refs and synthesizes
+            // Also allocates plugin-index FormIDs for new cells/refs and synthesizes
             // deletion-flag overrides for HasTemporary cells.
             _sink.OnPhaseStart("Merging cell children", null);
             var pcRefFormIds = new HashSet<uint>(refToCell.Keys);
             var bundles = BuildCellOverrideBundles(
                 dmpRecords, pcRecordsByFormId, refToCell, masterChildLocations, pcRefFormIds, cellContexts,
-                navmsByCell, landsByCell, allocator, grupBytesByType, inputs.Options, stats, ct);
+                navmsByCell, landsByCell, allocator, grupBytesByType, inputs.Options, stats,
+                out var newNavmEntries, ct);
             _sink.Info("Merging cell children",
                 $"Built {bundles.Count:N0} cell-override bundle(s); allocated {allocator.NextLocalId - allocator.BaseLocalId:N0} new FormID(s).");
+
+            // NAVI override: registers every newly-emitted NAVM in master's NavMeshInfoMap.
+            // Required to prevent FalloutNV+0x0069E09A null-deref during plugin load (NavMesh
+            // walked by engine -> lookup in NavMeshInfoMap -> not found -> crash). Skip when
+            // we emitted no new NAVMs (master NAVI is canonical, no extension needed).
+            if (newNavmEntries.Count > 0
+                && pcRecordsByFormId.TryGetValue(NavInfoMapBuilder.MasterNaviFormId, out var masterNavi)
+                && masterNavi.Header.Signature == "NAVI")
+            {
+                var naviOverrideBytes = NavInfoMapBuilder.BuildNaviOverride(masterNavi, newNavmEntries, inputs.Options);
+                AppendOrCreateTopLevelRecord(grupBytesByType, "NAVI", naviOverrideBytes);
+                _sink.Info("Merging cell children",
+                    $"Emitted NAVI override with {newNavmEntries.Count:N0} new NVMI+NVCI entry pair(s) " +
+                    $"(extends master 0x{NavInfoMapBuilder.MasterNaviFormId:X8}). NavMeshInfoMap can now " +
+                    "resolve our new NAVM FormIDs at plugin load.",
+                    code: "navi.override-emitted");
+            }
+            else if (newNavmEntries.Count > 0)
+            {
+                _sink.Warn("Merging cell children",
+                    $"Emitted {newNavmEntries.Count:N0} new NAVM(s) but master NAVI " +
+                    $"(0x{NavInfoMapBuilder.MasterNaviFormId:X8}) was not in the PC ESM index — skipping NAVI override.",
+                    code: "navi.master-missing");
+            }
+
             _sink.OnPhaseEnd("Merging cell children", stats);
             ct.ThrowIfCancellationRequested();
 
@@ -700,15 +741,9 @@ public sealed class PluginBuilder
                 continue;
             }
 
-            // (v20.13a-j bisection diagnostic removed. The bug was traced to AVIF: the DMP
-            // parser identifies engine-hardcoded actor values as "new" records, but emitting
-            // them with only an EDID subrecord (no FULL/DESC/ANAM, since the parser doesn't
-            // capture metadata) crashed FNV at startup. Fix lives in AvifEncoder.EncodeNew
-            // which now skips new AVIF emission entirely.)
-
             if (!classifier.IsOverride(formId))
             {
-                // v22: exact FormID remains primary identity. If the source FormID is not
+                // Exact FormID remains primary identity. If the source FormID is not
                 // present in master but the same-type EditorID exactly names a master record,
                 // treat the source ID as an alias to that final master ID and emit a normal
                 // override. No stem/fuzzy matching is used here; e.g. RoseOfSharonCassidyOLD
@@ -745,7 +780,7 @@ public sealed class PluginBuilder
                     continue;
                 }
 
-                // v4: route through new-record path if this type has a new-record encoder.
+                // Route through new-record path if this type has a new-record encoder.
                 if (TryEncodeNewTopLevelRecord(recordType, model, allocator, options, stats, out var newBytes))
                 {
                     grupBodyStream.Write(newBytes);
@@ -757,7 +792,7 @@ public sealed class PluginBuilder
                         stats.Scols.NewEmitted++;
                     }
 
-                    // v22: track FormIDs emitted via the new-record path so ValidateScriRefs
+                    // Track FormIDs emitted via the new-record path so ValidateScriRefs
                     // accepts SCRI references to freshly-emitted SCPTs (or other new records).
                     // Without this, an override-NPC pointing at a new prototype script would
                     // have its SCRI dropped because the target isn't in _masterFormIds.
@@ -967,8 +1002,8 @@ public sealed class PluginBuilder
 
     /// <summary>
     ///     Dispatch a DMP model that lacks a master FormID through the appropriate type-specific
-    ///     <c>EncodeNew</c> method. v4 covers GMST, GLOB, MISC, KEYM, ALCH, BOOK, AMMO. Other
-    ///     types fall through to a "skipped" decision (their `EncodeNew` paths are deferred).
+    ///     <c>EncodeNew</c> method. Types without a registered encoder fall through to a
+    ///     "skipped" decision.
     /// </summary>
     private bool TryEncodeNewTopLevelRecord(
         string recordType,
@@ -1004,7 +1039,7 @@ public sealed class PluginBuilder
 
         if (encoded is null)
         {
-            // Type doesn't have a v4 new-record path (WEAP/ARMO/FACT/NPC_ deferred to v5).
+            // Type doesn't have a new-record path.
             if (options.VerboseDecisions)
             {
                 _sink.Decision("Merging top-level records",
@@ -1116,8 +1151,8 @@ public sealed class PluginBuilder
     }
 
     /// <summary>
-    ///     Build cell-children bundles. v3 handles three cases:
-    ///     1. Cell exists in PC ESM, ref exists in PC ESM → override (v2 path)
+    ///     Build cell-children bundles. Handles three cases:
+    ///     1. Cell exists in PC ESM, ref exists in PC ESM → override
     ///     2. Cell exists in PC ESM, ref doesn't → new ref allocated under existing cell
     ///     3. Cell doesn't exist in PC ESM → new CELL with new refs as children
     ///     Plus, for HasTemporary cells with a master, master refs missing from DMP get
@@ -1136,8 +1171,10 @@ public sealed class PluginBuilder
         Dictionary<string, byte[]> grupBytesByType,
         PluginBuildOptions options,
         ConversionPipelineStats stats,
+        out List<NewNavmEntry> newNavmEntries,
         CancellationToken ct)
     {
+        newNavmEntries = [];
         var bundles = new List<CellOverrideBundle>();
         var policy = SubrecordMergePolicy.Default;
 
@@ -1146,7 +1183,7 @@ public sealed class PluginBuilder
         var cellToRefs = BuildCellToRefsIndex(refToCell);
         var actorBaseRemap = BuildDmpActorBaseMasterRemap(dmpRecords);
 
-        // v22: union placements across all parser snapshots of each logical cell. The DMP
+        // Union placements across all parser snapshots of each logical cell. The DMP
         // memory carver routinely produces multiple CellRecord captures for the same cell
         // (different runtime snapshots / mirrored memory regions), and the per-capture
         // PlacedObjects lists diverge. Without unioning, we'd emit only the FIRST capture's
@@ -1195,6 +1232,12 @@ public sealed class PluginBuilder
         // already exists in master flow through the master-preservation block instead.
         var dmpNavmsByCell = new Dictionary<uint, List<NavMeshRecord>>();
         var navmDmpToEmittedFormId = new Dictionary<uint, uint>();
+        // Tracks NAVMs we actually emit in Phase B. Phase A allocates FormIDs for every
+        // DMP NAVM with a parent cell + body, but the cell loop may skip some cells
+        // (dedup, grid-collision redirect, etc.) — so an allocated FormID can remain
+        // un-emitted, and any NVEX entry already rewritten to point at it dangles.
+        // Used by the post-cell-loop NVEX sanitizer to drop dangling cross-NAVM links.
+        var emittedNavmFormIds = new HashSet<uint>();
         foreach (var dmpNavm in dmpRecords.NavMeshes)
         {
             if (dmpNavm.CellFormId == 0
@@ -1220,6 +1263,12 @@ public sealed class PluginBuilder
                 $"DMP NAVM emission: indexed {dmpNavmsByCell.Values.Sum(l => l.Count):N0} new navmesh(es) " +
                 $"across {dmpNavmsByCell.Count:N0} cell(s) (proto-only worldspaces + master-cell augmentation).");
         }
+
+        // newNavmEntries (the out parameter, initialized at method entry) tracks every NAVM
+        // we actually emit in Phase B. After the cell loop completes, the caller hands this
+        // list to NavInfoMapBuilder to build a NAVI override record so the engine's
+        // NavMeshInfoMap can resolve our new NAVM FormIDs — without it, plugin load crashes at
+        // FalloutNV+0x0069E09A on the first cell that contains one of our NAVMs.
 
         foreach (var dmpCell in mergedCells)
         {
@@ -1377,7 +1426,7 @@ public sealed class PluginBuilder
                 }
             }
 
-            // v22: NEW cells (not in master) can't be "override merges" — there's no
+            // NEW cells (not in master) can't be "override merges" — there's no
             // master GRUP to retain temporaries from, so the only correct policy is to
             // emit every captured placement. The classifier's PersistentOnly mode would
             // otherwise drop all temporary placements (sidewalks, building geometry,
@@ -1427,7 +1476,7 @@ public sealed class PluginBuilder
             var dmpRefFormIdsInCell = new HashSet<uint>();
 
             // Walk every DMP placed object in this cell. The CellMerger.SelectOverrideRefs
-            // filter is for OVERRIDE-ONLY mode; v3 also handles new refs, so we walk the full
+            // filter is for OVERRIDE-ONLY mode; we also handle new refs, so we walk the full
             // list and decide per-ref.
             foreach (var placed in dmpCell.PlacedObjects)
             {
@@ -1449,7 +1498,7 @@ public sealed class PluginBuilder
                     ? RemapNewPlacedActorBase(placed, actorBaseRemap, options)
                     : placed;
 
-                // v22: when a placed ref's base FormID is a DMP-source ID that we've
+                // When a placed ref's base FormID is a DMP-source ID that we've
                 // freshly emitted under a new plugin-local FormID, rewrite the BaseFormId
                 // to point at the allocation. This must be type-aware: the source ID space
                 // is not globally unique enough for actor refs to blindly accept any alias
@@ -1629,7 +1678,7 @@ public sealed class PluginBuilder
                         continue;
                     }
 
-                    // Existing ref — override path (v2 logic).
+                    // Existing ref — override path.
                     if (!TryEncodeOverrideRef(placedForEmit, encoder, pcRefRecord!, policy, options, stats,
                             out var bytes))
                     {
@@ -1641,7 +1690,7 @@ public sealed class PluginBuilder
                 }
                 else
                 {
-                    // New ref — full-record path (v3).
+                    // New ref — full-record path.
                     if (!TryEncodeNewRef(
                             placedForEmit,
                             allocatedNewRefFormId!.Value,
@@ -1878,6 +1927,34 @@ public sealed class PluginBuilder
             // and master-cell augmentation (DMP captured a navmesh master doesn't have).
             // Phase A pre-allocated the emitted FormIDs so NVEX cross-references can
             // resolve across cells in this emission batch.
+            //
+            // DIAGNOSTIC GATE (v22r bisect): drop master-cell augmentation. Adding a second
+            // navmesh on top of vanilla's may confuse AI pathing (idle NPCs flip-flopping to
+            // the crucified animation every few seconds — same symptom as the original INFO
+            // emission bug, but here surfacing after we re-enabled new NAVMs). Only emit new
+            // NAVMs whose parent cell is itself NEW (FormID in our plugin range).
+            const bool SkipMasterCellNavmAugmentationForBisect = true;
+            var cellIsNew = (dmpCell.FormId & 0xFF000000) == 0x01000000
+                            || !pcRecordsByFormId.ContainsKey(dmpCell.FormId);
+            if (SkipMasterCellNavmAugmentationForBisect
+                && !cellIsNew
+                && dmpNavmsByCell.TryGetValue(dmpCell.FormId, out var skippedAugList))
+            {
+                var skipped = skippedAugList.Count;
+                for (var s = 0; s < skipped; s++)
+                {
+                    stats.IncrementSkipped("NAVM");
+                }
+                if (options.VerboseDecisions)
+                {
+                    _sink.Decision("Merging cell children",
+                        $"Master-cell NAVM augmentation gated: dropped {skipped} new NAVM(s) " +
+                        $"in master cell 0x{dmpCell.FormId:X8}.",
+                        "CELL", dmpCell.FormId, "navm.master-cell-aug-gated");
+                }
+                dmpNavmsByCell.Remove(dmpCell.FormId);
+            }
+
             if (dmpNavmsByCell.TryGetValue(dmpCell.FormId, out var dmpNavmsForCell))
             {
                 var emittedNavmCount = 0;
@@ -1892,6 +1969,48 @@ public sealed class PluginBuilder
                     var navmBytes = PluginRecordByteBuilder.BuildNewRecordBytes(
                         "NAVM", newNavmFormId, flags: 0u, patched);
                     temporaryPrefixRecords.Add(navmBytes);
+                    emittedNavmFormIds.Add(newNavmFormId);
+
+                    // Capture the data NavInfoMapBuilder needs for the matching NVMI entry.
+                    // NVVX is the only subrecord with the vertices used to compute the
+                    // approximate centroid; if absent the builder falls back to grid-center.
+                    var nvvxBytes = dmpNavm.RawSubrecords
+                        .FirstOrDefault(s => s.Signature == "NVVX").Bytes;
+                    // LocationFormId: per master's NVMI convention (verified against NAVM
+                    // 0x00136567 → 0x000DA726 WastelandNV), this is the parent worldspace
+                    // for exterior cells (or cell FormID for interior). For new worldspaces
+                    // we must use the EMITTED FormID, not the DMP-source FormID — otherwise
+                    // the engine looks for a non-existent FormID and crashes in
+                    // NavMeshInfoMap setup at FalloutNV+0x0069DFDC.
+                    uint locationFid;
+                    if (dmpCell.IsInterior)
+                    {
+                        locationFid = emittedCellFormId;
+                    }
+                    else if (dmpCell.WorldspaceFormId.HasValue
+                             && _newWorldspacesForCellPipeline is not null
+                             && _newWorldspacesForCellPipeline.TryGetValue(dmpCell.WorldspaceFormId.Value, out var newWrld))
+                    {
+                        // New worldspace: remap DMP-source → emitted FormID.
+                        locationFid = newWrld.EmittedFormId;
+                    }
+                    else if (dmpCell.WorldspaceFormId.HasValue)
+                    {
+                        // Master worldspace: DMP-source IS the master FormID.
+                        locationFid = dmpCell.WorldspaceFormId.Value;
+                    }
+                    else
+                    {
+                        locationFid = emittedCellFormId;
+                    }
+                    newNavmEntries.Add(new NewNavmEntry(
+                        NavmFormId: newNavmFormId,
+                        LocationFormId: locationFid,
+                        IsInterior: dmpCell.IsInterior,
+                        GridX: dmpCell.IsInterior ? (short)0 : (short)(dmpCell.GridX ?? 0),
+                        GridY: dmpCell.IsInterior ? (short)0 : (short)(dmpCell.GridY ?? 0),
+                        NvvxBytes: nvvxBytes));
+
                     emittedNavmCount++;
                     stats.IncrementEmitted("NAVM");
                     stats.NewRecordsEmitted++;
@@ -1959,7 +2078,86 @@ public sealed class PluginBuilder
             });
         }
 
+        SanitizeNvexInBundles(bundles, emittedNavmFormIds, stats);
+
         return CoalesceCellOverrideBundles(FilterInvalidPlacedChildRecords(bundles, stats));
+    }
+
+    /// <summary>
+    ///     Post-cell-loop pass: strips NVEX entries from emitted NAVM records whose target
+    ///     NAVM FormID doesn't exist as either a master NAVM or one we actually emitted.
+    ///     Catches both dangling shapes seen in xex4: NVEX targets in the master range whose
+    ///     FormID isn't actually in master, and allocator-issued FormIDs for NAVMs whose
+    ///     parent cell ended up skipped (so the rewrite landed but the NAVM was never written).
+    ///     Either dangling shape crashes the engine in NavMeshInfoMap setup.
+    /// </summary>
+    private void SanitizeNvexInBundles(
+        List<CellOverrideBundle> bundles,
+        HashSet<uint> emittedNavmFormIds,
+        ConversionPipelineStats stats)
+    {
+        if (bundles.Count == 0)
+        {
+            return;
+        }
+
+        var validTargets = new HashSet<uint>(emittedNavmFormIds);
+        if (_masterFormIdsByType is not null
+            && _masterFormIdsByType.TryGetValue("NAVM", out var masterNavms))
+        {
+            foreach (var fid in masterNavms)
+            {
+                validTargets.Add(fid);
+            }
+        }
+
+        var totalDropped = 0;
+        var sanitizedRecords = 0;
+        for (var b = 0; b < bundles.Count; b++)
+        {
+            var bundle = bundles[b];
+            var bundleChanged = false;
+            var newTemp = new List<byte[]>(bundle.TemporaryChildRecords.Count);
+            foreach (var rec in bundle.TemporaryChildRecords)
+            {
+                if (rec.Length < 4 || rec[0] != (byte)'N' || rec[1] != (byte)'A'
+                    || rec[2] != (byte)'V' || rec[3] != (byte)'M')
+                {
+                    newTemp.Add(rec);
+                    continue;
+                }
+                var sanitized = NavMeshByteRewriter.SanitizeNvexInNavmRecord(
+                    rec, validTargets, out var dropped);
+                newTemp.Add(sanitized);
+                // SanitizeNvexInNavmRecord can mutate the record without dropping any NVEX
+                // entries — e.g. when DATA.EdgeLinkCount is stale relative to the (possibly
+                // zero) NVEX entries actually present (xex2 NAVM 0x01003F41: DATA.edgeCnt=82
+                // but no NVEX subrecord). Detect a byte-level swap so the corrected record
+                // actually replaces the original.
+                if (!ReferenceEquals(sanitized, rec))
+                {
+                    bundleChanged = true;
+                    if (dropped > 0)
+                    {
+                        totalDropped += dropped;
+                        sanitizedRecords++;
+                    }
+                }
+            }
+            if (bundleChanged)
+            {
+                bundles[b] = bundle with { TemporaryChildRecords = newTemp };
+            }
+        }
+
+        if (totalDropped > 0)
+        {
+            _sink.Info("Merging cell children",
+                $"NVEX sanitization: dropped {totalDropped:N0} dangling cross-NAVM entry/entries " +
+                $"across {sanitizedRecords:N0} NAVM record(s) (targets pointed at master FormIDs " +
+                "not actually in master, or at allocated-but-unemitted new FormIDs).",
+                code: "navm.nvex-sanitized");
+        }
     }
 
     private List<CellOverrideBundle> FilterInvalidPlacedChildRecords(
@@ -3150,7 +3348,7 @@ public sealed class PluginBuilder
         return false;
     }
 
-    /// <summary>Encode a new ref (FormID not in PC ESM — v3 new-record path).</summary>
+    /// <summary>Encode a new ref (FormID not in PC ESM — new-record path).</summary>
     private bool TryEncodeNewRef(
         PlacedReference placed,
         uint allocatedFormId,
@@ -3222,7 +3420,7 @@ public sealed class PluginBuilder
     }
 
     /// <summary>
-    ///     v22: run the asset-path rename pass when the user has configured secondary data
+    ///     Runs the asset-path rename pass when the user has configured secondary data
     ///     folders + a baseline folder. Mutates record string fields in-place when fuzzy
     ///     resolution matches a differently-named asset.
     /// </summary>
@@ -3611,8 +3809,8 @@ public sealed class PluginBuilder
     ///     Returns true when an SCRI subrecord's target FormID would resolve at runtime:
     ///     the sentinel null FormIDs (0 / 0xFFFFFFFF), anything in the master ESM, and
     ///     anything being freshly emitted via the new-record path in the current Build.
-    ///     v22 added the new-emit case so reintroduced prototype NPCs can bind to their
-    ///     reintroduced scripts. Extracted as a static helper for unit testability.
+    ///     The new-emit case lets reintroduced prototype NPCs bind to their reintroduced
+    ///     scripts. Extracted as a static helper for unit testability.
     /// </summary>
     internal static bool IsValidScriTarget(
         uint formId,
@@ -3710,7 +3908,7 @@ public sealed class PluginBuilder
             }
 
             var formId = BinaryPrimitives.ReadUInt32LittleEndian(sub.Bytes);
-            // v22.scri.typed: validate against the SCPT-typed subsets, not the generic union.
+            // Validate against the SCPT-typed subsets, not the generic union.
             // The loose union check let through SCRI FormIDs that pointed at non-SCPT master
             // records (STAT/ACTI/etc.), and the runtime then logged "Unable to find script"
             // at load time. Falls back to the generic union when the typed maps aren't built.
@@ -3972,7 +4170,7 @@ public sealed class PluginBuilder
         var gridX = dmpCell.GridX.Value;
         var gridY = dmpCell.GridY.Value;
 
-        // v22: dedup by (worldspace, gridX, gridY). Two new cells claiming the same coords
+        // Dedup by (worldspace, gridX, gridY). Two new cells claiming the same coords
         // in one worldspace make the FNV runtime log "Cell ... already exists at coord"
         // and destroy the second cell, which then takes its placed objects down with it.
         // The DMP parser occasionally mis-attributes wilderness cells across worldspaces
@@ -4029,7 +4227,7 @@ public sealed class PluginBuilder
     }
 
     /// <summary>
-    ///     Walks the digested record collection and yields per-type model lists for the v1
+    ///     Walks the digested record collection and yields per-type model lists for the
     ///     simple-type set. Cell children (REFR/ACHR/ACRE) are NOT yielded here — they have
     ///     their own pipeline (see <see cref="BuildCellOverrideBundles" />).
     /// </summary>
@@ -4096,14 +4294,14 @@ public sealed class PluginBuilder
         yield return ("MGEF", records.BaseEffects);
         yield return ("WRLD", records.Worldspaces);
         yield return ("RACE", records.Races);
-        // v22r: types whose encoders are already registered (v18b) but were not
-        // previously dispatched. Adding them ensures DMP-captured overrides for these
-        // record types reach the merge engine.
+        // Types whose encoders are registered but were not previously dispatched.
+        // Adding them ensures DMP-captured overrides for these record types reach the
+        // merge engine.
         yield return ("CSTY", records.CombatStyles);
         yield return ("LGTM", records.LightingTemplates);
         yield return ("WATR", records.Water);
         yield return ("WTHR", records.Weather);
-        // v23: close encoder coverage for every type with a runtime reader.
+        // Close encoder coverage for every type with a runtime reader.
         yield return ("ECZN", records.EncounterZones);
         yield return ("MICN", records.MenuIcons);
         yield return ("VTYP", records.VoiceTypes);
@@ -4184,45 +4382,16 @@ public sealed class PluginBuilder
     /// </summary>
     private void ApplyCellWorldspaceAuthority(
         Models.RecordCollection records,
-        IReadOnlyDictionary<uint, uint>? authority)
+        IReadOnlyDictionary<uint, uint>? authority,
+        IReadOnlyDictionary<uint, string>? worldspaceNames)
     {
-        if (authority is null || authority.Count == 0)
-        {
-            return;
-        }
-        var applied = 0;
-        var overrode = 0;
-        var addedNew = 0;
-        for (var i = 0; i < records.Cells.Count; i++)
-        {
-            var c = records.Cells[i];
-            if (!authority.TryGetValue(c.FormId, out var wsFid) || wsFid == 0u)
-            {
-                continue;
-            }
-            if (c.WorldspaceFormId is { } existing && existing == wsFid)
-            {
-                continue;
-            }
-            if (c.WorldspaceFormId is { } prior && prior != 0u)
-            {
-                overrode++;
-            }
-            else
-            {
-                addedNew++;
-            }
-            records.Cells[i] = c with
-            {
-                WorldspaceFormId = wsFid,
-                WorldspaceAssignmentSource = "Authority"
-            };
-            applied++;
-        }
-        if (applied > 0)
+        var result = CellWorldspaceAuthorityApplier.Apply(records, authority, worldspaceNames);
+        if (result.Applied > 0)
         {
             _sink.Info("Reading DMP",
-                $"Cell authority applied: {applied} mapping(s) — {addedNew} added, {overrode} overrode prior inference.");
+                $"Cell authority applied: {result.Applied} mapping(s) - {result.Added} added, " +
+                $"{result.Overrode} overrode prior inference; " +
+                $"{result.SynthesizedWorldspaces} worldspace shell(s) synthesized.");
         }
     }
 

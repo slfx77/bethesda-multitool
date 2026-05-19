@@ -15,7 +15,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Misc;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Output;
 
 internal sealed record NewTopLevelRecordEncodingContext(
     IReadOnlySet<uint> MasterFormIds,

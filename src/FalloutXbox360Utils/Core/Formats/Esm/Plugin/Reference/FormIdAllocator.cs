@@ -1,4 +1,4 @@
-namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
 
 /// <summary>
 ///     Allocates fresh local FormIDs for new records emitted by the plugin. Each allocated

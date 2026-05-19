@@ -1,7 +1,10 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Cell;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
 using FalloutXbox360Utils.Core.Formats.Esm.Reporting;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Output;
 
 internal sealed class EspAssembler(RecordEncoderRegistry encoderRegistry)
 {
@@ -21,6 +24,7 @@ internal sealed class EspAssembler(RecordEncoderRegistry encoderRegistry)
         var optionsForBuild = options with { MasterFileSize = masterFileSize };
 
         var orderedGrups = new List<byte[]>();
+        var emittedTypes = new HashSet<string>(StringComparer.Ordinal);
         foreach (var recordType in encoderRegistry.SupportedRecordTypes)
         {
             if (RecordEncoderRegistry.IsCellChildRecordType(recordType)
@@ -32,7 +36,24 @@ internal sealed class EspAssembler(RecordEncoderRegistry encoderRegistry)
             if (grupBytesByType.TryGetValue(recordType, out var bytes))
             {
                 orderedGrups.Add(bytes);
+                emittedTypes.Add(recordType);
             }
+        }
+
+        // Synthesized top-level GRUPs whose record type isn't in the encoder registry (e.g.
+        // NAVI override built directly by NavInfoMapBuilder + AppendOrCreateTopLevelRecord)
+        // still need to be flushed to the output. Without this fallback they sit in
+        // grupBytesByType and never reach disk. Sort alphabetically for deterministic output.
+        foreach (var kvp in grupBytesByType.OrderBy(p => p.Key, StringComparer.Ordinal))
+        {
+            if (emittedTypes.Contains(kvp.Key)) continue;
+            if (RecordEncoderRegistry.IsCellChildRecordType(kvp.Key)
+                || RecordEncoderRegistry.IsCellRecordType(kvp.Key))
+            {
+                continue;
+            }
+            orderedGrups.Add(kvp.Value);
+            emittedTypes.Add(kvp.Key);
         }
 
         var cellSectionBytes = CellGrupBuilder.BuildCellSection(

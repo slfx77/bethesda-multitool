@@ -1,4 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
 using FalloutXbox360Utils.Core.Formats.Esm.Reporting;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;

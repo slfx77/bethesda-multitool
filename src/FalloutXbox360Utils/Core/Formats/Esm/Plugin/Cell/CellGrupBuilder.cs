@@ -3,7 +3,7 @@ using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Schema;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Cell;
 
 /// <summary>
 ///     A single cell's worth of override emission state — the master CELL bytes that anchor

@@ -1,4 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Plugin;

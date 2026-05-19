@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Validation;
 

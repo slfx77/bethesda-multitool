@@ -1,4 +1,4 @@
-namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
 
 /// <summary>
 ///     Inputs for a DMP→ESP conversion run.

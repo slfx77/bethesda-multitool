@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Cell;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using Xunit;
 

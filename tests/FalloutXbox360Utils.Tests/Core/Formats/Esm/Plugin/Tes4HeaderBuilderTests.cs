@@ -1,6 +1,8 @@
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Output;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Plugin;

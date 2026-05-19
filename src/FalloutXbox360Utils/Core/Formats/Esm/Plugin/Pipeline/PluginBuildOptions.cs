@@ -1,6 +1,7 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
 
 /// <summary>
 ///     Options controlling plugin ESP construction from a DMP + base ESM.
@@ -91,6 +92,13 @@ public sealed record PluginBuildOptions
     ///     more trustworthy than the per-DMP heuristic).
     /// </summary>
     public IReadOnlyDictionary<uint, uint>? CellWorldspaceAuthority { get; init; }
+
+    /// <summary>
+    ///     Optional worldspace labels from the authority JSON. Used when an authority
+    ///     assignment creates a worldspace shell for captured cells whose WRLD record was not
+    ///     recovered from the DMP.
+    /// </summary>
+    public IReadOnlyDictionary<uint, string>? CellWorldspaceAuthorityWorldspaceNames { get; init; }
 
     /// <summary>
     ///     Diagnostic mode: when a CELL exists in master AND the DMP captured placements

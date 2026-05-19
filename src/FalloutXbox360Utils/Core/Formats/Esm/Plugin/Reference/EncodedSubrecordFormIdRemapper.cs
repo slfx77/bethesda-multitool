@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
 
 /// <summary>
 ///     Rewrites encoded subrecords that carry FormIDs through a DMP-source to emitted/master
@@ -116,6 +116,17 @@ internal static class EncodedSubrecordFormIdRemapper
             {
                 "LTMP" or "LNAM" or "XEZN" or "XCAS" or "XCMO" or "XCIM" => Offset0WhenAtLeast4(subrecord),
                 "XCLR" => FourByteArrayOffsets(subrecord),
+                _ => []
+            };
+        }
+
+        if (recordType == "INFO")
+        {
+            return signature switch
+            {
+                "QSTI" or "TPIC" or "PNAM" or "ANAM" or "NAME" or "TCLT" or "TCLF"
+                    => Offset0WhenAtLeast4(subrecord),
+                "TRDT" when subrecord.Bytes.Length >= 20 => [16],
                 _ => []
             };
         }

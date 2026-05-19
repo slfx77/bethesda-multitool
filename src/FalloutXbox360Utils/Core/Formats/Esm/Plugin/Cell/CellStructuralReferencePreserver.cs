@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Reporting;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Cell;
 
 /// <summary>
 ///     Preserves room, portal, and occlusion marker references that are required for

@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Cell;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
 
 internal sealed record MasterChildLocation(uint CellFormId, int GroupType, string RecordType);
 

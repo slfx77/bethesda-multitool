@@ -1,7 +1,7 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
 using FalloutXbox360Utils.Core.Formats.Esm.Reporting;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
 
 /// <summary>
 ///     Public orchestration entrypoint for DMP-to-ESP conversion. The pipeline owns the

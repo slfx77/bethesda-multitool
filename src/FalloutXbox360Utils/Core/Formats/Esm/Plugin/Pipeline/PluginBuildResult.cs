@@ -1,6 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Reporting;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
 
 /// <summary>
 ///     Outcome of a DMP→ESP conversion run.

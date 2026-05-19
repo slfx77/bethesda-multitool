@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Cell;
 
 /// <summary>
 ///     The GRUP nesting context of a single CELL record in the master ESM. We capture this so

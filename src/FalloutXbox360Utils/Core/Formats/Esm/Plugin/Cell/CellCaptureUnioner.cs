@@ -1,7 +1,7 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Cell;
 
 internal sealed record CellCaptureUnionResult(
     IReadOnlyList<CellRecord> Cells,

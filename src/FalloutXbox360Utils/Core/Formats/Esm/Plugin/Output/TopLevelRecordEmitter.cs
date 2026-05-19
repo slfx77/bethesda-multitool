@@ -1,6 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Schema;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Output;
 
 internal static class TopLevelRecordEmitter
 {

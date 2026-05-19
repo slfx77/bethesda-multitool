@@ -1,8 +1,9 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Schema;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
 
-namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin;
+namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Output;
 
 /// <summary>
 ///     Synthesizes a PC plugin TES4 record. The TES4 lists the master file (FalloutNV.esm),
