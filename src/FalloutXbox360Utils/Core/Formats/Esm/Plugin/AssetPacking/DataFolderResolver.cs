@@ -89,7 +89,7 @@ internal sealed class DataFolderResolver
         var requestedTokens = TokenizePath(normalizedPath);
 
         var best = FindBestFuzzyCandidate(_secondaries, basename, requestedTokens, false);
-        // v22: when exact-basename match fails, try loose basename (case-folded with
+        // When exact-basename match fails, try loose basename (case-folded with
         // spaces, underscores, dashes, apostrophes stripped). Catches renames between
         // prototype and final where only separator style or capitalization changed —
         // e.g. `monorailplatform.nif` ↔ `monorail_platform.nif`. Same suffix-token
@@ -119,7 +119,7 @@ internal sealed class DataFolderResolver
             }
         }
 
-        // v22: NV-stripped loose match. The final FNV build occasionally removed the
+        // NV-stripped loose match. The final FNV build occasionally removed the
         // <c>nv</c> namespace token from prototype filenames (e.g. `nv_slotmachine` ↔
         // `slotmachine`, `rockcanyonrubblepile05nv` ↔ `rockcanyonrubblepile05`). The
         // index has already stored candidates under both their original loose and
@@ -151,7 +151,7 @@ internal sealed class DataFolderResolver
             }
         }
 
-        // v22: final fallback — directory-anchored substring-suffix match. Catches cases
+        // Final fallback — directory-anchored substring-suffix match. Catches cases
         // where a final-build mesh kept the prototype's directory but acquired (or lost)
         // a short prefix/suffix on the filename, e.g. `rubble\ibeam02.nif` ↔ `rubble\c_ibeam02.nif`.
         // Bounded by same-last-directory + minimum-stem-length + max-length-delta guards

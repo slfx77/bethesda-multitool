@@ -4,7 +4,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
 ///     Encodes a <see cref="MiscItemRecord" /> as PC-format MISC subrecord bytes.
-///     v1 emits DATA (8 bytes: int32 value + float weight). All other subrecords (EDID, FULL,
+///     Emits DATA (8 bytes: int32 value + float weight). All other subrecords (EDID, FULL,
 ///     MODL, MODT, OBND, ICON, MICO, SCRI, YNAM, ZNAM) are retained from the source ESM.
 /// </summary>
 public sealed class MiscEncoder : IRecordEncoder

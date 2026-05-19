@@ -4,7 +4,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
 ///     Encodes a <see cref="BookRecord" /> as PC-format BOOK subrecord bytes.
-///     v1 emits DATA (10 bytes) only. DESC (book text) is retained from the source ESM since
+///     Emits DATA (10 bytes) only. DESC (book text) is retained from the source ESM since
 ///     book content is largely static.
 ///     DATA layout: uint8 Flags(0) + uint8 SkillTaught(1) + int32 Value(2..5) + float Weight(6..9).
 /// </summary>

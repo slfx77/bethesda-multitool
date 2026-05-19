@@ -4,7 +4,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
 ///     Encodes a <see cref="KeyRecord" /> as PC-format KEYM subrecord bytes.
-///     v1 emits DATA (8 bytes: int32 value + float weight). All other subrecords are retained
+///     Emits DATA (8 bytes: int32 value + float weight). All other subrecords are retained
 ///     from the source ESM.
 /// </summary>
 public sealed class KeymEncoder : IRecordEncoder

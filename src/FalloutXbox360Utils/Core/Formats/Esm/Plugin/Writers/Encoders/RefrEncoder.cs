@@ -12,11 +12,9 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     positional per-signature replacement.
 ///     The new-record path emits a complete subrecord stream (no master to merge with).
 ///     DATA layout: float X(0) + float Y(4) + float Z(8) + float RotX(12) + float RotY(16) + float RotZ(20).
-///     History: v1-v21 dropped DATA on overrides because the DMP captures live runtime
-///     state and we suspected mid-walk/mid-fall positions caused NPC sinking. v22 reinstates
-///     DATA on overrides — the sinking root cause was traced to dropped vanilla NAVMs
-///     (addressed in v21 via the CellGrupBuilder NAVM preservation path), not transient
-///     captured positions.
+///     DATA is emitted on overrides; vanilla NAVMs are preserved via the CellGrupBuilder
+///     NAVM preservation path so the engine clamps refs to the floor at load time and
+///     the captured live positions don't cause NPC sinking.
 /// </summary>
 public sealed class RefrEncoder : IRecordEncoder
 {
@@ -60,10 +58,10 @@ public sealed class RefrEncoder : IRecordEncoder
     ///     XTEL, XCNT, XSCL, DATA.
     /// </summary>
     /// <remarks>
-    ///     v4 closes the v3 deferred-subrecord gaps: XLOC (lock state), XESP (enable parent),
-    ///     XLKR (linked ref), and XTEL (door teleport — emitted with FormID + zero PosRot/Flags
-    ///     because the model only carries the destination FormID). v4 also fixes the v3 XCNT
-    ///     bug (was 2 bytes, now 4 per the parser's <c>Simple4Byte</c> schema).
+    ///     Emits XLOC (lock state), XESP (enable parent), XLKR (linked ref), and XTEL
+    ///     (door teleport — emitted with FormID + zero PosRot/Flags because the model only
+    ///     carries the destination FormID). XCNT is 4 bytes per the parser's
+    ///     <c>Simple4Byte</c> schema.
     /// </remarks>
     internal static EncodedRecord EncodeNewPlacedReference(PlacedReference placed)
     {
@@ -218,8 +216,7 @@ public sealed class RefrEncoder : IRecordEncoder
 
     /// <summary>
     ///     XCNT — 4 bytes per parser's Simple4Byte schema: int16 Count @0, padding @2-3.
-    ///     v3 mistakenly emitted only 2 bytes, which the parser's <c>DataLength &gt;= 4</c>
-    ///     guard would silently reject.
+    ///     Anything shorter is silently rejected by the parser's <c>DataLength &gt;= 4</c> guard.
     /// </summary>
     private static EncodedSubrecord BuildXcntSubrecord(short count)
     {

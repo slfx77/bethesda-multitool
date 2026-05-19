@@ -87,7 +87,7 @@ internal static class NewTopLevelRecordEncoderDispatcher
             ["LGTM"] = (model, _) => LgtmEncoder.EncodeNew((LightingTemplateRecord)model),
             ["WATR"] = (model, _) => WatrEncoder.EncodeNew((WaterRecord)model),
             ["WTHR"] = (model, _) => WthrEncoder.EncodeNew((WeatherRecord)model),
-            // v23: close encoder coverage for every type with a runtime reader.
+            // Close encoder coverage for every type with a runtime reader.
             ["ECZN"] = (model, _) => EczEncoder.EncodeNew((EncounterZoneRecord)model),
             ["MICN"] = (model, _) => MicnEncoder.EncodeNew((MenuIconRecord)model),
             ["VTYP"] = (model, _) => VtypEncoder.EncodeNew((VoiceTypeRecord)model),

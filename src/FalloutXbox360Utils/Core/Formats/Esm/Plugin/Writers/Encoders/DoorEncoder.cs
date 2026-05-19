@@ -4,7 +4,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
 ///     Encodes a <see cref="DoorRecord" /> (DOOR) as PC-format subrecord bytes.
-///     v7 emits the full record from scratch: EDID + OBND? + FULL? + MODL? + SCRI? +
+///     Emits the full record from scratch: EDID + OBND? + FULL? + MODL? + SCRI? +
 ///     SNAM? + ANAM? + BNAM? + FNAM(1B). DOOR has no DATA subrecord; FNAM is a single
 ///     byte of flags (auto-open, hidden, minimal-use, etc.). The override path is a no-op.
 /// </summary>

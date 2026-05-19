@@ -4,7 +4,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
 ///     Encodes a <see cref="PackageRecord" /> (PACK) as PC-format subrecord bytes.
-///     v6 emits the full record from scratch: EDID + PKDT + PLDT? + PLD2? + PSDT? + PTDT? +
+///     Emits the full record from scratch: EDID + PKDT + PLDT? + PLD2? + PSDT? + PTDT? +
 ///     PTD2? + PKPT? + PKW3? + CNAM (combat style FormID, deferred — not in model).
 ///     Override path is a no-op.
 ///     PKDT (12 bytes) per PDB PACKAGE_DATA:

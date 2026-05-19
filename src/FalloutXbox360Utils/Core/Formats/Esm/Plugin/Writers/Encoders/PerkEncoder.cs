@@ -215,7 +215,7 @@ public sealed class PerkEncoder : IRecordEncoder
     private static byte[] BuildPerkCtdaSubrecord(PerkCondition condition)
     {
         // CTDA (28B) per PDB CONDITION_ITEM_DATA. Operator is the low 5 bits of byte 0
-        // (high 3 bits are reserved for run-on / OR flags which v17 leaves zero).
+        // (high 3 bits are reserved for run-on / OR flags which we leave zero).
         var ctda = new byte[28];
         ctda[0] = condition.ComparisonOperator;
         SubrecordEncoder.WriteFloat(ctda, 4, condition.ComparisonValue);

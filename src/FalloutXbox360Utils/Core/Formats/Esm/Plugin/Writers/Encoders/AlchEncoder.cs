@@ -28,8 +28,8 @@ public sealed class AlchEncoder : IRecordEncoder
 
     /// <summary>
     ///     Encode a new ALCH record from scratch. fopdoc canonical order:
-    ///     EDID, OBND?, FULL?, MODL?, DATA. ENIT and EFID/EFIT effect blocks are deferred to
-    ///     v5 because the model's ENIT byte order isn't fully verified.
+    ///     EDID, OBND?, FULL?, MODL?, DATA. ENIT and EFID/EFIT effect blocks are deferred
+    ///     because the model's ENIT byte order isn't fully verified.
     /// </summary>
     internal static EncodedRecord EncodeNew(ConsumableRecord alch)
     {

@@ -6,7 +6,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
 ///     Encodes a <see cref="WeaponRecord" /> as PC-format WEAP subrecord bytes.
-///     v1 emits DATA (15 bytes) only. DNAM (204 bytes), CRDT, ETYP, NAM0, etc. are retained
+///     Emits DATA (15 bytes) only. DNAM (204 bytes), CRDT, ETYP, NAM0, etc. are retained
 ///     from the source ESM — those subrecords contain many fields the WeaponRecord model does
 ///     not enumerate, so reconstructing them risks corrupting unmapped bytes.
 ///     DATA layout: int32 Value(0) + int32 Health(4) + float Weight(8) + int16 Damage(12) + uint8 ClipSize(14).

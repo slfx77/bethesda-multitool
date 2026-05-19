@@ -5,7 +5,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
 ///     Encodes a <see cref="ContainerRecord" /> (CONT) as PC-format subrecord bytes.
-///     v9 emits the full record: EDID + OBND? + FULL? + MODL? + MODT? + SCRI? +
+///     Emits the full record: EDID + OBND? + FULL? + MODL? + MODT? + SCRI? +
 ///     CNTO+COED?+ (per item) + DATA + SNAM? + QNAM? + RNAM?.
 ///     Override path is a no-op.
 ///     DATA layout (5 bytes, packed/unaligned):

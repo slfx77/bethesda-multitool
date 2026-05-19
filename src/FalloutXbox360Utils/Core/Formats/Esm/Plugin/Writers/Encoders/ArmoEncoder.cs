@@ -5,7 +5,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
 ///     Encodes an <see cref="ArmorRecord" /> as PC-format ARMO subrecord bytes.
-///     v1 emits DATA (12 bytes: int32 value + int32 health + float weight) only. DNAM
+///     Emits DATA (12 bytes: int32 value + int32 health + float weight) only. DNAM
 ///     (DR/DT armor stats), BMDT (biped flags), ETYP (equipment type) are retained from the
 ///     source ESM — the parsed model fields cover only a subset of those subrecords' bytes,
 ///     so reconstructing them risks corrupting unmapped fields.

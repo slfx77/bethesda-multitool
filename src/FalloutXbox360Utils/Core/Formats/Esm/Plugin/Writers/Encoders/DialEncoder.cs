@@ -4,7 +4,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
 ///     Encodes a <see cref="DialogTopicRecord" /> (DIAL) as PC-format subrecord bytes.
-///     v6 emits the full record from scratch: EDID + FULL? + QSTI? + DATA + PNAM? + TNAM?.
+///     Emits the full record from scratch: EDID + FULL? + QSTI? + DATA + PNAM? + TNAM?.
 ///     Override path is a no-op — DIAL definitions don't mutate at runtime.
 ///     DATA (2 bytes): byte TopicType(0) + byte Flags(1) — raw bytes, no endian swap.
 ///     PNAM (4 bytes): float Priority — topic ordering weight.

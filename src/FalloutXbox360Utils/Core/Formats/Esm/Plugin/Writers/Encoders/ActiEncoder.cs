@@ -4,7 +4,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
 ///     Encodes an <see cref="ActivatorRecord" /> (ACTI) as PC-format subrecord bytes.
-///     v7 emits the full record from scratch: EDID + OBND? + FULL? + MODL? + SCRI? +
+///     Emits the full record from scratch: EDID + OBND? + FULL? + MODL? + SCRI? +
 ///     SNAM? + RNAM? + WNAM?. ACTI has no DATA subrecord — all attributes are optional
 ///     individual subrecords. The override path is a no-op.
 /// </summary>

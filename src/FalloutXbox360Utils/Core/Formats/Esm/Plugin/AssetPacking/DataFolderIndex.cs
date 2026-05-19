@@ -64,7 +64,7 @@ internal sealed class DataFolderIndex : IDisposable
         new(StringComparer.Ordinal);
 
     /// <summary>
-    ///     v22: filename-without-extension reduced to lowercase letters/digits only — every
+    ///     Filename-without-extension reduced to lowercase letters/digits only — every
     ///     space, underscore, dash, and apostrophe is dropped. Lets the resolver catch
     ///     renames between the prototype and final FNV that only changed separator style
     ///     (e.g. <c>monorailplatform.nif</c> ↔ <c>monorail_platform.nif</c>, or
@@ -164,7 +164,7 @@ internal sealed class DataFolderIndex : IDisposable
     }
 
     /// <summary>
-    ///     v22: return every indexed asset whose filename, with extension stripped and
+    ///     Return every indexed asset whose filename, with extension stripped and
     ///     separators (space / underscore / dash / apostrophe) removed and case-folded,
     ///     matches the given <paramref name="looseBasename" />. The caller is responsible
     ///     for normalizing its key via <see cref="ComputeLooseBasename" />.
@@ -175,7 +175,7 @@ internal sealed class DataFolderIndex : IDisposable
     }
 
     /// <summary>
-    ///     v22: return every indexed asset whose immediate parent directory matches
+    ///     Return every indexed asset whose immediate parent directory matches
     ///     <paramref name="lastDirectory" /> (case-insensitive). Used by the substring-
     ///     suffix loose pass so the search stays bounded to "same folder" candidates
     ///     instead of walking every indexed entry.
@@ -196,7 +196,7 @@ internal sealed class DataFolderIndex : IDisposable
     }
 
     /// <summary>
-    ///     v22: like <see cref="ComputeLooseBasename" /> but additionally strips a leading
+    ///     Like <see cref="ComputeLooseBasename" /> but additionally strips a leading
     ///     and/or trailing <c>nv</c> token from the loose stem. The FNV final build
     ///     occasionally removed the <c>nv</c> namespace token that prototype filenames
     ///     carried (e.g. <c>nv_slotmachine</c> ↔ <c>slotmachine</c>,
@@ -368,7 +368,7 @@ internal sealed class DataFolderIndex : IDisposable
 
         looseList.Add(source);
 
-        // v22: when the basename carries a leading/trailing 'nv' token (the FNV namespace
+        // When the basename carries a leading/trailing 'nv' token (the FNV namespace
         // affix), ALSO index the asset under the stripped form so lookups for the
         // un-namespaced variant can find it (e.g. request `slot.nif` finds candidate
         // `nv_slot.nif` indexed under both `nvslot` and `slot`). The request side has its

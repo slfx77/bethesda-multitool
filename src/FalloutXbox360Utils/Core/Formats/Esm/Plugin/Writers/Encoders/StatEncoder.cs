@@ -4,7 +4,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
 ///     Encodes a <see cref="StaticRecord" /> (STAT) as PC-format subrecord bytes.
-///     v7 emits the full record from scratch: EDID + OBND? + MODL?. There is no DATA
+///     Emits the full record from scratch: EDID + OBND? + MODL?. There is no DATA
 ///     subrecord — STAT is the simplest world-object type. The override path is a no-op
 ///     (the master ESM's bytes are retained verbatim).
 /// </summary>

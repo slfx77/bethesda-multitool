@@ -4,7 +4,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models;
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
-///     Shared helpers for emitting subrecords in v4 new-record encoder paths. Each helper
+///     Shared helpers for emitting subrecords in new-record encoder paths. Each helper
 ///     produces an <see cref="EncodedSubrecord" /> with the appropriate byte payload —
 ///     avoids duplicating the same one-liner across every type-specific encoder.
 /// </summary>

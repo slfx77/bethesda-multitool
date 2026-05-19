@@ -26,7 +26,7 @@ public sealed class NpcEncoder : IRecordEncoder
 
         if (npc.Stats is not null)
         {
-            // v22: force AutoCalcStats on override ACBS too. The override path replaces the
+            // Force AutoCalcStats on override ACBS too. The override path replaces the
             // master's ACBS Flags wholesale, which would clear master's AutoCalcStats bit if
             // the captured runtime Flags doesn't include it (we routinely see captured
             // Flags = 0x01 / Biped-only). Without AutoCalc the engine reads manual stats
@@ -273,7 +273,7 @@ public sealed class NpcEncoder : IRecordEncoder
             templateIsMaster = true;
         }
 
-        // v22: GECK and in-game tooltips show the FormID as the NPC's name when the EDID
+        // GECK and in-game tooltips show the FormID as the NPC's name when the EDID
         // is empty, which leaves the user without a searchable handle in the Object Window.
         // Synthesize one from the captured FullName (preferred) or fall back to a stable
         // FormID-suffixed prefix so the NPC is at least listable and sortable.
@@ -304,7 +304,7 @@ public sealed class NpcEncoder : IRecordEncoder
         }
         else
         {
-            // v22: force AutoCalcStats (bit 0x10) on new NPCs so the engine derives HP / AP
+            // Force AutoCalcStats (bit 0x10) on new NPCs so the engine derives HP / AP
             // from Level + Class + SPECIAL instead of trusting the captured runtime Flags.
             // Without AutoCalc, prototype NPCs (e.g. Ulysses) spawn dead because the
             // captured Flags is just 0x01 (Biped only) and the manual stats path computes

@@ -45,7 +45,7 @@ public sealed class GmstEncoder : IRecordEncoder
             }
 
             case GameSettingType.String:
-                warnings.Add($"GMST {gmst.EditorId} is a string — DATA retained from ESM in v1.");
+                warnings.Add($"GMST {gmst.EditorId} is a string — DATA retained from ESM.");
                 break;
 
             default:
@@ -62,8 +62,7 @@ public sealed class GmstEncoder : IRecordEncoder
 
     /// <summary>
     ///     Encode a new GMST record from scratch (not an override). Subrecord order is EDID,
-    ///     DATA per fopdoc. String GMSTs are skipped (model inconsistency carries over from
-    ///     v1; defer to v5).
+    ///     DATA per fopdoc. String GMSTs are skipped (model inconsistency; deferred).
     /// </summary>
     internal static EncodedRecord EncodeNew(GameSettingRecord gmst)
     {
@@ -89,7 +88,7 @@ public sealed class GmstEncoder : IRecordEncoder
                 break;
 
             case GameSettingType.String:
-                warnings.Add($"New GMST {gmst.EditorId} is a string type — DATA omitted in v4.");
+                warnings.Add($"New GMST {gmst.EditorId} is a string type — DATA omitted.");
                 break;
 
             default:

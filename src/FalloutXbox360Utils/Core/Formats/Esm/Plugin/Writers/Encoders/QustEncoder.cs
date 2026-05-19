@@ -5,11 +5,11 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 /// <summary>
 ///     Encodes a <see cref="QuestRecord" /> (QUST) as PC-format subrecord bytes.
 ///     Both override and new-record paths emit EDID? + SCRI? + FULL? + DATA + CTDA* + stage
-///     blocks + objective blocks. v22 reinstates the override path: when the DMP captured
-///     any stages / objectives / conditions / script / FULL the override emits the FULL
-///     canonical subrecord stream, and the merge engine positionally replaces the master's
-///     blocks per signature. When the DMP carries no quest content the override returns
-///     empty subrecords and the engine retains the master verbatim.
+///     blocks + objective blocks. When the DMP captured any stages / objectives /
+///     conditions / script / FULL the override emits the full canonical subrecord stream,
+///     and the merge engine positionally replaces the master's blocks per signature.
+///     When the DMP carries no quest content the override returns empty subrecords and
+///     the engine retains the master verbatim.
 ///     Partial emission is unsafe: INDX + QSDT + CNAM (per stage) and QOBJ + NNAM + QSTA
 ///     (per objective) are positional groups, and the merge engine does per-signature
 ///     replacement only — emitting a subset would desynchronize the stage/objective tuples.
@@ -31,7 +31,7 @@ public sealed class QustEncoder : IRecordEncoder
         // (QOBJ + NNAM + QSTA), and top-level CTDA — are excluded because the merge engine's
         // positional per-signature replacement would interleave DMP entries with the master's
         // tail and break stage indexing, objective ordering, and condition chains. The
-        // initial v22 release emitted these and produced random quest failures in-game.
+        // Emitting these caused random quest failures in-game.
         if (!HasOverrideContent(quest))
         {
             return new EncodedRecord { Subrecords = [], Warnings = [] };

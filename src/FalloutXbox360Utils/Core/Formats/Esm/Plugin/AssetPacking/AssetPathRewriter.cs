@@ -4,8 +4,8 @@ using FalloutXbox360Utils.Core.Formats.Esm.Reporting;
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
 
 /// <summary>
-///     v22: when a record's asset path doesn't resolve exactly in any indexed Data folder
-///     but the v21 fuzzy resolver matches an asset under a different filename (or different
+///     When a record's asset path doesn't resolve exactly in any indexed Data folder
+///     but the fuzzy resolver matches an asset under a different filename (or different
 ///     extension, e.g. <c>.ddx</c> → <c>.dds</c>), rewrite the record's path field to the
 ///     matched filename. This unifies prototype-era references with assets that survived
 ///     under different names in the final builds and shrinks the BSA the packer needs to

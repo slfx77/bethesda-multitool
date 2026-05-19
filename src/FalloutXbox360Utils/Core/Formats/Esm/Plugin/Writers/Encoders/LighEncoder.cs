@@ -4,7 +4,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
 ///     Encodes a <see cref="LightRecord" /> (LIGH) as PC-format subrecord bytes.
-///     v9 emits the full record from scratch: EDID + OBND? + MODL? + MODT? + SCRI? +
+///     Emits the full record from scratch: EDID + OBND? + MODL? + MODT? + SCRI? +
 ///     FULL? + ICON? + DATA(32B) + FNAM? + SNAM?.
 ///     Override path is a no-op.
 ///     DATA layout (32 bytes, all PC little-endian):

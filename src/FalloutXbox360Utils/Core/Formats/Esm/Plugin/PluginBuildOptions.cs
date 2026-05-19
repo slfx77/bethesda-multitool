@@ -50,7 +50,7 @@ public sealed record PluginBuildOptions
     public uint NewRecordBaseFormId { get; init; } = FormIdAllocator.DefaultBaseLocalId;
 
     /// <summary>
-    ///     v22 asset-rename pass. When non-empty (and <see cref="AssetRenameBaselineFolder" />
+    ///     Asset-rename pass. When non-empty (and <see cref="AssetRenameBaselineFolder" />
     ///     is set), <c>PluginBuilder.BuildAsync</c> resolves every record-sourced asset path
     ///     against these folders before encoding. Paths that fuzzy-match to a differently-
     ///     named asset get their record field rewritten in-place so the output ESP carries

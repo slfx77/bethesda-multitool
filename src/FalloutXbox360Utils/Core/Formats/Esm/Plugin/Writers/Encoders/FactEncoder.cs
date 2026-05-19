@@ -4,7 +4,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
 ///     Encodes a <see cref="FactionRecord" /> as PC-format FACT subrecord bytes.
-///     v1 emits DATA (4 bytes: uint32 flags) only. CRVA (crime values), XNAM (relations),
+///     Emits DATA (4 bytes: uint32 flags) only. CRVA (crime values), XNAM (relations),
 ///     RNAM/MNAM/FNAM/INAM (rank tables), and other faction subrecords are retained from the
 ///     source ESM since CRVA carries 14+ bytes the model exposes only partially.
 ///     DATA layout: uint32 Flags(0).

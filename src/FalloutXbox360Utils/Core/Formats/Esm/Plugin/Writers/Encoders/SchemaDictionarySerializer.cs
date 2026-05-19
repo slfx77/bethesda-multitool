@@ -6,7 +6,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     Re-serializes a typed-field dictionary (as produced by
 ///     <see cref="FalloutXbox360Utils.Core.Formats.Esm.SubrecordDataReader.ReadFields(string, string?, byte[], bool)" />)
 ///     back into the byte layout defined by a
-///     <see cref="SubrecordSchema" />. Used by the v18b encoders for record types whose
+///     <see cref="SubrecordSchema" />. Used by encoders for record types whose
 ///     parsers store schema-parsed dictionaries instead of typed model fields (CSTY, LGTM,
 ///     WATR DNAM/GNAM). The walk follows the schema's field order, looks up each field by
 ///     name in the dictionary, and writes the typed value at the cumulative offset.

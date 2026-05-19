@@ -7,7 +7,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     In-game popup messages, tutorials, and notifications.
 ///     fopdoc canonical order:
 ///     EDID, FULL?, DESC?, ICON?, QNAM?(quest), DNAM?(flags u32), TNAM?(display time u32), ITXT*(buttons).
-///     Per-button CTDA conditions are not modeled yet (v17+ extension if needed).
+///     Per-button CTDA conditions are not modeled yet.
 /// </summary>
 public sealed class MesgEncoder : IRecordEncoder
 {

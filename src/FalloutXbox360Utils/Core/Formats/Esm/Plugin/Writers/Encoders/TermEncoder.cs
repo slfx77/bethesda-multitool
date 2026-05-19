@@ -5,7 +5,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
 ///     Encodes a <see cref="TerminalRecord" /> (TERM) as PC-format subrecord bytes.
-///     v9 path: EDID + FULL? + DESC? + DNAM(4B Difficulty + Flags + ServerType + Unused) +
+///     Emits EDID + FULL? + DESC? + DNAM(4B Difficulty + Flags + ServerType + Unused) +
 ///     per menu item: ITXT + (RNAM or embedded SCHR+SCDA?+SCTX?+SCRO*+SCRV*) + NEXT separator.
 ///     Override path is a no-op.
 ///     DNAM layout per PDB TERMINAL_DATA (4 bytes):

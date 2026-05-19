@@ -4,7 +4,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
 ///     Encodes a <see cref="FurnitureRecord" /> (FURN) as PC-format subrecord bytes.
-///     v7 emits the full record from scratch: EDID + OBND? + FULL? + MODL? + SCRI? + MNAM(4B).
+///     Emits the full record from scratch: EDID + OBND? + FULL? + MODL? + SCRI? + MNAM(4B).
 ///     The override path is a no-op — FURN carries no runtime-mutable bytes that we mirror.
 ///     MNAM is the marker-flags bitmask indicating which sit-positions are active.
 /// </summary>

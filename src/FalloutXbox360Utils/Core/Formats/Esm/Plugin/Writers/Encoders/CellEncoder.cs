@@ -7,12 +7,12 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
 ///     Encodes a new <see cref="CellRecord" /> as PC-format CELL subrecord bytes — used for
-///     DMP cells that don't exist in the master ESM. v4 supports both interior cells and
+///     DMP cells that don't exist in the master ESM. Supports both interior cells and
 ///     exterior cells (with synthetic XCLC).
 ///     Subrecords emitted in fopdoc-canonical CELL order:
 ///     EDID, FULL?, DATA, XCLC?, LTMP?, LNAM?, XCLW?, XCLR?, XCLL?, XEZN?, XCAS?, XCMO?, XCIM?.
-///     For interior cells (v3+), bit 0 of DATA is set and XCLC is omitted.
-///     For exterior cells (v4+), bit 0 of DATA is cleared and XCLC carries the grid coords.
+///     For interior cells, bit 0 of DATA is set and XCLC is omitted.
+///     For exterior cells, bit 0 of DATA is cleared and XCLC carries the grid coords.
 /// </summary>
 public sealed class CellEncoder : IRecordEncoder
 {

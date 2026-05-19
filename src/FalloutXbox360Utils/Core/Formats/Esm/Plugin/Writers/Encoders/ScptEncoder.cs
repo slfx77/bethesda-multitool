@@ -4,7 +4,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
 ///     Encodes a <see cref="ScriptRecord" /> (SCPT) as PC-format subrecord bytes.
-///     v6 emits the full record from scratch: EDID + SCHR + SCDA? + SCTX? + SLSD/SCVR pairs +
+///     Emits the full record from scratch: EDID + SCHR + SCDA? + SCTX? + SLSD/SCVR pairs +
 ///     SCRO/SCRV referenced objects. Override path is a no-op — script bytecode in the DMP
 ///     matches the master ESM's bytecode and is retained verbatim.
 ///     SCHR (20 bytes) per PDB SCRIPT_HEADER:

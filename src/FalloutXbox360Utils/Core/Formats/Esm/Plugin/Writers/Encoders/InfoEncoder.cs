@@ -41,8 +41,8 @@ public sealed class InfoEncoder : IRecordEncoder
         // We deliberately SKIP CTDA, TCLT, TCLF, NAME, and result-script blocks because the
         // merge engine doesn't understand their semantic groupings — partial DMP captures
         // (e.g. 2 conditions when master has 5) would interleave with master's tail and
-        // break AND/OR chains or script block boundaries. v22-initial-release emitted these
-        // and showed up as random quest / dialogue failures in-game.
+        // break AND/OR chains or script block boundaries. Emitting these caused random
+        // quest / dialogue failures in-game.
         if (!HasOverrideContent(info))
         {
             return new EncodedRecord { Subrecords = [], Warnings = [] };

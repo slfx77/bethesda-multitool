@@ -6,7 +6,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///     Encodes a <see cref="WorldspaceRecord" /> (WRLD) as PC-format subrecord bytes.
 ///     This emits only the worldspace header subrecords — child CELLs flow through the
 ///     existing cell-children pipeline ([CellEncoder.cs](CellEncoder.cs)), not via this
-///     encoder. v18 supplies the WRLD header so DMP-only worldspaces can be created.
+///     encoder. The WRLD header is supplied so DMP-only worldspaces can be created.
 ///     FNVEdit canonical order (wbWRLD, confirmed against master WastelandNV):
 ///     EDID, FULL?, XEZN?, WNAM?(parent), PNAM?(parent use flags, 2B — only with WNAM),
 ///     CNAM?(climate), NAM2?(water), [NAM3/NAM4 LOD-water — not modeled],

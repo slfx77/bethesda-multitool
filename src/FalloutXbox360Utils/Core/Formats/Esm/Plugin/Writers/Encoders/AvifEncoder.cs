@@ -26,8 +26,7 @@ public sealed class AvifEncoder : IRecordEncoder
         // captured memory but their FormIDs don't match the master (these are engine-
         // internal records with no on-disk equivalent), so the converter classifies them
         // as "new" and tries to emit them. Doing so with only an EDID subrecord and no
-        // FULL/DESC/ANAM crashes the engine at FalloutNV+0x46025A during plugin load —
-        // confirmed by 14 iterations of bisection in v20.13.
+        // FULL/DESC/ANAM crashes the engine at FalloutNV+0x46025A during plugin load.
         //
         // The safe answer is to never emit AVIF as a new record. Vanilla AVIF records
         // pass through the override path verbatim from master, so we don't lose anything.

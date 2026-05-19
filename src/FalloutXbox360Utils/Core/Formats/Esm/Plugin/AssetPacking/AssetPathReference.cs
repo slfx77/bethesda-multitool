@@ -5,7 +5,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
 /// <summary>
 ///     One asset path discovered on a parsed record, tracked back to its source object and
 ///     property. Used by <see cref="AssetPathRewriter" /> to mutate the record field when
-///     the v21 fuzzy resolver decides the path should be remapped to a differently-named
+///     the fuzzy resolver decides the path should be remapped to a differently-named
 ///     asset that exists in an indexed Data folder.
 /// </summary>
 internal sealed record AssetPathReference

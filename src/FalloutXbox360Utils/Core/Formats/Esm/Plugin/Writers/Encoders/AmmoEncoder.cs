@@ -33,7 +33,7 @@ public sealed class AmmoEncoder : IRecordEncoder
     /// <summary>
     ///     Encode a new AMMO record from scratch. fopdoc canonical order:
     ///     EDID, OBND?, FULL?, MODL?, DATA, DAT2?. DAT2 (FNV-specific 20 bytes with damage-mult
-    ///     and consumed-percentage fields) is deferred to v5 — model lacks those fields.
+    ///     and consumed-percentage fields) is deferred — model lacks those fields.
     /// </summary>
     internal static EncodedRecord EncodeNew(AmmoRecord ammo)
     {
@@ -82,7 +82,7 @@ public sealed class AmmoEncoder : IRecordEncoder
         if (ammo.ProjectileFormId.HasValue || ammo.ProjectileFormIds.Count > 0)
         {
             warnings.Add(
-                $"New AMMO 0x{ammo.FormId:X8} carries projectile data — DAT2 emission deferred to v5.");
+                $"New AMMO 0x{ammo.FormId:X8} carries projectile data — DAT2 emission deferred.");
         }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
