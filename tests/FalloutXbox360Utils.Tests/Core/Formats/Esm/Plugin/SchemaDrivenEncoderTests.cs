@@ -8,11 +8,12 @@ using Xunit;
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Plugin;
 
 /// <summary>
-///     v18b tests for the parser-deficient encoder batch:
-///     CSTY, LGTM, WATR (schema-dictionary-serialized), WTHR (narrow typed-field emit).
-///     NAVI is intentionally unencoded — model lacks vertex/triangle/portal arrays.
+///     Tests for encoders that re-serialize parser-deficient subrecord types through
+///     SchemaDictionarySerializer (CSTY/LGTM/WATR) plus narrow typed-field emission
+///     (WTHR), and SchemaDictionarySerializer itself.
+///     NAVI is intentionally unencoded — its model lacks vertex/triangle/portal arrays.
 /// </summary>
-public class V18bEncoderTests
+public class SchemaDrivenEncoderTests
 {
     // ====================================================================================
     // SchemaDictionarySerializer
@@ -219,7 +220,7 @@ public class V18bEncoderTests
     // ====================================================================================
 
     [Fact]
-    public void AllV18bEncoders_EmitWarningWhenEditorIdMissing()
+    public void SchemaDrivenEncoders_EmitWarningWhenEditorIdMissing()
     {
         Assert.Contains(CstyEncoder.EncodeNew(new CombatStyleRecord { FormId = 1 }).Warnings,
             w => w.Contains("has no EditorId"));
