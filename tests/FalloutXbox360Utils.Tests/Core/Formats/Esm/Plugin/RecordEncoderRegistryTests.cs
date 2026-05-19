@@ -1,4 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Plugin;
@@ -75,6 +76,18 @@ public class RecordEncoderRegistryTests
         Assert.Same(rads, dehy);
         Assert.Same(rads, hung);
         Assert.Same(rads, slpd);
+    }
+
+    [Fact]
+    public void Register_WithExplicitKey_OverridesEncoderRecordType()
+    {
+        var registry = new RecordEncoderRegistry();
+        var encoder = new LvliEncoder(); // RecordType == "LVLI"
+        registry.Register("LVLN", encoder);
+
+        Assert.True(registry.TryGet("LVLN", out var found));
+        Assert.Same(encoder, found);
+        Assert.False(registry.TryGet("LVLI", out _));
     }
 
     [Fact]

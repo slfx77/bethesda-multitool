@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
 using Xunit;
 
@@ -54,7 +55,7 @@ public class SubrecordEncoderTests
         Span<byte> buf = stackalloc byte[4];
         SubrecordEncoder.WriteFloat(buf, 0, 1.34f);
 
-        var roundTrip = System.Buffers.Binary.BinaryPrimitives.ReadSingleLittleEndian(buf);
+        var roundTrip = BinaryPrimitives.ReadSingleLittleEndian(buf);
         Assert.Equal(1.34f, roundTrip);
     }
 
@@ -76,15 +77,96 @@ public class SubrecordEncoderTests
         Assert.Equal(0x00, bytes[16]);
     }
 
+    // ====================================================================================
+    // XXXX extended-size subrecord (payload > 64KB)
+    // Payloads that exceed uint16 must emit the XXXX prefix carrying the real size as a
+    // uint32, followed by the real signature with size=0. Required for WRLD OFST tables.
+    // ====================================================================================
+
     [Fact]
-    public void WriteSubrecord_EmitsXxxxPrefixForPayloadOver64K()
+    public void WriteSubrecord_EmitsXxxxPrefixWhenPayloadExceeds64Kb()
     {
-        // v19 fix: payloads >64KB use the XXXX extended-size form rather than throwing.
-        // Detailed byte-layout assertions live in V19ValidationFixesTests.
-        using var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream);
-        var huge = new byte[ushort.MaxValue + 1];
-        SubrecordEncoder.WriteSubrecord(writer, "DATA", huge);
-        Assert.True(stream.Length > huge.Length);
+        var payload = new byte[100_000]; // > 65535
+        for (var i = 0; i < payload.Length; i++)
+        {
+            payload[i] = (byte)(i & 0xFF);
+        }
+
+        using var ms = new MemoryStream();
+        using var bw = new BinaryWriter(ms);
+        SubrecordEncoder.WriteSubrecord(bw, "OFST", payload);
+        bw.Flush();
+
+        var bytes = ms.ToArray();
+
+        // Total bytes = XXXX header (6) + XXXX payload (4) + real header (6) + payload (100_000).
+        Assert.Equal(6 + 4 + 6 + payload.Length, bytes.Length);
+
+        // First subrecord is "XXXX" with size=4 carrying the real payload size.
+        Assert.Equal((byte)'X', bytes[0]);
+        Assert.Equal((byte)'X', bytes[1]);
+        Assert.Equal((byte)'X', bytes[2]);
+        Assert.Equal((byte)'X', bytes[3]);
+        Assert.Equal(4, BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(4, 2)));
+        Assert.Equal(100_000u, BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(6, 4)));
+
+        // Second subrecord is the real sig "OFST" with size=0 (real size in XXXX prefix).
+        Assert.Equal((byte)'O', bytes[10]);
+        Assert.Equal((byte)'F', bytes[11]);
+        Assert.Equal((byte)'S', bytes[12]);
+        Assert.Equal((byte)'T', bytes[13]);
+        Assert.Equal(0, BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(14, 2)));
+
+        // Payload bytes follow verbatim.
+        Assert.Equal(payload[0], bytes[16]);
+        Assert.Equal(payload[^1], bytes[^1]);
+    }
+
+    [Fact]
+    public void WriteSubrecord_NormalPathUnchangedForSmallPayload()
+    {
+        var payload = new byte[100];
+        using var ms = new MemoryStream();
+        using var bw = new BinaryWriter(ms);
+        SubrecordEncoder.WriteSubrecord(bw, "DATA", payload);
+        bw.Flush();
+
+        var bytes = ms.ToArray();
+
+        // Total = single 6-byte header + 100 payload = 106. No XXXX prefix.
+        Assert.Equal(106, bytes.Length);
+        Assert.Equal((byte)'D', bytes[0]);
+        Assert.Equal((byte)'A', bytes[1]);
+        Assert.Equal((byte)'T', bytes[2]);
+        Assert.Equal((byte)'A', bytes[3]);
+        Assert.Equal(100, BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(4, 2)));
+    }
+
+    [Fact]
+    public void WriteSubrecord_BoundaryAtExactly65535()
+    {
+        var payload = new byte[ushort.MaxValue]; // 65535 — still fits in uint16, no XXXX
+        using var ms = new MemoryStream();
+        using var bw = new BinaryWriter(ms);
+        SubrecordEncoder.WriteSubrecord(bw, "OFST", payload);
+        bw.Flush();
+
+        var bytes = ms.ToArray();
+        Assert.Equal(6 + payload.Length, bytes.Length);
+        Assert.Equal(ushort.MaxValue, BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(4, 2)));
+    }
+
+    [Fact]
+    public void WriteSubrecord_OneOverBoundaryUsesXxxx()
+    {
+        var payload = new byte[ushort.MaxValue + 1]; // 65536 — must use XXXX
+        using var ms = new MemoryStream();
+        using var bw = new BinaryWriter(ms);
+        SubrecordEncoder.WriteSubrecord(bw, "OFST", payload);
+        bw.Flush();
+
+        var bytes = ms.ToArray();
+        Assert.Equal(6 + 4 + 6 + payload.Length, bytes.Length);
+        Assert.Equal((byte)'X', bytes[0]);
     }
 }
