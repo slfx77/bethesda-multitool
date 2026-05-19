@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Dialogue;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Plugin;

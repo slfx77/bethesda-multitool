@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
 
 /// <summary>

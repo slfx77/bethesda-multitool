@@ -9,6 +9,12 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Magic;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Misc;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using Xunit;
 

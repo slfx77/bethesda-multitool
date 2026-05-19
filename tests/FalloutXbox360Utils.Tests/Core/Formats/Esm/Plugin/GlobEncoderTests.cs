@@ -1,5 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Misc;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Plugin;

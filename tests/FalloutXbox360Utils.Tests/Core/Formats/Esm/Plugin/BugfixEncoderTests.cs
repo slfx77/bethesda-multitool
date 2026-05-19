@@ -6,6 +6,9 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using Xunit;
 

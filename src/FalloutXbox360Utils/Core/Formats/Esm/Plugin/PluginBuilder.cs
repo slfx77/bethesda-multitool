@@ -15,6 +15,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Validation;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Formats.Esm.Reporting;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
