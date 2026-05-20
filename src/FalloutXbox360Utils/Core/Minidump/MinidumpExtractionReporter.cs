@@ -1,6 +1,7 @@
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Carving;
 using FalloutXbox360Utils.Core.Extraction;
+using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
@@ -64,6 +65,12 @@ internal static class MinidumpExtractionReporter
                 fileInfo.Length,
                 analysisResult.MinidumpInfo);
             var semanticResult = parser.ParseAll();
+            var authority = CellWorldspaceAuthorityJson.Load(null);
+            CellWorldspaceAuthorityApplier.Apply(
+                semanticResult,
+                authority.Cells,
+                authority.WorldspaceNames,
+                analysisResult.EsmRecords);
             var stringData = RuntimeStringReportHelper.Extract(analysisResult, accessor);
 
             // Merge supplementary records (load order) for name enrichment

@@ -216,6 +216,12 @@ internal static class DialogueRecordDetailBuilder
             var prefix = info.Responses.Count > 1 ? $"Response {i + 1}" : "Response";
             rows.Add(new DetailRow($"{prefix} Emotion", $"{r.EmotionName} ({r.EmotionValue:+#;-#;0})"));
             rows.Add(new DetailRow($"{prefix} Number", r.ResponseNumber.ToString()));
+            if (r.SoundFormId is > 0)
+            {
+                rows.Add(new DetailRow($"{prefix} Sound",
+                    $"{resolveFormName(r.SoundFormId.Value)} (0x{r.SoundFormId.Value:X8})",
+                    r.SoundFormId.Value));
+            }
         }
 
         // Location

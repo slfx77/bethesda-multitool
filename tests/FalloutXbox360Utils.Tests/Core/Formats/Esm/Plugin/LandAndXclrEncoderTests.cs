@@ -114,8 +114,12 @@ public class LandAndXclrEncoderTests
     }
 
     [Fact]
-    public void Land_Encode_DataIsFourZeroBytes()
+    public void Land_Encode_DataCarriesCanonicalExteriorFlag()
     {
+        // Vanilla FNV exterior LANDs always have bit 4 (0x10) set in DATA. Quadrant bits
+        // (0..3) are set when BTXT data is emitted for that quadrant; with no BTXTs they
+        // stay clear. Prior behavior (DATA=0) made the engine treat the cell as having no
+        // LAND data and the terrain rendered flat — see the Phase 9 Goodsprings bugfix.
         var heightmap = new LandHeightmap
         {
             HeightOffset = 0f,
@@ -127,7 +131,82 @@ public class LandAndXclrEncoderTests
         var data = Assert.Single(subs, s => s.Signature == "DATA").Bytes;
 
         Assert.Equal(4, data.Length);
-        Assert.All(data, b => Assert.Equal(0, b));
+        Assert.Equal(0x10, data[0]);
+        Assert.Equal(0, data[1]);
+        Assert.Equal(0, data[2]);
+        Assert.Equal(0, data[3]);
+    }
+
+    [Fact]
+    public void Land_Encode_DataQuadrantBitsReflectBtxtQuadrants()
+    {
+        var heightmap = new LandHeightmap
+        {
+            HeightOffset = 0f,
+            HeightDeltas = new sbyte[33 * 33]
+        };
+        var visualData = new LandVisualData
+        {
+            TextureLayers =
+            [
+                new LandTextureLayer
+                {
+                    Kind = LandTextureLayerKind.Base, TextureFormId = 0x00038A28u,
+                    Quadrant = 0, Layer = 0
+                },
+                new LandTextureLayer
+                {
+                    Kind = LandTextureLayerKind.Base, TextureFormId = 0x00038A28u,
+                    Quadrant = 2, Layer = 0
+                }
+            ]
+        };
+
+        var subs = LandEncoder.Encode(heightmap, visualData);
+        Assert.NotNull(subs);
+        var data = Assert.Single(subs, s => s.Signature == "DATA").Bytes;
+
+        // Bit 4 (0x10) always; bit 0 for quad 0; bit 2 for quad 2; bits 1 + 3 clear.
+        Assert.Equal(0x10 | 0x01 | 0x04, data[0]);
+    }
+
+    [Fact]
+    public void Land_Encode_BtxtLayerIs65535_NotZero()
+    {
+        // BTXT (Base) layer must be 0xFFFF (the base-layer sentinel). Master FNV LANDs all
+        // use 0xFFFF for BTXT; the prior encoder emitted 0 which confused the engine into
+        // skipping the quadrant's base texture (contributed to flat-terrain rendering).
+        var heightmap = new LandHeightmap
+        {
+            HeightOffset = 0f,
+            HeightDeltas = new sbyte[33 * 33]
+        };
+        var visualData = new LandVisualData
+        {
+            TextureLayers =
+            [
+                new LandTextureLayer
+                {
+                    Kind = LandTextureLayerKind.Base, TextureFormId = 0x00038A28u,
+                    Quadrant = 0, Layer = 0
+                },
+                new LandTextureLayer
+                {
+                    Kind = LandTextureLayerKind.Alpha, TextureFormId = 0x0001F958u,
+                    Quadrant = 0, Layer = 3
+                }
+            ]
+        };
+
+        var subs = LandEncoder.Encode(heightmap, visualData);
+        Assert.NotNull(subs);
+        var btxt = Assert.Single(subs, s => s.Signature == "BTXT").Bytes;
+        var btxtLayer = BinaryPrimitives.ReadUInt16LittleEndian(btxt.AsSpan(6, 2));
+        Assert.Equal(0xFFFF, btxtLayer);
+
+        var atxt = Assert.Single(subs, s => s.Signature == "ATXT").Bytes;
+        var atxtLayer = BinaryPrimitives.ReadUInt16LittleEndian(atxt.AsSpan(6, 2));
+        Assert.Equal(3, atxtLayer);
     }
 
     [Fact]
@@ -208,6 +287,60 @@ public class LandAndXclrEncoderTests
         var vtex = subs[7].Bytes;
         Assert.Equal(0x1000u, BinaryPrimitives.ReadUInt32LittleEndian(vtex.AsSpan(0, 4)));
         Assert.Equal(0x2000u, BinaryPrimitives.ReadUInt32LittleEndian(vtex.AsSpan(4, 4)));
+    }
+
+    [Fact]
+    public void Land_Encode_SkipsTextureLayersWithZeroFormId()
+    {
+        var heightmap = new LandHeightmap
+        {
+            HeightOffset = 0f,
+            HeightDeltas = new sbyte[33 * 33]
+        };
+        var visual = new LandVisualData
+        {
+            TextureLayers =
+            [
+                new LandTextureLayer
+                {
+                    Kind = LandTextureLayerKind.Base,
+                    TextureFormId = 0,
+                    Quadrant = 0,
+                    Layer = 0
+                },
+                new LandTextureLayer
+                {
+                    Kind = LandTextureLayerKind.Alpha,
+                    TextureFormId = 0,
+                    Quadrant = 1,
+                    Layer = 0,
+                    BlendEntries =
+                    [
+                        new LandTextureBlendEntry(12, 0, 0, 0.5f)
+                    ]
+                },
+                new LandTextureLayer
+                {
+                    Kind = LandTextureLayerKind.Alpha,
+                    TextureFormId = 0x22222222,
+                    Quadrant = 2,
+                    Layer = 0,
+                    BlendEntries =
+                    [
+                        new LandTextureBlendEntry(13, 0, 0, 0.25f)
+                    ]
+                }
+            ]
+        };
+
+        var subs = LandEncoder.Encode(heightmap, visual);
+
+        Assert.NotNull(subs);
+        Assert.DoesNotContain(subs, s => s.Signature == "BTXT");
+        var atxt = Assert.Single(subs, s => s.Signature == "ATXT").Bytes;
+        Assert.Equal(0x22222222u, BinaryPrimitives.ReadUInt32LittleEndian(atxt.AsSpan(0, 4)));
+        var vtxt = Assert.Single(subs, s => s.Signature == "VTXT").Bytes;
+        Assert.Equal((ushort)13, BinaryPrimitives.ReadUInt16LittleEndian(vtxt.AsSpan(0, 2)));
     }
 
     // ===================================================================================

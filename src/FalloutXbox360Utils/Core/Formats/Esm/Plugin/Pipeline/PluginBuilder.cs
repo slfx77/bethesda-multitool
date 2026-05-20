@@ -230,6 +230,7 @@ public sealed class PluginBuilder
             _masterFormIdsByType = masterIndex.FormIdsByType;
             _emittedNewFormIds.Clear();
             _emittedNewFormIdsByType.Clear();
+            _placedRefValidFormIdsCache = null;
             _renderUnsafeNewNpcFormIds.Clear();
             _emittedExteriorCellCoords.Clear();
             _emittedOverrideCellFormIds.Clear();
@@ -325,6 +326,7 @@ public sealed class PluginBuilder
             var dmpRecords = unified.Records;
             ApplyCellWorldspaceAuthority(
                 dmpRecords,
+                unified.RawResult.EsmRecords,
                 inputs.Options.CellWorldspaceAuthority,
                 inputs.Options.CellWorldspaceAuthorityWorldspaceNames);
             FilterDmpRecordsByExcludedWorldspaces(dmpRecords, inputs.Options.SkipWorldspaceFormIds);
@@ -422,9 +424,16 @@ public sealed class PluginBuilder
             // reference (QSTI/ANAM/NAME/TCLT/TCLF/SCRO/CTDA-FormID-params) that isn't a
             // known master record AND isn't one of our newly-allocated FormIDs is replaced
             // with 0 to keep the runtime from null-deref'ing on dangling cross-refs.
+            // CTDA Parameter1/Parameter2 sanitizer needs the runtime→emitted alias table
+            // (remap step) and the set of FormIDs we've already emitted for other top-level
+            // record types (so a CTDA referencing a new QUST/NPC/SPEL FormID stays valid).
+            // _newRecordSourceToAllocated.Values is the full set of allocated new FormIDs at
+            // this point (top-level encoders ran above; DIAL/INFO allocate inside the call).
             var dialogResult = DialogGrupBuilder.BuildDialogSection(
                 dmpRecords.DialogTopics, dmpRecords.Dialogues, classifier, allocator,
-                pcRecordsByFormId.Keys, stats, _sink);
+                pcRecordsByFormId.Keys, pcRecordsByFormId, stats, _sink,
+                remapTable: _newRecordSourceToAllocated,
+                additionalValidFormIds: _newRecordSourceToAllocated.Values);
             if (dialogResult.DialogSection.Length > 0)
             {
                 grupBytesByType["DIAL"] = dialogResult.DialogSection;
@@ -1016,12 +1025,47 @@ public sealed class PluginBuilder
         recordBytes = [];
 
         EncodedRecord? encoded;
+        // For NPC PKID validation we need (master PACK ∪ emitted PACK). PACK is enumerated
+        // before NPC_ in EnumerateModelsByType so the emitted set is populated by the time
+        // the NPC encoder asks for it. The remap table is _newRecordSourceToAllocated, the
+        // converter-wide runtime→PC alias dictionary used by EncodedSubrecordFormIdRemapper.
+        IReadOnlySet<uint>? validPackages = null;
+        if (recordType == "NPC_")
+        {
+            var masterPacks = _masterFormIdsByType?.GetValueOrDefault("PACK");
+            var emittedPacks = _emittedNewFormIdsByType.GetValueOrDefault("PACK");
+            if (masterPacks is not null || emittedPacks is not null)
+            {
+                var union = new HashSet<uint>();
+                if (masterPacks is not null) union.UnionWith(masterPacks);
+                if (emittedPacks is not null) union.UnionWith(emittedPacks);
+                validPackages = union;
+            }
+        }
+
+        // PACK, IDLE, QUST, PERK, CONT, NPC_, LVLI/LVLN/LVLC, WEAP encoders want the full
+        // master ∪ all-emitted-new union so they can distinguish dangling refs from legitimate
+        // ones. Computed lazily and only for the encoders that actually need it so we don't
+        // pay the union cost everywhere.
+        IReadOnlySet<uint>? allValidFormIds = null;
+        if (recordType is "PACK" or "IDLE" or "QUST" or "PERK"
+            or "CONT" or "NPC_" or "LVLI" or "LVLN" or "LVLC" or "WEAP")
+        {
+            var union = new HashSet<uint>();
+            if (_masterFormIds is not null) union.UnionWith(_masterFormIds);
+            union.UnionWith(_emittedNewFormIds);
+            allValidFormIds = union;
+        }
+
         var context = new NewTopLevelRecordEncodingContext(
             _masterFormIds ?? new HashSet<uint>(),
             _emittedNewFormIdsByType.TryGetValue("STAT", out var statSet)
                 ? statSet
                 : new HashSet<uint>(),
-            _masterNpcByRace);
+            _masterNpcByRace,
+            validPackages,
+            _newRecordSourceToAllocated.Count > 0 ? _newRecordSourceToAllocated : null,
+            allValidFormIds);
         try
         {
             encoded = NewTopLevelRecordEncoderDispatcher.TryEncode(recordType, model, context);
@@ -1816,7 +1860,9 @@ public sealed class PluginBuilder
             }
 
             var hasCapturedTerrain = !dmpCell.IsInterior &&
-                                     (dmpCell.Heightmap != null || dmpCell.RuntimeTerrainMesh != null);
+                                     (dmpCell.Heightmap != null ||
+                                      dmpCell.RuntimeTerrainMesh != null ||
+                                      dmpCell.LandVisualData?.HasAny == true);
 
             if (persistentRecords.Count == 0
                 && vwdRecords.Count == 0
@@ -1844,12 +1890,14 @@ public sealed class PluginBuilder
 
                 ParsedMainRecord? masterLandRecord = null;
                 LandVisualData? masterLandVisualData = null;
+                LandHeightmap? masterLandHeightmap = null;
                 if (masterLandFormId.HasValue)
                 {
                     pcRecordsByFormId.TryGetValue(masterLandFormId.Value, out masterLandRecord);
                     if (masterLandRecord is not null)
                     {
                         masterLandVisualData = TryExtractMasterLandVisualData(masterLandRecord);
+                        masterLandHeightmap = TryExtractMasterLandHeightmap(masterLandRecord);
                     }
                 }
 
@@ -1861,7 +1909,8 @@ public sealed class PluginBuilder
                         stats,
                         out var landBytes,
                         masterLandFormId,
-                        masterLandVisualData))
+                        masterLandVisualData,
+                        masterLandHeightmap))
                 {
                     temporaryPrefixRecords.Add(landBytes);
                 }
@@ -1928,11 +1977,11 @@ public sealed class PluginBuilder
             // Phase A pre-allocated the emitted FormIDs so NVEX cross-references can
             // resolve across cells in this emission batch.
             //
-            // DIAGNOSTIC GATE (v22r bisect): drop master-cell augmentation. Adding a second
-            // navmesh on top of vanilla's may confuse AI pathing (idle NPCs flip-flopping to
-            // the crucified animation every few seconds — same symptom as the original INFO
-            // emission bug, but here surfacing after we re-enabled new NAVMs). Only emit new
-            // NAVMs whose parent cell is itself NEW (FormID in our plugin range).
+            // DIAGNOSTIC GATE: drop master-cell augmentation. Adding a second navmesh on top
+            // of vanilla's may confuse AI pathing (idle NPCs flip-flopping to the crucified
+            // animation every few seconds — same symptom as the original INFO emission bug,
+            // but here surfacing after we re-enabled new NAVMs). Only emit new NAVMs whose
+            // parent cell is itself NEW (FormID in our plugin range).
             const bool SkipMasterCellNavmAugmentationForBisect = true;
             var cellIsNew = (dmpCell.FormId & 0xFF000000) == 0x01000000
                             || !pcRecordsByFormId.ContainsKey(dmpCell.FormId);
@@ -2684,6 +2733,33 @@ public sealed class PluginBuilder
         return EsmWorldExtractor.ExtractLandFromBuffer(data, dataSize, header)?.VisualData;
     }
 
+    private static LandHeightmap? TryExtractMasterLandHeightmap(ParsedMainRecord masterLandRecord)
+    {
+        if (masterLandRecord.Header.Signature != "LAND")
+        {
+            return null;
+        }
+
+        var recordBytes = CellGrupBuilder.ReconstructRecordBytes(masterLandRecord);
+        if (recordBytes.Length <= 24)
+        {
+            return null;
+        }
+
+        var dataSize = recordBytes.Length - 24;
+        var data = new byte[dataSize];
+        Buffer.BlockCopy(recordBytes, 24, data, 0, dataSize);
+        var header = new DetectedMainRecord(
+            "LAND",
+            (uint)dataSize,
+            masterLandRecord.Header.Flags,
+            masterLandRecord.Header.FormId,
+            masterLandRecord.Offset,
+            false);
+
+        return EsmWorldExtractor.ExtractLandFromBuffer(data, dataSize, header)?.Heightmap;
+    }
+
     /// <summary>
     ///     Encode a master CELL anchor as an override that layers DMP-captured metadata
     ///     subrecords (FULL / DATA flags / XCLW water / XCLL lighting / XCLR regions /
@@ -2895,6 +2971,11 @@ public sealed class PluginBuilder
             TeleportFlags = placed.TeleportFlags
         };
 
+        // Synthesized door replacement refs use FormIDs that were just allocated in the same
+        // pass — they aren't in _emittedNewFormIds yet at this point in the flow, so passing
+        // BuildPlacedRefValidFormIds() would cause the placed-ref sanitizer to incorrectly
+        // drop XTEL as "dangling". The synthesized values are known-good by construction;
+        // bypass the sanitizer for this path.
         var replacementRefEncoded = RefrEncoder.EncodeNewPlacedReference(replacementDoorRef);
         foreach (var warning in replacementRefEncoded.Warnings)
         {
@@ -3348,6 +3429,26 @@ public sealed class PluginBuilder
         return false;
     }
 
+    /// <summary>
+    ///     Build (cached, lazy) the master ∪ all-emitted-new FormID set used by the
+    ///     placed-ref subrecord sanitizer. Recomputed once per build pass — cell child
+    ///     encoding happens after all top-level types are emitted, so this is stable.
+    /// </summary>
+    private HashSet<uint>? _placedRefValidFormIdsCache;
+    private HashSet<uint> BuildPlacedRefValidFormIds()
+    {
+        if (_placedRefValidFormIdsCache is not null)
+        {
+            return _placedRefValidFormIdsCache;
+        }
+
+        var union = new HashSet<uint>();
+        if (_masterFormIds is not null) union.UnionWith(_masterFormIds);
+        union.UnionWith(_emittedNewFormIds);
+        _placedRefValidFormIdsCache = union;
+        return union;
+    }
+
     /// <summary>Encode a new ref (FormID not in PC ESM — new-record path).</summary>
     private bool TryEncodeNewRef(
         PlacedReference placed,
@@ -3361,7 +3462,14 @@ public sealed class PluginBuilder
         EncodedRecord encoded;
         try
         {
-            encoded = RefrEncoder.EncodeNewPlacedReference(placed);
+            // Validate optional FormID-bearing subrecords (XEZN, XLKR, XOWN, XESP, XTEL)
+            // against master ∪ all-emitted-new. Dangling refs skip the subrecord (engine
+            // would log "Unable to find linked reference" / "Unable to find enable state
+            // parent" otherwise and remove the data anyway). Same remap-then-validity policy
+            // as IDLE ANAM, CTDA params, and PACK PLDT/PTDT.
+            encoded = RefrEncoder.EncodeNewPlacedReference(
+                placed, BuildPlacedRefValidFormIds(),
+                _newRecordSourceToAllocated.Count > 0 ? _newRecordSourceToAllocated : null);
         }
         catch (Exception ex)
         {
@@ -4245,13 +4353,17 @@ public sealed class PluginBuilder
         yield return ("KEYM", records.Keys);
         yield return ("CONT", records.Containers);
         yield return ("FACT", records.Factions);
+        // PACK must precede NPC_ so the NPC encoder can validate its PKID list against the
+        // set of (master ∪ just-emitted) PACK FormIDs and drop dangling refs. Dangling PKIDs
+        // were the leading suspect for the "every NPC plays the crucified idle" regression —
+        // missing packages → NPC falls through to default behavior → crucify idle.
+        yield return ("PACK", records.Packages);
         yield return ("NPC_", records.Npcs);
         yield return ("SCPT", records.Scripts);
         // DIAL and INFO are handled separately by DialogGrupBuilder so INFOs get nested
         // as type-7 Topic Children GRUPs under each DIAL. Emitting them as two flat
         // top-level GRUPs crashes the FNV runtime on dialog tree walks.
         yield return ("QUST", records.Quests);
-        yield return ("PACK", records.Packages);
         yield return ("ACTI", records.Activators);
         yield return ("DOOR", records.Doors);
         yield return ("LIGH", records.Lights);
@@ -4382,16 +4494,18 @@ public sealed class PluginBuilder
     /// </summary>
     private void ApplyCellWorldspaceAuthority(
         Models.RecordCollection records,
+        EsmRecordScanResult? scanResult,
         IReadOnlyDictionary<uint, uint>? authority,
         IReadOnlyDictionary<uint, string>? worldspaceNames)
     {
-        var result = CellWorldspaceAuthorityApplier.Apply(records, authority, worldspaceNames);
+        var result = CellWorldspaceAuthorityApplier.Apply(records, authority, worldspaceNames, scanResult);
         if (result.Applied > 0)
         {
             _sink.Info("Reading DMP",
                 $"Cell authority applied: {result.Applied} mapping(s) - {result.Added} added, " +
                 $"{result.Overrode} overrode prior inference; " +
-                $"{result.SynthesizedWorldspaces} worldspace shell(s) synthesized.");
+                $"{result.SynthesizedWorldspaces} worldspace shell(s) synthesized; " +
+                $"{result.TerrainCellsAttached} terrain cell(s) attached.");
         }
     }
 

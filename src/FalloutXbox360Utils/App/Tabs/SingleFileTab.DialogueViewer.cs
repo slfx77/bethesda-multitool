@@ -665,9 +665,23 @@ public sealed partial class SingleFileTab
             return;
         }
 
-        var byQuest = DialogueBrowseMode.SelectedIndex == 0;
+        // Read the selection from AddedItems rather than SelectedIndex. WinUI 3 1.8
+        // raises SelectionChanged before SelectedIndex settles in some interaction
+        // paths (the dropdown sometimes commits via a different code path), so reading
+        // SelectedIndex here can return the *previous* value and the tree never updates.
+        var byQuest = ResolveByQuestFromSelection(e);
         var searchQuery = string.IsNullOrWhiteSpace(DialogueSearchBox.Text) ? null : DialogueSearchBox.Text.Trim();
         BuildDialoguePickerTree(_session.DialogueTree, byQuest, searchQuery);
+    }
+
+    private bool ResolveByQuestFromSelection(SelectionChangedEventArgs e)
+    {
+        if (e.AddedItems.Count > 0 && e.AddedItems[0] is ComboBoxItem added)
+        {
+            return string.Equals(added.Content?.ToString(), "Quest", StringComparison.Ordinal);
+        }
+
+        return DialogueBrowseMode.SelectedIndex == 0;
     }
 
     private void DialogueShowEditorIdCheckBox_Changed(object sender, RoutedEventArgs e)

@@ -118,10 +118,12 @@
              Condition="Exists('..\..\data\cell_worldspace_authority.json')" />
   </ItemGroup>
 
-  <!-- App icon for title bar (unpackaged apps need explicit Content inclusion) -->
+  <!-- App icon for title bar (unpackaged apps need explicit Content inclusion).
+       App.xaml is included as <ApplicationDefinition> by the SDK default so the XAML
+       markup compiler injects IXamlMetadataProvider into the matching x:Class. Treating
+       App.xaml as a plain <Page> suppresses that injection and breaks XAML type resolution
+       at startup. -->
   <ItemGroup Condition="$(TargetFramework.Contains('windows'))">
-    <ApplicationDefinition Remove="App.xaml" />
-    <Page Include="App.xaml" />
     <Content Include="Assets\AppIcon.png" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="App\Assets\npc-viewer.html" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="App\Assets\model-viewer.min.js" CopyToOutputDirectory="PreserveNewest" />

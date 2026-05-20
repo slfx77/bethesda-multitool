@@ -248,6 +248,11 @@ internal static class GeckDialogueWriter
                             ? $" [{response.EmotionName}: {response.EmotionValue}]"
                             : "";
                         sb.AppendLine($"  [{response.ResponseNumber}]{emotionStr}");
+                        if (response.SoundFormId is > 0)
+                        {
+                            sb.AppendLine($"    Sound: {resolver.FormatFull(response.SoundFormId.Value)}");
+                        }
+
                         if (!string.IsNullOrEmpty(response.Text))
                         {
                             sb.AppendLine($"    \"{response.Text}\"");
@@ -418,6 +423,10 @@ internal static class GeckDialogueWriter
                 if (!string.IsNullOrEmpty(response.Text))
                 {
                     sb.AppendLine($"{indent}      {speakerStr}\"{response.Text}\"{emotionStr}");
+                }
+                if (response.SoundFormId is > 0)
+                {
+                    sb.AppendLine($"{indent}      Sound: {resolver.FormatFull(response.SoundFormId.Value)}");
                 }
             }
         }
@@ -630,9 +639,12 @@ internal static class GeckDialogueWriter
                     ? $"  [{r.EmotionName} ({r.EmotionValue:+0;-0})]"
                     : "";
                 var text = !string.IsNullOrEmpty(r.Text) ? $"\"{r.Text}\"" : "(no text)";
+                var soundTag = r.SoundFormId is > 0
+                    ? $"  [Sound: {resolver.FormatFull(r.SoundFormId.Value)}]"
+                    : "";
                 responseFields.Add(new ReportField(
                     $"Response {r.ResponseNumber}",
-                    ReportValue.String($"{text}{emotionTag}")));
+                    ReportValue.String($"{text}{emotionTag}{soundTag}")));
             }
 
             sections.Add(new ReportSection("Responses", responseFields));

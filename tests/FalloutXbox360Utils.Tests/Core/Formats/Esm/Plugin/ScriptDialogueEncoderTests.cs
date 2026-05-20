@@ -229,7 +229,8 @@ public class ScriptDialogueEncoderTests
                     Text = "Hello.",
                     EmotionType = 5,
                     EmotionValue = 50,
-                    ResponseNumber = 1
+                    ResponseNumber = 1,
+                    SoundFormId = 0x0000BEEF
                 },
                 new DialogueResponse
                 {
@@ -254,7 +255,7 @@ public class ScriptDialogueEncoderTests
         Assert.Equal(50, BinaryPrimitives.ReadInt32LittleEndian(trdt0.AsSpan(4, 4)));     // EmotionValue
         Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(trdt0.AsSpan(8, 4)));    // ConvTopic (zero)
         Assert.Equal(1, trdt0[12]);                                                        // ResponseNumber
-        Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(trdt0.AsSpan(16, 4)));   // Sound (zero)
+        Assert.Equal(0x0000BEEFu, BinaryPrimitives.ReadUInt32LittleEndian(trdt0.AsSpan(16, 4))); // Sound
         Assert.Equal(0, trdt0[20]);                                                        // UseEmotionAnim
     }
 
@@ -330,7 +331,7 @@ public class ScriptDialogueEncoderTests
 
         var encoded = InfoEncoder.EncodeNew(info);
 
-        var schr = Assert.Single(encoded.Subrecords, s => s.Signature == "SCHR");
+        var schr = encoded.Subrecords.First(s => s.Signature == "SCHR");
         Assert.Equal(20, schr.Bytes.Length);
         Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(schr.Bytes.AsSpan(0, 4)));  // VariableCount
         Assert.Equal(1u, BinaryPrimitives.ReadUInt32LittleEndian(schr.Bytes.AsSpan(4, 4)));  // RefObjectCount

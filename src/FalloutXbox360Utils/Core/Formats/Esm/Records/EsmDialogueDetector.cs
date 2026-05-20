@@ -90,16 +90,17 @@ internal static class EsmDialogueDetector
     internal static void TryAddResponseDataSubrecord(byte[] data, int i, int dataLength,
         List<ResponseDataSubrecord> records)
     {
-        // TRDT is 20 bytes: emotionType(4) + emotionValue(4) + unused(4) + responseNumber(1) + unused(3) + soundFile(4)
-        if (i + 26 > dataLength) // 4 sig + 2 len + 20 data
+        // TRDT is 24 bytes: emotionType(4), emotionValue(4), conversationTopic(4),
+        // responseNumber(1), padding(3), sound FormID(4), useEmotionAnim(1), padding(3).
+        if (i + 30 > dataLength) // 4 sig + 2 len + 24 data
         {
             return;
         }
 
-        // Check both endianness for length (20 = 0x0014)
+        // Check both endianness for length (24 = 0x0018).
         var lenLe = BinaryUtils.ReadUInt16LE(data, i + 4);
         var lenBe = BinaryUtils.ReadUInt16BE(data, i + 4);
-        if (lenLe != 20 && lenBe != 20)
+        if (lenLe != 24 && lenBe != 24)
         {
             return;
         }
@@ -114,14 +115,14 @@ internal static class EsmDialogueDetector
     internal static void TryAddResponseDataSubrecordWithOffset(byte[] data, int i, int dataLength, long baseOffset,
         List<ResponseDataSubrecord> records)
     {
-        if (i + 26 > dataLength)
+        if (i + 30 > dataLength)
         {
             return;
         }
 
         var lenLe = BinaryUtils.ReadUInt16LE(data, i + 4);
         var lenBe = BinaryUtils.ReadUInt16BE(data, i + 4);
-        if (lenLe != 20 && lenBe != 20)
+        if (lenLe != 24 && lenBe != 24)
         {
             return;
         }
@@ -139,20 +140,32 @@ internal static class EsmDialogueDetector
         var emotionType = BinaryUtils.ReadUInt32LE(data, offset);
         var emotionValue = BinaryUtils.ReadInt32LE(data, offset + 4);
         var responseNumber = data[offset + 12];
+        var soundFormId = BinaryUtils.ReadUInt32LE(data, offset + 16);
 
         // Validate emotion type (0-8 are valid emotion types in Fallout NV)
         if (emotionType <= 8 && emotionValue >= -100 && emotionValue <= 100)
         {
-            return new ResponseDataSubrecord(emotionType, emotionValue, responseNumber, recordOffset);
+            return new ResponseDataSubrecord(
+                emotionType,
+                emotionValue,
+                responseNumber,
+                soundFormId != 0 ? soundFormId : null,
+                recordOffset);
         }
 
         // Try big-endian
         emotionType = BinaryUtils.ReadUInt32BE(data, offset);
         emotionValue = (int)BinaryUtils.ReadUInt32BE(data, offset + 4);
+        soundFormId = BinaryUtils.ReadUInt32BE(data, offset + 16);
 
         if (emotionType <= 8 && emotionValue >= -100 && emotionValue <= 100)
         {
-            return new ResponseDataSubrecord(emotionType, emotionValue, responseNumber, recordOffset);
+            return new ResponseDataSubrecord(
+                emotionType,
+                emotionValue,
+                responseNumber,
+                soundFormId != 0 ? soundFormId : null,
+                recordOffset);
         }
 
         return null;

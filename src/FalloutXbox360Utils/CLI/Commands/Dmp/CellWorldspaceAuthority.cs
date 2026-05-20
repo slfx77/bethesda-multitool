@@ -1,8 +1,12 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
+using FalloutXbox360Utils.Core.Formats.Esm.Records;
 
-namespace FalloutXbox360Utils.CLI.Commands.Dmp;
+namespace FalloutXbox360Utils.Core.Formats.Esm;
 
 internal sealed class CellWorldspaceAuthorityBuilder
 {
@@ -60,6 +64,7 @@ internal sealed record CellWorldspaceAuthoritySource(
 
 internal sealed record CellWorldspaceAuthorityLoadResult(
     Dictionary<uint, uint>? Cells,
+    Dictionary<uint, string>? WorldspaceNames,
     string? Path,
     string? Warning);
 
@@ -70,12 +75,13 @@ internal static class CellWorldspaceAuthorityJson
         var path = ResolveInputPath(explicitPath);
         if (path is null)
         {
-            return new CellWorldspaceAuthorityLoadResult(null, null, null);
+            return new CellWorldspaceAuthorityLoadResult(null, null, null, null);
         }
 
         if (!File.Exists(path))
         {
             return new CellWorldspaceAuthorityLoadResult(
+                null,
                 null,
                 path,
                 $"--cell-authority not found, skipping: {path}");
@@ -89,6 +95,7 @@ internal static class CellWorldspaceAuthorityJson
                 cellsEl.ValueKind != JsonValueKind.Object)
             {
                 return new CellWorldspaceAuthorityLoadResult(
+                    null,
                     null,
                     path,
                     $"Authority JSON has no `cells` object, skipping: {path}");
@@ -105,11 +112,27 @@ internal static class CellWorldspaceAuthorityJson
                 }
             }
 
-            return new CellWorldspaceAuthorityLoadResult(map, path, null);
+            var worldspaceNames = new Dictionary<uint, string>();
+            if (doc.RootElement.TryGetProperty("worldspaces", out var worldspacesEl) &&
+                worldspacesEl.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var entry in worldspacesEl.EnumerateObject())
+                {
+                    if (TryParseHexUInt(entry.Name, out var wrld) &&
+                        entry.Value.ValueKind == JsonValueKind.String &&
+                        !string.IsNullOrWhiteSpace(entry.Value.GetString()))
+                    {
+                        worldspaceNames[wrld] = entry.Value.GetString()!;
+                    }
+                }
+            }
+
+            return new CellWorldspaceAuthorityLoadResult(map, worldspaceNames, path, null);
         }
         catch (Exception ex)
         {
             return new CellWorldspaceAuthorityLoadResult(
+                null,
                 null,
                 path,
                 $"Failed to load --cell-authority ({ex.Message}); skipping.");
@@ -238,5 +261,143 @@ internal static class CellWorldspaceAuthorityJson
             Path.Combine(Directory.GetCurrentDirectory(), "data", "cell_worldspace_authority.json")
         ];
         return candidates.FirstOrDefault(File.Exists);
+    }
+}
+
+internal sealed record CellWorldspaceAuthorityApplyResult(
+    int Applied,
+    int Added,
+    int Overrode,
+    int SynthesizedWorldspaces,
+    int TerrainCellsAttached = 0);
+
+internal static class CellWorldspaceAuthorityApplier
+{
+    /// <summary>
+    ///     Applies an authoritative Cell FormID to Worldspace FormID map to the semantic record
+    ///     model and rebuilds worldspace child lists so reports and map views see the same
+    ///     ownership that DMP to ESP conversion uses.
+    /// </summary>
+    public static CellWorldspaceAuthorityApplyResult Apply(
+        RecordCollection records,
+        IReadOnlyDictionary<uint, uint>? authority,
+        IReadOnlyDictionary<uint, string>? worldspaceNames = null,
+        EsmRecordScanResult? scanResult = null)
+    {
+        if (authority is null || authority.Count == 0 || records.Cells.Count == 0)
+        {
+            return new CellWorldspaceAuthorityApplyResult(0, 0, 0, 0);
+        }
+
+        var applied = 0;
+        var overrode = 0;
+        var added = 0;
+        var matched = 0;
+
+        for (var i = 0; i < records.Cells.Count; i++)
+        {
+            var cell = records.Cells[i];
+            if (!authority.TryGetValue(cell.FormId, out var wsFid) || wsFid == 0u)
+            {
+                continue;
+            }
+
+            matched++;
+            if (scanResult is not null)
+            {
+                scanResult.CellToWorldspaceMap[cell.FormId] = wsFid;
+            }
+
+            if (cell.WorldspaceFormId is { } existing && existing == wsFid &&
+                string.Equals(cell.WorldspaceAssignmentSource, "Authority", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (cell.WorldspaceFormId is { } prior && prior != 0u && prior != wsFid)
+            {
+                overrode++;
+            }
+            else if (cell.WorldspaceFormId is null || cell.WorldspaceFormId == 0u)
+            {
+                added++;
+            }
+
+            records.Cells[i] = cell with
+            {
+                WorldspaceFormId = wsFid,
+                WorldspaceAssignmentSource = "Authority"
+            };
+            applied++;
+        }
+
+        var terrainBefore = CountCellsWithTerrain(records);
+        if (scanResult is not null && matched > 0)
+        {
+            EsmLandEnricher.EnrichLandRecordsWithCellWorldspaces(scanResult, records.Cells);
+            CellRecordHandler.AttachTerrainDataFromLandRecords(records.Cells, scanResult);
+        }
+
+        var synthesized = RebuildWorldspaceCellLists(records, worldspaceNames);
+        var terrainAttached = Math.Max(0, CountCellsWithTerrain(records) - terrainBefore);
+        return new CellWorldspaceAuthorityApplyResult(applied, added, overrode, synthesized, terrainAttached);
+    }
+
+    private static int CountCellsWithTerrain(RecordCollection records)
+    {
+        return records.Cells.Count(c =>
+            c.Heightmap is not null ||
+            c.LandVisualData?.HasAny == true ||
+            c.RuntimeTerrainMesh is not null);
+    }
+
+    private static int RebuildWorldspaceCellLists(
+        RecordCollection records,
+        IReadOnlyDictionary<uint, string>? worldspaceNames)
+    {
+        foreach (var (worldspaceFormId, name) in worldspaceNames ?? new Dictionary<uint, string>())
+        {
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                records.FormIdToEditorId.TryAdd(worldspaceFormId, name);
+            }
+        }
+
+        var cellsByWorldspace = records.Cells
+            .Where(c => !c.IsInterior && c.WorldspaceFormId is > 0)
+            .GroupBy(c => c.WorldspaceFormId!.Value)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var worldspaceIds = new HashSet<uint>(records.Worldspaces.Select(w => w.FormId));
+        var synthesized = 0;
+        foreach (var worldspaceFormId in cellsByWorldspace.Keys.OrderBy(id => id))
+        {
+            if (worldspaceIds.Contains(worldspaceFormId))
+            {
+                continue;
+            }
+
+            var name = worldspaceNames is not null &&
+                       worldspaceNames.TryGetValue(worldspaceFormId, out var resolvedName)
+                ? resolvedName
+                : null;
+            records.Worldspaces.Add(new WorldspaceRecord
+            {
+                FormId = worldspaceFormId,
+                EditorId = string.IsNullOrWhiteSpace(name) ? null : name,
+                Cells = []
+            });
+            worldspaceIds.Add(worldspaceFormId);
+            synthesized++;
+        }
+
+        for (var i = 0; i < records.Worldspaces.Count; i++)
+        {
+            var ws = records.Worldspaces[i];
+            cellsByWorldspace.TryGetValue(ws.FormId, out var cells);
+            records.Worldspaces[i] = ws with { Cells = cells ?? [] };
+        }
+
+        return synthesized;
     }
 }

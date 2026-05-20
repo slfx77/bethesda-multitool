@@ -1,3 +1,4 @@
+using System.Text;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
 
@@ -98,6 +99,44 @@ internal sealed class RuntimeMemoryContext(
         }
 
         return ReadBytes(fileOffset.Value, count);
+    }
+
+    /// <summary>
+    ///     Read a null-terminated printable ASCII string from a runtime char pointer.
+    /// </summary>
+    public string? ReadNullTerminatedAsciiString(uint ptr, int maxBytes = 256)
+    {
+        if (ptr == 0 || maxBytes <= 0 || !IsValidPointer(ptr))
+        {
+            return null;
+        }
+
+        var fileOffset = VaToFileOffset(ptr);
+        if (fileOffset == null)
+        {
+            return null;
+        }
+
+        var buffer = ReadBytes(fileOffset.Value, maxBytes);
+        if (buffer == null)
+        {
+            return null;
+        }
+
+        for (var i = 0; i < buffer.Length; i++)
+        {
+            if (buffer[i] == 0)
+            {
+                return i == 0 ? null : Encoding.ASCII.GetString(buffer, 0, i);
+            }
+
+            if (buffer[i] < 32 || buffer[i] > 126)
+            {
+                return null;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

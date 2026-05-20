@@ -58,6 +58,7 @@ internal static class EsmLandEnricher
                     RuntimeTerrainMesh = runtimeData.TerrainMesh,
                     VisualData = LandVisualData.MergeCategories(landRecord.VisualData, runtimeData.VisualData),
                     RuntimeLandTextures = runtimeData.RuntimeLandTextures,
+                    RuntimeTextureSets = runtimeData.RuntimeTextureSets,
                     RuntimeLandDiagnostics = runtimeData.Diagnostics
                 };
             }
@@ -81,6 +82,7 @@ internal static class EsmLandEnricher
                     RuntimeTerrainMesh = data.TerrainMesh,
                     VisualData = data.VisualData,
                     RuntimeLandTextures = data.RuntimeLandTextures,
+                    RuntimeTextureSets = data.RuntimeTextureSets,
                     RuntimeLandDiagnostics = data.Diagnostics
                 });
             }
@@ -177,11 +179,18 @@ internal static class EsmLandEnricher
             if (land.ParentCellFormId is uint parentCellFormId &&
                 cellsByFormId.TryGetValue(parentCellFormId, out var parentCell))
             {
+                var parentWorldspace = parentCell.WorldspaceFormId;
+                var useAuthorityWorldspace =
+                    parentWorldspace is > 0 &&
+                    string.Equals(parentCell.WorldspaceAssignmentSource, "Authority", StringComparison.Ordinal);
+
                 updated = updated with
                 {
                     CellX = parentCell.GridX ?? land.CellX,
                     CellY = parentCell.GridY ?? land.CellY,
-                    WorldspaceFormId = land.WorldspaceFormId ?? parentCell.WorldspaceFormId
+                    WorldspaceFormId = useAuthorityWorldspace
+                        ? parentWorldspace
+                        : land.WorldspaceFormId ?? parentWorldspace
                 };
             }
 

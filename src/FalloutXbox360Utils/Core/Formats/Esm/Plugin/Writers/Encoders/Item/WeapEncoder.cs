@@ -1,6 +1,7 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 
@@ -38,7 +39,18 @@ public sealed class WeapEncoder : IRecordEncoder
     ///     expose (ModActionOne/Two/Three pairs, EmbeddedConditionValue) are zeroed.
     ///     Padding bytes per the schema are zeroed.
     /// </remarks>
-    internal static EncodedRecord EncodeNew(WeaponRecord weap)
+    /// <summary>
+    ///     Encode a new WEAP record. Optional FormID-bearing subrecords (NAM0 ammo,
+    ///     REPL repair-list, INAM impact-data, CRDT critical-effect, DNAM-embedded projectile)
+    ///     are validated against master ∪ emitted. Dangling FormIDs are remapped via the alias
+    ///     table or zeroed (for embedded FormIDs in DNAM) / skipped (for standalone subrecords).
+    ///     The engine logs "Could not find projectile/ammo" otherwise and the weapon spawns
+    ///     nothing or uses the wrong ammo.
+    /// </summary>
+    internal static EncodedRecord EncodeNew(
+        WeaponRecord weap,
+        IReadOnlySet<uint>? validFormIds = null,
+        IReadOnlyDictionary<uint, uint>? remapTable = null)
     {
         var subs = new List<EncodedSubrecord>();
         var warnings = new List<string>();
@@ -86,12 +98,27 @@ public sealed class WeapEncoder : IRecordEncoder
         // ENAM as legacy F3/Oblivion and flags it as "unexpected" in FNV WEAP records.
         if (weap.AmmoFormId.HasValue)
         {
-            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("NAM0", weap.AmmoFormId.Value));
+            var resolved = FormIdReferenceResolver.Resolve(
+                weap.AmmoFormId.Value, validFormIds, remapTable);
+            if (resolved.HasValue)
+            {
+                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("NAM0", resolved.Value));
+            }
+            else
+            {
+                warnings.Add(
+                    $"New WEAP 0x{weap.FormId:X8} NAM0 ammo 0x{weap.AmmoFormId.Value:X8} dangles — subrecord skipped.");
+            }
         }
 
         if (weap.RepairItemListFormId.HasValue)
         {
-            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("REPL", weap.RepairItemListFormId.Value));
+            var resolved = FormIdReferenceResolver.Resolve(
+                weap.RepairItemListFormId.Value, validFormIds, remapTable);
+            if (resolved.HasValue)
+            {
+                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("REPL", resolved.Value));
+            }
         }
 
         // ETYP — 4-byte int32 (enum -1..13). Emit when not None.
@@ -103,19 +130,31 @@ public sealed class WeapEncoder : IRecordEncoder
         }
 
         subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(weap)));
-        subs.Add(new EncodedSubrecord("DNAM", BuildDnamSubrecord(weap)));
+        // DNAM embeds the projectile FormID at offset 36. When dangling, zero it (engine
+        // logs "Could not find projectile" but the weapon still loads — just fires nothing).
+        subs.Add(new EncodedSubrecord("DNAM",
+            BuildDnamSubrecord(weap, ResolveOrZero(weap.ProjectileFormId, validFormIds, remapTable, warnings, weap.FormId, "DNAM projectile"))));
 
         // CRDT — critical-hit data (16 bytes). Master canonical order has CRDT directly
         // after DNAM and before VATS. Emit only when the model carries non-default values
         // to avoid bloating new WEAPs that don't need a custom crit.
         if (weap.CriticalDamage != 0 || weap.CriticalChance != 0f || weap.CriticalEffectFormId.HasValue)
         {
-            subs.Add(new EncodedSubrecord("CRDT", BuildCrdtSubrecord(weap)));
+            var resolvedCritEffect = weap.CriticalEffectFormId.HasValue
+                ? ResolveOrZero(weap.CriticalEffectFormId, validFormIds, remapTable,
+                    warnings, weap.FormId, "CRDT critical effect")
+                : 0u;
+            subs.Add(new EncodedSubrecord("CRDT", BuildCrdtSubrecord(weap, resolvedCritEffect)));
         }
 
         if (weap.ImpactDataSetFormId.HasValue)
         {
-            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("INAM", weap.ImpactDataSetFormId.Value));
+            var resolved = FormIdReferenceResolver.Resolve(
+                weap.ImpactDataSetFormId.Value, validFormIds, remapTable);
+            if (resolved.HasValue)
+            {
+                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("INAM", resolved.Value));
+            }
         }
 
         // Modded weapon variants — WNAM (base 1st-person STAT FormID) plus WNM1-WNM7 / MWD1-MWD7
@@ -142,7 +181,7 @@ public sealed class WeapEncoder : IRecordEncoder
     ///         <item>FormID CritEffect (bytes 12-15)</item>
     ///     </list>
     /// </summary>
-    private static byte[] BuildCrdtSubrecord(WeaponRecord weap)
+    private static byte[] BuildCrdtSubrecord(WeaponRecord weap, uint resolvedCriticalEffectFormId)
     {
         var data = new byte[16];
         SubrecordEncoder.WriteInt16(data, 0, weap.CriticalDamage);
@@ -150,8 +189,38 @@ public sealed class WeapEncoder : IRecordEncoder
         SubrecordEncoder.WriteFloat(data, 4, weap.CriticalChance);
         // byte 8 = CritFlags ("On Death" not modeled, default 0)
         // bytes 9-11 unused (zero)
-        SubrecordEncoder.WriteFormId(data, 12, weap.CriticalEffectFormId ?? 0u);
+        SubrecordEncoder.WriteFormId(data, 12, resolvedCriticalEffectFormId);
         return data;
+    }
+
+    /// <summary>
+    ///     Resolve an optional FormID embedded inside a fixed-layout subrecord (DNAM, CRDT).
+    ///     Unlike standalone subrecords (NAM0, REPL, INAM) we can't skip emission when a
+    ///     field is dangling because the surrounding bytes are required — zero the FormID
+    ///     instead. The engine accepts 0 as "no projectile / no critical effect".
+    /// </summary>
+    private static uint ResolveOrZero(
+        uint? formId,
+        IReadOnlySet<uint>? validFormIds,
+        IReadOnlyDictionary<uint, uint>? remapTable,
+        List<string> warnings,
+        uint ownerFormId,
+        string label)
+    {
+        if (!formId.HasValue || formId.Value == 0)
+        {
+            return 0u;
+        }
+
+        var resolved = FormIdReferenceResolver.Resolve(formId.Value, validFormIds, remapTable);
+        if (resolved.HasValue)
+        {
+            return resolved.Value;
+        }
+
+        warnings.Add(
+            $"New WEAP 0x{ownerFormId:X8} {label} 0x{formId.Value:X8} dangles — zeroed in subrecord bytes.");
+        return 0u;
     }
 
     private static byte[] BuildVatsSubrecord(VatsAttackData vats)
@@ -237,7 +306,7 @@ public sealed class WeapEncoder : IRecordEncoder
     ///     <c>SubrecordItemSchemas.cs</c> — bytes for fields the model doesn't expose (e.g.,
     ///     ModActionOne/Two/Three FormIDs and their value pairs) are left as zero.
     /// </summary>
-    private static byte[] BuildDnamSubrecord(WeaponRecord weap)
+    private static byte[] BuildDnamSubrecord(WeaponRecord weap, uint resolvedProjectileFormId)
     {
         var dnam = new byte[204];
 
@@ -266,8 +335,8 @@ public sealed class WeapEncoder : IRecordEncoder
         SubrecordEncoder.WriteFloat(dnam, 28, weap.IronSightFov);
         // 32: uint8 ConditionLevel — not in model; zero
         // 33-35 padding
-        // 36-39: FormIdLittleEndian Projectile
-        SubrecordEncoder.WriteFormId(dnam, 36, weap.ProjectileFormId ?? 0);
+        // 36-39: FormIdLittleEndian Projectile (resolved by caller — zero if dangling).
+        SubrecordEncoder.WriteFormId(dnam, 36, resolvedProjectileFormId);
         // 40: uint8 VatToHitChance
         dnam[40] = weap.VatsToHitChance;
         // 41: uint8 AttackAnim

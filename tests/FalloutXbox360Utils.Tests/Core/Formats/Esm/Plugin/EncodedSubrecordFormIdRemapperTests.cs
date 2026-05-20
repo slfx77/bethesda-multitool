@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using Xunit;
@@ -61,6 +62,28 @@ public class EncodedSubrecordFormIdRemapperTests
         Assert.Equal(0x00002222u, ReadFormId(remapped[1].Bytes, 4));
         Assert.Equal(0x00002222u, ReadFormId(remapped[2].Bytes, 0));
         Assert.Equal(0x00133FDDu, ReadFormId(remapped[2].Bytes, 4));
+    }
+
+    [Fact]
+    public void Remap_InfoTrdt_RewritesResponseSoundFormId()
+    {
+        var aliases = new Dictionary<uint, uint>
+        {
+            [0x0000BEEF] = 0x01001234,
+            [0x00001111] = 0x01005678
+        };
+        var trdt = new byte[24];
+        trdt[12] = 1;
+        SubrecordEncoder.WriteFormId(trdt, 16, 0x0000BEEF);
+
+        var remapped = EncodedSubrecordFormIdRemapper.Remap("INFO",
+        [
+            new EncodedSubrecord("TRDT", trdt),
+            new EncodedSubrecord("QSTI", BitConverter.GetBytes(0x00001111u))
+        ], aliases);
+
+        Assert.Equal(0x01001234u, ReadFormId(remapped[0].Bytes, 16));
+        Assert.Equal(0x01005678u, ReadFormId(remapped[1].Bytes, 0));
     }
 
     private static uint ReadFormId(byte[] bytes, int offset)

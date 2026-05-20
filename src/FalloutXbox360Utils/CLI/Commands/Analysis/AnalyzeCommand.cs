@@ -4,6 +4,7 @@ using System.IO.MemoryMappedFiles;
 using System.Text;
 using System.Text.Json;
 using FalloutXbox360Utils.Core;
+using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
@@ -204,6 +205,15 @@ public static class AnalyzeCommand
             var parser = new RecordParser(
                 result.EsmRecords!, result.FormIdMap, accessor, result.FileSize, result.MinidumpInfo);
             semanticResult = parser.ParseAll();
+            if (result.MinidumpInfo != null)
+            {
+                var authority = CellWorldspaceAuthorityJson.Load(null);
+                CellWorldspaceAuthorityApplier.Apply(
+                    semanticResult,
+                    authority.Cells,
+                    authority.WorldspaceNames,
+                    result.EsmRecords);
+            }
 
             // Show BSStringT read diagnostics for DMP files
             if (result.MinidumpInfo != null)

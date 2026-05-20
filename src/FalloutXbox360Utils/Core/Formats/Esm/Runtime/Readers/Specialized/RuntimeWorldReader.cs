@@ -123,6 +123,7 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
             TerrainMesh = terrainMesh,
             VisualData = visualExtraction.VisualData,
             RuntimeLandTextures = visualExtraction.LandTextures,
+            RuntimeTextureSets = visualExtraction.TextureSets,
             Diagnostics = diagnostics
         };
     }

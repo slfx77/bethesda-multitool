@@ -47,6 +47,18 @@ internal static class PerkConditionParameterResolver
         return GetParameterType(conditionFunctionIndex, parameterIndex) == ScriptParamType.ActorValue;
     }
 
+    /// <summary>
+    ///     True when the named CTDA parameter is a FormID for this condition function index.
+    ///     Used by the dangling-FormID sanitizer to decide whether to validate the parameter.
+    ///     Returns false when the function or parameter is unknown so the sanitizer stays
+    ///     permissive (we'd rather keep a CTDA whose Param1 we can't classify than drop it).
+    /// </summary>
+    public static bool IsFormParameter(ushort conditionFunctionIndex, int parameterIndex)
+    {
+        var type = GetParameterType(conditionFunctionIndex, parameterIndex);
+        return type.HasValue && ShouldResolveAsForm(type);
+    }
+
     private static ushort ToScriptOpcode(ushort conditionFunctionIndex)
     {
         return conditionFunctionIndex >= 0x1000

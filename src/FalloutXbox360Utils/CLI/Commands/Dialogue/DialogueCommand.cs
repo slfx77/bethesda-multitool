@@ -274,7 +274,11 @@ public static class DialogueCommand
                 var emotionStr = resp.EmotionType != 0
                     ? $" [dim](Emotion: {resp.EmotionType}, Value: {resp.EmotionValue})[/]"
                     : "";
-                infoTable.AddRow($"Response #{resp.ResponseNumber}", (resp.Text ?? "(empty)") + emotionStr);
+                var soundStr = resp.SoundFormId is > 0
+                    ? $" [dim](Sound: 0x{resp.SoundFormId.Value:X8} " +
+                      $"{formIdMap.GetValueOrDefault(resp.SoundFormId.Value, "?")})[/]"
+                    : "";
+                infoTable.AddRow($"Response #{resp.ResponseNumber}", (resp.Text ?? "(empty)") + emotionStr + soundStr);
             }
 
             if (info.PreviousInfo is > 0)

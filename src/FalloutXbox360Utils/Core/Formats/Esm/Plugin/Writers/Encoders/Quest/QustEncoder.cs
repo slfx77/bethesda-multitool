@@ -1,4 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 
@@ -74,8 +75,18 @@ public sealed class QustEncoder : IRecordEncoder
     ///     EDID, SCRI?, FULL?, ICON?, DATA, CTDA*, then per stage:
     ///     INDX + (QSDT + CNAM?)*, then per objective: QOBJ + NNAM? + QSTA*.
     ///     Quest stages are emitted in index order; objectives are emitted in index order.
+    ///     <para>
+    ///     CTDAs across top-level + per-stage + per-objective-target are routed through
+    ///     <see cref="ConditionSanitizer.Filter" /> so dangling FormID parameters get remapped
+    ///     via the runtime→emitted alias table or dropped (same policy as INFO). When
+    ///     <paramref name="validFormIds" /> is null (legacy callers / tests) we skip sanitization
+    ///     and emit conditions verbatim.
+    ///     </para>
     /// </summary>
-    internal static EncodedRecord EncodeNew(QuestRecord quest)
+    internal static EncodedRecord EncodeNew(
+        QuestRecord quest,
+        IReadOnlySet<uint>? validFormIds = null,
+        IReadOnlyDictionary<uint, uint>? remapTable = null)
     {
         var subs = new List<EncodedSubrecord>();
         var warnings = new List<string>();
@@ -87,7 +98,18 @@ public sealed class QustEncoder : IRecordEncoder
 
         subs.Add(NewRecordSubrecords.EncodeStringSubrecord("EDID", quest.EditorId ?? string.Empty));
 
-        BuildCanonicalSubrecords(quest, subs);
+        var droppedCtdas = 0;
+        var remappedCtdaParams = 0;
+        BuildCanonicalSubrecords(quest, subs, validFormIds, remapTable,
+            ref droppedCtdas, ref remappedCtdaParams);
+        if (droppedCtdas > 0 || remappedCtdaParams > 0)
+        {
+            warnings.Add(
+                $"New QUST 0x{quest.FormId:X8} CTDA sanitizer: dropped {droppedCtdas} condition(s) " +
+                $"with dangling FormID params, remapped {remappedCtdaParams} param FormID(s) via " +
+                "the runtime→emitted alias table.");
+        }
+
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
     }
 
@@ -106,10 +128,18 @@ public sealed class QustEncoder : IRecordEncoder
     }
 
     /// <summary>
-    ///     Emits the canonical QUST subrecord stream (everything except EDID). Shared
-    ///     between the override path and the new-record path.
+    ///     Emits the canonical QUST subrecord stream (everything except EDID). Called only
+    ///     from the new-record path; CTDAs are routed through
+    ///     <see cref="ConditionSanitizer.Filter" /> when <paramref name="validFormIds" /> is
+    ///     supplied.
     /// </summary>
-    private static void BuildCanonicalSubrecords(QuestRecord quest, List<EncodedSubrecord> subs)
+    private static void BuildCanonicalSubrecords(
+        QuestRecord quest,
+        List<EncodedSubrecord> subs,
+        IReadOnlySet<uint>? validFormIds,
+        IReadOnlyDictionary<uint, uint>? remapTable,
+        ref int droppedCtdas,
+        ref int remappedCtdaParams)
     {
         if (quest.Script.HasValue)
         {
@@ -131,7 +161,8 @@ public sealed class QustEncoder : IRecordEncoder
         // Top-level quest conditions — CTDA* + optional CIS1/CIS2 between DATA and the
         // first INDX. Per-stage and per-target conditions are emitted within their owning
         // INDX / QSTA blocks below via the same helper.
-        EmitConditions(subs, quest.Conditions);
+        EmitConditions(subs, quest.Conditions, validFormIds, remapTable,
+            ref droppedCtdas, ref remappedCtdaParams);
 
         // Stages: INDX (2-byte little-endian on Xbox AND PC for QUST) then optional QSDT +
         // stage CTDA* + CIS1/CIS2 + CNAM. Stage CTDA gates when the log entry triggers.
@@ -146,7 +177,8 @@ public sealed class QustEncoder : IRecordEncoder
                 subs.Add(NewRecordSubrecords.EncodeByteSubrecord("QSDT", stage.Flags));
             }
 
-            EmitConditions(subs, stage.Conditions);
+            EmitConditions(subs, stage.Conditions, validFormIds, remapTable,
+                ref droppedCtdas, ref remappedCtdaParams);
 
             if (!string.IsNullOrEmpty(stage.LogEntry))
             {
@@ -172,18 +204,40 @@ public sealed class QustEncoder : IRecordEncoder
                 // bytes 5-7 padding
                 subs.Add(new EncodedSubrecord("QSTA", qsta));
 
-                EmitConditions(subs, target.Conditions);
+                EmitConditions(subs, target.Conditions, validFormIds, remapTable,
+                    ref droppedCtdas, ref remappedCtdaParams);
             }
         }
     }
 
     /// <summary>
     ///     Emit CTDA + optional CIS1/CIS2 for each condition. Shared between top-level,
-    ///     per-stage, and per-target condition lists.
+    ///     per-stage, and per-target condition lists. When <paramref name="validFormIds" /> is
+    ///     supplied, conditions with dangling FormID parameters are remapped or dropped
+    ///     via <see cref="ConditionSanitizer.Filter" />. The CIS1/CIS2 string
+    ///     subrecords follow their CTDA only when the CTDA itself survives sanitization.
     /// </summary>
-    private static void EmitConditions(List<EncodedSubrecord> subs, List<DialogueCondition> conditionList)
+    private static void EmitConditions(
+        List<EncodedSubrecord> subs,
+        List<DialogueCondition> conditionList,
+        IReadOnlySet<uint>? validFormIds,
+        IReadOnlyDictionary<uint, uint>? remapTable,
+        ref int droppedCtdas,
+        ref int remappedCtdaParams)
     {
-        foreach (var condition in conditionList)
+        IReadOnlyList<DialogueCondition> emitConds;
+        if (validFormIds is null)
+        {
+            emitConds = conditionList;
+        }
+        else
+        {
+            emitConds = ConditionSanitizer.Filter(
+                conditionList, ToMutableSet(validFormIds), remapTable,
+                ref remappedCtdaParams, ref droppedCtdas);
+        }
+
+        foreach (var condition in emitConds)
         {
             subs.Add(new EncodedSubrecord("CTDA", InfoEncoder.BuildCtdaSubrecord(condition)));
             if (!string.IsNullOrEmpty(condition.Parameter1String))
@@ -196,5 +250,10 @@ public sealed class QustEncoder : IRecordEncoder
                 subs.Add(NewRecordSubrecords.EncodeStringSubrecord("CIS2", condition.Parameter2String));
             }
         }
+    }
+
+    private static HashSet<uint> ToMutableSet(IReadOnlySet<uint> set)
+    {
+        return set as HashSet<uint> ?? new HashSet<uint>(set);
     }
 }

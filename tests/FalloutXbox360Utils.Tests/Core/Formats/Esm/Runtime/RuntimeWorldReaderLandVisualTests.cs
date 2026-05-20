@@ -1,7 +1,10 @@
 using System.Buffers.Binary;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
+using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 using FalloutXbox360Utils.Core.Minidump;
@@ -25,6 +28,13 @@ public class RuntimeWorldReaderLandVisualTests
     private const uint TextureSetVa = BaseVa + 0x1300;
     private const uint GrassVa = BaseVa + 0x1400;
     private const uint StringVa = BaseVa + 0x1500;
+    private const uint DiffusePathVa = BaseVa + 0x4000;
+    private const uint NormalPathVa = BaseVa + 0x4100;
+    private const uint AlternateDiffusePathVa = BaseVa + 0x4200;
+    private const uint AlternateNormalPathVa = BaseVa + 0x4300;
+    private const uint WrongInlinePathVa = BaseVa + 0x4400;
+    private const uint NiDiffuseTextureVa = BaseVa + 0x5000;
+    private const uint NiNormalTextureVa = BaseVa + 0x5100;
 
     [Fact]
     public void ReadRuntimeLandData_ReconstructsTextureLayersFromRuntimeLoadedLandData()
@@ -42,7 +52,7 @@ public class RuntimeWorldReaderLandVisualTests
         WriteLandTexture(buffer, BaseTextureVa, 0x00111111, "RuntimeBaseTexture");
         WriteLandTexture(buffer, AlphaTextureVa, 0x00222222, "RuntimeAlphaTexture");
         WriteFormHeader(buffer, InvalidTextureVa, 0x3A, 0x00333333);
-        WriteFormHeader(buffer, TextureSetVa, 0x04, 0x00444444);
+        WriteTextureSet(buffer);
         WriteFormHeader(buffer, GrassVa, 0x24, 0x00555555);
 
         var land = ReadLand(buffer, 0x000AAAAA);
@@ -80,10 +90,81 @@ public class RuntimeWorldReaderLandVisualTests
             Assert.Equal([0x00555555u], t.GrassFormIds);
         });
 
+        var runtimeTextureSet = Assert.Single(land.RuntimeTextureSets);
+        Assert.Equal(0x00444444u, runtimeTextureSet.FormId);
+        Assert.Equal("RuntimeTerrainTextureSet", runtimeTextureSet.EditorId);
+        Assert.Equal("textures\\landscape\\runtime_diffuse.dds", runtimeTextureSet.DiffuseTexture);
+        Assert.Equal("Textures\\Landscape\\RuntimeNormal.dds", runtimeTextureSet.NormalTexture);
+        Assert.Equal((ushort)0x1234, runtimeTextureSet.Flags);
+
         var textureDiag = Assert.Single(land.Diagnostics!.QuadTextureArrays, d => d.Pointer.IsMapped);
         Assert.Equal(2, textureDiag.SampledPointerCount);
         Assert.Equal(1, textureDiag.ResolvedTextureCount);
         Assert.Equal([0x00222222u], textureDiag.TextureFormIds);
+    }
+
+    [Fact]
+    public void ParseAll_MergesTextureSetsRecoveredFromRuntimeLandTexturePointers()
+    {
+        var runtimeTextureSet = new TextureSetRecord
+        {
+            FormId = 0x00ABCDEF,
+            EditorId = "RuntimeTerrainTextureSet",
+            DiffuseTexture = "textures\\landscape\\runtime_diffuse.dds",
+            NormalTexture = "textures\\landscape\\runtime_normal.dds",
+            Flags = 0x1234,
+            IsBigEndian = true
+        };
+        var scanResult = new EsmRecordScanResult
+        {
+            LandRecords =
+            [
+                new ExtractedLandRecord
+                {
+                    Header = new DetectedMainRecord("LAND", 0, 0, 0x00123456, 0, true),
+                    RuntimeTextureSets = [runtimeTextureSet]
+                }
+            ]
+        };
+
+        var records = new RecordParser(scanResult).ParseAll();
+
+        var parsedTextureSet = Assert.Single(records.TextureSets);
+        Assert.Equal(0x00ABCDEFu, parsedTextureSet.FormId);
+        Assert.Equal("RuntimeTerrainTextureSet", parsedTextureSet.EditorId);
+        Assert.Equal("textures\\landscape\\runtime_diffuse.dds", parsedTextureSet.DiffuseTexture);
+    }
+
+    [Fact]
+    public void ReadRuntimeLandData_RecoversTextureSetPathsFromNiSourcePointerArray()
+    {
+        var buffer = new byte[0x20000];
+        WriteLand(buffer, 0x000CCCCC);
+        WriteLoadedLand(buffer, baseTextureVa: BaseTextureVa, textureArrayVa: 0, percentArrayVa: 0);
+        WriteLandTexture(buffer, BaseTextureVa, 0x00111111, "RuntimeBaseTexture");
+        WriteTextureSetWithNiSourcePointerArray(buffer);
+
+        var land = ReadLand(buffer, 0x000CCCCC);
+
+        var textureSet = Assert.Single(land!.RuntimeTextureSets);
+        Assert.Equal("textures\\landscape\\direct_diffuse.dds", textureSet.DiffuseTexture);
+        Assert.Equal("textures\\landscape\\direct_diffuse_n.dds", textureSet.NormalTexture);
+    }
+
+    [Fact]
+    public void ReadRuntimeLandData_SelectsHighestScoringTextureSetPathLayout()
+    {
+        var buffer = new byte[0x20000];
+        WriteLand(buffer, 0x000DDDDD);
+        WriteLoadedLand(buffer, baseTextureVa: BaseTextureVa, textureArrayVa: 0, percentArrayVa: 0);
+        WriteLandTexture(buffer, BaseTextureVa, 0x00111111, "RuntimeBaseTexture");
+        WriteTextureSetWithFileEntriesAndInlineNoise(buffer);
+
+        var land = ReadLand(buffer, 0x000DDDDD);
+
+        var textureSet = Assert.Single(land!.RuntimeTextureSets);
+        Assert.Equal("textures\\landscape\\scored_diffuse.dds", textureSet.DiffuseTexture);
+        Assert.Equal("textures\\landscape\\scored_diffuse_n.dds", textureSet.NormalTexture);
     }
 
     [Fact]
@@ -99,7 +180,7 @@ public class RuntimeWorldReaderLandVisualTests
 
         WriteLandTexture(buffer, BaseTextureVa, 0x00111111, "RuntimeBaseTexture");
         WriteLandTexture(buffer, AlphaTextureVa, 0x00222222, "RuntimeAlphaTexture");
-        WriteFormHeader(buffer, TextureSetVa, 0x04, 0x00444444);
+        WriteTextureSet(buffer);
         WriteFormHeader(buffer, GrassVa, 0x24, 0x00555555);
 
         var land = ReadLand(buffer, 0x000BBBBB);
@@ -173,6 +254,68 @@ public class RuntimeWorldReaderLandVisualTests
         WriteUInt32BE(buffer, Offset(va) + 48, GrassVa);
     }
 
+    private static void WriteTextureSet(byte[] buffer)
+    {
+        WriteFormHeader(buffer, TextureSetVa, 0x04, 0x00444444);
+        WriteBsString(buffer, TextureSetVa + 16, StringVa + 0x1200, "RuntimeTerrainTextureSet");
+        WriteInt16BE(buffer, Offset(TextureSetVa) + 52, -1);
+        WriteInt16BE(buffer, Offset(TextureSetVa) + 54, -2);
+        WriteInt16BE(buffer, Offset(TextureSetVa) + 56, -3);
+        WriteInt16BE(buffer, Offset(TextureSetVa) + 58, 1);
+        WriteInt16BE(buffer, Offset(TextureSetVa) + 60, 2);
+        WriteInt16BE(buffer, Offset(TextureSetVa) + 62, 3);
+        WriteTextureInlineEntry(buffer, 0, DiffusePathVa, "textures/landscape/runtime_diffuse.dds");
+        WriteTextureInlineEntry(buffer, 1, NormalPathVa, "Data\\Textures\\Landscape\\RuntimeNormal.dds");
+        WriteUInt16BE(buffer, Offset(TextureSetVa) + 160, 0x1234);
+    }
+
+    private static void WriteTextureSetWithNiSourcePointerArray(byte[] buffer)
+    {
+        WriteFormHeader(buffer, TextureSetVa, 0x04, 0x00444444);
+        WriteBsString(buffer, TextureSetVa + 16, StringVa + 0x1200, "RuntimeTerrainTextureSet");
+        WriteUInt32BE(buffer, Offset(TextureSetVa) + 72, NiDiffuseTextureVa);
+        WriteUInt32BE(buffer, Offset(TextureSetVa) + 76, NiNormalTextureVa);
+        WriteNiSourceTexture(buffer, NiDiffuseTextureVa, AlternateDiffusePathVa,
+            "textures\\landscape\\direct_diffuse.dds");
+        WriteNiSourceTexture(buffer, NiNormalTextureVa, AlternateNormalPathVa,
+            "textures\\landscape\\direct_diffuse_n.dds");
+    }
+
+    private static void WriteTextureSetWithFileEntriesAndInlineNoise(byte[] buffer)
+    {
+        WriteFormHeader(buffer, TextureSetVa, 0x04, 0x00444444);
+        WriteBsString(buffer, TextureSetVa + 16, StringVa + 0x1200, "RuntimeTerrainTextureSet");
+        WriteUInt32BE(buffer, Offset(TextureSetVa) + 76, WrongInlinePathVa);
+        WriteAsciiNullTerminated(buffer, WrongInlinePathVa, "textures\\clutter\\wrong.dds");
+        WriteUInt32BE(buffer, Offset(TextureSetVa) + 164, AlternateDiffusePathVa);
+        WriteUInt32BE(buffer, Offset(TextureSetVa) + 168, AlternateNormalPathVa);
+        WriteAsciiNullTerminated(buffer, AlternateDiffusePathVa, "textures\\landscape\\scored_diffuse.dds");
+        WriteAsciiNullTerminated(buffer, AlternateNormalPathVa, "textures\\landscape\\scored_diffuse_n.dds");
+    }
+
+    private static void WriteNiSourceTexture(byte[] buffer, uint va, uint pathVa, string path)
+    {
+        WriteUInt32BE(buffer, Offset(va) + 4, 1);
+        WriteUInt32BE(buffer, Offset(va) + 48, pathVa);
+        WriteAsciiNullTerminated(buffer, pathVa, path);
+    }
+
+    private static void WriteTextureInlineEntry(byte[] buffer, int slot, uint pathVa, string path)
+    {
+        var offset = Offset(TextureSetVa) + 72 + slot * 12;
+        WriteUInt32BE(buffer, offset, 0x82015E40);
+        WriteUInt32BE(buffer, offset + 4, pathVa);
+        WriteUInt32BE(buffer, offset + 8, 0x001D001D);
+        WriteAsciiNullTerminated(buffer, pathVa, path);
+    }
+
+    private static void WriteAsciiNullTerminated(byte[] buffer, uint va, string value)
+    {
+        var bytes = Encoding.ASCII.GetBytes(value);
+        bytes.CopyTo(buffer.AsSpan(Offset(va), bytes.Length));
+        buffer[Offset(va) + bytes.Length] = 0;
+    }
+
     private static void WritePercentMask(byte[] buffer, uint va, params (int Position, float Opacity)[] values)
     {
         for (var i = 0; i < 17 * 17; i++)
@@ -217,6 +360,16 @@ public class RuntimeWorldReaderLandVisualTests
     private static void WriteInt32BE(byte[] buffer, int offset, int value)
     {
         BinaryPrimitives.WriteInt32BigEndian(buffer.AsSpan(offset, 4), value);
+    }
+
+    private static void WriteInt16BE(byte[] buffer, int offset, short value)
+    {
+        BinaryPrimitives.WriteInt16BigEndian(buffer.AsSpan(offset, 2), value);
+    }
+
+    private static void WriteUInt16BE(byte[] buffer, int offset, ushort value)
+    {
+        BinaryPrimitives.WriteUInt16BigEndian(buffer.AsSpan(offset, 2), value);
     }
 
     private static void WriteSingleBE(byte[] buffer, int offset, float value)

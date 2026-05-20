@@ -28,6 +28,8 @@ internal static class AssetPathRules
             [".lip"] = "sound\\",
             [".ogg"] = "sound\\",
             [".xwm"] = "sound\\",
+            [".xma"] = "sound\\",
+            [".mp3"] = "sound\\",
             [".bik"] = "video\\"
         };
 

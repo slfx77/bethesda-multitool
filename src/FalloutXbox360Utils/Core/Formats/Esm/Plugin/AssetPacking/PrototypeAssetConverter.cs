@@ -19,7 +19,10 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
 ///             </description>
 ///         </item>
 ///         <item>
-///             <description><c>.xma</c> → <c>.wav</c> via <see cref="XmaWavConverter.ConvertAsync" /> (requires FFmpeg).</description>
+///             <description>
+///                 <c>.xma</c> → <c>.ogg</c> for dialogue voice assets, otherwise
+///                 <c>.wav</c> via FFmpeg-backed converters.
+///             </description>
 ///         </item>
 ///         <item>
 ///             <description>Anything else: passed through unchanged with the original extension.</description>
@@ -101,6 +104,11 @@ internal sealed class PrototypeAssetConverter
 
     private static async Task<ConvertedAsset> ConvertXmaAsync(byte[] data, string sourcePath)
     {
+        if (IsDialogueVoicePath(sourcePath))
+        {
+            return await ConvertVoiceXmaAsync(data, sourcePath).ConfigureAwait(false);
+        }
+
         if (!XmaWavConverter.IsAvailable)
         {
             return ConvertedAsset.Failure(data, sourcePath, "FFmpeg not available for XMA → WAV");
@@ -122,6 +130,37 @@ internal sealed class PrototypeAssetConverter
         {
             return ConvertedAsset.Failure(data, sourcePath, $"XMA → WAV exception: {ex.Message}");
         }
+    }
+
+    private static async Task<ConvertedAsset> ConvertVoiceXmaAsync(byte[] data, string sourcePath)
+    {
+        if (!XmaOggConverter.IsAvailable)
+        {
+            return ConvertedAsset.Failure(data, sourcePath, "FFmpeg not available for XMA → OGG");
+        }
+
+        try
+        {
+            var result = await XmaOggConverter.ConvertAsync(data).ConfigureAwait(false);
+            if (!result.Success || result.OutputData is null)
+            {
+                return ConvertedAsset.Failure(data, sourcePath,
+                    result.Notes ?? "XMA → OGG conversion produced no data");
+            }
+
+            var newPath = Path.ChangeExtension(sourcePath, ".ogg");
+            return ConvertedAsset.Converted(result.OutputData, newPath);
+        }
+        catch (Exception ex)
+        {
+            return ConvertedAsset.Failure(data, sourcePath, $"XMA → OGG exception: {ex.Message}");
+        }
+    }
+
+    private static bool IsDialogueVoicePath(string sourcePath)
+    {
+        var normalized = sourcePath.Replace('/', '\\');
+        return normalized.StartsWith("sound\\voice\\", StringComparison.OrdinalIgnoreCase);
     }
 }
 

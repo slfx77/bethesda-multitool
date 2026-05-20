@@ -56,8 +56,26 @@ public static class LandEncoder
 
         var subs = new List<EncodedSubrecord>(3 + (visualData?.TextureLayers.Count ?? 0) * 2);
 
-        // DATA — 4 bytes. Flag byte 0 + 3 padding. Most vanilla cells have DATA=0.
-        subs.Add(new EncodedSubrecord("DATA", new byte[4]));
+        // DATA — 4 bytes per FNV LAND schema. Bits 0-3 are "Quad N has Data" flags (one per
+        // quadrant); bit 4 (0x10) is set on every vanilla exterior LAND we've inspected and
+        // appears to be the engine's "this cell has terrain" master flag. Emitting DATA=0
+        // (the prior behavior) makes the engine treat the LAND as having no per-quadrant
+        // texture/height data and the terrain renders flat. Compute the quadrant bits from
+        // the BTXTs we'll emit; OR in 0x10 for canonical exterior shape.
+        var dataFlags = (byte)0x10;
+        if (visualData?.TextureLayers is { Count: > 0 } layersForDataFlags)
+        {
+            foreach (var layer in layersForDataFlags)
+            {
+                if (layer.Kind == LandTextureLayerKind.Base
+                    && layer.TextureFormId != 0
+                    && layer.Quadrant <= 3)
+                {
+                    dataFlags |= (byte)(1 << layer.Quadrant);
+                }
+            }
+        }
+        subs.Add(new EncodedSubrecord("DATA", new byte[] { dataFlags, 0, 0, 0 }));
 
         // VNML — generated from the exact reconstructed heights when available.
         var vnml = BuildVnml(heightmap.CalculateHeights());
@@ -83,6 +101,11 @@ public static class LandEncoder
         {
             foreach (var layer in textureLayers)
             {
+                if (layer.TextureFormId == 0)
+                {
+                    continue;
+                }
+
                 subs.Add(new EncodedSubrecord(layer.SubrecordSignature, EncodeTextureLayer(layer)));
 
                 if (layer.Kind == LandTextureLayerKind.Alpha && layer.BlendEntries.Count > 0)
@@ -112,7 +135,15 @@ public static class LandEncoder
         SubrecordEncoder.WriteFormId(bytes, 0, layer.TextureFormId);
         bytes[4] = layer.Quadrant;
         bytes[5] = layer.PlatformFlag;
-        SubrecordEncoder.WriteUInt16(bytes, 6, layer.Layer);
+        // BTXT layer is the base-layer sentinel 0xFFFF in vanilla FNV LANDs; ATXT carries a
+        // real layer index. Emitting Layer=0 on BTXTs (the prior behavior) confused the
+        // engine into treating BTXT as an extra alpha layer with no base, which caused the
+        // quadrant's terrain to render with no textured base — observed as the "flat
+        // Goodsprings" symptom along with the DATA=0 bug.
+        var layerIndex = layer.Kind == LandTextureLayerKind.Base
+            ? (ushort)0xFFFF
+            : layer.Layer;
+        SubrecordEncoder.WriteUInt16(bytes, 6, layerIndex);
         return bytes;
     }
 

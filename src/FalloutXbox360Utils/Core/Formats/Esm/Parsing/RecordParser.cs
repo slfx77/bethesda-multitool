@@ -386,6 +386,7 @@ public sealed class RecordParser
         var sounds = _miscEnvironment.ParseSounds();
         var musicTypes = _miscEnvironment.ParseMusicTypes();
         var textureSets = _miscEnvironment.ParseTextureSets();
+        MergeRuntimeLandTextureSets(textureSets);
         var landTextures = _miscEnvironment.ParseLandscapeTextures();
         MergeRuntimeLandTextures(landTextures);
         var armorAddons = _miscItems.ParseArmorAddons();
@@ -580,6 +581,39 @@ public sealed class RecordParser
             Logger.Instance.Debug(
                 $"  [Semantic] Added {added} LTEX record(s) from runtime LAND texture pointers " +
                 $"(total: {landTextures.Count})");
+        }
+    }
+
+    private void MergeRuntimeLandTextureSets(List<TextureSetRecord> textureSets)
+    {
+        if (_context.ScanResult.LandRecords.Count == 0)
+        {
+            return;
+        }
+
+        var knownFormIds = new HashSet<uint>(textureSets.Select(t => t.FormId));
+        var added = 0;
+        foreach (var runtimeTextureSet in _context.ScanResult.LandRecords.SelectMany(l => l.RuntimeTextureSets))
+        {
+            if (runtimeTextureSet.FormId == 0 || !knownFormIds.Add(runtimeTextureSet.FormId))
+            {
+                continue;
+            }
+
+            textureSets.Add(runtimeTextureSet);
+            added++;
+
+            if (!string.IsNullOrEmpty(runtimeTextureSet.EditorId))
+            {
+                _context.FormIdToEditorId.TryAdd(runtimeTextureSet.FormId, runtimeTextureSet.EditorId);
+            }
+        }
+
+        if (added > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] Added {added} TXST record(s) from runtime LAND texture-set pointers " +
+                $"(total: {textureSets.Count})");
         }
     }
 

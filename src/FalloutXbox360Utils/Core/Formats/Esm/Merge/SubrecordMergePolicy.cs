@@ -45,7 +45,7 @@ public sealed record SubrecordMergePolicy
         return recordType switch
         {
             "WEAP" or "ARMO" or "AMMO" or "MISC" or "KEYM" or "ALCH" or "BOOK"
-                or "CONT" or "NPC_" or "CREA" => new SubrecordMergePolicy
+                or "CONT" => new SubrecordMergePolicy
                 {
                     RetainFromEsm = new HashSet<string>(StringComparer.Ordinal)
                     {
@@ -68,6 +68,7 @@ public sealed record SubrecordMergePolicy
                         "COED"
                     }
                 },
+            "NPC_" or "CREA" => CreateActorMergePolicy(),
             "CELL" => new SubrecordMergePolicy
                 {
                     RetainFromEsm = new HashSet<string>(StringComparer.Ordinal)
@@ -82,6 +83,61 @@ public sealed record SubrecordMergePolicy
                     }
                 },
             _ => Default
+        };
+    }
+
+    /// <summary>
+    ///     Actor (NPC_/CREA) override policy. We retain ONLY FormID-bearing identity references
+    ///     (race, script, class, eyes, voice, hair, head parts, combat style). These FormIDs
+    ///     may point at prototype-only records that don't exist in master; letting them through
+    ///     causes the engine's NPC-init bind to fail partially, which manifests as gore caps
+    ///     on living NPCs (race mismatch → wrong body part data) and partial dismemberment.
+    ///
+    ///     We DO let through raw-data fields: FGGS/FGGA/FGTS (FaceGen coefficient blobs),
+    ///     HCLR/LNAM/NAM4/NAM5/NAM6/NAM7 (hair color, length, skeleton scale). These aren't
+    ///     FormIDs and can't dangle — retaining them blocks prototype FaceGen changes from
+    ///     reaching the rendered actor (Sunny Smiles' face stayed master-default).
+    ///
+    ///     Each retained signature must also be in <see cref="DoNotAppendFromDmp" />, because
+    ///     <see cref="RetainFromEsm" /> only controls Pass 1 (ESM-positional merge) and leaves
+    ///     the DMP copy unconsumed — Pass 2 then appends it at the end of the record, producing
+    ///     a duplicate subrecord that crashes plugin load.
+    /// </summary>
+    private static SubrecordMergePolicy CreateActorMergePolicy()
+    {
+        var identityFields = new HashSet<string>(StringComparer.Ordinal)
+        {
+            // Texture-set hashes are PC-format-specific (not reproducible from Xbox textures).
+            "MODT", "MODS",
+            "MO2T", "MO2S",
+            "MO3T", "MO3S",
+            "MO4T", "MO4S",
+            // Damage modifier table is parsed from PC ESM only on this version.
+            "DMDT",
+            // FormID-bearing identity references. Prototype FormIDs that aren't in master
+            // break NPC-init and cause visual body-part failure on the rendered actor.
+            "RNAM", // Race FormID — wrong race = wrong body part data = gore caps on living actors
+            "SCRI", // Script FormID
+            "ZNAM", // Combat Style FormID
+            "CNAM", // Class FormID
+            "ENAM", // Eyes FormID
+            "VTCK", // Voice Type FormID
+            "HNAM", // Hair FormID
+            "PNAM" // Head Part FormID list (multi-occurrence)
+        };
+
+        // DoNotAppendFromDmp must include every identity field + COED (the inventory-pair
+        // orphan from CNTO/COED merging seen in xex21 NPC_:0011A509).
+        var doNotAppend = new HashSet<string>(identityFields, StringComparer.Ordinal)
+        {
+            "COED"
+        };
+
+        return new SubrecordMergePolicy
+        {
+            RetainFromEsm = identityFields,
+            AlwaysFromDmp = new HashSet<string>(StringComparer.Ordinal),
+            DoNotAppendFromDmp = doNotAppend
         };
     }
 }

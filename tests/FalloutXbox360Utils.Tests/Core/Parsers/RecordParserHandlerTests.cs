@@ -673,7 +673,10 @@ public class RecordParserHandlerTests
         var sourceText = NullTermString("StartCombat Player");
 
         var responseData = new byte[24];
+        BinaryPrimitives.WriteUInt32LittleEndian(responseData.AsSpan(0, 4), 5);
+        BinaryPrimitives.WriteInt32LittleEndian(responseData.AsSpan(4, 4), 50);
         responseData[12] = 1;
+        BinaryPrimitives.WriteUInt32LittleEndian(responseData.AsSpan(16, 4), 0x00005555);
 
         var scriptHeader = new byte[20];
         scriptHeader[18] = 1; // compiled
@@ -727,6 +730,10 @@ public class RecordParserHandlerTests
         Assert.Contains(0x00004321u, info.ResultScripts[0].ReferencedObjects);
         Assert.Single(info.Responses);
         Assert.Equal("Hello there", info.Responses[0].Text);
+        Assert.Equal(5u, info.Responses[0].EmotionType);
+        Assert.Equal(50, info.Responses[0].EmotionValue);
+        Assert.Equal(1, info.Responses[0].ResponseNumber);
+        Assert.Equal(0x00005555u, info.Responses[0].SoundFormId);
     }
 
     [Fact]

@@ -1,3 +1,5 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
+
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 
 /// <summary>
@@ -36,6 +38,16 @@ public record IdleAnimationRecord
 
     /// <summary>Number of CTDA conditions in the ESM-side record.</summary>
     public int ConditionCount { get; init; }
+
+    /// <summary>
+    ///     CTDA conditions captured from the runtime <c>TESCondition</c> list at
+    ///     <c>TESIdleForm + 64</c> (Beta/Final builds). Populated by the runtime reader so
+    ///     <see cref="Plugin.Writers.Encoders.World.IdleEncoder" /> can emit real CTDAs and
+    ///     restore the proto's idle-eligibility gating. When the list is empty (ESM-only
+    ///     records that didn't capture conditions), the encoder falls back to a synthetic
+    ///     never-fire CTDA to keep the idle inert.
+    /// </summary>
+    public List<DialogueCondition> Conditions { get; init; } = [];
 
     public long Offset { get; init; }
     public bool IsBigEndian { get; init; }

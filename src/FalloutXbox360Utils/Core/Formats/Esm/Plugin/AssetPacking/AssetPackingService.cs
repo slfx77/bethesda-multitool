@@ -54,6 +54,23 @@ public sealed class AssetPackingService
 
             // 2) Collect every referenced asset path.
             var requested = AssetPathCollector.Collect(espResult.Records, options.DmpPath, sink);
+            if (options.DialogueAudioCsvPaths.Count > 0)
+            {
+                var dialogueAudio = await DialogueAudioCsvAssetCollector
+                    .CollectAsync(
+                        espResult.Records,
+                        options.DmpPath,
+                        options.DialogueAudioCsvPaths,
+                        sink,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
+                foreach (var path in dialogueAudio.Paths)
+                {
+                    requested.Add(path);
+                }
+            }
+
             sink.Info("AssetPacking", $"Total unique asset paths to resolve: {requested.Count}");
 
             if (requested.Count == 0)

@@ -165,7 +165,13 @@ internal static class DmpCellInventoryCommand
             {
                 using var loaded = await SemanticFileLoader.LoadAsync(
                     dmpFile,
-                    new SemanticFileLoadOptions { FileType = AnalysisFileType.Minidump },
+                    new SemanticFileLoadOptions
+                    {
+                        FileType = AnalysisFileType.Minidump,
+                        CellWorldspaceAuthority = combinedAuthority,
+                        CellWorldspaceAuthorityWorldspaceNames = authorityLoad.WorldspaceNames,
+                        ApplyDefaultCellWorldspaceAuthority = combinedAuthority is null
+                    },
                     cancellationToken);
 
                 var records = loaded.Records;

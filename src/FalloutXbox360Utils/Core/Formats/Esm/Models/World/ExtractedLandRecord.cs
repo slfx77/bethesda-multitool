@@ -80,6 +80,9 @@ public record ExtractedLandRecord
     /// <summary>Runtime TESLandTexture records referenced by reconstructed LAND texture layers.</summary>
     public IReadOnlyList<LandscapeTextureRecord> RuntimeLandTextures { get; init; } = [];
 
+    /// <summary>Runtime BGSTextureSet records referenced by reconstructed LAND texture records.</summary>
+    public IReadOnlyList<TextureSetRecord> RuntimeTextureSets { get; init; } = [];
+
     /// <summary>Quality diagnostic captured BEFORE sanitization, reflecting true data quality.</summary>
     public TerrainMeshDiagnostic? PreSanitizationDiagnostic { get; init; }
 

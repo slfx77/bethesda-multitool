@@ -3,6 +3,7 @@ using System.Threading.Channels;
 using Windows.Storage.Pickers;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
 using FalloutXbox360Utils.Core.Formats.Esm.Reporting;
 using Microsoft.UI.Dispatching;

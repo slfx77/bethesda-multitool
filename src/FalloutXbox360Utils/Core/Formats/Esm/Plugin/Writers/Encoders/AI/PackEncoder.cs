@@ -33,7 +33,21 @@ public sealed class PackEncoder : IRecordEncoder
     ///     Encode a new PACK record from scratch in fopdoc canonical order:
     ///     EDID, PKDT, PLDT?, PSDT?, PTDT?, PLD2?, PTD2?, PKW3?, PKPT?.
     /// </summary>
-    internal static EncodedRecord EncodeNew(PackageRecord pack)
+    /// <param name="validFormIds">
+    ///     Optional set of FormIDs known to exist at load time (master ∪ all emitted-new).
+    ///     When supplied, PLDT/PLD2/PTDT/PTD2 entries whose Type indicates a FormID-bearing
+    ///     Union are validated. Dangling refs trigger the engine errors "Unable to find Package
+    ///     Location Reference" and "AI: is assigned a reference location that doesnt exist for
+    ///     a package" — the NPC then falls through to default idle behavior. Remap if possible,
+    ///     otherwise fall back to Type 2 (NearCurrentLocation / Object Type) which is the
+    ///     safest no-FormID-needed package shape (the package still runs but operates on the
+    ///     actor's current state).
+    /// </param>
+    /// <param name="remapTable">Runtime→emitted alias table for FormID remapping.</param>
+    internal static EncodedRecord EncodeNew(
+        PackageRecord pack,
+        IReadOnlySet<uint>? validFormIds = null,
+        IReadOnlyDictionary<uint, uint>? remapTable = null)
     {
         var subs = new List<EncodedSubrecord>();
         var warnings = new List<string>();
@@ -55,9 +69,12 @@ public sealed class PackEncoder : IRecordEncoder
             subs.Add(new EncodedSubrecord("PKDT", new byte[12]));
         }
 
-        if (pack.Location is not null)
+        var sanitizedLoc = pack.Location is not null
+            ? SanitizePackageLocation(pack.Location, pack.FormId, "PLDT", validFormIds, remapTable, warnings)
+            : null;
+        if (sanitizedLoc is not null)
         {
-            subs.Add(new EncodedSubrecord("PLDT", BuildPlocSubrecord(pack.Location)));
+            subs.Add(new EncodedSubrecord("PLDT", BuildPlocSubrecord(sanitizedLoc)));
         }
 
         if (pack.Schedule is not null)
@@ -65,19 +82,28 @@ public sealed class PackEncoder : IRecordEncoder
             subs.Add(new EncodedSubrecord("PSDT", BuildPsdtSubrecord(pack.Schedule)));
         }
 
-        if (pack.Target is not null)
+        var sanitizedTgt = pack.Target is not null
+            ? SanitizePackageTarget(pack.Target, pack.FormId, "PTDT", validFormIds, remapTable, warnings)
+            : null;
+        if (sanitizedTgt is not null)
         {
-            subs.Add(new EncodedSubrecord("PTDT", BuildPtdtSubrecord(pack.Target)));
+            subs.Add(new EncodedSubrecord("PTDT", BuildPtdtSubrecord(sanitizedTgt)));
         }
 
-        if (pack.Location2 is not null)
+        var sanitizedLoc2 = pack.Location2 is not null
+            ? SanitizePackageLocation(pack.Location2, pack.FormId, "PLD2", validFormIds, remapTable, warnings)
+            : null;
+        if (sanitizedLoc2 is not null)
         {
-            subs.Add(new EncodedSubrecord("PLD2", BuildPlocSubrecord(pack.Location2)));
+            subs.Add(new EncodedSubrecord("PLD2", BuildPlocSubrecord(sanitizedLoc2)));
         }
 
-        if (pack.Target2 is not null)
+        var sanitizedTgt2 = pack.Target2 is not null
+            ? SanitizePackageTarget(pack.Target2, pack.FormId, "PTD2", validFormIds, remapTable, warnings)
+            : null;
+        if (sanitizedTgt2 is not null)
         {
-            subs.Add(new EncodedSubrecord("PTD2", BuildPtdtSubrecord(pack.Target2)));
+            subs.Add(new EncodedSubrecord("PTD2", BuildPtdtSubrecord(sanitizedTgt2)));
         }
 
         if (pack.UseWeaponData is not null)
@@ -120,6 +146,122 @@ public sealed class PackEncoder : IRecordEncoder
         data[3] = (byte)psdt.Time;
         SubrecordEncoder.WriteInt32(data, 4, psdt.Duration);
         return data;
+    }
+
+    /// <summary>
+    ///     Map of PLDT Type byte → whether <c>Union</c> is a FormID. FNV recognises additional
+    ///     types (NearCurrent=2, ObjectType=5) where Union is an enum/no-op and needs no
+    ///     validation. Conservative: only sanitize types we know carry FormIDs.
+    /// </summary>
+    private static bool PlocTypeIsFormId(byte type) =>
+        type is 0   // NearReference (REFR FormID)
+             or 1   // InCell (CELL FormID)
+             or 3   // NearEditorLocation (FormID)
+             or 4   // ObjectID (base object FormID)
+             or 6   // LinkedReference (keyword FormID)
+             or 12; // NearLinkedRef (keyword FormID)
+
+    /// <summary>
+    ///     PLDT.Type = 2 (NearCurrentLocation) — "the actor's current location". Doesn't use
+    ///     Union, no FormID needed. Safest fallback when a Type-with-FormID Union dangles:
+    ///     the package still runs and the engine doesn't emit the "Unable to find Package
+    ///     Location Reference" / "AI reference location doesnt exist" pair.
+    /// </summary>
+    private const byte PlocTypeNearCurrentLocation = 2;
+
+    /// <summary>
+    ///     Validate a PLDT/PLD2 model against the master ∪ emitted-new FormID set. Remap when
+    ///     the dangling Union has an alias; otherwise rewrite Type to NearCurrentLocation (2)
+    ///     and Union to 0 so the package is still loadable but no longer fails AI setup.
+    /// </summary>
+    private static PackageLocation SanitizePackageLocation(
+        PackageLocation loc,
+        uint packFormId,
+        string subrecordTag,
+        IReadOnlySet<uint>? validFormIds,
+        IReadOnlyDictionary<uint, uint>? remapTable,
+        List<string> warnings)
+    {
+        if (validFormIds is null || loc.Union == 0 || !PlocTypeIsFormId(loc.Type))
+        {
+            return loc;
+        }
+
+        if (validFormIds.Contains(loc.Union))
+        {
+            return loc;
+        }
+
+        if (remapTable is not null
+            && remapTable.TryGetValue(loc.Union, out var remapped)
+            && remapped != loc.Union
+            && validFormIds.Contains(remapped))
+        {
+            warnings.Add(
+                $"New PACK 0x{packFormId:X8} {subrecordTag} remapped Union 0x{loc.Union:X8} → " +
+                $"0x{remapped:X8} via runtime→emitted alias table.");
+            return loc with { Union = remapped };
+        }
+
+        warnings.Add(
+            $"New PACK 0x{packFormId:X8} {subrecordTag} fallback: Union 0x{loc.Union:X8} doesn't " +
+            "resolve and no remap available — rewriting Type from " +
+            $"{loc.Type} to {PlocTypeNearCurrentLocation} (NearCurrentLocation) so the package " +
+            "loads without 'Unable to find Package Location Reference' / 'AI: reference " +
+            "location doesnt exist' (which causes the NPC to fall through to default idle).");
+        return loc with { Type = PlocTypeNearCurrentLocation, Union = 0u };
+    }
+
+    /// <summary>
+    ///     PTDT/PTD2 Type byte → whether <c>FormIdOrType</c> is a FormID:
+    ///     0 SpecificReference, 1 ObjectID, 3 LinkedReference.
+    /// </summary>
+    private static bool PtdtTypeIsFormId(byte type) => type is 0 or 1 or 3;
+
+    /// <summary>
+    ///     PTDT.Type = 2 (Object Type). FormIdOrType is then a Form-type enum (0=None) — no
+    ///     FormID validation needed. Used as the fallback when a Type-with-FormID target dangles.
+    /// </summary>
+    private const byte PtdtTypeObjectType = 2;
+
+    /// <summary>
+    ///     Validate a PTDT/PTD2 model. Same remap-or-fallback policy as PLDT.
+    /// </summary>
+    private static PackageTarget SanitizePackageTarget(
+        PackageTarget target,
+        uint packFormId,
+        string subrecordTag,
+        IReadOnlySet<uint>? validFormIds,
+        IReadOnlyDictionary<uint, uint>? remapTable,
+        List<string> warnings)
+    {
+        if (validFormIds is null || target.FormIdOrType == 0 || !PtdtTypeIsFormId(target.Type))
+        {
+            return target;
+        }
+
+        if (validFormIds.Contains(target.FormIdOrType))
+        {
+            return target;
+        }
+
+        if (remapTable is not null
+            && remapTable.TryGetValue(target.FormIdOrType, out var remapped)
+            && remapped != target.FormIdOrType
+            && validFormIds.Contains(remapped))
+        {
+            warnings.Add(
+                $"New PACK 0x{packFormId:X8} {subrecordTag} remapped FormIdOrType " +
+                $"0x{target.FormIdOrType:X8} → 0x{remapped:X8} via alias table.");
+            return target with { FormIdOrType = remapped };
+        }
+
+        warnings.Add(
+            $"New PACK 0x{packFormId:X8} {subrecordTag} fallback: FormIdOrType " +
+            $"0x{target.FormIdOrType:X8} doesn't resolve — rewriting Type from {target.Type} " +
+            $"to {PtdtTypeObjectType} (ObjectType=None) so the package's target evaluates to a " +
+            "no-op instead of triggering 'Unable to find Package Target Reference'.");
+        return target with { Type = PtdtTypeObjectType, FormIdOrType = 0u };
     }
 
     private static byte[] BuildPlocSubrecord(PackageLocation loc)

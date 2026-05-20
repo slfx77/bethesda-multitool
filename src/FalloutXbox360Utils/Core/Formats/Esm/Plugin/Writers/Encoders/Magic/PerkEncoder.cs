@@ -1,5 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Magic;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Magic;
 
@@ -21,10 +22,23 @@ public sealed class PerkEncoder : IRecordEncoder
         return new EncodedRecord { Subrecords = [], Warnings = [] };
     }
 
-    internal static EncodedRecord EncodeNew(PerkRecord perk)
+    /// <summary>
+    ///     Encode a new PERK record. CTDAs across top-level + per-entry are routed through
+    ///     <see cref="ConditionSanitizer.FilterPerk" /> so dangling FormID parameters get
+    ///     remapped via the runtime→emitted alias table or dropped. PerkCondition
+    ///     has Parameter1FormId/Parameter2FormId stamped from the model — when the param is
+    ///     FormID-typed (HasPerk, GetEquipped, etc.) the sanitizer applies; for AV/int params
+    ///     the sanitizer leaves them alone.
+    /// </summary>
+    internal static EncodedRecord EncodeNew(
+        PerkRecord perk,
+        IReadOnlySet<uint>? validFormIds = null,
+        IReadOnlyDictionary<uint, uint>? remapTable = null)
     {
         var subs = new List<EncodedSubrecord>();
         var warnings = new List<string>();
+        var droppedCtdas = 0;
+        var remappedCtdaParams = 0;
 
         if (string.IsNullOrEmpty(perk.EditorId))
         {
@@ -51,7 +65,9 @@ public sealed class PerkEncoder : IRecordEncoder
         // Top-level CTDA conditions (skill/stat requirements, perk prerequisites). PerkCondition
         // has its own structure (not DialogueCondition), so build the 28-byte CTDA directly.
         // Per FNVEdit's wbPERK schema, CTDA precedes DATA — emit conditions first.
-        foreach (var condition in perk.Conditions)
+        var sanitizedTopConds = SanitizePerkConditions(perk.Conditions, validFormIds, remapTable,
+            ref droppedCtdas, ref remappedCtdaParams);
+        foreach (var condition in sanitizedTopConds)
         {
             subs.Add(new EncodedSubrecord("CTDA", BuildPerkCtdaSubrecord(condition)));
         }
@@ -68,10 +84,45 @@ public sealed class PerkEncoder : IRecordEncoder
 
         foreach (var entry in perk.Entries)
         {
-            EmitPerkEntry(subs, entry, perk.FormId, warnings);
+            EmitPerkEntry(subs, entry, perk.FormId, warnings, validFormIds, remapTable,
+                ref droppedCtdas, ref remappedCtdaParams);
+        }
+
+        if (droppedCtdas > 0 || remappedCtdaParams > 0)
+        {
+            warnings.Add(
+                $"New PERK 0x{perk.FormId:X8} CTDA sanitizer: dropped {droppedCtdas} " +
+                $"condition(s) with dangling FormID params, remapped {remappedCtdaParams} " +
+                "param FormID(s) via the runtime→emitted alias table.");
         }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
+    }
+
+    /// <summary>
+    ///     Run PerkConditions through <see cref="ConditionSanitizer.FilterPerk" /> when a
+    ///     validity set is supplied; otherwise pass through verbatim for legacy callers/tests.
+    /// </summary>
+    private static IReadOnlyList<PerkCondition> SanitizePerkConditions(
+        List<PerkCondition> conditions,
+        IReadOnlySet<uint>? validFormIds,
+        IReadOnlyDictionary<uint, uint>? remapTable,
+        ref int droppedCtdas,
+        ref int remappedCtdaParams)
+    {
+        if (validFormIds is null)
+        {
+            return conditions;
+        }
+
+        return ConditionSanitizer.FilterPerk(
+            conditions, ToMutableSet(validFormIds), remapTable,
+            ref remappedCtdaParams, ref droppedCtdas);
+    }
+
+    private static HashSet<uint> ToMutableSet(IReadOnlySet<uint> set)
+    {
+        return set as HashSet<uint> ?? new HashSet<uint>(set);
     }
 
     /// <summary>
@@ -91,7 +142,11 @@ public sealed class PerkEncoder : IRecordEncoder
         List<EncodedSubrecord> subs,
         PerkEntry entry,
         uint perkFormId,
-        List<string> warnings)
+        List<string> warnings,
+        IReadOnlySet<uint>? validFormIds,
+        IReadOnlyDictionary<uint, uint>? remapTable,
+        ref int droppedCtdas,
+        ref int remappedCtdaParams)
     {
         // PRKE — 3 bytes: type + rank + priority.
         var prke = new byte[3];
@@ -142,13 +197,20 @@ public sealed class PerkEncoder : IRecordEncoder
         // PRKC + CTDA* — per-entry conditions (entry type 2 typically). Master records emit
         // a PRKC tab-count byte before any CTDA block; we emit one PRKC covering all captured
         // conditions, since the model collapses per-tab grouping into a single Conditions list.
+        // Conditions go through ConditionSanitizer.FilterPerk so dangling FormID params are
+        // remapped or dropped. PRKC is only emitted when at least one CTDA survives.
         if (entry.Conditions.Count > 0)
         {
-            var tabCount = entry.ConditionTabCount ?? (byte)1;
-            subs.Add(new EncodedSubrecord("PRKC", [tabCount]));
-            foreach (var condition in entry.Conditions)
+            var sanitizedEntryConds = SanitizePerkConditions(entry.Conditions,
+                validFormIds, remapTable, ref droppedCtdas, ref remappedCtdaParams);
+            if (sanitizedEntryConds.Count > 0)
             {
-                subs.Add(new EncodedSubrecord("CTDA", BuildPerkCtdaSubrecord(condition)));
+                var tabCount = entry.ConditionTabCount ?? (byte)1;
+                subs.Add(new EncodedSubrecord("PRKC", [tabCount]));
+                foreach (var condition in sanitizedEntryConds)
+                {
+                    subs.Add(new EncodedSubrecord("CTDA", BuildPerkCtdaSubrecord(condition)));
+                }
             }
         }
 

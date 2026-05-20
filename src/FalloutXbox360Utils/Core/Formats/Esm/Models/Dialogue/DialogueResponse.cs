@@ -17,6 +17,9 @@ public record DialogueResponse
     /// <summary>Response number within the INFO record.</summary>
     public byte ResponseNumber { get; init; }
 
+    /// <summary>Dialogue response sound FormID from TRDT bytes 16..19, when present.</summary>
+    public uint? SoundFormId { get; init; }
+
     /// <summary>Human-readable emotion name.</summary>
     public string EmotionName => EmotionType switch
     {

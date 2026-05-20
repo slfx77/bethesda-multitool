@@ -20,7 +20,10 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Output;
 internal sealed record NewTopLevelRecordEncodingContext(
     IReadOnlySet<uint> MasterFormIds,
     IReadOnlySet<uint> EmittedNewStatFormIds,
-    IReadOnlyDictionary<uint, uint> MasterNpcByRace);
+    IReadOnlyDictionary<uint, uint> MasterNpcByRace,
+    IReadOnlySet<uint>? ValidPackageFormIds = null,
+    IReadOnlyDictionary<uint, uint>? RemapTable = null,
+    IReadOnlySet<uint>? AllValidFormIds = null);
 
 internal static class NewTopLevelRecordEncoderDispatcher
 {
@@ -36,18 +39,28 @@ internal static class NewTopLevelRecordEncoderDispatcher
             ["ALCH"] = (model, _) => AlchEncoder.EncodeNew((ConsumableRecord)model),
             ["BOOK"] = (model, _) => BookEncoder.EncodeNew((BookRecord)model),
             ["AMMO"] = (model, _) => AmmoEncoder.EncodeNew((AmmoRecord)model),
-            ["WEAP"] = (model, _) => WeapEncoder.EncodeNew((WeaponRecord)model),
+            ["WEAP"] = (model, context) => WeapEncoder.EncodeNew(
+                (WeaponRecord)model, context.AllValidFormIds, context.RemapTable),
             ["ARMO"] = (model, _) => ArmoEncoder.EncodeNew((ArmorRecord)model),
             ["FACT"] = (model, _) => FactEncoder.EncodeNew((FactionRecord)model),
             ["NPC_"] = (model, context) => NpcEncoder.EncodeNew(
                 (NpcRecord)model,
                 context.MasterFormIds,
-                context.MasterNpcByRace),
+                context.MasterNpcByRace,
+                context.ValidPackageFormIds,
+                context.RemapTable,
+                context.AllValidFormIds),
             ["SCPT"] = (model, _) => ScptEncoder.EncodeNew((ScriptRecord)model),
             ["DIAL"] = (model, _) => DialEncoder.EncodeNew((DialogTopicRecord)model),
             ["INFO"] = (model, _) => InfoEncoder.EncodeNew((DialogueRecord)model),
-            ["QUST"] = (model, _) => QustEncoder.EncodeNew((QuestRecord)model),
-            ["PACK"] = (model, _) => PackEncoder.EncodeNew((PackageRecord)model),
+            ["QUST"] = (model, context) => QustEncoder.EncodeNew(
+                (QuestRecord)model,
+                context.AllValidFormIds,
+                context.RemapTable),
+            ["PACK"] = (model, context) => PackEncoder.EncodeNew(
+                (PackageRecord)model,
+                context.AllValidFormIds,
+                context.RemapTable),
             ["ACTI"] = (model, _) => ActiEncoder.EncodeNew((ActivatorRecord)model),
             ["DOOR"] = (model, _) => DoorEncoder.EncodeNew((DoorRecord)model),
             ["LIGH"] = (model, _) => LighEncoder.EncodeNew((LightRecord)model),
@@ -56,7 +69,10 @@ internal static class NewTopLevelRecordEncoderDispatcher
                 (StaticCollectionRecord)model,
                 context.MasterFormIds,
                 context.EmittedNewStatFormIds),
-            ["CONT"] = (model, _) => ContEncoder.EncodeNew((ContainerRecord)model),
+            ["CONT"] = (model, context) => ContEncoder.EncodeNew(
+                (ContainerRecord)model,
+                context.AllValidFormIds,
+                context.RemapTable),
             ["FURN"] = (model, _) => FurnEncoder.EncodeNew((FurnitureRecord)model),
             ["TERM"] = (model, _) => TermEncoder.EncodeNew((TerminalRecord)model),
             ["PROJ"] = (model, _) => ProjEncoder.EncodeNew((ProjectileRecord)model),
@@ -74,9 +90,12 @@ internal static class NewTopLevelRecordEncoderDispatcher
             ["MESG"] = (model, _) => MesgEncoder.EncodeNew((MessageRecord)model),
             ["NOTE"] = (model, _) => NoteEncoder.EncodeNew((NoteRecord)model),
             ["FLST"] = (model, _) => FlstEncoder.EncodeNew((FormListRecord)model),
-            ["LVLI"] = (model, _) => LvliEncoder.EncodeNew((LeveledListRecord)model),
-            ["LVLN"] = (model, _) => LvliEncoder.EncodeNew((LeveledListRecord)model),
-            ["LVLC"] = (model, _) => LvliEncoder.EncodeNew((LeveledListRecord)model),
+            ["LVLI"] = (model, context) => LvliEncoder.EncodeNew(
+                (LeveledListRecord)model, context.AllValidFormIds, context.RemapTable),
+            ["LVLN"] = (model, context) => LvliEncoder.EncodeNew(
+                (LeveledListRecord)model, context.AllValidFormIds, context.RemapTable),
+            ["LVLC"] = (model, context) => LvliEncoder.EncodeNew(
+                (LeveledListRecord)model, context.AllValidFormIds, context.RemapTable),
             ["CREA"] = (model, _) => CreaEncoder.EncodeNew((CreatureRecord)model),
             ["CLAS"] = (model, _) => ClasEncoder.EncodeNew((ClassRecord)model),
             ["SOUN"] = (model, _) => SounEncoder.EncodeNew((SoundRecord)model),
@@ -86,7 +105,10 @@ internal static class NewTopLevelRecordEncoderDispatcher
             ["BPTD"] = (model, _) => BptdEncoder.EncodeNew((BodyPartDataRecord)model),
             ["ENCH"] = (model, _) => EnchEncoder.EncodeNew((EnchantmentRecord)model),
             ["SPEL"] = (model, _) => SpelEncoder.EncodeNew((SpellRecord)model),
-            ["PERK"] = (model, _) => PerkEncoder.EncodeNew((PerkRecord)model),
+            ["PERK"] = (model, context) => PerkEncoder.EncodeNew(
+                (PerkRecord)model,
+                context.AllValidFormIds,
+                context.RemapTable),
             ["MGEF"] = (model, _) => MgefEncoder.EncodeNew((BaseEffectRecord)model),
             ["WRLD"] = (model, _) => WrldEncoder.EncodeNew((WorldspaceRecord)model),
             ["RACE"] = (model, _) => RaceEncoder.EncodeNew((RaceRecord)model),
@@ -101,7 +123,10 @@ internal static class NewTopLevelRecordEncoderDispatcher
             ["CCRD"] = (model, _) => CcrdEncoder.EncodeNew((CaravanCardRecord)model),
             ["INGR"] = (model, _) => IngrEncoder.EncodeNew((IngredientRecord)model),
             ["LSCT"] = (model, _) => LsctEncoder.EncodeNew((LoadScreenTypeRecord)model),
-            ["IDLE"] = (model, _) => IdleEncoder.EncodeNew((IdleAnimationRecord)model),
+            ["IDLE"] = (model, context) => IdleEncoder.EncodeNew(
+                (IdleAnimationRecord)model,
+                context.AllValidFormIds,
+                context.RemapTable),
             ["IPCT"] = (model, _) => IpctEncoder.EncodeNew((ImpactDataRecord)model),
             ["HDPT"] = (model, _) => HdptEncoder.EncodeNew((HeadPartRecord)model),
             ["CPTH"] = (model, _) => CpthEncoder.EncodeNew((CameraPathRecord)model),

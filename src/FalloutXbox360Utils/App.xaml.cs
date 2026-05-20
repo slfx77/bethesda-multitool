@@ -7,7 +7,7 @@ namespace FalloutXbox360Utils;
 /// <summary>
 ///     Provides application-specific behavior to supplement the default Application class.
 /// </summary>
-public sealed class FalloutApp : Application
+public sealed partial class FalloutApp : Application
 {
     private const int ATTACH_PARENT_PROCESS = -1;
 
@@ -25,7 +25,11 @@ public sealed class FalloutApp : Application
 
         try
         {
-            LoadComponent(this, new Uri("ms-appx:///App.xaml"));
+            // The XAML markup compiler emits InitializeComponent into the partial class
+            // (it also adds IXamlMetadataProvider, which WinUI needs in order to resolve
+            // any XAML type at runtime). Calling it here both loads App.xaml resources
+            // and registers the metadata provider on Application.Current.
+            InitializeComponent();
             Console.WriteLine("[FalloutXbox360Utils] App initialized");
         }
         catch (Exception ex)

@@ -1,8 +1,9 @@
-using Windows.Storage.Pickers;
 using FalloutAudioTranscriber.Models;
 using FalloutAudioTranscriber.Services;
+using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.Windows.Storage.Pickers;
 using WinRT.Interop;
 
 namespace FalloutAudioTranscriber.Views;
@@ -29,21 +30,23 @@ public sealed partial class LoadingView : UserControl
     /// <summary>Fires when a build is successfully loaded.</summary>
     public event EventHandler? BuildLoaded;
 
+    // Pickers use the WindowsAppSDK Microsoft.Windows.Storage.Pickers namespace rather
+    // than the legacy Windows.Storage.Pickers WinRT API. The legacy pickers rely on
+    // InitializeWithWindow + a COM activation context that does not work reliably in
+    // unpackaged WinUI 3 apps (1.7+), so the click would fire but the dialog never
+    // appeared. The new pickers take the window handle directly in the constructor.
     private async void BrowseButton_Click(object sender, RoutedEventArgs e)
     {
-        var picker = new FolderPicker();
-        picker.SuggestedStartLocation = PickerLocationId.ComputerFolder;
-        picker.FileTypeFilter.Add("*");
-
-        // Initialize the picker with the window handle (required for WinUI 3 unpackaged)
-        var hwnd = WindowNative.GetWindowHandle(MainWindow.Instance!);
-        InitializeWithWindow.Initialize(picker, hwnd);
-
-        var folder = await picker.PickSingleFolderAsync();
-        if (folder != null)
+        var picker = new FolderPicker(GetWindowId())
         {
-            DataDirectory = folder.Path;
-            FolderPathBox.Text = folder.Path;
+            SuggestedStartLocation = PickerLocationId.ComputerFolder
+        };
+
+        var result = await picker.PickSingleFolderAsync();
+        if (result != null)
+        {
+            DataDirectory = result.Path;
+            FolderPathBox.Text = result.Path;
             LoadButton.IsEnabled = true;
             ResultsPanel.Visibility = Visibility.Collapsed;
         }
@@ -51,20 +54,25 @@ public sealed partial class LoadingView : UserControl
 
     private async void EsmBrowseButton_Click(object sender, RoutedEventArgs e)
     {
-        var picker = new FileOpenPicker();
-        picker.SuggestedStartLocation = PickerLocationId.ComputerFolder;
+        var picker = new FileOpenPicker(GetWindowId())
+        {
+            SuggestedStartLocation = PickerLocationId.ComputerFolder
+        };
         picker.FileTypeFilter.Add(".esm");
 
-        var hwnd = WindowNative.GetWindowHandle(MainWindow.Instance!);
-        InitializeWithWindow.Initialize(picker, hwnd);
-
-        var file = await picker.PickSingleFileAsync();
-        if (file != null)
+        var result = await picker.PickSingleFileAsync();
+        if (result != null)
         {
-            EsmOverridePath = file.Path;
-            EsmPathBox.Text = file.Path;
+            EsmOverridePath = result.Path;
+            EsmPathBox.Text = result.Path;
             EsmClearButton.Visibility = Visibility.Visible;
         }
+    }
+
+    private static WindowId GetWindowId()
+    {
+        var hwnd = WindowNative.GetWindowHandle(MainWindow.Instance!);
+        return Win32Interop.GetWindowIdFromWindow(hwnd);
     }
 
     private void EsmClearButton_Click(object sender, RoutedEventArgs e)

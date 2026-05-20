@@ -285,6 +285,31 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
         uint currentEmotionType = 0;
         var currentEmotionValue = 0;
         byte currentResponseNumber = 0;
+        uint? currentSoundFormId = null;
+        var currentHasTrdt = false;
+
+        void FlushCurrentResponse()
+        {
+            if (currentResponseText == null)
+            {
+                return;
+            }
+
+            responses.Add(new DialogueResponse
+            {
+                Text = currentResponseText,
+                EmotionType = currentEmotionType,
+                EmotionValue = currentEmotionValue,
+                ResponseNumber = currentResponseNumber,
+                SoundFormId = currentSoundFormId
+            });
+            currentResponseText = null;
+            currentEmotionType = 0;
+            currentEmotionValue = 0;
+            currentResponseNumber = 0;
+            currentSoundFormId = null;
+            currentHasTrdt = false;
+        }
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -301,33 +326,32 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
                     questFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
                 case "NAM1":
-                    // Save previous response if any
-                    if (currentResponseText != null)
-                    {
-                        responses.Add(new DialogueResponse
-                        {
-                            Text = currentResponseText,
-                            EmotionType = currentEmotionType,
-                            EmotionValue = currentEmotionValue,
-                            ResponseNumber = currentResponseNumber
-                        });
-                    }
-
+                    FlushCurrentResponse();
                     currentResponseText = EsmStringUtils.ReadNullTermString(subData);
-                    currentEmotionType = 0;
-                    currentEmotionValue = 0;
                     break;
                 case "RNAM":
                     promptText = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "TRDT" when sub.DataLength >= 24:
                 {
+                    // Canonical FNV order is TRDT then NAM1, but some recovered blocks can
+                    // present NAM1 before TRDT. If a prior response already has TRDT data,
+                    // a new TRDT starts the next response; otherwise it completes the
+                    // current text-only response.
+                    if (currentResponseText != null && currentHasTrdt)
+                    {
+                        FlushCurrentResponse();
+                    }
+
                     var fields = SubrecordDataReader.ReadFields("TRDT", null, subData, record.IsBigEndian);
                     if (fields.Count > 0)
                     {
                         currentEmotionType = SubrecordDataReader.GetUInt32(fields, "EmotionType");
                         currentEmotionValue = SubrecordDataReader.GetInt32(fields, "EmotionValue");
                         currentResponseNumber = SubrecordDataReader.GetByte(fields, "ResponseNumber");
+                        var soundFormId = SubrecordDataReader.GetUInt32(fields, "Sound");
+                        currentSoundFormId = soundFormId != 0 ? soundFormId : null;
+                        currentHasTrdt = true;
                     }
                 }
 
@@ -472,17 +496,8 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
         DialogueResultScriptParser.FlushPendingVariable(
             currentResultScript, ref pendingVariableIndex, ref pendingVariableType);
 
-        // Add final response if any
-        if (currentResponseText != null)
-        {
-            responses.Add(new DialogueResponse
-            {
-                Text = currentResponseText,
-                EmotionType = currentEmotionType,
-                EmotionValue = currentEmotionValue,
-                ResponseNumber = currentResponseNumber
-            });
-        }
+        // Add final response if any.
+        FlushCurrentResponse();
 
         var resultScripts = DialogueResultScriptParser.BuildResultScripts(
             resultSourceTexts,

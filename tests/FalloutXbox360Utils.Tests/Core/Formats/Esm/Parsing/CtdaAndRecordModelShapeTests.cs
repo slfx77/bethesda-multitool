@@ -9,14 +9,14 @@ using Xunit;
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Parsing;
 
 /// <summary>
-///     v13 tests covering parser-side parity work:
+///     Parser + record-model shape coverage:
 ///     - CtdaParser shared 28-byte condition decoder (BE + LE)
 ///     - RecipeCategoryRecord model shape (RCCT)
 ///     - ConstructibleObjectRecord model shape (COBJ)
-///     - ArmaRecord new fields (texture hashes / icons / detection-sound-level)
-///     - QuestRecord new Conditions list
+///     - ArmaRecord texture hashes / icons / detection-sound-level fields
+///     - QuestRecord Conditions list with optional string parameters
 /// </summary>
-public class V13ParserTests
+public class CtdaAndRecordModelShapeTests
 {
     // ====================================================================================
     // CtdaParser.Decode — shared 28-byte CTDA decoder

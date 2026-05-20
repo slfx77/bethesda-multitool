@@ -64,7 +64,7 @@ internal static class CsvMiscWriter
     {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "RowType,FormID,EditorID,TopicFormID,TopicName,TopicDisplayName,QuestFormID,QuestName,QuestDisplayName,SpeakerFormID,SpeakerName,SpeakerDisplayName,SpeakerAnimFormID,SpeakerAnimName,PreviousInfoFormID,PromptText,InfoIndex,InfoFlags,FlagsDescription,Difficulty,LinkToTopics,AddTopics,Endianness,Offset,ResponseNumber,ResponseText,EmotionType,EmotionName,EmotionValue");
+            "RowType,FormID,EditorID,TopicFormID,TopicName,TopicDisplayName,QuestFormID,QuestName,QuestDisplayName,SpeakerFormID,SpeakerName,SpeakerDisplayName,SpeakerAnimFormID,SpeakerAnimName,PreviousInfoFormID,PromptText,InfoIndex,InfoFlags,FlagsDescription,Difficulty,LinkToTopics,AddTopics,Endianness,Offset,ResponseNumber,ResponseText,EmotionType,EmotionName,EmotionValue,ResponseSoundFormID,ResponseSoundName,ResponseSoundDisplayName");
 
         foreach (var d in dialogues.OrderBy(d => d.EditorId ?? ""))
         {
@@ -110,7 +110,7 @@ internal static class CsvMiscWriter
                 Fmt.CsvEscape(addStr),
                 Fmt.Endian(d.IsBigEndian),
                 d.Offset.ToString(),
-                "", "", "", "", ""));
+                "", "", "", "", "", "", "", ""));
 
             foreach (var r in d.Responses)
             {
@@ -124,7 +124,10 @@ internal static class CsvMiscWriter
                     Fmt.CsvEscape(r.Text),
                     r.EmotionType.ToString(),
                     Fmt.CsvEscape(r.EmotionName),
-                    r.EmotionValue.ToString()));
+                    r.EmotionValue.ToString(),
+                    Fmt.FIdN(r.SoundFormId),
+                    resolver.ResolveCsv(r.SoundFormId ?? 0),
+                    resolver.ResolveDisplayNameCsv(r.SoundFormId ?? 0)));
             }
         }
 

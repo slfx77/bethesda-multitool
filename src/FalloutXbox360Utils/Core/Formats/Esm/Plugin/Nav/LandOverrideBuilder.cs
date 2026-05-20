@@ -21,7 +21,8 @@ internal sealed class LandOverrideBuilder(
         ConversionPipelineStats stats,
         out byte[] landBytes,
         uint? existingLandFormId = null,
-        LandVisualData? masterVisualData = null)
+        LandVisualData? masterVisualData = null,
+        LandHeightmap? fallbackHeightmap = null)
     {
         landBytes = [];
 
@@ -36,6 +37,11 @@ internal sealed class LandOverrideBuilder(
             {
                 heightmap = null;
             }
+        }
+
+        if (heightmap is null)
+        {
+            heightmap = fallbackHeightmap;
         }
 
         if (heightmap is null)

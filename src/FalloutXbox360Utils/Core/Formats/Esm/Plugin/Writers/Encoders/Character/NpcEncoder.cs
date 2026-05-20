@@ -1,7 +1,7 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
-using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
-
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
+using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
 
@@ -56,7 +56,13 @@ public sealed class NpcEncoder : IRecordEncoder
     private static void AppendActorGameplaySubrecords(
         NpcRecord npc,
         List<EncodedSubrecord> subs,
-        uint? resolvedTemplate = null)
+        uint? resolvedTemplate = null,
+        IReadOnlySet<uint>? validPackageFormIds = null,
+        IReadOnlyDictionary<uint, uint>? remapTable = null,
+        Action<uint>? onPkidDropped = null,
+        Action<uint, uint>? onPkidRemapped = null,
+        IReadOnlySet<uint>? validFormIds = null,
+        List<string>? warnings = null)
     {
         // SNAM faction memberships — 8 bytes each: FormID + uint8 rank + 3 padding.
         foreach (var membership in npc.Factions)
@@ -88,29 +94,60 @@ public sealed class NpcEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("RNAM", npc.Race.Value));
         }
 
-        // SPLO — spell/ability list. One subrecord per spell.
+        // SPLO — spell/ability list. One subrecord per spell. Skip dangling entries.
         foreach (var spellId in npc.Spells)
         {
-            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SPLO", spellId));
+            var resolvedSpell = FormIdReferenceResolver.Resolve(spellId, validFormIds, remapTable);
+            if (resolvedSpell.HasValue)
+            {
+                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SPLO", resolvedSpell.Value));
+            }
         }
 
         if (npc.Script.HasValue)
         {
-            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRI", npc.Script.Value));
+            var resolvedScript = FormIdReferenceResolver.Resolve(
+                npc.Script.Value, validFormIds, remapTable);
+            if (resolvedScript.HasValue)
+            {
+                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRI", resolvedScript.Value));
+            }
+            else
+            {
+                warnings?.Add(
+                    $"New NPC_ 0x{npc.FormId:X8} SCRI 0x{npc.Script.Value:X8} dangles — subrecord skipped.");
+            }
         }
 
         // CNTO inventory entries — 8 bytes each: FormID + int32 count. Each CNTO may be
-        // followed by an optional COED (12 bytes) carrying ownership/condition data.
+        // followed by an optional COED (12 bytes) carrying ownership/condition data. Skip
+        // entries whose item FormID dangles in master ∪ emitted (engine would log
+        // "Unable to find container object on owner object" and drop the line anyway).
+        var droppedItems = 0;
         foreach (var item in npc.Inventory)
         {
+            var resolvedItem = FormIdReferenceResolver.Resolve(
+                item.ItemFormId, validFormIds, remapTable);
+            if (!resolvedItem.HasValue)
+            {
+                droppedItems++;
+                continue;
+            }
+
             var cnto = new byte[8];
-            SubrecordEncoder.WriteFormId(cnto, 0, item.ItemFormId);
+            SubrecordEncoder.WriteFormId(cnto, 0, resolvedItem.Value);
             SubrecordEncoder.WriteInt32(cnto, 4, item.Count);
             subs.Add(new EncodedSubrecord("CNTO", cnto));
             if (ContEncoder.HasOwnership(item))
             {
                 subs.Add(new EncodedSubrecord("COED", ContEncoder.BuildCoedSubrecord(item)));
             }
+        }
+        if (droppedItems > 0)
+        {
+            warnings?.Add(
+                $"New NPC_ 0x{npc.FormId:X8} dropped {droppedItems} CNTO inventory entry/entries " +
+                "with dangling item FormID (engine 'Unable to find container object on owner object').");
         }
 
         // AIDT — 20 bytes: AI behavior data.
@@ -131,8 +168,36 @@ public sealed class NpcEncoder : IRecordEncoder
         }
 
         // PKID — AI packages. One subrecord per package FormID.
-        foreach (var pkgId in npc.Packages)
+        // Dangling PKIDs (PACK FormIDs not in master and not in our emitted set) were the
+        // leading suspect for the "every NPC plays the crucified idle every few seconds"
+        // regression: an NPC with all-dangling packages has no AI driver, so the engine
+        // falls through to a default idle pose. Remap via the runtime→emitted alias table
+        // when possible; otherwise drop the PKID entry entirely.
+        foreach (var rawPkgId in npc.Packages)
         {
+            if (rawPkgId == 0)
+            {
+                continue;
+            }
+
+            var pkgId = rawPkgId;
+            if (validPackageFormIds is not null && !validPackageFormIds.Contains(pkgId))
+            {
+                if (remapTable is not null
+                    && remapTable.TryGetValue(pkgId, out var remapped)
+                    && remapped != pkgId
+                    && validPackageFormIds.Contains(remapped))
+                {
+                    onPkidRemapped?.Invoke(rawPkgId, remapped);
+                    pkgId = remapped;
+                }
+                else
+                {
+                    onPkidDropped?.Invoke(rawPkgId);
+                    continue;
+                }
+            }
+
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("PKID", pkgId));
         }
 
@@ -251,7 +316,10 @@ public sealed class NpcEncoder : IRecordEncoder
     internal static EncodedRecord EncodeNew(
         NpcRecord npc,
         IReadOnlySet<uint>? masterFormIds = null,
-        IReadOnlyDictionary<uint, uint>? masterNpcByRace = null)
+        IReadOnlyDictionary<uint, uint>? masterNpcByRace = null,
+        IReadOnlySet<uint>? validPackageFormIds = null,
+        IReadOnlyDictionary<uint, uint>? remapTable = null,
+        IReadOnlySet<uint>? validFormIds = null)
     {
         var subs = new List<EncodedSubrecord>();
         var warnings = new List<string>();
@@ -328,7 +396,29 @@ public sealed class NpcEncoder : IRecordEncoder
             warnings.Add($"New NPC 0x{npc.FormId:X8} has no race — racial traits will use engine default.");
         }
 
-        AppendActorGameplaySubrecords(npc, subs, resolvedTemplate);
+        var droppedPkids = 0;
+        var remappedPkids = 0;
+        AppendActorGameplaySubrecords(npc, subs, resolvedTemplate,
+            validPackageFormIds,
+            remapTable,
+            onPkidDropped: _ => droppedPkids++,
+            onPkidRemapped: (_, _) => remappedPkids++,
+            validFormIds: validFormIds,
+            warnings: warnings);
+        if (droppedPkids > 0)
+        {
+            warnings.Add(
+                $"New NPC 0x{npc.FormId:X8} dropped {droppedPkids} PKID(s) referencing dangling " +
+                "PACK FormIDs (not in master ∪ emitted, no remap available). The engine logged " +
+                "these as 'Could not find Package' previously and the NPC fell through to a " +
+                "default idle.");
+        }
+        if (remappedPkids > 0)
+        {
+            warnings.Add(
+                $"New NPC 0x{npc.FormId:X8} remapped {remappedPkids} PKID FormID(s) via the " +
+                "runtime→emitted alias table.");
+        }
 
         // Appearance subrecords (HNAM/LNAM/ENAM/HCLR/FGGS/FGGA/FGTS) emit via the shared
         // helper so override and new paths stay in lockstep.

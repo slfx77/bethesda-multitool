@@ -43,14 +43,14 @@ public static class DmpToEspCommand
         };
         var secondaryDataOpt = new Option<string[]>("--secondary-data")
         {
-            Description = "Repeatable: secondary data folder (PC format) to pull missing assets from, " +
-                          "in priority order (first wins). Use with --pack-assets."
+            Description = "Repeatable: secondary data folder to pull missing assets from, in priority order " +
+                          "(first wins). Xbox 360 folders are auto-detected when possible. Use with --pack-assets."
         };
         var secondaryData360Opt = new Option<string[]>("--secondary-data-360")
         {
-            Description = "Repeatable: secondary data folder containing Xbox 360 BSAs. " +
-                          "Assets resolved here are converted to PC format on the fly. " +
-                          "Use with --pack-assets."
+            Description = "Repeatable compatibility/override form: secondary data folder containing Xbox 360 " +
+                          "assets. Ordinary --secondary-data also auto-detects 360 folders; use this only " +
+                          "when a folder has loose 360 assets and no detectable 360 ESM/BSA header."
         };
         var packAssetsOpt = new Option<string?>("--pack-assets")
         {
@@ -62,6 +62,12 @@ public static class DmpToEspCommand
         {
             Description = "Write a human-reviewable per-asset audit file at <pack-assets>.missing.txt " +
                           "alongside the packed BSA. Sections: missing, fuzzy-matched, conversion-failed."
+        };
+        var dialogueAudioCsvOpt = new Option<string[]>("--dialogue-audio-csv")
+        {
+            Description = "Repeatable: Fallout Audio Transcriber CSV export used to add dialogue voice " +
+                          "audio/lip requests for INFO records present in the ESP/DMP. Use with " +
+                          "--pack-assets and a --secondary-data folder containing the audio."
         };
         var overrideVanillaOpt = new Option<bool>("--override-vanilla")
         {
@@ -95,6 +101,7 @@ public static class DmpToEspCommand
         command.Options.Add(secondaryData360Opt);
         command.Options.Add(packAssetsOpt);
         command.Options.Add(writeMissingListOpt);
+        command.Options.Add(dialogueAudioCsvOpt);
         command.Options.Add(overrideVanillaOpt);
         command.Options.Add(disableRefrEditorIdRemapOpt);
         command.Options.Add(replaceCellTemporariesOpt);
@@ -143,6 +150,7 @@ public static class DmpToEspCommand
             var secondaryData360 = parseResult.GetValue(secondaryData360Opt) ?? [];
             var packAssets = parseResult.GetValue(packAssetsOpt);
             var writeMissingList = parseResult.GetValue(writeMissingListOpt);
+            var dialogueAudioCsv = parseResult.GetValue(dialogueAudioCsvOpt) ?? [];
             var overrideVanilla = parseResult.GetValue(overrideVanillaOpt);
             var disableRefrEditorIdRemap = parseResult.GetValue(disableRefrEditorIdRemapOpt);
             var replaceCellTemporaries = parseResult.GetValue(replaceCellTemporariesOpt);
@@ -155,7 +163,7 @@ public static class DmpToEspCommand
                 StringComparer.Ordinal);
 
             await RunAsync(dmp, pcEsm, output, author, description, compress, validate, verbose,
-                secondaryData, secondaryData360, packAssets, writeMissingList, overrideVanilla,
+                secondaryData, secondaryData360, packAssets, writeMissingList, dialogueAudioCsv, overrideVanilla,
                 disableRefrEditorIdRemap, replaceCellTemporaries, cellAuthorityPath,
                 skipWorldspaceFormIds, skipRecordTypes, ct);
         });
@@ -176,6 +184,7 @@ public static class DmpToEspCommand
         string[] secondaryDataFolders360,
         string? packAssetsBsaPath,
         bool writeMissingList,
+        string[] dialogueAudioCsvPaths,
         bool overrideVanilla,
         bool disableRefrEditorIdRemap,
         bool replaceCellTemporaries,
@@ -236,6 +245,7 @@ public static class DmpToEspCommand
             EnableRefrBaseEditorIdRemap = !disableRefrEditorIdRemap,
             ReplaceCellTemporariesOnOverride = replaceCellTemporaries,
             CellWorldspaceAuthority = authorityLoad.Cells,
+            CellWorldspaceAuthorityWorldspaceNames = authorityLoad.WorldspaceNames,
             SkipWorldspaceFormIds = skipWorldspaceFormIds,
             SkipRecordTypes = skipRecordTypes
         };
@@ -310,7 +320,14 @@ public static class DmpToEspCommand
                 await RunAssetPackingAsync(
                     outputPath, dmpPath, pcEsmPath,
                     secondaryDataFolders, secondaryDataFolders360,
-                    packAssetsBsaPath, verbose, writeMissingList, overrideVanilla, sink, ct);
+                    packAssetsBsaPath, verbose, writeMissingList, dialogueAudioCsvPaths,
+                    overrideVanilla, sink, ct);
+            }
+            else if (dialogueAudioCsvPaths.Length > 0)
+            {
+                AnsiConsole.MarkupLine(
+                    "[yellow]Warning:[/] --dialogue-audio-csv was provided but --pack-assets was not; " +
+                    "dialogue audio CSV paths were not used.");
             }
         }
         else
@@ -360,23 +377,50 @@ public static class DmpToEspCommand
         string[] secondaryDataFolders,
         string[] secondaryDataFolders360)
     {
+        return BuildSecondaryFolders(secondaryDataFolders, secondaryDataFolders360, warnMissing: false);
+    }
+
+    private static List<SecondaryDataFolder> BuildSecondaryFolders(
+        string[] secondaryDataFolders,
+        string[] secondaryDataFolders360,
+        bool warnMissing)
+    {
         var folders = new List<SecondaryDataFolder>(
             secondaryDataFolders.Length + secondaryDataFolders360.Length);
 
         foreach (var folder in secondaryDataFolders)
         {
-            if (Directory.Exists(folder))
+            if (!Directory.Exists(folder))
             {
-                folders.Add(new SecondaryDataFolder { Path = folder, IsXbox360Format = false });
+                if (warnMissing)
+                {
+                    AnsiConsole.MarkupLine(
+                        $"[yellow]Warning:[/] --secondary-data folder not found, skipping: " +
+                        $"{Markup.Escape(folder)}");
+                }
+
+                continue;
             }
+
+            var isXbox360 = Xbox360FolderDetector.DetectIsXbox360Format(folder);
+            folders.Add(new SecondaryDataFolder { Path = folder, IsXbox360Format = isXbox360 });
         }
 
         foreach (var folder in secondaryDataFolders360)
         {
-            if (Directory.Exists(folder))
+            if (!Directory.Exists(folder))
             {
-                folders.Add(new SecondaryDataFolder { Path = folder, IsXbox360Format = true });
+                if (warnMissing)
+                {
+                    AnsiConsole.MarkupLine(
+                        $"[yellow]Warning:[/] --secondary-data-360 folder not found, skipping: " +
+                        $"{Markup.Escape(folder)}");
+                }
+
+                continue;
             }
+
+            folders.Add(new SecondaryDataFolder { Path = folder, IsXbox360Format = true });
         }
 
         return folders;
@@ -391,6 +435,7 @@ public static class DmpToEspCommand
         string outputBsaPath,
         bool verbose,
         bool writeMissingList,
+        string[] dialogueAudioCsvPaths,
         bool overrideVanilla,
         IConversionProgressSink sink,
         CancellationToken ct)
@@ -408,34 +453,7 @@ public static class DmpToEspCommand
             return;
         }
 
-        var secondaries = new List<SecondaryDataFolder>(
-            secondaryDataFolders.Length + secondaryDataFolders360.Length);
-
-        foreach (var folder in secondaryDataFolders)
-        {
-            if (!Directory.Exists(folder))
-            {
-                AnsiConsole.MarkupLine(
-                    $"[yellow]Warning:[/] --secondary-data folder not found, skipping: " +
-                    $"{Markup.Escape(folder)}");
-                continue;
-            }
-
-            secondaries.Add(new SecondaryDataFolder { Path = folder, IsXbox360Format = false });
-        }
-
-        foreach (var folder in secondaryDataFolders360)
-        {
-            if (!Directory.Exists(folder))
-            {
-                AnsiConsole.MarkupLine(
-                    $"[yellow]Warning:[/] --secondary-data-360 folder not found, skipping: " +
-                    $"{Markup.Escape(folder)}");
-                continue;
-            }
-
-            secondaries.Add(new SecondaryDataFolder { Path = folder, IsXbox360Format = true });
-        }
+        var secondaries = BuildSecondaryFolders(secondaryDataFolders, secondaryDataFolders360, warnMissing: true);
 
         if (secondaries.Count == 0)
         {
@@ -454,6 +472,7 @@ public static class DmpToEspCommand
             OutputBsaPath = outputBsaPath,
             VerbosePerAsset = verbose,
             WriteAuditFile = writeMissingList,
+            DialogueAudioCsvPaths = dialogueAudioCsvPaths,
             OverrideVanillaBaseline = overrideVanilla
         };
 

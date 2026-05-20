@@ -26,8 +26,18 @@ public sealed record AssetPackingOptions
     /// <summary>
     ///     Optional path to the source DMP. When set, <c>RuntimeBufferStringExtractor</c>
     ///     is run against the dump to collect raw asset path strings the ESP doesn't expose.
+    ///     Dialogue CSV matching also uses this to recover source INFO FormIDs for newly
+    ///     allocated dialogue records.
     /// </summary>
     public string? DmpPath { get; init; }
+
+    /// <summary>
+    ///     Optional Fallout Audio Transcriber CSV exports. Rows whose FormID matches an
+    ///     INFO in the converted ESP or source DMP contribute dialogue voice .ogg/.lip
+    ///     requests to the packer. The referenced audio bytes must still be resolvable
+    ///     through <see cref="SecondaryDataFolders" />.
+    /// </summary>
+    public IReadOnlyList<string> DialogueAudioCsvPaths { get; init; } = [];
 
     /// <summary>
     ///     The user's primary FNV PC Data folder. Anything already resolvable here is

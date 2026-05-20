@@ -1,12 +1,13 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Threading.Channels;
-using Windows.Storage.Pickers;
 using FalloutAudioTranscriber.Models;
 using FalloutAudioTranscriber.Services;
+using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.Windows.Storage.Pickers;
 using Whisper.net;
 using WinRT.Interop;
 
@@ -677,33 +678,36 @@ public sealed partial class PlaylistView : UserControl
             return;
         }
 
-        var picker = new FileSavePicker();
-        picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+        var hwnd = WindowNative.GetWindowHandle(MainWindow.Instance!);
+        var windowId = Win32Interop.GetWindowIdFromWindow(hwnd);
+        var picker = new FileSavePicker(windowId)
+        {
+            SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
+            SuggestedFileName = "transcriptions"
+        };
         picker.FileTypeChoices.Add("CSV", [".csv"]);
         picker.FileTypeChoices.Add("Plain Text", [".txt"]);
-        picker.SuggestedFileName = "transcriptions";
 
-        var hwnd = WindowNative.GetWindowHandle(MainWindow.Instance!);
-        InitializeWithWindow.Initialize(picker, hwnd);
-
-        var file = await picker.PickSaveFileAsync();
-        if (file != null)
+        var result = await picker.PickSaveFileAsync();
+        if (result != null)
         {
             try
             {
                 _project ??= new TranscriptionProject();
 
-                if (file.FileType == ".csv")
+                var path = result.Path;
+                var ext = System.IO.Path.GetExtension(path);
+                if (string.Equals(ext, ".csv", StringComparison.OrdinalIgnoreCase))
                 {
-                    await TranscriptionFileService.ExportCsvAsync(file.Path, _project, _allEntries, _showEsmSubtitles);
+                    await TranscriptionFileService.ExportCsvAsync(path, _project, _allEntries, _showEsmSubtitles);
                 }
                 else
                 {
-                    await TranscriptionFileService.ExportTextAsync(file.Path, _project, _allEntries, _showEsmSubtitles);
+                    await TranscriptionFileService.ExportTextAsync(path, _project, _allEntries, _showEsmSubtitles);
                 }
 
                 var esmNote = _showEsmSubtitles ? " (including ESM subtitles)" : "";
-                MainWindow.Instance?.SetStatus($"Exported transcriptions to {file.Name}{esmNote}");
+                MainWindow.Instance?.SetStatus($"Exported transcriptions to {System.IO.Path.GetFileName(path)}{esmNote}");
             }
             catch (Exception ex)
             {

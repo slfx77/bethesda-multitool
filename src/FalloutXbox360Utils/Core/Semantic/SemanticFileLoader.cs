@@ -40,7 +40,7 @@ internal static class SemanticFileLoader
 
         var fileType = ResolveSemanticFileType(filePath, options.FileType);
         var analysisResult = await AnalyzeOnlyAsync(filePath, options, cancellationToken);
-        return LoadFromAnalysisResult(filePath, analysisResult, fileType, options.ParseProgress);
+        return LoadFromAnalysisResult(filePath, analysisResult, fileType, options);
     }
 
     internal static async Task<AnalysisResult> AnalyzeOnlyAsync(
@@ -60,6 +60,24 @@ internal static class SemanticFileLoader
         AnalysisFileType fileType,
         IProgress<(int percent, string phase)>? parseProgress = null)
     {
+        return LoadFromAnalysisResult(
+            filePath,
+            analysisResult,
+            fileType,
+            new SemanticFileLoadOptions
+            {
+                FileType = fileType,
+                ParseProgress = parseProgress
+            });
+    }
+
+    internal static UnifiedAnalysisResult LoadFromAnalysisResult(
+        string filePath,
+        AnalysisResult analysisResult,
+        AnalysisFileType fileType,
+        SemanticFileLoadOptions? options)
+    {
+        options ??= new SemanticFileLoadOptions();
         fileType = ResolveSemanticFileType(filePath, fileType);
         if (analysisResult.EsmRecords == null)
         {
@@ -79,7 +97,8 @@ internal static class SemanticFileLoader
                 accessor,
                 fileInfo.Length,
                 analysisResult.MinidumpInfo);
-            var records = parser.ParseAll(parseProgress);
+            var records = parser.ParseAll(options.ParseProgress);
+            ApplyCellWorldspaceAuthorityIfNeeded(records, analysisResult.EsmRecords, fileType, options);
             var resolver = records.CreateResolver(analysisResult.FormIdMap);
 
             var result = new UnifiedAnalysisResult
@@ -122,5 +141,28 @@ internal static class SemanticFileLoader
                 cancellationToken),
             _ => throw new InvalidOperationException($"Unsupported semantic file type: {fileType}")
         };
+    }
+
+    private static void ApplyCellWorldspaceAuthorityIfNeeded(
+        Formats.Esm.Models.RecordCollection records,
+        Formats.Esm.Records.EsmRecordScanResult scanResult,
+        AnalysisFileType fileType,
+        SemanticFileLoadOptions options)
+    {
+        if (fileType != AnalysisFileType.Minidump)
+        {
+            return;
+        }
+
+        var authority = options.CellWorldspaceAuthority;
+        var worldspaceNames = options.CellWorldspaceAuthorityWorldspaceNames;
+        if (authority is null && options.ApplyDefaultCellWorldspaceAuthority)
+        {
+            var load = CellWorldspaceAuthorityJson.Load(options.CellWorldspaceAuthorityPath);
+            authority = load.Cells;
+            worldspaceNames = load.WorldspaceNames;
+        }
+
+        CellWorldspaceAuthorityApplier.Apply(records, authority, worldspaceNames, scanResult);
     }
 }

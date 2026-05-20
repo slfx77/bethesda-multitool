@@ -16,67 +16,6 @@
       <KeyboardAccelerator Key="F1" Invoked="F1_ShortcutsDialog_Invoked" />
     </Grid.KeyboardAccelerators>
 
-    <!--  Title bar drag region — rendered BEFORE NavigationView in XAML order.
-          With IsTitleBarAutoPaddingEnabled="True" on NavView, the expanded pane
-          does not claim the top 32 px strip, so the icon/title stay visually on top
-          and the margin never needs to shift.
-          Interactive controls (buttons) are auto-excluded from the drag region by WinUI.  -->
-    <Grid
-      x:Name="AppTitleBar"
-      Height="32"
-      Margin="48,0,0,0"
-      HorizontalAlignment="Stretch"
-      VerticalAlignment="Top"
-      Background="Transparent">
-      <StackPanel
-        Orientation="Horizontal"
-        VerticalAlignment="Center">
-        <Image
-          Width="16"
-          Height="16"
-          Margin="8,1,8,0"
-          VerticalAlignment="Center"
-          Source="ms-appx:///Assets/AppIcon.png" />
-        <TextBlock
-          x:Name="AppTitleText"
-          x:Uid="AppTitle"
-          VerticalAlignment="Center"
-          FontSize="12" />
-
-        <!--  Nav buttons: inside the title bar so WinUI auto-excludes them from drag  -->
-        <StackPanel
-          x:Name="NavButtonPanel"
-          Orientation="Horizontal"
-          Margin="12,0,0,0"
-          Visibility="Collapsed">
-          <Button
-            x:Name="NavBackButton"
-            Width="28" Height="24" Padding="0"
-            VerticalAlignment="Center"
-            IsEnabled="False"
-            Click="NavBack_Click"
-            ToolTipService.ToolTip="Back (Alt+Left)"
-            AutomationProperties.Name="Back"
-            AutomationProperties.HelpText="Go back to the previously viewed tab (Alt+Left)"
-            Background="Transparent" BorderBrush="Transparent">
-            <FontIcon Glyph="&#xE72B;" FontSize="11" />
-          </Button>
-          <Button
-            x:Name="NavForwardButton"
-            Width="28" Height="24" Padding="0" Margin="2,0,0,0"
-            VerticalAlignment="Center"
-            IsEnabled="False"
-            Click="NavForward_Click"
-            ToolTipService.ToolTip="Forward (Alt+Right)"
-            AutomationProperties.Name="Forward"
-            AutomationProperties.HelpText="Go forward to the next tab in navigation history (Alt+Right)"
-            Background="Transparent" BorderBrush="Transparent">
-            <FontIcon Glyph="&#xE72A;" FontSize="11" />
-          </Button>
-        </StackPanel>
-      </StackPanel>
-    </Grid>
-
     <!--  Navigation View with hamburger menu - fills entire window  -->
     <NavigationView
       x:Name="NavView"
@@ -249,5 +188,67 @@
         </Grid>
       </Grid>
     </NavigationView>
+
+    <!--  Title bar drag region — rendered AFTER NavigationView so it sits above the
+          NavView chrome and the back/forward buttons remain hit-testable. The transparent
+          Background still allows the NavView visuals to show through, but clicks on this
+          strip route to AppTitleBar's children (Back/Forward buttons) instead of being
+          swallowed by the NavView header. Interactive controls are auto-excluded from
+          the drag region by WinUI.  -->
+    <Grid
+      x:Name="AppTitleBar"
+      Height="32"
+      Margin="48,0,0,0"
+      HorizontalAlignment="Stretch"
+      VerticalAlignment="Top"
+      Background="Transparent">
+      <StackPanel
+        Orientation="Horizontal"
+        VerticalAlignment="Center">
+        <Image
+          Width="16"
+          Height="16"
+          Margin="8,1,8,0"
+          VerticalAlignment="Center"
+          Source="ms-appx:///Assets/AppIcon.png" />
+        <TextBlock
+          x:Name="AppTitleText"
+          x:Uid="AppTitle"
+          VerticalAlignment="Center"
+          FontSize="12" />
+
+        <!--  Nav buttons: inside the title bar so WinUI auto-excludes them from drag  -->
+        <StackPanel
+          x:Name="NavButtonPanel"
+          Orientation="Horizontal"
+          Margin="12,0,0,0"
+          Visibility="Collapsed">
+          <Button
+            x:Name="NavBackButton"
+            Width="28" Height="24" Padding="0"
+            VerticalAlignment="Center"
+            IsEnabled="False"
+            Click="NavBack_Click"
+            ToolTipService.ToolTip="Back (Alt+Left)"
+            AutomationProperties.Name="Back"
+            AutomationProperties.HelpText="Go back to the previously viewed tab (Alt+Left)"
+            Background="Transparent" BorderBrush="Transparent">
+            <FontIcon Glyph="&#xE72B;" FontSize="11" />
+          </Button>
+          <Button
+            x:Name="NavForwardButton"
+            Width="28" Height="24" Padding="0" Margin="2,0,0,0"
+            VerticalAlignment="Center"
+            IsEnabled="False"
+            Click="NavForward_Click"
+            ToolTipService.ToolTip="Forward (Alt+Right)"
+            AutomationProperties.Name="Forward"
+            AutomationProperties.HelpText="Go forward to the next tab in navigation history (Alt+Right)"
+            Background="Transparent" BorderBrush="Transparent">
+            <FontIcon Glyph="&#xE72A;" FontSize="11" />
+          </Button>
+        </StackPanel>
+      </StackPanel>
+    </Grid>
   </Grid>
 </Window>

@@ -58,12 +58,22 @@ public sealed class RefrEncoder : IRecordEncoder
     ///     XTEL, XCNT, XSCL, DATA.
     /// </summary>
     /// <remarks>
-    ///     Emits XLOC (lock state), XESP (enable parent), XLKR (linked ref), and XTEL
+    ///     <para>Emits XLOC (lock state), XESP (enable parent), XLKR (linked ref), and XTEL
     ///     (door teleport — emitted with FormID + zero PosRot/Flags because the model only
     ///     carries the destination FormID). XCNT is 4 bytes per the parser's
-    ///     <c>Simple4Byte</c> schema.
+    ///     <c>Simple4Byte</c> schema.</para>
+    ///     <para>Optional FormID-bearing subrecords (XEZN, XLKR keyword + ref, XOWN,
+    ///     XESP, XTEL door) are validated against master ∪ emitted. If a dangling FormID can't
+    ///     be remapped through the alias table the subrecord is SKIPPED (not emitted with a
+    ///     dangling value — engine logs "Unable to find linked reference / enable state
+    ///     parent" warnings when it sees one, and removes the data anyway). Skipping at emit
+    ///     time avoids the cosmetic noise + keeps the record's data-size header consistent
+    ///     with what the engine actually keeps after load.</para>
     /// </remarks>
-    internal static EncodedRecord EncodeNewPlacedReference(PlacedReference placed)
+    internal static EncodedRecord EncodeNewPlacedReference(
+        PlacedReference placed,
+        IReadOnlySet<uint>? validFormIds = null,
+        IReadOnlyDictionary<uint, uint>? remapTable = null)
     {
         var subs = new List<EncodedSubrecord>();
         var warnings = new List<string>();
@@ -73,12 +83,26 @@ public sealed class RefrEncoder : IRecordEncoder
 
         if (placed.EncounterZoneFormId.HasValue)
         {
-            subs.Add(EncodeFormIdSubrecord("XEZN", placed.EncounterZoneFormId.Value));
+            var resolved = ResolveOptionalFormId(placed.EncounterZoneFormId.Value,
+                validFormIds, remapTable);
+            if (resolved.HasValue)
+            {
+                subs.Add(EncodeFormIdSubrecord("XEZN", resolved.Value));
+            }
+            else
+            {
+                warnings.Add($"REFR 0x{placed.FormId:X8} XEZN encounter zone " +
+                    $"0x{placed.EncounterZoneFormId.Value:X8} dangles — subrecord skipped.");
+            }
         }
 
         if (placed.LinkedRefFormId.HasValue)
         {
-            subs.Add(BuildXlkrSubrecord(placed));
+            var xlkrSubrec = TryBuildXlkrSubrecord(placed, validFormIds, remapTable, warnings);
+            if (xlkrSubrec is not null)
+            {
+                subs.Add(xlkrSubrec);
+            }
         }
 
         if (HasAnyLockState(placed))
@@ -88,21 +112,51 @@ public sealed class RefrEncoder : IRecordEncoder
 
         if (placed.OwnerFormId.HasValue)
         {
-            subs.Add(EncodeFormIdSubrecord("XOWN", placed.OwnerFormId.Value));
+            var resolved = ResolveOptionalFormId(placed.OwnerFormId.Value,
+                validFormIds, remapTable);
+            if (resolved.HasValue)
+            {
+                subs.Add(EncodeFormIdSubrecord("XOWN", resolved.Value));
+            }
+            else
+            {
+                warnings.Add($"REFR 0x{placed.FormId:X8} XOWN owner " +
+                    $"0x{placed.OwnerFormId.Value:X8} dangles — subrecord skipped.");
+            }
         }
 
         if (placed.EnableParentFormId.HasValue)
         {
-            subs.Add(BuildXespSubrecord(placed));
+            var resolved = ResolveOptionalFormId(placed.EnableParentFormId.Value,
+                validFormIds, remapTable);
+            if (resolved.HasValue)
+            {
+                subs.Add(BuildXespSubrecord(placed, resolved.Value));
+            }
+            else
+            {
+                warnings.Add($"REFR 0x{placed.FormId:X8} XESP enable parent " +
+                    $"0x{placed.EnableParentFormId.Value:X8} dangles — subrecord skipped.");
+            }
         }
 
         if (placed.DestinationDoorFormId.HasValue)
         {
-            subs.Add(BuildXtelSubrecord(placed));
-            if (placed.TeleportPosRot is null)
+            var resolved = ResolveOptionalFormId(placed.DestinationDoorFormId.Value,
+                validFormIds, remapTable);
+            if (resolved.HasValue)
             {
-                warnings.Add(
-                    $"REFR 0x{placed.FormId:X8} XTEL teleport position not available — emitted with zero PosRot.");
+                subs.Add(BuildXtelSubrecord(placed, resolved.Value));
+                if (placed.TeleportPosRot is null)
+                {
+                    warnings.Add(
+                        $"REFR 0x{placed.FormId:X8} XTEL teleport position not available — emitted with zero PosRot.");
+                }
+            }
+            else
+            {
+                warnings.Add($"REFR 0x{placed.FormId:X8} XTEL destination door " +
+                    $"0x{placed.DestinationDoorFormId.Value:X8} dangles — subrecord skipped.");
             }
         }
 
@@ -154,34 +208,92 @@ public sealed class RefrEncoder : IRecordEncoder
     }
 
     /// <summary>
-    ///     XESP — 8 bytes fixed: FormID Parent @0, uint8 Flags @4, padding @5-7.
+    ///     XESP — 8 bytes fixed: FormID Parent @0, uint8 Flags @4, padding @5-7. The Parent
+    ///     FormID arrives pre-resolved (master ∪ emitted, with remap applied) so the engine
+    ///     never sees a dangling enable-state-parent ref.
     /// </summary>
-    private static EncodedSubrecord BuildXespSubrecord(PlacedReference placed)
+    private static EncodedSubrecord BuildXespSubrecord(PlacedReference placed, uint resolvedParentId)
     {
         var xesp = new byte[8];
-        SubrecordEncoder.WriteFormId(xesp, 0, placed.EnableParentFormId!.Value);
+        SubrecordEncoder.WriteFormId(xesp, 0, resolvedParentId);
         xesp[4] = placed.EnableParentFlags ?? 0;
         // bytes 5-7 = padding (zero)
         return new EncodedSubrecord("XESP", xesp);
     }
 
     /// <summary>
-    ///     XLKR — 4 bytes (just LinkedRef) or 8 bytes (Keyword + LinkedRef) depending on
-    ///     whether the model carries a keyword FormID.
+    ///     XLKR — 4 bytes (just LinkedRef) or 8 bytes (Keyword + LinkedRef). Both fields are
+    ///     individually validated; the subrecord is dropped only when the linked-ref FormID
+    ///     itself dangles. When only the keyword is dangling we degrade to the 4-byte form
+    ///     (engine treats no-keyword XLKR as a generic-keyword link).
     /// </summary>
-    private static EncodedSubrecord BuildXlkrSubrecord(PlacedReference placed)
+    private static EncodedSubrecord? TryBuildXlkrSubrecord(
+        PlacedReference placed,
+        IReadOnlySet<uint>? validFormIds,
+        IReadOnlyDictionary<uint, uint>? remapTable,
+        List<string> warnings)
     {
+        var resolvedRef = ResolveOptionalFormId(placed.LinkedRefFormId!.Value,
+            validFormIds, remapTable);
+        if (!resolvedRef.HasValue)
+        {
+            warnings.Add($"REFR 0x{placed.FormId:X8} XLKR linked ref " +
+                $"0x{placed.LinkedRefFormId.Value:X8} dangles — subrecord skipped.");
+            return null;
+        }
+
         if (placed.LinkedRefKeywordFormId.HasValue)
         {
-            var xlkr8 = new byte[8];
-            SubrecordEncoder.WriteFormId(xlkr8, 0, placed.LinkedRefKeywordFormId.Value);
-            SubrecordEncoder.WriteFormId(xlkr8, 4, placed.LinkedRefFormId!.Value);
-            return new EncodedSubrecord("XLKR", xlkr8);
+            var resolvedKeyword = ResolveOptionalFormId(placed.LinkedRefKeywordFormId.Value,
+                validFormIds, remapTable);
+            if (resolvedKeyword.HasValue)
+            {
+                var xlkr8 = new byte[8];
+                SubrecordEncoder.WriteFormId(xlkr8, 0, resolvedKeyword.Value);
+                SubrecordEncoder.WriteFormId(xlkr8, 4, resolvedRef.Value);
+                return new EncodedSubrecord("XLKR", xlkr8);
+            }
+
+            warnings.Add($"REFR 0x{placed.FormId:X8} XLKR keyword " +
+                $"0x{placed.LinkedRefKeywordFormId.Value:X8} dangles — degraded to 4-byte XLKR " +
+                "(linked ref only).");
         }
 
         var xlkr4 = new byte[4];
-        SubrecordEncoder.WriteFormId(xlkr4, 0, placed.LinkedRefFormId!.Value);
+        SubrecordEncoder.WriteFormId(xlkr4, 0, resolvedRef.Value);
         return new EncodedSubrecord("XLKR", xlkr4);
+    }
+
+    /// <summary>
+    ///     Try remap-first-then-validity for an optional placed-ref FormID. Returns null when
+    ///     the FormID is dangling with no remap; otherwise returns the resolved (possibly
+    ///     remapped) FormID. Mirrors the same policy used by IDLE ANAM, IDLE CTDA params,
+    ///     QUST/PERK CTDA params, and PACK PLDT/PTDT.
+    /// </summary>
+    private static uint? ResolveOptionalFormId(
+        uint formId,
+        IReadOnlySet<uint>? validFormIds,
+        IReadOnlyDictionary<uint, uint>? remapTable)
+    {
+        if (formId == 0 || validFormIds is null)
+        {
+            return formId;
+        }
+
+        if (remapTable is not null
+            && remapTable.TryGetValue(formId, out var remapped)
+            && remapped != formId
+            && validFormIds.Contains(remapped))
+        {
+            return remapped;
+        }
+
+        if (validFormIds.Contains(formId))
+        {
+            return formId;
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -190,10 +302,10 @@ public sealed class RefrEncoder : IRecordEncoder
     ///     <see cref="PlacedReference.TeleportPosRot" /> and
     ///     <see cref="PlacedReference.TeleportFlags" /> when available; otherwise zeroed.
     /// </summary>
-    private static EncodedSubrecord BuildXtelSubrecord(PlacedReference placed)
+    private static EncodedSubrecord BuildXtelSubrecord(PlacedReference placed, uint resolvedDoorFormId)
     {
         var xtel = new byte[32];
-        SubrecordEncoder.WriteFormId(xtel, 0, placed.DestinationDoorFormId!.Value);
+        SubrecordEncoder.WriteFormId(xtel, 0, resolvedDoorFormId);
 
         if (placed.TeleportPosRot is { } pr)
         {
