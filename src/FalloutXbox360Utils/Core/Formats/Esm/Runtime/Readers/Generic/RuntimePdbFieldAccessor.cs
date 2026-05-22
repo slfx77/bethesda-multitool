@@ -45,13 +45,26 @@ internal sealed class RuntimePdbFieldAccessor(RuntimeMemoryContext context)
             return null;
         }
 
-        if (buffer.Length < 16 ||
-            (buffer[4] != entry.FormType && buffer[4] != (entry.OriginalFormType ?? entry.FormType)))
+        // Resolve cFormType / iFormID offsets from the PDB layout. Most classes have
+        // TESForm at offset 0 (cFormType @ +4, iFormID @ +12) but multi-inheritance
+        // classes like TESFlora (cFormType @ +16) and BGSMovableStatic (cFormType @ +24)
+        // put base-class members before TESForm. Looking up the PDB-resolved offsets
+        // makes the validation work for both layouts.
+        var cFormTypeOff = FindFieldOffset(layout, "cFormType", "TESForm");
+        var iFormIdOff = FindFieldOffset(layout, "iFormID", "TESForm");
+        if (cFormTypeOff is not { } ftOff || iFormIdOff is not { } fidOff
+            || ftOff + 1 > buffer.Length || fidOff + 4 > buffer.Length)
         {
             return null;
         }
 
-        var formId = BinaryUtils.ReadUInt32BE(buffer, 12);
+        if (buffer[ftOff] != entry.FormType &&
+            buffer[ftOff] != (entry.OriginalFormType ?? entry.FormType))
+        {
+            return null;
+        }
+
+        var formId = BinaryUtils.ReadUInt32BE(buffer, fidOff);
         if (formId != entry.FormId || formId == 0)
         {
             return null;

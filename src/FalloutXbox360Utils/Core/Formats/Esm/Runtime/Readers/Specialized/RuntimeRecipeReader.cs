@@ -69,7 +69,7 @@ internal sealed class RuntimeRecipeReader(RuntimeMemoryContext context)
     }
 
     /// <summary>
-    ///     Walks BSSimpleList<TESRecipeComponent*> rooted at the named list field.
+    ///     Walks BSSimpleList&lt;TESRecipeComponent*&gt; rooted at the named list field.
     ///     Each TESRecipeComponent: pItem (TESForm*, 4B) + uiCount (uint32, 4B).
     /// </summary>
     private List<(uint FormId, uint Count)> WalkComponentList(PdbStructView view, string fieldName)
