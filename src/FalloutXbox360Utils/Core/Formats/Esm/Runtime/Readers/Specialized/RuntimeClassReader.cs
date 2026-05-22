@@ -1,100 +1,77 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 
 /// <summary>
-///     Typed runtime reader for TESClass structs (FormType 0x07, 112 bytes).
-///     Reads CLASS_DATA (tag skills, flags, barter, training), TESAttributes, full name, icon.
+///     Typed runtime reader for TESClass structs (FormType 0x07).
+///     Reads CLASS_DATA (tag skills, flags, barter, training), TESAttributes, full name,
+///     icon via the PDB layout. TESAttributes and CLASS_DATA are opaque in the PDB —
+///     we resolve their offsets by name and parse the inner layouts manually.
 /// </summary>
-internal sealed class RuntimeClassReader
+internal sealed class RuntimeClassReader(RuntimeMemoryContext context)
 {
-    private readonly RuntimeMemoryContext _context;
+    private const byte ClasFormType = 0x07;
 
-    public RuntimeClassReader(RuntimeMemoryContext context)
-    {
-        _context = context;
-    }
+    private readonly RuntimePdbFieldAccessor _fields = new(context);
 
     public ClassRecord? ReadRuntimeClass(RuntimeEditorIdEntry entry)
     {
-        if (entry.TesFormOffset == null || entry.FormType != ClasFormType)
+        if (entry.FormType != ClasFormType)
         {
             return null;
         }
 
-        var offset = entry.TesFormOffset.Value;
-        if (offset + StructSize > _context.FileSize)
+        var view = _fields.OpenStructView(entry);
+        if (view == null)
         {
             return null;
         }
 
-        var buffer = new byte[StructSize];
-        try
+        // TESAttributes is declared with size 0 in the PDB (opaque); the field is at
+        // attrOff but the 4-byte vtable precedes the actual UCHAR[7] data, so attribute
+        // bytes start at attrOff + 4.
+        var attrOff = view.Offset("cAttribute", "TESAttributes");
+        byte[] attributeWeights = new byte[7];
+        if (attrOff is { } ao && ao + 4 + 7 <= view.Buffer.Length)
         {
-            _context.Accessor.ReadArray(offset, buffer, 0, StructSize);
+            Array.Copy(view.Buffer, ao + 4, attributeWeights, 0, 7);
         }
-        catch
+
+        // CLASS_DATA (28 bytes): 4 tag-skill int32s, classFlags uint32, barterFlags uint32,
+        // trainingSkill byte, trainingLevel byte.
+        var dataOff = view.Offset("data", "TESClass");
+        if (dataOff is not { } o || o + 26 > view.Buffer.Length)
         {
             return null;
         }
 
-        var formId = BinaryUtils.ReadUInt32BE(buffer, FormIdOffset);
-        if (formId != entry.FormId || formId == 0)
-        {
-            return null;
-        }
-
-        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, FullNameOffset);
-        var icon = _context.ReadBsStringT(offset, IconOffset);
-
-        // TESAttributes: vtable(4) + UCHAR[7] at +76. Attribute bytes start at +80.
-        var attributeWeights = new byte[7];
-        Array.Copy(buffer, AttributeDataOffset, attributeWeights, 0, 7);
-
-        // CLASS_DATA (28 bytes at +84)
         var tagSkills = new List<int>();
         for (var i = 0; i < 4; i++)
         {
-            var skill = unchecked((int)BinaryUtils.ReadUInt32BE(buffer, ClassDataOffset + i * 4));
+            var skill = unchecked((int)BinaryUtils.ReadUInt32BE(view.Buffer, o + i * 4));
             if (skill >= 0)
             {
                 tagSkills.Add(skill);
             }
         }
 
-        var classFlags = BinaryUtils.ReadUInt32BE(buffer, ClassDataOffset + 16);
-        var barterFlags = BinaryUtils.ReadUInt32BE(buffer, ClassDataOffset + 20);
-        var trainingSkill = buffer[ClassDataOffset + 24];
-        var trainingLevel = buffer[ClassDataOffset + 25];
-
         return new ClassRecord
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
-            FullName = fullName,
-            Icon = icon,
+            FullName = entry.DisplayName ?? view.BsString("cFullName", "TESFullName"),
+            Icon = view.BsString("TextureName", "TESTexture"),
             TagSkills = tagSkills.ToArray(),
-            Flags = classFlags,
-            BarterFlags = barterFlags,
-            TrainingSkill = trainingSkill,
-            TrainingLevel = trainingLevel,
+            Flags = BinaryUtils.ReadUInt32BE(view.Buffer, o + 16),
+            BarterFlags = BinaryUtils.ReadUInt32BE(view.Buffer, o + 20),
+            TrainingSkill = view.Buffer[o + 24],
+            TrainingLevel = view.Buffer[o + 25],
             AttributeWeights = attributeWeights,
-            Offset = offset,
+            Offset = view.FileOffset,
             IsBigEndian = true
         };
     }
-
-    #region Constants
-
-    private const byte ClasFormType = 0x07;
-    private const int StructSize = 112;
-    private const int FormIdOffset = 12;
-    private const int FullNameOffset = 44;
-    private const int IconOffset = 64;
-    private const int AttributeDataOffset = 80; // TESAttributes vtable(4) at +76, data starts at +80
-    private const int ClassDataOffset = 84; // CLASS_DATA, 28 bytes
-
-    #endregion
 }

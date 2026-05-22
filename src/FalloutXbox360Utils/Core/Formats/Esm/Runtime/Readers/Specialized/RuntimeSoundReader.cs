@@ -1,87 +1,64 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 
 /// <summary>
-///     Typed runtime reader for TESSound (SOUN, 116 bytes, FormType 0x0D).
-///     Reads sound file path, SOUND_DATA fields, and random percent chance.
+///     Typed runtime reader for TESSound (SOUN, FormType 0x0D).
+///     Reads sound file path, SOUND_DATA fields, and random percent chance via the
+///     PDB layout. The SOUND_DATA struct at +76 is opaque in the PDB, so we resolve
+///     its offset by name then parse the 12-byte prefix manually.
 /// </summary>
-internal sealed class RuntimeSoundReader
+internal sealed class RuntimeSoundReader(RuntimeMemoryContext context)
 {
-    private readonly RuntimeMemoryContext _context;
+    private const byte SounFormType = 0x0D;
 
-    public RuntimeSoundReader(RuntimeMemoryContext context)
-    {
-        _context = context;
-    }
+    private readonly RuntimePdbFieldAccessor _fields = new(context);
 
     public SoundRecord? ReadRuntimeSound(RuntimeEditorIdEntry entry)
     {
-        if (entry.TesFormOffset == null || entry.FormType != SounFormType)
+        if (entry.FormType != SounFormType)
         {
             return null;
         }
 
-        var offset = entry.TesFormOffset.Value;
-        if (offset + StructSize > _context.FileSize)
+        var view = _fields.OpenStructView(entry);
+        if (view == null)
         {
             return null;
         }
 
-        var buffer = new byte[StructSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, StructSize);
-        }
-        catch
+        var dataOff = view.Offset("data", "TESSound");
+        if (dataOff is not { } o || o + 12 > view.Buffer.Length)
         {
             return null;
         }
 
-        var formId = BinaryUtils.ReadUInt32BE(buffer, FormIdOffset);
-        if (formId != entry.FormId || formId == 0)
-        {
-            return null;
-        }
-
-        var fileName = _context.ReadBsStringT(offset, SoundFileOffset);
-
-        // SOUND_DATA struct at +76 (36 bytes) — same layout as SNDD subrecord
-        var minAtten = buffer[SoundDataOffset + 0];
-        var maxAtten = buffer[SoundDataOffset + 1];
-        var flags = BinaryUtils.ReadUInt32BE(buffer, SoundDataOffset + 4);
-        var staticAtten = BinaryUtils.ReadInt16BE(buffer, SoundDataOffset + 8);
-        var endTime = buffer[SoundDataOffset + 10];
-        var startTime = buffer[SoundDataOffset + 11];
-        var randomChance = (sbyte)buffer[RandomChanceOffset];
+        // SOUND_DATA layout: minAtten(byte), maxAtten(byte), pad(2), flags(uint32),
+        // staticAtten(int16), endTime(byte), startTime(byte).
+        var minAtten = view.Buffer[o];
+        var maxAtten = view.Buffer[o + 1];
+        var flags = BinaryUtils.ReadUInt32BE(view.Buffer, o + 4);
+        var staticAtten = BinaryUtils.ReadInt16BE(view.Buffer, o + 8);
+        var endTime = view.Buffer[o + 10];
+        var startTime = view.Buffer[o + 11];
 
         return new SoundRecord
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
-            FileName = fileName,
+            FileName = view.BsString("cSoundFile", "TESSoundFile"),
             MinAttenuationDistance = minAtten,
             MaxAttenuationDistance = maxAtten,
             StaticAttenuation = staticAtten,
             Flags = flags,
             StartTime = startTime,
             EndTime = endTime,
-            RandomPercentChance = randomChance,
-            Offset = offset,
+            RandomPercentChance = (sbyte)view.Byte("cRandomPercentChance", "TESSound"),
+            Offset = view.FileOffset,
             IsBigEndian = true
         };
     }
-
-    #region Constants
-
-    private const byte SounFormType = 0x0D;
-    private const int StructSize = 116;
-    private const int FormIdOffset = 12;
-    private const int SoundFileOffset = 68; // TESSoundFile.cSoundFile BSStringT
-    private const int SoundDataOffset = 76; // SOUND_DATA struct (36 bytes)
-    private const int RandomChanceOffset = 112; // cRandomPercentChance int8
-
-    #endregion
 }
