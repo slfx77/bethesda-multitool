@@ -1,62 +1,39 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
-using FalloutXbox360Utils.Core.Utils;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 
 /// <summary>
-///     Typed runtime reader for BGSMenuIcon (MICN, 52 bytes, FormType 0x05).
-///     Reads TextureName BSStringT at +44.
+///     Typed runtime reader for BGSMenuIcon (MICN, FormType 0x05).
+///     Reads TextureName via the PDB layout.
 /// </summary>
 internal sealed class RuntimeMenuIconReader(RuntimeMemoryContext context)
 {
+    private const byte MicnFormType = 0x05;
+
+    private readonly RuntimePdbFieldAccessor _fields = new(context);
+
     public MenuIconRecord? ReadRuntimeMenuIcon(RuntimeEditorIdEntry entry)
     {
-        if (entry.TesFormOffset == null || entry.FormType != MicnFormType)
+        if (entry.FormType != MicnFormType)
         {
             return null;
         }
 
-        var offset = entry.TesFormOffset.Value;
-        if (offset + StructSize > context.FileSize)
+        var view = _fields.OpenStructView(entry);
+        if (view == null)
         {
             return null;
         }
-
-        var buffer = new byte[StructSize];
-        try
-        {
-            context.Accessor.ReadArray(offset, buffer, 0, StructSize);
-        }
-        catch
-        {
-            return null;
-        }
-
-        var formId = BinaryUtils.ReadUInt32BE(buffer, FormIdOffset);
-        if (formId != entry.FormId || formId == 0)
-        {
-            return null;
-        }
-
-        var iconPath = context.ReadBsStringT(offset, IconOffset);
 
         return new MenuIconRecord
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
-            IconPath = iconPath,
-            Offset = offset,
+            IconPath = view.BsString("TextureName", "TESTexture"),
+            Offset = view.FileOffset,
             IsBigEndian = true
         };
     }
-
-    #region Constants
-
-    private const byte MicnFormType = 0x05;
-    private const int StructSize = 52;
-    private const int FormIdOffset = 12;
-    private const int IconOffset = 44;
-
-    #endregion
 }

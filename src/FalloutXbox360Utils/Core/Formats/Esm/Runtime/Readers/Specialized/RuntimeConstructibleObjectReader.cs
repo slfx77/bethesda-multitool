@@ -1,65 +1,41 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
-using FalloutXbox360Utils.Core.Utils;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 
 /// <summary>
-///     Typed runtime reader for BGSConstructibleObject (COBJ, 196 bytes, FormType 0x32).
-///     Reads the CreatedItem FormID (pCreatedItem pointer at +192) to confirm the
-///     ESM CNAM subrecord value. pRequiredItems (+188, BGSListForm) is the
-///     materialized inline ingredient list — typically anonymous (FormID 0) so we
-///     don't expose it.
+///     Typed runtime reader for BGSConstructibleObject (COBJ, FormType 0x32).
+///     Reads the CreatedItem FormID by following the pCreatedItem pointer at +192.
+///     pRequiredItems (+188, BGSListForm) is the materialized inline ingredient list —
+///     typically anonymous (FormID 0), so we don't expose it.
 /// </summary>
 internal sealed class RuntimeConstructibleObjectReader(RuntimeMemoryContext context)
 {
+    private const byte CobjFormType = 0x32;
+
+    private readonly RuntimePdbFieldAccessor _fields = new(context);
+
     public ConstructibleObjectRecord? ReadRuntimeConstructibleObject(RuntimeEditorIdEntry entry)
     {
-        if (entry.TesFormOffset == null || entry.FormType != CobjFormType)
+        if (entry.FormType != CobjFormType)
         {
             return null;
         }
 
-        var offset = entry.TesFormOffset.Value;
-        if (offset + StructSize > context.FileSize)
+        var view = _fields.OpenStructView(entry);
+        if (view == null)
         {
             return null;
         }
-
-        var buffer = new byte[StructSize];
-        try
-        {
-            context.Accessor.ReadArray(offset, buffer, 0, StructSize);
-        }
-        catch
-        {
-            return null;
-        }
-
-        var formId = BinaryUtils.ReadUInt32BE(buffer, FormIdOffset);
-        if (formId != entry.FormId || formId == 0)
-        {
-            return null;
-        }
-
-        var createdItemFormId = context.FollowPointerToFormId(buffer, CreatedItemPointerOffset);
 
         return new ConstructibleObjectRecord
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
-            CreatedItemFormId = createdItemFormId,
-            Offset = offset,
+            CreatedItemFormId = view.FormIdPointer("pCreatedItem", "BGSConstructibleObject"),
+            Offset = view.FileOffset,
             IsBigEndian = true
         };
     }
-
-    #region Constants
-
-    private const byte CobjFormType = 0x32;
-    private const int StructSize = 196;
-    private const int FormIdOffset = 12;
-    private const int CreatedItemPointerOffset = 192;
-
-    #endregion
 }
