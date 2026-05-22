@@ -71,42 +71,32 @@ internal static class WeaponRecordScanner
                     break;
                 case "DNAM" when subrecord.Data.Length >= 64:
                 {
-                    var fields = SubrecordDataReader.ReadFields(
-                        "DNAM",
-                        "WEAP",
-                        subrecord.Data,
-                        bigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("DNAM", "WEAP", subrecord.Data, bigEndian) is { } v)
                     {
-                        var rawWeaponType = SubrecordDataReader.GetByte(fields, "WeaponType");
+                        var rawWeaponType = v.Byte("WeaponType");
                         weaponType = Enum.IsDefined(typeof(WeaponType), rawWeaponType)
                             ? (WeaponType)rawWeaponType
                             : WeaponType.HandToHandMelee;
-                        flags = SubrecordDataReader.GetByte(fields, "Flags");
-                        handGripAnim = SubrecordDataReader.GetByte(fields, "HandGripAnim");
-                        spread = SubrecordDataReader.GetFloat(fields, "Spread");
-                        minRange = SubrecordDataReader.GetFloat(fields, "MinRange");
-                        maxRange = SubrecordDataReader.GetFloat(fields, "MaxRange");
-                        flagsEx = SubrecordDataReader.GetUInt32(fields, "FlagsEx");
-                        shotsPerSec = SubrecordDataReader.GetFloat(fields, "ShotsPerSec");
-                        skillActorValue = SubrecordDataReader.GetUInt32(fields, "Skill");
-                        strengthRequirement = SubrecordDataReader.GetUInt32(fields, "StrengthRequirement");
-                        skillRequirement = SubrecordDataReader.GetUInt32(fields, "SkillRequirement");
+                        flags = v.Byte("Flags");
+                        handGripAnim = v.Byte("HandGripAnim");
+                        spread = v.Float("Spread");
+                        minRange = v.Float("MinRange");
+                        maxRange = v.Float("MaxRange");
+                        flagsEx = v.UInt32("FlagsEx");
+                        shotsPerSec = v.Float("ShotsPerSec");
+                        skillActorValue = v.UInt32("Skill");
+                        strengthRequirement = v.UInt32("StrengthRequirement");
+                        skillRequirement = v.UInt32("SkillRequirement");
                     }
 
                     break;
                 }
                 case "DATA" when subrecord.Data.Length >= 14:
                 {
-                    var fields = SubrecordDataReader.ReadFields(
-                        "DATA",
-                        "WEAP",
-                        subrecord.Data,
-                        bigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("DATA", "WEAP", subrecord.Data, bigEndian) is { } v)
                     {
-                        health = SubrecordDataReader.GetInt32(fields, "Health");
-                        damage = SubrecordDataReader.GetInt16(fields, "Damage");
+                        health = v.Int32("Health");
+                        damage = v.Int16("Damage");
                     }
 
                     break;

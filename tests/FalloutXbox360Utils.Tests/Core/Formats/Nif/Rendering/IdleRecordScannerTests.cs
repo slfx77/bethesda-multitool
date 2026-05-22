@@ -17,29 +17,29 @@ public sealed class IdleRecordScannerTests(SampleFileFixture samples)
     [Fact]
     public void IdleDataSchema_ReadFields_ParsesXboxAndPcLayouts()
     {
-        var xboxFields = SubrecordDataReader.ReadFields(
+        var xbox = SubrecordSchemaView.Read(
             "DATA",
             "IDLE",
             [0x07, 0x01, 0x02, 0x00, 0x12, 0x34, 0x56, 0x00],
-            true);
+            bigEndian: true);
 
-        Assert.Equal((byte)0x07, SubrecordDataReader.GetByte(xboxFields, "AnimData"));
-        Assert.Equal((byte)0x01, SubrecordDataReader.GetByte(xboxFields, "LoopMin"));
-        Assert.Equal((byte)0x02, SubrecordDataReader.GetByte(xboxFields, "LoopMax"));
-        Assert.Equal((ushort)0x1234, SubrecordDataReader.GetUInt16(xboxFields, "ReplayDelay"));
-        Assert.Equal((byte)0x56, SubrecordDataReader.GetByte(xboxFields, "FlagsEx"));
+        Assert.Equal((byte)0x07, xbox.Byte("AnimData"));
+        Assert.Equal((byte)0x01, xbox.Byte("LoopMin"));
+        Assert.Equal((byte)0x02, xbox.Byte("LoopMax"));
+        Assert.Equal((ushort)0x1234, xbox.UInt16("ReplayDelay"));
+        Assert.Equal((byte)0x56, xbox.Byte("FlagsEx"));
 
-        var pcFields = SubrecordDataReader.ReadFields(
+        var pc = SubrecordSchemaView.Read(
             "DATA",
             "IDLE",
             [0x07, 0x01, 0x02, 0x00, 0x34, 0x12],
-            false);
+            bigEndian: false);
 
-        Assert.Equal((byte)0x07, SubrecordDataReader.GetByte(pcFields, "AnimData"));
-        Assert.Equal((byte)0x01, SubrecordDataReader.GetByte(pcFields, "LoopMin"));
-        Assert.Equal((byte)0x02, SubrecordDataReader.GetByte(pcFields, "LoopMax"));
-        Assert.Equal((ushort)0x1234, SubrecordDataReader.GetUInt16(pcFields, "ReplayDelay"));
-        Assert.Equal((byte)0x00, SubrecordDataReader.GetByte(pcFields, "FlagsEx"));
+        Assert.Equal((byte)0x07, pc.Byte("AnimData"));
+        Assert.Equal((byte)0x01, pc.Byte("LoopMin"));
+        Assert.Equal((byte)0x02, pc.Byte("LoopMax"));
+        Assert.Equal((ushort)0x1234, pc.UInt16("ReplayDelay"));
+        Assert.Equal((byte)0x00, pc.Byte("FlagsEx"));
     }
 
     [Fact]

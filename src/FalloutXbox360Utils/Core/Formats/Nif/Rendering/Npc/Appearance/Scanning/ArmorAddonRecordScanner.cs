@@ -41,14 +41,9 @@ internal static class ArmorAddonRecordScanner
                     break;
                 case "BMDT" when subrecord.Data.Length >= 8:
                 {
-                    var fields = SubrecordDataReader.ReadFields(
-                        "BMDT",
-                        null,
-                        subrecord.Data,
-                        bigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("BMDT", null, subrecord.Data, bigEndian) is { } v)
                     {
-                        bipedFlags = SubrecordDataReader.GetUInt32(fields, "BipedFlags");
+                        bipedFlags = v.UInt32("BipedFlags");
                     }
 
                     break;

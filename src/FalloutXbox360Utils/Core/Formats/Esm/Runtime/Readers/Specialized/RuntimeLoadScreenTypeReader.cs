@@ -42,13 +42,13 @@ internal sealed class RuntimeLoadScreenTypeReader(RuntimeMemoryContext context)
 
         var dataBytes = new byte[DataSize];
         Array.Copy(buffer, DataOffset, dataBytes, 0, DataSize);
-        var layoutData = SubrecordDataReader.ReadFields("DATA", "LSCT", dataBytes, true);
+        var layoutData = SubrecordSchemaView.TryRead("DATA", "LSCT", dataBytes, bigEndian: true)?.Raw;
 
         return new LoadScreenTypeRecord
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
-            LayoutData = layoutData.Count > 0 ? layoutData : null,
+            LayoutData = layoutData,
             Offset = offset,
             IsBigEndian = true
         };

@@ -48,7 +48,7 @@ internal sealed class RuntimeWaterReader(RuntimeMemoryContext context)
 
         var shaderBytes = new byte[ShaderDataSize];
         Array.Copy(buffer, ShaderDataOffset, shaderBytes, 0, ShaderDataSize);
-        var visualProperties = SubrecordDataReader.ReadFields("DNAM", "WATR", shaderBytes, true);
+        var visualProperties = SubrecordSchemaView.TryRead("DNAM", "WATR", shaderBytes, bigEndian: true)?.Raw;
 
         return new WaterRecord
         {
@@ -58,7 +58,7 @@ internal sealed class RuntimeWaterReader(RuntimeMemoryContext context)
             Damage = damage,
             Opacity = opacity,
             SoundFormId = soundFormId,
-            VisualProperties = visualProperties.Count > 0 ? visualProperties : null,
+            VisualProperties = visualProperties,
             Offset = offset,
             IsBigEndian = true
         };

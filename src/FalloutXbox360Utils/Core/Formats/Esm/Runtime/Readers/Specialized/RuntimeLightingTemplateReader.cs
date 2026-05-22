@@ -43,13 +43,13 @@ internal sealed class RuntimeLightingTemplateReader(RuntimeMemoryContext context
 
         var dataBytes = new byte[EsmDataSize];
         Array.Copy(buffer, DataOffset, dataBytes, 0, EsmDataSize);
-        var lightingData = SubrecordDataReader.ReadFields("DATA", "LGTM", dataBytes, true);
+        var lightingData = SubrecordSchemaView.TryRead("DATA", "LGTM", dataBytes, bigEndian: true)?.Raw;
 
         return new LightingTemplateRecord
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
-            LightingData = lightingData.Count > 0 ? lightingData : null,
+            LightingData = lightingData,
             Offset = offset,
             IsBigEndian = true
         };

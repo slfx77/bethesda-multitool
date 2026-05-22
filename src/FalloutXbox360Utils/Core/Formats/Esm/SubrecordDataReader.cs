@@ -1,53 +1,14 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Schema;
-
 namespace FalloutXbox360Utils.Core.Formats.Esm;
 
 /// <summary>
-///     Provides schema-based reading of ESM subrecord data.
-///     Wraps SubrecordSchemaReader to provide a unified interface for
-///     both conversion and analysis code paths.
+///     Type-coercion helpers for the schema-decoded subrecord field dictionary produced by
+///     <see cref="SubrecordSchemaView" />. The view delegates its typed accessors to the
+///     <c>GetXxx</c> methods below — they handle the cross-type promotions (uint→int,
+///     short→byte, etc.) that arise because <see cref="Conversion.Schema.SubrecordSchemaReader" />
+///     returns values boxed as <see cref="object" />.
 /// </summary>
 public static class SubrecordDataReader
 {
-    /// <summary>
-    ///     Reads all fields from a subrecord using the schema registry.
-    ///     Automatically handles endianness based on file format (BE for Xbox 360, LE for PC).
-    /// </summary>
-    /// <param name="signature">4-character subrecord signature (e.g., "ACBS", "AIDT").</param>
-    /// <param name="recordType">Optional parent record type for context-specific schemas (e.g., "NPC_", "WEAP").</param>
-    /// <param name="data">Raw subrecord data (excluding 6-byte header).</param>
-    /// <param name="bigEndian">True for Xbox 360 (BE), false for PC (LE).</param>
-    /// <returns>Dictionary of field names to values, or empty if no schema found.</returns>
-    public static Dictionary<string, object?> ReadFields(
-        string signature,
-        string? recordType,
-        ReadOnlySpan<byte> data,
-        bool bigEndian)
-    {
-        return SubrecordSchemaReader.ReadFields(signature, data, recordType ?? "", bigEndian);
-    }
-
-    /// <summary>
-    ///     Reads all fields from a subrecord using the schema registry.
-    ///     Overload for byte array data.
-    /// </summary>
-    public static Dictionary<string, object?> ReadFields(
-        string signature,
-        string? recordType,
-        byte[] data,
-        bool bigEndian)
-    {
-        return SubrecordSchemaReader.ReadFields(signature, data.AsSpan(), recordType ?? "", bigEndian);
-    }
-
-    /// <summary>
-    ///     Checks if a schema exists for the given signature and record type.
-    /// </summary>
-    public static bool HasSchema(string signature, string? recordType, int dataLength)
-    {
-        return SubrecordSchemaRegistry.GetSchema(signature, recordType ?? "", dataLength) != null;
-    }
-
     /// <summary>
     ///     Gets a typed field value from the fields dictionary.
     /// </summary>
