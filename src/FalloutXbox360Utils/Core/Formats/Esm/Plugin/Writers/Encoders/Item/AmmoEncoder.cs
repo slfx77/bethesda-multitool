@@ -17,6 +17,14 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 /// </summary>
 public sealed class AmmoEncoder : IRecordEncoder
 {
+    private static readonly Dictionary<string, Func<AmmoRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
+    {
+        ["Speed"] = m => m.Speed,
+        ["Flags"] = m => m.Flags,
+        ["Value"] = m => m.Value,
+        ["ClipRounds"] = m => m.ClipRounds,
+    };
+
     public string RecordType => "AMMO";
     public Type ModelType => typeof(AmmoRecord);
 
@@ -25,7 +33,7 @@ public sealed class AmmoEncoder : IRecordEncoder
         var ammo = (AmmoRecord)model;
         return new EncodedRecord
         {
-            Subrecords = [new EncodedSubrecord("DATA", BuildDataSubrecord(ammo))],
+            Subrecords = [SchemaModelSerializer.SerializeSubrecord("DATA", "AMMO", 13, ammo, DataExtractors)],
             Warnings = []
         };
     }
@@ -77,7 +85,7 @@ public sealed class AmmoEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MICO", ammo.MessageIconPath));
         }
 
-        subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(ammo)));
+        subs.Add(SchemaModelSerializer.SerializeSubrecord("DATA", "AMMO", 13, ammo, DataExtractors));
 
         if (ammo.ProjectileFormId.HasValue || ammo.ProjectileFormIds.Count > 0)
         {
@@ -86,16 +94,5 @@ public sealed class AmmoEncoder : IRecordEncoder
         }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
-    }
-
-    private static byte[] BuildDataSubrecord(AmmoRecord ammo)
-    {
-        var data = new byte[13];
-        SubrecordEncoder.WriteFloat(data, 0, ammo.Speed);
-        data[4] = ammo.Flags;
-        // Bytes 5..7 are C-struct padding — leave as zero.
-        SubrecordEncoder.WriteUInt32(data, 8, ammo.Value);
-        data[12] = ammo.ClipRounds;
-        return data;
     }
 }

@@ -10,11 +10,28 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 ///     and EFID/EFIT effect blocks are retained from the source ESM in that path.
 ///     New-record path (<see cref="EncodeNew" />) emits the full chain:
 ///     EDID, OBND?, FULL?, MODL?, MODT?, ICON?, MICO?, DATA, ENIT?, (EFID + EFIT)*.
-///     ENIT layout (20 bytes): uint32 Value + bytes Flags(4..7) + FormID Addiction(8..11) +
-///     float AddictionChance(12..15) + FormID UseSoundOrWithdrawalEffect(16..19).
+///     DATA + ENIT byte layouts are driven by <see cref="SchemaModelSerializer" /> against
+///     the schemas registered in <c>SubrecordSchemaRegistry</c>; primitive subrecords
+///     (EDID/OBND/FULL/MODL/MODT/ICON/MICO/EFID) still go through
+///     <see cref="NewRecordSubrecords" />, and EFIT through
+///     <see cref="EnchEncoder.BuildEfitSubrecord" />.
 /// </summary>
 public sealed class AlchEncoder : IRecordEncoder
 {
+    private static readonly Dictionary<string, Func<ConsumableRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
+    {
+        ["Weight"] = m => m.Weight,
+    };
+
+    private static readonly Dictionary<string, Func<ConsumableRecord, object?>> EnitExtractors = new(StringComparer.Ordinal)
+    {
+        ["Value"] = m => m.Value,
+        ["Flags"] = m => BitConverter.GetBytes(m.Flags),
+        ["Addiction"] = m => m.AddictionFormId ?? 0u,
+        ["AddictionChance"] = m => m.AddictionChance,
+        ["UseSoundOrWithdrawalEffect"] = m => m.WithdrawalEffectFormId ?? 0u,
+    };
+
     public string RecordType => "ALCH";
     public Type ModelType => typeof(ConsumableRecord);
 
@@ -23,7 +40,7 @@ public sealed class AlchEncoder : IRecordEncoder
         var alch = (ConsumableRecord)model;
         return new EncodedRecord
         {
-            Subrecords = [new EncodedSubrecord("DATA", BuildDataSubrecord(alch))],
+            Subrecords = [SchemaModelSerializer.SerializeSubrecord("DATA", "ALCH", 4, alch, DataExtractors)],
             Warnings = []
         };
     }
@@ -75,22 +92,14 @@ public sealed class AlchEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MICO", alch.MessageIconPath));
         }
 
-        subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(alch)));
+        subs.Add(SchemaModelSerializer.SerializeSubrecord("DATA", "ALCH", 4, alch, DataExtractors));
 
-        // ENIT — 20 bytes per FNV ALCH ENIT schema:
-        //   uint32 Value(0) + bytes Flags(4..7) + FormID Addiction(8..11) +
-        //   float AddictionChance(12..15) + FormID UseSoundOrWithdrawalEffect(16..19).
-        // Always emit when we have any of the four ENIT fields populated; missing fields zero.
+        // ENIT is only emitted when at least one field is non-default; matches the original
+        // encoder's gating to avoid round-tripping empty 20-byte blocks for plain consumables.
         if (alch.Value != 0 || alch.Flags != 0 || alch.AddictionFormId.HasValue
             || Math.Abs(alch.AddictionChance) > float.Epsilon || alch.WithdrawalEffectFormId.HasValue)
         {
-            var enit = new byte[20];
-            SubrecordEncoder.WriteUInt32(enit, 0, alch.Value);
-            SubrecordEncoder.WriteUInt32(enit, 4, alch.Flags);
-            SubrecordEncoder.WriteFormId(enit, 8, alch.AddictionFormId ?? 0);
-            SubrecordEncoder.WriteFloat(enit, 12, alch.AddictionChance);
-            SubrecordEncoder.WriteFormId(enit, 16, alch.WithdrawalEffectFormId ?? 0);
-            subs.Add(new EncodedSubrecord("ENIT", enit));
+            subs.Add(SchemaModelSerializer.SerializeSubrecord("ENIT", "ALCH", 20, alch, EnitExtractors));
         }
 
         foreach (var effect in alch.Effects)
@@ -100,12 +109,5 @@ public sealed class AlchEncoder : IRecordEncoder
         }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
-    }
-
-    private static byte[] BuildDataSubrecord(ConsumableRecord alch)
-    {
-        var data = new byte[4];
-        SubrecordEncoder.WriteFloat(data, 0, alch.Weight);
-        return data;
     }
 }

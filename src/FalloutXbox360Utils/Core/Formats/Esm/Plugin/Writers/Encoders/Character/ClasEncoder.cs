@@ -11,6 +11,25 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Character
 /// </summary>
 public sealed class ClasEncoder : IRecordEncoder
 {
+    private static int TagSkillAt(ClassRecord clas, int index)
+    {
+        return clas.TagSkills is { Length: > 0 } && index < clas.TagSkills.Length
+            ? clas.TagSkills[index]
+            : -1;
+    }
+
+    private static readonly Dictionary<string, Func<ClassRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
+    {
+        ["TagSkill1"] = m => TagSkillAt(m, 0),
+        ["TagSkill2"] = m => TagSkillAt(m, 1),
+        ["TagSkill3"] = m => TagSkillAt(m, 2),
+        ["TagSkill4"] = m => TagSkillAt(m, 3),
+        ["Flags"] = m => m.Flags,
+        ["BuysServices"] = m => m.BarterFlags,
+        ["Teaches"] = m => (sbyte)m.TrainingSkill,
+        ["MaxTrainingLevel"] = m => m.TrainingLevel,
+    };
+
     public string RecordType => "CLAS";
     public Type ModelType => typeof(ClassRecord);
 
@@ -46,7 +65,7 @@ public sealed class ClasEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("ICON", clas.Icon));
         }
 
-        subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(clas)));
+        subs.Add(SchemaModelSerializer.SerializeSubrecord("DATA", "CLAS", 28, clas, DataExtractors));
 
         if (clas.AttributeWeights is { Length: 7 })
         {
@@ -54,27 +73,5 @@ public sealed class ClasEncoder : IRecordEncoder
         }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
-    }
-
-    private static byte[] BuildDataSubrecord(ClassRecord clas)
-    {
-        // DATA (28 bytes): four int32 tag skill slots (-1 sentinel for unused),
-        // uint32 Flags, uint32 BuysServices, int8 Teaches, uint8 MaxTrainingLevel,
-        // and 2 bytes of padding.
-        var data = new byte[28];
-        for (var i = 0; i < 4; i++)
-        {
-            var skill = clas.TagSkills is { Length: > 0 } && i < clas.TagSkills.Length
-                ? clas.TagSkills[i]
-                : -1;
-            SubrecordEncoder.WriteInt32(data, i * 4, skill);
-        }
-
-        SubrecordEncoder.WriteUInt32(data, 16, clas.Flags);
-        SubrecordEncoder.WriteUInt32(data, 20, clas.BarterFlags);
-        data[24] = clas.TrainingSkill;
-        data[25] = clas.TrainingLevel;
-        // bytes 26-27 padding
-        return data;
     }
 }

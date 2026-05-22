@@ -9,6 +9,14 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 /// </summary>
 public sealed class EczEncoder : IRecordEncoder
 {
+    private static readonly Dictionary<string, Func<EncounterZoneRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
+    {
+        ["Owner"] = m => m.OwnerFormId,
+        ["Rank"] = m => (sbyte)m.Rank,
+        ["MinimumLevel"] = m => (sbyte)m.MinimumLevel,
+        ["Flags"] = m => m.Flags,
+    };
+
     public string RecordType => "ECZN";
     public Type ModelType => typeof(EncounterZoneRecord);
 
@@ -28,19 +36,8 @@ public sealed class EczEncoder : IRecordEncoder
         }
 
         subs.Add(NewRecordSubrecords.EncodeStringSubrecord("EDID", ecz.EditorId ?? string.Empty));
-        subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(ecz)));
+        subs.Add(SchemaModelSerializer.SerializeSubrecord("DATA", "ECZN", 8, ecz, DataExtractors));
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
-    }
-
-    private static byte[] BuildDataSubrecord(EncounterZoneRecord ecz)
-    {
-        var data = new byte[8];
-        SubrecordEncoder.WriteFormId(data, 0, ecz.OwnerFormId);
-        data[4] = (byte)ecz.Rank;
-        data[5] = (byte)ecz.MinimumLevel;
-        data[6] = ecz.Flags;
-        // data[7] = 0 (reserved/pad)
-        return data;
     }
 }

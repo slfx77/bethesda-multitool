@@ -1,3 +1,4 @@
+using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
@@ -15,9 +16,44 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 ///     DATA is emitted on overrides; vanilla NAVMs are preserved via the CellGrupBuilder
 ///     NAVM preservation path so the engine clamps refs to the floor at load time and
 ///     the captured live positions don't cause NPC sinking.
+///     Map-marker REFRs (IsMapMarker=true) additionally emit XMRK + optional FNAM + optional
+///     FULL (display label) + optional TNAM (marker type). On overrides the merge engine
+///     overlays these onto the master record so a runtime-captured rename (MarkerName) wins.
 /// </summary>
 public sealed class RefrEncoder : IRecordEncoder
 {
+    // XLOC schema field names: Level, Key, Flags, NumTries, TimesUnlocked.
+    private static readonly Dictionary<string, Func<PlacedReference, object?>> XlocExtractors = new(StringComparer.Ordinal)
+    {
+        ["Level"] = m => m.LockLevel ?? (byte)0,
+        ["Key"] = m => m.LockKeyFormId ?? 0u,
+        ["Flags"] = m => m.LockFlags ?? (byte)0,
+        ["NumTries"] = m => m.LockNumTries ?? 0u,
+        ["TimesUnlocked"] = m => m.LockTimesUnlocked ?? 0u,
+    };
+
+    // XESP schema: ParentRef + Flags. The resolved FormID is patched onto the record via
+    // `with { EnableParentFormId = resolved }` before serialization.
+    private static readonly Dictionary<string, Func<PlacedReference, object?>> XespExtractors = new(StringComparer.Ordinal)
+    {
+        ["ParentRef"] = m => m.EnableParentFormId ?? 0u,
+        ["Flags"] = m => m.EnableParentFlags ?? (byte)0,
+    };
+
+    // XTEL schema: DestinationDoor + PosX/Y/Z + RotX/Y/Z + Flags. Resolved door + PosRot
+    // values are patched onto the record via `with { }` before serialization.
+    private static readonly Dictionary<string, Func<PlacedReference, object?>> XtelExtractors = new(StringComparer.Ordinal)
+    {
+        ["DestinationDoor"] = m => m.DestinationDoorFormId ?? 0u,
+        ["PosX"] = m => m.TeleportPosRot?.X ?? 0f,
+        ["PosY"] = m => m.TeleportPosRot?.Y ?? 0f,
+        ["PosZ"] = m => m.TeleportPosRot?.Z ?? 0f,
+        ["RotX"] = m => m.TeleportPosRot?.RotX ?? 0f,
+        ["RotY"] = m => m.TeleportPosRot?.RotY ?? 0f,
+        ["RotZ"] = m => m.TeleportPosRot?.RotZ ?? 0f,
+        ["Flags"] = m => m.TeleportFlags ?? (byte)0,
+    };
+
     public string RecordType => "REFR";
     public Type ModelType => typeof(PlacedReference);
 
@@ -41,6 +77,12 @@ public sealed class RefrEncoder : IRecordEncoder
         {
             subs.Add(EncodeFormIdSubrecord("NAME", placed.BaseFormId));
         }
+
+        // Map-marker subrecords (override path): omit FNAM so master's visibility flags
+        // survive Pass 1 of RecordMergeEngine unchanged. XMRK signals "this is a map marker"
+        // so the engine keeps the master record classified correctly; FULL/TNAM are emitted
+        // only when the runtime captured a value, in which case they overlay master's bytes.
+        AppendMapMarkerSubrecords(subs, placed, isNewRecord: false);
 
         subs.Add(new EncodedSubrecord("XSCL", BuildXsclSubrecord(placed.Scale)));
         subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(placed)));
@@ -160,10 +202,24 @@ public sealed class RefrEncoder : IRecordEncoder
             }
         }
 
-        if (placed.Count.HasValue)
+        // XCNT only has stack-count semantics on REFR (e.g., caps, ammo, item containers).
+        // On ACHR/ACRE the same byte slot was overloaded by Bethesda as a runtime instance
+        // counter — the engine appends "(N)" to the placed actor's display name whenever
+        // it sees a nonzero count. Captures from a running game inevitably have this counter
+        // set (it increments per session), so emitting it back makes every templated NPC
+        // show "Ulysses (20770)" etc. Strip it for actor placements; the engine restores its
+        // own counter at load time.
+        if (placed.Count.HasValue && placed.RecordType == "REFR")
         {
             subs.Add(BuildXcntSubrecord(placed.Count.Value));
         }
+
+        // Map-marker subrecords (new-record path). Inserted between XCNT and XSCL so the
+        // stream ends with the standard transform pair (XSCL, DATA) regardless of marker
+        // status. Emits FNAM with a sensible default (0x03 = Visible | CanTravel per
+        // docs/PDB_Runtime_Structures.md:715) so brand-new markers actually appear on the
+        // Pip-Boy map.
+        AppendMapMarkerSubrecords(subs, placed, isNewRecord: true);
 
         if (Math.Abs(placed.Scale - 1.0f) > float.Epsilon)
         {
@@ -190,35 +246,23 @@ public sealed class RefrEncoder : IRecordEncoder
     }
 
     /// <summary>
-    ///     XLOC — 20 bytes fixed: uint8 LockLevel @0, padding @1-3, FormID LockKey @4-7,
-    ///     uint8 LockFlags @8, padding @9-11, uint32 LockNumTries @12-15,
-    ///     uint32 LockTimesUnlocked @16-19.
+    ///     XLOC — 20 bytes fixed per the XLOC schema: Level + Padding(3) + Key + Flags +
+    ///     Padding(3) + NumTries + TimesUnlocked.
     /// </summary>
     private static EncodedSubrecord BuildXlocSubrecord(PlacedReference placed)
     {
-        var xloc = new byte[20];
-        xloc[0] = placed.LockLevel ?? 0;
-        // bytes 1-3 = padding (zero)
-        SubrecordEncoder.WriteFormId(xloc, 4, placed.LockKeyFormId ?? 0);
-        xloc[8] = placed.LockFlags ?? 0;
-        // bytes 9-11 = padding (zero)
-        SubrecordEncoder.WriteUInt32(xloc, 12, placed.LockNumTries ?? 0);
-        SubrecordEncoder.WriteUInt32(xloc, 16, placed.LockTimesUnlocked ?? 0);
-        return new EncodedSubrecord("XLOC", xloc);
+        return SchemaModelSerializer.SerializeSubrecord("XLOC", "", 20, placed, XlocExtractors);
     }
 
     /// <summary>
-    ///     XESP — 8 bytes fixed: FormID Parent @0, uint8 Flags @4, padding @5-7. The Parent
-    ///     FormID arrives pre-resolved (master ∪ emitted, with remap applied) so the engine
-    ///     never sees a dangling enable-state-parent ref.
+    ///     XESP — 8 bytes fixed per the XESP schema: ParentRef + Flags + Padding(3). The
+    ///     resolved Parent FormID is patched onto the record via `with { }` so the static
+    ///     extractor map sees it.
     /// </summary>
     private static EncodedSubrecord BuildXespSubrecord(PlacedReference placed, uint resolvedParentId)
     {
-        var xesp = new byte[8];
-        SubrecordEncoder.WriteFormId(xesp, 0, resolvedParentId);
-        xesp[4] = placed.EnableParentFlags ?? 0;
-        // bytes 5-7 = padding (zero)
-        return new EncodedSubrecord("XESP", xesp);
+        var mutated = placed with { EnableParentFormId = resolvedParentId };
+        return SchemaModelSerializer.SerializeSubrecord("XESP", "", 8, mutated, XespExtractors);
     }
 
     /// <summary>
@@ -297,33 +341,14 @@ public sealed class RefrEncoder : IRecordEncoder
     }
 
     /// <summary>
-    ///     XTEL — 32 bytes fixed: FormID DoorFormId @0, 6 floats PosRot @4-27,
-    ///     uint8 Flags @28, padding @29-31. PosRot/Flags are populated from
-    ///     <see cref="PlacedReference.TeleportPosRot" /> and
-    ///     <see cref="PlacedReference.TeleportFlags" /> when available; otherwise zeroed.
+    ///     XTEL — 32 bytes fixed per the XTEL schema: DestinationDoor + 6 PosRot floats +
+    ///     Flags + Padding(3). The resolved door FormID is patched onto the record via
+    ///     `with { }` so the static extractor map sees it.
     /// </summary>
     private static EncodedSubrecord BuildXtelSubrecord(PlacedReference placed, uint resolvedDoorFormId)
     {
-        var xtel = new byte[32];
-        SubrecordEncoder.WriteFormId(xtel, 0, resolvedDoorFormId);
-
-        if (placed.TeleportPosRot is { } pr)
-        {
-            SubrecordEncoder.WriteFloat(xtel, 4, pr.X);
-            SubrecordEncoder.WriteFloat(xtel, 8, pr.Y);
-            SubrecordEncoder.WriteFloat(xtel, 12, pr.Z);
-            SubrecordEncoder.WriteFloat(xtel, 16, pr.RotX);
-            SubrecordEncoder.WriteFloat(xtel, 20, pr.RotY);
-            SubrecordEncoder.WriteFloat(xtel, 24, pr.RotZ);
-        }
-
-        if (placed.TeleportFlags.HasValue)
-        {
-            xtel[28] = placed.TeleportFlags.Value;
-        }
-
-        // bytes 29-31 = padding (zero)
-        return new EncodedSubrecord("XTEL", xtel);
+        var mutated = placed with { DestinationDoorFormId = resolvedDoorFormId };
+        return SchemaModelSerializer.SerializeSubrecord("XTEL", "", 32, mutated, XtelExtractors);
     }
 
     /// <summary>
@@ -336,6 +361,63 @@ public sealed class RefrEncoder : IRecordEncoder
         SubrecordEncoder.WriteInt16(xcnt, 0, count);
         // bytes 2-3 = padding (zero)
         return new EncodedSubrecord("XCNT", xcnt);
+    }
+
+    /// <summary>
+    ///     Emits the XMRK / FNAM? / FULL? / TNAM? subrecord cluster for a map-marker REFR.
+    ///     <para>XMRK is the 0-byte presence flag; the engine ignores TNAM/FULL/FNAM without it.</para>
+    ///     <para>FNAM is the 1-byte visibility flag set (bit 0=Visible, bit 1=CanTravel,
+    ///     bit 2=Hidden per the runtime BGSPrimitiveMarker layout). Emitted only on the
+    ///     new-record path with a 0x03 default (Visible + CanTravel) so brand-new markers
+    ///     appear on the Pip-Boy map. On overrides we leave FNAM alone so the master's
+    ///     authored value passes through RecordMergeEngine Pass 1 unchanged.</para>
+    ///     <para>FULL is the latin1 display label ("Goodsprings"). When emitted on an
+    ///     override path it overlays master's FULL byte-for-byte at master's position —
+    ///     that's the rename path.</para>
+    ///     <para>TNAM is 2 bytes: byte 0 = marker type (cast from MapMarkerType, 0=None
+    ///     through 14=Vault), byte 1 = 0 padding.</para>
+    /// </summary>
+    private static void AppendMapMarkerSubrecords(
+        List<EncodedSubrecord> subs,
+        PlacedReference placed,
+        bool isNewRecord)
+    {
+        if (!placed.IsMapMarker)
+        {
+            return;
+        }
+
+        // XMRK — 0-byte presence flag. Always emit for map markers; the rest of the
+        // cluster is meaningless without it.
+        subs.Add(new EncodedSubrecord("XMRK", []));
+
+        if (isNewRecord)
+        {
+            // FNAM — visibility flags. 0x03 = Visible + CanTravel (standard shipping value).
+            subs.Add(new EncodedSubrecord("FNAM", [0x03]));
+        }
+
+        if (!string.IsNullOrEmpty(placed.MarkerName))
+        {
+            subs.Add(EncodeStringSubrecord("FULL", placed.MarkerName));
+        }
+
+        if (placed.MarkerType.HasValue)
+        {
+            var tnam = new byte[2];
+            tnam[0] = (byte)placed.MarkerType.Value;
+            // byte 1 = 0 padding
+            subs.Add(new EncodedSubrecord("TNAM", tnam));
+        }
+    }
+
+    private static EncodedSubrecord EncodeStringSubrecord(string signature, string value)
+    {
+        var byteCount = Encoding.Latin1.GetByteCount(value);
+        var buffer = new byte[byteCount + 1];
+        Encoding.Latin1.GetBytes(value, buffer);
+        // Final byte already 0 (null terminator).
+        return new EncodedSubrecord(signature, buffer);
     }
 
     private static byte[] BuildDataSubrecord(PlacedReference placed)

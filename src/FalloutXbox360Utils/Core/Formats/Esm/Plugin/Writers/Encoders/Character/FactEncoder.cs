@@ -1,3 +1,4 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
@@ -11,6 +12,25 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Character
 /// </summary>
 public sealed class FactEncoder : IRecordEncoder
 {
+    private static readonly Dictionary<string, Func<FactionRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
+    {
+        // Schema registers DATA(FACT, 4) as Simple4Byte("Faction Flags") — field name has a space.
+        ["Faction Flags"] = m => m.Flags,
+    };
+
+    private static readonly Dictionary<string, Func<FactionRelation, object?>> XnamExtractors = new(StringComparer.Ordinal)
+    {
+        ["Faction"] = m => m.FactionFormId,
+        ["Modifier"] = m => m.Modifier,
+        ["CombatReaction"] = m => m.CombatFlags,
+    };
+
+    private static readonly Dictionary<string, Func<FactionRecord, object?>> CrvaExtractors = new(StringComparer.Ordinal)
+    {
+        ["CrimeGoldMultiplier"] = m => m.CrimeGoldMultiplier,
+        // Remaining(16) bytes left unset → zero-fill.
+    };
+
     public string RecordType => "FACT";
     public Type ModelType => typeof(FactionRecord);
 
@@ -19,7 +39,7 @@ public sealed class FactEncoder : IRecordEncoder
         var fact = (FactionRecord)model;
         return new EncodedRecord
         {
-            Subrecords = [new EncodedSubrecord("DATA", BuildDataSubrecord(fact))],
+            Subrecords = [SchemaModelSerializer.SerializeSubrecord("DATA", "FACT", 4, fact, DataExtractors)],
             Warnings = []
         };
     }
@@ -48,23 +68,16 @@ public sealed class FactEncoder : IRecordEncoder
         // XNAM — faction relations. Each entry is 12 bytes: FormID + int32 Modifier + uint32 CombatReaction.
         foreach (var rel in fact.Relations)
         {
-            var xnam = new byte[12];
-            SubrecordEncoder.WriteFormId(xnam, 0, rel.FactionFormId);
-            SubrecordEncoder.WriteInt32(xnam, 4, rel.Modifier);
-            SubrecordEncoder.WriteUInt32(xnam, 8, rel.CombatFlags);
-            subs.Add(new EncodedSubrecord("XNAM", xnam));
+            subs.Add(SchemaModelSerializer.SerializeSubrecord("XNAM", "FACT", 12, rel, XnamExtractors));
         }
 
-        subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(fact)));
+        subs.Add(SchemaModelSerializer.SerializeSubrecord("DATA", "FACT", 4, fact, DataExtractors));
 
         // CRVA — Crime Values, 20 bytes per FNV schema. Float CrimeGoldMultiplier @0 plus
-        // 16 unknown bytes. Model only has CrimeGoldMultiplier; rest zero.
+        // 16 unknown bytes. Model only has CrimeGoldMultiplier; rest zero-fill via schema.
         if (Math.Abs(fact.CrimeGoldMultiplier) > float.Epsilon)
         {
-            var crva = new byte[20];
-            SubrecordEncoder.WriteFloat(crva, 0, fact.CrimeGoldMultiplier);
-            // bytes 4-19 unknown (zero)
-            subs.Add(new EncodedSubrecord("CRVA", crva));
+            subs.Add(SchemaModelSerializer.SerializeSubrecord("CRVA", "FACT", 20, fact, CrvaExtractors));
             warnings.Add(
                 $"New FACT 0x{fact.FormId:X8} CRVA emitted with multiplier only — remaining 16 bytes are zero.");
         }
@@ -86,12 +99,5 @@ public sealed class FactEncoder : IRecordEncoder
         }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
-    }
-
-    private static byte[] BuildDataSubrecord(FactionRecord fact)
-    {
-        var data = new byte[4];
-        SubrecordEncoder.WriteUInt32(data, 0, fact.Flags);
-        return data;
     }
 }

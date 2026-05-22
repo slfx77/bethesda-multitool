@@ -14,6 +14,23 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Magic;
 /// </summary>
 public sealed class ExplEncoder : IRecordEncoder
 {
+    private static readonly Dictionary<string, Func<ExplosionRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
+    {
+        ["Force"] = m => m.Force,
+        ["Damage"] = m => m.Damage,
+        ["Radius"] = m => m.Radius,
+        ["Light"] = m => m.Light,
+        ["Sound1"] = m => m.Sound1,
+        ["Flags"] = m => m.Flags,
+        ["IsRadius"] = m => m.IsRadius,
+        ["ImpactDataSet"] = m => m.ImpactDataSet,
+        ["Sound2"] = m => m.Sound2,
+        ["RadiationLevel"] = m => m.RadiationLevel,
+        ["RadiationDissipationTime"] = m => m.RadiationDissipationTime,
+        ["RadiationRadius"] = m => m.RadiationRadius,
+        ["SoundLevel"] = m => m.SoundLevel,
+    };
+
     public string RecordType => "EXPL";
     public Type ModelType => typeof(ExplosionRecord);
 
@@ -49,27 +66,8 @@ public sealed class ExplEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("EITM", expl.Enchantment));
         }
 
-        subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(expl)));
+        subs.Add(SchemaModelSerializer.SerializeSubrecord("DATA", "EXPL", 52, expl, DataExtractors));
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
-    }
-
-    private static byte[] BuildDataSubrecord(ExplosionRecord expl)
-    {
-        var data = new byte[52];
-        SubrecordEncoder.WriteFloat(data, 0, expl.Force);
-        SubrecordEncoder.WriteFloat(data, 4, expl.Damage);
-        SubrecordEncoder.WriteFloat(data, 8, expl.Radius);
-        SubrecordEncoder.WriteFormId(data, 12, expl.Light);
-        SubrecordEncoder.WriteFormId(data, 16, expl.Sound1);
-        SubrecordEncoder.WriteUInt32(data, 20, expl.Flags);
-        SubrecordEncoder.WriteFloat(data, 24, expl.IsRadius);
-        SubrecordEncoder.WriteFormId(data, 28, expl.ImpactDataSet);
-        SubrecordEncoder.WriteFormId(data, 32, expl.Sound2);
-        SubrecordEncoder.WriteFloat(data, 36, expl.RadiationLevel);
-        SubrecordEncoder.WriteFloat(data, 40, expl.RadiationDissipationTime);
-        SubrecordEncoder.WriteFloat(data, 44, expl.RadiationRadius);
-        SubrecordEncoder.WriteUInt32(data, 48, expl.SoundLevel);
-        return data;
     }
 }

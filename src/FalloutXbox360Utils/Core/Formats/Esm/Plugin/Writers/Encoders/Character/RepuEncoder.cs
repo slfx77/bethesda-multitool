@@ -9,6 +9,12 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Character
 /// </summary>
 public sealed class RepuEncoder : IRecordEncoder
 {
+    private static readonly Dictionary<string, Func<ReputationRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
+    {
+        ["PositiveValue"] = m => m.PositiveValue,
+        ["NegativeValue"] = m => m.NegativeValue,
+    };
+
     public string RecordType => "REPU";
     public Type ModelType => typeof(ReputationRecord);
 
@@ -34,10 +40,7 @@ public sealed class RepuEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("FULL", repu.FullName));
         }
 
-        var data = new byte[8];
-        SubrecordEncoder.WriteFloat(data, 0, repu.PositiveValue);
-        SubrecordEncoder.WriteFloat(data, 4, repu.NegativeValue);
-        subs.Add(new EncodedSubrecord("DATA", data));
+        subs.Add(SchemaModelSerializer.SerializeSubrecord("DATA", "REPU", 8, repu, DataExtractors));
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
     }

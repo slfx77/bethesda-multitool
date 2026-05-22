@@ -13,6 +13,17 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Misc;
 /// </summary>
 public sealed class ChalEncoder : IRecordEncoder
 {
+    private static readonly Dictionary<string, Func<ChallengeRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
+    {
+        ["ChallengeType"] = m => (int)m.ChallengeType,
+        ["Threshold"] = m => (int)m.Threshold,
+        ["Flags"] = m => (ushort)m.Flags,
+        ["Interval"] = m => (int)m.Interval,
+        ["SpecialDataOne"] = m => (ushort)m.Value1,
+        ["SpecialDataTwo"] = m => (ushort)m.Value2,
+        ["SpecialDataThree"] = m => (ushort)m.Value3,
+    };
+
     public string RecordType => "CHAL";
     public Type ModelType => typeof(ChallengeRecord);
 
@@ -53,23 +64,8 @@ public sealed class ChalEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRI", chal.Script));
         }
 
-        subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(chal)));
+        subs.Add(SchemaModelSerializer.SerializeSubrecord("DATA", "CHAL", 24, chal, DataExtractors));
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
-    }
-
-    private static byte[] BuildDataSubrecord(ChallengeRecord chal)
-    {
-        var data = new byte[24];
-        SubrecordEncoder.WriteInt32(data, 0, (int)chal.ChallengeType);
-        SubrecordEncoder.WriteInt32(data, 4, (int)chal.Threshold);
-        SubrecordEncoder.WriteUInt16(data, 8, (ushort)chal.Flags);
-        // bytes 10-11 padding
-        SubrecordEncoder.WriteInt32(data, 12, (int)chal.Interval);
-        SubrecordEncoder.WriteUInt16(data, 16, (ushort)chal.Value1);
-        SubrecordEncoder.WriteUInt16(data, 18, (ushort)chal.Value2);
-        SubrecordEncoder.WriteUInt16(data, 20, (ushort)chal.Value3);
-        // bytes 22-23 padding
-        return data;
     }
 }

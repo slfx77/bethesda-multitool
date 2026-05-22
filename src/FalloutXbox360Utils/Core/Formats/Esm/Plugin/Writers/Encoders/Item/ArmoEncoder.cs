@@ -13,6 +13,20 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 /// </summary>
 public sealed class ArmoEncoder : IRecordEncoder
 {
+    private static readonly Dictionary<string, Func<ArmorRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
+    {
+        ["Value"] = m => m.Value,
+        ["Health"] = m => m.Health,
+        ["Weight"] = m => m.Weight,
+    };
+
+    private static readonly Dictionary<string, Func<ArmorRecord, object?>> DnamExtractors = new(StringComparer.Ordinal)
+    {
+        ["DamageResistance"] = m => (short)m.DamageResistance,
+        ["DamageThreshold"] = m => m.DamageThreshold,
+        // Unknown(4) bytes left unset → zero-fill.
+    };
+
     public string RecordType => "ARMO";
     public Type ModelType => typeof(ArmorRecord);
 
@@ -21,7 +35,7 @@ public sealed class ArmoEncoder : IRecordEncoder
         var armo = (ArmorRecord)model;
         return new EncodedRecord
         {
-            Subrecords = [new EncodedSubrecord("DATA", BuildDataSubrecord(armo))],
+            Subrecords = [SchemaModelSerializer.SerializeSubrecord("DATA", "ARMO", 12, armo, DataExtractors)],
             Warnings = []
         };
     }
@@ -98,25 +112,10 @@ public sealed class ArmoEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeInt32Subrecord("ETYP", (int)armo.EquipmentType));
         }
 
-        subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(armo)));
+        subs.Add(SchemaModelSerializer.SerializeSubrecord("DATA", "ARMO", 12, armo, DataExtractors));
 
-        // DNAM — defense data: DR (int16) + padding(2) + DT (float) + 4 unknown bytes (zero).
-        var dnam = new byte[12];
-        SubrecordEncoder.WriteInt16(dnam, 0, (short)armo.DamageResistance);
-        // bytes 2-3 padding
-        SubrecordEncoder.WriteFloat(dnam, 4, armo.DamageThreshold);
-        // bytes 8-11 unknown (zero)
-        subs.Add(new EncodedSubrecord("DNAM", dnam));
+        subs.Add(SchemaModelSerializer.SerializeSubrecord("DNAM", "ARMO", 12, armo, DnamExtractors));
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
-    }
-
-    private static byte[] BuildDataSubrecord(ArmorRecord armo)
-    {
-        var data = new byte[12];
-        SubrecordEncoder.WriteInt32(data, 0, armo.Value);
-        SubrecordEncoder.WriteInt32(data, 4, armo.Health);
-        SubrecordEncoder.WriteFloat(data, 8, armo.Weight);
-        return data;
     }
 }

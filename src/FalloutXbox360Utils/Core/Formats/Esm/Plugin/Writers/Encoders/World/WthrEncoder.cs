@@ -14,6 +14,12 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 /// </summary>
 public sealed class WthrEncoder : IRecordEncoder
 {
+    private static readonly Dictionary<string, Func<WeatherSound, object?>> SnamExtractors = new(StringComparer.Ordinal)
+    {
+        ["Sound"] = m => m.SoundFormId,
+        ["Type"] = m => m.Type,
+    };
+
     public string RecordType => "WTHR";
     public Type ModelType => typeof(WeatherRecord);
 
@@ -46,11 +52,7 @@ public sealed class WthrEncoder : IRecordEncoder
 
         foreach (var sound in wthr.Sounds)
         {
-            // SNAM (8B): FormID Sound + uint32 Type.
-            var snam = new byte[8];
-            SubrecordEncoder.WriteFormId(snam, 0, sound.SoundFormId);
-            SubrecordEncoder.WriteUInt32(snam, 4, sound.Type);
-            subs.Add(new EncodedSubrecord("SNAM", snam));
+            subs.Add(SchemaModelSerializer.SerializeSubrecord("SNAM", "WTHR", 8, sound, SnamExtractors));
         }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };

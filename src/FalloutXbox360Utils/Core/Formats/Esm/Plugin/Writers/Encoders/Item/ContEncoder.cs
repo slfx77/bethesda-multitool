@@ -17,6 +17,12 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 /// </summary>
 public sealed class ContEncoder : IRecordEncoder
 {
+    private static readonly Dictionary<string, Func<ContainerRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
+    {
+        ["Flags"] = m => m.Flags,
+        ["Weight"] = m => m.Weight,
+    };
+
     public string RecordType => "CONT";
     public Type ModelType => typeof(ContainerRecord);
 
@@ -109,7 +115,7 @@ public sealed class ContEncoder : IRecordEncoder
                 "with dangling item FormID (engine would log 'Unable to find container object').");
         }
 
-        subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(cont)));
+        subs.Add(SchemaModelSerializer.SerializeSubrecord("DATA", "CONT", 5, cont, DataExtractors));
 
         if (cont.OpenSoundFormId.HasValue)
         {
@@ -142,14 +148,6 @@ public sealed class ContEncoder : IRecordEncoder
         }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
-    }
-
-    private static byte[] BuildDataSubrecord(ContainerRecord cont)
-    {
-        var data = new byte[5];
-        data[0] = cont.Flags;
-        SubrecordEncoder.WriteFloat(data, 1, cont.Weight);
-        return data;
     }
 
     private static byte[] BuildCntoSubrecord(InventoryItem item, uint resolvedItemFormId)

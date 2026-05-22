@@ -14,6 +14,14 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Misc;
 /// </summary>
 public sealed class SurvivalStageEncoder : IRecordEncoder
 {
+    // The 4 survival record types (RADS/DEHY/HUNG/SLPD) all share an identical 8-byte DATA
+    // schema, so we serialize using the RADS schema regardless of which type is being emitted.
+    private static readonly Dictionary<string, Func<SurvivalStageRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
+    {
+        ["TriggerThreshold"] = m => m.Threshold,
+        ["ActorEffect"] = m => m.Modifier,
+    };
+
     public string RecordType => "RADS";
     public Type ModelType => typeof(SurvivalStageRecord);
 
@@ -33,16 +41,8 @@ public sealed class SurvivalStageEncoder : IRecordEncoder
         }
 
         subs.Add(NewRecordSubrecords.EncodeStringSubrecord("EDID", stage.EditorId ?? string.Empty));
-        subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(stage)));
+        subs.Add(SchemaModelSerializer.SerializeSubrecord("DATA", "RADS", 8, stage, DataExtractors));
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
-    }
-
-    private static byte[] BuildDataSubrecord(SurvivalStageRecord stage)
-    {
-        var data = new byte[8];
-        SubrecordEncoder.WriteUInt32(data, 0, stage.Threshold);
-        SubrecordEncoder.WriteUInt32(data, 4, stage.Modifier);
-        return data;
     }
 }

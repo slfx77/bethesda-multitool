@@ -16,6 +16,31 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Magic;
 /// </summary>
 public sealed class MgefEncoder : IRecordEncoder
 {
+    // Schema field names diverge from model field names in several places — most notably
+    // "Archtype" (schema spelling) vs Archetype (model). Extractor map keys must match the
+    // schema verbatim; SchemaModelSerializer looks them up by exact string.
+    private static readonly Dictionary<string, Func<BaseEffectRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
+    {
+        ["Flags"] = m => m.Flags,
+        ["BaseCost"] = m => m.BaseCost,
+        ["AssocItem"] = m => m.AssociatedItem,
+        ["MagicSchool"] = m => m.MagicSchool,
+        ["ResistanceValue"] = m => m.ResistValue,
+        // "Unknown" (uint16) and padding not in model → zero-fill.
+        ["Light"] = m => m.LightFormId ?? 0u,
+        ["ProjectileSpeed"] = m => m.ProjectileSpeed ?? 0f,
+        ["EffectShader"] = m => m.EffectShaderFormId ?? 0u,
+        ["EnchantEffect"] = m => m.EnchantEffectFormId ?? 0u,
+        ["CastingSound"] = m => m.CastingSoundFormId ?? 0u,
+        ["BoltSound"] = m => m.BoltSoundFormId ?? 0u,
+        ["HitSound"] = m => m.HitSoundFormId ?? 0u,
+        ["AreaSound"] = m => m.AreaSoundFormId ?? 0u,
+        ["ConstantEffectEnchantmentFactor"] = m => m.CEEnchantFactor ?? 0f,
+        ["ConstantEffectBarterFactor"] = m => m.CEBarterFactor ?? 0f,
+        ["Archtype"] = m => (int)m.Archetype, // schema typo preserved
+        ["ActorValue"] = m => m.ActorValue,
+    };
+
     public string RecordType => "MGEF";
     public Type ModelType => typeof(BaseEffectRecord);
 
@@ -56,33 +81,8 @@ public sealed class MgefEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MODL", mgef.ModelPath));
         }
 
-        subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(mgef)));
+        subs.Add(SchemaModelSerializer.SerializeSubrecord("DATA", "MGEF", 72, mgef, DataExtractors));
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
-    }
-
-    private static byte[] BuildDataSubrecord(BaseEffectRecord mgef)
-    {
-        var data = new byte[72];
-        SubrecordEncoder.WriteUInt32(data, 0, mgef.Flags);
-        SubrecordEncoder.WriteFloat(data, 4, mgef.BaseCost);
-        SubrecordEncoder.WriteFormId(data, 8, mgef.AssociatedItem);
-        SubrecordEncoder.WriteInt32(data, 12, mgef.MagicSchool);
-        SubrecordEncoder.WriteInt32(data, 16, mgef.ResistValue);
-        // bytes 20-21: uint16 Unknown — not in model; leave zero
-        // bytes 22-23: padding
-        SubrecordEncoder.WriteFormId(data, 24, mgef.LightFormId ?? 0u);
-        SubrecordEncoder.WriteFloat(data, 28, mgef.ProjectileSpeed ?? 0f);
-        SubrecordEncoder.WriteFormId(data, 32, mgef.EffectShaderFormId ?? 0u);
-        SubrecordEncoder.WriteFormId(data, 36, mgef.EnchantEffectFormId ?? 0u);
-        SubrecordEncoder.WriteFormId(data, 40, mgef.CastingSoundFormId ?? 0u);
-        SubrecordEncoder.WriteFormId(data, 44, mgef.BoltSoundFormId ?? 0u);
-        SubrecordEncoder.WriteFormId(data, 48, mgef.HitSoundFormId ?? 0u);
-        SubrecordEncoder.WriteFormId(data, 52, mgef.AreaSoundFormId ?? 0u);
-        SubrecordEncoder.WriteFloat(data, 56, mgef.CEEnchantFactor ?? 0f);
-        SubrecordEncoder.WriteFloat(data, 60, mgef.CEBarterFactor ?? 0f);
-        SubrecordEncoder.WriteInt32(data, 64, (int)mgef.Archetype);
-        SubrecordEncoder.WriteInt32(data, 68, mgef.ActorValue);
-        return data;
     }
 }

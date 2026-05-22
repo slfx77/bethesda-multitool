@@ -18,6 +18,43 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Character
 /// </summary>
 public sealed class RaceEncoder : IRecordEncoder
 {
+    private static byte[] BuildSkillBoostBytes(RaceRecord race)
+    {
+        // 14 bytes: 7 pairs of (int8 SkillIndex + int8 Boost). -1 sentinel + zero for unused slots.
+        var bytes = new byte[14];
+        for (var i = 0; i < 7; i++)
+        {
+            if (i < race.SkillBoosts.Count)
+            {
+                var (skillIndex, boost) = race.SkillBoosts[i];
+                bytes[i * 2] = (byte)(sbyte)skillIndex;
+                bytes[i * 2 + 1] = (byte)boost;
+            }
+            else
+            {
+                bytes[i * 2] = 0xFF;
+                bytes[i * 2 + 1] = 0;
+            }
+        }
+        return bytes;
+    }
+
+    private static readonly Dictionary<string, Func<RaceRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
+    {
+        ["SkillBoosts"] = BuildSkillBoostBytes,
+        ["MaleHeight"] = m => m.MaleHeight,
+        ["FemaleHeight"] = m => m.FemaleHeight,
+        ["MaleWeight"] = m => m.MaleWeight,
+        ["FemaleWeight"] = m => m.FemaleWeight,
+        ["Flags"] = m => m.DataFlags,
+    };
+
+    private static readonly Dictionary<string, Func<RaceRecord, object?>> VtckExtractors = new(StringComparer.Ordinal)
+    {
+        ["Male Voice Type"] = m => m.MaleVoiceFormId ?? 0u,
+        ["Female Voice Type"] = m => m.FemaleVoiceFormId ?? 0u,
+    };
+
     public string RecordType => "RACE";
     public Type ModelType => typeof(RaceRecord);
 
@@ -54,7 +91,7 @@ public sealed class RaceEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SPLO", abilityFormId));
         }
 
-        subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(race)));
+        subs.Add(SchemaModelSerializer.SerializeSubrecord("DATA", "RACE", 36, race, DataExtractors));
 
         if (race.OlderRaceFormId.HasValue)
         {
@@ -69,10 +106,7 @@ public sealed class RaceEncoder : IRecordEncoder
         if (race.MaleVoiceFormId.HasValue || race.FemaleVoiceFormId.HasValue)
         {
             // VTCK is an 8-byte pair: male voice FormID + female voice FormID.
-            var vtck = new byte[8];
-            SubrecordEncoder.WriteFormId(vtck, 0, race.MaleVoiceFormId ?? 0u);
-            SubrecordEncoder.WriteFormId(vtck, 4, race.FemaleVoiceFormId ?? 0u);
-            subs.Add(new EncodedSubrecord("VTCK", vtck));
+            subs.Add(SchemaModelSerializer.SerializeSubrecord("VTCK", "RACE", 8, race, VtckExtractors));
         }
 
         if (race.DefaultHairMaleFormId.HasValue || race.DefaultHairFemaleFormId.HasValue)
@@ -89,12 +123,12 @@ public sealed class RaceEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeByteSubrecord("CNAM", race.DefaultHairColor.Value));
         }
 
-        if (race.FaceGenMainClamp != 0)
+        if (race.FaceGenMainClamp is < 0f or > 0f)
         {
             subs.Add(NewRecordSubrecords.EncodeFloatSubrecord("PNAM", race.FaceGenMainClamp));
         }
 
-        if (race.FaceGenFaceClamp != 0)
+        if (race.FaceGenFaceClamp is < 0f or > 0f)
         {
             subs.Add(NewRecordSubrecords.EncodeFloatSubrecord("UNAM", race.FaceGenFaceClamp));
         }
@@ -154,36 +188,6 @@ public sealed class RaceEncoder : IRecordEncoder
         }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
-    }
-
-    private static byte[] BuildDataSubrecord(RaceRecord race)
-    {
-        // DATA (36 bytes): 14 bytes of skill boosts (7 pairs of int8 + int8) + 2 pad +
-        // float MaleHeight + float FemaleHeight + float MaleWeight + float FemaleWeight +
-        // uint32 Flags.
-        var data = new byte[36];
-        for (var i = 0; i < 7; i++)
-        {
-            if (i < race.SkillBoosts.Count)
-            {
-                var (skillIndex, boost) = race.SkillBoosts[i];
-                data[i * 2] = (byte)(sbyte)skillIndex;
-                data[i * 2 + 1] = (byte)boost;
-            }
-            else
-            {
-                data[i * 2] = 0xFF; // -1 sentinel for unused slot
-                data[i * 2 + 1] = 0; // zero boost
-            }
-        }
-
-        // bytes 14-15 padding
-        SubrecordEncoder.WriteFloat(data, 16, race.MaleHeight);
-        SubrecordEncoder.WriteFloat(data, 20, race.FemaleHeight);
-        SubrecordEncoder.WriteFloat(data, 24, race.MaleWeight);
-        SubrecordEncoder.WriteFloat(data, 28, race.FemaleWeight);
-        SubrecordEncoder.WriteUInt32(data, 32, race.DataFlags);
-        return data;
     }
 
     private static List<(uint Index, string? ModelPath, string? IconPath)> CollectHeadParts(RaceRecord race)

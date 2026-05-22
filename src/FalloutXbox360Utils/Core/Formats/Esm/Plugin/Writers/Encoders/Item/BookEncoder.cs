@@ -10,6 +10,14 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 /// </summary>
 public sealed class BookEncoder : IRecordEncoder
 {
+    private static readonly Dictionary<string, Func<BookRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
+    {
+        ["Flags"] = m => m.Flags,
+        ["Skill"] = m => (sbyte)m.SkillTaught,
+        ["Value"] = m => m.Value,
+        ["Weight"] = m => m.Weight,
+    };
+
     public string RecordType => "BOOK";
     public Type ModelType => typeof(BookRecord);
 
@@ -18,7 +26,7 @@ public sealed class BookEncoder : IRecordEncoder
         var book = (BookRecord)model;
         return new EncodedRecord
         {
-            Subrecords = [new EncodedSubrecord("DATA", BuildDataSubrecord(book))],
+            Subrecords = [SchemaModelSerializer.SerializeSubrecord("DATA", "BOOK", 10, book, DataExtractors)],
             Warnings = []
         };
     }
@@ -74,7 +82,7 @@ public sealed class BookEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("DESC", book.Text));
         }
 
-        subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(book)));
+        subs.Add(SchemaModelSerializer.SerializeSubrecord("DATA", "BOOK", 10, book, DataExtractors));
 
         if (book.EnchantmentFormId.HasValue)
         {
@@ -82,15 +90,5 @@ public sealed class BookEncoder : IRecordEncoder
         }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
-    }
-
-    private static byte[] BuildDataSubrecord(BookRecord book)
-    {
-        var data = new byte[10];
-        data[0] = book.Flags;
-        data[1] = book.SkillTaught;
-        SubrecordEncoder.WriteInt32(data, 2, book.Value);
-        SubrecordEncoder.WriteFloat(data, 6, book.Weight);
-        return data;
     }
 }

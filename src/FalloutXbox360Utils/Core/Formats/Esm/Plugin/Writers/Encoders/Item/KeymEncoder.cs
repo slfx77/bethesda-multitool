@@ -9,6 +9,12 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 /// </summary>
 public sealed class KeymEncoder : IRecordEncoder
 {
+    private static readonly Dictionary<string, Func<KeyRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
+    {
+        ["Value"] = m => m.Value,
+        ["Weight"] = m => m.Weight,
+    };
+
     public string RecordType => "KEYM";
     public Type ModelType => typeof(KeyRecord);
 
@@ -17,7 +23,7 @@ public sealed class KeymEncoder : IRecordEncoder
         var key = (KeyRecord)model;
         return new EncodedRecord
         {
-            Subrecords = [new EncodedSubrecord("DATA", BuildDataSubrecord(key))],
+            Subrecords = [SchemaModelSerializer.SerializeSubrecord("DATA", "KEYM", 8, key, DataExtractors)],
             Warnings = []
         };
     }
@@ -63,16 +69,8 @@ public sealed class KeymEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MICO", key.MessageIconPath));
         }
 
-        subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(key)));
+        subs.Add(SchemaModelSerializer.SerializeSubrecord("DATA", "KEYM", 8, key, DataExtractors));
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
-    }
-
-    private static byte[] BuildDataSubrecord(KeyRecord key)
-    {
-        var data = new byte[8];
-        SubrecordEncoder.WriteInt32(data, 0, key.Value);
-        SubrecordEncoder.WriteFloat(data, 4, key.Weight);
-        return data;
     }
 }

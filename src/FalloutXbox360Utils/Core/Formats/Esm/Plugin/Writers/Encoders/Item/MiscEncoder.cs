@@ -9,6 +9,12 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 /// </summary>
 public sealed class MiscEncoder : IRecordEncoder
 {
+    private static readonly Dictionary<string, Func<MiscItemRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
+    {
+        ["Value"] = m => m.Value,
+        ["Weight"] = m => m.Weight,
+    };
+
     public string RecordType => "MISC";
     public Type ModelType => typeof(MiscItemRecord);
 
@@ -17,7 +23,7 @@ public sealed class MiscEncoder : IRecordEncoder
         var misc = (MiscItemRecord)model;
         return new EncodedRecord
         {
-            Subrecords = [new EncodedSubrecord("DATA", BuildDataSubrecord(misc))],
+            Subrecords = [SchemaModelSerializer.SerializeSubrecord("DATA", "MISC", 8, misc, DataExtractors)],
             Warnings = []
         };
     }
@@ -72,16 +78,8 @@ public sealed class MiscEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MICO", misc.MessageIconPath));
         }
 
-        subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(misc)));
+        subs.Add(SchemaModelSerializer.SerializeSubrecord("DATA", "MISC", 8, misc, DataExtractors));
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
-    }
-
-    private static byte[] BuildDataSubrecord(MiscItemRecord misc)
-    {
-        var data = new byte[8];
-        SubrecordEncoder.WriteInt32(data, 0, misc.Value);
-        SubrecordEncoder.WriteFloat(data, 4, misc.Weight);
-        return data;
     }
 }

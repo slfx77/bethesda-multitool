@@ -5,7 +5,8 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.AI;
 /// <summary>
 ///     Encodes a <see cref="PackageRecord" /> (PACK) as PC-format subrecord bytes.
 ///     Emits the full record from scratch: EDID + PKDT + PLDT? + PLD2? + PSDT? + PTDT? +
-///     PTD2? + PKPT? + PKW3? + CNAM (combat style FormID, deferred — not in model).
+///     PTD2? + PKPT? + PKW3? + CNAM (combat style FormID, captured from runtime
+///     <c>TESPackage.pCombatStyle</c> @+88 or master ESM CNAM subrecord).
 ///     Override path is a no-op.
 ///     PKDT (12 bytes) per PDB PACKAGE_DATA:
 ///     uint32 iPackFlags(0) + uint8 cPackType(4) + uint8 unused(5) +
@@ -21,6 +22,39 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.AI;
 /// </summary>
 public sealed class PackEncoder : IRecordEncoder
 {
+    private static readonly Dictionary<string, Func<PackageData, object?>> PkdtExtractors = new(StringComparer.Ordinal)
+    {
+        ["iPackFlags"] = m => m.GeneralFlags,
+        ["cPackType"] = m => m.Type,
+        ["iFOBehaviorFlags"] = m => m.FalloutBehaviorFlags,
+        ["iPackageSpecificFlags"] = m => m.TypeSpecificFlags,
+        // Unused, Unknown1, Unknown2 → zero-fill.
+    };
+
+    private static readonly Dictionary<string, Func<PackageSchedule, object?>> PsdtExtractors = new(StringComparer.Ordinal)
+    {
+        ["Month"] = m => (byte)m.Month,
+        ["DayOfWeek"] = m => (byte)m.DayOfWeek,
+        ["Date"] = m => (byte)m.Date,
+        ["Time"] = m => (sbyte)m.Time,
+        ["Duration"] = m => m.Duration,
+    };
+
+    private static readonly Dictionary<string, Func<PackageLocation, object?>> PldtExtractors = new(StringComparer.Ordinal)
+    {
+        ["Type"] = m => m.Type,
+        ["Union"] = m => m.Union,
+        ["Radius"] = m => m.Radius,
+    };
+
+    private static readonly Dictionary<string, Func<PackageTarget, object?>> PtdtExtractors = new(StringComparer.Ordinal)
+    {
+        ["Type"] = m => m.Type,
+        ["Union"] = m => m.FormIdOrType,
+        ["CountDistance"] = m => m.CountDistance,
+        ["Unknown"] = m => m.AcquireRadius,
+    };
+
     public string RecordType => "PACK";
     public Type ModelType => typeof(PackageRecord);
 
@@ -61,7 +95,7 @@ public sealed class PackEncoder : IRecordEncoder
 
         if (pack.Data is not null)
         {
-            subs.Add(new EncodedSubrecord("PKDT", BuildPkdtSubrecord(pack.Data)));
+            subs.Add(SchemaModelSerializer.SerializeSubrecord("PKDT", "", 12, pack.Data, PkdtExtractors));
         }
         else
         {
@@ -74,12 +108,12 @@ public sealed class PackEncoder : IRecordEncoder
             : null;
         if (sanitizedLoc is not null)
         {
-            subs.Add(new EncodedSubrecord("PLDT", BuildPlocSubrecord(sanitizedLoc)));
+            subs.Add(SchemaModelSerializer.SerializeSubrecord("PLDT", "", 12, sanitizedLoc, PldtExtractors));
         }
 
         if (pack.Schedule is not null)
         {
-            subs.Add(new EncodedSubrecord("PSDT", BuildPsdtSubrecord(pack.Schedule)));
+            subs.Add(SchemaModelSerializer.SerializeSubrecord("PSDT", "", 8, pack.Schedule, PsdtExtractors));
         }
 
         var sanitizedTgt = pack.Target is not null
@@ -87,7 +121,7 @@ public sealed class PackEncoder : IRecordEncoder
             : null;
         if (sanitizedTgt is not null)
         {
-            subs.Add(new EncodedSubrecord("PTDT", BuildPtdtSubrecord(sanitizedTgt)));
+            subs.Add(SchemaModelSerializer.SerializeSubrecord("PTDT", "", 16, sanitizedTgt, PtdtExtractors));
         }
 
         var sanitizedLoc2 = pack.Location2 is not null
@@ -95,7 +129,8 @@ public sealed class PackEncoder : IRecordEncoder
             : null;
         if (sanitizedLoc2 is not null)
         {
-            subs.Add(new EncodedSubrecord("PLD2", BuildPlocSubrecord(sanitizedLoc2)));
+            // PLD2 has its own schema registration but identical layout to PLDT.
+            subs.Add(SchemaModelSerializer.SerializeSubrecord("PLD2", "", 12, sanitizedLoc2, PldtExtractors));
         }
 
         var sanitizedTgt2 = pack.Target2 is not null
@@ -103,7 +138,7 @@ public sealed class PackEncoder : IRecordEncoder
             : null;
         if (sanitizedTgt2 is not null)
         {
-            subs.Add(new EncodedSubrecord("PTD2", BuildPtdtSubrecord(sanitizedTgt2)));
+            subs.Add(SchemaModelSerializer.SerializeSubrecord("PTD2", "", 16, sanitizedTgt2, PtdtExtractors));
         }
 
         if (pack.UseWeaponData is not null)
@@ -122,30 +157,59 @@ public sealed class PackEncoder : IRecordEncoder
             subs.Add(new EncodedSubrecord("PKPT", pkpt));
         }
 
+        // CNAM — TESCombatStyle FormID override. Validate against (master ∪ emitted-new) so a
+        // runtime-captured CSTY that didn't survive into the output ESP doesn't leave a dangling
+        // ref. If dangling, skip with a warning (mirrors the REFR optional-FormID pattern); the
+        // engine then falls through to the actor's base combat style which is the safe default.
+        if (pack.CombatStyleFormId.HasValue && pack.CombatStyleFormId.Value != 0)
+        {
+            var resolved = ResolveOptionalFormId(pack.CombatStyleFormId.Value, validFormIds, remapTable);
+            if (resolved.HasValue)
+            {
+                var cnam = new byte[4];
+                SubrecordEncoder.WriteFormId(cnam, 0, resolved.Value);
+                subs.Add(new EncodedSubrecord("CNAM", cnam));
+            }
+            else
+            {
+                warnings.Add($"New PACK 0x{pack.FormId:X8} CNAM combat style " +
+                    $"0x{pack.CombatStyleFormId.Value:X8} dangles — subrecord skipped " +
+                    "(engine inherits the actor's base combat style).");
+            }
+        }
+
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
     }
 
-    private static byte[] BuildPkdtSubrecord(PackageData pkdt)
+    /// <summary>
+    ///     Try remap-first-then-validity for an optional FormID. Mirrors the same policy
+    ///     used by RefrEncoder.ResolveOptionalFormId — returns null when the FormID is
+    ///     dangling with no remap, otherwise returns the resolved (possibly remapped) FormID.
+    /// </summary>
+    private static uint? ResolveOptionalFormId(
+        uint formId,
+        IReadOnlySet<uint>? validFormIds,
+        IReadOnlyDictionary<uint, uint>? remapTable)
     {
-        var data = new byte[12];
-        SubrecordEncoder.WriteUInt32(data, 0, pkdt.GeneralFlags);
-        data[4] = pkdt.Type;
-        // byte 5 unused
-        SubrecordEncoder.WriteUInt16(data, 6, pkdt.FalloutBehaviorFlags);
-        SubrecordEncoder.WriteUInt16(data, 8, pkdt.TypeSpecificFlags);
-        // bytes 10-11 unknown (zero)
-        return data;
-    }
+        if (formId == 0 || validFormIds is null)
+        {
+            return formId;
+        }
 
-    private static byte[] BuildPsdtSubrecord(PackageSchedule psdt)
-    {
-        var data = new byte[8];
-        data[0] = (byte)psdt.Month;
-        data[1] = (byte)psdt.DayOfWeek;
-        data[2] = (byte)psdt.Date;
-        data[3] = (byte)psdt.Time;
-        SubrecordEncoder.WriteInt32(data, 4, psdt.Duration);
-        return data;
+        if (remapTable is not null
+            && remapTable.TryGetValue(formId, out var remapped)
+            && remapped != formId
+            && validFormIds.Contains(remapped))
+        {
+            return remapped;
+        }
+
+        if (validFormIds.Contains(formId))
+        {
+            return formId;
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -262,27 +326,6 @@ public sealed class PackEncoder : IRecordEncoder
             $"to {PtdtTypeObjectType} (ObjectType=None) so the package's target evaluates to a " +
             "no-op instead of triggering 'Unable to find Package Target Reference'.");
         return target with { Type = PtdtTypeObjectType, FormIdOrType = 0u };
-    }
-
-    private static byte[] BuildPlocSubrecord(PackageLocation loc)
-    {
-        var data = new byte[12];
-        data[0] = loc.Type;
-        // bytes 1-3 padding
-        SubrecordEncoder.WriteUInt32(data, 4, loc.Union);
-        SubrecordEncoder.WriteInt32(data, 8, loc.Radius);
-        return data;
-    }
-
-    private static byte[] BuildPtdtSubrecord(PackageTarget target)
-    {
-        var data = new byte[16];
-        data[0] = target.Type;
-        // bytes 1-3 padding
-        SubrecordEncoder.WriteUInt32(data, 4, target.FormIdOrType);
-        SubrecordEncoder.WriteInt32(data, 8, target.CountDistance);
-        SubrecordEncoder.WriteFloat(data, 12, target.AcquireRadius);
-        return data;
     }
 
     private static byte[] BuildPkw3Subrecord(PackageUseWeaponData pkw3)

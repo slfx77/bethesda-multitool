@@ -1,7 +1,9 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
+using FalloutXbox360Utils.Core.Formats.Esm.Script;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 
@@ -29,7 +31,18 @@ public sealed class TermEncoder : IRecordEncoder
     ///     EDID, FULL, DESC, DNAM, per menu item: ITXT, (RNAM or embedded script block), NEXT.
     ///     OBND/MODL/SCRI/SNAM/PNAM deferred.
     /// </summary>
-    internal static EncodedRecord EncodeNew(TerminalRecord term)
+    /// <param name="term">TERM model to emit.</param>
+    /// <param name="validFormIds">
+    ///     Master ∪ newly-emitted FormID set for validating embedded result-script SCROs.
+    ///     See <see cref="ScptEncoder.EncodeNew" />.
+    /// </param>
+    /// <param name="remapTable">
+    ///     Source→allocated FormID alias map for embedded result-script SCROs.
+    /// </param>
+    internal static EncodedRecord EncodeNew(
+        TerminalRecord term,
+        IReadOnlySet<uint>? validFormIds = null,
+        IReadOnlyDictionary<uint, uint>? remapTable = null)
     {
         var subs = new List<EncodedSubrecord>();
         var warnings = new List<string>();
@@ -55,7 +68,8 @@ public sealed class TermEncoder : IRecordEncoder
 
         for (var i = 0; i < term.MenuItems.Count; i++)
         {
-            EmitMenuItem(subs, warnings, term.FormId, term.MenuItems[i], i == term.MenuItems.Count - 1);
+            EmitMenuItem(subs, warnings, term.FormId, term.MenuItems[i], i == term.MenuItems.Count - 1,
+                validFormIds, remapTable);
         }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
@@ -73,7 +87,9 @@ public sealed class TermEncoder : IRecordEncoder
         List<string> warnings,
         uint termFormId,
         TerminalMenuItem item,
-        bool isLast)
+        bool isLast,
+        IReadOnlySet<uint>? validFormIds = null,
+        IReadOnlyDictionary<uint, uint>? remapTable = null)
     {
         // ITXT — menu-item display text (may be empty if model only carries linkage).
         subs.Add(NewRecordSubrecords.EncodeStringSubrecord("ITXT", item.Text ?? string.Empty));
@@ -97,15 +113,20 @@ public sealed class TermEncoder : IRecordEncoder
         if (item.CompiledData is { Length: > 0 } || !string.IsNullOrEmpty(item.SourceText))
         {
             // Embedded result-script block — same SCHR/SCDA/SCTX/SCRO/SCRV layout as INFO.
-            EmitEmbeddedScriptBlock(subs, item);
+            EmitEmbeddedScriptBlock(subs, item, validFormIds, remapTable);
         }
         else
         {
             // External link via RNAM. ResultScript takes precedence when both are present.
+            // The RNAM target must resolve through the alias table the same way SCROs do —
+            // proto-only result scripts that the converter has reallocated would otherwise
+            // dangle.
             var linkFormId = item.ResultScript ?? item.SubTerminal;
             if (linkFormId.HasValue)
             {
-                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("RNAM", linkFormId.Value));
+                var resolved = FormIdReferenceResolver.Resolve(linkFormId.Value, validFormIds, remapTable)
+                               ?? linkFormId.Value;
+                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("RNAM", resolved));
             }
             else
             {
@@ -122,7 +143,11 @@ public sealed class TermEncoder : IRecordEncoder
         }
     }
 
-    private static void EmitEmbeddedScriptBlock(List<EncodedSubrecord> subs, TerminalMenuItem item)
+    private static void EmitEmbeddedScriptBlock(
+        List<EncodedSubrecord> subs,
+        TerminalMenuItem item,
+        IReadOnlySet<uint>? validFormIds = null,
+        IReadOnlyDictionary<uint, uint>? remapTable = null)
     {
         var compiledSize = item.CompiledData?.Length ?? 0;
         var refCount = (uint)item.ReferencedObjects.Count;
@@ -140,7 +165,13 @@ public sealed class TermEncoder : IRecordEncoder
 
         if (item.CompiledData is { Length: > 0 } compiled)
         {
-            subs.Add(new EncodedSubrecord("SCDA", compiled));
+            // BE bytecode from DMP-sourced TERM menu items must be swapped to LE for the
+            // PC engine — same reason as SCPT/INFO. See ScptEncoder.cs.
+            var scda = item.IsBigEndianBytecode
+                ? ScriptBytecodeEndianConverter.SwapBigEndianToLittleEndian(
+                    compiled, variables: null, item.ReferencedObjects)
+                : compiled;
+            subs.Add(new EncodedSubrecord("SCDA", scda));
         }
 
         if (!string.IsNullOrEmpty(item.SourceText))
@@ -157,7 +188,9 @@ public sealed class TermEncoder : IRecordEncoder
             }
             else
             {
-                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRO", refFormId));
+                // Same alias/validity check as SCPT and INFO SCROs — see ScptEncoder.EncodeNew.
+                var resolved = FormIdReferenceResolver.Resolve(refFormId, validFormIds, remapTable) ?? 0u;
+                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRO", resolved));
             }
         }
     }

@@ -11,6 +11,12 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 /// </summary>
 public sealed class ImodEncoder : IRecordEncoder
 {
+    private static readonly Dictionary<string, Func<WeaponModRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
+    {
+        ["Value"] = m => m.Value,
+        ["Weight"] = m => m.Weight,
+    };
+
     public string RecordType => "IMOD";
     public Type ModelType => typeof(WeaponModRecord);
 
@@ -51,16 +57,8 @@ public sealed class ImodEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("ICON", imod.Icon));
         }
 
-        subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(imod)));
+        subs.Add(SchemaModelSerializer.SerializeSubrecord("DATA", "IMOD", 8, imod, DataExtractors));
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
-    }
-
-    private static byte[] BuildDataSubrecord(WeaponModRecord imod)
-    {
-        var data = new byte[8];
-        SubrecordEncoder.WriteInt32(data, 0, imod.Value);
-        SubrecordEncoder.WriteFloat(data, 4, imod.Weight);
-        return data;
     }
 }

@@ -1,4 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
+using FalloutXbox360Utils.Core.Formats.Esm.Script;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 
@@ -16,6 +18,25 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 /// </summary>
 public sealed class ScptEncoder : IRecordEncoder
 {
+    private static readonly Dictionary<string, Func<ScriptRecord, object?>> SchrExtractors = new(StringComparer.Ordinal)
+    {
+        ["VariableCount"] = m => m.VariableCount,
+        ["RefObjectCount"] = m => m.RefObjectCount,
+        ["CompiledSize"] = m => m.CompiledSize,
+        ["LastVariableId"] = m => m.LastVariableId,
+        ["IsQuestScript"] = m => m.IsQuestScript ? (byte)1 : (byte)0,
+        ["IsMagicEffectScript"] = m => m.IsMagicEffectScript ? (byte)1 : (byte)0,
+        ["IsCompiled"] = m => m.IsCompiled ? (byte)1 : (byte)0,
+    };
+
+    private static readonly Dictionary<string, Func<ScriptVariableInfo, object?>> SlsdExtractors = new(StringComparer.Ordinal)
+    {
+        ["Index"] = m => m.Index,
+        // Value (double) intentionally omitted — runtime stores the last-evaluated value but
+        // the encoder writes zero so the engine recomputes on first script run.
+        ["IsInteger"] = m => m.Type,
+    };
+
     public string RecordType => "SCPT";
     public Type ModelType => typeof(ScriptRecord);
 
@@ -29,7 +50,23 @@ public sealed class ScptEncoder : IRecordEncoder
     ///     Encode a new SCPT record from scratch in fopdoc canonical order:
     ///     EDID, SCHR, SCDA?, SCTX?, then per local: SLSD + SCVR, then per ref: SCRO/SCRV.
     /// </summary>
-    internal static EncodedRecord EncodeNew(ScriptRecord script)
+    /// <param name="script">SCPT model to emit.</param>
+    /// <param name="validFormIds">
+    ///     Master ∪ newly-emitted FormID set, used to validate SCRO references. When supplied,
+    ///     unresolvable refs are emitted as 0x00000000 (engine treats as null/no-op) so the
+    ///     engine doesn't refuse to execute the script. Index order is preserved so bytecode
+    ///     operands (1-based into the combined SCRO+SCRV list) stay valid.
+    /// </param>
+    /// <param name="remapTable">
+    ///     Source→allocated FormID alias map. Proto FormIDs the converter has reallocated
+    ///     into plugin space resolve through this before validity checking. Without this,
+    ///     scripts that reference new NPCs/objects fail with "Could not find referenced
+    ///     object … Script will not be executed".
+    /// </param>
+    internal static EncodedRecord EncodeNew(
+        ScriptRecord script,
+        IReadOnlySet<uint>? validFormIds = null,
+        IReadOnlyDictionary<uint, uint>? remapTable = null)
     {
         var subs = new List<EncodedSubrecord>();
         var warnings = new List<string>();
@@ -52,11 +89,19 @@ public sealed class ScptEncoder : IRecordEncoder
         }
 
         subs.Add(NewRecordSubrecords.EncodeStringSubrecord("EDID", script.EditorId ?? string.Empty));
-        subs.Add(new EncodedSubrecord("SCHR", BuildSchrSubrecord(script)));
+        subs.Add(SchemaModelSerializer.SerializeSubrecord("SCHR", "", 20, script, SchrExtractors));
 
         if (script.CompiledData is { Length: > 0 } compiledData)
         {
-            subs.Add(new EncodedSubrecord("SCDA", compiledData));
+            // Xbox 360 stores SCDA bytecode in native (big-endian) form. The PC engine
+            // reads opcodes/operands as little-endian; emitting BE bytes verbatim makes the
+            // very first opcode (ScriptName, 0x001D BE) decode as 0x1D00 — the "command
+            // 7424" spam the engine logs for every converted script.
+            var scda = script.IsBigEndian
+                ? ScriptBytecodeEndianConverter.SwapBigEndianToLittleEndian(
+                    compiledData, script.Variables, script.ReferencedObjects)
+                : compiledData;
+            subs.Add(new EncodedSubrecord("SCDA", scda));
         }
 
         if (!string.IsNullOrEmpty(script.SourceText))
@@ -66,7 +111,7 @@ public sealed class ScptEncoder : IRecordEncoder
 
         foreach (var variable in script.Variables)
         {
-            subs.Add(new EncodedSubrecord("SLSD", BuildSlsdSubrecord(variable)));
+            subs.Add(SchemaModelSerializer.SerializeSubrecord("SLSD", "", 24, variable, SlsdExtractors));
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("SCVR", variable.Name ?? string.Empty));
         }
 
@@ -81,36 +126,16 @@ public sealed class ScptEncoder : IRecordEncoder
             }
             else
             {
-                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRO", refFormId));
+                // Route every SCRO through the alias table + validity check. The bytecode
+                // refers to SCRO entries by 1-based index into the combined SCRO+SCRV list,
+                // so we MUST preserve order/count — a null result becomes 0x00000000 in
+                // place rather than a dropped entry. The engine treats null FormID refs as
+                // no-ops, but a dangling FormID causes "Script will not be executed".
+                var resolved = FormIdReferenceResolver.Resolve(refFormId, validFormIds, remapTable) ?? 0u;
+                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRO", resolved));
             }
         }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
-    }
-
-    private static byte[] BuildSchrSubrecord(ScriptRecord script)
-    {
-        var schr = new byte[20];
-        SubrecordEncoder.WriteUInt32(schr, 0, script.VariableCount);
-        SubrecordEncoder.WriteUInt32(schr, 4, script.RefObjectCount);
-        SubrecordEncoder.WriteUInt32(schr, 8, script.CompiledSize);
-        SubrecordEncoder.WriteUInt32(schr, 12, script.LastVariableId);
-        schr[16] = script.IsQuestScript ? (byte)1 : (byte)0;
-        schr[17] = script.IsMagicEffectScript ? (byte)1 : (byte)0;
-        schr[18] = script.IsCompiled ? (byte)1 : (byte)0;
-        // byte 19 padding (zero)
-        return schr;
-    }
-
-    private static byte[] BuildSlsdSubrecord(ScriptVariableInfo variable)
-    {
-        var slsd = new byte[24];
-        SubrecordEncoder.WriteUInt32(slsd, 0, variable.Index);
-        // bytes 4-7: padding (alignment for the double at offset 8)
-        // bytes 8-15: fValue (double) — runtime stores last-evaluated value; encoder writes zero.
-        // bytes 16: bIsInteger (0 = float, non-zero = integer)
-        slsd[16] = variable.Type;
-        // bytes 17-23: padding
-        return slsd;
     }
 }

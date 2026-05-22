@@ -1,3 +1,4 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Dialogue;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
 
@@ -20,6 +21,19 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 /// </summary>
 public sealed class QustEncoder : IRecordEncoder
 {
+    private static readonly Dictionary<string, Func<QuestRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
+    {
+        ["Flags"] = m => m.Flags,
+        ["Priority"] = m => m.Priority,
+        ["QuestDelay"] = m => m.QuestDelay,
+    };
+
+    private static readonly Dictionary<string, Func<QuestObjectiveTarget, object?>> QstaExtractors = new(StringComparer.Ordinal)
+    {
+        ["Target"] = m => m.TargetFormId,
+        ["Flags"] = m => m.Flags,
+    };
+
     public string RecordType => "QUST";
     public Type ModelType => typeof(QuestRecord);
 
@@ -54,11 +68,7 @@ public sealed class QustEncoder : IRecordEncoder
 
         // DATA (8 bytes): byte Flags(0) + byte Priority(1) + pad(2..3) + float QuestDelay.
         // Single-occurrence; safe to replace.
-        var data = new byte[8];
-        data[0] = quest.Flags;
-        data[1] = quest.Priority;
-        SubrecordEncoder.WriteFloat(data, 4, quest.QuestDelay);
-        subs.Add(new EncodedSubrecord("DATA", data));
+        subs.Add(SchemaModelSerializer.SerializeSubrecord("DATA", "QUST", 8, quest, DataExtractors));
 
         // If only DATA was emitted (no FULL mutation), fall through to empty so the
         // merge engine retains the master's QUST verbatim — DATA flags rarely differ.
@@ -151,12 +161,7 @@ public sealed class QustEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("FULL", quest.FullName));
         }
 
-        var data = new byte[8];
-        data[0] = quest.Flags;
-        data[1] = quest.Priority;
-        // bytes 2-3 padding
-        SubrecordEncoder.WriteFloat(data, 4, quest.QuestDelay);
-        subs.Add(new EncodedSubrecord("DATA", data));
+        subs.Add(SchemaModelSerializer.SerializeSubrecord("DATA", "QUST", 8, quest, DataExtractors));
 
         // Top-level quest conditions — CTDA* + optional CIS1/CIS2 between DATA and the
         // first INDX. Per-stage and per-target conditions are emitted within their owning
@@ -198,11 +203,7 @@ public sealed class QustEncoder : IRecordEncoder
 
             foreach (var target in objective.Targets)
             {
-                var qsta = new byte[8];
-                SubrecordEncoder.WriteFormId(qsta, 0, target.TargetFormId);
-                qsta[4] = target.Flags;
-                // bytes 5-7 padding
-                subs.Add(new EncodedSubrecord("QSTA", qsta));
+                subs.Add(SchemaModelSerializer.SerializeSubrecord("QSTA", "", 8, target, QstaExtractors));
 
                 EmitConditions(subs, target.Conditions, validFormIds, remapTable,
                     ref droppedCtdas, ref remappedCtdaParams);

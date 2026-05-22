@@ -16,6 +16,13 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 /// </summary>
 public sealed class CellEncoder : IRecordEncoder
 {
+    private static readonly Dictionary<string, Func<CellRecord, object?>> XclcExtractors = new(StringComparer.Ordinal)
+    {
+        ["X"] = m => m.GridX ?? 0,
+        ["Y"] = m => m.GridY ?? 0,
+        // LandFlags / ForceHideLand left unset → zero-fill (the prior encoder also wrote 0).
+    };
+
     public string RecordType => "CELL";
     public Type ModelType => typeof(CellRecord);
 
@@ -56,11 +63,7 @@ public sealed class CellEncoder : IRecordEncoder
                     $"Exterior CELL 0x{cell.FormId:X8} has no grid coords — emitting XCLC at (0,0).");
             }
 
-            var xclc = new byte[12];
-            SubrecordEncoder.WriteInt32(xclc, 0, cell.GridX ?? 0);
-            SubrecordEncoder.WriteInt32(xclc, 4, cell.GridY ?? 0);
-            SubrecordEncoder.WriteUInt32(xclc, 8, 0); // ForceHideLand
-            subs.Add(new EncodedSubrecord("XCLC", xclc));
+            subs.Add(SchemaModelSerializer.SerializeSubrecord("XCLC", "", 12, cell, XclcExtractors));
         }
 
         // LTMP / LNAM — lighting template and inheritance flags. LNAM (inheritance flags) is

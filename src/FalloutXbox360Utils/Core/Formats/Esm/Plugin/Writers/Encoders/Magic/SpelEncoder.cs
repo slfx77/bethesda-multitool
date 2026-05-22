@@ -11,6 +11,14 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Magic;
 /// </summary>
 public sealed class SpelEncoder : IRecordEncoder
 {
+    private static readonly Dictionary<string, Func<SpellRecord, object?>> SpitExtractors = new(StringComparer.Ordinal)
+    {
+        ["Type"] = m => (uint)m.Type,
+        ["Cost"] = m => m.Cost,
+        ["Level"] = m => m.Level,
+        ["Flags"] = m => m.Flags,
+    };
+
     public string RecordType => "SPEL";
     public Type ModelType => typeof(SpellRecord);
 
@@ -36,7 +44,7 @@ public sealed class SpelEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("FULL", spel.FullName));
         }
 
-        subs.Add(new EncodedSubrecord("SPIT", BuildSpitSubrecord(spel)));
+        subs.Add(SchemaModelSerializer.SerializeSubrecord("SPIT", "SPEL", 16, spel, SpitExtractors));
 
         foreach (var effect in spel.Effects)
         {
@@ -45,16 +53,5 @@ public sealed class SpelEncoder : IRecordEncoder
         }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
-    }
-
-    private static byte[] BuildSpitSubrecord(SpellRecord spel)
-    {
-        var data = new byte[16];
-        SubrecordEncoder.WriteUInt32(data, 0, (uint)spel.Type);
-        SubrecordEncoder.WriteUInt32(data, 4, spel.Cost);
-        SubrecordEncoder.WriteUInt32(data, 8, spel.Level);
-        data[12] = spel.Flags;
-        // bytes 13-15 padding
-        return data;
     }
 }

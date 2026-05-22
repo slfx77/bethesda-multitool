@@ -1,5 +1,8 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Schema;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Dialogue;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
+using FalloutXbox360Utils.Core.Formats.Esm.Script;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 
@@ -26,6 +29,26 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 /// </summary>
 public sealed class InfoEncoder : IRecordEncoder
 {
+    private static readonly Dictionary<string, Func<DialogueResponse, object?>> TrdtExtractors = new(StringComparer.Ordinal)
+    {
+        ["EmotionType"] = m => m.EmotionType,
+        ["EmotionValue"] = m => m.EmotionValue,
+        // ConversationTopic + UseEmotionAnim not in model → zero-fill.
+        ["ResponseNumber"] = m => m.ResponseNumber,
+        ["Sound"] = m => m.SoundFormId ?? 0u,
+    };
+
+    private static readonly Dictionary<string, Func<DialogueCondition, object?>> CtdaExtractors = new(StringComparer.Ordinal)
+    {
+        ["Type"] = m => m.Type,
+        ["ComparisonValue"] = m => m.ComparisonValue,
+        ["FunctionIndex"] = m => m.FunctionIndex,
+        ["Parameter1"] = m => m.Parameter1,
+        ["Parameter2"] = m => m.Parameter2,
+        ["RunOn"] = m => m.RunOn,
+        ["Reference"] = m => m.Reference,
+    };
+
     public string RecordType => "INFO";
     public Type ModelType => typeof(DialogueRecord);
 
@@ -121,7 +144,18 @@ public sealed class InfoEncoder : IRecordEncoder
     ///     (CTDA + CIS1? + CIS2?)*, TCLT*, TCLF*,
     ///     (SCHR + SCDA? + SCTX? + SCRO* + SCRV* + NEXT?)*, RNAM?, ANAM?, DNAM?.
     /// </summary>
-    internal static EncodedRecord EncodeNew(DialogueRecord info)
+    /// <param name="info">INFO model to emit.</param>
+    /// <param name="validFormIds">
+    ///     Master ∪ newly-emitted FormID set for validating embedded result-script SCRO
+    ///     references. See <see cref="ScptEncoder.EncodeNew" />.
+    /// </param>
+    /// <param name="remapTable">
+    ///     Source→allocated FormID alias map for embedded result-script SCROs.
+    /// </param>
+    internal static EncodedRecord EncodeNew(
+        DialogueRecord info,
+        IReadOnlySet<uint>? validFormIds = null,
+        IReadOnlyDictionary<uint, uint>? remapTable = null)
     {
         var subs = new List<EncodedSubrecord>();
         var warnings = new List<string>();
@@ -135,7 +169,7 @@ public sealed class InfoEncoder : IRecordEncoder
 
         // New-record path needs a well-formed TRDT/NAM1 even if Responses is empty —
         // the runtime crashes iterating an empty response list on a fresh INFO record.
-        BuildCanonicalSubrecords(info, subs, true);
+        BuildCanonicalSubrecords(info, subs, true, validFormIds, remapTable);
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
     }
 
@@ -164,7 +198,9 @@ public sealed class InfoEncoder : IRecordEncoder
     private static void BuildCanonicalSubrecords(
         DialogueRecord info,
         List<EncodedSubrecord> subs,
-        bool emitPlaceholderOnEmptyResponses)
+        bool emitPlaceholderOnEmptyResponses,
+        IReadOnlySet<uint>? validFormIds = null,
+        IReadOnlyDictionary<uint, uint>? remapTable = null)
     {
         // DATA: DialType + NextSpeaker default 0; model carries Flags/Flags2.
         var data = new byte[4];
@@ -258,9 +294,9 @@ public sealed class InfoEncoder : IRecordEncoder
         // mid-record. Always emit the pair; pad missing blocks with empty SCHR headers.
         var beginScript = info.ResultScripts.Count > 0 ? info.ResultScripts[0] : null;
         var endScript = info.ResultScripts.Count > 1 ? info.ResultScripts[1] : null;
-        EmitResultScriptBlock(subs, beginScript);
+        EmitResultScriptBlock(subs, beginScript, validFormIds, remapTable);
         subs.Add(new EncodedSubrecord("NEXT", []));
-        EmitResultScriptBlock(subs, endScript);
+        EmitResultScriptBlock(subs, endScript, validFormIds, remapTable);
 
         if (!string.IsNullOrEmpty(info.PromptText))
         {
@@ -280,7 +316,9 @@ public sealed class InfoEncoder : IRecordEncoder
 
     private static void EmitResultScriptBlock(
         List<EncodedSubrecord> subs,
-        DialogueResultScript? script)
+        DialogueResultScript? script,
+        IReadOnlySet<uint>? validFormIds = null,
+        IReadOnlyDictionary<uint, uint>? remapTable = null)
     {
         var compiledSize = script?.CompiledData?.Length ?? 0;
         var refCount = (uint)(script?.ReferencedObjects.Count ?? 0);
@@ -290,15 +328,21 @@ public sealed class InfoEncoder : IRecordEncoder
         // "compiled form, no bytecode", a no-op. Setting IsCompiled=0 on an empty script
         // tells the engine the script needs runtime compilation, which can trigger spurious
         // behavior (observed: actors playing crucified idle every few seconds).
-        var schr = new byte[20];
-        SubrecordEncoder.WriteUInt32(schr, 0, 0); // VariableCount — INFO result scripts have no locals
-        SubrecordEncoder.WriteUInt32(schr, 4, refCount);
-        SubrecordEncoder.WriteUInt32(schr, 8, (uint)compiledSize);
-        SubrecordEncoder.WriteUInt32(schr, 12, 0); // LastVariableId
-        schr[16] = 0; // IsQuestScript
-        schr[17] = 0; // IsMagicEffectScript
-        schr[18] = 1; // IsCompiled — always 1 per master convention
-        subs.Add(new EncodedSubrecord("SCHR", schr));
+        // Use SchemaDictionarySerializer directly because the values are computed from the
+        // result script's referenced-objects and compiled-data sizes, not model properties.
+        var schrSchema = SubrecordSchemaRegistry.GetSchema("SCHR", "", 20)
+            ?? throw new InvalidOperationException("SCHR schema missing.");
+        var schrValues = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["VariableCount"] = 0u,
+            ["RefObjectCount"] = refCount,
+            ["CompiledSize"] = (uint)compiledSize,
+            ["LastVariableId"] = 0u,
+            ["IsQuestScript"] = (byte)0,
+            ["IsMagicEffectScript"] = (byte)0,
+            ["IsCompiled"] = (byte)1,
+        };
+        subs.Add(new EncodedSubrecord("SCHR", SchemaDictionarySerializer.Serialize(schrSchema, schrValues)));
 
         if (script is null)
         {
@@ -307,7 +351,13 @@ public sealed class InfoEncoder : IRecordEncoder
 
         if (script.CompiledData is { Length: > 0 } compiled)
         {
-            subs.Add(new EncodedSubrecord("SCDA", compiled));
+            // BE bytecode from DMP-sourced INFO result scripts must be swapped to LE for the
+            // PC engine — same reason as SCPT. See ScptEncoder.cs for the long explanation.
+            var scda = script.IsBigEndianBytecode
+                ? ScriptBytecodeEndianConverter.SwapBigEndianToLittleEndian(
+                    compiled, variables: null, script.ReferencedObjects)
+                : compiled;
+            subs.Add(new EncodedSubrecord("SCDA", scda));
         }
 
         if (!string.IsNullOrEmpty(script.SourceText))
@@ -324,27 +374,19 @@ public sealed class InfoEncoder : IRecordEncoder
             }
             else
             {
-                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRO", refFormId));
+                // SCROs in INFO result scripts go through the same alias/validity check as
+                // top-level SCPT records — see ScptEncoder.EncodeNew for rationale. Without
+                // this, the engine refuses to execute result scripts that reference any
+                // remapped or proto-only FormID, breaking dialogue side-effects.
+                var resolved = FormIdReferenceResolver.Resolve(refFormId, validFormIds, remapTable) ?? 0u;
+                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRO", resolved));
             }
         }
     }
 
     private static byte[] BuildTrdtSubrecord(DialogueResponse response)
     {
-        var trdt = new byte[24];
-        SubrecordEncoder.WriteUInt32(trdt, 0, response.EmotionType);
-        SubrecordEncoder.WriteInt32(trdt, 4, response.EmotionValue);
-        // bytes 8-11: ConversationTopic FormID (not in model, zero)
-        trdt[12] = response.ResponseNumber;
-        // bytes 13-15: padding
-        if (response.SoundFormId is > 0)
-        {
-            SubrecordEncoder.WriteFormId(trdt, 16, response.SoundFormId.Value);
-        }
-
-        // byte 20: UseEmotionAnim bool (not in model, zero)
-        // bytes 21-23: padding
-        return trdt;
+        return SchemaModelSerializer.Serialize("TRDT", "", 24, response, TrdtExtractors);
     }
 
     /// <summary>
@@ -354,23 +396,12 @@ public sealed class InfoEncoder : IRecordEncoder
     /// </summary>
     private static byte[] BuildPlaceholderTrdtSubrecord()
     {
-        var trdt = new byte[24];
-        trdt[12] = 1; // ResponseNumber = 1 (first response)
-        return trdt;
+        return SchemaModelSerializer.Serialize("TRDT", "", 24,
+            new DialogueResponse { ResponseNumber = 1 }, TrdtExtractors);
     }
 
     internal static byte[] BuildCtdaSubrecord(DialogueCondition condition)
     {
-        var ctda = new byte[28];
-        ctda[0] = condition.Type;
-        // bytes 1-3: padding
-        SubrecordEncoder.WriteFloat(ctda, 4, condition.ComparisonValue);
-        SubrecordEncoder.WriteUInt16(ctda, 8, condition.FunctionIndex);
-        // bytes 10-11: padding
-        SubrecordEncoder.WriteFormId(ctda, 12, condition.Parameter1);
-        SubrecordEncoder.WriteUInt32(ctda, 16, condition.Parameter2);
-        SubrecordEncoder.WriteUInt32(ctda, 20, condition.RunOn);
-        SubrecordEncoder.WriteFormId(ctda, 24, condition.Reference);
-        return ctda;
+        return SchemaModelSerializer.Serialize("CTDA", "", 28, condition, CtdaExtractors);
     }
 }

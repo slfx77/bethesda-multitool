@@ -14,6 +14,15 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 /// </summary>
 public sealed class IdleEncoder : IRecordEncoder
 {
+    // ANAM extractors operate on the sanitized parent/previous FormIDs the encoder
+    // computes per call. Mutate the record via `with { }` before serialization so the
+    // static map sees the resolved values.
+    private static readonly Dictionary<string, Func<IdleAnimationRecord, object?>> AnamExtractors = new(StringComparer.Ordinal)
+    {
+        ["Parent"] = m => m.ParentIdleFormId,
+        ["Previous"] = m => m.PreviousIdleFormId,
+    };
+
     public string RecordType => "IDLE";
     public Type ModelType => typeof(IdleAnimationRecord);
 
@@ -146,11 +155,10 @@ public sealed class IdleEncoder : IRecordEncoder
         var previousId = SanitizeIdleAnamRef(idle.PreviousIdleFormId, idle.FormId, "previous idle",
             validFormIds, remapTable, warnings);
 
-        // ANAM: 8 bytes (parent FormID + previous FormID).
-        var anam = new byte[8];
-        SubrecordEncoder.WriteFormId(anam, 0, parentId);
-        SubrecordEncoder.WriteFormId(anam, 4, previousId);
-        subs.Add(new EncodedSubrecord("ANAM", anam));
+        // ANAM: 8 bytes (parent FormID + previous FormID). Mutate via `with { }` so the
+        // sanitized FormIDs land in the schema-driven serializer through the static map.
+        var anamModel = idle with { ParentIdleFormId = parentId, PreviousIdleFormId = previousId };
+        subs.Add(SchemaModelSerializer.SerializeSubrecord("ANAM", "IDLE", 8, anamModel, AnamExtractors));
 
         // DATA: 8 bytes packed per FNV IDLE schema.
         var data = new byte[8];

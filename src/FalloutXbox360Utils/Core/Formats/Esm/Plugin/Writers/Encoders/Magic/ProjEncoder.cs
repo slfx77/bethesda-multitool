@@ -17,6 +17,34 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Magic;
 /// </summary>
 public sealed class ProjEncoder : IRecordEncoder
 {
+    // Schema collapses Flags (ushort) + ProjectileType (ushort) into one UInt32 "FlagsAndType"
+    // field at offset 0. Combine via shift; the LE encoding matches the prior two-WriteUInt16
+    // pattern byte-for-byte.
+    private static readonly Dictionary<string, Func<ProjectileRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
+    {
+        ["FlagsAndType"] = m => (uint)m.Flags | ((uint)m.ProjectileType << 16),
+        ["Gravity"] = m => m.Gravity,
+        ["Speed"] = m => m.Speed,
+        ["Range"] = m => m.Range,
+        ["Light"] = m => m.Light,
+        ["MuzzleFlashLight"] = m => m.MuzzleFlashLight,
+        ["TracerChance"] = m => m.TracerChance,
+        ["ExplosionAltTriggerProximity"] = m => m.ExplosionProximity,
+        ["ExplosionAltTriggerTimer"] = m => m.ExplosionTimer,
+        ["Explosion"] = m => m.Explosion,
+        ["Sound"] = m => m.Sound,
+        ["MuzzleFlashDuration"] = m => m.MuzzleFlashDuration,
+        ["FadeDuration"] = m => m.FadeDuration,
+        ["ImpactForce"] = m => m.ImpactForce,
+        ["SoundCountdown"] = m => m.CountdownSound,
+        ["SoundDisable"] = m => m.DeactivateSound,
+        ["DefaultWeaponSource"] = m => m.DefaultWeaponSource,
+        ["RotationX"] = m => m.RotationX,
+        ["RotationY"] = m => m.RotationY,
+        ["RotationZ"] = m => m.RotationZ,
+        ["BouncyMult"] = m => m.BounceMultiplier,
+    };
+
     public string RecordType => "PROJ";
     public Type ModelType => typeof(ProjectileRecord);
 
@@ -47,7 +75,7 @@ public sealed class ProjEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MODL", proj.ModelPath));
         }
 
-        subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(proj)));
+        subs.Add(SchemaModelSerializer.SerializeSubrecord("DATA", "PROJ", 84, proj, DataExtractors));
 
         if (proj.SoundLevel != 0)
         {
@@ -55,33 +83,5 @@ public sealed class ProjEncoder : IRecordEncoder
         }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
-    }
-
-    private static byte[] BuildDataSubrecord(ProjectileRecord proj)
-    {
-        var data = new byte[84];
-        SubrecordEncoder.WriteUInt16(data, 0, proj.Flags);
-        SubrecordEncoder.WriteUInt16(data, 2, proj.ProjectileType);
-        SubrecordEncoder.WriteFloat(data, 4, proj.Gravity);
-        SubrecordEncoder.WriteFloat(data, 8, proj.Speed);
-        SubrecordEncoder.WriteFloat(data, 12, proj.Range);
-        SubrecordEncoder.WriteFormId(data, 16, proj.Light);
-        SubrecordEncoder.WriteFormId(data, 20, proj.MuzzleFlashLight);
-        SubrecordEncoder.WriteFloat(data, 24, proj.TracerChance);
-        SubrecordEncoder.WriteFloat(data, 28, proj.ExplosionProximity);
-        SubrecordEncoder.WriteFloat(data, 32, proj.ExplosionTimer);
-        SubrecordEncoder.WriteFormId(data, 36, proj.Explosion);
-        SubrecordEncoder.WriteFormId(data, 40, proj.Sound);
-        SubrecordEncoder.WriteFloat(data, 44, proj.MuzzleFlashDuration);
-        SubrecordEncoder.WriteFloat(data, 48, proj.FadeDuration);
-        SubrecordEncoder.WriteFloat(data, 52, proj.ImpactForce);
-        SubrecordEncoder.WriteFormId(data, 56, proj.CountdownSound);
-        SubrecordEncoder.WriteFormId(data, 60, proj.DeactivateSound);
-        SubrecordEncoder.WriteFormId(data, 64, proj.DefaultWeaponSource);
-        SubrecordEncoder.WriteFloat(data, 68, proj.RotationX);
-        SubrecordEncoder.WriteFloat(data, 72, proj.RotationY);
-        SubrecordEncoder.WriteFloat(data, 76, proj.RotationZ);
-        SubrecordEncoder.WriteFloat(data, 80, proj.BounceMultiplier);
-        return data;
     }
 }

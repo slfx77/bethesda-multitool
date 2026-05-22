@@ -14,6 +14,17 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Magic;
 /// </summary>
 public sealed class PerkEncoder : IRecordEncoder
 {
+    // CTDA schema field names: Type (operator), ComparisonValue, FunctionIndex, Parameter1,
+    // Parameter2, RunOn, Reference. RunOn / Reference left unset → zero-fill.
+    private static readonly Dictionary<string, Func<PerkCondition, object?>> CtdaExtractors = new(StringComparer.Ordinal)
+    {
+        ["Type"] = m => m.ComparisonOperator,
+        ["ComparisonValue"] = m => m.ComparisonValue,
+        ["FunctionIndex"] = m => m.FunctionIndex,
+        ["Parameter1"] = m => m.Parameter1,
+        ["Parameter2"] = m => m.Parameter2,
+    };
+
     public string RecordType => "PERK";
     public Type ModelType => typeof(PerkRecord);
 
@@ -103,7 +114,7 @@ public sealed class PerkEncoder : IRecordEncoder
     ///     Run PerkConditions through <see cref="ConditionSanitizer.FilterPerk" /> when a
     ///     validity set is supplied; otherwise pass through verbatim for legacy callers/tests.
     /// </summary>
-    private static IReadOnlyList<PerkCondition> SanitizePerkConditions(
+    private static List<PerkCondition> SanitizePerkConditions(
         List<PerkCondition> conditions,
         IReadOnlySet<uint>? validFormIds,
         IReadOnlyDictionary<uint, uint>? remapTable,
@@ -276,15 +287,9 @@ public sealed class PerkEncoder : IRecordEncoder
 
     private static byte[] BuildPerkCtdaSubrecord(PerkCondition condition)
     {
-        // CTDA (28B) per PDB CONDITION_ITEM_DATA. Operator is the low 5 bits of byte 0
-        // (high 3 bits are reserved for run-on / OR flags which we leave zero).
-        var ctda = new byte[28];
-        ctda[0] = condition.ComparisonOperator;
-        SubrecordEncoder.WriteFloat(ctda, 4, condition.ComparisonValue);
-        SubrecordEncoder.WriteUInt16(ctda, 8, condition.FunctionIndex);
-        SubrecordEncoder.WriteFormId(ctda, 12, condition.Parameter1);
-        SubrecordEncoder.WriteUInt32(ctda, 16, condition.Parameter2);
-        // RunOn (bytes 20-23) and Reference (bytes 24-27) left zero
-        return ctda;
+        // CTDA (28B) per PDB CONDITION_ITEM_DATA. The schema-driven path writes the operator
+        // byte at offset 0 (UInt8 "Type" in schema); the high 3 bits are run-on/OR flags
+        // currently unused by the encoder. RunOn (offset 20) and Reference (offset 24) zero-fill.
+        return SchemaModelSerializer.Serialize("CTDA", "", 28, condition, CtdaExtractors);
     }
 }

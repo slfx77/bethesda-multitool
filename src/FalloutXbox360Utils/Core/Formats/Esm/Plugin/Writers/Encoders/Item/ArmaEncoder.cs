@@ -16,6 +16,13 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 /// </summary>
 public sealed class ArmaEncoder : IRecordEncoder
 {
+    private static readonly Dictionary<string, Func<ArmaRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
+    {
+        ["Value"] = m => m.Value,
+        ["MaxCondition"] = m => m.MaxCondition,
+        ["Weight"] = m => m.Weight,
+    };
+
     public string RecordType => "ARMA";
     public Type ModelType => typeof(ArmaRecord);
 
@@ -103,7 +110,7 @@ public sealed class ArmaEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MIC2", arma.FemaleIconPath));
         }
 
-        subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(arma)));
+        subs.Add(SchemaModelSerializer.SerializeSubrecord("DATA", "ARMA", 12, arma, DataExtractors));
 
         // DNAM — detection sound level. Emit when non-default (0 = Loud is the default; we
         // emit when it's been deliberately set to Normal or Silent, but always-emitting is
@@ -128,14 +135,5 @@ public sealed class ArmaEncoder : IRecordEncoder
         }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
-    }
-
-    private static byte[] BuildDataSubrecord(ArmaRecord arma)
-    {
-        var data = new byte[12];
-        SubrecordEncoder.WriteInt32(data, 0, arma.Value);
-        SubrecordEncoder.WriteInt32(data, 4, arma.MaxCondition);
-        SubrecordEncoder.WriteFloat(data, 8, arma.Weight);
-        return data;
     }
 }

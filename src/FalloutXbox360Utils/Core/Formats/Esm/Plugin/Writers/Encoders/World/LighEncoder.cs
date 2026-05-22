@@ -19,6 +19,19 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 /// </summary>
 public sealed class LighEncoder : IRecordEncoder
 {
+    // Schema field names track the LIGH DATA layout: Time/Radius/Color/Flags/FalloffExponent/FOV/Value/Weight.
+    private static readonly Dictionary<string, Func<LightRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
+    {
+        ["Time"] = m => m.Duration,
+        ["Radius"] = m => m.Radius,
+        ["Color"] = m => m.Color,
+        ["Flags"] = m => m.Flags,
+        ["FalloffExponent"] = m => m.FalloffExponent,
+        ["FOV"] = m => m.Fov,
+        ["Value"] = m => m.Value,
+        ["Weight"] = m => m.Weight,
+    };
+
     public string RecordType => "LIGH";
     public Type ModelType => typeof(LightRecord);
 
@@ -73,7 +86,7 @@ public sealed class LighEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("ICON", ligh.IconPath));
         }
 
-        subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(ligh)));
+        subs.Add(SchemaModelSerializer.SerializeSubrecord("DATA", "LIGH", 32, ligh, DataExtractors));
 
         if (ligh.Fade.HasValue)
         {
@@ -86,19 +99,5 @@ public sealed class LighEncoder : IRecordEncoder
         }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
-    }
-
-    private static byte[] BuildDataSubrecord(LightRecord ligh)
-    {
-        var data = new byte[32];
-        SubrecordEncoder.WriteInt32(data, 0, ligh.Duration);
-        SubrecordEncoder.WriteUInt32(data, 4, ligh.Radius);
-        SubrecordEncoder.WriteUInt32(data, 8, ligh.Color);
-        SubrecordEncoder.WriteUInt32(data, 12, ligh.Flags);
-        SubrecordEncoder.WriteFloat(data, 16, ligh.FalloffExponent);
-        SubrecordEncoder.WriteFloat(data, 20, ligh.Fov);
-        SubrecordEncoder.WriteInt32(data, 24, ligh.Value);
-        SubrecordEncoder.WriteFloat(data, 28, ligh.Weight);
-        return data;
     }
 }

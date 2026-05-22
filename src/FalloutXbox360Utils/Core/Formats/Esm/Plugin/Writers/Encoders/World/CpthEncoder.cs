@@ -12,6 +12,12 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 /// </summary>
 public sealed class CpthEncoder : IRecordEncoder
 {
+    private static readonly Dictionary<string, Func<CameraPathRecord, object?>> AnamExtractors = new(StringComparer.Ordinal)
+    {
+        ["Parent"] = m => m.ParentPathFormId,
+        ["Previous"] = m => m.PreviousPathFormId,
+    };
+
     public string RecordType => "CPTH";
     public Type ModelType => typeof(CameraPathRecord);
 
@@ -40,10 +46,7 @@ public sealed class CpthEncoder : IRecordEncoder
         }
 
         // ANAM: 8 bytes (parent FormID + previous FormID).
-        var anam = new byte[8];
-        SubrecordEncoder.WriteFormId(anam, 0, cpth.ParentPathFormId);
-        SubrecordEncoder.WriteFormId(anam, 4, cpth.PreviousPathFormId);
-        subs.Add(new EncodedSubrecord("ANAM", anam));
+        subs.Add(SchemaModelSerializer.SerializeSubrecord("ANAM", "CPTH", 8, cpth, AnamExtractors));
 
         subs.Add(NewRecordSubrecords.EncodeByteSubrecord("DATA", cpth.Flags));
 

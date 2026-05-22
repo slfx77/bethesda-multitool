@@ -13,6 +13,21 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Misc;
 /// </summary>
 public sealed class SounEncoder : IRecordEncoder
 {
+    // The model widens MinAttenuationDistance / MaxAttenuationDistance to ushort but the
+    // wire format is uint8 per PDB; downstream serializer truncates via cast. Schema fields
+    // we don't populate (Attenuation1..5, ReverbAttenuation, Priority, LoopBegin, LoopEnd)
+    // are zero-filled — matches the prior encoder's behaviour of leaving those bytes at 0.
+    private static readonly Dictionary<string, Func<SoundRecord, object?>> SnddExtractors = new(StringComparer.Ordinal)
+    {
+        ["MinAttenuationDistance"] = m => (byte)m.MinAttenuationDistance,
+        ["MaxAttenuationDistance"] = m => (byte)m.MaxAttenuationDistance,
+        ["FreqAdjustment"] = m => (sbyte)m.RandomPercentChance,
+        ["Flags"] = m => m.Flags,
+        ["StaticAttenuation"] = m => m.StaticAttenuation,
+        ["EndTime"] = m => m.EndTime,
+        ["StartTime"] = m => m.StartTime,
+    };
+
     public string RecordType => "SOUN";
     public Type ModelType => typeof(SoundRecord);
 
@@ -43,26 +58,8 @@ public sealed class SounEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("FNAM", soun.FileName));
         }
 
-        subs.Add(new EncodedSubrecord("SNDD", BuildSnddSubrecord(soun)));
+        subs.Add(SchemaModelSerializer.SerializeSubrecord("SNDD", "SOUN", 36, soun, SnddExtractors));
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
-    }
-
-    private static byte[] BuildSnddSubrecord(SoundRecord soun)
-    {
-        // The model widens MinAttenuationDistance and MaxAttenuationDistance to ushort but the
-        // wire format is uint8 per PDB. Truncate via cast — values rarely exceed 255.
-        var data = new byte[36];
-        data[0] = (byte)soun.MinAttenuationDistance;
-        data[1] = (byte)soun.MaxAttenuationDistance;
-        data[2] = (byte)soun.RandomPercentChance; // FreqAdjustment slot per schema
-        // byte 3 padding
-        SubrecordEncoder.WriteUInt32(data, 4, soun.Flags);
-        SubrecordEncoder.WriteInt16(data, 8, soun.StaticAttenuation);
-        data[10] = soun.EndTime;
-        data[11] = soun.StartTime;
-        // bytes 12-23: Attenuation1-5 + ReverbAttenuation — not in model, leave zero.
-        // bytes 24-35: Priority + LoopBegin + LoopEnd — not in model, leave zero.
-        return data;
     }
 }

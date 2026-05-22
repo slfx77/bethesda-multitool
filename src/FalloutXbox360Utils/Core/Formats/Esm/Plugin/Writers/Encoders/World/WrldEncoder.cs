@@ -17,6 +17,34 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 /// </summary>
 public sealed class WrldEncoder : IRecordEncoder
 {
+    private static readonly Dictionary<string, Func<WorldspaceRecord, object?>> DnamExtractors = new(StringComparer.Ordinal)
+    {
+        ["Value1"] = m => m.DefaultLandHeight ?? 0f,
+        ["Value2"] = m => m.DefaultWaterHeight ?? 0f,
+    };
+
+    private static readonly Dictionary<string, Func<WorldspaceRecord, object?>> MnamExtractors = new(StringComparer.Ordinal)
+    {
+        ["UsableX"] = m => m.MapUsableWidth ?? 0,
+        ["UsableY"] = m => m.MapUsableHeight ?? 0,
+        ["NWCellX"] = m => m.MapNWCellX ?? (short)0,
+        ["NWCellY"] = m => m.MapNWCellY ?? (short)0,
+        ["SECellX"] = m => m.MapSECellX ?? (short)0,
+        ["SECellY"] = m => m.MapSECellY ?? (short)0,
+    };
+
+    private static readonly Dictionary<string, Func<WorldspaceRecord, object?>> Nam0Extractors = new(StringComparer.Ordinal)
+    {
+        ["X"] = m => m.BoundsMinX ?? 0f,
+        ["Y"] = m => m.BoundsMinY ?? 0f,
+    };
+
+    private static readonly Dictionary<string, Func<WorldspaceRecord, object?>> Nam9Extractors = new(StringComparer.Ordinal)
+    {
+        ["X"] = m => m.BoundsMaxX ?? 0f,
+        ["Y"] = m => m.BoundsMaxY ?? 0f,
+    };
+
     public string RecordType => "WRLD";
     public Type ModelType => typeof(WorldspaceRecord);
 
@@ -76,15 +104,12 @@ public sealed class WrldEncoder : IRecordEncoder
         // emit NAM3/NAM4/ICON, so DNAM lands directly between NAM2 and MNAM.
         if (wrld.DefaultLandHeight.HasValue || wrld.DefaultWaterHeight.HasValue)
         {
-            var dnam = new byte[8];
-            SubrecordEncoder.WriteFloat(dnam, 0, wrld.DefaultLandHeight ?? 0f);
-            SubrecordEncoder.WriteFloat(dnam, 4, wrld.DefaultWaterHeight ?? 0f);
-            subs.Add(new EncodedSubrecord("DNAM", dnam));
+            subs.Add(SchemaModelSerializer.SerializeSubrecord("DNAM", "WRLD", 8, wrld, DnamExtractors));
         }
 
         if (HasMapData(wrld))
         {
-            subs.Add(new EncodedSubrecord("MNAM", BuildMnamSubrecord(wrld)));
+            subs.Add(SchemaModelSerializer.SerializeSubrecord("MNAM", "WRLD", 16, wrld, MnamExtractors));
         }
 
         if (HasMapOffset(wrld))
@@ -108,18 +133,12 @@ public sealed class WrldEncoder : IRecordEncoder
 
         if (wrld.BoundsMinX.HasValue || wrld.BoundsMinY.HasValue)
         {
-            var nam0 = new byte[8];
-            SubrecordEncoder.WriteFloat(nam0, 0, wrld.BoundsMinX ?? 0f);
-            SubrecordEncoder.WriteFloat(nam0, 4, wrld.BoundsMinY ?? 0f);
-            subs.Add(new EncodedSubrecord("NAM0", nam0));
+            subs.Add(SchemaModelSerializer.SerializeSubrecord("NAM0", "WRLD", 8, wrld, Nam0Extractors));
         }
 
         if (wrld.BoundsMaxX.HasValue || wrld.BoundsMaxY.HasValue)
         {
-            var nam9 = new byte[8];
-            SubrecordEncoder.WriteFloat(nam9, 0, wrld.BoundsMaxX ?? 0f);
-            SubrecordEncoder.WriteFloat(nam9, 4, wrld.BoundsMaxY ?? 0f);
-            subs.Add(new EncodedSubrecord("NAM9", nam9));
+            subs.Add(SchemaModelSerializer.SerializeSubrecord("NAM9", "WRLD", 8, wrld, Nam9Extractors));
         }
 
         if (wrld.MusicTypeFormId.HasValue)
@@ -146,20 +165,5 @@ public sealed class WrldEncoder : IRecordEncoder
     private static bool HasMapOffset(WorldspaceRecord wrld)
     {
         return wrld.MapOffsetScaleX.HasValue || wrld.MapOffsetScaleY.HasValue || wrld.MapOffsetZ.HasValue;
-    }
-
-    private static byte[] BuildMnamSubrecord(WorldspaceRecord wrld)
-    {
-        // MNAM (16B per PDB WORLD_MAP_DATA):
-        //   int32 UsableX + int32 UsableY + int16 NWCellX + int16 NWCellY +
-        //   int16 SECellX + int16 SECellY.
-        var data = new byte[16];
-        SubrecordEncoder.WriteInt32(data, 0, wrld.MapUsableWidth ?? 0);
-        SubrecordEncoder.WriteInt32(data, 4, wrld.MapUsableHeight ?? 0);
-        SubrecordEncoder.WriteInt16(data, 8, wrld.MapNWCellX ?? 0);
-        SubrecordEncoder.WriteInt16(data, 10, wrld.MapNWCellY ?? 0);
-        SubrecordEncoder.WriteInt16(data, 12, wrld.MapSECellX ?? 0);
-        SubrecordEncoder.WriteInt16(data, 14, wrld.MapSECellY ?? 0);
-        return data;
     }
 }

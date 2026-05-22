@@ -1,3 +1,4 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
@@ -17,6 +18,50 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Character
 /// </summary>
 public sealed class NpcEncoder : IRecordEncoder
 {
+    private static readonly Dictionary<string, Func<ActorBaseSubrecord, object?>> AcbsExtractors = new(StringComparer.Ordinal)
+    {
+        ["Flags"] = m => m.Flags,
+        ["Fatigue"] = m => m.FatigueBase,
+        ["BarterGold"] = m => m.BarterGold,
+        ["Level"] = m => m.Level,
+        ["CalcMin"] = m => m.CalcMin,
+        ["CalcMax"] = m => m.CalcMax,
+        ["SpeedMult"] = m => m.SpeedMultiplier,
+        ["KarmaAlignment"] = m => m.KarmaAlignment,
+        ["Disposition"] = m => m.DispositionBase,
+        ["TemplateFlags"] = m => m.TemplateFlags,
+    };
+
+    private static readonly Dictionary<string, Func<FactionMembership, object?>> SnamExtractors = new(StringComparer.Ordinal)
+    {
+        ["Faction"] = m => m.FactionFormId,
+        ["Rank"] = m => (byte)m.Rank,
+    };
+
+    private static readonly Dictionary<string, Func<NpcAiData, object?>> AidtExtractors = new(StringComparer.Ordinal)
+    {
+        ["Aggression"] = m => m.Aggression,
+        ["Confidence"] = m => m.Confidence,
+        ["Energy"] = m => m.EnergyLevel,
+        ["Responsibility"] = m => m.Responsibility,
+        ["Mood"] = m => m.Mood,
+        ["ServiceFlags"] = m => m.Flags,
+        ["Assistance"] = m => m.Assistance,
+        // TrainingSkill / TrainingLevel / AggroRadiusBehavior / AggroRadius not modeled → zero-fill.
+    };
+
+    private static readonly Dictionary<string, Func<NpcRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
+    {
+        ["BaseHealth"] = m => ResolveBaseHealth(m, m.SpecialStats!),
+        ["Strength"] = m => m.SpecialStats![0],
+        ["Perception"] = m => m.SpecialStats![1],
+        ["Endurance"] = m => m.SpecialStats![2],
+        ["Charisma"] = m => m.SpecialStats![3],
+        ["Intelligence"] = m => m.SpecialStats![4],
+        ["Agility"] = m => m.SpecialStats![5],
+        ["Luck"] = m => m.SpecialStats![6],
+    };
+
     public string RecordType => "NPC_";
     public Type ModelType => typeof(NpcRecord);
 
@@ -67,11 +112,7 @@ public sealed class NpcEncoder : IRecordEncoder
         // SNAM faction memberships — 8 bytes each: FormID + uint8 rank + 3 padding.
         foreach (var membership in npc.Factions)
         {
-            var snam = new byte[8];
-            SubrecordEncoder.WriteFormId(snam, 0, membership.FactionFormId);
-            snam[4] = (byte)membership.Rank;
-            // bytes 5-7 padding (zero)
-            subs.Add(new EncodedSubrecord("SNAM", snam));
+            subs.Add(SchemaModelSerializer.SerializeSubrecord("SNAM", "NPC_", 8, membership, SnamExtractors));
         }
 
         if (npc.DeathItem.HasValue)
@@ -153,18 +194,7 @@ public sealed class NpcEncoder : IRecordEncoder
         // AIDT — 20 bytes: AI behavior data.
         if (npc.AiData is not null)
         {
-            var aidt = new byte[20];
-            aidt[0] = npc.AiData.Aggression;
-            aidt[1] = npc.AiData.Confidence;
-            aidt[2] = npc.AiData.EnergyLevel;
-            aidt[3] = npc.AiData.Responsibility;
-            aidt[4] = npc.AiData.Mood;
-            // bytes 5-7 padding
-            SubrecordEncoder.WriteUInt32(aidt, 8, npc.AiData.Flags);
-            // bytes 12-13 = TrainingSkill/TrainingLevel (not in model; zero)
-            aidt[14] = npc.AiData.Assistance;
-            // bytes 15-19 = AggroRadiusBehavior + AggroRadius (not in model; zero)
-            subs.Add(new EncodedSubrecord("AIDT", aidt));
+            subs.Add(SchemaModelSerializer.SerializeSubrecord("AIDT", "NPC_", 20, npc.AiData, AidtExtractors));
         }
 
         // PKID — AI packages. One subrecord per package FormID.
@@ -278,12 +308,9 @@ public sealed class NpcEncoder : IRecordEncoder
 
         // NPC_ DATA — 11 bytes per FNV schema: int32 BaseHealth + 7 SPECIAL bytes
         // (Strength, Perception, Endurance, Charisma, Intelligence, Agility, Luck).
-        if (npc.SpecialStats is { Length: 7 } special)
+        if (npc.SpecialStats is { Length: 7 })
         {
-            var data = new byte[11];
-            SubrecordEncoder.WriteInt32(data, 0, ResolveBaseHealth(npc, special));
-            Array.Copy(special, 0, data, 4, 7);
-            subs.Add(new EncodedSubrecord("DATA", data));
+            subs.Add(SchemaModelSerializer.SerializeSubrecord("DATA", "NPC_", 11, npc, DataExtractors));
         }
 
         // NPC_ DNAM — 28 bytes: 14 base skill values + 14 mod offsets.
@@ -469,42 +496,55 @@ public sealed class NpcEncoder : IRecordEncoder
         //   0x01=Female, 0x02=Essential, 0x04=IsCharGenFacePreset, 0x08=Respawn,
         //   0x10=AutoCalcStats, 0x20=PCLevelMult, 0x40=UseTemplate,
         //   0x80=NoLowLevelProcessing, etc.
+        //
+        // forceAutoCalc sets bit 0x10 so the engine derives HP/AP from Level + Class +
+        // SPECIAL instead of trusting the captured runtime Flags (DMP often captures Flags=0
+        // because the runtime cleared AutoCalc once stats were computed). DO NOT OR in 0x01
+        // — that's Female (NOT Biped, despite an earlier spec misreading).
+        //
+        // 0x40 (UseTemplate) must be set whenever TemplateFlags is nonzero — without it the
+        // engine treats the NPC as a "templated instance" and appends a per-spawn numeric
+        // suffix to the display name (e.g. "Ulysses (20755)").
         var flags = s.Flags;
         if (forceAutoCalc)
         {
-            // Force AutoCalcStats (bit 0x10) so the engine derives HP / AP from Level +
-            // Class + SPECIAL instead of trusting the captured runtime Flags. The DMP often
-            // captures Flags = 0x00 because the runtime cleared AutoCalc once stats were
-            // computed; without re-setting it, the engine reads the manual-stat path which
-            // can yield 0 HP on prototype data and spawn the NPC dead.
-            //
-            // DO NOT OR in 0x01 here — that bit is Female (NOT Biped, despite an earlier
-            // misreading of the spec). Forcing 0x01 sex-swaps every male NPC in the output.
             flags |= 0x00000010u;
         }
+        if (extraTemplateFlags != 0 || s.TemplateFlags != 0)
+        {
+            flags |= 0x00000040u;
+        }
 
-        var acbs = new byte[24];
-        SubrecordEncoder.WriteUInt32(acbs, 0, flags);
-        SubrecordEncoder.WriteUInt16(acbs, 4, s.FatigueBase);
-        SubrecordEncoder.WriteUInt16(acbs, 6, s.BarterGold);
-        SubrecordEncoder.WriteInt16(acbs, 8, s.Level);
-        SubrecordEncoder.WriteUInt16(acbs, 10, s.CalcMin);
-        SubrecordEncoder.WriteUInt16(acbs, 12, s.CalcMax);
-        SubrecordEncoder.WriteUInt16(acbs, 14, s.SpeedMultiplier == 0 ? (ushort)100 : s.SpeedMultiplier);
-        SubrecordEncoder.WriteFloat(acbs, 16, s.KarmaAlignment);
-        SubrecordEncoder.WriteInt16(acbs, 20, s.DispositionBase);
-        SubrecordEncoder.WriteUInt16(acbs, 22, (ushort)(s.TemplateFlags | extraTemplateFlags));
-        return acbs;
+        var mutated = s with
+        {
+            Flags = flags,
+            SpeedMultiplier = s.SpeedMultiplier == 0 ? (ushort)100 : s.SpeedMultiplier,
+            TemplateFlags = (ushort)(s.TemplateFlags | extraTemplateFlags),
+        };
+
+        return SchemaModelSerializer.Serialize("ACBS", "NPC_", 24, mutated, AcbsExtractors);
     }
 
     private static byte[] BuildDefaultAcbsSubrecord(ushort extraTemplateFlags = 0)
     {
         // FNV engine defaults when ACBS data is missing: SpeedMult=100, Level=1, others zero.
-        var acbs = new byte[24];
-        SubrecordEncoder.WriteInt16(acbs, 8, 1);
-        SubrecordEncoder.WriteUInt16(acbs, 14, 100);
-        SubrecordEncoder.WriteUInt16(acbs, 22, extraTemplateFlags);
-        return acbs;
+        // UseTemplate (0x40) is set when emitting with a template-flag bundle so the engine
+        // treats this as a proper templated unique NPC, not a per-spawn numeric-suffix instance.
+        var defaults = new ActorBaseSubrecord(
+            Flags: extraTemplateFlags != 0 ? 0x00000040u : 0u,
+            FatigueBase: 0,
+            BarterGold: 0,
+            Level: 1,
+            CalcMin: 0,
+            CalcMax: 0,
+            SpeedMultiplier: 100,
+            KarmaAlignment: 0f,
+            DispositionBase: 0,
+            TemplateFlags: extraTemplateFlags,
+            Offset: 0,
+            IsBigEndian: false);
+
+        return SchemaModelSerializer.Serialize("ACBS", "NPC_", 24, defaults, AcbsExtractors);
     }
 
     /// <summary>

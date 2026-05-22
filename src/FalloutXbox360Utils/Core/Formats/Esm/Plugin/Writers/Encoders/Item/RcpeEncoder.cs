@@ -12,6 +12,14 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 /// </summary>
 public sealed class RcpeEncoder : IRecordEncoder
 {
+    private static readonly Dictionary<string, Func<RecipeRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
+    {
+        ["Skill"] = m => m.RequiredSkill,
+        ["Level"] = m => (uint)m.RequiredSkillLevel,
+        ["Category"] = m => m.CategoryFormId,
+        ["SubCategory"] = m => m.SubcategoryFormId,
+    };
+
     public string RecordType => "RCPE";
     public Type ModelType => typeof(RecipeRecord);
 
@@ -37,7 +45,7 @@ public sealed class RcpeEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("FULL", recipe.FullName));
         }
 
-        subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(recipe)));
+        subs.Add(SchemaModelSerializer.SerializeSubrecord("DATA", "RCPE", 16, recipe, DataExtractors));
 
         foreach (var ingredient in recipe.Ingredients)
         {
@@ -52,15 +60,5 @@ public sealed class RcpeEncoder : IRecordEncoder
         }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
-    }
-
-    private static byte[] BuildDataSubrecord(RecipeRecord recipe)
-    {
-        var data = new byte[16];
-        SubrecordEncoder.WriteInt32(data, 0, recipe.RequiredSkill);
-        SubrecordEncoder.WriteUInt32(data, 4, (uint)recipe.RequiredSkillLevel);
-        SubrecordEncoder.WriteFormId(data, 8, recipe.CategoryFormId);
-        SubrecordEncoder.WriteFormId(data, 12, recipe.SubcategoryFormId);
-        return data;
     }
 }
