@@ -1,60 +1,39 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
-using FalloutXbox360Utils.Core.Utils;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 
 /// <summary>
-///     Typed runtime reader for TESReputation (REPU, 96 bytes, FormType 0x68).
-///     Reads full name, positive/negative threshold values.
+///     Typed runtime reader for TESReputation (REPU, FormType 0x68).
+///     Reads full name, positive/negative threshold values via the PDB layout.
 /// </summary>
-internal sealed class RuntimeReputationReader
+internal sealed class RuntimeReputationReader(RuntimeMemoryContext context)
 {
-    private readonly RuntimeMemoryContext _context;
+    private const byte RepuFormType = 0x68;
 
-    public RuntimeReputationReader(RuntimeMemoryContext context)
-    {
-        _context = context;
-    }
+    private readonly RuntimePdbFieldAccessor _fields = new(context);
 
     public ReputationRecord? ReadRuntimeReputation(RuntimeEditorIdEntry entry)
     {
-        if (entry.TesFormOffset == null || entry.FormType != RepuFormType)
+        if (entry.FormType != RepuFormType)
         {
             return null;
         }
 
-        var offset = entry.TesFormOffset.Value;
-        if (offset + StructSize > _context.FileSize)
+        var view = _fields.OpenStructView(entry);
+        if (view == null)
         {
             return null;
         }
 
-        var buffer = new byte[StructSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, StructSize);
-        }
-        catch
-        {
-            return null;
-        }
-
-        var formId = BinaryUtils.ReadUInt32BE(buffer, FormIdOffset);
-        if (formId != entry.FormId || formId == 0)
-        {
-            return null;
-        }
-
-        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, FullNameOffset);
-        var positiveValue = BinaryUtils.ReadFloatBE(buffer, PositiveValueOffset);
-        var negativeValue = BinaryUtils.ReadFloatBE(buffer, NegativeValueOffset);
-
+        var positiveValue = view.Float("fPositiveValue", "TESReputation");
         if (!RuntimeMemoryContext.IsNormalFloat(positiveValue))
         {
             positiveValue = 0f;
         }
 
+        var negativeValue = view.Float("fNegativeValue", "TESReputation");
         if (!RuntimeMemoryContext.IsNormalFloat(negativeValue))
         {
             negativeValue = 0f;
@@ -64,22 +43,11 @@ internal sealed class RuntimeReputationReader
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
-            FullName = fullName,
+            FullName = entry.DisplayName ?? view.BsString("cFullName", "TESFullName"),
             PositiveValue = positiveValue,
             NegativeValue = negativeValue,
-            Offset = offset,
+            Offset = view.FileOffset,
             IsBigEndian = true
         };
     }
-
-    #region Constants
-
-    private const byte RepuFormType = 0x68;
-    private const int StructSize = 96;
-    private const int FormIdOffset = 12;
-    private const int FullNameOffset = 44; // TESFullName.cFullName BSStringT
-    private const int PositiveValueOffset = 84; // fPositiveValue float32
-    private const int NegativeValueOffset = 88; // fNegativeValue float32
-
-    #endregion
 }

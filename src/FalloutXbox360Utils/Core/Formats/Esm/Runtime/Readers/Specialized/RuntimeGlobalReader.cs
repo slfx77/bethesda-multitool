@@ -1,55 +1,40 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
-using FalloutXbox360Utils.Core.Utils;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 
 /// <summary>
-///     Typed runtime reader for TESGlobal structs (FormType 0x06, 48 bytes).
-///     Reads cType (value type char) and fValue (float).
+///     Typed runtime reader for TESGlobal structs (FormType 0x06).
+///     Reads cType (value type char) and fValue (float) via the PDB layout.
 /// </summary>
 internal sealed class RuntimeGlobalReader(RuntimeMemoryContext context)
 {
+    private const byte GlobFormType = 0x06;
+
+    private readonly RuntimePdbFieldAccessor _fields = new(context);
+
     public GlobalRecord? ReadRuntimeGlobal(RuntimeEditorIdEntry entry)
     {
-        if (entry.TesFormOffset == null || entry.FormType != GlobFormType)
+        if (entry.FormType != GlobFormType)
         {
             return null;
         }
 
-        var offset = entry.TesFormOffset.Value;
-        if (offset + StructSize > context.FileSize)
+        var view = _fields.OpenStructView(entry);
+        if (view == null)
         {
             return null;
         }
 
-        var buffer = new byte[StructSize];
-        try
-        {
-            context.Accessor.ReadArray(offset, buffer, 0, StructSize);
-        }
-        catch
-        {
-            return null;
-        }
-
-        var formId = BinaryUtils.ReadUInt32BE(buffer, FormIdOffset);
-        if (formId != entry.FormId || formId == 0)
-        {
-            return null;
-        }
-
-        var valueType = (char)buffer[TypeOffset];
+        var valueType = (char)view.Byte("cType", "TESGlobal");
         if (valueType != 's' && valueType != 'l' && valueType != 'f')
         {
             valueType = 'f'; // default to float if unknown
         }
 
-        var value = BinaryUtils.ReadFloatBE(buffer, ValueOffset);
-        if (!RuntimeMemoryContext.IsNormalFloat(value))
-        {
-            value = 0f;
-        }
+        var rawValue = view.Float("fValue", "TESGlobal");
+        var value = RuntimeMemoryContext.IsNormalFloat(rawValue) ? rawValue : 0f;
 
         return new GlobalRecord
         {
@@ -57,18 +42,8 @@ internal sealed class RuntimeGlobalReader(RuntimeMemoryContext context)
             EditorId = entry.EditorId,
             ValueType = valueType,
             Value = value,
-            Offset = offset,
+            Offset = view.FileOffset,
             IsBigEndian = true
         };
     }
-
-    #region Constants
-
-    private const byte GlobFormType = 0x06;
-    private const int StructSize = 48;
-    private const int FormIdOffset = 12;
-    private const int TypeOffset = 40; // cType (int8 — 's', 'l', or 'f')
-    private const int ValueOffset = 44; // fValue (float32)
-
-    #endregion
 }

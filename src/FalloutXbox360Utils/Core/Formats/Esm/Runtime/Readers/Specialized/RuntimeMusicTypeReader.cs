@@ -1,72 +1,40 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
-using FalloutXbox360Utils.Core.Utils;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 
 /// <summary>
-///     Typed runtime reader for BGSMusicType (MUSC, 68 bytes, FormType 0x66).
-///     Reads music file path and attenuation.
+///     Typed runtime reader for BGSMusicType (MUSC, FormType 0x66).
+///     Reads music file path and attenuation via the PDB layout.
 /// </summary>
-internal sealed class RuntimeMusicTypeReader
+internal sealed class RuntimeMusicTypeReader(RuntimeMemoryContext context)
 {
-    private readonly RuntimeMemoryContext _context;
+    private const byte MuscFormType = 0x66;
 
-    public RuntimeMusicTypeReader(RuntimeMemoryContext context)
-    {
-        _context = context;
-    }
+    private readonly RuntimePdbFieldAccessor _fields = new(context);
 
     public MusicTypeRecord? ReadRuntimeMusicType(RuntimeEditorIdEntry entry)
     {
-        if (entry.TesFormOffset == null || entry.FormType != MuscFormType)
+        if (entry.FormType != MuscFormType)
         {
             return null;
         }
 
-        var offset = entry.TesFormOffset.Value;
-        if (offset + StructSize > _context.FileSize)
+        var view = _fields.OpenStructView(entry);
+        if (view == null)
         {
             return null;
         }
-
-        var buffer = new byte[StructSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, StructSize);
-        }
-        catch
-        {
-            return null;
-        }
-
-        var formId = BinaryUtils.ReadUInt32BE(buffer, FormIdOffset);
-        if (formId != entry.FormId || formId == 0)
-        {
-            return null;
-        }
-
-        var fileName = _context.ReadBsStringT(offset, SoundFileOffset);
-        var attenuation = BinaryUtils.ReadFloatBE(buffer, AttenuationOffset);
 
         return new MusicTypeRecord
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
-            FileName = fileName,
-            Attenuation = attenuation,
-            Offset = offset,
+            FileName = view.BsString("cSoundFile", "TESSoundFile"),
+            Attenuation = view.Float("fAttenuation", "BGSMusicType"),
+            Offset = view.FileOffset,
             IsBigEndian = true
         };
     }
-
-    #region Constants
-
-    private const byte MuscFormType = 0x66;
-    private const int StructSize = 68;
-    private const int FormIdOffset = 12;
-    private const int SoundFileOffset = 44; // TESSoundFile.cSoundFile BSStringT
-    private const int AttenuationOffset = 52; // BGSMusicType.fAttenuation float32
-
-    #endregion
 }
