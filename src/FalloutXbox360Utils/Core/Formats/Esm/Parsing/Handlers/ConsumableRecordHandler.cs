@@ -94,13 +94,12 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
                     break;
                 case "DATA" when sub.DataLength >= 13:
                 {
-                    var fields = SubrecordDataReader.ReadFields("DATA", "AMMO", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("DATA", "AMMO", subData, record.IsBigEndian) is { } v)
                     {
-                        speed = SubrecordDataReader.GetFloat(fields, "Speed");
-                        flags = SubrecordDataReader.GetByte(fields, "Flags");
-                        value = SubrecordDataReader.GetUInt32(fields, "Value");
-                        clipRounds = SubrecordDataReader.GetByte(fields, "ClipRounds");
+                        speed = v.Float("Speed");
+                        flags = v.Byte("Flags");
+                        value = v.UInt32("Value");
+                        clipRounds = v.Byte("ClipRounds");
                     }
 
                     break;
@@ -392,25 +391,23 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
                     break;
                 case "DATA" when sub.DataLength >= 4:
                 {
-                    var fields = SubrecordDataReader.ReadFields("DATA", "ALCH", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("DATA", "ALCH", subData, record.IsBigEndian) is { } v)
                     {
-                        weight = SubrecordDataReader.GetFloat(fields, "Weight");
+                        weight = v.Float("Weight");
                     }
 
                     break;
                 }
                 case "ENIT" when sub.DataLength >= 16:
                 {
-                    var fields = SubrecordDataReader.ReadFields("ENIT", "ALCH", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("ENIT", "ALCH", subData, record.IsBigEndian) is { } v)
                     {
-                        value = SubrecordDataReader.GetUInt32(fields, "Value");
-                        addictionFormId = SubrecordDataReader.GetUInt32(fields, "Addiction");
-                        addictionChance = SubrecordDataReader.GetFloat(fields, "AddictionChance");
+                        value = v.UInt32("Value");
+                        addictionFormId = v.UInt32("Addiction");
+                        addictionChance = v.Float("AddictionChance");
                     }
 
-                    // Flags are at bytes 4-7 (stored as raw Bytes in schema, read directly)
+                    // Flags are at bytes 4-7 (schema declares Bytes(4); we want uint32).
                     if (sub.DataLength >= 8)
                     {
                         flags = record.IsBigEndian
@@ -435,14 +432,13 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
                     break;
                 case "EFIT" when sub.DataLength >= 12:
                 {
-                    var fields = SubrecordDataReader.ReadFields("EFIT", null, subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("EFIT", null, subData, record.IsBigEndian) is { } v)
                     {
                         var magnitude = GameStatNormalizer.EffectMagnitude(subData, record.IsBigEndian);
-                        var area = SubrecordDataReader.GetUInt32(fields, "Area");
-                        var duration = SubrecordDataReader.GetUInt32(fields, "Duration");
-                        var type = SubrecordDataReader.GetUInt32(fields, "Type");
-                        var actorValue = SubrecordDataReader.GetInt32(fields, "ActorValue", -1);
+                        var area = v.UInt32("Area");
+                        var duration = v.UInt32("Duration");
+                        var type = v.UInt32("Type");
+                        var actorValue = v.Int32("ActorValue", -1);
 
                         effects.Add(new EnchantmentEffect
                         {
