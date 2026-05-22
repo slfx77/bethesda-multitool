@@ -1,96 +1,107 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
-using FalloutXbox360Utils.Core.Minidump;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 
 /// <summary>
 ///     Reader for Script runtime structs from Xbox 360 memory dumps.
-///     Extracts script source, compiled bytecode, variables, and referenced objects.
+///     Extracts script source, compiled bytecode, variables, and referenced objects via
+///     the PDB layout. SCRIPT_HEADER (opaque 20-byte struct at <c>m_header</c>) is parsed
+///     manually against the resolved offset; the BSSimpleList walks for RefObjects /
+///     Variables use the existing <see cref="RuntimeMemoryContext" /> primitives.
 /// </summary>
 internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
 {
+    private const byte ScptFormType = 0x11;
+
+    // SCRIPT_HEADER inner-field layout (relative to view.Offset("m_header")).
+    private const int HdrVarCountOff = 0;
+    private const int HdrRefCountOff = 4;
+    private const int HdrDataSizeOff = 8;
+    private const int HdrLastVarIdOff = 12;
+    private const int HdrIsQuestOff = 16;
+    private const int HdrIsMagicEffectOff = 17;
+    private const int HdrIsCompiledOff = 18;
+
+    // SCRIPT_REFERENCED_OBJECT: 16 bytes — standalone struct, not TESForm-derived.
+    // +0: cEditorID (BSStringT, 8 bytes), +8: pForm (TESForm*, 4 bytes), +12: uiVariableID (UInt32)
+    private const int ScroFormPtrOffset = 8;
+    private const int ScroVarIdOffset = 12;
+    private const int ScroStructSize = 16;
+
+    // ScriptVariable: 32 bytes — standalone struct, not TESForm-derived.
+    private const int SvarIsIntegerOffset = 12; // bIsInteger within SCRIPT_LOCAL
+    private const int SvarNameOffset = 24; // BSStringT cName
+    private const int SvarStructSize = 32;
+
+    private readonly RuntimePdbFieldAccessor _fields = new(context);
     private readonly RuntimeMemoryContext _context = context;
 
-    // Build-specific offset shift: Proto Debug PDB + _s = actual dump offset.
-    private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
-        MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
-
-    /// <summary>
-    ///     Read a Script C++ struct from a runtime memory dump.
-    ///     Layout: TESForm(40) + SCRIPT_HEADER(20) + m_text(4) + m_data(4) +
-    ///     floats(12) + pOwnerQuest(4) + listRefObjects(8) + listVariables(8) = 100 bytes.
-    /// </summary>
     public RuntimeScriptData? ReadRuntimeScript(RuntimeEditorIdEntry entry)
     {
-        if (entry.TesFormOffset == null || entry.FormType != 0x11)
+        if (entry.FormType != ScptFormType)
         {
             return null;
         }
 
-        var offset = entry.TesFormOffset.Value;
-        if (offset + ScptStructSize > _context.FileSize)
+        var view = _fields.OpenStructView(entry);
+        if (view == null)
         {
             return null;
         }
 
-        var buffer = new byte[ScptStructSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, ScptStructSize);
-        }
-        catch
+        // SCRIPT_HEADER inner fields parsed manually against the resolved struct offset.
+        var hdrOff = view.Offset("m_header", "Script");
+        if (hdrOff is not { } h || h + 19 > view.Buffer.Length)
         {
             return null;
         }
 
-        // Validate: FormID at offset 12 should match
-        var formId = BinaryUtils.ReadUInt32BE(buffer, 12);
-        if (formId != entry.FormId)
-        {
-            return null;
-        }
+        var variableCount = BinaryUtils.ReadUInt32BE(view.Buffer, h + HdrVarCountOff);
+        var refObjectCount = BinaryUtils.ReadUInt32BE(view.Buffer, h + HdrRefCountOff);
+        var dataSize = BinaryUtils.ReadUInt32BE(view.Buffer, h + HdrDataSizeOff);
+        var lastVariableId = BinaryUtils.ReadUInt32BE(view.Buffer, h + HdrLastVarIdOff);
+        var isQuestScript = view.Buffer[h + HdrIsQuestOff] != 0;
+        var isMagicEffectScript = view.Buffer[h + HdrIsMagicEffectOff] != 0;
+        var isCompiled = view.Buffer[h + HdrIsCompiledOff] != 0;
 
-        // Read SCRIPT_HEADER fields
-        var variableCount = BinaryUtils.ReadUInt32BE(buffer, ScptVarCountOffset);
-        var refObjectCount = BinaryUtils.ReadUInt32BE(buffer, ScptRefCountOffset);
-        var dataSize = BinaryUtils.ReadUInt32BE(buffer, ScptDataSizeOffset);
-        var lastVariableId = BinaryUtils.ReadUInt32BE(buffer, ScptLastVarIdOffset);
-        var isQuestScript = buffer[ScptIsQuestOffset] != 0;
-        var isMagicEffectScript = buffer[ScptIsMagicEffectOffset] != 0;
-        var isCompiled = buffer[ScptIsCompiledOffset] != 0;
-
-        // Sanity check header values
+        // Sanity check header values.
         if (variableCount > 1000 || refObjectCount > 1000 || dataSize > 1_000_000)
         {
             return null;
         }
 
-        // Follow m_text char* pointer to read source text
-        var sourceText = ReadCharPointerString(buffer, ScptTextPtrOffset);
+        // m_text / m_data: raw char* pointers.
+        var textPtrOff = view.Offset("m_text", "Script");
+        var dataPtrOff = view.Offset("m_data", "Script");
+        if (textPtrOff is null || dataPtrOff is null)
+        {
+            return null;
+        }
 
-        // Follow m_data char* pointer to read compiled bytecode
+        var sourceText = ReadCharPointerString(view.Buffer, textPtrOff.Value);
         byte[]? compiledData = null;
         if (dataSize > 0)
         {
-            compiledData = ReadCharPointerData(buffer, ScptDataPtrOffset, dataSize);
+            compiledData = ReadCharPointerData(view.Buffer, dataPtrOff.Value, dataSize);
         }
 
-        // Read quest script delay
-        var questDelay = RuntimeMemoryContext.ReadValidatedFloat(buffer, ScptQuestDelayOffset, 0, 3600);
+        var questDelay = RuntimeMemoryContext.ReadValidatedFloat(
+            view.Buffer,
+            view.Offset("fQuestScriptDelay", "Script") ?? 0,
+            0,
+            3600);
 
-        // Follow pOwnerQuest pointer
-        var ownerQuestFormId = _context.FollowPointerToFormId(buffer, ScptOwnerQuestOffset);
+        var ownerQuestFormId = view.FormIdPointer("pOwnerQuest", "Script");
 
-        // Walk BSSimpleLists for ref objects and variables.
-        // Pass expected counts from SCRIPT_HEADER to avoid truncating large lists.
-        var refObjects = WalkScriptRefObjectList(offset, refObjectCount);
-        var variables = WalkScriptVariableList(offset, variableCount);
+        var refObjects = WalkScriptRefObjectList(view, refObjectCount);
+        var variables = WalkScriptVariableList(view, variableCount);
 
         return new RuntimeScriptData
         {
-            FormId = formId,
+            FormId = entry.FormId,
             EditorId = entry.EditorId,
             VariableCount = variableCount,
             RefObjectCount = refObjectCount,
@@ -105,13 +116,12 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
             QuestScriptDelay = questDelay,
             ReferencedObjects = refObjects,
             Variables = variables,
-            DumpOffset = offset
+            DumpOffset = view.FileOffset
         };
     }
 
     /// <summary>
     ///     Follow a raw char* pointer from a buffer and read a null-terminated ASCII string.
-    ///     Unlike BSStringT, char* has no inline length field — we scan for null terminator.
     /// </summary>
     private string? ReadCharPointerString(byte[] buffer, int pointerOffset, int maxLen = 16384)
     {
@@ -132,7 +142,6 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
             return null;
         }
 
-        // Read up to maxLen bytes and find null terminator
         var readLen = (int)Math.Min(maxLen, _context.FileSize - fileOffset.Value);
         if (readLen <= 0)
         {
@@ -145,7 +154,6 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
             return null;
         }
 
-        // Find null terminator
         var nullIdx = Array.IndexOf(data, (byte)0);
         var strLen = nullIdx >= 0 ? nullIdx : readLen;
 
@@ -158,8 +166,7 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
     }
 
     /// <summary>
-    ///     Follow a raw char* pointer from a buffer and read exactly <paramref name="size" /> bytes.
-    ///     Used for compiled bytecode (m_data) where the size is known from SCRIPT_HEADER.dataSize.
+    ///     Follow a raw char* pointer and read exactly <paramref name="size" /> bytes.
     /// </summary>
     private byte[]? ReadCharPointerData(byte[] buffer, int pointerOffset, uint size)
     {
@@ -184,16 +191,22 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
     }
 
     /// <summary>
-    ///     Walk the listRefObjects BSSimpleList on a Script struct.
-    ///     Each node's m_item is a SCRIPT_REFERENCED_OBJECT* pointer (16 bytes):
-    ///     +0: cEditorID (BSStringT, 8 bytes), +8: pForm (TESForm*, 4 bytes), +12: uiVariableID (UInt32)
+    ///     Walks the listRefObjects BSSimpleList — each node's m_item is a
+    ///     SCRIPT_REFERENCED_OBJECT* (16 bytes): cEditorID(8) + pForm(4) + uiVariableID(4).
     /// </summary>
-    private List<(uint FormId, string? EditorId)> WalkScriptRefObjectList(long scriptOffset, uint expectedCount)
+    private List<(uint FormId, string? EditorId)> WalkScriptRefObjectList(
+        PdbStructView view,
+        uint expectedCount)
     {
         var results = new List<(uint, string?)>();
+        var listOff = view.Offset("listRefObjects", "Script");
+        if (listOff is not { } o)
+        {
+            return results;
+        }
 
-        var listOffset = scriptOffset + ScptRefObjectsListOffset;
-        var listBuf = _context.ReadBytes(listOffset, 8);
+        var listFileOffset = view.FileOffset + o;
+        var listBuf = _context.ReadBytes(listFileOffset, 8);
         if (listBuf == null)
         {
             return results;
@@ -202,20 +215,14 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
         var firstItem = BinaryUtils.ReadUInt32BE(listBuf);
         var firstNext = BinaryUtils.ReadUInt32BE(listBuf, 4);
 
-        // Process inline first item
         var firstRef = ReadScriptRefObject(firstItem);
         if (firstRef != null)
         {
             results.Add(firstRef.Value);
         }
 
-        // Follow BSSimpleList chain
         var nextVA = firstNext;
         var visited = new HashSet<uint>();
-        // Use per-script expected count when it exceeds the default cap.
-        // +10 buffer accounts for SCRV entries mixed in alongside SCRO entries.
-        // Math.Max ensures we never read fewer entries than the default (avoiding regression).
-        // 200 hard cap prevents runaway traversal on corrupt data.
         var maxItems = (int)Math.Min(Math.Max(expectedCount + 10, RuntimeMemoryContext.MaxListItems), 200);
         while (nextVA != 0 && results.Count < maxItems && !visited.Contains(nextVA))
         {
@@ -247,9 +254,6 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
         return results;
     }
 
-    /// <summary>
-    ///     Read a single SCRIPT_REFERENCED_OBJECT (16 bytes) from a virtual address.
-    /// </summary>
     private (uint FormId, string? EditorId)? ReadScriptRefObject(uint va)
     {
         if (va == 0)
@@ -269,35 +273,34 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
             return null;
         }
 
-        // Follow pForm pointer at offset 8 to get FormID
         var formId = _context.FollowPointerToFormId(buf, ScroFormPtrOffset);
         if (formId == null)
         {
-            // SCRV entry: pForm is NULL but uiVariableID identifies a local variable.
-            // These occupy slots in the reference list alongside SCRO entries — the bytecode
-            // uses 1-based indices into the combined list. Flag with high bit 0x80000000
-            // so the decompiler can distinguish SCRV from SCRO entries.
+            // SCRV: pForm is NULL but uiVariableID identifies a local variable.
+            // Flag with high bit so the decompiler can distinguish SCRV from SCRO.
             var varId = BinaryUtils.ReadUInt32BE(buf, ScroVarIdOffset);
             return (0x80000000 | varId, null);
         }
 
-        // Read cEditorID BSStringT at offset 0
         var editorId = _context.ReadBsStringT(fileOffset.Value, 0);
-
         return (formId.Value, editorId);
     }
 
     /// <summary>
-    ///     Walk the listVariables BSSimpleList on a Script struct.
-    ///     Each node's m_item is a ScriptVariable* pointer (32 bytes):
-    ///     +0: SCRIPT_LOCAL data (uiID at +0, bIsInteger at +12), +24: cName BSStringT
+    ///     Walks the listVariables BSSimpleList — each node's m_item is a ScriptVariable*
+    ///     (32 bytes): SCRIPT_LOCAL(24) + cName BSStringT(8).
     /// </summary>
-    private List<ScriptVariableInfo> WalkScriptVariableList(long scriptOffset, uint expectedCount)
+    private List<ScriptVariableInfo> WalkScriptVariableList(PdbStructView view, uint expectedCount)
     {
         var results = new List<ScriptVariableInfo>();
+        var listOff = view.Offset("listVariables", "Script");
+        if (listOff is not { } o)
+        {
+            return results;
+        }
 
-        var listOffset = scriptOffset + ScptVariablesListOffset;
-        var listBuf = _context.ReadBytes(listOffset, 8);
+        var listFileOffset = view.FileOffset + o;
+        var listBuf = _context.ReadBytes(listFileOffset, 8);
         if (listBuf == null)
         {
             return results;
@@ -306,15 +309,12 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
         var firstItem = BinaryUtils.ReadUInt32BE(listBuf);
         var firstNext = BinaryUtils.ReadUInt32BE(listBuf, 4);
 
-        // Process inline first item
         var firstVar = ReadScriptVariable(firstItem);
         if (firstVar != null)
         {
             results.Add(firstVar);
         }
 
-        // Follow BSSimpleList chain.
-        // Use per-script expected count when it exceeds the default cap.
         var maxItems = (int)Math.Min(Math.Max(expectedCount + 10, RuntimeMemoryContext.MaxListItems), 200);
         var nextVA = firstNext;
         var visited = new HashSet<uint>();
@@ -348,10 +348,6 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
         return results;
     }
 
-    /// <summary>
-    ///     Read a single ScriptVariable (32 bytes) from a virtual address.
-    ///     Layout: SCRIPT_LOCAL(24 bytes) + cName BSStringT(8 bytes)
-    /// </summary>
     private ScriptVariableInfo? ReadScriptVariable(uint va)
     {
         if (va == 0)
@@ -371,51 +367,16 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
             return null;
         }
 
-        // Read uiID (variable index)
         var index = BinaryUtils.ReadUInt32BE(buf);
         if (index > 10000)
         {
             return null;
         }
 
-        // Read bIsInteger at offset 12
         var isInteger = BinaryUtils.ReadUInt32BE(buf, SvarIsIntegerOffset);
         var type = isInteger != 0 ? (byte)1 : (byte)0;
-
-        // Read cName BSStringT at offset 24
         var name = _context.ReadBsStringT(fileOffset.Value, SvarNameOffset);
 
         return new ScriptVariableInfo(index, name, type);
     }
-
-    #region Script Struct Layout (Proto Debug PDB base + _s)
-
-    // Script: PDB size 84, Debug dump 88, Release dump 100, FormType: 0x11
-    private int ScptStructSize => 84 + _s;
-    private int ScptVarCountOffset => 24 + _s;
-    private int ScptRefCountOffset => 28 + _s;
-    private int ScptDataSizeOffset => 32 + _s;
-    private int ScptLastVarIdOffset => 36 + _s;
-    private int ScptIsQuestOffset => 40 + _s;
-    private int ScptIsMagicEffectOffset => 41 + _s;
-    private int ScptIsCompiledOffset => 42 + _s;
-    private int ScptTextPtrOffset => 44 + _s; // m_text: char* -> SCTX source
-    private int ScptDataPtrOffset => 48 + _s; // m_data: char* -> SCDA bytecode
-    private int ScptQuestDelayOffset => 56 + _s;
-    private int ScptOwnerQuestOffset => 64 + _s; // pOwnerQuest: TESQuest*
-    private int ScptRefObjectsListOffset => 68 + _s; // BSSimpleList<SCRIPT_REFERENCED_OBJECT*>
-    private int ScptVariablesListOffset => 76 + _s; // BSSimpleList<ScriptVariable*>
-
-    // SCRIPT_REFERENCED_OBJECT: 16 bytes — standalone struct, not TESForm-derived
-    // +0: cEditorID (BSStringT, 8 bytes), +8: pForm (TESForm*, 4 bytes), +12: uiVariableID (UInt32)
-    private const int ScroFormPtrOffset = 8;
-    private const int ScroVarIdOffset = 12;
-    private const int ScroStructSize = 16;
-
-    // ScriptVariable: 32 bytes — standalone struct, not TESForm-derived
-    private const int SvarIsIntegerOffset = 12; // bIsInteger within SCRIPT_LOCAL
-    private const int SvarNameOffset = 24; // BSStringT cName
-    private const int SvarStructSize = 32;
-
-    #endregion
 }
