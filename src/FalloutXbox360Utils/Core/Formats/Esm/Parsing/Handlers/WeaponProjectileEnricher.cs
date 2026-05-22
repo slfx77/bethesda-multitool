@@ -107,42 +107,40 @@ internal sealed class WeaponProjectileEnricher(RecordParserContext context)
                         break;
                     case "DATA" when sub.DataLength >= 64:
                     {
-                        var fields =
-                            SubrecordDataReader.ReadFields("DATA", "PROJ", subData, projRecord.IsBigEndian);
-                        if (fields.Count > 0)
+                        if (SubrecordSchemaView.TryRead("DATA", "PROJ", subData, projRecord.IsBigEndian) is { } v)
                         {
                             projPhysics = new ProjectilePhysicsData
                             {
-                                Flags = SubrecordDataReader.GetUInt32(fields, "FlagsAndType"),
-                                Gravity = SubrecordDataReader.GetFloat(fields, "Gravity"),
-                                Speed = SubrecordDataReader.GetFloat(fields, "Speed"),
-                                Range = SubrecordDataReader.GetFloat(fields, "Range"),
-                                LightFormId = NullIfZero(SubrecordDataReader.GetUInt32(fields, "Light")),
+                                Flags = v.UInt32("FlagsAndType"),
+                                Gravity = v.Float("Gravity"),
+                                Speed = v.Float("Speed"),
+                                Range = v.Float("Range"),
+                                LightFormId = NullIfZero(v.UInt32("Light")),
                                 MuzzleFlashLightFormId =
-                                    NullIfZero(SubrecordDataReader.GetUInt32(fields, "MuzzleFlashLight")),
-                                TracerChance = SubrecordDataReader.GetFloat(fields, "TracerChance"),
+                                    NullIfZero(v.UInt32("MuzzleFlashLight")),
+                                TracerChance = v.Float("TracerChance"),
                                 ExplosionProximity =
-                                    SubrecordDataReader.GetFloat(fields, "ExplosionAltTriggerProximity"),
+                                    v.Float("ExplosionAltTriggerProximity"),
                                 ExplosionTimer =
-                                    SubrecordDataReader.GetFloat(fields, "ExplosionAltTriggerTimer"),
+                                    v.Float("ExplosionAltTriggerTimer"),
                                 ExplosionFormId =
-                                    NullIfZero(SubrecordDataReader.GetUInt32(fields, "Explosion")),
+                                    NullIfZero(v.UInt32("Explosion")),
                                 ActiveSoundLoopFormId =
-                                    NullIfZero(SubrecordDataReader.GetUInt32(fields, "Sound")),
+                                    NullIfZero(v.UInt32("Sound")),
                                 MuzzleFlashDuration =
-                                    SubrecordDataReader.GetFloat(fields, "MuzzleFlashDuration"),
-                                FadeOutTime = SubrecordDataReader.GetFloat(fields, "FadeDuration"),
-                                Force = SubrecordDataReader.GetFloat(fields, "ImpactForce"),
+                                    v.Float("MuzzleFlashDuration"),
+                                FadeOutTime = v.Float("FadeDuration"),
+                                Force = v.Float("ImpactForce"),
                                 CountdownSoundFormId =
-                                    NullIfZero(SubrecordDataReader.GetUInt32(fields, "SoundCountdown")),
+                                    NullIfZero(v.UInt32("SoundCountdown")),
                                 DeactivateSoundFormId =
-                                    NullIfZero(SubrecordDataReader.GetUInt32(fields, "SoundDisable")),
+                                    NullIfZero(v.UInt32("SoundDisable")),
                                 DefaultWeaponSourceFormId =
-                                    NullIfZero(SubrecordDataReader.GetUInt32(fields, "DefaultWeaponSource")),
-                                RotationX = SubrecordDataReader.GetFloat(fields, "RotationX"),
-                                RotationY = SubrecordDataReader.GetFloat(fields, "RotationY"),
-                                RotationZ = SubrecordDataReader.GetFloat(fields, "RotationZ"),
-                                BounceMultiplier = SubrecordDataReader.GetFloat(fields, "BouncyMult")
+                                    NullIfZero(v.UInt32("DefaultWeaponSource")),
+                                RotationX = v.Float("RotationX"),
+                                RotationY = v.Float("RotationY"),
+                                RotationZ = v.Float("RotationZ"),
+                                BounceMultiplier = v.Float("BouncyMult")
                             };
                         }
 

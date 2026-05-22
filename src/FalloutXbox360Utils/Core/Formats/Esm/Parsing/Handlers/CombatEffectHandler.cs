@@ -67,24 +67,23 @@ internal sealed class CombatEffectHandler(RecordParserContext context) : RecordH
                     break;
                 case "DATA" when sub.DataLength >= 36:
                 {
-                    var fields = SubrecordDataReader.ReadFields("DATA", "EXPL",
-                        data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("DATA", "EXPL",
+                            data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian) is { } v)
                     {
-                        force = SubrecordDataReader.GetFloat(fields, "Force");
-                        damage = SubrecordDataReader.GetFloat(fields, "Damage");
-                        radius = SubrecordDataReader.GetFloat(fields, "Radius");
-                        light = SubrecordDataReader.GetUInt32(fields, "Light");
-                        sound1 = SubrecordDataReader.GetUInt32(fields, "Sound1");
-                        flags = SubrecordDataReader.GetUInt32(fields, "Flags");
-                        isRadius = SubrecordDataReader.GetFloat(fields, "IsRadius");
-                        impactDataSet = SubrecordDataReader.GetUInt32(fields, "ImpactDataSet");
-                        sound2 = SubrecordDataReader.GetUInt32(fields, "Sound2");
-                        radiationLevel = SubrecordDataReader.GetFloat(fields, "RadiationLevel");
+                        force = v.Float("Force");
+                        damage = v.Float("Damage");
+                        radius = v.Float("Radius");
+                        light = v.UInt32("Light");
+                        sound1 = v.UInt32("Sound1");
+                        flags = v.UInt32("Flags");
+                        isRadius = v.Float("IsRadius");
+                        impactDataSet = v.UInt32("ImpactDataSet");
+                        sound2 = v.UInt32("Sound2");
+                        radiationLevel = v.Float("RadiationLevel");
                         radiationDissipationTime =
-                            SubrecordDataReader.GetFloat(fields, "RadiationDissipationTime");
-                        radiationRadius = SubrecordDataReader.GetFloat(fields, "RadiationRadius");
-                        soundLevel = SubrecordDataReader.GetUInt32(fields, "SoundLevel");
+                            v.Float("RadiationDissipationTime");
+                        radiationRadius = v.Float("RadiationRadius");
+                        soundLevel = v.UInt32("SoundLevel");
                     }
 
                     break;
@@ -178,34 +177,33 @@ internal sealed class CombatEffectHandler(RecordParserContext context) : RecordH
                     break;
                 case "DATA" when sub.DataLength >= 52:
                 {
-                    var fields = SubrecordDataReader.ReadFields("DATA", "PROJ",
-                        data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("DATA", "PROJ",
+                            data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian) is { } v)
                     {
-                        var flagsAndType = SubrecordDataReader.GetUInt32(fields, "FlagsAndType");
+                        var flagsAndType = v.UInt32("FlagsAndType");
                         projFlags = (ushort)(flagsAndType & 0xFFFF);
                         projType = (ushort)((flagsAndType >> 16) & 0xFFFF);
-                        gravity = SubrecordDataReader.GetFloat(fields, "Gravity");
-                        speed = SubrecordDataReader.GetFloat(fields, "Speed");
-                        range = SubrecordDataReader.GetFloat(fields, "Range");
-                        light = SubrecordDataReader.GetUInt32(fields, "Light");
-                        muzzleFlashLight = SubrecordDataReader.GetUInt32(fields, "MuzzleFlashLight");
-                        tracerChance = SubrecordDataReader.GetFloat(fields, "TracerChance");
+                        gravity = v.Float("Gravity");
+                        speed = v.Float("Speed");
+                        range = v.Float("Range");
+                        light = v.UInt32("Light");
+                        muzzleFlashLight = v.UInt32("MuzzleFlashLight");
+                        tracerChance = v.Float("TracerChance");
                         explosionProximity =
-                            SubrecordDataReader.GetFloat(fields, "ExplosionAltTriggerProximity");
-                        explosionTimer = SubrecordDataReader.GetFloat(fields, "ExplosionAltTriggerTimer");
-                        explosion = SubrecordDataReader.GetUInt32(fields, "Explosion");
-                        sound = SubrecordDataReader.GetUInt32(fields, "Sound");
-                        muzzleFlashDuration = SubrecordDataReader.GetFloat(fields, "MuzzleFlashDuration");
-                        fadeDuration = SubrecordDataReader.GetFloat(fields, "FadeDuration");
-                        impactForce = SubrecordDataReader.GetFloat(fields, "ImpactForce");
-                        countdownSound = SubrecordDataReader.GetUInt32(fields, "SoundCountdown");
-                        deactivateSound = SubrecordDataReader.GetUInt32(fields, "SoundDisable");
-                        defaultWeaponSource = SubrecordDataReader.GetUInt32(fields, "DefaultWeaponSource");
-                        rotationX = SubrecordDataReader.GetFloat(fields, "RotationX");
-                        rotationY = SubrecordDataReader.GetFloat(fields, "RotationY");
-                        rotationZ = SubrecordDataReader.GetFloat(fields, "RotationZ");
-                        bounceMultiplier = SubrecordDataReader.GetFloat(fields, "BouncyMult");
+                            v.Float("ExplosionAltTriggerProximity");
+                        explosionTimer = v.Float("ExplosionAltTriggerTimer");
+                        explosion = v.UInt32("Explosion");
+                        sound = v.UInt32("Sound");
+                        muzzleFlashDuration = v.Float("MuzzleFlashDuration");
+                        fadeDuration = v.Float("FadeDuration");
+                        impactForce = v.Float("ImpactForce");
+                        countdownSound = v.UInt32("SoundCountdown");
+                        deactivateSound = v.UInt32("SoundDisable");
+                        defaultWeaponSource = v.UInt32("DefaultWeaponSource");
+                        rotationX = v.Float("RotationX");
+                        rotationY = v.Float("RotationY");
+                        rotationZ = v.Float("RotationZ");
+                        bounceMultiplier = v.Float("BouncyMult");
                     }
 
                     break;

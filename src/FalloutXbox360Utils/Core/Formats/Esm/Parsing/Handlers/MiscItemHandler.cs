@@ -69,12 +69,11 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
                     break;
                 case "DATA" when sub.DataLength >= 8:
                 {
-                    var fields = SubrecordDataReader.ReadFields("DATA", "IMOD",
-                        data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("DATA", "IMOD",
+                            data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian) is { } v)
                     {
-                        value = (int)SubrecordDataReader.GetUInt32(fields, "Value");
-                        weight = SubrecordDataReader.GetFloat(fields, "Weight");
+                        value = (int)v.UInt32("Value");
+                        weight = v.Float("Weight");
                     }
 
                     break;
@@ -149,14 +148,13 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
                     break;
                 case "DATA" when sub.DataLength >= 16:
                 {
-                    var fields = SubrecordDataReader.ReadFields("DATA", "RCPE",
-                        data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("DATA", "RCPE",
+                            data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian) is { } v)
                     {
-                        requiredSkill = SubrecordDataReader.GetInt32(fields, "Skill");
-                        requiredSkillLevel = (int)SubrecordDataReader.GetUInt32(fields, "Level");
-                        categoryFormId = SubrecordDataReader.GetUInt32(fields, "Category");
-                        subcategoryFormId = SubrecordDataReader.GetUInt32(fields, "SubCategory");
+                        requiredSkill = v.Int32("Skill");
+                        requiredSkillLevel = (int)v.UInt32("Level");
+                        categoryFormId = v.UInt32("Category");
+                        subcategoryFormId = v.UInt32("SubCategory");
                     }
 
                     break;
@@ -340,11 +338,10 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
                     break;
                 case "BMDT" when sub.DataLength >= 8:
                 {
-                    var fields = SubrecordDataReader.ReadFields("BMDT", null, subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("BMDT", null, subData, record.IsBigEndian) is { } v)
                     {
-                        bipedFlags = SubrecordDataReader.GetUInt32(fields, "BipedFlags");
-                        generalFlags = SubrecordDataReader.GetByte(fields, "GeneralFlags");
+                        bipedFlags = v.UInt32("BipedFlags");
+                        generalFlags = v.Byte("GeneralFlags");
                     }
 
                     break;
@@ -395,12 +392,11 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
                     break;
                 case "DATA" when sub.DataLength >= 12:
                 {
-                    var fields = SubrecordDataReader.ReadFields("DATA", "ARMA", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("DATA", "ARMA", subData, record.IsBigEndian) is { } v)
                     {
-                        value = SubrecordDataReader.GetInt32(fields, "Value");
-                        maxCondition = SubrecordDataReader.GetInt32(fields, "MaxCondition");
-                        weight = SubrecordDataReader.GetFloat(fields, "Weight");
+                        value = v.Int32("Value");
+                        maxCondition = v.Int32("MaxCondition");
+                        weight = v.Float("Weight");
                     }
 
                     break;
@@ -634,10 +630,9 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
                 }
                 case "NAM5" when sub.DataLength >= 4:
                 {
-                    var fields = SubrecordDataReader.ReadFields("NAM5", "BPTD", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("NAM5", "BPTD", subData, record.IsBigEndian) is { } v)
                     {
-                        textureCount = SubrecordDataReader.GetUInt32(fields, "TextureCount");
+                        textureCount = v.UInt32("TextureCount");
                     }
 
                     break;

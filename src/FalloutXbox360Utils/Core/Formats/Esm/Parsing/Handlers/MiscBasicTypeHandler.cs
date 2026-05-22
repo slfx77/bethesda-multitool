@@ -128,23 +128,22 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context) : Record
                     break;
                 case "DATA" when sub.DataLength >= 28:
                 {
-                    var fields = SubrecordDataReader.ReadFields("DATA", "CLAS",
-                        data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("DATA", "CLAS",
+                            data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian) is { } v)
                     {
-                        var skill1 = SubrecordDataReader.GetInt32(fields, "TagSkill1");
-                        var skill2 = SubrecordDataReader.GetInt32(fields, "TagSkill2");
-                        var skill3 = SubrecordDataReader.GetInt32(fields, "TagSkill3");
-                        var skill4 = SubrecordDataReader.GetInt32(fields, "TagSkill4");
+                        var skill1 = v.Int32("TagSkill1");
+                        var skill2 = v.Int32("TagSkill2");
+                        var skill3 = v.Int32("TagSkill3");
+                        var skill4 = v.Int32("TagSkill4");
                         if (skill1 >= 0) tagSkills.Add(skill1);
                         if (skill2 >= 0) tagSkills.Add(skill2);
                         if (skill3 >= 0) tagSkills.Add(skill3);
                         if (skill4 >= 0) tagSkills.Add(skill4);
 
-                        classFlags = SubrecordDataReader.GetUInt32(fields, "Flags");
-                        barterFlags = SubrecordDataReader.GetUInt32(fields, "BuysServices");
-                        trainingSkill = (byte)SubrecordDataReader.GetSByte(fields, "Teaches");
-                        trainingLevel = SubrecordDataReader.GetByte(fields, "MaxTrainingLevel");
+                        classFlags = v.UInt32("Flags");
+                        barterFlags = v.UInt32("BuysServices");
+                        trainingSkill = (byte)v.SByte("Teaches");
+                        trainingLevel = v.Byte("MaxTrainingLevel");
                     }
 
                     break;
@@ -566,17 +565,16 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context) : Record
                     break;
                 case "DATA" when sub.DataLength >= 24:
                 {
-                    var fields = SubrecordDataReader.ReadFields("DATA", "CHAL",
-                        data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("DATA", "CHAL",
+                            data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian) is { } v)
                     {
-                        challengeType = SubrecordDataReader.GetUInt32(fields, "Type");
-                        threshold = SubrecordDataReader.GetUInt32(fields, "Threshold");
-                        flags = SubrecordDataReader.GetUInt16(fields, "Flags");
-                        interval = SubrecordDataReader.GetUInt16(fields, "Interval");
-                        value1 = SubrecordDataReader.GetUInt32(fields, "Value1");
-                        value2 = SubrecordDataReader.GetUInt16(fields, "Value2");
-                        value3 = SubrecordDataReader.GetUInt16(fields, "Value3");
+                        challengeType = v.UInt32("Type");
+                        threshold = v.UInt32("Threshold");
+                        flags = v.UInt16("Flags");
+                        interval = v.UInt16("Interval");
+                        value1 = v.UInt32("Value1");
+                        value2 = v.UInt16("Value2");
+                        value3 = v.UInt16("Value3");
                     }
 
                     break;
@@ -651,12 +649,11 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context) : Record
                     break;
                 case "DATA" when sub.DataLength >= 8:
                 {
-                    var fields = SubrecordDataReader.ReadFields("DATA", "REPU",
-                        data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("DATA", "REPU",
+                            data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian) is { } v)
                     {
-                        positiveValue = SubrecordDataReader.GetFloat(fields, "PositiveValue");
-                        negativeValue = SubrecordDataReader.GetFloat(fields, "NegativeValue");
+                        positiveValue = v.Float("PositiveValue");
+                        negativeValue = v.Float("NegativeValue");
                     }
 
                     break;

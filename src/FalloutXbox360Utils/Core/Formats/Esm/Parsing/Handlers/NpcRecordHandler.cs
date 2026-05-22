@@ -135,10 +135,9 @@ internal sealed class NpcRecordHandler(RecordParserContext context) : RecordHand
                     break;
                 case "LNAM" when sub.DataLength == 4:
                 {
-                    var fields = SubrecordDataReader.ReadFields("LNAM", "NPC_", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("LNAM", "NPC_", subData, record.IsBigEndian) is { } v)
                     {
-                        hairLength = SubrecordDataReader.GetFloat(fields, "HairLength");
+                        hairLength = v.Float("HairLength");
                     }
 
                     break;
@@ -168,11 +167,10 @@ internal sealed class NpcRecordHandler(RecordParserContext context) : RecordHand
                     break;
                 case "CNTO" when sub.DataLength >= 8:
                 {
-                    var fields = SubrecordDataReader.ReadFields("CNTO", null, subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("CNTO", null, subData, record.IsBigEndian) is { } v)
                     {
-                        var itemFormId = SubrecordDataReader.GetUInt32(fields, "Item");
-                        var count = SubrecordDataReader.GetInt32(fields, "Count");
+                        var itemFormId = v.UInt32("Item");
+                        var count = v.Int32("Count");
                         inventory.Add(new InventoryItem(itemFormId, count));
                     }
 

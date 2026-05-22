@@ -88,11 +88,10 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
                     break;
                 case "DATA" when sub.DataLength >= 8:
                 {
-                    var fields = SubrecordDataReader.ReadFields("DATA", "KEYM", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("DATA", "KEYM", subData, record.IsBigEndian) is { } v)
                     {
-                        value = SubrecordDataReader.GetInt32(fields, "Value");
-                        weight = SubrecordDataReader.GetFloat(fields, "Weight");
+                        value = v.Int32("Value");
+                        weight = v.Float("Weight");
                     }
 
                     break;
@@ -223,12 +222,11 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
                     break;
                 case "DATA" when sub.DataLength >= 12:
                 {
-                    var fields = SubrecordDataReader.ReadFields("DATA", "ARMO", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("DATA", "ARMO", subData, record.IsBigEndian) is { } v)
                     {
-                        value = SubrecordDataReader.GetInt32(fields, "Value");
-                        health = SubrecordDataReader.GetInt32(fields, "Health");
-                        weight = SubrecordDataReader.GetFloat(fields, "Weight");
+                        value = v.Int32("Value");
+                        health = v.Int32("Health");
+                        weight = v.Float("Weight");
                     }
 
                     break;
@@ -241,11 +239,10 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
                     break;
                 case "BMDT" when sub.DataLength >= 8:
                 {
-                    var fields = SubrecordDataReader.ReadFields("BMDT", null, subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("BMDT", null, subData, record.IsBigEndian) is { } v)
                     {
-                        bipedFlags = SubrecordDataReader.GetUInt32(fields, "BipedFlags");
-                        generalFlags = SubrecordDataReader.GetByte(fields, "GeneralFlags");
+                        bipedFlags = v.UInt32("BipedFlags");
+                        generalFlags = v.Byte("GeneralFlags");
                     }
 
                     break;
@@ -395,11 +392,10 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
                     break;
                 case "DATA" when sub.DataLength >= 8:
                 {
-                    var fields = SubrecordDataReader.ReadFields("DATA", "MISC", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("DATA", "MISC", subData, record.IsBigEndian) is { } v)
                     {
-                        value = SubrecordDataReader.GetInt32(fields, "Value");
-                        weight = SubrecordDataReader.GetFloat(fields, "Weight");
+                        value = v.Int32("Value");
+                        weight = v.Float("Weight");
                     }
 
                     break;
@@ -612,11 +608,10 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
                     break;
                 case "CNTO" when sub.DataLength >= 8:
                 {
-                    var fields = SubrecordDataReader.ReadFields("CNTO", null, subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("CNTO", null, subData, record.IsBigEndian) is { } v)
                     {
-                        var itemFormId = SubrecordDataReader.GetUInt32(fields, "Item");
-                        var count = SubrecordDataReader.GetInt32(fields, "Count");
+                        var itemFormId = v.UInt32("Item");
+                        var count = v.Int32("Count");
                         contents.Add(new InventoryItem(itemFormId, count));
                     }
 

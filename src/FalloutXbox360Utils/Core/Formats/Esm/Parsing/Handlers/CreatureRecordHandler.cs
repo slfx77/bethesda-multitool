@@ -51,6 +51,7 @@ internal sealed class CreatureRecordHandler(RecordParserContext context) : Recor
         string? editorId = null;
         string? fullName = null;
         string? modelPath = null;
+        ObjectBounds? bounds = null;
         ActorBaseSubrecord? stats = null;
         byte creatureType = 0;
         byte combatSkill = 0;
@@ -59,14 +60,32 @@ internal sealed class CreatureRecordHandler(RecordParserContext context) : Recor
         short attackDamage = 0;
         uint? script = null;
         uint? deathItem = null;
+        uint? equippedItem = null;
+        ushort? equippedAttackAnimation = null;
+        uint? template = null;
+        uint? voiceType = null;
+        uint? combatStyleFormId = null;
+        uint? inheritsSoundsFrom = null;
+        uint? deathItemLootList = null;
+        uint? impactDataSet = null;
+        uint? bodyData = null;
+        byte? soundType = null;
+        float? turningSpeed = null;
+        float? baseScale = null;
+        float? footWeight = null;
+        uint? impactMaterialType = null;
+        uint? soundLevel = null;
         NpcAiData? aiData = null;
         var factions = new List<FactionMembership>();
+        var inventory = new List<InventoryItem>();
         var spells = new List<uint>();
         var packages = new List<uint>();
         byte[]? modelFilesRaw = null;
         byte[]? textureFilesRaw = null;
         byte[]? animationFilesRaw = null;
         byte[]? animationNamesRaw = null;
+        List<KeyValuePair<string, byte[]>>? soundDefinitionsRaw = null;
+        List<KeyValuePair<string, byte[]>>? destructionDataRaw = null;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -80,6 +99,9 @@ internal sealed class CreatureRecordHandler(RecordParserContext context) : Recor
                 case "FULL":
                     fullName = EsmStringUtils.ReadNullTermString(subData);
                     break;
+                case "OBND" when sub.DataLength == 12:
+                    bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
+                    break;
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
                     break;
@@ -89,13 +111,12 @@ internal sealed class CreatureRecordHandler(RecordParserContext context) : Recor
                     break;
                 case "DATA" when sub.DataLength >= 8:
                 {
-                    var fields = SubrecordDataReader.ReadFields("DATA", "CREA", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("DATA", "CREA", subData, record.IsBigEndian) is { } v)
                     {
-                        creatureType = SubrecordDataReader.GetByte(fields, "CreatureType");
-                        combatSkill = SubrecordDataReader.GetByte(fields, "CombatSkill");
-                        magicSkill = SubrecordDataReader.GetByte(fields, "MagicSkill");
-                        stealthSkill = SubrecordDataReader.GetByte(fields, "StealthSkill");
+                        creatureType = v.Byte("CreatureType");
+                        combatSkill = v.Byte("CombatSkill");
+                        magicSkill = v.Byte("MagicSkill");
+                        stealthSkill = v.Byte("StealthSkill");
                         if (sub.DataLength >= 10)
                         {
                             attackDamage = record.IsBigEndian
@@ -146,6 +167,103 @@ internal sealed class CreatureRecordHandler(RecordParserContext context) : Recor
                 case "KFNM":
                     animationNamesRaw = subData.ToArray();
                     break;
+                case "EITM" when sub.DataLength == 4:
+                    equippedItem = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "EAMT" when sub.DataLength == 2:
+                    equippedAttackAnimation = record.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt16BigEndian(subData)
+                        : BinaryPrimitives.ReadUInt16LittleEndian(subData);
+                    break;
+                case "TPLT" when sub.DataLength == 4:
+                    template = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "VTCK" when sub.DataLength == 4:
+                    voiceType = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "ZNAM" when sub.DataLength == 4:
+                    combatStyleFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "CSCR" when sub.DataLength == 4:
+                    inheritsSoundsFrom = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "LNAM" when sub.DataLength == 4:
+                    deathItemLootList = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "CNAM" when sub.DataLength == 4:
+                    impactDataSet = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "PNAM" when sub.DataLength == 4:
+                    bodyData = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "RNAM" when sub.DataLength == 1:
+                    soundType = subData[0];
+                    break;
+                case "TNAM" when sub.DataLength == 4:
+                    turningSpeed = record.IsBigEndian
+                        ? BinaryPrimitives.ReadSingleBigEndian(subData)
+                        : BinaryPrimitives.ReadSingleLittleEndian(subData);
+                    break;
+                case "BNAM" when sub.DataLength == 4:
+                    baseScale = record.IsBigEndian
+                        ? BinaryPrimitives.ReadSingleBigEndian(subData)
+                        : BinaryPrimitives.ReadSingleLittleEndian(subData);
+                    break;
+                case "WNAM" when sub.DataLength == 4:
+                    footWeight = record.IsBigEndian
+                        ? BinaryPrimitives.ReadSingleBigEndian(subData)
+                        : BinaryPrimitives.ReadSingleLittleEndian(subData);
+                    break;
+                case "NAM4" when sub.DataLength == 4:
+                    impactMaterialType = record.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
+                    break;
+                case "NAM5" when sub.DataLength == 4:
+                    soundLevel = record.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
+                    break;
+                case "CNTO" when sub.DataLength >= 8:
+                {
+                    var itemFormId = RecordParserContext.ReadFormId(subData[..4], record.IsBigEndian);
+                    var count = record.IsBigEndian
+                        ? BinaryPrimitives.ReadInt32BigEndian(subData[4..])
+                        : BinaryPrimitives.ReadInt32LittleEndian(subData[4..]);
+                    inventory.Add(new InventoryItem(itemFormId, count));
+                    break;
+                }
+                case "COED" when sub.DataLength >= 12 && inventory.Count > 0:
+                {
+                    var owner = RecordParserContext.ReadFormId(subData[..4], record.IsBigEndian);
+                    var globalOrRank = record.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData[4..])
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData[4..]);
+                    var condition = record.IsBigEndian
+                        ? BinaryPrimitives.ReadSingleBigEndian(subData[8..])
+                        : BinaryPrimitives.ReadSingleLittleEndian(subData[8..]);
+                    inventory[^1] = inventory[^1] with
+                    {
+                        OwnerFormId = owner != 0 ? owner : null,
+                        GlobalOrRank = globalOrRank,
+                        ItemCondition = condition
+                    };
+                    break;
+                }
+                case "CSDT":
+                case "CSDI":
+                case "CSDC":
+                    soundDefinitionsRaw ??= [];
+                    soundDefinitionsRaw.Add(new KeyValuePair<string, byte[]>(sub.Signature, subData.ToArray()));
+                    break;
+                case "DEST":
+                case "DSTD":
+                case "DMDL":
+                case "DMDT":
+                case "DSTF":
+                    destructionDataRaw ??= [];
+                    destructionDataRaw.Add(new KeyValuePair<string, byte[]>(sub.Signature, subData.ToArray()));
+                    break;
             }
         }
 
@@ -154,6 +272,7 @@ internal sealed class CreatureRecordHandler(RecordParserContext context) : Recor
             FormId = record.FormId,
             EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
+            Bounds = bounds,
             Stats = stats,
             CreatureType = creatureType,
             CombatSkill = combatSkill,
@@ -162,15 +281,33 @@ internal sealed class CreatureRecordHandler(RecordParserContext context) : Recor
             AttackDamage = attackDamage,
             Script = script,
             DeathItem = deathItem,
+            EquippedItem = equippedItem,
+            EquippedAttackAnimation = equippedAttackAnimation,
+            Template = template,
+            VoiceType = voiceType,
+            CombatStyleFormId = combatStyleFormId,
+            InheritsSoundsFrom = inheritsSoundsFrom,
+            DeathItemLootList = deathItemLootList,
+            ImpactDataSet = impactDataSet,
+            BodyData = bodyData,
+            SoundType = soundType,
+            TurningSpeed = turningSpeed,
+            BaseScale = baseScale,
+            FootWeight = footWeight,
+            ImpactMaterialType = impactMaterialType,
+            SoundLevel = soundLevel,
             AiData = aiData,
             ModelPath = modelPath,
             Factions = factions,
+            Inventory = inventory,
             Spells = spells,
             Packages = packages,
             ModelFilesRaw = modelFilesRaw,
             TextureFilesRaw = textureFilesRaw,
             AnimationFilesRaw = animationFilesRaw,
             AnimationNamesRaw = animationNamesRaw,
+            SoundDefinitionsRaw = soundDefinitionsRaw,
+            DestructionDataRaw = destructionDataRaw,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };

@@ -343,13 +343,12 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
                         FlushCurrentResponse();
                     }
 
-                    var fields = SubrecordDataReader.ReadFields("TRDT", null, subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("TRDT", null, subData, record.IsBigEndian) is { } v)
                     {
-                        currentEmotionType = SubrecordDataReader.GetUInt32(fields, "EmotionType");
-                        currentEmotionValue = SubrecordDataReader.GetInt32(fields, "EmotionValue");
-                        currentResponseNumber = SubrecordDataReader.GetByte(fields, "ResponseNumber");
-                        var soundFormId = SubrecordDataReader.GetUInt32(fields, "Sound");
+                        currentEmotionType = v.UInt32("EmotionType");
+                        currentEmotionValue = v.Int32("EmotionValue");
+                        currentResponseNumber = v.Byte("ResponseNumber");
+                        var soundFormId = v.UInt32("Sound");
                         currentSoundFormId = soundFormId != 0 ? soundFormId : null;
                         currentHasTrdt = true;
                     }
@@ -426,6 +425,7 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
                 case "SCDA":
                     currentResultScript ??= DialogueResultScriptParser.StartImplicitResultScript(resultScriptBlocks);
                     currentResultScript.CompiledData = subData.ToArray();
+                    currentResultScript.IsBigEndianBytecode = record.IsBigEndian;
                     break;
                 case "SCRO" when sub.DataLength >= 4:
                     currentResultScript ??= DialogueResultScriptParser.StartImplicitResultScript(resultScriptBlocks);
@@ -550,20 +550,20 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
         ref uint? conditionRace,
         ref uint? conditionVoiceType)
     {
-        var fields = SubrecordDataReader.ReadFields("CTDA", null, subData, isBigEndian);
-        if (fields.Count == 0)
+        var v = SubrecordSchemaView.TryRead("CTDA", null, subData, isBigEndian);
+        if (v == null)
         {
             return null;
         }
 
-        var functionIndex = SubrecordDataReader.GetUInt16(fields, "FunctionIndex");
+        var functionIndex = v.UInt16("FunctionIndex");
         conditionFunctions.Add(functionIndex);
 
-        var param1 = SubrecordDataReader.GetUInt32(fields, "Parameter1");
-        var runOn = SubrecordDataReader.GetUInt32(fields, "RunOn");
-        var reference = SubrecordDataReader.GetUInt32(fields, "Reference");
-        var compValue = SubrecordDataReader.GetFloat(fields, "ComparisonValue");
-        var typeByte = SubrecordDataReader.GetByte(fields, "Type");
+        var param1 = v.UInt32("Parameter1");
+        var runOn = v.UInt32("RunOn");
+        var reference = v.UInt32("Reference");
+        var compValue = v.Float("ComparisonValue");
+        var typeByte = v.Byte("Type");
         var compOp = (typeByte >> 5) & 0x7;
 
         var isPositive = runOn == 0 &&
@@ -596,7 +596,7 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
             ComparisonValue = compValue,
             FunctionIndex = functionIndex,
             Parameter1 = param1,
-            Parameter2 = SubrecordDataReader.GetUInt32(fields, "Parameter2"),
+            Parameter2 = v.UInt32("Parameter2"),
             RunOn = runOn,
             Reference = reference
         };

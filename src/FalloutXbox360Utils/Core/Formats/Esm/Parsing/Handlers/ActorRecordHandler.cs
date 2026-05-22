@@ -47,23 +47,23 @@ internal sealed class ActorRecordHandler(RecordParserContext context) : RecordHa
             return null;
         }
 
-        var fields = SubrecordDataReader.ReadFields("ACBS", null, data, bigEndian);
-        if (fields.Count == 0)
+        var v = SubrecordSchemaView.TryRead("ACBS", null, data, bigEndian);
+        if (v == null)
         {
             return null;
         }
 
         return new ActorBaseSubrecord(
-            SubrecordDataReader.GetUInt32(fields, "Flags"),
-            SubrecordDataReader.GetUInt16(fields, "Fatigue"),
-            SubrecordDataReader.GetUInt16(fields, "BarterGold"),
-            SubrecordDataReader.GetInt16(fields, "Level"),
-            SubrecordDataReader.GetUInt16(fields, "CalcMin"),
-            SubrecordDataReader.GetUInt16(fields, "CalcMax"),
-            SubrecordDataReader.GetUInt16(fields, "SpeedMult"),
-            SubrecordDataReader.GetFloat(fields, "KarmaAlignment"),
-            SubrecordDataReader.GetInt16(fields, "Disposition"),
-            SubrecordDataReader.GetUInt16(fields, "TemplateFlags"),
+            v.UInt32("Flags"),
+            v.UInt16("Fatigue"),
+            v.UInt16("BarterGold"),
+            v.Int16("Level"),
+            v.UInt16("CalcMin"),
+            v.UInt16("CalcMax"),
+            v.UInt16("SpeedMult"),
+            v.Float("KarmaAlignment"),
+            v.Int16("Disposition"),
+            v.UInt16("TemplateFlags"),
             offset, bigEndian);
     }
 
@@ -229,12 +229,11 @@ internal sealed class ActorRecordHandler(RecordParserContext context) : RecordHa
                     break;
                 case "XNAM" when sub.DataLength == 12:
                 {
-                    var fields = SubrecordDataReader.ReadFields("XNAM", "FACT", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("XNAM", "FACT", subData, record.IsBigEndian) is { } v)
                     {
-                        var factionFormId = SubrecordDataReader.GetUInt32(fields, "Faction");
-                        var modifier = SubrecordDataReader.GetInt32(fields, "Modifier");
-                        var combatReaction = SubrecordDataReader.GetUInt32(fields, "CombatReaction");
+                        var factionFormId = v.UInt32("Faction");
+                        var modifier = v.Int32("Modifier");
+                        var combatReaction = v.UInt32("CombatReaction");
                         relations.Add(new FactionRelation(factionFormId, modifier, combatReaction));
                     }
 
@@ -249,9 +248,8 @@ internal sealed class ActorRecordHandler(RecordParserContext context) : RecordHa
                             currentInsignia));
                     }
 
-                    var fields = SubrecordDataReader.ReadFields("RNAM", "FACT", subData, record.IsBigEndian);
-                    currentRankNumber = fields.Count > 0
-                        ? SubrecordDataReader.GetInt32(fields, "RankNumber")
+                    currentRankNumber = SubrecordSchemaView.TryRead("RNAM", "FACT", subData, record.IsBigEndian) is { } v
+                        ? v.Int32("RankNumber")
                         : 0;
                     currentMaleTitle = null;
                     currentFemaleTitle = null;
@@ -269,10 +267,9 @@ internal sealed class ActorRecordHandler(RecordParserContext context) : RecordHa
                     break;
                 case "CRVA" when sub.DataLength >= 4:
                 {
-                    var fields = SubrecordDataReader.ReadFields("CRVA", "FACT", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("CRVA", "FACT", subData, record.IsBigEndian) is { } v)
                     {
-                        crimeGoldMultiplier = SubrecordDataReader.GetFloat(fields, "CrimeGoldMultiplier");
+                        crimeGoldMultiplier = v.Float("CrimeGoldMultiplier");
                     }
 
                     break;
@@ -450,14 +447,13 @@ internal sealed class ActorRecordHandler(RecordParserContext context) : RecordHa
                         }
                     }
 
-                    var fields = SubrecordDataReader.ReadFields("DATA", "RACE", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("DATA", "RACE", subData, record.IsBigEndian) is { } v)
                     {
-                        maleHeight = SubrecordDataReader.GetFloat(fields, "MaleHeight");
-                        femaleHeight = SubrecordDataReader.GetFloat(fields, "FemaleHeight");
-                        maleWeight = SubrecordDataReader.GetFloat(fields, "MaleWeight");
-                        femaleWeight = SubrecordDataReader.GetFloat(fields, "FemaleWeight");
-                        dataFlags = SubrecordDataReader.GetUInt32(fields, "Flags");
+                        maleHeight = v.Float("MaleHeight");
+                        femaleHeight = v.Float("FemaleHeight");
+                        maleWeight = v.Float("MaleWeight");
+                        femaleWeight = v.Float("FemaleWeight");
+                        dataFlags = v.UInt32("Flags");
                     }
 
                     break;
@@ -488,20 +484,18 @@ internal sealed class ActorRecordHandler(RecordParserContext context) : RecordHa
                     break;
                 case "PNAM" when sub.DataLength == 4:
                 {
-                    var fields = SubrecordDataReader.ReadFields("PNAM", "RACE", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("PNAM", "RACE", subData, record.IsBigEndian) is { } v)
                     {
-                        faceGenMainClamp = SubrecordDataReader.GetFloat(fields, "FaceGenMainClamp");
+                        faceGenMainClamp = v.Float("FaceGenMainClamp");
                     }
 
                     break;
                 }
                 case "UNAM" when sub.DataLength == 4:
                 {
-                    var fields = SubrecordDataReader.ReadFields("UNAM", "RACE", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("UNAM", "RACE", subData, record.IsBigEndian) is { } v)
                     {
-                        faceGenFaceClamp = SubrecordDataReader.GetFloat(fields, "FaceGenFaceClamp");
+                        faceGenFaceClamp = v.Float("FaceGenFaceClamp");
                     }
 
                     break;

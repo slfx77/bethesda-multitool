@@ -192,12 +192,11 @@ internal sealed class MiscCollectionHandler(RecordParserContext context) : Recor
 
                 case "LVLO" when sub.DataLength == 12:
                 {
-                    var fields = SubrecordDataReader.ReadFields("LVLO", null, subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("LVLO", null, subData, record.IsBigEndian) is { } v)
                     {
-                        var level = SubrecordDataReader.GetUInt16(fields, "Level");
-                        var formId = SubrecordDataReader.GetUInt32(fields, "Entry");
-                        var count = SubrecordDataReader.GetUInt16(fields, "Count");
+                        var level = v.UInt16("Level");
+                        var formId = v.UInt32("Entry");
+                        var count = v.UInt16("Count");
                         entries.Add(new LeveledEntry(level, formId, count));
                     }
                 }

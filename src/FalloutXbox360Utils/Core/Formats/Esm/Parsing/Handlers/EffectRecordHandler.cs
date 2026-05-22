@@ -56,14 +56,13 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
                     break;
                 case "ENIT" when sub.DataLength >= 12:
                 {
-                    var fields = SubrecordDataReader.ReadFields("ENIT", "ENCH",
-                        data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("ENIT", "ENCH",
+                            data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian) is { } v)
                     {
-                        enchantType = SubrecordDataReader.GetUInt32(fields, "Type");
-                        chargeAmount = SubrecordDataReader.GetUInt32(fields, "ChargeAmount");
-                        enchantCost = SubrecordDataReader.GetUInt32(fields, "EnchantCost");
-                        flags = SubrecordDataReader.GetByte(fields, "Flags");
+                        enchantType = v.UInt32("Type");
+                        chargeAmount = v.UInt32("ChargeAmount");
+                        enchantCost = v.UInt32("EnchantCost");
+                        flags = v.Byte("Flags");
                     }
 
                     break;
@@ -74,16 +73,15 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
                     break;
                 case "EFIT" when sub.DataLength >= 12:
                 {
-                    var fields = SubrecordDataReader.ReadFields("EFIT", null,
-                        data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("EFIT", null,
+                            data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian) is { } v)
                     {
                         var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
                         var magnitude = GameStatNormalizer.EffectMagnitude(subData, record.IsBigEndian);
-                        var area = SubrecordDataReader.GetUInt32(fields, "Area");
-                        var duration = SubrecordDataReader.GetUInt32(fields, "Duration");
-                        var effectTargetType = SubrecordDataReader.GetUInt32(fields, "Type");
-                        var actorValue = SubrecordDataReader.GetInt32(fields, "ActorValue", -1);
+                        var area = v.UInt32("Area");
+                        var duration = v.UInt32("Duration");
+                        var effectTargetType = v.UInt32("Type");
+                        var actorValue = v.Int32("ActorValue", -1);
 
                         effects.Add(new EnchantmentEffect
                         {
@@ -180,35 +178,34 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
                     break;
                 case "DATA" when sub.DataLength >= 36:
                 {
-                    var fields = SubrecordDataReader.ReadFields("DATA", "MGEF",
-                        data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("DATA", "MGEF",
+                            data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian) is { } v)
                     {
-                        flags = SubrecordDataReader.GetUInt32(fields, "Flags");
-                        baseCost = SubrecordDataReader.GetFloat(fields, "BaseCost");
-                        associatedItem = SubrecordDataReader.GetUInt32(fields, "AssocItem");
-                        magicSchool = SubrecordDataReader.GetInt32(fields, "MagicSchool");
-                        resistValue = SubrecordDataReader.GetInt32(fields, "ResistanceValue");
-                        archetype = SubrecordDataReader.GetUInt32(fields, "Archtype");
-                        actorValue = SubrecordDataReader.GetInt32(fields, "ActorValue");
-                        var light = SubrecordDataReader.GetUInt32(fields, "Light");
+                        flags = v.UInt32("Flags");
+                        baseCost = v.Float("BaseCost");
+                        associatedItem = v.UInt32("AssocItem");
+                        magicSchool = v.Int32("MagicSchool");
+                        resistValue = v.Int32("ResistanceValue");
+                        archetype = v.UInt32("Archtype");
+                        actorValue = v.Int32("ActorValue");
+                        var light = v.UInt32("Light");
                         if (light != 0) lightFormId = light;
-                        projectileSpeed = SubrecordDataReader.GetFloat(fields, "ProjectileSpeed");
-                        var shader = SubrecordDataReader.GetUInt32(fields, "EffectShader");
+                        projectileSpeed = v.Float("ProjectileSpeed");
+                        var shader = v.UInt32("EffectShader");
                         if (shader != 0) effectShaderFormId = shader;
-                        var enchEff = SubrecordDataReader.GetUInt32(fields, "EnchantEffect");
+                        var enchEff = v.UInt32("EnchantEffect");
                         if (enchEff != 0) enchantEffectFormId = enchEff;
-                        var castSnd = SubrecordDataReader.GetUInt32(fields, "CastingSound");
+                        var castSnd = v.UInt32("CastingSound");
                         if (castSnd != 0) castingSoundFormId = castSnd;
-                        var boltSnd = SubrecordDataReader.GetUInt32(fields, "BoltSound");
+                        var boltSnd = v.UInt32("BoltSound");
                         if (boltSnd != 0) boltSoundFormId = boltSnd;
-                        var hitSnd = SubrecordDataReader.GetUInt32(fields, "HitSound");
+                        var hitSnd = v.UInt32("HitSound");
                         if (hitSnd != 0) hitSoundFormId = hitSnd;
-                        var areaSnd = SubrecordDataReader.GetUInt32(fields, "AreaSound");
+                        var areaSnd = v.UInt32("AreaSound");
                         if (areaSnd != 0) areaSoundFormId = areaSnd;
                         ceEnchantFactor =
-                            SubrecordDataReader.GetFloat(fields, "ConstantEffectEnchantmentFactor");
-                        ceBarterFactor = SubrecordDataReader.GetFloat(fields, "ConstantEffectBarterFactor");
+                            v.Float("ConstantEffectEnchantmentFactor");
+                        ceBarterFactor = v.Float("ConstantEffectBarterFactor");
                     }
 
                     break;
@@ -645,13 +642,12 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
                     break;
                 case "SPIT" when sub.DataLength >= 16:
                 {
-                    var fields = SubrecordDataReader.ReadFields("SPIT", "SPEL", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("SPIT", "SPEL", subData, record.IsBigEndian) is { } v)
                     {
-                        type = (SpellType)SubrecordDataReader.GetUInt32(fields, "Type");
-                        cost = SubrecordDataReader.GetUInt32(fields, "Cost");
-                        level = SubrecordDataReader.GetUInt32(fields, "Level");
-                        flags = SubrecordDataReader.GetByte(fields, "Flags");
+                        type = (SpellType)v.UInt32("Type");
+                        cost = v.UInt32("Cost");
+                        level = v.UInt32("Level");
+                        flags = v.Byte("Flags");
                     }
 
                     break;
@@ -661,14 +657,13 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
                     break;
                 case "EFIT" when sub.DataLength >= 12:
                 {
-                    var fields = SubrecordDataReader.ReadFields("EFIT", null, subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("EFIT", null, subData, record.IsBigEndian) is { } v)
                     {
                         var magnitude = GameStatNormalizer.EffectMagnitude(subData, record.IsBigEndian);
-                        var area = SubrecordDataReader.GetUInt32(fields, "Area");
-                        var duration = SubrecordDataReader.GetUInt32(fields, "Duration");
-                        var effectTargetType = SubrecordDataReader.GetUInt32(fields, "Type");
-                        var actorValue = SubrecordDataReader.GetInt32(fields, "ActorValue", -1);
+                        var area = v.UInt32("Area");
+                        var duration = v.UInt32("Duration");
+                        var effectTargetType = v.UInt32("Type");
+                        var actorValue = v.Int32("ActorValue", -1);
 
                         effects.Add(new EnchantmentEffect
                         {

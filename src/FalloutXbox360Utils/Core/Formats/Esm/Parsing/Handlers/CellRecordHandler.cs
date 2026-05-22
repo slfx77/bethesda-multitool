@@ -348,11 +348,10 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                     break;
                 case "XCLC" when sub.DataLength >= 12:
                 {
-                    var fields = SubrecordDataReader.ReadFields("XCLC", null, subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("XCLC", null, subData, record.IsBigEndian) is { } v)
                     {
-                        gridX = SubrecordDataReader.GetInt32(fields, "X");
-                        gridY = SubrecordDataReader.GetInt32(fields, "Y");
+                        gridX = v.Int32("X");
+                        gridY = v.Int32("Y");
                     }
 
                     break;
@@ -385,10 +384,9 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                     break;
                 case "XCLL" when sub.DataLength == 40:
                 {
-                    var fields = SubrecordDataReader.ReadFields("XCLL", "CELL", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("XCLL", "CELL", subData, record.IsBigEndian) is { } v)
                     {
-                        lightingData = fields;
+                        lightingData = v.Raw;
                     }
 
                     break;

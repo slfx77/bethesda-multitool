@@ -96,20 +96,18 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                     break;
                 case "DNAM" when sub.DataLength == 196:
                 {
-                    var fields = SubrecordDataReader.ReadFields("DNAM", "WATR", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("DNAM", "WATR", subData, record.IsBigEndian) is { } v)
                     {
-                        visualProps = fields;
+                        visualProps = v.Raw;
                     }
 
                     break;
                 }
                 case "GNAM" when sub.DataLength == 12:
                 {
-                    var fields = SubrecordDataReader.ReadFields("GNAM", "WATR", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("GNAM", "WATR", subData, record.IsBigEndian) is { } v)
                     {
-                        relatedWater = fields;
+                        relatedWater = v.Raw;
                     }
 
                     break;
@@ -193,13 +191,12 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                     break;
                 case "SNAM" when sub.DataLength == 8:
                 {
-                    var fields = SubrecordDataReader.ReadFields("SNAM", "WTHR", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("SNAM", "WTHR", subData, record.IsBigEndian) is { } v)
                     {
                         sounds.Add(new WeatherSound
                         {
-                            SoundFormId = SubrecordDataReader.GetUInt32(fields, "Sound"),
-                            Type = SubrecordDataReader.GetUInt32(fields, "Type")
+                            SoundFormId = v.UInt32("Sound"),
+                            Type = v.UInt32("Type")
                         });
                     }
 
@@ -290,15 +287,14 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                     break;
                 case "SNDD" when sub.DataLength >= 36:
                 {
-                    var fields = SubrecordDataReader.ReadFields("SNDD", "SOUN", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("SNDD", "SOUN", subData, record.IsBigEndian) is { } v)
                     {
-                        minAtten = SubrecordDataReader.GetByte(fields, "MinAttenuationDistance");
-                        maxAtten = SubrecordDataReader.GetByte(fields, "MaxAttenuationDistance");
-                        staticAtten = SubrecordDataReader.GetInt16(fields, "StaticAttenuation");
-                        flags = SubrecordDataReader.GetUInt32(fields, "Flags");
-                        startTime = SubrecordDataReader.GetByte(fields, "StartTime");
-                        endTime = SubrecordDataReader.GetByte(fields, "EndTime");
+                        minAtten = v.Byte("MinAttenuationDistance");
+                        maxAtten = v.Byte("MaxAttenuationDistance");
+                        staticAtten = v.Int16("StaticAttenuation");
+                        flags = v.UInt32("Flags");
+                        startTime = v.Byte("StartTime");
+                        endTime = v.Byte("EndTime");
                     }
 
                     break;
@@ -726,10 +722,9 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                     break;
                 case "DATA" when sub.DataLength == 88:
                 {
-                    var fields = SubrecordDataReader.ReadFields("DATA", "LSCT", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("DATA", "LSCT", subData, record.IsBigEndian) is { } v)
                     {
-                        layoutData = fields;
+                        layoutData = v.Raw;
                     }
 
                     break;

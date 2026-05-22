@@ -64,6 +64,14 @@ public sealed class SubrecordSchemaView
         return new SubrecordSchemaView(SubrecordSchemaReader.ReadFields(signature, data, rt, bigEndian));
     }
 
+    /// <summary>
+    ///     Underlying decoded field dictionary. Most callers should prefer the typed accessors
+    ///     below — this exists for the small set of consumers (CSTY/LGTM/WATR/LSCT records)
+    ///     that hold the dict verbatim instead of projecting to a typed model. Returned as a
+    ///     mutable Dictionary to match the consumers' existing storage type; treat as read-only.
+    /// </summary>
+    public Dictionary<string, object?> Raw => _fields;
+
     public bool HasField(string name) => _fields.ContainsKey(name);
 
     public byte Byte(string name, byte def = 0) => SubrecordDataReader.GetByte(_fields, name, def);

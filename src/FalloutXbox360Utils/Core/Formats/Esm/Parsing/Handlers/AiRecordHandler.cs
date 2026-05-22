@@ -56,6 +56,7 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
         PackageTarget? target2 = null;
         var isRepeatable = false;
         var isStartingLocationLinkedRef = false;
+        uint? combatStyleFormId = null;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -90,6 +91,9 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
                 case "PKPT" when sub.DataLength >= 2:
                     (isRepeatable, isStartingLocationLinkedRef) = ParsePatrolData(subData);
                     break;
+                case "CNAM" when sub.DataLength == 4:
+                    combatStyleFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
             }
         }
 
@@ -106,6 +110,7 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
             Target2 = target2,
             IsRepeatable = isRepeatable,
             IsStartingLocationLinkedRef = isStartingLocationLinkedRef,
+            CombatStyleFormId = combatStyleFormId,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
@@ -318,19 +323,25 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
                     break;
                 case "ANAM" when sub.DataLength >= 8:
                 {
-                    var fields = SubrecordDataReader.ReadFields("ANAM", "IDLE", subData, record.IsBigEndian);
-                    parentIdle = SubrecordDataReader.GetUInt32(fields, "Parent");
-                    previousIdle = SubrecordDataReader.GetUInt32(fields, "Previous");
+                    if (SubrecordSchemaView.TryRead("ANAM", "IDLE", subData, record.IsBigEndian) is { } v)
+                    {
+                        parentIdle = v.UInt32("Parent");
+                        previousIdle = v.UInt32("Previous");
+                    }
+
                     break;
                 }
                 case "DATA" when sub.DataLength is 8 or 6:
                 {
-                    var fields = SubrecordDataReader.ReadFields("DATA", "IDLE", subData, record.IsBigEndian);
-                    animData = SubrecordDataReader.GetByte(fields, "AnimData");
-                    loopMin = SubrecordDataReader.GetByte(fields, "LoopMin");
-                    loopMax = SubrecordDataReader.GetByte(fields, "LoopMax");
-                    replayDelay = SubrecordDataReader.GetUInt16(fields, "ReplayDelay");
-                    flagsEx = SubrecordDataReader.GetByte(fields, "FlagsEx");
+                    if (SubrecordSchemaView.TryRead("DATA", "IDLE", subData, record.IsBigEndian) is { } v)
+                    {
+                        animData = v.Byte("AnimData");
+                        loopMin = v.Byte("LoopMin");
+                        loopMax = v.Byte("LoopMax");
+                        replayDelay = v.UInt16("ReplayDelay");
+                        flagsEx = v.Byte("FlagsEx");
+                    }
+
                     break;
                 }
                 case "CTDA":

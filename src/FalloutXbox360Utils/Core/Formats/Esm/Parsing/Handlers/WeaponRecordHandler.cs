@@ -195,105 +195,103 @@ internal sealed class WeaponRecordHandler(RecordParserContext context) : RecordH
                     break;
                 case "DATA" when sub.DataLength >= 15:
                 {
-                    var fields = SubrecordDataReader.ReadFields("DATA", "WEAP", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("DATA", "WEAP", subData, record.IsBigEndian) is { } v)
                     {
-                        value = SubrecordDataReader.GetInt32(fields, "Value");
-                        health = SubrecordDataReader.GetInt32(fields, "Health");
-                        weight = SubrecordDataReader.GetFloat(fields, "Weight");
-                        damage = SubrecordDataReader.GetInt16(fields, "Damage");
-                        clipSize = SubrecordDataReader.GetByte(fields, "ClipSize");
+                        value = v.Int32("Value");
+                        health = v.Int32("Health");
+                        weight = v.Float("Weight");
+                        damage = v.Int16("Damage");
+                        clipSize = v.Byte("ClipSize");
                     }
 
                     break;
                 }
                 case "DNAM" when sub.DataLength >= 64:
                 {
-                    var fields = SubrecordDataReader.ReadFields("DNAM", "WEAP", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("DNAM", "WEAP", subData, record.IsBigEndian) is { } v)
                     {
-                        var wt = SubrecordDataReader.GetByte(fields, "WeaponType");
+                        var wt = v.Byte("WeaponType");
                         animationType = wt;
                         weaponType = Enum.IsDefined(typeof(WeaponType), wt)
                             ? (WeaponType)wt
                             : WeaponType.HandToHandMelee;
-                        speed = SubrecordDataReader.GetFloat(fields, "Speed");
-                        reach = SubrecordDataReader.GetFloat(fields, "Reach");
-                        flags = SubrecordDataReader.GetByte(fields, "Flags");
-                        var grip = SubrecordDataReader.GetByte(fields, "HandGripAnim");
+                        speed = v.Float("Speed");
+                        reach = v.Float("Reach");
+                        flags = v.Byte("Flags");
+                        var grip = v.Byte("HandGripAnim");
                         handGrip = Enum.IsDefined(typeof(HandGripAnimation), grip)
                             ? (HandGripAnimation)grip
                             : HandGripAnimation.Default;
-                        ammoPerShot = SubrecordDataReader.GetByte(fields, "AmmoPerShot");
-                        var reload = SubrecordDataReader.GetByte(fields, "ReloadAnim");
+                        ammoPerShot = v.Byte("AmmoPerShot");
+                        var reload = v.Byte("ReloadAnim");
                         reloadAnim = reload <= 10
                             ? (ReloadAnimation)reload
                             : ReloadAnimation.ReloadA;
-                        minSpread = SubrecordDataReader.GetFloat(fields, "MinSpread");
-                        spread = SubrecordDataReader.GetFloat(fields, "Spread");
-                        drift = SubrecordDataReader.GetFloat(fields, "Drift");
-                        ironSightFov = SubrecordDataReader.GetFloat(fields, "IronFov");
-                        var projId = SubrecordDataReader.GetUInt32(fields, "Projectile");
+                        minSpread = v.Float("MinSpread");
+                        spread = v.Float("Spread");
+                        drift = v.Float("Drift");
+                        ironSightFov = v.Float("IronFov");
+                        var projId = v.UInt32("Projectile");
                         if (projId != 0)
                         {
                             projectileFormId = projId;
                         }
 
-                        vatsToHitChance = SubrecordDataReader.GetByte(fields, "VatToHitChance");
-                        var attack = SubrecordDataReader.GetByte(fields, "AttackAnim");
+                        vatsToHitChance = v.Byte("VatToHitChance");
+                        var attack = v.Byte("AttackAnim");
                         attackAnim = Enum.IsDefined(typeof(AttackAnimation), attack)
                             ? (AttackAnimation)attack
                             : AttackAnimation.Default;
-                        numProjectiles = SubrecordDataReader.GetByte(fields, "NumProjectiles");
-                        minRange = SubrecordDataReader.GetFloat(fields, "MinRange");
-                        maxRange = SubrecordDataReader.GetFloat(fields, "MaxRange");
-                        onHit = (OnHitBehavior)SubrecordDataReader.GetUInt32(fields, "HitBehavior");
-                        flagsEx = SubrecordDataReader.GetUInt32(fields, "FlagsEx");
-                        attackMultiplier = SubrecordDataReader.GetFloat(fields, "AttackMult");
-                        shotsPerSec = SubrecordDataReader.GetFloat(fields, "ShotsPerSec");
-                        actionPoints = SubrecordDataReader.GetFloat(fields, "ActionPoints");
-                        aimArc = SubrecordDataReader.GetFloat(fields, "AimArc");
-                        limbDamageMult = SubrecordDataReader.GetFloat(fields, "LimbDamageMult");
-                        skill = SubrecordDataReader.GetUInt32(fields, "Skill");
-                        strengthRequirement = SubrecordDataReader.GetUInt32(fields, "StrengthRequirement");
-                        skillRequirement = SubrecordDataReader.GetUInt32(fields, "SkillRequirement");
+                        numProjectiles = v.Byte("NumProjectiles");
+                        minRange = v.Float("MinRange");
+                        maxRange = v.Float("MaxRange");
+                        onHit = (OnHitBehavior)v.UInt32("HitBehavior");
+                        flagsEx = v.UInt32("FlagsEx");
+                        attackMultiplier = v.Float("AttackMult");
+                        shotsPerSec = v.Float("ShotsPerSec");
+                        actionPoints = v.Float("ActionPoints");
+                        aimArc = v.Float("AimArc");
+                        limbDamageMult = v.Float("LimbDamageMult");
+                        skill = v.UInt32("Skill");
+                        strengthRequirement = v.UInt32("StrengthRequirement");
+                        skillRequirement = v.UInt32("SkillRequirement");
 
                         // Phase 3: Additional DNAM fields
-                        damageToWeaponMult = SubrecordDataReader.GetFloat(fields, "DamageToWeaponMult");
-                        resistance = SubrecordDataReader.GetUInt32(fields, "Resistance");
-                        ironSightUseMult = SubrecordDataReader.GetFloat(fields, "IronSightUseMult");
-                        ammoRegenRate = SubrecordDataReader.GetFloat(fields, "AmmoRegenRate");
-                        killImpulse = SubrecordDataReader.GetFloat(fields, "KillImpulse");
-                        killImpulseDistance = SubrecordDataReader.GetFloat(fields, "KillImpulseDistance");
-                        semiAutoFireDelayMin = SubrecordDataReader.GetFloat(fields, "SemiAutoDelayMin");
-                        semiAutoFireDelayMax = SubrecordDataReader.GetFloat(fields, "SemiAutoDelayMax");
-                        animShotsPerSecond = SubrecordDataReader.GetFloat(fields, "AnimShotsPerSecond");
-                        animReloadTime = SubrecordDataReader.GetFloat(fields, "AnimReloadTime");
-                        animJamTime = SubrecordDataReader.GetFloat(fields, "AnimJamTime");
-                        powerAttackOverrideAnim = SubrecordDataReader.GetByte(fields, "PowerAttackOverrideAnim");
-                        modReloadClipAnimation = (sbyte)SubrecordDataReader.GetByte(fields, "ModReloadClipAnimation");
-                        modFireAnimation = (sbyte)SubrecordDataReader.GetByte(fields, "ModFireAnimation");
-                        cookTimer = SubrecordDataReader.GetFloat(fields, "CookTimer");
-                        rumbleLeftMotor = SubrecordDataReader.GetFloat(fields, "RumbleLeftMotor");
-                        rumbleRightMotor = SubrecordDataReader.GetFloat(fields, "RumbleRightMotor");
-                        rumbleDuration = SubrecordDataReader.GetFloat(fields, "RumbleDuration");
-                        rumblePattern = SubrecordDataReader.GetUInt32(fields, "RumblePattern");
-                        rumbleWavelength = SubrecordDataReader.GetFloat(fields, "RumbleWavelength");
+                        damageToWeaponMult = v.Float("DamageToWeaponMult");
+                        resistance = v.UInt32("Resistance");
+                        ironSightUseMult = v.Float("IronSightUseMult");
+                        ammoRegenRate = v.Float("AmmoRegenRate");
+                        killImpulse = v.Float("KillImpulse");
+                        killImpulseDistance = v.Float("KillImpulseDistance");
+                        semiAutoFireDelayMin = v.Float("SemiAutoDelayMin");
+                        semiAutoFireDelayMax = v.Float("SemiAutoDelayMax");
+                        animShotsPerSecond = v.Float("AnimShotsPerSecond");
+                        animReloadTime = v.Float("AnimReloadTime");
+                        animJamTime = v.Float("AnimJamTime");
+                        powerAttackOverrideAnim = v.Byte("PowerAttackOverrideAnim");
+                        modReloadClipAnimation = (sbyte)v.Byte("ModReloadClipAnimation");
+                        modFireAnimation = (sbyte)v.Byte("ModFireAnimation");
+                        cookTimer = v.Float("CookTimer");
+                        rumbleLeftMotor = v.Float("RumbleLeftMotor");
+                        rumbleRightMotor = v.Float("RumbleRightMotor");
+                        rumbleDuration = v.Float("RumbleDuration");
+                        rumblePattern = v.UInt32("RumblePattern");
+                        rumbleWavelength = v.Float("RumbleWavelength");
 
                         // Mod slot data (FNV-specific, DNAM size 204)
                         if (sub.DataLength >= 196)
                         {
                             var modActions = new[]
                             {
-                                (SubrecordDataReader.GetUInt32(fields, "ModActionOne"),
-                                    SubrecordDataReader.GetFloat(fields, "ModActionOneValue"),
-                                    SubrecordDataReader.GetFloat(fields, "ModActionOneValueTwo")),
-                                (SubrecordDataReader.GetUInt32(fields, "ModActionTwo"),
-                                    SubrecordDataReader.GetFloat(fields, "ModActionTwoValue"),
-                                    SubrecordDataReader.GetFloat(fields, "ModActionTwoValueTwo")),
-                                (SubrecordDataReader.GetUInt32(fields, "ModActionThree"),
-                                    SubrecordDataReader.GetFloat(fields, "ModActionThreeValue"),
-                                    SubrecordDataReader.GetFloat(fields, "ModActionThreeValueTwo"))
+                                (v.UInt32("ModActionOne"),
+                                    v.Float("ModActionOneValue"),
+                                    v.Float("ModActionOneValueTwo")),
+                                (v.UInt32("ModActionTwo"),
+                                    v.Float("ModActionTwoValue"),
+                                    v.Float("ModActionTwoValueTwo")),
+                                (v.UInt32("ModActionThree"),
+                                    v.Float("ModActionThreeValue"),
+                                    v.Float("ModActionThreeValueTwo"))
                             };
 
                             for (var mi = 0; mi < 3; mi++)
@@ -331,12 +329,11 @@ internal sealed class WeaponRecordHandler(RecordParserContext context) : RecordH
                 }
                 case "CRDT" when sub.DataLength >= 16:
                 {
-                    var fields = SubrecordDataReader.ReadFields("CRDT", null, subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("CRDT", null, subData, record.IsBigEndian) is { } v)
                     {
-                        criticalDamage = SubrecordDataReader.GetInt16(fields, "CriticalDamage");
-                        criticalChance = SubrecordDataReader.GetFloat(fields, "CriticalChanceMult");
-                        criticalEffectFormId = SubrecordDataReader.GetUInt32(fields, "CriticalEffect");
+                        criticalDamage = v.Int16("CriticalDamage");
+                        criticalChance = v.Float("CriticalChanceMult");
+                        criticalEffectFormId = v.UInt32("CriticalEffect");
                     }
 
                     break;

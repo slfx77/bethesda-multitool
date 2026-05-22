@@ -163,13 +163,12 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
                     break;
                 case "DATA" when sub.DataLength >= 8:
                 {
-                    var fields = SubrecordDataReader.ReadFields("DATA", "ECZN", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("DATA", "ECZN", subData, record.IsBigEndian) is { } v)
                     {
-                        ownerFormId = SubrecordDataReader.GetUInt32(fields, "Owner");
-                        rank = SubrecordDataReader.GetSByte(fields, "Rank");
-                        minLevel = SubrecordDataReader.GetSByte(fields, "MinimumLevel");
-                        flags = SubrecordDataReader.GetByte(fields, "Flags");
+                        ownerFormId = v.UInt32("Owner");
+                        rank = v.SByte("Rank");
+                        minLevel = v.SByte("MinimumLevel");
+                        flags = v.Byte("Flags");
                     }
 
                     break;
@@ -248,30 +247,27 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
                     break;
                 case "CSTD":
                 {
-                    var fields = SubrecordDataReader.ReadFields("CSTD", "CSTY", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("CSTD", "CSTY", subData, record.IsBigEndian) is { } v)
                     {
-                        styleData = fields;
+                        styleData = v.Raw;
                     }
 
                     break;
                 }
                 case "CSAD":
                 {
-                    var fields = SubrecordDataReader.ReadFields("CSAD", "CSTY", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("CSAD", "CSTY", subData, record.IsBigEndian) is { } v)
                     {
-                        advancedData = fields;
+                        advancedData = v.Raw;
                     }
 
                     break;
                 }
                 case "CSSD":
                 {
-                    var fields = SubrecordDataReader.ReadFields("CSSD", "CSTY", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("CSSD", "CSTY", subData, record.IsBigEndian) is { } v)
                     {
-                        simpleData = fields;
+                        simpleData = v.Raw;
                     }
 
                     break;
@@ -351,10 +347,9 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
                     break;
                 case "DATA" when sub.DataLength == 40:
                 {
-                    var fields = SubrecordDataReader.ReadFields("DATA", "LGTM", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("DATA", "LGTM", subData, record.IsBigEndian) is { } v)
                     {
-                        lightingData = fields;
+                        lightingData = v.Raw;
                     }
 
                     break;
@@ -434,12 +429,11 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
                     break;
                 case "DATA" when sub.DataLength >= 20:
                 {
-                    var fields = SubrecordDataReader.ReadFields("DATA", "NAVM", subData, record.IsBigEndian);
-                    if (fields.Count > 0)
+                    if (SubrecordSchemaView.TryRead("DATA", "NAVM", subData, record.IsBigEndian) is { } v)
                     {
-                        cellFormId = SubrecordDataReader.GetUInt32(fields, "Cell");
-                        vertexCount = SubrecordDataReader.GetUInt32(fields, "VertexCount");
-                        triangleCount = SubrecordDataReader.GetUInt32(fields, "TriangleCount");
+                        cellFormId = v.UInt32("Cell");
+                        vertexCount = v.UInt32("VertexCount");
+                        triangleCount = v.UInt32("TriangleCount");
                     }
 
                     break;
