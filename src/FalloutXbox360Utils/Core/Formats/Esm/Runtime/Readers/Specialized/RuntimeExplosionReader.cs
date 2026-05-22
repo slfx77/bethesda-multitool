@@ -1,67 +1,54 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Magic;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 
 /// <summary>
-///     Typed runtime reader for BGSExplosion (EXPL, 184 bytes, FormType 0x51).
-///     Reads full name, model, and BGSExplosionData fields.
+///     Typed runtime reader for BGSExplosion (EXPL, FormType 0x51).
+///     Reads full name, model, enchantment pointer, and BGSExplosionData fields
+///     via the PDB layout. The Data struct (BGSExplosionData, 52 bytes) is opaque;
+///     we resolve its offset by name and parse the inner layout manually.
 /// </summary>
-internal sealed class RuntimeExplosionReader
+internal sealed class RuntimeExplosionReader(RuntimeMemoryContext context)
 {
-    private readonly RuntimeMemoryContext _context;
+    private const byte ExplFormType = 0x51;
 
-    public RuntimeExplosionReader(RuntimeMemoryContext context)
-    {
-        _context = context;
-    }
+    private readonly RuntimePdbFieldAccessor _fields = new(context);
+    private readonly RuntimeMemoryContext _context = context;
 
     public ExplosionRecord? ReadRuntimeExplosion(RuntimeEditorIdEntry entry)
     {
-        if (entry.TesFormOffset == null || entry.FormType != ExplFormType)
+        if (entry.FormType != ExplFormType)
         {
             return null;
         }
 
-        var offset = entry.TesFormOffset.Value;
-        if (offset + StructSize > _context.FileSize)
+        var view = _fields.OpenStructView(entry);
+        if (view == null)
         {
             return null;
         }
 
-        var buffer = new byte[StructSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, StructSize);
-        }
-        catch
+        var dataOff = view.Offset("Data", "BGSExplosion");
+        if (dataOff is not { } o || o + 36 > view.Buffer.Length)
         {
             return null;
         }
 
-        var formId = BinaryUtils.ReadUInt32BE(buffer, FormIdOffset);
-        if (formId != entry.FormId || formId == 0)
-        {
-            return null;
-        }
-
-        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, FullNameOffset);
-        var modelPath = _context.ReadBsStringT(offset, ModelOffset);
-
-        // BGSExplosionData (52 bytes at +132)
-        var force = BinaryUtils.ReadFloatBE(buffer, ExpDataOffset);
-        var damage = BinaryUtils.ReadFloatBE(buffer, ExpDataOffset + 4);
-        var radius = BinaryUtils.ReadFloatBE(buffer, ExpDataOffset + 8);
-        var light = _context.FollowPointerToFormId(buffer, ExpDataOffset + 12) ?? 0u;
-        var sound1 = _context.FollowPointerToFormId(buffer, ExpDataOffset + 16) ?? 0u;
-        var flags = BinaryUtils.ReadUInt32BE(buffer, ExpDataOffset + 20);
-        var isRadius = BinaryUtils.ReadFloatBE(buffer, ExpDataOffset + 24);
-        var impactDataSet = _context.FollowPointerToFormId(buffer, ExpDataOffset + 28) ?? 0u;
-        var sound2 = _context.FollowPointerToFormId(buffer, ExpDataOffset + 32) ?? 0u;
-
-        // Enchantment pointer (TESEnchantableForm)
-        var enchantment = _context.FollowPointerToFormId(buffer, EnchantmentPtrOffset) ?? 0u;
+        // BGSExplosionData prefix layout: Force(float), Damage(float), Radius(float),
+        // Light(ptr), Sound1(ptr), Flags(uint32), IsRadius(float), ImpactDataSet(ptr),
+        // Sound2(ptr).
+        var force = BinaryUtils.ReadFloatBE(view.Buffer, o);
+        var damage = BinaryUtils.ReadFloatBE(view.Buffer, o + 4);
+        var radius = BinaryUtils.ReadFloatBE(view.Buffer, o + 8);
+        var light = _context.FollowPointerToFormId(view.Buffer, o + 12) ?? 0u;
+        var sound1 = _context.FollowPointerToFormId(view.Buffer, o + 16) ?? 0u;
+        var flags = BinaryUtils.ReadUInt32BE(view.Buffer, o + 20);
+        var isRadius = BinaryUtils.ReadFloatBE(view.Buffer, o + 24);
+        var impactDataSet = _context.FollowPointerToFormId(view.Buffer, o + 28) ?? 0u;
+        var sound2 = _context.FollowPointerToFormId(view.Buffer, o + 32) ?? 0u;
 
         // Validate floats
         if (!RuntimeMemoryContext.IsNormalFloat(force)) force = 0f;
@@ -73,8 +60,8 @@ internal sealed class RuntimeExplosionReader
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
-            FullName = fullName,
-            ModelPath = modelPath,
+            FullName = entry.DisplayName ?? view.BsString("cFullName", "TESFullName"),
+            ModelPath = view.BsString("cModel", "TESModel"),
             Force = force,
             Damage = damage,
             Radius = radius,
@@ -84,21 +71,9 @@ internal sealed class RuntimeExplosionReader
             IsRadius = isRadius,
             ImpactDataSet = impactDataSet,
             Sound2 = sound2,
-            Enchantment = enchantment,
-            Offset = offset,
+            Enchantment = view.FormIdPointer("pFormEnchanting", "TESEnchantableForm") ?? 0u,
+            Offset = view.FileOffset,
             IsBigEndian = true
         };
     }
-
-    #region Constants
-
-    private const byte ExplFormType = 0x51;
-    private const int StructSize = 184;
-    private const int FormIdOffset = 12;
-    private const int FullNameOffset = 68; // TESFullName.cFullName BSStringT
-    private const int ModelOffset = 80; // TESModel.cModel BSStringT
-    private const int EnchantmentPtrOffset = 104; // TESEnchantableForm.pFormEnchanting pointer
-    private const int ExpDataOffset = 132; // BGSExplosionData (52 bytes)
-
-    #endregion
 }

@@ -1,18 +1,18 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 
 /// <summary>
-///     Typed runtime reader for TESIdleForm (IDLE, 92 bytes, FormType 0x48).
-///     Reads animation path, IDLE_DATA (loop/timing), parent idle FormID
-///     (via pParentIdle pointer at +84), and the embedded
-///     <see cref="TesConditionListWalker" /> at +64 to capture each CTDA condition
-///     (function index + parameters + comparison operator). Without the CTDAs the
-///     idle is unconditional in our emitted plugin and the engine plays it for
-///     every standing NPC (proto crucifix-idle bug).
+///     Typed runtime reader for TESIdleForm (IDLE, FormType 0x48).
+///     Reads animation path, IDLE_DATA (loop/timing), parent idle FormID, and walks
+///     the embedded TESCondition (BSSimpleList) at the PDB-resolved Conditions offset
+///     via <see cref="TesConditionListWalker" />. Without the CTDAs the idle is
+///     unconditional in our emitted plugin and the engine plays it for every standing
+///     NPC (proto crucifix-idle bug).
 ///     <para>
 ///     Build drift on TESIdleForm:
 ///     <list type="bullet">
@@ -24,55 +24,50 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 /// </summary>
 internal sealed class RuntimeIdleAnimationReader(RuntimeMemoryContext context)
 {
+    private const byte IdleFormType = 0x48;
+
+    private readonly RuntimePdbFieldAccessor _fields = new(context);
+    private readonly RuntimeMemoryContext _context = context;
+
     public IdleAnimationRecord? ReadRuntimeIdleAnimation(RuntimeEditorIdEntry entry)
     {
-        if (entry.TesFormOffset == null || entry.FormType != IdleFormType)
+        if (entry.FormType != IdleFormType)
         {
             return null;
         }
 
-        var offset = entry.TesFormOffset.Value;
-        if (offset + StructSize > context.FileSize)
+        var view = _fields.OpenStructView(entry);
+        if (view == null)
         {
             return null;
         }
 
-        var buffer = new byte[StructSize];
-        try
-        {
-            context.Accessor.ReadArray(offset, buffer, 0, StructSize);
-        }
-        catch
+        // IDLE_DATA at view.Offset("data", "TESIdleForm"): AnimData(1), LoopMin(1),
+        // LoopMax(1), pad(1), ReplayDelay(2), FlagsEx(1), pad(1).
+        var dataOff = view.Offset("data", "TESIdleForm");
+        if (dataOff is not { } d || d + 7 > view.Buffer.Length)
         {
             return null;
         }
 
-        var formId = BinaryUtils.ReadUInt32BE(buffer, FormIdOffset);
-        if (formId != entry.FormId || formId == 0)
-        {
-            return null;
-        }
+        var animData = view.Buffer[d];
+        var loopMin = view.Buffer[d + 1];
+        var loopMax = view.Buffer[d + 2];
+        var replayDelay = BinaryUtils.ReadUInt16BE(view.Buffer, d + 4);
+        var flagsEx = view.Buffer[d + 6];
 
-        var modelPath = context.ReadBsStringT(offset, ModelOffset);
-        var parentIdleFormId = context.FollowPointerToFormId(buffer, ParentIdlePointerOffset) ?? 0;
-
-        // IDLE_DATA at +72: AnimData(1), LoopMin(1), LoopMax(1), pad(1), ReplayDelay(2), FlagsEx(1), pad(1)
-        var animData = buffer[DataOffset];
-        var loopMin = buffer[DataOffset + 1];
-        var loopMax = buffer[DataOffset + 2];
-        var replayDelay = BinaryUtils.ReadUInt16BE(buffer, DataOffset + 4);
-        var flagsEx = buffer[DataOffset + 6];
-
-        // Walk the embedded TESCondition.BSSimpleList<TESConditionItem*> at +64.
-        // Each visited TESConditionItem yields one DialogueCondition.
-        var conditions = TesConditionListWalker.Walk(context, buffer, ConditionsOffset);
+        // Walk the embedded TESCondition.BSSimpleList<TESConditionItem*> at Conditions.
+        var conditionsOff = view.Offset("Conditions", "TESIdleForm");
+        var conditions = conditionsOff is { } c
+            ? TesConditionListWalker.Walk(_context, view.Buffer, c)
+            : new List<DialogueCondition>();
 
         return new IdleAnimationRecord
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
-            ModelPath = modelPath,
-            ParentIdleFormId = parentIdleFormId,
+            ModelPath = view.BsString("cModel", "TESModel"),
+            ParentIdleFormId = view.FormIdPointer("pParentIdle", "TESIdleForm") ?? 0,
             AnimData = animData,
             LoopMin = loopMin,
             LoopMax = loopMax,
@@ -80,20 +75,8 @@ internal sealed class RuntimeIdleAnimationReader(RuntimeMemoryContext context)
             FlagsEx = flagsEx,
             ConditionCount = conditions.Count,
             Conditions = conditions,
-            Offset = offset,
+            Offset = view.FileOffset,
             IsBigEndian = true
         };
     }
-
-    #region Constants
-
-    private const byte IdleFormType = 0x48;
-    private const int StructSize = 92;
-    private const int FormIdOffset = 12;
-    private const int ModelOffset = 44;
-    private const int ConditionsOffset = 64;   // TESCondition (BSSimpleList) embedded here
-    private const int DataOffset = 72;
-    private const int ParentIdlePointerOffset = 84;
-
-    #endregion
 }
