@@ -1,87 +1,49 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
-using FalloutXbox360Utils.Core.Utils;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 
 /// <summary>
-///     Typed runtime reader for TESObjectIMOD (IMOD, 192 bytes, FormType 0x67).
-///     Reads full name, model, value, weight.
+///     Typed runtime reader for TESObjectIMOD (IMOD, FormType 0x67).
+///     Reads full name, model, icon, value, weight via the PDB struct layout — no
+///     hardcoded offsets.
 /// </summary>
 internal sealed class RuntimeWeaponModReader
 {
-    private readonly RuntimeMemoryContext _context;
+    private const byte ImodFormType = 0x67;
+
+    private readonly RuntimePdbFieldAccessor _fields;
 
     public RuntimeWeaponModReader(RuntimeMemoryContext context)
     {
-        _context = context;
+        _fields = new RuntimePdbFieldAccessor(context);
     }
 
     public WeaponModRecord? ReadRuntimeWeaponMod(RuntimeEditorIdEntry entry)
     {
-        if (entry.TesFormOffset == null || entry.FormType != ImodFormType)
+        if (entry.FormType != ImodFormType)
         {
             return null;
         }
 
-        var offset = entry.TesFormOffset.Value;
-        if (offset + StructSize > _context.FileSize)
+        var view = _fields.OpenStructView(entry);
+        if (view == null)
         {
             return null;
         }
-
-        var buffer = new byte[StructSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, StructSize);
-        }
-        catch
-        {
-            return null;
-        }
-
-        var formId = BinaryUtils.ReadUInt32BE(buffer, FormIdOffset);
-        if (formId != entry.FormId || formId == 0)
-        {
-            return null;
-        }
-
-        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, FullNameOffset);
-        var modelPath = _context.ReadBsStringT(offset, ModelOffset);
-        var iconPath = _context.ReadBsStringT(offset, IconOffset);
-
-        var value = RuntimeMemoryContext.ReadInt32BE(buffer, ValueOffset);
-        if (value < 0 || value > 1_000_000)
-        {
-            value = 0;
-        }
-
-        var weight = RuntimeMemoryContext.ReadValidatedFloat(buffer, WeightOffset, 0, 500);
 
         return new WeaponModRecord
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
-            FullName = fullName,
-            ModelPath = modelPath,
-            Icon = iconPath,
-            Value = value,
-            Weight = weight,
-            Offset = offset,
+            FullName = entry.DisplayName ?? view.BsString("cFullName", "TESFullName"),
+            ModelPath = view.BsString("cModel", "TESModel"),
+            Icon = view.BsString("TextureName", "TESTexture"),
+            Value = view.Int32Range("iValue", "TESValueForm", 0, 1_000_000),
+            Weight = view.FloatRange("fWeight", "TESWeightForm", 0, 500),
+            Offset = view.FileOffset,
             IsBigEndian = true
         };
     }
-
-    #region Constants
-
-    private const byte ImodFormType = 0x67;
-    private const int StructSize = 192;
-    private const int FormIdOffset = 12;
-    private const int FullNameOffset = 68; // TESFullName.cFullName BSStringT
-    private const int ModelOffset = 80; // TESModel.cModel BSStringT
-    private const int IconOffset = 112; // TESTexture.TextureName BSStringT
-    private const int ValueOffset = 144; // TESValueForm.iValue (uint32)
-    private const int WeightOffset = 152; // TESWeightForm.fWeight (float32)
-
-    #endregion
 }

@@ -13,6 +13,19 @@ internal sealed class RuntimePdbFieldAccessor(RuntimeMemoryContext context)
 {
     private readonly RuntimeMemoryContext _context = context;
 
+    /// <summary>
+    ///     Opens a typed view over the entry's runtime struct. Returns null on the same
+    ///     guards that <see cref="ReadStruct" /> applies (no PDB layout, buffer read failure,
+    ///     FormType byte mismatch, FormID mismatch).
+    /// </summary>
+    internal PdbStructView? OpenStructView(RuntimeEditorIdEntry entry)
+    {
+        var data = ReadStruct(entry);
+        return data is null
+            ? null
+            : new PdbStructView(this, _context, data.Value.Layout, data.Value.Buffer, data.Value.FileOffset, entry);
+    }
+
     internal (PdbTypeLayout Layout, byte[] Buffer, long FileOffset)? ReadStruct(RuntimeEditorIdEntry entry)
     {
         if (!entry.TesFormOffset.HasValue)
