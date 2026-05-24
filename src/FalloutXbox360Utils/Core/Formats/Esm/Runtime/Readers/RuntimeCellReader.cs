@@ -1,6 +1,7 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers;
@@ -14,7 +15,8 @@ internal sealed class RuntimeCellReader
 {
     #region TESObjectCELL Struct Layout
 
-    private const int CellShiftStartOffset = 52;
+    // CellShiftStartOffset (52) is now owned by RuntimeCellObjectEnumerator, where
+    // the WithShift band is registered via the cellShift constructor parameter.
 
     #endregion
 
@@ -50,7 +52,7 @@ internal sealed class RuntimeCellReader
         _fields = new RuntimePdbFieldAccessor(context);
         _layout = layout;
         _allowStructuralReads = allowStructuralReads;
-        _cellEnumerator = new RuntimeCellObjectEnumerator(context, _fields, AdjustCellFieldOffset);
+        _cellEnumerator = new RuntimeCellObjectEnumerator(context, _fields, _layout.CellShift);
         _cellMapWalker = new RuntimeCellMapWalker(context, _cellEnumerator);
     }
 
@@ -230,18 +232,25 @@ internal sealed class RuntimeCellReader
             worldspaceMetadata = BuildRuntimeWorldspaceRecord(entry, buffer, layout);
         }
 
+        // Resolve cell-map / persistent-cell / parent-world pointer offsets via the
+        // worldspace view (PDB +64/+68/+128 + WorldShift band).
+        var worldView = layout != null ? OpenWorldspaceView(entry, buffer, layout) : null;
+        var cellMapOffset = worldView?.Offset("pCellMap", "TESWorldSpace") ?? (64 + _layout.WorldShift);
+        var persistentCellOffset = worldView?.Offset("pPersistentCell", "TESWorldSpace") ?? (68 + _layout.WorldShift);
+        var parentWorldOffset = worldView?.Offset("pParentWorld", "TESWorldSpace") ?? (128 + _layout.WorldShift);
+
         // Read pPersistentCell pointer
-        var persistentCellFormId = _cellMapWalker.ReadCellFormIdFromPointer(buffer, WorldPersistentCellPtrOffset);
+        var persistentCellFormId = _cellMapWalker.ReadCellFormIdFromPointer(buffer, persistentCellOffset);
 
         // Read pParentWorld pointer -> FormID
         uint? parentWorldFormId = null;
-        if (WorldParentWorldPtrOffset + 4 <= buffer.Length)
+        if (parentWorldOffset + 4 <= buffer.Length)
         {
-            parentWorldFormId = _context.FollowPointerToFormId(buffer, WorldParentWorldPtrOffset, 0x41);
+            parentWorldFormId = _context.FollowPointerToFormId(buffer, parentWorldOffset, 0x41);
         }
 
         // Follow pCellMap pointer and walk the NiTPointerMap
-        var cells = _cellMapWalker.WalkCellMap(buffer, WorldCellMapPtrOffset);
+        var cells = _cellMapWalker.WalkCellMap(buffer, cellMapOffset);
 
         // Mark the persistent cell
         if (persistentCellFormId.HasValue)
@@ -352,12 +361,10 @@ internal sealed class RuntimeCellReader
             return null;
         }
 
-        var mapDataOffset =
-            AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "WorldMapData", "TESWorldSpace"));
-        var minimumCoordsOffset =
-            AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "MinimumCoords", "TESWorldSpace"));
-        var maximumCoordsOffset =
-            AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "MaximumCoords", "TESWorldSpace"));
+        var view = OpenWorldspaceView(entry, buffer, layout);
+        var mapDataOffset = view.Offset("WorldMapData", "TESWorldSpace");
+        var minimumCoordsOffset = view.Offset("MinimumCoords", "TESWorldSpace");
+        var maximumCoordsOffset = view.Offset("MaximumCoords", "TESWorldSpace");
 
         int? mapUsableWidth = null;
         int? mapUsableHeight = null;
@@ -434,23 +441,22 @@ internal sealed class RuntimeCellReader
         float? boundsMaxX,
         float? boundsMaxY)
     {
-        var ext = ReadWorldExtendedFields(buffer, layout);
+        var view = OpenWorldspaceView(entry, buffer, layout);
+        var ext = ReadWorldExtendedFields(view);
 
         return new WorldspaceRecord
         {
             FormId = entry.FormId,
             EditorId = RuntimeCellObjectEnumerator.NormalizeString(entry.EditorId),
             FullName = RuntimeCellObjectEnumerator.NormalizeString(entry.DisplayName)
-                       ?? _fields.ReadBsString(entry.TesFormOffset!.Value, layout, "cFullName", "TESFullName"),
-            ParentWorldspaceFormId = ReadWorldFormIdPointer(buffer, layout, "pParentWorld", "TESWorldSpace", 0x41),
-            ClimateFormId = ReadWorldFormIdPointer(buffer, layout, "pClimate", "TESWorldSpace", 0x36),
-            WaterFormId = ReadWorldFormIdPointer(buffer, layout, "pWorldWater", "TESWorldSpace", 0x4E),
+                       ?? view.BsString("cFullName", "TESFullName"),
+            ParentWorldspaceFormId = view.FormIdPointer("pParentWorld", "TESWorldSpace", 0x41),
+            ClimateFormId = view.FormIdPointer("pClimate", "TESWorldSpace", 0x36),
+            WaterFormId = view.FormIdPointer("pWorldWater", "TESWorldSpace", 0x4E),
             DefaultLandHeight = RuntimeCellObjectEnumerator.ReadNormalFloat(buffer,
-                AdjustWorldFieldOffset(
-                    RuntimePdbFieldAccessor.FindFieldOffset(layout, "fDefaultLandHeight", "TESWorldSpace"))),
+                view.Offset("fDefaultLandHeight", "TESWorldSpace")),
             DefaultWaterHeight = RuntimeCellObjectEnumerator.ReadReportableHeight(buffer,
-                AdjustWorldFieldOffset(
-                    RuntimePdbFieldAccessor.FindFieldOffset(layout, "fDefaultWaterHeight", "TESWorldSpace"))),
+                view.Offset("fDefaultWaterHeight", "TESWorldSpace")),
             MapUsableWidth = mapUsableWidth,
             MapUsableHeight = mapUsableHeight,
             MapNWCellX = mapNWCellX,
@@ -461,7 +467,7 @@ internal sealed class RuntimeCellReader
             BoundsMinY = boundsMinY,
             BoundsMaxX = boundsMaxX,
             BoundsMaxY = boundsMaxY,
-            EncounterZoneFormId = ReadWorldFormIdPointer(buffer, layout, "pEncounterZone", "TESWorldSpace", 0x61),
+            EncounterZoneFormId = view.FormIdPointer("pEncounterZone", "TESWorldSpace", 0x61),
             Flags = ext.Flags,
             ParentUseFlags = ext.ParentUseFlags,
             ImageSpaceFormId = ext.ImageSpaceFormId,
@@ -479,12 +485,10 @@ internal sealed class RuntimeCellReader
         byte[] buffer,
         PdbTypeLayout layout)
     {
-        var mapDataOffset =
-            AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "WorldMapData", "TESWorldSpace"));
-        var minimumCoordsOffset =
-            AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "MinimumCoords", "TESWorldSpace"));
-        var maximumCoordsOffset =
-            AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "MaximumCoords", "TESWorldSpace"));
+        var view = OpenWorldspaceView(entry, buffer, layout);
+        var mapDataOffset = view.Offset("WorldMapData", "TESWorldSpace");
+        var minimumCoordsOffset = view.Offset("MinimumCoords", "TESWorldSpace");
+        var maximumCoordsOffset = view.Offset("MaximumCoords", "TESWorldSpace");
 
         int? mapUsableWidth = null;
         int? mapUsableHeight = null;
@@ -613,28 +617,25 @@ internal sealed class RuntimeCellReader
         };
     }
 
-    private (byte? Flags, ushort? ParentUseFlags, uint? ImageSpaceFormId, uint? MusicTypeFormId,
+    private static (byte? Flags, ushort? ParentUseFlags, uint? ImageSpaceFormId, uint? MusicTypeFormId,
         float? MapOffsetScaleX, float? MapOffsetScaleY, float? MapOffsetZ) ReadWorldExtendedFields(
-            byte[] buffer, PdbTypeLayout layout)
+            PdbStructView view)
     {
-        var flagsOffset =
-            AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "cFlags", "TESWorldSpace"));
+        var buffer = view.Buffer;
+        var flagsOffset = view.Offset("cFlags", "TESWorldSpace");
         byte? flags = flagsOffset.HasValue && flagsOffset.Value < buffer.Length
             ? buffer[flagsOffset.Value]
             : null;
 
-        var parentUseFlagsOffset =
-            AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "sParentUseFlags", "TESWorldSpace"));
+        var parentUseFlagsOffset = view.Offset("sParentUseFlags", "TESWorldSpace");
         ushort? parentUseFlags = parentUseFlagsOffset.HasValue && parentUseFlagsOffset.Value + 2 <= buffer.Length
             ? RuntimePdbFieldAccessor.ReadUInt16(buffer, parentUseFlagsOffset.Value)
             : null;
 
-        var imageSpaceFormId = ReadWorldFormIdPointer(buffer, layout, "pImageSpace", "TESWorldSpace", 0x56);
-        var musicTypeFormId = ReadWorldFormIdPointer(buffer, layout, "pMusicType", "TESWorldSpace", 0x6B);
+        var imageSpaceFormId = view.FormIdPointer("pImageSpace", "TESWorldSpace", 0x56);
+        var musicTypeFormId = view.FormIdPointer("pMusicType", "TESWorldSpace", 0x6B);
 
-        var offsetDataOffset =
-            AdjustWorldFieldOffset(
-                RuntimePdbFieldAccessor.FindFieldOffset(layout, "WorldMapOffsetData", "TESWorldSpace"));
+        var offsetDataOffset = view.Offset("WorldMapOffsetData", "TESWorldSpace");
         float? mapOffsetScaleX = null;
         float? mapOffsetScaleY = null;
         float? mapOffsetZ = null;
@@ -657,19 +658,6 @@ internal sealed class RuntimeCellReader
             mapOffsetScaleX, mapOffsetScaleY, mapOffsetZ);
     }
 
-    private uint? ReadWorldFormIdPointer(
-        byte[] buffer,
-        PdbTypeLayout layout,
-        string name,
-        string? owner = null,
-        byte? expectedFormType = null)
-    {
-        var fieldOffset = AdjustWorldFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, name, owner));
-        return fieldOffset.HasValue
-            ? _fields.ReadPointerToFormId(buffer, fieldOffset.Value, expectedFormType)
-            : null;
-    }
-
     #endregion
 
     #region Buffer and Offset Helpers
@@ -690,28 +678,17 @@ internal sealed class RuntimeCellReader
         return _context.ReadBytes(offset, size);
     }
 
-    private int? AdjustWorldFieldOffset(int? offset)
+    /// <summary>
+    ///     Build a TESWorldSpace view from a pre-read buffer with the WorldShift band
+    ///     applied. Lets the worldspace reads use the standard view accessors
+    ///     (Offset/FormIdPointer/BsString) instead of manual FindFieldOffset + shift
+    ///     adjustment.
+    /// </summary>
+    private PdbStructView OpenWorldspaceView(
+        RuntimeEditorIdEntry entry, byte[] buffer, PdbTypeLayout layout)
     {
-        if (!offset.HasValue)
-        {
-            return null;
-        }
-
-        return offset.Value >= WorldShiftStartOffset
-            ? offset.Value + _layout.WorldShift
-            : offset.Value;
-    }
-
-    private int? AdjustCellFieldOffset(int? offset)
-    {
-        if (!offset.HasValue)
-        {
-            return null;
-        }
-
-        return offset.Value >= CellShiftStartOffset
-            ? offset.Value + _layout.CellShift
-            : offset.Value;
+        return new PdbStructView(_fields, _context, layout, buffer, entry.TesFormOffset!.Value, entry)
+            .WithShift(WorldShiftStartOffset, int.MaxValue, _layout.WorldShift);
     }
 
     private static bool IsExpectedForm(byte[] buffer, byte expectedFormType, uint expectedFormId,
@@ -735,12 +712,12 @@ internal sealed class RuntimeCellReader
 
     #region TESWorldSpace Struct Layout
 
+    // pCellMap (+64), pPersistentCell (+68), pParentWorld (+128) — now resolved via
+    // OpenWorldspaceView in ReadWorldspaceCellMap. The WorldShift band (registered
+    // via WithShift(64, int.MaxValue, _layout.WorldShift)) handles per-build offset
+    // variation.
     private const int WorldStructSize = 244;
     private const int WorldShiftStartOffset = 64;
-
-    private int WorldCellMapPtrOffset => 64 + _layout.WorldShift;
-    private int WorldPersistentCellPtrOffset => 68 + _layout.WorldShift;
-    private int WorldParentWorldPtrOffset => 128 + _layout.WorldShift;
 
     #endregion
 }

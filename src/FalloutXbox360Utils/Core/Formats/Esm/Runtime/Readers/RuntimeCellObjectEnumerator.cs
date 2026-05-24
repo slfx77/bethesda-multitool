@@ -1,5 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers;
@@ -7,22 +8,32 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers;
 /// <summary>
 ///     Reads TESObjectCELL runtime structs from Xbox 360 memory dumps.
 ///     Extracts cell probe snapshots (FormID, flags, water height, worldspace, land,
-///     references, lighting, extra data) from PDB-derived struct layouts.
+///     references, lighting, extra data) from PDB-derived struct layouts. Per-build
+///     cell-field offset shifts are applied via <see cref="PdbStructView.WithShift" />
+///     using the <paramref name="cellShift" /> registered at construction time.
 /// </summary>
 internal sealed class RuntimeCellObjectEnumerator
 {
-    private readonly Func<int?, int?> _adjustCellFieldOffset;
+    private const int CellShiftStartOffset = 52;
+
+    private readonly int _cellShift;
     private readonly RuntimeMemoryContext _context;
     private readonly RuntimePdbFieldAccessor _fields;
 
     internal RuntimeCellObjectEnumerator(
         RuntimeMemoryContext context,
         RuntimePdbFieldAccessor fields,
-        Func<int?, int?> adjustCellFieldOffset)
+        int cellShift)
     {
         _context = context;
         _fields = fields;
-        _adjustCellFieldOffset = adjustCellFieldOffset;
+        _cellShift = cellShift;
+    }
+
+    private PdbStructView OpenCellView(byte[] buffer, long fileOffset, PdbTypeLayout layout)
+    {
+        return new PdbStructView(_fields, _context, layout, buffer, fileOffset, entry: null)
+            .WithShift(CellShiftStartOffset, int.MaxValue, _cellShift);
     }
 
     internal RuntimeCellProbeSnapshot? ReadRuntimeCellProbeSnapshot(RuntimeEditorIdEntry entry,
@@ -99,55 +110,36 @@ internal sealed class RuntimeCellObjectEnumerator
             return null;
         }
 
-        var flagsOffset =
-            _adjustCellFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "cCellFlags", "TESObjectCELL"));
-        var waterHeightOffset =
-            _adjustCellFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "fWaterHeight", "TESObjectCELL"));
-        var worldspaceOffset =
-            _adjustCellFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "pWorldSpace", "TESObjectCELL"));
-        var landOffset =
-            _adjustCellFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "pCellLand", "TESObjectCELL"));
-        var referenceListOffset =
-            _adjustCellFieldOffset(RuntimePdbFieldAccessor.FindFieldOffset(layout, "listReferences", "TESObjectCELL"));
+        var view = OpenCellView(buffer, fileOffset, layout);
+
+        var flagsOffset = view.Offset("cCellFlags", "TESObjectCELL");
+        var waterHeightOffset = view.Offset("fWaterHeight", "TESObjectCELL");
+        var referenceListOffset = view.Offset("listReferences", "TESObjectCELL");
 
         var flags = flagsOffset.HasValue && flagsOffset.Value < buffer.Length
             ? buffer[flagsOffset.Value]
             : (byte)0;
 
-        // pLightingTemplate — BGSLightingTemplate pointer (FormType 0x67)
-        var lightingTemplateOffset =
-            _adjustCellFieldOffset(
-                RuntimePdbFieldAccessor.FindFieldOffset(layout, "pLightingTemplate", "TESObjectCELL"));
-        var lightingTemplateFormId = lightingTemplateOffset.HasValue
-            ? _fields.ReadPointerToFormId(buffer, lightingTemplateOffset.Value, 0x67)
-            : null;
-
         // iLightingTemplateInheritanceFlags (uint32)
-        var inheritFlagsOffset = _adjustCellFieldOffset(
-            RuntimePdbFieldAccessor.FindFieldOffset(layout, "iLightingTemplateInheritanceFlags", "TESObjectCELL"));
+        var inheritFlagsOffset = view.Offset("iLightingTemplateInheritanceFlags", "TESObjectCELL");
         uint? lightingInheritanceFlags = inheritFlagsOffset.HasValue && inheritFlagsOffset.Value + 4 <= buffer.Length
             ? RuntimePdbFieldAccessor.ReadUInt32(buffer, inheritFlagsOffset.Value)
             : null;
 
         // Walk the BSExtraData linked list for encounter zone, music, acoustic, image space
-        var cellExtras = ReadCellExtraData(buffer, layout);
+        var cellExtras = ReadCellExtraData(view);
 
         return new RuntimeCellProbeSnapshot(
             formId,
-            NormalizeString(displayName)
-            ?? _fields.ReadBsString(fileOffset, layout, "cFullName", "TESFullName"),
+            NormalizeString(displayName) ?? view.BsString("cFullName", "TESFullName"),
             flags,
             ReadReportableHeight(buffer, waterHeightOffset),
-            worldspaceOffset.HasValue
-                ? _fields.ReadPointerToFormId(buffer, worldspaceOffset.Value, 0x41)
-                : null,
-            landOffset.HasValue
-                ? _fields.ReadPointerToFormId(buffer, landOffset.Value)
-                : null,
+            view.FormIdPointer("pWorldSpace", "TESObjectCELL", 0x41),
+            view.FormIdPointer("pCellLand", "TESObjectCELL"),
             referenceListOffset.HasValue
                 ? ReadCellReferenceFormIds(buffer, referenceListOffset.Value)
                 : [],
-            lightingTemplateFormId,
+            view.FormIdPointer("pLightingTemplate", "TESObjectCELL", 0x67),
             lightingInheritanceFlags,
             cellExtras.EncounterZoneFormId,
             cellExtras.MusicTypeFormId,
@@ -216,11 +208,11 @@ internal sealed class RuntimeCellObjectEnumerator
     ///     encounter zone, music type, acoustic space, and image space FormIDs.
     /// </summary>
     private (uint? EncounterZoneFormId, uint? MusicTypeFormId, uint? AcousticSpaceFormId, uint? ImageSpaceFormId)
-        ReadCellExtraData(byte[] cellBuffer, PdbTypeLayout layout)
+        ReadCellExtraData(PdbStructView view)
     {
+        var cellBuffer = view.Buffer;
         // ExtraDataList is an embedded struct in TESObjectCELL; pHead is at +4 within it.
-        var extraDataOffset = _adjustCellFieldOffset(
-            RuntimePdbFieldAccessor.FindFieldOffset(layout, "ExtraData", "TESObjectCELL"));
+        var extraDataOffset = view.Offset("ExtraData", "TESObjectCELL");
         if (!extraDataOffset.HasValue || extraDataOffset.Value + 8 > cellBuffer.Length)
         {
             return (null, null, null, null);
