@@ -18,11 +18,6 @@ public sealed class DebrEncoder : IRecordEncoder
     public string RecordType => "DEBR";
     public Type ModelType => typeof(DebrisRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(DebrisRecord debr)
     {
         var subs = new List<EncodedSubrecord>();

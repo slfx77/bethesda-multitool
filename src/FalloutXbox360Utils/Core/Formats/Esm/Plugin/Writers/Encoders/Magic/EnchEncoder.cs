@@ -32,11 +32,6 @@ public sealed class EnchEncoder : IRecordEncoder
     public string RecordType => "ENCH";
     public Type ModelType => typeof(EnchantmentRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(EnchantmentRecord ench)
     {
         var subs = new List<EncodedSubrecord>();

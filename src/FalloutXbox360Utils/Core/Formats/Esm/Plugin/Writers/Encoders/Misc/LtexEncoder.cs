@@ -11,11 +11,6 @@ public sealed class LtexEncoder : IRecordEncoder
 
     public Type ModelType => typeof(LandscapeTextureRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(LandscapeTextureRecord ltex)
     {
         var subs = new List<EncodedSubrecord>();

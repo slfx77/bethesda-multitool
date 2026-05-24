@@ -33,11 +33,6 @@ public sealed class ClasEncoder : IRecordEncoder
     public string RecordType => "CLAS";
     public Type ModelType => typeof(ClassRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(ClassRecord clas)
     {
         var subs = new List<EncodedSubrecord>();

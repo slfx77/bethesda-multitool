@@ -13,11 +13,6 @@ public sealed class ActiEncoder : IRecordEncoder
     public string RecordType => "ACTI";
     public Type ModelType => typeof(ActivatorRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     /// <summary>
     ///     Encode a new ACTI record from scratch in fopdoc canonical order:
     ///     EDID, OBND, FULL, MODL, SCRI, SNAM, RNAM, WNAM.

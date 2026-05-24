@@ -14,11 +14,6 @@ public sealed class DialEncoder : IRecordEncoder
     public string RecordType => "DIAL";
     public Type ModelType => typeof(DialogTopicRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     /// <summary>
     ///     Encode a new DIAL record from scratch in fopdoc canonical order:
     ///     EDID, FULL?, QSTI*, INFC?, INFX?, DATA, PNAM?, TNAM?.

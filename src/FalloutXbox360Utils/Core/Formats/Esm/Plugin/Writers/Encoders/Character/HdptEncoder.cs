@@ -12,11 +12,6 @@ public sealed class HdptEncoder : IRecordEncoder
     public string RecordType => "HDPT";
     public Type ModelType => typeof(HeadPartRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(HeadPartRecord hdpt)
     {
         var subs = new List<EncodedSubrecord>();

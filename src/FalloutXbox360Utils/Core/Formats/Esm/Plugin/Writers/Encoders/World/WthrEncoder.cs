@@ -23,11 +23,6 @@ public sealed class WthrEncoder : IRecordEncoder
     public string RecordType => "WTHR";
     public Type ModelType => typeof(WeatherRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(WeatherRecord wthr)
     {
         var subs = new List<EncodedSubrecord>();

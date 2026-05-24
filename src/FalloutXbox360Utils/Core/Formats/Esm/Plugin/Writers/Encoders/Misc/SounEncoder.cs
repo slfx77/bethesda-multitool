@@ -31,11 +31,6 @@ public sealed class SounEncoder : IRecordEncoder
     public string RecordType => "SOUN";
     public Type ModelType => typeof(SoundRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(SoundRecord soun)
     {
         var subs = new List<EncodedSubrecord>();

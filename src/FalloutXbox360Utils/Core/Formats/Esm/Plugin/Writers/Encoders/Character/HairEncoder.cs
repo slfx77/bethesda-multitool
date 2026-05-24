@@ -12,11 +12,6 @@ public sealed class HairEncoder : IRecordEncoder
     public string RecordType => "HAIR";
     public Type ModelType => typeof(HairRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(HairRecord hair)
     {
         var subs = new List<EncodedSubrecord>();

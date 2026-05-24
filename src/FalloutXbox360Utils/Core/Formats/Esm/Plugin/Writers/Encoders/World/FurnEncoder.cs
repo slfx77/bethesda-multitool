@@ -13,11 +13,6 @@ public sealed class FurnEncoder : IRecordEncoder
     public string RecordType => "FURN";
     public Type ModelType => typeof(FurnitureRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     /// <summary>
     ///     Encode a new FURN record from scratch in fopdoc canonical order:
     ///     EDID, OBND, FULL, MODL, SCRI, MNAM.

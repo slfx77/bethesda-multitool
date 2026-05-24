@@ -22,11 +22,6 @@ public sealed class CobjEncoder : IRecordEncoder
     public string RecordType => "COBJ";
     public Type ModelType => typeof(ConstructibleObjectRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(ConstructibleObjectRecord cobj)
     {
         var subs = new List<EncodedSubrecord>();

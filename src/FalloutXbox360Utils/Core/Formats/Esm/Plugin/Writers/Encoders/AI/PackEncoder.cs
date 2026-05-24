@@ -58,11 +58,6 @@ public sealed class PackEncoder : IRecordEncoder
     public string RecordType => "PACK";
     public Type ModelType => typeof(PackageRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     /// <summary>
     ///     Encode a new PACK record from scratch in fopdoc canonical order:
     ///     EDID, PKDT, PLDT?, PSDT?, PTDT?, PLD2?, PTD2?, PKW3?, PKPT?.

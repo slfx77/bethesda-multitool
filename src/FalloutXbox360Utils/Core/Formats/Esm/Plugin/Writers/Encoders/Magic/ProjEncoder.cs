@@ -48,11 +48,6 @@ public sealed class ProjEncoder : IRecordEncoder
     public string RecordType => "PROJ";
     public Type ModelType => typeof(ProjectileRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(ProjectileRecord proj)
     {
         var subs = new List<EncodedSubrecord>();

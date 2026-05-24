@@ -28,11 +28,6 @@ public sealed class PerkEncoder : IRecordEncoder
     public string RecordType => "PERK";
     public Type ModelType => typeof(PerkRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     /// <summary>
     ///     Encode a new PERK record. CTDAs across top-level + per-entry are routed through
     ///     <see cref="ConditionSanitizer.FilterPerk" /> so dangling FormID parameters get

@@ -13,11 +13,6 @@ public sealed class DoorEncoder : IRecordEncoder
     public string RecordType => "DOOR";
     public Type ModelType => typeof(DoorRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     /// <summary>
     ///     Encode a new DOOR record from scratch in fopdoc canonical order:
     ///     EDID, OBND, FULL, MODL, SCRI, SNAM, ANAM, BNAM, FNAM.

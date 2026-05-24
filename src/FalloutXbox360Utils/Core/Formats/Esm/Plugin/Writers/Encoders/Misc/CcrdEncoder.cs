@@ -12,11 +12,6 @@ public sealed class CcrdEncoder : IRecordEncoder
     public string RecordType => "CCRD";
     public Type ModelType => typeof(CaravanCardRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(CaravanCardRecord ccrd)
     {
         var subs = new List<EncodedSubrecord>();

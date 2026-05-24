@@ -13,11 +13,6 @@ public sealed class FlstEncoder : IRecordEncoder
     public string RecordType => "FLST";
     public Type ModelType => typeof(FormListRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(FormListRecord flst)
     {
         var subs = new List<EncodedSubrecord>();

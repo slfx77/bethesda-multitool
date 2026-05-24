@@ -26,11 +26,6 @@ public sealed class ArmaEncoder : IRecordEncoder
     public string RecordType => "ARMA";
     public Type ModelType => typeof(ArmaRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(ArmaRecord arma)
     {
         var subs = new List<EncodedSubrecord>();

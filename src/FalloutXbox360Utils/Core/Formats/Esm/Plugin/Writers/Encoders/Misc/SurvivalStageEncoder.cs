@@ -25,11 +25,6 @@ public sealed class SurvivalStageEncoder : IRecordEncoder
     public string RecordType => "RADS";
     public Type ModelType => typeof(SurvivalStageRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(SurvivalStageRecord stage)
     {
         var subs = new List<EncodedSubrecord>();

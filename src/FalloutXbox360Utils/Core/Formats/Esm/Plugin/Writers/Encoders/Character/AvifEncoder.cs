@@ -12,11 +12,6 @@ public sealed class AvifEncoder : IRecordEncoder
     public string RecordType => "AVIF";
     public Type ModelType => typeof(ActorValueInfoRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(ActorValueInfoRecord avif)
     {
         // Actor values in FNV are engine-hardcoded — AVIF records define metadata for

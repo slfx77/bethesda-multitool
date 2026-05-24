@@ -14,11 +14,6 @@ public sealed class MesgEncoder : IRecordEncoder
     public string RecordType => "MESG";
     public Type ModelType => typeof(MessageRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(MessageRecord mesg)
     {
         var subs = new List<EncodedSubrecord>();

@@ -12,11 +12,6 @@ public sealed class VtypEncoder : IRecordEncoder
     public string RecordType => "VTYP";
     public Type ModelType => typeof(VoiceTypeRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(VoiceTypeRecord vtyp)
     {
         var subs = new List<EncodedSubrecord>();

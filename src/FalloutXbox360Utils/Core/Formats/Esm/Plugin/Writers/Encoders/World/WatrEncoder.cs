@@ -16,11 +16,6 @@ public sealed class WatrEncoder : IRecordEncoder
     public string RecordType => "WATR";
     public Type ModelType => typeof(WaterRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(WaterRecord watr)
     {
         var subs = new List<EncodedSubrecord>();

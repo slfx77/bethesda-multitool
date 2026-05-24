@@ -21,11 +21,6 @@ public sealed class TermEncoder : IRecordEncoder
     public string RecordType => "TERM";
     public Type ModelType => typeof(TerminalRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     /// <summary>
     ///     Encode a new TERM record from scratch in fopdoc canonical order:
     ///     EDID, FULL, DESC, DNAM, per menu item: ITXT, (RNAM or embedded script block), NEXT.

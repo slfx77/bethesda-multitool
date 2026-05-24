@@ -16,11 +16,6 @@ public sealed class IpctEncoder : IRecordEncoder
     public string RecordType => "IPCT";
     public Type ModelType => typeof(ImpactDataRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(ImpactDataRecord ipct)
     {
         var subs = new List<EncodedSubrecord>();

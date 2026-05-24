@@ -13,12 +13,6 @@ public sealed class StatEncoder : IRecordEncoder
     public string RecordType => "STAT";
     public Type ModelType => typeof(StaticRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        // STAT override path is a no-op — STAT carries no runtime-mutable bytes.
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     /// <summary>
     ///     Encode a new STAT record from scratch in fopdoc canonical order: EDID, OBND, MODL.
     /// </summary>

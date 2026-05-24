@@ -44,11 +44,6 @@ public sealed class MgefEncoder : IRecordEncoder
     public string RecordType => "MGEF";
     public Type ModelType => typeof(BaseEffectRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(BaseEffectRecord mgef)
     {
         var subs = new List<EncodedSubrecord>();

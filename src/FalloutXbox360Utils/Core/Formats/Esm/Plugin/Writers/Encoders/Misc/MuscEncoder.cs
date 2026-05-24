@@ -12,11 +12,6 @@ public sealed class MuscEncoder : IRecordEncoder
     public string RecordType => "MUSC";
     public Type ModelType => typeof(MusicTypeRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(MusicTypeRecord musc)
     {
         var subs = new List<EncodedSubrecord>();

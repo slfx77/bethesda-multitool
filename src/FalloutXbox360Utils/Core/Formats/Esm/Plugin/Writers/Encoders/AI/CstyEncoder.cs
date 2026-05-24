@@ -15,11 +15,6 @@ public sealed class CstyEncoder : IRecordEncoder
     public string RecordType => "CSTY";
     public Type ModelType => typeof(CombatStyleRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(CombatStyleRecord csty)
     {
         var subs = new List<EncodedSubrecord>();
@@ -69,7 +64,7 @@ public sealed class CstyEncoder : IRecordEncoder
     ///     "Value" entry holding a float[]. Handle both shapes; pad with zeros to the expected
     ///     count.
     /// </summary>
-    private static byte[] BuildFloatArrayFromDict(IReadOnlyDictionary<string, object?> values, int floatCount)
+    private static byte[] BuildFloatArrayFromDict(Dictionary<string, object?> values, int floatCount)
     {
         var bytes = new byte[floatCount * 4];
 

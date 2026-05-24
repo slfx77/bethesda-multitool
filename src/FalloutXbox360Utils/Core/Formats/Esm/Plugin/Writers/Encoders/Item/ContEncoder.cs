@@ -26,11 +26,6 @@ public sealed class ContEncoder : IRecordEncoder
     public string RecordType => "CONT";
     public Type ModelType => typeof(ContainerRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     /// <summary>
     ///     Encode a new CONT record from scratch in fopdoc canonical order:
     ///     EDID, OBND, FULL, MODL, MODT, SCRI, [CNTO+COED?]+, DATA, SNAM, QNAM, RNAM.

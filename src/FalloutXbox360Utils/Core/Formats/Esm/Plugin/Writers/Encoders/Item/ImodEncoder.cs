@@ -20,11 +20,6 @@ public sealed class ImodEncoder : IRecordEncoder
     public string RecordType => "IMOD";
     public Type ModelType => typeof(WeaponModRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(WeaponModRecord imod)
     {
         var subs = new List<EncodedSubrecord>();

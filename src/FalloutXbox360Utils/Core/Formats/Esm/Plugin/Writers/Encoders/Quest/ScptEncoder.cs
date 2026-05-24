@@ -40,12 +40,6 @@ public sealed class ScptEncoder : IRecordEncoder
     public string RecordType => "SCPT";
     public Type ModelType => typeof(ScriptRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        // SCPT override path is a no-op — bytecode in DMP equals master ESM, no mutations possible.
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     /// <summary>
     ///     Encode a new SCPT record from scratch in fopdoc canonical order:
     ///     EDID, SCHR, SCDA?, SCTX?, then per local: SLSD + SCVR, then per ref: SCRO/SCRV.

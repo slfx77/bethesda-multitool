@@ -14,11 +14,6 @@ public sealed class TxstEncoder : IRecordEncoder
     public string RecordType => "TXST";
     public Type ModelType => typeof(TextureSetRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(TextureSetRecord txst)
     {
         var subs = new List<EncodedSubrecord>();

@@ -13,11 +13,6 @@ public sealed class RcctEncoder : IRecordEncoder
     public string RecordType => "RCCT";
     public Type ModelType => typeof(RecipeCategoryRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(RecipeCategoryRecord rcct)
     {
         var subs = new List<EncodedSubrecord>();

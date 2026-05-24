@@ -21,11 +21,6 @@ public sealed class CpthEncoder : IRecordEncoder
     public string RecordType => "CPTH";
     public Type ModelType => typeof(CameraPathRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(CameraPathRecord cpth)
     {
         var subs = new List<EncodedSubrecord>();

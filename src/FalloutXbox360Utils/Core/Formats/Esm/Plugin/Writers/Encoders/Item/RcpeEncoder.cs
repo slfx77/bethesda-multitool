@@ -23,11 +23,6 @@ public sealed class RcpeEncoder : IRecordEncoder
     public string RecordType => "RCPE";
     public Type ModelType => typeof(RecipeRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(RecipeRecord recipe)
     {
         var subs = new List<EncodedSubrecord>();

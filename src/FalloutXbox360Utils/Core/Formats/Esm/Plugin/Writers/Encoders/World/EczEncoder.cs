@@ -20,11 +20,6 @@ public sealed class EczEncoder : IRecordEncoder
     public string RecordType => "ECZN";
     public Type ModelType => typeof(EncounterZoneRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(EncounterZoneRecord ecz)
     {
         var subs = new List<EncodedSubrecord>();

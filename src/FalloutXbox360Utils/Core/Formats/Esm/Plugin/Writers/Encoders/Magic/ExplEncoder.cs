@@ -34,11 +34,6 @@ public sealed class ExplEncoder : IRecordEncoder
     public string RecordType => "EXPL";
     public Type ModelType => typeof(ExplosionRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(ExplosionRecord expl)
     {
         var subs = new List<EncodedSubrecord>();

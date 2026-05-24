@@ -26,11 +26,6 @@ public sealed class IdleEncoder : IRecordEncoder
     public string RecordType => "IDLE";
     public Type ModelType => typeof(IdleAnimationRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     /// <summary>
     ///     A CTDA whose runtime evaluation is always <c>false</c>:
     ///     <c>GetIsID(FormID 0) == 1</c>. GetIsID returns 1 when the subject's FormID matches

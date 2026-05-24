@@ -19,11 +19,6 @@ public sealed class LsctEncoder : IRecordEncoder
     public string RecordType => "LSCT";
     public Type ModelType => typeof(LoadScreenTypeRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(LoadScreenTypeRecord lsct)
     {
         var subs = new List<EncodedSubrecord>();

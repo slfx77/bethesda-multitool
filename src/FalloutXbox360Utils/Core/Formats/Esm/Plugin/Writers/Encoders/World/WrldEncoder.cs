@@ -48,11 +48,6 @@ public sealed class WrldEncoder : IRecordEncoder
     public string RecordType => "WRLD";
     public Type ModelType => typeof(WorldspaceRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(WorldspaceRecord wrld)
     {
         var subs = new List<EncodedSubrecord>();

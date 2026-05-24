@@ -27,11 +27,6 @@ public sealed class ChalEncoder : IRecordEncoder
     public string RecordType => "CHAL";
     public Type ModelType => typeof(ChallengeRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(ChallengeRecord chal)
     {
         var subs = new List<EncodedSubrecord>();

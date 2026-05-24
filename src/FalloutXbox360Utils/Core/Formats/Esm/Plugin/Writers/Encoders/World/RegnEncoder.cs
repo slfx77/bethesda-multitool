@@ -16,11 +16,6 @@ public sealed class RegnEncoder : IRecordEncoder
     public string RecordType => "REGN";
     public Type ModelType => typeof(RegionRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(RegionRecord regn)
     {
         var subs = new List<EncodedSubrecord>();

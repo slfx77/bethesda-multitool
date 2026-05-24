@@ -12,11 +12,6 @@ public sealed class EyesEncoder : IRecordEncoder
     public string RecordType => "EYES";
     public Type ModelType => typeof(EyesRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(EyesRecord eyes)
     {
         var subs = new List<EncodedSubrecord>();

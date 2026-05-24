@@ -58,11 +58,6 @@ public sealed class RaceEncoder : IRecordEncoder
     public string RecordType => "RACE";
     public Type ModelType => typeof(RaceRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(RaceRecord race)
     {
         var subs = new List<EncodedSubrecord>();

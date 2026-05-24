@@ -17,11 +17,6 @@ public sealed class LvliEncoder : IRecordEncoder
     public string RecordType => "LVLI"; // Registry key — also handles LVLN/LVLC via dispatch.
     public Type ModelType => typeof(LeveledListRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     /// <summary>
     ///     Encode a new LVLI/LVLN/LVLC record. Drop LVLO entries whose target FormID
     ///     dangles in master ∪ emitted (engine logs "Unable to find Leveled Object Form (X)

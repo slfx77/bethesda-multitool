@@ -18,11 +18,6 @@ public sealed class RepuEncoder : IRecordEncoder
     public string RecordType => "REPU";
     public Type ModelType => typeof(ReputationRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(ReputationRecord repu)
     {
         var subs = new List<EncodedSubrecord>();

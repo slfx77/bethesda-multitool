@@ -13,11 +13,6 @@ public sealed class ScolEncoder : IRecordEncoder
     public string RecordType => "SCOL";
     public Type ModelType => typeof(StaticCollectionRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     /// <summary>
     ///     Encode a new SCOL record from scratch. Parts whose <see cref="StaticCollectionPart.OnamFormId" />
     ///     is unreachable in the output (neither in the master ESM nor among newly-emitted STATs)

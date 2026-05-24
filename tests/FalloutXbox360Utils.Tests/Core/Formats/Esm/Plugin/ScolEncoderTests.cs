@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 using Xunit;
@@ -15,9 +16,12 @@ public class ScolEncoderTests
     [Fact]
     public void Encode_OverrideAlwaysEmpty()
     {
+        // SCOL relies on the default no-op `Encode(object)` provided by IRecordEncoder;
+        // it doesn't declare its own. Cast through the interface to hit that default —
+        // C# default-interface-methods aren't accessible via the concrete type alone.
         var scol = new StaticCollectionRecord { FormId = 0x100, EditorId = "S" };
 
-        var encoded = new ScolEncoder().Encode(scol);
+        var encoded = ((IRecordEncoder)new ScolEncoder()).Encode(scol);
 
         Assert.Empty(encoded.Subrecords);
     }

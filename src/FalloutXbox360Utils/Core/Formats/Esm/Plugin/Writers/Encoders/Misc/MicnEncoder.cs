@@ -12,11 +12,6 @@ public sealed class MicnEncoder : IRecordEncoder
     public string RecordType => "MICN";
     public Type ModelType => typeof(MenuIconRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(MenuIconRecord micn)
     {
         var subs = new List<EncodedSubrecord>();

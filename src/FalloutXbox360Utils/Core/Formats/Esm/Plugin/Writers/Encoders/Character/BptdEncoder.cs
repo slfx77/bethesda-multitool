@@ -13,11 +13,6 @@ public sealed class BptdEncoder : IRecordEncoder
     public string RecordType => "BPTD";
     public Type ModelType => typeof(BodyPartDataRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(BodyPartDataRecord bptd)
     {
         var subs = new List<EncodedSubrecord>();

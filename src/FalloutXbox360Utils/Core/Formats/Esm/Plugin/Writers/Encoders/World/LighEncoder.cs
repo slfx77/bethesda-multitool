@@ -35,11 +35,6 @@ public sealed class LighEncoder : IRecordEncoder
     public string RecordType => "LIGH";
     public Type ModelType => typeof(LightRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     /// <summary>
     ///     Encode a new LIGH record from scratch in fopdoc canonical order:
     ///     EDID, OBND, MODL, MODT, SCRI, FULL, ICON, DATA, FNAM, SNAM.

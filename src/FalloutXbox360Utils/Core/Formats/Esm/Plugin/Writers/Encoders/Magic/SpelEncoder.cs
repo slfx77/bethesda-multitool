@@ -22,11 +22,6 @@ public sealed class SpelEncoder : IRecordEncoder
     public string RecordType => "SPEL";
     public Type ModelType => typeof(SpellRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(SpellRecord spel)
     {
         var subs = new List<EncodedSubrecord>();

@@ -15,11 +15,6 @@ public sealed class NoteEncoder : IRecordEncoder
     public string RecordType => "NOTE";
     public Type ModelType => typeof(NoteRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(NoteRecord note)
     {
         var subs = new List<EncodedSubrecord>();

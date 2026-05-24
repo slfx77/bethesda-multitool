@@ -57,11 +57,6 @@ public sealed class CreaEncoder : IRecordEncoder
     public string RecordType => "CREA";
     public Type ModelType => typeof(CreatureRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(
         CreatureRecord crea,
         IReadOnlySet<uint>? validFormIds = null,

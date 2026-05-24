@@ -14,11 +14,6 @@ public sealed class AlocEncoder : IRecordEncoder
     public string RecordType => "ALOC";
     public Type ModelType => typeof(AudioLocationControllerRecord);
 
-    public EncodedRecord Encode(object model)
-    {
-        return new EncodedRecord { Subrecords = [], Warnings = [] };
-    }
-
     internal static EncodedRecord EncodeNew(AudioLocationControllerRecord aloc)
     {
         var subs = new List<EncodedSubrecord>();
