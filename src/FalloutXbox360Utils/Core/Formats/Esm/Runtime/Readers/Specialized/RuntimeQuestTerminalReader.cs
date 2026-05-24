@@ -26,10 +26,17 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
     // fallback) and the menu-list shift was uniformly +4. The +4 is now baked into
     // TermMenuItemListOffset below; the data-shift fallback (0) is the identity.
     //
-    // The TermDifficulty/TermFlags fields are known to be reading from PDB +132 instead
-    // of +180 (PDB's BGSTerminal.Difficulty location) — that is a separate latent
-    // investigation item documented in the plan ("Package + QuestTerminal cleanup"),
-    // not introduced by removing the probe.
+    // Phase 1B.7 placed TERMINAL_DATA at PDB +180 (Difficulty=byte0 of Data) per the
+    // MemDebug PDB layout, but the actual runtime layout has Data at +176 — the
+    // runtime BGSTerminal struct is 180 bytes and has NO pPassword field at all,
+    // while the PDB declares it as 184 bytes with pPassword (BGSNote*) between
+    // MenuItemList and Data. Tier 3.2 confirmed this via byte-level probing across
+    // 32 TERMs in memdebug_dump cross-referenced against ESM DNAM payloads (e.g.
+    // TERM 0x000EBA3A "HouseToolsTerminal": ESM DNAM = "00 02 05 00" matches
+    // runtime +176 = "00 02 05 00" exactly). Difficulty/Flags moved to +176/+177
+    // accordingly. pPassword recovery is permanently blocked for these DMPs — the
+    // PDB and binary diverge enough that the field genuinely isn't there in the
+    // runtime. See plan file Tier 3.2 for the full investigation trail.
 
     /// <summary>
     ///     Read extended quest data from a runtime TESQuest struct.
@@ -155,12 +162,12 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
             return null;
         }
 
-        // Read difficulty and flags from TERMINAL_DATA at PDB +180 (byte 0 = Difficulty,
-        // byte 1 = Flags). Per Phase 1B.6 follow-up, the previous offsets (+132/+133)
-        // were reading the high bytes of pSoundLoop and always produced 0x65/0x03 in
-        // sampled dumps — clamped to 0 by the > 4 check, so every terminal appeared as
-        // "Very Easy". 0xFF here is heap-fill (uninitialized DATA), which the clamp also
-        // turns into 0; preserving that for back-compat.
+        // Read Difficulty + Flags from TERMINAL_DATA. PDB declares Data at +180, but
+        // the runtime BGSTerminal in every observed DMP has Data at +176 (validated
+        // against ESM DNAM payloads — see class-level comment + plan file Tier 3.2).
+        // Phase 1B.7 read these at +180 and got 0x00 or 0xFF for every terminal,
+        // producing all-VeryEasy results after the > 4 clamp. The +176 read gives the
+        // actual author-set Difficulty + Flags values.
         var difficulty = buffer[TermDifficultyOffset];
         var flags = buffer[TermFlagsOffset];
 
@@ -170,19 +177,13 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
             difficulty = 0; // Default to very easy if invalid
         }
 
-        // Password reading is blocked on a PDB-vs-runtime layout discrepancy.
-        // cvdump on the MemDebug PDB says BGSTerminal.pPassword is a 4-byte BGSNote*
-        // pointer at +176, followed by 4-byte TERMINAL_DATA (Difficulty/Flags/
-        // ServerType/Unused) at +180. But probing 16 TERMs across every snippet
-        // family (including memdebug_dump) showed +176 holds Data-shaped bytes
-        // (byte 0 in {0,2,4} = valid Difficulty; byte 2 = small ServerType) and
-        // +180 holds null or 0xFF heap-fill — i.e. the actual runtime layout has
-        // Data at +176 with no pPassword field at all (runtime structSize ~180,
-        // PDB structSize 184). This may be a per-build layout change (the FNV
-        // runtime that produced the dumps differs from the PDB-source build) or
-        // a virtual-base-class adjustment we haven't modeled. Until that's
-        // resolved, leave Password as null; see Tier 3.2 in the plan file for the
-        // investigation trail and follow-up requirements.
+        // Password recovery is permanently blocked for these DMPs. The runtime
+        // BGSTerminal struct doesn't have a pPassword field — the PDB declares one
+        // at +176 (a BGSNote*), but cross-referencing with ESM DNAM payloads
+        // confirmed that +176 actually holds Data (Difficulty/Flags/ServerType),
+        // not a pointer. The runtime struct is 180 bytes; the PDB declares 184.
+        // No offset shift can reconcile this — the field genuinely isn't there.
+        // See plan file Tier 3.2 for the investigation trail.
         string? password = null;
 
         // Parse menu items from BSSimpleList at the PDB-aligned offset.
@@ -689,15 +690,21 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
 
     #region Terminal Struct Layout (Proto Debug PDB base + _s)
 
-    // BGSTerminal: PDB structSize 184. All constants below are `pdb_offset - _s` so
-    // adding the build shift yields the PDB-reported runtime offset. The previous
-    // constants (116/117/120/140) were stale by 48 / 48 / 40 / 12 bytes respectively
-    // and produced garbage values — see PackageTerminalOffsetInvestigationTests for the
-    // ground-truth evidence (16-of-16 sampled TERMs showed 0x65/0x03 at the old
-    // Difficulty/Flags offsets, vs 0x00 or 0xFF at the PDB +180/+181 location).
-    private int TermStructSize => 168 + _s;          // PDB structSize 184
-    private int TermDifficultyOffset => 164 + _s;    // TERMINAL_DATA byte 0 (PDB +180)
-    private int TermFlagsOffset => 165 + _s;         // TERMINAL_DATA byte 1 (PDB +181)
+    // BGSTerminal: PDB declares structSize 184 with pPassword(+176) + Data(+180);
+    // runtime is 180 bytes with Data(+176) and no pPassword (Tier 3.2). We still
+    // read 184 bytes (TermStructSize unchanged) to stay byte-compatible with the
+    // previous code that allocated a 184-byte buffer — the extra 4 bytes are
+    // simply unused. Constants are `pdb-or-runtime offset - _s` so adding the
+    // build shift yields the runtime-correct offset.
+    //
+    // Update history:
+    //   - Phase 1B.6: probe deleted; +4 baked into TermMenuItemListOffset.
+    //   - Phase 1B.7: Difficulty/Flags moved from +132/+133 to PDB +180/+181.
+    //   - Tier 3.2:   Difficulty/Flags moved from PDB +180/+181 to actual runtime
+    //                 +176/+177 (validated against ESM DNAM payloads).
+    private int TermStructSize => 168 + _s;          // 184 bytes (4 unused at end)
+    private int TermDifficultyOffset => 160 + _s;    // TERMINAL_DATA byte 0 (runtime +176)
+    private int TermFlagsOffset => 161 + _s;         // TERMINAL_DATA byte 1 (runtime +177)
     private int TermMenuItemListOffset => 152 + _s;  // BSSimpleList<TERMINAL_MENU_ITEM*> head (PDB +168)
 
     #endregion

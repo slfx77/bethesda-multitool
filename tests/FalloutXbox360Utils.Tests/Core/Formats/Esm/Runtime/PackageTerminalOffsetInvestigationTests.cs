@@ -109,19 +109,26 @@ public sealed class PackageTerminalOffsetInvestigationTests
     }
 
     // ============================================================================
-    // TERM — Difficulty at PDB +180, MenuItemList at PDB +168
+    // TERM — TERMINAL_DATA at runtime +176 (NOT PDB +180), MenuItemList at +168
+    //
+    // Tier 3.2 finding: PDB declares Data at +180 with pPassword(+176, BGSNote*)
+    // between MenuItemList and Data. Runtime is different — Data is at +176 and
+    // there's no pPassword at all (struct is 180 bytes, not 184). Validated by
+    // cross-referencing every TERM's runtime +176 bytes against its ESM DNAM
+    // payload (perfect match in every checked record, e.g. HouseToolsTerminal
+    // 0x000EBA3A: ESM DNAM = `00 02 05 00` = runtime +176 exactly).
     // ============================================================================
 
     [Theory]
     [MemberData(nameof(AllSnippets))]
-    public async Task TERM_Difficulty_PdbOffset_beats_OldCodeOffset_for_inRange_rate(string snippetName)
+    public async Task TERM_Difficulty_runtime_offset_176_outperforms_pdb_offset_180(string snippetName)
     {
-        // Instead of asserting that every byte at PDB +180 is in {0..4, 0xFF} (any one
-        // outlier — e.g. 0x7F in xex4_dump — would trip a binary check), use a
-        // distribution-based comparison: the PDB-correct offset must produce at LEAST
-        // as many in-range (0..4) values as the previously-wrong offset (+132). In
-        // practice it produces strictly more on every observed snippet — the old offset
-        // landed in a pointer field that essentially never read a 0..4 byte.
+        // Distribution comparison: +176 (runtime-correct) should produce strictly
+        // more in-range (0..4) Difficulty bytes than +180 (PDB-correct). In every
+        // sampled snippet, +176 reads 16/16 in-range (every value in {0, 2, 4} per
+        // the ESM cross-reference), while +180 reads 0xFF heap-fill for ~half the
+        // records. Both beat the old +132 (which always landed in a pointer field
+        // and produced uniformly out-of-range bytes).
         var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
         var termEntries = snippet.RuntimeEditorIds
             .Where(e => e.FormType == 0x17 && e.TesFormOffset.HasValue)
@@ -135,49 +142,60 @@ public sealed class PackageTerminalOffsetInvestigationTests
 
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
 
+        var runtimeInRange = 0;
         var pdbInRange = 0;
         var oldInRange = 0;
         foreach (var entry in termEntries)
         {
             var buf = context.ReadBytes(entry.TesFormOffset!.Value, 184);
             Assert.NotNull(buf);
-            if (buf![180] <= 4) pdbInRange++;
+            if (buf![176] <= 4) runtimeInRange++;
+            if (buf[180] <= 4) pdbInRange++;
             if (buf[132] <= 4) oldInRange++;
         }
 
-        Assert.True(pdbInRange >= oldInRange,
-            $"[{snippetName}] PDB +180 produced {pdbInRange}/{termEntries.Count} in-range "
-            + $"Difficulty bytes; old +132 produced {oldInRange}/{termEntries.Count}. "
-            + "The PDB offset is supposed to be at least as good — re-investigate.");
+        Assert.True(runtimeInRange >= pdbInRange,
+            $"[{snippetName}] Runtime +176 produced {runtimeInRange}/{termEntries.Count} in-range "
+            + $"Difficulty; PDB +180 produced {pdbInRange}; old +132 produced {oldInRange}. "
+            + "Runtime +176 must dominate — if it doesn't, the layout has changed again.");
     }
 
     /// <summary>
-    ///     Same "previously-wrong offset still looks wrong" guard for TERM Difficulty.
+    ///     Cross-reference test: for TERM 0x000EBA3A (HouseToolsTerminal), the
+    ///     authoritative TERMINAL_DATA payload from FalloutNV.esm's DNAM subrecord
+    ///     is exactly `00 02 05 00` (Difficulty=0/VeryEasy, Flags=0x02, ServerType=5,
+    ///     Unused=0). The runtime +176 bytes for this exact FormID must match. This
+    ///     is the canonical evidence that Data is at +176 and NOT at the PDB-declared
+    ///     +180. If this test ever fails, either the runtime layout changed or the
+    ///     ESM source-of-truth changed — re-investigate before adjusting offsets.
     /// </summary>
-    [Fact]
-    public async Task TERM_Difficulty_previously_wrong_offset_still_looks_wrong()
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task TERM_HouseToolsTerminal_runtime_176_matches_ESM_DNAM(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, "release_dump");
-        var termEntries = snippet.RuntimeEditorIds
-            .Where(e => e.FormType == 0x17 && e.TesFormOffset.HasValue)
-            .Take(16)
-            .ToList();
-        Assert.NotEmpty(termEntries);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var entry = snippet.RuntimeEditorIds
+            .FirstOrDefault(e => e.FormType == 0x17 && e.FormId == 0x000EBA3A && e.TesFormOffset.HasValue);
+        if (entry == null)
+        {
+            // This snippet doesn't include HouseToolsTerminal — skip silently.
+            return;
+        }
 
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var buf = context.ReadBytes(entry.TesFormOffset!.Value, 184);
+        Assert.NotNull(buf);
 
-        var wrongDifficulties = termEntries
-            .Select(e =>
-            {
-                var buf = context.ReadBytes(e.TesFormOffset!.Value, 184);
-                return buf is null ? (byte)0 : buf[132];
-            })
-            .ToList();
+        // ESM DNAM payload for HouseToolsTerminal (from PC final FalloutNV.esm,
+        // verified via hex dump at TERM record offset 0x5A5E5B): 00 02 05 00.
+        var actual = buf!.AsSpan(176, 4).ToArray();
+        var expected = new byte[] { 0x00, 0x02, 0x05, 0x00 };
 
-        var distinct = wrongDifficulties.Distinct().ToList();
-        Assert.True(distinct.Count == 1 && distinct[0] > 4,
-            $"Old +132 offset used to read a single out-of-range value uniformly; "
-            + $"observed distinct values: [{string.Join(",", distinct.Select(b => $"0x{b:X2}"))}].");
+        Assert.True(
+            expected.AsSpan().SequenceEqual(actual),
+            $"[{snippetName}] HouseToolsTerminal runtime +176 = [{string.Join(",", actual.Select(b => $"0x{b:X2}"))}]; "
+            + $"ESM DNAM = [{string.Join(",", expected.Select(b => $"0x{b:X2}"))}]. "
+            + "Runtime must match ESM source-of-truth — re-investigate if it doesn't.");
     }
 
     [Theory]
@@ -345,12 +363,13 @@ public sealed class PackageTerminalOffsetInvestigationTests
     }
 
     // ============================================================================
-    // TERM Password — Tier 3.2 investigation finding (NOT a passing-test pin).
-    // The bytes at PDB +176 (where cvdump says pPassword lives) read as
-    // TERMINAL_DATA-shaped data across every snippet family. See plan file
-    // Tier 3.2 for the full investigation trail. No regression test pins this
-    // because the right behaviour (resolving the actual password Note) is
-    // currently blocked on understanding why MemDebug PDB layout doesn't match
-    // the runtime layout that produced the DMPs.
+    // TERM Password — Tier 3.2 investigation outcome:
+    // The runtime BGSTerminal struct doesn't include pPassword at all. The PDB
+    // declares a 184-byte struct with pPassword(BGSNote*, +176) + Data(+180),
+    // but the runtime is 180 bytes with Data at +176 and no pPassword field
+    // (validated via the HouseToolsTerminal ESM-DNAM match test above). Password
+    // text recovery is permanently impossible for these DMPs unless a PDB
+    // matching the actual runtime build is located. The Difficulty/Flags fields
+    // are now correctly read from +176/+177 (see plan file Tier 3.2).
     // ============================================================================
 }
