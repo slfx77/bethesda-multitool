@@ -34,19 +34,8 @@ public sealed class CreaEncoder : IRecordEncoder
         // Remaining(7) bytes left unset → zero-fill.
     };
 
-    private static readonly Dictionary<string, Func<ActorBaseSubrecord, object?>> AcbsExtractors = new(StringComparer.Ordinal)
-    {
-        ["Flags"] = m => m.Flags,
-        ["Fatigue"] = m => m.FatigueBase,
-        ["BarterGold"] = m => m.BarterGold,
-        ["Level"] = m => m.Level,
-        ["CalcMin"] = m => m.CalcMin,
-        ["CalcMax"] = m => m.CalcMax,
-        ["SpeedMult"] = m => m.SpeedMultiplier,
-        ["KarmaAlignment"] = m => m.KarmaAlignment,
-        ["Disposition"] = m => m.DispositionBase,
-        ["TemplateFlags"] = m => m.TemplateFlags,
-    };
+    // ACBS bytes-builder + flag-policy lives in ActorBaseAcbsBuilder, shared with NpcEncoder.
+    // Both record types use the identical extractor dict + flag-policy fixups.
 
     private static readonly Dictionary<string, Func<FactionMembership, object?>> SnamExtractors = new(StringComparer.Ordinal)
     {
@@ -116,15 +105,24 @@ public sealed class CreaEncoder : IRecordEncoder
             subs.Add(new EncodedSubrecord("NIFT", nift));
         }
 
-        // ACBS — actor base stats. Mirrors NpcEncoder's pattern. Zero-fills if model lacks ACBS.
+        // ACBS — actor base stats. Routed through ActorBaseAcbsBuilder so creatures get the
+        // same three flag-policy fixups NPCs do: force AutoCalcStats (0x10), set UseTemplate
+        // (0x40) when TemplateFlags is nonzero, and clamp SpeedMultiplier to 100 when zero.
+        // Without those fixups, templated creatures (Speedy / Sleepy / etc. captured from a
+        // prototype build) would emit ACBS with cleared AutoCalc and missing UseTemplate —
+        // the engine then appends a per-spawn numeric suffix to the display name (mirror of
+        // the Ulysses-suffix bug previously fixed on NPC placements).
         if (crea.Stats is { } stats)
         {
-            subs.Add(SchemaModelSerializer.SerializeSubrecord("ACBS", "CREA", 24, stats, AcbsExtractors));
+            subs.Add(new EncodedSubrecord("ACBS",
+                ActorBaseAcbsBuilder.Build("CREA", stats, forceAutoCalc: true)));
         }
         else
         {
-            warnings.Add($"New CREA 0x{crea.FormId:X8} has no ACBS — emitting zero-filled actor base stats.");
-            subs.Add(new EncodedSubrecord("ACBS", new byte[24]));
+            warnings.Add(
+                $"New CREA 0x{crea.FormId:X8} has no ACBS — emitting default actor base stats "
+                + "(Level=1, SpeedMult=100).");
+            subs.Add(new EncodedSubrecord("ACBS", ActorBaseAcbsBuilder.BuildDefault("CREA")));
         }
 
         // SNAM faction memberships — 8 bytes each (FormID + uint8 rank + 3 padding).

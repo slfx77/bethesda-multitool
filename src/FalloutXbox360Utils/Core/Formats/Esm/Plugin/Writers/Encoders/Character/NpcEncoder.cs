@@ -18,20 +18,6 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Character
 /// </summary>
 public sealed class NpcEncoder : IRecordEncoder
 {
-    private static readonly Dictionary<string, Func<ActorBaseSubrecord, object?>> AcbsExtractors = new(StringComparer.Ordinal)
-    {
-        ["Flags"] = m => m.Flags,
-        ["Fatigue"] = m => m.FatigueBase,
-        ["BarterGold"] = m => m.BarterGold,
-        ["Level"] = m => m.Level,
-        ["CalcMin"] = m => m.CalcMin,
-        ["CalcMax"] = m => m.CalcMax,
-        ["SpeedMult"] = m => m.SpeedMultiplier,
-        ["KarmaAlignment"] = m => m.KarmaAlignment,
-        ["Disposition"] = m => m.DispositionBase,
-        ["TemplateFlags"] = m => m.TemplateFlags,
-    };
-
     private static readonly Dictionary<string, Func<FactionMembership, object?>> SnamExtractors = new(StringComparer.Ordinal)
     {
         ["Faction"] = m => m.FactionFormId,
@@ -487,64 +473,20 @@ public sealed class NpcEncoder : IRecordEncoder
         return new EncodedSubrecord(signature, bytes);
     }
 
+    // ACBS bytes-builder + flag-policy lives in ActorBaseAcbsBuilder, shared with CreaEncoder.
+    // BuildAcbsSubrecord(stats, forceAutoCalc, extra) → ActorBaseAcbsBuilder.Build("NPC_", ...).
+    // BuildDefaultAcbsSubrecord(extra)              → ActorBaseAcbsBuilder.BuildDefault("NPC_", extra).
     private static byte[] BuildAcbsSubrecord(
         ActorBaseSubrecord s,
         bool forceAutoCalc = false,
         ushort extraTemplateFlags = 0)
     {
-        // ACBS Flags bits (per FlagRegistry.ActorBaseFlags / fopdoc):
-        //   0x01=Female, 0x02=Essential, 0x04=IsCharGenFacePreset, 0x08=Respawn,
-        //   0x10=AutoCalcStats, 0x20=PCLevelMult, 0x40=UseTemplate,
-        //   0x80=NoLowLevelProcessing, etc.
-        //
-        // forceAutoCalc sets bit 0x10 so the engine derives HP/AP from Level + Class +
-        // SPECIAL instead of trusting the captured runtime Flags (DMP often captures Flags=0
-        // because the runtime cleared AutoCalc once stats were computed). DO NOT OR in 0x01
-        // — that's Female (NOT Biped, despite an earlier spec misreading).
-        //
-        // 0x40 (UseTemplate) must be set whenever TemplateFlags is nonzero — without it the
-        // engine treats the NPC as a "templated instance" and appends a per-spawn numeric
-        // suffix to the display name (e.g. "Ulysses (20755)").
-        var flags = s.Flags;
-        if (forceAutoCalc)
-        {
-            flags |= 0x00000010u;
-        }
-        if (extraTemplateFlags != 0 || s.TemplateFlags != 0)
-        {
-            flags |= 0x00000040u;
-        }
-
-        var mutated = s with
-        {
-            Flags = flags,
-            SpeedMultiplier = s.SpeedMultiplier == 0 ? (ushort)100 : s.SpeedMultiplier,
-            TemplateFlags = (ushort)(s.TemplateFlags | extraTemplateFlags),
-        };
-
-        return SchemaModelSerializer.Serialize("ACBS", "NPC_", 24, mutated, AcbsExtractors);
+        return ActorBaseAcbsBuilder.Build("NPC_", s, forceAutoCalc, extraTemplateFlags);
     }
 
     private static byte[] BuildDefaultAcbsSubrecord(ushort extraTemplateFlags = 0)
     {
-        // FNV engine defaults when ACBS data is missing: SpeedMult=100, Level=1, others zero.
-        // UseTemplate (0x40) is set when emitting with a template-flag bundle so the engine
-        // treats this as a proper templated unique NPC, not a per-spawn numeric-suffix instance.
-        var defaults = new ActorBaseSubrecord(
-            Flags: extraTemplateFlags != 0 ? 0x00000040u : 0u,
-            FatigueBase: 0,
-            BarterGold: 0,
-            Level: 1,
-            CalcMin: 0,
-            CalcMax: 0,
-            SpeedMultiplier: 100,
-            KarmaAlignment: 0f,
-            DispositionBase: 0,
-            TemplateFlags: extraTemplateFlags,
-            Offset: 0,
-            IsBigEndian: false);
-
-        return SchemaModelSerializer.Serialize("ACBS", "NPC_", 24, defaults, AcbsExtractors);
+        return ActorBaseAcbsBuilder.BuildDefault("NPC_", extraTemplateFlags);
     }
 
     /// <summary>
