@@ -170,12 +170,19 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
             difficulty = 0; // Default to very easy if invalid
         }
 
-        // Password reading deferred: pPassword at PDB +176 is a TESPassword* pointer,
-        // not the inline BSStringT the previous code assumed (which is why we used to
-        // read at a totally different — and also wrong — offset). Proper recovery
-        // requires following the pointer to a TESPassword struct and reading its inner
-        // BSStringT, which has no PDB layout entry yet. Leave as null for now; tracked
-        // in the plan file as a Tier-3 follow-up.
+        // Password reading is blocked on a PDB-vs-runtime layout discrepancy.
+        // cvdump on the MemDebug PDB says BGSTerminal.pPassword is a 4-byte BGSNote*
+        // pointer at +176, followed by 4-byte TERMINAL_DATA (Difficulty/Flags/
+        // ServerType/Unused) at +180. But probing 16 TERMs across every snippet
+        // family (including memdebug_dump) showed +176 holds Data-shaped bytes
+        // (byte 0 in {0,2,4} = valid Difficulty; byte 2 = small ServerType) and
+        // +180 holds null or 0xFF heap-fill — i.e. the actual runtime layout has
+        // Data at +176 with no pPassword field at all (runtime structSize ~180,
+        // PDB structSize 184). This may be a per-build layout change (the FNV
+        // runtime that produced the dumps differs from the PDB-source build) or
+        // a virtual-base-class adjustment we haven't modeled. Until that's
+        // resolved, leave Password as null; see Tier 3.2 in the plan file for the
+        // investigation trail and follow-up requirements.
         string? password = null;
 
         // Parse menu items from BSSimpleList at the PDB-aligned offset.

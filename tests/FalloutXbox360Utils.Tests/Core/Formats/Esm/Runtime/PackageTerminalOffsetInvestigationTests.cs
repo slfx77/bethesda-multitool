@@ -343,4 +343,14 @@ public sealed class PackageTerminalOffsetInvestigationTests
         if (value == 0) return true;
         return value >= 0x40000000 && value < 0x80000000;
     }
+
+    // ============================================================================
+    // TERM Password — Tier 3.2 investigation finding (NOT a passing-test pin).
+    // The bytes at PDB +176 (where cvdump says pPassword lives) read as
+    // TERMINAL_DATA-shaped data across every snippet family. See plan file
+    // Tier 3.2 for the full investigation trail. No regression test pins this
+    // because the right behaviour (resolving the actual password Note) is
+    // currently blocked on understanding why MemDebug PDB layout doesn't match
+    // the runtime layout that produced the DMPs.
+    // ============================================================================
 }

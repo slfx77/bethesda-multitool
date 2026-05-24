@@ -26,7 +26,10 @@ public record TerminalRecord
     /// <summary>Terminal menu items.</summary>
     public List<TerminalMenuItem> MenuItems { get; init; } = [];
 
-    /// <summary>Password (if set).</summary>
+    /// <summary>Password text (if resolvable). Currently always null on runtime reads —
+    /// the BGSTerminal struct doesn't store password text inline, and pPassword
+    /// pointer-chase recovery is blocked by a PDB-vs-runtime layout discrepancy
+    /// (see RuntimeQuestTerminalReader and the plan file's Tier 3.2 notes).</summary>
     public string? Password { get; init; }
 
     /// <summary>Offset in the dump where this record was found.</summary>
