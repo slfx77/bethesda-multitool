@@ -39,6 +39,7 @@ public sealed class RuntimeStructReader
     private readonly RuntimeEffectReader _effects;
     private readonly RuntimeEncounterZoneReader _encounterZones;
     private readonly RuntimeExplosionReader _explosions;
+    private readonly RuntimeFlorReader _flora;
     private readonly RuntimeGenericReader _generic;
     private readonly RuntimeGlobalReader _globals;
     private readonly RuntimeHeadPartReader _headParts;
@@ -51,6 +52,7 @@ public sealed class RuntimeStructReader
     private readonly RuntimeMagicReader _magic;
     private readonly RuntimeMenuIconReader _menuIcons;
     private readonly RuntimeMessageReader _messages;
+    private readonly RuntimeMsttReader _movableStatics;
     private readonly RuntimeMusicTypeReader _musicTypes;
     private readonly RuntimeNavMeshReader _navMeshes;
     private readonly RuntimeNavMeshInfoMapReader _navMeshInfoMaps;
@@ -90,11 +92,12 @@ public sealed class RuntimeStructReader
     {
         IsEarlyBuild = useProtoOffsets;
         WorldCellLayoutProbe = worldCellLayoutProbe;
+        ProbeResults = probeResults;
         _context = new RuntimeMemoryContext(accessor, fileSize, minidumpInfo);
         _actors = new RuntimeActorReader(_context, npcLayoutProbe);
         _generic = new RuntimeGenericReader(_context, probeResults?.GenericTypeShifts);
-        _items = new RuntimeItemReader(_context, probeResults?.WeaponSoundLayout, probeResults?.WeaponCritLayout);
-        _dialogue = new RuntimeDialogueReader(_context, probeResults?.TerminalLayout);
+        _items = new RuntimeItemReader(_context, probeResults?.WeaponSoundLayout);
+        _dialogue = new RuntimeDialogueReader(_context);
         _effects = new RuntimeEffectReader(_context, probeResults?.EffectLayout);
         _scripts = new RuntimeScriptReader(_context);
         _world = new RuntimeWorldReader(_context);
@@ -105,14 +108,14 @@ public sealed class RuntimeStructReader
         _collections = new RuntimeCollectionReader(_context);
         _worldObjects = new RuntimeWorldObjectReader(_context);
         _races = new RuntimeRaceReader(_context, probeResults?.RaceLayout);
-        _magic = new RuntimeMagicReader(_context, probeResults?.MagicLayout);
+        _magic = new RuntimeMagicReader(_context);
         _globals = new RuntimeGlobalReader(_context);
         _classes = new RuntimeClassReader(_context);
         _appearance = new RuntimeCharacterAppearanceReader(_context);
         _reputations = new RuntimeReputationReader(_context);
         _musicTypes = new RuntimeMusicTypeReader(_context);
         _sounds = new RuntimeSoundReader(_context);
-        _books = new RuntimeBookReader(_context, probeResults?.BookLayout);
+        _books = new RuntimeBookReader(_context);
         _weaponMods = new RuntimeWeaponModReader(_context);
         _recipes = new RuntimeRecipeReader(_context);
         _challenges = new RuntimeChallengeReader(_context);
@@ -132,6 +135,8 @@ public sealed class RuntimeStructReader
         _cameraPaths = new RuntimeCameraPathReader(_context);
         _impactData = new RuntimeImpactDataReader(_context);
         _audioLocationControllers = new RuntimeAudioLocationControllerReader(_context);
+        _movableStatics = new RuntimeMsttReader(_context);
+        _flora = new RuntimeFlorReader(_context);
         _regions = new RuntimeRegionReader(_context);
         _caravanCards = new RuntimeCaravanCardReader(_context);
         _debris = new RuntimeDebrisReader(_context);
@@ -143,6 +148,14 @@ public sealed class RuntimeStructReader
 
     public bool IsEarlyBuild { get; }
     internal RuntimeWorldCellLayoutProbeResult? WorldCellLayoutProbe { get; }
+
+    /// <summary>
+    ///     Aggregated probe results captured by <see cref="CreateWithAutoDetect(IMemoryAccessor,long,MinidumpInfo,IReadOnlyList{RuntimeEditorIdEntry},IReadOnlyList{RuntimeEditorIdEntry}?,IReadOnlyList{RuntimeEditorIdEntry}?,IReadOnlyList{RuntimeEditorIdEntry}?,IReadOnlyList{RuntimeEditorIdEntry}?,IReadOnlyList{RuntimeEditorIdEntry}?)" />.
+    ///     Surfaced so research/diagnostic commands (e.g. <c>dmp probe-shifts</c>) can
+    ///     inspect probe-discovered layout drift across builds without re-running the probes.
+    ///     Null when constructed without an entry set (e.g. test fixtures).
+    /// </summary>
+    internal RuntimeProbeResults? ProbeResults { get; }
 
     /// <summary>
     ///     Factory that probes the DMP memory to auto-detect early vs final build layout.
@@ -157,10 +170,11 @@ public sealed class RuntimeStructReader
         IReadOnlyList<RuntimeEditorIdEntry>? npcEntries = null,
         IReadOnlyList<RuntimeEditorIdEntry>? worldEntries = null,
         IReadOnlyList<RuntimeEditorIdEntry>? cellEntries = null,
-        IReadOnlyList<RuntimeEditorIdEntry>? allEntries = null)
+        IReadOnlyList<RuntimeEditorIdEntry>? allEntries = null,
+        IReadOnlyList<RuntimeEditorIdEntry>? landEntries = null)
     {
         return CreateWithAutoDetect(new MmfMemoryAccessor(accessor), fileSize, minidumpInfo,
-            refrEntries, npcEntries, worldEntries, cellEntries, allEntries);
+            refrEntries, npcEntries, worldEntries, cellEntries, allEntries, landEntries);
     }
 
     public static RuntimeStructReader CreateWithAutoDetect(
@@ -171,7 +185,8 @@ public sealed class RuntimeStructReader
         IReadOnlyList<RuntimeEditorIdEntry>? npcEntries = null,
         IReadOnlyList<RuntimeEditorIdEntry>? worldEntries = null,
         IReadOnlyList<RuntimeEditorIdEntry>? cellEntries = null,
-        IReadOnlyList<RuntimeEditorIdEntry>? allEntries = null)
+        IReadOnlyList<RuntimeEditorIdEntry>? allEntries = null,
+        IReadOnlyList<RuntimeEditorIdEntry>? landEntries = null)
     {
         var context = new RuntimeMemoryContext(accessor, fileSize, minidumpInfo);
         var isEarlyBuild = RuntimeRefrReader.ProbeIsEarlyBuild(context, refrEntries);
@@ -182,7 +197,6 @@ public sealed class RuntimeStructReader
             worldEntries is { Count: > 0 } || cellEntries is { Count: > 0 }
                 ? RuntimeWorldCellLayoutProbe.Probe(context, worldEntries, cellEntries)
                 : null;
-
         // Run field probes for specialized readers using allEntries
         RuntimeProbeResults? probeResults = null;
         if (allEntries is { Count: > 0 })
@@ -202,20 +216,20 @@ public sealed class RuntimeStructReader
             {
                 NpcLayout = npcLayoutProbe,
                 WorldCellLayout = worldCellLayoutProbe,
-                BookLayout = RuntimeBookProbe.Probe(context, allEntries),
                 RaceLayout = RuntimeRaceProbe.Probe(context, allEntries),
                 EffectLayout = RuntimeEffectProbe.Probe(context, allEntries),
-                MagicLayout = RuntimeMagicProbe.Probe(context, allEntries),
                 WeaponSoundLayout = RuntimeWeaponSoundProbe.Probe(context, allEntries,
                     msg => Logger.Instance.Info(msg),
                     editorIdsByFormId),
-                WeaponCritLayout = RuntimeWeaponCritProbe.Probe(context, allEntries,
-                    msg => Logger.Instance.Info(msg),
-                    editorIdsByFormId),
-                TerminalLayout = RuntimeTerminalLayoutProbe.Probe(context, allEntries,
-                    msg => Logger.Instance.Info(msg),
-                    editorIdsByFormId),
                 GenericTypeShifts = RuntimeGenericReader.ProbeAllTypeShifts(context, allEntries)
+            };
+        }
+        else if (npcLayoutProbe != null || worldCellLayoutProbe != null)
+        {
+            probeResults = new RuntimeProbeResults
+            {
+                NpcLayout = npcLayoutProbe,
+                WorldCellLayout = worldCellLayoutProbe
             };
         }
 
@@ -261,6 +275,24 @@ public sealed class RuntimeStructReader
     public GenericEsmRecord? ReadGenericRecord(RuntimeEditorIdEntry entry)
     {
         return _generic.ReadGenericRecord(entry);
+    }
+
+    /// <summary>
+    ///     Read a runtime MSTT (BGSMovableStatic) base form. Activated by the
+    ///     multi-inheritance probe in <see cref="Records.TesFormHeaderProbe" />.
+    /// </summary>
+    public GenericEsmRecord? ReadRuntimeMstt(RuntimeEditorIdEntry entry)
+    {
+        return _movableStatics.ReadRuntimeMstt(entry);
+    }
+
+    /// <summary>
+    ///     Read a runtime FLOR (TESFlora) base form. Activated by the
+    ///     multi-inheritance probe in <see cref="Records.TesFormHeaderProbe" />.
+    /// </summary>
+    public GenericEsmRecord? ReadRuntimeFlor(RuntimeEditorIdEntry entry)
+    {
+        return _flora.ReadRuntimeFlor(entry);
     }
 
     #endregion

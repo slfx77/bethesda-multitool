@@ -41,17 +41,23 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : IDispos
     private const byte WeaponFormType = 0x28;
 
     [Fact]
-    public void RuntimeItemLayouts_weapon_asset_and_critical_offsets_match_memdebug_pdb()
+    public void RuntimeItemLayouts_weapon_asset_and_critical_offsets_match_runtime()
     {
         var layouts = new RuntimeItemLayouts(16);
 
+        // Asset offsets — match the MemDebug PDB directly.
         Assert.Equal(112, layouts.WeapInventoryIconPathOffset);
         Assert.Equal(208, layouts.WeapRepairItemListOffset);
         Assert.Equal(228, layouts.WeapMessageIconPathOffset);
-        Assert.Equal(464, layouts.WeapCritDamageOffset);
-        Assert.Equal(468, layouts.WeapCritChanceOffset);
-        Assert.Equal(476, layouts.WeapCritEffectPtrOffset);
         Assert.Equal(480, layouts.WeapShellCasingModelPathOffset);
+
+        // OBJ_WEAP_CRITICAL block sits 8 bytes earlier in the actual runtime layout
+        // than the PDB reports (PDB says 464/468/476). The -8 used to come from the
+        // RuntimeWeaponCritProbe, which always produced -8 across 32 sampled dumps;
+        // Phase 1B.6 baked it into the constants and deleted the probe.
+        Assert.Equal(456, layouts.WeapCritDamageOffset);     // PDB 464, runtime -8
+        Assert.Equal(460, layouts.WeapCritChanceOffset);     // PDB 468, runtime -8
+        Assert.Equal(468, layouts.WeapCritEffectPtrOffset);  // PDB 476, runtime -8
     }
     private const int BipedWeaponOffset = 0x7C;
     private const int ProcessWeaponDrawnOffset = 0x135;

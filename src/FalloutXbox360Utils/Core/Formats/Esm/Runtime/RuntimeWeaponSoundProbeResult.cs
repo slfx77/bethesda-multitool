@@ -2,12 +2,11 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 
 /// <summary>
 ///     Result of the weapon sound layout probe.
-///     Carries the selected layout variant plus a fine-grained shift for builds that
-///     drift from the reference offsets within a variant.
+///     Carries the selected layout variant (V1 vs V2). The fine-grained shift dimension
+///     was deleted in Phase 1B.6 — always 0 across every observed dump.
 /// </summary>
 internal sealed record RuntimeWeaponSoundProbeResult(
     RuntimeWeaponSoundLayoutVariant Variant,
-    int FineShift,
     int WinnerScore,
     int RunnerUpScore,
     int SampleCount,

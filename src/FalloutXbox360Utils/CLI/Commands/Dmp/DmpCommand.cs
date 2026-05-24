@@ -29,6 +29,7 @@ public static class DmpCommand
         command.Subcommands.Add(DmpFormTypeCensusCommand.Create());
         command.Subcommands.Add(BuffersCommand.Create());
         command.Subcommands.Add(CoverageCommand.Create());
+        command.Subcommands.Add(ProbeShiftsCommand.Create());
         command.Subcommands.Add(DmpCompareCommand.Create());
         command.Subcommands.Add(RttiCommand.Create());
         command.Subcommands.Add(AnimationsCommand.Create());

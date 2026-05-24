@@ -112,7 +112,10 @@ internal static class RuntimeWeaponSoundProbe
             (byte)0x5F)
     ];
 
-    private static readonly int[] FineShiftOptions = [-4, 0, 4];
+    // FineShiftOptions = [0] forces the probe to only evaluate the canonical offsets.
+    // The previous ±4 sweep was deleted in Phase 1B.6 — every observed dump (32/32) had
+    // fineShift=0, so the extra candidates were dead work.
+    private static readonly int[] FineShiftOptions = [0];
 
     public static RuntimeWeaponSoundProbeResult? Probe(
         RuntimeMemoryContext context,
@@ -127,7 +130,6 @@ internal static class RuntimeWeaponSoundProbe
         }
 
         // Run both layout templates and pick the one with the highest score.
-        // For each template, also try a fine-grained ±4 shift to handle minor build drift.
         var v2Result = RuntimeReaderFieldProbe.Probe(
             context, weapEntries, LayoutV2Fields, 1,
             FineShiftOptions, 924, "WeaponSoundLayout-V2",
@@ -155,7 +157,6 @@ internal static class RuntimeWeaponSoundProbe
         // Pick the higher-scoring layout. Pattern matching gives V1 dumps a low score under
         // V2 (Fire2D pattern fails because the slot reads a non-Fire2D sound) and vice versa.
         RuntimeWeaponSoundLayoutVariant variant;
-        int fineShift;
         int winnerScore;
         int runnerUpScore;
         int sampleCount;
@@ -163,17 +164,15 @@ internal static class RuntimeWeaponSoundProbe
         if (v2Score >= v1Score)
         {
             variant = RuntimeWeaponSoundLayoutVariant.V2;
-            fineShift = v2Result!.Winner.Layout.Length > 1 ? v2Result.Winner.Layout[1] : 0;
             winnerScore = v2Score;
-            runnerUpScore = Math.Max(v1Score, v2Result.RunnerUpScore);
+            runnerUpScore = Math.Max(v1Score, v2Result!.RunnerUpScore);
             sampleCount = v2Result.SampleCount;
         }
         else
         {
             variant = RuntimeWeaponSoundLayoutVariant.V1;
-            fineShift = v1Result!.Winner.Layout.Length > 1 ? v1Result.Winner.Layout[1] : 0;
             winnerScore = v1Score;
-            runnerUpScore = Math.Max(v2Score, v1Result.RunnerUpScore);
+            runnerUpScore = Math.Max(v2Score, v1Result!.RunnerUpScore);
             sampleCount = v1Result.SampleCount;
         }
 
@@ -185,12 +184,12 @@ internal static class RuntimeWeaponSoundProbe
             var name = variant == RuntimeWeaponSoundLayoutVariant.V1
                 ? "V1 (FO3-derived, 7 fields)"
                 : "V2 (FNV, 14 fields)";
-            log($"  [WeaponSoundProbe] Selected layout {name} fine-shift={fineShift:+0;-0;0} " +
+            log($"  [WeaponSoundProbe] Selected layout {name} " +
                 $"(V1 score={v1Score}, V2 score={v2Score}, margin={margin}, " +
                 $"confidence={(isHighConfidence ? "high" : "low")}, samples={weapEntries.Count})");
         }
 
         return new RuntimeWeaponSoundProbeResult(
-            variant, fineShift, winnerScore, runnerUpScore, sampleCount, isHighConfidence);
+            variant, winnerScore, runnerUpScore, sampleCount, isHighConfidence);
     }
 }

@@ -1,49 +1,40 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 
 /// <summary>
 ///     Typed runtime reader for TESCaravanDeck (CDCK, 60 bytes, FormType 0x75).
-///     Walks the pDeck BSSimpleList for card count + reads CARAVANDECKDATA
-///     uint32 at +56 (joker count).
+///     Reads the CARAVANDECKDATA <c>uint32</c> "joker count" from the <c>data</c>
+///     substruct via PDB-resolved offsets. The runtime card count walk is skipped —
+///     <c>pDeck</c> is a pointer to a heap-allocated BSSimpleList&lt;TESCaravanCard*&gt;
+///     and the ESM-side CNTO counting already carries parity.
 /// </summary>
 internal sealed class RuntimeCaravanDeckReader(RuntimeMemoryContext context)
 {
+    private const byte CdckFormType = 0x75;
+
+    private readonly RuntimePdbFieldAccessor _fields = new(context);
+
     public CaravanDeckRecord? ReadRuntimeCaravanDeck(RuntimeEditorIdEntry entry)
     {
-        if (entry.TesFormOffset == null || entry.FormType != CdckFormType)
+        if (entry.FormType != CdckFormType)
         {
             return null;
         }
 
-        var offset = entry.TesFormOffset.Value;
-        if (offset + StructSize > context.FileSize)
+        var view = _fields.OpenStructView(entry);
+        if (view == null)
         {
             return null;
         }
 
-        var buffer = new byte[StructSize];
-        try
-        {
-            context.Accessor.ReadArray(offset, buffer, 0, StructSize);
-        }
-        catch
-        {
-            return null;
-        }
-
-        var formId = BinaryUtils.ReadUInt32BE(buffer, FormIdOffset);
-        if (formId != entry.FormId || formId == 0)
-        {
-            return null;
-        }
-
-        // pDeck is a pointer to a heap-allocated BSSimpleList<TESCaravanCard*>.
-        // Walking it requires dereferencing the pointer first — skip for now;
-        // runtime card count remains 0. ESM-side CNTO counting carries the parity.
-        var jokerCount = BinaryUtils.ReadUInt32BE(buffer, DataOffset);
+        // CARAVANDECKDATA substruct holds joker count as a single uint32.
+        var jokerCount = view.Offset("data", "TESCaravanDeck") is { } dataOff
+            ? BinaryUtils.ReadUInt32BE(view.Buffer, dataOff)
+            : 0u;
 
         return new CaravanDeckRecord
         {
@@ -51,18 +42,8 @@ internal sealed class RuntimeCaravanDeckReader(RuntimeMemoryContext context)
             EditorId = entry.EditorId,
             CardCount = 0,
             JokerCount = jokerCount,
-            Offset = offset,
+            Offset = view.FileOffset,
             IsBigEndian = true
         };
     }
-
-    #region Constants
-
-    private const byte CdckFormType = 0x75;
-    private const int StructSize = 60;
-    private const int FormIdOffset = 12;
-    private const int DeckPointerOffset = 52;
-    private const int DataOffset = 56;
-
-    #endregion
 }

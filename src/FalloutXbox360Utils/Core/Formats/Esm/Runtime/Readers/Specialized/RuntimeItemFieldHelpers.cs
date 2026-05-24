@@ -5,23 +5,19 @@ using FalloutXbox360Utils.Core.Utils;
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 
 /// <summary>
-///     Field-reading helpers for item runtime structs: weapon base/combat/critical fields
-///     and container content traversal. Used by <see cref="RuntimeItemReader" />.
+///     Field-reading helpers for weapon runtime structs (base/combat/critical fields,
+///     mod slots, VATS attack data, modded model variants). Used by
+///     <see cref="RuntimeItemReader" />.
 /// </summary>
 internal sealed class RuntimeItemFieldHelpers
 {
     private readonly RuntimeMemoryContext _context;
     private readonly RuntimeItemLayouts _layouts;
-    private readonly int _weaponCritShift;
 
-    internal RuntimeItemFieldHelpers(
-        RuntimeMemoryContext context,
-        RuntimeItemLayouts layouts,
-        int weaponCritShift = 0)
+    internal RuntimeItemFieldHelpers(RuntimeMemoryContext context, RuntimeItemLayouts layouts)
     {
         _context = context;
         _layouts = layouts;
-        _weaponCritShift = weaponCritShift;
     }
 
     #region Weapon Helper Methods
@@ -141,9 +137,9 @@ internal sealed class RuntimeItemFieldHelpers
         // OBJ_WEAP_CRITICAL position so builds whose criticalData block sits at a
         // non-default offset still read correctly. Shift is 0 when no probe ran or
         // confidence was low (no behavior change vs pre-probe baseline).
-        var damageOffset = _layouts.WeapCritDamageOffset + _weaponCritShift;
-        var chanceOffset = _layouts.WeapCritChanceOffset + _weaponCritShift;
-        var effectOffset = _layouts.WeapCritEffectPtrOffset + _weaponCritShift;
+        var damageOffset = _layouts.WeapCritDamageOffset;
+        var chanceOffset = _layouts.WeapCritChanceOffset;
+        var effectOffset = _layouts.WeapCritEffectPtrOffset;
 
         var damage = damageOffset + 2 <= buffer.Length
             ? (short)BinaryUtils.ReadUInt16BE(buffer, damageOffset)
@@ -385,102 +381,9 @@ internal sealed class RuntimeItemFieldHelpers
 
     #endregion
 
-    #region Container Helper Methods
-
-    /// <summary>
-    ///     Read container contents from TESContainer tList at +120/+124.
-    ///     Reuses the same ContainerObject reading logic as NPC inventory.
-    /// </summary>
-    internal List<InventoryItem> ReadContainerContents(byte[] buffer)
-    {
-        var items = new List<InventoryItem>();
-
-        // Read inline first node
-        var firstDataPtr = BinaryUtils.ReadUInt32BE(buffer, _layouts.ContContentsDataOffset);
-        var firstNextPtr = BinaryUtils.ReadUInt32BE(buffer, _layouts.ContContentsNextOffset);
-
-        // Process inline first item
-        var firstItem = ReadContainerObject(firstDataPtr);
-        if (firstItem != null)
-        {
-            items.Add(firstItem);
-        }
-
-        // Follow chain of _Node (8 bytes each: data ptr + next ptr)
-        var nextVA = firstNextPtr;
-        var visited = new HashSet<uint>();
-        while (nextVA != 0 && items.Count < RuntimeMemoryContext.MaxListItems && !visited.Contains(nextVA))
-        {
-            visited.Add(nextVA);
-            var nodeFileOffset = _context.VaToFileOffset(nextVA);
-            if (nodeFileOffset == null)
-            {
-                break;
-            }
-
-            var nodeBuf = _context.ReadBytes(nodeFileOffset.Value, 8);
-            if (nodeBuf == null)
-            {
-                break;
-            }
-
-            var dataPtr = BinaryUtils.ReadUInt32BE(nodeBuf);
-            var nextPtr = BinaryUtils.ReadUInt32BE(nodeBuf, 4);
-
-            var item = ReadContainerObject(dataPtr);
-            if (item != null)
-            {
-                items.Add(item);
-            }
-
-            nextVA = nextPtr;
-        }
-
-        return items;
-    }
-
-    /// <summary>
-    ///     Follow a ContainerObject* pointer to read { count(int32 BE), pItem(TESForm*) }.
-    ///     Returns an InventoryItem or null.
-    /// </summary>
-    private InventoryItem? ReadContainerObject(uint containerObjectVA)
-    {
-        if (containerObjectVA == 0)
-        {
-            return null;
-        }
-
-        var fileOffset = _context.VaToFileOffset(containerObjectVA);
-        if (fileOffset == null)
-        {
-            return null;
-        }
-
-        var buf = _context.ReadBytes(fileOffset.Value, 8);
-        if (buf == null)
-        {
-            return null;
-        }
-
-        var count = RuntimeMemoryContext.ReadInt32BE(buf, 0);
-        var pItem = BinaryUtils.ReadUInt32BE(buf, 4);
-
-        // Validate count (reasonable range for inventory)
-        if (count <= 0 || count > 100000)
-        {
-            Logger.Instance.Debug("[CONT] Rejected inventory item: count={0} (range 1-100000)", count);
-            return null;
-        }
-
-        // Follow pItem to read the item's FormID
-        var itemFormId = _context.FollowPointerVaToFormId(pItem);
-        if (itemFormId == null)
-        {
-            return null;
-        }
-
-        return new InventoryItem(itemFormId.Value, count);
-    }
-
-    #endregion
+    // Container Helper Methods removed: the previous ReadContainerContents +
+    // ReadContainerObject pair on this class was dead code (no callers — the only
+    // CONT consumer is RuntimeContainerReader, which has its own equivalent private
+    // implementation). Deleting them also unblocked removing the CONT region of
+    // RuntimeItemLayouts.
 }

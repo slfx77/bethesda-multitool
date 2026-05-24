@@ -64,6 +64,12 @@ internal sealed class RuntimePackageReader(RuntimeMemoryContext context)
         // Follow pPackTarg pointer to read PackageTarget
         var target = ReadTarget(buffer);
 
+        // pCombatStyle @ PDB +88 (TESCombatStyle*, FormType 0x4A). Constrain by FormType so a
+        // stale pointer that resolves to a non-CSTY form is dropped rather than emitted as a
+        // bogus CNAM. The CombatStylePtrOffset already includes the build-specific _s shift.
+        var combatStyleFormId = _context.FollowPointerToFormId(
+            buffer, CombatStylePtrOffset, CstyFormType);
+
         return new PackageRecord
         {
             FormId = formId,
@@ -72,6 +78,7 @@ internal sealed class RuntimePackageReader(RuntimeMemoryContext context)
             Schedule = schedule,
             Location = location,
             Target = target,
+            CombatStyleFormId = combatStyleFormId,
             Offset = offset,
             IsBigEndian = true
         };
@@ -266,12 +273,22 @@ internal sealed class RuntimePackageReader(RuntimeMemoryContext context)
 
     #region TESPackage Struct Layout (Proto Debug PDB base + _s)
 
-    // TESPackage: PDB size 128
+    // TESPackage: PDB size 128 (proto), +_s shift on later builds. CombatStyle ptr at +88
+    // pushes the minimum read to 92 bytes — within the 128-byte default but explicit here.
     private int PackStructSize => 128 + _s;
     private int PackDataOffset => 28 + _s; // PACKAGE_DATA (12 bytes inline)
     private int PackLocPtrOffset => 44 + _s; // PackageLocation* pPackLoc
     private int PackTargPtrOffset => 48 + _s; // PackageTarget* pPackTarg
     private int PackSchedOffset => 56 + _s; // PackageSchedule (8 bytes inline)
+    // pCombatStyle: PDB +88. The constant is `pdb - _s = 88 - 16 = 72`. Was
+    // mistakenly `88 + _s = +104` until the Phase 1B.6 follow-up — that landed inside
+    // the OnBegin PackageEventAction struct (+92..+107), so the typed-pointer gate
+    // (FollowPointerToFormId expecting FormType 0x4A=CSTY) rejected every read and
+    // PackageRecord.CombatStyleFormId was always null in production. Pinned by
+    // PackageTerminalOffsetInvestigationTests.PACK_pCombatStyle_offset_groundtruth.
+    private int CombatStylePtrOffset => 72 + _s; // TESCombatStyle* pCombatStyle (PDB +88)
+
+    private const byte CstyFormType = 0x4A;
 
     // PackageLocation (12 bytes)
     private const int LocTypeOffset = 0; // eLocType (char)

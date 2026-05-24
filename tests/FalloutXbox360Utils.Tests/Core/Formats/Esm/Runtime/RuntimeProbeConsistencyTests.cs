@@ -134,17 +134,10 @@ public sealed class RuntimeProbeConsistencyTests
             probeShifts.Add(("Effect", FormatShifts(effectProbe.Winner.Layout), effectProbe.Margin));
         }
 
-        var magicProbe = RuntimeMagicProbe.Probe(context, allEntries);
-        if (magicProbe != null)
-        {
-            probeShifts.Add(("Magic", FormatShifts(magicProbe.Winner.Layout), magicProbe.Margin));
-        }
-
-        var bookProbe = RuntimeBookProbe.Probe(context, allEntries);
-        if (bookProbe != null)
-        {
-            probeShifts.Add(("Book", FormatShifts(bookProbe.Winner.Layout), bookProbe.Margin));
-        }
+        // Book/Magic probes were deleted in Phase 1B.6 (uniformly zero across all
+        // 32 sampled dumps). MGEF/SPEL/ENCH/PERK/BOOK reads still appear in the
+        // probed-vs-default comparison below — both readers now behave identically
+        // for those types, so the columns should report `=` (no delta).
 
         // Test each reader type
         var typeResults = new Dictionary<string, TypeReadResult>();

@@ -5,6 +5,12 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Layouts;
 ///     Group 0: TESForm (anchored, never shifts)
 ///     Group 1: TESFullName through TESEnchantableForm (model, enchantment, icons, etc.)
 ///     Group 2: TESValueForm through OBJ_BOOK (value, weight, book data)
+///
+///     The Group 2 fields (Value/Weight/BookData) are at offsets 8 bytes earlier than
+///     the PDB-reported values: PDB says Value=152/Weight=160/BookData=208, but every
+///     observed runtime dump (32/32 in the Phase 1B.5 probe sweep) has them at
+///     144/152/200. The previous probe-driven `FromShifts` path was deleted in Phase
+///     1B.6 once the constant was confirmed across all builds in scope.
 /// </summary>
 internal readonly record struct RuntimeBookLayout(
     int FullNameOffset,
@@ -21,37 +27,15 @@ internal readonly record struct RuntimeBookLayout(
     public static RuntimeBookLayout CreateDefault()
     {
         return new RuntimeBookLayout(
-            68,
-            80,
-            112, // TESTexture.TextureName (BSStringT) — ICON
-            184, // BGSMessageIcon.Icon (TESIcon→BSStringT) — MICO
-            136,
-            140,
-            152,
-            160,
-            208,
-            212);
-    }
-
-    /// <summary>
-    ///     Create a layout from a shift array produced by the probe engine.
-    ///     Group 0 = TESForm (anchor), Group 1 = mid-chain, Group 2 = late fields.
-    /// </summary>
-    public static RuntimeBookLayout FromShifts(int[] shifts)
-    {
-        var d = CreateDefault();
-        var s1 = shifts.Length > 1 ? shifts[1] : 0;
-        var s2 = shifts.Length > 2 ? shifts[2] : 0;
-        return new RuntimeBookLayout(
-            d.FullNameOffset + s1,
-            d.ModelOffset + s1,
-            d.InventoryIconPathOffset + s1,
-            d.MessageIconPathOffset + s1,
-            d.EnchantmentPtrOffset + s1,
-            d.EnchantmentAmountOffset + s1,
-            d.ValueOffset + s2,
-            d.WeightOffset + s2,
-            d.BookDataOffset + s2,
-            d.StructSize + Math.Max(s1, s2));
+            FullNameOffset: 68,
+            ModelOffset: 80,
+            InventoryIconPathOffset: 112, // TESTexture.TextureName (BSStringT) — ICON
+            MessageIconPathOffset: 184,   // BGSMessageIcon.Icon (TESIcon→BSStringT) — MICO
+            EnchantmentPtrOffset: 136,
+            EnchantmentAmountOffset: 140,
+            ValueOffset: 144,             // PDB says 152; runtime sits 8 bytes earlier (G2=-8)
+            WeightOffset: 152,            // PDB says 160
+            BookDataOffset: 200,          // PDB says 208
+            StructSize: 212);
     }
 }

@@ -13,9 +13,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 ///     Reader for quest, terminal, and note runtime structs from Xbox 360 memory dumps.
 ///     Extracts quest data, terminal menus with menu items, and note content.
 /// </summary>
-internal sealed class RuntimeQuestTerminalReader(
-    RuntimeMemoryContext context,
-    RuntimeTerminalLayoutProbeResult? terminalLayoutProbe = null)
+internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
 {
     private readonly RuntimeMemoryContext _context = context;
 
@@ -23,20 +21,15 @@ internal sealed class RuntimeQuestTerminalReader(
     private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
         MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
 
-    // Per-dump terminal layout shifts from RuntimeTerminalLayoutProbe.
+    // RuntimeTerminalLayoutProbe was deleted in Phase 1B.6. Across 32 sampled dumps the
+    // data-shift result was never high-confidence (so the consumer always took the 0
+    // fallback) and the menu-list shift was uniformly +4. The +4 is now baked into
+    // TermMenuItemListOffset below; the data-shift fallback (0) is the identity.
     //
-    // The data shift (Difficulty/Flags/ServerType) is gated on high confidence —
-    // a low-margin winner could regress the 230+ records that already agree on
-    // Difficulty at the current hardcoded offset.
-    //
-    // The menu-list shift is applied whenever the probe ran at all (score > 0),
-    // because the pre-probe MenuItemCount baseline is 0 agreement — any positive
-    // signal from the probe is improvement and can't make the metric worse.
-    private readonly int _termDataShift =
-        terminalLayoutProbe is { IsHighConfidence: true } ? terminalLayoutProbe.DataShift : 0;
-
-    private readonly int _termMenuListShift =
-        terminalLayoutProbe is { WinnerScore: > 0 } ? terminalLayoutProbe.MenuListShift : 0;
+    // The TermDifficulty/TermFlags fields are known to be reading from PDB +132 instead
+    // of +180 (PDB's BGSTerminal.Difficulty location) — that is a separate latent
+    // investigation item documented in the plan ("Package + QuestTerminal cleanup"),
+    // not introduced by removing the probe.
 
     /// <summary>
     ///     Read extended quest data from a runtime TESQuest struct.
@@ -88,8 +81,28 @@ internal sealed class RuntimeQuestTerminalReader(
         // Try to read quest display name from BSStringT, with fallback to hash table DisplayName
         var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, QustFullNameOffset);
 
-        // Follow pFormScript pointer → Script* → get Script FormID (0x11 = SCPT)
+        // Follow pFormScript pointer → Script* → get Script FormID (0x11 = SCPT).
+        // Brute-force fallback when the canonical slot is null: scan the whole TESQuest
+        // struct for any 4-byte pointer that resolves to a Script form. Proto builds may
+        // attach scripts via a different field path (e.g. an aggregated form-list pointer
+        // we haven't reverse-engineered), and a missing SCRI on the quest cascades into
+        // empty CTDA / AddTopic / dialogue-tree state. Same rationale as the NPC fallback
+        // in RuntimeActorReader.BruteForceScanForScriptPointer.
         var scriptFormId = _context.FollowPointerToFormId(buffer, QustScriptOffset, 0x11);
+        if (scriptFormId is null or 0)
+        {
+            for (var probe = 4; probe + 4 <= buffer.Length; probe += 4)
+            {
+                if (probe == QustScriptOffset) continue;
+                var candidate = _context.FollowPointerToFormId(buffer, probe, 0x11);
+                if (candidate is > 0)
+                {
+                    scriptFormId = candidate;
+                    break;
+                }
+            }
+        }
+
         var stages = WalkQuestStageList(offset, entry.FormId);
         var objectives = WalkQuestObjectiveList(offset, entry.FormId);
 
@@ -142,7 +155,12 @@ internal sealed class RuntimeQuestTerminalReader(
             return null;
         }
 
-        // Read difficulty and flags
+        // Read difficulty and flags from TERMINAL_DATA at PDB +180 (byte 0 = Difficulty,
+        // byte 1 = Flags). Per Phase 1B.6 follow-up, the previous offsets (+132/+133)
+        // were reading the high bytes of pSoundLoop and always produced 0x65/0x03 in
+        // sampled dumps — clamped to 0 by the > 4 check, so every terminal appeared as
+        // "Very Easy". 0xFF here is heap-fill (uninitialized DATA), which the clamp also
+        // turns into 0; preserving that for back-compat.
         var difficulty = buffer[TermDifficultyOffset];
         var flags = buffer[TermFlagsOffset];
 
@@ -152,10 +170,15 @@ internal sealed class RuntimeQuestTerminalReader(
             difficulty = 0; // Default to very easy if invalid
         }
 
-        // Read password (optional)
-        var password = _context.ReadBsStringT(offset, TermPasswordOffset);
+        // Password reading deferred: pPassword at PDB +176 is a TESPassword* pointer,
+        // not the inline BSStringT the previous code assumed (which is why we used to
+        // read at a totally different — and also wrong — offset). Proper recovery
+        // requires following the pointer to a TESPassword struct and reading its inner
+        // BSStringT, which has no PDB layout entry yet. Leave as null for now; tracked
+        // in the plan file as a Tier-3 follow-up.
+        string? password = null;
 
-        // Parse menu items from BSSimpleList at +152
+        // Parse menu items from BSSimpleList at the PDB-aligned offset.
         var menuItems = WalkTerminalMenuItemList(offset);
 
         return new TerminalRecord
@@ -659,13 +682,16 @@ internal sealed class RuntimeQuestTerminalReader(
 
     #region Terminal Struct Layout (Proto Debug PDB base + _s)
 
-    // BGSTerminal: PDB size 168, Debug dump 172, Release dump 184
-    private int TermStructSize => 168 + _s;
-    private int TermDifficultyOffset => 116 + _s + _termDataShift;
-    private int TermFlagsOffset => 117 + _s + _termDataShift;
-    private int TermPasswordOffset => 120 + _s;
-
-    private int TermMenuItemListOffset => 136 + _s + _termMenuListShift;
+    // BGSTerminal: PDB structSize 184. All constants below are `pdb_offset - _s` so
+    // adding the build shift yields the PDB-reported runtime offset. The previous
+    // constants (116/117/120/140) were stale by 48 / 48 / 40 / 12 bytes respectively
+    // and produced garbage values — see PackageTerminalOffsetInvestigationTests for the
+    // ground-truth evidence (16-of-16 sampled TERMs showed 0x65/0x03 at the old
+    // Difficulty/Flags offsets, vs 0x00 or 0xFF at the PDB +180/+181 location).
+    private int TermStructSize => 168 + _s;          // PDB structSize 184
+    private int TermDifficultyOffset => 164 + _s;    // TERMINAL_DATA byte 0 (PDB +180)
+    private int TermFlagsOffset => 165 + _s;         // TERMINAL_DATA byte 1 (PDB +181)
+    private int TermMenuItemListOffset => 152 + _s;  // BSSimpleList<TERMINAL_MENU_ITEM*> head (PDB +168)
 
     #endregion
 }

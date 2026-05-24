@@ -1,6 +1,7 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Magic;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
@@ -8,63 +9,51 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 /// <summary>
 ///     Typed runtime reader for magic/effect structs: EffectSetting (MGEF, 192B),
 ///     SpellItem (SPEL, 84B), EnchantmentItem (ENCH, 84B), BGSPerk (PERK, 96B).
-///     Supports auto-detected layouts via <see cref="RuntimeMagicProbe" />.
-///     All 4 types share the same inheritance chain; the probed shift from MGEF
-///     applies uniformly to all post-TESForm fields across all types.
+///     All 4 types share the same inheritance chain. The per-build shift previously
+///     supplied by <c>RuntimeMagicProbe</c> was always zero across every observed dump
+///     (32/32 samples in the Phase 1B.5 probe sweep), so it has been removed.
+///     Phase 1B's closeout migrates the field reads to <see cref="PdbStructView" />:
+///     offsets come straight from <c>pdb_layouts.json</c> instead of being hand-pinned
+///     in this file.
 /// </summary>
 internal sealed class RuntimeMagicReader
 {
     private readonly RuntimeMemoryContext _context;
+    private readonly RuntimePdbFieldAccessor _fields;
 
-    // Uniform shift for all post-TESForm fields, probed from MGEF samples.
-    private readonly int _s;
-
-    public RuntimeMagicReader(RuntimeMemoryContext context, RuntimeLayoutProbeResult<int[]>? probeResult = null)
+    public RuntimeMagicReader(RuntimeMemoryContext context)
     {
         _context = context;
-        _s = probeResult is { Margin: >= MinProbeMargin } && probeResult.Winner.Layout.Length > 1
-            ? probeResult.Winner.Layout[1]
-            : 0;
+        _fields = new RuntimePdbFieldAccessor(context);
     }
 
     #region MGEF — EffectSetting (192 bytes, FormType 0x10)
 
     public BaseEffectRecord? ReadRuntimeBaseEffect(RuntimeEditorIdEntry entry)
     {
-        if (entry.TesFormOffset == null || entry.FormType != MgefFormType)
+        if (entry.FormType != MgefFormType)
         {
             return null;
         }
 
-        var offset = entry.TesFormOffset.Value;
-        var structSize = MgefStructSize + _s;
-        if (offset + structSize > _context.FileSize)
+        var view = _fields.OpenStructView(entry);
+        if (view == null)
         {
             return null;
         }
 
-        var buffer = new byte[structSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, structSize);
-        }
-        catch
-        {
-            return null;
-        }
+        var fullName = entry.DisplayName ?? view.BsString("cFullName", "TESFullName");
+        var modelPath = view.BsString("cModel", "TESModel");
+        var icon = view.BsString("TextureName", "TESTexture");
 
-        var formId = BinaryUtils.ReadUInt32BE(buffer, FormIdOffset);
-        if (formId != entry.FormId || formId == 0)
+        // EffectSettingData (72-byte substruct at "data") — no per-field PDB entries,
+        // walk the bytes from the substruct base.
+        if (view.Offset("data", "EffectSetting") is not { } dataBase)
         {
             return null;
         }
 
-        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, MgefFullNameOffset + _s);
-        var modelPath = _context.ReadBsStringT(offset, MgefModelOffset + _s);
-        var icon = _context.ReadBsStringT(offset, MgefIconOffset + _s);
-
-        // EffectSettingData (72 bytes)
-        var dataBase = MgefDataOffset + _s;
+        var buffer = view.Buffer;
         var flags = BinaryUtils.ReadUInt32BE(buffer, dataBase);
         var baseCost = BinaryUtils.ReadFloatBE(buffer, dataBase + 4);
         var associatedItem = _context.FollowPointerToFormId(buffer, dataBase + 8);
@@ -83,8 +72,10 @@ internal sealed class RuntimeMagicReader
         var archetype = BinaryUtils.ReadUInt32BE(buffer, dataBase + 64);
         var actorValue = unchecked((int)BinaryUtils.ReadUInt32BE(buffer, dataBase + 68));
 
-        // counterEffects BSSimpleList
-        var counterEffects = WalkFormIdSimpleList(buffer, MgefCounterEffectsOffset + _s);
+        // counterEffects BSSimpleList — head lives at the "counterEffects" PDB field.
+        var counterEffects = view.Offset("counterEffects", "EffectSetting") is { } ceOff
+            ? WalkFormIdSimpleList(buffer, ceOff)
+            : [];
 
         if (!RuntimeMemoryContext.IsNormalFloat(baseCost))
         {
@@ -116,7 +107,7 @@ internal sealed class RuntimeMagicReader
             CounterEffectFormIds = counterEffects.Count > 0 ? counterEffects : null,
             Icon = icon,
             ModelPath = modelPath,
-            Offset = offset,
+            Offset = view.FileOffset,
             IsBigEndian = true
         };
     }
@@ -127,45 +118,36 @@ internal sealed class RuntimeMagicReader
 
     public SpellRecord? ReadRuntimeSpell(RuntimeEditorIdEntry entry)
     {
-        if (entry.TesFormOffset == null || entry.FormType != SpelFormType)
+        if (entry.FormType != SpelFormType)
         {
             return null;
         }
 
-        var offset = entry.TesFormOffset.Value;
-        var structSize = SpelStructSize + _s;
-        if (offset + structSize > _context.FileSize)
+        var view = _fields.OpenStructView(entry);
+        if (view == null)
         {
             return null;
         }
 
-        var buffer = new byte[structSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, structSize);
-        }
-        catch
+        var fullName = entry.DisplayName ?? view.BsString("cFullName", "TESFullName");
+
+        // SpellItemData (16-byte substruct)
+        if (view.Offset("data", "SpellItem") is not { } spelData)
         {
             return null;
         }
 
-        var formId = BinaryUtils.ReadUInt32BE(buffer, FormIdOffset);
-        if (formId != entry.FormId || formId == 0)
-        {
-            return null;
-        }
-
-        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, SpelFullNameOffset + _s);
-
-        // SpellItemData (16 bytes)
-        var spelData = SpelDataOffset + _s;
+        var buffer = view.Buffer;
         var type = (SpellType)BinaryUtils.ReadUInt32BE(buffer, spelData);
         var cost = BinaryUtils.ReadUInt32BE(buffer, spelData + 4);
         var level = BinaryUtils.ReadUInt32BE(buffer, spelData + 8);
         var flags = buffer[spelData + 12];
 
-        // Walk EffectItem linked list for full effect data
-        var effects = RuntimeEffectItemListReader.Read(_context, buffer, EffectListOffset + _s, MaxListNodes);
+        // Walk EffectItem linked list (BSSimpleList head at "m_item")
+        var effectListOffset = view.Offset("m_item", "BSSimpleList<EffectItem *>") ?? -1;
+        var effects = effectListOffset >= 0
+            ? RuntimeEffectItemListReader.Read(_context, buffer, effectListOffset, MaxListNodes)
+            : [];
 
         return new SpellRecord
         {
@@ -177,7 +159,7 @@ internal sealed class RuntimeMagicReader
             Level = level,
             Flags = flags,
             Effects = effects,
-            Offset = offset,
+            Offset = view.FileOffset,
             IsBigEndian = true
         };
     }
@@ -188,45 +170,36 @@ internal sealed class RuntimeMagicReader
 
     public EnchantmentRecord? ReadRuntimeEnchantment(RuntimeEditorIdEntry entry)
     {
-        if (entry.TesFormOffset == null || entry.FormType != EnchFormType)
+        if (entry.FormType != EnchFormType)
         {
             return null;
         }
 
-        var offset = entry.TesFormOffset.Value;
-        var structSize = EnchStructSize + _s;
-        if (offset + structSize > _context.FileSize)
+        var view = _fields.OpenStructView(entry);
+        if (view == null)
         {
             return null;
         }
 
-        var buffer = new byte[structSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, structSize);
-        }
-        catch
+        var fullName = entry.DisplayName ?? view.BsString("cFullName", "TESFullName");
+
+        // EnchantmentItemData (16-byte substruct)
+        if (view.Offset("data", "EnchantmentItem") is not { } enchData)
         {
             return null;
         }
 
-        var formId = BinaryUtils.ReadUInt32BE(buffer, FormIdOffset);
-        if (formId != entry.FormId || formId == 0)
-        {
-            return null;
-        }
-
-        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, EnchFullNameOffset + _s);
-
-        // EnchantmentItemData (16 bytes)
-        var enchData = EnchDataOffset + _s;
+        var buffer = view.Buffer;
         var enchantType = BinaryUtils.ReadUInt32BE(buffer, enchData);
         var chargeAmount = BinaryUtils.ReadUInt32BE(buffer, enchData + 4);
         var enchantCost = BinaryUtils.ReadUInt32BE(buffer, enchData + 8);
         var flags = buffer[enchData + 12];
 
-        // Walk EffectItem linked list for effects
-        var effects = RuntimeEffectItemListReader.Read(_context, buffer, EffectListOffset + _s, MaxListNodes);
+        // Walk EffectItem linked list (BSSimpleList head at "m_item")
+        var effectListOffset = view.Offset("m_item", "BSSimpleList<EffectItem *>") ?? -1;
+        var effects = effectListOffset >= 0
+            ? RuntimeEffectItemListReader.Read(_context, buffer, effectListOffset, MaxListNodes)
+            : [];
 
         return new EnchantmentRecord
         {
@@ -238,7 +211,7 @@ internal sealed class RuntimeMagicReader
             EnchantCost = enchantCost,
             Flags = flags,
             Effects = effects,
-            Offset = offset,
+            Offset = view.FileOffset,
             IsBigEndian = true
         };
     }
@@ -272,49 +245,43 @@ internal sealed class RuntimeMagicReader
 
     public PerkRecord? ReadRuntimePerk(RuntimeEditorIdEntry entry)
     {
-        if (entry.TesFormOffset == null || entry.FormType != PerkFormType)
+        if (entry.FormType != PerkFormType)
         {
             return null;
         }
 
-        var offset = entry.TesFormOffset.Value;
-        var structSize = PerkStructSize + _s;
-        if (offset + structSize > _context.FileSize)
+        var view = _fields.OpenStructView(entry);
+        if (view == null)
         {
             return null;
         }
 
-        var buffer = new byte[structSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, structSize);
-        }
-        catch
-        {
-            return null;
-        }
+        var fullName = entry.DisplayName ?? view.BsString("cFullName", "TESFullName");
+        var iconPath = view.BsString("TextureName", "TESTexture");
 
-        var formId = BinaryUtils.ReadUInt32BE(buffer, FormIdOffset);
-        if (formId != entry.FormId || formId == 0)
+        // PerkData (5-byte substruct)
+        if (view.Offset("Data", "BGSPerk") is not { } perkData)
         {
             return null;
         }
 
-        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, PerkFullNameOffset + _s);
-        var iconPath = _context.ReadBsStringT(offset, PerkIconOffset + _s);
-
-        // PerkData (5 bytes)
-        var perkData = PerkDataOffset + _s;
+        var buffer = view.Buffer;
         var trait = buffer[perkData];
         var minLevel = buffer[perkData + 1];
         var ranks = buffer[perkData + 2];
         var playable = buffer[perkData + 3];
 
-        // Walk PerkEntries BSSimpleList at offset 88
-        var entries = WalkPerkEntryList(buffer, PerkEntriesListOffset + _s);
+        // Walk PerkEntries BSSimpleList
+        var entriesListOffset = view.Offset("PerkEntries", "BGSPerk") ?? -1;
+        var entries = entriesListOffset >= 0
+            ? WalkPerkEntryList(buffer, entriesListOffset)
+            : [];
 
-        // Walk PerkConditions TESCondition linked list at offset 80
-        var conditions = WalkPerkConditions(buffer, PerkConditionsListOffset + _s);
+        // Walk PerkConditions TESCondition linked list
+        var conditionsListOffset = view.Offset("PerkConditions", "BGSPerk") ?? -1;
+        var conditions = conditionsListOffset >= 0
+            ? WalkPerkConditions(buffer, conditionsListOffset)
+            : [];
 
         return new PerkRecord
         {
@@ -328,7 +295,7 @@ internal sealed class RuntimeMagicReader
             Playable = playable,
             Entries = entries,
             Conditions = conditions,
-            Offset = offset,
+            Offset = view.FileOffset,
             IsBigEndian = true
         };
     }
@@ -540,44 +507,18 @@ internal sealed class RuntimeMagicReader
 
     #endregion
 
-    #region Constants
+    #region FormType + List Walker Constants
 
-    // Shared TESForm
-    private const int FormIdOffset = 12;
+    // FormType constants — kept here (not from PDB) because the reader's entry-point
+    // type checks reference them; offsets all come from PdbStructLayouts via
+    // PdbStructView at call time.
+    private const byte MgefFormType = 0x10; // EffectSetting (192B)
+    private const byte SpelFormType = 0x14; // SpellItem (84B)
+    private const byte EnchFormType = 0x13; // EnchantmentItem (84B)
+    private const byte PerkFormType = 0x56; // BGSPerk (96B)
 
-    // MGEF — EffectSetting (192 bytes)
-    private const byte MgefFormType = 0x10;
-    private const int MgefStructSize = 192;
-    private const int MgefModelOffset = 44;
-    private const int MgefFullNameOffset = 76;
-    private const int MgefIconOffset = 88;
-    private const int MgefDataOffset = 104; // EffectSettingData, 72 bytes
-    private const int MgefCounterEffectsOffset = 176;
-
-    // SPEL — SpellItem (84 bytes)
-    private const byte SpelFormType = 0x14;
-    private const int SpelStructSize = 84;
-    private const int SpelFullNameOffset = 44;
-    private const int EffectListOffset = 56; // BSSimpleList<EffectItem*> — shared by SPEL & ENCH
-    private const int SpelDataOffset = 68; // SpellItemData, 16 bytes
-
-    // ENCH — EnchantmentItem (84 bytes)
-    private const byte EnchFormType = 0x13;
-    private const int EnchStructSize = 84;
-    private const int EnchFullNameOffset = 44;
-    private const int EnchDataOffset = 68; // EnchantmentItemData, 16 bytes
-
-    // PERK — BGSPerk (96 bytes)
-    private const byte PerkFormType = 0x56;
-    private const int PerkStructSize = 96;
-    private const int PerkFullNameOffset = 44;
-    private const int PerkIconOffset = 64;
-    private const int PerkDataOffset = 72; // PerkData, 5 bytes
-    private const int PerkConditionsListOffset = 80; // TESCondition (BSSimpleList<TESConditionItem*>)
-    private const int PerkEntriesListOffset = 88; // BSSimpleList<BGSPerkEntry*>
-
+    // Cap on linked-list traversals for runaway-list protection.
     private const int MaxListNodes = 256;
-    private const int MinProbeMargin = 3;
 
     #endregion
 }

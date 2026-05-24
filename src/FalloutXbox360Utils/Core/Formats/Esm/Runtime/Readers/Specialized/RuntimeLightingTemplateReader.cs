@@ -1,67 +1,52 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
-using FalloutXbox360Utils.Core.Utils;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 
 /// <summary>
 ///     Typed runtime reader for BGSLightingTemplate (LGTM, 84 bytes, FormType 0x65).
-///     Reads the INTERIOR_DATA struct at +40 (44B, of which the first 40B match the
-///     ESM DATA subrecord schema) and produces the same field dictionary the ESM
-///     handler populates.
+///     Reads the INTERIOR_DATA struct at PDB <c>Data</c> (+40, 44B; first 40B match
+///     the ESM DATA subrecord schema) and produces the same field dictionary the
+///     ESM handler populates.
 /// </summary>
 internal sealed class RuntimeLightingTemplateReader(RuntimeMemoryContext context)
 {
+    private const byte LgtmFormType = 0x65;
+    // INTERIOR_DATA is 44 bytes in the runtime struct, but only the first 40 bytes
+    // match the ESM DATA subrecord schema (the last 4 bytes are runtime padding/extra).
+    private const int EsmDataSize = 40;
+
+    private readonly RuntimePdbFieldAccessor _fields = new(context);
+
     public LightingTemplateRecord? ReadRuntimeLightingTemplate(RuntimeEditorIdEntry entry)
     {
-        if (entry.TesFormOffset == null || entry.FormType != LgtmFormType)
+        if (entry.FormType != LgtmFormType)
         {
             return null;
         }
 
-        var offset = entry.TesFormOffset.Value;
-        if (offset + StructSize > context.FileSize)
+        var view = _fields.OpenStructView(entry);
+        if (view == null)
         {
             return null;
         }
 
-        var buffer = new byte[StructSize];
-        try
+        Dictionary<string, object?>? lightingData = null;
+        if (view.Offset("Data", "BGSLightingTemplate") is { } dataOff)
         {
-            context.Accessor.ReadArray(offset, buffer, 0, StructSize);
+            var dataBytes = new byte[EsmDataSize];
+            Array.Copy(view.Buffer, dataOff, dataBytes, 0, EsmDataSize);
+            lightingData = SubrecordSchemaView.TryRead("DATA", "LGTM", dataBytes, bigEndian: true)?.Raw;
         }
-        catch
-        {
-            return null;
-        }
-
-        var formId = BinaryUtils.ReadUInt32BE(buffer, FormIdOffset);
-        if (formId != entry.FormId || formId == 0)
-        {
-            return null;
-        }
-
-        var dataBytes = new byte[EsmDataSize];
-        Array.Copy(buffer, DataOffset, dataBytes, 0, EsmDataSize);
-        var lightingData = SubrecordSchemaView.TryRead("DATA", "LGTM", dataBytes, bigEndian: true)?.Raw;
 
         return new LightingTemplateRecord
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
             LightingData = lightingData,
-            Offset = offset,
+            Offset = view.FileOffset,
             IsBigEndian = true
         };
     }
-
-    #region Constants
-
-    private const byte LgtmFormType = 0x65;
-    private const int StructSize = 84;
-    private const int FormIdOffset = 12;
-    private const int DataOffset = 40;
-    private const int EsmDataSize = 40; // First 40B of the 44B INTERIOR_DATA match ESM DATA schema
-
-    #endregion
 }

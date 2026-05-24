@@ -1,6 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
-using FalloutXbox360Utils.Core.Utils;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 
@@ -8,47 +8,41 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 ///     Typed runtime reader for TESWaterForm (WATR, 420 bytes, FormType 0x4E).
 ///     Reads the fields the ESM model exposes: FullName, Damage (sAttackDamage),
 ///     Opacity (cAlpha), SoundFormId (pWaterSound pointer), and the 196-byte
-///     WaterShaderData block (mirrors the ESM DNAM schema).
+///     WaterShaderData block (mirrors the ESM DNAM schema). All offsets resolve
+///     from <c>pdb_layouts.json</c> via <see cref="PdbStructView" />.
 /// </summary>
 internal sealed class RuntimeWaterReader(RuntimeMemoryContext context)
 {
+    private const byte WatrFormType = 0x4E;
+    private const int ShaderDataSize = 196;
+
+    private readonly RuntimePdbFieldAccessor _fields = new(context);
+
     public WaterRecord? ReadRuntimeWater(RuntimeEditorIdEntry entry)
     {
-        if (entry.TesFormOffset == null || entry.FormType != WatrFormType)
+        if (entry.FormType != WatrFormType)
         {
             return null;
         }
 
-        var offset = entry.TesFormOffset.Value;
-        if (offset + StructSize > context.FileSize)
+        var view = _fields.OpenStructView(entry);
+        if (view == null)
         {
             return null;
         }
 
-        var buffer = new byte[StructSize];
-        try
-        {
-            context.Accessor.ReadArray(offset, buffer, 0, StructSize);
-        }
-        catch
-        {
-            return null;
-        }
+        var fullName = view.BsString("cFullName", "TESFullName");
+        var damage = view.UInt16("sAttackDamage", "TESAttackDamageForm");
+        var opacity = view.Byte("cAlpha", "TESWaterForm");
+        var soundFormId = view.FormIdPointer("pWaterSound", "TESWaterForm");
 
-        var formId = BinaryUtils.ReadUInt32BE(buffer, FormIdOffset);
-        if (formId != entry.FormId || formId == 0)
+        Dictionary<string, object?>? visualProperties = null;
+        if (view.Offset("Data", "TESWaterForm") is { } shaderOff)
         {
-            return null;
+            var shaderBytes = new byte[ShaderDataSize];
+            Array.Copy(view.Buffer, shaderOff, shaderBytes, 0, ShaderDataSize);
+            visualProperties = SubrecordSchemaView.TryRead("DNAM", "WATR", shaderBytes, bigEndian: true)?.Raw;
         }
-
-        var fullName = context.ReadBsStringT(offset, FullNameOffset);
-        var damage = BinaryUtils.ReadUInt16BE(buffer, AttackDamageOffset);
-        var opacity = buffer[AlphaOffset];
-        var soundFormId = context.FollowPointerToFormId(buffer, WaterSoundPointerOffset);
-
-        var shaderBytes = new byte[ShaderDataSize];
-        Array.Copy(buffer, ShaderDataOffset, shaderBytes, 0, ShaderDataSize);
-        var visualProperties = SubrecordSchemaView.TryRead("DNAM", "WATR", shaderBytes, bigEndian: true)?.Raw;
 
         return new WaterRecord
         {
@@ -59,22 +53,8 @@ internal sealed class RuntimeWaterReader(RuntimeMemoryContext context)
             Opacity = opacity,
             SoundFormId = soundFormId,
             VisualProperties = visualProperties,
-            Offset = offset,
+            Offset = view.FileOffset,
             IsBigEndian = true
         };
     }
-
-    #region Constants
-
-    private const byte WatrFormType = 0x4E;
-    private const int StructSize = 420;
-    private const int FormIdOffset = 12;
-    private const int FullNameOffset = 44;
-    private const int AttackDamageOffset = 56;
-    private const int AlphaOffset = 128;
-    private const int WaterSoundPointerOffset = 140;
-    private const int ShaderDataOffset = 148;
-    private const int ShaderDataSize = 196;
-
-    #endregion
 }

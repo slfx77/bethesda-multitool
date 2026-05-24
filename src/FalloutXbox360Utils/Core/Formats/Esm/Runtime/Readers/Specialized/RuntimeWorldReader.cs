@@ -11,14 +11,52 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 ///     Reader for TESObjectLAND and DIAL runtime structs from Xbox 360 memory dumps.
 ///     Extracts cell coordinates, loaded land data, and probes dialogue topic layouts.
 /// </summary>
-internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
+internal sealed class RuntimeWorldReader
 {
-    private readonly RuntimeMemoryContext _context = context;
-    private readonly RuntimeLandVisualReader _landVisualReader = new(context);
+    private readonly RuntimeMemoryContext _context;
+    private readonly RuntimeLandVisualReader _landVisualReader;
 
     // Build-specific offset shift: Proto Debug PDB + _s = actual dump offset.
-    private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
-        MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
+    private readonly int _s;
+
+    // LoadedLandData* offset inside TESObjectLAND. Always 40 + _s = 56 for every build
+    // in scope — the LAND probe (deleted in Phase 1B.6) ran against 32 dumps and never
+    // found anything different from this default, so the probe-driven override path was
+    // removed.
+    private readonly int _landLoadedDataPtrOffset;
+
+    // Stage counters for the terrain-mesh extraction path. Aggregated across a single
+    // `ReadAllRuntimeLandData` call so we can pinpoint which step drops a build's
+    // LoadedLandData reads before they reach a TerrainMesh. Each counter is mutually
+    // exclusive: a LAND record contributes to exactly one of them.
+    private int _meshStageQuadrantOk;
+    private int _meshStageSingleArrayOk;
+    private int _meshStageVertexPtrNull;
+    private int _meshStageVertexPtrBad;
+    private int _meshStageVertexOuterDerefFail;
+    private int _meshStageVertexInnerPtrNullOrBad;
+    private int _meshStageVertexDataReadFail;
+    private int _meshStageVertexFloatValidationFail;
+    private int _meshStageGridReconstructFail;
+
+    // High-byte histogram of "bad" ppVertices VAs — values that are non-null but don't
+    // resolve to a captured memory region. Tells us whether they cluster in a specific
+    // VA range (suggesting an uncaptured heap region) or are random noise (suggesting a
+    // wrong field offset). Index = upper 8 bits of the VA (0x00..0xFF).
+    private readonly int[] _badVertexVaHighBytes = new int[256];
+
+    // Parallel histogram of successful inner-pointer VAs (the actual pVertices arrays
+    // that were resolved). Comparing this against `_badVertexVaHighBytes` shows whether
+    // good vs bad VAs cluster in different regions.
+    private readonly int[] _goodVertexVaHighBytes = new int[256];
+
+    public RuntimeWorldReader(RuntimeMemoryContext context)
+    {
+        _context = context;
+        _landVisualReader = new RuntimeLandVisualReader(context);
+        _s = RuntimeBuildOffsets.GetPdbShift(MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
+        _landLoadedDataPtrOffset = 40 + _s;
+    }
 
     /// <summary>
     ///     Read cell coordinates from a runtime TESObjectLAND struct's LoadedLandData.
@@ -168,7 +206,7 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
         };
     }
 
-    private IReadOnlyList<RuntimePointerDiagnostic> ReadDoublePointerArrayDiagnostics(
+    private List<RuntimePointerDiagnostic> ReadDoublePointerArrayDiagnostics(
         byte[] buffer,
         int ptrOffset,
         int slotCount)
@@ -238,7 +276,7 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
         };
     }
 
-    private IReadOnlyList<RuntimeLandTexturePointerDiagnostic> ReadDefaultQuadTextureDiagnostics(byte[] buffer)
+    private List<RuntimeLandTexturePointerDiagnostic> ReadDefaultQuadTextureDiagnostics(byte[] buffer)
     {
         var results = new List<RuntimeLandTexturePointerDiagnostic>(LoadedDataQuadCount);
         for (var quadrant = 0; quadrant < LoadedDataQuadCount; quadrant++)
@@ -257,7 +295,7 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
         return results;
     }
 
-    private IReadOnlyList<RuntimeLandTextureArrayDiagnostic> ReadQuadTextureArrayDiagnostics(byte[] buffer)
+    private List<RuntimeLandTextureArrayDiagnostic> ReadQuadTextureArrayDiagnostics(byte[] buffer)
     {
         var results = new List<RuntimeLandTextureArrayDiagnostic>(LoadedDataQuadCount);
         for (var quadrant = 0; quadrant < LoadedDataQuadCount; quadrant++)
@@ -302,7 +340,7 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
         return results;
     }
 
-    private IReadOnlyList<RuntimePercentArrayDiagnostic> ReadPercentArrayDiagnostics(byte[] buffer)
+    private List<RuntimePercentArrayDiagnostic> ReadPercentArrayDiagnostics(byte[] buffer)
     {
         var results = new List<RuntimePercentArrayDiagnostic>(LoadedDataQuadCount);
         for (var quadrant = 0; quadrant < LoadedDataQuadCount; quadrant++)
@@ -407,33 +445,101 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
         var quadrantMesh = ReadQuadrantTerrainMesh(loadedDataBuffer);
         if (quadrantMesh != null)
         {
+            _meshStageQuadrantOk++;
             return quadrantMesh;
         }
 
-        // Vertices are required — normals and colors are optional.
-        // Read the full 1089-slot maximum buffer, but use a low valid-float threshold here:
-        // lower LOD captures can contain only 4x4/5x5/8x8/etc. useful vertices followed by garbage.
-        // The RuntimeTerrainMesh grid detector does the real validation from XY coverage and bounds.
-        var (vertices, vertexOffset) = ReadDoubleIndirectedFloatArray(
-            loadedDataBuffer, LoadedDataVerticesPtrOffset,
-            3, RuntimeTerrainMesh.VertexCount, 200_000, 0.01);
-
-        if (vertices == null)
+        // Single-array fallback. Inline the stages of ReadDoubleIndirectedFloatArray here
+        // so we can pinpoint where the read drops out across the LAND set, which is the
+        // bottleneck on builds where many LANDs have a valid LoadedLandData but the
+        // vertex array can't be resolved (e.g. xex22/xex43/xex44).
+        if (LoadedDataVerticesPtrOffset + 4 > loadedDataBuffer.Length)
         {
+            _meshStageVertexPtrNull++;
+            return null;
+        }
+
+        var ppVertices = BinaryUtils.ReadUInt32BE(loadedDataBuffer, LoadedDataVerticesPtrOffset);
+        if (ppVertices == 0)
+        {
+            _meshStageVertexPtrNull++;
+            return null;
+        }
+
+        if (!_context.IsValidPointer(ppVertices))
+        {
+            _meshStageVertexPtrBad++;
+            _badVertexVaHighBytes[(ppVertices >> 24) & 0xFF]++;
+            return null;
+        }
+
+        var outerFileOffset = _context.VaToFileOffset(ppVertices);
+        if (outerFileOffset == null)
+        {
+            _meshStageVertexOuterDerefFail++;
+            return null;
+        }
+
+        var innerPtrBytes = _context.ReadBytes(outerFileOffset.Value, 4);
+        if (innerPtrBytes == null)
+        {
+            _meshStageVertexOuterDerefFail++;
+            return null;
+        }
+
+        var pVertices = BinaryUtils.ReadUInt32BE(innerPtrBytes);
+        if (pVertices == 0 || !_context.IsValidPointer(pVertices))
+        {
+            _meshStageVertexInnerPtrNullOrBad++;
+            return null;
+        }
+
+        var vertexFileOffset = _context.VaToFileOffset(pVertices);
+        if (vertexFileOffset == null)
+        {
+            _meshStageVertexInnerPtrNullOrBad++;
+            return null;
+        }
+
+        const int totalFloats = RuntimeTerrainMesh.VertexCount * 3;
+        var rawData = _context.ReadBytes(vertexFileOffset.Value, totalFloats * 4);
+        if (rawData == null)
+        {
+            _meshStageVertexDataReadFail++;
+            return null;
+        }
+
+        var vertices = new float[totalFloats];
+        var validCount = 0;
+        for (var i = 0; i < totalFloats; i++)
+        {
+            vertices[i] = BinaryUtils.ReadFloatBE(rawData, i * 4);
+            if (RuntimeMemoryContext.IsNormalFloat(vertices[i]) && Math.Abs(vertices[i]) <= 200_000f)
+            {
+                validCount++;
+            }
+        }
+
+        if (validCount < totalFloats * 0.01)
+        {
+            _meshStageVertexFloatValidationFail++;
             return null;
         }
 
         var terrainMesh = new RuntimeTerrainMesh
         {
             Vertices = vertices,
-            VertexDataOffset = vertexOffset
+            VertexDataOffset = vertexFileOffset.Value
         };
 
         var reconstruction = RuntimeTerrainGridReconstructionService.Reconstruct(terrainMesh);
         if (reconstruction == null)
         {
+            _meshStageGridReconstructFail++;
             return null;
         }
+
+        _meshStageSingleArrayOk++;
 
         var companionValidFraction = Math.Max(0.01,
             reconstruction.SourceSampleCount / (double)RuntimeTerrainMesh.VertexCount * 0.5);
@@ -548,6 +654,13 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
             }
 
             result.Add(new RuntimeTerrainFloatArraySlot(slot, data, dataFileOffset.Value));
+
+            // Histogram the inner pointer's high byte so we can compare against the
+            // bad-VA histogram when diagnosing why other builds fail to resolve vertices.
+            if (ptrOffset == LoadedDataVerticesPtrOffset)
+            {
+                _goodVertexVaHighBytes[(innerPtr >> 24) & 0xFF]++;
+            }
         }
 
         return result;
@@ -643,6 +756,20 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
         var noMesh = 0;
         var withMesh = 0;
 
+        // Reset mesh-extraction stage counters for this batch so the summary log reflects
+        // only this run.
+        _meshStageQuadrantOk = 0;
+        _meshStageSingleArrayOk = 0;
+        _meshStageVertexPtrNull = 0;
+        _meshStageVertexPtrBad = 0;
+        _meshStageVertexOuterDerefFail = 0;
+        _meshStageVertexInnerPtrNullOrBad = 0;
+        _meshStageVertexDataReadFail = 0;
+        _meshStageVertexFloatValidationFail = 0;
+        _meshStageGridReconstructFail = 0;
+        Array.Clear(_badVertexVaHighBytes);
+        Array.Clear(_goodVertexVaHighBytes);
+
         // Entries are pre-filtered to LAND by EsmEditorIdExtractor (FormType varies by build)
         foreach (var entry in entries)
         {
@@ -677,7 +804,42 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
                  "{4} failed (no offset: {5}, no loaded data or bad coords: {6})",
             total, result.Count, withMesh, noMesh, failed, noOffset, failed - noOffset);
 
+        log.Info(
+            "LAND mesh stages: quadOk={0}, singleOk={1}, vertexPtrNull={2}, vertexPtrBad={3}, " +
+            "outerDerefFail={4}, innerPtrNullOrBad={5}, dataReadFail={6}, floatFail={7}, gridFail={8}",
+            _meshStageQuadrantOk, _meshStageSingleArrayOk, _meshStageVertexPtrNull,
+            _meshStageVertexPtrBad, _meshStageVertexOuterDerefFail,
+            _meshStageVertexInnerPtrNullOrBad, _meshStageVertexDataReadFail,
+            _meshStageVertexFloatValidationFail, _meshStageGridReconstructFail);
+
+        if (_meshStageVertexPtrBad > 0)
+        {
+            log.Info("LAND bad vertex VA high-byte histogram (top 5): {0}",
+                FormatVaHistogram(_badVertexVaHighBytes));
+        }
+
+        if (_meshStageQuadrantOk > 0)
+        {
+            log.Info("LAND good vertex VA high-byte histogram (top 5): {0}",
+                FormatVaHistogram(_goodVertexVaHighBytes));
+        }
+
         return result;
+    }
+
+    private static string FormatVaHistogram(int[] highBytes)
+    {
+        var pairs = new List<(int Byte, int Count)>();
+        for (var b = 0; b < highBytes.Length; b++)
+        {
+            if (highBytes[b] > 0)
+            {
+                pairs.Add((b, highBytes[b]));
+            }
+        }
+
+        pairs.Sort((a, b) => b.Count.CompareTo(a.Count));
+        return string.Join(", ", pairs.Take(5).Select(t => $"0x{t.Byte:X2}xxxxxx={t.Count}"));
     }
 
     /// <summary>
@@ -844,12 +1006,14 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
 
     #region World/Land Struct Layout
 
-    // TESObjectLAND: PDB size 44, Debug dump 48, Release dump 60
-    private int LandStructSize => 44 + _s;
+    // TESObjectLAND: PDB size 44, Debug dump 48, Release dump 60. When the probe picks
+    // a LoadedLandData* offset that sits past the default struct end (e.g. +64 / +68 on
+    // a future build), bump the read size accordingly so the pointer field is included.
+    private int LandStructSize => Math.Max(44 + _s, _landLoadedDataPtrOffset + 4);
 
     private int LandParentCellPtrOffset => 32 + _s;
 
-    private int LandLoadedDataPtrOffset => 40 + _s;
+    private int LandLoadedDataPtrOffset => _landLoadedDataPtrOffset;
 
     // LoadedLandData: 164 bytes — standalone struct, identical across all builds
     private const int LoadedDataSize = 164;

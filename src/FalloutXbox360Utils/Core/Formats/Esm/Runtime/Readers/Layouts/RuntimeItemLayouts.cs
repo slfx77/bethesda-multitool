@@ -9,13 +9,6 @@ internal sealed class RuntimeItemLayouts
     private readonly int _s;
 
     /// <summary>
-    ///     Fine-grained shift applied on top of the chosen weapon sound layout variant.
-    ///     Detected by <see cref="Probes.RuntimeWeaponSoundProbe" />. Most builds use 0;
-    ///     used for minor build drift within a layout variant.
-    /// </summary>
-    private readonly int _weapSoundShift;
-
-    /// <summary>
     ///     Selected weapon sound layout variant.
     ///     V2 = FNV-era builds (14 sound fields). V1 = early FO3-derived builds (7 sound
     ///     fields, no Distant / AttackLoop / MeleeBlock / Idle / ModSilenced).
@@ -24,11 +17,9 @@ internal sealed class RuntimeItemLayouts
 
     internal RuntimeItemLayouts(
         int pdbShift,
-        int weaponSoundShift = 0,
         RuntimeWeaponSoundLayoutVariant weaponSoundVariant = RuntimeWeaponSoundLayoutVariant.V2)
     {
         _s = pdbShift;
-        _weapSoundShift = weaponSoundShift;
         _weapSoundVariant = weaponSoundVariant;
     }
 
@@ -104,13 +95,17 @@ internal sealed class RuntimeItemLayouts
     internal const int DnamModValueTwoThreeRelOffset = 192;
 
     // pModObject pointers (V2 only — V1 has no weapon mods)
-    internal int WeapModObjectOneOffset => 864 + _s + _weapSoundShift;
-    internal int WeapModObjectTwoOffset => 868 + _s + _weapSoundShift;
-    internal int WeapModObjectThreeOffset => 872 + _s + _weapSoundShift;
+    internal int WeapModObjectOneOffset => 864 + _s;
+    internal int WeapModObjectTwoOffset => 868 + _s;
+    internal int WeapModObjectThreeOffset => 872 + _s;
 
-    internal int WeapCritDamageOffset => 448 + _s; // PDB 464 OBJ_WEAP_CRITICAL.sDamage
-    internal int WeapCritChanceOffset => 452 + _s; // PDB 468 OBJ_WEAP_CRITICAL.fMultiplier
-    internal int WeapCritEffectPtrOffset => 460 + _s; // PDB 476 OBJ_WEAP_CRITICAL.pEffect
+    // OBJ_WEAP_CRITICAL block: PDB reports +464/+468/+476 but every observed runtime
+    // dump (32/32 in the Phase 1B.5 probe sweep) reads 8 bytes earlier — the previous
+    // RuntimeWeaponCritProbe always produced -8 with high confidence. That -8 is now
+    // baked into these constants (Phase 1B.6); the probe was deleted.
+    internal int WeapCritDamageOffset => 440 + _s;     // PDB 464 OBJ_WEAP_CRITICAL.sDamage      (-8 baked)
+    internal int WeapCritChanceOffset => 444 + _s;     // PDB 468 OBJ_WEAP_CRITICAL.fMultiplier  (-8 baked)
+    internal int WeapCritEffectPtrOffset => 452 + _s;  // PDB 476 OBJ_WEAP_CRITICAL.pEffect      (-8 baked)
 
     // Pickup/Putdown sounds — BGSPickupPutdownSounds, before the variable-size data block.
     // Stable across all observed builds.
@@ -130,60 +125,60 @@ internal sealed class RuntimeItemLayouts
     // Both anchor on Fire3D = 548 (code base 532 + _s 16).
     private bool IsV1 => _weapSoundVariant == RuntimeWeaponSoundLayoutVariant.V1;
 
-    internal int WeapFireSound3DOffset => 532 + _s + _weapSoundShift;
+    internal int WeapFireSound3DOffset => 532 + _s;
 
     internal int WeapFireSoundDistOffset =>
-        IsV1 ? -1 : 536 + _s + _weapSoundShift; // V1 has no Distant slot
+        IsV1 ? -1 : 536 + _s; // V1 has no Distant slot
 
     internal int WeapFireSound2DOffset =>
-        IsV1 ? 536 + _s + _weapSoundShift : 540 + _s + _weapSoundShift;
+        IsV1 ? 536 + _s : 540 + _s;
 
     internal int WeapAttackLoopOffset =>
-        IsV1 ? -1 : 544 + _s + _weapSoundShift; // V1 has no AttackLoop slot
+        IsV1 ? -1 : 544 + _s; // V1 has no AttackLoop slot
 
     internal int WeapDryFireSoundOffset =>
-        IsV1 ? 544 + _s + _weapSoundShift : 548 + _s + _weapSoundShift;
+        IsV1 ? 544 + _s : 548 + _s;
 
     internal int WeapMeleeBlockSoundOffset =>
-        IsV1 ? -1 : 552 + _s + _weapSoundShift; // V1 has no MeleeBlock slot
+        IsV1 ? -1 : 552 + _s; // V1 has no MeleeBlock slot
 
     internal int WeapIdleSoundOffset =>
-        IsV1 ? -1 : 556 + _s + _weapSoundShift; // V1 has no Idle slot
+        IsV1 ? -1 : 556 + _s; // V1 has no Idle slot
 
     internal int WeapEquipSoundOffset =>
-        IsV1 ? 556 + _s + _weapSoundShift : 560 + _s + _weapSoundShift;
+        IsV1 ? 556 + _s : 560 + _s;
 
     internal int WeapUnequipSoundOffset =>
-        IsV1 ? 560 + _s + _weapSoundShift : 564 + _s + _weapSoundShift;
+        IsV1 ? 560 + _s : 564 + _s;
 
     internal int WeapModSilencedSound3DOffset =>
-        IsV1 ? -1 : 568 + _s + _weapSoundShift; // V1 has no ModSilenced slots
+        IsV1 ? -1 : 568 + _s; // V1 has no ModSilenced slots
 
     internal int WeapModSilencedSoundDistOffset =>
-        IsV1 ? -1 : 572 + _s + _weapSoundShift;
+        IsV1 ? -1 : 572 + _s;
 
     internal int WeapModSilencedSound2DOffset =>
-        IsV1 ? -1 : 576 + _s + _weapSoundShift;
+        IsV1 ? -1 : 576 + _s;
 
     internal int WeapImpactDataSetOffset =>
-        IsV1 ? 572 + _s + _weapSoundShift : 580 + _s + _weapSoundShift;
+        IsV1 ? 572 + _s : 580 + _s;
 
     internal int WeapEmbeddedWeaponNodeOffset =>
-        IsV1 ? -1 : 852 + _s + _weapSoundShift; // V1 doesn't have embedded weapon node
+        IsV1 ? -1 : 852 + _s; // V1 doesn't have embedded weapon node
 
     // VATS attack data (V2 only — added by FNV)
     internal int WeapVatsAttackNameOffset =>
-        IsV1 ? -1 : 864 + _s + _weapSoundShift;
+        IsV1 ? -1 : 864 + _s;
 
     internal int WeapVatsDataOffset =>
-        IsV1 ? -1 : 872 + _s + _weapSoundShift;
+        IsV1 ? -1 : 872 + _s;
 
     // Modded model variants (V2 only)
     internal int Weap1stPersonObjectOffset =>
-        IsV1 ? 576 + _s + _weapSoundShift : 584 + _s + _weapSoundShift;
+        IsV1 ? 576 + _s : 584 + _s;
 
     internal int WeapWorldModelMod1Offset =>
-        IsV1 ? -1 : 616 + _s + _weapSoundShift;
+        IsV1 ? -1 : 616 + _s;
 
     #endregion
 
@@ -249,14 +244,9 @@ internal sealed class RuntimeItemLayouts
 
     #endregion
 
-    #region TESObjectCONT — PDB size 156, Debug dump 160, Release dump 172
-
-    internal int ContStructSize => 156 + _s;
-    internal int ContModelPathOffset => 64 + _s;
-    internal int ContScriptPtrOffset => 108 + _s; // TESScriptableForm::pFormScript (base+104, field+4)
-    internal int ContContentsDataOffset => 52 + _s;
-    internal int ContContentsNextOffset => 56 + _s;
-    internal int ContFlagsOffset => 124 + _s;
-
-    #endregion
+    // TESObjectCONT layout intentionally omitted — the consumer (RuntimeContainerReader)
+    // owns its own private offsets (its own ContStructSize / ContModelPathOffset / etc.),
+    // and the earlier copy here was both unused and partially stale (ContModelPathOffset
+    // pointed at cFullName, not cModel). See StaticLayoutOffsetParityTests for the audit
+    // trail.
 }

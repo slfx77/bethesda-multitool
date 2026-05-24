@@ -15,8 +15,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 /// </summary>
 internal sealed class RuntimeItemReader(
     RuntimeMemoryContext context,
-    RuntimeWeaponSoundProbeResult? weaponSoundProbe = null,
-    RuntimeWeaponCritProbeResult? weaponCritProbe = null)
+    RuntimeWeaponSoundProbeResult? weaponSoundProbe = null)
 {
     private readonly RuntimeMemoryContext _context = context;
 
@@ -24,18 +23,11 @@ internal sealed class RuntimeItemReader(
     private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
         MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
 
-    // Shift applied on top of WeapCritDamageOffset / WeapCritChanceOffset /
-    // WeapCritEffectPtrOffset so the OBJ_WEAP_CRITICAL block reads in builds whose
-    // criticalData sub-struct sits at a different relative offset. Falls back to 0
-    // (no shift) when no probe ran or confidence was low.
-    private readonly int _weaponCritShift =
-        weaponCritProbe is { IsHighConfidence: true } ? weaponCritProbe.CritBlockShift : 0;
-
-    // Fine-grained shift on top of the chosen layout (for builds that drift slightly).
-    private readonly int _weaponSoundShift = weaponSoundProbe?.FineShift ?? 0;
-
     // Selected weapon sound layout variant (V1 = early FO3-derived, V2 = FNV).
     // The probe picks whichever pattern-matches better; default to V2 if no probe result.
+    // (RuntimeWeaponSoundProbe's FineShift dimension was deleted in Phase 1B.6 — always
+    // 0 across every observed dump. The WeapCritProbe was deleted in the same phase;
+    // its -8 result was baked into RuntimeItemLayouts.WeapCrit*Offset constants.)
     private readonly RuntimeWeaponSoundLayoutVariant _weaponSoundVariant =
         weaponSoundProbe?.Variant ?? RuntimeWeaponSoundLayoutVariant.V2;
 
@@ -49,10 +41,10 @@ internal sealed class RuntimeItemReader(
     private RuntimeItemLayouts? _layouts;
 
     private RuntimeItemLayouts Layouts => _layouts ??=
-        new RuntimeItemLayouts(_s, _weaponSoundShift, _weaponSoundVariant);
+        new RuntimeItemLayouts(_s, _weaponSoundVariant);
 
     private RuntimeItemFieldHelpers FieldHelpers => _fieldHelpers ??=
-        new RuntimeItemFieldHelpers(_context, Layouts, _weaponCritShift);
+        new RuntimeItemFieldHelpers(_context, Layouts);
 
     private RuntimeContainerReader ContainerReader => _containerReader ??= new RuntimeContainerReader(_context);
 

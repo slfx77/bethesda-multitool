@@ -169,12 +169,12 @@ public sealed class DmpSnippetExtractionRunner(SampleFileFixture samples)
             reader.ReadRuntimeRefr(entry);
         }
 
-        // Probe reads (RuntimeProbeConsistencyTests)
+        // Probe reads (RuntimeProbeConsistencyTests). Magic/Book probes were deleted in
+        // Phase 1B.6 (uniformly zero across all 32 observed dumps); only the live probes
+        // remain in this warmup pass.
         var context = new RuntimeMemoryContext(accessor, fileSize, minidumpInfo);
         RuntimeRaceProbe.Probe(context, allEntries);
         RuntimeEffectProbe.Probe(context, allEntries);
-        RuntimeMagicProbe.Probe(context, allEntries);
-        RuntimeBookProbe.Probe(context, allEntries);
 
         // Per-type reads (RuntimeProbeConsistencyTests)
         foreach (var entry in allEntries.Where(e => e.FormType == 0x0C && e.TesFormOffset.HasValue).Take(50))

@@ -7,22 +7,20 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 /// <summary>
 ///     Typed runtime reader for TESObjectBOOK (BOOK, ~212 bytes, FormType 0x19).
 ///     Reads full name, model, value, weight, book flags/skill, and enchantment pointer.
-///     Supports auto-detected layouts via <see cref="RuntimeBookProbe" />.
+///     Phase 1B.5 confirmed the Group 2 shift is constant across all observed builds —
+///     the previous probe-driven layout selection was deleted in Phase 1B.6 in favour
+///     of the baked-in constants in <see cref="RuntimeBookLayout.CreateDefault" />.
 /// </summary>
 internal sealed class RuntimeBookReader
 {
     private const byte BookFormType = 0x19;
     private const int FormIdOffset = 12;
-    private const int MinProbeMargin = 3;
     private readonly RuntimeMemoryContext _context;
-    private readonly RuntimeBookLayout _layout;
+    private readonly RuntimeBookLayout _layout = RuntimeBookLayout.CreateDefault();
 
-    public RuntimeBookReader(RuntimeMemoryContext context, RuntimeLayoutProbeResult<int[]>? probeResult = null)
+    public RuntimeBookReader(RuntimeMemoryContext context)
     {
         _context = context;
-        _layout = probeResult is { Margin: >= MinProbeMargin }
-            ? RuntimeBookLayout.FromShifts(probeResult.Winner.Layout)
-            : RuntimeBookLayout.CreateDefault();
     }
 
     public BookRecord? ReadRuntimeBook(RuntimeEditorIdEntry entry)
