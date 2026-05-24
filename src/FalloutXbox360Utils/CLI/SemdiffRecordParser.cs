@@ -51,11 +51,22 @@ internal static class SemdiffRecordParser
 
                 if (compressed)
                 {
-                    // Decompress
-                    var decompSize = BinaryUtils.ReadUInt32(data, offset + headerSize, bigEndian);
-                    var compData = data.AsSpan(offset + headerSize + 4, (int)dataSize - 4);
-                    recordData = DecompressZlib(compData.ToArray(), (int)decompSize);
-                    subOffset = 0;
+                    try
+                    {
+                        var decompSize = BinaryUtils.ReadUInt32(data, offset + headerSize, bigEndian);
+                        var compData = data.AsSpan(offset + headerSize + 4, (int)dataSize - 4);
+                        recordData = DecompressZlib(compData.ToArray(), (int)decompSize);
+                        subOffset = 0;
+                    }
+                    catch (InvalidDataException)
+                    {
+                        // Some records have a compressed flag set but the payload isn't
+                        // standard zlib (build artifacts, custom compression, header
+                        // mismatch). Skip these rather than aborting the whole diff so
+                        // the rest of the file can still be analyzed.
+                        offset = recordEnd;
+                        continue;
+                    }
                 }
                 else
                 {
