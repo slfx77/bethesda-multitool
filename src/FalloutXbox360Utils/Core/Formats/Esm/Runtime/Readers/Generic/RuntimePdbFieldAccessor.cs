@@ -93,7 +93,21 @@ internal sealed class RuntimePdbFieldAccessor(RuntimeMemoryContext context)
 
     internal string? ReadBsString(long fileOffset, PdbTypeLayout layout, string name, string? owner = null)
     {
-        var fieldOffset = FindFieldOffset(layout, name, owner);
+        return ReadBsStringAtOffset(fileOffset, name, FindFieldOffset(layout, name, owner));
+    }
+
+    internal string? ReadBsString(long fileOffset, PdbTypeLayout layout, string name, string? owner,
+        RuntimeEditorIdEntry entry)
+    {
+        return ReadBsStringAtOffset(fileOffset, name, FindFieldOffset(layout, name, owner), entry);
+    }
+
+    /// <summary>
+    ///     Pre-computed-offset overload — used by <see cref="PdbStructView" /> when a
+    ///     <see cref="PdbStructView.WithShift" /> band has adjusted the field offset.
+    /// </summary>
+    internal string? ReadBsStringAtOffset(long fileOffset, string name, int? fieldOffset)
+    {
         if (!fieldOffset.HasValue)
         {
             return null;
@@ -104,10 +118,9 @@ internal sealed class RuntimePdbFieldAccessor(RuntimeMemoryContext context)
         return result;
     }
 
-    internal string? ReadBsString(long fileOffset, PdbTypeLayout layout, string name, string? owner,
+    internal string? ReadBsStringAtOffset(long fileOffset, string name, int? fieldOffset,
         RuntimeEditorIdEntry entry)
     {
-        var fieldOffset = FindFieldOffset(layout, name, owner);
         if (!fieldOffset.HasValue)
         {
             return null;

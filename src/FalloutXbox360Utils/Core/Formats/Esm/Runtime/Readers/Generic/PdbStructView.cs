@@ -20,6 +20,7 @@ internal sealed class PdbStructView
     private readonly RuntimePdbFieldAccessor _accessor;
     private readonly RuntimeMemoryContext _context;
     private readonly RuntimeEditorIdEntry? _entry;
+    private List<(int MinOffset, int MaxOffset, int Shift)>? _shifts;
 
     internal PdbStructView(
         RuntimePdbFieldAccessor accessor,
@@ -42,18 +43,61 @@ internal sealed class PdbStructView
     public long FileOffset { get; }
 
     /// <summary>
-    ///     Look up a field's flattened offset by (name, owner). Returns null if the field
-    ///     isn't in the layout — callers should treat that as "field absent" and fall back
-    ///     to a default, matching the prevailing reader idiom.
+    ///     Register a build-specific offset shift for fields whose PDB-declared offset
+    ///     falls in <c>[minOffset, maxOffset]</c>. Used by readers that consume live
+    ///     probe results (Race / Effect / NPC / WorldCell) where the runtime struct
+    ///     layout deviates from the PDB-declared one in known offset bands. Shifts
+    ///     apply to every accessor (Int32/UInt32/Float/BsString/FormIdPointer/list
+    ///     walkers/Offset/Bounds), so callers don't need to add the shift at each
+    ///     call site.
+    ///     <para>
+    ///         Multiple bands may be registered; the FIRST matching range wins.
+    ///         Register narrower/later-band ranges before wider ones if they overlap.
+    ///     </para>
+    ///     <para>Returns <c>this</c> for fluent chaining.</para>
     /// </summary>
-    public int? Offset(string name, string? owner = null)
+    public PdbStructView WithShift(int minOffset, int maxOffset, int shift)
     {
-        return RuntimePdbFieldAccessor.FindFieldOffset(Layout, name, owner);
+        if (shift == 0)
+        {
+            return this; // identity, no point storing
+        }
+
+        _shifts ??= [];
+        _shifts.Add((minOffset, maxOffset, shift));
+        return this;
     }
+
+    private int? ResolveOffset(string name, string? owner)
+    {
+        var pdbOffset = RuntimePdbFieldAccessor.FindFieldOffset(Layout, name, owner);
+        if (pdbOffset is not { } off || _shifts is null)
+        {
+            return pdbOffset;
+        }
+
+        foreach (var (min, max, shift) in _shifts)
+        {
+            if (off >= min && off <= max)
+            {
+                return off + shift;
+            }
+        }
+
+        return off;
+    }
+
+    /// <summary>
+    ///     Look up a field's flattened offset by (name, owner), with any registered
+    ///     <see cref="WithShift" /> band applied. Returns null if the field isn't in
+    ///     the layout — callers should treat that as "field absent" and fall back to a
+    ///     default, matching the prevailing reader idiom.
+    /// </summary>
+    public int? Offset(string name, string? owner = null) => ResolveOffset(name, owner);
 
     public int Int32(string field, string? owner = null, int def = 0)
     {
-        var off = RuntimePdbFieldAccessor.FindFieldOffset(Layout, field, owner);
+        var off = ResolveOffset(field, owner);
         return off is { } o && o + 4 <= Buffer.Length
             ? RuntimePdbFieldAccessor.ReadInt32(Buffer, o)
             : def;
@@ -61,7 +105,7 @@ internal sealed class PdbStructView
 
     public uint UInt32(string field, string? owner = null, uint def = 0)
     {
-        var off = RuntimePdbFieldAccessor.FindFieldOffset(Layout, field, owner);
+        var off = ResolveOffset(field, owner);
         return off is { } o && o + 4 <= Buffer.Length
             ? RuntimePdbFieldAccessor.ReadUInt32(Buffer, o)
             : def;
@@ -69,7 +113,7 @@ internal sealed class PdbStructView
 
     public ushort UInt16(string field, string? owner = null, ushort def = 0)
     {
-        var off = RuntimePdbFieldAccessor.FindFieldOffset(Layout, field, owner);
+        var off = ResolveOffset(field, owner);
         return off is { } o && o + 2 <= Buffer.Length
             ? RuntimePdbFieldAccessor.ReadUInt16(Buffer, o)
             : def;
@@ -77,7 +121,7 @@ internal sealed class PdbStructView
 
     public float Float(string field, string? owner = null, float def = 0f)
     {
-        var off = RuntimePdbFieldAccessor.FindFieldOffset(Layout, field, owner);
+        var off = ResolveOffset(field, owner);
         return off is { } o && o + 4 <= Buffer.Length
             ? RuntimePdbFieldAccessor.ReadFloat(Buffer, o)
             : def;
@@ -85,7 +129,7 @@ internal sealed class PdbStructView
 
     public byte Byte(string field, string? owner = null, byte def = 0)
     {
-        var off = RuntimePdbFieldAccessor.FindFieldOffset(Layout, field, owner);
+        var off = ResolveOffset(field, owner);
         return off is { } o && o < Buffer.Length ? Buffer[o] : def;
     }
 
@@ -105,7 +149,7 @@ internal sealed class PdbStructView
     /// </summary>
     public float FloatRange(string field, string? owner, float min, float max)
     {
-        var off = RuntimePdbFieldAccessor.FindFieldOffset(Layout, field, owner);
+        var off = ResolveOffset(field, owner);
         return off is { } o ? RuntimeMemoryContext.ReadValidatedFloat(Buffer, o, min, max) : 0f;
     }
 
@@ -116,9 +160,10 @@ internal sealed class PdbStructView
     /// </summary>
     public string? BsString(string field, string? owner = null)
     {
+        var off = ResolveOffset(field, owner);
         return _entry != null
-            ? _accessor.ReadBsString(FileOffset, Layout, field, owner, _entry)
-            : _accessor.ReadBsString(FileOffset, Layout, field, owner);
+            ? _accessor.ReadBsStringAtOffset(FileOffset, field, off, _entry)
+            : _accessor.ReadBsStringAtOffset(FileOffset, field, off);
     }
 
     /// <summary>
@@ -127,7 +172,8 @@ internal sealed class PdbStructView
     /// </summary>
     public uint? FormIdPointer(string field, string? owner = null, byte? expectedFormType = null)
     {
-        return _accessor.ReadFormIdPointer(Buffer, Layout, field, owner, expectedFormType);
+        var off = ResolveOffset(field, owner);
+        return off is { } o ? _accessor.ReadPointerToFormId(Buffer, o, expectedFormType) : null;
     }
 
     /// <summary>
@@ -142,7 +188,7 @@ internal sealed class PdbStructView
     /// </summary>
     public List<uint> FormIdSimpleList(string field, string? owner = null, byte? expectedFormType = null)
     {
-        var off = RuntimePdbFieldAccessor.FindFieldOffset(Layout, field, owner);
+        var off = ResolveOffset(field, owner);
         return off is { } o
             ? _accessor.ReadFormIdSimpleList(Buffer, o, expectedFormType)
             : [];
@@ -151,7 +197,7 @@ internal sealed class PdbStructView
     public List<T> SimpleList<T>(string field, string? owner, Func<uint, T?> itemReader)
         where T : class
     {
-        var off = RuntimePdbFieldAccessor.FindFieldOffset(Layout, field, owner);
+        var off = ResolveOffset(field, owner);
         return off is { } o
             ? _accessor.ReadSimpleList(Buffer, o, itemReader)
             : [];

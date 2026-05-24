@@ -105,6 +105,80 @@ public sealed class PdbStructViewTests
         Assert.Null(view.Offset("NotARealField"));
     }
 
+    [Fact]
+    public void WithShift_AppliesShiftToFieldsInBand()
+    {
+        // IMOD has iValue (TESValueForm) at PDB +144 and fWeight (TESWeightForm)
+        // at PDB +152. Write the expected values at the SHIFTED offsets (+148 / +156)
+        // and verify reads pick them up via WithShift(140, 200, +4).
+        var buffer = new byte[0x1000];
+        var fileOffset = OffsetFromVa(StructVa);
+        WriteFormHeader(buffer, fileOffset, TestFormType, 0x00012345);
+        WriteInt32BE(buffer, fileOffset + 148, 999);    // shifted iValue
+        WriteFloatBE(buffer, fileOffset + 156, 7.5f);   // shifted fWeight
+
+        var view = OpenView(buffer, entryFormId: 0x00012345)!
+            .WithShift(140, 200, +4);
+
+        Assert.Equal(999, view.Int32("iValue", "TESValueForm"));
+        Assert.Equal(7.5f, view.Float("fWeight", "TESWeightForm"));
+        Assert.Equal(148, view.Offset("iValue", "TESValueForm"));   // shifted offset surfaced
+    }
+
+    [Fact]
+    public void WithShift_OutOfBandFields_AreNotShifted()
+    {
+        // Shift only applies to offsets in [200, 300]. iValue at PDB +144 is
+        // OUTSIDE the band → no shift → reads from the original PDB-resolved
+        // location.
+        var buffer = new byte[0x1000];
+        var fileOffset = OffsetFromVa(StructVa);
+        WriteFormHeader(buffer, fileOffset, TestFormType, 0x00012345);
+        WriteInt32BE(buffer, fileOffset + 144, 42);    // unshifted PDB location
+        WriteInt32BE(buffer, fileOffset + 148, 999);   // would-be-shifted location
+
+        var view = OpenView(buffer, entryFormId: 0x00012345)!
+            .WithShift(200, 300, +4);
+
+        // iValue (PDB +144) is outside the shift band — reads the original 42, not 999.
+        Assert.Equal(42, view.Int32("iValue", "TESValueForm"));
+    }
+
+    [Fact]
+    public void WithShift_ZeroShift_IsIdentityAndDoesNotAllocate()
+    {
+        // WithShift(_, _, 0) should be a no-op (avoid storing the entry).
+        var buffer = new byte[0x1000];
+        var fileOffset = OffsetFromVa(StructVa);
+        WriteFormHeader(buffer, fileOffset, TestFormType, 0x00012345);
+        WriteInt32BE(buffer, fileOffset + 144, 11);
+
+        var view = OpenView(buffer, entryFormId: 0x00012345)!
+            .WithShift(0, int.MaxValue, 0);
+
+        Assert.Equal(11, view.Int32("iValue", "TESValueForm"));
+        // Calling WithShift with shift=0 must return the view unchanged (fluent identity).
+    }
+
+    [Fact]
+    public void WithShift_FirstMatchingBandWins_WhenBandsOverlap()
+    {
+        // Two overlapping bands; the first matching one wins. Verify that
+        // registration order matters.
+        var buffer = new byte[0x1000];
+        var fileOffset = OffsetFromVa(StructVa);
+        WriteFormHeader(buffer, fileOffset, TestFormType, 0x00012345);
+        WriteInt32BE(buffer, fileOffset + 152, 77);   // PDB +144 +8 (G2)
+        WriteInt32BE(buffer, fileOffset + 148, 88);   // PDB +144 +4 (G1)
+
+        var view = OpenView(buffer, entryFormId: 0x00012345)!
+            .WithShift(140, 200, +8)
+            .WithShift(140, 200, +4);
+
+        // First band registered (+8) wins, reads from +152 → 77.
+        Assert.Equal(77, view.Int32("iValue", "TESValueForm"));
+    }
+
     private static PdbStructView? OpenView(byte[] buffer, uint entryFormId, byte entryFormType = TestFormType)
     {
         var memoryAccessor = new SparseMemoryAccessor();
