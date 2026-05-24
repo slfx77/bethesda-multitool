@@ -1,6 +1,7 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
 using FalloutXbox360Utils.Core.Formats.Esm.Terrain;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
@@ -15,15 +16,14 @@ internal sealed class RuntimeWorldReader
 {
     private readonly RuntimeMemoryContext _context;
     private readonly RuntimeLandVisualReader _landVisualReader;
+    private readonly RuntimePdbFieldAccessor _fields;
 
-    // Build-specific offset shift: Proto Debug PDB + _s = actual dump offset.
-    private readonly int _s;
-
-    // LoadedLandData* offset inside TESObjectLAND. Always 40 + _s = 56 for every build
-    // in scope — the LAND probe (deleted in Phase 1B.6) ran against 32 dumps and never
-    // found anything different from this default, so the probe-driven override path was
-    // removed.
-    private readonly int _landLoadedDataPtrOffset;
+    // Build-specific shift delta vs the PDB baseline (+16). Most builds align with
+    // PDB exactly (shift=0); proto Debug builds shift -4 etc. Routed through
+    // PdbStructView.WithShift so the per-field offset constants below are PDB-aligned
+    // and the shift adjustment happens once per opened view.
+    private const int PdbBaselineShift = 16;
+    private readonly int _shift;
 
     // Stage counters for the terrain-mesh extraction path. Aggregated across a single
     // `ReadAllRuntimeLandData` call so we can pinpoint which step drops a build's
@@ -53,9 +53,15 @@ internal sealed class RuntimeWorldReader
     public RuntimeWorldReader(RuntimeMemoryContext context)
     {
         _context = context;
+        _fields = new RuntimePdbFieldAccessor(context);
         _landVisualReader = new RuntimeLandVisualReader(context);
-        _s = RuntimeBuildOffsets.GetPdbShift(MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
-        _landLoadedDataPtrOffset = 40 + _s;
+        _shift = RuntimeBuildOffsets.GetPdbShift(MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo))
+                 - PdbBaselineShift;
+    }
+
+    private PdbStructView? OpenLandView(RuntimeEditorIdEntry entry)
+    {
+        return _fields.OpenStructView(entry)?.WithShift(0, int.MaxValue, _shift);
     }
 
     /// <summary>
@@ -65,38 +71,19 @@ internal sealed class RuntimeWorldReader
     public RuntimeLoadedLandData? ReadRuntimeLandData(RuntimeEditorIdEntry entry)
     {
         // Caller is responsible for filtering to LAND entries (FormType varies by build)
-        if (entry.TesFormOffset == null)
+        var view = OpenLandView(entry);
+        if (view == null)
         {
             return null;
         }
 
-        var offset = entry.TesFormOffset.Value;
-        if (offset + LandStructSize > _context.FileSize)
-        {
-            return null;
-        }
+        var offset = view.FileOffset;
+        var formId = entry.FormId;
 
-        var buffer = new byte[LandStructSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, LandStructSize);
-        }
-        catch
-        {
-            return null;
-        }
+        var parentCellFormId = view.FormIdPointer("pParentCell", "TESObjectLAND", 0x39);
 
-        // Validate FormID at offset 12 (TESForm: vfptr(4) + cFormType(1) + pad(3) + flags(4) + iFormID(4))
-        var formId = BinaryUtils.ReadUInt32BE(buffer, 12);
-        if (formId != entry.FormId)
-        {
-            return null;
-        }
-
-        var parentCellFormId = _context.FollowPointerToFormId(buffer, LandParentCellPtrOffset, 0x39);
-
-        // Read pLoadedData pointer at offset 56
-        var pLoadedData = BinaryUtils.ReadUInt32BE(buffer, LandLoadedDataPtrOffset);
+        // Read pLoadedData pointer (PDB +56, TESObjectLAND owner). View applies build shift.
+        var pLoadedData = view.UInt32("pLoadedData", "TESObjectLAND");
         if (pLoadedData == 0 || !_context.IsValidPointer(pLoadedData))
         {
             return null;
@@ -1006,14 +993,9 @@ internal sealed class RuntimeWorldReader
 
     #region World/Land Struct Layout
 
-    // TESObjectLAND: PDB size 44, Debug dump 48, Release dump 60. When the probe picks
-    // a LoadedLandData* offset that sits past the default struct end (e.g. +64 / +68 on
-    // a future build), bump the read size accordingly so the pointer field is included.
-    private int LandStructSize => Math.Max(44 + _s, _landLoadedDataPtrOffset + 4);
-
-    private int LandParentCellPtrOffset => 32 + _s;
-
-    private int LandLoadedDataPtrOffset => _landLoadedDataPtrOffset;
+    // TESObjectLAND fields are now resolved via PdbStructView in ReadRuntimeLandData
+    // (pParentCell at PDB +48, pLoadedData at PDB +56, structSize=60). Per-build shift
+    // routed through WithShift(0, int.MaxValue, _shift).
 
     // LoadedLandData: 164 bytes — standalone struct, identical across all builds
     private const int LoadedDataSize = 164;
