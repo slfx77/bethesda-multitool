@@ -1,5 +1,7 @@
+using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Probes;
@@ -1163,15 +1165,63 @@ public sealed class RuntimeOffsetCrossReferenceTests
             }
         }
 
+        // Authority lookup: when LAND records lack WorldspaceFormId (typical for
+        // DMP-scanned data), use cell_worldspace_authority.json to resolve
+        // worldspace via the parent CELL → worldspace mapping. Without this the
+        // exporter dumps every LAND into ws_unknown/.
+        var authorityPath = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "data", "cell_worldspace_authority.json"));
+        var authority = CellWorldspaceAuthorityJson.Load(authorityPath);
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"Authority: {(authority.Cells?.Count ?? 0):N0} cells, "
+            + $"{(authority.WorldspaceNames?.Count ?? 0)} worldspace names "
+            + $"(source: {authority.Path ?? "(none)"})");
+
+        var enhanced = new List<ExtractedLandRecord>(lands.Count);
+        var resolved = 0;
+        foreach (var land in lands)
+        {
+            if (land.WorldspaceFormId is null or 0u
+                && land.ParentCellFormId is { } parentCell
+                && authority.Cells is { } cellMap
+                && cellMap.TryGetValue(parentCell, out var meta)
+                && meta.WorldspaceFormId is { } wsId)
+            {
+                enhanced.Add(land with { WorldspaceFormId = wsId });
+                resolved++;
+            }
+            else
+            {
+                enhanced.Add(land);
+            }
+        }
+
+        var perWs = enhanced
+            .Where(l => l.WorldspaceFormId is > 0)
+            .GroupBy(l => l.WorldspaceFormId!.Value)
+            .Select(g => (Ws: g.Key,
+                Name: authority.WorldspaceNames?.GetValueOrDefault(g.Key) ?? "(no name)",
+                Count: g.Count()))
+            .OrderByDescending(t => t.Count)
+            .ToList();
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"Resolved {resolved}/{lands.Count} LAND→worldspace via authority. Per-worldspace breakdown:");
+        foreach (var (ws, name, count) in perWs)
+        {
+            TestContext.Current.TestOutputHelper!.WriteLine($"  0x{ws:X8} {name,-30} {count}");
+        }
+
         var outputDir = Path.GetFullPath(Path.Combine(
             AppContext.BaseDirectory, "..", "..", "..", "..", "..",
             "TestOutput", "xex5_heightmaps"));
         Directory.CreateDirectory(outputDir);
 
         await LandRecordHeightmapExporter.ExportLandRecordsAsync(
-            lands.ToList(),
+            enhanced,
             outputDir,
-            useColorGradient: true);
+            useColorGradient: true,
+            worldspaceNames: authority.WorldspaceNames);
 
         // Count PNGs produced
         var pngs = Directory.GetFiles(outputDir, "*.png", SearchOption.AllDirectories);
