@@ -1182,19 +1182,24 @@ public sealed class RuntimeOffsetCrossReferenceTests
         var resolved = 0;
         foreach (var land in lands)
         {
-            if (land.WorldspaceFormId is null or 0u
-                && land.ParentCellFormId is { } parentCell
+            // Apply authority for both worldspace AND grid coordinates. DMP-scanned
+            // LAND records typically lack both (the EsmRecordScanner finds LAND
+            // headers but doesn't extract the surrounding CELL context).
+            if (land.ParentCellFormId is { } parentCell
                 && authority.Cells is { } cellMap
-                && cellMap.TryGetValue(parentCell, out var meta)
-                && meta.WorldspaceFormId is { } wsId)
+                && cellMap.TryGetValue(parentCell, out var meta))
             {
-                enhanced.Add(land with { WorldspaceFormId = wsId });
-                resolved++;
+                var newWs = land.WorldspaceFormId is null or 0u ? meta.WorldspaceFormId : land.WorldspaceFormId;
+                var newX = land.CellX ?? meta.GridX;
+                var newY = land.CellY ?? meta.GridY;
+                if (newWs is > 0 || newX.HasValue || newY.HasValue)
+                {
+                    enhanced.Add(land with { WorldspaceFormId = newWs, CellX = newX, CellY = newY });
+                    if (newWs is > 0 && land.WorldspaceFormId is null or 0u) resolved++;
+                    continue;
+                }
             }
-            else
-            {
-                enhanced.Add(land);
-            }
+            enhanced.Add(land);
         }
 
         var perWs = enhanced
@@ -1222,6 +1227,20 @@ public sealed class RuntimeOffsetCrossReferenceTests
             outputDir,
             useColorGradient: true,
             worldspaceNames: authority.WorldspaceNames);
+
+        // Stitched per-worldspace renders (composite of all cells per worldspace)
+        var stitchedDir = Path.Combine(outputDir, "stitched");
+        var stitchedPaths = StitchedHeightmapRenderer.RenderPerWorldspace(
+            enhanced,
+            stitchedDir,
+            scale: 1,
+            worldspaceNames: authority.WorldspaceNames);
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"Wrote {stitchedPaths.Count} stitched worldspace PNG(s):");
+        foreach (var p in stitchedPaths)
+        {
+            TestContext.Current.TestOutputHelper!.WriteLine($"  {p}");
+        }
 
         // Count PNGs produced
         var pngs = Directory.GetFiles(outputDir, "*.png", SearchOption.AllDirectories);
