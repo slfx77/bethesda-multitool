@@ -25,7 +25,7 @@ internal sealed class RuntimeCaravanDeckReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, CdckFormType);
         if (view == null)
         {
             return null;

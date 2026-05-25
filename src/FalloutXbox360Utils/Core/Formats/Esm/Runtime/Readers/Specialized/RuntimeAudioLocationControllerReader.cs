@@ -24,7 +24,7 @@ internal sealed class RuntimeAudioLocationControllerReader(RuntimeMemoryContext 
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, AlocFormType);
         if (view == null)
         {
             return null;

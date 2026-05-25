@@ -21,7 +21,7 @@ internal sealed class RuntimeVoiceTypeReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, VtypFormType);
         if (view == null)
         {
             return null;

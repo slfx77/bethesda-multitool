@@ -25,7 +25,7 @@ internal sealed class RuntimeSurvivalStageReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, expectedFormType);
         if (view == null)
         {
             return null;

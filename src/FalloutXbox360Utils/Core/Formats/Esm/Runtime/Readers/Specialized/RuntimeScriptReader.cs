@@ -46,7 +46,7 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, ScptFormType);
         if (view == null)
         {
             return null;

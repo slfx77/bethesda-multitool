@@ -30,9 +30,6 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime;
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class RuntimeOffsetCrossReferenceTests
 {
-    private static readonly string SnippetDir = Path.Combine(
-        AppContext.BaseDirectory, "..", "..", "..", "TestData", "Dmp");
-
     private static readonly string Xbox360EsmPath = Path.GetFullPath(Path.Combine(
         AppContext.BaseDirectory, "..", "..", "..", "..", "..",
         "Sample", "ESM", "360_final", "FalloutNV.esm"));
@@ -57,7 +54,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task NPC_ESM_intersection_has_enough_records_for_anchoring(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         Assert.True(File.Exists(Xbox360EsmPath), $"ESM not found: {Xbox360EsmPath}");
         var extractor = EsmSubrecordExtractor.LoadCached(Xbox360EsmPath);
 
@@ -111,7 +108,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
         // Unlike ACBS.Level (which gameplay can modify and PC_Level_Mult
         // resolves dynamically), Flags is post-load-stable, so a near-100%
         // parity match is expected when the offset is correct.
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         Assert.True(File.Exists(Xbox360EsmPath), $"ESM not found: {Xbox360EsmPath}");
         var extractor = EsmSubrecordExtractor.LoadCached(Xbox360EsmPath);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
@@ -216,7 +213,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task NPC_RacePtr_offset_lands_on_heap_pointer_or_null(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
 
         var coreShift = RuntimeBuildOffsets.GetPdbShift(MinidumpAnalyzer.DetectBuildType(snippet.MinidumpInfo));
@@ -280,7 +277,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task NPC_VoiceTypePtr_offset_lands_on_heap_pointer_or_null(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
         var coreShift = RuntimeBuildOffsets.GetPdbShift(MinidumpAnalyzer.DetectBuildType(snippet.MinidumpInfo));
         var voiceTypePtrOffset = 80 + coreShift;
@@ -321,7 +318,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task NPC_CombatStylePtr_offset_lands_on_heap_pointer_or_null(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
 
         var npcProbeEntries = snippet.RuntimeEditorIds
@@ -434,7 +431,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task REFR_FormId_at_offset_12_matches_entry_FormId(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
         var refrs = GetRefrSample(snippet, 500);
 
@@ -479,7 +476,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task REFR_BaseObjectPtr_offset_lands_on_heap_pointer(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
         var refrs = GetRefrSample(snippet, 500);
         var isEarlyBuild = RuntimeRefrReader.ProbeIsEarlyBuild(context, refrs);
@@ -508,7 +505,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task REFR_ParentCellPtr_offset_lands_on_heap_pointer_or_null(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
         var refrs = GetRefrSample(snippet, 500);
         var isEarlyBuild = RuntimeRefrReader.ProbeIsEarlyBuild(context, refrs);
@@ -537,7 +534,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task REFR_ExtraListHead_offset_lands_on_heap_pointer_or_null(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
         var refrs = GetRefrSample(snippet, 500);
         var isEarlyBuild = RuntimeRefrReader.ProbeIsEarlyBuild(context, refrs);
@@ -611,7 +608,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task WEAP_EditorIdHashTable_validation_rate_diagnostic(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
         var weaps = snippet.RuntimeEditorIds
             .Where(e => e.FormType == 0x28 && e.TesFormOffset.HasValue)
@@ -643,7 +640,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task WEAP_AmmoPtr_offset_lands_on_heap_pointer_or_null(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
         var weaps = GetValidatedWeapSample(snippet, context, 200);
         Assert.True(weaps.Count >= 20, $"[{snippetName}] Only {weaps.Count} validated WEAPs.");
@@ -667,7 +664,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task WEAP_PickupSound_offset_lands_on_heap_pointer_or_null(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
         var weaps = GetValidatedWeapSample(snippet, context, 200);
         Assert.True(weaps.Count >= 20, $"[{snippetName}] Only {weaps.Count} validated WEAPs.");
@@ -723,7 +720,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task CONT_ContentsData_offset_lands_on_heap_pointer_or_null(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
         var conts = GetValidatedContSample(snippet, context, 200);
         Assert.True(conts.Count >= 10, $"[{snippetName}] Only {conts.Count} validated CONTs.");
@@ -747,7 +744,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task CONT_ContentsNext_offset_lands_on_heap_pointer_or_null(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
         var conts = GetValidatedContSample(snippet, context, 200);
         Assert.True(conts.Count >= 10, $"[{snippetName}] Only {conts.Count} validated CONTs.");
@@ -771,7 +768,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task CONT_Script_offset_lands_on_heap_pointer_or_null(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
         var conts = GetValidatedContSample(snippet, context, 200);
         Assert.True(conts.Count >= 10, $"[{snippetName}] Only {conts.Count} validated CONTs.");
@@ -800,7 +797,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [Fact(Skip = "Diagnostic only — confirmed via Phase 1B.15B that NO G2 shift produces voice FormID resolution on debug_dump; the issue is snippet capture (heap targets not in snippet), not an offset bug. Un-skip to re-run if voice ptr handling regresses.")]
     public async Task RACE_debug_dump_g2_shift_exploration()
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, "debug_dump");
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, "debug_dump");
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
         var raceEntries = snippet.RuntimeEditorIds
             .Where(e => e.FormType == 0x0C && e.TesFormOffset.HasValue)
@@ -895,7 +892,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task DIAL_QuestInfoList_offset_lands_on_heap_pointer_or_null(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
         var dials = GetValidatedSampleByFormType(snippet, context, 0x45, 200);
 
@@ -933,7 +930,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
             return;
         }
 
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
         var infos = GetValidatedSampleByFormType(snippet, context, 0x46, 200);
 
@@ -969,7 +966,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
             return;
         }
 
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
         var infos = GetValidatedSampleByFormType(snippet, context, 0x46, 200);
 
@@ -1013,7 +1010,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task LAND_ReadRuntimeLandData_returns_populated_records(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
 
         // Take 200 to match the extraction runner — only the first 200 LANDs have
@@ -1076,7 +1073,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task LAND_pParentCell_pLoadedData_offsets_land_on_heap_pointer_or_null(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
         var landEntries = snippet.RuntimeLandFormEntries
             .Where(e => e.TesFormOffset.HasValue)
@@ -1116,6 +1113,150 @@ public sealed class RuntimeOffsetCrossReferenceTests
             $"[{snippetName}] LAND pLoadedData pointer-shape {ldRate:P0} below threshold "
             + $"({ldShape}/{landEntries.Count}). First 10 non-pointer values:\n  "
             + string.Join("\n  ", ldNonPtr));
+    }
+
+    [Fact]
+    public async Task LAND_diagnostic_release_beta_xex_dmp()
+    {
+        var dmpPath = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "Sample", "MemoryDump", "Fallout_Release_Beta.xex.dmp"));
+        Assert.True(File.Exists(dmpPath), $"DMP not found: {dmpPath}");
+
+        var analyzer = new MinidumpAnalyzer();
+        var analysis = await analyzer.AnalyzeAsync(dmpPath);
+        Assert.NotNull(analysis.MinidumpInfo);
+        Assert.NotNull(analysis.EsmRecords);
+
+        var scan = analysis.EsmRecords!;
+        using var mmf = System.IO.MemoryMappedFiles.MemoryMappedFile.CreateFromFile(
+            dmpPath, FileMode.Open, null, 0, System.IO.MemoryMappedFiles.MemoryMappedFileAccess.Read);
+        using var accessor = mmf.CreateViewAccessor(0, new FileInfo(dmpPath).Length,
+            System.IO.MemoryMappedFiles.MemoryMappedFileAccess.Read);
+
+        var landEntries = scan.RuntimeLandFormEntries.Where(e => e.TesFormOffset.HasValue).ToList();
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"RuntimeLandFormEntries count: {landEntries.Count}");
+
+        // FormType byte distribution
+        var formTypeCounts = landEntries.GroupBy(e => e.FormType)
+            .Select(g => (FormType: g.Key, Count: g.Count()))
+            .OrderByDescending(t => t.Count).ToList();
+        foreach (var (ft, c) in formTypeCounts)
+        {
+            TestContext.Current.TestOutputHelper!.WriteLine($"  FormType 0x{ft:X2}: {c} entries");
+        }
+
+        // Sample first 5 entries — show raw bytes at PDB-expected offsets +48 / +56
+        var bufRaw = new byte[80];
+        foreach (var entry in landEntries.Take(5))
+        {
+            accessor.ReadArray(entry.TesFormOffset!.Value, bufRaw, 0, 80);
+            var formTypeAtPlus4 = bufRaw[4];
+            var formIdAtPlus12 = BinaryUtils.ReadUInt32BE(bufRaw, 12);
+            var bytesAt48 = BinaryUtils.ReadUInt32BE(bufRaw, 48);
+            var bytesAt56 = BinaryUtils.ReadUInt32BE(bufRaw, 56);
+            TestContext.Current.TestOutputHelper!.WriteLine(
+                $"  0x{entry.FormId:X8} entry.FT=0x{entry.FormType:X2}, "
+                + $"buf[+4]=0x{formTypeAtPlus4:X2}, buf[+12]=0x{formIdAtPlus12:X8} (match={formIdAtPlus12 == entry.FormId}), "
+                + $"buf[+48]=0x{bytesAt48:X8}, buf[+56]=0x{bytesAt56:X8}");
+        }
+    }
+
+    /// <summary>
+    ///     Phase 1B.16 follow-up: real-DMP survey to find any of the 50 DMPs in
+    ///     Sample/MemoryDump/ that have loaded LAND data. Our 5 snippet families
+    ///     are all menu / interior crashes (pLoadedData=0 for every LAND). If a
+    ///     DMP captured during outdoor gameplay exists in the set, this test will
+    ///     find it and validate the LAND reader against real loaded data.
+    ///
+    ///     Output per-DMP diagnostics: total LAND entries, count with pLoadedData
+    ///     pointer-shape, count with cell coords producing valid records.
+    ///
+    ///     Assertion: aggregate across all DMPs has > 0 LAND entries (proves the
+    ///     landFormType detection works on at least some real DMPs) AND > 0
+    ///     populated records (proves the reader works on real loaded data) —
+    ///     OR documents that no DMP in the set has loaded LANDs.
+    /// </summary>
+    [Fact]
+    public async Task LAND_survey_across_all_real_dmps()
+    {
+        var dmpDir = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "Sample", "MemoryDump"));
+        Assert.True(Directory.Exists(dmpDir), $"DMP directory not found: {dmpDir}");
+
+        var dmpPaths = Directory.GetFiles(dmpDir, "*.dmp").OrderBy(p => p).ToList();
+        Assert.True(dmpPaths.Count >= 5, $"Expected >= 5 DMPs, found {dmpPaths.Count}");
+
+        var results = new List<(string Name, int LandCount, int Populated, int LoadedDataNonNull)>();
+        foreach (var dmpPath in dmpPaths)
+        {
+            var name = Path.GetFileName(dmpPath);
+            try
+            {
+                var analyzer = new MinidumpAnalyzer();
+                var analysis = await analyzer.AnalyzeAsync(dmpPath);
+                if (analysis.MinidumpInfo == null || analysis.EsmRecords == null)
+                {
+                    results.Add((name, -1, -1, -1)); // failed to analyze
+                    continue;
+                }
+
+                var scan = analysis.EsmRecords;
+                using var mmf = System.IO.MemoryMappedFiles.MemoryMappedFile.CreateFromFile(
+                    dmpPath, FileMode.Open, null, 0, System.IO.MemoryMappedFiles.MemoryMappedFileAccess.Read);
+                using var accessor = mmf.CreateViewAccessor(0, new FileInfo(dmpPath).Length,
+                    System.IO.MemoryMappedFiles.MemoryMappedFileAccess.Read);
+
+                var reader = RuntimeStructReader.CreateWithAutoDetect(
+                    accessor, new FileInfo(dmpPath).Length, analysis.MinidumpInfo,
+                    scan.RuntimeRefrFormEntries, allEntries: scan.RuntimeEditorIds);
+
+                var landEntries = scan.RuntimeLandFormEntries.Where(e => e.TesFormOffset.HasValue).ToList();
+                var landCount = landEntries.Count;
+
+                var populated = 0;
+                var loadedDataNonNull = 0;
+                foreach (var entry in landEntries.Take(2000))
+                {
+                    var record = reader.ReadRuntimeLandData(entry);
+                    if (record == null) continue;
+                    populated++;
+                    if (record.LoadedDataOffset != 0) loadedDataNonNull++;
+                }
+
+                results.Add((name, landCount, populated, loadedDataNonNull));
+            }
+            catch (Exception ex)
+            {
+                TestContext.Current.TestOutputHelper!.WriteLine($"  {name} FAILED: {ex.GetType().Name}: {ex.Message}");
+                results.Add((name, -2, -2, -2));
+            }
+        }
+
+        // Log per-DMP findings
+        var dmpsWithLands = results.Where(r => r.LandCount > 0).ToList();
+        var dmpsWithLoadedLands = results.Where(r => r.LoadedDataNonNull > 0).ToList();
+
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"Summary: {results.Count} DMPs surveyed, "
+            + $"{dmpsWithLands.Count} with LAND entries, "
+            + $"{dmpsWithLoadedLands.Count} with at least one loaded LAND.");
+
+        foreach (var (name, lands, pop, loaded) in results.Where(r => r.LandCount != 0))
+        {
+            TestContext.Current.TestOutputHelper!.WriteLine(
+                $"  {name,-45} entries={lands,6} populated={pop,5} loaded={loaded,5}");
+        }
+
+        // Assertion: at minimum, SOMETHING in this entire set should have LAND data.
+        // If every DMP returns 0 entries, either the EditorIdLookupTables fix
+        // over-corrected, or no DMP in the set has scannable LAND ESM data.
+        Assert.True(dmpsWithLands.Count > 0,
+            $"All {results.Count} DMPs in Sample/MemoryDump/ returned 0 LAND entries. "
+            + "The EditorIdLookupTables landFormType detection may have over-corrected — "
+            + "every DMP's knownLandFormIds is empty so the fallback skips population.");
     }
 
     // =========================================================================
@@ -1180,7 +1321,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippetsXPdbReaders))]
     public async Task BatchPipeline_NonNullRate(string snippetName, string readerKey, byte formType)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
 
         // Pre-filter to FormID-validated entries: avoids testing readers against
@@ -1281,7 +1422,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task QUST_ScriptPtr_offset_lands_on_heap_pointer_or_null(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
         var qusts = GetValidatedQustSample(snippet, context, 200);
 
@@ -1311,7 +1452,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task QUST_StageList_offset_lands_on_heap_pointer_or_null(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
         var qusts = GetValidatedQustSample(snippet, context, 200);
 
@@ -1341,7 +1482,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task QUST_ObjectiveList_offset_lands_on_heap_pointer_or_null(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
         var qusts = GetValidatedQustSample(snippet, context, 200);
 
@@ -1393,7 +1534,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task ACHR_CurrentProcessPtr_offset_lands_on_heap_pointer_or_null(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
         var achrs = GetAchrSample(snippet, 500);
 
@@ -1421,7 +1562,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task ACHR_BipedPtr_offset_lands_on_heap_pointer_or_null(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
         var achrs = GetAchrSample(snippet, 500);
 
@@ -1484,7 +1625,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task BOOK_EnchantmentPtr_offset_lands_on_heap_pointer_or_null(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
         var books = GetValidatedBookSample(snippet, context, 200);
 
@@ -1520,7 +1661,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task PROJ_ReadRuntimeProjectile_returns_populated_records(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
 
         var projEntries = snippet.RuntimeEditorIds
@@ -1571,7 +1712,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [Fact]
     public async Task PACK_release_dump_rejects_FormType_drifted_IDLE_entries()
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, "release_dump");
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, "release_dump");
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
         var reader = new RuntimePackageReader(context);
 
@@ -1617,7 +1758,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task RACE_ReadRuntimeRace_returns_populated_records(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
 
         var raceEntries = snippet.RuntimeEditorIds
@@ -1742,7 +1883,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task PACK_PackLocPtr_offset_lands_on_heap_pointer_or_null(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
         var packs = GetValidatedPackSample(snippet, context, 200);
         Assert.True(packs.Count >= 20, $"[{snippetName}] Only {packs.Count} validated PACKs.");
@@ -1766,7 +1907,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task PACK_PackTargPtr_offset_lands_on_heap_pointer_or_null(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
         var packs = GetValidatedPackSample(snippet, context, 200);
         Assert.True(packs.Count >= 20, $"[{snippetName}] Only {packs.Count} validated PACKs.");
@@ -1820,7 +1961,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task MGEF_FormId_sanity(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
         var (checkedCount, matches) = ValidateFormIdSanity(snippet, context, formType: 0x10, sampleSize: 300);
 
@@ -1841,7 +1982,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task SPEL_FormId_sanity(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
         var (checkedCount, matches) = ValidateFormIdSanity(snippet, context, formType: 0x14, sampleSize: 300);
 
@@ -1862,7 +2003,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [MemberData(nameof(AllSnippets))]
     public async Task PERK_FormId_sanity(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
         var (checkedCount, matches) = ValidateFormIdSanity(snippet, context, formType: 0x56, sampleSize: 300);
 

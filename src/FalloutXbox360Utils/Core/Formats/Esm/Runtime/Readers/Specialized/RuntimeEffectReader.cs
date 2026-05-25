@@ -90,7 +90,7 @@ internal sealed class RuntimeEffectReader
             FormType = ProjFormType,
             TesFormOffset = fileOffset
         };
-        var view = _fields.OpenStructView(entry)?.WithShift(0, int.MaxValue, _shift);
+        var view = _fields.OpenStructView(entry, ProjFormType)?.WithShift(0, int.MaxValue, _shift);
         if (view == null)
         {
             return null;
@@ -110,7 +110,7 @@ internal sealed class RuntimeEffectReader
             return null;
         }
 
-        var view = _fields.OpenStructView(entry)?.WithShift(0, int.MaxValue, _shift);
+        var view = _fields.OpenStructView(entry, ProjFormType)?.WithShift(0, int.MaxValue, _shift);
         if (view == null)
         {
             return null;

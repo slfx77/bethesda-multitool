@@ -24,7 +24,7 @@ internal sealed class RuntimeClassReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, ClasFormType);
         if (view == null)
         {
             return null;

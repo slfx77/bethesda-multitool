@@ -20,7 +20,18 @@ internal sealed class RuntimePdbFieldAccessor(RuntimeMemoryContext context)
     /// </summary>
     internal PdbStructView? OpenStructView(RuntimeEditorIdEntry entry)
     {
-        var data = ReadStruct(entry);
+        return OpenStructView(entry, entry.FormType);
+    }
+
+    /// <summary>
+    ///     Open a struct view using the layout for <paramref name="pdbFormType" /> instead of
+    ///     the entry's runtime FormType byte. Used by readers whose runtime FormType byte
+    ///     differs from the PDB-declared key due to per-build FormType drift (e.g. LAND lives
+    ///     at runtime byte 0x43 in Fallout_Release_Beta.xex.dmp but PDB key is 0x44).
+    /// </summary>
+    internal PdbStructView? OpenStructView(RuntimeEditorIdEntry entry, byte pdbFormType)
+    {
+        var data = ReadStruct(entry, pdbFormType);
         return data is null
             ? null
             : new PdbStructView(this, _context, data.Value.Layout, data.Value.Buffer, data.Value.FileOffset, entry);
@@ -28,12 +39,18 @@ internal sealed class RuntimePdbFieldAccessor(RuntimeMemoryContext context)
 
     internal (PdbTypeLayout Layout, byte[] Buffer, long FileOffset)? ReadStruct(RuntimeEditorIdEntry entry)
     {
+        return ReadStruct(entry, entry.FormType);
+    }
+
+    internal (PdbTypeLayout Layout, byte[] Buffer, long FileOffset)? ReadStruct(
+        RuntimeEditorIdEntry entry, byte pdbFormType)
+    {
         if (!entry.TesFormOffset.HasValue)
         {
             return null;
         }
 
-        var layout = PdbStructLayouts.Get(entry.FormType);
+        var layout = PdbStructLayouts.Get(pdbFormType);
         if (layout == null)
         {
             return null;

@@ -23,7 +23,7 @@ internal sealed class RuntimeRegionReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, RegnFormType);
         if (view == null)
         {
             return null;

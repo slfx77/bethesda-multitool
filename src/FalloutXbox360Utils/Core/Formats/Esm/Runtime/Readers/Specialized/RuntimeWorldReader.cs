@@ -61,7 +61,14 @@ internal sealed class RuntimeWorldReader
 
     private PdbStructView? OpenLandView(RuntimeEditorIdEntry entry)
     {
-        return _fields.OpenStructView(entry)?.WithShift(0, int.MaxValue, _shift);
+        // Always look up the TESObjectLAND PDB layout (key 0x44 = TLOD/TESObjectLAND)
+        // regardless of entry.FormType. Per-DMP FormType drift means runtime LAND
+        // entries may carry a different byte — e.g. Fallout_Release_Beta.xex.dmp has
+        // LAND at runtime FormType 0x43 (the byte where the PDB says NavMesh lives).
+        // EditorIdLookupTables.landFormType detection identifies the right runtime
+        // byte for filtering; this override ensures the field-resolution machinery
+        // uses the right PDB layout regardless.
+        return _fields.OpenStructView(entry, pdbFormType: 0x44)?.WithShift(0, int.MaxValue, _shift);
     }
 
     /// <summary>

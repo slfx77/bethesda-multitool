@@ -21,7 +21,7 @@ internal sealed class RuntimeMenuIconReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, MicnFormType);
         if (view == null)
         {
             return null;

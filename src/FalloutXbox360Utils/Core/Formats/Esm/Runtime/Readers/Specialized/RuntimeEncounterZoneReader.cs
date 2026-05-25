@@ -22,7 +22,7 @@ internal sealed class RuntimeEncounterZoneReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, EczFormType);
         if (view == null)
         {
             return null;

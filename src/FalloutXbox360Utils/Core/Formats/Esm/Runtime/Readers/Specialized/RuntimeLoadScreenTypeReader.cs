@@ -23,7 +23,7 @@ internal sealed class RuntimeLoadScreenTypeReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, LsctFormType);
         if (view == null)
         {
             return null;

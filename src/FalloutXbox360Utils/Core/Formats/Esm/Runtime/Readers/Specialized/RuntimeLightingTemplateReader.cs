@@ -26,7 +26,7 @@ internal sealed class RuntimeLightingTemplateReader(RuntimeMemoryContext context
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, LgtmFormType);
         if (view == null)
         {
             return null;

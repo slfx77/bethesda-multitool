@@ -25,7 +25,7 @@ internal sealed class RuntimeRecipeReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, RcpeFormType);
         if (view == null)
         {
             return null;

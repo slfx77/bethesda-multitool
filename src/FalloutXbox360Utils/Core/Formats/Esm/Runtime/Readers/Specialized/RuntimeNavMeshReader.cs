@@ -27,7 +27,7 @@ internal sealed class RuntimeNavMeshReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, NavmFormType);
         if (view == null)
         {
             return null;

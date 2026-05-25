@@ -21,7 +21,7 @@ internal sealed class RuntimeReputationReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, RepuFormType);
         if (view == null)
         {
             return null;

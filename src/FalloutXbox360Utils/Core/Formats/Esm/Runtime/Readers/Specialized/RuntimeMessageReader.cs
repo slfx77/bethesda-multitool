@@ -22,7 +22,7 @@ internal sealed class RuntimeMessageReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, MesgFormType);
         if (view == null)
         {
             return null;

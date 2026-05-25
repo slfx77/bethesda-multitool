@@ -27,7 +27,7 @@ internal sealed class RuntimeWeaponModReader
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, ImodFormType);
         if (view == null)
         {
             return null;

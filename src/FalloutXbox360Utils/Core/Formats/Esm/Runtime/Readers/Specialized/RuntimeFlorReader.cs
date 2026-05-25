@@ -35,7 +35,7 @@ internal sealed class RuntimeFlorReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, FlorFormType);
         if (view == null)
         {
             return null;

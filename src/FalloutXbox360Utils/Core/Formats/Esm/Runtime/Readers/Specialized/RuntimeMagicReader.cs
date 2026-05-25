@@ -36,7 +36,7 @@ internal sealed class RuntimeMagicReader
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, MgefFormType);
         if (view == null)
         {
             return null;
@@ -123,7 +123,7 @@ internal sealed class RuntimeMagicReader
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, SpelFormType);
         if (view == null)
         {
             return null;
@@ -175,7 +175,7 @@ internal sealed class RuntimeMagicReader
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, EnchFormType);
         if (view == null)
         {
             return null;
@@ -250,7 +250,7 @@ internal sealed class RuntimeMagicReader
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, PerkFormType);
         if (view == null)
         {
             return null;

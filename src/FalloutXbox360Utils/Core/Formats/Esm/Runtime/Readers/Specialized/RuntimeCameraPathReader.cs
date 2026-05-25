@@ -21,7 +21,7 @@ internal sealed class RuntimeCameraPathReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, CpthFormType);
         if (view == null)
         {
             return null;

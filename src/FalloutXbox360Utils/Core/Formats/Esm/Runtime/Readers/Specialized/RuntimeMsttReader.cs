@@ -35,7 +35,7 @@ internal sealed class RuntimeMsttReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, MsttFormType);
         if (view == null)
         {
             return null;

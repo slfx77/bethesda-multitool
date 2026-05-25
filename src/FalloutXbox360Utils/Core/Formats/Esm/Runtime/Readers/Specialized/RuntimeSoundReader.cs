@@ -24,7 +24,7 @@ internal sealed class RuntimeSoundReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, SounFormType);
         if (view == null)
         {
             return null;

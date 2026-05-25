@@ -23,7 +23,7 @@ internal sealed class RuntimeDebrisReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, DebrFormType);
         if (view == null)
         {
             return null;

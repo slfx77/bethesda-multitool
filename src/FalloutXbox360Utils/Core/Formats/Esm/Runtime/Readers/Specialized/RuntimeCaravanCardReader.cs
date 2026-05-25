@@ -22,7 +22,7 @@ internal sealed class RuntimeCaravanCardReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, CcrdFormType);
         if (view == null)
         {
             return null;

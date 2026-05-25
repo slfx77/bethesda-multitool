@@ -21,7 +21,7 @@ internal sealed class RuntimeImpactDataReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, IpctFormType);
         if (view == null)
         {
             return null;

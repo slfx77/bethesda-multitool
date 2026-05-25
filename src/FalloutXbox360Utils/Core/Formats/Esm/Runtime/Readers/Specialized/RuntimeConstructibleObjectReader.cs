@@ -23,7 +23,7 @@ internal sealed class RuntimeConstructibleObjectReader(RuntimeMemoryContext cont
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, CobjFormType);
         if (view == null)
         {
             return null;

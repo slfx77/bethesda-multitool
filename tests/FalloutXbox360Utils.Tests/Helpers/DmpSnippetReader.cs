@@ -17,6 +17,14 @@ internal sealed class DmpSnippetReader
 {
     private static readonly ConcurrentDictionary<string, Lazy<Task<DmpSnippetReader>>> SnippetCache = new();
 
+    /// <summary>
+    ///     Standard location for snippet binaries + manifests checked into the repo.
+    ///     Tests pass this to <see cref="LoadCachedAsync"/> as the <c>snippetDir</c> argument;
+    ///     previously every snippet-consuming test file declared its own private copy.
+    /// </summary>
+    public static readonly string DefaultSnippetDir = Path.Combine(
+        AppContext.BaseDirectory, "..", "..", "..", "TestData", "Dmp");
+
     private DmpSnippetReader(
         SparseMemoryAccessor accessor,
         MinidumpInfo minidumpInfo,

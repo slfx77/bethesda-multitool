@@ -66,7 +66,7 @@ internal sealed class RuntimeRaceReader
             return null;
         }
 
-        var view = _fields.OpenStructView(entry)
+        var view = _fields.OpenStructView(entry, RaceFormType)
             ?.WithShift(G1MinOffset, G1MaxOffset, _g1Shift)
             .WithShift(G2MinOffset, G2MaxOffset, _g2Shift);
         if (view == null)

@@ -22,7 +22,7 @@ internal sealed class RuntimeIngredientReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, IngrFormType);
         if (view == null)
         {
             return null;

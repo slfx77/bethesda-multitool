@@ -25,7 +25,7 @@ internal sealed class RuntimeWaterReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, WatrFormType);
         if (view == null)
         {
             return null;

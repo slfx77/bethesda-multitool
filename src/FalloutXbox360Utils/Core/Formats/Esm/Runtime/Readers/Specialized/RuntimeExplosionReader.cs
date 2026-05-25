@@ -25,7 +25,7 @@ internal sealed class RuntimeExplosionReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var view = _fields.OpenStructView(entry);
+        var view = _fields.OpenStructView(entry, ExplFormType);
         if (view == null)
         {
             return null;
