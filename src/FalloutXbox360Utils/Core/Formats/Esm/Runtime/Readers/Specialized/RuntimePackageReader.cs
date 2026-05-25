@@ -58,6 +58,23 @@ internal sealed class RuntimePackageReader(RuntimeMemoryContext context)
         // Read inline PackageSchedule at +56+_s (8 bytes)
         var schedule = ReadSchedule(buffer);
 
+        // FormType-drift guard. When RuntimeBuildOffsets.DetectFormTypeDrift fails
+        // to remap entries (e.g. release_dump, where the ESM has no PACKs at 0x49
+        // to cross-reference), IDLE animation TESForms reach this reader at the
+        // PACK FormType byte. Their TESForm header passes the FormID + packType
+        // gates above, producing an all-null PackageRecord stub that downstream
+        // (PackEncoder.EncodeNew) emits as a zero-filled PLDT/PTDT record.
+        // Real PACKs have pPackLoc that is either NULL or a valid Xbox 360 heap
+        // pointer (0x40000000-0x7FFFFFFF); IDLE structs uniformly read
+        // 0x00CBCB17 (uninit fill) at +60. (pPackTarg @ +64 isn't a reliable
+        // discriminator — IDLE structs happen to have a heap pointer there too,
+        // overlapping with the next field in their own layout.)
+        var pLocPtr = BinaryUtils.ReadUInt32BE(buffer, PackLocPtrOffset);
+        if (pLocPtr != 0 && !_context.IsValidPointer(pLocPtr))
+        {
+            return null;
+        }
+
         // Follow pPackLoc pointer to read PackageLocation
         var location = ReadLocation(buffer);
 

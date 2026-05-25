@@ -906,6 +906,45 @@ public sealed class RuntimeOffsetCrossReferenceTests
             + $"({populated}/{projEntries.Count}).");
     }
 
+    /// <summary>
+    ///     Phase 1B.15A regression guard: on release_dump, FormType 0x49 contains
+    ///     IDLE animations due to FormType drift that DetectFormTypeDrift fails to
+    ///     remap. Before the fix, RuntimePackageReader.ReadRuntimePackage accepted
+    ///     these as PACKs and downstream emitted zero-filled PLDT/PTDT records.
+    ///     After the fix, the pPackLoc + pPackTarg pointer-shape gate rejects
+    ///     them, so the count of accepted records at 0x49 should drop significantly.
+    /// </summary>
+    [Fact]
+    public async Task PACK_release_dump_rejects_FormType_drifted_IDLE_entries()
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, "release_dump");
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var reader = new RuntimePackageReader(context);
+
+        // Raw entries at FormType 0x49: includes both real PACKs (zero in release_dump
+        // because real PACKs are at 0x4A there) AND drift-mislabeled IDLE entries.
+        var entries0x49 = snippet.RuntimeEditorIds
+            .Where(e => e.FormType == 0x49 && e.TesFormOffset.HasValue)
+            .Take(500)
+            .ToList();
+
+        Assert.True(entries0x49.Count >= 50,
+            $"Expected ≥ 50 entries at FormType 0x49 in release_dump (got {entries0x49.Count}). "
+            + "If this drops, the snippet may have changed.");
+
+        var accepted = entries0x49.Count(e => reader.ReadRuntimePackage(e) is not null);
+
+        // Pre-fix: roughly equal to validation-passing count (~100s of IDLE stubs).
+        // Post-fix: should be 0 or very few (since release_dump's real PACKs are
+        // at 0x4A, not 0x49). Threshold: accept < 10% of raw entries.
+        var acceptanceRate = (double)accepted / entries0x49.Count;
+        Assert.True(acceptanceRate < 0.1,
+            $"[release_dump] PACK acceptance rate at FormType 0x49 is {acceptanceRate:P0} "
+            + $"({accepted}/{entries0x49.Count}). Should be < 10% — real PACKs in this "
+            + "snippet are at 0x4A, not 0x49. If this rate is high, the FormType-drift "
+            + "gate in RuntimePackageReader.ReadRuntimePackage has regressed.");
+    }
+
     // =========================================================================
     // RACE (TESRace) production-pipeline audit
     // =========================================================================
