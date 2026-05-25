@@ -994,6 +994,33 @@ public sealed class RuntimeOffsetCrossReferenceTests
     }
 
     // =========================================================================
+    // DEFERRED audit targets (Phase 1B.15E investigation)
+    // =========================================================================
+    //
+    // RuntimeLandVisualReader (terrain mesh) — uses double-deref pointer
+    //   chains (ppVertices → pVertices → float[]) reading large texture/normal/
+    //   color arrays from LoadedLandData. No simple pointer-shape anchor
+    //   applies because:
+    //     - LAND records aren't in snippet.RuntimeEditorIds (no EditorID)
+    //     - LAND-keyed snippet manifest data (RuntimeLandFormEntries) isn't
+    //       serialized in DmpSnippetManifest
+    //     - The double-deref chains target heap regions snippets typically
+    //       don't capture
+    //   Status: deferred. Audit will need DmpSnippetManifest extraction
+    //   expansion to surface RuntimeLandFormEntries, then can apply
+    //   pipeline-test pattern against ReadAllRuntimeLandData.
+    //
+    // RuntimeCellReader (worldspace pCellMap walk) — primary code path is
+    //   NiTPointerMap traversal from TESWorldSpace, not per-CELL reads.
+    //   Population of TESObjectCELL entries in EditorIDs is sparse (CELLs
+    //   often don't have explicit EditorIDs). The cell map walk relies on
+    //   probe-driven WorldCell shifts. Per the Phase 1B.5 probe sweep, this
+    //   shift varies per-snippet — auditing the walk would require
+    //   instrumenting the production pipeline rather than per-entry checks.
+    //   Status: deferred. Would need a dedicated test harness for the cell
+    //   map walk; ScopedCellMapWalkTests or similar (out of scope here).
+
+    // =========================================================================
     // Batch pipeline-test for PdbStructView-driven readers (Phase 1B.15D)
     // =========================================================================
     // For ~15 specialized readers that use PdbStructView with name-based field
@@ -1021,7 +1048,10 @@ public sealed class RuntimeOffsetCrossReferenceTests
         ["Recipe",         (byte)0x6A],
         ["MenuIcon",       (byte)0x05],
         ["HeadPart",       (byte)0x09],
-        ["EncounterZone",  (byte)0x61]
+        ["EncounterZone",  (byte)0x61],
+        // Phase 1B.15E additions (best-effort):
+        ["Eyes",           (byte)0x0B],
+        ["Hair",           (byte)0x0A]
     ];
 
     public static IEnumerable<object[]> AllSnippetsXPdbReaders
@@ -1074,6 +1104,8 @@ public sealed class RuntimeOffsetCrossReferenceTests
                 "MenuIcon" => entries.Count(e => new RuntimeMenuIconReader(context).ReadRuntimeMenuIcon(e) != null),
                 "HeadPart" => entries.Count(e => new RuntimeHeadPartReader(context).ReadRuntimeHeadPart(e) != null),
                 "EncounterZone" => entries.Count(e => new RuntimeEncounterZoneReader(context).ReadRuntimeEncounterZone(e) != null),
+                "Eyes" => entries.Count(e => new RuntimeCharacterAppearanceReader(context).ReadRuntimeEyes(e) != null),
+                "Hair" => entries.Count(e => new RuntimeCharacterAppearanceReader(context).ReadRuntimeHair(e) != null),
                 _ => throw new InvalidOperationException($"Unknown reader key: {readerKey}")
             };
         }
