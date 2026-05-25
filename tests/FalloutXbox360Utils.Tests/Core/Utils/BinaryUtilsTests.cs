@@ -103,159 +103,59 @@ public class BinaryUtilsTests
 
     #region ReadUInt32BE Tests
 
-    [Fact]
-    public void ReadUInt32BE_ReadsBigEndianCorrectly()
+    [Theory]
+    [InlineData(new byte[] { 0x12, 0x34, 0x56, 0x78 }, 0, 0x12345678u)]
+    [InlineData(new byte[] { 0x00, 0x00, 0x12, 0x34, 0x56, 0x78 }, 2, 0x12345678u)]
+    public void ReadUInt32BE_ReadsBigEndian(byte[] data, int offset, uint expected)
     {
-        // Arrange - 0x12345678 in big-endian
-        byte[] data = [0x12, 0x34, 0x56, 0x78];
-
-        // Act
-        var result = BinaryUtils.ReadUInt32BE(data);
-
-        // Assert
-        Assert.Equal(0x12345678u, result);
-    }
-
-    [Fact]
-    public void ReadUInt32BE_WithOffset_ReadsCorrectly()
-    {
-        // Arrange
-        byte[] data = [0x00, 0x00, 0x12, 0x34, 0x56, 0x78];
-
-        // Act
-        var result = BinaryUtils.ReadUInt32BE(data, 2);
-
-        // Assert
-        Assert.Equal(0x12345678u, result);
+        Assert.Equal(expected, BinaryUtils.ReadUInt32BE(data, offset));
     }
 
     #endregion
 
     #region ReadUInt16LE/BE Tests
 
-    [Fact]
-    public void ReadUInt16LE_ReadsLittleEndianCorrectly()
+    [Theory]
+    [InlineData(new byte[] { 0x34, 0x12 }, false, (ushort)0x1234)] // LE
+    [InlineData(new byte[] { 0x12, 0x34 }, true, (ushort)0x1234)]  // BE
+    public void ReadUInt16_ReadsCorrectly(byte[] data, bool bigEndian, ushort expected)
     {
-        // Arrange - 0x1234 in little-endian
-        byte[] data = [0x34, 0x12];
-
-        // Act
-        var result = BinaryUtils.ReadUInt16LE(data);
-
-        // Assert
-        Assert.Equal((ushort)0x1234, result);
-    }
-
-    [Fact]
-    public void ReadUInt16BE_ReadsBigEndianCorrectly()
-    {
-        // Arrange - 0x1234 in big-endian
-        byte[] data = [0x12, 0x34];
-
-        // Act
-        var result = BinaryUtils.ReadUInt16BE(data);
-
-        // Assert
-        Assert.Equal((ushort)0x1234, result);
+        var actual = bigEndian ? BinaryUtils.ReadUInt16BE(data) : BinaryUtils.ReadUInt16LE(data);
+        Assert.Equal(expected, actual);
     }
 
     #endregion
 
     #region ReadUInt64LE/BE Tests
 
-    [Fact]
-    public void ReadUInt64LE_ReadsLittleEndianCorrectly()
+    [Theory]
+    [InlineData(new byte[] { 0xF0, 0xDE, 0xBC, 0x9A, 0x78, 0x56, 0x34, 0x12 }, false, 0x123456789ABCDEF0ul)] // LE
+    [InlineData(new byte[] { 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0 }, true, 0x123456789ABCDEF0ul)]  // BE
+    public void ReadUInt64_ReadsCorrectly(byte[] data, bool bigEndian, ulong expected)
     {
-        // Arrange - 0x123456789ABCDEF0 in little-endian
-        byte[] data = [0xF0, 0xDE, 0xBC, 0x9A, 0x78, 0x56, 0x34, 0x12];
-
-        // Act
-        var result = BinaryUtils.ReadUInt64LE(data);
-
-        // Assert
-        Assert.Equal(0x123456789ABCDEF0ul, result);
-    }
-
-    [Fact]
-    public void ReadUInt64BE_ReadsBigEndianCorrectly()
-    {
-        // Arrange - 0x123456789ABCDEF0 in big-endian
-        byte[] data = [0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0];
-
-        // Act
-        var result = BinaryUtils.ReadUInt64BE(data);
-
-        // Assert
-        Assert.Equal(0x123456789ABCDEF0ul, result);
+        var actual = bigEndian ? BinaryUtils.ReadUInt64BE(data) : BinaryUtils.ReadUInt64LE(data);
+        Assert.Equal(expected, actual);
     }
 
     #endregion
 
     #region IsPrintableText Tests
 
-    [Fact]
-    public void IsPrintableText_AllPrintable_ReturnsTrue()
+    [Theory]
+    [InlineData("Hello, World!", true)]   // all printable
+    [InlineData("Hello\tWorld", true)]    // tabs allowed
+    [InlineData("Hello\r\nWorld", true)]  // newlines allowed
+    public void IsPrintableText_TextInputs(string text, bool expected)
     {
-        // Arrange
-        var data = "Hello, World!"u8.ToArray();
-
-        // Act
-        var result = BinaryUtils.IsPrintableText(data);
-
-        // Assert
-        Assert.True(result);
+        Assert.Equal(expected, BinaryUtils.IsPrintableText(System.Text.Encoding.UTF8.GetBytes(text)));
     }
 
-    [Fact]
-    public void IsPrintableText_WithTabs_ReturnsTrue()
+    [Theory]
+    [InlineData(new byte[] { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05 })] // binary
+    [InlineData(new byte[] { })]                                     // empty
+    public void IsPrintableText_NonTextInputs_ReturnFalse(byte[] data)
     {
-        // Arrange
-        var data = "Hello\tWorld"u8.ToArray();
-
-        // Act
-        var result = BinaryUtils.IsPrintableText(data);
-
-        // Assert
-        Assert.True(result);
-    }
-
-    [Fact]
-    public void IsPrintableText_WithNewlines_ReturnsTrue()
-    {
-        // Arrange
-        var data = "Hello\r\nWorld"u8.ToArray();
-
-        // Act
-        var result = BinaryUtils.IsPrintableText(data);
-
-        // Assert
-        Assert.True(result);
-    }
-
-    [Fact]
-    public void IsPrintableText_BinaryData_ReturnsFalse()
-    {
-        // Arrange - mostly non-printable bytes
-        byte[] data = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05];
-
-        // Act
-        var result = BinaryUtils.IsPrintableText(data);
-
-        // Assert
-        Assert.False(result);
-    }
-
-    [Fact]
-    public void IsPrintableText_EmptyData_ReturnsFalse()
-    {
-        // Arrange
-        byte[] data = [];
-
-        // Act
-        var result = BinaryUtils.IsPrintableText(data);
-
-        // Assert
-        Assert.False(result);
+        Assert.False(BinaryUtils.IsPrintableText(data));
     }
 
     #endregion

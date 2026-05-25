@@ -5,7 +5,13 @@ using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Parsers;
 
-public class EsmRecordParserTests
+/// <summary>
+///     Tests for <see cref="EsmRecordScanner"/> — heuristic byte-pattern scanning that finds
+///     EDID / GMST / SCTX / SCRO subrecords in raw ESM data without full record parsing.
+///     Distinct from the byte-level <c>EsmParserTests</c> (binary headers) and the semantic
+///     <c>RecordParserTests</c> (typed NPC/creature parsing).
+/// </summary>
+public class EsmRecordScannerTests
 {
     [Fact]
     public void ScanForRecords_EmptyData_ReturnsEmptyResult()

@@ -1,6 +1,7 @@
 using FalloutXbox360Utils.Core.Formats.Dds;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
+using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
@@ -14,13 +15,13 @@ public sealed class FaceGenHeadShaderFamilyResolverTests
         const string generatedPath = @"facegen_egt\00000001.dds";
 
         using var resolver = new NifTextureResolver();
-        resolver.InjectTexture(diffusePath, CreateTexture(10, 20, 30, 255));
+        resolver.InjectTexture(diffusePath, TestTextures.Single(10, 20, 30, 255));
         resolver.InjectTexture(
             FaceGenHeadShaderFamilyResolver.BuildSiblingPath(diffusePath, "_n")!,
-            CreateTexture(127, 127, 255, 255));
+            TestTextures.Single(127, 127, 255, 255));
         resolver.InjectTexture(
             FaceGenHeadShaderFamilyResolver.BuildSiblingPath(diffusePath, "_sk")!,
-            CreateTexture(64, 32, 16, 255));
+            TestTextures.Single(64, 32, 16, 255));
 
         var submesh = new RenderableSubmesh
         {
@@ -54,8 +55,4 @@ public sealed class FaceGenHeadShaderFamilyResolverTests
         Assert.Equal<byte>(255, composed.Pixels[3]);
     }
 
-    private static DecodedTexture CreateTexture(byte r, byte g, byte b, byte a)
-    {
-        return DecodedTexture.FromBaseLevel([r, g, b, a], 1, 1);
-    }
 }

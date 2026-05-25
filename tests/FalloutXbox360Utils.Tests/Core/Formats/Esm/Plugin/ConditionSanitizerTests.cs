@@ -2,6 +2,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
 using Xunit;
+using static FalloutXbox360Utils.Tests.Helpers.DialogueConditionTestConstants;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Plugin;
 
@@ -12,11 +13,6 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Plugin;
 /// </summary>
 public class ConditionSanitizerTests
 {
-    private const ushort GetActorValue = 0x000E;     // Param1 = ActorValue enum (NOT a FormID)
-    private const ushort GetIsRace = 0x0045;         // Param1 = Race FormID
-    private const ushort GetIsID = 0x0048;           // Param1 = Object FormID
-    private const ushort GetQuestRunning = 0x0038;   // Param1 = Quest FormID
-    private const ushort HasPerk = 0x01C1;           // Param1 = Perk FormID, Param2 = Int
 
     [Fact]
     public void Filter_keeps_condition_when_Param1_is_ActorValue_enum_with_non_formid_value()

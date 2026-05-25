@@ -69,91 +69,38 @@ public class AssetPathAndStringTests
 
     #region IsAssetPath - Invalid Cases
 
-    [Fact]
-    public void IsAssetPath_NoSeparator_ReturnsFalse()
+    [Theory]
+    [InlineData("file.nif")]                       // no separator
+    [InlineData("meshes\\weapons\\pistol")]        // no extension
+    [InlineData("meshes\\weapons\\pistol.xyz")]    // unknown extension
+    [InlineData("meshes\\weapons\\pistol.")]       // dot at end
+    [InlineData("")]                                // empty
+    [InlineData(".nif")]                            // just extension
+    public void IsAssetPath_Invalid_ReturnsFalse(string path)
     {
-        Assert.False(EsmStringDetector.IsAssetPath("file.nif"));
-    }
-
-    [Fact]
-    public void IsAssetPath_NoExtension_ReturnsFalse()
-    {
-        Assert.False(EsmStringDetector.IsAssetPath("meshes\\weapons\\pistol"));
-    }
-
-    [Fact]
-    public void IsAssetPath_UnknownExtension_ReturnsFalse()
-    {
-        Assert.False(EsmStringDetector.IsAssetPath("meshes\\weapons\\pistol.xyz"));
-    }
-
-    [Fact]
-    public void IsAssetPath_DotAtEnd_ReturnsFalse()
-    {
-        Assert.False(EsmStringDetector.IsAssetPath("meshes\\weapons\\pistol."));
-    }
-
-    [Fact]
-    public void IsAssetPath_NoContent_ReturnsFalse()
-    {
-        Assert.False(EsmStringDetector.IsAssetPath(""));
-    }
-
-    [Fact]
-    public void IsAssetPath_JustExtension_ReturnsFalse()
-    {
-        Assert.False(EsmStringDetector.IsAssetPath(".nif"));
+        Assert.False(EsmStringDetector.IsAssetPath(path));
     }
 
     #endregion
 
     #region CleanAssetPath
 
-    [Fact]
-    public void CleanAssetPath_BackslashesNormalized()
+    [Theory]
+    [InlineData("meshes\\weapons\\pistol.nif", "meshes/weapons/pistol.nif")] // backslashes normalized
+    [InlineData("///meshes/pistol.nif", "meshes/pistol.nif")]                // leading slashes removed
+    [InlineData("Meshes\\Weapons\\Pistol.NIF", "meshes/weapons/pistol.nif")] // lowercased
+    [InlineData("", "")]                                                      // empty in, empty out
+    [InlineData("meshes/pistol.nif", "meshes/pistol.nif")]                   // already clean
+    [InlineData("meshes/weapons\\pistol.nif", "meshes/weapons/pistol.nif")]  // mixed slashes
+    public void CleanAssetPath_Normalizes(string input, string expected)
     {
-        var result = EsmStringDetector.CleanAssetPath("meshes\\weapons\\pistol.nif");
-        Assert.Equal("meshes/weapons/pistol.nif", result);
-    }
-
-    [Fact]
-    public void CleanAssetPath_LeadingSlashesRemoved()
-    {
-        var result = EsmStringDetector.CleanAssetPath("///meshes/pistol.nif");
-        Assert.Equal("meshes/pistol.nif", result);
-    }
-
-    [Fact]
-    public void CleanAssetPath_ConvertedToLowercase()
-    {
-        var result = EsmStringDetector.CleanAssetPath("Meshes\\Weapons\\Pistol.NIF");
-        Assert.Equal("meshes/weapons/pistol.nif", result);
-    }
-
-    [Fact]
-    public void CleanAssetPath_EmptyString_ReturnsEmpty()
-    {
-        Assert.Equal("", EsmStringDetector.CleanAssetPath(""));
+        Assert.Equal(expected, EsmStringDetector.CleanAssetPath(input));
     }
 
     [Fact]
     public void CleanAssetPath_Null_ReturnsNull()
     {
         Assert.Null(EsmStringDetector.CleanAssetPath(null!));
-    }
-
-    [Fact]
-    public void CleanAssetPath_AlreadyClean_ReturnsUnchanged()
-    {
-        var result = EsmStringDetector.CleanAssetPath("meshes/pistol.nif");
-        Assert.Equal("meshes/pistol.nif", result);
-    }
-
-    [Fact]
-    public void CleanAssetPath_MixedSlashes_Normalized()
-    {
-        var result = EsmStringDetector.CleanAssetPath("meshes/weapons\\pistol.nif");
-        Assert.Equal("meshes/weapons/pistol.nif", result);
     }
 
     #endregion

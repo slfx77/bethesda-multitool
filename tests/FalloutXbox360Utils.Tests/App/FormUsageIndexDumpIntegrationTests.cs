@@ -6,13 +6,10 @@ namespace FalloutXbox360Utils.Tests.App;
 
 public class FormUsageIndexDumpIntegrationTests
 {
-    private static readonly string SnippetDir = Path.Combine(
-        AppContext.BaseDirectory, "..", "..", "..", "TestData", "Dmp");
-
     [Fact]
     public async Task RuntimeReader_OnReleaseDump_ReadsDialogueConditionsFromStructs()
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, "release_dump");
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, "release_dump");
 
         var runtimeEntries = snippet.RuntimeEditorIds
             .Where(entry => entry.FormType == 0x46 && entry.TesFormOffset.HasValue)

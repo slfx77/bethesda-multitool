@@ -1,19 +1,15 @@
-using System.IO.MemoryMappedFiles;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
-using FalloutXbox360Utils.Core.Minidump;
-using FalloutXbox360Utils.Core.Utils;
 using Xunit;
 using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime;
 
-public sealed class RuntimeParityStructReaderTests : IDisposable
+public sealed class RuntimeParityStructReaderTests : RuntimeStructReaderTestBase
 {
     private const int DataSize = 16 * 1024;
-    private const uint HeapBaseVa = 0x40000000;
 
     private const byte ExtraOwnershipType = 0x21;
     private const byte ExtraPersistentCellType = 0x0C;
@@ -30,29 +26,6 @@ public sealed class RuntimeParityStructReaderTests : IDisposable
     private const byte ExtraEncounterZoneType = 0x74;
     private const byte ExtraLinkedRefType = 0x51;
     private const byte ExtraLinkedRefChildrenType = 0x52;
-
-    private MemoryMappedViewAccessor? _accessor;
-    private MemoryMappedFile? _mmf;
-    private string? _tempFilePath;
-
-    public void Dispose()
-    {
-        GC.SuppressFinalize(this);
-        _accessor?.Dispose();
-        _mmf?.Dispose();
-
-        if (_tempFilePath != null && File.Exists(_tempFilePath))
-        {
-            try
-            {
-                File.Delete(_tempFilePath);
-            }
-            catch
-            {
-                // Best-effort temp cleanup only.
-            }
-        }
-    }
 
     [Fact]
     public void ReadRuntimeFormList_WithSimpleList_ReturnsOrderedFormIds()
@@ -1234,34 +1207,6 @@ public sealed class RuntimeParityStructReaderTests : IDisposable
         Assert.Equal(1, census.TypeCounts[ExtraRadiusType]);
     }
 
-    private RuntimeStructReader CreateReader(byte[] data)
-    {
-        _tempFilePath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        File.WriteAllBytes(_tempFilePath, data);
-
-        _mmf = MemoryMappedFile.CreateFromFile(_tempFilePath, FileMode.Open, null, data.Length,
-            MemoryMappedFileAccess.Read);
-        _accessor = _mmf.CreateViewAccessor(0, data.Length, MemoryMappedFileAccess.Read);
-
-        var minidumpInfo = new MinidumpInfo
-        {
-            IsValid = true,
-            ProcessorArchitecture = 0x03,
-            NumberOfStreams = 1,
-            MemoryRegions =
-            [
-                new MinidumpMemoryRegion
-                {
-                    VirtualAddress = Xbox360MemoryUtils.VaToLong(HeapBaseVa),
-                    Size = data.Length,
-                    FileOffset = 0
-                }
-            ]
-        };
-
-        return new RuntimeStructReader(_accessor, data.Length, minidumpInfo);
-    }
-
     private static RuntimeEditorIdEntry MakeEntry(string editorId, uint formId, byte formType, long tesFormOffset)
     {
         return new RuntimeEditorIdEntry
@@ -1271,18 +1216,6 @@ public sealed class RuntimeParityStructReaderTests : IDisposable
             FormType = formType,
             TesFormOffset = tesFormOffset
         };
-    }
-
-    private static uint FileOffsetToVa(int fileOffset)
-    {
-        return HeapBaseVa + (uint)fileOffset;
-    }
-
-    private static void WriteTesFormHeader(byte[] data, int fileOffset, uint vtable, byte formType, uint formId)
-    {
-        WriteUInt32BE(data, fileOffset, vtable);
-        data[fileOffset + 4] = formType;
-        WriteUInt32BE(data, fileOffset + 12, formId);
     }
 
     private static void WriteBSStringT(byte[] data, int bstFileOffset, uint stringVa, string text,

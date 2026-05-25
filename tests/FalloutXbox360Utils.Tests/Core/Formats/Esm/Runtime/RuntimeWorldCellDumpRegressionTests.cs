@@ -1,4 +1,3 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 
@@ -6,96 +5,35 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime;
 
 public sealed class RuntimeWorldCellDumpRegressionTests
 {
-    private static readonly string SnippetDir = Path.Combine(
-        AppContext.BaseDirectory, "..", "..", "..", "TestData", "Dmp");
-
-    [Fact]
-    public async Task Probe_OnDebugDump_IsHighConfidence()
+    // Two probe-outcome families across the captured snippets:
+    //   - "high confidence" — debug / memdebug builds where the probe identifies a
+    //     specific (worldShift, cellShift) candidate above the noise floor.
+    //   - "release-beta family" — release builds where the probe can't reach high
+    //     confidence but still produces a non-empty candidate set with signals.
+    [Theory]
+    [InlineData("debug_dump", true)]
+    [InlineData("memdebug_dump", true)]
+    [InlineData("release_dump", false)]
+    [InlineData("xex4_dump", false)]
+    [InlineData("xex44_dump", false)]
+    public async Task Probe_OnSnippet_MatchesExpectedConfidence(string snippetName, bool expectHighConfidence)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, "debug_dump");
-        var result = ProbeSnippet(snippet);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
+        var result = RuntimeWorldCellProbe.Probe(snippet);
 
         Assert.NotNull(result.Probe);
-        Assert.True(result.Probe!.IsHighConfidence);
-        Assert.True(result.WorldCellMapCount > 0);
-    }
 
-    [Fact]
-    public async Task Probe_OnReleaseDump_ReturnsCellBackedCandidate()
-    {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, "release_dump");
-        var result = ProbeSnippet(snippet);
-
-        AssertReleaseBetaFamilyProbe(result);
-    }
-
-    [Fact]
-    public async Task Probe_OnReleaseDumpXex4_ReturnsCellBackedCandidate()
-    {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, "xex4_dump");
-        var result = ProbeSnippet(snippet);
-
-        AssertReleaseBetaFamilyProbe(result);
-    }
-
-    [Fact]
-    public async Task Probe_OnReleaseDumpXex44_ReturnsCellBackedCandidate()
-    {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, "xex44_dump");
-        var result = ProbeSnippet(snippet);
-
-        AssertReleaseBetaFamilyProbe(result);
-    }
-
-    [Fact]
-    public async Task Probe_OnMemDebugDump_IsHighConfidence()
-    {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, "memdebug_dump");
-        var result = ProbeSnippet(snippet);
-
-        Assert.NotNull(result.Probe);
-        Assert.True(result.Probe!.IsHighConfidence);
-        Assert.True(result.WorldCellMapCount > 0);
-    }
-
-    private static void AssertReleaseBetaFamilyProbe(
-        (RuntimeWorldCellLayoutProbeResult? Probe, int WorldCellMapCount, int CellEntryCount, int RuntimeCellSignalCount
-            ) result)
-    {
-        Assert.NotNull(result.Probe);
-        Assert.True(result.Probe!.WinnerScore > 0);
-        Assert.True(result.Probe.SampleCount > 0);
-        Assert.True(result.CellEntryCount > 0);
-        Assert.True(result.RuntimeCellSignalCount > 0);
-    }
-
-    private static (RuntimeWorldCellLayoutProbeResult? Probe, int WorldCellMapCount, int CellEntryCount, int
-        RuntimeCellSignalCount) ProbeSnippet(DmpSnippetReader snippet)
-    {
-        var worldEntries = snippet.RuntimeEditorIds
-            .Where(entry => entry.FormType == 0x41 && entry.TesFormOffset.HasValue)
-            .ToList();
-        var cellEntries = snippet.RuntimeEditorIds
-            .Where(entry => entry.FormType == 0x39 && entry.TesFormOffset.HasValue)
-            .ToList();
-
-        Assert.True(worldEntries.Count > 0 || cellEntries.Count > 0, "Expected runtime WRLD or CELL entries.");
-
-        var reader = RuntimeStructReader.CreateWithAutoDetect(
-            snippet.Accessor,
-            snippet.FileSize,
-            snippet.MinidumpInfo,
-            snippet.RuntimeRefrFormEntries,
-            null,
-            worldEntries,
-            cellEntries);
-
-        var worldCellMaps = reader.ReadAllWorldspaceCellMaps(worldEntries);
-        var runtimeCellSignalCount = cellEntries
-            .Select(reader.ReadRuntimeCell)
-            .Where(cell => cell is not null)
-            .Count(cell => cell!.WorldspaceFormId is > 0 || cell.WaterHeight is not null || cell.Flags != 0);
-
-        return (reader.WorldCellLayoutProbe, worldCellMaps.Count, cellEntries.Count, runtimeCellSignalCount);
+        if (expectHighConfidence)
+        {
+            Assert.True(result.Probe!.IsHighConfidence);
+            Assert.True(result.WorldCellMapCount > 0);
+        }
+        else
+        {
+            Assert.True(result.Probe!.WinnerScore > 0);
+            Assert.True(result.Probe.SampleCount > 0);
+            Assert.True(result.CellEntryCount > 0);
+            Assert.True(result.RuntimeCellSignalCount > 0);
+        }
     }
 }

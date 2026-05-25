@@ -1,5 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Dds;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
+using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
@@ -102,7 +103,7 @@ public sealed class NifScanlineRasterizerTests
             width,
             height,
             -1f,
-            CreateTexture(1, 1, (0, 0, 255, 255)),
+            TestTextures.FromTexels(1, 1, (0, 0, 255, 255)),
             NifAlphaRenderMode.Opaque);
         RasterizeQuad(
             pixels,
@@ -112,7 +113,7 @@ public sealed class NifScanlineRasterizerTests
             width,
             height,
             0f,
-            CreateTexture(
+            TestTextures.FromTexels(
                 2,
                 1,
                 (255, 0, 0, 255),
@@ -126,7 +127,7 @@ public sealed class NifScanlineRasterizerTests
             width,
             height,
             1f,
-            CreateTexture(
+            TestTextures.FromTexels(
                 2,
                 1,
                 (0, 0, 0, 255),
@@ -162,7 +163,7 @@ public sealed class NifScanlineRasterizerTests
             width,
             height,
             0f,
-            CreateTexture(1, 1, (200, 160, 140, 255)),
+            TestTextures.FromTexels(1, 1, (200, 160, 140, 255)),
             NifAlphaRenderMode.Opaque);
         RasterizeQuad(
             pixels,
@@ -172,7 +173,7 @@ public sealed class NifScanlineRasterizerTests
             width,
             height,
             1f,
-            CreateTexture(1, 1, (20, 10, 5, 128)),
+            TestTextures.FromTexels(1, 1, (20, 10, 5, 128)),
             NifAlphaRenderMode.Blend,
             true);
 
@@ -206,7 +207,7 @@ public sealed class NifScanlineRasterizerTests
             width,
             height,
             0f,
-            CreateTexture(1, 1, (0, 0, 255, 255)),
+            TestTextures.FromTexels(1, 1, (0, 0, 255, 255)),
             NifAlphaRenderMode.Opaque);
         RasterizeQuad(
             pixels,
@@ -216,7 +217,7 @@ public sealed class NifScanlineRasterizerTests
             width,
             height,
             1f,
-            CreateTexture(
+            TestTextures.FromTexels(
                 2,
                 1,
                 (0, 255, 0, 0),
@@ -434,26 +435,6 @@ public sealed class NifScanlineRasterizerTests
                 AlphaRenderMode = renderMode
             };
         }
-    }
-
-    private static DecodedTexture CreateTexture(
-        int width,
-        int height,
-        params (byte R, byte G, byte B, byte A)[] texels)
-    {
-        Assert.Equal(width * height, texels.Length);
-
-        var pixels = new byte[texels.Length * 4];
-        for (var i = 0; i < texels.Length; i++)
-        {
-            var offset = i * 4;
-            pixels[offset] = texels[i].R;
-            pixels[offset + 1] = texels[i].G;
-            pixels[offset + 2] = texels[i].B;
-            pixels[offset + 3] = texels[i].A;
-        }
-
-        return DecodedTexture.FromBaseLevel(pixels, width, height);
     }
 
     private static (byte R, byte G, byte B, byte A) ReadPixel(byte[] pixels, int width, int x, int y)

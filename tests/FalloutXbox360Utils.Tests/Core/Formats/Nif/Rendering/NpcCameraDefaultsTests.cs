@@ -50,51 +50,39 @@ public sealed class NpcCameraDefaultsTests
             StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
-    public void RenderNpcCommand_DefaultElevationResultIsImplicit()
+    [Theory]
+    [InlineData(false, true)]   // no --elevation → Implicit
+    [InlineData(true, false)]   // explicit --elevation 12 → not Implicit
+    public void RenderNpcCommand_ElevationImplicitMatchesArgs(bool passElevation, bool expectedImplicit)
     {
         var command = RenderNpcCommand.Create();
         var elevationOption = Assert.Single(
             command.Options.OfType<Option<float>>(),
             option => option.Name.Contains("elevation", StringComparison.OrdinalIgnoreCase));
 
-        var parseResult = command.Parse([
+        var args = new List<string>
+        {
             "meshes.bsa",
             "--esm", "FalloutNV.esm",
             "--output", "TestOutput",
             "--npc", "VMS38RedLucy"
-        ]);
+        };
+        if (passElevation)
+        {
+            args.Add("--elevation");
+            args.Add("12");
+        }
 
-        var elevationResult = parseResult.GetResult(elevationOption);
-
-        Assert.NotNull(elevationResult);
-        Assert.True(elevationResult.Implicit);
-    }
-
-    [Fact]
-    public void RenderNpcCommand_ExplicitElevationResultIsNotImplicit()
-    {
-        var command = RenderNpcCommand.Create();
-        var elevationOption = Assert.Single(
-            command.Options.OfType<Option<float>>(),
-            option => option.Name.Contains("elevation", StringComparison.OrdinalIgnoreCase));
-
-        var parseResult = command.Parse([
-            "meshes.bsa",
-            "--esm", "FalloutNV.esm",
-            "--output", "TestOutput",
-            "--npc", "VMS38RedLucy",
-            "--elevation", "12"
-        ]);
-
-        var elevationResult = parseResult.GetResult(elevationOption);
+        var elevationResult = command.Parse(args.ToArray()).GetResult(elevationOption);
 
         Assert.NotNull(elevationResult);
-        Assert.False(elevationResult.Implicit);
+        Assert.Equal(expectedImplicit, elevationResult.Implicit);
     }
 
-    [Fact]
-    public void RenderNpcCommand_WireframeOptionParsesWithoutErrors()
+    [Theory]
+    [InlineData("--wireframe")]
+    [InlineData("--compare-race-fgts")]
+    public void RenderNpcCommand_FlagOptionParsesWithoutErrors(string flag)
     {
         var command = RenderNpcCommand.Create();
 
@@ -103,23 +91,7 @@ public sealed class NpcCameraDefaultsTests
             "--esm", "FalloutNV.esm",
             "--output", "TestOutput",
             "--npc", "VMS38RedLucy",
-            "--wireframe"
-        ]);
-
-        Assert.Empty(parseResult.Errors);
-    }
-
-    [Fact]
-    public void RenderNpcCommand_CompareRaceTextureFgtsOptionParsesWithoutErrors()
-    {
-        var command = RenderNpcCommand.Create();
-
-        var parseResult = command.Parse([
-            "meshes.bsa",
-            "--esm", "FalloutNV.esm",
-            "--output", "TestOutput",
-            "--npc", "VMS38RedLucy",
-            "--compare-race-fgts"
+            flag
         ]);
 
         Assert.Empty(parseResult.Errors);

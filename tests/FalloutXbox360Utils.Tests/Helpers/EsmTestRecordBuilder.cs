@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Text;
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
@@ -327,6 +328,30 @@ internal static class EsmTestRecordBuilder
         }
 
         return buffer;
+    }
+
+    /// <summary>
+    ///     Sibling of <see cref="BuildRecordBytes"/> for NIF/asset record-scanner tests.
+    ///     Builds the synthetic record buffer AND the matching <see cref="AnalyzerRecordInfo"/>
+    ///     header that scanner Process() methods need. Returns both via tuple destructuring:
+    ///     <c>var (recordBytes, record) = EsmTestRecordBuilder.BuildAnalyzerRecord(...);</c>
+    ///     DataSize/TotalSize/Offset are derived from the buffer length so they stay in sync.
+    /// </summary>
+    public static (byte[] RecordBytes, AnalyzerRecordInfo Info) BuildAnalyzerRecord(
+        uint formId, string recordType, bool bigEndian,
+        params (string sig, byte[] data)[] subrecords)
+    {
+        var recordBytes = BuildRecordBytes(formId, recordType, bigEndian, subrecords);
+        var info = new AnalyzerRecordInfo
+        {
+            Signature = recordType,
+            FormId = formId,
+            Flags = 0,
+            DataSize = (uint)(recordBytes.Length - 24),
+            Offset = 0,
+            TotalSize = (uint)recordBytes.Length
+        };
+        return (recordBytes, info);
     }
 
     /// <summary>Write a subrecord header via BinaryWriter (dual-endian).</summary>

@@ -6,13 +6,10 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime;
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class RuntimeMagicDumpRegressionTests
 {
-    private static readonly string SnippetDir = Path.Combine(
-        AppContext.BaseDirectory, "..", "..", "..", "TestData", "Dmp");
-
     [Fact]
     public async Task RuntimePerkEntries_ReadRankFromInlineListItem()
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, "xex44_dump");
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, "xex44_dump");
         var reader = snippet.CreateStructReader();
         var entry = Assert.Single(snippet.RuntimeEditorIds, e =>
             e.FormType == 0x56 &&

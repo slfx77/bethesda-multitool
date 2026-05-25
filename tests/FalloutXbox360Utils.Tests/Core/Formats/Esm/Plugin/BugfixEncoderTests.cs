@@ -12,6 +12,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using Xunit;
+using static FalloutXbox360Utils.Tests.Helpers.EsmTestRecordMakers;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Plugin;
 
@@ -63,30 +64,33 @@ public class BugfixEncoderTests
         Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "ENIT");
     }
 
-    [Fact]
-    public void WeapEncoder_EncodeNew_NonNoneEquipmentType_EmitsEtypAsInt32Enum()
+    // ETYP is emitted as a 4-byte little-endian int32 for any non-None equipment type;
+    // EquipmentType.None means "unassigned" and the subrecord is suppressed entirely.
+    [Theory]
+    [InlineData(EquipmentType.SmallGuns)]
+    [InlineData(EquipmentType.BigGuns)]
+    [InlineData(EquipmentType.None)]
+    public void WeapEncoder_EncodeNew_EtypEmissionDependsOnEquipmentType(EquipmentType equipmentType)
     {
         var weap = new WeaponRecord
         {
             FormId = 0x800,
             EditorId = "Weap",
-            EquipmentType = EquipmentType.SmallGuns
+            EquipmentType = equipmentType
         };
 
         var encoded = WeapEncoder.EncodeNew(weap);
 
-        var etyp = Assert.Single(encoded.Subrecords, s => s.Signature == "ETYP");
-        Assert.Equal(4, etyp.Bytes.Length);
-        Assert.Equal((int)EquipmentType.SmallGuns,
-            BinaryPrimitives.ReadInt32LittleEndian(etyp.Bytes));
-    }
-
-    [Fact]
-    public void WeapEncoder_EncodeNew_NoneEquipmentType_OmitsEtyp()
-    {
-        var weap = new WeaponRecord { FormId = 0x800, EditorId = "Weap", EquipmentType = EquipmentType.None };
-        var encoded = WeapEncoder.EncodeNew(weap);
-        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "ETYP");
+        if (equipmentType == EquipmentType.None)
+        {
+            Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "ETYP");
+        }
+        else
+        {
+            var etyp = Assert.Single(encoded.Subrecords, s => s.Signature == "ETYP");
+            Assert.Equal(4, etyp.Bytes.Length);
+            Assert.Equal((int)equipmentType, BinaryPrimitives.ReadInt32LittleEndian(etyp.Bytes));
+        }
     }
 
     [Fact]
@@ -313,6 +317,29 @@ public class BugfixEncoderTests
         Assert.Equal(0x123456u, BinaryPrimitives.ReadUInt32LittleEndian(tplt.Bytes));
         var acbs = Assert.Single(encoded.Subrecords, s => s.Signature == "ACBS");
         Assert.Equal(0x0001, BinaryPrimitives.ReadUInt16LittleEndian(acbs.Bytes.AsSpan(22, 2)));
+    }
+
+    [Fact]
+    public void NpcEncoder_EncodeNew_PrefersMasterFaceTemplateOverRaceFallback()
+    {
+        var npc = new NpcRecord
+        {
+            FormId = 0x800,
+            EditorId = "Npc",
+            Template = 0x00F00F00,
+            FaceNpc = 0x000A1234,
+            Race = 0x33184,
+            Stats = MakeMinimalAcbs()
+        };
+
+        var encoded = NpcEncoder.EncodeNew(
+            npc,
+            new HashSet<uint> { 0x000A1234, 0x123456 },
+            new Dictionary<uint, uint> { [0x33184] = 0x123456 });
+
+        Assert.True(PluginBuilder.NpcHasRenderableTemplate(encoded.Subrecords));
+        var tplt = Assert.Single(encoded.Subrecords, s => s.Signature == "TPLT");
+        Assert.Equal(0x000A1234u, BinaryPrimitives.ReadUInt32LittleEndian(tplt.Bytes));
     }
 
     [Fact]
@@ -608,53 +635,28 @@ public class BugfixEncoderTests
     // InfoEncoder defensive PNAM filtering
     // ====================================================================================
 
-    [Fact]
-    public void InfoEncoder_EncodeNew_PreviousInfoZero_OmitsPnam()
+    // PNAM (previous-info FormID pointer) is omitted for three sentinel values that the
+    // engine cannot resolve: 0 (no link), 0xFFFFFFFF (the "unset" marker), and a
+    // self-reference (would loop forever). Any other value rides through verbatim.
+    [Theory]
+    [InlineData(0u, null)]                  // no link
+    [InlineData(0xFFFFFFFFu, null)]         // sentinel "unset"
+    [InlineData(0x800u, null)]              // self-reference (FormId == PreviousInfo)
+    [InlineData(0x12345u, 0x12345u)]        // valid link → PNAM emits with that FormID
+    public void InfoEncoder_EncodeNew_PreviousInfoPnamEmissionPolicy(uint previousInfo, uint? expectedPnamFormId)
     {
-        var info = new DialogueRecord { FormId = 0x800, PreviousInfo = 0u };
+        var info = new DialogueRecord { FormId = 0x800, PreviousInfo = previousInfo };
         var encoded = InfoEncoder.EncodeNew(info);
-        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "PNAM");
+
+        if (expectedPnamFormId is null)
+        {
+            Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "PNAM");
+        }
+        else
+        {
+            var pnam = Assert.Single(encoded.Subrecords, s => s.Signature == "PNAM");
+            Assert.Equal(expectedPnamFormId.Value, BinaryPrimitives.ReadUInt32LittleEndian(pnam.Bytes));
+        }
     }
 
-    [Fact]
-    public void InfoEncoder_EncodeNew_PreviousInfoSentinelFFFFFFFF_OmitsPnam()
-    {
-        var info = new DialogueRecord { FormId = 0x800, PreviousInfo = 0xFFFFFFFFu };
-        var encoded = InfoEncoder.EncodeNew(info);
-        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "PNAM");
-    }
-
-    [Fact]
-    public void InfoEncoder_EncodeNew_PreviousInfoSelfReference_OmitsPnam()
-    {
-        var info = new DialogueRecord { FormId = 0x800, PreviousInfo = 0x800u };
-        var encoded = InfoEncoder.EncodeNew(info);
-        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "PNAM");
-    }
-
-    [Fact]
-    public void InfoEncoder_EncodeNew_PreviousInfoValid_EmitsPnam()
-    {
-        var info = new DialogueRecord { FormId = 0x800, PreviousInfo = 0x12345u };
-        var encoded = InfoEncoder.EncodeNew(info);
-        var pnam = Assert.Single(encoded.Subrecords, s => s.Signature == "PNAM");
-        Assert.Equal(0x12345u, BinaryPrimitives.ReadUInt32LittleEndian(pnam.Bytes));
-    }
-
-    private static ActorBaseSubrecord MakeMinimalAcbs()
-    {
-        return new ActorBaseSubrecord(
-            Flags: 0,
-            FatigueBase: 0,
-            BarterGold: 0,
-            Level: 1,
-            CalcMin: 1,
-            CalcMax: 1,
-            SpeedMultiplier: 100,
-            KarmaAlignment: 0f,
-            DispositionBase: 0,
-            TemplateFlags: 0,
-            Offset: 0,
-            IsBigEndian: false);
-    }
 }

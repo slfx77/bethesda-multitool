@@ -1,7 +1,7 @@
 using System.Numerics;
 using FalloutXbox360Utils.CLI;
-using FalloutXbox360Utils.Core.Formats.Nif;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
+using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
@@ -9,7 +9,7 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
 public sealed class NifEyeTransformTests
 {
     private const float PositionEpsilon = 0.01f;
-    private static readonly string SampleRoot = FindSampleRoot();
+    private static readonly string SampleRoot = NifSampleLoader.FindCharactersSampleRoot();
     private static readonly string EyeLeftPath = Path.Combine(SampleRoot, "head", "eyelefthuman.nif");
     private static readonly string EyeRightPath = Path.Combine(SampleRoot, "head", "eyerighthuman.nif");
     private static readonly string HeadHumanPath = Path.Combine(SampleRoot, "head", "headhuman.nif");
@@ -20,7 +20,7 @@ public sealed class NifEyeTransformTests
     public void HumanEye_RootCompensation_RestoresBindPoseGeometry(string relativeEyePath)
     {
         var eyePath = Path.Combine(SampleRoot, relativeEyePath);
-        var eyeNif = LoadNif(eyePath);
+        var eyeNif = NifSampleLoader.LoadNif(eyePath);
         Assert.NotNull(eyeNif);
 
         var extracted = NifGeometryExtractor.Extract(eyeNif.Value.Data, eyeNif.Value.Info);
@@ -41,7 +41,7 @@ public sealed class NifEyeTransformTests
                 out var compensation),
             $"Expected non-identity root compensation for '{Path.GetFileName(eyePath)}'");
 
-        Assert.False(MatrixNearlyEqual(compensation, Matrix4x4.Identity, 0.001f));
+        Assert.False(MatrixAssert.NearlyEqual(compensation, Matrix4x4.Identity, 0.001f));
         Assert.True(MathF.Abs(before.CenterX - bindPoseBounds.CenterX) > 1f ||
                     MathF.Abs(before.CenterZ - bindPoseBounds.CenterZ) > 1f);
 
@@ -110,7 +110,7 @@ public sealed class NifEyeTransformTests
 
     private static HeadReference LoadHeadReference()
     {
-        var headNif = LoadNif(HeadHumanPath);
+        var headNif = NifSampleLoader.LoadNif(HeadHumanPath);
         Assert.NotNull(headNif);
 
         var bones = NifGeometryExtractor.ExtractNamedBoneTransforms(headNif.Value.Data, headNif.Value.Info);
@@ -136,7 +136,7 @@ public sealed class NifEyeTransformTests
         Matrix4x4 eyeAttachmentTransform,
         bool applyRootCompensation)
     {
-        var eyeNif = LoadNif(eyePath);
+        var eyeNif = NifSampleLoader.LoadNif(eyePath);
         Assert.NotNull(eyeNif);
 
         var eyeModel = NifGeometryExtractor.Extract(eyeNif.Value.Data, eyeNif.Value.Info);
@@ -195,31 +195,6 @@ public sealed class NifEyeTransformTests
         }
     }
 
-    private static bool MatrixNearlyEqual(Matrix4x4 left, Matrix4x4 right, float epsilon)
-    {
-        return NearlyEqual(left.M11, right.M11, epsilon) &&
-               NearlyEqual(left.M12, right.M12, epsilon) &&
-               NearlyEqual(left.M13, right.M13, epsilon) &&
-               NearlyEqual(left.M14, right.M14, epsilon) &&
-               NearlyEqual(left.M21, right.M21, epsilon) &&
-               NearlyEqual(left.M22, right.M22, epsilon) &&
-               NearlyEqual(left.M23, right.M23, epsilon) &&
-               NearlyEqual(left.M24, right.M24, epsilon) &&
-               NearlyEqual(left.M31, right.M31, epsilon) &&
-               NearlyEqual(left.M32, right.M32, epsilon) &&
-               NearlyEqual(left.M33, right.M33, epsilon) &&
-               NearlyEqual(left.M34, right.M34, epsilon) &&
-               NearlyEqual(left.M41, right.M41, epsilon) &&
-               NearlyEqual(left.M42, right.M42, epsilon) &&
-               NearlyEqual(left.M43, right.M43, epsilon) &&
-               NearlyEqual(left.M44, right.M44, epsilon);
-    }
-
-    private static bool NearlyEqual(float left, float right, float epsilon)
-    {
-        return MathF.Abs(left - right) <= epsilon;
-    }
-
     private static ModelBounds GetBounds(NifRenderableModel model)
     {
         float minX = float.MaxValue, minY = float.MaxValue, minZ = float.MaxValue;
@@ -242,44 +217,6 @@ public sealed class NifEyeTransformTests
         }
 
         return new ModelBounds(minX, minY, minZ, maxX, maxY, maxZ);
-    }
-
-    private static (byte[] Data, NifInfo Info)? LoadNif(string path)
-    {
-        var fullPath = Path.GetFullPath(path);
-        if (!File.Exists(fullPath))
-            return null;
-
-        var data = File.ReadAllBytes(fullPath);
-        var nif = NifParser.Parse(data);
-        return nif != null ? (data, nif) : null;
-    }
-
-    private static string FindSampleRoot()
-    {
-        var dir = AppContext.BaseDirectory;
-        for (var i = 0; i < 10; i++)
-        {
-            var candidate = Path.Combine(
-                dir,
-                "Sample",
-                "Unpacked_Builds",
-                "PC_Final_Unpacked",
-                "Data",
-                "meshes",
-                "characters");
-            if (Directory.Exists(candidate))
-                return candidate;
-            dir = Path.GetDirectoryName(dir)!;
-        }
-
-        return Path.Combine(
-            "Sample",
-            "Unpacked_Builds",
-            "PC_Final_Unpacked",
-            "Data",
-            "meshes",
-            "characters");
     }
 
     private readonly record struct ModelBounds(

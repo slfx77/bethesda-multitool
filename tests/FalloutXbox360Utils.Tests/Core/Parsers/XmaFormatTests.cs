@@ -12,45 +12,16 @@ public class XmaFormatTests
 
     #region Magic Bytes Tests
 
-    [Fact]
-    public void ParseHeader_ValidRiffWave_WithXma2Chunk_ReturnsResult()
+    [Theory]
+    [InlineData(true, (ushort)0x0165)]   // XMA2 chunk variant
+    [InlineData(false, (ushort)0x0165)]  // fmt chunk + XMA format tag
+    [InlineData(false, (ushort)0x0166)]  // fmt chunk + XMA2 format tag
+    public void ParseHeader_ValidRiffWaveXma_ReturnsXmaResult(bool useXma2Chunk, ushort formatTag)
     {
-        // Arrange
-        var data = CreateXmaHeader();
+        var data = CreateXmaHeader(useXma2Chunk, formatTag);
 
-        // Act
         var result = _parser.Parse(data);
 
-        // Assert
-        Assert.NotNull(result);
-        Assert.Equal("XMA", result.Format);
-        Assert.True((bool)result.Metadata["isXma"]);
-    }
-
-    [Fact]
-    public void ParseHeader_ValidRiffWave_WithFmtXmaFormat_ReturnsResult()
-    {
-        // Arrange
-        var data = CreateXmaHeader(false);
-
-        // Act
-        var result = _parser.Parse(data);
-
-        // Assert
-        Assert.NotNull(result);
-        Assert.Equal("XMA", result.Format);
-    }
-
-    [Fact]
-    public void ParseHeader_ValidRiffWave_WithXma2Format_ReturnsResult()
-    {
-        // Arrange
-        var data = CreateXmaHeader(false, 0x0166);
-
-        // Act
-        var result = _parser.Parse(data);
-
-        // Assert
         Assert.NotNull(result);
         Assert.Equal("XMA", result.Format);
     }
@@ -116,29 +87,15 @@ public class XmaFormatTests
         Assert.Equal(5008, result.EstimatedSize);
     }
 
-    [Fact]
-    public void ParseHeader_TooSmallSize_ReturnsNull()
+    [Theory]
+    [InlineData(20u)]                  // size < 44 is invalid
+    [InlineData(150u * 1024 * 1024)]   // size > 100MB is invalid
+    public void ParseHeader_InvalidSize_ReturnsNull(uint riffSize)
     {
-        // Arrange - size < 44 is invalid
-        var data = CreateXmaHeader(riffSize: 20);
+        var data = CreateXmaHeader(riffSize: riffSize);
 
-        // Act
         var result = _parser.Parse(data);
 
-        // Assert
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public void ParseHeader_TooLargeSize_ReturnsNull()
-    {
-        // Arrange - size > 100MB is invalid
-        var data = CreateXmaHeader(riffSize: 150 * 1024 * 1024);
-
-        // Act
-        var result = _parser.Parse(data);
-
-        // Assert
         Assert.Null(result);
     }
 

@@ -26,9 +26,6 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime;
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class PackageTerminalOffsetInvestigationTests
 {
-    private static readonly string SnippetDir = Path.Combine(
-        AppContext.BaseDirectory, "..", "..", "..", "TestData", "Dmp");
-
     /// <summary>
     ///     All snippet families that ship with the test data. Used to verify offset
     ///     correctness across build variants.
@@ -50,7 +47,7 @@ public sealed class PackageTerminalOffsetInvestigationTests
     [MemberData(nameof(AllSnippets))]
     public async Task PACK_pCombatStyle_offset_lands_on_pointer_field_or_null(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var packEntries = snippet.RuntimeEditorIds
             .Where(e => e.FormType == 0x49 && e.TesFormOffset.HasValue)
             .Take(16)
@@ -85,7 +82,7 @@ public sealed class PackageTerminalOffsetInvestigationTests
     [Fact]
     public async Task PACK_pCombatStyle_previously_wrong_offset_still_looks_wrong()
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, "release_dump");
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, "release_dump");
         var packEntries = snippet.RuntimeEditorIds
             .Where(e => e.FormType == 0x49 && e.TesFormOffset.HasValue)
             .Take(16)
@@ -129,7 +126,7 @@ public sealed class PackageTerminalOffsetInvestigationTests
         // the ESM cross-reference), while +180 reads 0xFF heap-fill for ~half the
         // records. Both beat the old +132 (which always landed in a pointer field
         // and produced uniformly out-of-range bytes).
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var termEntries = snippet.RuntimeEditorIds
             .Where(e => e.FormType == 0x17 && e.TesFormOffset.HasValue)
             .Take(16)
@@ -173,7 +170,7 @@ public sealed class PackageTerminalOffsetInvestigationTests
     [MemberData(nameof(AllSnippets))]
     public async Task TERM_HouseToolsTerminal_runtime_176_matches_ESM_DNAM(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var entry = snippet.RuntimeEditorIds
             .FirstOrDefault(e => e.FormType == 0x17 && e.FormId == 0x000EBA3A && e.TesFormOffset.HasValue);
         if (entry == null)
@@ -202,7 +199,7 @@ public sealed class PackageTerminalOffsetInvestigationTests
     [MemberData(nameof(AllSnippets))]
     public async Task TERM_MenuItemList_offset_lands_on_per_record_list_head(string snippetName)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
         var termEntries = snippet.RuntimeEditorIds
             .Where(e => e.FormType == 0x17 && e.TesFormOffset.HasValue)
             .Take(16)
@@ -243,7 +240,7 @@ public sealed class PackageTerminalOffsetInvestigationTests
     [Fact]
     public async Task TERM_MenuItemList_previously_wrong_offset_still_looks_wrong()
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, "release_dump");
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, "release_dump");
         var termEntries = snippet.RuntimeEditorIds
             .Where(e => e.FormType == 0x17 && e.TesFormOffset.HasValue)
             .Take(16)

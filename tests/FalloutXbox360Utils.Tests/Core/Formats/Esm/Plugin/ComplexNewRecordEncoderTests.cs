@@ -17,6 +17,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using Xunit;
+using static FalloutXbox360Utils.Tests.Helpers.EsmTestRecordMakers;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Plugin;
 
@@ -269,23 +270,6 @@ public class ComplexNewRecordEncoderTests
         }
 
         Assert.Contains(encoded.Warnings, w => w.Contains("ACBS"));
-    }
-
-    private static ActorBaseSubrecord MakeMinimalAcbs()
-    {
-        return new ActorBaseSubrecord(
-            Flags: 0,
-            FatigueBase: 0,
-            BarterGold: 0,
-            Level: 1,
-            CalcMin: 1,
-            CalcMax: 1,
-            SpeedMultiplier: 100,
-            KarmaAlignment: 0f,
-            DispositionBase: 0,
-            TemplateFlags: 0,
-            Offset: 0,
-            IsBigEndian: false);
     }
 
     // ====================================================================================
@@ -1580,7 +1564,7 @@ public class ComplexNewRecordEncoderTests
         var sigs = encoded.Subrecords.Select(s => s.Signature).ToList();
 
         Assert.Equal(
-            ["EDID", "FULL", "MODL", "ACBS", "SNAM", "PKID", "SPLO", "DATA"],
+            ["EDID", "FULL", "MODL", "SPLO", "ACBS", "SNAM", "PKID", "DATA"],
             sigs);
 
         var data = Assert.Single(encoded.Subrecords, s => s.Signature == "DATA").Bytes;
@@ -1599,6 +1583,107 @@ public class ComplexNewRecordEncoderTests
         var encoded = CreaEncoder.EncodeNew(crea);
         Assert.Contains(encoded.Warnings, w => w.Contains("no ACBS"));
         Assert.Equal(24, Assert.Single(encoded.Subrecords, s => s.Signature == "ACBS").Bytes.Length);
+    }
+
+    [Fact]
+    public void CreaEncoder_EncodeNew_EmitsObndAndPhysicalSubrecords()
+    {
+        var crea = new CreatureRecord
+        {
+            FormId = 0x2901,
+            EditorId = "Robot",
+            Bounds = new ObjectBounds { X1 = -23, Y1 = -17, Z1 = 0, X2 = 23, Y2 = 17, Z2 = 132 },
+            SoundType = 0,
+            TurningSpeed = 180f,
+            BaseScale = 1.0f,
+            FootWeight = 20.0f,
+            ImpactMaterialType = 4,
+            SoundLevel = 1,
+            EquippedAttackAnimation = 0x00FF
+        };
+
+        var encoded = CreaEncoder.EncodeNew(crea);
+        var sigs = encoded.Subrecords.Select(s => s.Signature).ToList();
+
+        Assert.Contains("OBND", sigs);
+        Assert.Contains("EAMT", sigs);
+        Assert.Contains("RNAM", sigs);
+        Assert.Contains("TNAM", sigs);
+        Assert.Contains("BNAM", sigs);
+        Assert.Contains("WNAM", sigs);
+        Assert.Contains("NAM4", sigs);
+        Assert.Contains("NAM5", sigs);
+
+        var obnd = Assert.Single(encoded.Subrecords, s => s.Signature == "OBND").Bytes;
+        Assert.Equal(12, obnd.Length);
+        Assert.Equal(-23, BinaryPrimitives.ReadInt16LittleEndian(obnd.AsSpan(0, 2)));
+        Assert.Equal(132, BinaryPrimitives.ReadInt16LittleEndian(obnd.AsSpan(10, 2)));
+    }
+
+    [Fact]
+    public void CreaEncoder_EncodeNew_RemapsFormIdBearingSubrecords()
+    {
+        // Source FormID (proto-allocated) → allocated FormID (in plugin) for new records.
+        var remap = new Dictionary<uint, uint>
+        {
+            [0x000ABCDE] = 0x01001234, // CombatStyle
+            [0x000FEDCB] = 0x01005678  // Voice type
+        };
+        var valid = new HashSet<uint> { 0x01001234, 0x01005678, 0x000F1111, 0x000F2222 };
+
+        var crea = new CreatureRecord
+        {
+            FormId = 0x2902,
+            EditorId = "Robot",
+            CombatStyleFormId = 0x000ABCDE,
+            VoiceType = 0x000FEDCB,
+            Template = 0x000F1111,    // already in valid set, stays
+            BodyData = 0x000F2222,    // already in valid set, stays
+            DeathItemLootList = 0x00DEAD00 // dangling, no remap — subrecord omitted
+        };
+
+        var encoded = CreaEncoder.EncodeNew(crea, valid, remap);
+
+        var znam = Assert.Single(encoded.Subrecords, s => s.Signature == "ZNAM").Bytes;
+        Assert.Equal(0x01001234u, BinaryPrimitives.ReadUInt32LittleEndian(znam));
+
+        var vtck = Assert.Single(encoded.Subrecords, s => s.Signature == "VTCK").Bytes;
+        Assert.Equal(0x01005678u, BinaryPrimitives.ReadUInt32LittleEndian(vtck));
+
+        var tplt = Assert.Single(encoded.Subrecords, s => s.Signature == "TPLT").Bytes;
+        Assert.Equal(0x000F1111u, BinaryPrimitives.ReadUInt32LittleEndian(tplt));
+
+        var pnam = Assert.Single(encoded.Subrecords, s => s.Signature == "PNAM").Bytes;
+        Assert.Equal(0x000F2222u, BinaryPrimitives.ReadUInt32LittleEndian(pnam));
+
+        // Dangling LNAM dropped — subrecord must not be emitted.
+        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "LNAM");
+    }
+
+    [Fact]
+    public void CreaEncoder_EncodeNew_EmitsInventoryWithRemap()
+    {
+        var remap = new Dictionary<uint, uint> { [0x000AAAA0] = 0x01001000 };
+        var valid = new HashSet<uint> { 0x01001000, 0x000B0000 };
+
+        var crea = new CreatureRecord
+        {
+            FormId = 0x2903,
+            EditorId = "Robot",
+            Inventory =
+            [
+                new InventoryItem(0x000AAAA0, 5), // proto FormID → gets remapped
+                new InventoryItem(0x000B0000, 3), // already valid master → stays
+                new InventoryItem(0xDEADBEEF, 1)  // dangling → dropped
+            ]
+        };
+
+        var encoded = CreaEncoder.EncodeNew(crea, valid, remap);
+        var cntos = encoded.Subrecords.Where(s => s.Signature == "CNTO").ToList();
+        Assert.Equal(2, cntos.Count);
+        Assert.Equal(0x01001000u, BinaryPrimitives.ReadUInt32LittleEndian(cntos[0].Bytes));
+        Assert.Equal(0x000B0000u, BinaryPrimitives.ReadUInt32LittleEndian(cntos[1].Bytes));
+        Assert.Contains(encoded.Warnings, w => w.Contains("dropped 1 CNTO"));
     }
 
     // ====================================================================================

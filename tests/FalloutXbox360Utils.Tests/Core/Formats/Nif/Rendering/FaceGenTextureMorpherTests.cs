@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Dds;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
+using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
@@ -115,7 +116,7 @@ public sealed class FaceGenTextureMorpherTests
     [Fact]
     public void Apply_DefaultsToEncodedFacemodSemantics()
     {
-        var baseTexture = CreateTexture(2, 2, 100, 110, 120);
+        var baseTexture = TestTextures.Uniform(2, 2, 100, 110, 120);
         var egt = CreateSinglePixelMorphEgt(1.0f, 127, 0, 0);
         const float coefficient = 1f / 256f;
 
@@ -139,8 +140,8 @@ public sealed class FaceGenTextureMorpherTests
     [Fact]
     public void ApplyEncodedDeltaTexture_UpscalesCenteredDeltaOntoBaseTexture()
     {
-        var baseTexture = CreateTexture(2, 2, 100, 110, 120);
-        var deltaTexture = CreateTexture(1, 1, 138, 123, 128);
+        var baseTexture = TestTextures.Uniform(2, 2, 100, 110, 120);
+        var deltaTexture = TestTextures.Uniform(1, 1, 138, 123, 128);
 
         var applied = FaceGenTextureMorpher.ApplyEncodedDeltaTexture(baseTexture, deltaTexture);
 
@@ -152,20 +153,6 @@ public sealed class FaceGenTextureMorpherTests
             Assert.Equal(121, applied.Pixels[offset + 2]);
             Assert.Equal(255, applied.Pixels[offset + 3]);
         }
-    }
-
-    private static DecodedTexture CreateTexture(int width, int height, byte r, byte g, byte b)
-    {
-        var pixels = new byte[width * height * 4];
-        for (var offset = 0; offset < pixels.Length; offset += 4)
-        {
-            pixels[offset] = r;
-            pixels[offset + 1] = g;
-            pixels[offset + 2] = b;
-            pixels[offset + 3] = 255;
-        }
-
-        return DecodedTexture.FromBaseLevel(pixels, width, height);
     }
 
     private static EgtParser CreateSinglePixelMorphEgt(float scale, sbyte deltaR, sbyte deltaG, sbyte deltaB)

@@ -1,4 +1,3 @@
-using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Core.Minidump;
@@ -8,13 +7,15 @@ using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime;
 
-public sealed class RuntimeNpcAutoDetectTests
+public sealed class RuntimeNpcAutoDetectTests : RuntimeStructReaderTestBase
 {
+    // NPC tests use a two-region synthetic dump: heap (records / pointers) + module (FaceGen
+    // float arrays referenced via ModuleVa). The base class's CreateReader builds a
+    // single-region dump, so we use MapSyntheticBytes + build our own MinidumpInfo instead.
     private const int HeapRegionSize = 8192;
     private const int ModuleRegionSize = 8192;
     private const int ModuleRegionFileOffset = HeapRegionSize;
     private const int TotalSize = HeapRegionSize + ModuleRegionSize;
-    private const uint HeapBaseVa = 0x40000000;
     private const uint ModuleBaseVa = 0x66000000;
 
     [Fact]
@@ -23,11 +24,11 @@ public sealed class RuntimeNpcAutoDetectTests
         var data = new byte[TotalSize];
         var entry = WriteNpcRecord(data, 0x100, 0x00122B99, 16, 16);
 
-        using var context = new SyntheticNpcDump(data);
+        var accessor = MapSyntheticBytes(data);
         var reader = RuntimeStructReader.CreateWithAutoDetect(
-            context.Accessor,
+            accessor,
             data.Length,
-            context.MinidumpInfo,
+            TwoRegionMinidumpInfo(),
             Array.Empty<RuntimeEditorIdEntry>(),
             [entry]);
 
@@ -48,11 +49,11 @@ public sealed class RuntimeNpcAutoDetectTests
         var data = new byte[TotalSize];
         var entry = WriteNpcRecord(data, 0x180, 0x001300E2, 16, 28);
 
-        using var context = new SyntheticNpcDump(data);
+        var accessor = MapSyntheticBytes(data);
         var reader = RuntimeStructReader.CreateWithAutoDetect(
-            context.Accessor,
+            accessor,
             data.Length,
-            context.MinidumpInfo,
+            TwoRegionMinidumpInfo(),
             Array.Empty<RuntimeEditorIdEntry>(),
             [entry]);
 
@@ -75,14 +76,15 @@ public sealed class RuntimeNpcAutoDetectTests
         var entry = WritePrimitiveArrayNpcRecord(data, 0x140, 0x0012A111, 16);
         var entry2 = WritePrimitiveArrayNpcRecord(data, 0x700, 0x0012A112, 16);
 
-        using var context = new SyntheticNpcDump(data);
+        var accessor = MapSyntheticBytes(data);
+        var minidumpInfo = TwoRegionMinidumpInfo();
         var runtimeContext =
-            new RuntimeMemoryContext(new MmfMemoryAccessor(context.Accessor), data.Length, context.MinidumpInfo);
+            new RuntimeMemoryContext(new MmfMemoryAccessor(accessor), data.Length, minidumpInfo);
         var probe = RuntimeNpcLayoutProbe.Probe(runtimeContext, [entry, entry2]);
         var reader = new RuntimeStructReader(
-            new MmfMemoryAccessor(context.Accessor),
+            new MmfMemoryAccessor(accessor),
             data.Length,
-            context.MinidumpInfo,
+            minidumpInfo,
             false,
             new RuntimeNpcLayoutProbeResult(
                 RuntimeNpcLayout.CreatePrimitiveArrayDebug(16, 0, 640),
@@ -114,11 +116,11 @@ public sealed class RuntimeNpcAutoDetectTests
         var data = new byte[TotalSize];
         var entry = WriteNpcRecord(data, 0x1C0, 0x00131F77, 16, 28);
 
-        using var context = new SyntheticNpcDump(data);
+        var accessor = MapSyntheticBytes(data);
         var reader = new RuntimeStructReader(
-            new MmfMemoryAccessor(context.Accessor),
+            new MmfMemoryAccessor(accessor),
             data.Length,
-            context.MinidumpInfo,
+            TwoRegionMinidumpInfo(),
             false,
             new RuntimeNpcLayoutProbeResult(RuntimeNpcLayout.CreateDirect(16, 28, 640), false, 10, 10, 1));
 
@@ -162,25 +164,25 @@ public sealed class RuntimeNpcAutoDetectTests
         WriteNpcSpecial(data, npcOffset + 188 + coreShift);
         WriteNpcSkills(data, npcOffset + 276 + coreShift);
 
-        WriteUInt32BE(data, npcOffset + 248 + coreShift, HeapVa(scriptOffset));
-        WriteUInt32BE(data, npcOffset + 272 + coreShift, HeapVa(raceOffset));
-        WriteUInt32BE(data, npcOffset + 304 + coreShift, HeapVa(classOffset));
+        WriteUInt32BE(data, npcOffset + 248 + coreShift, FileOffsetToVa(scriptOffset));
+        WriteUInt32BE(data, npcOffset + 272 + coreShift, FileOffsetToVa(raceOffset));
+        WriteUInt32BE(data, npcOffset + 304 + coreShift, FileOffsetToVa(classOffset));
 
         WriteFaceGenArray(data, 0x100, npcOffset + 320 + appearanceShift, npcOffset + 332 + appearanceShift, 50, 0.10f);
         WriteFaceGenArray(data, 0x300, npcOffset + 352 + appearanceShift, npcOffset + 364 + appearanceShift, 30, 0.20f);
         WriteFaceGenArray(data, 0x500, npcOffset + 384 + appearanceShift, npcOffset + 396 + appearanceShift, 50, 0.30f);
 
-        WriteUInt32BE(data, npcOffset + 440 + appearanceShift, HeapVa(hairOffset));
+        WriteUInt32BE(data, npcOffset + 440 + appearanceShift, FileOffsetToVa(hairOffset));
         WriteFloatBE(data, npcOffset + 444 + appearanceShift, 0.65f);
-        WriteUInt32BE(data, npcOffset + 448 + appearanceShift, HeapVa(eyesOffset));
+        WriteUInt32BE(data, npcOffset + 448 + appearanceShift, FileOffsetToVa(eyesOffset));
         WriteUInt16BE(data, npcOffset + 464 + appearanceShift, 7);
-        WriteUInt32BE(data, npcOffset + 468 + appearanceShift, HeapVa(combatStyleOffset));
+        WriteUInt32BE(data, npcOffset + 468 + appearanceShift, FileOffsetToVa(combatStyleOffset));
         WriteUInt32BE(data, npcOffset + 472 + appearanceShift, 0x001E140A);
-        WriteUInt32BE(data, npcOffset + 476 + appearanceShift, HeapVa(headPartOffset));
+        WriteUInt32BE(data, npcOffset + 476 + appearanceShift, FileOffsetToVa(headPartOffset));
         WriteUInt32BE(data, npcOffset + 480 + appearanceShift, 0);
         data[npcOffset + 484 + appearanceShift] = 1;
-        WriteUInt32BE(data, npcOffset + 492 + appearanceShift, HeapVa(raceOffset));
-        WriteUInt32BE(data, npcOffset + 496 + appearanceShift, HeapVa(npcOffset));
+        WriteUInt32BE(data, npcOffset + 492 + appearanceShift, FileOffsetToVa(raceOffset));
+        WriteUInt32BE(data, npcOffset + 496 + appearanceShift, FileOffsetToVa(npcOffset));
         WriteFloatBE(data, npcOffset + 500 + appearanceShift, 1.02f);
         WriteFloatBE(data, npcOffset + 504 + appearanceShift, 45.0f);
 
@@ -190,7 +192,7 @@ public sealed class RuntimeNpcAutoDetectTests
             FormId = formId,
             FormType = 0x2A,
             TesFormOffset = npcOffset,
-            TesFormPointer = Xbox360MemoryUtils.VaToLong(HeapVa(npcOffset)),
+            TesFormPointer = Xbox360MemoryUtils.VaToLong(FileOffsetToVa(npcOffset)),
             DisplayName = "Synthetic NPC"
         };
     }
@@ -223,9 +225,9 @@ public sealed class RuntimeNpcAutoDetectTests
         WriteNpcSpecial(data, npcOffset + 188 + coreShift);
         WriteNpcSkills(data, npcOffset + 276 + coreShift);
 
-        WriteUInt32BE(data, npcOffset + 248 + coreShift, HeapVa(scriptOffset));
-        WriteUInt32BE(data, npcOffset + 272 + coreShift, HeapVa(raceOffset));
-        WriteUInt32BE(data, npcOffset + 304 + coreShift, HeapVa(classOffset));
+        WriteUInt32BE(data, npcOffset + 248 + coreShift, FileOffsetToVa(scriptOffset));
+        WriteUInt32BE(data, npcOffset + 272 + coreShift, FileOffsetToVa(raceOffset));
+        WriteUInt32BE(data, npcOffset + 304 + coreShift, FileOffsetToVa(classOffset));
 
         WritePrimitiveFaceGenArray(data, 0x100, npcOffset + 332, npcOffset + 336, npcOffset + 340, npcOffset + 344,
             npcOffset + 348, 50, 0.10f);
@@ -234,13 +236,13 @@ public sealed class RuntimeNpcAutoDetectTests
         WritePrimitiveFaceGenArray(data, 0x500, npcOffset + 388, npcOffset + 392, npcOffset + 396, npcOffset + 400,
             npcOffset + 404, 50, 0.30f);
 
-        WriteUInt32BE(data, npcOffset + 440, HeapVa(hairOffset));
+        WriteUInt32BE(data, npcOffset + 440, FileOffsetToVa(hairOffset));
         WriteFloatBE(data, npcOffset + 444, 0.65f);
-        WriteUInt32BE(data, npcOffset + 448, HeapVa(eyesOffset));
+        WriteUInt32BE(data, npcOffset + 448, FileOffsetToVa(eyesOffset));
         WriteUInt16BE(data, npcOffset + 464, 7);
-        WriteUInt32BE(data, npcOffset + 468, HeapVa(combatStyleOffset));
+        WriteUInt32BE(data, npcOffset + 468, FileOffsetToVa(combatStyleOffset));
         WriteUInt32BE(data, npcOffset + 472, 0x001E140A);
-        WriteUInt32BE(data, npcOffset + 476, HeapVa(headPartOffset));
+        WriteUInt32BE(data, npcOffset + 476, FileOffsetToVa(headPartOffset));
         WriteUInt32BE(data, npcOffset + 480, 0);
         data[npcOffset + 484] = 1;
 
@@ -250,16 +252,9 @@ public sealed class RuntimeNpcAutoDetectTests
             FormId = formId,
             FormType = 0x2A,
             TesFormOffset = npcOffset,
-            TesFormPointer = Xbox360MemoryUtils.VaToLong(HeapVa(npcOffset)),
+            TesFormPointer = Xbox360MemoryUtils.VaToLong(FileOffsetToVa(npcOffset)),
             DisplayName = "Synthetic NPC Debug"
         };
-    }
-
-    private static void WriteTesFormHeader(byte[] data, int fileOffset, uint vtable, byte formType, uint formId)
-    {
-        WriteUInt32BE(data, fileOffset, vtable);
-        data[fileOffset + 4] = formType;
-        WriteUInt32BE(data, fileOffset + 12, formId);
     }
 
     private static void WriteAcbs(byte[] data, int offset)
@@ -348,64 +343,33 @@ public sealed class RuntimeNpcAutoDetectTests
         }
     }
 
-    private static uint HeapVa(int fileOffset)
-    {
-        return HeapBaseVa + (uint)fileOffset;
-    }
-
     private static uint ModuleVa(int moduleRegionOffset)
     {
         return ModuleBaseVa + (uint)moduleRegionOffset;
     }
 
-    private sealed class SyntheticNpcDump : IDisposable
+    private static MinidumpInfo TwoRegionMinidumpInfo()
     {
-        private readonly MemoryMappedFile _mmf;
-        private readonly string _tempFilePath;
-
-        public SyntheticNpcDump(byte[] data)
+        return new MinidumpInfo
         {
-            _tempFilePath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-            File.WriteAllBytes(_tempFilePath, data);
-            _mmf = MemoryMappedFile.CreateFromFile(_tempFilePath, FileMode.Open, null, data.Length,
-                MemoryMappedFileAccess.Read);
-            Accessor = _mmf.CreateViewAccessor(0, data.Length, MemoryMappedFileAccess.Read);
-            MinidumpInfo = new MinidumpInfo
-            {
-                IsValid = true,
-                ProcessorArchitecture = 0x03,
-                NumberOfStreams = 2,
-                MemoryRegions =
-                [
-                    new MinidumpMemoryRegion
-                    {
-                        VirtualAddress = Xbox360MemoryUtils.VaToLong(HeapBaseVa),
-                        Size = HeapRegionSize,
-                        FileOffset = 0
-                    },
-                    new MinidumpMemoryRegion
-                    {
-                        VirtualAddress = Xbox360MemoryUtils.VaToLong(ModuleBaseVa),
-                        Size = ModuleRegionSize,
-                        FileOffset = ModuleRegionFileOffset
-                    }
-                ]
-            };
-        }
-
-        public MemoryMappedViewAccessor Accessor { get; }
-        public MinidumpInfo MinidumpInfo { get; }
-
-        public void Dispose()
-        {
-            GC.SuppressFinalize(this);
-            Accessor.Dispose();
-            _mmf.Dispose();
-
-            if (File.Exists(_tempFilePath))
-            {
-                File.Delete(_tempFilePath);
-            }
-        }
+            IsValid = true,
+            ProcessorArchitecture = 0x03,
+            NumberOfStreams = 2,
+            MemoryRegions =
+            [
+                new MinidumpMemoryRegion
+                {
+                    VirtualAddress = Xbox360MemoryUtils.VaToLong(HeapBaseVa),
+                    Size = HeapRegionSize,
+                    FileOffset = 0
+                },
+                new MinidumpMemoryRegion
+                {
+                    VirtualAddress = Xbox360MemoryUtils.VaToLong(ModuleBaseVa),
+                    Size = ModuleRegionSize,
+                    FileOffset = ModuleRegionFileOffset
+                }
+            ]
+        };
     }
 }

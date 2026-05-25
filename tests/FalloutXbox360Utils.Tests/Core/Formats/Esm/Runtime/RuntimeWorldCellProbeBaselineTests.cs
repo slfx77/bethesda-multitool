@@ -7,9 +7,6 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime;
 
 public sealed class RuntimeWorldCellProbeBaselineTests
 {
-    private static readonly string SnippetDir = Path.Combine(
-        AppContext.BaseDirectory, "..", "..", "..", "TestData", "Dmp");
-
     private static readonly HashSet<string> AllowedConfidence = ["high", "low"];
 
     private static readonly JsonSerializerOptions BaselineJsonOptions = new()
@@ -93,8 +90,8 @@ public sealed class RuntimeWorldCellProbeBaselineTests
             Assert.True(SamplePathToSnippet.TryGetValue(baseline.SamplePath, out var snippetName),
                 $"No snippet mapping for baseline '{baseline.Label}': {baseline.SamplePath}");
 
-            var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
-            var observed = ProbeSnippet(snippet);
+            var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
+            var observed = RuntimeWorldCellProbe.Probe(snippet);
             var mismatch = BuildMismatchMessage(baseline, observed);
 
             Assert.True(observed.Probe is not null, mismatch);
@@ -108,37 +105,6 @@ public sealed class RuntimeWorldCellProbeBaselineTests
             Assert.True(observed.CellEntryCount == baseline.CellEntryCount, mismatch);
             Assert.True(observed.RuntimeCellSignalCount == baseline.RuntimeCellSignalCount, mismatch);
         }
-    }
-
-    private static RuntimeWorldCellProbeObservation ProbeSnippet(DmpSnippetReader snippet)
-    {
-        var worldEntries = snippet.RuntimeEditorIds
-            .Where(entry => entry.FormType == 0x41 && entry.TesFormOffset.HasValue)
-            .ToList();
-        var cellEntries = snippet.RuntimeEditorIds
-            .Where(entry => entry.FormType == 0x39 && entry.TesFormOffset.HasValue)
-            .ToList();
-
-        var reader = RuntimeStructReader.CreateWithAutoDetect(
-            snippet.Accessor,
-            snippet.FileSize,
-            snippet.MinidumpInfo,
-            snippet.RuntimeRefrFormEntries,
-            null,
-            worldEntries,
-            cellEntries);
-
-        var worldCellMaps = reader.ReadAllWorldspaceCellMaps(worldEntries);
-        var runtimeCellSignalCount = cellEntries
-            .Select(reader.ReadRuntimeCell)
-            .Where(cell => cell is not null)
-            .Count(cell => cell!.WorldspaceFormId is > 0 || cell.WaterHeight is not null || cell.Flags != 0);
-
-        return new RuntimeWorldCellProbeObservation(
-            reader.WorldCellLayoutProbe,
-            worldCellMaps.Count,
-            cellEntries.Count,
-            runtimeCellSignalCount);
     }
 
     private static string BuildMismatchMessage(
@@ -213,10 +179,4 @@ public sealed class RuntimeWorldCellProbeBaselineTests
         int CellEntryCount,
         int RuntimeCellSignalCount,
         string Notes);
-
-    private sealed record RuntimeWorldCellProbeObservation(
-        RuntimeWorldCellLayoutProbeResult? Probe,
-        int WorldCellMapCount,
-        int CellEntryCount,
-        int RuntimeCellSignalCount);
 }

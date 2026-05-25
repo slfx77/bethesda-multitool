@@ -1,9 +1,7 @@
-using System.IO.MemoryMappedFiles;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Layouts;
-using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
 using Xunit;
 using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
@@ -12,19 +10,15 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime;
 
 /// <summary>
 ///     Tests for RuntimeStructReader using synthetic memory-mapped data that simulates
-///     an Xbox 360 memory dump with heap memory at VA 0x40000000.
+///     an Xbox 360 memory dump with heap memory at VA 0x40000000. MMF/accessor/temp-file
+///     lifecycle lives in <see cref="RuntimeStructReaderTestBase"/>.
 /// </summary>
-public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : IDisposable
+public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : RuntimeStructReaderTestBase
 {
     /// <summary>
     ///     Size of the synthetic dump file. Large enough for all test scenarios.
     /// </summary>
     private const int DataSize = 8192;
-
-    /// <summary>
-    ///     Xbox 360 heap base VA. VaToLong(0x40000000) = 0x40000000 (positive, no sign extension).
-    /// </summary>
-    private const uint HeapBaseVa = 0x40000000;
 
     // Struct constants mirrored from RuntimeStructReader for test clarity
     private const int AmmoValueOffset = 140;
@@ -62,29 +56,6 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : IDispos
     private const int BipedWeaponOffset = 0x7C;
     private const int ProcessWeaponDrawnOffset = 0x135;
     private readonly ITestOutputHelper _output = output;
-    private MemoryMappedViewAccessor? _accessor;
-    private MemoryMappedFile? _mmf;
-
-    private string? _tempFilePath;
-
-    public void Dispose()
-    {
-        GC.SuppressFinalize(this);
-        _accessor?.Dispose();
-        _mmf?.Dispose();
-
-        if (_tempFilePath != null && File.Exists(_tempFilePath))
-        {
-            try
-            {
-                File.Delete(_tempFilePath);
-            }
-            catch
-            {
-                // Best-effort cleanup; temp files are cleaned by OS eventually.
-            }
-        }
-    }
 
     #region Multiple Structs at Different Offsets
 
@@ -230,49 +201,6 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : IDispos
     #region Test Fixture Helpers
 
     /// <summary>
-    ///     Creates a RuntimeStructReader backed by a temporary file containing the given byte array.
-    ///     The MinidumpInfo maps VA 0x40000000 to file offset 0, so file offset == (VA - 0x40000000).
-    /// </summary>
-    private RuntimeStructReader CreateReader(byte[] data)
-    {
-        _tempFilePath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        File.WriteAllBytes(_tempFilePath, data);
-
-        _mmf = MemoryMappedFile.CreateFromFile(_tempFilePath, FileMode.Open, null, data.Length,
-            MemoryMappedFileAccess.Read);
-        _accessor = _mmf.CreateViewAccessor(0, data.Length, MemoryMappedFileAccess.Read);
-
-        var minidumpInfo = new MinidumpInfo
-        {
-            IsValid = true,
-            ProcessorArchitecture = 0x03, // PowerPC
-            NumberOfStreams = 1,
-            MemoryRegions =
-            [
-                new MinidumpMemoryRegion
-                {
-                    VirtualAddress = Xbox360MemoryUtils.VaToLong(HeapBaseVa),
-                    Size = data.Length,
-                    FileOffset = 0
-                }
-            ]
-        };
-
-        return new RuntimeStructReader(_accessor, data.Length, minidumpInfo);
-    }
-
-    /// <summary>
-    ///     Write a TESForm header at the given file offset.
-    ///     Layout: byte[0-3] = vtable pointer, byte[4] = formType, byte[12-15] = formId (BE).
-    /// </summary>
-    private static void WriteTesFormHeader(byte[] data, int fileOffset, uint vtable, byte formType, uint formId)
-    {
-        WriteUInt32BE(data, fileOffset, vtable);
-        data[fileOffset + 4] = formType;
-        WriteUInt32BE(data, fileOffset + 12, formId);
-    }
-
-    /// <summary>
     ///     Write a BSStringT at the given file offset within a struct.
     ///     BSStringT layout: [4 bytes pointer BE][2 bytes length BE][2 bytes unused].
     ///     The string data is placed at stringDataFileOffset in the file.
@@ -285,14 +213,6 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : IDispos
 
         var textBytes = Encoding.ASCII.GetBytes(text);
         Array.Copy(textBytes, 0, data, stringDataFileOffset, Math.Min(textBytes.Length, stringLength));
-    }
-
-    /// <summary>
-    ///     Convert a file offset to the corresponding Xbox 360 VA for our test memory region.
-    /// </summary>
-    private static uint FileOffsetToVa(int fileOffset)
-    {
-        return HeapBaseVa + (uint)fileOffset;
     }
 
     /// <summary>

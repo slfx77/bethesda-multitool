@@ -1,4 +1,3 @@
-using System.IO.MemoryMappedFiles;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
@@ -9,10 +8,9 @@ using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime;
 
-public sealed class RuntimeWorldCellAutoDetectTests
+public sealed class RuntimeWorldCellAutoDetectTests : RuntimeStructReaderTestBase
 {
     private const int DataSize = 16 * 1024;
-    private const uint HeapBaseVa = 0x40000000;
 
     [Fact]
     public void CreateWithAutoDetect_ShiftedWorldAndCellLayout_UsesDetectedCandidate()
@@ -23,11 +21,12 @@ public sealed class RuntimeWorldCellAutoDetectTests
 
         var (worldEntry, cellEntry) = WriteShiftedWorldAndCell(data, worldShift, cellShift);
 
-        using var context = new SyntheticWorldCellDump(data);
+        var accessor = MapSyntheticBytes(data);
+        var minidumpInfo = SingleRegionMinidumpInfo(data.Length);
         var reader = RuntimeStructReader.CreateWithAutoDetect(
-            context.Accessor,
+            accessor,
             data.Length,
-            context.MinidumpInfo,
+            minidumpInfo,
             Array.Empty<RuntimeEditorIdEntry>(),
             null,
             [worldEntry],
@@ -68,11 +67,12 @@ public sealed class RuntimeWorldCellAutoDetectTests
 
         var worldEntry = MakeEntry("FallbackWorld", worldspaceFormId, 0x41, worldOffset);
 
-        using var context = new SyntheticWorldCellDump(data);
+        var accessor = MapSyntheticBytes(data);
+        var minidumpInfo = SingleRegionMinidumpInfo(data.Length);
         var reader = new RuntimeStructReader(
-            new MmfMemoryAccessor(context.Accessor),
+            new MmfMemoryAccessor(accessor),
             data.Length,
-            context.MinidumpInfo,
+            minidumpInfo,
             false,
             null,
             new RuntimeWorldCellLayoutProbeResult(
@@ -89,7 +89,26 @@ public sealed class RuntimeWorldCellAutoDetectTests
         Assert.Equal("Fallback World", worldspace!.FullName);
     }
 
-    private static (RuntimeEditorIdEntry WorldEntry, RuntimeEditorIdEntry CellEntry) WriteShiftedWorldAndCell(
+    private static MinidumpInfo SingleRegionMinidumpInfo(long size)
+    {
+        return new MinidumpInfo
+        {
+            IsValid = true,
+            ProcessorArchitecture = 0x03,
+            NumberOfStreams = 1,
+            MemoryRegions =
+            [
+                new MinidumpMemoryRegion
+                {
+                    VirtualAddress = Xbox360MemoryUtils.VaToLong(HeapBaseVa),
+                    Size = size,
+                    FileOffset = 0
+                }
+            ]
+        };
+    }
+
+    private (RuntimeEditorIdEntry WorldEntry, RuntimeEditorIdEntry CellEntry) WriteShiftedWorldAndCell(
         byte[] data,
         int worldShift,
         int cellShift)
@@ -148,6 +167,10 @@ public sealed class RuntimeWorldCellAutoDetectTests
             MakeEntry("CellShifted", cellFormId, 0x39, cellOffset));
     }
 
+    // Auto-detect-specific shape: also sets TesFormPointer (derived from TesFormOffset),
+    // since the world/cell layout probe dereferences entries through their pointer rather
+    // than offset. Other RuntimeStructReader tests only need TesFormOffset, so this lives
+    // file-local rather than on the base.
     private static RuntimeEditorIdEntry MakeEntry(string editorId, uint formId, byte formType, long tesFormOffset)
     {
         return new RuntimeEditorIdEntry
@@ -158,13 +181,6 @@ public sealed class RuntimeWorldCellAutoDetectTests
             TesFormOffset = tesFormOffset,
             TesFormPointer = Xbox360MemoryUtils.VaToLong(FileOffsetToVa((int)tesFormOffset))
         };
-    }
-
-    private static void WriteTesFormHeader(byte[] data, int fileOffset, uint vtable, byte formType, uint formId)
-    {
-        WriteUInt32BE(data, fileOffset, vtable);
-        data[fileOffset + 4] = formType;
-        WriteUInt32BE(data, fileOffset + 12, formId);
     }
 
     private static void WriteBSStringT(byte[] data, int bstFileOffset, uint stringVa, string text,
@@ -178,55 +194,5 @@ public sealed class RuntimeWorldCellAutoDetectTests
     private static uint PackCellMapKey(int gridX, int gridY)
     {
         return unchecked((uint)((gridX << 16) | (ushort)gridY));
-    }
-
-    private static uint FileOffsetToVa(int fileOffset)
-    {
-        return HeapBaseVa + (uint)fileOffset;
-    }
-
-    private sealed class SyntheticWorldCellDump : IDisposable
-    {
-        private readonly MemoryMappedFile _mmf;
-        private readonly string _tempFilePath;
-
-        public SyntheticWorldCellDump(byte[] data)
-        {
-            _tempFilePath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-            File.WriteAllBytes(_tempFilePath, data);
-            _mmf = MemoryMappedFile.CreateFromFile(_tempFilePath, FileMode.Open, null, data.Length,
-                MemoryMappedFileAccess.Read);
-            Accessor = _mmf.CreateViewAccessor(0, data.Length, MemoryMappedFileAccess.Read);
-            MinidumpInfo = new MinidumpInfo
-            {
-                IsValid = true,
-                ProcessorArchitecture = 0x03,
-                NumberOfStreams = 1,
-                MemoryRegions =
-                [
-                    new MinidumpMemoryRegion
-                    {
-                        VirtualAddress = Xbox360MemoryUtils.VaToLong(HeapBaseVa),
-                        Size = data.Length,
-                        FileOffset = 0
-                    }
-                ]
-            };
-        }
-
-        public MemoryMappedViewAccessor Accessor { get; }
-        public MinidumpInfo MinidumpInfo { get; }
-
-        public void Dispose()
-        {
-            GC.SuppressFinalize(this);
-            Accessor.Dispose();
-            _mmf.Dispose();
-
-            if (File.Exists(_tempFilePath))
-            {
-                File.Delete(_tempFilePath);
-            }
-        }
     }
 }

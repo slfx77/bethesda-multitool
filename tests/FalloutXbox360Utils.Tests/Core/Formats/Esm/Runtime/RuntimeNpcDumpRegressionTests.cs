@@ -7,9 +7,6 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime;
 
 public sealed class RuntimeNpcDumpRegressionTests
 {
-    private static readonly string SnippetDir = Path.Combine(
-        AppContext.BaseDirectory, "..", "..", "..", "TestData", "Dmp");
-
     [Fact]
     public async Task FortVulpesInculta_DebugDump_ResolvesFaceGenLikeMemDebug()
     {
@@ -38,7 +35,7 @@ public sealed class RuntimeNpcDumpRegressionTests
 
     private static async Task<NpcRecord?> LoadNpcAsync(string snippetName, string editorId)
     {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
 
         var npcEntries = snippet.RuntimeEditorIds
             .Where(entry => entry.FormType == 0x2A)

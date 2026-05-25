@@ -1,4 +1,3 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Models;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
@@ -13,7 +12,7 @@ public sealed class ArmorRecordScannerTests
         var bmdt = new byte[8];
         bmdt[0] = 0x04;
 
-        var recordBytes = EsmTestRecordBuilder.BuildRecordBytes(
+        var (recordBytes, record) = EsmTestRecordBuilder.BuildAnalyzerRecord(
             0x00012345,
             "ARMO",
             false,
@@ -21,16 +20,6 @@ public sealed class ArmorRecordScannerTests
             ("BMDT", bmdt),
             ("BIPL", BitConverter.GetBytes(0x00054321u)),
             ("MODL", EsmTestRecordBuilder.NullTermString(@"armor\boomeroutfit.nif")));
-
-        var record = new AnalyzerRecordInfo
-        {
-            Signature = "ARMO",
-            FormId = 0x00012345,
-            Flags = 0,
-            DataSize = (uint)(recordBytes.Length - 24),
-            Offset = 0,
-            TotalSize = (uint)recordBytes.Length
-        };
 
         var scanEntry = ArmorRecordScanner.Process(recordBytes, false, record);
 

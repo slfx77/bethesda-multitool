@@ -13,9 +13,6 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime;
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class RuntimeProbeConsistencyTests
 {
-    private static readonly string SnippetDir = Path.Combine(
-        AppContext.BaseDirectory, "..", "..", "..", "TestData", "Dmp");
-
     private static readonly string[] TypeNames = ["RACE", "PROJ", "MGEF", "SPEL", "ENCH", "PERK", "BOOK"];
 
     private static readonly string[] SnippetNames =
@@ -52,7 +49,7 @@ public sealed class RuntimeProbeConsistencyTests
 
         foreach (var snippetName in SnippetNames)
         {
-            var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+            var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
             var result = TestSnippet(snippet, snippetName, Log);
             allResults.Add(result);
         }

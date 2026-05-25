@@ -1,5 +1,6 @@
 using System.Numerics;
 using FalloutXbox360Utils.CLI;
+using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
@@ -21,7 +22,7 @@ public sealed class NpcHeadBoneCorrectionTests
             null);
 
         Assert.True(result.HasValue);
-        AssertMatrixEqual(Matrix4x4.CreateTranslation(1f, 2f, 3f), result.Value);
+        MatrixAssert.Equal(Matrix4x4.CreateTranslation(1f, 2f, 3f), result.Value);
     }
 
     [Fact]
@@ -46,7 +47,7 @@ public sealed class NpcHeadBoneCorrectionTests
         var expected =
             Matrix4x4.CreateRotationZ(-0.2f) *
             Matrix4x4.CreateTranslation(4f, 5f, 6f);
-        AssertMatrixEqual(expected, result.Value);
+        MatrixAssert.Equal(expected, result.Value);
     }
 
     [Fact]
@@ -69,7 +70,7 @@ public sealed class NpcHeadBoneCorrectionTests
         Assert.Equal(
             NpcRenderHelpers.HeadAttachmentCorrectionMode.BonelessUseAttachmentTransform,
             result.Mode);
-        AssertMatrixEqual(bonelessAttachmentTransform, result.Correction);
+        MatrixAssert.Equal(bonelessAttachmentTransform, result.Correction);
     }
 
     [Fact]
@@ -95,7 +96,7 @@ public sealed class NpcHeadBoneCorrectionTests
         Assert.Equal(
             NpcRenderHelpers.HeadAttachmentCorrectionMode.BonelessUseAttachmentTransform,
             result.Mode);
-        AssertMatrixEqual(bonelessAttachmentTransform, result.Correction);
+        MatrixAssert.Equal(bonelessAttachmentTransform, result.Correction);
     }
 
     [Fact]
@@ -115,7 +116,7 @@ public sealed class NpcHeadBoneCorrectionTests
         Assert.Equal(
             NpcRenderHelpers.HeadAttachmentCorrectionMode.BonelessUseAttachmentTransform,
             result.Mode);
-        AssertMatrixEqual(targetHeadTransform, result.Correction);
+        MatrixAssert.Equal(targetHeadTransform, result.Correction);
     }
 
     [Fact]
@@ -139,7 +140,7 @@ public sealed class NpcHeadBoneCorrectionTests
         Assert.Equal(
             NpcRenderHelpers.HeadAttachmentCorrectionMode.BonelessUseAttachmentTransform,
             result.Mode);
-        AssertMatrixEqual(bonelessAttachmentTransform, result.Correction);
+        MatrixAssert.Equal(bonelessAttachmentTransform, result.Correction);
     }
 
     [Fact]
@@ -163,7 +164,7 @@ public sealed class NpcHeadBoneCorrectionTests
         Assert.Equal(
             NpcRenderHelpers.HeadAttachmentCorrectionMode.BonelessUseAttachmentTransform,
             result.Mode);
-        AssertMatrixEqual(targetHeadTransform, result.Correction);
+        MatrixAssert.Equal(targetHeadTransform, result.Correction);
     }
 
     [Fact]
@@ -189,7 +190,7 @@ public sealed class NpcHeadBoneCorrectionTests
         Assert.Equal(
             NpcRenderHelpers.HeadAttachmentCorrectionMode.BonelessUseAttachmentTransform,
             result.Mode);
-        AssertMatrixEqual(invRootRotation * targetHeadTransform, result.Correction);
+        MatrixAssert.Equal(invRootRotation * targetHeadTransform, result.Correction);
     }
 
     [Fact]
@@ -216,7 +217,7 @@ public sealed class NpcHeadBoneCorrectionTests
         Assert.Equal(
             NpcRenderHelpers.HeadAttachmentCorrectionMode.BonelessUseAttachmentTransform,
             result.Mode);
-        AssertMatrixEqual(bonelessAttachmentTransform, result.Correction);
+        MatrixAssert.Equal(bonelessAttachmentTransform, result.Correction);
     }
 
     [Fact]
@@ -246,7 +247,7 @@ public sealed class NpcHeadBoneCorrectionTests
         Assert.Equal(
             NpcRenderHelpers.HeadAttachmentCorrectionMode.BonelessUseAttachmentTransform,
             result.Mode);
-        AssertMatrixEqual(invRootRotation * bonelessAttachmentTransform, result.Correction);
+        MatrixAssert.Equal(invRootRotation * bonelessAttachmentTransform, result.Correction);
     }
 
     [Fact]
@@ -268,7 +269,7 @@ public sealed class NpcHeadBoneCorrectionTests
         var result = NpcRenderHelpers.GetHeadAttachmentCorrection(nifBones, targetHeadTransform);
 
         Assert.Equal(NpcRenderHelpers.HeadAttachmentCorrectionMode.Boned, result.Mode);
-        AssertMatrixEqual(expected, result.Correction);
+        MatrixAssert.Equal(expected, result.Correction);
     }
 
     private static Matrix4x4 CreateTransform(Vector3 translation, Matrix4x4 rotation)
@@ -280,28 +281,4 @@ public sealed class NpcHeadBoneCorrectionTests
         return rotation;
     }
 
-    private static void AssertMatrixEqual(Matrix4x4 expected, Matrix4x4 actual, float epsilon = 0.001f)
-    {
-        AssertClose(expected.M11, actual.M11, epsilon);
-        AssertClose(expected.M12, actual.M12, epsilon);
-        AssertClose(expected.M13, actual.M13, epsilon);
-        AssertClose(expected.M14, actual.M14, epsilon);
-        AssertClose(expected.M21, actual.M21, epsilon);
-        AssertClose(expected.M22, actual.M22, epsilon);
-        AssertClose(expected.M23, actual.M23, epsilon);
-        AssertClose(expected.M24, actual.M24, epsilon);
-        AssertClose(expected.M31, actual.M31, epsilon);
-        AssertClose(expected.M32, actual.M32, epsilon);
-        AssertClose(expected.M33, actual.M33, epsilon);
-        AssertClose(expected.M34, actual.M34, epsilon);
-        AssertClose(expected.M41, actual.M41, epsilon);
-        AssertClose(expected.M42, actual.M42, epsilon);
-        AssertClose(expected.M43, actual.M43, epsilon);
-        AssertClose(expected.M44, actual.M44, epsilon);
-    }
-
-    private static void AssertClose(float expected, float actual, float epsilon)
-    {
-        Assert.InRange(actual, expected - epsilon, expected + epsilon);
-    }
 }

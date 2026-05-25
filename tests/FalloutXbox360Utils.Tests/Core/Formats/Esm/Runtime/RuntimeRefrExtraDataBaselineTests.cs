@@ -8,9 +8,6 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime;
 
 public sealed class RuntimeRefrExtraDataBaselineTests
 {
-    private static readonly string SnippetDir = Path.Combine(
-        AppContext.BaseDirectory, "..", "..", "..", "TestData", "Dmp");
-
     private static readonly JsonSerializerOptions BaselineJsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
@@ -121,7 +118,7 @@ public sealed class RuntimeRefrExtraDataBaselineTests
             Assert.True(SamplePathToSnippet.TryGetValue(baseline.SamplePath, out var snippetName),
                 $"No snippet mapping for baseline '{baseline.Label}': {baseline.SamplePath}");
 
-            var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+            var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
             var observed = ObserveSnippet(snippet, baseline.SampleLimit);
             var mismatch = BuildMismatchMessage(baseline, observed);
 

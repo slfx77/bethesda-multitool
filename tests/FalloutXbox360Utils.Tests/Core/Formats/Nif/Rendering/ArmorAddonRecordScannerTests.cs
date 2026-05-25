@@ -1,4 +1,3 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Models;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
@@ -19,7 +18,7 @@ public sealed class ArmorAddonRecordScannerTests
         data[2] = 0x34;
         data[3] = 0x12;
 
-        var recordBytes = EsmTestRecordBuilder.BuildRecordBytes(
+        var (recordBytes, record) = EsmTestRecordBuilder.BuildAnalyzerRecord(
             0x00044947,
             "ARMA",
             false,
@@ -27,16 +26,6 @@ public sealed class ArmorAddonRecordScannerTests
             ("BMDT", bmdt),
             ("MODL", EsmTestRecordBuilder.NullTermString(@"weapons\hand2hand\powerfist.nif")),
             ("DATA", data));
-
-        var record = new AnalyzerRecordInfo
-        {
-            Signature = "ARMA",
-            FormId = 0x00044947,
-            Flags = 0,
-            DataSize = (uint)(recordBytes.Length - 24),
-            Offset = 0,
-            TotalSize = (uint)recordBytes.Length
-        };
 
         var scanEntry = ArmorAddonRecordScanner.Process(recordBytes, false, record);
 

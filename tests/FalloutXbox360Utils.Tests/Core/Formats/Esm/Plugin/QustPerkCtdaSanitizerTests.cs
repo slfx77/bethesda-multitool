@@ -6,6 +6,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Magic;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 using Xunit;
+using static FalloutXbox360Utils.Tests.Helpers.DialogueConditionTestConstants;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Plugin;
 
@@ -17,9 +18,6 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Plugin;
 /// </summary>
 public class QustPerkCtdaSanitizerTests
 {
-    private const ushort GetIsID = 0x0048;       // Param1 = FormID
-    private const ushort GetActorValue = 0x000E; // Param1 = ActorValue enum (NOT a FormID)
-    private const ushort HasPerk = 0x01C1;       // Param1 = Perk FormID
 
     // ---------- QUST top-level conditions ----------
 

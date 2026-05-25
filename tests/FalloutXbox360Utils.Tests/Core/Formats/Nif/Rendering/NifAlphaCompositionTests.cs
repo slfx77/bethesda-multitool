@@ -19,7 +19,7 @@ public sealed class NifAlphaCompositionTests
         var submesh = CreateQuadSubmesh(
             0f,
             JacketTexturePath);
-        var texture = CreateTexture(
+        var texture = TestTextures.FromTexels(
             2,
             1,
             (255, 0, 0, 255),
@@ -40,7 +40,7 @@ public sealed class NifAlphaCompositionTests
             @"textures\characters\hair\samplehair.dds",
             "HairStrands");
         submesh.TintColor = (0.5f, 0.4f, 0.3f);
-        var texture = CreateTexture(
+        var texture = TestTextures.FromTexels(
             2,
             1,
             (180, 120, 80, 255),
@@ -62,17 +62,17 @@ public sealed class NifAlphaCompositionTests
         GpuTestGuard.SkipUnlessEnabled();
         using var _ = new RendererStateScope();
         using var textureResolver = new NifTextureResolver();
-        textureResolver.InjectTexture(BackTexturePath, CreateTexture(1, 1, (0, 0, 255, 255)));
+        textureResolver.InjectTexture(BackTexturePath, TestTextures.FromTexels(1, 1, (0, 0, 255, 255)));
         textureResolver.InjectTexture(
             JacketTexturePath,
-            CreateTexture(
+            TestTextures.FromTexels(
                 2,
                 1,
                 (255, 0, 0, 255),
                 (255, 0, 0, 0)));
         textureResolver.InjectTexture(
             GrimeTexturePath,
-            CreateTexture(
+            TestTextures.FromTexels(
                 2,
                 1,
                 (0, 0, 0, 255),
@@ -116,7 +116,7 @@ public sealed class NifAlphaCompositionTests
         using var textureResolver = new NifTextureResolver();
         textureResolver.InjectTexture(
             FrontBlendTexturePath,
-            CreateTexture(
+            TestTextures.FromTexels(
                 2,
                 1,
                 (255, 255, 255, 255),
@@ -160,10 +160,10 @@ public sealed class NifAlphaCompositionTests
         GpuTestGuard.SkipUnlessEnabled();
         using var _ = new RendererStateScope();
         using var textureResolver = new NifTextureResolver();
-        textureResolver.InjectTexture(BackTexturePath, CreateTexture(1, 1, (0, 0, 255, 255)));
+        textureResolver.InjectTexture(BackTexturePath, TestTextures.FromTexels(1, 1, (0, 0, 255, 255)));
         textureResolver.InjectTexture(
             FrontBlendTexturePath,
-            CreateTexture(1, 1, (0, 255, 0, 128)));
+            TestTextures.FromTexels(1, 1, (0, 255, 0, 128)));
 
         var model = CreateModel(
             CreateQuadSubmesh(0f, BackTexturePath),
@@ -223,7 +223,7 @@ public sealed class NifAlphaCompositionTests
         using var textureResolver = new NifTextureResolver();
         textureResolver.InjectTexture(
             FrontBlendTexturePath,
-            CreateTexture(1, 1, (255, 255, 255, 255)));
+            TestTextures.FromTexels(1, 1, (255, 255, 255, 255)));
 
         byte[] vertexColors =
         [
@@ -327,26 +327,6 @@ public sealed class NifAlphaCompositionTests
             VertexColors = vertexColors,
             UseVertexColors = useVertexColors
         };
-    }
-
-    private static DecodedTexture CreateTexture(
-        int width,
-        int height,
-        params (byte R, byte G, byte B, byte A)[] texels)
-    {
-        Assert.Equal(width * height, texels.Length);
-
-        var pixels = new byte[texels.Length * 4];
-        for (var i = 0; i < texels.Length; i++)
-        {
-            var offset = i * 4;
-            pixels[offset] = texels[i].R;
-            pixels[offset + 1] = texels[i].G;
-            pixels[offset + 2] = texels[i].B;
-            pixels[offset + 3] = texels[i].A;
-        }
-
-        return DecodedTexture.FromBaseLevel(pixels, width, height);
     }
 
     private static void AssertPairShowsOpaqueBaseAndTransparentGrime(SpriteResult? sprite)
