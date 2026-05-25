@@ -792,6 +792,121 @@ public sealed class RuntimeOffsetCrossReferenceTests
     }
 
     // =========================================================================
+    // BOOK (TESObjectBOOK) — Group2 baked-shift validation
+    // =========================================================================
+    // RuntimeBookReader uses RuntimeBookLayout.CreateDefault() with baked-in
+    // Group 2 -8 shift (Phase 1B.6 found this constant across all observed
+    // DMPs and inlined it). Anchors verify the baked offsets still match the
+    // runtime layout.
+    //   EnchantmentPtrOffset @ +136  — TESEnchantmentItem* (often null, some heap)
+    //
+    // Most BOOKs aren't enchanted, so the test is "(null OR heap pointer)"
+    // shape. A wrong offset would mostly read non-pointer / non-null values.
+
+    private static IReadOnlyList<RuntimeEditorIdEntry> GetValidatedBookSample(
+        DmpSnippetReader snippet, RuntimeMemoryContext context, int sampleSize)
+    {
+        var candidates = snippet.RuntimeEditorIds
+            .Where(e => e.FormType == 0x19 && e.TesFormOffset.HasValue)
+            .Take(sampleSize * 4)
+            .ToList();
+
+        var validated = new List<RuntimeEditorIdEntry>(sampleSize);
+        foreach (var entry in candidates)
+        {
+            var buf = context.ReadBytes(entry.TesFormOffset!.Value + FormIdOffset, 4);
+            if (buf == null) continue;
+            if (BinaryUtils.ReadUInt32BE(buf, 0) == entry.FormId)
+            {
+                validated.Add(entry);
+                if (validated.Count >= sampleSize) break;
+            }
+        }
+
+        return validated;
+    }
+
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task BOOK_EnchantmentPtr_offset_lands_on_heap_pointer_or_null(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var books = GetValidatedBookSample(snippet, context, 200);
+
+        if (books.Count < 10)
+        {
+            TestContext.Current.TestOutputHelper!.WriteLine(
+                $"[{snippetName}] Only {books.Count} validated BOOKs — under-exercised.");
+            return;
+        }
+
+        const int enchantmentPtrOffset = 136; // RuntimeBookLayout.CreateDefault baked Group 2 -8 shift
+        var (checkedCount, pointerShaped, nonPointer) = ScanPointerShape(books, context, enchantmentPtrOffset);
+        var rate = (double)pointerShaped / checkedCount;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] BOOK EnchantmentPtr pointer-shape: {pointerShaped}/{checkedCount} ({rate:P0}) "
+            + $"at offset {enchantmentPtrOffset} (baked).");
+
+        Assert.True(rate >= 0.9,
+            $"[{snippetName}] BOOK EnchantmentPtr pointer-shape {rate:P0} below threshold "
+            + $"(offset {enchantmentPtrOffset}). First 10 non-pointer values:\n  "
+            + string.Join("\n  ", nonPointer));
+    }
+
+    // =========================================================================
+    // PROJ (BGSProjectile) — production-pipeline audit
+    // =========================================================================
+    // RuntimeEffectReader is the legacy name; it reads BGSProjectile structs
+    // (FormType 0x33). Migrated to PdbStructView + WithShift in Tier 3.4 step 3
+    // with a single shift band, driven by RuntimeEffectProbe. Same pipeline
+    // pattern as RACE.
+
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task PROJ_ReadRuntimeProjectile_returns_populated_records(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+
+        var projEntries = snippet.RuntimeEditorIds
+            .Where(e => e.FormType == 0x33 && e.TesFormOffset.HasValue)
+            .ToList();
+
+        if (projEntries.Count < 5)
+        {
+            TestContext.Current.TestOutputHelper!.WriteLine(
+                $"[{snippetName}] Only {projEntries.Count} PROJ entries — under-exercised.");
+            return;
+        }
+
+        var probeResult = RuntimeEffectProbe.Probe(context, projEntries);
+        var reader = new RuntimeEffectReader(context, probeResult);
+
+        var populated = 0;
+        var withSpeed = 0;
+        var withExplosion = 0;
+        foreach (var entry in projEntries)
+        {
+            var record = reader.ReadRuntimeProjectile(entry);
+            if (record == null) continue;
+            populated++;
+            if (record.Speed > 0) withSpeed++;
+            if (record.Explosion != 0) withExplosion++;
+        }
+
+        var rate = (double)populated / projEntries.Count;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] PROJ pipeline: {populated}/{projEntries.Count} ({rate:P0}) populated; "
+            + $"{withSpeed} with Speed, {withExplosion} with Explosion FormID "
+            + $"(probe margin={probeResult?.Margin ?? 0}).");
+
+        Assert.True(rate >= 0.7,
+            $"[{snippetName}] PROJ pipeline pass rate {rate:P0} below threshold "
+            + $"({populated}/{projEntries.Count}).");
+    }
+
+    // =========================================================================
     // RACE (TESRace) production-pipeline audit
     // =========================================================================
     // RuntimeRaceReader uses PdbStructView + WithShift with probe-discovered
