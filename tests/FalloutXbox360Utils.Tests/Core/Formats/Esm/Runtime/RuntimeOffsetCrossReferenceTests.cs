@@ -1,4 +1,6 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Probes;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
@@ -353,16 +355,22 @@ public sealed class RuntimeOffsetCrossReferenceTests
             .Take(sampleSize)
             .ToList();
 
-        var checkedNpcs = 0;
+        return ScanPointerShape(npcEntries, context, offset);
+    }
+
+    private static (int Checked, int PointerShaped, List<string> NonPointerValues) ScanPointerShape(
+        IReadOnlyList<RuntimeEditorIdEntry> entries, RuntimeMemoryContext context, int offset)
+    {
+        var @checked = 0;
         var pointerShaped = 0;
         var nonPointerValues = new List<string>();
 
-        foreach (var entry in npcEntries)
+        foreach (var entry in entries)
         {
             var buf = context.ReadBytes(entry.TesFormOffset!.Value + offset, 4);
             if (buf == null) continue;
             var value = BinaryUtils.ReadUInt32BE(buf, 0);
-            checkedNpcs++;
+            @checked++;
             if (IsNullOrXbox360HeapPointer(value))
             {
                 pointerShaped++;
@@ -373,8 +381,329 @@ public sealed class RuntimeOffsetCrossReferenceTests
             }
         }
 
-        return (checkedNpcs, pointerShaped, nonPointerValues);
+        return (@checked, pointerShaped, nonPointerValues);
     }
+
+    // =========================================================================
+    // REFR section
+    // =========================================================================
+    // RuntimeRefrReader has TESObjectREFR offset constants (FormFlagsOffset=8,
+    // FormIdOffset=12, FinalBaseObjectPtrOffset=48, FinalParentCellPtrOffset=80,
+    // FinalExtraListHeadOffset=88) with a per-build `_shift` that
+    // RuntimeBuildOffsets.GetRefrFieldShift returns:
+    //   0  for final-era builds (REFR=120 bytes, TESChildCell=8B)
+    //  -4  for early-era builds (REFR=116 bytes, TESChildCell=4B vtable-only)
+    //
+    // The early/final selection is discovered per-snippet by
+    // RuntimeRefrReader.ProbeIsEarlyBuild. These tests use the same probe so
+    // the test offsets match production offsets exactly.
+    //
+    // REFR/ACHR/ACRE all share the same struct layout (FormType 0x3A-0x3C).
+
+    private const int FormIdOffset = 12;
+    private const int FinalBaseObjectPtrOffset = 48;
+    private const int FinalParentCellPtrOffset = 80;
+    private const int FinalExtraListHeadOffset = 88;
+
+    private static IReadOnlyList<RuntimeEditorIdEntry> GetRefrSample(DmpSnippetReader snippet, int sampleSize)
+    {
+        // REFR/ACHR/ACRE entries come from the pAllForms hash table
+        // (snippet.RuntimeRefrFormEntries), NOT the EditorID hash table
+        // (snippet.RuntimeEditorIds). The EditorID table contains a sparse
+        // set of REFRs with explicit names but their TesFormOffset is often
+        // stale/uninitialized — only the pAllForms entries have reliable
+        // offsets.
+        return snippet.RuntimeRefrFormEntries
+            .Where(e => e.FormType is >= 0x3A and <= 0x3C
+                        && e.TesFormOffset.HasValue
+                        && e.FormId != 0x14) // exclude Player
+            .Take(sampleSize)
+            .ToList();
+    }
+
+    /// <summary>
+    ///     FormID sanity: the uint32 at TesFormOffset + 12 should equal the
+    ///     entry's FormId. Validates that TesFormOffset is in fact pointing at
+    ///     a TESForm header (every TESObjectREFR starts with TESForm at +0).
+    ///     A wrong TesFormOffset would land 12 bytes into garbage memory.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task REFR_FormId_at_offset_12_matches_entry_FormId(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var refrs = GetRefrSample(snippet, 500);
+
+        var checkedCount = 0;
+        var matches = 0;
+        var mismatches = new List<string>();
+
+        foreach (var entry in refrs)
+        {
+            var buf = context.ReadBytes(entry.TesFormOffset!.Value + FormIdOffset, 4);
+            if (buf == null) continue;
+            var runtimeFormId = BinaryUtils.ReadUInt32BE(buf, 0);
+            checkedCount++;
+            if (runtimeFormId == entry.FormId)
+            {
+                matches++;
+            }
+            else if (mismatches.Count < 10)
+            {
+                mismatches.Add(
+                    $"0x{entry.FormId:X8} {entry.EditorId ?? "?"}: TesFormOffset+12 reads 0x{runtimeFormId:X8}");
+            }
+        }
+
+        Assert.True(checkedCount >= 50, $"[{snippetName}] Only {checkedCount} REFRs captured.");
+        var rate = (double)matches / checkedCount;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] REFR FormId sanity: {matches}/{checkedCount} ({rate:P0}).");
+
+        Assert.True(rate >= 0.95,
+            $"[{snippetName}] REFR FormId sanity {rate:P0} below threshold. "
+            + $"TesFormOffset may not be pointing at a TESForm header. First 10:\n  "
+            + string.Join("\n  ", mismatches));
+    }
+
+    /// <summary>
+    ///     BaseObjectPtr at +48 + shift. Every REFR must have a base object
+    ///     (the TESForm it's an instance of), so this should be ~100%
+    ///     pointer-shape with very few nulls.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task REFR_BaseObjectPtr_offset_lands_on_heap_pointer(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var refrs = GetRefrSample(snippet, 500);
+        var isEarlyBuild = RuntimeRefrReader.ProbeIsEarlyBuild(context, refrs);
+        var shift = RuntimeBuildOffsets.GetRefrFieldShift(isEarlyBuild);
+        var baseObjectOffset = FinalBaseObjectPtrOffset + shift;
+
+        var (checkedCount, pointerShaped, nonPointer) = ScanPointerShape(refrs, context, baseObjectOffset);
+        Assert.True(checkedCount >= 50, $"[{snippetName}] Only {checkedCount} REFRs captured.");
+        var rate = (double)pointerShaped / checkedCount;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] REFR BaseObjectPtr pointer-shape: {pointerShaped}/{checkedCount} ({rate:P0}) "
+            + $"at offset {baseObjectOffset} (= 48 + refrShift({shift}), isEarlyBuild={isEarlyBuild}).");
+
+        Assert.True(rate >= 0.95,
+            $"[{snippetName}] REFR BaseObjectPtr pointer-shape {rate:P0} below threshold "
+            + $"(offset {baseObjectOffset}). First 10 non-pointer values:\n  "
+            + string.Join("\n  ", nonPointer));
+    }
+
+    /// <summary>
+    ///     ParentCellPtr at +80 + shift. Most REFRs have a parent cell, but
+    ///     some (particularly persistent refs initially outside any cell) may
+    ///     be null. Threshold relaxed accordingly.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task REFR_ParentCellPtr_offset_lands_on_heap_pointer_or_null(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var refrs = GetRefrSample(snippet, 500);
+        var isEarlyBuild = RuntimeRefrReader.ProbeIsEarlyBuild(context, refrs);
+        var shift = RuntimeBuildOffsets.GetRefrFieldShift(isEarlyBuild);
+        var parentCellOffset = FinalParentCellPtrOffset + shift;
+
+        var (checkedCount, pointerShaped, nonPointer) = ScanPointerShape(refrs, context, parentCellOffset);
+        Assert.True(checkedCount >= 50, $"[{snippetName}] Only {checkedCount} REFRs captured.");
+        var rate = (double)pointerShaped / checkedCount;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] REFR ParentCellPtr pointer-shape: {pointerShaped}/{checkedCount} ({rate:P0}) "
+            + $"at offset {parentCellOffset} (= 80 + refrShift({shift})).");
+
+        Assert.True(rate >= 0.9,
+            $"[{snippetName}] REFR ParentCellPtr pointer-shape {rate:P0} below threshold "
+            + $"(offset {parentCellOffset}). First 10 non-pointer values:\n  "
+            + string.Join("\n  ", nonPointer));
+    }
+
+    /// <summary>
+    ///     ExtraListHead at +88 + shift. BSExtraData chain head. Some refs
+    ///     have no extras (null); others point to a chain. Both null and heap
+    ///     pointer are valid.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task REFR_ExtraListHead_offset_lands_on_heap_pointer_or_null(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var refrs = GetRefrSample(snippet, 500);
+        var isEarlyBuild = RuntimeRefrReader.ProbeIsEarlyBuild(context, refrs);
+        var shift = RuntimeBuildOffsets.GetRefrFieldShift(isEarlyBuild);
+        var extraListOffset = FinalExtraListHeadOffset + shift;
+
+        var (checkedCount, pointerShaped, nonPointer) = ScanPointerShape(refrs, context, extraListOffset);
+        Assert.True(checkedCount >= 50, $"[{snippetName}] Only {checkedCount} REFRs captured.");
+        var rate = (double)pointerShaped / checkedCount;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] REFR ExtraListHead pointer-shape: {pointerShaped}/{checkedCount} ({rate:P0}) "
+            + $"at offset {extraListOffset} (= 88 + refrShift({shift})).");
+
+        Assert.True(rate >= 0.9,
+            $"[{snippetName}] REFR ExtraListHead pointer-shape {rate:P0} below threshold "
+            + $"(offset {extraListOffset}). First 10 non-pointer values:\n  "
+            + string.Join("\n  ", nonPointer));
+    }
+
+    // =========================================================================
+    // WEAP (TESObjectWEAP) section
+    // =========================================================================
+    // RuntimeItemReader uses RuntimeItemLayouts for offsets (all `+ _s` where
+    // _s = GetPdbShift = 16 for all known builds). Pointer fields are PDB-
+    // derived and primary risk surface for the PDB-postdates-DMPs problem.
+    //
+    // Anchors:
+    //   FormID @ +12          — TesFormOffset sanity (TESForm header start)
+    //   WeapAmmoPtr @ +184    — pointer to TESAmmo (rarely null on real weapons)
+    //   WeapPickupSound @ +252 — pointer to TESSound (often present)
+
+    /// <summary>
+    ///     Filter WEAP entries to those whose runtime TESForm at +12 actually
+    ///     matches the entry's FormId. The EditorID hash table contains stale/
+    ///     freed entries (especially in early-build dumps like debug_dump), which
+    ///     the production reader silently drops via the same FormID check. The
+    ///     subsequent pointer-shape tests need a clean baseline of validated
+    ///     WEAPs to avoid testing offsets on garbage memory.
+    /// </summary>
+    private static IReadOnlyList<RuntimeEditorIdEntry> GetValidatedWeapSample(
+        DmpSnippetReader snippet, RuntimeMemoryContext context, int sampleSize)
+    {
+        var candidates = snippet.RuntimeEditorIds
+            .Where(e => e.FormType == 0x28 && e.TesFormOffset.HasValue)
+            .Take(sampleSize * 4) // over-fetch so we can drop stale entries
+            .ToList();
+
+        var validated = new List<RuntimeEditorIdEntry>(sampleSize);
+        foreach (var entry in candidates)
+        {
+            var buf = context.ReadBytes(entry.TesFormOffset!.Value + FormIdOffset, 4);
+            if (buf == null) continue;
+            if (BinaryUtils.ReadUInt32BE(buf, 0) == entry.FormId)
+            {
+                validated.Add(entry);
+                if (validated.Count >= sampleSize) break;
+            }
+        }
+
+        return validated;
+    }
+
+    /// <summary>
+    ///     Diagnostic: count WEAP entries in EditorID hash table vs those that
+    ///     pass FormID validation (TesFormOffset+12 == entry.FormId). Low
+    ///     validation rates indicate the hash table contains stale entries
+    ///     that the production reader silently drops. This is a snippet
+    ///     quality / data-source health check, not an offset bug.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task WEAP_EditorIdHashTable_validation_rate_diagnostic(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var weaps = snippet.RuntimeEditorIds
+            .Where(e => e.FormType == 0x28 && e.TesFormOffset.HasValue)
+            .Take(500)
+            .ToList();
+
+        var validated = 0;
+        foreach (var entry in weaps)
+        {
+            var buf = context.ReadBytes(entry.TesFormOffset!.Value + FormIdOffset, 4);
+            if (buf != null && BinaryUtils.ReadUInt32BE(buf, 0) == entry.FormId)
+            {
+                validated++;
+            }
+        }
+
+        var rate = weaps.Count > 0 ? (double)validated / weaps.Count : 0;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] WEAP EditorID validation rate: {validated}/{weaps.Count} ({rate:P0}) "
+            + "(low rate = stale hash table entries, production reader silently drops mismatches).");
+
+        // Only assert that at least SOME WEAPs are validated — staleness rate
+        // varies legitimately across snippet families.
+        Assert.True(validated >= 20,
+            $"[{snippetName}] Only {validated} WEAPs validated — need >= 20 for pointer-shape anchors.");
+    }
+
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task WEAP_AmmoPtr_offset_lands_on_heap_pointer_or_null(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var weaps = GetValidatedWeapSample(snippet, context, 200);
+        Assert.True(weaps.Count >= 20, $"[{snippetName}] Only {weaps.Count} validated WEAPs.");
+
+        var s = RuntimeBuildOffsets.GetPdbShift(MinidumpAnalyzer.DetectBuildType(snippet.MinidumpInfo));
+        var ammoPtrOffset = 168 + s; // WeapAmmoPtrOffset
+
+        var (checkedCount, pointerShaped, nonPointer) = ScanPointerShape(weaps, context, ammoPtrOffset);
+        var rate = (double)pointerShaped / checkedCount;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] WEAP AmmoPtr pointer-shape: {pointerShaped}/{checkedCount} ({rate:P0}) "
+            + $"at offset {ammoPtrOffset} (= 168 + _s({s})).");
+
+        Assert.True(rate >= 0.9,
+            $"[{snippetName}] WEAP AmmoPtr pointer-shape {rate:P0} below threshold "
+            + $"(offset {ammoPtrOffset}). First 10 non-pointer values:\n  "
+            + string.Join("\n  ", nonPointer));
+    }
+
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task WEAP_PickupSound_offset_lands_on_heap_pointer_or_null(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var weaps = GetValidatedWeapSample(snippet, context, 200);
+        Assert.True(weaps.Count >= 20, $"[{snippetName}] Only {weaps.Count} validated WEAPs.");
+
+        var s = RuntimeBuildOffsets.GetPdbShift(MinidumpAnalyzer.DetectBuildType(snippet.MinidumpInfo));
+        var pickupSoundOffset = 236 + s; // WeapPickupSoundOffset
+
+        var (checkedCount, pointerShaped, nonPointer) = ScanPointerShape(weaps, context, pickupSoundOffset);
+        var rate = (double)pointerShaped / checkedCount;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] WEAP PickupSound pointer-shape: {pointerShaped}/{checkedCount} ({rate:P0}) "
+            + $"at offset {pickupSoundOffset} (= 236 + _s({s})).");
+
+        Assert.True(rate >= 0.9,
+            $"[{snippetName}] WEAP PickupSound pointer-shape {rate:P0} below threshold "
+            + $"(offset {pickupSoundOffset}). First 10 non-pointer values:\n  "
+            + string.Join("\n  ", nonPointer));
+    }
+
+    // =========================================================================
+    // LAND audit — DEFERRED. RuntimeWorldReader operates on LAND records, but
+    // LAND has no EditorID, so the EditorID hash table (snippet.RuntimeEditorIds)
+    // doesn't reliably carry LAND entries. The pAllForms hash table does, but
+    // DmpSnippetManifest only exposes RuntimeEditorIds + RuntimeRefrFormEntries
+    // (LAND is captured separately as RuntimeLandFormEntries in the live
+    // EsmRecordScanResult but not serialized into snippet manifests yet).
+    //
+    // Side finding from the first LAND audit attempt: in `release_dump`, the
+    // EditorID hash table contains 16 entries with FormType 0x42 whose editor
+    // IDs are WORLDSPACE names (Wasteland, FreesideWorld, FFEncounterWorld,
+    // WastelandNV). That's empirical confirmation of the well-known FormType
+    // drift — in some early builds, 0x42 contains WRLD records (which RTTI
+    // mapping says is LAND, but the runtime built-in enum had inserted a type
+    // and shifted everything). `RuntimeBuildOffsets.DetectFormTypeDrift` is
+    // responsible for remapping. The snippet stores pre-drift-detection
+    // FormType bytes, so naively filtering on FormType==0x42 grabs WRLDs.
+    //
+    // To audit RuntimeWorldReader properly, the snippet manifest needs to
+    // surface RuntimeLandFormEntries. Tracked as a follow-up.
 
     /// <summary>
     ///     Xbox 360 heap pointers cluster in 0x40000000-0x7FFFFFFF. The XEX
