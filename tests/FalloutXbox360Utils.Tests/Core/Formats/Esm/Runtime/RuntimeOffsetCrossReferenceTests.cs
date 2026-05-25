@@ -791,6 +791,51 @@ public sealed class RuntimeOffsetCrossReferenceTests
             + string.Join("\n  ", nonPointer));
     }
 
+    /// <summary>
+    ///     Exploration helper for the Phase 1B.15B RACE fallback investigation.
+    ///     For debug_dump, prints how many voice pointers resolve at each candidate
+    ///     G2 shift. Helps diagnose whether the -8 fallback is correct or if
+    ///     debug_dump's voice ptrs simply aren't in the captured snippet memory.
+    /// </summary>
+    [Fact(Skip = "Diagnostic only — confirmed via Phase 1B.15B that NO G2 shift produces voice FormID resolution on debug_dump; the issue is snippet capture (heap targets not in snippet), not an offset bug. Un-skip to re-run if voice ptr handling regresses.")]
+    public async Task RACE_debug_dump_g2_shift_exploration()
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, "debug_dump");
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var raceEntries = snippet.RuntimeEditorIds
+            .Where(e => e.FormType == 0x0C && e.TesFormOffset.HasValue)
+            .ToList();
+        var accessor = new RuntimePdbFieldAccessor(context);
+        var voiceFmt = (byte)0x5D;
+
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"debug_dump RACE entries: {raceEntries.Count}");
+
+        foreach (var shift in new[] { -16, -12, -8, -4, 0, 4, 8, 12, 16 })
+        {
+            var votesFollowed = 0;
+            var ptrShape = 0;
+            foreach (var entry in raceEntries)
+            {
+                var view = accessor.OpenStructView(entry)
+                    ?.WithShift(0, 1000, 0)
+                    .WithShift(1200, int.MaxValue, shift);
+                if (view == null) continue;
+                var voiceOff = view.Offset("pDefaultVoiceType", "TESRace");
+                if (voiceOff is not { } vOff) continue;
+                var buf = context.ReadBytes(entry.TesFormOffset!.Value + vOff, 4);
+                if (buf == null) continue;
+                var ptr = BinaryUtils.ReadUInt32BE(buf, 0);
+                if (ptr == 0 || (ptr >= 0x40000000 && ptr < 0x80000000)) ptrShape++;
+                var voiceFormId = context.FollowPointerToFormId(buf, 0, voiceFmt);
+                if (voiceFormId.HasValue) votesFollowed++;
+            }
+
+            TestContext.Current.TestOutputHelper!.WriteLine(
+                $"  shift={shift,3}: ptr-shape={ptrShape}/{raceEntries.Count}, voiceFormId resolved={votesFollowed}");
+        }
+    }
+
     // =========================================================================
     // BOOK (TESObjectBOOK) — Group2 baked-shift validation
     // =========================================================================
@@ -1001,15 +1046,32 @@ public sealed class RuntimeOffsetCrossReferenceTests
         }
 
         var rate = (double)populated / raceEntries.Count;
+        var buildType = MinidumpAnalyzer.DetectBuildType(snippet.MinidumpInfo);
         TestContext.Current.TestOutputHelper!.WriteLine(
             $"[{snippetName}] RACE pipeline: {populated}/{raceEntries.Count} ({rate:P0}) populated; "
             + $"{withHeight} with valid height, {withVoice} with voice pointer "
-            + $"(probe margin={probeResult?.Margin ?? 0}).");
+            + $"(probe margin={probeResult?.Margin ?? 0}, buildType={buildType ?? "?"}).");
 
         Assert.True(rate >= 0.5,
             $"[{snippetName}] RACE pipeline pass rate {rate:P0} below threshold "
             + $"({populated}/{raceEntries.Count}). First 10 failures:\n  "
             + string.Join("\n  ", failed));
+
+        // Phase 1B.15B investigation: voice ptrs resolve cleanly on 4 of 5
+        // snippets. debug_dump returns 0 not because of an offset bug, but
+        // because the VTYP TESForms its voice pointers reference aren't in
+        // the captured snippet memory regions (the pointers themselves ARE
+        // heap-shaped at the default offset; FollowPointerToFormId just
+        // can't dereference outside the snippet). Documented in
+        // RACE_debug_dump_g2_shift_exploration (skipped diagnostic test).
+        // So: require voice ptrs on >= 3 of 5 snippets, not all 5.
+        if (snippetName != "debug_dump")
+        {
+            Assert.True(withVoice > 0,
+                $"[{snippetName}] RACE pipeline produced 0 voice pointers — the "
+                + "PdbStructView+WithShift+probe path may have regressed. "
+                + $"Probe margin={probeResult?.Margin ?? 0}.");
+        }
     }
 
     // =========================================================================

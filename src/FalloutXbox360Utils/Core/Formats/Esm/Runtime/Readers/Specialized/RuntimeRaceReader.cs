@@ -46,6 +46,17 @@ internal sealed class RuntimeRaceReader
             _g1Shift = shifts.Length > 1 ? shifts[1] : 0;
             _g2Shift = shifts.Length > 2 ? shifts[2] : 0;
         }
+
+        // Note (Phase 1B.15B investigation): A build-type-aware fallback that
+        // sets _g2Shift = -8 for Debug builds was tried but reverted. The
+        // observation that "Debug shifts G2 by -8" came from the Phase 1B.5
+        // probe sweep over 32 DMPs, but is not universally true. Empirical
+        // testing on the debug_dump snippet shows G2 bytes at +0 (no shift)
+        // are pointer-shape 22/22 while bytes at -8 are 0/22. The 0/22
+        // voice-FormID resolution on debug_dump is a snippet capture
+        // limitation (pointers exist but their VTYP targets aren't in the
+        // captured heap regions), not an offset bug. Leave the 0/0 fallback
+        // as the conservative default for inconclusive-probe cases.
     }
 
     public RaceRecord? ReadRuntimeRace(RuntimeEditorIdEntry entry)
