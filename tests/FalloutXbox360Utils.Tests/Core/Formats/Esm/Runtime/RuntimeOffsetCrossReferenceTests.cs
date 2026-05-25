@@ -837,6 +837,363 @@ public sealed class RuntimeOffsetCrossReferenceTests
     }
 
     // =========================================================================
+    // DIAL / INFO — RuntimeDialogueReader pointer anchors
+    // =========================================================================
+    // RuntimeDialogueLayouts hardcodes the validated Debug/Release/MemDebug
+    // offsets. Pointer fields:
+    //   DIAL (0x45) QuestInfoList @ +60 — BSSimpleList<TESTopicInfo*> head
+    //   INFO (0x46) AddTopics @ +64     — BSSimpleList<TESTopic*> head
+    //   INFO (0x46) Speaker @ +76        — pNPC speaker (often null)
+    //   INFO (0x46) Quest @ +88          — pOwnerQuest (mostly non-null)
+    //
+    // FormType-drift caveat: release_dump may have DIAL/INFO at shifted bytes
+    // (same pattern as PACK). The validated-sample helper drops entries where
+    // TesFormOffset+12 != FormId, which catches drift-mislabeled entries.
+
+    /// <summary>
+    ///     Filter snippet entries to those whose TesFormOffset+12 matches the entry's
+    ///     FormId. Optionally drift-detects: if 0 validated at <paramref name="formType" />,
+    ///     also tries <paramref name="driftFormType" /> (typically formType+1 for the
+    ///     dialogue/PACK FormType-drift case).
+    /// </summary>
+    private static IReadOnlyList<RuntimeEditorIdEntry> GetValidatedSampleByFormType(
+        DmpSnippetReader snippet, RuntimeMemoryContext context, byte formType, int sampleSize,
+        byte? driftFormType = null)
+    {
+        var validated = TryFormType(formType);
+        if (validated.Count == 0 && driftFormType.HasValue)
+        {
+            validated = TryFormType(driftFormType.Value);
+        }
+
+        return validated;
+
+        List<RuntimeEditorIdEntry> TryFormType(byte ft)
+        {
+            var candidates = snippet.RuntimeEditorIds
+                .Where(e => e.FormType == ft && e.TesFormOffset.HasValue)
+                .Take(sampleSize * 4)
+                .ToList();
+
+            var matches = new List<RuntimeEditorIdEntry>(sampleSize);
+            foreach (var entry in candidates)
+            {
+                var buf = context.ReadBytes(entry.TesFormOffset!.Value + FormIdOffset, 4);
+                if (buf == null) continue;
+                if (BinaryUtils.ReadUInt32BE(buf, 0) == entry.FormId)
+                {
+                    matches.Add(entry);
+                    if (matches.Count >= sampleSize) break;
+                }
+            }
+
+            return matches;
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task DIAL_QuestInfoList_offset_lands_on_heap_pointer_or_null(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var dials = GetValidatedSampleByFormType(snippet, context, 0x45, 200);
+
+        if (dials.Count < 20)
+        {
+            TestContext.Current.TestOutputHelper!.WriteLine(
+                $"[{snippetName}] Only {dials.Count} validated DIALs — under-exercised.");
+            return;
+        }
+
+        const int questInfoListOffset = 60; // RuntimeDialogueLayouts.DialQuestInfoListOffset
+        var (checkedCount, pointerShaped, nonPointer) = ScanPointerShape(dials, context, questInfoListOffset);
+        var rate = (double)pointerShaped / checkedCount;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] DIAL QuestInfoList pointer-shape: {pointerShaped}/{checkedCount} ({rate:P0}) "
+            + $"at offset {questInfoListOffset}.");
+
+        Assert.True(rate >= 0.9,
+            $"[{snippetName}] DIAL QuestInfoList pointer-shape {rate:P0} below threshold "
+            + $"(offset {questInfoListOffset}). First 10 non-pointer values:\n  "
+            + string.Join("\n  ", nonPointer));
+    }
+
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task INFO_AddTopics_offset_lands_on_heap_pointer_or_null(string snippetName)
+    {
+        // Skip release_dump: FormType drift puts DIAL at 0x46 (where INFO normally
+        // lives) and INFO at 0x47. Without drift-aware FormType remapping in the
+        // snippet manifest, our 0x46 filter would grab DIALs not INFOs.
+        if (snippetName == "release_dump")
+        {
+            TestContext.Current.TestOutputHelper!.WriteLine(
+                "[release_dump] Skipped — FormType drift puts DIAL at 0x46, not INFO.");
+            return;
+        }
+
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var infos = GetValidatedSampleByFormType(snippet, context, 0x46, 200);
+
+        if (infos.Count < 20)
+        {
+            TestContext.Current.TestOutputHelper!.WriteLine(
+                $"[{snippetName}] Only {infos.Count} validated INFOs — under-exercised.");
+            return;
+        }
+
+        const int addTopicsOffset = 64; // RuntimeDialogueLayouts.InfoAddTopicsOffset
+        var (checkedCount, pointerShaped, nonPointer) = ScanPointerShape(infos, context, addTopicsOffset);
+        var rate = (double)pointerShaped / checkedCount;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] INFO AddTopics pointer-shape: {pointerShaped}/{checkedCount} ({rate:P0}) "
+            + $"at offset {addTopicsOffset}.");
+
+        Assert.True(rate >= 0.9,
+            $"[{snippetName}] INFO AddTopics pointer-shape {rate:P0} below threshold "
+            + $"(offset {addTopicsOffset}). First 10 non-pointer values:\n  "
+            + string.Join("\n  ", nonPointer));
+    }
+
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task INFO_Quest_offset_lands_on_heap_pointer_or_null(string snippetName)
+    {
+        // Skip release_dump: see INFO_AddTopics for FormType drift explanation.
+        if (snippetName == "release_dump")
+        {
+            TestContext.Current.TestOutputHelper!.WriteLine(
+                "[release_dump] Skipped — FormType drift puts DIAL at 0x46, not INFO.");
+            return;
+        }
+
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var infos = GetValidatedSampleByFormType(snippet, context, 0x46, 200);
+
+        if (infos.Count < 20)
+        {
+            TestContext.Current.TestOutputHelper!.WriteLine(
+                $"[{snippetName}] Only {infos.Count} validated INFOs — under-exercised.");
+            return;
+        }
+
+        const int questOffset = 88; // RuntimeDialogueLayouts.InfoLayout.QuestPtrOffset
+        var (checkedCount, pointerShaped, nonPointer) = ScanPointerShape(infos, context, questOffset);
+        var rate = (double)pointerShaped / checkedCount;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] INFO Quest pointer-shape: {pointerShaped}/{checkedCount} ({rate:P0}) "
+            + $"at offset {questOffset}.");
+
+        Assert.True(rate >= 0.9,
+            $"[{snippetName}] INFO Quest pointer-shape {rate:P0} below threshold "
+            + $"(offset {questOffset}). First 10 non-pointer values:\n  "
+            + string.Join("\n  ", nonPointer));
+    }
+
+    // =========================================================================
+    // QUST (TESQuest) — RuntimeQuestTerminalReader extras
+    // =========================================================================
+    // Phase 1B.7 covered TERM offsets (Difficulty/Flags/MenuItemList). Adding
+    // QUST pointer anchors here:
+    //   QustScriptOffset @ +44 (= 28 + _s(16))    — Script* pFormScript
+    //   QustStageListOffset @ +84 (= 68 + _s(16)) — BSSimpleList<TESQuestStage*> head
+    //   QustObjectiveListOffset @ +92 (= 76 + _s(16)) — BSSimpleList<TESQuestObjective*> head
+
+    private static IReadOnlyList<RuntimeEditorIdEntry> GetValidatedQustSample(
+        DmpSnippetReader snippet, RuntimeMemoryContext context, int sampleSize)
+    {
+        var candidates = snippet.RuntimeEditorIds
+            .Where(e => e.FormType == 0x47 && e.TesFormOffset.HasValue)
+            .Take(sampleSize * 4)
+            .ToList();
+
+        var validated = new List<RuntimeEditorIdEntry>(sampleSize);
+        foreach (var entry in candidates)
+        {
+            var buf = context.ReadBytes(entry.TesFormOffset!.Value + FormIdOffset, 4);
+            if (buf == null) continue;
+            if (BinaryUtils.ReadUInt32BE(buf, 0) == entry.FormId)
+            {
+                validated.Add(entry);
+                if (validated.Count >= sampleSize) break;
+            }
+        }
+
+        return validated;
+    }
+
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task QUST_ScriptPtr_offset_lands_on_heap_pointer_or_null(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var qusts = GetValidatedQustSample(snippet, context, 200);
+
+        if (qusts.Count < 20)
+        {
+            TestContext.Current.TestOutputHelper!.WriteLine(
+                $"[{snippetName}] Only {qusts.Count} validated QUSTs — under-exercised.");
+            return;
+        }
+
+        var s = RuntimeBuildOffsets.GetPdbShift(MinidumpAnalyzer.DetectBuildType(snippet.MinidumpInfo));
+        var scriptOffset = 28 + s;
+
+        var (checkedCount, pointerShaped, nonPointer) = ScanPointerShape(qusts, context, scriptOffset);
+        var rate = (double)pointerShaped / checkedCount;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] QUST ScriptPtr pointer-shape: {pointerShaped}/{checkedCount} ({rate:P0}) "
+            + $"at offset {scriptOffset} (= 28 + _s({s})).");
+
+        Assert.True(rate >= 0.9,
+            $"[{snippetName}] QUST ScriptPtr pointer-shape {rate:P0} below threshold "
+            + $"(offset {scriptOffset}). First 10 non-pointer values:\n  "
+            + string.Join("\n  ", nonPointer));
+    }
+
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task QUST_StageList_offset_lands_on_heap_pointer_or_null(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var qusts = GetValidatedQustSample(snippet, context, 200);
+
+        if (qusts.Count < 20)
+        {
+            TestContext.Current.TestOutputHelper!.WriteLine(
+                $"[{snippetName}] Only {qusts.Count} validated QUSTs — under-exercised.");
+            return;
+        }
+
+        var s = RuntimeBuildOffsets.GetPdbShift(MinidumpAnalyzer.DetectBuildType(snippet.MinidumpInfo));
+        var stageListOffset = 68 + s;
+
+        var (checkedCount, pointerShaped, nonPointer) = ScanPointerShape(qusts, context, stageListOffset);
+        var rate = (double)pointerShaped / checkedCount;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] QUST StageList pointer-shape: {pointerShaped}/{checkedCount} ({rate:P0}) "
+            + $"at offset {stageListOffset} (= 68 + _s({s})).");
+
+        Assert.True(rate >= 0.9,
+            $"[{snippetName}] QUST StageList pointer-shape {rate:P0} below threshold "
+            + $"(offset {stageListOffset}). First 10 non-pointer values:\n  "
+            + string.Join("\n  ", nonPointer));
+    }
+
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task QUST_ObjectiveList_offset_lands_on_heap_pointer_or_null(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var qusts = GetValidatedQustSample(snippet, context, 200);
+
+        if (qusts.Count < 20)
+        {
+            TestContext.Current.TestOutputHelper!.WriteLine(
+                $"[{snippetName}] Only {qusts.Count} validated QUSTs — under-exercised.");
+            return;
+        }
+
+        var s = RuntimeBuildOffsets.GetPdbShift(MinidumpAnalyzer.DetectBuildType(snippet.MinidumpInfo));
+        var objListOffset = 76 + s;
+
+        var (checkedCount, pointerShaped, nonPointer) = ScanPointerShape(qusts, context, objListOffset);
+        var rate = (double)pointerShaped / checkedCount;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] QUST ObjectiveList pointer-shape: {pointerShaped}/{checkedCount} ({rate:P0}) "
+            + $"at offset {objListOffset} (= 76 + _s({s})).");
+
+        Assert.True(rate >= 0.9,
+            $"[{snippetName}] QUST ObjectiveList pointer-shape {rate:P0} below threshold "
+            + $"(offset {objListOffset}). First 10 non-pointer values:\n  "
+            + string.Join("\n  ", nonPointer));
+    }
+
+    // =========================================================================
+    // ACHR (Character placed-actor runtime instance) — RuntimeActorWeaponReader
+    // =========================================================================
+    // RuntimeActorWeaponReader reads weapon equip state from ACHR records (FormType
+    // 0x3B). Hardcoded offsets (no PdbStructView yet):
+    //   FormIdOffset @ +12  — TESForm header
+    //   CurrentProcessPtrOffset @ +120 — pointer to actor's runtime process state
+    //   BipedPtrOffset @ +452 — pointer to BipedAnim (which holds equipped weapon)
+    //
+    // ACHR entries come from snippet.RuntimeRefrFormEntries (pAllForms hash table),
+    // same source as REFR/ACRE.
+
+    private static IReadOnlyList<RuntimeEditorIdEntry> GetAchrSample(DmpSnippetReader snippet, int sampleSize)
+    {
+        return snippet.RuntimeRefrFormEntries
+            .Where(e => e.FormType == 0x3B
+                        && e.TesFormOffset.HasValue
+                        && e.FormId != 0x14)
+            .Take(sampleSize)
+            .ToList();
+    }
+
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task ACHR_CurrentProcessPtr_offset_lands_on_heap_pointer_or_null(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var achrs = GetAchrSample(snippet, 500);
+
+        if (achrs.Count < 20)
+        {
+            TestContext.Current.TestOutputHelper!.WriteLine(
+                $"[{snippetName}] Only {achrs.Count} ACHR entries — under-exercised.");
+            return;
+        }
+
+        const int currentProcessPtrOffset = 120;
+        var (checkedCount, pointerShaped, nonPointer) = ScanPointerShape(achrs, context, currentProcessPtrOffset);
+        var rate = (double)pointerShaped / checkedCount;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] ACHR CurrentProcessPtr pointer-shape: {pointerShaped}/{checkedCount} ({rate:P0}) "
+            + $"at offset {currentProcessPtrOffset}.");
+
+        Assert.True(rate >= 0.9,
+            $"[{snippetName}] ACHR CurrentProcessPtr pointer-shape {rate:P0} below threshold "
+            + $"(offset {currentProcessPtrOffset}). First 10 non-pointer values:\n  "
+            + string.Join("\n  ", nonPointer));
+    }
+
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task ACHR_BipedPtr_offset_lands_on_heap_pointer_or_null(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var achrs = GetAchrSample(snippet, 500);
+
+        if (achrs.Count < 20)
+        {
+            TestContext.Current.TestOutputHelper!.WriteLine(
+                $"[{snippetName}] Only {achrs.Count} ACHR entries — under-exercised.");
+            return;
+        }
+
+        const int bipedPtrOffset = 452;
+        var (checkedCount, pointerShaped, nonPointer) = ScanPointerShape(achrs, context, bipedPtrOffset);
+        var rate = (double)pointerShaped / checkedCount;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] ACHR BipedPtr pointer-shape: {pointerShaped}/{checkedCount} ({rate:P0}) "
+            + $"at offset {bipedPtrOffset}.");
+
+        Assert.True(rate >= 0.9,
+            $"[{snippetName}] ACHR BipedPtr pointer-shape {rate:P0} below threshold "
+            + $"(offset {bipedPtrOffset}). First 10 non-pointer values:\n  "
+            + string.Join("\n  ", nonPointer));
+    }
+
+    // =========================================================================
     // BOOK (TESObjectBOOK) — Group2 baked-shift validation
     // =========================================================================
     // RuntimeBookReader uses RuntimeBookLayout.CreateDefault() with baked-in
