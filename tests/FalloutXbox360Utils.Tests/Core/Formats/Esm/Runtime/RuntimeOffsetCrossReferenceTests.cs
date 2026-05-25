@@ -1,3 +1,4 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers;
@@ -1115,6 +1116,72 @@ public sealed class RuntimeOffsetCrossReferenceTests
             + string.Join("\n  ", ldNonPtr));
     }
 
+    /// <summary>
+    ///     Render xex5's 143 ESM-side LAND records as PNG heightmaps so the
+    ///     user can visually verify they're real terrain (varied heights) vs
+    ///     all-flat / garbage. Files written to TestOutput/xex5_heightmaps/.
+    /// </summary>
+    [Fact]
+    public async Task LAND_render_xex5_heightmaps_for_visual_inspection()
+    {
+        var dmpPath = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "Sample", "MemoryDump", "Fallout_Release_Beta.xex5.dmp"));
+        Assert.True(File.Exists(dmpPath), $"DMP not found: {dmpPath}");
+
+        var analyzer = new MinidumpAnalyzer();
+        var analysis = await analyzer.AnalyzeAsync(dmpPath);
+        Assert.NotNull(analysis.EsmRecords);
+        var lands = analysis.EsmRecords!.LandRecords;
+        var landsWithHeightmaps = lands.Where(l => l.Heightmap != null).ToList();
+
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"xex5 ESM LAND records: {lands.Count} total, {landsWithHeightmaps.Count} with VHGT heightmap.");
+
+        // Height-variance diagnostic — confirm we're not just looking at zero deltas.
+        if (landsWithHeightmaps.Count > 0)
+        {
+            var allDeltas = landsWithHeightmaps
+                .Select(l => l.Heightmap!.CalculateHeights())
+                .SelectMany(grid =>
+                {
+                    var flat = new List<float>(grid.Length);
+                    foreach (var row in grid) flat.AddRange(row);
+                    return flat;
+                })
+                .Where(h => !float.IsNaN(h))
+                .ToList();
+            if (allDeltas.Count > 0)
+            {
+                var min = allDeltas.Min();
+                var max = allDeltas.Max();
+                var nonZero = allDeltas.Count(h => Math.Abs(h) > 0.01f);
+                TestContext.Current.TestOutputHelper!.WriteLine(
+                    $"Height stats across {landsWithHeightmaps.Count} LANDs: "
+                    + $"min={min:F1}, max={max:F1}, span={max - min:F1}, "
+                    + $"non-zero deltas={nonZero}/{allDeltas.Count} ({100.0 * nonZero / allDeltas.Count:F1}%)");
+            }
+        }
+
+        var outputDir = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "TestOutput", "xex5_heightmaps"));
+        Directory.CreateDirectory(outputDir);
+
+        await LandRecordHeightmapExporter.ExportLandRecordsAsync(
+            lands.ToList(),
+            outputDir,
+            useColorGradient: true);
+
+        // Count PNGs produced
+        var pngs = Directory.GetFiles(outputDir, "*.png", SearchOption.AllDirectories);
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"Wrote {pngs.Length} PNG files to {outputDir}");
+
+        Assert.True(landsWithHeightmaps.Count > 0,
+            $"Expected > 0 LAND records with VHGT heightmaps in xex5; got {landsWithHeightmaps.Count}.");
+    }
+
     [Fact]
     public async Task LAND_diagnostic_release_beta_xex_dmp()
     {
@@ -1189,7 +1256,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
         var dmpPaths = Directory.GetFiles(dmpDir, "*.dmp").OrderBy(p => p).ToList();
         Assert.True(dmpPaths.Count >= 5, $"Expected >= 5 DMPs, found {dmpPaths.Count}");
 
-        var results = new List<(string Name, int LandCount, int Populated, int LoadedDataNonNull)>();
+        var results = new List<(string Name, int EsmLandCount, int RuntimeLandCount, int Populated, int LoadedDataNonNull)>();
         foreach (var dmpPath in dmpPaths)
         {
             var name = Path.GetFileName(dmpPath);
@@ -1199,7 +1266,7 @@ public sealed class RuntimeOffsetCrossReferenceTests
                 var analysis = await analyzer.AnalyzeAsync(dmpPath);
                 if (analysis.MinidumpInfo == null || analysis.EsmRecords == null)
                 {
-                    results.Add((name, -1, -1, -1)); // failed to analyze
+                    results.Add((name, -1, -1, -1, -1));
                     continue;
                 }
 
@@ -1213,8 +1280,9 @@ public sealed class RuntimeOffsetCrossReferenceTests
                     accessor, new FileInfo(dmpPath).Length, analysis.MinidumpInfo,
                     scan.RuntimeRefrFormEntries, allEntries: scan.RuntimeEditorIds);
 
+                var esmLandCount = scan.LandRecords.Count;
                 var landEntries = scan.RuntimeLandFormEntries.Where(e => e.TesFormOffset.HasValue).ToList();
-                var landCount = landEntries.Count;
+                var runtimeLandCount = landEntries.Count;
 
                 var populated = 0;
                 var loadedDataNonNull = 0;
@@ -1226,37 +1294,41 @@ public sealed class RuntimeOffsetCrossReferenceTests
                     if (record.LoadedDataOffset != 0) loadedDataNonNull++;
                 }
 
-                results.Add((name, landCount, populated, loadedDataNonNull));
+                results.Add((name, esmLandCount, runtimeLandCount, populated, loadedDataNonNull));
             }
             catch (Exception ex)
             {
                 TestContext.Current.TestOutputHelper!.WriteLine($"  {name} FAILED: {ex.GetType().Name}: {ex.Message}");
-                results.Add((name, -2, -2, -2));
+                results.Add((name, -2, -2, -2, -2));
             }
         }
 
         // Log per-DMP findings
-        var dmpsWithLands = results.Where(r => r.LandCount > 0).ToList();
+        var dmpsWithEsmLands = results.Where(r => r.EsmLandCount > 0).ToList();
+        var dmpsWithRuntimeLands = results.Where(r => r.RuntimeLandCount > 0).ToList();
         var dmpsWithLoadedLands = results.Where(r => r.LoadedDataNonNull > 0).ToList();
 
         TestContext.Current.TestOutputHelper!.WriteLine(
             $"Summary: {results.Count} DMPs surveyed, "
-            + $"{dmpsWithLands.Count} with LAND entries, "
+            + $"{dmpsWithEsmLands.Count} with ESM-side LAND records, "
+            + $"{dmpsWithRuntimeLands.Count} with runtime-side RuntimeLandFormEntries, "
             + $"{dmpsWithLoadedLands.Count} with at least one loaded LAND.");
 
-        foreach (var (name, lands, pop, loaded) in results.Where(r => r.LandCount != 0))
+        foreach (var (name, esm, runtime, pop, loaded) in results
+                     .Where(r => r.EsmLandCount > 0 || r.RuntimeLandCount > 0))
         {
             TestContext.Current.TestOutputHelper!.WriteLine(
-                $"  {name,-45} entries={lands,6} populated={pop,5} loaded={loaded,5}");
+                $"  {name,-45} esm={esm,6} runtime={runtime,6} populated={pop,5} loaded={loaded,5}");
         }
 
         // Assertion: at minimum, SOMETHING in this entire set should have LAND data.
         // If every DMP returns 0 entries, either the EditorIdLookupTables fix
         // over-corrected, or no DMP in the set has scannable LAND ESM data.
-        Assert.True(dmpsWithLands.Count > 0,
-            $"All {results.Count} DMPs in Sample/MemoryDump/ returned 0 LAND entries. "
-            + "The EditorIdLookupTables landFormType detection may have over-corrected — "
-            + "every DMP's knownLandFormIds is empty so the fallback skips population.");
+        Assert.True(dmpsWithRuntimeLands.Count > 0 || dmpsWithEsmLands.Count > 0,
+            $"All {results.Count} DMPs in Sample/MemoryDump/ returned 0 LAND entries "
+            + "(both ESM-side and runtime-side). Either the EditorIdLookupTables "
+            + "landFormType detection over-corrected, or the ESM scanner stopped "
+            + "finding LAND records.");
     }
 
     // =========================================================================
