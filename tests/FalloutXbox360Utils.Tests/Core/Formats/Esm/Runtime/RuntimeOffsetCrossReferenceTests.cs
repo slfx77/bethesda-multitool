@@ -2,6 +2,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Probes;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
 using FalloutXbox360Utils.Tests.Helpers;
@@ -787,6 +788,176 @@ public sealed class RuntimeOffsetCrossReferenceTests
         Assert.True(rate >= 0.9,
             $"[{snippetName}] CONT Script pointer-shape {rate:P0} below threshold "
             + $"(offset {scriptPtrOffset}). First 10 non-pointer values:\n  "
+            + string.Join("\n  ", nonPointer));
+    }
+
+    // =========================================================================
+    // RACE (TESRace) production-pipeline audit
+    // =========================================================================
+    // RuntimeRaceReader uses PdbStructView + WithShift with probe-discovered
+    // G1/G2 shifts (RuntimeRaceProbe). Direct pointer-shape testing would
+    // require duplicating the PDB-name resolution path; the cleaner audit is
+    // a production-pipeline test: run ReadRuntimeRace and assert non-null
+    // results for the majority of RACE entries the snippet captured.
+    //
+    // This exercises the full chain: probe → PdbStructView.OpenStructView →
+    // WithShift bands → field-name resolution → pointer follows. A failure
+    // anywhere in the chain (wrong probe, wrong PDB offset, broken WithShift)
+    // would drop the success rate to near zero.
+
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task RACE_ReadRuntimeRace_returns_populated_records(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+
+        var raceEntries = snippet.RuntimeEditorIds
+            .Where(e => e.FormType == 0x0C && e.TesFormOffset.HasValue)
+            .ToList();
+
+        if (raceEntries.Count < 5)
+        {
+            TestContext.Current.TestOutputHelper!.WriteLine(
+                $"[{snippetName}] Only {raceEntries.Count} RACE entries — under-exercised.");
+            return;
+        }
+
+        // Run probe to discover G1/G2 shifts. Identical to what RuntimeStructReader
+        // does during normal initialization.
+        var probeResult = RuntimeRaceProbe.Probe(context, raceEntries);
+        var reader = new RuntimeRaceReader(context, probeResult);
+
+        var populated = 0;
+        var withHeight = 0;
+        var withVoice = 0;
+        var failed = new List<string>();
+        foreach (var entry in raceEntries)
+        {
+            var record = reader.ReadRuntimeRace(entry);
+            if (record == null)
+            {
+                if (failed.Count < 10) failed.Add($"0x{entry.FormId:X8} {entry.EditorId ?? "?"}");
+                continue;
+            }
+
+            populated++;
+            if (record.MaleHeight is > 0 and < 5) withHeight++;
+            if (record.MaleVoiceFormId.HasValue || record.FemaleVoiceFormId.HasValue) withVoice++;
+        }
+
+        var rate = (double)populated / raceEntries.Count;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] RACE pipeline: {populated}/{raceEntries.Count} ({rate:P0}) populated; "
+            + $"{withHeight} with valid height, {withVoice} with voice pointer "
+            + $"(probe margin={probeResult?.Margin ?? 0}).");
+
+        Assert.True(rate >= 0.5,
+            $"[{snippetName}] RACE pipeline pass rate {rate:P0} below threshold "
+            + $"({populated}/{raceEntries.Count}). First 10 failures:\n  "
+            + string.Join("\n  ", failed));
+    }
+
+    // =========================================================================
+    // PACK (TESPackage) extra anchors
+    // =========================================================================
+    // pCombatStyle (PDB +88) is already covered by
+    // PackageTerminalOffsetInvestigationTests (Phase 1B.7 regression set).
+    // These add coverage for the location + target pointer offsets:
+    //   pPackLoc @ +60   (= 44 + _s)  — PackageLocation*
+    //   pPackTarg @ +64  (= 48 + _s)  — PackageTarget*
+    // Both are null on many PACK types; pointer-shape (null OR heap) is the
+    // right check.
+
+    private static IReadOnlyList<RuntimeEditorIdEntry> GetValidatedPackSample(
+        DmpSnippetReader snippet, RuntimeMemoryContext context, int sampleSize)
+    {
+        // FormType 0x49 = PACK in most build variants, but FormType drift in
+        // release_dump puts IDLE animations at 0x49 and PACKs at 0x4A. Try both
+        // FormType bytes and use the one that produces more entries with a
+        // pointer-shaped PackLocPtr (the field most likely to be heap-pointer
+        // for a real PACK — IDLE structs uniformly read 0x00CBCB17 there).
+        var reader = new RuntimePackageReader(context);
+        var s = RuntimeBuildOffsets.GetPdbShift(MinidumpAnalyzer.DetectBuildType(snippet.MinidumpInfo));
+        var packLocOffset = 44 + s;
+
+        IReadOnlyList<RuntimeEditorIdEntry> TryFormType(byte formType)
+        {
+            var candidates = snippet.RuntimeEditorIds
+                .Where(e => e.FormType == formType && e.TesFormOffset.HasValue)
+                .Take(sampleSize * 8)
+                .ToList();
+
+            var validated = new List<RuntimeEditorIdEntry>(sampleSize);
+            foreach (var entry in candidates)
+            {
+                if (reader.ReadRuntimePackage(entry) is null) continue;
+                // Drop entries that lack a pointer-shape at PackLocPtr: those are
+                // FormType-drift mis-tagged entries that ReadRuntimePackage's loose
+                // validation accepted as PACKs.
+                var buf = context.ReadBytes(entry.TesFormOffset!.Value + packLocOffset, 4);
+                if (buf == null) continue;
+                var locPtr = BinaryUtils.ReadUInt32BE(buf, 0);
+                if (!IsNullOrXbox360HeapPointer(locPtr)) continue;
+
+                validated.Add(entry);
+                if (validated.Count >= sampleSize) break;
+            }
+
+            return validated;
+        }
+
+        var at0x49 = TryFormType(0x49);
+        if (at0x49.Count >= 20) return at0x49;
+        var at0x4A = TryFormType(0x4A);
+        return at0x4A.Count > at0x49.Count ? at0x4A : at0x49;
+    }
+
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task PACK_PackLocPtr_offset_lands_on_heap_pointer_or_null(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var packs = GetValidatedPackSample(snippet, context, 200);
+        Assert.True(packs.Count >= 20, $"[{snippetName}] Only {packs.Count} validated PACKs.");
+
+        var s = RuntimeBuildOffsets.GetPdbShift(MinidumpAnalyzer.DetectBuildType(snippet.MinidumpInfo));
+        var packLocOffset = 44 + s;
+
+        var (checkedCount, pointerShaped, nonPointer) = ScanPointerShape(packs, context, packLocOffset);
+        var rate = (double)pointerShaped / checkedCount;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] PACK PackLocPtr pointer-shape: {pointerShaped}/{checkedCount} ({rate:P0}) "
+            + $"at offset {packLocOffset} (= 44 + _s({s})).");
+
+        Assert.True(rate >= 0.9,
+            $"[{snippetName}] PACK PackLocPtr pointer-shape {rate:P0} below threshold "
+            + $"(offset {packLocOffset}). First 10 non-pointer values:\n  "
+            + string.Join("\n  ", nonPointer));
+    }
+
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task PACK_PackTargPtr_offset_lands_on_heap_pointer_or_null(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var packs = GetValidatedPackSample(snippet, context, 200);
+        Assert.True(packs.Count >= 20, $"[{snippetName}] Only {packs.Count} validated PACKs.");
+
+        var s = RuntimeBuildOffsets.GetPdbShift(MinidumpAnalyzer.DetectBuildType(snippet.MinidumpInfo));
+        var packTargOffset = 48 + s;
+
+        var (checkedCount, pointerShaped, nonPointer) = ScanPointerShape(packs, context, packTargOffset);
+        var rate = (double)pointerShaped / checkedCount;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] PACK PackTargPtr pointer-shape: {pointerShaped}/{checkedCount} ({rate:P0}) "
+            + $"at offset {packTargOffset} (= 48 + _s({s})).");
+
+        Assert.True(rate >= 0.9,
+            $"[{snippetName}] PACK PackTargPtr pointer-shape {rate:P0} below threshold "
+            + $"(offset {packTargOffset}). First 10 non-pointer values:\n  "
             + string.Join("\n  ", nonPointer));
     }
 
