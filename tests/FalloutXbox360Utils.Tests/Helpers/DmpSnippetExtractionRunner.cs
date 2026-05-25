@@ -282,6 +282,22 @@ public sealed class DmpSnippetExtractionRunner(SampleFileFixture samples)
             reader.ReadRuntimePackage(entry);
         }
 
+        // LAND reads (Phase 1B.16 — captures TESObjectLAND + LoadedLandData byte
+        // ranges so the snippet supports LAND audits via RuntimeOffsetCrossReferenceTests).
+        // LAND records lack EditorIDs so they come from pAllForms (RuntimeLandFormEntries).
+        var landEntries = scanResult.RuntimeLandFormEntries;
+        foreach (var entry in landEntries.Take(200))
+        {
+            reader.ReadRuntimeLandData(entry);
+        }
+
+        // TERM reads (PackageTerminalOffsetInvestigationTests pins HouseToolsTerminal
+        // at runtime +176 — needs the BGSTerminal struct bytes captured).
+        foreach (var entry in allEntries.Where(e => e.FormType == 0x17 && e.TesFormOffset.HasValue).Take(100))
+        {
+            reader.ReadRuntimeTerminal(entry);
+        }
+
         // Generic record reads (covers remaining FormTypes via PDB layouts)
         foreach (var entry in allEntries
                      .Where(e => e.TesFormOffset.HasValue && !PdbStructLayouts.HasSpecializedReader(e.FormType))

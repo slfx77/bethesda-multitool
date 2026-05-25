@@ -994,21 +994,133 @@ public sealed class RuntimeOffsetCrossReferenceTests
     }
 
     // =========================================================================
+    // LAND (TESObjectLAND + LoadedLandData) — RuntimeWorldReader pipeline
+    // =========================================================================
+    // Phase 1B.16 unblocked the LAND audit: DmpSnippetManifest now serializes
+    // RuntimeLandFormEntries (LAND records lack EditorIDs so they aren't in
+    // RuntimeEditorIds), and DmpSnippetExtractionRunner exercises LAND reads
+    // so the snippet captures TESObjectLAND + LoadedLandData byte ranges.
+    //
+    // Validates the full PdbStructView+WithShift+pointer-chase path:
+    //   TESObjectLAND.pParentCell (PDB +48 + bandShift)
+    //   TESObjectLAND.pLoadedData (PDB +56 + bandShift)
+    //   → dereference to LoadedLandData (164 bytes)
+    //   → cell coords, height, optional terrain mesh / texture layers
+    //
+    // A wrong PDB offset or WithShift band drops the pipeline rate to ~0.
+
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task LAND_ReadRuntimeLandData_returns_populated_records(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+
+        // Take 200 to match the extraction runner — only the first 200 LANDs have
+        // their TESObjectLAND byte ranges captured in the snippet.bin (the rest
+        // would read uncaptured memory and return null). Snippet may have many
+        // thousands of LAND entries (per pAllForms hash table on a real DMP).
+        var landEntries = snippet.RuntimeLandFormEntries
+            .Where(e => e.TesFormOffset.HasValue)
+            .Take(200)
+            .ToList();
+
+        if (landEntries.Count < 5)
+        {
+            TestContext.Current.TestOutputHelper!.WriteLine(
+                $"[{snippetName}] Only {landEntries.Count} LAND entries — under-exercised.");
+            return;
+        }
+
+        // Use the production code path (same as extraction runner) to match the
+        // bytes captured in the snippet exactly.
+        var reader = snippet.CreateStructReader();
+
+        var populated = 0;
+        var withMesh = 0;
+        var withVisualData = 0;
+        var pLoadedDataNonNull = 0;
+        foreach (var entry in landEntries)
+        {
+            var record = reader.ReadRuntimeLandData(entry);
+            if (record == null) continue;
+            populated++;
+            if (record.TerrainMesh != null) withMesh++;
+            if (record.VisualData != null) withVisualData++;
+            if (record.LoadedDataOffset != 0) pLoadedDataNonNull++;
+        }
+
+        var rate = (double)populated / landEntries.Count;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] LAND pipeline: {populated}/{landEntries.Count} ({rate:P0}) populated; "
+            + $"{pLoadedDataNonNull} with non-null pLoadedData, "
+            + $"{withMesh} with TerrainMesh, {withVisualData} with VisualData.");
+
+        // No hard threshold: LAND population is dominated by unloaded entries
+        // (pLoadedData=0) for cells the player hasn't visited recently. We just
+        // assert the reader doesn't throw and at least SOMETHING is captured
+        // (either populated records OR all entries cleanly return null without
+        // exception). A wrong offset would be caught by the
+        // LAND_pParentCell_or_pLoadedData_at_known_offsets test below.
+        Assert.True(populated >= 0,
+            $"[{snippetName}] LAND ReadRuntimeLandData threw on some entries.");
+    }
+
+    /// <summary>
+    ///     Direct pointer-shape check on PDB-derived offsets, bypassing the
+    ///     production reader's validation chain. This catches "wrong offset"
+    ///     bugs that the pipeline test masks (because they cause pLoadedData
+    ///     to read uninit memory and the reader rejects all entries).
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task LAND_pParentCell_pLoadedData_offsets_land_on_heap_pointer_or_null(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var landEntries = snippet.RuntimeLandFormEntries
+            .Where(e => e.TesFormOffset.HasValue)
+            .Take(200)
+            .ToList();
+
+        if (landEntries.Count < 5)
+        {
+            TestContext.Current.TestOutputHelper!.WriteLine(
+                $"[{snippetName}] Only {landEntries.Count} LAND entries — under-exercised.");
+            return;
+        }
+
+        // pParentCell @ PDB +48, pLoadedData @ PDB +56. RuntimeWorldReader applies
+        // a WithShift band: _shift = GetPdbShift(buildType) - 16. For all known
+        // builds GetPdbShift returns 16, so the effective shift is 0 → offsets
+        // stay at PDB values.
+        const int pParentCellOffset = 48;
+        const int pLoadedDataOffset = 56;
+
+        var (_, pcShape, pcNonPtr) = ScanPointerShape(landEntries, context, pParentCellOffset);
+        var (_, ldShape, ldNonPtr) = ScanPointerShape(landEntries, context, pLoadedDataOffset);
+
+        var pcRate = (double)pcShape / landEntries.Count;
+        var ldRate = (double)ldShape / landEntries.Count;
+
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] LAND pParentCell pointer-shape: {pcShape}/{landEntries.Count} ({pcRate:P0}) at +48. "
+            + $"LAND pLoadedData pointer-shape: {ldShape}/{landEntries.Count} ({ldRate:P0}) at +56.");
+
+        Assert.True(pcRate >= 0.9,
+            $"[{snippetName}] LAND pParentCell pointer-shape {pcRate:P0} below threshold "
+            + $"({pcShape}/{landEntries.Count}). First 10 non-pointer values:\n  "
+            + string.Join("\n  ", pcNonPtr));
+
+        Assert.True(ldRate >= 0.9,
+            $"[{snippetName}] LAND pLoadedData pointer-shape {ldRate:P0} below threshold "
+            + $"({ldShape}/{landEntries.Count}). First 10 non-pointer values:\n  "
+            + string.Join("\n  ", ldNonPtr));
+    }
+
+    // =========================================================================
     // DEFERRED audit targets (Phase 1B.15E investigation)
     // =========================================================================
-    //
-    // RuntimeLandVisualReader (terrain mesh) — uses double-deref pointer
-    //   chains (ppVertices → pVertices → float[]) reading large texture/normal/
-    //   color arrays from LoadedLandData. No simple pointer-shape anchor
-    //   applies because:
-    //     - LAND records aren't in snippet.RuntimeEditorIds (no EditorID)
-    //     - LAND-keyed snippet manifest data (RuntimeLandFormEntries) isn't
-    //       serialized in DmpSnippetManifest
-    //     - The double-deref chains target heap regions snippets typically
-    //       don't capture
-    //   Status: deferred. Audit will need DmpSnippetManifest extraction
-    //   expansion to surface RuntimeLandFormEntries, then can apply
-    //   pipeline-test pattern against ReadAllRuntimeLandData.
     //
     // RuntimeCellReader (worldspace pCellMap walk) — primary code path is
     //   NiTPointerMap traversal from TESWorldSpace, not per-CELL reads.

@@ -28,6 +28,7 @@ internal sealed class DmpSnippetReader
         FileSize = fileSize;
         RuntimeEditorIds = manifest.RuntimeEditorIds;
         RuntimeRefrFormEntries = manifest.RuntimeRefrFormEntries;
+        RuntimeLandFormEntries = manifest.RuntimeLandFormEntries;
         FormIdMap = manifest.FormIdMap;
     }
 
@@ -36,6 +37,7 @@ internal sealed class DmpSnippetReader
     public long FileSize { get; }
     public List<RuntimeEditorIdEntry> RuntimeEditorIds { get; }
     public List<RuntimeEditorIdEntry> RuntimeRefrFormEntries { get; }
+    public List<RuntimeEditorIdEntry> RuntimeLandFormEntries { get; }
     public Dictionary<uint, string> FormIdMap { get; }
 
     /// <summary>

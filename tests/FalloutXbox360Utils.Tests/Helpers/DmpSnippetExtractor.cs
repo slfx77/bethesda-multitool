@@ -84,6 +84,7 @@ internal static class DmpSnippetExtractor
             MinidumpInfo = SerializeMinidumpInfo(analysisResult.MinidumpInfo),
             RuntimeEditorIds = analysisResult.EsmRecords.RuntimeEditorIds,
             RuntimeRefrFormEntries = analysisResult.EsmRecords.RuntimeRefrFormEntries,
+            RuntimeLandFormEntries = analysisResult.EsmRecords.RuntimeLandFormEntries,
             FormIdMap = analysisResult.FormIdMap ?? new Dictionary<uint, string>(),
             Ranges = ranges.Select(r => new DmpSnippetRange { Offset = r.Offset, Length = r.Length }).ToList()
         };

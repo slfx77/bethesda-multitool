@@ -11,4 +11,12 @@ internal sealed class DmpSnippetManifest
     public required List<RuntimeEditorIdEntry> RuntimeRefrFormEntries { get; init; }
     public required Dictionary<uint, string> FormIdMap { get; init; }
     public required List<DmpSnippetRange> Ranges { get; init; }
+
+    /// <summary>
+    ///     LAND entries from the pAllForms hash table (LAND records lack EditorIDs
+    ///     so they aren't in RuntimeEditorIds). Optional for backward-compat with
+    ///     pre-Phase-1B.16 snippet files: those deserialize with an empty list.
+    ///     Phase 1B.16 onward populates this from analysisResult.EsmRecords.
+    /// </summary>
+    public List<RuntimeEditorIdEntry> RuntimeLandFormEntries { get; init; } = [];
 }

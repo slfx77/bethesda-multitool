@@ -179,8 +179,13 @@ internal static class EditorIdLookupTables
             }
         }
 
-        // Determine LAND FormType: the FormType most commonly associated with known LAND FormIDs
-        byte landFormType = 0x45; // Default fallback
+        // Determine LAND FormType: the FormType most commonly associated with known LAND FormIDs.
+        // Sentinel byte value (0xFF, an unused FormType slot) means "no high-confidence detection
+        // — don't populate RuntimeLandFormEntries". This is critical: the previous default of 0x45
+        // was provably wrong (0x45 is DIAL in our observed builds), causing DIAL records to be
+        // mis-classified as LAND and downstream readers to receive garbage. Better to populate
+        // nothing than wrong entries.
+        byte landFormType = 0xFF;
         if (landFormTypeCounts.Count > 0)
         {
             var best = landFormTypeCounts.MaxBy(kv => kv.Value);
@@ -191,10 +196,16 @@ internal static class EditorIdLookupTables
                     "EditorIDs: pAllForms: detected LAND FormType = 0x{0:X2} ({1} matches from {2} known LAND FormIDs)",
                     landFormType, best.Value, knownLandFormIds.Count);
             }
+            else
+            {
+                log.Debug(
+                    "EditorIDs: pAllForms: LAND FormType detection low-confidence (best.Value={0}, need >=3) — skipping LAND population",
+                    best.Value);
+            }
         }
         else
         {
-            log.Debug("EditorIDs: pAllForms: no known LAND FormIDs matched - using default 0x45");
+            log.Debug("EditorIDs: pAllForms: no known LAND FormIDs matched — skipping LAND population");
         }
 
         // Determine REFR FormType cluster: REFR/ACHR/ACRE are consecutive (base, base+1, base+2)
@@ -284,7 +295,9 @@ internal static class EditorIdLookupTables
     {
         var chainDepth = 0;
         var itemBuffer = new byte[12];
-        var tesFormBuffer = new byte[24];
+        // Enlarged from 24 → 36 bytes so the probe can read iFormID at +32 for MSTT-style
+        // multi-inheritance classes. See TesFormHeaderProbe for the candidate-layout list.
+        var tesFormBuffer = new byte[TesFormHeaderProbe.RequiredBufferSize];
 
         while (itemVa != 0 && chainDepth < 1000)
         {
@@ -315,18 +328,20 @@ internal static class EditorIdLookupTables
             {
                 var valVaLong = Xbox360MemoryUtils.VaToLong(valVa);
 
-                // Validate 24-byte TESForm header is fully within a captured memory region
-                if (minidumpInfo.IsVaRangeCaptured(valVaLong, 24))
+                if (minidumpInfo.IsVaRangeCaptured(valVaLong, TesFormHeaderProbe.RequiredBufferSize))
                 {
                     var formFileOffset = minidumpInfo.VirtualAddressToFileOffset(valVaLong);
-                    if (formFileOffset.HasValue && formFileOffset.Value + 24 <= fileSize)
+                    if (formFileOffset.HasValue
+                        && formFileOffset.Value + TesFormHeaderProbe.RequiredBufferSize <= fileSize)
                     {
-                        accessor.ReadArray(formFileOffset.Value, tesFormBuffer, 0, 24);
-                        var formType = tesFormBuffer[4];
-                        var structFormId = BinaryUtils.ReadUInt32BE(tesFormBuffer, 12);
+                        accessor.ReadArray(formFileOffset.Value, tesFormBuffer, 0,
+                            TesFormHeaderProbe.RequiredBufferSize);
 
-                        // Verify FormID consistency
-                        if (structFormId == keyFormId && keyFormId != 0)
+                        // Probe with expectedFormId = keyFormId so the candidate that matches
+                        // the hash-table key wins unambiguously, even on multi-inheritance classes.
+                        if (TesFormHeaderProbe.TryProbe(tesFormBuffer, out var formType, out _,
+                                expectedFormId: keyFormId)
+                            && keyFormId != 0)
                         {
                             allEntries.Add((keyFormId, formType, formFileOffset.Value, valVaLong));
 
