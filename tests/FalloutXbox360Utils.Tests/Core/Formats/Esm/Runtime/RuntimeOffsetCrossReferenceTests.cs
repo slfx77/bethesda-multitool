@@ -14,7 +14,7 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime;
 ///     bytes from each test DMP snippet against the authoritative ESM subrecord
 ///     payload, with no PDB involvement — the PDBs in this repo all post-date the
 ///     captured DMPs by 3-9 months, so PDB offsets aren't reliable ground truth
-///     for the DMP-era class layouts.
+///     for the class layouts captured in our DMPs.
 ///
 ///     Each test picks ONE field with a clean ESM-vs-runtime byte equivalence
 ///     (typically a scalar or a small fixed payload), iterates over every record
@@ -391,12 +391,14 @@ public sealed class RuntimeOffsetCrossReferenceTests
     // FormIdOffset=12, FinalBaseObjectPtrOffset=48, FinalParentCellPtrOffset=80,
     // FinalExtraListHeadOffset=88) with a per-build `_shift` that
     // RuntimeBuildOffsets.GetRefrFieldShift returns:
-    //   0  for final-era builds (REFR=120 bytes, TESChildCell=8B)
-    //  -4  for early-era builds (REFR=116 bytes, TESChildCell=4B vtable-only)
+    //   0  for builds where TESChildCell is 8B (vtable + data) → REFR=120 bytes
+    //  -4  for builds where TESChildCell is 4B (vtable only)    → REFR=116 bytes
     //
-    // The early/final selection is discovered per-snippet by
-    // RuntimeRefrReader.ProbeIsEarlyBuild. These tests use the same probe so
-    // the test offsets match production offsets exactly.
+    // The shift selection is discovered per-snippet by
+    // RuntimeRefrReader.ProbeIsEarlyBuild (the name is legacy — there's no
+    // clean early/late split; the build-vs-build variation might be a
+    // continuous gradient). These tests run the same probe so the test
+    // offsets match production offsets exactly.
     //
     // REFR/ACHR/ACRE all share the same struct layout (FormType 0x3A-0x3C).
 
@@ -682,6 +684,209 @@ public sealed class RuntimeOffsetCrossReferenceTests
             $"[{snippetName}] WEAP PickupSound pointer-shape {rate:P0} below threshold "
             + $"(offset {pickupSoundOffset}). First 10 non-pointer values:\n  "
             + string.Join("\n  ", nonPointer));
+    }
+
+    // =========================================================================
+    // CONT (TESObjectCONT) section
+    // =========================================================================
+    // RuntimeContainerReader uses hardcoded offsets + _s = GetPdbShift = 16.
+    // Pointer fields validated here:
+    //   ContScriptPtrOffset @ +124      — TESScriptableForm pointer (often null)
+    //   ContContentsDataOffset @ +68    — head of contents BSSimpleList (often non-null)
+    //   ContContentsNextOffset @ +72    — next link in contents list
+
+    private static IReadOnlyList<RuntimeEditorIdEntry> GetValidatedContSample(
+        DmpSnippetReader snippet, RuntimeMemoryContext context, int sampleSize)
+    {
+        var candidates = snippet.RuntimeEditorIds
+            .Where(e => e.FormType == 0x1B && e.TesFormOffset.HasValue)
+            .Take(sampleSize * 4)
+            .ToList();
+
+        var validated = new List<RuntimeEditorIdEntry>(sampleSize);
+        foreach (var entry in candidates)
+        {
+            var buf = context.ReadBytes(entry.TesFormOffset!.Value + FormIdOffset, 4);
+            if (buf == null) continue;
+            if (BinaryUtils.ReadUInt32BE(buf, 0) == entry.FormId)
+            {
+                validated.Add(entry);
+                if (validated.Count >= sampleSize) break;
+            }
+        }
+
+        return validated;
+    }
+
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task CONT_ContentsData_offset_lands_on_heap_pointer_or_null(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var conts = GetValidatedContSample(snippet, context, 200);
+        Assert.True(conts.Count >= 10, $"[{snippetName}] Only {conts.Count} validated CONTs.");
+
+        var s = RuntimeBuildOffsets.GetPdbShift(MinidumpAnalyzer.DetectBuildType(snippet.MinidumpInfo));
+        var contentsDataOffset = 52 + s; // ContContentsDataOffset
+
+        var (checkedCount, pointerShaped, nonPointer) = ScanPointerShape(conts, context, contentsDataOffset);
+        var rate = (double)pointerShaped / checkedCount;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] CONT ContentsData pointer-shape: {pointerShaped}/{checkedCount} ({rate:P0}) "
+            + $"at offset {contentsDataOffset} (= 52 + _s({s})).");
+
+        Assert.True(rate >= 0.9,
+            $"[{snippetName}] CONT ContentsData pointer-shape {rate:P0} below threshold "
+            + $"(offset {contentsDataOffset}). First 10 non-pointer values:\n  "
+            + string.Join("\n  ", nonPointer));
+    }
+
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task CONT_ContentsNext_offset_lands_on_heap_pointer_or_null(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var conts = GetValidatedContSample(snippet, context, 200);
+        Assert.True(conts.Count >= 10, $"[{snippetName}] Only {conts.Count} validated CONTs.");
+
+        var s = RuntimeBuildOffsets.GetPdbShift(MinidumpAnalyzer.DetectBuildType(snippet.MinidumpInfo));
+        var contentsNextOffset = 56 + s; // ContContentsNextOffset
+
+        var (checkedCount, pointerShaped, nonPointer) = ScanPointerShape(conts, context, contentsNextOffset);
+        var rate = (double)pointerShaped / checkedCount;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] CONT ContentsNext pointer-shape: {pointerShaped}/{checkedCount} ({rate:P0}) "
+            + $"at offset {contentsNextOffset} (= 56 + _s({s})).");
+
+        Assert.True(rate >= 0.9,
+            $"[{snippetName}] CONT ContentsNext pointer-shape {rate:P0} below threshold "
+            + $"(offset {contentsNextOffset}). First 10 non-pointer values:\n  "
+            + string.Join("\n  ", nonPointer));
+    }
+
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task CONT_Script_offset_lands_on_heap_pointer_or_null(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var conts = GetValidatedContSample(snippet, context, 200);
+        Assert.True(conts.Count >= 10, $"[{snippetName}] Only {conts.Count} validated CONTs.");
+
+        var s = RuntimeBuildOffsets.GetPdbShift(MinidumpAnalyzer.DetectBuildType(snippet.MinidumpInfo));
+        var scriptPtrOffset = 108 + s; // ContScriptPtrOffset
+
+        var (checkedCount, pointerShaped, nonPointer) = ScanPointerShape(conts, context, scriptPtrOffset);
+        var rate = (double)pointerShaped / checkedCount;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] CONT Script pointer-shape: {pointerShaped}/{checkedCount} ({rate:P0}) "
+            + $"at offset {scriptPtrOffset} (= 108 + _s({s})).");
+
+        Assert.True(rate >= 0.9,
+            $"[{snippetName}] CONT Script pointer-shape {rate:P0} below threshold "
+            + $"(offset {scriptPtrOffset}). First 10 non-pointer values:\n  "
+            + string.Join("\n  ", nonPointer));
+    }
+
+    // =========================================================================
+    // Magic FormType sanity (MGEF / SPEL / PERK)
+    // =========================================================================
+    // RuntimeMagicReader uses PdbStructView with field-name lookups — all
+    // pointer fields live inside the `data` substruct at PDB-resolved offsets.
+    // A direct pointer-shape test would require resolving the substruct base
+    // first; the simpler check here is FormID sanity, confirming TesFormOffset
+    // points at a TESForm header for these FormTypes.
+
+    private static (int Checked, int Matches) ValidateFormIdSanity(
+        DmpSnippetReader snippet, RuntimeMemoryContext context, byte formType, int sampleSize)
+    {
+        var entries = snippet.RuntimeEditorIds
+            .Where(e => e.FormType == formType && e.TesFormOffset.HasValue)
+            .Take(sampleSize)
+            .ToList();
+
+        var matches = 0;
+        var checkedCount = 0;
+        foreach (var entry in entries)
+        {
+            var buf = context.ReadBytes(entry.TesFormOffset!.Value + FormIdOffset, 4);
+            if (buf == null) continue;
+            checkedCount++;
+            if (BinaryUtils.ReadUInt32BE(buf, 0) == entry.FormId) matches++;
+        }
+
+        return (checkedCount, matches);
+    }
+
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task MGEF_FormId_sanity(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var (checkedCount, matches) = ValidateFormIdSanity(snippet, context, formType: 0x10, sampleSize: 300);
+
+        Assert.True(checkedCount >= 30, $"[{snippetName}] Only {checkedCount} MGEF entries.");
+        var rate = (double)matches / checkedCount;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] MGEF FormID sanity: {matches}/{checkedCount} ({rate:P0}).");
+        // 40% floor: empirically the EditorID hash table has bulk staleness for
+        // many FormTypes (~30-50% across magic types). Production reader drops
+        // stale entries via FormID check. This floor catches a regression where
+        // the offset would land on garbage (~0% match rate).
+        Assert.True(rate >= 0.4,
+            $"[{snippetName}] MGEF FormID match rate {rate:P0} below floor "
+            + $"({matches}/{checkedCount}).");
+    }
+
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task SPEL_FormId_sanity(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var (checkedCount, matches) = ValidateFormIdSanity(snippet, context, formType: 0x14, sampleSize: 300);
+
+        Assert.True(checkedCount >= 30, $"[{snippetName}] Only {checkedCount} SPEL entries.");
+        var rate = (double)matches / checkedCount;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] SPEL FormID sanity: {matches}/{checkedCount} ({rate:P0}).");
+        // 40% floor: empirically the EditorID hash table has bulk staleness for
+        // many FormTypes (~30-50% across magic types). Production reader drops
+        // stale entries via FormID check. This floor catches a regression where
+        // the offset would land on garbage (~0% match rate).
+        Assert.True(rate >= 0.4,
+            $"[{snippetName}] SPEL FormID match rate {rate:P0} below floor "
+            + $"({matches}/{checkedCount}).");
+    }
+
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task PERK_FormId_sanity(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(SnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var (checkedCount, matches) = ValidateFormIdSanity(snippet, context, formType: 0x56, sampleSize: 300);
+
+        if (checkedCount < 30)
+        {
+            TestContext.Current.TestOutputHelper!.WriteLine(
+                $"[{snippetName}] Only {checkedCount} PERK entries — under-exercised.");
+            return;
+        }
+
+        var rate = (double)matches / checkedCount;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] PERK FormID sanity: {matches}/{checkedCount} ({rate:P0}).");
+        // 40% floor: empirically the EditorID hash table has bulk staleness for
+        // many FormTypes (~30-50% across magic types). Production reader drops
+        // stale entries via FormID check. This floor catches a regression where
+        // the offset would land on garbage (~0% match rate).
+        Assert.True(rate >= 0.4,
+            $"[{snippetName}] PERK FormID match rate {rate:P0} below floor "
+            + $"({matches}/{checkedCount}).");
     }
 
     // =========================================================================

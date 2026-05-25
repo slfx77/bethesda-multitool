@@ -8,10 +8,10 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers;
 /// <summary>
 ///     Reader for TESObjectREFR runtime structs (REFR/ACHR/ACRE) from Xbox 360 memory dumps.
 ///     Extracts placed reference data including position, base object, parent cell, and map markers.
-///     Supports both final layout (REFR=120) and early-era layout (REFR=116).
-///     Early builds (before March 30, 2010) have TESChildCell = 4B (vtable only, no data field),
-///     vs 8B in final builds. This shifts OBJ_REFR and BSExtraList fields by -4.
-///     TESForm is 40 bytes in both eras; only TESChildCell size differs.
+///     Supports two TESChildCell variants: vtable-only (4B) → REFR=116 bytes, and
+///     vtable + 4B data (8B) → REFR=120 bytes. The 4B variant shifts OBJ_REFR and
+///     BSExtraList fields by -4. Per-DMP selection happens via <see cref="ProbeIsEarlyBuild" />.
+///     TESForm is 40 bytes in every observed build; only TESChildCell size differs.
 /// </summary>
 internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool useProtoOffsets = false)
 {
@@ -143,10 +143,12 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
     }
 
     /// <summary>
-    ///     Probes a sample of REFR entries to determine whether the DMP uses early-era
-    ///     struct offsets (TESChildCell=4B, REFR=116) or final (TESChildCell=8B, REFR=120).
-    ///     Tries reading with both layouts; the one producing more valid REFRs wins.
-    ///     Returns true if early-era offsets match better, false for final.
+    ///     Probes a sample of REFR entries to determine which TESChildCell layout the
+    ///     DMP uses: vtable-only (4B, REFR=116) or vtable + 4B data (8B, REFR=120).
+    ///     Tries both; the one producing more valid REFRs wins. Returns true if the
+    ///     vtable-only layout matches better, false for the wider layout. (The
+    ///     parameter name <c>isEarlyBuild</c> is legacy — there's no clean split
+    ///     point between builds, the variation is just per-DMP.)
     /// </summary>
     public static bool ProbeIsEarlyBuild(
         RuntimeMemoryContext context,
@@ -488,10 +490,10 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
     private const int FinalRefScaleOffset = 76;
     private const int FinalParentCellPtrOffset = 80;
 
-    // BaseExtraList m_Extra: Final pHead at +88, Early at +84
+    // BaseExtraList m_Extra: pHead at +88 (wider TESChildCell variant) or +84 (narrow)
     private const int FinalExtraListHeadOffset = 88;
 
-    // Computed offsets (apply early-era shift)
+    // Computed offsets (apply TESChildCell variant shift)
     private int RefrStructSize => useProtoOffsets ? EarlyRefrStructSize : FinalRefrStructSize;
     private int BaseObjectPtrOffset => FinalBaseObjectPtrOffset + _shift;
     private int AngleXOffset => FinalAngleXOffset + _shift;

@@ -3,13 +3,18 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models;
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 
 /// <summary>
-///     Computes field offset shifts between early-era and final-era Xbox 360 builds.
-///     Final-era builds (from ~March 30, 2010 onwards) use REFR = 120 bytes.
-///     Early-era builds (before ~March 30, 2010) use REFR = 116 bytes.
-///     The difference is a 4-byte field in TESChildCell (vtable-only in early builds,
-///     vtable + 4B data in final builds). This shifts all OBJ_REFR and later fields by -4.
-///     The TESForm base class is 40 bytes in both eras.
-///     Note: The Proto Debug PDB (July 2010, TESForm=24) does NOT match these early DMPs.
+///     Computes field offset shifts between Xbox 360 build variants.
+///     Two TESChildCell layouts have been observed across the captured DMPs:
+///     vtable-only (4 bytes) → REFR=116 bytes, and vtable + 4B data (8 bytes)
+///     → REFR=120 bytes. The latter shifts all OBJ_REFR and later fields by +4.
+///     The selection is empirically discovered per-DMP by
+///     <see cref="Readers.RuntimeRefrReader.ProbeIsEarlyBuild" /> (legacy name —
+///     there's no clean split point; the variation is per-build and may be
+///     finer-grained than what the binary probe distinguishes today).
+///     The TESForm base class is 40 bytes in every observed build.
+///     Note: the PDBs in this repo (July-Aug 2010) post-date the captured DMPs
+///     (Nov 2009 - Apr 2010) so their declared struct sizes don't always match
+///     runtime — see plan Phase 1B.9.
 /// </summary>
 internal static class RuntimeBuildOffsets
 {
@@ -42,7 +47,7 @@ internal static class RuntimeBuildOffsets
     /// <summary>
     ///     Returns the field offset shift from Proto Debug PDB values to actual dump values.
     ///     Currently +16 for all known builds. The mechanism is retained for future extensibility
-    ///     in case a Proto Debug era dump is ever encountered (would need +4 shift).
+    ///     in case a Proto Debug build dump is ever encountered (would need +4 shift).
     /// </summary>
     public static int GetPdbShift(string? _buildType)
     {
@@ -50,10 +55,11 @@ internal static class RuntimeBuildOffsets
     }
 
     /// <summary>
-    ///     Returns the REFR field offset delta for early-era builds.
-    ///     Early builds: OBJ_REFR and BSExtraList fields are 4 bytes earlier
-    ///     because TESChildCell is vtable-only (4B) vs vtable+data (8B) in final.
-    ///     Only applies to REFR/ACHR/ACRE forms that inherit from TESChildCell.
+    ///     Returns the REFR field offset delta. Some builds have TESChildCell as
+    ///     vtable-only (4 bytes) and others as vtable + 4B data (8 bytes); the
+    ///     4-byte difference shifts OBJ_REFR and BSExtraList fields by -4 in the
+    ///     vtable-only variant. Only applies to REFR/ACHR/ACRE forms that inherit
+    ///     from TESChildCell.
     /// </summary>
     public static int GetRefrFieldShift(bool isEarlyBuild)
     {
@@ -61,12 +67,12 @@ internal static class RuntimeBuildOffsets
     }
 
     /// <summary>
-    ///     Returns the field offset delta for TESWorldSpace forms in early-era builds.
-    ///     RTTI analysis of the Nov 2009 module binary shows TESWorldSpace = 240 bytes
-    ///     vs 244 bytes in MemDebug PDB (July 2010). The 4-byte difference shifts all
-    ///     post-base-class fields by -4 in early builds.
-    ///     TESObjectCELL (192 bytes) is the same size in both eras; CELL field drift
-    ///     is handled separately by the layout probe.
+    ///     Returns the field offset delta for TESWorldSpace forms in builds with
+    ///     the smaller WorldSpace layout. RTTI of the Nov 2009 module binary shows
+    ///     TESWorldSpace = 240 bytes vs 244 bytes in the MemDebug PDB (July 2010);
+    ///     the 4-byte difference shifts post-base-class fields by -4 in that variant.
+    ///     TESObjectCELL (192 bytes) is the same size in every observed build; CELL
+    ///     field drift is handled separately by the layout probe.
     /// </summary>
     public static int GetWorldCellFieldShift(bool isEarlyBuild)
     {
