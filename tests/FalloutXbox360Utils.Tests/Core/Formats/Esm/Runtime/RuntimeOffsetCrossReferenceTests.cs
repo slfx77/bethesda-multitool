@@ -1228,16 +1228,21 @@ public sealed class RuntimeOffsetCrossReferenceTests
             useColorGradient: true,
             worldspaceNames: authority.WorldspaceNames);
 
-        // Stitched per-worldspace renders (composite of all cells per worldspace)
-        var stitchedDir = Path.Combine(outputDir, "stitched");
-        var stitchedPaths = StitchedHeightmapRenderer.RenderPerWorldspace(
-            enhanced,
-            stitchedDir,
-            scale: 1,
-            worldspaceNames: authority.WorldspaceNames);
+        // Composite per-worldspace renders (all cells stitched into one image).
+        // Reuses the production worldmap exporter — correct stride (cells share
+        // their boundary vertex so there are no seams) and correct row/col
+        // orientation (north up, south at bottom).
+        var compositePaths = await WorldspaceCompositeMapRenderer
+            .ExportWorldspaceCompositeWorldmapsAsync(
+                heightmaps: [],
+                cellGrids: [],
+                landRecords: enhanced,
+                outputDir: outputDir,
+                useColorGradient: true,
+                worldspaceNames: authority.WorldspaceNames);
         TestContext.Current.TestOutputHelper!.WriteLine(
-            $"Wrote {stitchedPaths.Count} stitched worldspace PNG(s):");
-        foreach (var p in stitchedPaths)
+            $"Wrote {compositePaths.Count} per-worldspace composite PNG(s):");
+        foreach (var p in compositePaths)
         {
             TestContext.Current.TestOutputHelper!.WriteLine($"  {p}");
         }
