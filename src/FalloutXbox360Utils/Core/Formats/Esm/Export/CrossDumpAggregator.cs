@@ -729,7 +729,7 @@ internal static class CrossDumpAggregator
     ///     Resolve a quest group label using canonical quest labels.
     ///     Tracks name history when a quest's display name changes across builds.
     /// </summary>
-    private static string ResolveQuestGroupLabel(
+    internal static string ResolveQuestGroupLabel(
         uint questFormId, FormIdResolver resolver, Dictionary<uint, string> questLabels)
     {
         var questEditorId = resolver.GetEditorId(questFormId);
@@ -838,6 +838,28 @@ internal static class CrossDumpAggregator
         return "(No Speaker)";
     }
 
+    /// <summary>
+    ///     Overload consuming nullable speaker/quest FormIDs directly — used by the
+    ///     projection-based aggregator where the dialogue record has been released and only
+    ///     the captured observation remains. Constructs a synthetic <see cref="DialogueRecord" />
+    ///     and delegates to the existing implementation so the label-history logic stays in
+    ///     exactly one place.
+    /// </summary>
+    internal static string ResolveSpeakerGroupLabel(
+        uint? speakerFormId,
+        uint? questFormId,
+        FormIdResolver resolver,
+        Dictionary<uint, string> speakerLabels)
+    {
+        var synthetic = new DialogueRecord
+        {
+            FormId = 0,
+            SpeakerFormId = speakerFormId,
+            QuestFormId = questFormId
+        };
+        return ResolveSpeakerGroupLabel(synthetic, resolver, speakerLabels);
+    }
+
     private static string? PickRealName(string? displayName, string? editorId)
     {
         if (IsRealName(displayName))
@@ -848,7 +870,7 @@ internal static class CrossDumpAggregator
         return IsRealName(editorId) ? editorId : null;
     }
 
-    private sealed class WorldspaceLabelHistory
+    internal sealed class WorldspaceLabelHistory
     {
         public List<string> DisplayNames { get; } = [];
         public string? EditorId { get; set; }
@@ -871,7 +893,7 @@ internal static class CrossDumpAggregator
         return lookup;
     }
 
-    private static void RecordWorldspaceObservation(
+    internal static void RecordWorldspaceObservation(
         uint wsFid,
         string? displayName,
         string? editorId,
@@ -903,7 +925,7 @@ internal static class CrossDumpAggregator
         }
     }
 
-    private static Dictionary<uint, string> ResolveWorldspaceLabels(
+    internal static Dictionary<uint, string> ResolveWorldspaceLabels(
         Dictionary<uint, WorldspaceLabelHistory> worldspaceLabels)
     {
         var labels = new Dictionary<uint, string>(worldspaceLabels.Count);

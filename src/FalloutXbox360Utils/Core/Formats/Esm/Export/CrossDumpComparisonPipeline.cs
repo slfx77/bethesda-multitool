@@ -1,4 +1,5 @@
 using System.Runtime;
+using FalloutXbox360Utils.Core.Formats.Esm.Export.Projections;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Semantic;
@@ -144,12 +145,20 @@ internal static class CrossDumpComparisonPipeline
         };
     }
 
+    /// <summary>
+    ///     Stream the comparison HTML pipeline using projection-based loading. Each
+    ///     <see cref="SemanticSource" /> is projected to a lightweight
+    ///     <see cref="CrossDumpSourceProjection" /> immediately after load and the source
+    ///     (with its heavy <c>RecordCollection</c>) is released. Cross-source indexes are
+    ///     built once from skeletons; pass-B builds NPC/Key/Container reports; then the
+    ///     per-record-type aggregator consumes the projections.
+    /// </summary>
     internal static async Task<CrossDumpStreamingComparisonResult> WriteHtmlByRecordTypeAsync(
         CrossDumpComparisonRequest request,
         Action<string>? status = null,
         CancellationToken cancellationToken = default)
     {
-        var sources = new List<SemanticSource>();
+        var projections = new List<CrossDumpSourceProjection>();
         var heightmapSources = new List<HeightmapSource>();
         var hasBaseBuild = false;
         var allowedTypes = ParseTypeFilter(request.TypeFilter);
@@ -163,8 +172,15 @@ internal static class CrossDumpComparisonPipeline
                 cancellationToken);
             if (baseSource != null)
             {
-                sources.Add(baseSource);
+                if (CaptureHeightmapSource(baseSource) is { } baseHeightmap)
+                {
+                    heightmapSources.Add(baseHeightmap);
+                }
+
+                projections.Add(CrossDumpSourceProjector.Project(baseSource));
                 hasBaseBuild = true;
+                // baseSource falls out of scope; its RecordCollection is now eligible for GC
+                // (the lightweight projection holds the reports + skeletons we still need).
             }
         }
 
@@ -191,18 +207,21 @@ internal static class CrossDumpComparisonPipeline
                 heightmapSources.Add(heightmapSource);
             }
 
-            sources.Add(DropRawScanPayload(source));
+            projections.Add(CrossDumpSourceProjector.Project(source));
+            // source falls out of scope after this iteration; the heavy RecordCollection
+            // is eligible for GC. Free transiently retained large-object-heap blocks.
+            ReleaseTransientRecordTypeMemory();
         }
 
-        var sourceSummaries = sources.Select(source => new CrossDumpSourceSummary(
-                source.FilePath,
-                source.Records.Weapons.Count,
-                source.Records.Npcs.Count,
-                source.Records.Cells.Count,
-                source.Resolver.SkillEra?.Summary))
+        var sourceSummaries = projections.Select(p => new CrossDumpSourceSummary(
+                p.FilePath,
+                p.ReportsByType.TryGetValue("Weapon", out var weaponReports) ? weaponReports.Count : 0,
+                p.NpcSkeletons.Count,
+                p.CellSkeletons.Count,
+                p.Resolver.SkillEra?.Summary))
             .ToList();
 
-        var recordTypes = DetermineRecordTypes(sources, allowedTypes);
+        var recordTypes = DetermineRecordTypesFromProjections(projections, allowedTypes);
         if (recordTypes.Count == 0)
         {
             return new CrossDumpStreamingComparisonResult
@@ -215,20 +234,38 @@ internal static class CrossDumpComparisonPipeline
             };
         }
 
+        // Cross-source indexes built once from skeletons. virtualCellCanonicalFormIds is
+        // shared by every placement / locked-door / canonicalizer call below.
+        var virtualCellCanonicalFormIds = VirtualCellCanonicalizer.BuildVirtualCellCanonicalFormIds(
+            projections.Select(p => p.CellSkeletons));
+
         var npcPlacementIndexes = recordTypes.Contains("NPC", StringComparer.OrdinalIgnoreCase)
-            ? CrossDumpAggregator.BuildNpcPlacementIndexes(
-                sources.Select(source => (source.FilePath, source.Records)))
+            ? CrossDumpPlacementIndexBuilder.BuildNpcPlacementIndexes(projections, virtualCellCanonicalFormIds)
             : null;
         var npcScriptReferenceIndexes = recordTypes.Contains("NPC", StringComparer.OrdinalIgnoreCase)
-            ? CrossDumpAggregator.BuildNpcScriptReferenceIndexes(
-                sources.Select(source => (source.FilePath, source.Records)))
+            ? CrossDumpPlacementIndexBuilder.BuildNpcScriptReferenceIndexes(projections)
             : null;
+        var keyLockedDoorIndexes = recordTypes.Contains("Key", StringComparer.OrdinalIgnoreCase)
+            ? CrossDumpPlacementIndexBuilder.BuildKeyLockedDoorIndexes(projections, virtualCellCanonicalFormIds)
+            : null;
+        var containerPlacementIndexes = recordTypes.Contains("Container", StringComparer.OrdinalIgnoreCase)
+            ? CrossDumpPlacementIndexBuilder.BuildContainerPlacementIndexes(projections, virtualCellCanonicalFormIds)
+            : null;
+
+        // Pass B: fill in NPC/Key/Container reports on each projection using the cross-source
+        // enrichment indexes that didn't exist at projection time.
+        status?.Invoke("Building cross-source NPC/Key/Container reports...");
+        CrossDumpProjectionAggregator.BuildLatePassReports(
+            projections,
+            npcPlacementIndexes,
+            npcScriptReferenceIndexes,
+            keyLockedDoorIndexes,
+            containerPlacementIndexes);
+        ReleaseTransientRecordTypeMemory();
 
         var writtenFiles = new List<string>();
         var summaries = new List<CrossDumpRecordTypeSummary>();
         List<DumpSnapshot>? dumps = null;
-
-        ReleaseRecordListsNotNeededForRemainingTypes(sources, recordTypes);
 
         for (var typeIndex = 0; typeIndex < recordTypes.Count; typeIndex++)
         {
@@ -237,16 +274,11 @@ internal static class CrossDumpComparisonPipeline
             var recordType = recordTypes[typeIndex];
             status?.Invoke($"Writing {recordType} report...");
 
-            var aggregateInputs = sources
-                .Select(source => (source.FilePath, source.Records, source.Resolver, source.MinidumpInfo))
-                .ToList();
             var allowedRecordType = new HashSet<string>([recordType], StringComparer.OrdinalIgnoreCase);
-            var index = CrossDumpAggregator.Aggregate(
-                aggregateInputs,
-                allowedRecordType,
-                npcPlacementIndexes: npcPlacementIndexes,
-                npcScriptReferenceIndexes: npcScriptReferenceIndexes);
-            aggregateInputs.Clear();
+            var index = CrossDumpProjectionAggregator.AggregateFromProjections(
+                projections,
+                virtualCellCanonicalFormIds,
+                allowedRecordType);
 
             if (string.Equals(recordType, "Cell", StringComparison.OrdinalIgnoreCase))
             {
@@ -275,9 +307,6 @@ internal static class CrossDumpComparisonPipeline
             }
 
             ClearIndexPayload(index);
-
-            var remainingTypes = recordTypes.Skip(typeIndex + 1).ToList();
-            ReleaseRecordListsNotNeededForRemainingTypes(sources, remainingTypes);
             ReleaseTransientRecordTypeMemory();
         }
 
@@ -289,7 +318,7 @@ internal static class CrossDumpComparisonPipeline
             cancellationToken);
         writtenFiles.Add(indexFile);
 
-        sources.Clear();
+        projections.Clear();
         heightmapSources.Clear();
         ReleaseTransientRecordTypeMemory();
 
@@ -301,6 +330,50 @@ internal static class CrossDumpComparisonPipeline
             SourceSummaries = sourceSummaries,
             HasBaseBuild = hasBaseBuild
         };
+    }
+
+    private static List<string> DetermineRecordTypesFromProjections(
+        IEnumerable<CrossDumpSourceProjection> projections,
+        HashSet<string>? allowedTypes)
+    {
+        var recordTypes = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var projection in projections)
+        {
+            foreach (var typeName in projection.ReportsByType.Keys)
+            {
+                if (allowedTypes is { Count: > 0 } && !allowedTypes.Contains(typeName))
+                {
+                    continue;
+                }
+
+                recordTypes.Add(typeName);
+            }
+
+            // Include NPC/Key/Container even if pass-B hasn't run yet (e.g., empty late
+            // enrichment) so DetermineRecordTypes matches the legacy behavior of including
+            // every type that has at least one record in some source.
+            foreach (var (typeName, count) in new[]
+                     {
+                         ("NPC", projection.NpcSkeletons.Count),
+                         ("Key", projection.KeySkeletons.Count),
+                         ("Container", projection.ContainerSkeletons.Count)
+                     })
+            {
+                if (count == 0)
+                {
+                    continue;
+                }
+
+                if (allowedTypes is { Count: > 0 } && !allowedTypes.Contains(typeName))
+                {
+                    continue;
+                }
+
+                recordTypes.Add(typeName);
+            }
+        }
+
+        return recordTypes.ToList();
     }
 
     private static HashSet<string>? ParseTypeFilter(string? typeFilter)
