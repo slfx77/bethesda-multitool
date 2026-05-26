@@ -17,16 +17,14 @@ internal static class CrossDumpAggregator
     ///     Uses PE TimeDateStamp from game module for build dates when available.
     /// </summary>
     /// <remarks>
-    ///     <b>Legacy path.</b> The cross-dump comparison pipeline
-    ///     (<see cref="CrossDumpComparisonPipeline.WriteHtmlByRecordTypeAsync" /> and
-    ///     <see cref="CrossDumpComparisonPipeline.BuildAsync" />) now uses
-    ///     <see cref="Projections.CrossDumpProjectionAggregator.AggregateFromProjections" />
-    ///     instead, which projects each source to a lightweight
-    ///     <see cref="Projections.CrossDumpSourceProjection" /> so the heavy
-    ///     <see cref="Models.RecordCollection" /> can be released per-source. This method is
-    ///     retained for direct callers (<c>ReportConsistencyCommand</c>, semantic-consolidation
-    ///     tests, comparison-HTML regression tests) that work with smaller datasets where peak
-    ///     memory is not the bottleneck. New code should prefer the projection pipeline.
+    ///     <b>Thin shim around the projection pipeline.</b> Builds a
+    ///     <see cref="Projections.CrossDumpSourceProjection" /> per input tuple and delegates
+    ///     to <see cref="Projections.CrossDumpProjectionAggregator.AggregateFromProjections" />.
+    ///     The 500-line legacy <c>RecordCollection</c>-based loop body has been removed —
+    ///     the projection path is now the single implementation. Caller-provided cross-source
+    ///     indexes are still honored (avoid rebuilding them); the <c>releaseInputRecords</c>
+    ///     parameter is a no-op since the projection path discards the heavy
+    ///     <see cref="Models.RecordCollection" /> per source naturally.
     /// </remarks>
     internal static CrossDumpRecordIndex Aggregate(
         List<(string FilePath, RecordCollection Records, FormIdResolver Resolver, MinidumpInfo? Info)> dumps,
@@ -39,500 +37,45 @@ internal static class CrossDumpAggregator
         IReadOnlyDictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<ContainerPlacementInfo>>>?
             containerPlacementIndexes = null)
     {
-        var index = new CrossDumpRecordIndex();
+        _ = releaseInputRecords; // Defunct: projection path releases sources naturally.
 
-        // Sort by build date (PE timestamp) falling back to file date
-        var ordered = dumps
-            .Select(d =>
+        // Project each input tuple. Construct a synthetic SemanticSource so the existing
+        // CrossDumpSourceProjector path can run unchanged.
+        var projections = new List<Projections.CrossDumpSourceProjection>(dumps.Count);
+        foreach (var (filePath, records, resolver, info) in dumps)
+        {
+            var source = new Semantic.SemanticSource
             {
-                var fi = new FileInfo(d.FilePath);
-                var fileDate = fi.Exists ? fi.LastWriteTimeUtc : DateTime.MinValue;
-
-                var isDmp = d.FilePath.EndsWith(".dmp", StringComparison.OrdinalIgnoreCase);
-
-                // Use PE timestamp from game module if available
-                var buildDate = fileDate;
-                var dateSource = "file timestamp";
-                if (d.Info != null)
-                {
-                    var gameModule = d.Info.FindGameModule();
-                    if (gameModule != null && gameModule.TimeDateStamp != 0)
-                    {
-                        buildDate = DateTimeOffset.FromUnixTimeSeconds(gameModule.TimeDateStamp).UtcDateTime;
-                        dateSource = "PE TimeDateStamp";
-                    }
-                }
-                else if (!isDmp)
-                {
-                    var esmDate = EsmBuildDateExtractor.Extract(d.FilePath);
-                    buildDate = esmDate.BuildDateUtc;
-                    dateSource = esmDate.Source;
-                }
-
-                var shortName = Path.GetFileNameWithoutExtension(d.FilePath);
-                return (d.FilePath, d.Records, d.Resolver, Date: buildDate, ShortName: shortName, IsDmp: isDmp,
-                    DateSource: dateSource);
-            })
-            .OrderBy(d => d.Date)
-            .ToList();
-        if (releaseInputRecords)
-        {
-            dumps.Clear();
+                FilePath = filePath,
+                FileType = filePath.EndsWith(".dmp", StringComparison.OrdinalIgnoreCase)
+                    ? Core.AnalysisFileType.Minidump
+                    : Core.AnalysisFileType.EsmFile,
+                Records = records,
+                Resolver = resolver,
+                MinidumpInfo = info
+            };
+            projections.Add(Projections.CrossDumpSourceProjector.Project(source));
         }
 
-        var virtualCellCanonicalFormIds = ShouldIncludeType(allowedTypes, "Cell") ||
-                                          ShouldIncludeType(allowedTypes, "MapMarker") ||
-                                          ShouldIncludeType(allowedTypes, "Key") ||
-                                          ShouldIncludeType(allowedTypes, "Container")
-            ? BuildVirtualCellCanonicalFormIds(ordered.Select(d => d.Records))
-            : new Dictionary<CellCoordinateKey, RealCellCandidate>();
-        var keyLockedDoorIndexes = ShouldIncludeType(allowedTypes, "Key")
-            ? BuildKeyLockedDoorIndexes(
-                ordered.Select(d => (d.FilePath, d.Records)),
-                virtualCellCanonicalFormIds)
-            : null;
-        if (ShouldIncludeType(allowedTypes, "NPC") && npcPlacementIndexes == null)
-        {
-            npcPlacementIndexes = BuildNpcPlacementIndexes(
-                ordered.Select(d => (d.FilePath, d.Records)));
-        }
+        // Build cross-source indexes from skeletons if the caller didn't pre-build them.
+        var virtualCanon = VirtualCellCanonicalizer.BuildVirtualCellCanonicalFormIds(
+            projections.Select(p => p.CellSkeletons));
+        npcPlacementIndexes ??=
+            CrossDumpPlacementIndexBuilder.BuildNpcPlacementIndexes(projections, virtualCanon);
+        npcScriptReferenceIndexes ??=
+            CrossDumpPlacementIndexBuilder.BuildNpcScriptReferenceIndexes(projections);
+        var keyLockedDoorIndexes =
+            CrossDumpPlacementIndexBuilder.BuildKeyLockedDoorIndexes(projections, virtualCanon);
+        containerPlacementIndexes ??=
+            CrossDumpPlacementIndexBuilder.BuildContainerPlacementIndexes(projections, virtualCanon);
 
-        if (ShouldIncludeType(allowedTypes, "NPC") && npcScriptReferenceIndexes == null)
-        {
-            npcScriptReferenceIndexes = BuildNpcScriptReferenceIndexes(
-                ordered.Select(d => (d.FilePath, d.Records)));
-        }
+        Projections.CrossDumpProjectionAggregator.BuildLatePassReports(
+            projections, npcPlacementIndexes, npcScriptReferenceIndexes,
+            keyLockedDoorIndexes, containerPlacementIndexes);
+        Projections.CrossDumpProjectionAggregator.ReleaseLateEnrichment(projections);
 
-        if (ShouldIncludeType(allowedTypes, "Container") && containerPlacementIndexes == null)
-        {
-            containerPlacementIndexes = BuildContainerPlacementIndexes(
-                ordered.Select(d => (d.FilePath, d.Records)),
-                virtualCellCanonicalFormIds);
-        }
-
-        var upgradedVirtualCellIds = new Dictionary<uint, SortedSet<uint>>();
-        var upgradedVirtualCellIdsByDump = new Dictionary<uint, SortedDictionary<int, SortedSet<uint>>>();
-
-        // Canonical labels: FormID → display label.
-        // Ensures all dialogue from the same NPC/quest shares one group label
-        // even if the display name changed between builds.
-        var speakerLabels = new Dictionary<uint, string>();
-        var questLabels = new Dictionary<uint, string>();
-        // Canonical worldspace labels: cells from the same worldspace should all use
-        // the same label even if early DMPs resolve the worldspace name differently
-        // than later ESMs (e.g., WastelandNVOLD vs WastelandNV for the same FormID).
-        // Tracks per-FormID display-name history + EditorID so the finalization pass
-        // can render rename chains (Old → New) and disambiguate distinct worldspaces
-        // that happen to share a display name (e.g., a split FreesideWorld).
-        var worldspaceLabels = new Dictionary<uint, WorldspaceLabelHistory>();
-        // Track cells whose group was set by an ESM (authoritative). DMP cell records
-        // may have a misread WorldspaceFormId from runtime struct parsing, so they
-        // should not overwrite ESM-sourced grouping.
-        var cellGroupFromEsm = new HashSet<uint>();
-
-        for (var dumpIdx = 0; dumpIdx < ordered.Count; dumpIdx++)
-        {
-            var dump = ordered[dumpIdx];
-            index.Dumps.Add(new DumpSnapshot(
-                Path.GetFileName(dump.FilePath),
-                dump.Date,
-                dump.ShortName,
-                dump.IsDmp,
-                DateSource: dump.DateSource));
-
-            // Build reverse indexes once per dump for enriched reports, but skip
-            // them for scoped runs that cannot use those enrichments.
-            var factionMembers = ShouldIncludeType(allowedTypes, "Faction")
-                ? dump.Records.BuildFactionMembersIndex()
-                : null;
-            var keyLockedDoors = ShouldIncludeType(allowedTypes, "Key") &&
-                                 keyLockedDoorIndexes != null &&
-                                 keyLockedDoorIndexes.TryGetValue(dump.FilePath, out var keysForDump)
-                ? keysForDump
-                : null;
-            var modToWeapon = ShouldIncludeType(allowedTypes, "WeaponMod")
-                ? dump.Records.BuildModToWeaponMap()
-                : null;
-            var placedReferenceLocations = ShouldIncludeType(allowedTypes, "Cell") ||
-                                           ShouldIncludeType(allowedTypes, "MapMarker")
-                ? BuildPlacedReferenceLocations(dump.Records.Cells, virtualCellCanonicalFormIds)
-                : null;
-            var npcPlacements = ShouldIncludeType(allowedTypes, "NPC") &&
-                                npcPlacementIndexes != null &&
-                                npcPlacementIndexes.TryGetValue(dump.FilePath, out var placementsForDump)
-                ? placementsForDump
-                : null;
-            var npcScriptReferences = ShouldIncludeType(allowedTypes, "NPC") &&
-                                      npcScriptReferenceIndexes != null &&
-                                      npcScriptReferenceIndexes.TryGetValue(dump.FilePath, out var refsForDump)
-                ? refsForDump
-                : null;
-            var containerPlacements = ShouldIncludeType(allowedTypes, "Container") &&
-                                      containerPlacementIndexes != null &&
-                                      containerPlacementIndexes.TryGetValue(dump.FilePath, out var containersForDump)
-                ? containersForDump
-                : null;
-            var dialogTopicsByFormId = ShouldIncludeType(allowedTypes, "Dialogue")
-                ? BuildDialogTopicLookup(dump.Records.DialogTopics)
-                : null;
-            var dialogTopicSearchTextByFormId = ShouldIncludeType(allowedTypes, "DialogTopic")
-                ? BuildDialogTopicSearchTextLookup(dump.Records.Dialogues)
-                : null;
-
-            // Build a per-dump WRLD lookup straight from records.Worldspaces. The
-            // Resolver's DisplayNames dict only sees worldspace names captured via
-            // FULL-subrecord scans; runtime-extracted worldspaces (DMPs) populate
-            // WorldspaceRecord.FullName via the PDB struct read but never make it
-            // back into FormIdToFullName. Without this map, RecordWorldspaceObservation
-            // gets "(none)" for every DMP-era worldspace name and the group label
-            // collapses to the latest (post-rename) name only.
-            var worldspaceNamesByFormId = ShouldIncludeType(allowedTypes, "Cell")
-                ? BuildWorldspaceNameLookup(dump.Records.Worldspaces)
-                : null;
-
-            foreach (var (typeName, formId, _, _, record) in
-                     RecordTextFormatter.EnumerateAll(dump.Records))
-            {
-                if (!ShouldIncludeType(allowedTypes, typeName))
-                {
-                    continue;
-                }
-
-                if (record is CellRecord { IsUnresolvedBucket: true })
-                {
-                    continue;
-                }
-
-                var reportFormId = formId;
-                var reportWasRebasedVirtualCell = false;
-                var canonicalCell = default(RealCellCandidate);
-                if (record is CellRecord identityCell &&
-                    TryGetVirtualCellCanonicalFormId(
-                        identityCell,
-                        virtualCellCanonicalFormIds,
-                        out canonicalCell))
-                {
-                    reportFormId = canonicalCell.FormId;
-                    reportWasRebasedVirtualCell = true;
-                    if (!upgradedVirtualCellIds.TryGetValue(reportFormId, out var originalIds))
-                    {
-                        originalIds = [];
-                        upgradedVirtualCellIds[reportFormId] = originalIds;
-                    }
-
-                    originalIds.Add(formId);
-                    AddUpgradedVirtualCellForDump(upgradedVirtualCellIdsByDump, reportFormId, dumpIdx, formId);
-                }
-
-                // Build structured report (primary path for all output formats)
-                var report = RecordTextFormatter.BuildReport(record, dump.Resolver,
-                    factionMembers, keyLockedDoors, modToWeapon, placedReferenceLocations, npcPlacements,
-                    npcScriptReferences, containerPlacements);
-                if (report == null) continue;
-                if (reportWasRebasedVirtualCell)
-                {
-                    report = RebaseVirtualCellReport(report, canonicalCell);
-                }
-
-                if (!index.StructuredRecords.TryGetValue(typeName, out var structFormIdMap))
-                {
-                    structFormIdMap = new Dictionary<uint, Dictionary<int, RecordReport>>();
-                    index.StructuredRecords[typeName] = structFormIdMap;
-                }
-
-                if (!structFormIdMap.TryGetValue(reportFormId, out var structDumpMap))
-                {
-                    structDumpMap = new Dictionary<int, RecordReport>();
-                    structFormIdMap[reportFormId] = structDumpMap;
-                }
-
-                if (record is CellRecord { IsVirtual: true } && structDumpMap.ContainsKey(dumpIdx))
-                {
-                    continue;
-                }
-
-                structDumpMap[dumpIdx] = report;
-
-                // Compute group key and store grid coords for cells
-                if (record is CellRecord c)
-                {
-                    if (!index.RecordGroups.TryGetValue(typeName, out var gm))
-                    {
-                        gm = new Dictionary<uint, string>();
-                        index.RecordGroups[typeName] = gm;
-                    }
-
-                    // Group key is based on worldspace FormID (or "Interior" / "Unknown").
-                    // Use placeholder "WS:0xFORMID" during aggregation, then replace with
-                    // resolved names in a finalization pass. Track the best name per FormID.
-                    string newGroupKey;
-                    if (c.IsInterior)
-                    {
-                        newGroupKey = "Interior Cells";
-                    }
-                    else if (c.WorldspaceFormId.HasValue)
-                    {
-                        var wsFid = c.WorldspaceFormId.Value;
-                        newGroupKey = $"WS:0x{wsFid:X8}";
-
-                        // Record display name + EditorID for this worldspace FormID
-                        // on each dump. The finalization pass builds the human label
-                        // from the accumulated history. Prefer the per-dump
-                        // WorldspaceRecord (covers runtime-extracted DMP worldspaces);
-                        // fall back to the resolver only if the worldspace isn't in
-                        // this dump's records (rare — e.g., cell references a missing
-                        // worldspace).
-                        string? wsDisplayName = null;
-                        string? wsEditorId = null;
-                        if (worldspaceNamesByFormId != null &&
-                            worldspaceNamesByFormId.TryGetValue(wsFid, out var wsNames))
-                        {
-                            wsDisplayName = wsNames.FullName;
-                            wsEditorId = wsNames.EditorId;
-                        }
-
-                        wsDisplayName ??= dump.Resolver.ResolveDisplayName(wsFid);
-                        wsEditorId ??= dump.Resolver.ResolveEditorId(wsFid);
-                        RecordWorldspaceObservation(wsFid, wsDisplayName, wsEditorId, worldspaceLabels);
-                    }
-                    else
-                    {
-                        newGroupKey = "Exterior Cells (Unknown Worldspace)";
-                    }
-
-                    if (!gm.TryGetValue(reportFormId, out var existingGroup))
-                    {
-                        gm[reportFormId] = newGroupKey;
-                        if (!dump.IsDmp) cellGroupFromEsm.Add(reportFormId);
-                    }
-                    else if (!dump.IsDmp)
-                    {
-                        // ESMs are authoritative — overwrite any DMP-sourced group.
-                        // (DMP cell parser may misread WorldspaceFormId from runtime structs.)
-                        gm[reportFormId] = newGroupKey;
-                        cellGroupFromEsm.Add(reportFormId);
-                    }
-                    else if (!cellGroupFromEsm.Contains(reportFormId))
-                    {
-                        // DMP→DMP upgrade: only allow Interior or Unknown→worldspace
-                        if (c.IsInterior && existingGroup != "Interior Cells")
-                        {
-                            gm[reportFormId] = "Interior Cells";
-                        }
-                        else if (existingGroup == "Exterior Cells (Unknown Worldspace)"
-                                 && c.WorldspaceFormId.HasValue)
-                        {
-                            gm[reportFormId] = newGroupKey;
-                        }
-                    }
-
-                    // Store grid coordinates for CSS grid tile map (latest wins —
-                    // ESM coords are authoritative over DMP-inferred coords)
-                    if (c.GridX.HasValue && c.GridY.HasValue)
-                    {
-                        index.CellGridCoords[reportFormId] = (c.GridX.Value, c.GridY.Value);
-                    }
-
-                    // Heightmap storage is handled separately from ESM LAND records
-                    // (see DmpCompareCommand after Aggregate call) for complete coverage.
-                }
-
-                // Compute dialogue groups (by quest and by NPC) and per-record metadata
-                if (record is DialogueRecord d)
-                {
-                    // Quest groups
-                    if (!index.RecordGroups.TryGetValue("Dialogue_Quest", out var questGroups))
-                    {
-                        questGroups = new Dictionary<uint, string>();
-                        index.RecordGroups["Dialogue_Quest"] = questGroups;
-                    }
-
-                    if (!questGroups.TryGetValue(formId, out var existingQuestGroup))
-                    {
-                        questGroups[formId] = d.QuestFormId.HasValue
-                            ? ResolveQuestGroupLabel(d.QuestFormId.Value, dump.Resolver, questLabels)
-                            : "(No Quest)";
-                    }
-                    else if (existingQuestGroup == "(No Quest)" && d.QuestFormId.HasValue)
-                    {
-                        questGroups[formId] =
-                            ResolveQuestGroupLabel(d.QuestFormId.Value, dump.Resolver, questLabels);
-                    }
-                    else if (d.QuestFormId.HasValue)
-                    {
-                        // Update canonical label with better name resolution from later dumps
-                        ResolveQuestGroupLabel(d.QuestFormId.Value, dump.Resolver, questLabels);
-                    }
-
-                    // NPC groups — use a speaker FormID-keyed canonical name so all
-                    // dialogue lines from the same NPC share a single group label
-                    // even if the NPC's display name changed between builds.
-                    if (!index.RecordGroups.TryGetValue("Dialogue_NPC", out var npcGroups))
-                    {
-                        npcGroups = new Dictionary<uint, string>();
-                        index.RecordGroups["Dialogue_NPC"] = npcGroups;
-                    }
-
-                    // Insert on first sighting; upgrade "(No Speaker)" if a later dump
-                    // provides speaker or quest attribution.
-                    var hasExistingNpcGroup = npcGroups.TryGetValue(formId, out var existingNpcGroup);
-                    var canUpgradeNoSpeaker = hasExistingNpcGroup
-                                              && existingNpcGroup == "(No Speaker)"
-                                              && (d.SpeakerFormId.HasValue || d.QuestFormId.HasValue);
-                    if (!hasExistingNpcGroup || canUpgradeNoSpeaker)
-                    {
-                        npcGroups[formId] = ResolveSpeakerGroupLabel(d, dump.Resolver, speakerLabels);
-                    }
-
-                    // Per-record metadata for table columns — update on each dump
-                    // so later dumps can fill in missing quest/topic/speaker info
-                    if (!index.RecordMetadata.TryGetValue(typeName, out var metaMap))
-                    {
-                        metaMap = new Dictionary<uint, Dictionary<string, string>>();
-                        index.RecordMetadata[typeName] = metaMap;
-                    }
-
-                    if (!metaMap.TryGetValue(formId, out var meta))
-                    {
-                        meta = new Dictionary<string, string>();
-                        metaMap[formId] = meta;
-                    }
-
-                    // Update metadata from each dump — latest wins for best name resolution.
-                    // Also tracks name changes across builds for history display.
-                    if (d.QuestFormId.HasValue)
-                    {
-                        meta["questFormId"] = $"0x{d.QuestFormId.Value:X8}";
-                        var qEid = dump.Resolver.GetEditorId(d.QuestFormId.Value) ?? "";
-                        var qName = dump.Resolver.GetDisplayName(d.QuestFormId.Value) ?? "";
-                        if (!string.IsNullOrEmpty(qEid)) meta["questEditorId"] = qEid;
-                        if (!string.IsNullOrEmpty(qName)) meta["questName"] = qName;
-                    }
-
-                    if (d.TopicFormId.HasValue)
-                    {
-                        meta["topicFormId"] = $"0x{d.TopicFormId.Value:X8}";
-                        var tEid = dump.Resolver.GetEditorId(d.TopicFormId.Value) ?? "";
-                        var tName = dump.Resolver.GetDisplayName(d.TopicFormId.Value) ?? "";
-                        if (string.IsNullOrEmpty(tName) &&
-                            dialogTopicsByFormId != null &&
-                            dialogTopicsByFormId.TryGetValue(d.TopicFormId.Value, out var topic))
-                        {
-                            tName = topic.FullName ?? topic.DummyPrompt ?? "";
-                        }
-
-                        if (string.IsNullOrEmpty(tName))
-                        {
-                            tName = PickFirstDialogueText(d);
-                        }
-
-                        if (!string.IsNullOrEmpty(tEid)) meta["topicEditorId"] = tEid;
-                        if (!string.IsNullOrEmpty(tName)) meta["topicName"] = tName;
-                    }
-
-                    if (d.SpeakerFormId.HasValue)
-                    {
-                        meta["speakerFormId"] = $"0x{d.SpeakerFormId.Value:X8}";
-                        var sEid = dump.Resolver.GetEditorId(d.SpeakerFormId.Value) ?? "";
-                        var sName = dump.Resolver.GetDisplayName(d.SpeakerFormId.Value) ?? "";
-                        if (!string.IsNullOrEmpty(sEid)) meta["speakerEditorId"] = sEid;
-                        if (!string.IsNullOrEmpty(sName)) meta["speakerName"] = sName;
-                    }
-                }
-
-                if (record is DialogTopicRecord dialogTopic &&
-                    dialogTopicSearchTextByFormId != null &&
-                    dialogTopicSearchTextByFormId.TryGetValue(dialogTopic.FormId, out var topicSearchText) &&
-                    !string.IsNullOrWhiteSpace(topicSearchText))
-                {
-                    if (!index.RecordMetadata.TryGetValue(typeName, out var metaMap))
-                    {
-                        metaMap = new Dictionary<uint, Dictionary<string, string>>();
-                        index.RecordMetadata[typeName] = metaMap;
-                    }
-
-                    if (!metaMap.TryGetValue(formId, out var meta))
-                    {
-                        meta = new Dictionary<string, string>();
-                        metaMap[formId] = meta;
-                    }
-
-                    meta["searchText"] = topicSearchText;
-                }
-            }
-
-            if (releaseInputRecords)
-            {
-                ClearRecordLists(dump.Records);
-            }
-        }
-
-        AppendVirtualCellAuditMetadata(index, upgradedVirtualCellIds, upgradedVirtualCellIdsByDump);
-
-        // Finalize: replace cell group placeholder keys ("WS:0xFORMID") with the
-        // resolved worldspace label. Labels include rename history ("Old → New")
-        // and a stable identifier (EditorID, with FormID disambiguator on collisions)
-        // so two FormIDs that share a display name don't merge into one group.
-        // Falls back to "Worldspace 0xFORMID" if no name was resolved in any dump.
-        if (index.RecordGroups.TryGetValue("Cell", out var cellGroups))
-        {
-            var resolvedWorldspaceLabels = ResolveWorldspaceLabels(worldspaceLabels);
-            foreach (var (cellFormId, currentKey) in cellGroups.ToList())
-            {
-                if (currentKey.StartsWith("WS:0x", StringComparison.Ordinal))
-                {
-                    var hex = currentKey[5..];
-                    if (uint.TryParse(hex, NumberStyles.HexNumber, null, out var wsFid))
-                    {
-                        cellGroups[cellFormId] = resolvedWorldspaceLabels.TryGetValue(wsFid, out var label)
-                            ? label
-                            : $"Worldspace 0x{wsFid:X8}";
-                    }
-                }
-            }
-        }
-
-        // Finalize: sync all dialogue group labels to their canonical versions.
-        // Speaker/quest labels may have been upgraded by later dumps, but earlier
-        // dialogue records still reference the old label string.
-        if (index.RecordGroups.TryGetValue("Dialogue_NPC", out var finalNpcGroups))
-        {
-            // Build reverse map: old label → canonical label
-            var speakerFormIdToLabel = speakerLabels;
-            foreach (var (dialogueFormId, currentLabel) in finalNpcGroups.ToList())
-            {
-                // Find the speaker FormID for this dialogue line from metadata
-                if (index.RecordMetadata.TryGetValue("Dialogue", out var metas)
-                    && metas.TryGetValue(dialogueFormId, out var m)
-                    && m.TryGetValue("speakerFormId", out var spkHex)
-                    && uint.TryParse(spkHex.Replace("0x", ""), NumberStyles.HexNumber,
-                        null, out var spkFid)
-                    && speakerFormIdToLabel.TryGetValue(spkFid, out var canonicalLabel)
-                    && canonicalLabel != currentLabel)
-                {
-                    finalNpcGroups[dialogueFormId] = canonicalLabel;
-                }
-            }
-        }
-
-        if (index.RecordGroups.TryGetValue("Dialogue_Quest", out var finalQuestGroups))
-        {
-            foreach (var (dialogueFormId, currentLabel) in finalQuestGroups.ToList())
-            {
-                if (index.RecordMetadata.TryGetValue("Dialogue", out var metas)
-                    && metas.TryGetValue(dialogueFormId, out var m)
-                    && m.TryGetValue("questFormId", out var qstHex)
-                    && uint.TryParse(qstHex.Replace("0x", ""), NumberStyles.HexNumber,
-                        null, out var qstFid)
-                    && questLabels.TryGetValue(qstFid, out var canonicalLabel)
-                    && canonicalLabel != currentLabel)
-                {
-                    finalQuestGroups[dialogueFormId] = canonicalLabel;
-                }
-            }
-        }
-
-        return index;
+        return Projections.CrossDumpProjectionAggregator.AggregateFromProjections(
+            projections, virtualCanon, allowedTypes);
     }
 
     private static bool ShouldIncludeType(IReadOnlySet<string>? allowedTypes, string typeName)
