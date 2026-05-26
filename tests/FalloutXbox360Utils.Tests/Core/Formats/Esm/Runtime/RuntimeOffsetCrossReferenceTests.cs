@@ -345,6 +345,118 @@ public sealed class RuntimeOffsetCrossReferenceTests
             + $"First 10 non-pointer values:\n  {string.Join("\n  ", nonPointerValues)}");
     }
 
+    // =========================================================================
+    // NPC offset investigation table (Phase 1B.19)
+    //
+    // Goal: pre-migration audit of every NPC pointer-shaped offset constant in
+    // RuntimeNpcFieldReader. For each anchor, log:
+    //   1. Where the constant actually lands at runtime (base + shift)
+    //   2. The pointer-shape rate across the snippet (≥90% = a real pointer
+    //      slot; <90% = empirically-derived offset that doesn't correspond to
+    //      a heap pointer)
+    //   3. Whether the runtime offset coincides with a PDB-named field in
+    //      TESNPC (gives a name to migrate to via view.FormIdPointer)
+    //
+    // Anchors with high pointer-shape rate AND a PDB-named field at the same
+    // offset are safe to migrate to PdbStructView. The rest stay as
+    // empirical-only hardcoded constants with the diagnostic documented.
+    //
+    // Each anchor's MinRate is set permissively (0.5) so this investigation
+    // pass runs to completion. Step 2 (migration) will raise the threshold for
+    // the verified anchors.
+    // =========================================================================
+
+    private enum NpcShiftBand { Core, Appearance, LateAppearance }
+
+    private sealed record NpcOffsetAnchor(
+        string Name,
+        int BaseOffset,
+        NpcShiftBand Band,
+        string PdbHint,
+        double MinRate = 0.9);
+
+    private static readonly NpcOffsetAnchor[] NpcAnchorTable =
+    [
+        // Pointer fields
+        new("DeathItemPtr",     76,  NpcShiftBand.Core,            "pDeathItem (TESForm*)"),
+        new("TemplatePtr",      84,  NpcShiftBand.Core,            "pTemplateForm (TESNPC*)"),
+        new("ClassPtr",        304,  NpcShiftBand.Core,            "pClass (TESClass*)"),
+        new("ScriptPtr",       248,  NpcShiftBand.Core,            "pFormScript (Script*)"),
+        new("HairPtr",         440,  NpcShiftBand.Appearance,      "pHair (TESHair*)"),
+        new("EyesPtr",         448,  NpcShiftBand.Appearance,      "pEyes (TESEyes*)"),
+        new("OriginalRacePtr", 492,  NpcShiftBand.LateAppearance,  "pOriginalRace (TESRace*)"),
+        new("FaceNpcPtr",      496,  NpcShiftBand.LateAppearance,  "pFaceNPC (TESNPC*)"),
+        // List heads — first 4 bytes is item pointer (or null for empty list)
+        new("ContainerDataHead", 104, NpcShiftBand.Core,           "TESContainer first node m_item"),
+        new("FactionListHead",    92, NpcShiftBand.Core,           "BSSimpleList<FACTION_RANK*> head m_item"),
+        new("SpellListHead",     128, NpcShiftBand.Core,           "BSSimpleList<SpellItem*> head m_item"),
+        new("PackageListHead",   168, NpcShiftBand.Core,           "AIPackList BSSimpleList head m_item"),
+        new("HeadPartListHead",  476, NpcShiftBand.Appearance,     "listHeadParts BSSimpleList head m_item")
+    ];
+
+    public static IEnumerable<object[]> NpcAnchorRows =>
+        from snip in AllSnippets
+        from anchor in NpcAnchorTable
+        select new object[] { (string)snip[0], anchor.Name };
+
+    [Theory]
+    [MemberData(nameof(NpcAnchorRows))]
+    public async Task NPC_offset_investigation(string snippetName, string anchorName)
+    {
+        var anchor = NpcAnchorTable.First(a => a.Name == anchorName);
+
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+
+        var npcEntries = snippet.RuntimeEditorIds
+            .Where(e => e.FormType == 0x2A && e.TesFormOffset.HasValue)
+            .ToList();
+        var probe = RuntimeNpcLayoutProbe.Probe(context, npcEntries);
+        var layout = probe.Layout;
+
+        var shift = anchor.Band switch
+        {
+            NpcShiftBand.Core => layout.CoreShift,
+            NpcShiftBand.Appearance => layout.AppearanceShift,
+            NpcShiftBand.LateAppearance => layout.LateAppearanceShift,
+            _ => 0
+        };
+        var runtimeOffset = anchor.BaseOffset + shift;
+
+        var pdbField = LookupPdbFieldAtOffset(0x2A, runtimeOffset);
+        var pdbLine = pdbField is null
+            ? "(no PDB field at this offset)"
+            : $"PDB \"{pdbField.Name}\" of {pdbField.Owner ?? "?"} @ +{pdbField.Offset} (size={pdbField.Size}, kind={pdbField.Kind})";
+
+        var (@checked, pointerShaped, nonPointerValues) = ScanPointerShape(
+            snippet, context, runtimeOffset, 500);
+        var rate = @checked > 0 ? (double)pointerShaped / @checked : 0;
+
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] Npc{anchor.Name} runtime offset {runtimeOffset} "
+            + $"(base {anchor.BaseOffset} + {anchor.Band}-shift({shift})): "
+            + $"ptr-shape={pointerShaped}/{@checked} ({rate:P0}) | {pdbLine} | hint={anchor.PdbHint}");
+
+        Assert.True(@checked >= 50,
+            $"[{snippetName}] Only {@checked} NPCs sampled — investigation under-exercised.");
+
+        Assert.True(rate >= anchor.MinRate,
+            $"[{snippetName}] Npc{anchor.Name} pointer-shape {rate:P0} below permissive floor {anchor.MinRate:P0} "
+            + $"at runtime offset {runtimeOffset}. {pdbLine}. "
+            + $"First 10 non-pointer values:\n  {string.Join("\n  ", nonPointerValues)}");
+    }
+
+    private static PdbFieldLayout? LookupPdbFieldAtOffset(byte formType, int offset)
+    {
+        var layout = PdbStructLayouts.Get(formType);
+        if (layout == null) return null;
+
+        // Prefer an exact-start match; fall back to a containing range so the
+        // diagnostic shows which PDB field the offset lands inside.
+        return layout.Fields.FirstOrDefault(f => f.Offset == offset)
+            ?? layout.Fields.FirstOrDefault(f => offset >= f.Offset && offset < f.Offset + f.Size);
+    }
+
     private static (int CheckedNpcs, int PointerShaped, List<string> NonPointerValues) ScanPointerShape(
         DmpSnippetReader snippet, RuntimeMemoryContext context, int offset, int sampleSize)
     {
