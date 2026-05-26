@@ -12,6 +12,18 @@ internal sealed class RuntimeItemLayouts
     ///     Selected weapon sound layout variant.
     ///     V2 = FNV-era builds (14 sound fields). V1 = early FO3-derived builds (7 sound
     ///     fields, no Distant / AttackLoop / MeleeBlock / Idle / ModSilenced).
+    ///
+    ///     <para>
+    ///     NOT migrated to <c>PdbStructView</c> (Phase 1B.24 decision). The MemDebug PDB
+    ///     describes only the V2 layout; V1 offsets aren't PDB-named, so view.FormIdPointer
+    ///     can't be used uniformly. Variant disambiguation has to stay in
+    ///     <see cref="RuntimeWeaponSoundProbe" /> regardless. The
+    ///     <c>IsV1 ? offsetA : offsetB</c> ternaries here are the right pattern.
+    ///     The empirical audit at
+    ///     <c>WEAP_sound_slot_pointer_shape</c> (RuntimeOffsetCrossReferenceTests.cs)
+    ///     proves all 7 shared sound-slot offsets are correct across the 5 sampled
+    ///     snippets (all V2 in the current corpus, 100% pointer-shape).
+    ///     </para>
     /// </summary>
     private readonly RuntimeWeaponSoundLayoutVariant _weapSoundVariant;
 

@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Layouts;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Probes;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 using FalloutXbox360Utils.Core.Minidump;
@@ -1026,6 +1027,82 @@ public sealed class RuntimeOffsetCrossReferenceTests
             $"[{snippetName}] WEAP PickupSound pointer-shape {rate:P0} below threshold "
             + $"(offset {pickupSoundOffset}). First 10 non-pointer values:\n  "
             + string.Join("\n  ", nonPointer));
+    }
+
+    // =========================================================================
+    // WEAP sound-slot V1/V2 layout audit (Phase 1B.24)
+    //
+    // RuntimeWeaponSoundProbe disambiguates V1 (FO3-derived early builds, 7 sound
+    // slots, no Distant/AttackLoop/MeleeBlock/Idle/ModSilenced) vs V2 (FNV-era,
+    // 14 slots). The 7 SHARED slots have different offsets between V1 and V2 —
+    // RuntimeItemLayouts.cs exposes properties that switch on the probed variant
+    // (e.g. WeapFireSound2DOffset => IsV1 ? 536+_s : 540+_s).
+    //
+    // This audit validates that the probe correctly identifies the variant AND
+    // that the resolved offset lands on a real pointer slot in every snippet.
+    // Per the Phase 1B.24 planning analysis, migration to PdbStructView is
+    // REJECTED: pdb_layouts.json describes only V2; V1 offsets would still need
+    // hardcoding; variant selection cannot be moved into the view. The audit is
+    // the appropriate alternative — empirical proof the probe-driven approach
+    // is correct.
+    //
+    // Audit covers the 7 shared sound slots. V2-only slots (Distant/AttackLoop/
+    // MeleeBlock/Idle/ModSilenced/Embedded/VATS/WorldModelMod) aren't covered —
+    // they're either irrelevant on V1 snippets (returning -1) or part of V2's
+    // larger struct that the WEAP_AmmoPtr/WEAP_PickupSound tests already cover.
+    // =========================================================================
+
+    private sealed record WeapSoundSlotAnchor(string Name, Func<RuntimeItemLayouts, int> Resolve);
+
+    private static readonly WeapSoundSlotAnchor[] WeapSoundSlotAnchors =
+    [
+        new("Fire3D",          l => l.WeapFireSound3DOffset),
+        new("Fire2D",          l => l.WeapFireSound2DOffset),
+        new("DryFire",         l => l.WeapDryFireSoundOffset),
+        new("Equip",           l => l.WeapEquipSoundOffset),
+        new("Unequip",         l => l.WeapUnequipSoundOffset),
+        new("ImpactDataSet",   l => l.WeapImpactDataSetOffset),
+        new("1stPersonObject", l => l.Weap1stPersonObjectOffset)
+    ];
+
+    public static IEnumerable<object[]> WeapSoundSlotRows =>
+        from snip in AllSnippets
+        from anchor in WeapSoundSlotAnchors
+        select new object[] { (string)snip[0], anchor.Name };
+
+    [Theory]
+    [MemberData(nameof(WeapSoundSlotRows))]
+    public async Task WEAP_sound_slot_pointer_shape(string snippetName, string slotName)
+    {
+        var anchor = WeapSoundSlotAnchors.First(a => a.Name == slotName);
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+
+        // Run the probe to identify the variant. Mirrors how RuntimeStructReader
+        // wires the probe result into RuntimeItemLayouts in production.
+        var probe = RuntimeWeaponSoundProbe.Probe(context, snippet.RuntimeEditorIds);
+        Assert.NotNull(probe);
+
+        var pdbShift = RuntimeBuildOffsets.GetPdbShift(MinidumpAnalyzer.DetectBuildType(snippet.MinidumpInfo));
+        var layouts = new RuntimeItemLayouts(pdbShift, probe!.Variant);
+        var resolvedOffset = anchor.Resolve(layouts);
+
+        var weaps = GetValidatedWeapSample(snippet, context, 200);
+        Assert.True(weaps.Count >= 20, $"[{snippetName}] Only {weaps.Count} validated WEAPs.");
+
+        var (checkedCount, pointerShaped, nonPointer) = ScanPointerShape(weaps, context, resolvedOffset);
+        var rate = (double)pointerShaped / checkedCount;
+
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] WEAP {anchor.Name} pointer-shape: {pointerShaped}/{checkedCount} ({rate:P0}) "
+            + $"at offset {resolvedOffset} (variant={probe.Variant}, score={probe.WinnerScore}, "
+            + $"margin={probe.WinnerScore - probe.RunnerUpScore}, confidence={(probe.IsHighConfidence ? "high" : "low")}).");
+
+        Assert.True(rate >= 0.9,
+            $"[{snippetName}] WEAP {anchor.Name} pointer-shape {rate:P0} below threshold "
+            + $"(offset {resolvedOffset}, variant {probe.Variant}). "
+            + $"This means either the probe picked the wrong variant OR the slot offset is wrong for this variant. "
+            + $"First 10 non-pointer values:\n  {string.Join("\n  ", nonPointer)}");
     }
 
     // =========================================================================
