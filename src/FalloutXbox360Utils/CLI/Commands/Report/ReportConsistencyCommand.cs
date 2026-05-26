@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
+using FalloutXbox360Utils.Core.Formats.Esm.Export.Projections;
 using FalloutXbox360Utils.Core.Semantic;
 using Spectre.Console;
 
@@ -150,8 +151,8 @@ internal static class ReportConsistencyCommand
             string[] inputs,
             CancellationToken cancellationToken)
     {
-        var sources = new List<SemanticSource>();
-        var labels = new List<string>();
+        var labelByFilePath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var projections = new List<CrossDumpSourceProjection>();
 
         foreach (var raw in inputs)
         {
@@ -173,30 +174,52 @@ internal static class ReportConsistencyCommand
                     IncludeMetadata = fileType == AnalysisFileType.Minidump
                 },
                 cancellationToken: cancellationToken);
-            sources.Add(source);
-            labels.Add(label);
+
+            // Project immediately and let `source` fall out of scope so the heavy
+            // RecordCollection becomes GC-eligible. Same memory profile as the streaming
+            // HTML pipeline (CrossDumpComparisonPipeline.WriteHtmlByRecordTypeAsync).
+            projections.Add(CrossDumpSourceProjector.Project(source));
+            labelByFilePath[source.FilePath] = label;
         }
 
-        var index = CrossDumpAggregator.Aggregate(
-            sources.Select(s => (s.FilePath, s.Records, s.Resolver, s.MinidumpInfo)).ToList());
+        // Build the cross-source enrichment indexes the projection aggregator needs.
+        var virtualCanon = VirtualCellCanonicalizer.BuildVirtualCellCanonicalFormIds(
+            projections.Select(p => p.CellSkeletons));
+        var npcPlacements = CrossDumpPlacementIndexBuilder.BuildNpcPlacementIndexes(projections, virtualCanon);
+        var npcScriptRefs = CrossDumpPlacementIndexBuilder.BuildNpcScriptReferenceIndexes(projections);
+        var keyDoors = CrossDumpPlacementIndexBuilder.BuildKeyLockedDoorIndexes(projections, virtualCanon);
+        var containerPlacements = CrossDumpPlacementIndexBuilder.BuildContainerPlacementIndexes(
+            projections, virtualCanon);
+        CrossDumpProjectionAggregator.BuildLatePassReports(
+            projections, npcPlacements, npcScriptRefs, keyDoors, containerPlacements);
+        CrossDumpProjectionAggregator.ReleaseLateEnrichment(projections);
 
-        // CrossDumpAggregator sorts by build date — re-derive labels from the index's
+        var index = CrossDumpProjectionAggregator.AggregateFromProjections(
+            projections, virtualCanon, allowedTypes: null);
+
+        // AggregateFromProjections sorts by build date — re-derive labels from the index's
         // dump order so they line up with StructuredRecords' dump indices.
         var orderedLabels = index.Dumps.Select(d =>
-            labels[FindLabelIndex(sources, d.FileName)]).ToList();
+            labelByFilePath.TryGetValue(MatchProjectionFilePath(projections, d.FileName), out var label)
+                ? label
+                : d.FileName).ToList();
 
         return CrossBuildReportComparer.ProjectFromIndex(index, orderedLabels);
     }
 
-    private static int FindLabelIndex(List<SemanticSource> sources, string fileName)
+    private static string MatchProjectionFilePath(
+        IReadOnlyList<CrossDumpSourceProjection> projections,
+        string fileName)
     {
-        for (var i = 0; i < sources.Count; i++)
+        foreach (var projection in projections)
         {
-            if (string.Equals(Path.GetFileName(sources[i].FilePath), fileName, StringComparison.OrdinalIgnoreCase))
-                return i;
+            if (string.Equals(Path.GetFileName(projection.FilePath), fileName, StringComparison.OrdinalIgnoreCase))
+            {
+                return projection.FilePath;
+            }
         }
 
-        return 0;
+        return projections.Count > 0 ? projections[0].FilePath : fileName;
     }
 
     private static List<(string, Dictionary<string, Dictionary<uint, RecordReport>>)>
