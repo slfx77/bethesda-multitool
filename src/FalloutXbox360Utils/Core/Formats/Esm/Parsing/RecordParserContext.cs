@@ -51,31 +51,14 @@ public sealed class RecordParserContext
         // Uses probe-based auto-detection of early vs final build struct layout
         if (accessor != null && minidumpInfo != null && fileSize > 0)
         {
-            // Detect and fix FormType code drift between builds.
-            // Early builds may have different ENUM_FORM_ID values due to types being
-            // inserted/removed during development. Remap to final-build codes so all
-            // readers see consistent FormType values.
-            var formTypeDrift = RuntimeBuildOffsets.DetectFormTypeDrift(
-                scanResult.RuntimeEditorIds, scanResult.MainRecords);
-            if (formTypeDrift != null)
-            {
-                foreach (var entry in scanResult.RuntimeEditorIds)
-                {
-                    if (formTypeDrift.TryGetValue(entry.FormType, out var corrected))
-                    {
-                        entry.OriginalFormType = entry.FormType;
-                        entry.FormType = corrected;
-                    }
-                }
-
-                foreach (var entry in scanResult.RuntimeRefrFormEntries)
-                {
-                    if (formTypeDrift.TryGetValue(entry.FormType, out var corrected))
-                    {
-                        entry.FormType = corrected;
-                    }
-                }
-            }
+            // FormType drift correction is now applied centrally in
+            // MinidumpAnalyzer.AnalyzeAsync (Phase 1B.22), so by the time this
+            // context is constructed the entries already carry canonical
+            // FormType bytes. ApplyDriftCorrection is idempotent — this call
+            // is defense-in-depth for callers that construct a RecordParser
+            // without going through MinidumpAnalyzer (e.g., a hand-built
+            // scanResult from a unit test).
+            RuntimeBuildOffsets.ApplyDriftCorrection(scanResult);
 
             var npcEntries = scanResult.RuntimeEditorIds
                 .Where(entry => entry.FormType == 0x2A)
@@ -95,7 +78,8 @@ public sealed class RecordParserContext
                 npcEntries,
                 worldEntries,
                 cellEntries,
-                scanResult.RuntimeEditorIds);
+                scanResult.RuntimeEditorIds,
+                scanResult.RuntimeLandFormEntries);
         }
 
         // Build FormID lookup from main records

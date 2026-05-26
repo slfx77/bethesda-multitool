@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Formats;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 
 namespace FalloutXbox360Utils.Core.Minidump;
 
@@ -95,6 +96,17 @@ public sealed class MinidumpAnalyzer
                 accessor, result, matches, moduleOffsets, minidumpInfo, progress, cancellationToken);
 
             MinidumpFileScanner.SortCarvedFilesByOffset(result);
+        }
+
+        // Phase 1B.22: apply FormType drift correction in-place so every consumer of
+        // result.EsmRecords sees canonical (final-build) FormType bytes. Previously this
+        // ran inside RecordParserContext, which meant any consumer that read
+        // result.EsmRecords.RuntimeEditorIds directly (snippet extraction, NPC browser,
+        // etc.) saw uncorrected entries and had to remap themselves. Centralizing here
+        // makes the contract uniform: AnalysisResult.EsmRecords is always drift-corrected.
+        if (result.EsmRecords is { } scanResult)
+        {
+            RuntimeBuildOffsets.ApplyDriftCorrection(scanResult);
         }
 
         progress?.Report(new AnalysisProgress

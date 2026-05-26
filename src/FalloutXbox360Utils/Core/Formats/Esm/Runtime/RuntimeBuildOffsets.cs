@@ -1,4 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Records;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 
@@ -341,6 +342,64 @@ internal static class RuntimeBuildOffsets
             0x78 => "SLPD",
             _ => null
         };
+    }
+
+    /// <summary>
+    ///     Detect and apply FormType drift correction to a scan result in place. After this
+    ///     call, every <see cref="RuntimeEditorIdEntry.FormType" /> in
+    ///     <c>scanResult.RuntimeEditorIds</c>, <c>scanResult.RuntimeRefrFormEntries</c>, and
+    ///     <c>scanResult.RuntimeLandFormEntries</c> holds the canonical (final-build) FormType
+    ///     code. Entries that were remapped also have their original byte preserved on
+    ///     <see cref="RuntimeEditorIdEntry.OriginalFormType" />.
+    ///
+    ///     <para>
+    ///     Idempotent: if any entry already has a non-zero <c>OriginalFormType</c>,
+    ///     correction has already run and this call is a no-op. Safe to call multiple times.
+    ///     </para>
+    ///
+    ///     <para>
+    ///     This consolidates what every consumer previously had to do manually (via
+    ///     <c>RecordParserContext</c>). Phase 1B.22 moved the call to
+    ///     <c>MinidumpAnalyzer.AnalyzeAsync</c> so all downstream code paths — including
+    ///     snippet extraction for tests — see consistent canonical FormType bytes.
+    ///     </para>
+    /// </summary>
+    /// <returns>The remap dictionary that was applied, or null if no drift was detected.</returns>
+    public static Dictionary<byte, byte>? ApplyDriftCorrection(EsmRecordScanResult scanResult)
+    {
+        // Idempotence guard: if any entry already has a recorded OriginalFormType, drift
+        // correction has already been applied (OriginalFormType is non-null only after
+        // a successful prior remap).
+        foreach (var entry in scanResult.RuntimeEditorIds)
+        {
+            if (entry.OriginalFormType.HasValue)
+            {
+                return null;
+            }
+        }
+
+        var remap = DetectFormTypeDrift(scanResult.RuntimeEditorIds, scanResult.MainRecords);
+        if (remap is null)
+        {
+            return null;
+        }
+
+        ApplyRemap(scanResult.RuntimeEditorIds, remap);
+        ApplyRemap(scanResult.RuntimeRefrFormEntries, remap);
+        ApplyRemap(scanResult.RuntimeLandFormEntries, remap);
+        return remap;
+    }
+
+    private static void ApplyRemap(IEnumerable<RuntimeEditorIdEntry> entries, Dictionary<byte, byte> remap)
+    {
+        foreach (var entry in entries)
+        {
+            if (remap.TryGetValue(entry.FormType, out var corrected))
+            {
+                entry.OriginalFormType = entry.FormType;
+                entry.FormType = corrected;
+            }
+        }
     }
 
     /// <summary>
