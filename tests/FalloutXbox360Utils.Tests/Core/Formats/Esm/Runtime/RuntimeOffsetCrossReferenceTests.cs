@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers;
@@ -455,6 +456,237 @@ public sealed class RuntimeOffsetCrossReferenceTests
         // diagnostic shows which PDB field the offset lands inside.
         return layout.Fields.FirstOrDefault(f => f.Offset == offset)
             ?? layout.Fields.FirstOrDefault(f => offset >= f.Offset && offset < f.Offset + f.Size);
+    }
+
+    // =========================================================================
+    // NPC appearance-region SCALAR cross-reference audit (Phase 1B.23)
+    //
+    // Phase 1B.19 covered pointer-shape validation for the NPC pointer fields.
+    // This phase fills the gap: empirical validation of the 4 appearance-region
+    // SCALAR fields that have a direct ESM source (HairLength / HairColor /
+    // Height / Weight). Two more appearance scalars (RaceFacePreset /
+    // BloodImpactMaterial) are runtime-only with no ESM source and aren't
+    // covered here — the reader's existing in-range validation is the only
+    // check for those.
+    //
+    // For each scalar, we compare the runtime byte(s) at TesFormOffset + the
+    // runtime offset constant against the ESM-declared value in the matching
+    // subrecord. Templated NPCs (TemplateFlags ≠ 0) inherit appearance from
+    // their template, so ESM and runtime can legitimately differ — those are
+    // skipped, matching the NPC_Acbs_Flags test pattern.
+    // =========================================================================
+
+    private sealed record NpcScalarAnchor(
+        string Name,
+        int BaseOffset,
+        NpcShiftBand Band,
+        string EsmSubrecord,
+        string ValueKind,         // "Float" | "PackedColor3"
+        double MinMatchRate = 0.5);
+
+    private static readonly NpcScalarAnchor[] NpcScalarAnchorTable =
+    [
+        new("HairLengthOffset", 444, NpcShiftBand.Appearance,     "LNAM", "Float"),
+        new("HairColorOffset",  472, NpcShiftBand.Appearance,     "HCLR", "PackedColor3"),
+        new("HeightOffset",     500, NpcShiftBand.LateAppearance, "NAM6", "Float"),
+        new("WeightOffset",     504, NpcShiftBand.LateAppearance, "NAM7", "Float")
+    ];
+
+    public static IEnumerable<object[]> NpcScalarAnchorRows =>
+        from snip in AllSnippets
+        from anchor in NpcScalarAnchorTable
+        select new object[] { (string)snip[0], anchor.Name };
+
+    [Theory]
+    [MemberData(nameof(NpcScalarAnchorRows))]
+    public async Task NPC_appearance_scalar_audit(string snippetName, string anchorName)
+    {
+        var anchor = NpcScalarAnchorTable.First(a => a.Name == anchorName);
+
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
+        Assert.True(File.Exists(Xbox360EsmPath), $"ESM not found: {Xbox360EsmPath}");
+        var extractor = EsmSubrecordExtractor.LoadCached(Xbox360EsmPath);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+
+        var npcEntries = snippet.RuntimeEditorIds
+            .Where(e => e.FormType == 0x2A && e.TesFormOffset.HasValue)
+            .ToList();
+        var probe = RuntimeNpcLayoutProbe.Probe(context, npcEntries);
+        var layout = probe.Layout;
+
+        var shift = anchor.Band switch
+        {
+            NpcShiftBand.Core => layout.CoreShift,
+            NpcShiftBand.Appearance => layout.AppearanceShift,
+            NpcShiftBand.LateAppearance => layout.LateAppearanceShift,
+            _ => 0
+        };
+        var runtimeOffset = anchor.BaseOffset + shift;
+
+        var totalEntriesScanned = 0;
+        var unloaded = 0;
+        var populated = 0;
+        var matches = 0;
+        var mismatches = new List<string>();
+
+        foreach (var entry in npcEntries)
+        {
+            // Skip templated NPCs — they inherit appearance from their template.
+            var esmAcbs = extractor.GetSubrecordBytes(entry.FormId, "ACBS");
+            if (esmAcbs is { Length: >= 24 })
+            {
+                var templateFlags = BinaryUtils.ReadUInt16BE(esmAcbs, 22);
+                // Bit 0x0001 = UseTraits (Hair* + HairColor + Height + Weight all inherit when set).
+                if (templateFlags != 0)
+                {
+                    continue;
+                }
+            }
+
+            // Skip NPCs whose ESM record doesn't carry the scalar — that's
+            // common for scalars like HairLength / HairColor that are
+            // optional on plain Race-inheriting NPCs.
+            var esmBytes = extractor.GetSubrecordBytes(entry.FormId, anchor.EsmSubrecord);
+            if (esmBytes is null)
+            {
+                continue;
+            }
+
+            // Read runtime bytes.
+            var runtimeBuf = context.ReadBytes(entry.TesFormOffset!.Value + runtimeOffset, 4);
+            if (runtimeBuf is null)
+            {
+                continue;
+            }
+
+            totalEntriesScanned++;
+            bool? result = anchor.ValueKind switch
+            {
+                "Float" => CompareFloat(esmBytes, runtimeBuf, mismatches, entry),
+                "PackedColor3" => ComparePackedColor3(esmBytes, runtimeBuf, mismatches, entry),
+                _ => false
+            };
+
+            if (result is null)
+            {
+                unloaded++;
+                continue;
+            }
+            populated++;
+            if (result.Value)
+            {
+                matches++;
+            }
+        }
+
+        var matchRate = populated > 0 ? (double)matches / populated : 0;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] Npc{anchor.Name} scalar parity: {matches}/{populated} ({matchRate:P0}) "
+            + $"at runtime offset {runtimeOffset} (= {anchor.BaseOffset} + {anchor.Band}-shift({shift})) "
+            + $"vs ESM {anchor.EsmSubrecord} ({anchor.ValueKind}); "
+            + $"{unloaded}/{totalEntriesScanned} engine-unloaded (runtime bytes all-zero), skipped from rate.");
+
+        // Stop conditions: if no NPCs have populated runtime data, the engine
+        // hasn't instantiated any with this scalar — common for HairColor on
+        // snippets capturing few live NPCs. Skip the rate assertion in that
+        // case; the diagnostic above is the signal.
+        if (populated < 20)
+        {
+            TestContext.Current.TestOutputHelper!.WriteLine(
+                $"[{snippetName}] only {populated} populated samples — under-exercised, skipping rate assertion.");
+            return;
+        }
+
+        Assert.True(matchRate >= anchor.MinMatchRate,
+            $"[{snippetName}] Npc{anchor.Name} scalar parity {matchRate:P0} below floor {anchor.MinMatchRate:P0} "
+            + $"({matches}/{populated} populated at offset {runtimeOffset}; {unloaded} unloaded skipped). "
+            + $"Below floor among populated NPCs suggests the offset is wrong. "
+            + $"First 5 mismatches:\n  {string.Join("\n  ", mismatches.Take(5))}");
+    }
+
+    /// <summary>Returns null if either side is unset (all-zero bytes); otherwise true/false.</summary>
+    private static bool? CompareFloat(
+        byte[] esmBytes, byte[] runtimeBuf, List<string> mismatches, RuntimeEditorIdEntry entry)
+    {
+        if (esmBytes.Length < 4 || runtimeBuf.Length < 4)
+        {
+            return null;
+        }
+
+        // Treat all-zero runtime bytes as "unset / not loaded by engine yet" — most
+        // appearance scalars are populated lazily when the NPC is instantiated as a
+        // 3D model. ESM declares the intent, but unloaded slots stay zero.
+        if (runtimeBuf is [0, 0, 0, 0])
+        {
+            return null;
+        }
+
+        // Likewise, all-zero ESM bytes mean "use engine default" — the parser's
+        // ReadNpcHeight/ReadNpcWeight returns null for these. Runtime would have
+        // the engine default (typically 1.0f = 0x3F800000) which won't match
+        // ESM's literal zero. Skip from rate.
+        if (esmBytes[0] == 0 && esmBytes[1] == 0 && esmBytes[2] == 0 && esmBytes[3] == 0)
+        {
+            return null;
+        }
+
+        // ESM stores these floats LE (per SubrecordSchemaRegistry — LNAM/NAM6/NAM7
+        // carry already-LE floats on Xbox 360); runtime stores BE. Accept either as
+        // a defensive measure in case any field surprises.
+        var esmFloatLe = BinaryPrimitives.ReadSingleLittleEndian(esmBytes);
+        var esmFloatBe = BinaryPrimitives.ReadSingleBigEndian(esmBytes);
+        var runtimeFloat = BinaryPrimitives.ReadSingleBigEndian(runtimeBuf);
+
+        // ~1e-3 tolerance (these are NPC stat floats in the ~0.5–2.0 range).
+        if (Math.Abs(esmFloatLe - runtimeFloat) < 1e-3f || Math.Abs(esmFloatBe - runtimeFloat) < 1e-3f)
+        {
+            return true;
+        }
+
+        if (mismatches.Count < 10)
+        {
+            mismatches.Add(
+                $"0x{entry.FormId:X8} {entry.EditorId ?? "?"}: ESM={esmFloatLe} (LE) / {esmFloatBe} (BE), runtime={runtimeFloat}");
+        }
+        return false;
+    }
+
+    /// <summary>Returns null if runtime is unset (all-zero RGB — engine populates lazily); otherwise true/false.</summary>
+    private static bool? ComparePackedColor3(
+        byte[] esmBytes, byte[] runtimeBuf, List<string> mismatches, RuntimeEditorIdEntry entry)
+    {
+        if (esmBytes.Length < 3 || runtimeBuf.Length < 3)
+        {
+            return null;
+        }
+
+        // All-zero RGB means "engine hasn't applied the HCLR yet" — most
+        // visible across release/memdebug snippets where only ~20% of NPCs are
+        // instantiated. Skip from rate calc; the populated NPCs are the only
+        // useful signal.
+        if (runtimeBuf[0] == 0 && runtimeBuf[1] == 0 && runtimeBuf[2] == 0)
+        {
+            return null;
+        }
+
+        // Both sides store the color as 3 sequential bytes [R, G, B]. Runtime
+        // byte 3 is alpha / NPC personalization marker — not compared.
+        var match = esmBytes[0] == runtimeBuf[0]
+                 && esmBytes[1] == runtimeBuf[1]
+                 && esmBytes[2] == runtimeBuf[2];
+        if (match)
+        {
+            return true;
+        }
+
+        if (mismatches.Count < 10)
+        {
+            mismatches.Add(
+                $"0x{entry.FormId:X8} {entry.EditorId ?? "?"}: "
+                + $"ESM RGB=({esmBytes[0]:X2},{esmBytes[1]:X2},{esmBytes[2]:X2}), "
+                + $"runtime RGB=({runtimeBuf[0]:X2},{runtimeBuf[1]:X2},{runtimeBuf[2]:X2})");
+        }
+        return false;
     }
 
     private static (int CheckedNpcs, int PointerShaped, List<string> NonPointerValues) ScanPointerShape(
