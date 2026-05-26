@@ -1,5 +1,7 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
+using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
@@ -14,6 +16,7 @@ internal sealed class RuntimeActorReader
 {
     private readonly RuntimeMemoryContext _context;
     private readonly RuntimeNpcLayoutProbeResult _npcLayoutProbe;
+    private readonly RuntimePdbFieldAccessor _pdbFields;
 
     // Build-specific offset shift: Proto Debug PDB + _s = actual dump offset.
     private readonly int _s;
@@ -24,6 +27,7 @@ internal sealed class RuntimeActorReader
     public RuntimeActorReader(RuntimeMemoryContext context, RuntimeNpcLayoutProbeResult? npcLayoutProbe = null)
     {
         _context = context;
+        _pdbFields = new RuntimePdbFieldAccessor(context);
         _s = RuntimeBuildOffsets.GetPdbShift(MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
         _npcLayoutProbe = npcLayoutProbe ?? new RuntimeNpcLayoutProbeResult(
             RuntimeNpcLayout.CreateDefault(context.MinidumpInfo),
@@ -35,6 +39,18 @@ internal sealed class RuntimeActorReader
 
     private RuntimeNpcFieldReader NpcFields =>
         _npcFieldReader ??= new RuntimeNpcFieldReader(_context, _npcLayoutProbe.Layout);
+
+    /// <summary>
+    ///     Wrap a freshly-read NPC/CREA buffer in a <see cref="PdbStructView" /> so
+    ///     callers can look up PDB-named core-region fields via
+    ///     <c>view.FormIdPointer / view.Offset</c> rather than hardcoded constants.
+    ///     Returns null if the PDB layout for the FormType isn't loaded.
+    /// </summary>
+    private PdbStructView? WrapActorBufferInView(byte[] buffer, long fileOffset, RuntimeEditorIdEntry entry, byte pdbFormType)
+    {
+        var layout = PdbStructLayouts.Get(pdbFormType);
+        return layout is null ? null : new PdbStructView(_pdbFields, _context, layout, buffer, fileOffset, entry);
+    }
 
     /// <summary>
     ///     Read extended NPC data from a runtime TESNPC struct.
@@ -62,39 +78,62 @@ internal sealed class RuntimeActorReader
             return null;
         }
 
-        // Read script pointer before ACBS validation so it's available even for minimal NPCs
-        var scriptFormId = _context.FollowPointerToFormId(buffer, NpcFields.NpcScriptPtrOffset, 0x11);
+        // Open a PdbStructView over the already-read buffer for core-region field
+        // reads (Phase 1B.20). pdb_layouts.json is an embedded resource so this
+        // only returns null if the resource is broken — treat that as a hard fail.
+        // Appearance-region fields are read separately below — see NpcFieldReader's
+        // class doc for the runtime-vs-PDB layout drift explanation.
+        var view = WrapActorBufferInView(buffer, offset, entry, pdbFormType: 0x2A);
+        if (view is null)
+        {
+            return null;
+        }
 
-        // Read ACBS stats block at empirically verified offset +68
-        var stats = ReadActorBaseStats(buffer, NpcFields.NpcAcbsOffset, offset);
+        // Read script pointer before ACBS validation so it's available even for minimal NPCs.
+        var scriptFormId = view.FormIdPointer("pFormScript", "TESScriptableForm", 0x11);
+
+        // When the canonical pFormScript slot is null, fall back to a brute-force scan of
+        // the TESNPC struct: walk every 4-byte-aligned offset and try resolving it as a
+        // pointer to a Script (FormType 0x11). Proto builds occasionally store the script
+        // reference at a different offset (e.g. embedded in an aggregated form list or via
+        // a different TESScriptableForm derivation path) — without this fallback, scripts
+        // like UlyssesScript get emitted as orphan SCPT records with no SCRI binding,
+        // breaking script-driven dialogue chains (AddTopic / GetVariable conditions).
+        if (scriptFormId is null or 0)
+        {
+            var scriptPtrOffset = view.Offset("pFormScript", "TESScriptableForm") ?? (248 + _s);
+            scriptFormId = BruteForceScanForScriptPointer(buffer, scriptPtrOffset);
+        }
+
+        // Read ACBS stats block (PDB TESActorBaseData::actorData)
+        var acbsOffset = view.Offset("actorData", "TESActorBaseData") ?? (52 + _s);
+        var stats = ReadActorBaseStats(buffer, acbsOffset, offset);
         if (stats == null)
         {
             return CreateMinimalNpc(entry, offset, scriptFormId);
         }
 
-        // Read iHealth from the TESHealthForm base class (PDB offset 196 + build shift).
-        // Sanity-gate to discard reads that overshoot the struct or capture cleared
-        // memory; zero is treated as "unknown — let the encoder synthesize from SPECIAL".
+        // Read iHealth (TESHealthForm::iHealth). Sanity-gate to discard reads that
+        // overshoot the struct or capture cleared memory; zero is treated as
+        // "unknown — let the encoder synthesize from SPECIAL".
         int? baseHealth = null;
-        if (NpcFields.NpcBaseHealthOffset + 4 <= buffer.Length)
+        var rawHealth = (int)view.UInt32("iHealth", "TESHealthForm");
+        if (rawHealth is > 0 and < 100_000)
         {
-            var rawHealth = (int)BinaryUtils.ReadUInt32BE(buffer, NpcFields.NpcBaseHealthOffset);
-            if (rawHealth is > 0 and < 100_000)
-            {
-                baseHealth = rawHealth;
-            }
+            baseHealth = rawHealth;
         }
 
-        // Follow pointer fields to get FormIDs
-        var race = _context.FollowPointerToFormId(buffer, NpcFields.NpcRacePtrOffset, 0x0C);
-        var classFormId = _context.FollowPointerToFormId(buffer, NpcFields.NpcClassPtrOffset, 0x07);
-        var deathItem = _context.FollowPointerToFormId(buffer, NpcFields.NpcDeathItemPtrOffset);
-        var voiceType = _context.FollowPointerToFormId(buffer, NpcFields.NpcVoiceTypePtrOffset, 0x5D);
-        var template = _context.FollowPointerToFormId(buffer, NpcFields.NpcTemplatePtrOffset, 0x2A);
+        // Follow pointer fields to get FormIDs (all PDB-aligned in core region)
+        var race = view.FormIdPointer("pFormRace", "TESRaceForm", 0x0C);
+        var classFormId = view.FormIdPointer("pCl", "TESNPC", 0x07);
+        var deathItem = view.FormIdPointer("pDeathItem", "TESActorBaseData");
+        var voiceType = view.FormIdPointer("pVoiceType", "TESActorBaseData", 0x5D);
+        var template = view.FormIdPointer("pTemplateForm", "TESActorBaseData", 0x2A);
 
-        // Read sub-item lists (container inventory, faction memberships)
-        var inventory = NpcFields.ReadNpcInventory(buffer, offset);
-        var factions = NpcFields.ReadNpcFactions(buffer);
+        // Read sub-item lists (container inventory, faction memberships) — list-head
+        // offsets come from PDB via the view; the walker chases heap nodes externally.
+        var inventory = NpcFields.ReadNpcInventory(view);
+        var factions = NpcFields.ReadNpcFactions(view);
 
         // Read S.P.E.C.I.A.L. stats (7 bytes at +204)
         var special = NpcFields.ReadNpcSpecial(buffer);
@@ -139,11 +178,11 @@ internal sealed class RuntimeActorReader
             fgts = null;
         }
 
-        // Read AI package list (BSSimpleList<TESPackage*> at TESAIForm+24)
-        var packages = NpcFields.ReadPackageList(buffer);
+        // Read AI package list (BSSimpleList<TESPackage*> at TESAIForm::AIPackList)
+        var packages = view is not null ? NpcFields.ReadPackageList(view) : [];
 
-        // Read spell/ability list (BSSimpleList<SpellItem*> at TESSpellList)
-        var spells = NpcFields.ReadSpellList(buffer);
+        // Read spell/ability list (BSSimpleList<SpellItem*> at TESSpellList::spellList)
+        var spells = view is not null ? NpcFields.ReadSpellList(view) : [];
 
         return new NpcRecord
         {
@@ -253,24 +292,78 @@ internal sealed class RuntimeActorReader
         // Read AI data (TESAIForm at PDB +164, shared base class with NPC)
         var aiData = NpcFields.ReadNpcAiData(buffer);
 
-        // Read death item pointer (pDeathItem at PDB +92, shared base class with NPC)
-        var deathItem = _context.FollowPointerToFormId(buffer, NpcFields.NpcDeathItemPtrOffset);
+        // Open a PdbStructView over the CREA buffer so the shared TESActorBaseData /
+        // TESAIForm / TESSpellList / TESContainer reads can use the same PDB-driven
+        // lookups as TESNPC.
+        var creaView = WrapActorBufferInView(buffer, offset, entry, pdbFormType: 0x2B);
+        uint? deathItem = null;
+        var packages = new List<uint>();
+        var factions = new List<FactionMembership>();
+        if (creaView is not null)
+        {
+            // pDeathItem (TESActorBaseData, PDB +92), shared base class with NPC
+            deathItem = creaView.FormIdPointer("pDeathItem", "TESActorBaseData");
+            // BSSimpleList<TESPackage*> at TESAIForm::AIPackList
+            packages = NpcFields.ReadPackageList(creaView);
+            // BSSimpleList<FACTION_RANK*> at TESActorBaseData::listFactions
+            factions = NpcFields.ReadNpcFactions(creaView);
+        }
 
-        // Read AI package list (BSSimpleList<TESPackage*> at TESAIForm+24)
-        // TESCreature inherits TESActorBase at offset 0, same layout as TESNPC
-        var packages = NpcFields.ReadPackageList(buffer);
+        // Read OBND bounding box from BoundData (TESBoundObject base — first 12 bytes are
+        // X1,Y1,Z1,X2,Y2,Z2 as int16). Zero-bounds collapse to null so engine doesn't get
+        // a degenerate bbox.
+        ObjectBounds? bounds = null;
+        if (NpcFields.CreaBoundsOffset + 12 <= buffer.Length)
+        {
+            var candidate = RecordParserContext.ReadObjectBounds(
+                buffer.AsSpan(NpcFields.CreaBoundsOffset, 12), true);
+            if (candidate is not { X1: 0, Y1: 0, Z1: 0, X2: 0, Y2: 0, Z2: 0 })
+            {
+                bounds = candidate;
+            }
+        }
 
-        // Read faction memberships (BSSimpleList<FACTION_RANK*>, same offset as TESNPC)
-        var factions = NpcFields.ReadNpcFactions(buffer);
+        var voiceType = _context.FollowPointerToFormId(buffer, NpcFields.CreaVoiceTypePtrOffset, 0x5D);
+        var template = _context.FollowPointerToFormId(buffer, NpcFields.CreaTemplatePtrOffset, 0x2A);
+        var combatStyle = _context.FollowPointerToFormId(buffer, NpcFields.CreaCombatStylePtrOffset, 0x4A);
+        var bodyPartData = _context.FollowPointerToFormId(buffer, NpcFields.CreaBodyPartDataPtrOffset);
+        var impactDataSet = _context.FollowPointerToFormId(buffer, NpcFields.CreaImpactDataSetPtrOffset);
+
+        var turnSpeed = NpcFields.CreaTurnSpeedOffset + 4 <= buffer.Length
+            ? BinaryUtils.ReadFloatBE(buffer, NpcFields.CreaTurnSpeedOffset)
+            : (float?)null;
+        var footWeight = NpcFields.CreaFootWeightOffset + 4 <= buffer.Length
+            ? BinaryUtils.ReadFloatBE(buffer, NpcFields.CreaFootWeightOffset)
+            : (float?)null;
+        var baseScale = NpcFields.CreaBaseScaleOffset + 4 <= buffer.Length
+            ? BinaryUtils.ReadFloatBE(buffer, NpcFields.CreaBaseScaleOffset)
+            : (float?)null;
+        var impactMaterial = NpcFields.CreaBloodImpactMaterialOffset + 4 <= buffer.Length
+            ? BinaryUtils.ReadUInt32BE(buffer, NpcFields.CreaBloodImpactMaterialOffset)
+            : (uint?)null;
+        var soundLevel = NpcFields.CreaSoundLevelOffset + 4 <= buffer.Length
+            ? BinaryUtils.ReadUInt32BE(buffer, NpcFields.CreaSoundLevelOffset)
+            : (uint?)null;
 
         return new CreatureRecord
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
             FullName = entry.DisplayName,
+            Bounds = bounds,
             Stats = stats,
             AiData = aiData,
             DeathItem = deathItem,
+            VoiceType = voiceType,
+            Template = template,
+            CombatStyleFormId = combatStyle,
+            BodyData = bodyPartData,
+            ImpactDataSet = impactDataSet,
+            TurningSpeed = turnSpeed,
+            FootWeight = footWeight,
+            BaseScale = baseScale,
+            ImpactMaterialType = impactMaterial,
+            SoundLevel = soundLevel,
             CreatureType = creatureType,
             CombatSkill = combatSkill,
             MagicSkill = magicSkill,
@@ -630,4 +723,32 @@ internal sealed class RuntimeActorReader
     }
 
     #endregion
+
+    /// <summary>
+    ///     Brute-force scan: walk every 4-byte-aligned offset in the actor base struct,
+    ///     treat each as a candidate big-endian pointer, and try resolving it to a Script
+    ///     form (TESForm with FormType 0x11). Returns the first non-zero Script FormID it
+    ///     finds, or null. Skips the canonical pFormScript offset that the caller already
+    ///     checked. Used when the runtime layout's expected slot was empty, which happens
+    ///     for proto builds where the script reference lives at a different offset than the
+    ///     PDB-derived constant predicts.
+    /// </summary>
+    private uint? BruteForceScanForScriptPointer(byte[] buffer, int skipOffset)
+    {
+        for (var off = 4; off + 4 <= buffer.Length; off += 4)
+        {
+            if (off == skipOffset)
+            {
+                continue;
+            }
+
+            var candidate = _context.FollowPointerToFormId(buffer, off, 0x11);
+            if (candidate is > 0)
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
 }

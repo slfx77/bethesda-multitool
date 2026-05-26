@@ -1,4 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
@@ -7,6 +8,16 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 ///     Reads NPC-specific fields from Xbox 360 memory dump buffers: ACBS stats, AI data,
 ///     S.P.E.C.I.A.L., skills, FaceGen morphs, inventory, factions, and package lists.
 ///     Used by <see cref="RuntimeActorReader" /> to populate NPC and Creature records.
+///
+///     <para>
+///     Phase 1B.20 migrated 12 core-region offsets to PDB-driven lookups (via
+///     <see cref="PdbStructView" />). The appearance-region offsets (Hair / Eyes /
+///     HairColor / HairLength / CombatStyle / HeadPartList / OriginalRace / FaceNpc /
+///     Height / Weight / RaceFacePreset / BloodImpactMaterial) stay as hardcoded
+///     empirical constants — the runtime layout is +32 bytes ahead of the MemDebug
+///     PDB in that region (FR2MatrixVTC padding delta), so PDB field names don't
+///     correspond to the runtime offsets there.
+///     </para>
 /// </summary>
 internal sealed class RuntimeNpcFieldReader
 {
@@ -65,23 +76,26 @@ internal sealed class RuntimeNpcFieldReader
     }
 
     /// <summary>
-    ///     Read NPC faction memberships from BSSimpleList&lt;FACTION_RANK*&gt; at +108 (PDB).
+    ///     Read NPC faction memberships from BSSimpleList&lt;FACTION_RANK*&gt; at PDB
+    ///     <c>TESActorBaseData::listFactions</c>.
     ///     BSSimpleList nodes are 8 bytes: m_item (FACTION_RANK*, 4B) + m_pkNext (BSSimpleList*, 4B).
     ///     FACTION_RANK is 8 bytes: pFaction (TESFaction*, 4B at +0) + cRank (int8 at +4).
     ///     Returns a list of (FactionFormId, Rank) pairs.
     /// </summary>
-    public List<FactionMembership> ReadNpcFactions(byte[] npcBuffer)
+    public List<FactionMembership> ReadNpcFactions(PdbStructView view)
     {
         var factions = new List<FactionMembership>();
+        var npcBuffer = view.Buffer;
+        var headOffset = view.Offset("listFactions", "TESActorBaseData") ?? (92 + _coreShift);
 
-        if (NpcFactionListHeadOffset + 8 > npcBuffer.Length)
+        if (headOffset + 8 > npcBuffer.Length)
         {
             return factions;
         }
 
         // Read inline BSSimpleList head: m_item (FACTION_RANK*) + m_pkNext (BSSimpleList*)
-        var itemPtr = BinaryUtils.ReadUInt32BE(npcBuffer, NpcFactionListHeadOffset);
-        var nextPtr = BinaryUtils.ReadUInt32BE(npcBuffer, NpcFactionListHeadOffset + 4);
+        var itemPtr = BinaryUtils.ReadUInt32BE(npcBuffer, headOffset);
+        var nextPtr = BinaryUtils.ReadUInt32BE(npcBuffer, headOffset + 4);
 
         // Process inline first item
         var first = ReadFactionRank(itemPtr);
@@ -177,23 +191,26 @@ internal sealed class RuntimeNpcFieldReader
     }
 
     /// <summary>
-    ///     Read AI package list from BSSimpleList&lt;TESPackage*&gt; at PackageListOffset.
+    ///     Read AI package list from BSSimpleList&lt;TESPackage*&gt; at PDB
+    ///     <c>TESAIForm::AIPackList</c>.
     ///     BSSimpleList is a singly-linked list: m_item (TESPackage*, 4 bytes) + m_pkNext (BSSimpleList*, 4 bytes).
     ///     The head node is inline in the struct; subsequent nodes are heap-allocated.
     ///     Returns a list of PACK FormIDs.
     /// </summary>
-    public List<uint> ReadPackageList(byte[] buffer)
+    public List<uint> ReadPackageList(PdbStructView view)
     {
         var packages = new List<uint>();
+        var buffer = view.Buffer;
+        var headOffset = view.Offset("AIPackList", "TESAIForm") ?? (168 + _coreShift);
 
-        if (PackageListOffset + 8 > buffer.Length)
+        if (headOffset + 8 > buffer.Length)
         {
             return packages;
         }
 
         // Read inline BSSimpleList head: m_item (TESPackage*) + m_pkNext (BSSimpleList*)
-        var itemPtr = BinaryUtils.ReadUInt32BE(buffer, PackageListOffset);
-        var nextPtr = BinaryUtils.ReadUInt32BE(buffer, PackageListOffset + 4);
+        var itemPtr = BinaryUtils.ReadUInt32BE(buffer, headOffset);
+        var nextPtr = BinaryUtils.ReadUInt32BE(buffer, headOffset + 4);
 
         // Follow first item pointer to TESPackage → read FormID at +12
         if (itemPtr != 0 && _context.IsValidPointer(itemPtr))
@@ -239,20 +256,23 @@ internal sealed class RuntimeNpcFieldReader
     }
 
     /// <summary>
-    ///     Read spell/ability list from BSSimpleList&lt;SpellItem*&gt; at NpcSpellListOffset.
+    ///     Read spell/ability list from BSSimpleList&lt;SpellItem*&gt; at PDB
+    ///     <c>TESSpellList::spellList</c>.
     ///     Same linked list pattern as ReadPackageList. Returns a list of SPEL FormIDs.
     /// </summary>
-    public List<uint> ReadSpellList(byte[] buffer)
+    public List<uint> ReadSpellList(PdbStructView view)
     {
         var spells = new List<uint>();
+        var buffer = view.Buffer;
+        var headOffset = view.Offset("spellList", "TESSpellList") ?? (128 + _coreShift);
 
-        if (NpcSpellListOffset + 8 > buffer.Length)
+        if (headOffset + 8 > buffer.Length)
         {
             return spells;
         }
 
-        var itemPtr = BinaryUtils.ReadUInt32BE(buffer, NpcSpellListOffset);
-        var nextPtr = BinaryUtils.ReadUInt32BE(buffer, NpcSpellListOffset + 4);
+        var itemPtr = BinaryUtils.ReadUInt32BE(buffer, headOffset);
+        var nextPtr = BinaryUtils.ReadUInt32BE(buffer, headOffset + 4);
 
         if (itemPtr != 0 && _context.IsValidPointer(itemPtr))
         {
@@ -474,16 +494,25 @@ internal sealed class RuntimeNpcFieldReader
     }
 
     /// <summary>
-    ///     Read NPC inventory items from TESContainer tList at +120/+124.
+    ///     Read NPC inventory items from TESContainer tList at PDB
+    ///     <c>TESContainer::objectList</c>. The head is 8 bytes: first node data
+    ///     pointer + next pointer.
     ///     Returns a list of (ItemFormId, Count) pairs.
     /// </summary>
-    public List<InventoryItem> ReadNpcInventory(byte[] npcBuffer, long _npcFileOffset)
+    public List<InventoryItem> ReadNpcInventory(PdbStructView view)
     {
         var items = new List<InventoryItem>();
+        var npcBuffer = view.Buffer;
+        var headOffset = view.Offset("objectList", "TESContainer") ?? (104 + _coreShift);
+
+        if (headOffset + 8 > npcBuffer.Length)
+        {
+            return items;
+        }
 
         // Read inline first node
-        var firstDataPtr = BinaryUtils.ReadUInt32BE(npcBuffer, NpcContainerDataOffset);
-        var firstNextPtr = BinaryUtils.ReadUInt32BE(npcBuffer, NpcContainerNextOffset);
+        var firstDataPtr = BinaryUtils.ReadUInt32BE(npcBuffer, headOffset);
+        var firstNextPtr = BinaryUtils.ReadUInt32BE(npcBuffer, headOffset + 4);
 
         // Process inline first item
         var firstItem = ReadContainerObject(firstDataPtr);
@@ -732,33 +761,44 @@ internal sealed class RuntimeNpcFieldReader
         return new InventoryItem(itemFormId.Value, count);
     }
 
-    #region NPC Struct Layout (Proto Debug PDB base + selected shifts)
+    #region NPC Struct Layout — appearance-region empirical constants + probe-only core offsets
 
     // TESNPC: PDB size 492, MemDebug PDB 508. Fields after the RaceFaceOffsetCoord inline
     // array (PDB 308-404) are +32 bytes higher at runtime vs PDB, likely due to 8-byte alignment
     // padding in FR2MatrixVTC (24B padded to 32B × 4 = 128B vs PDB's 96B).
-    // Probe reads a fixed window so appearance-tail candidates can move independently.
+    //
+    // Core-region reads (TESActorBaseData / TESScriptableForm / TESRaceForm / TESHealthForm /
+    // TESAIForm / TESContainer / TESSpellList / TESNPC fields up through offset 320) line up
+    // with PDB and are done via view.FormIdPointer / view.Offset / view.UInt32 in
+    // RuntimeActorReader.ReadRuntimeNpc — see Phase 1B.20.
+    //
+    // The four properties retained for probe use (NpcAcbsOffset, NpcScriptPtrOffset,
+    // NpcRacePtrOffset, NpcClassPtrOffset) feed RuntimeNpcLayoutProbe's candidate-scoring
+    // pass, which runs BEFORE a stable layout (and view) exist. They're functionally
+    // duplicates of the view-based reads but live here so the probe can compute them from
+    // candidate RuntimeNpcLayouts without needing a view.
+    //
+    // Phase 1B.19 confirmed via pointer-shape that every offset below points at a real heap
+    // pointer (or zero) across all 5 sampled DMP families — they're correct runtime offsets.
+    //
+    // ReadSize is still a probe-derived value (varies between Debug 492 / Release 508).
     public int NpcStructSize => _layout.ReadSize;
-    public int NpcAcbsOffset => 52 + _coreShift;
 
-    // TESActorBase inherits TESHealthForm at PDB offset 192 (per MemDebug types_full.txt
-    // fieldlist 0x00015773 list[6]); iHealth is a private uint32 at offset 4 within
-    // TESHealthForm, giving PDB-MemDebug offset 196. The Proto-Debug-base value is
-    // 196 - 16 (TESForm-size delta) = 180; _coreShift restores the runtime offset.
-    public int NpcBaseHealthOffset => 180 + _coreShift;
-    public int NpcDeathItemPtrOffset => 76 + _coreShift;
-    public int NpcVoiceTypePtrOffset => 80 + _coreShift;
-    public int NpcTemplatePtrOffset => 84 + _coreShift;
-    public int NpcRacePtrOffset => 272 + _coreShift;
-    public int NpcClassPtrOffset => 304 + _coreShift;
+    // Probe-only core offsets (kept so RuntimeNpcLayoutProbe.ScoreSample can score candidate
+    // layouts before a view exists; production reads in RuntimeActorReader go through the view).
+    internal int NpcAcbsOffset => 52 + _coreShift;
+    internal int NpcScriptPtrOffset => 248 + _coreShift;
+    internal int NpcRacePtrOffset => 272 + _coreShift;
+    internal int NpcClassPtrOffset => 304 + _coreShift;
+
+    private const int NpcSpecialSize = 7;
+    private const int NpcSkillsSize = 14;
     private int NpcAiDataOffset => 148 + _coreShift;
     private int NpcMoodOffset => 152 + _coreShift;
     private int NpcAiFlagsOffset => 156 + _coreShift;
     private int NpcAiAssistanceOffset => 162 + _coreShift;
     private int NpcSpecialOffset => 188 + _coreShift;
-    private const int NpcSpecialSize = 7;
     private int NpcSkillsOffset => 276 + _coreShift;
-    private const int NpcSkillsSize = 14;
     public RuntimeNpcFaceGenFieldLayout NpcFggsLayout => _layout.Fggs;
     public RuntimeNpcFaceGenFieldLayout NpcFggaLayout => _layout.Fgga;
     public RuntimeNpcFaceGenFieldLayout NpcFgtsLayout => _layout.Fgts;
@@ -768,24 +808,11 @@ internal sealed class RuntimeNpcFieldReader
     public int NpcCombatStylePtrOffset => 468 + _appearanceShift;
     private int NpcHairColorOffset => 472 + _appearanceShift; // iHairColor (uint32, packed 0x00BBGGRR)
     private int NpcHeadPartListOffset => 476 + _appearanceShift; // listHeadParts (BSSimpleList<BGSHeadPart*>, 8B)
-    public int NpcScriptPtrOffset => 248 + _coreShift; // TESScriptableForm::pFormScript (base+244, field+4)
-    private int NpcContainerDataOffset => 104 + _coreShift;
-    private int NpcContainerNextOffset => 108 + _coreShift;
 
-    private int NpcFactionListHeadOffset => 92 + _coreShift;
-
-    // TESSpellList.spellList (BSSimpleList<SpellItem*>, 8B inline head)
-    private int NpcSpellListOffset => 128 + _coreShift;
-
-    // TESAIForm at offset 144 in TESActorBase; AIPackList (BSSimpleList<TESPackage*>) at +24 within TESAIForm
-    private int PackageListOffset => 168 + _coreShift;
-
-    // Additional TESNPC fields from PDB (Proto Debug offset + 32 runtime shift + _s).
-    // The +32 matches the empirical shift applied to all post-FaceGen fields (Hair, Eyes, etc.).
+    // Additional TESNPC fields (Proto Debug offset + 32 runtime shift + _s).
     private int NpcRaceFacePresetOffset => 464 + _appearanceShift; // PDB 432 + 32: sLastRaceFaceNum (uint16)
     private int NpcBloodImpactMaterialOffset => 484 + _appearanceShift; // PDB 452 + 32: eBloodImpactMaterial (enum)
     public int NpcOriginalRacePtrOffset => 492 + _lateAppearanceShift; // PDB 460 + 32: pOriginalRace (TESRace*)
-
     public int NpcFaceNpcPtrOffset => 496 + _lateAppearanceShift; // PDB 464 + 32: pFaceNPC (TESNPC*)
 
     // NOTE: Empirically verified — base 500/504 is correct for the Release Beta
@@ -801,7 +828,10 @@ internal sealed class RuntimeNpcFieldReader
 
     // TESCreature: PDB struct size 368, base values = PDB offset - 16
     public int CreaStructSize => 352 + _coreShift;
+    public int CreaBoundsOffset => 36 + _coreShift; // PDB 52: BoundData (TESBoundObject, 12 bytes OBND payload)
     public int CreaAcbsOffset => 52 + _coreShift; // PDB 68: actorData (ACTOR_BASE_DATA, same as NPC)
+    public int CreaVoiceTypePtrOffset => 80 + _coreShift; // PDB 96: pVoiceType (BGSVoiceType*)
+    public int CreaTemplatePtrOffset => 84 + _coreShift; // PDB 100: pTemplateForm (TESForm*)
     public int CreaModelPathOffset => 224 + _coreShift; // PDB 240: cModel (BSStringT<char>)
     public int CreaScriptOffset => 248 + _coreShift; // PDB 264: pFormScript (TESScriptableForm)
     public int CreaAttackDamageOffset => 272 + _coreShift; // PDB 288: sAttackDamage (uint16)
@@ -809,6 +839,14 @@ internal sealed class RuntimeNpcFieldReader
     public int CreaCombatSkillOffset => 301 + _coreShift; // PDB 317: CREATURE_DATA byte 1 (combat)
     public int CreaMagicSkillOffset => 302 + _coreShift; // PDB 318: CREATURE_DATA byte 2 (magic)
     public int CreaStealthSkillOffset => 303 + _coreShift; // PDB 319: CREATURE_DATA byte 3 (stealth)
+    public int CreaTurnSpeedOffset => 308 + _coreShift; // PDB 324: fTurnSpeed (float)
+    public int CreaFootWeightOffset => 312 + _coreShift; // PDB 328: fFootWeight (float)
+    public int CreaBaseScaleOffset => 316 + _coreShift; // PDB 332: fBaseScale (float)
+    public int CreaCombatStylePtrOffset => 320 + _coreShift; // PDB 336: pCombatStyle (TESCombatStyle*)
+    public int CreaBodyPartDataPtrOffset => 324 + _coreShift; // PDB 340: pBodyPartData (BGSBodyPartData*)
+    public int CreaBloodImpactMaterialOffset => 328 + _coreShift; // PDB 344: eBloodImpactMaterial (uint32)
+    public int CreaImpactDataSetPtrOffset => 332 + _coreShift; // PDB 348: pImpactDataSet (BGSImpactDataSet*)
+    public int CreaSoundLevelOffset => 340 + _coreShift; // PDB 356: eSoundLevel (uint32)
 
     #endregion
 }
