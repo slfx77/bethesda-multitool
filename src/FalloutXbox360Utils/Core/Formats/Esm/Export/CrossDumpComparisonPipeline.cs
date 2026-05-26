@@ -53,12 +53,24 @@ internal static class CrossDumpComparisonPipeline
             ["WeaponMod"] = ["Weapon"]
         };
 
+    /// <summary>
+    ///     Non-streaming variant of the cross-dump pipeline: loads every source up front,
+    ///     aggregates all record types in one pass, returns the full
+    ///     <see cref="CrossDumpRecordIndex" /> in memory. Used by callers that need direct
+    ///     access to the index (GUI batch mode, CLI dmp compare without --streaming).
+    /// </summary>
+    /// <remarks>
+    ///     Internally projects each source the same way <see cref="WriteHtmlByRecordTypeAsync" />
+    ///     does, so the per-source <c>RecordCollection</c> can be released as soon as projection
+    ///     finishes. Peak managed heap drops from O(parsed records × sources) to
+    ///     O(reports + skeletons × sources), matching the streaming pipeline's memory profile.
+    /// </remarks>
     internal static async Task<CrossDumpComparisonResult> BuildAsync(
         CrossDumpComparisonRequest request,
         Action<string>? status = null,
         CancellationToken cancellationToken = default)
     {
-        var sources = new List<SemanticSource>();
+        var projections = new List<CrossDumpSourceProjection>();
         var heightmapSources = new List<HeightmapSource>();
         var hasBaseBuild = false;
         var allowedTypes = ParseTypeFilter(request.TypeFilter);
@@ -72,7 +84,12 @@ internal static class CrossDumpComparisonPipeline
                 cancellationToken);
             if (baseSource != null)
             {
-                sources.Add(baseSource);
+                if (CaptureHeightmapSource(baseSource) is { } baseHeightmap)
+                {
+                    heightmapSources.Add(baseHeightmap);
+                }
+
+                projections.Add(CrossDumpSourceProjector.Project(baseSource));
                 hasBaseBuild = true;
             }
         }
@@ -100,38 +117,44 @@ internal static class CrossDumpComparisonPipeline
                 heightmapSources.Add(heightmapSource);
             }
 
-            sources.Add(DropRawScanPayload(source));
+            projections.Add(CrossDumpSourceProjector.Project(source));
+            ReleaseTransientRecordTypeMemory();
         }
 
-        var sourceSummaries = sources.Select(source => new CrossDumpSourceSummary(
-                source.FilePath,
-                source.Records.Weapons.Count,
-                source.Records.Npcs.Count,
-                source.Records.Cells.Count,
-                source.Resolver.SkillEra?.Summary))
+        var sourceSummaries = projections.Select(p => new CrossDumpSourceSummary(
+                p.FilePath,
+                p.ReportsByType.TryGetValue("Weapon", out var weaponReports) ? weaponReports.Count : 0,
+                p.NpcSkeletons.Count,
+                p.CellSkeletons.Count,
+                p.Resolver.SkillEra?.Summary))
             .ToList();
+
+        var virtualCellCanonicalFormIds = VirtualCellCanonicalizer.BuildVirtualCellCanonicalFormIds(
+            projections.Select(p => p.CellSkeletons));
 
         var npcPlacementIndexes = allowedTypes == null || allowedTypes.Contains("NPC")
-            ? CrossDumpAggregator.BuildNpcPlacementIndexes(
-                sources.Select(source => (source.FilePath, source.Records)))
+            ? CrossDumpPlacementIndexBuilder.BuildNpcPlacementIndexes(projections, virtualCellCanonicalFormIds)
             : null;
         var npcScriptReferenceIndexes = allowedTypes == null || allowedTypes.Contains("NPC")
-            ? CrossDumpAggregator.BuildNpcScriptReferenceIndexes(
-                sources.Select(source => (source.FilePath, source.Records)))
+            ? CrossDumpPlacementIndexBuilder.BuildNpcScriptReferenceIndexes(projections)
+            : null;
+        var keyLockedDoorIndexes = allowedTypes == null || allowedTypes.Contains("Key")
+            ? CrossDumpPlacementIndexBuilder.BuildKeyLockedDoorIndexes(projections, virtualCellCanonicalFormIds)
+            : null;
+        var containerPlacementIndexes = allowedTypes == null || allowedTypes.Contains("Container")
+            ? CrossDumpPlacementIndexBuilder.BuildContainerPlacementIndexes(projections, virtualCellCanonicalFormIds)
             : null;
 
-        var aggregateInputs = sources
-            .Select(source => (source.FilePath, source.Records, source.Resolver, source.MinidumpInfo))
-            .ToList();
-        sources.Clear();
-
-        var index = CrossDumpAggregator.Aggregate(
-            aggregateInputs,
-            allowedTypes,
-            true,
+        status?.Invoke("Building cross-source NPC/Key/Container reports...");
+        CrossDumpProjectionAggregator.BuildLatePassReports(
+            projections,
             npcPlacementIndexes,
-            npcScriptReferenceIndexes);
-        aggregateInputs.Clear();
+            npcScriptReferenceIndexes,
+            keyLockedDoorIndexes,
+            containerPlacementIndexes);
+
+        var index = CrossDumpProjectionAggregator.AggregateFromProjections(
+            projections, virtualCellCanonicalFormIds, allowedTypes);
 
         AppendHeightmaps(index, heightmapSources);
         ApplyBaseBuildNormalization(index, hasBaseBuild);

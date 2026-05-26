@@ -16,6 +16,18 @@ internal static class CrossDumpAggregator
     ///     Aggregate record data from multiple dumps into a cross-dump index.
     ///     Uses PE TimeDateStamp from game module for build dates when available.
     /// </summary>
+    /// <remarks>
+    ///     <b>Legacy path.</b> The cross-dump comparison pipeline
+    ///     (<see cref="CrossDumpComparisonPipeline.WriteHtmlByRecordTypeAsync" /> and
+    ///     <see cref="CrossDumpComparisonPipeline.BuildAsync" />) now uses
+    ///     <see cref="Projections.CrossDumpProjectionAggregator.AggregateFromProjections" />
+    ///     instead, which projects each source to a lightweight
+    ///     <see cref="Projections.CrossDumpSourceProjection" /> so the heavy
+    ///     <see cref="Models.RecordCollection" /> can be released per-source. This method is
+    ///     retained for direct callers (<c>ReportConsistencyCommand</c>, semantic-consolidation
+    ///     tests, comparison-HTML regression tests) that work with smaller datasets where peak
+    ///     memory is not the bottleneck. New code should prefer the projection pipeline.
+    /// </remarks>
     internal static CrossDumpRecordIndex Aggregate(
         List<(string FilePath, RecordCollection Records, FormIdResolver Resolver, MinidumpInfo? Info)> dumps,
         IReadOnlySet<string>? allowedTypes = null,
