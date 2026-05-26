@@ -267,83 +267,73 @@ internal sealed class RuntimeActorReader
             return null;
         }
 
-        // Read skills and type
-        var combatSkill = buffer[NpcFields.CreaCombatSkillOffset];
-        var magicSkill = buffer[NpcFields.CreaMagicSkillOffset];
-        var stealthSkill = buffer[NpcFields.CreaStealthSkillOffset];
-        var attackDamage = (short)BinaryUtils.ReadUInt16BE(buffer, NpcFields.CreaAttackDamageOffset);
-        var creatureType = buffer[NpcFields.CreaTypeOffset];
+        // Open a PdbStructView over the CREA buffer. TESCreature is fully PDB-aligned
+        // (no FR2MatrixVTC padding drift like TESNPC has), so every field below comes
+        // from view.* lookups instead of hardcoded offset constants — Phase 1B.21.
+        var creaView = WrapActorBufferInView(buffer, offset, entry, pdbFormType: 0x2B);
+        if (creaView is null)
+        {
+            return null;
+        }
 
-        // Validate creature type (0-7)
+        // CREATURE_DATA struct (TESCreature::Data, PDB +316, 4 bytes): { Type, CombatSkill,
+        // MagicSkill, StealthSkill } as 4 consecutive bytes.
+        var dataOffset = creaView.Offset("Data", "TESCreature") ?? (300 + _s);
+        byte creatureType = 0, combatSkill = 0, magicSkill = 0, stealthSkill = 0;
+        if (dataOffset + 4 <= buffer.Length)
+        {
+            creatureType = buffer[dataOffset];
+            combatSkill = buffer[dataOffset + 1];
+            magicSkill = buffer[dataOffset + 2];
+            stealthSkill = buffer[dataOffset + 3];
+        }
         if (creatureType > 7)
         {
-            creatureType = 0;
+            creatureType = 0; // Validate creature type (0-7)
         }
 
-        // Read model path
-        var modelPath = _context.ReadBsStringT(offset, NpcFields.CreaModelPathOffset);
+        var attackDamage = (short)creaView.UInt16("sAttackDamage", "TESAttackDamageForm");
+        var modelPath = creaView.BsString("cModel", "TESModel");
+        var scriptFormId = creaView.FormIdPointer("pFormScript", "TESScriptableForm", 0x11);
 
-        // Read script pointer
-        var scriptFormId = _context.FollowPointerToFormId(buffer, NpcFields.CreaScriptOffset);
+        // Read ACBS (actor base stats); structure shared with TESNPC.
+        var acbsOffset = creaView.Offset("actorData", "TESActorBaseData") ?? (52 + _s);
+        var stats = ReadCreatureActorBaseStats(buffer, acbsOffset, offset);
 
-        // Read ACBS (actor base stats), same structure as NPC
-        var stats = ReadCreatureActorBaseStats(buffer, NpcFields.CreaAcbsOffset, offset);
-
-        // Read AI data (TESAIForm at PDB +164, shared base class with NPC)
+        // Read AI data (TESAIForm AIData struct, shared base class with NPC).
         var aiData = NpcFields.ReadNpcAiData(buffer);
 
-        // Open a PdbStructView over the CREA buffer so the shared TESActorBaseData /
-        // TESAIForm / TESSpellList / TESContainer reads can use the same PDB-driven
-        // lookups as TESNPC.
-        var creaView = WrapActorBufferInView(buffer, offset, entry, pdbFormType: 0x2B);
-        uint? deathItem = null;
-        var packages = new List<uint>();
-        var factions = new List<FactionMembership>();
-        if (creaView is not null)
-        {
-            // pDeathItem (TESActorBaseData, PDB +92), shared base class with NPC
-            deathItem = creaView.FormIdPointer("pDeathItem", "TESActorBaseData");
-            // BSSimpleList<TESPackage*> at TESAIForm::AIPackList
-            packages = NpcFields.ReadPackageList(creaView);
-            // BSSimpleList<FACTION_RANK*> at TESActorBaseData::listFactions
-            factions = NpcFields.ReadNpcFactions(creaView);
-        }
+        // Shared TESActorBaseData / TESAIForm fields (same offsets as TESNPC).
+        var deathItem = creaView.FormIdPointer("pDeathItem", "TESActorBaseData");
+        var packages = NpcFields.ReadPackageList(creaView);
+        var factions = NpcFields.ReadNpcFactions(creaView);
 
         // Read OBND bounding box from BoundData (TESBoundObject base — first 12 bytes are
         // X1,Y1,Z1,X2,Y2,Z2 as int16). Zero-bounds collapse to null so engine doesn't get
         // a degenerate bbox.
         ObjectBounds? bounds = null;
-        if (NpcFields.CreaBoundsOffset + 12 <= buffer.Length)
+        var boundsOffset = creaView.Offset("BoundData", "TESBoundObject");
+        if (boundsOffset is { } bOff && bOff + 12 <= buffer.Length)
         {
             var candidate = RecordParserContext.ReadObjectBounds(
-                buffer.AsSpan(NpcFields.CreaBoundsOffset, 12), true);
+                buffer.AsSpan(bOff, 12), true);
             if (candidate is not { X1: 0, Y1: 0, Z1: 0, X2: 0, Y2: 0, Z2: 0 })
             {
                 bounds = candidate;
             }
         }
 
-        var voiceType = _context.FollowPointerToFormId(buffer, NpcFields.CreaVoiceTypePtrOffset, 0x5D);
-        var template = _context.FollowPointerToFormId(buffer, NpcFields.CreaTemplatePtrOffset, 0x2A);
-        var combatStyle = _context.FollowPointerToFormId(buffer, NpcFields.CreaCombatStylePtrOffset, 0x4A);
-        var bodyPartData = _context.FollowPointerToFormId(buffer, NpcFields.CreaBodyPartDataPtrOffset);
-        var impactDataSet = _context.FollowPointerToFormId(buffer, NpcFields.CreaImpactDataSetPtrOffset);
+        var voiceType = creaView.FormIdPointer("pVoiceType", "TESActorBaseData", 0x5D);
+        var template = creaView.FormIdPointer("pTemplateForm", "TESActorBaseData", 0x2A);
+        var combatStyle = creaView.FormIdPointer("pCombatStyle", "TESCreature", 0x4A);
+        var bodyPartData = creaView.FormIdPointer("pBodyPartData", "TESCreature");
+        var impactDataSet = creaView.FormIdPointer("pImpactDataSet", "TESCreature");
 
-        var turnSpeed = NpcFields.CreaTurnSpeedOffset + 4 <= buffer.Length
-            ? BinaryUtils.ReadFloatBE(buffer, NpcFields.CreaTurnSpeedOffset)
-            : (float?)null;
-        var footWeight = NpcFields.CreaFootWeightOffset + 4 <= buffer.Length
-            ? BinaryUtils.ReadFloatBE(buffer, NpcFields.CreaFootWeightOffset)
-            : (float?)null;
-        var baseScale = NpcFields.CreaBaseScaleOffset + 4 <= buffer.Length
-            ? BinaryUtils.ReadFloatBE(buffer, NpcFields.CreaBaseScaleOffset)
-            : (float?)null;
-        var impactMaterial = NpcFields.CreaBloodImpactMaterialOffset + 4 <= buffer.Length
-            ? BinaryUtils.ReadUInt32BE(buffer, NpcFields.CreaBloodImpactMaterialOffset)
-            : (uint?)null;
-        var soundLevel = NpcFields.CreaSoundLevelOffset + 4 <= buffer.Length
-            ? BinaryUtils.ReadUInt32BE(buffer, NpcFields.CreaSoundLevelOffset)
-            : (uint?)null;
+        var turnSpeed = (float?)creaView.Float("fTurnSpeed", "TESCreature");
+        var footWeight = (float?)creaView.Float("fFootWeight", "TESCreature");
+        var baseScale = (float?)creaView.Float("fBaseScale", "TESCreature");
+        var impactMaterial = (uint?)creaView.UInt32("eBloodImpactMaterial", "TESCreature");
+        var soundLevel = (uint?)creaView.UInt32("eSoundLevel", "TESCreature");
 
         return new CreatureRecord
         {

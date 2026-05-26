@@ -824,29 +824,13 @@ internal sealed class RuntimeNpcFieldReader
 
     #endregion
 
-    #region Creature Struct Layout (Proto Debug PDB base + core shift)
+    #region Creature Struct Layout
 
-    // TESCreature: PDB struct size 368, base values = PDB offset - 16
+    // TESCreature: PDB struct size 368, fully PDB-aligned (no FR2MatrixVTC padding
+    // drift). Phase 1B.21 migrated every field to view.* lookups in
+    // RuntimeActorReader.ReadRuntimeCreature. Only the struct size remains here so
+    // RuntimeActorReader can allocate the read buffer.
     public int CreaStructSize => 352 + _coreShift;
-    public int CreaBoundsOffset => 36 + _coreShift; // PDB 52: BoundData (TESBoundObject, 12 bytes OBND payload)
-    public int CreaAcbsOffset => 52 + _coreShift; // PDB 68: actorData (ACTOR_BASE_DATA, same as NPC)
-    public int CreaVoiceTypePtrOffset => 80 + _coreShift; // PDB 96: pVoiceType (BGSVoiceType*)
-    public int CreaTemplatePtrOffset => 84 + _coreShift; // PDB 100: pTemplateForm (TESForm*)
-    public int CreaModelPathOffset => 224 + _coreShift; // PDB 240: cModel (BSStringT<char>)
-    public int CreaScriptOffset => 248 + _coreShift; // PDB 264: pFormScript (TESScriptableForm)
-    public int CreaAttackDamageOffset => 272 + _coreShift; // PDB 288: sAttackDamage (uint16)
-    public int CreaTypeOffset => 300 + _coreShift; // PDB 316: CREATURE_DATA byte 0 (type)
-    public int CreaCombatSkillOffset => 301 + _coreShift; // PDB 317: CREATURE_DATA byte 1 (combat)
-    public int CreaMagicSkillOffset => 302 + _coreShift; // PDB 318: CREATURE_DATA byte 2 (magic)
-    public int CreaStealthSkillOffset => 303 + _coreShift; // PDB 319: CREATURE_DATA byte 3 (stealth)
-    public int CreaTurnSpeedOffset => 308 + _coreShift; // PDB 324: fTurnSpeed (float)
-    public int CreaFootWeightOffset => 312 + _coreShift; // PDB 328: fFootWeight (float)
-    public int CreaBaseScaleOffset => 316 + _coreShift; // PDB 332: fBaseScale (float)
-    public int CreaCombatStylePtrOffset => 320 + _coreShift; // PDB 336: pCombatStyle (TESCombatStyle*)
-    public int CreaBodyPartDataPtrOffset => 324 + _coreShift; // PDB 340: pBodyPartData (BGSBodyPartData*)
-    public int CreaBloodImpactMaterialOffset => 328 + _coreShift; // PDB 344: eBloodImpactMaterial (uint32)
-    public int CreaImpactDataSetPtrOffset => 332 + _coreShift; // PDB 348: pImpactDataSet (BGSImpactDataSet*)
-    public int CreaSoundLevelOffset => 340 + _coreShift; // PDB 356: eSoundLevel (uint32)
 
     #endregion
 }
