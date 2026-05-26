@@ -109,7 +109,10 @@ internal static class CrossDumpAggregator
         // Canonical worldspace labels: cells from the same worldspace should all use
         // the same label even if early DMPs resolve the worldspace name differently
         // than later ESMs (e.g., WastelandNVOLD vs WastelandNV for the same FormID).
-        var worldspaceLabels = new Dictionary<uint, string>();
+        // Tracks per-FormID display-name history + EditorID so the finalization pass
+        // can render rename chains (Old → New) and disambiguate distinct worldspaces
+        // that happen to share a display name (e.g., a split FreesideWorld).
+        var worldspaceLabels = new Dictionary<uint, WorldspaceLabelHistory>();
         // Track cells whose group was set by an ESM (authoritative). DMP cell records
         // may have a misread WorldspaceFormId from runtime struct parsing, so they
         // should not overwrite ESM-sourced grouping.
@@ -162,6 +165,17 @@ internal static class CrossDumpAggregator
                 : null;
             var dialogTopicSearchTextByFormId = ShouldIncludeType(allowedTypes, "DialogTopic")
                 ? BuildDialogTopicSearchTextLookup(dump.Records.Dialogues)
+                : null;
+
+            // Build a per-dump WRLD lookup straight from records.Worldspaces. The
+            // Resolver's DisplayNames dict only sees worldspace names captured via
+            // FULL-subrecord scans; runtime-extracted worldspaces (DMPs) populate
+            // WorldspaceRecord.FullName via the PDB struct read but never make it
+            // back into FormIdToFullName. Without this map, RecordWorldspaceObservation
+            // gets "(none)" for every DMP-era worldspace name and the group label
+            // collapses to the latest (post-rename) name only.
+            var worldspaceNamesByFormId = ShouldIncludeType(allowedTypes, "Cell")
+                ? BuildWorldspaceNameLookup(dump.Records.Worldspaces)
                 : null;
 
             foreach (var (typeName, formId, _, _, record) in
@@ -249,18 +263,25 @@ internal static class CrossDumpAggregator
                         var wsFid = c.WorldspaceFormId.Value;
                         newGroupKey = $"WS:0x{wsFid:X8}";
 
-                        // Track the best display label for this worldspace FormID.
-                        // Prefer display names over EditorIDs; later dumps overwrite earlier.
-                        // Filter out resolver placeholder strings like "(none)".
-                        var wsDisplayName = dump.Resolver.ResolveDisplayName(wsFid);
-                        var wsEditorId = dump.Resolver.ResolveEditorId(wsFid);
-                        var bestName = PickRealName(wsDisplayName, wsEditorId);
-                        if (bestName != null)
+                        // Record display name + EditorID for this worldspace FormID
+                        // on each dump. The finalization pass builds the human label
+                        // from the accumulated history. Prefer the per-dump
+                        // WorldspaceRecord (covers runtime-extracted DMP worldspaces);
+                        // fall back to the resolver only if the worldspace isn't in
+                        // this dump's records (rare — e.g., cell references a missing
+                        // worldspace).
+                        string? wsDisplayName = null;
+                        string? wsEditorId = null;
+                        if (worldspaceNamesByFormId != null &&
+                            worldspaceNamesByFormId.TryGetValue(wsFid, out var wsNames))
                         {
-                            // Only overwrite if we don't already have a real name,
-                            // or if the new name is also real (let later dumps win)
-                            worldspaceLabels[wsFid] = bestName;
+                            wsDisplayName = wsNames.FullName;
+                            wsEditorId = wsNames.EditorId;
                         }
+
+                        wsDisplayName ??= dump.Resolver.ResolveDisplayName(wsFid);
+                        wsEditorId ??= dump.Resolver.ResolveEditorId(wsFid);
+                        RecordWorldspaceObservation(wsFid, wsDisplayName, wsEditorId, worldspaceLabels);
                     }
                     else
                     {
@@ -437,11 +458,13 @@ internal static class CrossDumpAggregator
         AppendVirtualCellAuditMetadata(index, upgradedVirtualCellIds, upgradedVirtualCellIdsByDump);
 
         // Finalize: replace cell group placeholder keys ("WS:0xFORMID") with the
-        // best-resolved worldspace name. All cells from the same worldspace FormID
-        // will end up with the same group label, regardless of which dump's resolver
-        // first saw them. Falls back to "Worldspace 0xFORMID" if no name was resolved.
+        // resolved worldspace label. Labels include rename history ("Old → New")
+        // and a stable identifier (EditorID, with FormID disambiguator on collisions)
+        // so two FormIDs that share a display name don't merge into one group.
+        // Falls back to "Worldspace 0xFORMID" if no name was resolved in any dump.
         if (index.RecordGroups.TryGetValue("Cell", out var cellGroups))
         {
+            var resolvedWorldspaceLabels = ResolveWorldspaceLabels(worldspaceLabels);
             foreach (var (cellFormId, currentKey) in cellGroups.ToList())
             {
                 if (currentKey.StartsWith("WS:0x", StringComparison.Ordinal))
@@ -449,7 +472,7 @@ internal static class CrossDumpAggregator
                     var hex = currentKey[5..];
                     if (uint.TryParse(hex, NumberStyles.HexNumber, null, out var wsFid))
                     {
-                        cellGroups[cellFormId] = worldspaceLabels.TryGetValue(wsFid, out var label)
+                        cellGroups[cellFormId] = resolvedWorldspaceLabels.TryGetValue(wsFid, out var label)
                             ? label
                             : $"Worldspace 0x{wsFid:X8}";
                     }
@@ -694,8 +717,7 @@ internal static class CrossDumpAggregator
             upgradedVirtualCellIds,
             upgradedVirtualCellIdsByDump);
     }
-    ///     or a placeholder like "(none)").
-    /// </summary>
+
     private static bool IsRealName(string? name)
     {
         if (string.IsNullOrEmpty(name)) return false;
@@ -824,6 +846,127 @@ internal static class CrossDumpAggregator
         }
 
         return IsRealName(editorId) ? editorId : null;
+    }
+
+    private sealed class WorldspaceLabelHistory
+    {
+        public List<string> DisplayNames { get; } = [];
+        public string? EditorId { get; set; }
+    }
+
+    private static Dictionary<uint, (string? EditorId, string? FullName)> BuildWorldspaceNameLookup(
+        IReadOnlyList<WorldspaceRecord> worldspaces)
+    {
+        var lookup = new Dictionary<uint, (string? EditorId, string? FullName)>(worldspaces.Count);
+        foreach (var worldspace in worldspaces)
+        {
+            if (worldspace.FormId == 0)
+            {
+                continue;
+            }
+
+            lookup[worldspace.FormId] = (worldspace.EditorId, worldspace.FullName);
+        }
+
+        return lookup;
+    }
+
+    private static void RecordWorldspaceObservation(
+        uint wsFid,
+        string? displayName,
+        string? editorId,
+        Dictionary<uint, WorldspaceLabelHistory> worldspaceLabels)
+    {
+        if (!worldspaceLabels.TryGetValue(wsFid, out var history))
+        {
+            history = new WorldspaceLabelHistory();
+            worldspaceLabels[wsFid] = history;
+        }
+
+        if (IsRealName(editorId))
+        {
+            history.EditorId = editorId;
+        }
+
+        if (!IsRealName(displayName))
+        {
+            return;
+        }
+
+        // Append only if the name differs from the most recent observation so a
+        // name appearing across multiple dumps doesn't produce "A → A" noise,
+        // but a real revert (A → B → A) is preserved.
+        if (history.DisplayNames.Count == 0 ||
+            !string.Equals(history.DisplayNames[^1], displayName, StringComparison.Ordinal))
+        {
+            history.DisplayNames.Add(displayName!);
+        }
+    }
+
+    private static Dictionary<uint, string> ResolveWorldspaceLabels(
+        Dictionary<uint, WorldspaceLabelHistory> worldspaceLabels)
+    {
+        var labels = new Dictionary<uint, string>(worldspaceLabels.Count);
+        foreach (var (wsFid, history) in worldspaceLabels)
+        {
+            labels[wsFid] = BuildWorldspaceLabel(wsFid, history);
+        }
+
+        DisambiguateWorldspaceLabelCollisions(labels);
+        return labels;
+    }
+
+    private static string BuildWorldspaceLabel(uint wsFid, WorldspaceLabelHistory history)
+    {
+        if (history.DisplayNames.Count == 0)
+        {
+            return history.EditorId ?? $"Worldspace 0x{wsFid:X8}";
+        }
+
+        var identifier = history.EditorId ?? $"0x{wsFid:X8}";
+        var names = string.Join(" → ", history.DisplayNames);
+        return $"{names} ({identifier})";
+    }
+
+    private static void DisambiguateWorldspaceLabelCollisions(Dictionary<uint, string> labels)
+    {
+        var labelToFormIds = new Dictionary<string, List<uint>>(StringComparer.Ordinal);
+        foreach (var (wsFid, label) in labels)
+        {
+            if (!labelToFormIds.TryGetValue(label, out var ids))
+            {
+                ids = [];
+                labelToFormIds[label] = ids;
+            }
+
+            ids.Add(wsFid);
+        }
+
+        foreach (var (_, ids) in labelToFormIds)
+        {
+            if (ids.Count <= 1)
+            {
+                continue;
+            }
+
+            foreach (var wsFid in ids)
+            {
+                labels[wsFid] = AppendFormIdDisambiguator(labels[wsFid], wsFid);
+            }
+        }
+    }
+
+    private static string AppendFormIdDisambiguator(string label, uint wsFid)
+    {
+        // Inject "@ 0xFORMID" inside the existing trailing parenthetical so the
+        // result reads "Name (EditorID @ 0xFORMID)". If the label has no trailing
+        // parens, append a fresh one: "EditorID (0xFORMID)".
+        if (label.EndsWith(')'))
+        {
+            return $"{label[..^1]} @ 0x{wsFid:X8})";
+        }
+
+        return $"{label} (0x{wsFid:X8})";
     }
 
     private static string PickFirstDialogueText(DialogueRecord dialogue)

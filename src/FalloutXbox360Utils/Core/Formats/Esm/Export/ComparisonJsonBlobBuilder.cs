@@ -145,10 +145,14 @@ internal static class ComparisonJsonBlobBuilder
                 writer.WritePropertyName($"0x{formId:X8}");
                 writer.WriteStartObject();
 
-                // EditorId and DisplayName: use the latest real value
+                // EditorId and DisplayName: use the latest real value. Walking
+                // descending + ??= picks the newest non-null, so a name added in a
+                // late dump wins over an earlier-dump fallback. Walking ascending
+                // (the previous code) picked the earliest non-null, contradicting
+                // this comment and hiding the most recently observed name.
                 string? editorId = null;
                 string? displayName = null;
-                foreach (var report in dumpMap.OrderBy(kvp => kvp.Key).Select(kvp => kvp.Value))
+                foreach (var report in dumpMap.OrderByDescending(kvp => kvp.Key).Select(kvp => kvp.Value))
                 {
                     editorId ??= NormalizeHistoryName(report.EditorId);
                     displayName ??= NormalizeHistoryName(report.DisplayName);
@@ -553,9 +557,10 @@ internal static class ComparisonJsonBlobBuilder
     {
         writer.WriteStartObject();
 
+        // Mirror Build(): walk descending so the LATEST non-null wins.
         string? editorId = null;
         string? displayName = null;
-        foreach (var report in dumpMap.OrderBy(kvp => kvp.Key).Select(kvp => kvp.Value))
+        foreach (var report in dumpMap.OrderByDescending(kvp => kvp.Key).Select(kvp => kvp.Value))
         {
             editorId ??= NormalizeHistoryName(report.EditorId);
             displayName ??= NormalizeHistoryName(report.DisplayName);
