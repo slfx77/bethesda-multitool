@@ -153,6 +153,12 @@ internal static class CrossDumpComparisonPipeline
             keyLockedDoorIndexes,
             containerPlacementIndexes);
 
+        // Pass-B reports are now in each projection's ReportsByType. The NpcRecord /
+        // KeyRecord / ContainerRecord instances that fed BuildReport are no longer needed —
+        // release them so the per-record-type aggregation loop runs with the minimum
+        // possible working set.
+        CrossDumpProjectionAggregator.ReleaseLateEnrichment(projections);
+
         var index = CrossDumpProjectionAggregator.AggregateFromProjections(
             projections, virtualCellCanonicalFormIds, allowedTypes);
 
@@ -284,6 +290,12 @@ internal static class CrossDumpComparisonPipeline
             npcScriptReferenceIndexes,
             keyLockedDoorIndexes,
             containerPlacementIndexes);
+
+        // Pass-B reports are now in each projection's ReportsByType. The NpcRecord /
+        // KeyRecord / ContainerRecord instances that fed BuildReport are no longer needed —
+        // release them so the per-record-type aggregation loop runs with the minimum
+        // possible working set.
+        CrossDumpProjectionAggregator.ReleaseLateEnrichment(projections);
         ReleaseTransientRecordTypeMemory();
 
         var writtenFiles = new List<string>();

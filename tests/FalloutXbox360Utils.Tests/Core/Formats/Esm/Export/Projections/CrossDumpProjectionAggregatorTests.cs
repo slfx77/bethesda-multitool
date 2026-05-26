@@ -128,6 +128,45 @@ public class CrossDumpProjectionAggregatorTests
         Assert.DoesNotContain("CampMcCarranWorld", label);
     }
 
+    [Fact]
+    public void ReleaseLateEnrichment_nulls_each_projection_LateEnrichment_in_place()
+    {
+        // Build two projections — each Project() call gives them a non-null
+        // LateEnrichmentRecords. ReleaseLateEnrichment should null both out by replacing
+        // the list entries with `projection with { LateEnrichment = null }`.
+        var first = BuildSingleCellProjection(
+            filePath: "first.dmp",
+            buildDate: new DateTime(2009, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            isDmp: true,
+            cellFormId: 0x1u,
+            worldspaceFormId: 0x2u,
+            worldspaceEditorId: "World1",
+            worldspaceFullName: "World 1");
+        var second = BuildSingleCellProjection(
+            filePath: "second.dmp",
+            buildDate: new DateTime(2009, 6, 1, 0, 0, 0, DateTimeKind.Utc),
+            isDmp: true,
+            cellFormId: 0x3u,
+            worldspaceFormId: 0x4u,
+            worldspaceEditorId: "World2",
+            worldspaceFullName: "World 2");
+
+        var projections = new List<CrossDumpSourceProjection> { first, second };
+        Assert.NotNull(projections[0].LateEnrichment);
+        Assert.NotNull(projections[1].LateEnrichment);
+
+        CrossDumpProjectionAggregator.ReleaseLateEnrichment(projections);
+
+        Assert.Null(projections[0].LateEnrichment);
+        Assert.Null(projections[1].LateEnrichment);
+
+        // Other state must be preserved — the ReleaseLateEnrichment call only nulls one field.
+        Assert.Equal("first.dmp", projections[0].FilePath);
+        Assert.Equal("second.dmp", projections[1].FilePath);
+        Assert.NotEmpty(projections[0].CellSkeletons);
+        Assert.NotEmpty(projections[1].CellSkeletons);
+    }
+
     // ---------- Helpers ----------
 
     private static CrossDumpSourceProjection BuildSingleCellProjection(

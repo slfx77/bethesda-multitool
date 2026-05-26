@@ -36,6 +36,29 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Export.Projections;
 internal static class CrossDumpProjectionAggregator
 {
     /// <summary>
+    ///     Replace every projection's <see cref="CrossDumpSourceProjection.LateEnrichment" />
+    ///     with <c>null</c>, releasing the held NPC / Key / Container record lists once
+    ///     pass-B has already built their reports. Mutates the list in place.
+    /// </summary>
+    /// <remarks>
+    ///     Memory: across 50 DMPs each holding a few thousand NPC + a few hundred Key /
+    ///     Container records, this typically frees tens to hundreds of MB. Smaller than the
+    ///     CellRecord / DialogueRecord drop that projection itself enables, but still worth
+    ///     reclaiming before the per-record-type aggregation loop, where peak HTML JSON
+    ///     payloads can be hundreds of MB on their own.
+    /// </remarks>
+    internal static void ReleaseLateEnrichment(List<CrossDumpSourceProjection> projections)
+    {
+        for (var i = 0; i < projections.Count; i++)
+        {
+            if (projections[i].LateEnrichment is not null)
+            {
+                projections[i] = projections[i] with { LateEnrichment = null };
+            }
+        }
+    }
+
+    /// <summary>
     ///     Build pass-B reports for NPC / Key / Container records across every projection.
     ///     Mutates each projection's <see cref="CrossDumpSourceProjection.ReportsByType" /> to
     ///     add the late-enrichment-dependent entries. After this call, every projection has a
