@@ -26,7 +26,7 @@ public sealed class RecordEncoderRegistry
     /// <summary>
     ///     Register an encoder under a specific record type, overriding its declared
     ///     <see cref="IRecordEncoder.RecordType" />. Used by encoders that handle multiple
-    ///     signatures (e.g., <see cref="Encoders.LvliEncoder" /> handles LVLI/LVLN/LVLC).
+    ///     signatures (e.g., <see cref="Encoders.Item.LvliEncoder" /> handles LVLI/LVLN/LVLC).
     /// </summary>
     public void Register(string recordType, IRecordEncoder encoder)
     {
@@ -60,7 +60,6 @@ public sealed class RecordEncoderRegistry
     ///     Placed-reference types (REFR/ACHR/ACRE) and CELL live inside cell-children GRUPs
     ///     and are routed through the cell-children pipeline rather than top-level emission.
     ///     Still deferred:
-    ///     - CDCK — parser doesn't enumerate CNTO cards into the model.
     ///     - NAVI — global pathfinding lookup table; master FNV.esm's NAVI covers every vanilla
     ///       navmesh, and the DMP→ESP pipeline emits NAVM records as overrides of master,
     ///       never as new. Omitting NAVI is therefore safe under current scope. Full NAVI
@@ -88,7 +87,16 @@ public sealed class RecordEncoderRegistry
             new IpctEncoder(),
             new IngrEncoder(),
             new CcrdEncoder(),
+            new CmnyEncoder(),
+            new CdckEncoder(),
             new RcctEncoder(),
+            // SCPT MUST be registered before any record type that carries a SCRI subrecord
+            // (NPC_, CREA, QUST, ACTI, etc.). EspAssembler emits GRUPs in registration order,
+            // and the FNV engine resolves SCRI inline during load — forward references to a
+            // SCPT GRUP that hasn't been read yet log "MASTERFILE: Unable to find script (X)
+            // on owner object (Y)" and null the script binding. Vanilla FalloutNV.esm has
+            // SCPT at file position 13 (before NPC_ at 36); we must mirror that ordering.
+            new ScptEncoder(),
             // Item
             new WeapEncoder(),
             new ArmoEncoder(),
@@ -112,6 +120,9 @@ public sealed class RecordEncoderRegistry
             new ProjEncoder(),
             new AvifEncoder(),
             // Character / AI
+            // PACK before NPC_ so the NPC's PKID list resolves against (master ∪ emitted) PACK
+            // FormIDs at file-load time, matching the same inline-resolution constraint as SCRI.
+            new PackEncoder(),
             new NpcEncoder(),
             new CreaEncoder(),
             new RaceEncoder(),
@@ -124,12 +135,12 @@ public sealed class RecordEncoderRegistry
             new RepuEncoder(),
             new VtypEncoder(),
             new CstyEncoder(),
-            new PackEncoder(),
-            // Quest / Dialogue / Script / Message
+            // Quest / Dialogue / Message — QUST carries SCRI but its target SCPT is already
+            // emitted above. DIAL/INFO carry result-script SCDA bytecode (no forward FormID
+            // refs into SCPT GRUP), so file position is unconstrained.
             new QustEncoder(),
             new DialEncoder(),
             new InfoEncoder(),
-            new ScptEncoder(),
             new MesgEncoder(),
             // World / Cell / Placed
             new WrldEncoder(),

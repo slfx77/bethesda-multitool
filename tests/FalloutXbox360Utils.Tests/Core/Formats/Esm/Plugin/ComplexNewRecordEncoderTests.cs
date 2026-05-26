@@ -1524,6 +1524,151 @@ public class ComplexNewRecordEncoderTests
         Assert.DoesNotContain(encoded.Warnings, w => w.Contains("deferred"));
     }
 
+    [Fact]
+    public void PerkEncoder_EncodeNew_PreservesUnknownEntryRawData()
+    {
+        var rawData = new byte[] { 0xDE, 0xAD, 0xBE, 0xEF };
+        var perk = new PerkRecord
+        {
+            FormId = 0x2800,
+            EditorId = "UnknownEntry",
+            Entries =
+            [
+                new PerkEntry
+                {
+                    Type = 0x7F,
+                    Rank = 1,
+                    Priority = 2,
+                    RawEntryData = rawData
+                }
+            ]
+        };
+
+        var encoded = PerkEncoder.EncodeNew(perk);
+        var entryData = encoded.Subrecords.Last(s => s.Signature == "DATA");
+
+        Assert.Equal(rawData, entryData.Bytes);
+        Assert.DoesNotContain(encoded.Warnings, w => w.Contains("unknown type"));
+    }
+
+    [Fact]
+    public void PerkEncoder_EncodeNew_PreservesUnknownFunctionRawPayload()
+    {
+        var rawEpfd = new byte[] { 0x11, 0x22, 0x33 };
+        var perk = new PerkRecord
+        {
+            FormId = 0x2800,
+            EditorId = "UnknownFunction",
+            Entries =
+            [
+                new PerkEntry
+                {
+                    Type = 2,
+                    Rank = 1,
+                    Priority = 0,
+                    EntryPoint = 4,
+                    FunctionType = 0x7E,
+                    RawFunctionData = rawEpfd
+                }
+            ]
+        };
+
+        var encoded = PerkEncoder.EncodeNew(perk);
+        var epfd = Assert.Single(encoded.Subrecords, s => s.Signature == "EPFD");
+
+        Assert.Equal(rawEpfd, epfd.Bytes);
+        Assert.DoesNotContain(encoded.Warnings, w => w.Contains("unknown FunctionType"));
+    }
+
+    [Fact]
+    public void CmnyEncoder_EncodeNew_EmitsEditorIdAndValue()
+    {
+        var cmny = new CaravanMoneyRecord
+        {
+            FormId = 0x3100,
+            EditorId = "CaravanMoney",
+            Value = 250
+        };
+
+        var encoded = CmnyEncoder.EncodeNew(cmny);
+
+        Assert.Equal(["EDID", "DATA"], encoded.Subrecords.Select(s => s.Signature));
+        var data = Assert.Single(encoded.Subrecords, s => s.Signature == "DATA").Bytes;
+        Assert.Equal(250u, BinaryPrimitives.ReadUInt32LittleEndian(data));
+        Assert.Empty(encoded.Warnings);
+    }
+
+    // ====================================================================================
+    // CdckEncoder (Phase 4.2a)
+    // ====================================================================================
+
+    [Fact]
+    public void CdckEncoder_EncodeNew_EmitsEditorIdJokerCountAndCards()
+    {
+        var cdck = new CaravanDeckRecord
+        {
+            FormId = 0x7500,
+            EditorId = "TestDeck",
+            JokerCount = 2,
+            Cards = [0x00012345, 0x00012346, 0x00012347]
+        };
+
+        var encoded = CdckEncoder.EncodeNew(cdck);
+
+        // Canonical order: EDID, DATA, CARD*
+        Assert.Equal(["EDID", "DATA", "CARD", "CARD", "CARD"],
+            encoded.Subrecords.Select(s => s.Signature));
+
+        var data = Assert.Single(encoded.Subrecords, s => s.Signature == "DATA").Bytes;
+        Assert.Equal(2u, BinaryPrimitives.ReadUInt32LittleEndian(data));
+
+        var cards = encoded.Subrecords.Where(s => s.Signature == "CARD")
+            .Select(s => BinaryPrimitives.ReadUInt32LittleEndian(s.Bytes))
+            .ToList();
+        Assert.Equal(new[] { 0x00012345u, 0x00012346u, 0x00012347u }, cards);
+        Assert.Empty(encoded.Warnings);
+    }
+
+    [Fact]
+    public void CdckEncoder_EncodeNew_EmptyDeck_StillEmitsEditorIdAndData()
+    {
+        var cdck = new CaravanDeckRecord
+        {
+            FormId = 0x7501,
+            EditorId = "EmptyDeck",
+            JokerCount = 0,
+            Cards = []
+        };
+
+        var encoded = CdckEncoder.EncodeNew(cdck);
+
+        // No CARD subrecords; just EDID + DATA.
+        Assert.Equal(["EDID", "DATA"], encoded.Subrecords.Select(s => s.Signature));
+        var data = Assert.Single(encoded.Subrecords, s => s.Signature == "DATA").Bytes;
+        Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(data));
+        Assert.Empty(encoded.Warnings);
+    }
+
+    [Fact]
+    public void CdckEncoder_EncodeNew_SkipsZeroCardFormIds()
+    {
+        var cdck = new CaravanDeckRecord
+        {
+            FormId = 0x7502,
+            EditorId = "DeckWithZero",
+            JokerCount = 1,
+            Cards = [0x00012345, 0x00000000, 0x00012346]  // middle entry is invalid sentinel
+        };
+
+        var encoded = CdckEncoder.EncodeNew(cdck);
+
+        // Only 2 CARD subrecords (the zero is skipped to avoid emitting a null reference).
+        var cards = encoded.Subrecords.Where(s => s.Signature == "CARD")
+            .Select(s => BinaryPrimitives.ReadUInt32LittleEndian(s.Bytes))
+            .ToList();
+        Assert.Equal(new[] { 0x00012345u, 0x00012346u }, cards);
+    }
+
     // ====================================================================================
     // CreaEncoder
     // ====================================================================================

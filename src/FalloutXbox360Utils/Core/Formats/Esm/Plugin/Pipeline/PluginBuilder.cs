@@ -4418,6 +4418,7 @@ public sealed class PluginBuilder
         yield return ("MICN", records.MenuIcons);
         yield return ("VTYP", records.VoiceTypes);
         yield return ("CCRD", records.CaravanCards);
+        yield return ("CDCK", records.CaravanDecks);
         yield return ("INGR", records.Ingredients);
         yield return ("LSCT", records.LoadScreenTypes);
         yield return ("IDLE", records.IdleAnimations);

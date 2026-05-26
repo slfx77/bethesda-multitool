@@ -554,6 +554,65 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
 
     #endregion
 
+    #region Caravan Money
+
+    /// <summary>
+    ///     Parse all Caravan Money (CMNY) records.
+    /// </summary>
+    internal List<CaravanMoneyRecord> ParseCaravanMoney()
+    {
+        var money = ParseAccessorOnly("CMNY", 256, ParseCaravanMoneyFromAccessor);
+
+        Context.MergeRuntimeRecords(money, 0x74, m => m.FormId,
+            (reader, entry) => reader.ReadRuntimeCaravanMoney(entry), "caravan money");
+
+        return money;
+    }
+
+    private CaravanMoneyRecord? ParseCaravanMoneyFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return null;
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        uint value = 0;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId =
+                        EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "DATA" when sub.DataLength >= 4:
+                    value = BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian);
+                    break;
+            }
+        }
+
+        return new CaravanMoneyRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            Value = value,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
     #region Caravan Deck
 
     /// <summary>
@@ -580,7 +639,7 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
         var (data, dataSize) = recordData.Value;
 
         string? editorId = null;
-        var cardCount = 0;
+        var cards = new List<uint>();
         uint jokerCount = 0;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
@@ -596,9 +655,11 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
                     }
 
                     break;
-                case "CARD":
-                case "CNTO":
-                    cardCount++;
+                // CDCK cards: each CARD subrecord is a 4-byte FormID referencing a CCRD record.
+                // (CNTO is unused for CDCK in FNV — the previous parser counted it defensively
+                // but no real CDCK record uses CNTO.)
+                case "CARD" when sub.DataLength >= 4:
+                    cards.Add(BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian));
                     break;
                 case "DATA" when sub.DataLength >= 4:
                     jokerCount = BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian);
@@ -610,7 +671,8 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
         {
             FormId = record.FormId,
             EditorId = editorId ?? Context.GetEditorId(record.FormId),
-            CardCount = cardCount,
+            Cards = cards,
+            CardCount = cards.Count,
             JokerCount = jokerCount,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
