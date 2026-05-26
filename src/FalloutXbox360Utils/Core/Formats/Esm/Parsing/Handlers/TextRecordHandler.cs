@@ -179,9 +179,15 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
 
         string? editorId = null;
         string? fullName = null;
+        string? modelPath = null;
         string? headerText = null;
+        ObjectBounds? bounds = null;
+        uint? scriptFormId = null;
+        uint? soundLoopFormId = null;
+        uint? passwordNoteFormId = null;
         byte difficulty = 0;
         byte flags = 0;
+        byte serverType = 0;
         var menuItems = new List<TerminalMenuItem>();
 
         // Active menu-item accumulator. Reset on each NEXT separator (or on a new ITXT if a
@@ -227,16 +233,36 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
                 case "EDID":
                     editorId = EsmStringUtils.ReadNullTermString(subData);
                     break;
+                case "OBND" when sub.DataLength == 12:
+                    bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
+                    break;
                 case "FULL":
                     fullName = EsmStringUtils.ReadNullTermString(subData);
                     break;
+                case "MODL":
+                    modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
                 case "DESC":
                     headerText = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "SCRI" when sub.DataLength == 4:
+                    scriptFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "SNAM" when sub.DataLength == 4:
+                    soundLoopFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "PNAM" when sub.DataLength == 4:
+                    passwordNoteFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
                 case "DNAM" when sub.DataLength >= 2:
                     // TERMINAL_DATA: byte Difficulty(0) + byte Flags(1) + byte ServerType(2) + byte Unused(3).
                     difficulty = subData[0];
                     flags = subData[1];
+                    if (sub.DataLength >= 3)
+                    {
+                        serverType = subData[2];
+                    }
+
                     break;
                 case "ITXT":
                     // Beginning of a new menu item — flush any pending item (no NEXT before this).
@@ -303,10 +329,16 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
         {
             FormId = record.FormId,
             EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            Bounds = bounds,
             FullName = fullName,
+            ModelPath = modelPath,
             HeaderText = headerText,
+            ScriptFormId = scriptFormId,
+            SoundLoopFormId = soundLoopFormId,
+            PasswordNoteFormId = passwordNoteFormId,
             Difficulty = difficulty,
             Flags = flags,
+            ServerType = serverType,
             MenuItems = menuItems,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian

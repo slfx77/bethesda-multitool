@@ -9,7 +9,8 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 
 /// <summary>
 ///     Encodes a <see cref="TerminalRecord" /> (TERM) as PC-format subrecord bytes.
-///     Emits EDID + FULL? + DESC? + DNAM(4B Difficulty + Flags + ServerType + Unused) +
+///     Emits EDID + OBND? + FULL? + MODL? + SCRI? + DESC? + SNAM? + PNAM? +
+///     DNAM(4B Difficulty + Flags + ServerType + Unused) +
 ///     per menu item: ITXT + (RNAM or embedded SCHR+SCDA?+SCTX?+SCRO*+SCRV*) + NEXT separator.
 ///     Override path is a no-op.
 ///     DNAM layout per PDB TERMINAL_DATA (4 bytes):
@@ -23,8 +24,8 @@ public sealed class TermEncoder : IRecordEncoder
 
     /// <summary>
     ///     Encode a new TERM record from scratch in fopdoc canonical order:
-    ///     EDID, FULL, DESC, DNAM, per menu item: ITXT, (RNAM or embedded script block), NEXT.
-    ///     OBND/MODL/SCRI/SNAM/PNAM deferred.
+    ///     EDID, OBND, FULL, MODL, SCRI, DESC, SNAM, PNAM, DNAM,
+    ///     per menu item: ITXT, (RNAM or embedded script block), NEXT.
     /// </summary>
     /// <param name="term">TERM model to emit.</param>
     /// <param name="validFormIds">
@@ -49,14 +50,39 @@ public sealed class TermEncoder : IRecordEncoder
 
         subs.Add(NewRecordSubrecords.EncodeStringSubrecord("EDID", term.EditorId ?? string.Empty));
 
+        if (term.Bounds is not null)
+        {
+            subs.Add(NewRecordSubrecords.EncodeObndSubrecord(term.Bounds));
+        }
+
         if (!string.IsNullOrEmpty(term.FullName))
         {
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("FULL", term.FullName));
         }
 
+        if (!string.IsNullOrEmpty(term.ModelPath))
+        {
+            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MODL", term.ModelPath));
+        }
+
+        if (term.ScriptFormId.HasValue)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRI", term.ScriptFormId.Value));
+        }
+
         if (!string.IsNullOrEmpty(term.HeaderText))
         {
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("DESC", term.HeaderText));
+        }
+
+        if (term.SoundLoopFormId.HasValue)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SNAM", term.SoundLoopFormId.Value));
+        }
+
+        if (term.PasswordNoteFormId.HasValue)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("PNAM", term.PasswordNoteFormId.Value));
         }
 
         subs.Add(new EncodedSubrecord("DNAM", BuildDnamSubrecord(term)));
@@ -73,8 +99,7 @@ public sealed class TermEncoder : IRecordEncoder
     private static byte[] BuildDnamSubrecord(TerminalRecord term)
     {
         // DNAM (4 bytes): Difficulty, Flags, ServerType, Unused.
-        // Model lacks ServerType — encode as 0 (default).
-        return [term.Difficulty, term.Flags, 0, 0];
+        return [term.Difficulty, term.Flags, term.ServerType, 0];
     }
 
     private static void EmitMenuItem(

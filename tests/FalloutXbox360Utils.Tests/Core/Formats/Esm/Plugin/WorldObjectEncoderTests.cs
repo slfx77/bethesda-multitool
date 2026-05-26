@@ -940,4 +940,132 @@ public class WorldObjectEncoderTests
         Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "CIS1");
         Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "CIS2");
     }
+
+    // ====================================================================================
+    // TERM extra subrecords (Phase 4.2b): OBND, MODL, SCRI, SNAM, PNAM
+    // ====================================================================================
+
+    [Fact]
+    public void TermEncoder_EncodeNew_EmitsObndWhenBoundsPresent()
+    {
+        var term = new TerminalRecord
+        {
+            FormId = 0x701,
+            EditorId = "BoundedTerm",
+            Bounds = new ObjectBounds { X1 = -10, Y1 = -20, Z1 = 0, X2 = 10, Y2 = 20, Z2 = 30 }
+        };
+
+        var encoded = TermEncoder.EncodeNew(term);
+
+        var obnd = Assert.Single(encoded.Subrecords, s => s.Signature == "OBND").Bytes;
+        Assert.Equal(12, obnd.Length);
+        Assert.Equal(-10, BinaryPrimitives.ReadInt16LittleEndian(obnd.AsSpan(0, 2)));
+        Assert.Equal(-20, BinaryPrimitives.ReadInt16LittleEndian(obnd.AsSpan(2, 2)));
+        Assert.Equal(0, BinaryPrimitives.ReadInt16LittleEndian(obnd.AsSpan(4, 2)));
+        Assert.Equal(10, BinaryPrimitives.ReadInt16LittleEndian(obnd.AsSpan(6, 2)));
+        Assert.Equal(20, BinaryPrimitives.ReadInt16LittleEndian(obnd.AsSpan(8, 2)));
+        Assert.Equal(30, BinaryPrimitives.ReadInt16LittleEndian(obnd.AsSpan(10, 2)));
+    }
+
+    [Fact]
+    public void TermEncoder_EncodeNew_EmitsModlWhenModelPathPresent()
+    {
+        var term = new TerminalRecord
+        {
+            FormId = 0x702,
+            EditorId = "ModelTerm",
+            ModelPath = "Terminals\\testTerm.nif"
+        };
+
+        var encoded = TermEncoder.EncodeNew(term);
+
+        var modl = Assert.Single(encoded.Subrecords, s => s.Signature == "MODL").Bytes;
+        // Null-terminated string.
+        Assert.Equal("Terminals\\testTerm.nif\0", System.Text.Encoding.ASCII.GetString(modl));
+    }
+
+    [Fact]
+    public void TermEncoder_EncodeNew_EmitsScriSnamPnamFormIds()
+    {
+        var term = new TerminalRecord
+        {
+            FormId = 0x703,
+            EditorId = "LinkedTerm",
+            ScriptFormId = 0x00012345,
+            SoundLoopFormId = 0x00023456,
+            PasswordNoteFormId = 0x00034567
+        };
+
+        var encoded = TermEncoder.EncodeNew(term);
+
+        var scri = Assert.Single(encoded.Subrecords, s => s.Signature == "SCRI").Bytes;
+        Assert.Equal(0x00012345u, BinaryPrimitives.ReadUInt32LittleEndian(scri));
+        var snam = Assert.Single(encoded.Subrecords, s => s.Signature == "SNAM").Bytes;
+        Assert.Equal(0x00023456u, BinaryPrimitives.ReadUInt32LittleEndian(snam));
+        var pnam = Assert.Single(encoded.Subrecords, s => s.Signature == "PNAM").Bytes;
+        Assert.Equal(0x00034567u, BinaryPrimitives.ReadUInt32LittleEndian(pnam));
+    }
+
+    [Fact]
+    public void TermEncoder_EncodeNew_FullCanonicalOrderWithAllOptionals()
+    {
+        // Canonical order per fopdoc: EDID, OBND, FULL, MODL, SCRI, DESC, SNAM, PNAM, DNAM, menu items.
+        var term = new TerminalRecord
+        {
+            FormId = 0x704,
+            EditorId = "FullTerm",
+            Bounds = new ObjectBounds { X2 = 1, Y2 = 1, Z2 = 1 },
+            FullName = "Mainframe",
+            ModelPath = "term.nif",
+            ScriptFormId = 0x1,
+            HeaderText = "Welcome",
+            SoundLoopFormId = 0x2,
+            PasswordNoteFormId = 0x3,
+            Difficulty = 2,
+            Flags = 0x10,
+            ServerType = 5
+        };
+
+        var encoded = TermEncoder.EncodeNew(term);
+
+        Assert.Equal(
+            ["EDID", "OBND", "FULL", "MODL", "SCRI", "DESC", "SNAM", "PNAM", "DNAM"],
+            encoded.Subrecords.Select(s => s.Signature));
+    }
+
+    [Fact]
+    public void TermEncoder_EncodeNew_DnamServerTypeRoundTrips()
+    {
+        // Regression: ServerType byte now flows from the model into DNAM[2] (previously hard-coded 0).
+        var term = new TerminalRecord
+        {
+            FormId = 0x705,
+            EditorId = "ServerTypeTerm",
+            Difficulty = 1,
+            Flags = 0x20,
+            ServerType = 7
+        };
+
+        var encoded = TermEncoder.EncodeNew(term);
+
+        var dnam = Assert.Single(encoded.Subrecords, s => s.Signature == "DNAM").Bytes;
+        Assert.Equal(new byte[] { 1, 0x20, 7, 0 }, dnam);
+    }
+
+    [Fact]
+    public void TermEncoder_EncodeNew_OmitsOptionalSubrecordsWhenNull()
+    {
+        // Bare TERM (no extras) should produce the same shape as before Phase 4.2b.
+        var term = new TerminalRecord
+        {
+            FormId = 0x706,
+            EditorId = "BareTerm",
+            HeaderText = "Hi",
+            Difficulty = 0
+        };
+
+        var encoded = TermEncoder.EncodeNew(term);
+
+        Assert.Equal(["EDID", "DESC", "DNAM"], encoded.Subrecords.Select(s => s.Signature));
+    }
 }

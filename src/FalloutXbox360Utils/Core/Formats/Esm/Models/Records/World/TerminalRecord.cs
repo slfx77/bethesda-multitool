@@ -11,17 +11,35 @@ public record TerminalRecord
     /// <summary>Editor ID.</summary>
     public string? EditorId { get; init; }
 
+    /// <summary>Object bounds (OBND subrecord). Null when absent.</summary>
+    public ObjectBounds? Bounds { get; init; }
+
     /// <summary>Display name.</summary>
     public string? FullName { get; init; }
 
+    /// <summary>Model path (MODL subrecord). Null when absent.</summary>
+    public string? ModelPath { get; init; }
+
     /// <summary>Terminal header text (DESC subrecord).</summary>
     public string? HeaderText { get; init; }
+
+    /// <summary>Script FormID (SCRI subrecord). Null when absent.</summary>
+    public uint? ScriptFormId { get; init; }
+
+    /// <summary>Sound-loop FormID (SNAM subrecord, BGSSoundForm). Null when absent.</summary>
+    public uint? SoundLoopFormId { get; init; }
+
+    /// <summary>Password-note FormID (PNAM subrecord, BGSNote). Null when absent.</summary>
+    public uint? PasswordNoteFormId { get; init; }
 
     /// <summary>Terminal difficulty (0-4).</summary>
     public byte Difficulty { get; init; }
 
     /// <summary>Terminal flags.</summary>
     public byte Flags { get; init; }
+
+    /// <summary>Terminal server type byte from DNAM.</summary>
+    public byte ServerType { get; init; }
 
     /// <summary>Terminal menu items.</summary>
     public List<TerminalMenuItem> MenuItems { get; init; } = [];
