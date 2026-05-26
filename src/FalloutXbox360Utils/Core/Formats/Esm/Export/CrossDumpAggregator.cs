@@ -78,129 +78,11 @@ internal static class CrossDumpAggregator
             projections, virtualCanon, allowedTypes);
     }
 
-    private static bool ShouldIncludeType(IReadOnlySet<string>? allowedTypes, string typeName)
-    {
-        return allowedTypes is not { Count: > 0 } || allowedTypes.Contains(typeName);
-    }
-
-    private static Dictionary<uint, DialogTopicRecord> BuildDialogTopicLookup(
-        IEnumerable<DialogTopicRecord> topics)
-    {
-        var map = new Dictionary<uint, DialogTopicRecord>();
-        foreach (var topic in topics)
-        {
-            map.TryAdd(topic.FormId, topic);
-        }
-
-        return map;
-    }
-
-    private static Dictionary<uint, string> BuildDialogTopicSearchTextLookup(
-        IEnumerable<DialogueRecord> dialogues)
-    {
-        var map = new Dictionary<uint, HashSet<string>>();
-        foreach (var dialogue in dialogues)
-        {
-            if (dialogue.TopicFormId is not > 0)
-            {
-                continue;
-            }
-
-            if (!map.TryGetValue(dialogue.TopicFormId.Value, out var values))
-            {
-                values = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                map[dialogue.TopicFormId.Value] = values;
-            }
-
-            AddSearchValue(values, dialogue.PromptText);
-            foreach (var response in dialogue.Responses)
-            {
-                AddSearchValue(values, response.Text);
-            }
-        }
-
-        return map.ToDictionary(
-            entry => entry.Key,
-            entry => string.Join(' ', entry.Value));
-    }
-
-    private static void AddSearchValue(HashSet<string> values, string? value)
-    {
-        if (!string.IsNullOrWhiteSpace(value))
-        {
-            values.Add(value);
-        }
-    }
-
-    private static void ClearRecordLists(RecordCollection records)
-    {
-        records.Npcs.Clear();
-        records.Creatures.Clear();
-        records.Races.Clear();
-        records.Factions.Clear();
-        records.Quests.Clear();
-        records.DialogTopics.Clear();
-        records.Dialogues.Clear();
-        records.Notes.Clear();
-        records.Books.Clear();
-        records.Terminals.Clear();
-        records.Scripts.Clear();
-        records.Weapons.Clear();
-        records.Armor.Clear();
-        records.Ammo.Clear();
-        records.Consumables.Clear();
-        records.MiscItems.Clear();
-        records.Keys.Clear();
-        records.Containers.Clear();
-        records.Perks.Clear();
-        records.Spells.Clear();
-        records.Cells.Clear();
-        records.Worldspaces.Clear();
-        records.MapMarkers.Clear();
-        records.LeveledLists.Clear();
-        records.GameSettings.Clear();
-        records.Globals.Clear();
-        records.Enchantments.Clear();
-        records.BaseEffects.Clear();
-        records.WeaponMods.Clear();
-        records.Recipes.Clear();
-        records.RecipeCategories.Clear();
-        records.ConstructibleObjects.Clear();
-        records.Challenges.Clear();
-        records.Reputations.Clear();
-        records.Projectiles.Clear();
-        records.Explosions.Clear();
-        records.Messages.Clear();
-        records.Classes.Clear();
-        records.Eyes.Clear();
-        records.Hair.Clear();
-        records.FormLists.Clear();
-        records.Activators.Clear();
-        records.Lights.Clear();
-        records.Doors.Clear();
-        records.Statics.Clear();
-        records.Furniture.Clear();
-        records.Packages.Clear();
-        records.GenericRecords.Clear();
-        records.Sounds.Clear();
-        records.MusicTypes.Clear();
-        records.TextureSets.Clear();
-        records.ArmorAddons.Clear();
-        records.Water.Clear();
-        records.BodyPartData.Clear();
-        records.ActorValueInfos.Clear();
-        records.CombatStyles.Clear();
-        records.LightingTemplates.Clear();
-        records.NavMeshes.Clear();
-        records.Weather.Clear();
-    }
-
-    private static Dictionary<uint, PlacedReferenceLocation> BuildPlacedReferenceLocations(
-        IEnumerable<CellRecord> cells,
-        IReadOnlyDictionary<CellCoordinateKey, RealCellCandidate> virtualCellCanonicalFormIds)
-    {
-        return CrossDumpPlacementIndexBuilder.BuildPlacedReferenceLocations(cells, virtualCellCanonicalFormIds);
-    }
+    // ShouldIncludeType / BuildDialogTopicLookup / BuildDialogTopicSearchTextLookup /
+    // AddSearchValue / ClearRecordLists / BuildPlacedReferenceLocations were private
+    // helpers used only by the legacy aggregator loop body that was replaced by the
+    // projection-path shim in the previous commit. They became unreachable when the body
+    // was removed.
 
     internal static IReadOnlyDictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<NpcPlacementInfo>>>
         BuildNpcPlacementIndexes(IEnumerable<(string FilePath, RecordCollection Records)> sources)
@@ -230,48 +112,11 @@ internal static class CrossDumpAggregator
         return CrossDumpPlacementIndexBuilder.BuildNpcScriptReferenceIndexes(sources);
     }
 
-    private static Dictionary<CellCoordinateKey, RealCellCandidate> BuildVirtualCellCanonicalFormIds(
-        IEnumerable<RecordCollection> recordCollections)
-    {
-        return VirtualCellCanonicalizer.BuildVirtualCellCanonicalFormIds(recordCollections);
-    }
-
-    private static bool TryGetVirtualCellCanonicalFormId(
-        CellRecord cell,
-        IReadOnlyDictionary<CellCoordinateKey, RealCellCandidate> canonicalFormIds,
-        out RealCellCandidate canonicalCell)
-    {
-        return VirtualCellCanonicalizer.TryGetVirtualCellCanonicalFormId(cell, canonicalFormIds, out canonicalCell);
-    }
-
-    private static RecordReport RebaseVirtualCellReport(RecordReport report, RealCellCandidate canonicalCell)
-    {
-        return VirtualCellCanonicalizer.RebaseVirtualCellReport(report, canonicalCell);
-    }
-
-    private static void AddUpgradedVirtualCellForDump(
-        Dictionary<uint, SortedDictionary<int, SortedSet<uint>>> upgradedVirtualCellIdsByDump,
-        uint realFormId,
-        int dumpIdx,
-        uint originalVirtualFormId)
-    {
-        VirtualCellCanonicalizer.AddUpgradedVirtualCellForDump(
-            upgradedVirtualCellIdsByDump,
-            realFormId,
-            dumpIdx,
-            originalVirtualFormId);
-    }
-
-    private static void AppendVirtualCellAuditMetadata(
-        CrossDumpRecordIndex index,
-        Dictionary<uint, SortedSet<uint>> upgradedVirtualCellIds,
-        Dictionary<uint, SortedDictionary<int, SortedSet<uint>>> upgradedVirtualCellIdsByDump)
-    {
-        VirtualCellCanonicalizer.AppendVirtualCellAuditMetadata(
-            index,
-            upgradedVirtualCellIds,
-            upgradedVirtualCellIdsByDump);
-    }
+    // BuildVirtualCellCanonicalFormIds / TryGetVirtualCellCanonicalFormId /
+    // RebaseVirtualCellReport / AddUpgradedVirtualCellForDump /
+    // AppendVirtualCellAuditMetadata were private delegate forwarders to
+    // VirtualCellCanonicalizer used only by the legacy aggregator body. CrossDumpProjection-
+    // Aggregator now calls VirtualCellCanonicalizer directly.
 
     private static bool IsRealName(string? name)
     {
@@ -546,17 +391,9 @@ internal static class CrossDumpAggregator
         return $"{label} (0x{wsFid:X8})";
     }
 
-    private static string PickFirstDialogueText(DialogueRecord dialogue)
-    {
-        if (!string.IsNullOrWhiteSpace(dialogue.PromptText))
-        {
-            return dialogue.PromptText;
-        }
-
-        return dialogue.Responses
-            .Select(response => response.Text)
-            .FirstOrDefault(text => !string.IsNullOrWhiteSpace(text)) ?? "";
-    }
+    // PickFirstDialogueText was used only by the legacy aggregator body's dialogue
+    // metadata fallback. Replaced by DialogueObservation.FirstPromptText /
+    // FirstResponseText captured at projection time.
 
     private static string BuildQuestLabel(uint questFormId, string? displayName, string? editorId)
     {
