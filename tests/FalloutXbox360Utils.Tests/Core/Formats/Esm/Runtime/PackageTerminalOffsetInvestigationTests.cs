@@ -73,37 +73,17 @@ public sealed class PackageTerminalOffsetInvestigationTests
         }
     }
 
-    /// <summary>
-    ///     Confirms that on the snippet where the original ground-truth was done, the
-    ///     previously-wrong offset (+104) still does NOT look like a pointer field for
-    ///     every record — so future regressions (someone reverting `72 + _s` back to
-    ///     `88 + _s`) trip a clear signal.
-    /// </summary>
-    [Fact]
-    public async Task PACK_pCombatStyle_previously_wrong_offset_still_looks_wrong()
-    {
-        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, "release_dump");
-        var packEntries = snippet.RuntimeEditorIds
-            .Where(e => e.FormType == 0x49 && e.TesFormOffset.HasValue)
-            .Take(16)
-            .ToList();
-        Assert.NotEmpty(packEntries);
-
-        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
-        const int previouslyWrongOffset = 104;
-
-        var pointerOrNull = packEntries
-            .Select(e =>
-            {
-                var buf = context.ReadBytes(e.TesFormOffset!.Value, 144);
-                return buf is null ? 0u : BinaryUtils.ReadUInt32BE(buf, previouslyWrongOffset);
-            })
-            .Count(IsNullOrXbox360HeapPointer);
-
-        Assert.True(pointerOrNull < packEntries.Count,
-            "If the old +104 offset now looks pointer-shaped for every record, re-investigate — "
-            + "the ground-truth signal that distinguished it from the correct +88 has changed.");
-    }
+    // PACK_pCombatStyle_previously_wrong_offset_still_looks_wrong was deleted in
+    // Phase 1B.25 after snippet re-extraction. Pre-re-extraction, release_dump
+    // had drift-mislabeled IDLE entries at FormType 0x49 (not real PACKs), so the
+    // bytes at the previously-wrong offset (+104) were structurally non-pointer.
+    // Post-1B.22 drift correction, FormType 0x49 contains REAL PACK records that
+    // happen to have valid heap pointers at +104 too (a different real PACK
+    // field), so the regression guard's distinguishing signal disappeared.
+    //
+    // The correctness of the pCombatStyle fix (+88, not +104) is still verified
+    // end-to-end by `PACK_CombatStyleFormId_populated_across_full_dmp_families`
+    // — that's the load-bearing regression guard.
 
     // ============================================================================
     // TERM — TERMINAL_DATA at runtime +176 (NOT PDB +180), MenuItemList at +168

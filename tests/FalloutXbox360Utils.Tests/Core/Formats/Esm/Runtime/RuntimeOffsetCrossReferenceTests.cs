@@ -2128,12 +2128,33 @@ public sealed class RuntimeOffsetCrossReferenceTests
     }
 
     /// <summary>
-    ///     Phase 1B.15A regression guard: on release_dump, FormType 0x49 contains
-    ///     IDLE animations due to FormType drift that DetectFormTypeDrift fails to
-    ///     remap. Before the fix, RuntimePackageReader.ReadRuntimePackage accepted
-    ///     these as PACKs and downstream emitted zero-filled PLDT/PTDT records.
-    ///     After the fix, the pPackLoc + pPackTarg pointer-shape gate rejects
-    ///     them, so the count of accepted records at 0x49 should drop significantly.
+    ///     Phase 1B.15A regression guard for the pPackLoc heap-shape gate in
+    ///     <c>RuntimePackageReader.ReadRuntimePackage</c>. The gate's purpose is to
+    ///     reject FormType-drifted IDLE entries that masquerade as PACKs when
+    ///     drift correction hasn't been applied to the runtime entries.
+    ///
+    ///     <para>
+    ///     Phase 1B.22 made drift correction central in <c>MinidumpAnalyzer</c>, so
+    ///     in production every <c>AnalysisResult.EsmRecords</c> reaches downstream
+    ///     readers with canonical FormType bytes. Phase 1B.25 re-extracted the
+    ///     snippet test data so the snippets themselves carry post-drift bytes:
+    ///     entries that were originally tagged FormType 0x49 (IDLE shifted-up by
+    ///     drift) are now at FormType 0x48 (canonical IDLE) with
+    ///     <see cref="RuntimeEditorIdEntry.OriginalFormType" /> set to 0x49.
+    ///     </para>
+    ///
+    ///     <para>
+    ///     The gate is still load-bearing as defense-in-depth: any consumer that
+    ///     builds a <c>scanResult</c> by hand (unit tests, alternative pipelines)
+    ///     might bypass drift correction. We simulate that scenario by:
+    ///     1. Finding entries the extractor recorded as drift-corrected from 0x49
+    ///        (i.e., <c>OriginalFormType == 0x49</c> — these are the IDLEs the
+    ///        gate was designed to catch).
+    ///     2. Constructing copies with <c>FormType = 0x49</c> (mimicking
+    ///        "drift correction failed").
+    ///     3. Feeding them to <c>ReadRuntimePackage</c> and verifying it rejects
+    ///        them via the pPackLoc heap-shape check.
+    ///     </para>
     /// </summary>
     [Fact]
     public async Task PACK_release_dump_rejects_FormType_drifted_IDLE_entries()
@@ -2142,28 +2163,37 @@ public sealed class RuntimeOffsetCrossReferenceTests
         var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
         var reader = new RuntimePackageReader(context);
 
-        // Raw entries at FormType 0x49: includes both real PACKs (zero in release_dump
-        // because real PACKs are at 0x4A there) AND drift-mislabeled IDLE entries.
-        var entries0x49 = snippet.RuntimeEditorIds
-            .Where(e => e.FormType == 0x49 && e.TesFormOffset.HasValue)
+        // Find entries that were originally at FormType 0x49 (drifted IDLEs) but
+        // got corrected down to 0x48 by Phase 1B.22 drift correction. These are
+        // the exact entries the 1B.15A gate was designed to catch when produced
+        // without drift correction.
+        var driftedIdleSources = snippet.RuntimeEditorIds
+            .Where(e => e.OriginalFormType == 0x49 && e.FormType == 0x48 && e.TesFormOffset.HasValue)
             .Take(500)
             .ToList();
 
-        Assert.True(entries0x49.Count >= 50,
-            $"Expected ≥ 50 entries at FormType 0x49 in release_dump (got {entries0x49.Count}). "
-            + "If this drops, the snippet may have changed.");
+        Assert.True(driftedIdleSources.Count >= 50,
+            $"Expected ≥ 50 drift-corrected entries (OriginalFormType=0x49 → 0x48) in release_dump "
+            + $"(got {driftedIdleSources.Count}). If this drops, the snippet may have been re-extracted "
+            + "without drift detection firing — verify MinidumpAnalyzer.AnalyzeAsync still calls "
+            + "RuntimeBuildOffsets.ApplyDriftCorrection (Phase 1B.22).");
 
-        var accepted = entries0x49.Count(e => reader.ReadRuntimePackage(e) is not null);
+        // Simulate "drift correction failed" by relabeling these IDLE entries
+        // with FormType 0x49 again, then feed to the PACK reader.
+        var asFakeDriftedPacks = driftedIdleSources
+            .Select(e => e with { FormType = 0x49 })
+            .ToList();
 
-        // Pre-fix: roughly equal to validation-passing count (~100s of IDLE stubs).
-        // Post-fix: should be 0 or very few (since release_dump's real PACKs are
-        // at 0x4A, not 0x49). Threshold: accept < 10% of raw entries.
-        var acceptanceRate = (double)accepted / entries0x49.Count;
+        var accepted = asFakeDriftedPacks.Count(e => reader.ReadRuntimePackage(e) is not null);
+        var acceptanceRate = (double)accepted / asFakeDriftedPacks.Count;
+
+        // Pre-1B.15A gate: structurally-IDLE entries pass the basic FormID +
+        // packType checks → ~100% acceptance, emitting zero-filled stubs.
+        // Post-fix: the pPackLoc heap-shape gate rejects them → near-0% acceptance.
         Assert.True(acceptanceRate < 0.1,
-            $"[release_dump] PACK acceptance rate at FormType 0x49 is {acceptanceRate:P0} "
-            + $"({accepted}/{entries0x49.Count}). Should be < 10% — real PACKs in this "
-            + "snippet are at 0x4A, not 0x49. If this rate is high, the FormType-drift "
-            + "gate in RuntimePackageReader.ReadRuntimePackage has regressed.");
+            $"[release_dump] PACK gate acceptance rate for simulated-drifted IDLEs is {acceptanceRate:P0} "
+            + $"({accepted}/{asFakeDriftedPacks.Count}). Should be < 10%. If high, the pPackLoc "
+            + "heap-shape gate in RuntimePackageReader.ReadRuntimePackage has regressed.");
     }
 
     // =========================================================================

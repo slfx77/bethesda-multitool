@@ -18,16 +18,16 @@
     "label": "ReleaseBetaBase",
     "family": "release-beta",
     "samplePath": "Sample\\MemoryDump\\Fallout_Release_Beta.xex.dmp",
-    "worldShift": -16,
+    "worldShift": 0,
     "cellShift": -8,
-    "confidence": "low",
-    "winnerScore": 69,
-    "runnerUpScore": 69,
-    "sampleCount": 10,
-    "worldCellMapCount": 0,
+    "confidence": "high",
+    "winnerScore": 123,
+    "runnerUpScore": 109,
+    "sampleCount": 20,
+    "worldCellMapCount": 16,
     "cellEntryCount": 242,
     "runtimeCellSignalCount": 242,
-    "notes": "Low-confidence base release-beta dump; runtime CELL signals exist, but structural worldspace map walking stays disabled."
+    "notes": "Updated Phase 1B.25 after snippet re-extraction. Drift-correction-centered MinidumpAnalyzer (1B.22) + ExerciseAllCodePaths now captures the pCellMap byte ranges, so the probe sees 16 maps (was 0) and lifts confidence from low to high. Winning worldShift moved from -16 (random low-confidence guess with no real evidence) to 0 (PDB-aligned, supported by 16 map signals)."
   },
   {
     "label": "ReleaseBetaXex4",
