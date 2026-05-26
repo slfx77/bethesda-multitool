@@ -160,6 +160,87 @@ public class EsmSubrecordConverterTests
 
     #endregion
 
+    #region BPND Mixed Endianness
+
+    [Fact]
+    public void ConvertSubrecordData_Bpnd_FloatsSwappedFormIdsAndCountsPreserved()
+    {
+        // BPND uses mixed endianness on Xbox 360:
+        //   - Float fields are big-endian → must be swapped to LE
+        //   - UInt16 / Int32 / FormId fields are already little-endian on Xbox →
+        //     must NOT be swapped (would corrupt them, see Phase 1B.17g).
+        //
+        // Synthesized payload modeled on a real BPND seen in FalloutNV.esm:
+        //   DamageMult=1.0 (BE float 3F-80-00-00)
+        //   DebrisCount=4  (LE u16 04-00)
+        //   Debris FormID 0x0001B2BF (LE bytes BF-B2-01-00)
+        //   Explosion FormID 0x0001540D (LE bytes 0D-54-01-00)
+        var data = new byte[84];
+
+        // [0..3] DamageMult: BE 1.0 = 3F 80 00 00 → should become LE 1.0 = 00 00 80 3F.
+        data[0] = 0x3F;
+        data[1] = 0x80;
+        // [4..9] six UInt8 flags — leave as zeros.
+        data[5] = 0x01; // PartType for sanity
+        // [10..11] DebrisCount = 4 (already LE).
+        data[10] = 0x04;
+        // [12..15] Debris FormID 0x0001B2BF stored LE.
+        data[12] = 0xBF; data[13] = 0xB2; data[14] = 0x01; data[15] = 0x00;
+        // [16..19] Explosion FormID 0x0001540D stored LE.
+        data[16] = 0x0D; data[17] = 0x54; data[18] = 0x01; data[19] = 0x00;
+        // [20..23] TrackingMaxAngle BE float 1.0 → LE 1.0.
+        data[20] = 0x3F;
+        data[21] = 0x80;
+        // [24..27] DebrisScale BE float 1.0.
+        data[24] = 0x3F;
+        data[25] = 0x80;
+        // [28..31] SeverableDebrisCount (Int32LittleEndian) = 0 (zeros).
+        // [32..35] SeverableDebris LE 0x00000000.
+        // [36..39] SeverableExplosion LE 0x00000000.
+        // [40..43] SeverableDebrisScale BE float 1.0.
+        data[40] = 0x3F;
+        data[41] = 0x80;
+        // [44..67] GoreTransform PosRot (6 floats) — zeros.
+        // [68..71] SeverableImpact LE 0x0002ED47.
+        data[68] = 0x47; data[69] = 0xED; data[70] = 0x02; data[71] = 0x00;
+        // [72..75] ExplodableImpact LE 0x0002ED47.
+        data[72] = 0x47; data[73] = 0xED; data[74] = 0x02; data[75] = 0x00;
+        // [76] SeverableDecalCount, [77] ExplodableDecalCount, [78..79] padding.
+        // [80..83] LimbReplacementScale BE float 1.0.
+        data[80] = 0x3F;
+        data[81] = 0x80;
+
+        var result = EsmSubrecordConverter.ConvertSubrecordData("BPND", data, "BPTD");
+
+        Assert.Equal(84, result.Length);
+
+        // DamageMult: BE → LE.
+        Assert.Equal(new byte[] { 0x00, 0x00, 0x80, 0x3F }, result[0..4]);
+        // PartType preserved.
+        Assert.Equal(0x01, result[5]);
+        // DebrisCount preserved (was already LE).
+        Assert.Equal(0x04, result[10]);
+        Assert.Equal(0x00, result[11]);
+        // Debris FormID preserved (was already LE) — would have been BF→00 if wrongly swapped.
+        Assert.Equal(new byte[] { 0xBF, 0xB2, 0x01, 0x00 }, result[12..16]);
+        // Explosion FormID preserved.
+        Assert.Equal(new byte[] { 0x0D, 0x54, 0x01, 0x00 }, result[16..20]);
+        // TrackingMaxAngle: BE → LE.
+        Assert.Equal(new byte[] { 0x00, 0x00, 0x80, 0x3F }, result[20..24]);
+        // DebrisScale: BE → LE.
+        Assert.Equal(new byte[] { 0x00, 0x00, 0x80, 0x3F }, result[24..28]);
+        // SeverableDebrisScale: BE → LE.
+        Assert.Equal(new byte[] { 0x00, 0x00, 0x80, 0x3F }, result[40..44]);
+        // SeverableImpact preserved.
+        Assert.Equal(new byte[] { 0x47, 0xED, 0x02, 0x00 }, result[68..72]);
+        // ExplodableImpact preserved.
+        Assert.Equal(new byte[] { 0x47, 0xED, 0x02, 0x00 }, result[72..76]);
+        // LimbReplacementScale: BE → LE.
+        Assert.Equal(new byte[] { 0x00, 0x00, 0x80, 0x3F }, result[80..84]);
+    }
+
+    #endregion
+
     #region ByteArray Schema (No Conversion)
 
     [Fact]

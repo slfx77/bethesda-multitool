@@ -96,6 +96,15 @@ public readonly record struct SubrecordField(string Name, SubrecordFieldType Typ
     }
 
     /// <summary>
+    ///     Creates an Int32 field that is already little-endian on Xbox 360.
+    ///     Used for count/index fields alongside BE float fields in BPND-style subrecords.
+    /// </summary>
+    public static SubrecordField Int32LittleEndian(string name)
+    {
+        return new SubrecordField(name, SubrecordFieldType.Int32LittleEndian, 4);
+    }
+
+    /// <summary>
     ///     Creates a UInt32 field that uses word-swapped (middle-endian) format on Xbox 360.
     ///     Xbox stores two big-endian uint16 words in LE order: [HI_BE][LO_BE] -> [LO_LE][HI_LE]
     /// </summary>

@@ -334,7 +334,8 @@ internal static class ThreeWayDiffHelpers
         {
             SubrecordFieldType.UInt8 or SubrecordFieldType.Int8 => 1,
             SubrecordFieldType.UInt16 or SubrecordFieldType.Int16 or SubrecordFieldType.UInt16LittleEndian => 2,
-            SubrecordFieldType.UInt32 or SubrecordFieldType.Int32 or SubrecordFieldType.Float
+            SubrecordFieldType.UInt32 or SubrecordFieldType.Int32 or SubrecordFieldType.Int32LittleEndian
+                or SubrecordFieldType.Float
                 or SubrecordFieldType.FormId or SubrecordFieldType.FormIdLittleEndian
                 or SubrecordFieldType.ColorRgba or SubrecordFieldType.ColorArgb
                 or SubrecordFieldType.UInt32WordSwapped => 4,

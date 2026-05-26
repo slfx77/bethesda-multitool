@@ -26,6 +26,7 @@ public static class FieldValueDecoder
                 SubrecordFieldType.UInt16LittleEndian => BinaryUtils.ReadUInt16(data, 0, false).ToString(),
                 SubrecordFieldType.UInt32 => BinaryUtils.ReadUInt32(data, 0, bigEndian).ToString(),
                 SubrecordFieldType.Int32 => BinaryUtils.ReadInt32(data, 0, bigEndian).ToString(),
+                SubrecordFieldType.Int32LittleEndian => BinaryUtils.ReadInt32(data, 0, false).ToString(),
                 SubrecordFieldType.UInt32WordSwapped => DecodeWordSwapped(data, bigEndian).ToString(),
                 SubrecordFieldType.Float => FormatFloat(BinaryUtils.ReadFloat(data, 0, bigEndian)),
                 SubrecordFieldType.FormId => $"0x{BinaryUtils.ReadUInt32(data, 0, bigEndian):X8}",

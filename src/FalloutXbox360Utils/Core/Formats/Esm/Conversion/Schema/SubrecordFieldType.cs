@@ -42,6 +42,13 @@ public enum SubrecordFieldType
     UInt16LittleEndian,
 
     /// <summary>
+    ///     4-byte signed integer that is already little-endian on Xbox 360.
+    ///     Used for count/index fields in BPND-style subrecords where Xbox stores
+    ///     the integer in native little-endian format alongside BE float fields.
+    /// </summary>
+    Int32LittleEndian,
+
+    /// <summary>
     ///     4-byte unsigned integer stored in word-swapped (middle-endian) format on Xbox 360.
     ///     Xbox stores as two big-endian uint16 words in little-endian order: [HI_BE][LO_BE]
     ///     Example: value 21 stored as 00 15 00 00 on Xbox -> 15 00 00 00 on PC

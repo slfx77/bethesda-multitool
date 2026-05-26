@@ -69,6 +69,7 @@ public static class SubrecordSchemaReader
             SubrecordFieldType.UInt16LittleEndian => data.Length >= 2 ? BinaryUtils.ReadUInt16LE(data) : null,
             SubrecordFieldType.UInt32 => data.Length >= 4 ? BinaryUtils.ReadUInt32(data, 0, bigEndian) : null,
             SubrecordFieldType.Int32 => data.Length >= 4 ? BinaryUtils.ReadInt32(data, 0, bigEndian) : null,
+            SubrecordFieldType.Int32LittleEndian => data.Length >= 4 ? BinaryUtils.ReadInt32LE(data) : null,
             SubrecordFieldType.UInt32WordSwapped => ReadUInt32WordSwapped(data),
             SubrecordFieldType.Float => data.Length >= 4 ? BinaryUtils.ReadFloat(data, 0, bigEndian) : null,
             SubrecordFieldType.FormId => data.Length >= 4 ? BinaryUtils.ReadUInt32(data, 0, bigEndian) : null,

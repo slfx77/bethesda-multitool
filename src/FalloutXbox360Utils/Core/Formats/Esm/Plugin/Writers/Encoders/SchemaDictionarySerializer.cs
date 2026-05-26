@@ -76,6 +76,7 @@ internal static class SchemaDictionarySerializer
                 SubrecordEncoder.WriteUInt32(bytes, offset, AsUInt(value));
                 break;
             case SubrecordFieldType.Int32:
+            case SubrecordFieldType.Int32LittleEndian:
                 SubrecordEncoder.WriteInt32(bytes, offset, AsInt(value));
                 break;
             case SubrecordFieldType.Float:

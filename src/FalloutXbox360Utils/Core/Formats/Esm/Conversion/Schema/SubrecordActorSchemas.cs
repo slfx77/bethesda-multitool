@@ -270,6 +270,12 @@ internal static class SubrecordActorSchemas
         // ========================================================================
 
         // BPND - Body Part Node Data (84 bytes)
+        //
+        // Mixed endianness on Xbox 360: Float fields are stored big-endian (need
+        // swap), but UInt16 / Int32 / FormId fields are stored little-endian
+        // (already PC-format, no swap). Empirical confirmation came from semdiff
+        // against PC FalloutNV.esm — Debris/Explosion/SeverableImpact/etc all
+        // diffed as inverted-byte-order reads when treated as BE.
         schemas[new SubrecordSchemaRegistry.SchemaKey("BPND", null, 84)] = new SubrecordSchema(
             F.Float("DamageMult"),
             F.UInt8("Flags"),
@@ -278,18 +284,18 @@ internal static class SubrecordActorSchemas
             F.UInt8("ActorValue"),
             F.UInt8("ToHitChance"),
             F.UInt8("ExplodableExplosionChance"),
-            F.UInt16("DebrisCount"),
-            F.FormId("Debris"),
-            F.FormId("Explosion"),
+            F.UInt16LittleEndian("DebrisCount"),
+            F.FormIdLittleEndian("Debris"),
+            F.FormIdLittleEndian("Explosion"),
             F.Float("TrackingMaxAngle"),
             F.Float("DebrisScale"),
-            F.Int32("SeverableDebrisCount"),
-            F.FormId("SeverableDebris"),
-            F.FormId("SeverableExplosion"),
+            F.Int32LittleEndian("SeverableDebrisCount"),
+            F.FormIdLittleEndian("SeverableDebris"),
+            F.FormIdLittleEndian("SeverableExplosion"),
             F.Float("SeverableDebrisScale"),
             F.PosRot("GoreTransform"),
-            F.FormId("SeverableImpact"),
-            F.FormId("ExplodableImpact"),
+            F.FormIdLittleEndian("SeverableImpact"),
+            F.FormIdLittleEndian("ExplodableImpact"),
             F.UInt8("SeverableDecalCount"),
             F.UInt8("ExplodableDecalCount"),
             F.Padding(2),

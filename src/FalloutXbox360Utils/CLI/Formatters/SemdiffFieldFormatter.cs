@@ -165,7 +165,8 @@ internal static class SemdiffFieldFormatter
         {
             SubrecordFieldType.UInt8 or SubrecordFieldType.Int8 => 1,
             SubrecordFieldType.UInt16 or SubrecordFieldType.Int16 or SubrecordFieldType.UInt16LittleEndian => 2,
-            SubrecordFieldType.UInt32 or SubrecordFieldType.Int32 or SubrecordFieldType.Float
+            SubrecordFieldType.UInt32 or SubrecordFieldType.Int32 or SubrecordFieldType.Int32LittleEndian
+                or SubrecordFieldType.Float
                 or SubrecordFieldType.FormId or SubrecordFieldType.FormIdLittleEndian
                 or SubrecordFieldType.ColorRgba or SubrecordFieldType.ColorArgb => 4,
             SubrecordFieldType.UInt64 or SubrecordFieldType.Int64 or SubrecordFieldType.Double => 8,

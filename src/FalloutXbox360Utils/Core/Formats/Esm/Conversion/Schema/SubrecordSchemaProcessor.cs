@@ -317,6 +317,10 @@ public static class SubrecordSchemaProcessor
             case SubrecordFieldType.UInt16LittleEndian:
                 break;
 
+            // Int32LittleEndian: Already little-endian on Xbox 360, no swap needed
+            case SubrecordFieldType.Int32LittleEndian:
+                break;
+
             // UInt32WordSwapped: Xbox stores as two BE uint16 words in LE order
             // Xbox [A B C D] where AB=high word (BE), CD=low word (BE)
             // Swap each word: [B A D C] to get proper little-endian uint32
