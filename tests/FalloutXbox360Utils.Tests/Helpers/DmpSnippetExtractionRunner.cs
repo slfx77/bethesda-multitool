@@ -27,6 +27,9 @@ public sealed class DmpSnippetExtractionRunner(SampleFileFixture samples)
         {
             (samples.DebugDump, "debug_dump"),
             (samples.ReleaseDump, "release_dump"),
+            (samples.ReleaseDumpXex1, "xex1_dump"),
+            (samples.ReleaseDumpXex2, "xex2_dump"),
+            (samples.ReleaseDumpXex3, "xex3_dump"),
             (samples.ReleaseDumpXex4, "xex4_dump"),
             (samples.ReleaseDumpXex44, "xex44_dump"),
             (SampleFileFixture.FindSamplePath(@"Sample\MemoryDump\Fallout_Release_MemDebug.xex.dmp"), "memdebug_dump")

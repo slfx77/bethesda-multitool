@@ -26,6 +26,15 @@ public class SampleFileFixture
     /// <summary>Release beta memory dump.</summary>
     public string? ReleaseDump { get; } = FindSamplePath(@"Sample\MemoryDump\Fallout_Release_Beta.xex.dmp");
 
+    /// <summary>Earliest snippeted Release Beta variant (xex1, Dec 3 2009).</summary>
+    public string? ReleaseDumpXex1 { get; } = FindSamplePath(@"Sample\MemoryDump\Fallout_Release_Beta.xex1.dmp");
+
+    /// <summary>Early Release Beta variant (xex2, Dec 4 2009).</summary>
+    public string? ReleaseDumpXex2 { get; } = FindSamplePath(@"Sample\MemoryDump\Fallout_Release_Beta.xex2.dmp");
+
+    /// <summary>Early Release Beta variant (xex3, Dec 11 2009).</summary>
+    public string? ReleaseDumpXex3 { get; } = FindSamplePath(@"Sample\MemoryDump\Fallout_Release_Beta.xex3.dmp");
+
     /// <summary>Early release beta memory dump variant.</summary>
     public string? ReleaseDumpXex4 { get; } = FindSamplePath(@"Sample\MemoryDump\Fallout_Release_Beta.xex4.dmp");
 

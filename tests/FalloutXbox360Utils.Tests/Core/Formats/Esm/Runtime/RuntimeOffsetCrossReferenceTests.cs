@@ -40,6 +40,9 @@ public sealed class RuntimeOffsetCrossReferenceTests
     [
         ["debug_dump"],
         ["release_dump"],
+        ["xex1_dump"],
+        ["xex2_dump"],
+        ["xex3_dump"],
         ["xex4_dump"],
         ["xex44_dump"],
         ["memdebug_dump"]
