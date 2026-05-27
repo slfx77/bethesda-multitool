@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
@@ -6,12 +7,14 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Magic;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Magic;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Misc;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Plugin;
@@ -186,6 +189,29 @@ public class NewTopLevelEncoderTests
 
         var encoded = AmmoEncoder.EncodeNew(ammo);
         Assert.Contains(encoded.Warnings, w => w.Contains("DAT2"));
+    }
+
+    [Fact]
+    public void DebrEncoder_EncodeNew_Variants_PreservesDataFields()
+    {
+        var debr = new DebrisRecord
+        {
+            FormId = 0x900,
+            EditorId = "TestDebris",
+            Variants =
+            [
+                new DebrisVariantData(42, @"meshes\clutter\test.nif", 0x05)
+            ]
+        };
+
+        var encoded = DebrEncoder.EncodeNew(debr);
+
+        var data = Assert.Single(encoded.Subrecords, s => s.Signature == "DATA");
+        var pathBytes = Encoding.Latin1.GetBytes(@"meshes\clutter\test.nif");
+        Assert.Equal(42, data.Bytes[0]);
+        Assert.Equal(pathBytes, data.Bytes[1..(1 + pathBytes.Length)]);
+        Assert.Equal(0, data.Bytes[1 + pathBytes.Length]);
+        Assert.Equal(0x05, data.Bytes[^1]);
     }
 
     [Fact]

@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Utils;
@@ -481,6 +482,7 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context) : Reco
 
         string? editorId = null;
         var variantCount = 0;
+        var variants = new List<DebrisVariantData>();
         var modelPaths = new List<string>();
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
@@ -498,6 +500,15 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context) : Reco
                     break;
                 case "DATA":
                     variantCount++;
+                    if (TryParseDebrisVariantData(data.AsSpan(sub.DataOffset, sub.DataLength)) is { } variant)
+                    {
+                        variants.Add(variant);
+                        if (!string.IsNullOrEmpty(variant.ModelPath))
+                        {
+                            modelPaths.Add(variant.ModelPath);
+                        }
+                    }
+
                     break;
                 case "MODL":
                 {
@@ -518,10 +529,35 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context) : Reco
             FormId = record.FormId,
             EditorId = editorId ?? Context.GetEditorId(record.FormId),
             VariantCount = variantCount,
+            Variants = variants,
             ModelPaths = modelPaths,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
+    }
+
+    private static DebrisVariantData? TryParseDebrisVariantData(ReadOnlySpan<byte> data)
+    {
+        if (data.Length < 2)
+        {
+            return null;
+        }
+
+        var terminatorOffset = data[1..].IndexOf((byte)0);
+        if (terminatorOffset < 0)
+        {
+            return null;
+        }
+
+        var pathLength = terminatorOffset;
+        var flagOffset = 1 + pathLength + 1;
+        if (flagOffset >= data.Length)
+        {
+            return null;
+        }
+
+        var modelPath = Encoding.Latin1.GetString(data.Slice(1, pathLength));
+        return new DebrisVariantData(data[0], modelPath, data[flagOffset]);
     }
 
     #endregion
