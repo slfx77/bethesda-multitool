@@ -78,6 +78,8 @@ public sealed class RefrEncoder : IRecordEncoder
             subs.Add(EncodeFormIdSubrecord("NAME", placed.BaseFormId));
         }
 
+        AppendStructuralSubrecords(subs, placed);
+
         // Map-marker subrecords (override path): omit FNAM so master's visibility flags
         // survive Pass 1 of RecordMergeEngine unchanged. XMRK signals "this is a map marker"
         // so the engine keeps the master record classified correctly; FULL/TNAM are emitted
@@ -220,6 +222,7 @@ public sealed class RefrEncoder : IRecordEncoder
         // docs/PDB_Runtime_Structures.md:715) so brand-new markers actually appear on the
         // Pip-Boy map.
         AppendMapMarkerSubrecords(subs, placed, isNewRecord: true);
+        AppendStructuralSubrecords(subs, placed);
 
         if (Math.Abs(placed.Scale - 1.0f) > float.Epsilon)
         {
@@ -234,6 +237,19 @@ public sealed class RefrEncoder : IRecordEncoder
             Subrecords = subs,
             Warnings = warnings
         };
+    }
+
+    private static void AppendStructuralSubrecords(List<EncodedSubrecord> subs, PlacedReference placed)
+    {
+        if (placed.StructuralData is not { HasAny: true })
+        {
+            return;
+        }
+
+        foreach (var subrecord in placed.StructuralData.Subrecords)
+        {
+            subs.Add(NewRecordSubrecords.EncodeByteArraySubrecord(subrecord.Signature, subrecord.Data));
+        }
     }
 
     private static bool HasAnyLockState(PlacedReference placed)
