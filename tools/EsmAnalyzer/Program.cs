@@ -48,6 +48,7 @@ internal sealed class Program
         rootCommand.Subcommands.Add(MapStatsCommands.CreateMapStatsCommand());
         rootCommand.Subcommands.Add(VoiceHeuristicsCommands.CreateVoiceHeuristicsCommand());
         rootCommand.Subcommands.Add(TranscriptDiagCommands.CreateTranscriptDiagCommand());
+        rootCommand.Subcommands.Add(DialogueQcCommand.CreateDialogueQcCommand());
         rootCommand.Subcommands.Add(GenFaceGenCommands.CreateGenFaceGenCommand());
 
         // ===== Backward compatibility aliases =====
@@ -97,6 +98,9 @@ internal sealed class Program
         cellCommand.Subcommands.Add(CellCommands.CreateCellChildrenCommand());   // raw GRUP-level inspection
         rootCommand.Subcommands.Add(cellCommand);
 
+        rootCommand.Subcommands.Add(EsmRefrDetailCommand.CreateRefrDetailCommand()); // "refr-detail" at root
+        rootCommand.Subcommands.Add(DanglingBaseSearchCommand.CreateDanglingBaseSearchCommand()); // "dangling-base-search" at root
+
         // ===== wrld subcommands (WRLD OFST streaming data) =====
         var wrldCommand = new Command("wrld", "Analyze WRLD worldspace data (OFST offset tables, streaming)");
         wrldCommand.Subcommands.Add(OfstCommands.CreateOfstCommand());
@@ -118,6 +122,10 @@ internal sealed class Program
         dmpCommand.Subcommands.Add(DmpScriptCommands.CreateScriptsCommand());     // "dmp scripts ..."
         dmpCommand.Subcommands.Add(DmpMapRenderCommands.CreateRenderMapCommand()); // "dmp render-map"
         dmpCommand.Subcommands.Add(DmpModuleExtractCommands.CreateExtractModuleCommand()); // "dmp extract-module"
+        dmpCommand.Subcommands.Add(DmpCellScanCommand.CreateScanCellCommand()); // "dmp scan-cell"
+        dmpCommand.Subcommands.Add(DmpRefrSweepCommand.CreateSweepRefrsCommand()); // "dmp sweep-refrs"
+        dmpCommand.Subcommands.Add(DmpAttributeDanglingCommand.CreateAttributeDanglingCommand()); // "dmp attribute-dangling"
+        dmpCommand.Subcommands.Add(DmpFindRefsByParentCellCommand.CreateFindRefsByParentCellCommand()); // "dmp find-refs-by-parent-cell"
         rootCommand.Subcommands.Add(dmpCommand);
 
         // Default action: show help
@@ -145,6 +153,7 @@ internal sealed class Program
             _ = table.AddRow("[cyan]map-stats[/]", "Per-worldspace placed object category counts (for color scheme tuning)");
             _ = table.AddRow("[cyan]voice-heuristics[/]", "Cross-reference BSA voice files against ESM records");
             _ = table.AddRow("[cyan]transcript-diag[/]", "Diagnose .fnvtranscript.json key counts vs BSA voice files");
+            _ = table.AddRow("[cyan]dialogue-qc[/]", "Clean transcriber CSV: double-space + proper-noun fixes vs ESM vocab");
             _ = table.AddRow("", "");
             _ = table.AddRow("[bold yellow]compare[/]", "[bold]Compare ESM files[/]");
             _ = table.AddRow("  [cyan]compare land[/]", "Compare LAND records between Xbox 360 and PC");
