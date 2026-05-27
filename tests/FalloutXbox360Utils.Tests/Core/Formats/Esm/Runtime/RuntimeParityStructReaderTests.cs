@@ -364,6 +364,53 @@ public sealed class RuntimeParityStructReaderTests : RuntimeStructReaderTestBase
     }
 
     [Fact]
+    public void ReadRuntimeQuest_WithStageItemConditions_PopulatesPerStageCtdas()
+    {
+        // Phase 4.2e: the runtime stage walker now decodes per-stage CTDAs from the
+        // embedded TESCondition at TESQuestStageItem+4 (8-byte BSSimpleList head
+        // pointing at 28-byte TESConditionItem entries).
+        var data = new byte[DataSize];
+        const uint questFormId = 0x00002600;
+        const int structOffset = 0;
+        const int stageOffset = 1024;
+        const int stageItemOffset = 1280;
+        const int conditionItemOffset = 1536;
+
+        WriteTesFormHeader(data, structOffset, 0x82010000, 0x47, questFormId);
+        WriteUInt32BE(data, structOffset + 84, FileOffsetToVa(stageOffset));
+
+        WriteQuestStage(data, stageOffset, 30, FileOffsetToVa(stageItemOffset));
+        WriteQuestStageItem(data, stageItemOffset, 0x02, FileOffsetToVa(structOffset), false);
+        // BSSimpleList head at TESQuestStageItem+4: m_item points at our condition,
+        // m_pkNext is null (end of list).
+        WriteUInt32BE(data, stageItemOffset + 4, FileOffsetToVa(conditionItemOffset));
+        WriteUInt32BE(data, stageItemOffset + 8, 0);
+
+        // TESConditionItem (28 bytes per CONDITION_ITEM_DATA layout in TesConditionListWalker):
+        //   +0  iFlags (Type byte) = 0x00 (operator ==, no OR, no swap, no UseGlobal)
+        //   +4  fValue (float)     = 1.0f
+        //   +8  iFunction (u16)    = 0x0014 (GetInFaction)
+        //   +12 pParam[0] (u32)    = 0x000ED239u (non-form param: faction FormID-shaped value)
+        //   +20 eObject (u32)      = 0 (Subject)
+        WriteUInt32BE(data, conditionItemOffset + 4, BitConverter.SingleToUInt32Bits(1.0f));
+        data[conditionItemOffset + 8] = 0x00;
+        data[conditionItemOffset + 9] = 0x14;
+        WriteUInt32BE(data, conditionItemOffset + 12, 0x000ED239u);
+
+        var reader = CreateReader(data);
+        var result =
+            reader.ReadRuntimeQuest(MakeEntry("QuestStageItemConditions", questFormId, 0x47, structOffset));
+
+        Assert.NotNull(result);
+        var stage = Assert.Single(result.Stages);
+        Assert.Equal(30, stage.Index);
+        Assert.Equal((byte)0x02, stage.Flags);
+        var condition = Assert.Single(stage.Conditions);
+        Assert.Equal((ushort)0x0014, condition.FunctionIndex);
+        Assert.Equal(1.0f, condition.ComparisonValue);
+    }
+
+    [Fact]
     public void ReadRuntimeQuest_WithMissingStageItems_LeavesStageFlagsUnset()
     {
         var data = new byte[DataSize];

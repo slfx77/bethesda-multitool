@@ -41,12 +41,14 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
     /// <summary>
     ///     Read extended quest data from a runtime TESQuest struct.
     ///     Returns a QuestRecord with flags, delay, script, stages, and objectives, or null if validation fails.
-    ///     Runtime stage traversal is conservative: it projects stage index and flags when a valid
-    ///     TESQuestStageItem is available, but does not guess stage log text. PDB evidence only shows
-    ///     TESQuestStageItem.GetLogEntry(TESForm*) plus m_fileOffset/m_bHasLogEntry; there is no proven
-    ///     inline runtime text field to project directly from dump memory. Save/load decompilation also
-    ///     indicates quest stage persistence keeps indices, flags, and note/reference metadata rather
-    ///     than serializing the display text itself.
+    ///     Runtime stage traversal projects stage index, flags, and per-stage CTDA conditions
+    ///     (walking the embedded TESCondition at <c>TESQuestStageItem+4</c> via
+    ///     <see cref="TesConditionListWalker" />). It does not guess stage log text — PDB
+    ///     evidence only shows TESQuestStageItem.GetLogEntry(TESForm*) plus m_fileOffset /
+    ///     m_bHasLogEntry; there is no proven inline runtime text field to project directly
+    ///     from dump memory. Save/load decompilation also indicates quest stage persistence
+    ///     keeps indices, flags, and note/reference metadata rather than serializing the
+    ///     display text itself.
     /// </summary>
     internal QuestRecord? ReadRuntimeQuest(RuntimeEditorIdEntry entry)
     {
@@ -448,21 +450,24 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
         }
 
         var index = buf[QuestStageIndexOffset];
-        var flags = WalkQuestStageItemList(fileOffset.Value, questFormId);
+        var stageItem = WalkQuestStageItemList(fileOffset.Value, questFormId);
 
         return new QuestStage
         {
             Index = index,
-            Flags = flags ?? 0
+            Flags = stageItem?.Flags ?? 0,
+            Conditions = stageItem?.Conditions ?? []
         };
     }
 
     /// <summary>
     ///     Walk the BSSimpleList of TESQuestStageItem pointers on TESQuestStage and return the
-    ///     first valid stage-item flags byte. Validation is conservative: if the owner quest is
-    ///     readable and does not match, the stage item is rejected.
+    ///     first valid stage-item's flags + conditions. Validation is conservative: if the
+    ///     owner quest is readable and does not match, the stage item is rejected.
+    ///     Conditions come from the embedded TESCondition (BSSimpleList) at <c>TESQuestStageItem+4</c>
+    ///     per <c>docs/PDB_Runtime_Structures.md</c>'s TESQuestStageItem layout.
     /// </summary>
-    private byte? WalkQuestStageItemList(long stageOffset, uint questFormId)
+    private QuestStageItemReadResult? WalkQuestStageItemList(long stageOffset, uint questFormId)
     {
         var listBuf = _context.ReadBytes(stageOffset + QuestStageItemListOffset, 8);
         if (listBuf == null)
@@ -470,10 +475,10 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var firstFlags = ReadQuestStageItemFlags(BinaryUtils.ReadUInt32BE(listBuf), questFormId);
-        if (firstFlags.HasValue)
+        var first = ReadQuestStageItem(BinaryUtils.ReadUInt32BE(listBuf), questFormId);
+        if (first.HasValue)
         {
-            return firstFlags.Value;
+            return first.Value;
         }
 
         var nextVA = BinaryUtils.ReadUInt32BE(listBuf, 4);
@@ -493,10 +498,10 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
                 break;
             }
 
-            var flags = ReadQuestStageItemFlags(BinaryUtils.ReadUInt32BE(nodeBuf), questFormId);
-            if (flags.HasValue)
+            var item = ReadQuestStageItem(BinaryUtils.ReadUInt32BE(nodeBuf), questFormId);
+            if (item.HasValue)
             {
-                return flags.Value;
+                return item.Value;
             }
 
             nextVA = BinaryUtils.ReadUInt32BE(nodeBuf, 4);
@@ -505,7 +510,7 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
         return null;
     }
 
-    private byte? ReadQuestStageItemFlags(uint stageItemVa, uint questFormId)
+    private QuestStageItemReadResult? ReadQuestStageItem(uint stageItemVa, uint questFormId)
     {
         if (stageItemVa == 0)
         {
@@ -531,8 +536,15 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
             return null;
         }
 
-        return buf[QuestStageItemFlagsOffset];
+        // objConditions (TESCondition, embedded 8-byte BSSimpleList head) sits at offset +4
+        // inside TESQuestStageItem per docs/PDB_Runtime_Structures.md. Walk it through the
+        // shared TesConditionListWalker so we get the same CTDA disassembly as IDLE/INFO/PERK.
+        var conditions = TesConditionListWalker.Walk(_context, buf, QuestStageItemConditionsOffset);
+
+        return new QuestStageItemReadResult(buf[QuestStageItemFlagsOffset], conditions);
     }
+
+    private readonly record struct QuestStageItemReadResult(byte Flags, List<DialogueCondition> Conditions);
 
     /// <summary>
     ///     Walk the BSSimpleList of BGSQuestObjective pointers on TESQuest.
@@ -663,6 +675,9 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
 
     private const int QuestStageItemStructSize = 132;
     private const int QuestStageItemFlagsOffset = 0;
+    // objConditions (TESCondition, 8-byte embedded BSSimpleList head) — see
+    // docs/PDB_Runtime_Structures.md "TESQuestStageItem" table.
+    private const int QuestStageItemConditionsOffset = 4;
     private const int QuestStageItemOwnerQuestPtrOffset = 124;
 
     private const int QuestObjectiveStructSize = 36;
