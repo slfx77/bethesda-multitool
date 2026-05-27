@@ -2603,25 +2603,104 @@ public sealed class RuntimeOffsetCrossReferenceTests
     }
 
     // =========================================================================
-    // LAND audit — DEFERRED. RuntimeWorldReader operates on LAND records, but
-    // LAND has no EditorID, so the EditorID hash table (snippet.RuntimeEditorIds)
-    // doesn't reliably carry LAND entries. The pAllForms hash table does, but
-    // DmpSnippetManifest only exposes RuntimeEditorIds + RuntimeRefrFormEntries
-    // (LAND is captured separately as RuntimeLandFormEntries in the live
-    // EsmRecordScanResult but not serialized into snippet manifests yet).
+    // LAND (TESObjectLAND) — RuntimeWorldReader anchor coverage (Phase 6.2)
+    // =========================================================================
+    // RuntimeWorldReader.ReadRuntimeLandData consumes LAND records via PDB
+    // layout 0x44 (TESObjectLAND), with per-build shift = GetPdbShift - 16.
+    // PDB-declared field offsets:
+    //   pParentCell  @ PDB +48 — TESObjectCELL* (FormType 0x39)
+    //   pLoadedData  @ PDB +56 — LoadedLandData* (heap pointer)
     //
-    // Side finding from the first LAND audit attempt: in `release_dump`, the
-    // EditorID hash table contains 16 entries with FormType 0x42 whose editor
-    // IDs are WORLDSPACE names (Wasteland, FreesideWorld, FFEncounterWorld,
-    // WastelandNV). That's empirical confirmation of the well-known FormType
-    // drift — in some early builds, 0x42 contains WRLD records (which RTTI
-    // mapping says is LAND, but the runtime built-in enum had inserted a type
-    // and shifted everything). `RuntimeBuildOffsets.DetectFormTypeDrift` is
-    // responsible for remapping. The snippet stores pre-drift-detection
-    // FormType bytes, so naively filtering on FormType==0x42 grabs WRLDs.
-    //
-    // To audit RuntimeWorldReader properly, the snippet manifest needs to
-    // surface RuntimeLandFormEntries. Tracked as a follow-up.
+    // LAND records have no EditorID; entries come from RuntimeLandFormEntries
+    // (pAllForms hash table) not from the EditorID hash table. The snippet
+    // manifest now surfaces this field (regenerated 2026-05-27 to unblock
+    // Phase 6.2).
+
+    private static IReadOnlyList<RuntimeEditorIdEntry> GetValidatedLandSample(
+        DmpSnippetReader snippet, RuntimeMemoryContext context, int sampleSize)
+    {
+        var candidates = snippet.RuntimeLandFormEntries
+            .Where(e => e.TesFormOffset.HasValue)
+            .Take(sampleSize * 4)
+            .ToList();
+
+        var validated = new List<RuntimeEditorIdEntry>(sampleSize);
+        foreach (var entry in candidates)
+        {
+            var buf = context.ReadBytes(entry.TesFormOffset!.Value + FormIdOffset, 4);
+            if (buf == null) continue;
+            if (BinaryUtils.ReadUInt32BE(buf, 0) == entry.FormId)
+            {
+                validated.Add(entry);
+                if (validated.Count >= sampleSize) break;
+            }
+        }
+
+        return validated;
+    }
+
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task LAND_pParentCell_offset_lands_on_heap_pointer_or_null(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var lands = GetValidatedLandSample(snippet, context, 200);
+
+        if (lands.Count < 10)
+        {
+            TestContext.Current.TestOutputHelper!.WriteLine(
+                $"[{snippetName}] Only {lands.Count} validated LANDs — under-exercised.");
+            return;
+        }
+
+        // Production reader builds the offset as PDB(+48) + (GetPdbShift - 16).
+        var s = RuntimeBuildOffsets.GetPdbShift(MinidumpAnalyzer.DetectBuildType(snippet.MinidumpInfo));
+        const int pdbParentCellOffset = 48;
+        var parentCellOffset = pdbParentCellOffset + (s - 16);
+
+        var (checkedCount, pointerShaped, nonPointer) = ScanPointerShape(lands, context, parentCellOffset);
+        var rate = (double)pointerShaped / checkedCount;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] LAND pParentCell pointer-shape: {pointerShaped}/{checkedCount} ({rate:P0}) "
+            + $"at offset {parentCellOffset} (= 48 + (_s({s}) - 16)).");
+
+        Assert.True(rate >= 0.9,
+            $"[{snippetName}] LAND pParentCell pointer-shape {rate:P0} below threshold "
+            + $"(offset {parentCellOffset}). First 10 non-pointer values:\n  "
+            + string.Join("\n  ", nonPointer));
+    }
+
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task LAND_pLoadedData_offset_lands_on_heap_pointer_or_null(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var lands = GetValidatedLandSample(snippet, context, 200);
+
+        if (lands.Count < 10)
+        {
+            TestContext.Current.TestOutputHelper!.WriteLine(
+                $"[{snippetName}] Only {lands.Count} validated LANDs — under-exercised.");
+            return;
+        }
+
+        var s = RuntimeBuildOffsets.GetPdbShift(MinidumpAnalyzer.DetectBuildType(snippet.MinidumpInfo));
+        const int pdbLoadedDataOffset = 56;
+        var loadedDataOffset = pdbLoadedDataOffset + (s - 16);
+
+        var (checkedCount, pointerShaped, nonPointer) = ScanPointerShape(lands, context, loadedDataOffset);
+        var rate = (double)pointerShaped / checkedCount;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] LAND pLoadedData pointer-shape: {pointerShaped}/{checkedCount} ({rate:P0}) "
+            + $"at offset {loadedDataOffset} (= 56 + (_s({s}) - 16)).");
+
+        Assert.True(rate >= 0.9,
+            $"[{snippetName}] LAND pLoadedData pointer-shape {rate:P0} below threshold "
+            + $"(offset {loadedDataOffset}). First 10 non-pointer values:\n  "
+            + string.Join("\n  ", nonPointer));
+    }
 
     /// <summary>
     ///     Xbox 360 heap pointers cluster in 0x40000000-0x7FFFFFFF. The XEX
