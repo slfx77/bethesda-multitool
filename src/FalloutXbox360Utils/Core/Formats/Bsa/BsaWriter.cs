@@ -43,14 +43,17 @@ public sealed class BsaWriter : IDisposable
     /// <param name="compressionLevel">Zlib compression level (default: Optimal for closest match with Bethesda tools).</param>
     public BsaWriter(bool compressFiles = true, BsaFileFlags fileFlags = BsaFileFlags.None,
         bool embedFileNames = false,
-        CompressionLevel compressionLevel = CompressionLevel.Optimal)
+        CompressionLevel compressionLevel = CompressionLevel.Optimal,
+        BsaArchiveFlags additionalArchiveFlags = BsaArchiveFlags.None)
     {
         _compressFiles = compressFiles;
         _fileFlags = fileFlags;
         _embedFileNames = embedFileNames;
         _compressionLevel = compressionLevel;
 
-        _archiveFlags = BsaArchiveFlags.IncludeDirectoryNames | BsaArchiveFlags.IncludeFileNames;
+        _archiveFlags = BsaArchiveFlags.IncludeDirectoryNames
+                        | BsaArchiveFlags.IncludeFileNames
+                        | additionalArchiveFlags;
         if (compressFiles)
         {
             _archiveFlags |= BsaArchiveFlags.CompressedArchive;
@@ -75,8 +78,11 @@ public sealed class BsaWriter : IDisposable
     ///     Creates a BSA writer with auto-detected flags based on file content.
     ///     Follows BSArchPro conventions for FO3/FNV archives:
     ///     - FileFlags auto-detected from folder paths and extensions
-    ///     - EmbedFileNames enabled for texture-only archives
-    ///     - Fonts/XML/TXT file flags stripped (Oblivion-only)
+    ///     - Texture-only archives are compressed and use embedded filenames
+    ///     - Mixed archives containing textures follow vanilla DLC Main BSAs:
+    ///       uncompressed, no embedded filenames, RetainStringsDuringStartup
+    ///     - Audio-only archives are uncompressed like vanilla Sound/Voices BSAs
+    ///     - Fonts file flags stripped (Oblivion-only)
     /// </summary>
     /// <param name="files">List of relative file paths to be added.</param>
     /// <param name="compressFiles">Whether to compress file data with zlib.</param>
@@ -101,9 +107,14 @@ public sealed class BsaWriter : IDisposable
             {
                 fileFlags |= BsaFileFlags.Textures;
             }
+            else if (dir.StartsWith("sound\\voice\\", StringComparison.Ordinal)
+                     || dir == "sound\\voice")
+            {
+                fileFlags |= BsaFileFlags.Voices;
+            }
             else if (dir.StartsWith("sound\\", StringComparison.Ordinal) || dir == "sound")
             {
-                fileFlags |= BsaFileFlags.Sounds | BsaFileFlags.Voices;
+                fileFlags |= BsaFileFlags.Sounds;
             }
             else
             {
@@ -127,10 +138,42 @@ public sealed class BsaWriter : IDisposable
         // Reference: BSArchPro line 1519-1521
         fileFlags &= ~BsaFileFlags.Fonts;
 
-        // Texture-only archives get EmbedFileNames (BSArchPro line 1508-1509)
-        var embedNames = fileFlags == BsaFileFlags.Textures;
+        var containsTextures = (fileFlags & BsaFileFlags.Textures) != 0;
+        var containsNonTextures = (fileFlags & ~BsaFileFlags.Textures) != 0;
+        var containsMeshesOrTrees = (fileFlags & (BsaFileFlags.Meshes | BsaFileFlags.Trees)) != 0;
+        var containsAudio = (fileFlags & (BsaFileFlags.Sounds | BsaFileFlags.Voices)) != 0;
 
-        return new BsaWriter(compressFiles, fileFlags, embedNames, compressionLevel);
+        var archiveCompressFiles = compressFiles;
+        var embedNames = false;
+        var additionalFlags = BsaArchiveFlags.None;
+
+        if (containsTextures && containsNonTextures)
+        {
+            // Vanilla FNV DLC Main archives contain DDS + NIF + voice content and are
+            // stored as 0x083: no zlib archive flag, no embedded file names, and the
+            // startup-retain bit set. Using the texture-only 0x107 shape for a mixed
+            // plugin BSA lets loose files work while BSA texture lookup fails in-game.
+            archiveCompressFiles = false;
+            additionalFlags |= BsaArchiveFlags.RetainStringsDuringStartup;
+        }
+        else if (containsTextures)
+        {
+            embedNames = archiveCompressFiles;
+        }
+        else if (containsMeshesOrTrees)
+        {
+            additionalFlags |= BsaArchiveFlags.RetainStringsDuringStartup;
+        }
+        else if (containsAudio)
+        {
+            archiveCompressFiles = false;
+            if ((fileFlags & BsaFileFlags.Sounds) != 0)
+            {
+                additionalFlags |= BsaArchiveFlags.RetainFileNames;
+            }
+        }
+
+        return new BsaWriter(archiveCompressFiles, fileFlags, embedNames, compressionLevel, additionalFlags);
     }
 
     /// <summary>
@@ -246,10 +289,20 @@ public sealed class BsaWriter : IDisposable
 
             foreach (var file in folder.Files)
             {
-                var fileData = PrepareFileData(file.Data, file.FullPath);
+                var compressed = ShouldCompressFile(file.FullPath);
+                var fileData = PrepareFileData(file.Data, file.FullPath, compressed);
                 var size = (uint)fileData.Length;
 
-                // Uses archive-level compression setting; per-file toggle not supported
+                // BSA size field bit 30 (0x40000000) inverts the archive default compression
+                // for this individual file. When the per-file choice disagrees with the
+                // archive flag, set the bit so the engine reads this file with the opposite
+                // compression policy. Voice files (.ogg/.wav/.lip/.mp3) in a compressed
+                // archive use this path; without bit 30 the engine tries to zlib-decompress
+                // an already-OGG-Vorbis stream and silently fails the lookup.
+                if (compressed != _compressFiles)
+                {
+                    size |= 0x40000000u;
+                }
 
                 fileRecords.Add(new FileRecordData
                 {
@@ -272,8 +325,14 @@ public sealed class BsaWriter : IDisposable
             });
         }
 
-        // Write folder records (first pass to set offsets)
-        var currentFileRecordOffset = fileRecordsOffset;
+        // Write folder records (first pass to set offsets).
+        // Bethesda BSA v104 quirk: the per-folder file-record offset is stored with
+        // totalFileNameLength ADDED to it. The runtime engine subtracts that back when
+        // looking up files, so storing the raw offset (delta 0) leaves the engine reading
+        // garbage memory in place of the file record block and silently failing every
+        // lookup — which surfaced as Ulysses's BSA-packed outfit textures rendering with
+        // stale GPU memory even after the EmbedFileNames flag was set correctly.
+        var currentFileRecordOffset = fileRecordsOffset + totalFileNameLength;
         foreach (var folder in folderRecords)
         {
             writer.Write(folder.Hash);
@@ -321,7 +380,7 @@ public sealed class BsaWriter : IDisposable
         }
     }
 
-    private byte[] PrepareFileData(byte[] data, string fullPath)
+    private byte[] PrepareFileData(byte[] data, string fullPath, bool compressed)
     {
         using var output = new MemoryStream();
         using var bw = new BinaryWriter(output);
@@ -335,7 +394,7 @@ public sealed class BsaWriter : IDisposable
             bw.Write(pathBytes);
         }
 
-        if (_compressFiles)
+        if (compressed)
         {
             // Write original size first (for decompression)
             bw.Write((uint)data.Length);
@@ -352,6 +411,37 @@ public sealed class BsaWriter : IDisposable
         }
 
         return output.ToArray();
+    }
+
+    /// <summary>
+    ///     Decide whether an individual file should be stored compressed. Voice files
+    ///     (.ogg / .wav / .lip / .mp3 under <c>sound\voice\</c>) are stored uncompressed to
+    ///     match vanilla FNV's Voices BSA: the FNV runtime reads voice OGG bytes directly
+    ///     into the audio decoder, and a zlib wrapper hides the file from the audio path
+    ///     (the engine silently skips playback). When the archive default disagrees with
+    ///     this per-file choice, bit 30 (0x40000000) of the file's size field is set to
+    ///     invert the archive default for that file.
+    /// </summary>
+    private bool ShouldCompressFile(string fullPath)
+    {
+        if (!_compressFiles)
+        {
+            return false;
+        }
+
+        var lower = fullPath.ToLowerInvariant();
+        if (lower.StartsWith("sound\\voice\\", StringComparison.Ordinal)
+            || lower.StartsWith("sound/voice/", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var ext = Path.GetExtension(lower);
+        return ext switch
+        {
+            ".lip" or ".ogg" or ".mp3" or ".fuz" or ".wav" => false,
+            _ => true
+        };
     }
 
     /// <summary>
