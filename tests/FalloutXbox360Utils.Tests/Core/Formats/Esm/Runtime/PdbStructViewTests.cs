@@ -179,6 +179,103 @@ public sealed class PdbStructViewTests
         Assert.Equal(77, view.Int32("iValue", "TESValueForm"));
     }
 
+    // =========================================================================
+    // Per-owner WithShift overload (Phase 5.1) — partitions shifts by PDB owner
+    // label rather than by offset range. Used by readers (e.g. NPC TESNPC
+    // appearance region) where the runtime layout drift is per-class, not
+    // per-band.
+    // =========================================================================
+
+    [Fact]
+    public void WithShift_OwnerShift_AppliesToMatchingOwner()
+    {
+        // IMOD has cModel (TESModel) at PDB +80 and iValue (TESValueForm) at PDB +144.
+        // Register an owner shift of +24 on TESModel and verify only TESModel-owned
+        // fields pick it up. TESValueForm reads stay at the PDB-resolved offset.
+        var buffer = new byte[0x1000];
+        var fileOffset = OffsetFromVa(StructVa);
+        WriteFormHeader(buffer, fileOffset, TestFormType, 0x00012345);
+        WriteInt32BE(buffer, fileOffset + 144, 42);    // PDB iValue
+        WriteInt32BE(buffer, fileOffset + 120, 999);   // shifted "cFlags" (TESModel @ +96 + 24)
+
+        var view = OpenView(buffer, entryFormId: 0x00012345)!
+            .WithShift("TESModel", +24);
+
+        // TESValueForm not registered → reads from raw PDB offset.
+        Assert.Equal(42, view.Int32("iValue", "TESValueForm"));
+        // TESModel registered → reads shifted offset (96 + 24 = 120).
+        Assert.Equal((byte)0, view.Byte("cFlags", "TESModel"));  // byte at +120 is upper byte of 999
+        Assert.Equal(120, view.Offset("cFlags", "TESModel"));
+    }
+
+    [Fact]
+    public void WithShift_DefaultZero_ForUnregisteredOwner()
+    {
+        // No owner shifts registered → all owners read from PDB-resolved offsets.
+        var buffer = new byte[0x1000];
+        var fileOffset = OffsetFromVa(StructVa);
+        WriteFormHeader(buffer, fileOffset, TestFormType, 0x00012345);
+        WriteInt32BE(buffer, fileOffset + 144, 42);
+
+        var view = OpenView(buffer, entryFormId: 0x00012345)!;
+
+        Assert.Equal(42, view.Int32("iValue", "TESValueForm"));
+        Assert.Equal(144, view.Offset("iValue", "TESValueForm"));
+    }
+
+    [Fact]
+    public void WithShift_BandAndOwnerStack_Additive()
+    {
+        // Register BOTH a band shift (+4 in the iValue region) AND an owner shift
+        // (+16 on TESValueForm). The two compose additively: PDB +144 + band(+4)
+        // + owner(+16) = +164.
+        var buffer = new byte[0x1000];
+        var fileOffset = OffsetFromVa(StructVa);
+        WriteFormHeader(buffer, fileOffset, TestFormType, 0x00012345);
+        WriteInt32BE(buffer, fileOffset + 164, 555);
+
+        var view = OpenView(buffer, entryFormId: 0x00012345)!
+            .WithShift(140, 200, +4)
+            .WithShift("TESValueForm", +16);
+
+        Assert.Equal(555, view.Int32("iValue", "TESValueForm"));
+        Assert.Equal(164, view.Offset("iValue", "TESValueForm"));
+    }
+
+    [Fact]
+    public void WithShift_OwnerWithZeroShift_Noop()
+    {
+        // Registering shift=0 on the owner overload is identity — the registry
+        // entry is not stored, behavior matches an unregistered owner.
+        var buffer = new byte[0x1000];
+        var fileOffset = OffsetFromVa(StructVa);
+        WriteFormHeader(buffer, fileOffset, TestFormType, 0x00012345);
+        WriteInt32BE(buffer, fileOffset + 144, 11);
+
+        var view = OpenView(buffer, entryFormId: 0x00012345)!
+            .WithShift("TESValueForm", 0);
+
+        Assert.Equal(11, view.Int32("iValue", "TESValueForm"));
+        Assert.Equal(144, view.Offset("iValue", "TESValueForm"));
+    }
+
+    [Fact]
+    public void WithShift_FluentChaining_ReturnsSameInstance()
+    {
+        // Both WithShift overloads return `this` for fluent chaining. Verify
+        // identity-equality across both overloads + zero-shift no-op paths.
+        var buffer = new byte[0x1000];
+        var fileOffset = OffsetFromVa(StructVa);
+        WriteFormHeader(buffer, fileOffset, TestFormType, 0x00012345);
+
+        var view = OpenView(buffer, entryFormId: 0x00012345)!;
+
+        Assert.Same(view, view.WithShift(0, int.MaxValue, +4));
+        Assert.Same(view, view.WithShift(0, int.MaxValue, 0));       // band identity
+        Assert.Same(view, view.WithShift("TESNPC", +16));
+        Assert.Same(view, view.WithShift("TESNPC", 0));              // owner identity
+    }
+
     private static PdbStructView? OpenView(byte[] buffer, uint entryFormId, byte entryFormType = TestFormType)
     {
         var memoryAccessor = new SparseMemoryAccessor();

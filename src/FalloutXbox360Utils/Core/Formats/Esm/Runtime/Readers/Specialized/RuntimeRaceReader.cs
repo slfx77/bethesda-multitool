@@ -9,7 +9,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 ///     Typed runtime reader for TESRace structs (FormType 0x0C). Reads RACE_DATA
 ///     (skill boosts, height/weight, flags), attributes, FaceGen clamp values,
 ///     voice types, default hair, age races, and BSSimpleList-backed hair/eye/
-///     ability lists via <see cref="PdbStructView" /> + <see cref="PdbStructView.WithShift" />
+///     ability lists via <see cref="PdbStructView" /> + <see cref="PdbStructView.WithShift(int,int,int)" />
 ///     for the per-build G2 offset variation that <see cref="RuntimeRaceProbe" />
 ///     discovers (Debug builds shift G2 by -8; Release builds by +8).
 /// </summary>

@@ -9,7 +9,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 /// <summary>
 ///     Reader for BGSProjectile runtime structs (FormType 0x33 PROJ). Reads
 ///     physics/sound data via <see cref="PdbStructView" /> with a single
-///     <see cref="PdbStructView.WithShift" /> band applied per
+///     <see cref="PdbStructView.WithShift(int,int,int)" /> band applied per
 ///     <see cref="RuntimeEffectProbe" />. The probe found uniform shift
 ///     of +16 across 31/32 sampled DMPs with one +12 outlier (a single
 ///     Release-Beta xex dump where Data lives 4 bytes earlier than the PDB

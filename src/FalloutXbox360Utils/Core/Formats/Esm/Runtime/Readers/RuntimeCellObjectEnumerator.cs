@@ -9,7 +9,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers;
 ///     Reads TESObjectCELL runtime structs from Xbox 360 memory dumps.
 ///     Extracts cell probe snapshots (FormID, flags, water height, worldspace, land,
 ///     references, lighting, extra data) from PDB-derived struct layouts. Per-build
-///     cell-field offset shifts are applied via <see cref="PdbStructView.WithShift" />
+///     cell-field offset shifts are applied via <see cref="PdbStructView.WithShift(int,int,int)" />
 ///     using the <paramref name="cellShift" /> registered at construction time.
 /// </summary>
 internal sealed class RuntimeCellObjectEnumerator

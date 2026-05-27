@@ -78,15 +78,28 @@ internal sealed class RuntimeActorReader
             return null;
         }
 
-        // Open a PdbStructView over the already-read buffer for core-region field
-        // reads (Phase 1B.20). pdb_layouts.json is an embedded resource so this
-        // only returns null if the resource is broken — treat that as a hard fail.
-        // Appearance-region fields are read separately below — see NpcFieldReader's
-        // class doc for the runtime-vs-PDB layout drift explanation.
+        // Open a PdbStructView over the already-read buffer. Core-region reads were
+        // migrated in Phase 1B.20; appearance + late-appearance reads were migrated
+        // in Phase 5.1 with the +32-byte FR2MatrixVTC padding delta absorbed by a
+        // single per-owner WithShift on TESNPC. Late-appearance gets an additive band
+        // shift on top only when the probe discovered a distinct LateAppearanceShift
+        // (rare — defaults to AppearanceShift). pdb_layouts.json is an embedded
+        // resource so view==null means the resource is broken — treat as hard fail.
         var view = WrapActorBufferInView(buffer, offset, entry, pdbFormType: 0x2A);
         if (view is null)
         {
             return null;
+        }
+
+        var appearanceShift = _npcLayoutProbe.Layout.AppearanceShift;
+        var lateAppearanceShift = _npcLayoutProbe.Layout.LateAppearanceShift;
+        view.WithShift("TESNPC", 16 + appearanceShift);
+        if (lateAppearanceShift != appearanceShift)
+        {
+            // Late-region (pOriginalRace onward, PDB +476..+488) needs a delta on top
+            // of the TESNPC owner shift. Both shifts compose additively per the
+            // PdbStructView.WithShift(string,int) contract.
+            view.WithShift(476, int.MaxValue, lateAppearanceShift - appearanceShift);
         }
 
         // Read script pointer before ACBS validation so it's available even for minimal NPCs.
@@ -144,21 +157,25 @@ internal sealed class RuntimeActorReader
         // Read AI data (aggression, confidence, mood, etc. at +164)
         var aiData = NpcFields.ReadNpcAiData(buffer);
 
-        // Read physical traits (hair, eyes, hair length, combat style, hair color, head parts)
-        var hair = _context.FollowPointerToFormId(buffer, NpcFields.NpcHairPtrOffset, 0x0A);
-        var eyes = _context.FollowPointerToFormId(buffer, NpcFields.NpcEyesPtrOffset, 0x0B);
-        var combatStyle = _context.FollowPointerToFormId(buffer, NpcFields.NpcCombatStylePtrOffset, 0x4A);
-        var hairLength = NpcFields.ReadNpcHairLength(buffer);
-        var hairColor = NpcFields.ReadNpcHairColor(buffer);
-        var headPartFormIds = NpcFields.ReadNpcHeadPartFormIds(buffer);
+        // Read physical traits (hair, eyes, hair length, combat style, hair color,
+        // head parts) via view-based PDB lookups. The TESNPC owner shift registered
+        // above absorbs the +32-byte runtime-vs-PDB padding delta uniformly.
+        var hair = view.FormIdPointer("pHair", "TESNPC", 0x0A);
+        var eyes = view.FormIdPointer("pEyeColor", "TESNPC", 0x0B);
+        var combatStyle = view.FormIdPointer("pCombatStyle", "TESNPC", 0x4A);
+        var hairLength = NpcFields.ReadNpcHairLength(view);
+        var hairColor = NpcFields.ReadNpcHairColor(view);
+        var headPartFormIds = NpcFields.ReadNpcHeadPartFormIds(view);
 
-        // Read additional PDB-derived fields
-        var originalRace = _context.FollowPointerToFormId(buffer, NpcFields.NpcOriginalRacePtrOffset, 0x0C);
-        var faceNpc = _context.FollowPointerToFormId(buffer, NpcFields.NpcFaceNpcPtrOffset, 0x2A);
-        var height = NpcFields.ReadNpcHeight(buffer);
-        var weight = NpcFields.ReadNpcWeight(buffer);
-        var bloodImpactMaterial = NpcFields.ReadNpcBloodImpactMaterial(buffer);
-        var raceFacePreset = NpcFields.ReadNpcRaceFacePreset(buffer);
+        // Late-appearance PDB-derived fields. The owner shift + optional band shift
+        // (registered above when LateAppearanceShift != AppearanceShift) take care
+        // of any per-build drift.
+        var originalRace = view.FormIdPointer("pOriginalRace", "TESNPC", 0x0C);
+        var faceNpc = view.FormIdPointer("pFaceNPC", "TESNPC", 0x2A);
+        var height = NpcFields.ReadNpcHeight(view);
+        var weight = NpcFields.ReadNpcWeight(view);
+        var bloodImpactMaterial = NpcFields.ReadNpcBloodImpactMaterial(view);
+        var raceFacePreset = NpcFields.ReadNpcRaceFacePreset(view);
 
         // Read FaceGen morph data (follow pointers to float arrays in module space)
         var fggs = NpcFields.ReadFaceGenMorphArray(buffer, NpcFields.NpcFggsLayout);

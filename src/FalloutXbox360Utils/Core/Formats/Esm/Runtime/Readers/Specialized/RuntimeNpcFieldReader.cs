@@ -11,21 +11,32 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 ///
 ///     <para>
 ///     Phase 1B.20 migrated 12 core-region offsets to PDB-driven lookups (via
-///     <see cref="PdbStructView" />). The appearance-region offsets (Hair / Eyes /
-///     HairColor / HairLength / CombatStyle / HeadPartList / OriginalRace / FaceNpc /
-///     Height / Weight / RaceFacePreset / BloodImpactMaterial) stay as hardcoded
-///     empirical constants — the runtime layout is +32 bytes ahead of the MemDebug
-///     PDB in that region (FR2MatrixVTC padding delta), so PDB field names don't
-///     correspond to the runtime offsets there.
+///     <see cref="PdbStructView" />). Phase 5.1 migrated the appearance-region reads
+///     too — the +32-byte runtime/PDB padding delta (FR2MatrixVTC) is now absorbed
+///     by a single <c>WithShift("TESNPC", 16 + _appearanceShift)</c> registration at
+///     the view-opening site in <see cref="RuntimeActorReader" />. Per-band coverage
+///     for the late-appearance region only fires when the probe discovers
+///     <c>LateAppearanceShift != AppearanceShift</c> (rare).
+///     </para>
+///     <para>
+///     Two clusters stay as hardcoded constants by design:
+///     <list type="bullet">
+///         <item>Probe-only core offsets (NpcAcbsOffset / NpcScriptPtrOffset /
+///         NpcRacePtrOffset / NpcClassPtrOffset / NpcStructSize) — used by
+///         RuntimeNpcLayoutProbe.ScoreSample, which runs BEFORE a stable layout
+///         (and view) exists.</item>
+///         <item>Core scalars (NpcAiDataOffset / NpcMoodOffset / NpcAiFlagsOffset /
+///         NpcAiAssistanceOffset / NpcSpecialOffset / NpcSkillsOffset) — they're
+///         read against a raw buffer span on the hot path; PDB-name lookups would
+///         add allocations.</item>
+///     </list>
 ///     </para>
 /// </summary>
 internal sealed class RuntimeNpcFieldReader
 {
-    private readonly int _appearanceShift;
     private readonly RuntimeMemoryContext _context;
 
     private readonly int _coreShift;
-    private readonly int _lateAppearanceShift;
     private readonly RuntimeNpcLayout _layout;
 
     public RuntimeNpcFieldReader(RuntimeMemoryContext context, RuntimeNpcLayout layout)
@@ -33,8 +44,6 @@ internal sealed class RuntimeNpcFieldReader
         _context = context;
         _layout = layout;
         _coreShift = layout.CoreShift;
-        _appearanceShift = layout.AppearanceShift;
-        _lateAppearanceShift = layout.LateAppearanceShift;
     }
 
     /// <summary>
@@ -316,24 +325,25 @@ internal sealed class RuntimeNpcFieldReader
     }
 
     /// <summary>
-    ///     Read hair length float from dump offset +460.
+    ///     Read hair length float (fHairLength) via the view's PDB-name lookup.
     ///     Returns null if the value is zero (NULL/unset) or invalid.
     ///     Empirically verified: Sunny=0.60, Doc=0.29, Arcade=0.69, Boone=NULL, Raul=NULL.
     /// </summary>
-    public float? ReadNpcHairLength(byte[] buffer)
+    public float? ReadNpcHairLength(PdbStructView view)
     {
-        if (NpcHairLengthOffset + 4 > buffer.Length)
+        var off = view.Offset("fHairLength", "TESNPC");
+        if (off is not { } o || o + 4 > view.Buffer.Length)
         {
             return null;
         }
 
-        var raw = BinaryUtils.ReadUInt32BE(buffer, NpcHairLengthOffset);
+        var raw = BinaryUtils.ReadUInt32BE(view.Buffer, o);
         if (raw == 0)
         {
             return null; // NULL/unset
         }
 
-        var value = BinaryUtils.ReadFloatBE(buffer, NpcHairLengthOffset);
+        var value = BinaryUtils.ReadFloatBE(view.Buffer, o);
         if (!RuntimeMemoryContext.IsNormalFloat(value) || value < 0 || value > 10)
         {
             return null;
@@ -343,32 +353,34 @@ internal sealed class RuntimeNpcFieldReader
     }
 
     /// <summary>
-    ///     Read hair color uint32 (packed 0x00BBGGRR) from NPC struct.
-    ///     Returns null if the value is zero (unset).
+    ///     Read hair color uint32 (iHairColor, packed 0x00BBGGRR) via the view's
+    ///     PDB-name lookup. Returns null if the value is zero (unset).
     /// </summary>
-    public uint? ReadNpcHairColor(byte[] buffer)
+    public uint? ReadNpcHairColor(PdbStructView view)
     {
-        if (NpcHairColorOffset + 4 > buffer.Length)
-            return null;
-
-        var value = BinaryUtils.ReadUInt32BE(buffer, NpcHairColorOffset);
+        var value = view.UInt32("iHairColor", "TESNPC");
         return value == 0 ? null : value;
     }
 
     /// <summary>
-    ///     Read head part FormIDs from BSSimpleList&lt;BGSHeadPart*&gt; at NpcHeadPartListOffset.
-    ///     Same linked list pattern as ReadPackageList: inline head node + heap-allocated chain.
+    ///     Read head part FormIDs from BSSimpleList&lt;BGSHeadPart*&gt; at PDB
+    ///     <c>TESNPC::listHeadParts</c>. Same linked-list pattern as ReadPackageList:
+    ///     inline head node + heap-allocated chain.
     /// </summary>
-    public List<uint> ReadNpcHeadPartFormIds(byte[] buffer)
+    public List<uint> ReadNpcHeadPartFormIds(PdbStructView view)
     {
         var parts = new List<uint>();
-
-        if (NpcHeadPartListOffset + 8 > buffer.Length)
+        var off = view.Offset("listHeadParts", "TESNPC");
+        if (off is not { } headOffset || headOffset + 8 > view.Buffer.Length)
+        {
             return parts;
+        }
+
+        var buffer = view.Buffer;
 
         // Read inline BSSimpleList head: m_item (BGSHeadPart*) + m_pkNext (BSSimpleList*)
-        var itemPtr = BinaryUtils.ReadUInt32BE(buffer, NpcHeadPartListOffset);
-        var nextPtr = BinaryUtils.ReadUInt32BE(buffer, NpcHeadPartListOffset + 4);
+        var itemPtr = BinaryUtils.ReadUInt32BE(buffer, headOffset);
+        var nextPtr = BinaryUtils.ReadUInt32BE(buffer, headOffset + 4);
 
         // Follow first item pointer to BGSHeadPart → read FormID at +12
         if (itemPtr != 0 && _context.IsValidPointer(itemPtr))
@@ -406,23 +418,25 @@ internal sealed class RuntimeNpcFieldReader
     }
 
     /// <summary>
-    ///     Read NPC height multiplier (fHeight, float ~0.9-1.1, default 1.0).
-    ///     Returns null if the value is zero/unset or out of reasonable range.
+    ///     Read NPC height multiplier (fHeight, float ~0.9-1.1, default 1.0) via the
+    ///     view's PDB-name lookup. Returns null if the value is zero/unset or out of
+    ///     reasonable range.
     /// </summary>
-    public float? ReadNpcHeight(byte[] buffer)
+    public float? ReadNpcHeight(PdbStructView view)
     {
-        if (NpcHeightOffset + 4 > buffer.Length)
+        var off = view.Offset("fHeight", "TESNPC");
+        if (off is not { } o || o + 4 > view.Buffer.Length)
         {
             return null;
         }
 
-        var raw = BinaryUtils.ReadUInt32BE(buffer, NpcHeightOffset);
+        var raw = BinaryUtils.ReadUInt32BE(view.Buffer, o);
         if (raw == 0)
         {
             return null;
         }
 
-        var value = BinaryUtils.ReadFloatBE(buffer, NpcHeightOffset);
+        var value = BinaryUtils.ReadFloatBE(view.Buffer, o);
 
         // Match NpcRecordHandler.ReadNpcHeight's broader plausibility range so
         // proto-build NPCs with stretched values aren't filtered out (audit
@@ -436,23 +450,24 @@ internal sealed class RuntimeNpcFieldReader
     }
 
     /// <summary>
-    ///     Read NPC weight (fWeight, float 0-1000, GECK body morph slider).
-    ///     Returns null if the value looks invalid.
+    ///     Read NPC weight (fWeight, float 0-1000, GECK body morph slider) via the
+    ///     view's PDB-name lookup. Returns null if the value looks invalid.
     /// </summary>
-    public float? ReadNpcWeight(byte[] buffer)
+    public float? ReadNpcWeight(PdbStructView view)
     {
-        if (NpcWeightOffset + 4 > buffer.Length)
+        var off = view.Offset("fWeight", "TESNPC");
+        if (off is not { } o || o + 4 > view.Buffer.Length)
         {
             return null;
         }
 
-        var raw = BinaryUtils.ReadUInt32BE(buffer, NpcWeightOffset);
+        var raw = BinaryUtils.ReadUInt32BE(view.Buffer, o);
         if (raw == 0)
         {
             return null;
         }
 
-        var value = BinaryUtils.ReadFloatBE(buffer, NpcWeightOffset);
+        var value = BinaryUtils.ReadFloatBE(view.Buffer, o);
 
         // Match NpcRecordHandler.ReadNpcWeight's broader plausibility range
         // so proto-build NPCs with values above 100 aren't filtered out
@@ -466,31 +481,34 @@ internal sealed class RuntimeNpcFieldReader
     }
 
     /// <summary>
-    ///     Read blood impact material enum (eBloodImpactMaterial, byte).
-    ///     FNV values: 0=Default, 1=Metal, 2=CinderBlock, 3=Stone.
+    ///     Read blood impact material enum (eBloodImpactMaterial, byte) via the view's
+    ///     PDB-name lookup. FNV values: 0=Default, 1=Metal, 2=CinderBlock, 3=Stone.
     /// </summary>
-    public byte? ReadNpcBloodImpactMaterial(byte[] buffer)
+    public byte? ReadNpcBloodImpactMaterial(PdbStructView view)
     {
-        if (NpcBloodImpactMaterialOffset >= buffer.Length)
+        var off = view.Offset("eBloodImpactMaterial", "TESNPC");
+        if (off is not { } o || o >= view.Buffer.Length)
         {
             return null;
         }
 
-        var value = buffer[NpcBloodImpactMaterialOffset];
+        var value = view.Buffer[o];
         return value > 10 ? null : value; // sanity check
     }
 
     /// <summary>
-    ///     Read last race face preset number (sLastRaceFaceNum, uint16).
+    ///     Read last race face preset number (sLastRaceFaceNum, uint16) via the view's
+    ///     PDB-name lookup.
     /// </summary>
-    public ushort? ReadNpcRaceFacePreset(byte[] buffer)
+    public ushort? ReadNpcRaceFacePreset(PdbStructView view)
     {
-        if (NpcRaceFacePresetOffset + 2 > buffer.Length)
+        var off = view.Offset("sLastRaceFaceNum", "TESNPC");
+        if (off is not { } o || o + 2 > view.Buffer.Length)
         {
             return null;
         }
 
-        return BinaryUtils.ReadUInt16BE(buffer, NpcRaceFacePresetOffset);
+        return BinaryUtils.ReadUInt16BE(view.Buffer, o);
     }
 
     /// <summary>
@@ -761,36 +779,44 @@ internal sealed class RuntimeNpcFieldReader
         return new InventoryItem(itemFormId.Value, count);
     }
 
-    #region NPC Struct Layout — appearance-region empirical constants + probe-only core offsets
+    #region NPC Struct Layout — probe-only constants + hot-path core scalars
 
-    // TESNPC: PDB size 492, MemDebug PDB 508. Fields after the RaceFaceOffsetCoord inline
-    // array (PDB 308-404) are +32 bytes higher at runtime vs PDB, likely due to 8-byte alignment
-    // padding in FR2MatrixVTC (24B padded to 32B × 4 = 128B vs PDB's 96B).
+    // TESNPC: PDB size 492, MemDebug PDB 508. Phase 5.1 routes all appearance-region
+    // reads (Hair / Eyes / CombatStyle / HairLength / HairColor / HeadParts /
+    // OriginalRace / FaceNpc / Height / Weight / RaceFacePreset / BloodImpactMaterial)
+    // through view.FormIdPointer / view.Offset against the PDB-named TESNPC fields,
+    // with the +32-byte FR2MatrixVTC padding delta absorbed by a single
+    // WithShift("TESNPC", 16 + _appearanceShift) registration at the view-opening
+    // site in RuntimeActorReader.ReadRuntimeNpc.
     //
-    // Core-region reads (TESActorBaseData / TESScriptableForm / TESRaceForm / TESHealthForm /
-    // TESAIForm / TESContainer / TESSpellList / TESNPC fields up through offset 320) line up
-    // with PDB and are done via view.FormIdPointer / view.Offset / view.UInt32 in
-    // RuntimeActorReader.ReadRuntimeNpc — see Phase 1B.20.
+    // Core-region reads (TESActorBaseData / TESScriptableForm / TESRaceForm /
+    // TESHealthForm / TESAIForm / TESContainer / TESSpellList / TESNPC fields up
+    // through offset 320) were migrated to view-based lookups in Phase 1B.20.
     //
-    // The four properties retained for probe use (NpcAcbsOffset, NpcScriptPtrOffset,
-    // NpcRacePtrOffset, NpcClassPtrOffset) feed RuntimeNpcLayoutProbe's candidate-scoring
-    // pass, which runs BEFORE a stable layout (and view) exist. They're functionally
-    // duplicates of the view-based reads but live here so the probe can compute them from
-    // candidate RuntimeNpcLayouts without needing a view.
-    //
-    // Phase 1B.19 confirmed via pointer-shape that every offset below points at a real heap
-    // pointer (or zero) across all 5 sampled DMP families — they're correct runtime offsets.
-    //
-    // ReadSize is still a probe-derived value (varies between Debug 492 / Release 508).
+    // ReadSize is probe-derived (Debug 492 / Release 508). NpcAcbsOffset /
+    // NpcScriptPtrOffset / NpcRacePtrOffset / NpcClassPtrOffset feed
+    // RuntimeNpcLayoutProbe.ScoreSample, which runs BEFORE a stable view exists;
+    // they're kept here as probe-only duplicates of what the view eventually
+    // resolves the same fields to.
     public int NpcStructSize => _layout.ReadSize;
 
-    // Probe-only core offsets (kept so RuntimeNpcLayoutProbe.ScoreSample can score candidate
-    // layouts before a view exists; production reads in RuntimeActorReader go through the view).
+    // Probe-only core offsets (RuntimeNpcLayoutProbe.ScoreSample needs them without
+    // a view; production reads in RuntimeActorReader go through the view).
     internal int NpcAcbsOffset => 52 + _coreShift;
     internal int NpcScriptPtrOffset => 248 + _coreShift;
     internal int NpcRacePtrOffset => 272 + _coreShift;
     internal int NpcClassPtrOffset => 304 + _coreShift;
 
+    // Probe-only appearance shifts — exposed so RuntimeNpcLayoutProbe.ScoreSample can
+    // configure a candidate-specific PdbStructView.WithShift("TESNPC", ...) when
+    // scoring appearance signals. Production reads in RuntimeActorReader pull the
+    // same values directly from the probe result; the field reader holds them so
+    // the probe doesn't need a second copy of the layout per candidate.
+    internal int AppearanceShift => _layout.AppearanceShift;
+    internal int LateAppearanceShift => _layout.LateAppearanceShift;
+
+    // Hot-path core scalars — kept as raw-buffer reads to avoid view allocations on
+    // the SPECIAL/skills/AIDT byte-scrape paths.
     private const int NpcSpecialSize = 7;
     private const int NpcSkillsSize = 14;
     private int NpcAiDataOffset => 148 + _coreShift;
@@ -799,28 +825,12 @@ internal sealed class RuntimeNpcFieldReader
     private int NpcAiAssistanceOffset => 162 + _coreShift;
     private int NpcSpecialOffset => 188 + _coreShift;
     private int NpcSkillsOffset => 276 + _coreShift;
+
+    // FaceGen field layouts come baked from RuntimeNpcLayout; offsets include the
+    // probe-discovered appearance shift at layout-construction time.
     public RuntimeNpcFaceGenFieldLayout NpcFggsLayout => _layout.Fggs;
     public RuntimeNpcFaceGenFieldLayout NpcFggaLayout => _layout.Fgga;
     public RuntimeNpcFaceGenFieldLayout NpcFgtsLayout => _layout.Fgts;
-    public int NpcHairPtrOffset => 440 + _appearanceShift;
-    private int NpcHairLengthOffset => 444 + _appearanceShift;
-    public int NpcEyesPtrOffset => 448 + _appearanceShift;
-    public int NpcCombatStylePtrOffset => 468 + _appearanceShift;
-    private int NpcHairColorOffset => 472 + _appearanceShift; // iHairColor (uint32, packed 0x00BBGGRR)
-    private int NpcHeadPartListOffset => 476 + _appearanceShift; // listHeadParts (BSSimpleList<BGSHeadPart*>, 8B)
-
-    // Additional TESNPC fields (Proto Debug offset + 32 runtime shift + _s).
-    private int NpcRaceFacePresetOffset => 464 + _appearanceShift; // PDB 432 + 32: sLastRaceFaceNum (uint16)
-    private int NpcBloodImpactMaterialOffset => 484 + _appearanceShift; // PDB 452 + 32: eBloodImpactMaterial (enum)
-    public int NpcOriginalRacePtrOffset => 492 + _lateAppearanceShift; // PDB 460 + 32: pOriginalRace (TESRace*)
-    public int NpcFaceNpcPtrOffset => 496 + _lateAppearanceShift; // PDB 464 + 32: pFaceNPC (TESNPC*)
-
-    // NOTE: Empirically verified — base 500/504 is correct for the Release Beta
-    // xex44 build. The MemDebug PDB shows fHeight at +484 / fWeight at +488, but
-    // that's a different build's layout. Do not "correct" these to PDB values
-    // without a build-conditional shift — see docs/parity/SUMMARY.md.
-    private int NpcHeightOffset => 500 + _lateAppearanceShift; // fHeight (float, ~0.9-1.1)
-    private int NpcWeightOffset => 504 + _lateAppearanceShift; // fWeight (float, 0-1000)
 
     #endregion
 

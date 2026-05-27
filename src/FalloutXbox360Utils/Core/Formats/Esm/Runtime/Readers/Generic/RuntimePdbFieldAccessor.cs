@@ -121,7 +121,7 @@ internal sealed class RuntimePdbFieldAccessor(RuntimeMemoryContext context)
 
     /// <summary>
     ///     Pre-computed-offset overload — used by <see cref="PdbStructView" /> when a
-    ///     <see cref="PdbStructView.WithShift" /> band has adjusted the field offset.
+    ///     <see cref="PdbStructView.WithShift(int,int,int)" /> band has adjusted the field offset.
     /// </summary>
     internal string? ReadBsStringAtOffset(long fileOffset, string name, int? fieldOffset)
     {

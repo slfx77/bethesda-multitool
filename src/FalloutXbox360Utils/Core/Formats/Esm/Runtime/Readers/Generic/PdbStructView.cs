@@ -20,6 +20,7 @@ internal sealed class PdbStructView
     private readonly RuntimePdbFieldAccessor _accessor;
     private readonly RuntimeMemoryContext _context;
     private readonly RuntimeEditorIdEntry? _entry;
+    private Dictionary<string, int>? _ownerShifts;
     private List<(int MinOffset, int MaxOffset, int Shift)>? _shifts;
 
     internal PdbStructView(
@@ -68,30 +69,73 @@ internal sealed class PdbStructView
         return this;
     }
 
+    /// <summary>
+    ///     Register a build-specific offset shift for ALL fields whose PDB owner matches
+    ///     <paramref name="owner" />. Composes with band-based <see cref="WithShift(int,int,int)" />:
+    ///     when both apply to a field, the band shift is applied first (in PDB-offset space,
+    ///     first matching band wins), then the per-owner shift is added on top.
+    ///     <para>
+    ///         Used by readers whose runtime layout drifts uniformly within a PDB owner —
+    ///         e.g. <c>RuntimeNpcFieldReader</c>'s TESNPC appearance region, which is
+    ///         +32 bytes ahead of the MemDebug PDB across every observed FNV build
+    ///         (FR2MatrixVTC padding delta).
+    ///     </para>
+    ///     <para>Registering shift=0 is a no-op (no entry stored). Returns <c>this</c> for
+    ///     fluent chaining.</para>
+    /// </summary>
+    public PdbStructView WithShift(string owner, int shift)
+    {
+        if (shift == 0)
+        {
+            return this; // identity
+        }
+
+        _ownerShifts ??= new Dictionary<string, int>(StringComparer.Ordinal);
+        _ownerShifts[owner] = shift;
+        return this;
+    }
+
     private int? ResolveOffset(string name, string? owner)
     {
         var pdbOffset = RuntimePdbFieldAccessor.FindFieldOffset(Layout, name, owner);
-        if (pdbOffset is not { } off || _shifts is null)
+        if (pdbOffset is not { } off)
         {
-            return pdbOffset;
+            return null;
         }
 
-        foreach (var (min, max, shift) in _shifts)
+        var resolved = off;
+
+        // Band shifts: range matched against the original PDB offset, first match wins.
+        if (_shifts is not null)
         {
-            if (off >= min && off <= max)
+            foreach (var (min, max, shift) in _shifts)
             {
-                return off + shift;
+                if (off >= min && off <= max)
+                {
+                    resolved = off + shift;
+                    break;
+                }
             }
         }
 
-        return off;
+        // Per-owner shifts: additive on top of band shift. Owner is looked up exactly,
+        // so a field declared with the matching owner picks up the shift regardless of
+        // its PDB-declared offset.
+        if (owner is not null && _ownerShifts is not null
+            && _ownerShifts.TryGetValue(owner, out var ownerShift))
+        {
+            resolved += ownerShift;
+        }
+
+        return resolved;
     }
 
     /// <summary>
     ///     Look up a field's flattened offset by (name, owner), with any registered
-    ///     <see cref="WithShift" /> band applied. Returns null if the field isn't in
-    ///     the layout — callers should treat that as "field absent" and fall back to a
-    ///     default, matching the prevailing reader idiom.
+    ///     band and per-owner shifts applied (see
+    ///     <see cref="WithShift(int,int,int)" /> and <see cref="WithShift(string,int)" />).
+    ///     Returns null if the field isn't in the layout — callers should treat that as
+    ///     "field absent" and fall back to a default, matching the prevailing reader idiom.
     /// </summary>
     public int? Offset(string name, string? owner = null) => ResolveOffset(name, owner);
 

@@ -246,59 +246,83 @@ internal static class RuntimeNpcLayoutProbe
             details.Append("FaceGenAll, ");
         }
 
-        if (context.FollowPointerToFormId(buffer, fields.NpcHairPtrOffset, 0x0A) != null)
+        // Appearance + late-appearance region (Phase 5.1): build a per-candidate
+        // PdbStructView, register the candidate's TESNPC owner shift (+16 padding
+        // delta + probed AppearanceShift), and route reads through view.* against
+        // the PDB-named TESNPC fields. Mirrors what RuntimeActorReader does in
+        // production. If the TESNPC PDB layout isn't loaded the appearance signals
+        // simply don't contribute — the candidate is still scored on core signals.
+        var npcLayout = PdbStructLayouts.Get(0x2A);
+        if (npcLayout != null)
         {
-            score += SecondarySignalScore;
-            details.Append("Hair, ");
-        }
+            var view = new PdbStructView(
+                    new RuntimePdbFieldAccessor(context),
+                    context,
+                    npcLayout,
+                    buffer,
+                    sample.Offset,
+                    sample.Entry)
+                .WithShift("TESNPC", 16 + fields.AppearanceShift);
+            if (fields.LateAppearanceShift != fields.AppearanceShift)
+            {
+                view.WithShift(476, int.MaxValue,
+                    fields.LateAppearanceShift - fields.AppearanceShift);
+            }
 
-        if (context.FollowPointerToFormId(buffer, fields.NpcEyesPtrOffset, 0x0B) != null)
-        {
-            score += SecondarySignalScore;
-            details.Append("Eyes, ");
-        }
+            if (view.FormIdPointer("pHair", "TESNPC", 0x0A) != null)
+            {
+                score += SecondarySignalScore;
+                details.Append("Hair, ");
+            }
 
-        if (context.FollowPointerToFormId(buffer, fields.NpcCombatStylePtrOffset, 0x4A) != null)
-        {
-            score += SecondarySignalScore;
-            details.Append("CSTY, ");
-        }
+            if (view.FormIdPointer("pEyeColor", "TESNPC", 0x0B) != null)
+            {
+                score += SecondarySignalScore;
+                details.Append("Eyes, ");
+            }
 
-        if (context.FollowPointerToFormId(buffer, fields.NpcOriginalRacePtrOffset, 0x0C) != null)
-        {
-            score += SecondarySignalScore;
-            details.Append("Race, ");
-        }
+            if (view.FormIdPointer("pCombatStyle", "TESNPC", 0x4A) != null)
+            {
+                score += SecondarySignalScore;
+                details.Append("CSTY, ");
+            }
 
-        if (context.FollowPointerToFormId(buffer, fields.NpcFaceNpcPtrOffset, 0x2A) != null)
-        {
-            score += SecondarySignalScore;
-            details.Append("FaceNPC, ");
-        }
+            if (view.FormIdPointer("pOriginalRace", "TESNPC", 0x0C) != null)
+            {
+                score += SecondarySignalScore;
+                details.Append("Race, ");
+            }
 
-        var headParts = fields.ReadNpcHeadPartFormIds(buffer);
-        if (headParts.Count > 0)
-        {
-            score += SecondarySignalScore;
-            details.Append($"HDPT={headParts.Count}, ");
-        }
+            if (view.FormIdPointer("pFaceNPC", "TESNPC", 0x2A) != null)
+            {
+                score += SecondarySignalScore;
+                details.Append("FaceNPC, ");
+            }
 
-        if (fields.ReadNpcHairLength(buffer) != null)
-        {
-            score += SecondarySignalScore;
-            details.Append("HairLen, ");
-        }
+            var headParts = fields.ReadNpcHeadPartFormIds(view);
+            if (headParts.Count > 0)
+            {
+                score += SecondarySignalScore;
+                details.Append($"HDPT={headParts.Count}, ");
+            }
 
-        if (fields.ReadNpcHeight(buffer) != null)
-        {
-            score += SecondarySignalScore;
-            details.Append("Height, ");
-        }
+            if (fields.ReadNpcHairLength(view) != null)
+            {
+                score += SecondarySignalScore;
+                details.Append("HairLen, ");
+            }
 
-        if (fields.ReadNpcWeight(buffer) != null)
-        {
-            score += SecondarySignalScore;
-            details.Append("Weight, ");
+            if (fields.ReadNpcHeight(view) != null)
+            {
+                score += SecondarySignalScore;
+                details.Append("Height, ");
+            }
+
+            if (fields.ReadNpcWeight(view) != null)
+            {
+                score += SecondarySignalScore;
+                details.Append("Weight, ");
+            }
         }
 
         var detailText = details.Length > 2
