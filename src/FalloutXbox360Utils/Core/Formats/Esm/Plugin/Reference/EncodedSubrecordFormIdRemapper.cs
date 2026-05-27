@@ -124,7 +124,7 @@ internal static class EncodedSubrecordFormIdRemapper
         {
             return signature switch
             {
-                "QSTI" or "TPIC" or "PNAM" or "ANAM" or "NAME" or "TCLT" or "TCLF"
+                "QSTI" or "TPIC" or "PNAM" or "ANAM" or "NAME" or "TCLT" or "TCLF" or "TCFU"
                     => Offset0WhenAtLeast4(subrecord),
                 "TRDT" when subrecord.Bytes.Length >= 20 => [16],
                 _ => []
@@ -150,7 +150,7 @@ internal static class EncodedSubrecordFormIdRemapper
     private static IReadOnlyList<int> Offset0WhenAtLeast4(EncodedSubrecord subrecord)
         => subrecord.Bytes.Length >= 4 ? [0] : [];
 
-    private static IReadOnlyList<int> FourByteArrayOffsets(EncodedSubrecord subrecord)
+    private static int[] FourByteArrayOffsets(EncodedSubrecord subrecord)
     {
         if (subrecord.Bytes.Length < 4 || subrecord.Bytes.Length % 4 != 0)
         {

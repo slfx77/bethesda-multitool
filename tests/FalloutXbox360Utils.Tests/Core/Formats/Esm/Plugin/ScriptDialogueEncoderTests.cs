@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Dialogue;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.AI;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
+using FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.AI;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
@@ -312,6 +313,23 @@ public class ScriptDialogueEncoderTests
     }
 
     [Fact]
+    public void InfoEncoder_EncodeNew_FollowUpInfosEmittedAsTcfu()
+    {
+        var info = new DialogueRecord
+        {
+            FormId = 0x901,
+            FollowUpInfos = { 0x00112233, 0x00445566 }
+        };
+
+        var encoded = InfoEncoder.EncodeNew(info);
+
+        var tcfuRecords = encoded.Subrecords.Where(s => s.Signature == "TCFU").ToList();
+        Assert.Equal(2, tcfuRecords.Count);
+        Assert.Equal(0x00112233u, BinaryPrimitives.ReadUInt32LittleEndian(tcfuRecords[0].Bytes));
+        Assert.Equal(0x00445566u, BinaryPrimitives.ReadUInt32LittleEndian(tcfuRecords[1].Bytes));
+    }
+
+    [Fact]
     public void InfoEncoder_EncodeNew_ResultScript_EmitsSchrAndScda()
     {
         var info = new DialogueRecord
@@ -346,6 +364,43 @@ public class ScriptDialogueEncoderTests
 
         var scro = Assert.Single(encoded.Subrecords, s => s.Signature == "SCRO");
         Assert.Equal(0x1111u, BinaryPrimitives.ReadUInt32LittleEndian(scro.Bytes));
+    }
+
+    [Fact]
+    public void DialogueResultScriptParser_DoesNotMarkLittleEndianScdaBigEndianFromRecordWrapper()
+    {
+        byte[] littleEndianScda =
+        [
+            0x15, 0x00, 0x0B, 0x00,
+            0x66,
+            0x00, 0x00,
+            0x06, 0x00,
+            0x20, 0x6E, 0x01, 0x00, 0x00, 0x00
+        ];
+
+        var data = BuildSubrecordStream(
+            bigEndianSizes: true,
+            ("SCHR", new byte[20]),
+            ("SCDA", littleEndianScda));
+
+        var scripts = DialogueResultScriptParser.ParseResultScriptsFromSubrecords(
+            data,
+            data.Length,
+            isBigEndian: true,
+            editorId: null,
+            formId: 0x01003FED,
+            resolveFormName: _ => null);
+
+        var script = Assert.Single(scripts);
+        Assert.False(script.IsBigEndianBytecode);
+
+        var encoded = InfoEncoder.EncodeNew(new DialogueRecord
+        {
+            FormId = 0x01003FED,
+            ResultScripts = { script }
+        });
+        var scda = Assert.Single(encoded.Subrecords, sub => sub.Signature == "SCDA");
+        Assert.Equal(littleEndianScda, scda.Bytes);
     }
 
     [Fact]
@@ -624,6 +679,57 @@ public class ScriptDialogueEncoderTests
         Assert.Equal(2, pkpt.Bytes.Length);
         Assert.Equal(1, pkpt.Bytes[0]);
         Assert.Equal(0, pkpt.Bytes[1]);
+    }
+
+    private static byte[] BuildSubrecordStream(bool bigEndianSizes, params (string Signature, byte[] Data)[] subrecords)
+    {
+        var bytes = new List<byte>();
+        foreach (var (signature, data) in subrecords)
+        {
+            var signatureBytes = System.Text.Encoding.ASCII.GetBytes(signature);
+            if (bigEndianSizes)
+            {
+                Array.Reverse(signatureBytes);
+            }
+
+            bytes.AddRange(signatureBytes);
+            Span<byte> lengthBytes = stackalloc byte[2];
+            if (bigEndianSizes)
+            {
+                BinaryPrimitives.WriteUInt16BigEndian(lengthBytes, (ushort)data.Length);
+            }
+            else
+            {
+                BinaryPrimitives.WriteUInt16LittleEndian(lengthBytes, (ushort)data.Length);
+            }
+
+            bytes.AddRange(lengthBytes.ToArray());
+            bytes.AddRange(data);
+        }
+
+        return bytes.ToArray();
+    }
+
+    [Fact]
+    public void PackEncoder_EncodeNew_EmitsBehaviorMarkers()
+    {
+        var pack = new PackageRecord
+        {
+            FormId = 0xB00,
+            EditorId = "Pkg",
+            Data = new PackageData { Type = 8 },
+            HasEatMarker = true,
+            HasUseItemMarker = true,
+            HasAmbushMarker = true
+        };
+
+        var encoded = PackEncoder.EncodeNew(pack);
+
+        var markerSubrecords = encoded.Subrecords
+            .Where(s => s.Signature is "PKED" or "PUID" or "PKAM")
+            .ToList();
+        Assert.Equal(["PKED", "PUID", "PKAM"], markerSubrecords.Select(s => s.Signature));
+        Assert.All(markerSubrecords, marker => Assert.Empty(marker.Bytes));
     }
 
     [Fact]

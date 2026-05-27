@@ -149,6 +149,11 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
                         best = best with { AddTopics = other.AddTopics };
                     }
 
+                    if (best.FollowUpInfos.Count == 0 && other.FollowUpInfos.Count > 0)
+                    {
+                        best = best with { FollowUpInfos = other.FollowUpInfos };
+                    }
+
                     if (best.Responses.Count == 0 && other.Responses.Count > 0)
                     {
                         best = best with { Responses = other.Responses };
@@ -262,6 +267,7 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
         var linkToTopics = new List<uint>();
         var linkFromTopics = new List<uint>();
         var addTopics = new List<uint>();
+        var followUpInfos = new List<uint>();
         string? promptText = null;
 
         // CTDA condition-based speaker tracking
@@ -393,6 +399,16 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
                     if (nameFormId != 0)
                     {
                         addTopics.Add(nameFormId);
+                    }
+
+                    break;
+                }
+                case "TCFU" when sub.DataLength == 4:
+                {
+                    var followUpFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    if (followUpFormId != 0)
+                    {
+                        followUpInfos.Add(followUpFormId);
                     }
 
                     break;
@@ -530,6 +546,7 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
             LinkToTopics = linkToTopics,
             LinkFromTopics = linkFromTopics,
             AddTopics = addTopics,
+            FollowUpInfos = followUpInfos,
             HasResultScript = hasResultScript,
             ResultScripts = resultScripts,
             Offset = record.Offset,

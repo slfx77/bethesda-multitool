@@ -34,7 +34,9 @@ internal static class DialogueResultScriptParser
         for (var i = 0; i < blocks.Count; i++)
         {
             var block = blocks[i];
-            var decompiledText = TryDecompileResultScript(block, editorId, infoFormId, i, resolveFormName);
+            var isBigEndianBytecode = InferBytecodeEndian(block);
+            var decompiledText = TryDecompileResultScript(
+                block, editorId, infoFormId, i, resolveFormName, isBigEndianBytecode);
             resultScripts.Add(new DialogueResultScript
             {
                 SourceText = block.SourceText,
@@ -43,7 +45,8 @@ internal static class DialogueResultScriptParser
                 ReferencedObjects = block.ReferencedObjects
                     .Where(formId => (formId & 0x80000000) == 0)
                     .ToList(),
-                HasNextSeparator = block.HasNextSeparator
+                HasNextSeparator = block.HasNextSeparator,
+                IsBigEndianBytecode = isBigEndianBytecode
             });
         }
 
@@ -102,6 +105,7 @@ internal static class DialogueResultScriptParser
                 case "SCDA":
                     currentResultScript ??= StartImplicitResultScript(resultScriptBlocks);
                     currentResultScript.CompiledData = subData.ToArray();
+                    currentResultScript.IsBigEndianBytecode = isBigEndian;
                     break;
                 case "SCRO" when sub.DataLength >= 4:
                     currentResultScript ??= StartImplicitResultScript(resultScriptBlocks);
@@ -244,6 +248,12 @@ internal static class DialogueResultScriptParser
                 continue;
             }
 
+            // Preserve the BE-bytecode flag of whichever side actually supplied the bytes.
+            // If left has bytes, its endianness governs; otherwise right's does.
+            var mergedIsBe = left.CompiledData is { Length: > 0 }
+                ? left.IsBigEndianBytecode
+                : right.IsBigEndianBytecode;
+
             merged.Add(new DialogueResultScript
             {
                 SourceText = left.SourceText ?? right.SourceText,
@@ -253,7 +263,8 @@ internal static class DialogueResultScriptParser
                     .Concat(right.ReferencedObjects)
                     .Distinct()
                     .ToList(),
-                HasNextSeparator = left.HasNextSeparator || right.HasNextSeparator
+                HasNextSeparator = left.HasNextSeparator || right.HasNextSeparator,
+                IsBigEndianBytecode = mergedIsBe
             });
         }
 
@@ -267,7 +278,8 @@ internal static class DialogueResultScriptParser
         string? editorId,
         uint infoFormId,
         int index,
-        Func<uint, string?> resolveFormName)
+        Func<uint, string?> resolveFormName,
+        bool isBigEndianBytecode)
     {
         if (block.CompiledData is not { Length: > 0 })
         {
@@ -283,7 +295,7 @@ internal static class DialogueResultScriptParser
                 block.Variables,
                 block.ReferencedObjects,
                 resolveFormName,
-                false,
+                isBigEndianBytecode,
                 scriptName);
             return decompiler.Decompile(block.CompiledData);
         }
@@ -293,6 +305,39 @@ internal static class DialogueResultScriptParser
         }
     }
 
+    private static bool InferBytecodeEndian(DialogueResultScriptBuilder block)
+    {
+        if (block.CompiledData is not { Length: >= 4 } compiled)
+        {
+            return block.IsBigEndianBytecode;
+        }
+
+        var littleEndian = ScriptBytecodeAnalyzer.Analyze(
+            compiled,
+            isBigEndian: false,
+            block.Variables,
+            block.ReferencedObjects);
+        var bigEndian = ScriptBytecodeAnalyzer.Analyze(
+            compiled,
+            isBigEndian: true,
+            block.Variables,
+            block.ReferencedObjects);
+
+        var littleClean = littleEndian.WalkedToEnd && !littleEndian.HasDiagnostics;
+        var bigClean = bigEndian.WalkedToEnd && !bigEndian.HasDiagnostics;
+        if (littleClean && !bigClean)
+        {
+            return false;
+        }
+
+        if (bigClean && !littleClean)
+        {
+            return true;
+        }
+
+        return block.IsBigEndianBytecode;
+    }
+
     internal sealed class DialogueResultScriptBuilder
     {
         public string? SourceText { get; set; }
@@ -300,5 +345,6 @@ internal static class DialogueResultScriptParser
         public List<uint> ReferencedObjects { get; } = [];
         public List<ScriptVariableInfo> Variables { get; } = [];
         public bool HasNextSeparator { get; set; }
+        public bool IsBigEndianBytecode { get; set; }
     }
 }

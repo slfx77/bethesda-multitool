@@ -9,7 +9,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 /// <summary>
 ///     Encodes a <see cref="DialogueRecord" /> (INFO) as PC-format subrecord bytes.
 ///     Both override and new-record paths emit DATA + QSTI? + TPIC? + PNAM? + TRDT/NAM1 groups +
-///     TCLT* + TCLF* + RNAM? + DNAM? + result-script blocks + ANAM? + NAME* + CTDA*.
+///     TCLT* + TCLF* + TCFU* + RNAM? + DNAM? + result-script blocks + ANAM? + NAME* + CTDA*.
 ///     INFO records typically have no EDID (the parent DIAL's EDID identifies the topic).
 ///     Override path emits the FULL canonical subrecord stream whenever the DMP captured
 ///     any meaningful content (responses / conditions / result scripts / prompt / etc.).
@@ -115,11 +115,22 @@ public sealed class InfoEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("PNAM", info.PreviousInfo.Value));
         }
 
-        // Response text pairs — positional merge keeps TRDT[i] aligned with NAM1[i].
+        // Response groups — vanilla INFOs emit (TRDT, NAM1, NAM2, NAM3) per response. NAM2
+        // (Actor Notes, GECK editorial only) and NAM3 (Edits, GECK editorial only) are
+        // single-null-byte empty strings in shipping content, but the FNV engine uses them
+        // as the response-record boundary marker when walking the response list — without
+        // them the next response's TRDT is misread as overflow on the prior response and
+        // the engine SILENTLY skips voice playback for the whole INFO (no error log, no
+        // audio). Confirmed against every vanilla voiced INFO (e.g. 0x001611DE, 0x00167749):
+        // every response is exactly TRDT[24] + NAM1[N] + NAM2[1]=0x00 + NAM3[1]=0x00.
         foreach (var response in info.Responses)
         {
             subs.Add(new EncodedSubrecord("TRDT", BuildTrdtSubrecord(response)));
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("NAM1", response.Text ?? string.Empty));
+            // NAM2 = empty actor notes (1-byte null terminator).
+            subs.Add(new EncodedSubrecord("NAM2", [0]));
+            // NAM3 = empty edits (1-byte null terminator).
+            subs.Add(new EncodedSubrecord("NAM3", [0]));
         }
 
         if (!string.IsNullOrEmpty(info.PromptText))
@@ -141,7 +152,7 @@ public sealed class InfoEncoder : IRecordEncoder
     /// <summary>
     ///     Encode a new INFO record from scratch in xEdit canonical FNV order:
     ///     EDID?, DATA, QSTI?, TPIC?, PNAM?, NAME*, (TRDT + NAM1)+,
-    ///     (CTDA + CIS1? + CIS2?)*, TCLT*, TCLF*,
+    ///     (CTDA + CIS1? + CIS2?)*, TCLT*, TCLF*, TCFU*,
     ///     (SCHR + SCDA? + SCTX? + SCRO* + SCRV* + NEXT?)*, RNAM?, ANAM?, DNAM?.
     /// </summary>
     /// <param name="info">INFO model to emit.</param>
@@ -185,6 +196,7 @@ public sealed class InfoEncoder : IRecordEncoder
                || info.ResultScripts.Count > 0
                || info.LinkToTopics.Count > 0
                || info.LinkFromTopics.Count > 0
+               || info.FollowUpInfos.Count > 0
                || info.AddTopics.Count > 0
                || !string.IsNullOrEmpty(info.PromptText)
                || info.Difficulty != 0
@@ -251,14 +263,28 @@ public sealed class InfoEncoder : IRecordEncoder
                 subs.Add(new EncodedSubrecord("TRDT", BuildPlaceholderTrdtSubrecord()));
                 subs.Add(NewRecordSubrecords.EncodeStringSubrecord("NAM1",
                     "(NOT FOUND IN CRASH DUMP)"));
+                // Placeholder still needs the per-response (NAM2, NAM3) boundary markers —
+                // see the comment above the new-INFO loop for the engine-side rationale.
+                subs.Add(new EncodedSubrecord("NAM2", [0]));
+                subs.Add(new EncodedSubrecord("NAM3", [0]));
             }
         }
         else
         {
+            // Vanilla INFOs emit (TRDT, NAM1, NAM2[1]=0x00, NAM3[1]=0x00) per response.
+            // NAM2/NAM3 are GECK editorial fields (Actor Notes / Edits), empty in shipping
+            // content, but the FNV runtime uses them as the response-record boundary marker
+            // when walking the response list — without them the next response's TRDT is
+            // misread as overflow on the prior response and the engine SILENTLY skips voice
+            // playback for the whole INFO (no error log, no audio). Confirmed against every
+            // vanilla voiced INFO (e.g. 0x001611DE, 0x00167749): every response is exactly
+            // TRDT[24] + NAM1[N] + NAM2[1]=0x00 + NAM3[1]=0x00.
             foreach (var response in info.Responses)
             {
                 subs.Add(new EncodedSubrecord("TRDT", BuildTrdtSubrecord(response)));
                 subs.Add(NewRecordSubrecords.EncodeStringSubrecord("NAM1", response.Text ?? string.Empty));
+                subs.Add(new EncodedSubrecord("NAM2", [0]));
+                subs.Add(new EncodedSubrecord("NAM3", [0]));
             }
         }
 
@@ -285,6 +311,15 @@ public sealed class InfoEncoder : IRecordEncoder
         foreach (var formId in info.LinkFromTopics)
         {
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("TCLF", formId));
+        }
+
+        // TCFU links are the serialized follow-up INFO list. Runtime captures expose
+        // these as TESConversationData.m_listFollowUpInfos; topic-menu links themselves
+        // are TCLT and are synthesized by DialogGrupBuilder when a terminal response
+        // needs to return to its GREETING root topic list.
+        foreach (var formId in info.FollowUpInfos)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("TCFU", formId));
         }
 
         // Result-script blocks: master ALWAYS emits Begin Script + NEXT + End Script in INFO
@@ -314,7 +349,7 @@ public sealed class InfoEncoder : IRecordEncoder
         }
     }
 
-    private static void EmitResultScriptBlock(
+    internal static void EmitResultScriptBlock(
         List<EncodedSubrecord> subs,
         DialogueResultScript? script,
         IReadOnlySet<uint>? validFormIds = null,

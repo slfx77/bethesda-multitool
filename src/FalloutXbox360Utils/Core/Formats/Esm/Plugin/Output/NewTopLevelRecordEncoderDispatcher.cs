@@ -50,9 +50,11 @@ internal static class NewTopLevelRecordEncoderDispatcher
                 context.ValidPackageFormIds,
                 context.RemapTable,
                 context.AllValidFormIds),
-            ["SCPT"] = (model, _) => ScptEncoder.EncodeNew((ScriptRecord)model),
+            ["SCPT"] = (model, context) => ScptEncoder.EncodeNew(
+                (ScriptRecord)model, context.AllValidFormIds, context.RemapTable),
             ["DIAL"] = (model, _) => DialEncoder.EncodeNew((DialogTopicRecord)model),
-            ["INFO"] = (model, _) => InfoEncoder.EncodeNew((DialogueRecord)model),
+            ["INFO"] = (model, context) => InfoEncoder.EncodeNew(
+                (DialogueRecord)model, context.AllValidFormIds, context.RemapTable),
             ["QUST"] = (model, context) => QustEncoder.EncodeNew(
                 (QuestRecord)model,
                 context.AllValidFormIds,
@@ -74,7 +76,8 @@ internal static class NewTopLevelRecordEncoderDispatcher
                 context.AllValidFormIds,
                 context.RemapTable),
             ["FURN"] = (model, _) => FurnEncoder.EncodeNew((FurnitureRecord)model),
-            ["TERM"] = (model, _) => TermEncoder.EncodeNew((TerminalRecord)model),
+            ["TERM"] = (model, context) => TermEncoder.EncodeNew(
+                (TerminalRecord)model, context.AllValidFormIds, context.RemapTable),
             ["PROJ"] = (model, _) => ProjEncoder.EncodeNew((ProjectileRecord)model),
             ["EXPL"] = (model, _) => ExplEncoder.EncodeNew((ExplosionRecord)model),
             ["IMOD"] = (model, _) => ImodEncoder.EncodeNew((WeaponModRecord)model),
@@ -96,7 +99,8 @@ internal static class NewTopLevelRecordEncoderDispatcher
                 (LeveledListRecord)model, context.AllValidFormIds, context.RemapTable),
             ["LVLC"] = (model, context) => LvliEncoder.EncodeNew(
                 (LeveledListRecord)model, context.AllValidFormIds, context.RemapTable),
-            ["CREA"] = (model, _) => CreaEncoder.EncodeNew((CreatureRecord)model),
+            ["CREA"] = (model, context) => CreaEncoder.EncodeNew(
+                (CreatureRecord)model, context.AllValidFormIds, context.RemapTable),
             ["CLAS"] = (model, _) => ClasEncoder.EncodeNew((ClassRecord)model),
             ["SOUN"] = (model, _) => SounEncoder.EncodeNew((SoundRecord)model),
             ["TXST"] = (model, _) => TxstEncoder.EncodeNew((TextureSetRecord)model),

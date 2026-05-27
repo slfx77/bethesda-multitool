@@ -79,11 +79,13 @@ public class EncodedSubrecordFormIdRemapperTests
         var remapped = EncodedSubrecordFormIdRemapper.Remap("INFO",
         [
             new EncodedSubrecord("TRDT", trdt),
-            new EncodedSubrecord("QSTI", BitConverter.GetBytes(0x00001111u))
+            new EncodedSubrecord("QSTI", BitConverter.GetBytes(0x00001111u)),
+            new EncodedSubrecord("TCFU", BitConverter.GetBytes(0x00001111u))
         ], aliases);
 
         Assert.Equal(0x01001234u, ReadFormId(remapped[0].Bytes, 16));
         Assert.Equal(0x01005678u, ReadFormId(remapped[1].Bytes, 0));
+        Assert.Equal(0x01005678u, ReadFormId(remapped[2].Bytes, 0));
     }
 
     private static uint ReadFormId(byte[] bytes, int offset)
