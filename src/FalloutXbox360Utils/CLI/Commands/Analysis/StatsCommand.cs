@@ -111,6 +111,7 @@ public static class StatsCommand
         AddIfNonZero(categories, "Game Data", "RCPE", records.Recipes.Count);
         AddIfNonZero(categories, "Game Data", "CHAL", records.Challenges.Count);
         AddIfNonZero(categories, "Game Data", "REPU", records.Reputations.Count);
+        AddIfNonZero(categories, "Game Data", "CMNY", records.CaravanMoney.Count);
         AddIfNonZero(categories, "Game Data", "FLST", records.FormLists.Count);
         AddIfNonZero(categories, "Game Data", "PROJ", records.Projectiles.Count);
         AddIfNonZero(categories, "Game Data", "EXPL", records.Explosions.Count);

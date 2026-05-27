@@ -120,9 +120,6 @@ internal static class LandVisualPreviewRenderer
         await Task.WhenAll(tasks);
     }
 
-    /// <summary>
-    ///     Export a single LAND record heightmap to PNG.
-
     internal static LandVisualData? BuildPreviewVisualData(ExtractedLandRecord land)
     {
         byte[]? runtimeVertexColors = null;

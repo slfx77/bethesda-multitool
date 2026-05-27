@@ -193,11 +193,19 @@ internal static class StandaloneHeightmapResolver
         {
             var resolvedWorldspace = GetWorldspaceEditorId(land.WorldspaceFormId, worldspaceNames);
             var worldspaceFormId = FormatNullableFormId(land.WorldspaceFormId);
-            var worldspace = !string.IsNullOrWhiteSpace(resolvedWorldspace)
-                ? resolvedWorldspace
-                : !string.IsNullOrWhiteSpace(worldspaceFormId)
-                    ? worldspaceFormId
-                    : "ws_unknown";
+            string worldspace;
+            if (!string.IsNullOrWhiteSpace(resolvedWorldspace))
+            {
+                worldspace = resolvedWorldspace;
+            }
+            else if (!string.IsNullOrWhiteSpace(worldspaceFormId))
+            {
+                worldspace = worldspaceFormId;
+            }
+            else
+            {
+                worldspace = "ws_unknown";
+            }
             var cell = land.BestCellX.HasValue && land.BestCellY.HasValue
                 ? $"({land.BestCellX.Value},{land.BestCellY.Value})"
                 : "(?,?)";

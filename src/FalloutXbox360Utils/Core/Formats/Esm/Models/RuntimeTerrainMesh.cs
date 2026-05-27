@@ -642,16 +642,16 @@ public record RuntimeTerrainMesh
         return filtered.Count >= 12 ? filtered : samples;
     }
 
-    private static float Percentile(IReadOnlyList<float> sortedValues, float percentile)
+    private static float Percentile(float[] sortedValues, float percentile)
     {
-        if (sortedValues.Count == 1)
+        if (sortedValues.Length == 1)
         {
             return sortedValues[0];
         }
 
-        var index = Math.Clamp(percentile, 0f, 1f) * (sortedValues.Count - 1);
+        var index = Math.Clamp(percentile, 0f, 1f) * (sortedValues.Length - 1);
         var lower = (int)MathF.Floor(index);
-        var upper = Math.Min(lower + 1, sortedValues.Count - 1);
+        var upper = Math.Min(lower + 1, sortedValues.Length - 1);
         var fraction = index - lower;
         return sortedValues[lower] * (1f - fraction) + sortedValues[upper] * fraction;
     }

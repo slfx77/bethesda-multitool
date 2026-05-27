@@ -79,7 +79,4 @@ internal static class StandaloneHeightmapFileExporter
             }
         });
     }
-
-    /// <summary>
-    ///     Export all extracted LAND records with heightmaps to PNG files.
 }

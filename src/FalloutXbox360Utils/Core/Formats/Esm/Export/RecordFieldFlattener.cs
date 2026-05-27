@@ -75,6 +75,8 @@ internal static class RecordFieldFlattener
         foreach (var cc in records.CaravanCards)
             yield return ("CaravanCard", cc.FormId, cc.EditorId, cc.FullName,
                 FlattenCaravanCard(cc, resolver));
+        foreach (var cm in records.CaravanMoney)
+            yield return ("CaravanMoney", cm.FormId, cm.EditorId, null, FlattenCaravanMoney(cm));
         foreach (var db in records.Debris)
             yield return ("Debris", db.FormId, db.EditorId, null, FlattenDebris(db));
         foreach (var ig in records.Ingredients)
@@ -449,6 +451,14 @@ internal static class RecordFieldFlattener
             ["Script"] = ResolveRef(cc.ScriptFormId, resolver),
             ["PickupSound"] = ResolveRef(cc.PickupSoundFormId, resolver),
             ["PutdownSound"] = ResolveRef(cc.PutdownSoundFormId, resolver)
+        };
+    }
+
+    internal static Dictionary<string, string> FlattenCaravanMoney(CaravanMoneyRecord cm)
+    {
+        return new Dictionary<string, string>
+        {
+            ["Value"] = cm.Value.ToString()
         };
     }
 

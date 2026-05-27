@@ -120,7 +120,7 @@ public sealed class WhisperTranscriptionService : IDisposable
             segments.Add(result.Text);
         }
 
-        return string.Join(" ", segments).Trim();
+        return JoinSegments(segments);
     }
 
     /// <summary>
@@ -151,7 +151,14 @@ public sealed class WhisperTranscriptionService : IDisposable
             segments.Add(result.Text);
         }
 
-        return string.Join(" ", segments).Trim();
+        return JoinSegments(segments);
+    }
+
+    // Whisper segments often have leading/trailing whitespace; trim per-segment before
+    // joining so we don't produce ".  " (double space after punctuation) on segment boundaries.
+    private static string JoinSegments(List<string> segments)
+    {
+        return string.Join(" ", segments.Select(static s => s.Trim()).Where(static s => s.Length > 0)).Trim();
     }
 
     /// <summary>

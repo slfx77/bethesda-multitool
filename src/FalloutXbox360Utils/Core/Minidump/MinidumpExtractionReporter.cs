@@ -68,9 +68,12 @@ internal static class MinidumpExtractionReporter
             var authority = CellWorldspaceAuthorityJson.Load(null);
             CellWorldspaceAuthorityApplier.Apply(
                 semanticResult,
-                authority.Cells,
+                authority.CellToWorldspace,
                 authority.WorldspaceNames,
-                analysisResult.EsmRecords);
+                analysisResult.EsmRecords,
+                authority.Cells,
+                authority.RefToCell,
+                authority.RefWindows);
             var stringData = RuntimeStringReportHelper.Extract(analysisResult, accessor);
 
             // Merge supplementary records (load order) for name enrichment

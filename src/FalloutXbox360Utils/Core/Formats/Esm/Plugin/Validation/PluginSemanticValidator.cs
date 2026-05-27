@@ -150,15 +150,13 @@ public static class PluginSemanticValidator
                             $"{baseRecordType}, which is not a valid base type for {signature}.");
                     }
                 }
-                else if (masterFormIds is not null)
+                else if (masterFormIds is not null
+                    && baseId.HasValue && baseId.Value != 0 && baseId.Value != 0xFFFFFFFFu
+                    && !masterFormIds.Contains(baseId.Value) && !pluginFormIds.Contains(baseId.Value))
                 {
-                    if (baseId.HasValue && baseId.Value != 0 && baseId.Value != 0xFFFFFFFFu
-                        && !masterFormIds.Contains(baseId.Value) && !pluginFormIds.Contains(baseId.Value))
-                    {
-                        refrBaseDangling.Add(
-                            $"{signature} 0x{formId:X8} base FormID 0x{baseId.Value:X8} is " +
-                            "neither in master nor freshly emitted by this plugin.");
-                    }
+                    refrBaseDangling.Add(
+                        $"{signature} 0x{formId:X8} base FormID 0x{baseId.Value:X8} is " +
+                        "neither in master nor freshly emitted by this plugin.");
                 }
             }
         }

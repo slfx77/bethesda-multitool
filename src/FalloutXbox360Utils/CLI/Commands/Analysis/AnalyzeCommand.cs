@@ -210,9 +210,12 @@ public static class AnalyzeCommand
                 var authority = CellWorldspaceAuthorityJson.Load(null);
                 CellWorldspaceAuthorityApplier.Apply(
                     semanticResult,
-                    authority.Cells,
+                    authority.CellToWorldspace,
                     authority.WorldspaceNames,
-                    result.EsmRecords);
+                    result.EsmRecords,
+                    authority.Cells,
+                    authority.RefToCell,
+                    authority.RefWindows);
             }
 
             // Show BSStringT read diagnostics for DMP files

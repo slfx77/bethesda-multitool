@@ -115,6 +115,9 @@ public sealed class RecordParser
             "MSTT", "TACT", "CAMS", "ANIO", "IPDS", "EFSH", "RGDL", "LSCR",
             "ASPC", "MSET", "CHIP", "CSNO", "DOBJ", "ADDN", "TREE", "IMAD",
             "IDLM", "PWAT",
+            // FLOR (Flora) was previously dropped — added so xander roots, broc flowers,
+            // mutfruit, etc. carry through to the output ESP even when no DMP is supplied.
+            "FLOR",
             "SCOL",
             // Specialized record types (Phase 2)
             "SOUN", "MUSC", "TXST", "LTEX", "ARMA", "WATR", "BPTD", "AVIF", "CSTY", "LGTM", "NAVM", "WTHR",
@@ -123,7 +126,10 @@ public sealed class RecordParser
             // Phase 10 typed handlers
             "HDPT", "VTYP", "MICN", "LSCT", "IDLE", "CPTH", "IPCT", "ALOC",
             "PGRE", "REGN", "CCRD", "DEBR",
-            "INGR", "NAVI", "CDCK", "RADS", "DEHY", "HUNG", "SLPD"
+            "INGR", "NAVI", "CMNY", "CDCK", "RADS", "DEHY", "HUNG", "SLPD",
+            // Special-modeled records routed through cell/terrain/header paths instead of
+            // normal top-level typed lists.
+            "TES4", "REFR", "ACHR", "ACRE", "LAND"
         };
 
         // Count all record types and compute unparsed counts
@@ -406,6 +412,7 @@ public sealed class RecordParser
         var placedGrenades = _world.ParsePlacedGrenades();
         var regions = _world.ParseRegions();
         var caravanCards = _miscGameSystems.ParseCaravanCards();
+        var caravanMoney = _miscGameSystems.ParseCaravanMoney();
         var debris = _miscWorldObjects.ParseDebris();
         var ingredients = _miscItems.ParseIngredients();
         var navMeshInfoMaps = _miscGameSystems.ParseNavMeshInfoMaps();
@@ -496,6 +503,7 @@ public sealed class RecordParser
             PlacedGrenades = placedGrenades,
             Regions = regions,
             CaravanCards = caravanCards,
+            CaravanMoney = caravanMoney,
             Debris = debris,
             Ingredients = ingredients,
             NavMeshInfoMaps = navMeshInfoMaps,

@@ -23,6 +23,19 @@ public record AudioLocationControllerRecord
     /// <summary>Initial play offset within the media set (uint32 at +64, NAM6).</summary>
     public uint MediaStartTime { get; init; }
 
+    /// <summary>
+    ///     Audio-emitting REFR the controller is bound to (resolved from <c>pAudioMarker</c>
+    ///     pointer at PDB offset 120 in <c>MediaLocationController</c>). Null when the runtime
+    ///     pointer is unset/dangling, or when the ALOC was read purely from ESM (the PC ESM
+    ///     parser doesn't populate this — runtime-only enrichment).
+    ///     Not currently emitted by the encoder: the FNV ALOC subrecord that carries this
+    ///     link isn't disambiguated by the schema registry (HNAM/ZNAM/XNAM/YNAM/RNAM are all
+    ///     labeled "Location Controller FormID" with no identifier of which is the marker
+    ///     ref), so writing it back would risk overwriting an unrelated FormID slot. Surfaced
+    ///     here for diff/report inspection until the slot is verified empirically.
+    /// </summary>
+    public uint? AudioMarkerFormId { get; init; }
+
     public long Offset { get; init; }
     public bool IsBigEndian { get; init; }
 }

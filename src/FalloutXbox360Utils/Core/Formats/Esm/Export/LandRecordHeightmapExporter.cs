@@ -114,8 +114,4 @@ internal static class LandRecordHeightmapExporter
             }
         });
     }
-
-    /// <summary>
-    ///     Generate a composite worldmap image from all detected heightmaps.
-    ///     Positions heightmaps based on their cell grid coordinates.
 }

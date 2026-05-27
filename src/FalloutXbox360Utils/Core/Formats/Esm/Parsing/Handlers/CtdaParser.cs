@@ -7,7 +7,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
 /// <summary>
 ///     Decoder for the 28-byte CTDA condition subrecord, shared across record types that
 ///     carry conditions (INFO, TERM, QUST, COBJ, ...). Mirrors
-///     <see cref="FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.InfoEncoder" />'s
+///     <see cref="FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Quest.InfoEncoder" />'s
 ///     BuildCtdaSubrecord exactly: Type(1) + pad(3) + ComparisonValue(f32) +
 ///     FunctionIndex(u16) + pad(2) + Parameter1(u32) + Parameter2(u32) + RunOn(u32) +
 ///     Reference(u32).

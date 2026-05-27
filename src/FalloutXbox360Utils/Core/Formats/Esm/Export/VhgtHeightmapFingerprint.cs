@@ -19,12 +19,12 @@ internal readonly record struct VhgtHeightmapFingerprint(uint HeightOffsetBits, 
             HashDeltas(heightmap.HeightDeltas));
     }
 
-    private static int HashDeltas(IReadOnlyList<sbyte> deltas)
+    private static int HashDeltas(sbyte[] deltas)
     {
         unchecked
         {
             var hash = (int)2166136261u;
-            hash = (hash ^ deltas.Count) * 16777619;
+            hash = (hash ^ deltas.Length) * 16777619;
             foreach (var delta in deltas)
             {
                 hash = (hash ^ (byte)delta) * 16777619;

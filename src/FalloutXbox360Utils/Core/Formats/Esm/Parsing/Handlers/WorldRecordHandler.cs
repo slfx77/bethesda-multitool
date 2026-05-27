@@ -66,6 +66,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
                 LinkedRefKeywordFormId = refr.LinkedRefKeywordFormId,
                 LinkedRefFormId = refr.LinkedRefFormId,
                 LinkedRefChildrenFormIds = refr.LinkedRefChildrenFormIds,
+                StructuralData = refr.StructuralData,
                 EditorId = refr.EditorId,
                 Offset = refr.Header.Offset,
                 IsBigEndian = refr.Header.IsBigEndian

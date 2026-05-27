@@ -104,7 +104,8 @@ internal static class RuntimeDataEnricher
                         ? existing.LinkedRefChildrenFormIds
                         : runtimeRefr.LinkedRefChildrenFormIds,
                     OwnerFormId = existing.OwnerFormId ?? runtimeRefr.OwnerFormId,
-                    DestinationDoorFormId = existing.DestinationDoorFormId ?? runtimeRefr.DestinationDoorFormId
+                    DestinationDoorFormId = existing.DestinationDoorFormId ?? runtimeRefr.DestinationDoorFormId,
+                    StructuralData = existing.StructuralData ?? runtimeRefr.StructuralData
                 };
                 mergedCount++;
             }

@@ -147,7 +147,7 @@ public static class LandEncoder
         return bytes;
     }
 
-    private static byte[] EncodeTextureBlendEntries(IReadOnlyList<LandTextureBlendEntry> entries)
+    private static byte[] EncodeTextureBlendEntries(List<LandTextureBlendEntry> entries)
     {
         var bytes = new byte[entries.Count * 8];
         for (var i = 0; i < entries.Count; i++)

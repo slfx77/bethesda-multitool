@@ -1070,12 +1070,31 @@ public class WorldObjectEncoderTests
     }
 
     [Fact]
+    public void TermEncoder_EncodeNew_DnamServerTypeRoundTrips()
+    {
+        // Regression: ServerType byte now flows from the model into DNAM[2] (previously hard-coded 0).
+        var term = new TerminalRecord
+        {
+            FormId = 0x705,
+            EditorId = "ServerTypeTerm",
+            Difficulty = 1,
+            Flags = 0x20,
+            ServerType = 7
+        };
+
+        var encoded = TermEncoder.EncodeNew(term);
+
+        var dnam = Assert.Single(encoded.Subrecords, s => s.Signature == "DNAM").Bytes;
+        Assert.Equal(new byte[] { 1, 0x20, 7, 0 }, dnam);
+    }
+
+    [Fact]
     public void TermEncoder_EncodeNew_OmitsOptionalSubrecordsWhenNull()
     {
         // Bare TERM (no extras) should produce the same shape as before Phase 4.2b.
         var term = new TerminalRecord
         {
-            FormId = 0x705,
+            FormId = 0x706,
             EditorId = "BareTerm",
             HeaderText = "Hi",
             Difficulty = 0

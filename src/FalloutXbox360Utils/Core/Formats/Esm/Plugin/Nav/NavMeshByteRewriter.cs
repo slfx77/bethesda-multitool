@@ -12,12 +12,12 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Nav;
 ///     <list type="bullet">
 ///         <item><description><b>DATA</b> subrecord (bytes 0..3): replace with the target cell FormID.</description></item>
 ///         <item><description><b>NVEX</b> subrecord (per 10-byte entry, bytes 4..7): replace navmesh FormID via
-///             <paramref name="navmFormIdRewrites" /> when the original is a DMP FormID we've allocated a new ID for.
+///             the navmFormIdRewrites map when the original is a DMP FormID we've allocated a new ID for.
 ///             Entries whose target isn't in the rewrites dict are left intact (master FormIDs round-trip as-is).</description></item>
 ///     </list>
 ///     Other subrecords (EDID, NVVX, NVTR, NVDP, NVCA) pass through verbatim. The caller is
 ///     responsible for allocating the new record-level FormID and assembling the final
-///     record via <see cref="PluginRecordByteBuilder.BuildNewRecordBytes" />.
+///     record via <see cref="FalloutXbox360Utils.Core.Formats.Esm.Plugin.Output.PluginRecordByteBuilder.BuildNewRecordBytes" />.
 /// </summary>
 internal static class NavMeshByteRewriter
 {
@@ -113,6 +113,7 @@ internal static class NavMeshByteRewriter
         var keptNvexEntries = 0;
         var existingDataEdgeCnt = -1;
         var body = navmRecordBytes.AsSpan(RecordHeaderSize, (int)bodySize);
+        Span<byte> sizeBytes = stackalloc byte[2];
         var j = 0;
         while (j + 6 <= body.Length)
         {
@@ -142,7 +143,6 @@ internal static class NavMeshByteRewriter
                 if (kept.Length > 0)
                 {
                     newBody.Write("NVEX"u8);
-                    Span<byte> sizeBytes = stackalloc byte[2];
                     BinaryPrimitives.WriteUInt16LittleEndian(sizeBytes, (ushort)kept.Length);
                     newBody.Write(sizeBytes);
                     newBody.Write(kept.GetBuffer().AsSpan(0, (int)kept.Length));
