@@ -124,16 +124,7 @@ internal sealed class WorldMapStateController
             return null;
         }
 
-        var lookup = new Dictionary<(int x, int y), CellRecord>();
-        foreach (var cell in cells)
-        {
-            if (cell.GridX.HasValue && cell.GridY.HasValue)
-            {
-                lookup.TryAdd((cell.GridX.Value, cell.GridY.Value), cell);
-            }
-        }
-
-        return lookup;
+        return WorldMapDataBuilder.BuildCellGridLookup(cells);
     }
 
     public CellRecord? FindCellByFormId(uint formId)

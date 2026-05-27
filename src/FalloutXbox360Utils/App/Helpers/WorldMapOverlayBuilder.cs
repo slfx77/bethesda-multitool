@@ -87,7 +87,8 @@ internal static class WorldMapOverlayBuilder
             SourceFilePath = sourceFilePath,
             SpawnIndex = spawnIndex,
             UsageIndex = usageIndex,
-            RefPositionIndex = refPositionIndex
+            RefPositionIndex = refPositionIndex,
+            DanglingRefs = DanglingRefAttributions.LoadDefault()
         };
     }
 
@@ -206,7 +207,8 @@ internal static class WorldMapOverlayBuilder
             UsageIndex = usageIndex,
             RefPositionIndex = refPositionIndex,
             SaveOverlayMarkers = overlayMarkers,
-            PlayerPosition = playerPos
+            PlayerPosition = playerPos,
+            DanglingRefs = DanglingRefAttributions.LoadDefault()
         };
     }
 

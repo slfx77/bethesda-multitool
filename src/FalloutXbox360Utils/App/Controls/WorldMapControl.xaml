@@ -154,6 +154,18 @@
       <CheckBox x:Name="SpritesCheckBox" Content="Sprites" IsChecked="False"
                 Checked="SpritesCheckBox_Changed" Unchecked="SpritesCheckBox_Changed"
                 ToolTipService.ToolTip="Load pre-rendered model sprites (from render nif output)" />
+      <TextBlock x:Name="DanglingRefsLabel" Text="Dangling REFRs:" VerticalAlignment="Center"
+                 FontSize="12"
+                 Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+      <ComboBox x:Name="DanglingRefsComboBox" MinWidth="100"
+                AutomationProperties.Name="Dangling REFR confidence threshold"
+                SelectionChanged="DanglingRefsComboBox_SelectionChanged"
+                ToolTipService.ToolTip="Show heap-resident REFRs that the cell-traversal pipeline missed, at or above the chosen confidence level">
+        <ComboBoxItem Content="None" />
+        <ComboBoxItem Content="High" />
+        <ComboBoxItem Content="Medium" />
+        <ComboBoxItem Content="Low" />
+      </ComboBox>
     </StackPanel>
   </Grid>
 </UserControl>

@@ -44,6 +44,15 @@ public sealed partial class MainWindow : Window
             // Extend content into title bar and set up drag region
             SetupTitleBar();
 
+            // Title bar lives in the same parent grid as the NavigationView so its
+            // children (the Back/Forward buttons) are hit-testable on top of the
+            // NavView's transparent header strip. When the pane expands the drawer
+            // needs to visually cover the title and arrows instead, so we drop the
+            // title bar below the NavView in z-order whenever the pane is open.
+            NavView.RegisterPropertyChangedCallback(
+                NavigationView.IsPaneOpenProperty, OnNavPaneOpenChanged);
+            ApplyAppTitleBarZIndex();
+
             Console.WriteLine("[MainWindow] Constructor complete");
         }
         catch (Exception ex)
@@ -129,6 +138,20 @@ public sealed partial class MainWindow : Window
         // Transparent backgrounds for both themes (Mica shows through)
         titleBar.ButtonBackgroundColor = Colors.Transparent;
         titleBar.ButtonInactiveBackgroundColor = Colors.Transparent;
+    }
+
+    // ── Title bar / pane z-order coordination ──
+
+    private void OnNavPaneOpenChanged(DependencyObject sender, DependencyProperty dp)
+    {
+        ApplyAppTitleBarZIndex();
+    }
+
+    private void ApplyAppTitleBarZIndex()
+    {
+        // Pane closed → title bar above the NavView so the Back/Forward buttons are hit-testable.
+        // Pane open    → title bar below the NavView so the drawer covers the icon/title.
+        Canvas.SetZIndex(AppTitleBar, NavView.IsPaneOpen ? -1 : 1);
     }
 
     // ── Global keyboard shortcuts ──

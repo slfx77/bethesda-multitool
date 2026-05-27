@@ -74,6 +74,14 @@ internal sealed class WorldViewData
     /// <summary>Player position from save file, if available.</summary>
     public (float X, float Y, float Z)? PlayerPosition { get; set; }
 
+    /// <summary>
+    ///     Heuristically-attributed dangling-REFR clusters loaded from the
+    ///     <c>dangling_refs</c> section of <c>cell_worldspace_authority.json</c>.
+    ///     Always non-null; <see cref="DanglingRefAttributions.Grid" /> is empty when
+    ///     the authority JSON is missing or lacks the section.
+    /// </summary>
+    public DanglingRefAttributions DanglingRefs { get; init; } = new();
+
 #if WINDOWS_GUI
     /// <summary>Pre-rendered sprite registry for placed object rendering (loaded from render nif output).</summary>
     public WorldMapSpriteRegistry? SpriteRegistry { get; set; }

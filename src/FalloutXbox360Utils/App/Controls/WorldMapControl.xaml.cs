@@ -46,6 +46,9 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     // --- Markers ---
     private bool _hideDisabledActors = true;
 
+    // --- Dangling REFR overlay ---
+    private DanglingRefThreshold _danglingThreshold = DanglingRefThreshold.None;
+
     // --- Hover / Selection ---
     private PlacedReference? _hoveredObject;
     private bool _isPanning;
@@ -133,6 +136,12 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         {
             WorldspaceComboBox.SelectedIndex = 0;
         }
+
+        // Seed dangling-REFR dropdown. Default to None — overlay is opt-in.
+        DanglingRefsComboBox.SelectedIndex = (int)_danglingThreshold;
+        var hasDangling = data.DanglingRefs.Grid.Count > 0;
+        DanglingRefsComboBox.IsEnabled = hasDangling;
+        DanglingRefsLabel.Opacity = hasDangling ? 1.0 : 0.5;
     }
 
     private void LegendToggle_Click(object sender, RoutedEventArgs e)
@@ -176,6 +185,18 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private void DisabledCheckBox_Changed(object sender, RoutedEventArgs e)
     {
         _hideDisabledActors = DisabledCheckBox.IsChecked != true;
+        MapCanvas.Invalidate();
+    }
+
+    private void DanglingRefsComboBox_SelectionChanged(object sender, Microsoft.UI.Xaml.Controls.SelectionChangedEventArgs e)
+    {
+        var idx = DanglingRefsComboBox.SelectedIndex;
+        if (idx < 0 || idx > 3)
+        {
+            return;
+        }
+
+        _danglingThreshold = (DanglingRefThreshold)idx;
         MapCanvas.Invalidate();
     }
 
@@ -475,6 +496,16 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                 _hiddenCategories, _hideDisabledActors,
                 _state.SelectedObject, _hoveredObject,
                 _markerIconBitmaps, _currentColorScheme);
+
+            // Dangling-REFR overlay (opt-in via DanglingRefsComboBox).
+            // Drawn after overview so tinted cells overlay heightmap + cell grid.
+            // Pass the active worldspace so Lucky38-interior actors don't get rendered
+            // on the WastelandNV exterior map (their X/Y coords mean different things
+            // in each worldspace's coordinate system).
+            WorldMapDanglingRefOverlayRenderer.DrawOverlay(
+                ds, _data.DanglingRefs, _data, _danglingThreshold,
+                _state.SelectedWorldspace?.FormId,
+                _zoom, _panOffset, canvasW, canvasH);
         }
         else if (_state.SelectedCell != null)
         {
@@ -541,15 +572,37 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         }
         else if (_state.Mode == ViewMode.WorldOverview && _data != null)
         {
-            var hover = WorldMapHitTester.ProcessOverviewHover(
-                worldPos, _data, GetActiveCells(), _state.FilteredMarkers, _cellGridLookup,
-                _hiddenCategories, _hideDisabledActors, _zoom);
-            HoverInfoText.Text = hover.StatusText;
-            SetInteractiveCursor(hover.IsInteractive);
-            if (hover.HoveredObject != _hoveredObject)
+            // Check dangling markers first so they take hover priority (matches click priority).
+            DanglingRefPosition? hitDangling = null;
+            if (_danglingThreshold != DanglingRefThreshold.None)
             {
-                _hoveredObject = hover.HoveredObject;
-                MapCanvas.Invalidate();
+                hitDangling = WorldMapDanglingRefOverlayRenderer.HitTest(
+                    _data.DanglingRefs, _danglingThreshold,
+                    _state.SelectedWorldspace?.FormId, worldPos, _zoom);
+            }
+
+            if (hitDangling != null)
+            {
+                var cellName = string.IsNullOrEmpty(hitDangling.CellEditorId)
+                    ? $"cell 0x{hitDangling.CellFormId:X8}"
+                    : hitDangling.CellEditorId;
+                HoverInfoText.Text =
+                    $"Dangling REFR 0x{hitDangling.FormId:X8} (base 0x{hitDangling.BaseFormId:X8}) " +
+                    $"-> {cellName} [{hitDangling.Confidence}] at ({hitDangling.X:F0}, {hitDangling.Y:F0}, {hitDangling.Z:F0})";
+                SetInteractiveCursor(true);
+            }
+            else
+            {
+                var hover = WorldMapHitTester.ProcessOverviewHover(
+                    worldPos, _data, GetActiveCells(), _state.FilteredMarkers, _cellGridLookup,
+                    _hiddenCategories, _hideDisabledActors, _zoom);
+                HoverInfoText.Text = hover.StatusText;
+                SetInteractiveCursor(hover.IsInteractive);
+                if (hover.HoveredObject != _hoveredObject)
+                {
+                    _hoveredObject = hover.HoveredObject;
+                    MapCanvas.Invalidate();
+                }
             }
         }
 
@@ -561,6 +614,26 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         MapCanvas.ReleasePointerCapture(e.Pointer);
         if (_isPanning && !_pointerWasDragged)
         {
+            // Dangling markers take priority — they're drawn on top of everything else, so a
+            // click that lands on one should inspect the dangling REFR rather than fall through
+            // to the cell or placed-object beneath.
+            if (_data != null && _danglingThreshold != DanglingRefThreshold.None &&
+                _state.Mode == ViewMode.WorldOverview)
+            {
+                var worldClick = WorldMapViewportHelper.ScreenToWorld(_pointerDownScreen, _zoom, _panOffset);
+                var hitDangling = WorldMapDanglingRefOverlayRenderer.HitTest(
+                    _data.DanglingRefs, _danglingThreshold,
+                    _state.SelectedWorldspace?.FormId, worldClick, _zoom);
+                if (hitDangling != null)
+                {
+                    var synthetic = WorldMapDanglingRefOverlayRenderer.SynthesizePlacedReference(hitDangling);
+                    InspectObject?.Invoke(this, synthetic);
+                    _isPanning = false;
+                    e.Handled = true;
+                    return;
+                }
+            }
+
             var result = WorldMapHitTester.HandleClick(
                 _pointerDownScreen, _state.Mode, _data, GetActiveCells(),
                 _state.SelectedCell,
