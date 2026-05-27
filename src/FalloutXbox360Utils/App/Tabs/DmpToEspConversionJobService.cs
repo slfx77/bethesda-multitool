@@ -80,10 +80,9 @@ internal sealed class DmpToEspConversionJobService
             return null;
         }
 
-        var service = new AssetPackingService();
         options = options with { ConvertedEspPath = conversionResult.OutputPath };
         return await Task.Run(
-            () => service.PackAsync(options, sink, cancellationToken),
+            () => AssetPackingService.PackAsync(options, sink, cancellationToken),
             cancellationToken).ConfigureAwait(false);
     }
 }

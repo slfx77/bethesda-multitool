@@ -7,7 +7,7 @@ using Spectre.Console;
 namespace FalloutXbox360Utils.CLI.Commands.Dmp;
 
 /// <summary>
-///     Builds an authoritative <c>CellFormId → WorldspaceFormId</c> map by surveying every
+///     Builds authoritative CELL metadata by surveying every
 ///     reference source the caller supplies: master ESMs (whose Type-1 World-Children GRUPs
 ///     are the canonical hierarchy) and Xbox 360 memory dumps (whose runtime
 ///     <c>TESWorldSpace::pCellMap</c> entries are an authoritative live-game snapshot).
@@ -21,7 +21,7 @@ internal static class DmpCellAuthorityBuildCommand
     public static Command Create()
     {
         var command = new Command("build-cell-authority",
-            "Survey ESMs and DMPs to produce an authoritative CellFormId→WorldspaceFormId JSON map");
+            "Survey ESMs and DMPs to produce authoritative CELL metadata JSON");
 
         var dmpDirOpt = new Option<string?>("--dmp-dir")
         {
@@ -93,11 +93,30 @@ internal static class DmpCellAuthorityBuildCommand
                 AnsiConsole.MarkupLine(
                     $"[cyan]Seed:[/] preserving {seedCells.Count:N0} entries from " +
                     $"existing {Markup.Escape(outputPath)}");
-                foreach (var (cell, wrld) in seedCells)
+                foreach (var (cell, metadata) in seedCells)
                 {
-                    authority.TryAddOrFlag(cell, wrld, $"seed:{Path.GetFileName(outputPath)}");
+                    authority.AddOrUpdateCell(cell, metadata, $"seed:{Path.GetFileName(outputPath)}");
                 }
                 authority.AddSource("seed", outputPath, seedCells.Count, seedCells.Count);
+            }
+
+            if (seed.RefToCell is { Count: > 0 } seedReferences)
+            {
+                AnsiConsole.MarkupLine(
+                    $"[cyan]Seed:[/] preserving {seedReferences.Count:N0} ref→cell entries from " +
+                    $"existing {Markup.Escape(outputPath)}");
+                foreach (var (reference, cell) in seedReferences)
+                {
+                    authority.TryAddReferenceParent(reference, cell, $"seed:{Path.GetFileName(outputPath)}");
+                }
+            }
+
+            if (seed.RefWindows is { Count: > 0 } seedWindows)
+            {
+                AnsiConsole.MarkupLine(
+                    $"[cyan]Seed:[/] preserving {seedWindows.Count:N0} pinned ref window(s) from " +
+                    $"existing {Markup.Escape(outputPath)}");
+                authority.ReferenceParentWindows.AddRange(seedWindows);
             }
         }
 
@@ -120,9 +139,9 @@ internal static class DmpCellAuthorityBuildCommand
                 dmp, authority, cancellationToken);
         }
 
-        if (authority.CellToWorldspace.Count == 0)
+        if (authority.Cells.Count == 0)
         {
-            AnsiConsole.MarkupLine("[red]No cell→worldspace assignments collected. Aborting write.[/]");
+            AnsiConsole.MarkupLine("[red]No cell metadata collected. Aborting write.[/]");
             return;
         }
 
@@ -134,15 +153,20 @@ internal static class DmpCellAuthorityBuildCommand
 
         await CellWorldspaceAuthorityJson.WriteAsync(
             outputPath,
-            authority.CellToWorldspace,
+            authority.Cells,
+            authority.ReferenceParents,
+            authority.ReferenceParentWindows,
             authority.Conflicts,
+            authority.ReferenceConflicts,
             authority.WorldspaceNames,
             authority.Sources,
             cancellationToken);
         AnsiConsole.MarkupLine($"[green]Wrote {Markup.Escape(outputPath)}[/]");
         AnsiConsole.MarkupLine(
-            $"  cells: {authority.CellToWorldspace.Count:N0} | worldspaces: {authority.WorldspaceNames.Count} | " +
-            $"conflicts: {authority.Conflicts.Count} | sources: {authority.Sources.Count}");
+            $"  cells: {authority.Cells.Count:N0} | worldspaces: {authority.WorldspaceNames.Count} | " +
+            $"references: {authority.ReferenceParents.Count:N0} | ref windows: {authority.ReferenceParentWindows.Count:N0} | " +
+            $"conflicts: {authority.Conflicts.Count} | " +
+            $"reference conflicts: {authority.ReferenceConflicts.Count} | sources: {authority.Sources.Count}");
     }
 
     private static async Task IngestEsmAsync(
@@ -161,25 +185,63 @@ internal static class DmpCellAuthorityBuildCommand
             }
 
             var label = $"esm:{Path.GetFileName(esmPath)}";
-            var addedCells = 0;
-            foreach (var (cell, wrld) in esmRecords.CellToWorldspaceMap)
-            {
-                if (authority.TryAddOrFlag(cell, wrld, label))
-                {
-                    addedCells++;
-                }
-            }
-
-            // Worldspace names: load the parsed records to capture EditorIds.
             using var loaded = SemanticFileLoader.LoadFromAnalysisResult(esmPath, analysis, AnalysisFileType.EsmFile);
             foreach (var ws in loaded.Records.Worldspaces)
             {
                 authority.AddWorldspaceName(ws.FormId, ws.EditorId);
             }
 
-            authority.AddSource("esm", esmPath, addedCells, esmRecords.CellToWorldspaceMap.Count);
+            var addedCells = 0;
+            var observedCells = 0;
+            var loadedCellFormIds = loaded.Records.Cells.Select(c => c.FormId).ToHashSet();
+            foreach (var cell in loaded.Records.Cells)
+            {
+                esmRecords.CellToWorldspaceMap.TryGetValue(cell.FormId, out var mappedWorldspace);
+                var worldspaceFormId = cell.WorldspaceFormId ?? (mappedWorldspace != 0 ? (uint?)mappedWorldspace : null);
+                if (authority.AddOrUpdateCell(
+                        cell.FormId,
+                        CellAuthorityMetadata.FromCell(cell, worldspaceFormId),
+                        label))
+                {
+                    addedCells++;
+                }
+
+                observedCells++;
+            }
+
+            foreach (var (cell, wrld) in esmRecords.CellToWorldspaceMap)
+            {
+                if (authority.TryAddOrFlag(cell, wrld, label) &&
+                    !loadedCellFormIds.Contains(cell))
+                {
+                    addedCells++;
+                }
+            }
+
+            var addedReferences = 0;
+            var observedReferences = 0;
+            foreach (var (cellFormId, refs) in esmRecords.CellToRefrMap)
+            {
+                foreach (var referenceFormId in refs)
+                {
+                    observedReferences++;
+                    if (authority.TryAddReferenceParent(referenceFormId, cellFormId, label))
+                    {
+                        addedReferences++;
+                    }
+                }
+            }
+
+            authority.AddSource("esm", esmPath, addedCells, observedCells);
             AnsiConsole.MarkupLine(
-                $"  added {addedCells} new cell→ws (of {esmRecords.CellToWorldspaceMap.Count} in this ESM)");
+                $"  added {addedCells} new cell metadata entr{(addedCells == 1 ? "y" : "ies")} " +
+                $"(of {observedCells} CELL records in this ESM)");
+            if (observedReferences > 0)
+            {
+                AnsiConsole.MarkupLine(
+                    $"  added {addedReferences:N0} new ref→cell entries " +
+                    $"(of {observedReferences:N0} child refs in this ESM)");
+            }
         }
         catch (Exception ex)
         {
@@ -210,7 +272,16 @@ internal static class DmpCellAuthorityBuildCommand
                 foreach (var entry in wsData.Cells)
                 {
                     observedCells++;
-                    if (authority.TryAddOrFlag(entry.CellFormId, worldspaceFormId, label))
+                    if (authority.AddOrUpdateCell(
+                            entry.CellFormId,
+                            new CellAuthorityMetadata
+                            {
+                                WorldspaceFormId = worldspaceFormId,
+                                IsInterior = entry.IsInterior,
+                                GridX = entry.GridX,
+                                GridY = entry.GridY
+                            },
+                            label))
                     {
                         addedCells++;
                     }
@@ -232,7 +303,10 @@ internal static class DmpCellAuthorityBuildCommand
                     continue;
                 }
                 observedCells++;
-                if (authority.TryAddOrFlag(c.FormId, wsfId, label))
+                if (authority.AddOrUpdateCell(
+                        c.FormId,
+                        CellAuthorityMetadata.FromCell(c, wsfId),
+                        label))
                 {
                     addedCells++;
                 }

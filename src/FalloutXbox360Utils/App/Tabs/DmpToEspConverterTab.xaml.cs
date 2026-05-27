@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Threading.Channels;
 using Windows.Storage.Pickers;
+using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
@@ -289,6 +290,7 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
         var renameFolders = PackAssetsCheckBox.IsChecked == true
             ? SnapshotSecondaryFolders()
             : new List<SecondaryDataFolder>();
+        var authorityLoad = CellWorldspaceAuthorityJson.Load(null);
 
         var options = new PluginBuildOptions
         {
@@ -303,7 +305,12 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
             AssetRenameSecondaryFolders = renameFolders,
             AssetRenameOverrideVanilla = OverrideVanillaCheckBox.IsChecked == true,
             EnableRefrBaseEditorIdRemap = RefrEditorIdRemapCheckBox.IsChecked == true,
-            ReplaceCellTemporariesOnOverride = ReplaceCellTemporariesCheckBox.IsChecked == true
+            ReplaceCellTemporariesOnOverride = ReplaceCellTemporariesCheckBox.IsChecked == true,
+            CellWorldspaceAuthority = authorityLoad.CellToWorldspace,
+            CellMetadataAuthority = authorityLoad.Cells,
+            CellReferenceParentAuthority = authorityLoad.RefToCell,
+            CellReferenceParentWindows = authorityLoad.RefWindows,
+            CellWorldspaceAuthorityWorldspaceNames = authorityLoad.WorldspaceNames
         };
 
         // Set up a buffered channel for progress events.
@@ -515,7 +522,9 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
                     $"converted-360={ps.Converted360:N0}, " +
                     $"missing={ps.Missing:N0}." +
                     $"\nPacked {ps.PackedAssetCount:N0} asset(s) into " +
-                    $"{(string.IsNullOrEmpty(_lastAssetPackingResult.OutputPath) ? "(no BSA written — nothing to pack)" : _lastAssetPackingResult.OutputPath)}";
+                    (_lastAssetPackingResult.OutputPaths.Count == 0
+                        ? "(no BSA written — nothing to pack)"
+                        : string.Join(", ", _lastAssetPackingResult.OutputPaths));
             }
             else
             {

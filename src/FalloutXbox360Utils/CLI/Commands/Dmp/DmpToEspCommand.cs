@@ -109,7 +109,7 @@ public static class DmpToEspCommand
         var cellAuthorityOpt = new Option<string?>("--cell-authority")
         {
             Description =
-                "Optional corpus-derived CellFormId→WorldspaceFormId authority JSON (built with " +
+                "Optional corpus-derived CELL metadata authority JSON (built with " +
                 "`dmp build-cell-authority`). Applied to parsed cells before grouping so cells " +
                 "land under the correct WRLD in the output ESP. Defaults to " +
                 "data/cell_worldspace_authority.json next to the executable if it exists."
@@ -189,8 +189,8 @@ public static class DmpToEspCommand
         bool disableRefrEditorIdRemap,
         bool replaceCellTemporaries,
         string? cellAuthorityPath,
-        IReadOnlySet<uint> skipWorldspaceFormIds,
-        IReadOnlySet<string> skipRecordTypes,
+        HashSet<uint> skipWorldspaceFormIds,
+        HashSet<string> skipRecordTypes,
         CancellationToken ct)
     {
         if (!File.Exists(dmpPath))
@@ -227,7 +227,9 @@ public static class DmpToEspCommand
         {
             AnsiConsole.MarkupLine(
                 $"[cyan]Cell authority:[/] {authorityLoad.Cells.Count:N0} entries from " +
-                $"{Markup.Escape(Path.GetFileName(authorityLoad.Path))}");
+                $"{Markup.Escape(Path.GetFileName(authorityLoad.Path))}" +
+                $"{(authorityLoad.RefToCell is { Count: > 0 } refs ? $", {refs.Count:N0} ref→cell entries" : "")}" +
+                $"{(authorityLoad.RefWindows is { Count: > 0 } windows ? $", {windows.Count:N0} ref window(s)" : "")}");
         }
 
         var options = new PluginBuildOptions
@@ -244,10 +246,14 @@ public static class DmpToEspCommand
             AssetRenameOverrideVanilla = overrideVanilla,
             EnableRefrBaseEditorIdRemap = !disableRefrEditorIdRemap,
             ReplaceCellTemporariesOnOverride = replaceCellTemporaries,
-            CellWorldspaceAuthority = authorityLoad.Cells,
+            CellWorldspaceAuthority = authorityLoad.CellToWorldspace,
+            CellMetadataAuthority = authorityLoad.Cells,
+            CellReferenceParentAuthority = authorityLoad.RefToCell,
+            CellReferenceParentWindows = authorityLoad.RefWindows,
             CellWorldspaceAuthorityWorldspaceNames = authorityLoad.WorldspaceNames,
             SkipWorldspaceFormIds = skipWorldspaceFormIds,
-            SkipRecordTypes = skipRecordTypes
+            SkipRecordTypes = skipRecordTypes,
+            DialogueTextOverridesCsvPaths = dialogueAudioCsvPaths
         };
 
         if (skipWorldspaceFormIds.Count > 0)
@@ -321,13 +327,15 @@ public static class DmpToEspCommand
                     outputPath, dmpPath, pcEsmPath,
                     secondaryDataFolders, secondaryDataFolders360,
                     packAssetsBsaPath, verbose, writeMissingList, dialogueAudioCsvPaths,
-                    overrideVanilla, sink, ct);
+                    overrideVanilla, result.NewRecordSourceToAllocated,
+                    result.EmittedDialogueAudioBindings, sink, ct);
             }
             else if (dialogueAudioCsvPaths.Length > 0)
             {
                 AnsiConsole.MarkupLine(
-                    "[yellow]Warning:[/] --dialogue-audio-csv was provided but --pack-assets was not; " +
-                    "dialogue audio CSV paths were not used.");
+                    "[yellow]Note:[/] --dialogue-audio-csv was provided without --pack-assets; " +
+                    "the CSV Text column was still used to backfill INFO response text in the ESP, " +
+                    "but voice audio files were not packed into a BSA.");
             }
         }
         else
@@ -341,7 +349,7 @@ public static class DmpToEspCommand
     ///     Parse a list of hex form-id strings (with or without 0x prefix) into a set.
     ///     Invalid entries are reported and skipped.
     /// </summary>
-    private static IReadOnlySet<uint> ParseHexFormIdSet(string[] hexStrings)
+    private static HashSet<uint> ParseHexFormIdSet(string[] hexStrings)
     {
         var set = new HashSet<uint>();
         foreach (var raw in hexStrings)
@@ -373,7 +381,7 @@ public static class DmpToEspCommand
     ///     and the v21 asset packer. Missing folders are dropped with a console warning
     ///     (the rename + pack paths each guard against an empty list).
     /// </summary>
-    private static IReadOnlyList<SecondaryDataFolder> BuildRenameFolders(
+    private static List<SecondaryDataFolder> BuildRenameFolders(
         string[] secondaryDataFolders,
         string[] secondaryDataFolders360)
     {
@@ -437,6 +445,8 @@ public static class DmpToEspCommand
         bool writeMissingList,
         string[] dialogueAudioCsvPaths,
         bool overrideVanilla,
+        IReadOnlyDictionary<uint, uint> newRecordSourceToAllocatedFormIds,
+        IReadOnlyList<EmittedDialogueAudioBinding> emittedDialogueAudioBindings,
         IConversionProgressSink sink,
         CancellationToken ct)
     {
@@ -473,11 +483,12 @@ public static class DmpToEspCommand
             VerbosePerAsset = verbose,
             WriteAuditFile = writeMissingList,
             DialogueAudioCsvPaths = dialogueAudioCsvPaths,
-            OverrideVanillaBaseline = overrideVanilla
+            OverrideVanillaBaseline = overrideVanilla,
+            NewRecordSourceToAllocatedFormIds = newRecordSourceToAllocatedFormIds,
+            EmittedDialogueAudioBindings = emittedDialogueAudioBindings
         };
 
-        var service = new AssetPackingService();
-        var result = await service.PackAsync(options, sink, ct);
+        var result = await AssetPackingService.PackAsync(options, sink, ct);
 
         AnsiConsole.WriteLine();
         if (result.Success)
@@ -492,12 +503,15 @@ public static class DmpToEspCommand
                 $"converted-360={s.Converted360:N0}, " +
                 $"conversion-failed={s.ConversionFailed:N0}, " +
                 $"missing={s.Missing:N0})");
-            if (result.OutputPath is not null)
+            if (result.OutputPaths.Count > 0)
             {
                 AnsiConsole.MarkupLine(
                     $"  Packed: {s.PackedAssetCount:N0} assets in {s.OutputBsaSizeBytes:N0} bytes " +
-                    $"({s.Elapsed.TotalSeconds:F2}s)");
-                AnsiConsole.MarkupLine($"  Output: {Markup.Escape(result.OutputPath)}");
+                    $"across {result.OutputPaths.Count:N0} archive(s) ({s.Elapsed.TotalSeconds:F2}s)");
+                foreach (var outputPath in result.OutputPaths)
+                {
+                    AnsiConsole.MarkupLine($"  Output: {Markup.Escape(outputPath)}");
+                }
             }
             else
             {

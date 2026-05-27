@@ -1,6 +1,10 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 using FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
+using FalloutXbox360Utils.Core.Formats.Esm.Records;
+using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Parsing;
@@ -143,6 +147,54 @@ public class CellLinkageWorldspaceInferenceTests
 
         Assert.Equal(0, reassigned);
         Assert.Null(cells[1].WorldspaceFormId);
+    }
+
+    [Fact]
+    public void CreateVirtualCells_UsesOffsetClusterAdjacencyForMissingExteriorTile()
+    {
+        var existingCells = new List<CellRecord>
+        {
+            new()
+            {
+                FormId = 0x1000,
+                GridX = -4,
+                GridY = -1,
+                WorldspaceFormId = 0x10,
+                Offset = 0x2000,
+                IsBigEndian = true
+            },
+            new()
+            {
+                FormId = 0x1001,
+                GridX = -4,
+                GridY = -2,
+                WorldspaceFormId = 0x10,
+                Offset = 0x2800,
+                IsBigEndian = true
+            }
+        };
+        var orphan = new ExtractedRefrRecord
+        {
+            Header = new DetectedMainRecord("REFR", 0, 0, 0x3000, 0x1F00, true),
+            BaseFormId = 0x4000,
+            Position = new PositionSubrecord(-5136, -3488, 1040, 0, 0, 0, 0x1F00, true)
+        };
+        var context = new RecordParserContext(new EsmRecordScanResult
+        {
+            RefrRecords = [orphan]
+        });
+
+        var virtualCells = CellLinkageHandler.CreateVirtualCells(existingCells, [orphan], context);
+
+        var virtualCell = Assert.Single(virtualCells);
+        Assert.False(virtualCell.IsUnresolvedBucket);
+        Assert.True(virtualCell.IsVirtual);
+        Assert.Equal(0x10u, virtualCell.WorldspaceFormId);
+        Assert.Equal(-2, virtualCell.GridX);
+        Assert.Equal(-1, virtualCell.GridY);
+        var placed = Assert.Single(virtualCell.PlacedObjects);
+        Assert.Equal(0x3000u, placed.FormId);
+        Assert.Equal("OffsetCluster", placed.AssignmentSource);
     }
 
     private static WorldspaceRecord CreateWorldspace(

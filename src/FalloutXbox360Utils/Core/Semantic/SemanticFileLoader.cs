@@ -155,14 +155,31 @@ internal static class SemanticFileLoader
         }
 
         var authority = options.CellWorldspaceAuthority;
+        var metadata = options.CellMetadataAuthority;
+        var refToCell = options.CellReferenceParentAuthority;
+        var refWindows = options.CellReferenceParentWindows;
         var worldspaceNames = options.CellWorldspaceAuthorityWorldspaceNames;
-        if (authority is null && options.ApplyDefaultCellWorldspaceAuthority)
+        if (authority is null &&
+            metadata is null &&
+            refToCell is null &&
+            refWindows is null &&
+            options.ApplyDefaultCellWorldspaceAuthority)
         {
             var load = CellWorldspaceAuthorityJson.Load(options.CellWorldspaceAuthorityPath);
-            authority = load.Cells;
+            authority = load.CellToWorldspace;
+            metadata = load.Cells;
+            refToCell = load.RefToCell;
+            refWindows = load.RefWindows;
             worldspaceNames = load.WorldspaceNames;
         }
 
-        CellWorldspaceAuthorityApplier.Apply(records, authority, worldspaceNames, scanResult);
+        CellWorldspaceAuthorityApplier.Apply(
+            records,
+            authority,
+            worldspaceNames,
+            scanResult,
+            metadata,
+            refToCell,
+            refWindows);
     }
 }

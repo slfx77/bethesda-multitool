@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Semantic;
@@ -37,6 +38,8 @@ internal static class DmpCellInventoryCommand
 
     private const uint UnlinkedExteriorBucket = 0u;
 
+    private const int ExactGridReassignmentMinPlacements = 10;
+
     public static Command Create()
     {
         var command = new Command("cell-inventory",
@@ -58,13 +61,13 @@ internal static class DmpCellInventoryCommand
         {
             Description =
                 "Optional path to a reference PC FalloutNV.esm. When supplied, its GRUP " +
-                "hierarchy is used as the authoritative cell→worldspace map (resolves cells " +
+                "hierarchy is used as authoritative CELL metadata (resolves cells " +
                 "the DMP runtime pCellMap doesn't anchor)."
         };
         var authorityOpt = new Option<string?>("--cell-authority")
         {
             Description =
-                "Optional path to a corpus-derived authority JSON (built with " +
+                "Optional path to corpus-derived CELL metadata authority JSON (built with " +
                 "`dmp build-cell-authority`). Loaded in addition to --pc-esm; covers cells the " +
                 "shipped PC ESM lacks (e.g. cut prototype worldspaces). Defaults to " +
                 "data/cell_worldspace_authority.json next to the executable if it exists."
@@ -147,10 +150,28 @@ internal static class DmpCellInventoryCommand
         {
             AnsiConsole.MarkupLine(
                 $"[blue]Cell authority loaded: {authorityLoad.Cells.Count:N0} entries from " +
-                $"{Markup.Escape(Path.GetFileName(authorityLoad.Path))}.[/]");
+                $"{Markup.Escape(Path.GetFileName(authorityLoad.Path))}" +
+                $"{(authorityLoad.RefToCell is { Count: > 0 } refs ? $", {refs.Count:N0} ref→cell entries" : "")}" +
+                $"{(authorityLoad.RefWindows is { Count: > 0 } windows ? $", {windows.Count:N0} ref window(s)" : "")}.[/]");
         }
 
-        var combinedAuthority = CellWorldspaceAuthorityJson.Merge(pcAuthority?.CellToWorldspace, authorityLoad.Cells);
+        var combinedMetadata = CellWorldspaceAuthorityJson.MergeMetadata(pcAuthority?.CellMetadata, authorityLoad.Cells);
+        var combinedAuthority = CellWorldspaceAuthorityJson.Merge(
+            pcAuthority?.CellToWorldspace,
+            authorityLoad.CellToWorldspace);
+        var combinedRefToCell = CellWorldspaceAuthorityJson.Merge(
+            pcAuthority?.RefToCell,
+            authorityLoad.RefToCell);
+        var inventoryAuthority = combinedAuthority is null &&
+                                 combinedRefToCell is null &&
+                                 combinedMetadata is null &&
+                                 pcAuthority is null
+            ? null
+            : new PcEsmCellAuthority(
+                combinedAuthority ?? [],
+                combinedRefToCell ?? [],
+                pcAuthority?.EditorIds ?? new Dictionary<uint, string>(),
+                combinedMetadata ?? []);
         AnsiConsole.WriteLine();
 
         var processed = 0;
@@ -169,8 +190,14 @@ internal static class DmpCellInventoryCommand
                     {
                         FileType = AnalysisFileType.Minidump,
                         CellWorldspaceAuthority = combinedAuthority,
+                        CellMetadataAuthority = combinedMetadata,
+                        CellReferenceParentAuthority = combinedRefToCell,
+                        CellReferenceParentWindows = authorityLoad.RefWindows,
                         CellWorldspaceAuthorityWorldspaceNames = authorityLoad.WorldspaceNames,
-                        ApplyDefaultCellWorldspaceAuthority = combinedAuthority is null
+                        ApplyDefaultCellWorldspaceAuthority = combinedAuthority is null &&
+                                                              combinedMetadata is null &&
+                                                              combinedRefToCell is null &&
+                                                              authorityLoad.RefWindows is null
                     },
                     cancellationToken);
 
@@ -217,11 +244,11 @@ internal static class DmpCellInventoryCommand
                                         ?? $"0x{ws.FormId:X8}";
                 }
 
-                // Runtime pCellMap → direct CellFormId -> WorldspaceFormId lookup. This is the
-                // strongest signal for DMP worldspace ownership: it comes from the game's live
-                // TESWorldSpace::pCellMap hash tables captured at dump time. CellLinkageHandler
-                // uses it via connected-component anchoring, but isolated cells may slip through;
-                // consult it directly as a fallback so they don't fall into Ambiguous Exterior.
+                // Runtime pCellMap supplies a direct cell-to-worldspace lookup. This is the
+                // strongest signal for DMP worldspace ownership; it comes from the game's live
+                // TESWorldSpace pCellMap hash tables captured at dump time. CellLinkageHandler
+                // uses it via connected-component anchoring, but isolated cells may slip through,
+                // so consult it directly as a fallback to avoid Ambiguous Exterior placement.
                 var runtimeCellOwner = new Dictionary<uint, uint>();
                 foreach (var (worldspaceFormId, worldspaceData) in records.RuntimeWorldspaceMaps)
                 {
@@ -266,7 +293,7 @@ internal static class DmpCellInventoryCommand
                 var totalPlacements = 0;
 
                 // Cells that have at least one placement whose base FormID is in our target set.
-                var matchedCells = BuildMatchedCells(records.Cells, baseTypeMap, pcAuthority);
+                var matchedCells = BuildMatchedCells(records.Cells, baseTypeMap, inventoryAuthority);
 
                 if (matchedCells.Count == 0)
                 {
@@ -403,11 +430,31 @@ internal static class DmpCellInventoryCommand
             AnsiConsole.MarkupLine(
                 $"[blue]PC ESM authority: {esmRecords.CellToWorldspaceMap.Count:N0} cell→worldspace entries, " +
                 $"{refToCell.Count:N0} ref→cell entries.[/]");
-            return new PcEsmCellAuthority(esmRecords.CellToWorldspaceMap, refToCell, analysis.FormIdMap);
+            using var loaded = SemanticFileLoader.LoadFromAnalysisResult(
+                pcEsmPath,
+                analysis,
+                AnalysisFileType.EsmFile);
+            var metadata = BuildCellMetadata(loaded.Records.Cells, esmRecords.CellToWorldspaceMap);
+            return new PcEsmCellAuthority(esmRecords.CellToWorldspaceMap, refToCell, analysis.FormIdMap, metadata);
         }
 
         AnsiConsole.MarkupLine($"[yellow]PC ESM produced no cell/ref authority map (file empty or unparseable).[/]");
         return null;
+    }
+
+    private static Dictionary<uint, CellAuthorityMetadata> BuildCellMetadata(
+        IReadOnlyList<CellRecord> cells,
+        Dictionary<uint, uint> cellToWorldspace)
+    {
+        var metadata = new Dictionary<uint, CellAuthorityMetadata>();
+        foreach (var cell in cells)
+        {
+            cellToWorldspace.TryGetValue(cell.FormId, out var mappedWorldspace);
+            var worldspaceFormId = cell.WorldspaceFormId ?? (mappedWorldspace != 0 ? (uint?)mappedWorldspace : null);
+            metadata[cell.FormId] = CellAuthorityMetadata.FromCell(cell, worldspaceFormId);
+        }
+
+        return metadata;
     }
 
     private static Dictionary<uint, uint> BuildRefToCellMap(
@@ -428,6 +475,26 @@ internal static class DmpCellInventoryCommand
         return refToCell;
     }
 
+    internal static List<CellInventoryMatch> BuildMatchedCellsForTesting(
+        IReadOnlyList<CellRecord> cells,
+        IReadOnlyDictionary<uint, string> baseTypeMap)
+    {
+        return BuildMatchedCells(cells, baseTypeMap, null);
+    }
+
+    internal static List<CellInventoryMatch> BuildMatchedCellsForTesting(
+        IReadOnlyList<CellRecord> cells,
+        IReadOnlyDictionary<uint, string> baseTypeMap,
+        IReadOnlyDictionary<uint, uint> cellToWorldspace,
+        IReadOnlyDictionary<uint, uint> refToCell,
+        IReadOnlyDictionary<uint, CellAuthorityMetadata> cellMetadata)
+    {
+        return BuildMatchedCells(
+            cells,
+            baseTypeMap,
+            new PcEsmCellAuthority(cellToWorldspace, refToCell, new Dictionary<uint, string>(), cellMetadata));
+    }
+
     private static List<CellInventoryMatch> BuildMatchedCells(
         IReadOnlyList<CellRecord> cells,
         IReadOnlyDictionary<uint, string> baseTypeMap,
@@ -437,6 +504,7 @@ internal static class DmpCellInventoryCommand
             .GroupBy(c => c.FormId)
             .ToDictionary(g => g.Key, g => g.First());
         var buckets = new Dictionary<uint, CellInventoryMatch>();
+        var unresolvedPlacements = new List<(CellRecord Cell, PlacedReference Placement)>();
 
         foreach (var sourceCell in cells)
         {
@@ -446,24 +514,190 @@ internal static class DmpCellInventoryCommand
             foreach (var placed in sourceCell.PlacedObjects.Where(o =>
                          !o.IsPersistent && baseTypeMap.ContainsKey(o.BaseFormId)))
             {
+                if (sourceCell.IsUnresolvedBucket)
+                {
+                    unresolvedPlacements.Add((sourceCell, placed));
+                    continue;
+                }
+
                 var effectiveCell = ResolveEffectiveInventoryCell(
                     sourceCell,
                     placed,
                     cellByFormId,
                     pcAuthority);
-                if (!buckets.TryGetValue(effectiveCell.FormId, out var bucket))
-                {
-                    bucket = new CellInventoryMatch(effectiveCell, []);
-                    buckets[effectiveCell.FormId] = bucket;
-                }
-
-                bucket.Hits.Add(placed);
+                AddMatchedPlacement(buckets, effectiveCell, placed);
             }
+        }
+
+        if (unresolvedPlacements.Count > 0)
+        {
+            ResolveUnresolvedBucketPlacements(
+                unresolvedPlacements,
+                cells,
+                buckets,
+                cellByFormId,
+                pcAuthority);
         }
 
         return buckets.Values
             .Where(x => x.Hits.Count > 0)
             .ToList();
+    }
+
+    private static void AddMatchedPlacement(
+        Dictionary<uint, CellInventoryMatch> buckets,
+        CellRecord effectiveCell,
+        PlacedReference placed)
+    {
+        if (!buckets.TryGetValue(effectiveCell.FormId, out var bucket))
+        {
+            bucket = new CellInventoryMatch(effectiveCell, []);
+            buckets[effectiveCell.FormId] = bucket;
+        }
+
+        bucket.Hits.Add(placed);
+    }
+
+    private static void ResolveUnresolvedBucketPlacements(
+        IReadOnlyList<(CellRecord Cell, PlacedReference Placement)> unresolvedPlacements,
+        IReadOnlyList<CellRecord> allCells,
+        Dictionary<uint, CellInventoryMatch> buckets,
+        IReadOnlyDictionary<uint, CellRecord> cellByFormId,
+        PcEsmCellAuthority? pcAuthority)
+    {
+        var exactGridTargets = BuildExactGridTargets(buckets);
+        var allowWorldspaceBoundsSplit = !buckets.Values.Any(match => match.Cell.IsInterior);
+        var capturedWorldspaceBounds = allowWorldspaceBoundsSplit
+            ? BuildWorldspaceBounds(buckets.Values.Select(match => match.Cell))
+            : [];
+        var worldspaceBounds = allowWorldspaceBoundsSplit
+            ? BuildWorldspaceBounds(allCells)
+            : [];
+        var boundedVirtualCells = new Dictionary<(uint WorldspaceFormId, int GridX, int GridY), CellRecord>();
+        var unresolvedGridCells = new Dictionary<(int GridX, int GridY), CellRecord>();
+        var nextBoundedVirtualFormId = 0xFF100001u;
+        var nextUnresolvedGridFormId = 0xFE110001u;
+
+        foreach (var (sourceCell, placed) in unresolvedPlacements)
+        {
+            var effectiveCell = ResolveEffectiveInventoryCell(sourceCell, placed, cellByFormId, pcAuthority);
+            if (effectiveCell.FormId != sourceCell.FormId)
+            {
+                AddMatchedPlacement(buckets, effectiveCell, placed);
+                continue;
+            }
+
+            var (gridX, gridY) = CellUtils.WorldToCellCoordinates(placed.X, placed.Y);
+            if (exactGridTargets.TryGetValue((gridX, gridY), out var exactGridCell))
+            {
+                AddMatchedPlacement(buckets, exactGridCell, placed);
+                continue;
+            }
+
+            if (TryResolveUniqueWorldspaceBounds(capturedWorldspaceBounds, gridX, gridY, out var worldspaceFormId) ||
+                TryResolveUniqueWorldspaceBounds(worldspaceBounds, gridX, gridY, out worldspaceFormId))
+            {
+                var key = (worldspaceFormId, gridX, gridY);
+                if (!boundedVirtualCells.TryGetValue(key, out var virtualCell))
+                {
+                    virtualCell = new CellRecord
+                    {
+                        FormId = nextBoundedVirtualFormId++,
+                        EditorId = $"[Virtual {gridX},{gridY}]",
+                        GridX = gridX,
+                        GridY = gridY,
+                        WorldspaceFormId = worldspaceFormId,
+                        IsVirtual = true,
+                        IsBigEndian = sourceCell.IsBigEndian
+                    };
+                    boundedVirtualCells[key] = virtualCell;
+                }
+
+                AddMatchedPlacement(buckets, virtualCell, placed);
+                continue;
+            }
+
+            var unresolvedKey = (gridX, gridY);
+            if (!unresolvedGridCells.TryGetValue(unresolvedKey, out var unresolvedCell))
+            {
+                unresolvedCell = new CellRecord
+                {
+                    FormId = nextUnresolvedGridFormId++,
+                    EditorId = $"[Unresolved Grid {gridX},{gridY}]",
+                    GridX = gridX,
+                    GridY = gridY,
+                    IsVirtual = true,
+                    IsUnresolvedBucket = true,
+                    IsBigEndian = sourceCell.IsBigEndian
+                };
+                unresolvedGridCells[unresolvedKey] = unresolvedCell;
+            }
+
+            AddMatchedPlacement(buckets, unresolvedCell, placed);
+        }
+    }
+
+    private static Dictionary<(int GridX, int GridY), CellRecord> BuildExactGridTargets(
+        IReadOnlyDictionary<uint, CellInventoryMatch> buckets)
+    {
+        return buckets.Values
+            .Where(match => !match.Cell.IsInterior &&
+                            !match.Cell.IsVirtual &&
+                            match.Cell.GridX.HasValue &&
+                            match.Cell.GridY.HasValue &&
+                            match.Hits.Count >= ExactGridReassignmentMinPlacements)
+            .GroupBy(match => (match.Cell.GridX!.Value, match.Cell.GridY!.Value))
+            .Where(group => group.Count() == 1)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Single().Cell);
+    }
+
+    private static List<WorldspaceGridBounds> BuildWorldspaceBounds(IEnumerable<CellRecord> cells)
+    {
+        return cells
+            .Where(cell => !cell.IsInterior &&
+                           !cell.IsUnresolvedBucket &&
+                           cell.WorldspaceFormId is > 0 &&
+                           cell.GridX.HasValue &&
+                           cell.GridY.HasValue)
+            .GroupBy(cell => cell.WorldspaceFormId!.Value)
+            .Select(group => new WorldspaceGridBounds(
+                group.Key,
+                group.Min(cell => cell.GridX!.Value),
+                group.Min(cell => cell.GridY!.Value),
+                group.Max(cell => cell.GridX!.Value),
+                group.Max(cell => cell.GridY!.Value)))
+            .ToList();
+    }
+
+    private static bool TryResolveUniqueWorldspaceBounds(
+        IReadOnlyList<WorldspaceGridBounds> bounds,
+        int gridX,
+        int gridY,
+        out uint worldspaceFormId)
+    {
+        worldspaceFormId = 0;
+        var matches = 0;
+        foreach (var bound in bounds)
+        {
+            if (gridX < bound.MinGridX ||
+                gridX > bound.MaxGridX ||
+                gridY < bound.MinGridY ||
+                gridY > bound.MaxGridY)
+            {
+                continue;
+            }
+
+            worldspaceFormId = bound.WorldspaceFormId;
+            if (++matches > 1)
+            {
+                worldspaceFormId = 0;
+                return false;
+            }
+        }
+
+        return matches == 1;
     }
 
     private static CellRecord ResolveEffectiveInventoryCell(
@@ -485,12 +719,28 @@ internal static class DmpCellInventoryCommand
             return masterCell;
         }
 
+        pcAuthority.CellMetadata.TryGetValue(masterCellFormId, out var metadata);
         pcAuthority.CellToWorldspace.TryGetValue(masterCellFormId, out var worldspaceFormId);
+        uint? resolvedWorldspaceFormId = metadata?.WorldspaceFormId;
+        if (resolvedWorldspaceFormId is null or 0u && worldspaceFormId != 0)
+        {
+            resolvedWorldspaceFormId = worldspaceFormId;
+        }
+
         return new CellRecord
         {
             FormId = masterCellFormId,
-            WorldspaceFormId = worldspaceFormId != 0 ? worldspaceFormId : null,
-            WorldspaceAssignmentSource = worldspaceFormId != 0 ? "PcEsmRefParent" : null
+            EditorId = metadata?.EditorId,
+            FullName = metadata?.FullName,
+            GridX = metadata?.IsInterior == true ? null : metadata?.GridX,
+            GridY = metadata?.IsInterior == true ? null : metadata?.GridY,
+            Flags = metadata?.IsInterior == true ? (byte)0x01 : (byte)0x00,
+            WorldspaceFormId = metadata?.IsInterior == true
+                ? null
+                : resolvedWorldspaceFormId,
+            WorldspaceAssignmentSource = resolvedWorldspaceFormId is > 0
+                ? "PcEsmRefParent"
+                : null
         };
     }
 
@@ -565,9 +815,17 @@ internal static class DmpCellInventoryCommand
     private sealed record PcEsmCellAuthority(
         IReadOnlyDictionary<uint, uint> CellToWorldspace,
         IReadOnlyDictionary<uint, uint> RefToCell,
-        IReadOnlyDictionary<uint, string> EditorIds);
+        IReadOnlyDictionary<uint, string> EditorIds,
+        IReadOnlyDictionary<uint, CellAuthorityMetadata> CellMetadata);
 
-    private sealed record CellInventoryMatch(
+    internal sealed record CellInventoryMatch(
         CellRecord Cell,
         List<PlacedReference> Hits);
+
+    private sealed record WorldspaceGridBounds(
+        uint WorldspaceFormId,
+        int MinGridX,
+        int MinGridY,
+        int MaxGridX,
+        int MaxGridY);
 }
