@@ -49,8 +49,9 @@ public record ExtractedRefrRecord
 
     /// <summary>
     ///     XTEL - Teleport position + rotation (6 floats at offsets 4-27 of the 32-byte
-    ///     subrecord). Populated from PC ESM XTEL bytes; null until v6 wires up runtime
-    ///     extraction from <c>DoorTeleportData</c>.
+    ///     subrecord). Populated from ESM XTEL bytes by both parser paths. Null for
+    ///     runtime-only refs and for the 4-byte XTEL variant (legacy format with only
+    ///     the door FormID).
     /// </summary>
     public PositionSubrecord? TeleportPosRot { get; init; }
 

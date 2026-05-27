@@ -235,4 +235,108 @@ public sealed class EsmPlacedReferenceSubrecordTests
             BigEndian = false
         };
     }
+
+    [Fact]
+    public void ExtractRefrRecordsFromParsed_Reads32ByteXtelPosRotAndFlags()
+    {
+        // Phase 4.2c: regression coverage for the full 32-byte XTEL layout
+        // (DoorFormID@0 + PosX/Y/Z@4-15 + RotX/Y/Z@16-27 + Flags@28).
+        const uint refrFormId = 0x00150210;
+        const uint baseFormId = 0x00150220;
+        const uint destinationDoorFormId = 0x00150280;
+
+        var record = new ParsedMainRecord
+        {
+            Header = new MainRecordHeader
+            {
+                Signature = "REFR",
+                DataSize = 0,
+                Flags = 0,
+                FormId = refrFormId
+            },
+            Offset = 0x300,
+            Subrecords =
+            [
+                MakeFormIdSubrecord("NAME", baseFormId),
+                MakeFullXtelSubrecord(
+                    destinationDoorFormId,
+                    posX: 100.5f, posY: 200.25f, posZ: 50.125f,
+                    rotX: 0.1f, rotY: 0.2f, rotZ: 0.3f,
+                    flags: 0x01)
+            ]
+        };
+
+        var scanResult = new EsmRecordScanResult();
+        EsmDataExtractor.ExtractRefrRecordsFromParsed(scanResult, [record], false);
+
+        var refr = Assert.Single(scanResult.RefrRecords);
+        Assert.Equal(destinationDoorFormId, refr.DestinationDoorFormId);
+        Assert.NotNull(refr.TeleportPosRot);
+        Assert.Equal(100.5f, refr.TeleportPosRot!.X);
+        Assert.Equal(200.25f, refr.TeleportPosRot.Y);
+        Assert.Equal(50.125f, refr.TeleportPosRot.Z);
+        Assert.Equal(0.1f, refr.TeleportPosRot.RotX);
+        Assert.Equal(0.2f, refr.TeleportPosRot.RotY);
+        Assert.Equal(0.3f, refr.TeleportPosRot.RotZ);
+        Assert.Equal((byte)0x01, refr.TeleportFlags);
+    }
+
+    [Fact]
+    public void ExtractRefrRecordsFromParsed_Reads4ByteXtelLeavesPosRotNull()
+    {
+        // Legacy 4-byte XTEL: only the door FormID, no PosRot or Flags.
+        // Phase 4.2c gates the PosRot read on `DataLength >= 28` so this stays null.
+        const uint refrFormId = 0x00150310;
+        const uint baseFormId = 0x00150320;
+        const uint destinationDoorFormId = 0x00150380;
+
+        var record = new ParsedMainRecord
+        {
+            Header = new MainRecordHeader
+            {
+                Signature = "REFR",
+                DataSize = 0,
+                Flags = 0,
+                FormId = refrFormId
+            },
+            Offset = 0x400,
+            Subrecords =
+            [
+                MakeFormIdSubrecord("NAME", baseFormId),
+                MakeFormIdSubrecord("XTEL", destinationDoorFormId)  // 4 bytes only
+            ]
+        };
+
+        var scanResult = new EsmRecordScanResult();
+        EsmDataExtractor.ExtractRefrRecordsFromParsed(scanResult, [record], false);
+
+        var refr = Assert.Single(scanResult.RefrRecords);
+        Assert.Equal(destinationDoorFormId, refr.DestinationDoorFormId);
+        Assert.Null(refr.TeleportPosRot);
+        Assert.Null(refr.TeleportFlags);
+    }
+
+    private static ParsedSubrecord MakeFullXtelSubrecord(
+        uint destinationDoorFormId,
+        float posX, float posY, float posZ,
+        float rotX, float rotY, float rotZ,
+        byte flags)
+    {
+        Span<byte> data = stackalloc byte[32];
+        BinaryPrimitives.WriteUInt32LittleEndian(data[..4], destinationDoorFormId);
+        BinaryPrimitives.WriteSingleLittleEndian(data[4..8], posX);
+        BinaryPrimitives.WriteSingleLittleEndian(data[8..12], posY);
+        BinaryPrimitives.WriteSingleLittleEndian(data[12..16], posZ);
+        BinaryPrimitives.WriteSingleLittleEndian(data[16..20], rotX);
+        BinaryPrimitives.WriteSingleLittleEndian(data[20..24], rotY);
+        BinaryPrimitives.WriteSingleLittleEndian(data[24..28], rotZ);
+        data[28] = flags;
+        // bytes 29-31 are padding (zero)
+        return new ParsedSubrecord
+        {
+            Signature = "XTEL",
+            Data = data.ToArray(),
+            BigEndian = false
+        };
+    }
 }

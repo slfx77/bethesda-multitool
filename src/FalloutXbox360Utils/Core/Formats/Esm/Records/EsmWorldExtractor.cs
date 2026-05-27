@@ -89,6 +89,8 @@ internal static class EsmWorldExtractor
         uint? lockNumTries = null;
         uint? lockTimesUnlocked = null;
         uint? destinationDoorFormId = null;
+        PositionSubrecord? teleportPosRot = null;
+        byte? teleportFlags = null;
         uint? enableParentFormId = null;
         byte? enableParentFlags = null;
         uint? linkedRefKeywordFormId = null;
@@ -173,6 +175,25 @@ internal static class EsmWorldExtractor
                     destinationDoorFormId = header.IsBigEndian
                         ? BinaryPrimitives.ReadUInt32BigEndian(subData)
                         : BinaryPrimitives.ReadUInt32LittleEndian(subData);
+                    // 32-byte XTEL also carries 6-float PosRot @4 + uint8 Flags @28.
+                    // Mirrors EsmDataExtractor.ExtractRefrRecordsFromParsed.
+                    if (sub.DataLength >= 28)
+                    {
+                        teleportPosRot = new PositionSubrecord(
+                            ReadXtelFloat(subData, 4, header.IsBigEndian),
+                            ReadXtelFloat(subData, 8, header.IsBigEndian),
+                            ReadXtelFloat(subData, 12, header.IsBigEndian),
+                            ReadXtelFloat(subData, 16, header.IsBigEndian),
+                            ReadXtelFloat(subData, 20, header.IsBigEndian),
+                            ReadXtelFloat(subData, 24, header.IsBigEndian),
+                            header.Offset + 24 + sub.DataOffset, header.IsBigEndian);
+                    }
+
+                    if (sub.DataLength >= 29)
+                    {
+                        teleportFlags = subData[28];
+                    }
+
                     break;
 
                 case "XESP" when sub.DataLength >= 8: // Enable Parent
@@ -252,6 +273,8 @@ internal static class EsmWorldExtractor
             LockNumTries = lockNumTries,
             LockTimesUnlocked = lockTimesUnlocked,
             DestinationDoorFormId = destinationDoorFormId,
+            TeleportPosRot = teleportPosRot,
+            TeleportFlags = teleportFlags,
             EnableParentFormId = enableParentFormId,
             EnableParentFlags = enableParentFlags,
             BaseEditorId = editorIdMap?.GetValueOrDefault(baseFormId),
@@ -265,6 +288,13 @@ internal static class EsmWorldExtractor
                 ? new PlacedReferenceStructuralData { Subrecords = structuralSubrecords }
                 : null
         };
+    }
+
+    private static float ReadXtelFloat(ReadOnlySpan<byte> subData, int offset, bool bigEndian)
+    {
+        return bigEndian
+            ? BinaryPrimitives.ReadSingleBigEndian(subData.Slice(offset, 4))
+            : BinaryPrimitives.ReadSingleLittleEndian(subData.Slice(offset, 4));
     }
 
     private static byte[] NormalizeStructuralSubrecord(

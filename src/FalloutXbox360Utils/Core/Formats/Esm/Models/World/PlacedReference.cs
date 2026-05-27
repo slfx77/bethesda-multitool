@@ -109,8 +109,10 @@ public record PlacedReference
 
     /// <summary>
     ///     XTEL teleport position + rotation (6 floats at offsets 4-27 in the on-disk subrecord).
-    ///     Populated by the ESM parser for override refs; null for runtime-only refs until the
-    ///     runtime DoorTeleportData struct layout is verified (deferred to v6).
+    ///     Populated by both ESM parser paths (EsmWorldExtractor + EsmDataExtractor) for refs
+    ///     carrying a 32-byte XTEL. Null for runtime-only refs — DoorTeleportData runtime
+    ///     extraction is not implemented (would require pointer-chase from the REFR struct's
+    ///     ExtraTeleport entry).
     /// </summary>
     public PositionSubrecord? TeleportPosRot { get; init; }
 

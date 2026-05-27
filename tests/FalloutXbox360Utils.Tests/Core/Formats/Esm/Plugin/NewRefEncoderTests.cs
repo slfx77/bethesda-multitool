@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Plugin;
@@ -81,5 +82,35 @@ public class NewRefEncoderTests
 
         Assert.Contains(encoded.Subrecords, s => s.Signature == "XTEL");
         Assert.Contains(encoded.Warnings, w => w.Contains("XTEL"));
+    }
+
+    [Fact]
+    public void EncodeNewPlacedReference_TeleportFullPosRot_EmitsXtelWithoutWarning()
+    {
+        // Phase 4.2c: PlacedReference now carries TeleportPosRot + TeleportFlags end-to-end.
+        // When both are set, XTEL is emitted with the full 32-byte payload and no warning.
+        var placed = new PlacedReference
+        {
+            FormId = 1,
+            DestinationDoorFormId = 0xDEAD,
+            TeleportPosRot = new PositionSubrecord(
+                X: 100.5f, Y: 200.25f, Z: 50.125f,
+                RotX: 0.1f, RotY: 0.2f, RotZ: 0.3f,
+                Offset: 0, IsBigEndian: false),
+            TeleportFlags = 0x01
+        };
+        var encoded = RefrEncoder.EncodeNewPlacedReference(placed);
+
+        var xtel = Assert.Single(encoded.Subrecords, s => s.Signature == "XTEL");
+        Assert.Equal(32, xtel.Bytes.Length);
+        Assert.Equal(0xDEADu, BinaryPrimitives.ReadUInt32LittleEndian(xtel.Bytes.AsSpan(0, 4)));
+        Assert.Equal(100.5f, BinaryPrimitives.ReadSingleLittleEndian(xtel.Bytes.AsSpan(4, 4)));
+        Assert.Equal(200.25f, BinaryPrimitives.ReadSingleLittleEndian(xtel.Bytes.AsSpan(8, 4)));
+        Assert.Equal(50.125f, BinaryPrimitives.ReadSingleLittleEndian(xtel.Bytes.AsSpan(12, 4)));
+        Assert.Equal(0.1f, BinaryPrimitives.ReadSingleLittleEndian(xtel.Bytes.AsSpan(16, 4)));
+        Assert.Equal(0.2f, BinaryPrimitives.ReadSingleLittleEndian(xtel.Bytes.AsSpan(20, 4)));
+        Assert.Equal(0.3f, BinaryPrimitives.ReadSingleLittleEndian(xtel.Bytes.AsSpan(24, 4)));
+        Assert.Equal((byte)0x01, xtel.Bytes[28]);
+        Assert.DoesNotContain(encoded.Warnings, w => w.Contains("XTEL"));
     }
 }
