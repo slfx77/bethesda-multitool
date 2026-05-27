@@ -1733,7 +1733,20 @@ public sealed class RuntimeOffsetCrossReferenceTests
         ["EncounterZone",  (byte)0x61],
         // Phase 1B.15E additions (best-effort):
         ["Eyes",           (byte)0x0B],
-        ["Hair",           (byte)0x0A]
+        ["Hair",           (byte)0x0A],
+        // Phase 6.3 additions (load-bearing readers without dedicated anchors):
+        ["VoiceType",      (byte)0x5D],
+        ["Water",          (byte)0x4E],
+        ["WeaponMod",      (byte)0x67],
+        ["Activator",      (byte)0x15],
+        ["Light",          (byte)0x1E],
+        ["Door",           (byte)0x1C],
+        ["FormList",       (byte)0x55],
+        ["Constructible",  (byte)0x32],
+        ["Book",           (byte)0x19],
+        ["Region",         (byte)0x37],
+        ["NavMesh",        (byte)0x43],
+        ["NavMeshInfoMap", (byte)0x38]
     ];
 
     public static IEnumerable<object[]> AllSnippetsXPdbReaders
@@ -1788,6 +1801,18 @@ public sealed class RuntimeOffsetCrossReferenceTests
                 "EncounterZone" => entries.Count(e => new RuntimeEncounterZoneReader(context).ReadRuntimeEncounterZone(e) != null),
                 "Eyes" => entries.Count(e => new RuntimeCharacterAppearanceReader(context).ReadRuntimeEyes(e) != null),
                 "Hair" => entries.Count(e => new RuntimeCharacterAppearanceReader(context).ReadRuntimeHair(e) != null),
+                "VoiceType" => entries.Count(e => new RuntimeVoiceTypeReader(context).ReadRuntimeVoiceType(e) != null),
+                "Water" => entries.Count(e => new RuntimeWaterReader(context).ReadRuntimeWater(e) != null),
+                "WeaponMod" => entries.Count(e => new RuntimeWeaponModReader(context).ReadRuntimeWeaponMod(e) != null),
+                "Activator" => entries.Count(e => new RuntimeWorldObjectReader(context).ReadRuntimeActivator(e) != null),
+                "Light" => entries.Count(e => new RuntimeWorldObjectReader(context).ReadRuntimeLight(e) != null),
+                "Door" => entries.Count(e => new RuntimeWorldObjectReader(context).ReadRuntimeDoor(e) != null),
+                "FormList" => entries.Count(e => new RuntimeCollectionReader(context).ReadRuntimeFormList(e) != null),
+                "Constructible" => entries.Count(e => new RuntimeConstructibleObjectReader(context).ReadRuntimeConstructibleObject(e) != null),
+                "Book" => entries.Count(e => new RuntimeBookReader(context).ReadRuntimeBook(e) != null),
+                "Region" => entries.Count(e => new RuntimeRegionReader(context).ReadRuntimeRegion(e) != null),
+                "NavMesh" => entries.Count(e => new RuntimeNavMeshReader(context).ReadRuntimeNavMesh(e) != null),
+                "NavMeshInfoMap" => entries.Count(e => new RuntimeNavMeshInfoMapReader(context).ReadRuntimeNavMeshInfoMap(e) != null),
                 _ => throw new InvalidOperationException($"Unknown reader key: {readerKey}")
             };
         }
