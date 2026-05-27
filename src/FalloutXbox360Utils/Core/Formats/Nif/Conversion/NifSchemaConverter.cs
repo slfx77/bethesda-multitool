@@ -84,6 +84,13 @@ internal sealed class NifSchemaConverter
         ///     to nested structs.
         /// </summary>
         public string? TemplateType { get; set; }
+
+        /// <summary>
+        ///     Stack of struct type names currently being converted, outermost first. Used by
+        ///     field-level special cases (e.g. <c>NiAGDDataBlock.Data</c>) that need to
+        ///     identify their container without crawling the whole conversion call stack.
+        /// </summary>
+        public Stack<string> StructStack { get; } = new();
     }
 
     #endregion
@@ -310,6 +317,22 @@ internal sealed class NifSchemaConverter
 
     private void ConvertFieldValue(ConversionContext ctx, NifFieldDef field, int depth)
     {
+        // Special case: NiAGDDataBlock.Data is declared as `byte[Num Data][Block Size]`,
+        // but the byte buffer is packed multi-byte channel data (typically 4-byte floats
+        // for vertex positions/normals on LOD meshes — all 2,282 same-structure diffs in
+        // the parity sweep landed here). Byte-by-byte conversion preserves the Xbox big-
+        // endian byte order verbatim; the PC engine then reads garbage floats. Swap each
+        // 4-byte uint32 in the buffer instead — handles every channel layout we have
+        // empirical evidence for (Unit Size 4, Stride 4-multiple).
+        if (field.Length != null
+            && field.Name == "Data"
+            && ctx.StructStack.Count > 0
+            && ctx.StructStack.Peek() == "NiAGDDataBlock"
+            && TryConvertNiAgdDataBlockData(ctx, field))
+        {
+            return;
+        }
+
         // Handle arrays
         if (field.Length != null)
         {
@@ -320,6 +343,57 @@ internal sealed class NifSchemaConverter
         // Single value
         ConvertSingleValue(ctx, field.Type, depth);
         StoreFieldValue(ctx, field);
+    }
+
+    /// <summary>
+    ///     Swap the packed data buffer of a <c>NiAGDDataBlock</c> as a uint32 stream rather
+    ///     than as the per-byte no-op the schema would otherwise apply. The buffer length
+    ///     is <c>Num Data × Block Size</c>; we look both values up from the field-values
+    ///     map that the converter populated when processing earlier fields. If anything
+    ///     looks off (missing values, non-4-aligned size, out-of-bounds), bail and let the
+    ///     normal path run — better to fall back to legacy behavior than corrupt bytes.
+    /// </summary>
+    private static bool TryConvertNiAgdDataBlockData(ConversionContext ctx, NifFieldDef field)
+    {
+        if (field.Width is null
+            || !ctx.FieldValues.TryGetValue("Num Data", out var numDataObj)
+            || !ctx.FieldValues.TryGetValue("Block Size", out var blockSizeObj))
+        {
+            return false;
+        }
+
+        if (numDataObj is not int numData || blockSizeObj is not int blockSize)
+        {
+            return false;
+        }
+
+        var totalBytes = (long)numData * blockSize;
+        if (totalBytes is < 0 or > int.MaxValue)
+        {
+            return false;
+        }
+
+        // The fix only applies when the packed data is 4-byte aligned (the only layout
+        // we have empirical evidence for). NIFs with byte-sized channels would need
+        // per-channel swap; fall back to the original behavior in that case.
+        if (blockSize % 4 != 0)
+        {
+            return false;
+        }
+
+        var totalInt = (int)totalBytes;
+        if (ctx.Position + totalInt > ctx.End)
+        {
+            return false;
+        }
+
+        for (var offset = 0; offset < totalInt; offset += 4)
+        {
+            SwapUInt32InPlace(ctx.Buffer, ctx.Position + offset);
+        }
+
+        ctx.Position += totalInt;
+        return true;
     }
 
     private void ConvertArrayField(ConversionContext ctx, NifFieldDef field, int depth)
@@ -524,14 +598,17 @@ internal sealed class NifSchemaConverter
     {
         // Store fields that may be needed for conditions or array lengths
         // This includes: Num X, X Count, Has X, Data Flags, BS Data Flags, etc.
-        // Also store "Interpolation" which is used as #ARG# for Key struct conditions
+        // Also store "Interpolation" which is used as #ARG# for Key struct conditions.
+        // "Block Size" is the 2D-array width for NiAGDDataBlock.Data — the converter's
+        // NiAGDDataBlock.Data swap path needs it alongside "Num Data".
         var shouldStore = field.Name.StartsWith("Num ", StringComparison.Ordinal) ||
                           field.Name.EndsWith(" Count", StringComparison.Ordinal) ||
                           field.Name.StartsWith("Has ", StringComparison.Ordinal) ||
                           field.Name.Contains("Flags", StringComparison.Ordinal) ||
                           field.Name.Contains("Type", StringComparison.Ordinal) ||
                           field.Name == "Compressed" ||
-                          field.Name == "Interpolation"; // For KeyGroup -> Key #ARG# propagation
+                          field.Name == "Interpolation" || // For KeyGroup -> Key #ARG# propagation
+                          field.Name == "Block Size";
 
         if (!shouldStore)
         {
@@ -652,6 +729,21 @@ internal sealed class NifSchemaConverter
             return false;
         }
 
+        if (BytePackedBitflagTypes.Contains(typeName))
+        {
+            // Xbox 360 NIF tools wrote BSPartFlag (BSDismemberSkinInstance.Partitions[].PartFlag)
+            // as raw bytes in the same layout as PC, not as a byte-swapped ushort. A normal
+            // per-field swap inverts the bit positions: PF_EDITOR_VISIBLE (bit 0, value 0x0001)
+            // becomes PF_START_NET_BONESET (bit 8, value 0x0100) and vice versa. The effect on
+            // a converted prototype outfit is that body partitions lose the visible flag (so
+            // limbs flicker / cull) and gore-cap partitions GAIN the visible flag (so the caps
+            // render through the body, garbage-textured if the cap textures aren't loaded).
+            // Skip the swap: advance the position by the storage size without touching bytes.
+            var skipSize = _schema.GetTypeSize(enumDef.Storage) ?? 2;
+            ctx.Position += skipSize;
+            return true;
+        }
+
         if (_schema.BasicTypes.TryGetValue(enumDef.Storage, out var storageType))
         {
             ConvertBasicType(ctx, storageType);
@@ -659,6 +751,19 @@ internal sealed class NifSchemaConverter
 
         return true;
     }
+
+    /// <summary>
+    ///     Enum/bitflags type names whose bytes are stored in PC-native order even in Xbox 360
+    ///     NIFs. The schema converter normally swaps every multi-byte enum/bitflags via its
+    ///     ushort/uint storage type, but Bethesda's Xbox tools wrote these specific types as
+    ///     raw byte pairs — swapping inverts the semantic bit positions. Add a type here only
+    ///     when both an Xbox source and its PC counterpart show identical disk bytes for the
+    ///     field (compare via <c>NifAnalyzer block</c>).
+    /// </summary>
+    private static readonly HashSet<string> BytePackedBitflagTypes = new(StringComparer.Ordinal)
+    {
+        "BSPartFlag",
+    };
 
     private bool TryConvertStructType(ConversionContext ctx, string typeName, int depth)
     {
@@ -680,7 +785,16 @@ internal sealed class NifSchemaConverter
             ctx.FieldValues.Remove(field.Name);
         }
 
-        ConvertFields(ctx, structDef.Fields, depth + 1);
+        ctx.StructStack.Push(typeName);
+        try
+        {
+            ConvertFields(ctx, structDef.Fields, depth + 1);
+        }
+        finally
+        {
+            ctx.StructStack.Pop();
+        }
+
         return true;
     }
 

@@ -44,6 +44,8 @@ internal sealed class Program
         rootCommand.Subcommands.Add(HavokCommands.CreateHavokCompareCommand());
         rootCommand.Subcommands.Add(ScanCommands.CreateScanCommand());
         rootCommand.Subcommands.Add(ScanCommands.CreateAnimatedCommand());
+        rootCommand.Subcommands.Add(ParityCommands.CreateParityCommand());
+        rootCommand.Subcommands.Add(ParityCommands.CreateConvertCommand());
 
         return rootCommand.Parse(args).Invoke();
     }
