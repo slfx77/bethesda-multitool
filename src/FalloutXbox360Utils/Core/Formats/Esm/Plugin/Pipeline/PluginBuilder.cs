@@ -43,7 +43,9 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
 ///     overrides.
 ///     6. Optionally validate by re-parsing.
 /// </summary>
+#pragma warning disable S1133 // Deprecated code reminder — intentional, removal tracked in roadmap.
 [Obsolete("Use PluginConversionPipeline as the conversion orchestration entrypoint.")]
+#pragma warning restore S1133
 public sealed class PluginBuilder
 {
     /// <summary>
@@ -52,6 +54,20 @@ public sealed class PluginBuilder
     ///     and runtime REFR rescue policy use identical type gates.
     /// </summary>
     private static readonly HashSet<string> RefrBaseEligibleTypes = ReferenceBaseRemapper.RefrBaseEligibleTypes;
+
+    /// <summary>
+    ///     Non-persistent REFRs using these base types prove that the DMP had actual
+    ///     static/layout placement data for the cell. Door/furniture/interactive-only
+    ///     captures stay in sparse merge mode because they are common in unloaded cells.
+    /// </summary>
+    private static readonly HashSet<string> LoadedCellPlacementBaseTypes = new(StringComparer.Ordinal)
+    {
+        "STAT",
+        "SCOL",
+        "MSTT",
+        "TREE",
+        "FLOR"
+    };
 
     /// <summary>
     ///     Tracks every new exterior cell emitted by <c>TryBuildSyntheticExteriorContext</c>,
@@ -165,6 +181,16 @@ public sealed class PluginBuilder
     private HashSet<uint>? _masterFormIds;
 
     /// <summary>
+    ///     Master REFR/ACHR/ACRE/NAVM/LAND FormIDs — placed inside CELL Children GRUPs in the
+    ///     master ESM. These are NOT in <see cref="_masterFormIds" /> (which only holds
+    ///     top-level records) but the engine knows about them because the player ref
+    ///     (0x00000014) and every placed instance lives here. SCRO validation must accept
+    ///     references to them; without that, scripts that target the player or any vanilla
+    ///     placed REFR get nulled and refuse to execute.
+    /// </summary>
+    private HashSet<uint>? _masterChildFormIds;
+
+    /// <summary>
     ///     Per-record-type subset of <see cref="_masterFormIds" />. Lets validators answer
     ///     "is FormID X a SCPT in the master?" rather than the weaker "is FormID X anything
     ///     in the master?" — the loose check let SCRI references through that pointed at
@@ -228,6 +254,7 @@ public sealed class PluginBuilder
             // runtime and gets dropped to avoid null-deref during master-binding.
             _masterFormIds = masterIndex.FormIds;
             _masterFormIdsByType = masterIndex.FormIdsByType;
+            _masterChildFormIds = new HashSet<uint>(masterIndex.ChildLocations.Keys);
             _emittedNewFormIds.Clear();
             _emittedNewFormIdsByType.Clear();
             _placedRefValidFormIdsCache = null;
@@ -328,7 +355,10 @@ public sealed class PluginBuilder
                 dmpRecords,
                 unified.RawResult.EsmRecords,
                 inputs.Options.CellWorldspaceAuthority,
-                inputs.Options.CellWorldspaceAuthorityWorldspaceNames);
+                inputs.Options.CellWorldspaceAuthorityWorldspaceNames,
+                inputs.Options.CellMetadataAuthority,
+                inputs.Options.CellReferenceParentAuthority,
+                inputs.Options.CellReferenceParentWindows);
             FilterDmpRecordsByExcludedWorldspaces(dmpRecords, inputs.Options.SkipWorldspaceFormIds);
             _dmpBaseFormIdToRecordType = ReferenceBaseRemapper.BuildDmpBaseFormIdToRecordType(dmpRecords);
             _sink.Info("Reading DMP", "DMP semantic load complete.");
@@ -366,6 +396,24 @@ public sealed class PluginBuilder
                     $"Deferred {_newWorldspacesForCellPipeline.Count:N0} new WRLD(s) with child cells " +
                     "to the cell-children pipeline (so their child cells emit under the right WRLD).");
             }
+
+            // EDID-based SCRI fallback: when an NPC has no captured script binding (its
+            // TESScriptableForm::pFormScript slot was null at DMP capture and the
+            // brute-force scan in RuntimeActorReader.BruteForceScanForScriptPointer also
+            // failed), try to attach a script whose EditorId is "<NpcEditorId>Script". This
+            // matches FNV vanilla's naming convention (e.g. CassFollowerScript →
+            // CassFollower; UlyssesScript → Ulysses) and recovers orphan-script bindings the
+            // proto's runtime hadn't yet wired up.
+            AttachOrphanScriptsByEditorId(dmpRecords);
+
+            // EDID-based VTCK fallback: NPCs may carry a VTCK FormID from the proto runtime
+            // that no longer exists in vanilla or our build (FormID 0x0014F3EB on Ulysses, for
+            // example — that FormID is a hole between MaleUniqueTheKing (0x...EC) and
+            // RobotUniqueRex (0x...EA)). When the engine can't resolve VTCK, it falls back to
+            // MaleAdult01Default and audio lookups under the unique voicetype directory all
+            // fail. Re-bind the VTCK to a matching VTYP whose EditorId is
+            // "MaleUnique<NpcEditorId>" / "FemaleUnique<NpcEditorId>" — vanilla's convention.
+            AttachOrphanVoiceTypesByEditorId(dmpRecords);
 
             // Phase 3: top-level record merging (GMST, GLOB, WEAP, …).
             _sink.OnPhaseStart("Merging top-level records", null);
@@ -418,6 +466,19 @@ public sealed class PluginBuilder
                 }
             }
 
+            // Dialogue-text backfill from --dialogue-audio-csv: when the DMP capture left a
+            // response blank or marked it "(NOT FOUND IN CRASH DUMP)", the audio CSV's Text
+            // column (one row per voice file = one response number) supplies the missing line
+            // so the engine emits real dialog instead of the placeholder sentinel. Applied
+            // in-place to dmpRecords.Dialogues before encoding.
+            if (inputs.Options.DialogueTextOverridesCsvPaths.Count > 0)
+            {
+                DialogueTextBackfill.ApplyFromCsvs(
+                    dmpRecords.Dialogues,
+                    inputs.Options.DialogueTextOverridesCsvPaths,
+                    _sink);
+            }
+
             // DIAL+INFO are not in EnumerateModelsByType — emit them as a single nested
             // section so each DIAL is followed by its type-7 Topic Children GRUP of INFOs.
             // Master FormIDs feed the FormID validator inside the builder: any FormID
@@ -429,15 +490,50 @@ public sealed class PluginBuilder
             // record types (so a CTDA referencing a new QUST/NPC/SPEL FormID stays valid).
             // _newRecordSourceToAllocated.Values is the full set of allocated new FormIDs at
             // this point (top-level encoders ran above; DIAL/INFO allocate inside the call).
+            // Include master child records too so INFO result-script SCRO references to
+            // placed refs / actors survive validation instead of being zeroed.
+            // Build voice-type EditorId + NPC→voice-type lookups so DialogGrupBuilder can
+            // emit dialogue-audio bindings keyed on the (voicetype_edid, dial_edid, resp_num)
+            // triple — the asset packer uses these to bridge build-era FormID drift in the
+            // dialogue-audio CSV.
+            var voiceTypeEditorIdsByFormId = BuildVoiceTypeEditorIdLookup(pcRecordsByFormId, dmpRecords);
+            var npcVoiceTypeByNpcFormId = BuildNpcVoiceTypeLookup(dmpRecords, _newRecordSourceToAllocated);
+            // Quest source-FormID → EDID lookup, unifying master + DMP quests. Needed by
+            // CollectAudioBindings to record QuestEditorId on each emitted binding (so the
+            // packer can reconstruct the engine-shaped voice filename when CSV truncation
+            // differs from what the runtime constructs).
+            var questEditorIdsByFormId = BuildQuestEditorIdLookup(
+                pcRecordsByFormId, dmpRecords, _newRecordSourceToAllocated);
+            IEnumerable<uint> dialogAdditionalValidFormIds = _newRecordSourceToAllocated.Values;
+            if (_masterChildFormIds is not null)
+            {
+                dialogAdditionalValidFormIds = dialogAdditionalValidFormIds.Concat(_masterChildFormIds);
+            }
+
             var dialogResult = DialogGrupBuilder.BuildDialogSection(
                 dmpRecords.DialogTopics, dmpRecords.Dialogues, classifier, allocator,
                 pcRecordsByFormId.Keys, pcRecordsByFormId, stats, _sink,
                 remapTable: _newRecordSourceToAllocated,
-                additionalValidFormIds: _newRecordSourceToAllocated.Values);
+                additionalValidFormIds: dialogAdditionalValidFormIds,
+                voiceTypeEditorIdsByFormId: voiceTypeEditorIdsByFormId,
+                npcVoiceTypeByNpcFormId: npcVoiceTypeByNpcFormId,
+                questEditorIdsByFormId: questEditorIdsByFormId);
             if (dialogResult.DialogSection.Length > 0)
             {
                 grupBytesByType["DIAL"] = dialogResult.DialogSection;
             }
+
+            // Record INFO source→allocated mappings so the asset packer can rewrite voice
+            // file paths onto the engine's runtime lookup shape.
+            foreach (var (sourceId, allocatedId) in dialogResult.NewInfoSourceToAllocated)
+            {
+                _newRecordSourceToAllocated.TryAdd(sourceId, allocatedId);
+            }
+
+            _sink.Info("Merging top-level records",
+                $"Recorded {dialogResult.NewInfoSourceToAllocated.Count:N0} INFO source→allocated " +
+                $"mapping(s) (total remap entries now: {_newRecordSourceToAllocated.Count:N0}).",
+                code: "dialog.remap.recorded");
 
             // The placeholder DIAL needs a parent quest or the FNV runtime refuses to attach
             // INFOs to it. DialogGrupBuilder allocated + encoded the placeholder QUST; inject
@@ -539,7 +635,9 @@ public sealed class PluginBuilder
                 Success = true,
                 Stats = stats,
                 OutputPath = inputs.OutputEspPath,
-                ValidationReport = validationReport
+                ValidationReport = validationReport,
+                NewRecordSourceToAllocated = new Dictionary<uint, uint>(_newRecordSourceToAllocated),
+                EmittedDialogueAudioBindings = dialogResult.AudioBindings
             };
         }
         catch (OperationCanceledException)
@@ -614,6 +712,233 @@ public sealed class PluginBuilder
      ///     so the WRLD record sits directly above its cells (canonical ESM layout). New WRLDs
     ///     with no child cells stay in the standard top-level emit path.
     /// </summary>
+    /// <summary>
+    ///     Attach orphan scripts to NPCs / quests / creatures by EditorId convention. Looks for
+    ///     <c>&lt;FormEditorId&gt;Script</c> as the script's EDID and binds it. Runs after
+    ///     all DMP records are parsed, before encoding. Bethesda's naming pattern
+    ///     (CassFollowerScript, BooneFollowerScript, UlyssesScript, etc.) makes this reliable
+    ///     for the common case where the proto's runtime hadn't yet linked the script pointer
+    ///     on TESForm.pFormScript.
+    /// </summary>
+    private void AttachOrphanScriptsByEditorId(RecordCollection dmpRecords)
+    {
+        // Build EditorId → SCPT FormID lookup, partitioned by script type. NPCs/creatures
+        // need Object-type scripts (IsQuestScript=false), quests need Quest-type scripts
+        // (IsQuestScript=true). Attaching the wrong type causes the engine to log
+        // "Unable to find script (X) on owner object (Y)" and silently null the binding
+        // — confirmed via UlyssesScript (Object, attaches to NPC) being incorrectly bound
+        // to VDialogueUlysses QUEST by the prefix-strip path.
+        var objectScriptsByEditorId = new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase);
+        var questScriptsByEditorId = new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase);
+        var validScriptFormIds = new HashSet<uint>();
+        foreach (var script in dmpRecords.Scripts)
+        {
+            if (script.FormId != 0)
+            {
+                validScriptFormIds.Add(script.FormId);
+            }
+
+            if (string.IsNullOrEmpty(script.EditorId) || script.FormId == 0)
+            {
+                continue;
+            }
+
+            // Magic effect scripts aren't attachable via SCRI on NPC/CREA/QUST — skip them.
+            if (script.IsMagicEffectScript)
+            {
+                continue;
+            }
+
+            if (script.IsQuestScript)
+            {
+                questScriptsByEditorId.TryAdd(script.EditorId, script.FormId);
+            }
+            else
+            {
+                objectScriptsByEditorId.TryAdd(script.EditorId, script.FormId);
+            }
+        }
+
+        if (objectScriptsByEditorId.Count == 0 && questScriptsByEditorId.Count == 0)
+        {
+            return;
+        }
+
+        // Treat an NPC/quest/creature as "needing a script attachment" when:
+        //   (a) Script field is null/zero, OR
+        //   (b) Script field points at a FormID we DON'T have a SCPT record for. (b) is the
+        //       Ulysses case: his TESNPC.pFormScript captured a proto FormID 0x00133FD7 that
+        //       was never instanced as a SCPT in our records — the encoder would log
+        //       "SCRI dangles" and skip the subrecord, leaving the NPC scriptless.
+        bool NeedsHeuristic(uint? script)
+            => !script.HasValue || script.Value == 0 || !validScriptFormIds.Contains(script.Value);
+
+        var attachedNpcs = 0;
+        var attachedQuests = 0;
+        var attachedCreatures = 0;
+
+        // NPCs: try EditorId + "Script", then EditorId itself (some scripts share the NPC name).
+        // Only consider Object-type scripts — quest-type would be rejected by the engine.
+        for (var i = 0; i < dmpRecords.Npcs.Count; i++)
+        {
+            var npc = dmpRecords.Npcs[i];
+            if (!NeedsHeuristic(npc.Script)) continue;
+            if (string.IsNullOrEmpty(npc.EditorId)) continue;
+
+            if (objectScriptsByEditorId.TryGetValue(npc.EditorId + "Script", out var sid)
+                || objectScriptsByEditorId.TryGetValue(npc.EditorId + "SCRIPT", out sid))
+            {
+                dmpRecords.Npcs[i] = npc with { Script = sid };
+                attachedNpcs++;
+            }
+        }
+
+        // Quests: try EditorId + "Script". Only consider Quest-type scripts — Object-type
+        // would be rejected. The previous prefix-strip path (VDialogueUlysses → UlyssesScript)
+        // is removed: it falsely matched the NPC's Object script for a quest, which is the
+        // type the engine rejects. Quest scripts in vanilla follow EditorId + "Script" with
+        // no stripping, so the direct lookup is sufficient.
+        for (var i = 0; i < dmpRecords.Quests.Count; i++)
+        {
+            var quest = dmpRecords.Quests[i];
+            if (!NeedsHeuristic(quest.Script)) continue;
+            if (string.IsNullOrEmpty(quest.EditorId)) continue;
+
+            if (questScriptsByEditorId.TryGetValue(quest.EditorId + "Script", out var sid)
+                || questScriptsByEditorId.TryGetValue(quest.EditorId + "SCRIPT", out sid))
+            {
+                dmpRecords.Quests[i] = quest with { Script = sid };
+                attachedQuests++;
+            }
+        }
+
+        // Creatures: same pattern as NPCs — Object-type only.
+        for (var i = 0; i < dmpRecords.Creatures.Count; i++)
+        {
+            var creature = dmpRecords.Creatures[i];
+            if (!NeedsHeuristic(creature.Script)) continue;
+            if (string.IsNullOrEmpty(creature.EditorId)) continue;
+
+            if (objectScriptsByEditorId.TryGetValue(creature.EditorId + "Script", out var sid)
+                || objectScriptsByEditorId.TryGetValue(creature.EditorId + "SCRIPT", out sid))
+            {
+                dmpRecords.Creatures[i] = creature with { Script = sid };
+                attachedCreatures++;
+            }
+        }
+
+        if (attachedNpcs + attachedQuests + attachedCreatures > 0)
+        {
+            _sink.Info("Attaching orphan scripts by EditorId",
+                $"Bound {attachedNpcs:N0} NPC, {attachedQuests:N0} quest, {attachedCreatures:N0} creature " +
+                "scripts via EditorId match. The proto's runtime hadn't populated TESForm.pFormScript " +
+                "for these; the EditorId convention (e.g. UlyssesScript → Ulysses NPC) recovers the link.",
+                code: "scri.orphan.attached");
+        }
+    }
+
+    /// <summary>
+    ///     For each NPC whose VTCK FormID doesn't resolve to a known VTYP in either the master
+    ///     ESM or our own records, look up a VTYP whose EditorId follows the vanilla naming
+    ///     convention (Male/FemaleUnique&lt;NpcEditorId&gt;) and rebind the VTCK to it. Without
+    ///     this, dangling VTCKs cause the engine to fall back to MaleAdult01Default, and any
+    ///     voice files packed under the unique voicetype directory never load.
+    /// </summary>
+    private void AttachOrphanVoiceTypesByEditorId(RecordCollection dmpRecords)
+    {
+        // Build EditorId → VTYP FormID lookup from our captured records. Master VTYPs are
+        // implicitly fine — if the NPC's VTCK already points at a master FormID, the master
+        // ESM provides the record and we don't need to rebind.
+        var vtypsByEditorId = new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase);
+        var validVtypFormIds = _masterFormIds is not null
+            ? new HashSet<uint>(_masterFormIds)
+            : [];
+        foreach (var vtyp in dmpRecords.VoiceTypes)
+        {
+            if (vtyp.FormId != 0)
+            {
+                validVtypFormIds.Add(vtyp.FormId);
+            }
+
+            if (!string.IsNullOrEmpty(vtyp.EditorId) && vtyp.FormId != 0)
+            {
+                vtypsByEditorId.TryAdd(vtyp.EditorId, vtyp.FormId);
+            }
+        }
+
+        if (vtypsByEditorId.Count == 0)
+        {
+            return;
+        }
+
+        // An NPC "needs heuristic" when its VTCK is set but doesn't resolve to a VTYP
+        // specifically — checking validVtypFormIds (which mirrors all master FormIDs, not
+        // just VTYP ones) would let a dangling 0x... slip through unchanged just because
+        // SOME other record type uses that FormID. Filter by VTYP record-type explicitly.
+        var masterVtypSet = _masterFormIdsByType is not null
+            && _masterFormIdsByType.TryGetValue("VTYP", out var masterVtyps)
+            ? masterVtyps
+            : (IReadOnlySet<uint>)new HashSet<uint>();
+        var dmpVtypSet = new HashSet<uint>();
+        foreach (var vtyp in dmpRecords.VoiceTypes)
+        {
+            if (vtyp.FormId != 0)
+            {
+                dmpVtypSet.Add(vtyp.FormId);
+            }
+        }
+
+        bool NeedsHeuristic(uint? vtck)
+            => vtck.HasValue && vtck.Value != 0
+               && !masterVtypSet.Contains(vtck.Value)
+               && !dmpVtypSet.Contains(vtck.Value);
+
+        var attached = 0;
+        var needyCount = 0;
+        var sampleMisses = new List<string>();
+        var sampleAttaches = new List<string>();
+        string[] prefixes = ["MaleUnique", "FemaleUnique"];
+        for (var i = 0; i < dmpRecords.Npcs.Count; i++)
+        {
+            var npc = dmpRecords.Npcs[i];
+            if (!NeedsHeuristic(npc.VoiceType)) continue;
+            if (string.IsNullOrEmpty(npc.EditorId)) continue;
+
+            needyCount++;
+
+            var matched = false;
+            foreach (var prefix in prefixes)
+            {
+                if (vtypsByEditorId.TryGetValue(prefix + npc.EditorId, out var newVtck))
+                {
+                    dmpRecords.Npcs[i] = npc with { VoiceType = newVtck };
+                    attached++;
+                    matched = true;
+                    if (sampleAttaches.Count < 5)
+                    {
+                        sampleAttaches.Add(
+                            $"{npc.EditorId} 0x{npc.VoiceType!.Value:X8}→0x{newVtck:X8}");
+                    }
+                    break;
+                }
+            }
+
+            if (!matched && sampleMisses.Count < 5)
+            {
+                sampleMisses.Add($"{npc.EditorId} (VTCK=0x{npc.VoiceType!.Value:X8})");
+            }
+        }
+
+        if (attached > 0)
+        {
+            _sink.Info("Attaching orphan voice types by EditorId",
+                $"Rebound {attached:N0} of {needyCount:N0} NPC VTCK reference(s) to matching " +
+                "unique VTYP records via EditorId convention (e.g. Ulysses → MaleUniqueUlysses). " +
+                "The original VTCKs pointed at FormIDs with no record in vanilla or our build.",
+                code: "vtck.orphan.attached");
+        }
+    }
+
     private Dictionary<uint, NewWorldspaceEntry> PreEncodeNewWorldspacesWithCells(
         RecordCollection dmpRecords,
         NewVsOverrideClassifier classifier,
@@ -926,7 +1251,7 @@ public sealed class PluginBuilder
         string recordType,
         object model,
         IRecordEncoder encoder,
-        IReadOnlyDictionary<uint, ParsedMainRecord> pcRecords,
+        Dictionary<uint, ParsedMainRecord> pcRecords,
         uint masterFormId,
         SubrecordMergePolicy policy,
         PluginBuildOptions options,
@@ -1043,19 +1368,22 @@ public sealed class PluginBuilder
             }
         }
 
-        // PACK, IDLE, QUST, PERK, CONT, NPC_, LVLI/LVLN/LVLC, WEAP encoders want the full
-        // master ∪ all-emitted-new union so they can distinguish dangling refs from legitimate
-        // ones. Computed lazily and only for the encoders that actually need it so we don't
-        // pay the union cost everywhere.
-        IReadOnlySet<uint>? allValidFormIds = null;
-        if (recordType is "PACK" or "IDLE" or "QUST" or "PERK"
-            or "CONT" or "NPC_" or "LVLI" or "LVLN" or "LVLC" or "WEAP")
-        {
-            var union = new HashSet<uint>();
-            if (_masterFormIds is not null) union.UnionWith(_masterFormIds);
-            union.UnionWith(_emittedNewFormIds);
-            allValidFormIds = union;
-        }
+        // Every encoder that takes a (validFormIds, remapTable) pair wants the full
+        // master ∪ all-emitted-new union so it can distinguish dangling refs from legitimate
+        // ones. The previous selective allow-list quietly fed null to encoders not on it —
+        // most notably SCPT, where unresolved SCROs caused the engine to log
+        // "Could not find referenced object … Script will not be executed" and refuse to run
+        // the script. Always compute the union; the HashSet union is cheap and the
+        // allow-list is too easy to forget to update when adding new validating encoders.
+        var allValidFormIdsUnion = new HashSet<uint>();
+        if (_masterFormIds is not null) allValidFormIdsUnion.UnionWith(_masterFormIds);
+        if (_masterChildFormIds is not null) allValidFormIdsUnion.UnionWith(_masterChildFormIds);
+        allValidFormIdsUnion.UnionWith(_emittedNewFormIds);
+        // Engine-hardcoded refs (PlayerRef 0x14, game-time GLOBs, etc.) aren't in any
+        // ESM record but scripts reference them constantly — without whitelisting,
+        // SCRO validators would null them and break every script that touches the player.
+        allValidFormIdsUnion.UnionWith(RuntimeStateRecordPolicy.EngineFormIds);
+        IReadOnlySet<uint>? allValidFormIds = allValidFormIdsUnion;
 
         var context = new NewTopLevelRecordEncodingContext(
             _masterFormIds ?? new HashSet<uint>(),
@@ -1199,8 +1527,9 @@ public sealed class PluginBuilder
     ///     1. Cell exists in PC ESM, ref exists in PC ESM → override
     ///     2. Cell exists in PC ESM, ref doesn't → new ref allocated under existing cell
     ///     3. Cell doesn't exist in PC ESM → new CELL with new refs as children
-    ///     Plus, for HasTemporary cells with a master, master refs missing from DMP get
-    ///     deleted-flag overrides via <see cref="DeletedRefSynthesizer" />.
+    ///     Plus, for master cells that get a replacement child GRUP, vanilla child refs
+    ///     missing from sparse DMP captures are copied forward so the override does not
+    ///     gut populated interiors.
     /// </summary>
     private List<CellOverrideBundle> BuildCellOverrideBundles(
         RecordCollection dmpRecords,
@@ -1235,7 +1564,6 @@ public sealed class PluginBuilder
         // when secondary captures held additional content.
         var unionResult = CellCaptureUnioner.Union(dmpRecords.Cells);
         var mergedCells = unionResult.Cells;
-        var seenExistingRefsByMasterCell = BuildSeenExistingRefsByMasterCell(mergedCells, masterChildLocations);
         var reroutedChildRecordsByCell = new Dictionary<uint, CellChildRecordBuckets>();
         var staticDoorRepairsByTargetRef = new Dictionary<uint, DoorTeleportRepair>();
         if (unionResult.TotalUnionedPlacements > 0)
@@ -1267,7 +1595,7 @@ public sealed class PluginBuilder
         // (position/rotation) get emitted under the wrong parent — two parent assignments at
         // load time crash the FNV renderer with a NiAlphaProperty access violation.
         mergedCells = RepartitionPlacementsByMasterParent(mergedCells, pcRecordsByFormId,
-            refToCell, cellContexts, options, stats);
+            refToCell, cellContexts, options);
 
         // Phase A — index DMP-captured NAVMs by their parent cell FormID and allocate
         // emitted FormIDs upfront. Allocating ahead of the per-cell loop guarantees that
@@ -1470,6 +1798,8 @@ public sealed class PluginBuilder
                 }
             }
 
+            var masterChildLookupFormId = gridRedirectedToMasterFormId ?? dmpCell.FormId;
+
             // NEW cells (not in master) can't be "override merges" — there's no
             // master GRUP to retain temporaries from, so the only correct policy is to
             // emit every captured placement. The classifier's PersistentOnly mode would
@@ -1477,9 +1807,30 @@ public sealed class PluginBuilder
             // clutter) because *none* of a new cell's placements live in the master.
             // For override cells (cell exists in master) the classifier's logic still
             // applies, because the runtime merges DMP overrides into the master GRUP.
+            var loadedPlacementEvidenceThreshold =
+                GetLoadedPlacementEvidenceThreshold(masterChildLookupFormId, cellToRefs);
+            var loadedPlacementEvidenceCount = pcCellExists
+                ? CountLoadedCellPlacementEvidence(dmpCell, pcRecordsByFormId)
+                : 0;
             var mode = pcCellExists
-                ? CellMerger.Classify(dmpCell, pcRefFormIds)
+                ? CellMerger.Classify(
+                    dmpCell,
+                    pcRefFormIds,
+                    placed => IsLoadedCellPlacement(placed, pcRecordsByFormId),
+                    loadedPlacementEvidenceThreshold)
                 : CellMergeMode.HasTemporary;
+
+            if (options.VerboseDecisions && pcCellExists)
+            {
+                var masterChildRefCount = cellToRefs.TryGetValue(masterChildLookupFormId, out var refs)
+                    ? refs.Count
+                    : 0;
+                _sink.Decision("Merging cell children",
+                    $"Cell 0x{emittedCellFormId:X8} merge mode {mode}; loaded static/layout evidence " +
+                    $"{loadedPlacementEvidenceCount:N0}/{loadedPlacementEvidenceThreshold:N0}, " +
+                    $"master child refs {masterChildRefCount:N0}.",
+                    "CELL", dmpCell.FormId, "cell.merge-mode");
+            }
 
             // Diagnostic full-replace mode: when the user opts in AND the master cell exists
             // AND the DMP captured any placements for the cell, force HasTemporary mode so all
@@ -1518,6 +1869,7 @@ public sealed class PluginBuilder
             var vwdRecords = new List<byte[]>();
             var temporaryRecords = new List<byte[]>();
             var dmpRefFormIdsInCell = new HashSet<uint>();
+            var coveredMasterRefFormIdsInCell = new HashSet<uint>();
 
             // Walk every DMP placed object in this cell. The CellMerger.SelectOverrideRefs
             // filter is for OVERRIDE-ONLY mode; we also handle new refs, so we walk the full
@@ -1541,6 +1893,49 @@ public sealed class PluginBuilder
                 var placedForEmit = !refIsInMaster
                     ? RemapNewPlacedActorBase(placed, actorBaseRemap, options)
                     : placed;
+
+                if (!pcCellExists && refIsInMaster)
+                {
+                    // A DMP snapshot can attach an existing master ref to a synthetic
+                    // runtime cell. Emitting that override under the new cell duplicates the
+                    // FormID and breaks master-authored links such as door XTEL parent-cell
+                    // resolution. Keep the master record in its original cell instead.
+                    stats.IncrementSkipped(placed.RecordType);
+                    stats.IncrementDropReason("refr.master-ref-in-new-cell");
+                    if (options.VerboseDecisions)
+                    {
+                        _sink.Decision("Merging cell children",
+                            $"Skipping existing master {placed.RecordType} 0x{placed.FormId:X8} captured " +
+                            $"under new cell 0x{emittedCellFormId:X8}; master parent-cell ownership wins.",
+                            placed.RecordType,
+                            placed.FormId,
+                            "refr.master-ref-in-new-cell");
+                    }
+
+                    continue;
+                }
+
+                if (mode == CellMergeMode.PersistentOnly && refIsInMaster)
+                {
+                    // Sparse unloaded-cell captures are not authoritative for existing
+                    // master refs: they often carry only persistent doors / markers and
+                    // live-state teleport data. Preserve the master record verbatim in the
+                    // child-GRUP preservation pass instead of overriding it with DMP bytes.
+                    stats.IncrementSkipped(placed.RecordType);
+                    stats.IncrementDropReason("refr.sparse-cell-master-preserved");
+                    if (options.VerboseDecisions)
+                    {
+                        _sink.Decision("Merging cell children",
+                            $"Preserving master {placed.RecordType} 0x{placed.FormId:X8} in sparse " +
+                            $"cell 0x{emittedCellFormId:X8}; DMP persistent-only capture is not " +
+                            "authoritative for existing refs.",
+                            placed.RecordType,
+                            placed.FormId,
+                            "refr.sparse-cell-master-preserved");
+                    }
+
+                    continue;
+                }
 
                 // When a placed ref's base FormID is a DMP-source ID that we've
                 // freshly emitted under a new plugin-local FormID, rewrite the BaseFormId
@@ -1764,6 +2159,10 @@ public sealed class PluginBuilder
                 {
                     AddChildRecordToBuckets(persistentRecords, vwdRecords, temporaryRecords, targetGroupType,
                         recordBytes);
+                    if (refExistsInPc)
+                    {
+                        coveredMasterRefFormIdsInCell.Add(placed.FormId);
+                    }
                 }
                 else
                 {
@@ -1783,36 +2182,33 @@ public sealed class PluginBuilder
                 stats.IncrementEmitted(placed.RecordType);
             }
 
-            // Mode B (HasTemporary) + cell has a master: synthesize deletion-flag overrides for
-            // master refs that weren't in the DMP snapshot. When the cell was redirected via
-            // grid-collision, look up master refs by the *master* cell FormID (= emittedCellFormId)
-            // rather than the DMP source FormID.
-            var masterChildLookupFormId = gridRedirectedToMasterFormId ?? dmpCell.FormId;
-            if (mode == CellMergeMode.HasTemporary
+            var hasCapturedTerrain = !dmpCell.IsInterior &&
+                                     (dmpCell.Heightmap != null ||
+                                      dmpCell.RuntimeTerrainMesh != null ||
+                                      dmpCell.LandVisualData?.HasAny == true);
+
+            // Sparse/merge cells with a master: preserve master refs that were not
+            // successfully covered by emitted overrides. Grid-redirected sparse cells can
+            // classify as Skip because none of their refs are master-owned, but if we emitted
+            // any new sparse child records, the master children still need to be copied so the
+            // plugin augments the cell instead of replacing it with only the new refs.
+            var hasEmittedDmpChildRecords =
+                persistentRecords.Count > 0 || vwdRecords.Count > 0 || temporaryRecords.Count > 0;
+            if ((mode != CellMergeMode.Skip || hasCapturedTerrain || hasEmittedDmpChildRecords)
                 && pcCellExists
                 && cellToRefs.TryGetValue(masterChildLookupFormId, out var masterRefIds))
             {
-                var dmpRefFormIdsForDeletion = dmpRefFormIdsInCell;
-                if (seenExistingRefsByMasterCell.TryGetValue(masterChildLookupFormId, out var globallySeenRefs)
-                    && globallySeenRefs.Count > 0)
-                {
-                    dmpRefFormIdsForDeletion = new HashSet<uint>(dmpRefFormIdsInCell);
-                    dmpRefFormIdsForDeletion.UnionWith(globallySeenRefs);
-                }
-
                 var masterRefs = masterRefIds
                     .Select(id => pcRecordsByFormId.GetValueOrDefault(id))
                     .Where(r => r is not null)
                     .ToList()!;
 
-                // In diagnostic full-replace mode, skip the structural preservation copy and
-                // use a persistent-only filter for the deletion synthesizer so all temporary
-                // master refs (structural or not) get a deletion override while every
-                // persistent master ref survives untouched.
-                var preservedStructural = 0;
-                Func<ParsedMainRecord, bool>? preserveFilter;
                 if (replaceTemporaries)
                 {
+                    // In diagnostic full-replace mode, use a per-ref position-matching
+                    // filter for the deletion synthesizer so only refs with an authoritative
+                    // DMP replacement are wiped. Missing runtime refs are preserved by the
+                    // filter because sparse captures are not a complete cell inventory.
                     // Per-ref position-matching filter. A master ref is wipe-eligible only
                     // when the DMP carries a placement of the *same base record* at the
                     // *same world position* (within PositionMatchTolerance). Master refs
@@ -1823,46 +2219,55 @@ public sealed class PluginBuilder
                     // TESObjectREFRs for, and wiping them leaves interiors gutted.
                     var placementsByBase = dmpPlacementsByBase
                                            ?? new Dictionary<uint, List<PlacedReference>>();
-                    preserveFilter = CellReplacementPreservationPolicy.CreatePreserveFilter(placementsByBase);
+                    var preserveFilter = CellReplacementPreservationPolicy.CreatePreserveFilter(placementsByBase);
+                    var deleted = DeletedRefSynthesizer.Synthesize(
+                        masterRefs!, dmpRefFormIdsInCell, preserveFilter);
+                    persistentRecords.AddRange(deleted.Persistent);
+                    temporaryRecords.AddRange(deleted.Temporary);
+
+                    if (deleted.Persistent.Count + deleted.Temporary.Count > 0 && options.VerboseDecisions)
+                    {
+                        _sink.Decision("Merging cell children",
+                            $"Full-replace: {deleted.Persistent.Count} persistent + {deleted.Temporary.Count} " +
+                            "temporary master refs marked deleted via per-ref base+position match " +
+                            $"(tolerance {CellReplacementPreservationPolicy.PositionMatchTolerance:F0}u).",
+                            "CELL", dmpCell.FormId, "cell.full-replace-on-override");
+                    }
                 }
                 else
                 {
-                    preservedStructural = CellStructuralReferencePreserver.PreserveMissing(
-                        masterRefs!, dmpRefFormIdsForDeletion, pcRecordsByFormId,
-                        persistentRecords, temporaryRecords, stats);
-                    preserveFilter = masterRef => CellStructuralReferencePreserver.IsStructuralCellRef(
-                        masterRef, pcRecordsByFormId);
-                }
+                    int preservedMasterRefs;
+                    string preservationReason;
+                    if (mode == CellMergeMode.LoadedReplacement)
+                    {
+                        var hasAuthoritativeDmpStructuralRefs = dmpCell.PlacedObjects.Any(
+                            placed => placed.StructuralData is { HasAny: true });
+                        preservedMasterRefs = CellStructuralReferencePreserver.PreserveLoadedReplacementMissing(
+                            masterRefs!, coveredMasterRefFormIdsInCell, masterChildLocations,
+                            pcRecordsByFormId, persistentRecords, vwdRecords, temporaryRecords, stats,
+                            hasAuthoritativeDmpStructuralRefs);
+                        preservationReason = "script-critical/structural";
+                    }
+                    else
+                    {
+                        var alreadyCoveredMasterRefs = mode == CellMergeMode.PersistentOnly
+                            ? new HashSet<uint>()
+                            : coveredMasterRefFormIdsInCell;
+                        preservedMasterRefs = CellStructuralReferencePreserver.PreserveAllMissing(
+                            masterRefs!, alreadyCoveredMasterRefs, masterChildLocations,
+                            persistentRecords, vwdRecords, temporaryRecords, stats);
+                        preservationReason = "vanilla";
+                    }
 
-                var deleted = DeletedRefSynthesizer.Synthesize(
-                    masterRefs!, dmpRefFormIdsForDeletion, preserveFilter);
-                persistentRecords.AddRange(deleted.Persistent);
-                temporaryRecords.AddRange(deleted.Temporary);
-
-                if (deleted.Persistent.Count + deleted.Temporary.Count > 0 && options.VerboseDecisions)
-                {
-                    var label = replaceTemporaries ? "Full-replace" : "Wipeout";
-                    var matchSuffix = replaceTemporaries
-                        ? $" via per-ref base+position match (tolerance {CellReplacementPreservationPolicy.PositionMatchTolerance:F0}u)"
-                        : string.Empty;
-                    _sink.Decision("Merging cell children",
-                        $"{label}: {deleted.Persistent.Count} persistent + {deleted.Temporary.Count} temporary master refs marked deleted{matchSuffix}.",
-                        "CELL", dmpCell.FormId,
-                        replaceTemporaries ? "cell.full-replace-on-override" : null);
-                }
-
-                if (preservedStructural > 0 && options.VerboseDecisions)
-                {
-                    _sink.Decision("Merging cell children",
-                        $"Preserved {preservedStructural} structural marker ref(s) missing from DMP cell snapshot.",
-                        "CELL", dmpCell.FormId, "cell.structural-preserved");
+                    if (preservedMasterRefs > 0 && options.VerboseDecisions)
+                    {
+                        _sink.Decision("Merging cell children",
+                            $"Preserved {preservedMasterRefs} {preservationReason} child ref(s) missing " +
+                            "from DMP cell snapshot.",
+                            "CELL", dmpCell.FormId, "cell.master-children-preserved");
+                    }
                 }
             }
-
-            var hasCapturedTerrain = !dmpCell.IsInterior &&
-                                     (dmpCell.Heightmap != null ||
-                                      dmpCell.RuntimeTerrainMesh != null ||
-                                      dmpCell.LandVisualData?.HasAny == true);
 
             if (persistentRecords.Count == 0
                 && vwdRecords.Count == 0
@@ -2127,7 +2532,7 @@ public sealed class PluginBuilder
             });
         }
 
-        SanitizeNvexInBundles(bundles, emittedNavmFormIds, stats);
+        SanitizeNvexInBundles(bundles, emittedNavmFormIds);
 
         return CoalesceCellOverrideBundles(FilterInvalidPlacedChildRecords(bundles, stats));
     }
@@ -2142,8 +2547,7 @@ public sealed class PluginBuilder
     /// </summary>
     private void SanitizeNvexInBundles(
         List<CellOverrideBundle> bundles,
-        HashSet<uint> emittedNavmFormIds,
-        ConversionPipelineStats stats)
+        HashSet<uint> emittedNavmFormIds)
     {
         if (bundles.Count == 0)
         {
@@ -2210,7 +2614,7 @@ public sealed class PluginBuilder
     }
 
     private List<CellOverrideBundle> FilterInvalidPlacedChildRecords(
-        IReadOnlyList<CellOverrideBundle> bundles,
+        List<CellOverrideBundle> bundles,
         ConversionPipelineStats stats)
     {
         var filtered = new List<CellOverrideBundle>(bundles.Count);
@@ -2266,6 +2670,11 @@ public sealed class PluginBuilder
     {
         var header = EsmParser.ParseRecordHeader(recordBytes);
         if (header is null || header.Signature is not ("REFR" or "ACHR" or "ACRE"))
+        {
+            return false;
+        }
+
+        if (_masterChildFormIds?.Contains(header.FormId) == true)
         {
             return false;
         }
@@ -2343,19 +2752,16 @@ public sealed class PluginBuilder
     ///     refs (those not in master), the original DMP cell stays the parent — the
     ///     reroute applies to OVERRIDE refs only.
     /// </summary>
-    private Dictionary<uint, uint>? _gridRedirectTargets;
-
     private List<CellRecord> RepartitionPlacementsByMasterParent(
         IReadOnlyList<CellRecord> mergedCells,
         Dictionary<uint, ParsedMainRecord> pcRecordsByFormId,
         Dictionary<uint, uint> refToCell,
         Dictionary<uint, PcEsmCellContext> cellContexts,
-        PluginBuildOptions options,
-        ConversionPipelineStats stats)
+        PluginBuildOptions options)
     {
         // Resolve grid-redirect targets up-front so the master-parent comparison uses the
         // effective cell each DMP entry maps to (DMP FormID → master cell at same grid).
-        _gridRedirectTargets = new Dictionary<uint, uint>();
+        var gridRedirectTargets = new Dictionary<uint, uint>();
         foreach (var dmpCell in mergedCells)
         {
             if (pcRecordsByFormId.ContainsKey(dmpCell.FormId) || dmpCell.IsInterior
@@ -2369,7 +2775,7 @@ public sealed class PluginBuilder
                     (dmpCell.WorldspaceFormId.Value, dmpCell.GridX.Value, dmpCell.GridY.Value),
                     out var redirectTo))
             {
-                _gridRedirectTargets[dmpCell.FormId] = redirectTo;
+                gridRedirectTargets[dmpCell.FormId] = redirectTo;
             }
         }
 
@@ -2382,7 +2788,7 @@ public sealed class PluginBuilder
         foreach (var dmpCell in mergedCells)
         {
             // Effective DMP cell FormID after grid-redirect.
-            var effectiveFormId = _gridRedirectTargets.GetValueOrDefault(dmpCell.FormId, dmpCell.FormId);
+            var effectiveFormId = gridRedirectTargets.GetValueOrDefault(dmpCell.FormId, dmpCell.FormId);
 
             foreach (var placed in dmpCell.PlacedObjects)
             {
@@ -2444,7 +2850,7 @@ public sealed class PluginBuilder
         var claimedTargets = new HashSet<uint>();
         foreach (var orig in mergedCells)
         {
-            var key = _gridRedirectTargets.GetValueOrDefault(orig.FormId, orig.FormId);
+            var key = gridRedirectTargets.GetValueOrDefault(orig.FormId, orig.FormId);
             var placements = claimedTargets.Add(key)
                 ? refsByTargetCell.GetValueOrDefault(key, [])
                 : [];
@@ -2504,34 +2910,6 @@ public sealed class PluginBuilder
         return rebuilt;
     }
 
-    private static Dictionary<uint, HashSet<uint>> BuildSeenExistingRefsByMasterCell(
-        IReadOnlyList<CellRecord> mergedCells,
-        IReadOnlyDictionary<uint, MasterChildLocation> masterChildLocations)
-    {
-        var seen = new Dictionary<uint, HashSet<uint>>();
-        foreach (var cell in mergedCells)
-        {
-            foreach (var placed in cell.PlacedObjects)
-            {
-                if (!masterChildLocations.TryGetValue(placed.FormId, out var location)
-                    || location.RecordType is not ("REFR" or "ACHR" or "ACRE"))
-                {
-                    continue;
-                }
-
-                if (!seen.TryGetValue(location.CellFormId, out var refsInCell))
-                {
-                    refsInCell = [];
-                    seen[location.CellFormId] = refsInCell;
-                }
-
-                refsInCell.Add(placed.FormId);
-            }
-        }
-
-        return seen;
-    }
-
     private static void AddReroutedChildRecord(
         Dictionary<uint, CellChildRecordBuckets> bucketsByCell,
         uint cellFormId,
@@ -2568,11 +2946,11 @@ public sealed class PluginBuilder
         }
     }
 
-    private static List<CellOverrideBundle> CoalesceCellOverrideBundles(IReadOnlyList<CellOverrideBundle> bundles)
+    private static List<CellOverrideBundle> CoalesceCellOverrideBundles(List<CellOverrideBundle> bundles)
     {
         if (bundles.Count <= 1)
         {
-            return bundles.ToList();
+            return [.. bundles];
         }
 
         var coalesced = new List<CellOverrideBundle>();
@@ -2590,11 +2968,11 @@ public sealed class PluginBuilder
             var vwd = new List<byte[]>();
             var temporary = new List<byte[]>();
 
-            foreach (var bundle in group)
+            foreach (var bundle in group.Reverse())
             {
-                AppendUniqueRecords(persistent, bundle.PersistentChildRecords, seenRecords);
-                AppendUniqueRecords(vwd, bundle.VwdChildRecords, seenRecords);
-                AppendUniqueRecords(temporary, bundle.TemporaryChildRecords, seenRecords);
+                PrependUniqueRecords(persistent, bundle.PersistentChildRecords, seenRecords);
+                PrependUniqueRecords(vwd, bundle.VwdChildRecords, seenRecords);
+                PrependUniqueRecords(temporary, bundle.TemporaryChildRecords, seenRecords);
             }
 
             coalesced.Add(first with
@@ -2608,18 +2986,24 @@ public sealed class PluginBuilder
         return coalesced;
     }
 
-    private static void AppendUniqueRecords(
+    private static void PrependUniqueRecords(
         List<byte[]> target,
         IReadOnlyList<byte[]> records,
         HashSet<RecordIdentity> seenRecords)
     {
+        var unique = new List<byte[]>(records.Count);
         foreach (var record in records)
         {
             var identity = ReadRecordIdentity(record);
             if (seenRecords.Add(identity))
             {
-                target.Add(record);
+                unique.Add(record);
             }
+        }
+
+        if (unique.Count > 0)
+        {
+            target.InsertRange(0, unique);
         }
     }
 
@@ -2973,9 +3357,9 @@ public sealed class PluginBuilder
 
         // Synthesized door replacement refs use FormIDs that were just allocated in the same
         // pass — they aren't in _emittedNewFormIds yet at this point in the flow, so passing
-        // BuildPlacedRefValidFormIds() would cause the placed-ref sanitizer to incorrectly
-        // drop XTEL as "dangling". The synthesized values are known-good by construction;
-        // bypass the sanitizer for this path.
+        // BuildPlacedRefValidFormIds would cause the placed-ref sanitizer to incorrectly
+        // drop XTEL as dangling. The synthesized values are known-good by construction,
+        // so we bypass the sanitizer for this path.
         var replacementRefEncoded = RefrEncoder.EncodeNewPlacedReference(replacementDoorRef);
         foreach (var warning in replacementRefEncoded.Warnings)
         {
@@ -3310,9 +3694,129 @@ public sealed class PluginBuilder
         return true;
     }
 
-    private bool IsValidPlacedBaseForOutput(
+    private bool IsLoadedCellPlacement(
+        PlacedReference placed,
+        IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId)
+    {
+        if (placed.IsPersistent
+            || placed.RecordType != "REFR"
+            || placed.BaseFormId == 0)
+        {
+            return false;
+        }
+
+        return TryResolvePlacedBaseRecordType(placed, pcRecordsByFormId, out var baseRecordType)
+               && LoadedCellPlacementBaseTypes.Contains(baseRecordType)
+               && CanPlacedBaseResolveForOutput(placed, baseRecordType, pcRecordsByFormId);
+    }
+
+    private int CountLoadedCellPlacementEvidence(
+        CellRecord dmpCell,
+        IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId)
+    {
+        var count = 0;
+        foreach (var placed in dmpCell.PlacedObjects)
+        {
+            if (IsLoadedCellPlacement(placed, pcRecordsByFormId))
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private static int GetLoadedPlacementEvidenceThreshold(
+        uint masterCellFormId,
+        IReadOnlyDictionary<uint, List<uint>> cellToRefs)
+    {
+        if (!cellToRefs.TryGetValue(masterCellFormId, out var masterRefIds))
+        {
+            return 1;
+        }
+
+        var masterRefCount = masterRefIds.Count;
+        if (masterRefCount <= 20)
+        {
+            return 1;
+        }
+
+        return Math.Min(25, Math.Max(3, masterRefCount / 4));
+    }
+
+    private bool CanPlacedBaseResolveForOutput(
+        PlacedReference placed,
+        string baseRecordType,
+        IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId)
+    {
+        if (pcRecordsByFormId.ContainsKey(placed.BaseFormId))
+        {
+            return ReferenceBaseRemapper.CanPlacedRecordUseBaseType(placed.RecordType, baseRecordType);
+        }
+
+        if (_newRecordSourceToAllocated.TryGetValue(placed.BaseFormId, out var allocatedBase))
+        {
+            if (_newRecordSourceToAllocatedType.TryGetValue(placed.BaseFormId, out var allocatedType))
+            {
+                return ReferenceBaseRemapper.CanPlacedRecordUseBaseType(placed.RecordType, allocatedType);
+            }
+
+            if (pcRecordsByFormId.TryGetValue(allocatedBase, out var masterAlias))
+            {
+                return ReferenceBaseRemapper.CanPlacedRecordUseBaseType(
+                    placed.RecordType,
+                    masterAlias.Header.Signature);
+            }
+        }
+
+        foreach (var (recordType, ids) in _emittedNewFormIdsByType)
+        {
+            if (ids.Contains(placed.BaseFormId))
+            {
+                return ReferenceBaseRemapper.CanPlacedRecordUseBaseType(placed.RecordType, recordType);
+            }
+        }
+
+        return false;
+    }
+
+    private bool TryResolvePlacedBaseRecordType(
         PlacedReference placed,
         IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId,
+        out string recordType)
+    {
+        if (pcRecordsByFormId.TryGetValue(placed.BaseFormId, out var masterBase))
+        {
+            recordType = masterBase.Header.Signature;
+            return true;
+        }
+
+        if (_newRecordSourceToAllocatedType.TryGetValue(placed.BaseFormId, out var aliasRecordType))
+        {
+            recordType = aliasRecordType;
+            return true;
+        }
+
+        if (_newRecordSourceToAllocated.TryGetValue(placed.BaseFormId, out var allocatedBase)
+            && pcRecordsByFormId.TryGetValue(allocatedBase, out masterBase))
+        {
+            recordType = masterBase.Header.Signature;
+            return true;
+        }
+
+        if (_dmpBaseFormIdToRecordType?.TryGetValue(placed.BaseFormId, out var dmpRecordType) == true)
+        {
+            recordType = dmpRecordType;
+            return true;
+        }
+
+        recordType = string.Empty;
+        return false;
+    }
+
+    private bool IsValidPlacedBaseForOutput(
+        PlacedReference placed,
+        Dictionary<uint, ParsedMainRecord> pcRecordsByFormId,
         out string? knownBaseRecordType)
     {
         knownBaseRecordType = null;
@@ -3644,7 +4148,7 @@ public sealed class PluginBuilder
         Dictionary<uint, uint> remap,
         uint dmpFormId,
         string? editorId,
-        IReadOnlyDictionary<string, uint> masterByEditorId)
+        Dictionary<string, uint> masterByEditorId)
     {
         if (dmpFormId == 0
             || string.IsNullOrEmpty(editorId)
@@ -3768,7 +4272,7 @@ public sealed class PluginBuilder
 
     private PlacedReference RemapNewPlacedActorBase(
         PlacedReference placed,
-        IReadOnlyDictionary<uint, uint> actorBaseRemap,
+        Dictionary<uint, uint> actorBaseRemap,
         PluginBuildOptions options)
     {
         if (placed.RecordType is not ("ACHR" or "ACRE")
@@ -3948,18 +4452,27 @@ public sealed class PluginBuilder
         var hasTemplate = subrecords.Any(s => s.Signature == "TPLT" && s.Bytes.Length >= 4);
         if (!hasTemplate)
         {
-            return false;
+            return NpcHasCompleteCapturedFaceGen(subrecords);
         }
 
         var acbs = subrecords.FirstOrDefault(s => s.Signature == "ACBS" && s.Bytes.Length >= 24);
         if (acbs is null)
         {
-            return false;
+            return NpcHasCompleteCapturedFaceGen(subrecords);
         }
 
         const ushort useTraitsTemplateFlag = 0x0001;
         var templateFlags = BinaryPrimitives.ReadUInt16LittleEndian(acbs.Bytes.AsSpan(22, 2));
-        return (templateFlags & useTraitsTemplateFlag) != 0;
+        return (templateFlags & useTraitsTemplateFlag) != 0
+               || NpcHasCompleteCapturedFaceGen(subrecords);
+    }
+
+    private static bool NpcHasCompleteCapturedFaceGen(IReadOnlyList<EncodedSubrecord> subrecords)
+    {
+        return subrecords.Any(s => s.Signature == "RNAM" && s.Bytes.Length >= 4)
+               && subrecords.Any(s => s.Signature == "FGGS" && s.Bytes.Length == 50 * sizeof(float))
+               && subrecords.Any(s => s.Signature == "FGGA" && s.Bytes.Length == 30 * sizeof(float))
+               && subrecords.Any(s => s.Signature == "FGTS" && s.Bytes.Length == 50 * sizeof(float));
     }
 
     internal static bool IsRuntimeStructuralMarkerPlacement(
@@ -4353,13 +4866,29 @@ public sealed class PluginBuilder
         yield return ("KEYM", records.Keys);
         yield return ("CONT", records.Containers);
         yield return ("FACT", records.Factions);
+        // MESG must precede script-bearing records. Object scripts can reference message
+        // records by SCRO slot (UlyssesScript -> FollowerMessageDeadUlysses); emitting MESG
+        // later means the script encoder has no allocated target yet and preserves the slot
+        // count only by writing a null SCRO.
+        yield return ("MESG", records.Messages);
         // PACK must precede NPC_ so the NPC encoder can validate its PKID list against the
         // set of (master ∪ just-emitted) PACK FormIDs and drop dangling refs. Dangling PKIDs
         // were the leading suspect for the "every NPC plays the crucified idle" regression —
         // missing packages → NPC falls through to default behavior → crucify idle.
         yield return ("PACK", records.Packages);
-        yield return ("NPC_", records.Npcs);
+        // SCPT must precede NPC_ (and QUST) for the same reason: the NPC encoder validates
+        // its SCRI against (master ∪ emitted) script FormIDs. Emitting SCPT after NPC_
+        // means every new NPC's SCRI to a newly-emitted script dangles, gets dropped, and
+        // the engine attaches no script — breaking dialogue control / follower behavior.
+        // Observed: UlyssesScript emitted at 0x01000A0F but Ulysses NPC's SCRI was nulled
+        // because SCPT hadn't been emitted yet when NPC_ encoder validated it.
         yield return ("SCPT", records.Scripts);
+        // VTYP must precede NPC_/CREA so the post-emit FormID remapper can rewrite a new NPC's
+        // VTCK from its proto source FormID to the allocator-issued one. Without this, Ulysses'
+        // VTCK kept the proto FormID 0x0014F3EB instead of the allocated 0x01002FA5, the
+        // engine couldn't resolve the voice type, and audio fell back to MaleAdult01Default.
+        yield return ("VTYP", records.VoiceTypes);
+        yield return ("NPC_", records.Npcs);
         // DIAL and INFO are handled separately by DialogGrupBuilder so INFOs get nested
         // as type-7 Topic Children GRUPs under each DIAL. Emitting them as two flat
         // top-level GRUPs crashes the FNV runtime on dialog tree walks.
@@ -4385,7 +4914,6 @@ public sealed class PluginBuilder
         yield return ("REPU", records.Reputations);
         yield return ("AVIF", records.ActorValueInfos);
         yield return ("MUSC", records.MusicTypes);
-        yield return ("MESG", records.Messages);
         yield return ("NOTE", records.Notes);
         yield return ("FLST", records.FormLists);
         // Leveled lists share one model but three signatures — partition at yield time so
@@ -4416,8 +4944,9 @@ public sealed class PluginBuilder
         // Close encoder coverage for every type with a runtime reader.
         yield return ("ECZN", records.EncounterZones);
         yield return ("MICN", records.MenuIcons);
-        yield return ("VTYP", records.VoiceTypes);
+        // VTYP yielded near the top (before NPC_/CREA) — see comment there.
         yield return ("CCRD", records.CaravanCards);
+        yield return ("CMNY", records.CaravanMoney);
         yield return ("CDCK", records.CaravanDecks);
         yield return ("INGR", records.Ingredients);
         yield return ("LSCT", records.LoadScreenTypes);
@@ -4497,17 +5026,156 @@ public sealed class PluginBuilder
         Models.RecordCollection records,
         EsmRecordScanResult? scanResult,
         IReadOnlyDictionary<uint, uint>? authority,
-        IReadOnlyDictionary<uint, string>? worldspaceNames)
+        IReadOnlyDictionary<uint, string>? worldspaceNames,
+        IReadOnlyDictionary<uint, CellAuthorityMetadata>? cellMetadata,
+        IReadOnlyDictionary<uint, uint>? refToCell,
+        IReadOnlyList<CellReferenceParentWindow>? refWindows)
     {
-        var result = CellWorldspaceAuthorityApplier.Apply(records, authority, worldspaceNames, scanResult);
-        if (result.Applied > 0)
+        var result = CellWorldspaceAuthorityApplier.Apply(
+            records,
+            authority,
+            worldspaceNames,
+            scanResult,
+            cellMetadata,
+            refToCell,
+            refWindows);
+        if (result.Applied > 0 || result.ReferencesReattached > 0)
         {
             _sink.Info("Reading DMP",
                 $"Cell authority applied: {result.Applied} mapping(s) - {result.Added} added, " +
                 $"{result.Overrode} overrode prior inference; " +
+                $"{result.ReferencesReattached} unresolved ref(s) reattached, " +
+                $"{result.ReferenceWindowsApplied} pinned window(s) applied, " +
+                $"{result.ReferenceCellsCreated} cell shell(s) created; " +
                 $"{result.SynthesizedWorldspaces} worldspace shell(s) synthesized; " +
                 $"{result.TerrainCellsAttached} terrain cell(s) attached.");
         }
+    }
+
+    /// <summary>
+    ///     Build a unified VTYP-FormID → VTYP-EditorId lookup so DialogGrupBuilder can resolve
+    ///     speaker voice types onto the engine's runtime path-construction shape. Includes
+    ///     master VTYPs (master FormID keys) AND DMP-captured new VTYPs (source FormID keys —
+    ///     same ones <see cref="BuildNpcVoiceTypeLookup"/> chains to). Without the new-VTYP
+    ///     entries, a new NPC pointing at a new VTYP would never resolve to an EditorId and
+    ///     dialogue audio bindings would be emitted with VoiceTypeEditorId=null, sending the
+    ///     packer's voicetype directory to the engine's MaleAdult01Default fallback.
+    /// </summary>
+    private static Dictionary<uint, string> BuildVoiceTypeEditorIdLookup(
+        IReadOnlyDictionary<uint, ParsedMainRecord> masterRecords,
+        Models.RecordCollection records)
+    {
+        var lookup = new Dictionary<uint, string>();
+        foreach (var (fid, rec) in masterRecords)
+        {
+            if (rec.Header.Signature != "VTYP")
+            {
+                continue;
+            }
+
+            var edid = rec.EditorId;
+            if (!string.IsNullOrEmpty(edid))
+            {
+                lookup[fid] = edid;
+            }
+        }
+
+        foreach (var vtyp in records.VoiceTypes)
+        {
+            if (vtyp.FormId == 0 || string.IsNullOrEmpty(vtyp.EditorId))
+            {
+                continue;
+            }
+
+            // Source FormID keys; will collide with master keys only if a new VTYP somehow
+            // shares a master VTYP's FormID, in which case the captured EDID wins.
+            lookup[vtyp.FormId] = vtyp.EditorId;
+        }
+
+        return lookup;
+    }
+
+    /// <summary>
+    ///     Build a DMP-source-NPC-FormID → DMP-source-VTCK-FormID lookup. Used by the
+    ///     dialogue-audio binding emitter to resolve speakers belonging to NPCs the
+    ///     converter is itself emitting (i.e., not in master). The keys are SOURCE FormIDs
+    ///     so the lookup keys match <c>DialogueRecord.SpeakerFormId</c>; the values are also
+    ///     source-side VTCK FormIDs and will hit the master VTYP EditorId lookup directly
+    ///     when those VoiceType records are inherited from master.
+    /// </summary>
+    /// <summary>
+    ///     Build a unified source-FormID → quest EDID lookup spanning the master ESM's QUST
+    ///     records and the DMP's captured quests. INFOs reference quests by source FormID
+    ///     (set at proto-build time), so the lookup is keyed on source-side IDs even for
+    ///     new quests that get allocated FormIDs at emission.
+    /// </summary>
+    private static Dictionary<uint, string> BuildQuestEditorIdLookup(
+        IReadOnlyDictionary<uint, ParsedMainRecord> masterRecords,
+        Models.RecordCollection records,
+        IReadOnlyDictionary<uint, uint>? sourceToAllocated)
+    {
+        var lookup = new Dictionary<uint, string>();
+        foreach (var (fid, rec) in masterRecords)
+        {
+            if (rec.Header.Signature != "QUST")
+            {
+                continue;
+            }
+
+            var edid = rec.EditorId;
+            if (!string.IsNullOrEmpty(edid))
+            {
+                lookup[fid] = edid;
+            }
+        }
+
+        foreach (var quest in records.Quests)
+        {
+            if (quest.FormId == 0 || string.IsNullOrEmpty(quest.EditorId))
+            {
+                continue;
+            }
+
+            lookup[quest.FormId] = quest.EditorId;
+            // Also register the allocated key (see BuildNpcVoiceTypeLookup for the same
+            // SanitizeInfoReferences-remap rationale).
+            if (sourceToAllocated is not null
+                && sourceToAllocated.TryGetValue(quest.FormId, out var allocated)
+                && allocated != quest.FormId)
+            {
+                lookup.TryAdd(allocated, quest.EditorId);
+            }
+        }
+
+        return lookup;
+    }
+
+    private static Dictionary<uint, uint> BuildNpcVoiceTypeLookup(
+        Models.RecordCollection records,
+        IReadOnlyDictionary<uint, uint>? sourceToAllocated)
+    {
+        var lookup = new Dictionary<uint, uint>(records.Npcs.Count * 2);
+        foreach (var npc in records.Npcs)
+        {
+            if (npc.FormId == 0 || npc.VoiceType is not { } vt || vt == 0)
+            {
+                continue;
+            }
+
+            lookup.TryAdd(npc.FormId, vt);
+            // Also register the allocated FormID — DialogGrupBuilder calls SanitizeInfoReferences
+            // BEFORE CollectAudioBindings, which remaps INFO.ANAM (SpeakerFormId) from source
+            // to allocated. Without an allocated-key entry the speaker→VTYP chain misses and
+            // bindings get VoiceTypeEditorId=null, sending audio paths to MaleAdult01Default.
+            if (sourceToAllocated is not null
+                && sourceToAllocated.TryGetValue(npc.FormId, out var allocatedNpc)
+                && allocatedNpc != npc.FormId)
+            {
+                lookup.TryAdd(allocatedNpc, vt);
+            }
+        }
+
+        return lookup;
     }
 
     private PluginBuildResult Fail(string errorMessage, ConversionPipelineStats stats, Stopwatch sw)

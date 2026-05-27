@@ -1,3 +1,4 @@
+using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
 
@@ -83,15 +84,29 @@ public sealed record PluginBuildOptions
     public bool EnableRefrBaseEditorIdRemap { get; init; } = true;
 
     /// <summary>
-    ///     Optional authoritative <c>CellFormId → WorldspaceFormId</c> map (built by
-    ///     <c>dmp build-cell-authority</c> from a corpus of ESMs + DMPs). When supplied, the
-    ///     builder applies these assignments to every parsed CELL before grouping into world
-    ///     children GRUPs — so cells whose worldspace the per-DMP inference pipeline left
-    ///     ambiguous or wrong land under the correct WRLD in the output ESP. Authority entries
-    ///     override existing <c>WorldspaceFormId</c> values (the authority is, by construction,
-    ///     more trustworthy than the per-DMP heuristic).
+    ///     Optional authoritative <c>CellFormId → WorldspaceFormId</c> projection from richer
+    ///     cell metadata. When supplied, the builder applies these assignments to every parsed
+    ///     CELL before grouping into world children GRUPs.
     /// </summary>
     public IReadOnlyDictionary<uint, uint>? CellWorldspaceAuthority { get; init; }
+
+    /// <summary>
+    ///     Optional richer cell authority metadata. This carries authored worldspace ownership,
+    ///     interior classification, grid coordinates, EditorID, and display name when known.
+    /// </summary>
+    public IReadOnlyDictionary<uint, CellAuthorityMetadata>? CellMetadataAuthority { get; init; }
+
+    /// <summary>
+    ///     Optional authoritative <c>ReferenceFormId → CellFormId</c> parent map. Used to move
+    ///     placements out of synthetic unresolved DMP buckets before plugin cell grouping.
+    /// </summary>
+    public IReadOnlyDictionary<uint, uint>? CellReferenceParentAuthority { get; init; }
+
+    /// <summary>
+    ///     Optional pinned offset windows for moving still-unresolved references into a
+    ///     known parent CELL after exact ref-parent authority has run.
+    /// </summary>
+    public IReadOnlyList<CellReferenceParentWindow>? CellReferenceParentWindows { get; init; }
 
     /// <summary>
     ///     Optional worldspace labels from the authority JSON. Used when an authority
@@ -136,4 +151,16 @@ public sealed record PluginBuildOptions
     /// </summary>
     public IReadOnlySet<string> SkipRecordTypes { get; init; } =
         new HashSet<string>(StringComparer.Ordinal);
+
+    /// <summary>
+    ///     Optional Fallout Audio Transcriber CSV exports used to backfill INFO response
+    ///     text (NAM1) when the DMP capture left a response blank or marked it as the
+    ///     placeholder "(NOT FOUND IN CRASH DUMP)". Each CSV row carries one response
+    ///     (FormID + Text + voice-file-path-with-response-index), so the backfill can
+    ///     map each row to the right response slot. CSVs are read in priority order;
+    ///     first non-empty Text per (FormID, ResponseNumber) wins. Same CSV may also
+    ///     be passed to <see cref="AssetPacking.AssetPackingOptions.DialogueAudioCsvPaths" />
+    ///     so the resulting voice audio gets packed into the BSA alongside the patched text.
+    /// </summary>
+    public IReadOnlyList<string> DialogueTextOverridesCsvPaths { get; init; } = [];
 }
