@@ -2079,6 +2079,98 @@ public sealed class RuntimeOffsetCrossReferenceTests
     }
 
     // =========================================================================
+    // SCPT (Script) — PDB-resolved offsets via PdbStructView
+    // =========================================================================
+    // RuntimeScriptReader uses view.Offset("pOwnerQuest"/"listRefObjects", "Script")
+    // — no per-build shifts, no probe. Anchors validate that the PDB-declared
+    // offsets land on pointer-shaped fields at runtime:
+    //   pOwnerQuest          @ +80  — TESQuest* (null for object scripts, heap for quest scripts)
+    //   listRefObjects.head  @ +84  — BSSimpleList<SCRIPT_REFERENCED_OBJECT*> m_item slot
+    //
+    // Most scripts are object scripts so pOwnerQuest is mostly null; quest
+    // scripts populate it. listRefObjects.head is null when the script
+    // references no objects (variables-only), heap when SCRO entries exist.
+
+    private static IReadOnlyList<RuntimeEditorIdEntry> GetValidatedScriptSample(
+        DmpSnippetReader snippet, RuntimeMemoryContext context, int sampleSize)
+    {
+        var candidates = snippet.RuntimeEditorIds
+            .Where(e => e.FormType == 0x11 && e.TesFormOffset.HasValue)
+            .Take(sampleSize * 4)
+            .ToList();
+
+        var validated = new List<RuntimeEditorIdEntry>(sampleSize);
+        foreach (var entry in candidates)
+        {
+            var buf = context.ReadBytes(entry.TesFormOffset!.Value + FormIdOffset, 4);
+            if (buf == null) continue;
+            if (BinaryUtils.ReadUInt32BE(buf, 0) == entry.FormId)
+            {
+                validated.Add(entry);
+                if (validated.Count >= sampleSize) break;
+            }
+        }
+
+        return validated;
+    }
+
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task SCPT_pOwnerQuest_offset_lands_on_heap_pointer_or_null(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var scripts = GetValidatedScriptSample(snippet, context, 200);
+
+        if (scripts.Count < 20)
+        {
+            TestContext.Current.TestOutputHelper!.WriteLine(
+                $"[{snippetName}] Only {scripts.Count} validated SCPTs — under-exercised.");
+            return;
+        }
+
+        const int pOwnerQuestOffset = 80; // PDB Script.pOwnerQuest
+        var (checkedCount, pointerShaped, nonPointer) = ScanPointerShape(scripts, context, pOwnerQuestOffset);
+        var rate = (double)pointerShaped / checkedCount;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] SCPT pOwnerQuest pointer-shape: {pointerShaped}/{checkedCount} ({rate:P0}) "
+            + $"at offset {pOwnerQuestOffset}.");
+
+        Assert.True(rate >= 0.9,
+            $"[{snippetName}] SCPT pOwnerQuest pointer-shape {rate:P0} below threshold "
+            + $"(offset {pOwnerQuestOffset}). First 10 non-pointer values:\n  "
+            + string.Join("\n  ", nonPointer));
+    }
+
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task SCPT_listRefObjects_head_offset_lands_on_heap_pointer_or_null(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var scripts = GetValidatedScriptSample(snippet, context, 200);
+
+        if (scripts.Count < 20)
+        {
+            TestContext.Current.TestOutputHelper!.WriteLine(
+                $"[{snippetName}] Only {scripts.Count} validated SCPTs — under-exercised.");
+            return;
+        }
+
+        const int listHeadOffset = 84; // PDB Script.listRefObjects — BSSimpleList m_item slot
+        var (checkedCount, pointerShaped, nonPointer) = ScanPointerShape(scripts, context, listHeadOffset);
+        var rate = (double)pointerShaped / checkedCount;
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] SCPT listRefObjects.head pointer-shape: {pointerShaped}/{checkedCount} ({rate:P0}) "
+            + $"at offset {listHeadOffset}.");
+
+        Assert.True(rate >= 0.9,
+            $"[{snippetName}] SCPT listRefObjects.head pointer-shape {rate:P0} below threshold "
+            + $"(offset {listHeadOffset}). First 10 non-pointer values:\n  "
+            + string.Join("\n  ", nonPointer));
+    }
+
+    // =========================================================================
     // PROJ (BGSProjectile) — production-pipeline audit
     // =========================================================================
     // RuntimeEffectReader is the legacy name; it reads BGSProjectile structs
