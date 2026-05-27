@@ -310,6 +310,8 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
         float? currentEffectValue = null;
         uint? currentEffectFormId = null;
         string? currentEffectData = null;
+        byte[]? currentRawEntryData = null;
+        byte[]? currentRawFunctionData = null;
         byte? currentConditionTabCount = null;
         var currentEntryConditions = new List<PerkCondition>();
         var currentEntryActive = false;
@@ -334,6 +336,8 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
                 EffectValue = currentEffectValue,
                 EffectFormId = currentEffectFormId,
                 EffectData = currentEffectData,
+                RawEntryData = currentRawEntryData,
+                RawFunctionData = currentRawFunctionData,
                 ConditionTabCount = currentConditionTabCount,
                 Conditions = currentEntryConditions
             });
@@ -346,6 +350,8 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
             currentEffectValue = null;
             currentEffectFormId = null;
             currentEffectData = null;
+            currentRawEntryData = null;
+            currentRawFunctionData = null;
             currentConditionTabCount = null;
             currentEntryConditions = [];
             currentEntryActive = false;
@@ -377,6 +383,7 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
                     playable = subData[3];
                     break;
                 case "DATA" when currentEntryActive:
+                    currentRawEntryData = subData.ToArray();
                     ParsePerkEntryData(
                         subData,
                         record.IsBigEndian,
@@ -416,6 +423,7 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
                     currentFunctionType = subData[0];
                     break;
                 case "EPFD" when currentEntryActive:
+                    currentRawFunctionData = subData.ToArray();
                     ParsePerkEntryFunctionData(
                         subData,
                         record.IsBigEndian,

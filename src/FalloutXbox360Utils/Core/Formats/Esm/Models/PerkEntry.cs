@@ -38,6 +38,12 @@ public record PerkEntry
     /// <summary>Raw/decoded entry data summary for payloads that are not fully typed yet.</summary>
     public string? EffectData { get; init; }
 
+    /// <summary>Raw DATA payload for entry types whose layout is not fully modeled.</summary>
+    public byte[]? RawEntryData { get; init; }
+
+    /// <summary>Raw EPFD payload for function types whose layout is not fully modeled.</summary>
+    public byte[]? RawFunctionData { get; init; }
+
     /// <summary>Condition-tab count from PRKC, when present.</summary>
     public byte? ConditionTabCount { get; init; }
 

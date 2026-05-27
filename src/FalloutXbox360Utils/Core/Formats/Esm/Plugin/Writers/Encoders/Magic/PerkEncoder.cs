@@ -194,9 +194,17 @@ public sealed class PerkEncoder : IRecordEncoder
                 break;
             }
             default:
-                warnings.Add(
-                    $"PERK 0x{perkFormId:X8} entry has unknown type {entry.Type} — emitting empty DATA.");
-                subs.Add(new EncodedSubrecord("DATA", []));
+                if (entry.RawEntryData is { Length: > 0 } rawEntryData)
+                {
+                    subs.Add(new EncodedSubrecord("DATA", rawEntryData));
+                }
+                else
+                {
+                    warnings.Add(
+                        $"PERK 0x{perkFormId:X8} entry has unknown type {entry.Type} - emitting empty DATA.");
+                    subs.Add(new EncodedSubrecord("DATA", []));
+                }
+
                 break;
         }
 
@@ -268,14 +276,24 @@ public sealed class PerkEncoder : IRecordEncoder
             }
             case 8:
             {
+                if (entry.RawFunctionData is { Length: > 0 } rawActivateChoiceData)
+                {
+                    return rawActivateChoiceData;
+                }
+
                 // zstring; if the model only has EffectData (best-effort text), fall back to it.
                 var text = entry.EffectData ?? string.Empty;
                 var bytes = System.Text.Encoding.Latin1.GetBytes(text + "\0");
                 return bytes;
             }
             default:
+                if (entry.RawFunctionData is { Length: > 0 } rawUnknownFunctionData)
+                {
+                    return rawUnknownFunctionData;
+                }
+
                 warnings.Add(
-                    $"PERK 0x{perkFormId:X8} entry has unknown FunctionType {entry.FunctionType} — omitting EPFD.");
+                    $"PERK 0x{perkFormId:X8} entry has unknown FunctionType {entry.FunctionType} - omitting EPFD.");
                 return null;
         }
     }
