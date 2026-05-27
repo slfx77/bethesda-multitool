@@ -341,7 +341,9 @@ internal static class EsmEditorIdExtractor
         var chainDepth = 0;
         var itemBuffer = new byte[12]; // NiTMapItem: m_pkNext(4) + m_key(4) + m_val(4)
         var stringBuffer = new byte[256];
-        var tesFormBuffer = new byte[24];
+        // Enlarged from 24 → 36 bytes so TesFormHeaderProbe can read iFormID at offset +32
+        // for MSTT-style classes whose TESForm base sits after TESFullName.
+        var tesFormBuffer = new byte[TesFormHeaderProbe.RequiredBufferSize];
 
         while (itemVa != 0 && chainDepth < 1000)
         {
@@ -393,7 +395,9 @@ internal static class EsmEditorIdExtractor
                 }
             }
 
-            // Read FormID from TESForm at m_val
+            // Read FormID + FormType from the TESForm header at m_val. The probe handles
+            // multi-inheritance classes (MSTT, FLOR) where TESForm fields sit at non-default
+            // offsets — see TesFormHeaderProbe for the candidate-layout list.
             uint formId = 0;
             byte formType = 0;
             long? tesFormFileOffset = null;
@@ -401,16 +405,16 @@ internal static class EsmEditorIdExtractor
             {
                 var valVaLong = Xbox360MemoryUtils.VaToLong(valVa);
 
-                // Validate 24-byte TESForm header is fully within a captured memory region
-                if (minidumpInfo.IsVaRangeCaptured(valVaLong, 24))
+                if (minidumpInfo.IsVaRangeCaptured(valVaLong, TesFormHeaderProbe.RequiredBufferSize))
                 {
                     var formFileOffset = minidumpInfo.VirtualAddressToFileOffset(valVaLong);
-                    if (formFileOffset.HasValue && formFileOffset.Value + 24 <= fileSize)
+                    if (formFileOffset.HasValue
+                        && formFileOffset.Value + TesFormHeaderProbe.RequiredBufferSize <= fileSize)
                     {
                         tesFormFileOffset = formFileOffset.Value;
-                        accessor.ReadArray(formFileOffset.Value, tesFormBuffer, 0, 24);
-                        formType = tesFormBuffer[4]; // Offset 0x04: cFormType
-                        formId = BinaryUtils.ReadUInt32BE(tesFormBuffer, 12); // Offset 0x0C: iFormID
+                        accessor.ReadArray(formFileOffset.Value, tesFormBuffer, 0,
+                            TesFormHeaderProbe.RequiredBufferSize);
+                        TesFormHeaderProbe.TryProbe(tesFormBuffer, out formType, out formId);
                     }
                 }
             }
