@@ -121,6 +121,7 @@ internal static class NewTopLevelRecordEncoderDispatcher
             ["MICN"] = (model, _) => MicnEncoder.EncodeNew((MenuIconRecord)model),
             ["VTYP"] = (model, _) => VtypEncoder.EncodeNew((VoiceTypeRecord)model),
             ["CCRD"] = (model, _) => CcrdEncoder.EncodeNew((CaravanCardRecord)model),
+            ["CMNY"] = (model, _) => CmnyEncoder.EncodeNew((CaravanMoneyRecord)model),
             ["CDCK"] = (model, _) => CdckEncoder.EncodeNew((CaravanDeckRecord)model),
             ["INGR"] = (model, _) => IngrEncoder.EncodeNew((IngredientRecord)model),
             ["LSCT"] = (model, _) => LsctEncoder.EncodeNew((LoadScreenTypeRecord)model),

@@ -181,6 +181,9 @@ public record RecordCollection
     /// <summary>Parsed Caravan Card (CCRD) records.</summary>
     public List<CaravanCardRecord> CaravanCards { get; init; } = [];
 
+    /// <summary>Parsed Caravan Money (CMNY) records.</summary>
+    public List<CaravanMoneyRecord> CaravanMoney { get; init; } = [];
+
     /// <summary>Parsed Debris (DEBR) records.</summary>
     public List<DebrisRecord> Debris { get; init; } = [];
 
@@ -308,7 +311,7 @@ public record RecordCollection
         Eyes.Count + Hair.Count + HeadParts.Count + VoiceTypes.Count + MenuIcons.Count + LoadScreenTypes.Count +
         IdleAnimations.Count + CameraPaths.Count + ImpactData.Count + AudioLocationControllers.Count +
         PlacedGrenades.Count + Regions.Count + CaravanCards.Count + Debris.Count +
-        Ingredients.Count + NavMeshInfoMaps.Count + CaravanDecks.Count +
+        CaravanMoney.Count + Ingredients.Count + NavMeshInfoMaps.Count + CaravanDecks.Count +
         RadiationStages.Count + DehydrationStages.Count + HungerStages.Count + SleepDeprivationStages.Count +
         FormLists.Count + Activators.Count +
         Lights.Count + Doors.Count + Statics.Count + StaticCollections.Count + Furniture.Count +
@@ -396,6 +399,7 @@ public record RecordCollection
             PlacedGrenades = MergeList(PlacedGrenades, overlay.PlacedGrenades, r => r.FormId),
             Regions = MergeList(Regions, overlay.Regions, r => r.FormId),
             CaravanCards = MergeList(CaravanCards, overlay.CaravanCards, r => r.FormId),
+            CaravanMoney = MergeList(CaravanMoney, overlay.CaravanMoney, r => r.FormId),
             Debris = MergeList(Debris, overlay.Debris, r => r.FormId),
             Ingredients = MergeList(Ingredients, overlay.Ingredients, r => r.FormId),
             NavMeshInfoMaps = MergeList(NavMeshInfoMaps, overlay.NavMeshInfoMaps, r => r.FormId),

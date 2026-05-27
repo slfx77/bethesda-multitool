@@ -28,6 +28,7 @@ public sealed class RuntimeStructReader
     private readonly RuntimeCameraPathReader _cameraPaths;
     private readonly RuntimeCaravanCardReader _caravanCards;
     private readonly RuntimeCaravanDeckReader _caravanDecks;
+    private readonly RuntimeCaravanMoneyReader _caravanMoney;
     private readonly RuntimeCellReader _cells;
     private readonly RuntimeChallengeReader _challenges;
     private readonly RuntimeClassReader _classes;
@@ -139,6 +140,7 @@ public sealed class RuntimeStructReader
         _flora = new RuntimeFlorReader(_context);
         _regions = new RuntimeRegionReader(_context);
         _caravanCards = new RuntimeCaravanCardReader(_context);
+        _caravanMoney = new RuntimeCaravanMoneyReader(_context);
         _debris = new RuntimeDebrisReader(_context);
         _ingredients = new RuntimeIngredientReader(_context);
         _navMeshInfoMaps = new RuntimeNavMeshInfoMapReader(_context);
@@ -640,6 +642,11 @@ public sealed class RuntimeStructReader
     public CaravanCardRecord? ReadRuntimeCaravanCard(RuntimeEditorIdEntry entry)
     {
         return _caravanCards.ReadRuntimeCaravanCard(entry);
+    }
+
+    public CaravanMoneyRecord? ReadRuntimeCaravanMoney(RuntimeEditorIdEntry entry)
+    {
+        return _caravanMoney.ReadRuntimeCaravanMoney(entry);
     }
 
     public DebrisRecord? ReadRuntimeDebris(RuntimeEditorIdEntry entry)
