@@ -1,6 +1,7 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.AI;
 using FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
 
@@ -81,11 +82,19 @@ internal sealed class RuntimePackageReader(RuntimeMemoryContext context)
         // Follow pPackTarg pointer to read PackageTarget
         var target = ReadTarget(buffer);
 
+        // pIdleCollection @ PDB +68. BGSIdleCollection's inner fields are also present in
+        // the PDB layout: cIdleFlags(+68), cIdleCount(+69), pIdleArray(+72), timer(+76).
+        var idleCollection = ReadIdleCollection(buffer);
+
         // pCombatStyle @ PDB +88 (TESCombatStyle*, FormType 0x4A). Constrain by FormType so a
         // stale pointer that resolves to a non-CSTY form is dropped rather than emitted as a
         // bogus CNAM. The CombatStylePtrOffset already includes the build-specific _s shift.
         var combatStyleFormId = _context.FollowPointerToFormId(
             buffer, CombatStylePtrOffset, CstyFormType);
+
+        var conditions = new RuntimeDialogueConditionReader(_context)
+            .ReadConditions(offset, PackConditionsOffset)
+            .Conditions;
 
         return new PackageRecord
         {
@@ -95,6 +104,8 @@ internal sealed class RuntimePackageReader(RuntimeMemoryContext context)
             Schedule = schedule,
             Location = location,
             Target = target,
+            Conditions = conditions,
+            IdleCollection = idleCollection,
             CombatStyleFormId = combatStyleFormId,
             Offset = offset,
             IsBigEndian = true
@@ -288,6 +299,92 @@ internal sealed class RuntimePackageReader(RuntimeMemoryContext context)
         };
     }
 
+    private PackageIdleCollection? ReadIdleCollection(byte[] buffer)
+    {
+        if (IdleCollectionPtrOffset + 4 > buffer.Length)
+        {
+            return null;
+        }
+
+        var collectionPtr = BinaryUtils.ReadUInt32BE(buffer, IdleCollectionPtrOffset);
+        if (collectionPtr == 0 || !_context.IsValidPointer(collectionPtr))
+        {
+            return null;
+        }
+
+        var collectionOffset = _context.VaToFileOffset(collectionPtr);
+        if (collectionOffset == null)
+        {
+            return null;
+        }
+
+        var collectionBuf = _context.ReadBytes(collectionOffset.Value, IdleCollectionStructMinSize);
+        if (collectionBuf == null)
+        {
+            return null;
+        }
+
+        var flags = collectionBuf[IdleFlagsOffset];
+        var count = collectionBuf[IdleCountOffset];
+        if (count > MaxIdleCollectionCount)
+        {
+            return null;
+        }
+
+        var timer = BinaryUtils.ReadFloatBE(collectionBuf, IdleTimerOffset);
+        if (!RuntimeMemoryContext.IsNormalFloat(timer))
+        {
+            timer = 0;
+        }
+
+        var idleFormIds = ReadIdleArrayFormIds(collectionBuf, count);
+        return new PackageIdleCollection
+        {
+            Flags = flags,
+            Count = (byte)idleFormIds.Count,
+            TimerCheckForIdle = timer,
+            IdleAnimationFormIds = idleFormIds
+        };
+    }
+
+    private List<uint> ReadIdleArrayFormIds(byte[] collectionBuf, byte count)
+    {
+        if (count == 0)
+        {
+            return [];
+        }
+
+        var arrayPtr = BinaryUtils.ReadUInt32BE(collectionBuf, IdleArrayPtrOffset);
+        if (arrayPtr == 0 || !_context.IsValidPointer(arrayPtr))
+        {
+            return [];
+        }
+
+        var arrayOffset = _context.VaToFileOffset(arrayPtr);
+        if (arrayOffset == null)
+        {
+            return [];
+        }
+
+        var arrayBuf = _context.ReadBytes(arrayOffset.Value, count * 4);
+        if (arrayBuf == null)
+        {
+            return [];
+        }
+
+        var ids = new List<uint>(count);
+        for (var i = 0; i < count; i++)
+        {
+            var idlePtr = BinaryUtils.ReadUInt32BE(arrayBuf, i * 4);
+            if (_context.FollowPointerVaToFormId(idlePtr, IdleFormType) is { } idleFormId)
+            {
+                ids.Add(idleFormId);
+            }
+        }
+
+        return ids;
+    }
+
     #region TESPackage Struct Layout (Proto Debug PDB base + _s)
 
     // TESPackage: PDB size 128 (proto), +_s shift on later builds. CombatStyle ptr at +88
@@ -296,7 +393,9 @@ internal sealed class RuntimePackageReader(RuntimeMemoryContext context)
     private int PackDataOffset => 28 + _s; // PACKAGE_DATA (12 bytes inline)
     private int PackLocPtrOffset => 44 + _s; // PackageLocation* pPackLoc
     private int PackTargPtrOffset => 48 + _s; // PackageTarget* pPackTarg
+    private int IdleCollectionPtrOffset => 52 + _s; // BGSIdleCollection* pIdleCollection (PDB +68)
     private int PackSchedOffset => 56 + _s; // PackageSchedule (8 bytes inline)
+    private int PackConditionsOffset => 64 + _s; // TESCondition packConditions (PDB +80)
     // pCombatStyle: PDB +88. The constant is `pdb - _s = 88 - 16 = 72`. Was
     // mistakenly `88 + _s = +104` until the Phase 1B.6 follow-up — that landed inside
     // the OnBegin PackageEventAction struct (+92..+107), so the typed-pointer gate
@@ -317,6 +416,15 @@ internal sealed class RuntimePackageReader(RuntimeMemoryContext context)
     private const int TargUnionOffset = 4; // union: pointer/enum
     private const int TargValueOffset = 8; // iValue (int32)
     private const int TargRadiusOffset = 12; // fAcquireRadius (float)
+
+    // BGSIdleCollection (PDB field offsets in pointed-to object)
+    private const int IdleCollectionStructMinSize = 80;
+    private const int IdleFlagsOffset = 68;
+    private const int IdleCountOffset = 69;
+    private const int IdleArrayPtrOffset = 72;
+    private const int IdleTimerOffset = 76;
+    private const int MaxIdleCollectionCount = 64;
+    private const byte IdleFormType = 0x48;
 
     #endregion
 }

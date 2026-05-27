@@ -1,11 +1,15 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.AI;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.AI;
 
 /// <summary>
 ///     Encodes a <see cref="PackageRecord" /> (PACK) as PC-format subrecord bytes.
 ///     Emits the full record from scratch: EDID + PKDT + PLDT? + PLD2? + PSDT? + PTDT? +
-///     PTD2? + PKPT? + PKW3? + CNAM (combat style FormID, captured from runtime
+///     PTD2? + CTDA* + IDLF/IDLC/IDLT/IDLA? + PKDD? + PKPT? + PKW3? + CNAM
+///     (combat style FormID, captured from runtime
 ///     <c>TESPackage.pCombatStyle</c> @+88 or master ESM CNAM subrecord).
 ///     Override path is a no-op.
 ///     PKDT (12 bytes) per PDB PACKAGE_DATA:
@@ -19,6 +23,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.AI;
 ///     uint16 VolleyShotsMax(10) + float VolleyWaitMin(12) + float VolleyWaitMax(16) +
 ///     uint32 Weapon(20).
 ///     PKPT (2 bytes): bool Repeatable(0) + bool StartingLocationLinkedRef(1).
+///     PKDD (24 bytes) per PDB PACK_DIALOGUE_DATA.
 /// </summary>
 public sealed class PackEncoder : IRecordEncoder
 {
@@ -60,7 +65,8 @@ public sealed class PackEncoder : IRecordEncoder
 
     /// <summary>
     ///     Encode a new PACK record from scratch in fopdoc canonical order:
-    ///     EDID, PKDT, PLDT?, PSDT?, PTDT?, PLD2?, PTD2?, PKW3?, PKPT?.
+    ///     EDID, PKDT, PLDT?, PSDT?, PTDT?, PLD2?, PTD2?, CTDA*, IDLE?, PKDD?,
+    ///     PKW3?, PKPT?, CNAM?, POBA?, POEA?, POCA?.
     /// </summary>
     /// <param name="validFormIds">
     ///     Optional set of FormIDs known to exist at load time (master ∪ all emitted-new).
@@ -80,6 +86,8 @@ public sealed class PackEncoder : IRecordEncoder
     {
         var subs = new List<EncodedSubrecord>();
         var warnings = new List<string>();
+        var droppedCtdas = 0;
+        var remappedCtdaParams = 0;
 
         if (string.IsNullOrEmpty(pack.EditorId))
         {
@@ -136,6 +144,20 @@ public sealed class PackEncoder : IRecordEncoder
             subs.Add(SchemaModelSerializer.SerializeSubrecord("PTD2", "", 16, sanitizedTgt2, PtdtExtractors));
         }
 
+        // PACK CTDAs are the activation gate for AI packages. Dropping them turns
+        // situational packages into always-on packages when an actor's PKID list points at them.
+        EmitConditions(subs, pack.Conditions, validFormIds, remapTable,
+            ref droppedCtdas, ref remappedCtdaParams);
+
+        EmitIdleCollection(subs, pack, validFormIds, remapTable, warnings);
+
+        if (pack.DialogueData is not null)
+        {
+            var dialogueData = SanitizePackageDialogueData(
+                pack.DialogueData, pack.FormId, validFormIds, remapTable, warnings);
+            subs.Add(new EncodedSubrecord("PKDD", BuildPkddSubrecord(dialogueData)));
+        }
+
         if (pack.UseWeaponData is not null)
         {
             subs.Add(new EncodedSubrecord("PKW3", BuildPkw3Subrecord(pack.UseWeaponData)));
@@ -173,7 +195,130 @@ public sealed class PackEncoder : IRecordEncoder
             }
         }
 
+        if (pack.HasEatMarker)
+        {
+            subs.Add(new EncodedSubrecord("PKED", []));
+        }
+
+        if (pack.HasUseItemMarker)
+        {
+            subs.Add(new EncodedSubrecord("PUID", []));
+        }
+
+        if (pack.HasAmbushMarker)
+        {
+            subs.Add(new EncodedSubrecord("PKAM", []));
+        }
+
+        EmitEventAction(subs, pack.OnBegin, "POBA", pack.FormId, validFormIds, remapTable, warnings);
+        EmitEventAction(subs, pack.OnEnd, "POEA", pack.FormId, validFormIds, remapTable, warnings);
+        EmitEventAction(subs, pack.OnChange, "POCA", pack.FormId, validFormIds, remapTable, warnings);
+
+        if (droppedCtdas > 0 || remappedCtdaParams > 0)
+        {
+            warnings.Add(
+                $"New PACK 0x{pack.FormId:X8} CTDA sanitizer: dropped {droppedCtdas} condition(s) " +
+                $"with dangling FormID params, remapped {remappedCtdaParams} param FormID(s) via " +
+                "the runtime→emitted alias table.");
+        }
+
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
+    }
+
+    private static void EmitIdleCollection(
+        List<EncodedSubrecord> subs,
+        PackageRecord pack,
+        IReadOnlySet<uint>? validFormIds,
+        IReadOnlyDictionary<uint, uint>? remapTable,
+        List<string> warnings)
+    {
+        if (pack.IdleCollection is null)
+        {
+            return;
+        }
+
+        var idles = new List<uint>(pack.IdleCollection.IdleAnimationFormIds.Count);
+        var dropped = 0;
+        var remapped = 0;
+        foreach (var idleFormId in pack.IdleCollection.IdleAnimationFormIds)
+        {
+            var resolved = ResolveOptionalFormId(idleFormId, validFormIds, remapTable);
+            if (!resolved.HasValue)
+            {
+                dropped++;
+                continue;
+            }
+
+            if (resolved.Value != idleFormId)
+            {
+                remapped++;
+            }
+
+            idles.Add(resolved.Value);
+        }
+
+        if (dropped > 0 || remapped > 0)
+        {
+            warnings.Add(
+                $"New PACK 0x{pack.FormId:X8} IDLA sanitizer: dropped {dropped} dangling idle " +
+                $"animation FormID(s), remapped {remapped} via the runtime→emitted alias table.");
+        }
+
+        subs.Add(NewRecordSubrecords.EncodeByteSubrecord("IDLF", pack.IdleCollection.Flags));
+        var count = idles.Count > 0
+            ? (byte)Math.Min(byte.MaxValue, idles.Count)
+            : pack.IdleCollection.Count;
+        subs.Add(NewRecordSubrecords.EncodeByteSubrecord("IDLC", count));
+        subs.Add(NewRecordSubrecords.EncodeFloatSubrecord("IDLT", pack.IdleCollection.TimerCheckForIdle));
+
+        if (idles.Count > 0)
+        {
+            var idla = new byte[idles.Count * 4];
+            for (var i = 0; i < idles.Count; i++)
+            {
+                SubrecordEncoder.WriteFormId(idla, i * 4, idles[i]);
+            }
+
+            subs.Add(new EncodedSubrecord("IDLA", idla));
+        }
+    }
+
+    private static void EmitConditions(
+        List<EncodedSubrecord> subs,
+        List<DialogueCondition> conditions,
+        IReadOnlySet<uint>? validFormIds,
+        IReadOnlyDictionary<uint, uint>? remapTable,
+        ref int droppedCtdas,
+        ref int remappedCtdaParams)
+    {
+        IReadOnlyList<DialogueCondition> emitConds;
+        if (validFormIds is null)
+        {
+            emitConds = conditions;
+        }
+        else
+        {
+            emitConds = ConditionSanitizer.Filter(
+                conditions,
+                validFormIds as HashSet<uint> ?? new HashSet<uint>(validFormIds),
+                remapTable,
+                ref remappedCtdaParams,
+                ref droppedCtdas);
+        }
+
+        foreach (var condition in emitConds)
+        {
+            subs.Add(new EncodedSubrecord("CTDA", InfoEncoder.BuildCtdaSubrecord(condition)));
+            if (!string.IsNullOrEmpty(condition.Parameter1String))
+            {
+                subs.Add(NewRecordSubrecords.EncodeStringSubrecord("CIS1", condition.Parameter1String));
+            }
+
+            if (!string.IsNullOrEmpty(condition.Parameter2String))
+            {
+                subs.Add(NewRecordSubrecords.EncodeStringSubrecord("CIS2", condition.Parameter2String));
+            }
+        }
     }
 
     /// <summary>
@@ -205,6 +350,111 @@ public sealed class PackEncoder : IRecordEncoder
         }
 
         return null;
+    }
+
+    private static PackageDialogueData SanitizePackageDialogueData(
+        PackageDialogueData data,
+        uint packFormId,
+        IReadOnlySet<uint>? validFormIds,
+        IReadOnlyDictionary<uint, uint>? remapTable,
+        List<string> warnings)
+    {
+        if (data.TopicFormId == 0)
+        {
+            return data;
+        }
+
+        var resolved = ResolveOptionalFormId(data.TopicFormId, validFormIds, remapTable);
+        if (resolved.HasValue)
+        {
+            if (resolved.Value != data.TopicFormId)
+            {
+                warnings.Add(
+                    $"New PACK 0x{packFormId:X8} PKDD TopicID remapped 0x{data.TopicFormId:X8} → " +
+                    $"0x{resolved.Value:X8} via runtime→emitted alias table.");
+            }
+
+            return data with { TopicFormId = resolved.Value };
+        }
+
+        warnings.Add(
+            $"New PACK 0x{packFormId:X8} PKDD TopicID 0x{data.TopicFormId:X8} dangles — " +
+            "rewriting to null so the package does not reference a missing topic.");
+        return data with { TopicFormId = 0 };
+    }
+
+    private static void EmitEventAction(
+        List<EncodedSubrecord> subs,
+        PackageEventAction? action,
+        string marker,
+        uint packFormId,
+        IReadOnlySet<uint>? validFormIds,
+        IReadOnlyDictionary<uint, uint>? remapTable,
+        List<string> warnings)
+    {
+        if (action is null)
+        {
+            return;
+        }
+
+        subs.Add(new EncodedSubrecord(marker, []));
+        subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("INAM",
+            ResolvePackageEventFormId(action.IdleFormId, packFormId, marker, "INAM",
+                validFormIds, remapTable, warnings)));
+
+        if (action.Scripts.Count == 0)
+        {
+            InfoEncoder.EmitResultScriptBlock(subs, null, validFormIds, remapTable);
+        }
+        else
+        {
+            for (var i = 0; i < action.Scripts.Count; i++)
+            {
+                var script = action.Scripts[i];
+                InfoEncoder.EmitResultScriptBlock(subs, script, validFormIds, remapTable);
+                if (i < action.Scripts.Count - 1)
+                {
+                    subs.Add(new EncodedSubrecord("NEXT", []));
+                }
+            }
+        }
+
+        subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("TNAM",
+            ResolvePackageEventFormId(action.TopicFormId, packFormId, marker, "TNAM",
+                validFormIds, remapTable, warnings)));
+    }
+
+    private static uint ResolvePackageEventFormId(
+        uint formId,
+        uint packFormId,
+        string marker,
+        string subrecord,
+        IReadOnlySet<uint>? validFormIds,
+        IReadOnlyDictionary<uint, uint>? remapTable,
+        List<string> warnings)
+    {
+        if (formId == 0)
+        {
+            return 0;
+        }
+
+        var resolved = ResolveOptionalFormId(formId, validFormIds, remapTable);
+        if (resolved.HasValue)
+        {
+            if (resolved.Value != formId)
+            {
+                warnings.Add(
+                    $"New PACK 0x{packFormId:X8} {marker}/{subrecord} remapped 0x{formId:X8} → " +
+                    $"0x{resolved.Value:X8} via runtime→emitted alias table.");
+            }
+
+            return resolved.Value;
+        }
+
+        warnings.Add(
+            $"New PACK 0x{packFormId:X8} {marker}/{subrecord} 0x{formId:X8} dangles — " +
+            "rewriting to null inside the package event action.");
+        return 0;
     }
 
     /// <summary>
@@ -338,6 +588,20 @@ public sealed class PackEncoder : IRecordEncoder
         SubrecordEncoder.WriteFloat(data, 12, pkw3.VolleyWaitMin);
         SubrecordEncoder.WriteFloat(data, 16, pkw3.VolleyWaitMax);
         SubrecordEncoder.WriteUInt32(data, 20, pkw3.WeaponFormId ?? 0);
+        return data;
+    }
+
+    private static byte[] BuildPkddSubrecord(PackageDialogueData pkdd)
+    {
+        var data = new byte[24];
+        SubrecordEncoder.WriteFloat(data, 0, pkdd.Fov);
+        SubrecordEncoder.WriteFormId(data, 4, pkdd.TopicFormId);
+        data[8] = pkdd.NoHeadtracking ? (byte)1 : (byte)0;
+        data[9] = pkdd.DoNotControlTarget ? (byte)1 : (byte)0;
+        data[10] = pkdd.SpeakerMoveTalk ? (byte)1 : (byte)0;
+        SubrecordEncoder.WriteFloat(data, 12, pkdd.DistanceStartTalking);
+        data[16] = pkdd.SayTo ? (byte)1 : (byte)0;
+        SubrecordEncoder.WriteUInt32(data, 20, pkdd.TriggerType);
         return data;
     }
 }

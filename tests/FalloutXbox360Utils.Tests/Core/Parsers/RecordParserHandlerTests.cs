@@ -737,6 +737,151 @@ public class RecordParserHandlerTests
     }
 
     [Fact]
+    public void ParsePackages_WithCtdaAndCisStrings_PreservesActivationConditions()
+    {
+        var pkdt = new byte[12];
+        pkdt[4] = 1; // Follow
+
+        var conditionData = new byte[28];
+        conditionData[0] = 0x00; // Equal
+        BinaryPrimitives.WriteSingleLittleEndian(conditionData.AsSpan(4), 1.0f);
+        BinaryPrimitives.WriteUInt16LittleEndian(conditionData.AsSpan(8), 0x48); // GetIsID
+        BinaryPrimitives.WriteUInt32LittleEndian(conditionData.AsSpan(12), 0x000E5958u);
+        BinaryPrimitives.WriteUInt32LittleEndian(conditionData.AsSpan(20), 0); // Subject
+
+        var recordBytes = BuildRecordBytes(0x01000958, "PACK", false,
+            ("EDID", NullTermString("FollowersChompsLewisFollowPCPackage")),
+            ("PKDT", pkdt),
+            ("CTDA", conditionData),
+            ("CIS1", NullTermString("QJChompsLewis")));
+
+        var mainRecord = new DetectedMainRecord("PACK",
+            (uint)(recordBytes.Length - 24), 0, 0x01000958, 0, false);
+        var scanResult = MakeScanResult([mainRecord]);
+
+        using var mmf = MemoryMappedFile.CreateNew(null, recordBytes.Length);
+        using var accessor = mmf.CreateViewAccessor(0, recordBytes.Length);
+        accessor.WriteArray(0, recordBytes, 0, recordBytes.Length);
+
+        var parser = new RecordParser(scanResult, accessor: accessor, fileSize: recordBytes.Length);
+        var packages = parser.ParsePackages();
+
+        var package = Assert.Single(packages);
+        var condition = Assert.Single(package.Conditions);
+        Assert.Equal(0x48, condition.FunctionIndex);
+        Assert.Equal(0x000E5958u, condition.Parameter1);
+        Assert.Equal("QJChompsLewis", condition.Parameter1String);
+    }
+
+    [Fact]
+    public void ParsePackages_WithTypedBlocks_PreservesDialogueIdleAndEventActions()
+    {
+        var pkdt = new byte[12];
+        pkdt[4] = 15; // Dialogue
+
+        var pkdd = new byte[24];
+        BinaryPrimitives.WriteSingleLittleEndian(pkdd.AsSpan(0), 90.0f);
+        BinaryPrimitives.WriteUInt32LittleEndian(pkdd.AsSpan(4), 0x00001234u);
+        pkdd[8] = 1;
+        pkdd[9] = 0;
+        pkdd[10] = 1;
+        BinaryPrimitives.WriteSingleLittleEndian(pkdd.AsSpan(12), 256.0f);
+        pkdd[16] = 1;
+        BinaryPrimitives.WriteUInt32LittleEndian(pkdd.AsSpan(20), 3);
+
+        var idlt = new byte[4];
+        BinaryPrimitives.WriteSingleLittleEndian(idlt, 12.5f);
+        var idla = new byte[8];
+        BinaryPrimitives.WriteUInt32LittleEndian(idla.AsSpan(0), 0x00002001u);
+        BinaryPrimitives.WriteUInt32LittleEndian(idla.AsSpan(4), 0x00002002u);
+
+        var inam = new byte[4];
+        BinaryPrimitives.WriteUInt32LittleEndian(inam, 0x00003001u);
+        var scro = new byte[4];
+        BinaryPrimitives.WriteUInt32LittleEndian(scro, 0x00004001u);
+        var tnam = new byte[4];
+        BinaryPrimitives.WriteUInt32LittleEndian(tnam, 0x00005001u);
+
+        var recordBytes = BuildRecordBytes(0x01000960, "PACK", false,
+            ("EDID", NullTermString("DialoguePackageWithBlocks")),
+            ("PKDT", pkdt),
+            ("IDLF", new byte[] { 0x03 }),
+            ("IDLC", new byte[] { 0x02 }),
+            ("IDLT", idlt),
+            ("IDLA", idla),
+            ("PKDD", pkdd),
+            ("POBA", Array.Empty<byte>()),
+            ("INAM", inam),
+            ("SCHR", new byte[20]),
+            ("SCDA", new byte[] { 0x1D, 0x00, 0x00, 0x00 }),
+            ("SCTX", NullTermString("SetStage TestQuest 10")),
+            ("SCRO", scro),
+            ("TNAM", tnam));
+
+        var mainRecord = new DetectedMainRecord("PACK",
+            (uint)(recordBytes.Length - 24), 0, 0x01000960, 0, false);
+        var scanResult = MakeScanResult([mainRecord]);
+
+        using var mmf = MemoryMappedFile.CreateNew(null, recordBytes.Length);
+        using var accessor = mmf.CreateViewAccessor(0, recordBytes.Length);
+        accessor.WriteArray(0, recordBytes, 0, recordBytes.Length);
+
+        var parser = new RecordParser(scanResult, accessor: accessor, fileSize: recordBytes.Length);
+        var package = Assert.Single(parser.ParsePackages());
+
+        Assert.NotNull(package.DialogueData);
+        Assert.Equal(90.0f, package.DialogueData.Fov);
+        Assert.Equal(0x00001234u, package.DialogueData.TopicFormId);
+        Assert.True(package.DialogueData.NoHeadtracking);
+        Assert.True(package.DialogueData.SpeakerMoveTalk);
+        Assert.Equal(256.0f, package.DialogueData.DistanceStartTalking);
+        Assert.True(package.DialogueData.SayTo);
+        Assert.Equal(3u, package.DialogueData.TriggerType);
+
+        Assert.NotNull(package.IdleCollection);
+        Assert.Equal(0x03, package.IdleCollection.Flags);
+        Assert.Equal(2, package.IdleCollection.Count);
+        Assert.Equal(12.5f, package.IdleCollection.TimerCheckForIdle);
+        Assert.Equal([0x00002001u, 0x00002002u], package.IdleCollection.IdleAnimationFormIds);
+
+        Assert.NotNull(package.OnBegin);
+        Assert.Equal(0x00003001u, package.OnBegin.IdleFormId);
+        Assert.Equal(0x00005001u, package.OnBegin.TopicFormId);
+        var script = Assert.Single(package.OnBegin.Scripts);
+        Assert.Equal("SetStage TestQuest 10", script.SourceText);
+        Assert.Equal([0x00004001u], script.ReferencedObjects);
+    }
+
+    [Fact]
+    public void ParsePackages_WithBehaviorMarkers_PreservesPackageMarkers()
+    {
+        var pkdt = new byte[12];
+        pkdt[4] = 8; // Use Item At
+
+        var recordBytes = BuildRecordBytes(0x01000961, "PACK", false,
+            ("EDID", NullTermString("PackageWithMarkers")),
+            ("PKDT", pkdt),
+            ("PKED", Array.Empty<byte>()),
+            ("PUID", Array.Empty<byte>()),
+            ("PKAM", Array.Empty<byte>()));
+
+        var mainRecord = new DetectedMainRecord("PACK",
+            (uint)(recordBytes.Length - 24), 0, 0x01000961, 0, false);
+        var scanResult = MakeScanResult([mainRecord]);
+
+        using var mmf = MemoryMappedFile.CreateNew(null, recordBytes.Length);
+        using var accessor = mmf.CreateViewAccessor(0, recordBytes.Length);
+        accessor.WriteArray(0, recordBytes, 0, recordBytes.Length);
+
+        var parser = new RecordParser(scanResult, accessor: accessor, fileSize: recordBytes.Length);
+        var package = Assert.Single(parser.ParsePackages());
+
+        Assert.True(package.HasEatMarker);
+        Assert.True(package.HasUseItemMarker);
+        Assert.True(package.HasAmbushMarker);
+    }
+
+    [Fact]
     public void ParseGlobals_WithAccessor_ParsesSubrecords()
     {
         var edidData = NullTermString("TimeScale");

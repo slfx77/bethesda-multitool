@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.AI;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Utils;
 
@@ -50,17 +51,55 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
         PackageData? packageData = null;
         PackageSchedule? schedule = null;
         PackageUseWeaponData? useWeaponData = null;
+        PackageDialogueData? dialogueData = null;
+        PackageIdleCollection? idleCollection = null;
         PackageLocation? location = null;
         PackageLocation? location2 = null;
         PackageTarget? target = null;
         PackageTarget? target2 = null;
+        var conditions = new List<DialogueCondition>();
         var isRepeatable = false;
         var isStartingLocationLinkedRef = false;
+        var hasEatMarker = false;
+        var hasUseItemMarker = false;
+        var hasAmbushMarker = false;
         uint? combatStyleFormId = null;
+        PackageEventActionBuilder? currentEventAction = null;
+        PackageEventActionBuilder? onBeginBuilder = null;
+        PackageEventActionBuilder? onEndBuilder = null;
+        PackageEventActionBuilder? onChangeBuilder = null;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
             var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+            if (TryStartEventAction(sub.Signature, out var eventKind))
+            {
+                currentEventAction = new PackageEventActionBuilder(eventKind);
+                switch (eventKind)
+                {
+                    case PackageEventActionKind.OnBegin:
+                        onBeginBuilder = currentEventAction;
+                        break;
+                    case PackageEventActionKind.OnEnd:
+                        onEndBuilder = currentEventAction;
+                        break;
+                    case PackageEventActionKind.OnChange:
+                        onChangeBuilder = currentEventAction;
+                        break;
+                }
+
+                continue;
+            }
+
+            if (currentEventAction is not null
+                && PackageEventActionBuilder.IsEventPayloadSubrecord(sub.Signature))
+            {
+                currentEventAction.ApplySubrecord(sub.Signature, subData, record.IsBigEndian);
+                continue;
+            }
+
+            currentEventAction = null;
 
             switch (sub.Signature)
             {
@@ -76,6 +115,9 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
                 case "PKW3" when sub.DataLength >= 24:
                     useWeaponData = ParsePackageUseWeaponData(subData, record.IsBigEndian);
                     break;
+                case "PKDD" when sub.DataLength >= 24:
+                    dialogueData = ParsePackageDialogueData(subData, record.IsBigEndian);
+                    break;
                 case "PLDT" when sub.DataLength >= 12:
                     location ??= ParsePackageLocation(subData, record.IsBigEndian);
                     break;
@@ -88,8 +130,56 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
                 case "PTD2" when sub.DataLength >= 16:
                     target2 ??= ParsePackageTarget(subData, record.IsBigEndian);
                     break;
+                case "CTDA" when sub.DataLength >= 28:
+                    conditions.Add(CtdaParser.Decode(subData, record.IsBigEndian));
+                    break;
+                case "CIS1" when conditions.Count > 0:
+                {
+                    var last = conditions[^1];
+                    conditions[^1] = last with
+                    {
+                        Parameter1String = EsmStringUtils.ReadNullTermString(subData)
+                    };
+                    break;
+                }
+                case "CIS2" when conditions.Count > 0:
+                {
+                    var last = conditions[^1];
+                    conditions[^1] = last with
+                    {
+                        Parameter2String = EsmStringUtils.ReadNullTermString(subData)
+                    };
+                    break;
+                }
                 case "PKPT" when sub.DataLength >= 2:
                     (isRepeatable, isStartingLocationLinkedRef) = ParsePatrolData(subData);
+                    break;
+                case "PKED":
+                    hasEatMarker = true;
+                    break;
+                case "PUID":
+                    hasUseItemMarker = true;
+                    break;
+                case "PKAM":
+                    hasAmbushMarker = true;
+                    break;
+                case "IDLF" when sub.DataLength >= 1:
+                    idleCollection = (idleCollection ?? new PackageIdleCollection()) with { Flags = subData[0] };
+                    break;
+                case "IDLC" when sub.DataLength >= 1:
+                    idleCollection = (idleCollection ?? new PackageIdleCollection()) with { Count = subData[0] };
+                    break;
+                case "IDLT" when sub.DataLength >= 4:
+                    idleCollection = (idleCollection ?? new PackageIdleCollection()) with
+                    {
+                        TimerCheckForIdle = ReadSingle(subData, record.IsBigEndian)
+                    };
+                    break;
+                case "IDLA" when sub.DataLength >= 4:
+                    idleCollection = (idleCollection ?? new PackageIdleCollection()) with
+                    {
+                        IdleAnimationFormIds = ParseFormIdArray(subData, record.IsBigEndian)
+                    };
                     break;
                 case "CNAM" when sub.DataLength == 4:
                     combatStyleFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
@@ -104,12 +194,21 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
             Data = packageData,
             Schedule = schedule,
             UseWeaponData = useWeaponData,
+            DialogueData = dialogueData,
+            IdleCollection = idleCollection,
             Location = location,
             Location2 = location2,
             Target = target,
             Target2 = target2,
+            Conditions = conditions,
             IsRepeatable = isRepeatable,
             IsStartingLocationLinkedRef = isStartingLocationLinkedRef,
+            HasEatMarker = hasEatMarker,
+            HasUseItemMarker = hasUseItemMarker,
+            HasAmbushMarker = hasAmbushMarker,
+            OnBegin = onBeginBuilder?.Build(editorId, record.FormId, Context.GetEditorId),
+            OnEnd = onEndBuilder?.Build(editorId, record.FormId, Context.GetEditorId),
+            OnChange = onChangeBuilder?.Build(editorId, record.FormId, Context.GetEditorId),
             CombatStyleFormId = combatStyleFormId,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
@@ -185,6 +284,28 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
         ReadOnlySpan<byte> data)
     {
         return (data[0] != 0, data[1] != 0);
+    }
+
+    /// <summary>
+    ///     Parse PKDD subrecord (24 bytes). Layout from PDB PACK_DIALOGUE_DATA:
+    ///     float fFov, FormID iTopicID, three bool bytes, float distance,
+    ///     bool bSayTo, uint trigger type.
+    /// </summary>
+    internal static PackageDialogueData ParsePackageDialogueData(ReadOnlySpan<byte> data, bool isBigEndian)
+    {
+        return new PackageDialogueData
+        {
+            Fov = ReadSingle(data, isBigEndian),
+            TopicFormId = RecordParserContext.ReadFormId(data[4..], isBigEndian),
+            NoHeadtracking = data[8] != 0,
+            DoNotControlTarget = data[9] != 0,
+            SpeakerMoveTalk = data[10] != 0,
+            DistanceStartTalking = ReadSingle(data[12..], isBigEndian),
+            SayTo = data[16] != 0,
+            TriggerType = isBigEndian
+                ? BinaryPrimitives.ReadUInt32BigEndian(data[20..])
+                : BinaryPrimitives.ReadUInt32LittleEndian(data[20..])
+        };
     }
 
     /// <summary>
@@ -384,5 +505,146 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
             Union = union,
             Radius = radius
         };
+    }
+
+    private static bool TryStartEventAction(string signature, out PackageEventActionKind kind)
+    {
+        switch (signature)
+        {
+            case "POBA":
+                kind = PackageEventActionKind.OnBegin;
+                return true;
+            case "POEA":
+                kind = PackageEventActionKind.OnEnd;
+                return true;
+            case "POCA":
+                kind = PackageEventActionKind.OnChange;
+                return true;
+            default:
+                kind = default;
+                return false;
+        }
+    }
+
+    private static List<uint> ParseFormIdArray(ReadOnlySpan<byte> data, bool isBigEndian)
+    {
+        var ids = new List<uint>(data.Length / 4);
+        for (var offset = 0; offset + 4 <= data.Length; offset += 4)
+        {
+            ids.Add(RecordParserContext.ReadFormId(data[offset..], isBigEndian));
+        }
+
+        return ids;
+    }
+
+    private static float ReadSingle(ReadOnlySpan<byte> data, bool isBigEndian)
+    {
+        return isBigEndian
+            ? BinaryPrimitives.ReadSingleBigEndian(data)
+            : BinaryPrimitives.ReadSingleLittleEndian(data);
+    }
+
+    private sealed class PackageEventActionBuilder(PackageEventActionKind kind)
+    {
+        private readonly List<string> _sourceTexts = [];
+        private readonly List<DialogueResultScriptParser.DialogueResultScriptBuilder> _blocks = [];
+        private DialogueResultScriptParser.DialogueResultScriptBuilder? _currentBlock;
+        private uint? _pendingVariableIndex;
+        private byte _pendingVariableType;
+
+        private uint _idleFormId;
+        private uint _topicFormId;
+
+        internal static bool IsEventPayloadSubrecord(string signature) =>
+            signature is "INAM" or "TNAM" or "SCHR" or "SCDA" or "SCTX" or "SCRO"
+                or "SLSD" or "SCVR" or "SCRV" or "NEXT";
+
+        internal void ApplySubrecord(string signature, ReadOnlySpan<byte> data, bool isBigEndian)
+        {
+            switch (signature)
+            {
+                case "INAM" when data.Length >= 4:
+                    _idleFormId = RecordParserContext.ReadFormId(data, isBigEndian);
+                    break;
+                case "TNAM" when data.Length >= 4:
+                    _topicFormId = RecordParserContext.ReadFormId(data, isBigEndian);
+                    break;
+                case "SCHR":
+                    DialogueResultScriptParser.FlushPendingVariable(
+                        _currentBlock, ref _pendingVariableIndex, ref _pendingVariableType);
+                    _currentBlock = new DialogueResultScriptParser.DialogueResultScriptBuilder();
+                    _blocks.Add(_currentBlock);
+                    break;
+                case "SCTX":
+                {
+                    var sourceText = EsmStringUtils.ReadNullTermString(data);
+                    if (!string.IsNullOrEmpty(sourceText))
+                    {
+                        _sourceTexts.Add(sourceText);
+                    }
+
+                    break;
+                }
+                case "SCDA":
+                    _currentBlock ??= DialogueResultScriptParser.StartImplicitResultScript(_blocks);
+                    _currentBlock.CompiledData = data.ToArray();
+                    _currentBlock.IsBigEndianBytecode = isBigEndian;
+                    break;
+                case "SCRO" when data.Length >= 4:
+                    _currentBlock ??= DialogueResultScriptParser.StartImplicitResultScript(_blocks);
+                    _currentBlock.ReferencedObjects.Add(RecordParserContext.ReadFormId(data, isBigEndian));
+                    break;
+                case "SLSD" when data.Length >= 16:
+                    _currentBlock ??= DialogueResultScriptParser.StartImplicitResultScript(_blocks);
+                    _pendingVariableIndex = isBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(data)
+                        : BinaryPrimitives.ReadUInt32LittleEndian(data);
+                    var isIntegerRaw = isBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(data[12..])
+                        : BinaryPrimitives.ReadUInt32LittleEndian(data[12..]);
+                    _pendingVariableType = isIntegerRaw != 0 ? (byte)1 : (byte)0;
+                    break;
+                case "SCVR":
+                {
+                    _currentBlock ??= DialogueResultScriptParser.StartImplicitResultScript(_blocks);
+                    var variableName = EsmStringUtils.ReadNullTermString(data);
+                    if (_pendingVariableIndex.HasValue)
+                    {
+                        _currentBlock.Variables.Add(new ScriptVariableInfo(
+                            _pendingVariableIndex.Value, variableName, _pendingVariableType));
+                        _pendingVariableIndex = null;
+                    }
+
+                    break;
+                }
+                case "SCRV" when data.Length >= 4:
+                    _currentBlock ??= DialogueResultScriptParser.StartImplicitResultScript(_blocks);
+                    var variableIndex = RecordParserContext.ReadFormId(data, isBigEndian);
+                    _currentBlock.ReferencedObjects.Add(0x80000000 | variableIndex);
+                    break;
+                case "NEXT":
+                    DialogueResultScriptParser.FlushPendingVariable(
+                        _currentBlock, ref _pendingVariableIndex, ref _pendingVariableType);
+                    _currentBlock ??= DialogueResultScriptParser.StartImplicitResultScript(_blocks);
+                    _currentBlock.HasNextSeparator = true;
+                    _currentBlock = null;
+                    break;
+            }
+        }
+
+        internal PackageEventAction Build(string? editorId, uint packageFormId, Func<uint, string?> resolveFormName)
+        {
+            DialogueResultScriptParser.FlushPendingVariable(
+                _currentBlock, ref _pendingVariableIndex, ref _pendingVariableType);
+
+            return new PackageEventAction
+            {
+                Kind = kind,
+                IdleFormId = _idleFormId,
+                TopicFormId = _topicFormId,
+                Scripts = DialogueResultScriptParser.BuildResultScripts(
+                    _sourceTexts, _blocks, editorId, packageFormId, resolveFormName)
+            };
+        }
     }
 }

@@ -1,3 +1,5 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
+
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models.Records.AI;
 
 /// <summary>
@@ -21,6 +23,12 @@ public record PackageRecord
     /// <summary>Use Weapon package data from PKW3, when present.</summary>
     public PackageUseWeaponData? UseWeaponData { get; init; }
 
+    /// <summary>Dialogue package data from PKDD, when present.</summary>
+    public PackageDialogueData? DialogueData { get; init; }
+
+    /// <summary>Idle marker package data from IDLF/IDLC/IDLT/IDLA, when present.</summary>
+    public PackageIdleCollection? IdleCollection { get; init; }
+
     /// <summary>Primary package location (PLDT subrecord).</summary>
     public PackageLocation? Location { get; init; }
 
@@ -33,11 +41,38 @@ public record PackageRecord
     /// <summary>Secondary package target (PTD2 subrecord).</summary>
     public PackageTarget? Target2 { get; init; }
 
+    /// <summary>Package activation conditions (CTDA* with optional CIS1/CIS2 string parameters).</summary>
+    public List<DialogueCondition> Conditions { get; init; } = [];
+
     /// <summary>Whether this patrol package is repeatable (from PKPT byte[0]).</summary>
     public bool IsRepeatable { get; init; }
 
     /// <summary>Whether patrol starting location uses linked ref (from PKPT byte[1]).</summary>
     public bool IsStartingLocationLinkedRef { get; init; }
+
+    /// <summary>Whether this package carries the PKED Eat marker.</summary>
+    public bool HasEatMarker { get; init; }
+
+    /// <summary>Whether this package carries the PUID Use Item marker.</summary>
+    public bool HasUseItemMarker { get; init; }
+
+    /// <summary>Whether this package carries the PKAM Ambush marker.</summary>
+    public bool HasAmbushMarker { get; init; }
+
+    /// <summary>Package OnBegin event action block.</summary>
+    public PackageEventAction? OnBegin { get; init; }
+
+    /// <summary>Package OnEnd event action block.</summary>
+    public PackageEventAction? OnEnd { get; init; }
+
+    /// <summary>Package OnChange event action block.</summary>
+    public PackageEventAction? OnChange { get; init; }
+
+    /// <summary>
+    ///     Combat style override (CNAM subrecord, TESCombatStyle FormID). On the runtime side
+    ///     this comes from <c>TESPackage.pCombatStyle</c> at PDB offset +88.
+    /// </summary>
+    public uint? CombatStyleFormId { get; init; }
 
     /// <summary>Human-readable package type name (from PKDT data).</summary>
     public string TypeName => Data?.TypeName ?? "AI Package";
