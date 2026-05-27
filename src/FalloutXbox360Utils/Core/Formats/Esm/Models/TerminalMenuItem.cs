@@ -42,4 +42,11 @@ public record TerminalMenuItem
     ///     variable-index references (SCRV); otherwise these are SCRO FormIDs.
     /// </summary>
     public List<uint> ReferencedObjects { get; init; } = [];
+
+    /// <summary>
+    ///     True when <see cref="CompiledData" /> holds Xbox 360 (big-endian) bytecode and
+    ///     must be byte-swapped before being emitted to a PC ESP. Set by parsers from the
+    ///     containing record's endianness flag; false by default for tests and any LE source.
+    /// </summary>
+    public bool IsBigEndianBytecode { get; init; }
 }

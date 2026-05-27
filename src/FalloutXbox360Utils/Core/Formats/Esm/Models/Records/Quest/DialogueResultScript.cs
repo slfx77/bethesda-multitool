@@ -20,6 +20,13 @@ public record DialogueResultScript
     /// <summary>Whether this script block ended with a NEXT separator.</summary>
     public bool HasNextSeparator { get; init; }
 
+    /// <summary>
+    ///     True when <see cref="CompiledData" /> holds Xbox 360 (big-endian) bytecode and
+    ///     must be byte-swapped before being emitted to a PC ESP. Set by parsers from the
+    ///     containing record's endianness flag; false by default for tests and any LE source.
+    /// </summary>
+    public bool IsBigEndianBytecode { get; init; }
+
     /// <summary>Whether any script content was recovered.</summary>
     public bool HasContent =>
         !string.IsNullOrEmpty(SourceText) ||

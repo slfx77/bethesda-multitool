@@ -44,11 +44,17 @@ public sealed class ScriptDecompiler(
     ///     Decompile compiled bytecode to GECK script source text.
     ///     Never throws — returns partial output with error comments on failure.
     /// </summary>
-    public string Decompile(byte[] compiledData)
+    /// <param name="compiledData">SCDA bytecode bytes.</param>
+    /// <param name="externalReader">
+    ///     Optional pre-configured reader (e.g. with multi-byte read tracking enabled
+    ///     for the endian converter). When supplied, must wrap the same buffer as
+    ///     <paramref name="compiledData" /> and use the matching endianness.
+    /// </param>
+    public string Decompile(byte[] compiledData, BytecodeReader? externalReader = null)
     {
         _output.Clear();
         _indentLevel = 0;
-        _reader = new BytecodeReader(compiledData, _isBigEndian);
+        _reader = externalReader ?? new BytecodeReader(compiledData, _isBigEndian);
 
         if (_varReader == null)
         {

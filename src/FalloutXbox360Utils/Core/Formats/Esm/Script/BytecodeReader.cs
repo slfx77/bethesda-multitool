@@ -3,17 +3,39 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Script;
 /// <summary>
 ///     Endian-aware binary reader over a byte array for script bytecode decoding.
 ///     Xbox 360 bytecode is big-endian; PC ESM bytecode is little-endian.
+///     Optionally tracks the offset/length of every multi-byte read so callers can
+///     produce a byte-swapped copy of the underlying buffer
+///     (see <c>ScriptBytecodeEndianConverter</c>).
 /// </summary>
 public sealed class BytecodeReader(byte[] data, bool isBigEndian)
 {
     private readonly byte[] _data = data;
     private readonly bool _isBigEndian = isBigEndian;
+    private List<(int Offset, int Length)>? _multiByteReads;
 
     public int Position { get; set; }
 
     public int Length => _data.Length;
     public int Remaining => _data.Length - Position;
     public bool HasData => Position < _data.Length;
+
+    /// <summary>
+    ///     Start recording every multi-byte read (uint16/uint32/double). Pairs with
+    ///     <see cref="StopTrackingMultiByteReads" />. Used by the endian converter to
+    ///     locate every field that needs byte-reversal when swapping a BE bytecode to LE.
+    /// </summary>
+    public void StartTrackingMultiByteReads()
+    {
+        _multiByteReads = [];
+    }
+
+    /// <summary>Stop recording multi-byte reads and return the accumulated list.</summary>
+    public IReadOnlyList<(int Offset, int Length)> StopTrackingMultiByteReads()
+    {
+        var result = _multiByteReads ?? [];
+        _multiByteReads = null;
+        return result;
+    }
 
     public byte ReadByte()
     {
@@ -70,6 +92,8 @@ public sealed class BytecodeReader(byte[] data, bool isBigEndian)
             throw new EndOfStreamException($"BytecodeReader: read UInt16 past end at offset {Position}");
         }
 
+        _multiByteReads?.Add((Position, 2));
+
         ushort value;
         if (_isBigEndian)
         {
@@ -95,6 +119,8 @@ public sealed class BytecodeReader(byte[] data, bool isBigEndian)
         {
             throw new EndOfStreamException($"BytecodeReader: read UInt32 past end at offset {Position}");
         }
+
+        _multiByteReads?.Add((Position, 4));
 
         uint value;
         if (_isBigEndian)
@@ -127,6 +153,8 @@ public sealed class BytecodeReader(byte[] data, bool isBigEndian)
         {
             throw new EndOfStreamException($"BytecodeReader: read Double past end at offset {Position}");
         }
+
+        _multiByteReads?.Add((Position, 8));
 
         // Read 8 bytes and convert respecting endianness
         var bytes = new byte[8];
