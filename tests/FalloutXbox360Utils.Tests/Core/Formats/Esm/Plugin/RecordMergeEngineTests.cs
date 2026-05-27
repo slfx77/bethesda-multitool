@@ -140,6 +140,28 @@ public class RecordMergeEngineTests
         Assert.Equal(-1, FindSubrecordIndex(merge.SubrecordBytes, "XCLC"));
     }
 
+    [Fact]
+    public void Merge_ActorPolicy_AllowsPackageListOverride()
+    {
+        var vanillaPackage = BitConverter.GetBytes(0x000E62E1u);
+        var capturedFollowerPackage = BitConverter.GetBytes(0x01000958u);
+        var esm = MakeEsmRecord("NPC_",
+            ("EDID", new byte[] { (byte)'Q', (byte)'J', 0 }),
+            ("PKID", vanillaPackage));
+        var dmpEncoded = new EncodedRecord
+        {
+            Subrecords = [new EncodedSubrecord("PKID", capturedFollowerPackage)],
+            Warnings = []
+        };
+
+        var merge = RecordMergeEngine.Merge(esm, dmpEncoded, SubrecordMergePolicy.ForRecordType("NPC_"));
+
+        Assert.Contains("PKID", merge.DmpSignaturesUsed);
+        Assert.DoesNotContain("PKID", merge.EsmSignaturesRetained);
+        Assert.DoesNotContain("PKID", merge.DmpSignaturesAppended);
+        Assert.Equal(capturedFollowerPackage, ReadFirstSubrecordPayload(merge.SubrecordBytes, "PKID"));
+    }
+
     private static int FindSubrecordIndex(byte[] stream, string sig)
     {
         for (var i = 0; i + 6 <= stream.Length;)

@@ -23,4 +23,11 @@ internal static class RuntimeStateRecordPolicy
     {
         return FormIds.Contains(formId);
     }
+
+    /// <summary>
+    ///     The set of engine-hardcoded FormIDs that aren't stored as records in any ESM but
+    ///     that scripts and conditions are allowed to reference. Used by validators that
+    ///     would otherwise null these out (e.g. SCRO refs to PlayerRef).
+    /// </summary>
+    public static IReadOnlySet<uint> EngineFormIds => FormIds;
 }

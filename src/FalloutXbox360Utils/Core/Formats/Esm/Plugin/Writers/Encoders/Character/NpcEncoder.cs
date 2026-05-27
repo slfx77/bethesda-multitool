@@ -292,6 +292,16 @@ public sealed class NpcEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("ZNAM", npc.CombatStyleFormId.Value));
         }
 
+        if (npc.Height.HasValue)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFloatSubrecord("NAM6", npc.Height.Value));
+        }
+
+        if (npc.Weight.HasValue)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFloatSubrecord("NAM7", npc.Weight.Value));
+        }
+
         // NPC_ DATA — 11 bytes per FNV schema: int32 BaseHealth + 7 SPECIAL bytes
         // (Strength, Perception, Endurance, Charisma, Intelligence, Agility, Luck).
         if (npc.SpecialStats is { Length: 7 })
@@ -323,8 +333,9 @@ public sealed class NpcEncoder : IRecordEncoder
     /// <summary>
     ///     Encode a new NPC_ record from scratch. Includes EDID, FULL?, ACBS, RNAM (race),
     ///     plus optional FormID / faction / spell / inventory / package / AI subrecords.
-    ///     The TPLT + ACBS TemplateFlags are forced to inherit-traits-from-template using
-    ///     the supplied lookups so the engine never tries to load our (missing) FaceGen.
+    ///     NPCs without complete captured FaceGen get a renderable master template with
+    ///     UseTraits forced; NPCs with complete captured FaceGen keep their own race/face
+    ///     data so template trait inheritance does not bleed in the wrong body tint.
     /// </summary>
     internal static EncodedRecord EncodeNew(
         NpcRecord npc,
@@ -337,23 +348,43 @@ public sealed class NpcEncoder : IRecordEncoder
         var subs = new List<EncodedSubrecord>();
         var warnings = new List<string>();
 
+        var hasCompleteCapturedFaceGen = HasCompleteCapturedFaceGen(npc);
+
         // Pick a renderable master NPC to use as Template so the engine inherits its face/
-        // body instead of trying to load our missing FaceGen files. Strategy:
+        // body instead of trying to load missing FaceGen files. NPCs with complete captured
+        // FaceGen deliberately skip this path: their own RNAM/HCLR/FGGS/FGGA/FGTS should
+        // drive appearance, and UseTraits can inherit the template's body skin instead.
+        //
+        // Strategy for incomplete captures:
         //  1. If npc.Template is already a master NPC, keep it.
-        //  2. Otherwise look up a master NPC of the same race.
-        //  3. If neither is available, fall through with template unset and warn — engine
+        //  2. Otherwise prefer the captured face-template NPC if it is a master record.
+        //  3. Otherwise look up a master NPC of the same race.
+        //  4. If neither is available, fall through with template unset and warn — engine
         //     will still try to render but at least won't have a TPLT loop into a dead NPC.
-        var resolvedTemplate = npc.Template;
+        var resolvedTemplate = hasCompleteCapturedFaceGen ? null : npc.Template;
         var templateIsMaster = resolvedTemplate.HasValue
                                && masterFormIds is not null
                                && masterFormIds.Contains(resolvedTemplate.Value);
-        if (!templateIsMaster
+        string? templateRetargetReason = null;
+        if (!hasCompleteCapturedFaceGen
+            && !templateIsMaster
+            && npc.FaceNpc.HasValue
+            && masterFormIds is not null
+            && masterFormIds.Contains(npc.FaceNpc.Value))
+        {
+            resolvedTemplate = npc.FaceNpc.Value;
+            templateIsMaster = true;
+            templateRetargetReason = "face template";
+        }
+        if (!hasCompleteCapturedFaceGen
+            && !templateIsMaster
             && masterNpcByRace is not null
             && npc.Race.HasValue
             && masterNpcByRace.TryGetValue(npc.Race.Value, out var raceTemplate))
         {
             resolvedTemplate = raceTemplate;
             templateIsMaster = true;
+            templateRetargetReason = "same race";
         }
 
         // GECK and in-game tooltips show the FormID as the NPC's name when the EDID
@@ -375,9 +406,9 @@ public sealed class NpcEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("FULL", npc.FullName));
         }
 
-        // OR-in the Use-Traits template-flag bit when a renderable template is in scope.
-        // The renderer needs this to inherit the template's FaceGen instead of loading our
-        // missing _0.NIF / _0.dds files.
+        // OR-in the Use-Traits template-flag bit only when an incomplete capture needs a
+        // renderable template. Complete captures keep TemplateFlags untouched so own race /
+        // face data controls body skin and head appearance.
         var extraTemplateFlags = templateIsMaster ? TemplateFlagUseTraits : (ushort)0;
 
         if (npc.Stats is null)
@@ -401,7 +432,7 @@ public sealed class NpcEncoder : IRecordEncoder
             warnings.Add(
                 $"New NPC 0x{npc.FormId:X8} template retargeted from " +
                 $"0x{npc.Template ?? 0u:X8} to master 0x{resolvedTemplate.Value:X8} " +
-                "(same race) — avoids missing-FaceGen render crash.");
+                $"({templateRetargetReason ?? "master fallback"}) — avoids missing-FaceGen render crash.");
         }
 
         if (!npc.Race.HasValue)
@@ -487,6 +518,14 @@ public sealed class NpcEncoder : IRecordEncoder
     private static byte[] BuildDefaultAcbsSubrecord(ushort extraTemplateFlags = 0)
     {
         return ActorBaseAcbsBuilder.BuildDefault("NPC_", extraTemplateFlags);
+    }
+
+    internal static bool HasCompleteCapturedFaceGen(NpcRecord npc)
+    {
+        return npc.Race.HasValue
+               && npc.FaceGenGeometrySymmetric is { Length: 50 }
+               && npc.FaceGenGeometryAsymmetric is { Length: 30 }
+               && npc.FaceGenTextureSymmetric is { Length: 50 };
     }
 
     /// <summary>

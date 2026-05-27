@@ -343,6 +343,32 @@ public class BugfixEncoderTests
     }
 
     [Fact]
+    public void NpcEncoder_EncodeNew_CompleteFaceGen_DoesNotForceTemplateTraits()
+    {
+        var npc = new NpcRecord
+        {
+            FormId = 0x800,
+            EditorId = "Npc",
+            Template = 0x000A1234,
+            Race = 0x33184,
+            Stats = MakeMinimalAcbs(),
+            FaceGenGeometrySymmetric = new float[50],
+            FaceGenGeometryAsymmetric = new float[30],
+            FaceGenTextureSymmetric = new float[50]
+        };
+
+        var encoded = NpcEncoder.EncodeNew(
+            npc,
+            new HashSet<uint> { 0x000A1234 },
+            new Dictionary<uint, uint> { [0x33184] = 0x123456 });
+
+        Assert.True(PluginBuilder.NpcHasRenderableTemplate(encoded.Subrecords));
+        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "TPLT");
+        var acbs = Assert.Single(encoded.Subrecords, s => s.Signature == "ACBS");
+        Assert.Equal(0x0000, BinaryPrimitives.ReadUInt16LittleEndian(acbs.Bytes.AsSpan(22, 2)));
+    }
+
+    [Fact]
     public void NpcEncoder_EncodeNew_WithoutMasterTemplate_IsRenderableTemplateUnsafe()
     {
         var npc = new NpcRecord
