@@ -116,4 +116,7 @@ public record ExtractedRefrRecord
 
     /// <summary>Runtime-linked child refs from ExtraLinkedRefChildren when present.</summary>
     public List<uint> LinkedRefChildrenFormIds { get; init; } = [];
+
+    /// <summary>Room/portal/occlusion structural subrecords carried by this placed marker reference.</summary>
+    public PlacedReferenceStructuralData? StructuralData { get; init; }
 }

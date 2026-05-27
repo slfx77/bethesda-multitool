@@ -152,6 +152,9 @@ public record PlacedReference
     /// <summary>Runtime-linked child refs derived from ExtraLinkedRefChildren.</summary>
     public List<uint> LinkedRefChildrenFormIds { get; init; } = [];
 
+    /// <summary>Room/portal/occlusion structural subrecords carried by this placed marker reference.</summary>
+    public PlacedReferenceStructuralData? StructuralData { get; init; }
+
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }
 

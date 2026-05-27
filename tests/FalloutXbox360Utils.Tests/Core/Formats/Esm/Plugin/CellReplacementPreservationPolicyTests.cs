@@ -4,6 +4,8 @@ using FalloutXbox360Utils.Core.Formats.Esm.Merge;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Cell;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
+using FalloutXbox360Utils.Core.Formats.Esm.Reporting;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using Xunit;
 
@@ -87,6 +89,120 @@ public class CellReplacementPreservationPolicyTests
         Assert.True(CellReplacementPreservationPolicy.ShouldPreserveMasterRef(masterRef, placementsByBase));
     }
 
+    [Fact]
+    public void PreserveAllMissing_CopiesVanillaRefsToTheirOriginalChildBuckets()
+    {
+        const uint cellFormId = 0x00103DF9;
+        var persistent = MakeMasterRef(0x200, 0x100, persistent: true, 10f, 20f, 30f);
+        var temporary = MakeMasterRef(0x201, 0x101, persistent: false, 10f, 20f, 30f);
+        var vwd = MakeMasterRef(0x202, 0x102, persistent: false, 10f, 20f, 30f);
+        var seenInDmp = MakeMasterRef(0x203, 0x103, persistent: false, 10f, 20f, 30f);
+        var locations = new Dictionary<uint, MasterChildLocation>
+        {
+            [0x200] = new(cellFormId, 8, "REFR"),
+            [0x201] = new(cellFormId, 9, "REFR"),
+            [0x202] = new(cellFormId, 10, "REFR"),
+            [0x203] = new(cellFormId, 9, "REFR")
+        };
+        var persistentBytes = new List<byte[]>();
+        var vwdBytes = new List<byte[]>();
+        var temporaryBytes = new List<byte[]>();
+        var stats = new ConversionPipelineStats();
+
+        var preserved = CellStructuralReferencePreserver.PreserveAllMissing(
+            [persistent, temporary, vwd, seenInDmp],
+            new HashSet<uint> { 0x203 },
+            locations,
+            persistentBytes,
+            vwdBytes,
+            temporaryBytes,
+            stats);
+
+        Assert.Equal(3, preserved);
+        Assert.Single(persistentBytes);
+        Assert.Single(vwdBytes);
+        Assert.Single(temporaryBytes);
+        Assert.Equal(3, stats.EmittedByType["REFR"]);
+    }
+
+    [Fact]
+    public void PreserveLoadedReplacementMissing_RetainsOnlyScriptCriticalRefs()
+    {
+        const uint cellFormId = 0x00103DF9;
+        var ordinary = MakeMasterRef(0x200, 0x100, persistent: false, 10f, 20f, 30f);
+        var covered = MakeMasterRef(0x201, 0x101, persistent: true, 10f, 20f, 30f);
+        var actor = MakeMasterRef(0x202, 0x102, persistent: false, 10f, 20f, 30f, "ACHR");
+        var persistent = MakeMasterRef(0x203, 0x103, persistent: true, 10f, 20f, 30f);
+        var scriptedRef = MakeMasterRef(
+            0x204, 0x104, persistent: false, 10f, 20f, 30f,
+            extraSubrecords: [MakeFormIdSubrecord("SCRI", 0x500)]);
+        var scriptedBase = MakeMasterRef(0x205, 0x105, persistent: false, 10f, 20f, 30f);
+        var structural = MakeMasterRef(
+            0x206, 0x106, persistent: false, 10f, 20f, 30f,
+            extraSubrecords: [new ParsedSubrecord { Signature = "XPRM", Data = [0x01] }]);
+        var locations = new Dictionary<uint, MasterChildLocation>
+        {
+            [0x200] = new(cellFormId, 9, "REFR"),
+            [0x201] = new(cellFormId, 8, "REFR"),
+            [0x202] = new(cellFormId, 8, "ACHR"),
+            [0x203] = new(cellFormId, 8, "REFR"),
+            [0x204] = new(cellFormId, 9, "REFR"),
+            [0x205] = new(cellFormId, 9, "REFR"),
+            [0x206] = new(cellFormId, 9, "REFR")
+        };
+        var pcRecords = new Dictionary<uint, ParsedMainRecord>
+        {
+            [0x105] = MakeBaseRecord("ACTI", 0x105, MakeFormIdSubrecord("SCRI", 0x501))
+        };
+        var persistentBytes = new List<byte[]>();
+        var vwdBytes = new List<byte[]>();
+        var temporaryBytes = new List<byte[]>();
+        var stats = new ConversionPipelineStats();
+
+        var preserved = CellStructuralReferencePreserver.PreserveLoadedReplacementMissing(
+            [ordinary, covered, actor, persistent, scriptedRef, scriptedBase, structural],
+            new HashSet<uint> { 0x201 },
+            locations,
+            pcRecords,
+            persistentBytes,
+            vwdBytes,
+            temporaryBytes,
+            stats);
+
+        Assert.Equal(4, preserved);
+        Assert.Equal(2, persistentBytes.Count);
+        Assert.Empty(vwdBytes);
+        Assert.Equal(2, temporaryBytes.Count);
+        Assert.Equal(3, stats.EmittedByType["REFR"]);
+        Assert.Equal(1, stats.EmittedByType["ACHR"]);
+    }
+
+    [Fact]
+    public void PreserveLoadedReplacementMissing_DmpStructuralRefsSuppressMasterStructuralRefs()
+    {
+        const uint cellFormId = 0x00103DF9;
+        var scriptedStructural = MakeMasterRef(
+            0x207, 0x107, persistent: false, 10f, 20f, 30f,
+            extraSubrecords:
+            [
+                MakeFormIdSubrecord("SCRI", 0x500),
+                new ParsedSubrecord { Signature = "XOCP", Data = [0x01, 0x02, 0x03, 0x04] }
+            ]);
+        var locations = new Dictionary<uint, MasterChildLocation>
+        {
+            [0x207] = new(cellFormId, 9, "REFR")
+        };
+
+        var withoutDmpStructural = PreserveSingleLoadedReplacement(scriptedStructural, locations, false);
+        Assert.Equal(1, withoutDmpStructural.Preserved);
+        Assert.Single(withoutDmpStructural.TemporaryBytes);
+        Assert.Equal(1, withoutDmpStructural.Stats.EmittedByType["REFR"]);
+
+        var withDmpStructural = PreserveSingleLoadedReplacement(scriptedStructural, locations, true);
+        Assert.Equal(0, withDmpStructural.Preserved);
+        Assert.Empty(withDmpStructural.TemporaryBytes);
+    }
+
     private static PlacedReference MakePlacement(uint baseFormId, float x, float y, float z)
     {
         return new PlacedReference
@@ -99,28 +215,77 @@ public class CellReplacementPreservationPolicyTests
         };
     }
 
+    private static (
+        int Preserved,
+        List<byte[]> TemporaryBytes,
+        ConversionPipelineStats Stats) PreserveSingleLoadedReplacement(
+            ParsedMainRecord masterRef,
+            IReadOnlyDictionary<uint, MasterChildLocation> locations,
+            bool hasAuthoritativeDmpStructuralRefs)
+    {
+        var persistentBytes = new List<byte[]>();
+        var vwdBytes = new List<byte[]>();
+        var temporaryBytes = new List<byte[]>();
+        var stats = new ConversionPipelineStats();
+
+        var preserved = CellStructuralReferencePreserver.PreserveLoadedReplacementMissing(
+            [masterRef],
+            new HashSet<uint>(),
+            locations,
+            new Dictionary<uint, ParsedMainRecord>(),
+            persistentBytes,
+            vwdBytes,
+            temporaryBytes,
+            stats,
+            hasAuthoritativeDmpStructuralRefs);
+
+        return (preserved, temporaryBytes, stats);
+    }
+
     private static ParsedMainRecord MakeMasterRef(
         uint formId,
         uint baseFormId,
         bool persistent,
         float x,
         float y,
-        float z)
+        float z,
+        string signature = "REFR",
+        params ParsedSubrecord[] extraSubrecords)
+    {
+        var subrecords = new List<ParsedSubrecord>
+        {
+            MakeFormIdSubrecord("NAME", baseFormId),
+            MakePositionSubrecord(x, y, z)
+        };
+        subrecords.AddRange(extraSubrecords);
+
+        return new ParsedMainRecord
+        {
+            Header = new MainRecordHeader
+            {
+                Signature = signature,
+                FormId = formId,
+                Flags = persistent ? PersistentFlag : 0,
+                Version = 0x000F
+            },
+            Subrecords = subrecords
+        };
+    }
+
+    private static ParsedMainRecord MakeBaseRecord(
+        string signature,
+        uint formId,
+        params ParsedSubrecord[] subrecords)
     {
         return new ParsedMainRecord
         {
             Header = new MainRecordHeader
             {
-                Signature = "REFR",
+                Signature = signature,
                 FormId = formId,
-                Flags = persistent ? PersistentFlag : 0,
                 Version = 0x000F
             },
-            Subrecords =
-            [
-                MakeFormIdSubrecord("NAME", baseFormId),
-                MakePositionSubrecord(x, y, z)
-            ]
+            Subrecords = [.. subrecords]
         };
     }
 

@@ -5,7 +5,8 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Merge;
 
 /// <summary>
 ///     Cell-merge mode chosen for a single cell based on the runtime DMP snapshot's contents.
-///     Drives whether temporary children (objects) are overridden alongside persistent refs.
+///     Drives whether temporary children are merged into the master cell or treated as an
+///     authoritative replacement snapshot.
 /// </summary>
 public enum CellMergeMode
 {
@@ -17,12 +18,19 @@ public enum CellMergeMode
     PersistentOnly,
 
     /// <summary>
-    ///     The DMP cell carries at least one temporary (non-persistent) ref — typical of
-    ///     cells the player was actively in. We override both persistent and temporary refs.
-    ///     v2 does NOT delete refs that exist in the PC ESM but not in the DMP — that
-    ///     "wipeout" semantics needs the deleted-flag override path which is deferred to v3.
+    ///     The DMP cell carries temporary refs, but not enough static/layout evidence to
+    ///     prove the full cell was loaded. Merge the captured refs into the master cell and
+    ///     preserve missing master children.
     /// </summary>
     HasTemporary,
+
+    /// <summary>
+    ///     The DMP cell carries non-persistent static/layout placement evidence, so the
+    ///     runtime snapshot is authoritative for ordinary temporary geometry and clutter.
+    ///     Missing master children are not copied wholesale; only script-critical and
+    ///     structural refs are retained.
+    /// </summary>
+    LoadedReplacement,
 
     /// <summary>
     ///     The DMP cell has no overrideable refs (either it's empty in the runtime snapshot
@@ -41,13 +49,25 @@ public static class CellMerger
     ///     Classify the merge mode for a single DMP cell. Returns <see cref="CellMergeMode.Skip" />
     ///     when none of the DMP's placed objects match a PC ESM ref FormID.
     /// </summary>
-    public static CellMergeMode Classify(CellRecord dmpCell, IReadOnlySet<uint> pcEsmRefFormIds)
+    public static CellMergeMode Classify(
+        CellRecord dmpCell,
+        IReadOnlySet<uint> pcEsmRefFormIds,
+        Func<PlacedReference, bool>? isLoadedPlacement = null,
+        int loadedPlacementThreshold = 1)
     {
         var hasOverrideablePersistent = false;
         var hasOverrideableTemporary = false;
+        var loadedPlacementCount = 0;
+        loadedPlacementThreshold = Math.Max(1, loadedPlacementThreshold);
 
         foreach (var placed in dmpCell.PlacedObjects)
         {
+            if (!placed.IsPersistent
+                && isLoadedPlacement?.Invoke(placed) == true)
+            {
+                loadedPlacementCount++;
+            }
+
             if (!pcEsmRefFormIds.Contains(placed.FormId))
             {
                 continue;
@@ -63,6 +83,11 @@ public static class CellMerger
             }
         }
 
+        if (loadedPlacementCount >= loadedPlacementThreshold)
+        {
+            return CellMergeMode.LoadedReplacement;
+        }
+
         if (hasOverrideableTemporary)
         {
             return CellMergeMode.HasTemporary;
@@ -74,8 +99,9 @@ public static class CellMerger
     /// <summary>
     ///     Returns the placed refs that should be emitted as overrides for the chosen mode:
     ///     <see cref="CellMergeMode.PersistentOnly" /> emits only persistent refs;
-    ///     <see cref="CellMergeMode.HasTemporary" /> emits both. Refs without a matching PC ESM
-    ///     FormID are filtered out — v2 does not emit new refs.
+    ///     <see cref="CellMergeMode.HasTemporary" /> and
+    ///     <see cref="CellMergeMode.LoadedReplacement" /> emit both. Refs without a matching
+    ///     PC ESM FormID are filtered out — v2 does not emit new refs.
     /// </summary>
     public static IEnumerable<PlacedReference> SelectOverrideRefs(
         CellRecord dmpCell,

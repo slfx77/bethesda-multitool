@@ -16,6 +16,16 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Records;
 /// </summary>
 internal static class EsmWorldExtractor
 {
+    private static readonly HashSet<string> StructuralReferenceSubrecords = new(StringComparer.Ordinal)
+    {
+        "XOCP",
+        "XORD",
+        "XMBO",
+        "XPRM",
+        "XPOD",
+        "XNDP"
+    };
+
     #region REFR Record Extraction
 
     /// <summary>
@@ -87,6 +97,7 @@ internal static class EsmWorldExtractor
         ushort? markerType = null;
         string? markerName = null;
         string? editorId = null;
+        List<PlacedReferenceStructuralSubrecord>? structuralSubrecords = null;
 
         // Iterate through subrecords using the standard subrecord header format
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, header.IsBigEndian))
@@ -210,6 +221,14 @@ internal static class EsmWorldExtractor
 
                     break;
             }
+
+            if (StructuralReferenceSubrecords.Contains(sub.Signature))
+            {
+                structuralSubrecords ??= [];
+                structuralSubrecords.Add(new PlacedReferenceStructuralSubrecord(
+                    sub.Signature,
+                    NormalizeStructuralSubrecord(sub.Signature, subData, header.IsBigEndian)));
+            }
         }
 
         if (baseFormId == 0)
@@ -241,8 +260,37 @@ internal static class EsmWorldExtractor
             MarkerName = markerName,
             EditorId = editorId,
             LinkedRefKeywordFormId = linkedRefKeywordFormId,
-            LinkedRefFormId = linkedRefFormId
+            LinkedRefFormId = linkedRefFormId,
+            StructuralData = structuralSubrecords is { Count: > 0 }
+                ? new PlacedReferenceStructuralData { Subrecords = structuralSubrecords }
+                : null
         };
+    }
+
+    private static byte[] NormalizeStructuralSubrecord(
+        string signature,
+        ReadOnlySpan<byte> data,
+        bool bigEndian)
+    {
+        var normalized = data.ToArray();
+        if (!bigEndian || normalized.Length == 0)
+        {
+            return normalized;
+        }
+
+        // These structural marker payloads are float/FormID/uint32 based in all known FNV
+        // schemas. Normalize 4-byte words to PC little-endian so encoders can byte-preserve.
+        if (normalized.Length % 4 != 0)
+        {
+            return normalized;
+        }
+
+        for (var offset = 0; offset < normalized.Length; offset += 4)
+        {
+            Array.Reverse(normalized, offset, 4);
+        }
+
+        return normalized;
     }
 
     #endregion

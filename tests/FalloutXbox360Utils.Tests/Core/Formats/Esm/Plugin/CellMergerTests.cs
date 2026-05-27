@@ -40,6 +40,43 @@ public class CellMergerTests
     }
 
     [Fact]
+    public void Classify_ContainsLoadedPlacement_ReturnsLoadedReplacement()
+    {
+        var dmpCell = new CellRecord
+        {
+            FormId = 0xCC,
+            PlacedObjects = [
+                new PlacedReference { FormId = 0x100, IsPersistent = true },
+                new PlacedReference { FormId = 0xDEAD, IsPersistent = false, BaseFormId = 0x300 }
+            ]
+        };
+
+        Assert.Equal(
+            CellMergeMode.LoadedReplacement,
+            CellMerger.Classify(dmpCell, PcRefs, placed => placed.BaseFormId == 0x300));
+    }
+
+    [Fact]
+    public void Classify_LoadedPlacementBelowThreshold_ReturnsSparseTemporaryMerge()
+    {
+        var dmpCell = new CellRecord
+        {
+            FormId = 0xCC,
+            PlacedObjects = [
+                new PlacedReference { FormId = 0x200, IsPersistent = false, BaseFormId = 0x300 }
+            ]
+        };
+
+        Assert.Equal(
+            CellMergeMode.HasTemporary,
+            CellMerger.Classify(
+                dmpCell,
+                PcRefs,
+                placed => placed.BaseFormId == 0x300,
+                loadedPlacementThreshold: 2));
+    }
+
+    [Fact]
     public void Classify_NoPcEsmMatches_ReturnsSkip()
     {
         var dmpCell = new CellRecord
@@ -86,6 +123,27 @@ public class CellMergerTests
         };
 
         var refs = CellMerger.SelectOverrideRefs(dmpCell, CellMergeMode.HasTemporary, PcRefs).ToList();
+
+        Assert.Equal(2, refs.Count);
+        Assert.Contains(refs, r => r.FormId == 0x100);
+        Assert.Contains(refs, r => r.FormId == 0x200);
+        Assert.DoesNotContain(refs, r => r.FormId == 0xDEAD);
+    }
+
+    [Fact]
+    public void SelectOverrideRefs_LoadedReplacement_IncludesBothPersistentAndTemporary()
+    {
+        var dmpCell = new CellRecord
+        {
+            FormId = 0xCC,
+            PlacedObjects = [
+                new PlacedReference { FormId = 0x100, IsPersistent = true },
+                new PlacedReference { FormId = 0x200, IsPersistent = false },
+                new PlacedReference { FormId = 0xDEAD, IsPersistent = false } // not in PC ESM
+            ]
+        };
+
+        var refs = CellMerger.SelectOverrideRefs(dmpCell, CellMergeMode.LoadedReplacement, PcRefs).ToList();
 
         Assert.Equal(2, refs.Count);
         Assert.Contains(refs, r => r.FormId == 0x100);
