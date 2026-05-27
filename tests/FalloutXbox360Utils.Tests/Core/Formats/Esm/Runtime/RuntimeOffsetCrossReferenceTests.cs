@@ -2516,4 +2516,239 @@ public sealed class RuntimeOffsetCrossReferenceTests
         if (value == 0) return true;
         return value >= 0x40000000 && value < 0x80000000;
     }
+
+    // =========================================================================
+    // ENCH / ALCH EffectItem list — RuntimeEffectItemListReader (Phase 5.2)
+    // =========================================================================
+    // RuntimeEffectItemListReader walks BSSimpleList<EffectItem*> for ENCH
+    // (TESEnchantmentItem) and ALCH (AlchemyItem) records. Each EffectItem is
+    // 24 bytes; the reader tries the standard layout (pSetting @ +0, data @ +4)
+    // first and falls back to the alternate layout (pSetting @ +20, data @ +0)
+    // when the first doesn't validate. The reader is LOAD-BEARING (its output
+    // flows to the converted ESP via RuntimeMagicReader / RuntimeItemReader →
+    // MergeRuntimeRecords), but had no empirical harness coverage before 5.2.
+    //
+    // PDB layout offsets (BSSimpleList head):
+    //   ENCH (EnchantmentItem): m_item at PDB +56 (no _s — Tier 1B.20 confirmed
+    //                            ENCH core region is PDB-aligned).
+    //   ALCH (AlchemyItem):     m_item at PDB +80 == 64 + _s on Release builds
+    //                            (matches RuntimeItemLayouts.AlchEffectListOffset).
+    //
+    // The anchors below walk every ENCH/ALCH entry's effect-item list and check
+    // pSetting at both candidate offsets (+0 standard, +20 alternate). Empirical
+    // observation (Phase 5.2 baseline across all 8 snippets): for ENCH captures
+    // the alternate layout (+20) is the load-bearing path, NOT the standard —
+    // pSetting at +0 reads actorValue-shaped small ints, never heap pointers.
+    // The reader's `TryReadLayout(buffer, 0, 4)` first try always fails for ENCH
+    // and falls through to `TryReadLayout(buffer, 20, 0)`. The 80% threshold is
+    // set against the empirical baseline (83-88% across snippets); the 12-17%
+    // gap represents stale list entries that the production reader also drops
+    // via its plausibility-gate chain.
+
+    private const int EffectItemStructSize = 24;
+    private const byte MagicEffectFormType = 0x10;
+    private const int EnchEffectListOffset = 56;
+    private const int AlchEffectListBase = 64;
+
+    private static IReadOnlyList<RuntimeEditorIdEntry> GetEffectItemSourceSample(
+        DmpSnippetReader snippet,
+        byte formType,
+        int sampleSize)
+    {
+        return snippet.RuntimeEditorIds
+            .Where(e => e.FormType == formType && e.TesFormOffset.HasValue && e.FormId != 0x14)
+            .Take(sampleSize)
+            .ToList();
+    }
+
+    /// <summary>
+    ///     Walk every entry's EffectItem BSSimpleList and tally how often
+    ///     pSetting at <paramref name="settingOffsetInItem" /> resolves to a
+    ///     valid MagicEffect FormID. Mirrors the standard-layout branch in
+    ///     <c>RuntimeEffectItemListReader.TryReadEffectItem</c>.
+    /// </summary>
+    private static (int Items, int MgefMatches, List<string> Samples) WalkEffectItemSettingMatches(
+        IReadOnlyList<RuntimeEditorIdEntry> entries,
+        RuntimeMemoryContext context,
+        Func<RuntimeEditorIdEntry, int> listOffsetForEntry,
+        int settingOffsetInItem)
+    {
+        var items = 0;
+        var matches = 0;
+        var samples = new List<string>();
+
+        foreach (var entry in entries)
+        {
+            var structOffset = entry.TesFormOffset!.Value;
+            var listOffset = listOffsetForEntry(entry);
+            var headBuf = context.ReadBytes(structOffset + listOffset, 8);
+            if (headBuf is null)
+            {
+                continue;
+            }
+
+            // Borrow the production walker — it knows the BSSimpleList layout
+            // (inline head + heap-allocated linked nodes) and is what the
+            // reader itself uses. Constructing an 8-byte head buffer at
+            // listOffset within the entry's struct is the contract it expects.
+            var headFrame = new byte[8];
+            Array.Copy(headBuf, headFrame, 8);
+            foreach (var itemVa in context.WalkInlineBSSimpleListItemPointers(headFrame, 0, 32))
+            {
+                var itemOffset = context.VaToFileOffset(itemVa);
+                if (itemOffset is null)
+                {
+                    continue;
+                }
+
+                var itemBuf = context.ReadBytes(itemOffset.Value, EffectItemStructSize);
+                if (itemBuf is null || settingOffsetInItem + 4 > itemBuf.Length)
+                {
+                    continue;
+                }
+
+                items++;
+                var settingVa = BinaryUtils.ReadUInt32BE(itemBuf, settingOffsetInItem);
+                var settingFormId = context.FollowPointerVaToFormId(settingVa, MagicEffectFormType);
+                if (settingFormId is > 0)
+                {
+                    matches++;
+                }
+                else if (samples.Count < 10)
+                {
+                    samples.Add(
+                        $"0x{entry.FormId:X8} {entry.EditorId ?? "?"} pSetting=0x{settingVa:X8}");
+                }
+            }
+        }
+
+        return (items, matches, samples);
+    }
+
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task ENCH_EffectItem_pSetting_LandsOnMagicEffect(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var enchEntries = GetEffectItemSourceSample(snippet, formType: 0x13, sampleSize: 500);
+
+        if (enchEntries.Count < 20)
+        {
+            TestContext.Current.TestOutputHelper!.WriteLine(
+                $"[{snippetName}] Only {enchEntries.Count} ENCH entries — under-exercised.");
+            return;
+        }
+
+        // Diagnostic: probe BOTH layouts so we report which one the captures actually
+        // use. Without this, a 0% rate at one layout is indistinguishable from
+        // wrong-list-offset.
+        var (items, matchesAtZero, _) = WalkEffectItemSettingMatches(
+            enchEntries, context, _ => EnchEffectListOffset, settingOffsetInItem: 0);
+        var (_, matchesAtTwenty, samplesAtTwenty) = WalkEffectItemSettingMatches(
+            enchEntries, context, _ => EnchEffectListOffset, settingOffsetInItem: 20);
+
+        if (items < 10)
+        {
+            TestContext.Current.TestOutputHelper!.WriteLine(
+                $"[{snippetName}] Only {items} ENCH EffectItems walked across {enchEntries.Count} entries — under-exercised.");
+            return;
+        }
+
+        var rateZero = (double)matchesAtZero / items;
+        var rateTwenty = (double)matchesAtTwenty / items;
+        var bestRate = Math.Max(rateZero, rateTwenty);
+        var bestLayout = rateTwenty > rateZero ? "+20 (alternate)" : "+0 (standard)";
+
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] ENCH EffectItem pSetting → MGEF: "
+            + $"@+0 {matchesAtZero}/{items} ({rateZero:P0}), @+20 {matchesAtTwenty}/{items} ({rateTwenty:P0}). "
+            + $"Best layout: {bestLayout}. List head @ +{EnchEffectListOffset}.");
+
+        Assert.True(bestRate >= 0.8,
+            $"[{snippetName}] ENCH EffectItem pSetting best-of-both layouts {bestRate:P0} below 80% threshold. "
+            + $"Standard (+0) {rateZero:P0}, alternate (+20) {rateTwenty:P0}. "
+            + $"First 10 non-MGEF at +20:\n  {string.Join("\n  ", samplesAtTwenty)}");
+    }
+
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task ALCH_EffectItem_pSetting_LandsOnMagicEffect(string snippetName)
+    {
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+        var alchEntries = GetEffectItemSourceSample(snippet, formType: 0x2F, sampleSize: 500);
+
+        if (alchEntries.Count < 20)
+        {
+            TestContext.Current.TestOutputHelper!.WriteLine(
+                $"[{snippetName}] Only {alchEntries.Count} ALCH entries — under-exercised.");
+            return;
+        }
+
+        var s = RuntimeBuildOffsets.GetPdbShift(MinidumpAnalyzer.DetectBuildType(snippet.MinidumpInfo));
+        var listOffset = AlchEffectListBase + s;
+
+        var (items, matchesAtZero, _) = WalkEffectItemSettingMatches(
+            alchEntries, context, _ => listOffset, settingOffsetInItem: 0);
+        var (_, matchesAtTwenty, samplesAtTwenty) = WalkEffectItemSettingMatches(
+            alchEntries, context, _ => listOffset, settingOffsetInItem: 20);
+
+        if (items < 10)
+        {
+            TestContext.Current.TestOutputHelper!.WriteLine(
+                $"[{snippetName}] Only {items} ALCH EffectItems walked across {alchEntries.Count} entries — under-exercised.");
+            return;
+        }
+
+        var rateZero = (double)matchesAtZero / items;
+        var rateTwenty = (double)matchesAtTwenty / items;
+        var bestRate = Math.Max(rateZero, rateTwenty);
+        var bestLayout = rateTwenty > rateZero ? "+20 (alternate)" : "+0 (standard)";
+
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] ALCH EffectItem pSetting → MGEF: "
+            + $"@+0 {matchesAtZero}/{items} ({rateZero:P0}), @+20 {matchesAtTwenty}/{items} ({rateTwenty:P0}). "
+            + $"Best layout: {bestLayout}. List head @ +{listOffset} (= 64 + _s({s})).");
+
+        Assert.True(bestRate >= 0.8,
+            $"[{snippetName}] ALCH EffectItem pSetting best-of-both layouts {bestRate:P0} below 80% threshold. "
+            + $"Standard (+0) {rateZero:P0}, alternate (+20) {rateTwenty:P0}. "
+            + $"First 10 non-MGEF at best layout:\n  {string.Join("\n  ", samplesAtTwenty)}");
+    }
+
+    [Theory]
+    [MemberData(nameof(AllSnippets))]
+    public async Task EffectItem_WalkProducesNonzeroEffects_Diagnostic(string snippetName)
+    {
+        // Diagnostic-only: walks each ENCH and ALCH entry through the
+        // production-shape walker (24B EffectItem stride) and logs the
+        // effect counts. No hard assert beyond "walked some items somewhere"
+        // — proves the test is exercising the path, not vacuously passing on
+        // empty samples.
+        var snippet = await DmpSnippetReader.LoadCachedAsync(DmpSnippetReader.DefaultSnippetDir, snippetName);
+        var context = new RuntimeMemoryContext(snippet.Accessor, snippet.FileSize, snippet.MinidumpInfo);
+
+        var s = RuntimeBuildOffsets.GetPdbShift(MinidumpAnalyzer.DetectBuildType(snippet.MinidumpInfo));
+        var enchEntries = GetEffectItemSourceSample(snippet, formType: 0x13, sampleSize: 500);
+        var alchEntries = GetEffectItemSourceSample(snippet, formType: 0x2F, sampleSize: 500);
+
+        var (enchItems, enchMatches, _) = WalkEffectItemSettingMatches(
+            enchEntries, context, _ => EnchEffectListOffset, settingOffsetInItem: 0);
+        var (alchItems, alchMatches, _) = WalkEffectItemSettingMatches(
+            alchEntries, context, _ => AlchEffectListBase + s, settingOffsetInItem: 0);
+
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"[{snippetName}] EffectItem walk diagnostic: "
+            + $"ENCH {enchEntries.Count} entries → {enchItems} items ({enchMatches} MGEF) | "
+            + $"ALCH {alchEntries.Count} entries → {alchItems} items ({alchMatches} MGEF). "
+            + $"_s={s}, ENCH list head @ +{EnchEffectListOffset}, ALCH list head @ +{AlchEffectListBase + s}.");
+
+        // Soft assertion: somewhere across ENCH+ALCH we should walk > 0 items.
+        // If both are zero in every snippet the test is broken (or the snippet
+        // captures lost the EffectItem heap region).
+        Assert.True(enchItems + alchItems > 0,
+            $"[{snippetName}] Walked 0 EffectItems across {enchEntries.Count} ENCH + {alchEntries.Count} ALCH entries. "
+            + "Snippet may not contain effect-item heap regions, or list offsets are wrong.");
+    }
 }
