@@ -73,6 +73,7 @@ public sealed record AssetPackingResult
     public required bool Success { get; init; }
     public required AssetPackingStats Stats { get; init; }
     public string? OutputPath { get; init; }
+    public IReadOnlyList<string> OutputPaths { get; init; } = [];
     public string? ErrorMessage { get; init; }
     public IReadOnlyList<AssetResolution> Resolutions { get; init; } = [];
 }

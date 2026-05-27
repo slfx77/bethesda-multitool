@@ -83,4 +83,26 @@ public sealed record AssetPackingOptions
     ///     behavior.
     /// </summary>
     public bool OverrideVanillaBaseline { get; init; }
+
+    /// <summary>
+    ///     Source-DMP FormID → emitted-ESP FormID alias map. When a CSV dialogue audio row's
+    ///     FormID is in this map, the corresponding voice-file path gets rewritten so the
+    ///     engine can find it: the master ESM directory (<c>sound\voice\falloutnv.esm\…</c>)
+    ///     becomes the new ESP's directory, and the filename's source-FormID hex becomes the
+    ///     emitted FormID's bottom 24 bits (matching the engine's runtime lookup pattern).
+    ///     Empty by default — when empty, the asset packer falls back to the old verbatim
+    ///     behavior (which only finds voice files for unchanged master overrides).
+    /// </summary>
+    public IReadOnlyDictionary<uint, uint> NewRecordSourceToAllocatedFormIds { get; init; } =
+        new Dictionary<uint, uint>();
+
+    /// <summary>
+    ///     Per-emitted-INFO×response triple-key bindings (voice type EDID, parent DIAL
+    ///     EDID, response number) used as a fallback when the CSV's FormID does not match
+    ///     the converter's source FormIDs (build-era drift). The asset packer parses each
+    ///     CSV row's <c>File</c> path to extract the same triple and looks up against this
+    ///     index, then rewrites the pack path using the binding's allocated FormID so the
+    ///     engine can find the audio at runtime. Empty by default.
+    /// </summary>
+    public IReadOnlyList<EmittedDialogueAudioBinding> EmittedDialogueAudioBindings { get; init; } = [];
 }

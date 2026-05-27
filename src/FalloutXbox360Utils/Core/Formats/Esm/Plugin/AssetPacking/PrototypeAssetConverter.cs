@@ -1,3 +1,4 @@
+using DDXConv;
 using FalloutXbox360Utils.Core.Formats.Ddx;
 using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
 using FalloutXbox360Utils.Core.Formats.Xma;
@@ -32,6 +33,12 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
 internal sealed class PrototypeAssetConverter
 {
     private readonly DdxConverter _ddx = new();
+    private readonly Func<string, byte[]?>? _companionFetcher;
+
+    public PrototypeAssetConverter(Func<string, byte[]?>? companionFetcher = null)
+    {
+        _companionFetcher = companionFetcher;
+    }
 
     /// <summary>
     ///     Convert one asset's bytes from Xbox 360 to PC format. The output extension may
@@ -73,13 +80,88 @@ internal sealed class PrototypeAssetConverter
                     result.Notes ?? "DDX → DDS conversion produced no data");
             }
 
+            var outputData = result.OutputData;
             var newPath = Path.ChangeExtension(sourcePath, ".dds");
-            return ConvertedAsset.Converted(result.OutputData, newPath);
+
+            // FNV's runtime DDS loader doesn't accept BC5/ATI2 (the Xbox 360 native normal-map
+            // format) — the texture slot stays unbound and renders whatever stale memory
+            // happens to be there, producing the "Ulysses outfit textures swap with garbage"
+            // behavior. Vanilla FNV ships normal maps as DXT5 with the specular packed into
+            // the alpha channel, so re-encode any ATI2 output through the same merge step
+            // the standalone `bsa extract --convert` path uses (with the companion `_s.ddx`
+            // when available; gray alpha otherwise).
+            if (IsLikelyNormalMap(sourcePath) && IsAti2(outputData))
+            {
+                outputData = MergeNormalToDxt5(outputData, sourcePath);
+            }
+
+            return ConvertedAsset.Converted(outputData, newPath);
         }
         catch (Exception ex)
         {
             return ConvertedAsset.Failure(data, sourcePath, $"DDX → DDS exception: {ex.Message}");
         }
+    }
+
+    private byte[] MergeNormalToDxt5(byte[] bc5Bytes, string normalSourcePath)
+    {
+        byte[]? specBytes = null;
+        if (_companionFetcher is not null)
+        {
+            var specSourcePath = ComputeSpecularSourcePath(normalSourcePath);
+            if (specSourcePath is not null)
+            {
+                var specRaw = _companionFetcher(specSourcePath);
+                if (specRaw is not null)
+                {
+                    try
+                    {
+                        var specConverted = _ddx.ConvertFromMemoryWithResult(specRaw);
+                        if (specConverted.Success && specConverted.OutputData is not null)
+                        {
+                            specBytes = specConverted.OutputData;
+                        }
+                    }
+                    catch
+                    {
+                        // If the spec map fails to convert, fall back to the gray-alpha
+                        // path — the merge then defaults to 128/128/128/128 specular.
+                    }
+                }
+            }
+        }
+
+        return DdsPostProcessor.MergeNormalSpecularMapsFromMemory(bc5Bytes, specBytes);
+    }
+
+    private static bool IsLikelyNormalMap(string sourcePath)
+    {
+        var stem = Path.GetFileNameWithoutExtension(sourcePath);
+        return stem.EndsWith("_n", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsAti2(byte[] dds)
+    {
+        // DDS header fourcc lives at offset 84. ATI2 = "ATI2" = {0x41, 0x54, 0x49, 0x32}.
+        return dds.Length >= 88
+               && dds[84] == (byte)'A'
+               && dds[85] == (byte)'T'
+               && dds[86] == (byte)'I'
+               && dds[87] == (byte)'2';
+    }
+
+    private static string? ComputeSpecularSourcePath(string normalSourcePath)
+    {
+        var dir = Path.GetDirectoryName(normalSourcePath) ?? string.Empty;
+        var name = Path.GetFileNameWithoutExtension(normalSourcePath);
+        var ext = Path.GetExtension(normalSourcePath);
+        if (!name.EndsWith("_n", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var specName = name[..^2] + "_s" + ext;
+        return string.IsNullOrEmpty(dir) ? specName : Path.Combine(dir, specName);
     }
 
     private static ConvertedAsset ConvertNif(byte[] data, string sourcePath)

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using FalloutXbox360Utils.Core.Formats.Bsa;
 using FalloutXbox360Utils.Core.Formats.Esm.Reporting;
@@ -30,8 +31,10 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
 /// </summary>
 public sealed class AssetPackingService
 {
+    private const long DefaultMaxBsaBytes = 1_900_000_000L;
+
     /// <summary>Run an asset packing job end-to-end.</summary>
-    public async Task<AssetPackingResult> PackAsync(
+    public static async Task<AssetPackingResult> PackAsync(
         AssetPackingOptions options,
         IConversionProgressSink sink,
         CancellationToken cancellationToken = default)
@@ -40,7 +43,7 @@ public sealed class AssetPackingService
         ArgumentNullException.ThrowIfNull(sink);
 
         var stopwatch = Stopwatch.StartNew();
-        var resolutions = new List<AssetResolution>();
+        var resolutions = new ConcurrentBag<AssetResolution>();
 
         sink.OnPhaseStart("AssetPacking", null);
 
@@ -54,6 +57,7 @@ public sealed class AssetPackingService
 
             // 2) Collect every referenced asset path.
             var requested = AssetPathCollector.Collect(espResult.Records, options.DmpPath, sink);
+            IReadOnlyDictionary<string, string>? packPathRenames = null;
             if (options.DialogueAudioCsvPaths.Count > 0)
             {
                 var dialogueAudio = await DialogueAudioCsvAssetCollector
@@ -62,20 +66,29 @@ public sealed class AssetPackingService
                         options.DmpPath,
                         options.DialogueAudioCsvPaths,
                         sink,
-                        cancellationToken)
+                        cancellationToken,
+                        options.NewRecordSourceToAllocatedFormIds.Count > 0
+                            ? options.NewRecordSourceToAllocatedFormIds
+                            : null,
+                        Path.GetFileName(options.ConvertedEspPath),
+                        options.EmittedDialogueAudioBindings.Count > 0
+                            ? options.EmittedDialogueAudioBindings
+                            : null)
                     .ConfigureAwait(false);
 
                 foreach (var path in dialogueAudio.Paths)
                 {
                     requested.Add(path);
                 }
+
+                packPathRenames = dialogueAudio.PackPathRenames;
             }
 
             sink.Info("AssetPacking", $"Total unique asset paths to resolve: {requested.Count}");
 
             if (requested.Count == 0)
             {
-                return BuildEmptyResult(options, sink, resolutions, stopwatch, null);
+                return BuildEmptyResult(options, sink, resolutions.ToList(), stopwatch, null);
             }
 
             // 3) Build baseline and secondary folder indexes.
@@ -101,55 +114,102 @@ public sealed class AssetPackingService
 
                 var resolver = new DataFolderResolver(
                     baseline, secondaryDisposables, options.OverrideVanillaBaseline);
-                var converter = new PrototypeAssetConverter();
+                // Companion fetcher lets the converter pull the `_s.ddx` specular companion
+                // for any `_n.ddx` normal map it's processing. The merge step packs the spec
+                // map into the normal map's alpha channel so the runtime gets vanilla-shape
+                // DXT5 normals instead of BC5/ATI2 (which FNV's loader rejects).
+                var converter = new PrototypeAssetConverter(companionSourcePath =>
+                {
+                    var normalized = AssetPathRules.TryNormalizeRequestPath(companionSourcePath);
+                    if (normalized is null)
+                    {
+                        return null;
+                    }
 
-                // 4) Resolve + convert + collect bytes to pack.
-                var packedFiles = new List<(string Path, byte[] Data)>();
+                    var companionResolution = resolver.Resolve(normalized);
+                    if (companionResolution.Source is null)
+                    {
+                        return null;
+                    }
+
+                    try
+                    {
+                        return companionResolution.Source.Read();
+                    }
+                    catch
+                    {
+                        return null;
+                    }
+                });
+
+                // 4a) NIF embedded-texture pre-pass. NIF blocks store texture paths as
+                // SizedString (length-prefix + ASCII, no null terminator), so the DMP
+                // raw-byte scanner can't find them — and the engine then renders missing
+                // textures with whatever stale memory occupies the texture slot. Open every
+                // .nif source we plan to pack, scan the bytes for embedded texture paths,
+                // and feed them back into the request set so the resolver picks them up.
+                await CollectNifEmbeddedTexturesAsync(
+                    requested,
+                    resolver,
+                    sink,
+                    cancellationToken).ConfigureAwait(false);
+
+                // 4b) Resolve + convert + collect bytes to pack. Parallelized — XMA→OGG/
+                // DDX→DDS conversion is CPU-heavy and dominates wall time on real
+                // workloads (6000+ assets per BSA). DataFolderResolver.Resolve and
+                // PrototypeAssetConverter.ConvertAsync are reentrant (read-only index
+                // lookups + per-call temp state), so we fan out across all cores.
+                var packedFiles = new ConcurrentBag<(string Path, byte[] Data)>();
                 var stats = new RunningStats();
 
-                foreach (var requestedPath in requested)
+                var parallelOptions = new ParallelOptions
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    var resolution = resolver.Resolve(requestedPath);
-                    stats.Total++;
-
-                    switch (resolution.Kind)
+                    MaxDegreeOfParallelism = Environment.ProcessorCount,
+                    CancellationToken = cancellationToken
+                };
+                await Parallel.ForEachAsync(requested, parallelOptions,
+                    async (requestedPath, ct) =>
                     {
-                        case AssetResolutionKind.AlreadyInBaseline:
-                            stats.AlreadyInBaseline++;
-                            // Don't emit a resolution entry for these — would balloon the log.
-                            break;
+                        var resolution = resolver.Resolve(requestedPath);
+                        Interlocked.Increment(ref stats.Total);
 
-                        case AssetResolutionKind.ResolvedExact:
-                        case AssetResolutionKind.ResolvedFuzzy:
-                            await TryPackAsync(
-                                converter,
-                                requestedPath,
-                                resolution,
-                                options,
-                                packedFiles,
-                                stats,
-                                resolutions,
-                                sink,
-                                cancellationToken).ConfigureAwait(false);
-                            break;
+                        switch (resolution.Kind)
+                        {
+                            case AssetResolutionKind.AlreadyInBaseline:
+                                Interlocked.Increment(ref stats.AlreadyInBaseline);
+                                // Don't emit a resolution entry for these — would balloon the log.
+                                break;
 
-                        case AssetResolutionKind.Missing:
-                            stats.Missing++;
-                            resolutions.Add(new AssetResolution
-                            {
-                                RequestedPath = requestedPath,
-                                Kind = AssetResolutionKind.Missing
-                            });
-                            if (options.VerbosePerAsset)
-                            {
-                                sink.Warn("AssetPacking", $"Missing: {requestedPath}");
-                            }
+                            case AssetResolutionKind.ResolvedExact:
+                            case AssetResolutionKind.ResolvedFuzzy:
+                                await TryPackAsync(
+                                    converter,
+                                    requestedPath,
+                                    resolution,
+                                    options,
+                                    packedFiles,
+                                    stats,
+                                    resolutions,
+                                    sink,
+                                    packPathRenames,
+                                    ct).ConfigureAwait(false);
+                                break;
 
-                            break;
-                    }
-                }
+                            case AssetResolutionKind.Missing:
+                                Interlocked.Increment(ref stats.Missing);
+                                resolutions.Add(new AssetResolution
+                                {
+                                    RequestedPath = requestedPath,
+                                    Kind = AssetResolutionKind.Missing
+                                });
+                                if (options.VerbosePerAsset)
+                                {
+                                    sink.Warn("AssetPacking", $"Missing: {requestedPath}");
+                                }
+
+                                break;
+                        }
+                    }).ConfigureAwait(false);
 
                 sink.Info("AssetPacking",
                     $"Summary: already-in-baseline={stats.AlreadyInBaseline}, " +
@@ -157,26 +217,57 @@ public sealed class AssetPackingService
                     $"converted-360={stats.Converted360}, conversion-failed={stats.ConversionFailed}, " +
                     $"missing={stats.Missing}");
 
-                if (packedFiles.Count == 0)
+                // Snapshot ConcurrentBag → List once so all downstream consumers (BSA
+                // writer, audit, result) see a stable enumeration order.
+                var packedSnapshot = packedFiles.ToList();
+                var resolutionsSnapshot = resolutions.ToList();
+                ReportVoiceLipPairDiagnostics(
+                    packedSnapshot,
+                    resolutionsSnapshot,
+                    packPathRenames,
+                    sink);
+
+                if (packedSnapshot.Count == 0)
                 {
-                    return BuildEmptyResult(options, sink, resolutions, stopwatch, stats);
+                    return BuildEmptyResult(options, sink, resolutionsSnapshot, stopwatch, stats);
                 }
 
-                // 5) Write the output BSA.
+                // 5) Write output BSAs. FO3/FNV archives are safest when no file data
+                // offset crosses the signed 2 GB boundary; the vanilla game also sorts
+                // meshes/textures/sounds/voices into separate BSA files. Treat the user's
+                // --pack-assets path as a base name when multiple asset classes exist.
                 Directory.CreateDirectory(Path.GetDirectoryName(options.OutputBsaPath)!);
 
-                sink.Info("AssetPacking",
-                    $"Writing {packedFiles.Count} assets to {Path.GetFileName(options.OutputBsaPath)}");
+                var outputPlans = PlanBsaOutputs(options.OutputBsaPath, packedSnapshot);
+                DeleteStaleBsaOutputs(options.OutputBsaPath, outputPlans, sink);
 
-                using var writer = BsaWriter.CreateWithAutoFlags(packedFiles.Select(p => p.Path));
-                foreach (var (path, data) in packedFiles)
+                var outputPaths = new List<string>(outputPlans.Count);
+                long totalOutputSize = 0;
+                foreach (var plan in outputPlans)
                 {
-                    writer.AddFile(path, data);
+                    sink.Info("AssetPacking",
+                        $"Writing {plan.Files.Count:N0} {plan.BucketLabel} asset(s) to " +
+                        $"{Path.GetFileName(plan.OutputPath)}");
+
+                    using var writer = BsaWriter.CreateWithAutoFlags(plan.Files.Select(p => p.Path));
+                    foreach (var (path, data) in plan.Files)
+                    {
+                        writer.AddFile(path, data);
+                    }
+
+                    writer.Write(plan.OutputPath);
+
+                    var size = new FileInfo(plan.OutputPath).Length;
+                    totalOutputSize += size;
+                    outputPaths.Add(plan.OutputPath);
+
+                    if (size > int.MaxValue)
+                    {
+                        sink.Warn("AssetPacking",
+                            $"{Path.GetFileName(plan.OutputPath)} is {size:N0} bytes, above the " +
+                            "signed 2 GB boundary. Split rules should be tightened before in-game use.");
+                    }
                 }
-
-                writer.Write(options.OutputBsaPath);
-
-                var outputSize = new FileInfo(options.OutputBsaPath).Length;
                 stopwatch.Stop();
 
                 // Drop a per-asset audit next to the BSA so the user can review what
@@ -184,17 +275,19 @@ public sealed class AssetPackingService
                 // one path per line within each section. Opt-in via WriteAuditFile.
                 if (options.WriteAuditFile)
                 {
-                    TryWriteAuditFile(options.OutputBsaPath, resolutions, stats, sink);
+                    TryWriteAuditFile(options.OutputBsaPath, resolutionsSnapshot, stats, sink);
                 }
 
                 sink.OnPhaseEnd("AssetPacking", new ConversionPipelineStats());
                 sink.Info("AssetPacking",
-                    $"BSA written: {outputSize:N0} bytes in {stopwatch.Elapsed.TotalSeconds:F2}s");
+                    $"BSA output written: {outputPaths.Count:N0} archive(s), " +
+                    $"{totalOutputSize:N0} total bytes in {stopwatch.Elapsed.TotalSeconds:F2}s");
 
                 return new AssetPackingResult
                 {
                     Success = true,
-                    OutputPath = options.OutputBsaPath,
+                    OutputPath = outputPaths.FirstOrDefault(),
+                    OutputPaths = outputPaths,
                     Stats = new AssetPackingStats
                     {
                         TotalPathsScanned = stats.Total,
@@ -204,11 +297,11 @@ public sealed class AssetPackingService
                         Converted360 = stats.Converted360,
                         ConversionFailed = stats.ConversionFailed,
                         Missing = stats.Missing,
-                        PackedAssetCount = packedFiles.Count,
-                        OutputBsaSizeBytes = outputSize,
+                        PackedAssetCount = packedSnapshot.Count,
+                        OutputBsaSizeBytes = totalOutputSize,
                         Elapsed = stopwatch.Elapsed
                     },
-                    Resolutions = resolutions
+                    Resolutions = resolutionsSnapshot
                 };
             }
             finally
@@ -228,7 +321,7 @@ public sealed class AssetPackingService
                 Success = false,
                 ErrorMessage = "Asset packing canceled",
                 Stats = EmptyStats(stopwatch.Elapsed),
-                Resolutions = resolutions
+                Resolutions = resolutions.ToList()
             };
         }
         catch (Exception ex)
@@ -240,9 +333,86 @@ public sealed class AssetPackingService
                 Success = false,
                 ErrorMessage = ex.Message,
                 Stats = EmptyStats(stopwatch.Elapsed),
-                Resolutions = resolutions
+                Resolutions = resolutions.ToList()
             };
         }
+    }
+
+    /// <summary>
+    ///     Pre-pass: for each .nif in the requested set, resolve it through the resolver,
+    ///     read the bytes, and feed any embedded texture-path references back into the
+    ///     requested set. The main pack loop then resolves and packs the newly-discovered
+    ///     textures alongside the originally-requested ones.
+    /// </summary>
+    private static async Task CollectNifEmbeddedTexturesAsync(
+        HashSet<string> requested,
+        DataFolderResolver resolver,
+        IConversionProgressSink sink,
+        CancellationToken cancellationToken)
+    {
+        var nifPaths = requested
+            .Where(static p => p.EndsWith(".nif", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (nifPaths.Count == 0)
+        {
+            return;
+        }
+
+        var discovered = new ConcurrentBag<string>();
+        var scanned = 0;
+        var scanFailures = 0;
+        var parallelOptions = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = Environment.ProcessorCount,
+            CancellationToken = cancellationToken
+        };
+
+        await Parallel.ForEachAsync(nifPaths, parallelOptions, (nifPath, ct) =>
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var resolution = resolver.Resolve(nifPath);
+            if (resolution.Source is null)
+            {
+                // AlreadyInBaseline / Missing — either the engine finds it via vanilla
+                // (and any textures the vanilla NIF references are also vanilla, so they
+                // don't need packing) or there's nothing to scan. Either way: skip.
+                return ValueTask.CompletedTask;
+            }
+
+            byte[] bytes;
+            try
+            {
+                bytes = resolution.Source.Read();
+            }
+            catch
+            {
+                Interlocked.Increment(ref scanFailures);
+                return ValueTask.CompletedTask;
+            }
+
+            foreach (var path in NifEmbeddedAssetCollector.ScanBytes(bytes))
+            {
+                discovered.Add(path);
+            }
+
+            Interlocked.Increment(ref scanned);
+            return ValueTask.CompletedTask;
+        }).ConfigureAwait(false);
+
+        var added = 0;
+        foreach (var path in discovered)
+        {
+            if (requested.Add(path))
+            {
+                added++;
+            }
+        }
+
+        sink.Info("AssetPacking",
+            $"NIF embedded-texture scan: read {scanned} NIFs, " +
+            $"added {added} new texture paths" +
+            (scanFailures > 0 ? $" ({scanFailures} read failures)" : string.Empty));
     }
 
     private static async Task TryPackAsync(
@@ -250,15 +420,16 @@ public sealed class AssetPackingService
         string requestedPath,
         DataFolderResolution resolution,
         AssetPackingOptions options,
-        List<(string Path, byte[] Data)> packedFiles,
+        ConcurrentBag<(string Path, byte[] Data)> packedFiles,
         RunningStats stats,
-        List<AssetResolution> resolutions,
+        ConcurrentBag<AssetResolution> resolutions,
         IConversionProgressSink sink,
+        IReadOnlyDictionary<string, string>? packPathRenames,
         CancellationToken cancellationToken)
     {
         if (resolution.Source is null || resolution.ResolvedPath is null)
         {
-            stats.Missing++;
+            Interlocked.Increment(ref stats.Missing);
             resolutions.Add(new AssetResolution
             {
                 RequestedPath = requestedPath,
@@ -270,7 +441,7 @@ public sealed class AssetPackingService
         if (resolution.Kind == AssetResolutionKind.ResolvedFuzzy && !options.IncludeFuzzyMatches)
         {
             // User opted out of fuzzy packing.
-            stats.Missing++;
+            Interlocked.Increment(ref stats.Missing);
             resolutions.Add(new AssetResolution
             {
                 RequestedPath = requestedPath,
@@ -287,7 +458,7 @@ public sealed class AssetPackingService
         catch (Exception ex)
         {
             sink.Warn("AssetPacking", $"Read failed for {resolution.ResolvedPath}: {ex.Message}");
-            stats.Missing++;
+            Interlocked.Increment(ref stats.Missing);
             resolutions.Add(new AssetResolution
             {
                 RequestedPath = requestedPath,
@@ -310,7 +481,7 @@ public sealed class AssetPackingService
 
             if (!converted.Success)
             {
-                stats.ConversionFailed++;
+                Interlocked.Increment(ref stats.ConversionFailed);
                 conversionError = converted.FailureReason;
                 resolutions.Add(new AssetResolution
                 {
@@ -339,6 +510,18 @@ public sealed class AssetPackingService
         // re-home the candidate to satisfy the missing reference.)
         var packedPath = requestedPath;
 
+        // Dialogue audio rewrite: when a CSV-derived voice path is for a remapped INFO,
+        // the engine looks up the file under our ESP's directory using the allocated
+        // FormID's bottom 24 bits in the filename. The collector built (resolveAs, packAs)
+        // pairs; resolveAs is `requestedPath` (master shape) and packAs is the engine's
+        // runtime shape. Apply the rename HERE so the resolver still found the master
+        // bytes but the BSA entry lands at the engine path.
+        if (packPathRenames is not null
+            && packPathRenames.TryGetValue(requestedPath, out var renamedPackPath))
+        {
+            packedPath = renamedPackPath;
+        }
+
         // If we converted an extension (.ddx → .dds, .xma → .wav), apply the same swap to
         // the requested path so the runtime finds the converted output. Otherwise the
         // record's reference would still point to the original extension.
@@ -346,7 +529,7 @@ public sealed class AssetPackingService
         var convertedExt = Path.GetExtension(outputPath);
         if (!string.Equals(originalExt, convertedExt, StringComparison.OrdinalIgnoreCase))
         {
-            packedPath = Path.ChangeExtension(requestedPath, convertedExt);
+            packedPath = Path.ChangeExtension(packedPath, convertedExt);
         }
 
         packedFiles.Add((packedPath, outputBytes));
@@ -361,18 +544,18 @@ public sealed class AssetPackingService
         switch (kind)
         {
             case AssetResolutionKind.ResolvedExact:
-                stats.ResolvedExact++;
+                Interlocked.Increment(ref stats.ResolvedExact);
                 break;
             case AssetResolutionKind.ResolvedFuzzy:
-                stats.ResolvedFuzzy++;
+                Interlocked.Increment(ref stats.ResolvedFuzzy);
                 break;
             case AssetResolutionKind.ResolvedExactConverted:
-                stats.ResolvedExact++;
-                stats.Converted360++;
+                Interlocked.Increment(ref stats.ResolvedExact);
+                Interlocked.Increment(ref stats.Converted360);
                 break;
             case AssetResolutionKind.ResolvedFuzzyConverted:
-                stats.ResolvedFuzzy++;
-                stats.Converted360++;
+                Interlocked.Increment(ref stats.ResolvedFuzzy);
+                Interlocked.Increment(ref stats.Converted360);
                 break;
         }
 
@@ -431,9 +614,373 @@ public sealed class AssetPackingService
         {
             Success = true,
             OutputPath = null,
+            OutputPaths = [],
             Stats = stats,
             Resolutions = resolutions
         };
+    }
+
+    private static void ReportVoiceLipPairDiagnostics(
+        List<(string Path, byte[] Data)> packedFiles,
+        List<AssetResolution> resolutions,
+        IReadOnlyDictionary<string, string>? packPathRenames,
+        IConversionProgressSink sink)
+    {
+        var oggStems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var lipStems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (path, _) in packedFiles)
+        {
+            if (!IsVoicePath(path))
+            {
+                continue;
+            }
+
+            var ext = Path.GetExtension(path);
+            if (ext.Equals(".ogg", StringComparison.OrdinalIgnoreCase))
+            {
+                oggStems.Add(PathStem(path));
+            }
+            else if (ext.Equals(".lip", StringComparison.OrdinalIgnoreCase))
+            {
+                lipStems.Add(PathStem(path));
+            }
+        }
+
+        if (oggStems.Count == 0)
+        {
+            return;
+        }
+
+        var missingLipStems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var resolution in resolutions)
+        {
+            if (resolution.Kind != AssetResolutionKind.Missing
+                || !resolution.RequestedPath.EndsWith(".lip", StringComparison.OrdinalIgnoreCase)
+                || !IsVoicePath(resolution.RequestedPath))
+            {
+                continue;
+            }
+
+            var packPath = resolution.RequestedPath;
+            if (packPathRenames is not null
+                && packPathRenames.TryGetValue(resolution.RequestedPath, out var renamed))
+            {
+                packPath = renamed;
+            }
+
+            missingLipStems.Add(PathStem(packPath));
+        }
+
+        var unpaired = oggStems
+            .Where(stem => !lipStems.Contains(stem))
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (unpaired.Count == 0)
+        {
+            sink.Info("AssetPacking",
+                $"Voice lip pairing: {oggStems.Count:N0} packed OGG voice line(s), every line has a paired LIP.");
+            return;
+        }
+
+        var missingSourceCount = unpaired.Count(stem => missingLipStems.Contains(stem));
+        var samples = string.Join(", ", unpaired.Take(5));
+        sink.Warn("AssetPacking",
+            $"Voice lip pairing: {unpaired.Count:N0}/{oggStems.Count:N0} packed OGG voice line(s) " +
+            $"have no paired LIP in the output ({missingSourceCount:N0} were unresolved source LIP requests). " +
+            $"Samples: {samples}");
+    }
+
+    private static bool IsVoicePath(string path)
+        => path.StartsWith("sound\\voice\\", StringComparison.OrdinalIgnoreCase)
+           || path.StartsWith("sound/voice/", StringComparison.OrdinalIgnoreCase);
+
+    private static string PathStem(string path)
+    {
+        var normalized = path.Replace('/', '\\');
+        var ext = Path.GetExtension(normalized);
+        return (ext.Length == 0 ? normalized : normalized[..^ext.Length]).ToLowerInvariant();
+    }
+
+    internal static IReadOnlyList<BsaOutputPlan> PlanBsaOutputs(
+        string outputBsaPath,
+        IReadOnlyList<(string Path, byte[] Data)> packedFiles,
+        long maxArchiveBytes = DefaultMaxBsaBytes)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(outputBsaPath);
+
+        if (packedFiles.Count == 0)
+        {
+            return [];
+        }
+
+        var bucketPlans = packedFiles
+            .GroupBy(f => ClassifyAssetBucket(f.Path))
+            .OrderBy(g => BucketSortOrder(g.Key))
+            .SelectMany(g => ChunkBucket(g.Key, g, maxArchiveBytes))
+            .ToList();
+
+        var split = bucketPlans.Count > 1 || bucketPlans[0].ChunkIndex > 0;
+        for (var i = 0; i < bucketPlans.Count; i++)
+        {
+            var plan = bucketPlans[i];
+            var outputPath = split
+                ? BuildSidecarPath(outputBsaPath, plan.Bucket, plan.ChunkIndex)
+                : outputBsaPath;
+            bucketPlans[i] = plan with { OutputPath = outputPath };
+        }
+
+        return bucketPlans;
+    }
+
+    private static IEnumerable<BsaOutputPlan> ChunkBucket(
+        AssetPackBucket bucket,
+        IEnumerable<(string Path, byte[] Data)> files,
+        long maxArchiveBytes)
+    {
+        var ordered = files
+            .OrderBy(f => f.Path, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (EstimateBsaSize(ordered) <= maxArchiveBytes)
+        {
+            yield return new BsaOutputPlan(
+                OutputPath: "",
+                Bucket: bucket,
+                BucketLabel: BucketLabel(bucket),
+                ChunkIndex: 0,
+                Files: ordered);
+            yield break;
+        }
+
+        var chunk = new List<(string Path, byte[] Data)>();
+        var chunkIndex = 0;
+        var chunkEstimate = new BsaSizeEstimate();
+        foreach (var file in ordered)
+        {
+            var candidateEstimate = chunkEstimate.EstimateWith(file);
+            if (chunk.Count > 0 && candidateEstimate > maxArchiveBytes)
+            {
+                yield return new BsaOutputPlan(
+                    OutputPath: "",
+                    Bucket: bucket,
+                    BucketLabel: BucketLabel(bucket),
+                    ChunkIndex: chunkIndex++,
+                    Files: chunk);
+                chunk = [];
+                chunkEstimate = new BsaSizeEstimate();
+            }
+
+            chunk.Add(file);
+            chunkEstimate.Add(file);
+        }
+
+        if (chunk.Count > 0)
+        {
+            yield return new BsaOutputPlan(
+                OutputPath: "",
+                Bucket: bucket,
+                BucketLabel: BucketLabel(bucket),
+                ChunkIndex: chunkIndex,
+                Files: chunk);
+        }
+    }
+
+    private static long EstimateBsaSize(IReadOnlyList<(string Path, byte[] Data)> files)
+    {
+        var unique = new Dictionary<(string Folder, string Name), byte[]>(files.Count);
+        foreach (var (path, data) in files)
+        {
+            var normalized = path.Replace('/', '\\').TrimStart('\\').ToLowerInvariant();
+            var slash = normalized.LastIndexOf('\\');
+            var folder = slash >= 0 ? normalized[..slash] : "";
+            var name = slash >= 0 ? normalized[(slash + 1)..] : normalized;
+            unique.TryAdd((folder, name), data);
+        }
+
+        var folderCount = unique.Keys.Select(k => k.Folder).Distinct(StringComparer.Ordinal).Count();
+        var fileCount = unique.Count;
+        var totalFolderNameLength = unique.Keys
+            .Select(k => k.Folder)
+            .Distinct(StringComparer.Ordinal)
+            .Sum(folder => folder.Length + 1);
+        var totalFileNameLength = unique.Keys.Sum(k => k.Name.Length + 1);
+        var dataLength = unique.Values.Sum(static data => (long)data.Length);
+
+        return 36L
+               + folderCount * 16L
+               + folderCount
+               + totalFolderNameLength
+               + fileCount * 16L
+               + totalFileNameLength
+               + dataLength;
+    }
+
+    private sealed class BsaSizeEstimate
+    {
+        private readonly HashSet<(string Folder, string Name)> _files = [];
+        private readonly HashSet<string> _folders = new(StringComparer.Ordinal);
+        private long _total = 36;
+
+        public long EstimateWith((string Path, byte[] Data) file)
+        {
+            var key = Normalize(file.Path);
+            if (_files.Contains(key))
+            {
+                return _total;
+            }
+
+            var estimate = _total + 16 + key.Name.Length + 1 + file.Data.Length;
+            if (!_folders.Contains(key.Folder))
+            {
+                estimate += 16 + 1 + key.Folder.Length + 1;
+            }
+
+            return estimate;
+        }
+
+        public void Add((string Path, byte[] Data) file)
+        {
+            var key = Normalize(file.Path);
+            if (!_files.Add(key))
+            {
+                return;
+            }
+
+            _total += 16 + key.Name.Length + 1 + file.Data.Length;
+            if (_folders.Add(key.Folder))
+            {
+                _total += 16 + 1 + key.Folder.Length + 1;
+            }
+        }
+
+        private static (string Folder, string Name) Normalize(string path)
+        {
+            var normalized = path.Replace('/', '\\').TrimStart('\\').ToLowerInvariant();
+            var slash = normalized.LastIndexOf('\\');
+            return slash >= 0
+                ? (normalized[..slash], normalized[(slash + 1)..])
+                : ("", normalized);
+        }
+    }
+
+    private static AssetPackBucket ClassifyAssetBucket(string path)
+    {
+        var normalized = path.Replace('/', '\\').TrimStart('\\').ToLowerInvariant();
+        if (normalized.StartsWith("textures\\", StringComparison.Ordinal))
+        {
+            return AssetPackBucket.Textures;
+        }
+
+        if (normalized.StartsWith("sound\\voice\\", StringComparison.Ordinal))
+        {
+            return AssetPackBucket.Voices;
+        }
+
+        if (normalized.StartsWith("sound\\", StringComparison.Ordinal))
+        {
+            return AssetPackBucket.Sounds;
+        }
+
+        return AssetPackBucket.Main;
+    }
+
+    private static int BucketSortOrder(AssetPackBucket bucket) => bucket switch
+    {
+        AssetPackBucket.Main => 0,
+        AssetPackBucket.Textures => 1,
+        AssetPackBucket.Sounds => 2,
+        AssetPackBucket.Voices => 3,
+        _ => 99
+    };
+
+    private static string BucketLabel(AssetPackBucket bucket) => bucket switch
+    {
+        AssetPackBucket.Main => "main",
+        AssetPackBucket.Textures => "texture",
+        AssetPackBucket.Sounds => "sound",
+        AssetPackBucket.Voices => "voice",
+        _ => "misc"
+    };
+
+    private static string BucketSuffix(AssetPackBucket bucket) => bucket switch
+    {
+        AssetPackBucket.Main => "Main",
+        AssetPackBucket.Textures => "Textures",
+        AssetPackBucket.Sounds => "Sounds",
+        AssetPackBucket.Voices => "Voices",
+        _ => "Assets"
+    };
+
+    private static string BuildSidecarPath(string outputBsaPath, AssetPackBucket bucket, int chunkIndex)
+    {
+        var directory = Path.GetDirectoryName(outputBsaPath);
+        var stem = Path.GetFileNameWithoutExtension(outputBsaPath);
+        var ext = Path.GetExtension(outputBsaPath);
+        if (string.IsNullOrEmpty(ext))
+        {
+            ext = ".bsa";
+        }
+
+        var suffix = BucketSuffix(bucket);
+        if (chunkIndex > 0)
+        {
+            suffix += chunkIndex + 1;
+        }
+
+        return Path.Combine(directory ?? "", $"{stem} - {suffix}{ext}");
+    }
+
+    private static void DeleteStaleBsaOutputs(
+        string outputBsaPath,
+        IReadOnlyList<BsaOutputPlan> outputPlans,
+        IConversionProgressSink sink)
+    {
+        var planned = new HashSet<string>(
+            outputPlans.Select(p => Path.GetFullPath(p.OutputPath)),
+            StringComparer.OrdinalIgnoreCase);
+
+        DeleteIfStale(outputBsaPath);
+
+        var directory = Path.GetDirectoryName(outputBsaPath);
+        var stem = Path.GetFileNameWithoutExtension(outputBsaPath);
+        var ext = Path.GetExtension(outputBsaPath);
+        if (string.IsNullOrEmpty(ext))
+        {
+            ext = ".bsa";
+        }
+
+        if (string.IsNullOrEmpty(directory))
+        {
+            directory = ".";
+        }
+
+        if (Directory.Exists(directory))
+        {
+            foreach (var sidecar in Directory.EnumerateFiles(directory, $"{stem} - *{ext}"))
+            {
+                DeleteIfStale(sidecar);
+            }
+        }
+
+        void DeleteIfStale(string path)
+        {
+            var fullPath = Path.GetFullPath(path);
+            if (planned.Contains(fullPath) || !File.Exists(fullPath))
+            {
+                return;
+            }
+
+            try
+            {
+                File.Delete(fullPath);
+                sink.Info("AssetPacking", $"Deleted stale BSA output: {Path.GetFileName(fullPath)}");
+            }
+            catch (Exception ex)
+            {
+                sink.Warn("AssetPacking",
+                    $"Could not delete stale BSA output {fullPath}: {ex.GetType().Name}: {ex.Message}");
+            }
+        }
     }
 
     private static AssetPackingStats EmptyStats(TimeSpan elapsed)
@@ -540,3 +1087,18 @@ public sealed class AssetPackingService
         public int Total;
     }
 }
+
+internal enum AssetPackBucket
+{
+    Main,
+    Textures,
+    Sounds,
+    Voices
+}
+
+internal sealed record BsaOutputPlan(
+    string OutputPath,
+    AssetPackBucket Bucket,
+    string BucketLabel,
+    int ChunkIndex,
+    IReadOnlyList<(string Path, byte[] Data)> Files);
