@@ -21,6 +21,9 @@ public record TerminalMenuItem
     /// <summary>Sub-terminal FormID (if this links to another terminal).</summary>
     public uint? SubTerminal { get; init; }
 
+    /// <summary>Terminal item action/type byte from ANAM, when present.</summary>
+    public byte? ActionType { get; init; }
+
     /// <summary>
     ///     CTDA conditions guarding this menu item's visibility. Multiple conditions ANDed
     ///     by default; the per-condition <see cref="Records.Quest.DialogueCondition.IsOr" />

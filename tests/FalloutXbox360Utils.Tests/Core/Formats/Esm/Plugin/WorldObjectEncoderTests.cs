@@ -331,6 +331,42 @@ public class WorldObjectEncoderTests
     }
 
     [Fact]
+    public void TermEncoder_EncodeNew_PreservesTypedServerAndMenuActionFields()
+    {
+        var term = new TerminalRecord
+        {
+            FormId = 0x700,
+            EditorId = "Terminal",
+            Difficulty = 2,
+            Flags = 0x04,
+            ServerType = 0x03,
+            MenuItems =
+            [
+                new TerminalMenuItem
+                {
+                    Text = "Login",
+                    ActionType = 0x07,
+                    ResultScript = 0xABC
+                }
+            ]
+        };
+
+        var encoded = TermEncoder.EncodeNew(term);
+
+        var dnam = Assert.Single(encoded.Subrecords, s => s.Signature == "DNAM");
+        Assert.Equal([0x02, 0x04, 0x03, 0x00], dnam.Bytes);
+
+        var anam = Assert.Single(encoded.Subrecords, s => s.Signature == "ANAM");
+        Assert.Equal([0x07], anam.Bytes);
+
+        var sigs = encoded.Subrecords
+            .Where(s => s.Signature is "ITXT" or "ANAM" or "RNAM")
+            .Select(s => s.Signature)
+            .ToList();
+        Assert.Equal(["ITXT", "ANAM", "RNAM"], sigs);
+    }
+
+    [Fact]
     public void TermEncoder_EncodeNew_MenuItemEmitsItxtAndRnamPair()
     {
         var term = new TerminalRecord
@@ -1034,31 +1070,12 @@ public class WorldObjectEncoderTests
     }
 
     [Fact]
-    public void TermEncoder_EncodeNew_DnamServerTypeRoundTrips()
-    {
-        // Regression: ServerType byte now flows from the model into DNAM[2] (previously hard-coded 0).
-        var term = new TerminalRecord
-        {
-            FormId = 0x705,
-            EditorId = "ServerTypeTerm",
-            Difficulty = 1,
-            Flags = 0x20,
-            ServerType = 7
-        };
-
-        var encoded = TermEncoder.EncodeNew(term);
-
-        var dnam = Assert.Single(encoded.Subrecords, s => s.Signature == "DNAM").Bytes;
-        Assert.Equal(new byte[] { 1, 0x20, 7, 0 }, dnam);
-    }
-
-    [Fact]
     public void TermEncoder_EncodeNew_OmitsOptionalSubrecordsWhenNull()
     {
         // Bare TERM (no extras) should produce the same shape as before Phase 4.2b.
         var term = new TerminalRecord
         {
-            FormId = 0x706,
+            FormId = 0x705,
             EditorId = "BareTerm",
             HeaderText = "Hi",
             Difficulty = 0

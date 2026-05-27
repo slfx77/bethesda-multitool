@@ -114,6 +114,11 @@ public sealed class TermEncoder : IRecordEncoder
         // ITXT — menu-item display text (may be empty if model only carries linkage).
         subs.Add(NewRecordSubrecords.EncodeStringSubrecord("ITXT", item.Text ?? string.Empty));
 
+        if (item.ActionType.HasValue)
+        {
+            subs.Add(NewRecordSubrecords.EncodeByteSubrecord("ANAM", item.ActionType.Value));
+        }
+
         // CTDA conditions (with optional CIS1/CIS2 string params) come between ITXT and the
         // result-script block per fopdoc. Conditions filter when the menu item is visible.
         foreach (var condition in item.Conditions)

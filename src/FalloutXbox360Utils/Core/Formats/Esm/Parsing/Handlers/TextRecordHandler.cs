@@ -195,6 +195,7 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
         string? curText = null;
         uint? curResultScript = null;
         uint? curSubTerminal = null;
+        byte? curActionType = null;
         byte[]? curCompiledData = null;
         string? curSourceText = null;
         var curReferencedObjects = new List<uint>();
@@ -209,14 +210,17 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
                 Text = curText,
                 ResultScript = curResultScript,
                 SubTerminal = curSubTerminal,
+                ActionType = curActionType,
                 Conditions = curConditions.Count > 0 ? [..curConditions] : [],
                 CompiledData = curCompiledData,
                 SourceText = curSourceText,
-                ReferencedObjects = curReferencedObjects.Count > 0 ? [..curReferencedObjects] : []
+                ReferencedObjects = curReferencedObjects.Count > 0 ? [..curReferencedObjects] : [],
+                IsBigEndianBytecode = curCompiledData is { Length: > 0 } && record.IsBigEndian
             });
             curText = null;
             curResultScript = null;
             curSubTerminal = null;
+            curActionType = null;
             curCompiledData = null;
             curSourceText = null;
             curReferencedObjects.Clear();
@@ -269,6 +273,9 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
                     FlushMenuItem();
                     curText = EsmStringUtils.ReadNullTermString(subData);
                     curHasMenuItem = true;
+                    break;
+                case "ANAM" when sub.DataLength >= 1 && curHasMenuItem:
+                    curActionType = subData[0];
                     break;
                 case "CTDA" when sub.DataLength >= 28 && curHasMenuItem:
                     curConditions.Add(CtdaParser.Decode(subData, record.IsBigEndian));
