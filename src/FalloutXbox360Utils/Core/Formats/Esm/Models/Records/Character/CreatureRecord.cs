@@ -17,6 +17,9 @@ public record CreatureRecord
     /// <summary>Display name.</summary>
     public string? FullName { get; init; }
 
+    /// <summary>Object bounds (OBND subrecord, 12 bytes int16[6]).</summary>
+    public ObjectBounds? Bounds { get; init; }
+
     /// <summary>Actor base stats from ACBS subrecord.</summary>
     public ActorBaseSubrecord? Stats { get; init; }
 
@@ -38,8 +41,53 @@ public record CreatureRecord
     /// <summary>Script FormID.</summary>
     public uint? Script { get; init; }
 
-    /// <summary>Death item FormID.</summary>
+    /// <summary>Death item FormID (INAM).</summary>
     public uint? DeathItem { get; init; }
+
+    /// <summary>Equipped item FormID (EITM).</summary>
+    public uint? EquippedItem { get; init; }
+
+    /// <summary>Equipped attack animation flag (EAMT, 2 bytes uint16).</summary>
+    public ushort? EquippedAttackAnimation { get; init; }
+
+    /// <summary>Template creature FormID (TPLT).</summary>
+    public uint? Template { get; init; }
+
+    /// <summary>Voice type FormID (VTCK).</summary>
+    public uint? VoiceType { get; init; }
+
+    /// <summary>Combat style FormID (ZNAM).</summary>
+    public uint? CombatStyleFormId { get; init; }
+
+    /// <summary>Creature this creature inherits sounds from (CSCR), or null if not inherited.</summary>
+    public uint? InheritsSoundsFrom { get; init; }
+
+    /// <summary>Death item leveled list FormID (LNAM). Distinct from <see cref="DeathItem" /> (INAM).</summary>
+    public uint? DeathItemLootList { get; init; }
+
+    /// <summary>Impact data set FormID (CNAM on CREA — different semantics from NPC's class CNAM).</summary>
+    public uint? ImpactDataSet { get; init; }
+
+    /// <summary>Body data FormID (PNAM — single FormID per CREA).</summary>
+    public uint? BodyData { get; init; }
+
+    /// <summary>Sound type byte (RNAM): 0=Mechanical, 1=Aquatic, 2=Bear, etc.</summary>
+    public byte? SoundType { get; init; }
+
+    /// <summary>Turning speed in degrees/sec (TNAM, float).</summary>
+    public float? TurningSpeed { get; init; }
+
+    /// <summary>Base scale multiplier (BNAM, float). Engine defaults to 1.0.</summary>
+    public float? BaseScale { get; init; }
+
+    /// <summary>Foot weight for sound (WNAM, float).</summary>
+    public float? FootWeight { get; init; }
+
+    /// <summary>Impact material type (NAM4, uint32).</summary>
+    public uint? ImpactMaterialType { get; init; }
+
+    /// <summary>Sound level enum (NAM5, uint32): 0=Loud, 1=Normal, 2=Silent.</summary>
+    public uint? SoundLevel { get; init; }
 
     /// <summary>Model path.</summary>
     public string? ModelPath { get; init; }
@@ -49,6 +97,9 @@ public record CreatureRecord
 
     /// <summary>Faction memberships.</summary>
     public List<FactionMembership> Factions { get; init; } = [];
+
+    /// <summary>Inventory items (CNTO + optional COED ownership data).</summary>
+    public List<InventoryItem> Inventory { get; init; } = [];
 
     /// <summary>Spell/ability FormIDs.</summary>
     public List<uint> Spells { get; init; } = [];
@@ -77,6 +128,22 @@ public record CreatureRecord
     ///     subrecord, occasionally present in FNV CREA records).
     /// </summary>
     public byte[]? AnimationNamesRaw { get; init; }
+
+    /// <summary>
+    ///     Raw concatenated CSDT/CSDI/CSDC sound-definition groups. Captured opaque because
+    ///     each CSDT (sound type byte) is followed by an interleaved CSDI (sound FormID) +
+    ///     CSDC (chance byte) sequence; the layout has many variants and engine round-trip
+    ///     fidelity is sufficient for spawn parity.
+    ///     <para>Stored as a list of (signature, bytes) pairs preserving original order.</para>
+    /// </summary>
+    public List<KeyValuePair<string, byte[]>>? SoundDefinitionsRaw { get; init; }
+
+    /// <summary>
+    ///     Raw concatenated DEST/DSTD/DMDL/DMDT/DSTF destructible-model subrecords, preserved
+    ///     in original order. Rare (≈3% of vanilla CREA) and the layout is record-type-shared
+    ///     so we capture verbatim rather than re-modeling.
+    /// </summary>
+    public List<KeyValuePair<string, byte[]>>? DestructionDataRaw { get; init; }
 
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }
