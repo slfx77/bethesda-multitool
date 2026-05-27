@@ -133,7 +133,41 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
 
     /// <summary>
     ///     Read extended terminal data from a runtime BGSTerminal struct.
-    ///     Returns a TerminalRecord with difficulty, flags, and password.
+    ///     Returns a TerminalRecord with difficulty, flags, and menu items.
+    ///     <para>
+    ///     <b>Password is permanently null for the captured DMPs.</b> Root cause:
+    ///     3–9-month build drift between the captured DMP binaries (180-byte
+    ///     <c>BGSTerminal</c>, no <c>pPassword</c> field) and the available MemDebug
+    ///     PDB (184-byte <c>BGSTerminal</c> with <c>pPassword: BGSNote*</c> at +176
+    ///     followed by <c>Data</c> at +180). The runtime binary's <c>BGSTerminal</c>
+    ///     simply does not have the <c>pPassword</c> field at all — its <c>Data</c>
+    ///     block sits where the PDB labels <c>pPassword</c>. No offset shift can
+    ///     reconcile this; the field is structurally absent.
+    ///     </para>
+    ///     <para>
+    ///     Tier 3.2 ground-truthed this via byte-level probing across 32 terminals
+    ///     in <c>memdebug_dump</c>, cross-referenced against the source ESM's DNAM
+    ///     payload. Example anchor: TERM 0x000EBA3A
+    ///     <c>HouseToolsTerminal</c> — ESM DNAM bytes <c>00 02 05 00</c> match
+    ///     runtime <c>+176</c> bytes <c>00 02 05 00</c> exactly. That puts Data
+    ///     (Difficulty / Flags / ServerType / Unused) at +176 in the runtime, with
+    ///     no <c>pPassword</c> slot before it.
+    ///     </para>
+    ///     <para>
+    ///     The decision to leave Password permanently null was canonicalized in
+    ///     Tier 5.3 of the planning file. The only paths forward would be (a)
+    ///     locating a PDB that matches the actual runtime build (none in this repo
+    ///     do, and no source has been identified) or (b) implementing a heap
+    ///     scanner that hunts BGSNote candidates referenced by terminals — much
+    ///     harder and not load-bearing for downstream consumers, since password
+    ///     text is rarely consumed in the output pipeline.
+    ///     </para>
+    ///     <para>
+    ///     If a newer PDB is sourced in the future, revisit this method; until
+    ///     then any "TODO: read pPassword" attempts will reproduce the Tier 3.2
+    ///     wrong-offset behaviour (reading <c>0x00</c> or <c>0xFF</c> garbage from
+    ///     +180 that downstream clamps mask as VeryEasy).
+    ///     </para>
     /// </summary>
     internal TerminalRecord? ReadRuntimeTerminal(RuntimeEditorIdEntry entry)
     {
@@ -179,13 +213,8 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
             difficulty = 0; // Default to very easy if invalid
         }
 
-        // Password recovery is permanently blocked for these DMPs. The runtime
-        // BGSTerminal struct doesn't have a pPassword field — the PDB declares one
-        // at +176 (a BGSNote*), but cross-referencing with ESM DNAM payloads
-        // confirmed that +176 actually holds Data (Difficulty/Flags/ServerType),
-        // not a pointer. The runtime struct is 180 bytes; the PDB declares 184.
-        // No offset shift can reconcile this — the field genuinely isn't there.
-        // See plan file Tier 3.2 for the investigation trail.
+        // Password: permanently null — see ReadRuntimeTerminal xml-doc and plan
+        // Tier 5.3 (PDB/binary divergence).
         string? password = null;
 
         // Parse menu items from BSSimpleList at the PDB-aligned offset.
