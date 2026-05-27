@@ -1,3 +1,5 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
+
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 
 /// <summary>
@@ -21,8 +23,16 @@ public record CameraPathRecord
     /// <summary>List of camera shot FormIDs (SNAM subrecords on ESM side).</summary>
     public List<uint> CameraShotFormIds { get; init; } = [];
 
-    /// <summary>Number of CTDA conditions in the ESM-side record.</summary>
+    /// <summary>Number of CTDA conditions in the source record (parser captures this even when
+    /// <see cref="Conditions" /> is empty, e.g. legacy ESM scans that ran before 4.2d).</summary>
     public int ConditionCount { get; init; }
+
+    /// <summary>
+    ///     CTDA conditions gating when the path is eligible. Populated by the ESM parser
+    ///     and the runtime reader (walking the <c>TESCondition</c> BSSimpleList at
+    ///     <c>BGSCameraPath+40</c>). Empty when neither path captured conditions.
+    /// </summary>
+    public List<DialogueCondition> Conditions { get; init; } = [];
 
     public long Offset { get; init; }
     public bool IsBigEndian { get; init; }

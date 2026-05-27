@@ -864,7 +864,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
         string? editorId = null;
         byte flags = 0;
         uint parentPath = 0;
-        var conditionCount = 0;
+        var conditions = new List<Models.Records.Quest.DialogueCondition>();
         var shotFormIds = new List<uint>();
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
@@ -889,8 +889,9 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
                 case "SNAM" when sub.DataLength >= 4:
                     shotFormIds.Add(BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian));
                     break;
-                case "CTDA":
-                    conditionCount++;
+                case "CTDA" when sub.DataLength >= 28:
+                    conditions.Add(CtdaParser.Decode(
+                        data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian));
                     break;
             }
         }
@@ -902,7 +903,8 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
             Flags = flags,
             ParentPathFormId = parentPath,
             CameraShotFormIds = shotFormIds,
-            ConditionCount = conditionCount,
+            ConditionCount = conditions.Count,
+            Conditions = conditions,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };

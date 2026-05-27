@@ -1,4 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 
@@ -6,8 +8,8 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 ///     Encodes a <see cref="CameraPathRecord" /> (CPTH) as PC-format subrecord bytes.
 ///     fopdoc canonical order: EDID, [CTDA]*, ANAM(8B: parent + previous FormIDs),
 ///     DATA(1B flags), SNAM*(camera shot FormIDs).
-///     Our model only captures the CTDA count, not the individual conditions — emit zero CTDAs
-///     and warn that conditions are deferred to ESM-side data.
+///     CTDAs are emitted from <see cref="CameraPathRecord.Conditions" /> when populated,
+///     run through <see cref="ConditionSanitizer" /> to drop/remap dangling FormID params.
 ///     Override path is a no-op; master ESM bytes retained verbatim.
 /// </summary>
 public sealed class CpthEncoder : IRecordEncoder
@@ -21,7 +23,10 @@ public sealed class CpthEncoder : IRecordEncoder
     public string RecordType => "CPTH";
     public Type ModelType => typeof(CameraPathRecord);
 
-    internal static EncodedRecord EncodeNew(CameraPathRecord cpth)
+    internal static EncodedRecord EncodeNew(
+        CameraPathRecord cpth,
+        IReadOnlySet<uint>? validFormIds = null,
+        IReadOnlyDictionary<uint, uint>? remapTable = null)
     {
         var subs = new List<EncodedSubrecord>();
         var warnings = new List<string>();
@@ -33,11 +38,43 @@ public sealed class CpthEncoder : IRecordEncoder
 
         subs.Add(NewRecordSubrecords.EncodeStringSubrecord("EDID", cpth.EditorId ?? string.Empty));
 
-        if (cpth.ConditionCount > 0)
+        // CTDAs gate when the camera path is eligible. Emit captured conditions through the
+        // same sanitizer the INFO/IDLE encoders use, to drop/remap dangling FormID params.
+        // Unlike IDLE, no never-fire fallback: CPTHs are camera shots (visual-only) so emitting
+        // an unconditional path when no conditions were captured is benign.
+        if (cpth.Conditions.Count > 0)
+        {
+            IReadOnlyList<Models.Records.Quest.DialogueCondition> emitConds;
+            if (validFormIds is null)
+            {
+                emitConds = cpth.Conditions;
+            }
+            else
+            {
+                var ctdaDropped = 0;
+                var ctdaRemapped = 0;
+                emitConds = ConditionSanitizer.Filter(
+                    cpth.Conditions, ToMutableSet(validFormIds), remapTable,
+                    ref ctdaRemapped, ref ctdaDropped);
+                if (ctdaDropped > 0 || ctdaRemapped > 0)
+                {
+                    warnings.Add(
+                        $"New CPTH 0x{cpth.FormId:X8} CTDA sanitizer: dropped {ctdaDropped} " +
+                        $"condition(s) with dangling FormID params, remapped {ctdaRemapped} " +
+                        "param FormID(s) via the runtime→emitted alias table.");
+                }
+            }
+
+            foreach (var cond in emitConds)
+            {
+                subs.Add(new EncodedSubrecord("CTDA", InfoEncoder.BuildCtdaSubrecord(cond)));
+            }
+        }
+        else if (cpth.ConditionCount > 0)
         {
             warnings.Add(
-                $"New CPTH 0x{cpth.FormId:X8}: {cpth.ConditionCount} CTDA condition(s) captured in count " +
-                "but individual conditions not modeled — emitting zero CTDAs.");
+                $"New CPTH 0x{cpth.FormId:X8}: {cpth.ConditionCount} CTDA condition(s) captured " +
+                "in count but Conditions list is empty — emitting zero CTDAs.");
         }
 
         // ANAM: 8 bytes (parent FormID + previous FormID).
@@ -55,5 +92,14 @@ public sealed class CpthEncoder : IRecordEncoder
         }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
+    }
+
+    /// <summary>
+    ///     ConditionSanitizer.Filter takes a mutable HashSet. Mirrors the adapter in
+    ///     <see cref="IdleEncoder" />.
+    /// </summary>
+    private static HashSet<uint> ToMutableSet(IReadOnlySet<uint> set)
+    {
+        return set as HashSet<uint> ?? new HashSet<uint>(set);
     }
 }

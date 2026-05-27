@@ -8,8 +8,10 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 ///     Encodes an <see cref="IdleAnimationRecord" /> (IDLE) as PC-format subrecord bytes.
 ///     fopdoc canonical order: EDID, MODL?, MODT?, [CTDA]*, ANAM(8B: parent + previous FormIDs),
 ///     DATA(8B: animData byte + loopMin + loopMax + unknown + replayDelay u16 + flagsEx + pad).
-///     Our model only captures the CTDA count, not the individual conditions — emit zero CTDAs
-///     and warn that conditions are deferred to ESM-side data.
+///     CTDAs are emitted from <see cref="IdleAnimationRecord.Conditions" /> when populated
+///     (by the runtime reader's TESCondition walk or the ESM parser). When the list is empty,
+///     a synthetic never-fire CTDA is emitted so the idle stays inert instead of becoming
+///     universally eligible (the proto crucifix-idle bug).
 ///     Override path is a no-op; master ESM bytes retained verbatim.
 /// </summary>
 public sealed class IdleEncoder : IRecordEncoder

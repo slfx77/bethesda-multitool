@@ -135,7 +135,10 @@ internal static class NewTopLevelRecordEncoderDispatcher
                 context.RemapTable),
             ["IPCT"] = (model, _) => IpctEncoder.EncodeNew((ImpactDataRecord)model),
             ["HDPT"] = (model, _) => HdptEncoder.EncodeNew((HeadPartRecord)model),
-            ["CPTH"] = (model, _) => CpthEncoder.EncodeNew((CameraPathRecord)model),
+            ["CPTH"] = (model, context) => CpthEncoder.EncodeNew(
+                (CameraPathRecord)model,
+                context.AllValidFormIds,
+                context.RemapTable),
             ["ALOC"] = (model, _) => AlocEncoder.EncodeNew((AudioLocationControllerRecord)model),
             ["DEBR"] = (model, _) => DebrEncoder.EncodeNew((DebrisRecord)model),
             ["REGN"] = (model, _) => RegnEncoder.EncodeNew((RegionRecord)model),
