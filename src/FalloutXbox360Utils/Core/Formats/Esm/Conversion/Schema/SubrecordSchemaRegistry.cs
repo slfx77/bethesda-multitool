@@ -386,32 +386,50 @@ public static class SubrecordSchemaRegistry
         schemas[new SchemaKey("PNAM", "WRLD", 2)] = SubrecordSchema.Simple2Byte("Parent World");
         schemas[new SchemaKey("TNAM", "REFR", 2)] = SubrecordSchema.Simple2Byte("Talk Distance");
 
-        // Single byte (flags) - no conversion needed
-        schemas[new SchemaKey("FNAM", "REFR", 1)] = SubrecordSchema.ByteArray;
-        schemas[new SchemaKey("FNAM", "WATR", 1)] = SubrecordSchema.ByteArray;
-        schemas[new SchemaKey("BRUS", "STAT", 1)] = SubrecordSchema.ByteArray;
-        schemas[new SchemaKey("FNAM", "GLOB", 1)] = SubrecordSchema.ByteArray;
-        schemas[new SchemaKey("FNAM", "DOOR", 1)] = SubrecordSchema.ByteArray;
-        schemas[new SchemaKey("MODD", null, 1)] = SubrecordSchema.ByteArray;
-        schemas[new SchemaKey("MOSD", null, 1)] = SubrecordSchema.ByteArray;
-        schemas[new SchemaKey("PNAM", "MSET", 1)] = SubrecordSchema.ByteArray;
-        schemas[new SchemaKey("XAPD", null, 1)] = SubrecordSchema.ByteArray;
-        schemas[new SchemaKey("XSED", "REFR", 1)] = SubrecordSchema.ByteArray;
+        // Single byte flags / enums. These require no endian conversion, but naming them
+        // keeps coverage from treating behavior-bearing flags as opaque blobs.
+        schemas[new SchemaKey("FNAM", "REFR", 1)] = new SubrecordSchema(SubrecordField.UInt8("MapMarkerFlags"));
+        schemas[new SchemaKey("FNAM", "WATR", 1)] = new SubrecordSchema(SubrecordField.UInt8("Flags"));
+        schemas[new SchemaKey("BRUS", "STAT", 1)] = new SubrecordSchema(SubrecordField.UInt8("BrushCount"));
+        schemas[new SchemaKey("FNAM", "GLOB", 1)] = new SubrecordSchema(SubrecordField.UInt8("Type"));
+        schemas[new SchemaKey("FNAM", "DOOR", 1)] = new SubrecordSchema(SubrecordField.UInt8("Flags"));
+        schemas[new SchemaKey("MODD", null, 1)] = new SubrecordSchema(SubrecordField.UInt8("Flags"));
+        schemas[new SchemaKey("MOSD", null, 1)] = new SubrecordSchema(SubrecordField.UInt8("Flags"));
+        schemas[new SchemaKey("PNAM", "MSET", 1)] = new SubrecordSchema(SubrecordField.UInt8("Flags"));
+        schemas[new SchemaKey("XAPD", null, 1)] = new SubrecordSchema(SubrecordField.UInt8("ActivateParentFlags"));
+        schemas[new SchemaKey("XSED", "REFR", 1)] = new SubrecordSchema(SubrecordField.UInt8("Seed"));
 
         // Zero-byte markers
-        schemas[new SchemaKey("MMRK", "REFR", 0)] = SubrecordSchema.ByteArray;
-        schemas[new SchemaKey("NAM0", "RACE", 0)] = SubrecordSchema.ByteArray;
-        schemas[new SchemaKey("NAM2", "RACE", 0)] = SubrecordSchema.ByteArray;
-        schemas[new SchemaKey("XIBS", null, 0)] = SubrecordSchema.ByteArray;
-        schemas[new SchemaKey("XMRK", "REFR", 0)] = SubrecordSchema.ByteArray;
-        schemas[new SchemaKey("XPPA", "REFR", 0)] = SubrecordSchema.ByteArray;
+        schemas[new SchemaKey("DSTF", null, 0)] = SubrecordSchema.Empty;
+        schemas[new SchemaKey("MMRK", "REFR", 0)] = SubrecordSchema.Empty;
+        schemas[new SchemaKey("NAM0", "RACE", 0)] = SubrecordSchema.Empty;
+        schemas[new SchemaKey("NAM2", "RACE", 0)] = SubrecordSchema.Empty;
+        schemas[new SchemaKey("XIBS", null, 0)] = SubrecordSchema.Empty;
+        schemas[new SchemaKey("XMRK", "REFR", 0)] = SubrecordSchema.Empty;
+        schemas[new SchemaKey("XPPA", "REFR", 0)] = SubrecordSchema.Empty;
         schemas[new SchemaKey("ONAM", "REFR", 0)] = SubrecordSchema.Empty;
 
         // Byte arrays - no conversion needed
         schemas[new SchemaKey("VNML")] = SubrecordSchema.ByteArray;
         schemas[new SchemaKey("VCLR")] = SubrecordSchema.ByteArray;
-        schemas[new SchemaKey("TNAM", "CLMT", 6)] = SubrecordSchema.ByteArray;
-        schemas[new SchemaKey("ONAM", "WTHR", 4)] = SubrecordSchema.ByteArray;
+        schemas[new SchemaKey("TNAM", "CLMT", 6)] = new SubrecordSchema(
+            F.UInt8("SunriseBegin"),
+            F.UInt8("SunriseEnd"),
+            F.UInt8("SunsetBegin"),
+            F.UInt8("SunsetEnd"),
+            F.UInt8("Volatility"),
+            F.UInt8("MoonPhaseLength"))
+        {
+            Description = "Climate timing"
+        };
+        schemas[new SchemaKey("ONAM", "WTHR", 4)] = new SubrecordSchema(
+            F.UInt8("CloudLayer0Speed"),
+            F.UInt8("CloudLayer1Speed"),
+            F.UInt8("CloudLayer2Speed"),
+            F.UInt8("CloudLayer3Speed"))
+        {
+            Description = "Weather cloud speeds"
+        };
 
         // Model texture hashes - no endian swap
         schemas[new SchemaKey("MODT")] = SubrecordSchema.ByteArray;

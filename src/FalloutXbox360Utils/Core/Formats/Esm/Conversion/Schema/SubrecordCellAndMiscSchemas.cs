@@ -39,7 +39,11 @@ internal static class SubrecordCellAndMiscSchemas
         // XCLR - Cell Regions (array of FormIDs)
         schemas[new SubrecordSchemaRegistry.SchemaKey("XCLR")] = SubrecordSchema.FormIdArray;
 
-        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "CELL", 1)] = SubrecordSchema.ByteArray;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "CELL", 1)] =
+            new SubrecordSchema(F.UInt8("Flags"))
+            {
+                Description = "Cell flags"
+            };
 
         // ========================================================================
         // LAND SCHEMAS
@@ -83,8 +87,18 @@ internal static class SubrecordCellAndMiscSchemas
         };
 
         schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "LAND", 4)] = new SubrecordSchema(F.UInt32("Flags"));
-        schemas[new SubrecordSchemaRegistry.SchemaKey("HNAM", "LTEX", 3)] = SubrecordSchema.ByteArray;
-        schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "LTEX", 1)] = SubrecordSchema.ByteArray;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("HNAM", "LTEX", 3)] = new SubrecordSchema(
+            F.UInt8("MaterialType"),
+            F.UInt8("Friction"),
+            F.UInt8("Restitution"))
+        {
+            Description = "Landscape texture Havok data"
+        };
+        schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "LTEX", 1)] =
+            new SubrecordSchema(F.UInt8("TextureSpecularExponent"))
+            {
+                Description = "Landscape texture specular exponent"
+            };
 
         // ========================================================================
         // WORLDSPACE SCHEMAS (WRLD)
@@ -93,7 +107,11 @@ internal static class SubrecordCellAndMiscSchemas
         schemas[new SubrecordSchemaRegistry.SchemaKey("CNAM", "WRLD", 4)] =
             SubrecordSchema.Simple4Byte("Climate FormID");
         schemas[new SubrecordSchemaRegistry.SchemaKey("NAM2", "WRLD", 4)] = SubrecordSchema.Simple4Byte("NAM2 FormID");
-        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "WRLD", 1)] = SubrecordSchema.ByteArray;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "WRLD", 1)] =
+            new SubrecordSchema(F.UInt8("Flags"))
+            {
+                Description = "Worldspace flags"
+            };
 
         // DNAM - WRLD (8 bytes)
         schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "WRLD", 8)] =
@@ -235,7 +253,24 @@ internal static class SubrecordCellAndMiscSchemas
         schemas[new SubrecordSchemaRegistry.SchemaKey("IAD", "WTHR", 4)] =
             SubrecordSchema.Simple4Byte("Image Adapter Float");
 
-        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "WTHR", 15)] = SubrecordSchema.ByteArray;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "WTHR", 15)] = new SubrecordSchema(
+            F.UInt8("WindSpeed"),
+            F.Padding(2),
+            F.UInt8("TransDelta"),
+            F.UInt8("SunGlare"),
+            F.UInt8("SunDamage"),
+            F.UInt8("PrecipitationBeginFadeIn"),
+            F.UInt8("PrecipitationEndFadeOut"),
+            F.UInt8("ThunderLightningBeginFadeIn"),
+            F.UInt8("ThunderLightningEndFadeOut"),
+            F.UInt8("ThunderLightningFrequency"),
+            F.UInt8("Flags"),
+            F.UInt8("LightningColorRed"),
+            F.UInt8("LightningColorGreen"),
+            F.UInt8("LightningColorBlue"))
+        {
+            Description = "Weather data"
+        };
 
         // ========================================================================
         // WATER SCHEMAS (WATR)
@@ -361,7 +396,11 @@ internal static class SubrecordCellAndMiscSchemas
         };
 
         schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "TREE", 4)] = SubrecordSchema.Simple4Byte("Sound FormID");
-        schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "TREE", 20)] = SubrecordSchema.ByteArray;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "TREE")] = new SubrecordSchema(F.UInt32("Seed"))
+        {
+            ExpectedSize = -1,
+            Description = "SpeedTree seed array"
+        };
 
         // ========================================================================
         // STATIC COLLECTION (SCOL)
@@ -454,7 +493,11 @@ internal static class SubrecordCellAndMiscSchemas
                 Description = "Placeable Water Data"
             };
 
-        schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "VTYP", 1)] = SubrecordSchema.ByteArray;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "VTYP", 1)] =
+            new SubrecordSchema(F.UInt8("Flags"))
+            {
+                Description = "Voice type flags"
+            };
 
         // DATA - ANIO (4 bytes)
         schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "ANIO", 4)] = new SubrecordSchema(F.FormId("Animation"))
@@ -547,11 +590,27 @@ internal static class SubrecordCellAndMiscSchemas
             Description = "Sleep Deprivation Stage Data"
         };
 
-        // DATA - HAIR/HDPT/EYES (1 byte)
-        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "HAIR", 1)] = SubrecordSchema.ByteArray;
-        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "HDPT", 1)] = SubrecordSchema.ByteArray;
-        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "EYES", 1)] = SubrecordSchema.ByteArray;
-        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "MSTT", 1)] = SubrecordSchema.ByteArray;
+        // DATA - HAIR/HDPT/EYES/MSTT (1 byte flags)
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "HAIR", 1)] =
+            new SubrecordSchema(F.UInt8("Flags"))
+            {
+                Description = "Hair flags"
+            };
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "HDPT", 1)] =
+            new SubrecordSchema(F.UInt8("Playable"))
+            {
+                Description = "Head part playable flag"
+            };
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "EYES", 1)] =
+            new SubrecordSchema(F.UInt8("Flags"))
+            {
+                Description = "Eye flags"
+            };
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "MSTT", 1)] =
+            new SubrecordSchema(F.UInt8("OnLocalMap"))
+            {
+                Description = "Moveable static local map flag"
+            };
 
         // MSET (Media Set) schemas
         schemas[new SubrecordSchemaRegistry.SchemaKey("NAM1", "MSET", 4)] =
@@ -615,5 +674,15 @@ internal static class SubrecordCellAndMiscSchemas
         schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "TACT", 4)] = SubrecordSchema.Simple4Byte("Sound FormID");
         schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "DOOR", 4)] = SubrecordSchema.Simple4Byte("Sound FormID");
         schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "MSTT", 4)] = SubrecordSchema.Simple4Byte("Sound FormID");
+
+        // FLOR (Flora) — harvestable plants. SCRI is registered globally; PFIG/PFPC/SNAM
+        // are FLOR-specific. PFPC encodes per-season harvest chance as a 4-byte struct
+        // (spring/summer/fall/winter, each 0-100); preserve as a raw byte array since we
+        // don't currently semantically diff it.
+        schemas[new SubrecordSchemaRegistry.SchemaKey("PFIG", "FLOR", 4)] =
+            SubrecordSchema.Simple4Byte("Ingredient FormID");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("PFPC", "FLOR", 4)] = SubrecordSchema.ByteArray;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "FLOR", 4)] =
+            SubrecordSchema.Simple4Byte("Sound FormID");
     }
 }

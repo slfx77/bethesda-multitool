@@ -101,7 +101,6 @@ internal static class SubrecordActorSchemas
         schemas[new SubrecordSchemaRegistry.SchemaKey("NAM1", "RACE", 0)] = SubrecordSchema.Empty;
         schemas[new SubrecordSchemaRegistry.SchemaKey("MNAM", "RACE", 0)] = SubrecordSchema.Empty;
         schemas[new SubrecordSchemaRegistry.SchemaKey("FNAM", "RACE", 0)] = SubrecordSchema.Empty;
-        schemas[new SubrecordSchemaRegistry.SchemaKey("FNAM", "RACE", 0)] = SubrecordSchema.ByteArray;
 
         // ATTR - RACE attributes (2 bytes)
         // Xbox 360 stores ATTR and CNAM already in little-endian (observed: byte-swapped vs PC
@@ -172,7 +171,12 @@ internal static class SubrecordActorSchemas
         schemas[new SubrecordSchemaRegistry.SchemaKey("CNAM", "NPC_", 4)] = SubrecordSchema.Simple4Byte("Class FormID");
         schemas[new SubrecordSchemaRegistry.SchemaKey("NAM4", "NPC_", 4)] = SubrecordSchema.Simple4Byte("NAM4 FormID");
         schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "NPC_", 28)] =
-            SubrecordSchema.ByteArray; // NPC skill values - no conversion
+            new SubrecordSchema(
+                F.Bytes("SkillBaseValues", 14),
+                F.Bytes("SkillOffsets", 14))
+            {
+                Description = "NPC skill base values and offsets"
+            };
 
         // SNAM - NPC_ Faction Membership (8 bytes)
         schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "NPC_", 8)] =
@@ -202,7 +206,11 @@ internal static class SubrecordActorSchemas
             SubrecordSchema.Simple4Byte("Combat Style FormID");
         schemas[new SubrecordSchemaRegistry.SchemaKey("NAM4", "CREA", 4)] = SubrecordSchema.Simple4Byte("NAM4 FormID");
         schemas[new SubrecordSchemaRegistry.SchemaKey("NAM5", "CREA", 4)] = SubrecordSchema.Simple4Byte("NAM5 FormID");
-        schemas[new SubrecordSchemaRegistry.SchemaKey("CSDC", "CREA", 1)] = SubrecordSchema.ByteArray;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("CSDC", "CREA", 1)] =
+            new SubrecordSchema(F.UInt8("Chance"))
+            {
+                Description = "Creature sound chance"
+            };
 
         // SNAM - CREA Faction Membership (8 bytes)
         schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "CREA", 8)] =
@@ -263,7 +271,17 @@ internal static class SubrecordActorSchemas
         };
 
         // ATTR - CLAS (7 bytes S.P.E.C.I.A.L. attributes)
-        schemas[new SubrecordSchemaRegistry.SchemaKey("ATTR", null, 7)] = SubrecordSchema.ByteArray;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("ATTR", "CLAS", 7)] = new SubrecordSchema(
+            F.UInt8("Strength"),
+            F.UInt8("Perception"),
+            F.UInt8("Endurance"),
+            F.UInt8("Charisma"),
+            F.UInt8("Intelligence"),
+            F.UInt8("Agility"),
+            F.UInt8("Luck"))
+        {
+            Description = "Class attribute weights"
+        };
 
         // ========================================================================
         // BODY PART DATA (BPTD)

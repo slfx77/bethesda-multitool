@@ -201,7 +201,8 @@ internal static class SubrecordItemSchemas
             F.Int16("DamageResistance"),
             F.Padding(2),
             F.Float("DamageThreshold"),
-            F.Bytes("Unknown", 4))
+            F.UInt16("Flags"),
+            F.Padding(2))
         {
             Description = "ARMO Defense Data"
         };
@@ -215,7 +216,14 @@ internal static class SubrecordItemSchemas
             Description = "Armor Data"
         };
 
-        schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "ARMO", 12)] = SubrecordSchema.ByteArray;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "ARMO", 12)] = new SubrecordSchema(
+            F.FormId("Sound"),
+            F.UInt8("Chance"),
+            F.Padding(3),
+            F.UInt32("Type"))
+        {
+            Description = "Armor animation sound"
+        };
 
         // BMDT - Biped Model Data (8 bytes)
         schemas[new SubrecordSchemaRegistry.SchemaKey("BMDT", null, 8)] = new SubrecordSchema(
@@ -224,6 +232,11 @@ internal static class SubrecordItemSchemas
             F.Padding(3))
         {
             Description = "Biped Model Data"
+        };
+        schemas[new SubrecordSchemaRegistry.SchemaKey("BMDT", "ARMO", 4)] = new SubrecordSchema(
+            F.UInt32("BipedFlags"))
+        {
+            Description = "Armor biped model flags"
         };
 
         // DATA - ARMA (12 bytes) - Armor Addon Data
@@ -457,8 +470,16 @@ internal static class SubrecordItemSchemas
             Description = "Leveled List Entry"
         };
 
-        schemas[new SubrecordSchemaRegistry.SchemaKey("LVLD", null, 1)] = SubrecordSchema.ByteArray;
-        schemas[new SubrecordSchemaRegistry.SchemaKey("LVLF", null, 1)] = SubrecordSchema.ByteArray;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("LVLD", null, 1)] =
+            new SubrecordSchema(F.UInt8("ChanceNone"))
+            {
+                Description = "Leveled list chance none"
+            };
+        schemas[new SubrecordSchemaRegistry.SchemaKey("LVLF", null, 1)] =
+            new SubrecordSchema(F.UInt8("Flags"))
+            {
+                Description = "Leveled list flags"
+            };
 
         // ========================================================================
         // DESTRUCTIBLE OBJECT SCHEMAS
@@ -488,7 +509,7 @@ internal static class SubrecordItemSchemas
             Description = "Destruction Stage Data"
         };
 
-        schemas[new SubrecordSchemaRegistry.SchemaKey("DSTF", null, 0)] = SubrecordSchema.ByteArray;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DSTF", null, 0)] = SubrecordSchema.Empty;
 
         // COED - Extra Data (12 bytes)
         schemas[new SubrecordSchemaRegistry.SchemaKey("COED", null, 12)] = new SubrecordSchema(
@@ -517,7 +538,11 @@ internal static class SubrecordItemSchemas
         };
 
         // DATA - RCCT (1 byte) - Recipe Category Flags
-        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "RCCT", 1)] = SubrecordSchema.ByteArray;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "RCCT", 1)] =
+            new SubrecordSchema(F.UInt8("Flags"))
+            {
+                Description = "Recipe category flags"
+            };
 
         // RCIL - Recipe Ingredient (8 bytes) - override generic 4-byte FormID
         schemas[new SubrecordSchemaRegistry.SchemaKey("RCIL", null, 8)] = new SubrecordSchema(

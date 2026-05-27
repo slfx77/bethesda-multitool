@@ -38,7 +38,11 @@ internal static class SubrecordDialogueSchemas
         // INDX in QUST is already little-endian on Xbox 360 - DO NOT SWAP!
         schemas[new SubrecordSchemaRegistry.SchemaKey("INDX", "QUST", 2)] =
             new SubrecordSchema(F.UInt16LittleEndian("Quest Index"));
-        schemas[new SubrecordSchemaRegistry.SchemaKey("QSDT", "QUST", 1)] = SubrecordSchema.ByteArray;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("QSDT", "QUST", 1)] =
+            new SubrecordSchema(F.UInt8("Flags"))
+            {
+                Description = "Quest stage flags"
+            };
 
         // ========================================================================
         // INFO SCHEMAS (Dialog Response)
@@ -59,21 +63,38 @@ internal static class SubrecordDialogueSchemas
             Description = "INFO Response Data (RESPONSE_DATA)"
         };
 
-        // DATA - INFO (4 bytes)
-        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "INFO", 4)] = SubrecordSchema.ByteArray;
+        // DATA - INFO (4 bytes): dialogue type + next speaker + flags + extended flags.
+        // These bytes are already modeled by DialogueRecord.InfoFlags/InfoFlagsExt and
+        // emitted by InfoEncoder; keep the schema named so coverage does not treat the
+        // behavior flags as an opaque blob.
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "INFO", 4)] = new SubrecordSchema(
+            F.UInt8("DialogueType"),
+            F.UInt8("NextSpeaker"),
+            F.UInt8("Flags"),
+            F.UInt8("Flags2"))
+        {
+            Description = "INFO dialogue flags"
+        };
 
         schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "INFO", 4)] =
             SubrecordSchema.Simple4Byte("Response Type");
         schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "INFO", 4)] =
             SubrecordSchema.Simple4Byte("Speaker FormID");
-        schemas[new SubrecordSchemaRegistry.SchemaKey("NEXT", "INFO", 0)] = SubrecordSchema.ByteArray;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("TPIC", "INFO", 4)] =
+            SubrecordSchema.Simple4Byte("Topic FormID");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("NEXT", "INFO", 0)] = SubrecordSchema.Empty;
 
         // ========================================================================
         // DIALOGUE TOPIC SCHEMAS (DIAL)
         // ========================================================================
 
         // DATA - DIAL (2 bytes) - Dialog Topic Data (2 UInt8 flags, no swap needed)
-        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "DIAL", 2)] = SubrecordSchema.ByteArray;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "DIAL", 2)] = new SubrecordSchema(
+            F.UInt8("TopicType"),
+            F.UInt8("Flags"))
+        {
+            Description = "Dialog topic data"
+        };
 
         // PNAM - DIAL (4 bytes) - Topic Priority (float)
         schemas[new SubrecordSchemaRegistry.SchemaKey("PNAM", "DIAL", 4)] = new SubrecordSchema(F.Float("Priority"))
@@ -86,7 +107,11 @@ internal static class SubrecordDialogueSchemas
         // ========================================================================
 
         // DATA - NOTE (1 byte) - Note Type
-        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "NOTE", 1)] = SubrecordSchema.ByteArray;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "NOTE", 1)] =
+            new SubrecordSchema(F.UInt8("NoteType"))
+            {
+                Description = "Note type"
+            };
         schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "NOTE", 4)] = SubrecordSchema.Simple4Byte("Sound FormID");
         schemas[new SubrecordSchemaRegistry.SchemaKey("ONAM", "NOTE", 4)] =
             SubrecordSchema.Simple4Byte("Note Object FormID");
@@ -95,10 +120,22 @@ internal static class SubrecordDialogueSchemas
         // TERMINAL SCHEMAS (TERM)
         // ========================================================================
 
-        schemas[new SubrecordSchemaRegistry.SchemaKey("ANAM", "TERM", 1)] = SubrecordSchema.ByteArray;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("ANAM", "TERM", 1)] =
+            new SubrecordSchema(F.UInt8("MenuItemType"))
+            {
+                Description = "Terminal menu item type"
+            };
         // DNAM - TERM (4 bytes) - PDB: TERMINAL_DATA (4 individual bytes: cDifficulty, cFlags, cServerType, cUnused)
-        schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "TERM", 4)] = SubrecordSchema.ByteArray;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "TERM", 4)] = new SubrecordSchema(
+            F.UInt8("Difficulty"),
+            F.UInt8("Flags"),
+            F.UInt8("ServerType"),
+            F.Padding(1))
+        {
+            Description = "Terminal data"
+        };
         schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "TERM", 4)] = SubrecordSchema.Simple4Byte("Sound FormID");
+        schemas[new SubrecordSchemaRegistry.SchemaKey("NEXT", "TERM", 0)] = SubrecordSchema.Empty;
 
         // ========================================================================
         // MESSAGE SCHEMAS (MESG)
@@ -210,7 +247,11 @@ internal static class SubrecordDialogueSchemas
         };
 
         // DATA - CPTH (1 byte)
-        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "CPTH", 1)] = SubrecordSchema.ByteArray;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "CPTH", 1)] =
+            new SubrecordSchema(F.UInt8("Flags"))
+            {
+                Description = "Camera path flags"
+            };
         schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "CPTH", 4)] =
             SubrecordSchema.Simple4Byte("Camera Path Sound");
 
@@ -267,9 +308,13 @@ internal static class SubrecordDialogueSchemas
         schemas[new SubrecordSchemaRegistry.SchemaKey("PKDD", null, 24)] = new SubrecordSchema(
             F.Float("FOV"),
             F.FormId("TopicID"),
-            F.Padding(4), // 3 bools (NOHeadtracking, DoNotControlTarget, SpeakerMoveTalk) + 1 pad
+            F.UInt8("NoHeadtracking"),
+            F.UInt8("DoNotControlTarget"),
+            F.UInt8("SpeakerMoveTalk"),
+            F.Padding(1),
             F.Float("DistanceStartTalking"),
-            F.Padding(4), // 1 bool (SayTo) + 3 pad
+            F.UInt8("SayTo"),
+            F.Padding(3),
             F.UInt32("TriggerType"))
         {
             Description = "Package Dialogue Data"
@@ -296,7 +341,12 @@ internal static class SubrecordDialogueSchemas
         // PKW3 - Package Use Weapon Data (24 bytes) - PDB: PACK_USE_WEAPON_DATA_PKW3
         // Offsets 0-5 are individual bools, NOT a uint32+bytes. Offset 20 is a uint32, NOT padding.
         schemas[new SubrecordSchemaRegistry.SchemaKey("PKW3", null, 24)] = new SubrecordSchema(
-            F.Padding(6), // 6 bools (AlwaysHit, DoNoDamage, Crouch, HoldFire, VolleyFire, RepeatFire)
+            F.UInt8("AlwaysHit"),
+            F.UInt8("DoNoDamage"),
+            F.UInt8("Crouch"),
+            F.UInt8("HoldFire"),
+            F.UInt8("VolleyFire"),
+            F.UInt8("RepeatFire"),
             F.UInt16("BurstCount"),
             F.UInt16("VolleyShotsMin"),
             F.UInt16("VolleyShotsMax"),
@@ -310,13 +360,18 @@ internal static class SubrecordDialogueSchemas
         schemas[new SubrecordSchemaRegistry.SchemaKey("CNAM", "PACK", 4)] =
             SubrecordSchema.Simple4Byte("Combat Style FormID");
         // PKPT - PDB: PACK_PATROL_DATA (2 individual bools: bRepeatable, bStartingLocationAtLinkedRef)
-        schemas[new SubrecordSchemaRegistry.SchemaKey("PKPT", "PACK", 2)] = SubrecordSchema.ByteArray;
-        schemas[new SubrecordSchemaRegistry.SchemaKey("PKAM", "PACK", 0)] = SubrecordSchema.ByteArray;
-        schemas[new SubrecordSchemaRegistry.SchemaKey("PKED", "PACK", 0)] = SubrecordSchema.ByteArray;
-        schemas[new SubrecordSchemaRegistry.SchemaKey("POBA", "PACK", 0)] = SubrecordSchema.ByteArray;
-        schemas[new SubrecordSchemaRegistry.SchemaKey("POCA", "PACK", 0)] = SubrecordSchema.ByteArray;
-        schemas[new SubrecordSchemaRegistry.SchemaKey("POEA", "PACK", 0)] = SubrecordSchema.ByteArray;
-        schemas[new SubrecordSchemaRegistry.SchemaKey("PUID", "PACK", 0)] = SubrecordSchema.ByteArray;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("PKPT", "PACK", 2)] = new SubrecordSchema(
+            F.UInt8("Repeatable"),
+            F.UInt8("StartingLocationAtLinkedRef"))
+        {
+            Description = "Package Patrol Flags"
+        };
+        schemas[new SubrecordSchemaRegistry.SchemaKey("PKAM", "PACK", 0)] = SubrecordSchema.Empty;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("PKED", "PACK", 0)] = SubrecordSchema.Empty;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("POBA", "PACK", 0)] = SubrecordSchema.Empty;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("POCA", "PACK", 0)] = SubrecordSchema.Empty;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("POEA", "PACK", 0)] = SubrecordSchema.Empty;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("PUID", "PACK", 0)] = SubrecordSchema.Empty;
 
         // ========================================================================
         // IDLE ANIMATION SCHEMAS (IDLE, IDLM)
@@ -358,7 +413,9 @@ internal static class SubrecordDialogueSchemas
         // IDLA - Idle Marker Animations (array of FormIDs)
         schemas[new SubrecordSchemaRegistry.SchemaKey("IDLA")] = SubrecordSchema.FormIdArray;
 
-        schemas[new SubrecordSchemaRegistry.SchemaKey("IDLC", null, 1)] = SubrecordSchema.ByteArray;
-        schemas[new SubrecordSchemaRegistry.SchemaKey("IDLF", null, 1)] = SubrecordSchema.ByteArray;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("IDLC", null, 1)] =
+            new SubrecordSchema(F.UInt8("Count")) { Description = "Idle animation count" };
+        schemas[new SubrecordSchemaRegistry.SchemaKey("IDLF", null, 1)] =
+            new SubrecordSchema(F.UInt8("Flags")) { Description = "Idle animation flags" };
     }
 }

@@ -103,16 +103,52 @@ internal static class SubrecordEffectSchemas
         // PERK SCHEMAS
         // ========================================================================
 
-        // DATA - PERK (variable)
+        // DATA - PERK (variable). Top-level PERK DATA is 5 bytes in FNV; the shorter
+        // DATA variants below are type-specific perk-entry payloads following PRKE.
         schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "PERK", 4)] = SubrecordSchema.Simple4Byte();
-        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "PERK", 5)] = SubrecordSchema.ByteArray;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "PERK", 3)] = new SubrecordSchema(
+            F.UInt8("EntryPoint"),
+            F.UInt8("FunctionType"),
+            F.UInt8("RunImmediately"))
+        {
+            Description = "Perk entry-point payload"
+        };
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "PERK", 5)] = new SubrecordSchema(
+            F.UInt8("Trait"),
+            F.UInt8("MinLevel"),
+            F.UInt8("Ranks"),
+            F.UInt8("Playable"),
+            F.UInt8("HiddenFromPC"))
+        {
+            Description = "Perk data"
+        };
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "PERK", 8)] = new SubrecordSchema(
+            F.FormId("Quest"),
+            F.Int32("QuestStage"))
+        {
+            Description = "Perk quest-stage entry payload"
+        };
         schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "PERK")] = SubrecordSchema.ByteArray;
 
-        schemas[new SubrecordSchemaRegistry.SchemaKey("PRKE", null, 3)] = SubrecordSchema.ByteArray;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("PRKE", null, 3)] = new SubrecordSchema(
+            F.UInt8("Type"),
+            F.UInt8("Rank"),
+            F.UInt8("Priority"))
+        {
+            Description = "Perk entry header"
+        };
         schemas[new SubrecordSchemaRegistry.SchemaKey("EPF3", "PERK", 2)] = SubrecordSchema.Simple2Byte("Perk Entry");
-        schemas[new SubrecordSchemaRegistry.SchemaKey("EPFT", "PERK", 1)] = SubrecordSchema.ByteArray;
-        schemas[new SubrecordSchemaRegistry.SchemaKey("PRKC", "PERK", 1)] = SubrecordSchema.ByteArray;
-        schemas[new SubrecordSchemaRegistry.SchemaKey("PRKF", "PERK", 0)] = SubrecordSchema.ByteArray;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("EPFT", "PERK", 1)] =
+            new SubrecordSchema(F.UInt8("FunctionType"))
+            {
+                Description = "Perk entry-point function type"
+            };
+        schemas[new SubrecordSchemaRegistry.SchemaKey("PRKC", "PERK", 1)] =
+            new SubrecordSchema(F.UInt8("ConditionTabCount"))
+            {
+                Description = "Perk entry condition tab count"
+            };
+        schemas[new SubrecordSchemaRegistry.SchemaKey("PRKF", "PERK", 0)] = SubrecordSchema.Empty;
         schemas[new SubrecordSchemaRegistry.SchemaKey("EPFD", null, 4)] = SubrecordSchema.Simple4Byte();
 
         // ========================================================================
