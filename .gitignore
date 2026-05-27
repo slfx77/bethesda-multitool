@@ -21,6 +21,8 @@ build/
 
 # Accidental files
 nul
+mid3k.txt
+parse_ulysses.py
 
 # NuGet
 packages/
