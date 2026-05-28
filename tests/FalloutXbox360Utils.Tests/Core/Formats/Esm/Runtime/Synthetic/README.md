@@ -79,7 +79,17 @@ component instead.
 
 ## What's NOT in here
 
-- **Bucket B (NIF / render / real-asset tests)** — out of scope for the
-  Tier 7 migration. Lives elsewhere under `Core/Formats/Nif/Rendering/`
-  and still depends on `Sample/Full_Builds/...` paths via
-  `SampleFileFixture`. Future tier candidate.
+- **Bucket B (NIF / render / real-asset tests)** — contained under
+  `Core/Formats/Nif/Rendering/`, `Core/Formats/Ddx/`,
+  `Core/Semantic/`, `Core/Formats/Esm/DialogueProvenance*`, and a few
+  other paths. Marked with `[Trait("Category", BucketBTestGuard.Category)]`
+  and skipped by default; set `RUN_BUCKET_B=1` to run them. See
+  [`BucketBTestGuard`](../../../../../Helpers/BucketBTestGuard.cs) for
+  the gate rationale.
+- **Why they weren't migrated to synthetic:** the audit identified a
+  few "synthetic-feasible" candidates (NIF GLB export, NPC composition
+  planner, RedLucy evidence), but the synthetic-builder infrastructure
+  costs (~200-400 LOC per format) exceeded the smoke / cross-platform-
+  comparison value of the tests. Tier 8 chose to gate them instead.
+  Future work could revisit individual files if a specific behaviour
+  needs stronger CI coverage.
