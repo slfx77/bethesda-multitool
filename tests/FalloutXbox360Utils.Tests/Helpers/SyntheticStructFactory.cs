@@ -127,8 +127,10 @@ internal static class SyntheticStructFactory
         uint formId,
         uint? ammoPtr = null,
         uint? pickupSoundPtr = null,
-        int bufferSize = 0x200)
+        int bufferSize = 1024)
     {
+        // TESObjectWEAP struct is 908 + _s(16) = 924 bytes — buffer must be at
+        // least that for the reader's ReadArray call to succeed.
         var buf = new byte[bufferSize];
         WriteFormHeader(buf, 0, formType: 0x28, formId);
         if (ammoPtr.HasValue) WriteUInt32BE(buf, 168 + 16, ammoPtr.Value);
