@@ -117,8 +117,10 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
     }
 
     [Fact]
+    [Trait("Category", BucketBTestGuard.Category)]
     public async Task SemanticFileLoader_loads_dump_fixture_when_available()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipWhen(samples.DebugDump is null, "Debug dump sample not available");
         var cancellationToken = TestContext.Current.CancellationToken;
 

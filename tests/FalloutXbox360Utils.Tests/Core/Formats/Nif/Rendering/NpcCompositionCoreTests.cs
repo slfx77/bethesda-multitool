@@ -52,8 +52,10 @@ public sealed class NpcCompositionCoreTests(SampleFileFixture samples)
     }
 
     [Fact]
+    [Trait("Category", BucketBTestGuard.Category)]
     public void CreatePlan_FullBodyNpc_UsesHatHairFilter_AndSuppressesOverlappingBodyEquipment()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipWhen(samples.PcFinalEsm is null, "PC final ESM not available");
 
         using var assets = CreatePcAssets();
@@ -114,8 +116,10 @@ public sealed class NpcCompositionCoreTests(SampleFileFixture samples)
 
     [Fact]
     [Trait("Category", GpuTestGuard.Category)]
+    [Trait("Category", BucketBTestGuard.Category)]
     public void VeronicaHeadPlan_DrivesCpuGpuAndGlbAdaptersFromSamePlan()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         GpuTestGuard.SkipUnlessEnabled();
         Assert.SkipWhen(samples.PcFinalEsm is null, "PC final ESM not available");
 
@@ -193,8 +197,10 @@ public sealed class NpcCompositionCoreTests(SampleFileFixture samples)
     }
 
     [Fact]
+    [Trait("Category", BucketBTestGuard.Category)]
     public void CreaturePlan_DrivesRenderAndExportAdaptersWithSharedAttachmentPolicy()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipWhen(samples.PcFinalEsm is null, "PC final ESM not available");
 
         using var assets = CreatePcAssets();

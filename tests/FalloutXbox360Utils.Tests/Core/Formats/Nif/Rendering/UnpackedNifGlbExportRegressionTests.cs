@@ -5,12 +5,28 @@ using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
 
+/// <summary>
+///     Smoke test for the full NIF → GLB export pipeline against a real unpacked
+///     Fallout NIF. Verifies the pipeline produces a loadable GLB with non-zero
+///     nodes/meshes/materials.
+///     <para>
+///         Gated as Bucket B because a synthetic-NIF migration would require
+///         ~200-400 LOC of NIF-format builder infrastructure (header + block
+///         table + typed blocks + string table + footer) to exercise a
+///         smoke-test contract. The individual NIF parser / scene builder /
+///         GLB writer components have synthetic unit tests already; this
+///         exists to validate the full pipeline glues together against real
+///         Fallout content.
+///     </para>
+/// </summary>
 [Collection(SequentialIntegrationGroup.Name)]
+[Trait("Category", BucketBTestGuard.Category)]
 public sealed class UnpackedNifGlbExportRegressionTests
 {
     [Fact]
     public void ExportWaterPurified01_UnpackedJulyBuild_WritesReloadableGlb()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         var inputPath = SampleFileFixture.FindSamplePath(
             @"Sample\Unpacked_Builds\360_July_Unpacked\FalloutNV\Data\meshes\clutter\food\waterpurified01.nif");
         Assert.SkipWhen(inputPath is null, "Unpacked July NIF sample not available");

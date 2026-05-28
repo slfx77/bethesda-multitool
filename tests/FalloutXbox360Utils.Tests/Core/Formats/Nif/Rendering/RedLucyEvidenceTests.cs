@@ -12,7 +12,17 @@ using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
 
+/// <summary>
+///     Evidence-style tests pinning the static texture/shader metadata for
+///     the Red Lucy / lucassimms outfit across PC and Xbox 360 assets. All 4
+///     facts depend on real NIF/DDX/ESM artifacts; the audit considered
+///     synthetic-NIF migration but the contracts (cross-platform NIF
+///     metadata comparison, dump-resident texture name search) are anchored
+///     to specific real artifacts that synthetic NIFs can't represent
+///     without reverse-engineering them into builders.
+/// </summary>
 [Collection(SequentialIntegrationGroup.Name)]
+[Trait("Category", BucketBTestGuard.Category)]
 public sealed class RedLucyEvidenceTests(SampleFileFixture samples)
 {
     private const uint BountyHunterDusterFormId = 0x0010D8DB;
@@ -22,6 +32,7 @@ public sealed class RedLucyEvidenceTests(SampleFileFixture samples)
     [Fact]
     public void BountyHunterDuster_UsesDirectGenderModelsWithoutAlternateTextureBlob()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipWhen(samples.PcFinalEsm is null, "PC final ESM not available");
 
         var esm = EsmFileLoader.Load(samples.PcFinalEsm!, false);
@@ -56,6 +67,7 @@ public sealed class RedLucyEvidenceTests(SampleFileFixture samples)
     [Fact]
     public void LucassimmsOutfitStaticMetadata_MatchesAcrossPcAndXboxSamples()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         var pcNifPath = SampleFileFixture.FindSamplePath(
             @"Sample\Meshes\meshes_pc\meshes\armor\lucassimms\f\outfitf.nif");
         var xboxNifPath = SampleFileFixture.FindSamplePath(
@@ -77,6 +89,7 @@ public sealed class RedLucyEvidenceTests(SampleFileFixture samples)
     [Fact]
     public void Xbox360LucassimmsSpecularTexture_RemainsUnboundInStaticShaderSlots()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         var xboxSpecularPath = SampleFileFixture.FindSamplePath(
             @"Sample\Textures\textures_360_final\textures\armor\lucassimms\outfitf_s.ddx");
         var xboxNifPath = SampleFileFixture.FindSamplePath(
@@ -104,6 +117,7 @@ public sealed class RedLucyEvidenceTests(SampleFileFixture samples)
     [Fact]
     public void ReleaseBetaDumpSearch_FindsGenericOutfitTextureNamesButNoQualifiedLucassimmsOutfitPath()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         var dumpChunkPath = SampleFileFixture.FindSamplePath(
             @"Sample\MemoryDump\Fallout_Release_Beta.xex10.dmp");
 
