@@ -13,7 +13,7 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime;
 ///     an Xbox 360 memory dump with heap memory at VA 0x40000000. MMF/accessor/temp-file
 ///     lifecycle lives in <see cref="RuntimeStructReaderTestBase"/>.
 /// </summary>
-public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : RuntimeStructReaderTestBase
+public sealed class RuntimeStructReaderTests : RuntimeStructReaderTestBase
 {
     /// <summary>
     ///     Size of the synthetic dump file. Large enough for all test scenarios.
@@ -55,7 +55,6 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : Runtime
     }
     private const int BipedWeaponOffset = 0x7C;
     private const int ProcessWeaponDrawnOffset = 0x135;
-    private readonly ITestOutputHelper _output = output;
 
     #region Multiple Structs at Different Offsets
 
@@ -95,8 +94,6 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : Runtime
         Assert.Equal(formId1, result1.FormId);
         Assert.Equal(formId2, result2.FormId);
 
-        _output.WriteLine($"Struct1: formId=0x{result1.FormId:X8} value={result1.Value}");
-        _output.WriteLine($"Struct2: formId=0x{result2.FormId:X8} value={result2.Value}");
     }
 
     #endregion
@@ -262,7 +259,6 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : Runtime
         Assert.True(result.IsBigEndian);
         Assert.Equal(structOffset, result.Offset);
 
-        _output.WriteLine($"Ammo value={result.Value}, formId=0x{result.FormId:X8}");
     }
 
     [Fact]
@@ -286,7 +282,6 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : Runtime
         Assert.NotNull(result);
         Assert.Equal(0u, result.Value);
 
-        _output.WriteLine("Out-of-range value clamped to 0 as expected");
     }
 
     [Fact]
@@ -307,7 +302,6 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : Runtime
         // Assert
         Assert.Null(result);
 
-        _output.WriteLine("FormID mismatch correctly returns null");
     }
 
     [Fact]
@@ -329,7 +323,6 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : Runtime
         // Assert
         Assert.Null(result);
 
-        _output.WriteLine("Wrong form type correctly returns null");
     }
 
     [Fact]
@@ -361,7 +354,6 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : Runtime
         Assert.NotNull(result);
         Assert.Equal(modelPath, result.ModelPath);
 
-        _output.WriteLine($"Model path: {result.ModelPath}");
     }
 
     #endregion
@@ -397,7 +389,6 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : Runtime
         Assert.Equal(expectedWeight, result.Weight, 3);
         Assert.True(result.IsBigEndian);
 
-        _output.WriteLine($"MiscItem value={result.Value}, weight={result.Weight:F2}");
     }
 
     [Fact]
@@ -422,7 +413,6 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : Runtime
         Assert.NotNull(result);
         Assert.Equal(0f, result.Weight);
 
-        _output.WriteLine("Out-of-range weight clamped to 0 as expected");
     }
 
     [Fact]
@@ -449,7 +439,6 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : Runtime
         Assert.NotNull(result);
         Assert.Equal(0f, result.Weight);
 
-        _output.WriteLine("NaN weight clamped to 0 as expected");
     }
 
     #endregion
@@ -481,7 +470,6 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : Runtime
         Assert.NotNull(result);
         Assert.Null(result.ModelPath);
 
-        _output.WriteLine("Null BSStringT pointer returns null model path as expected");
     }
 
     [Fact]
@@ -509,7 +497,6 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : Runtime
         Assert.NotNull(result);
         Assert.Null(result.ModelPath);
 
-        _output.WriteLine("Out-of-region BSStringT pointer returns null model path");
     }
 
     #endregion
@@ -527,7 +514,6 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : Runtime
 
         Assert.Null(result);
 
-        _output.WriteLine("Null TesFormOffset correctly returns null");
     }
 
     [Fact]
@@ -541,7 +527,6 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : Runtime
 
         Assert.Null(result);
 
-        _output.WriteLine("Null TesFormOffset correctly returns null for MiscItem");
     }
 
     [Fact]
@@ -559,7 +544,6 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : Runtime
 
         Assert.Null(result);
 
-        _output.WriteLine("Struct extending past end of file correctly returns null");
     }
 
     [Fact]
@@ -575,7 +559,6 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : Runtime
 
         Assert.Null(result);
 
-        _output.WriteLine("MiscItem struct past end of file correctly returns null");
     }
 
     [Fact]
@@ -591,7 +574,6 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : Runtime
 
         Assert.Null(result);
 
-        _output.WriteLine("Struct at exact end of file correctly returns null");
     }
 
     #endregion
@@ -624,7 +606,6 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : Runtime
 
         Assert.Equal(expectedPath, result);
 
-        _output.WriteLine($"ReadBsStringT returned: {result}");
     }
 
     [Fact]
@@ -642,7 +623,6 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : Runtime
 
         Assert.Null(result);
 
-        _output.WriteLine("Zero-length BSStringT correctly returns null");
     }
 
     [Fact]
@@ -656,7 +636,6 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : Runtime
 
         Assert.Null(result);
 
-        _output.WriteLine("BSStringT past end of file correctly returns null");
     }
 
     #endregion
@@ -684,7 +663,6 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : Runtime
         Assert.NotNull(result);
         Assert.Equal(0u, result.Value);
 
-        _output.WriteLine("Negative value clamped to 0 as expected");
     }
 
     [Fact]
@@ -707,7 +685,6 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : Runtime
         Assert.Equal(0, result.Value);
         Assert.Equal(1.0f, result.Weight, 3);
 
-        _output.WriteLine("Negative misc value clamped to 0, weight preserved");
     }
 
     #endregion
@@ -725,8 +702,6 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : Runtime
         var resultEnd = Xbox360MemoryUtils.VaToLong(0x4FFFFFFF);
         Assert.Equal(0x4FFFFFFFL, resultEnd);
 
-        _output.WriteLine($"VaToLong(0x40000000) = 0x{result:X16}");
-        _output.WriteLine($"VaToLong(0x4FFFFFFF) = 0x{resultEnd:X16}");
     }
 
     [Fact]
@@ -738,7 +713,6 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : Runtime
         Assert.True(result < 0, "Module address should sign-extend to negative");
         Assert.Equal(unchecked((int)0x82000000), result);
 
-        _output.WriteLine($"VaToLong(0x82000000) = 0x{result:X16} ({result})");
     }
 
     #endregion

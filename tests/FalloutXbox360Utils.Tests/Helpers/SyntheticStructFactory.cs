@@ -1,5 +1,5 @@
-using System.Buffers.Binary;
 using System.Text;
+using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
 
 namespace FalloutXbox360Utils.Tests.Helpers;
 
@@ -15,27 +15,15 @@ namespace FalloutXbox360Utils.Tests.Helpers;
 ///         offset constants — if a production reader's offset changes, the test
 ///         must be updated alongside it.
 ///     </para>
+///     <para>
+///         Primitive byte writers (WriteUInt32BE, WriteInt32BE, WriteFloatBE,
+///         WriteUInt16BE) live in <see cref="BinaryTestWriter" /> and are
+///         re-exported here via <c>using static</c> for builder-call ergonomics.
+///     </para>
 /// </summary>
 internal static class SyntheticStructFactory
 {
     public const uint DefaultVtable = 0x82010000u;
-
-    // =========================================================================
-    // Primitive writers — used by all per-record builders and by inline test
-    // setup. Big-endian to match the Xbox 360 runtime byte order.
-    // =========================================================================
-
-    public static void WriteUInt32BE(byte[] buffer, int offset, uint value) =>
-        BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan(offset, 4), value);
-
-    public static void WriteInt32BE(byte[] buffer, int offset, int value) =>
-        BinaryPrimitives.WriteInt32BigEndian(buffer.AsSpan(offset, 4), value);
-
-    public static void WriteUInt16BE(byte[] buffer, int offset, ushort value) =>
-        BinaryPrimitives.WriteUInt16BigEndian(buffer.AsSpan(offset, 2), value);
-
-    public static void WriteFloatBE(byte[] buffer, int offset, float value) =>
-        BinaryPrimitives.WriteSingleBigEndian(buffer.AsSpan(offset, 4), value);
 
     /// <summary>
     ///     Writes a 16-byte TESForm header at <paramref name="offset" />:
