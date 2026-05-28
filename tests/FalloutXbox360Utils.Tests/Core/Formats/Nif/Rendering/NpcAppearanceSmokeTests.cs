@@ -2,10 +2,12 @@ using FalloutXbox360Utils.CLI;
 using FalloutXbox360Utils.CLI.Rendering.Npc;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
+using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
 
+[Trait("Category", BucketBTestGuard.Category)]
 public sealed class NpcAppearanceSmokeTests(SampleFileFixture samples)
 {
     private const uint BooneFormId = 0x00092BD2;
@@ -13,6 +15,7 @@ public sealed class NpcAppearanceSmokeTests(SampleFileFixture samples)
     [Fact]
     public void ResolveHeadOnly_FindsCraigBooneFromSampleEsm()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipWhen(samples.PcFinalEsm is null, "PC final ESM not available");
 
         var esm = EsmFileLoader.Load(samples.PcFinalEsm!, false);
@@ -36,6 +39,7 @@ public sealed class NpcAppearanceSmokeTests(SampleFileFixture samples)
     [Fact]
     public void ResolveHeadOnly_BaseHeadTriLoadsFromSampleMeshesBsa()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipWhen(samples.PcFinalEsm is null, "PC final ESM not available");
 
         var meshesBsa = SampleFileFixture.FindSamplePath(

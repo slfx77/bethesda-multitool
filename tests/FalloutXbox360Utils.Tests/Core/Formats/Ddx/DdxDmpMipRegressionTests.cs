@@ -7,11 +7,13 @@ using FalloutXbox360Utils.Core.Minidump;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
+using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 using Xunit.Sdk;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Ddx;
 
+[Trait("Category", BucketBTestGuard.Category)]
 public sealed class DdxDmpMipRegressionTests
 {
     public enum ComparisonMode
@@ -159,6 +161,7 @@ public sealed class DdxDmpMipRegressionTests
     [MemberData(nameof(RepresentativeCases))]
     public async Task RepresentativeCases_PreserveExpectedMipBehavior(CarvedRegressionCase regressionCase)
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         var dumpPath = SampleFileFixture.FindSamplePath(regressionCase.DumpRelativePath);
         Assert.SkipWhen(dumpPath is null, $"Missing sample dump: {regressionCase.DumpRelativePath}");
 

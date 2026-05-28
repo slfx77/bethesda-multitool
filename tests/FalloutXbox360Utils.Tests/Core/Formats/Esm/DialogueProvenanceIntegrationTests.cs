@@ -5,10 +5,12 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 using FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
 using FalloutXbox360Utils.Core.Minidump;
+using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm;
 
+[Trait("Category", BucketBTestGuard.Category)]
 public sealed class DialogueProvenanceIntegrationTests(SampleFileFixture samples)
 {
     private readonly SampleFileFixture _samples = samples;
@@ -16,6 +18,7 @@ public sealed class DialogueProvenanceIntegrationTests(SampleFileFixture samples
     [Fact]
     public async Task Provenance_OnXex44Dump_ResolvesVms42GoodbyeTopic()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipWhen(_samples.ReleaseDumpXex44 is null, "Release xex44 dump not available");
 
         var result = await WithParsedDumpAsync(_samples.ReleaseDumpXex44!, (parser, parsed, _) =>
@@ -37,6 +40,7 @@ public sealed class DialogueProvenanceIntegrationTests(SampleFileFixture samples
     [Fact]
     public async Task Provenance_OnXex44Dump_ClassifiesMichelleBarterAsMissingTesFilePage()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipWhen(_samples.ReleaseDumpXex44 is null, "Release xex44 dump not available");
 
         var report = await WithParsedDumpAsync(_samples.ReleaseDumpXex44!, (parser, parsed, _) =>
@@ -55,6 +59,7 @@ public sealed class DialogueProvenanceIntegrationTests(SampleFileFixture samples
     [Fact]
     public async Task ProtoEsm_MichelleBarterInfo_ContainsShowBarterMenuGroundTruth()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipWhen(_samples.Xbox360ProtoEsm is null, "Xbox 360 proto ESM not available");
 
         var dialogue = await WithParsedEsmAsync(_samples.Xbox360ProtoEsm!,

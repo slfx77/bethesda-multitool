@@ -10,11 +10,13 @@ namespace FalloutXbox360Utils.Tests.Core.Semantic;
 ///     should add a case here so the architectural rule is enforced by CI.
 /// </summary>
 [Collection(SequentialIntegrationGroup.Name)]
+[Trait("Category", BucketBTestGuard.Category)]
 public sealed class UnifiedPipelineIntegrationTests(SampleFileFixture samples)
 {
     [Fact]
     public async Task Xbox360EsmLoadsThroughUnifiedPipeline()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 ESM sample not available");
 
         using var result = await SemanticFileLoader.LoadAsync(samples.Xbox360FinalEsm!, cancellationToken: TestContext.Current.CancellationToken);
@@ -29,6 +31,7 @@ public sealed class UnifiedPipelineIntegrationTests(SampleFileFixture samples)
     [Fact]
     public async Task PcEsmLoadsThroughUnifiedPipeline()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipWhen(samples.PcFinalEsm is null, "PC ESM sample not available");
 
         using var result = await SemanticFileLoader.LoadAsync(samples.PcFinalEsm!, cancellationToken: TestContext.Current.CancellationToken);
@@ -44,6 +47,7 @@ public sealed class UnifiedPipelineIntegrationTests(SampleFileFixture samples)
     [Fact]
     public async Task DmpLoadsThroughUnifiedPipeline()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipWhen(samples.DebugDump is null, "Debug DMP sample not available");
 
         using var result = await SemanticFileLoader.LoadAsync(samples.DebugDump!, cancellationToken: TestContext.Current.CancellationToken);

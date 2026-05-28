@@ -1,5 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Nif;
 using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
+using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Conversion;
@@ -16,6 +17,7 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Conversion;
 ///     multiple of 4. These tests pin the result by converting a real Xbox LOD mesh and
 ///     comparing every byte against its PC vanilla counterpart.
 /// </summary>
+[Trait("Category", BucketBTestGuard.Category)]
 public sealed class NiAgdDataBlockSwapRegressionTests
 {
     private const string XboxStripLod =
@@ -27,6 +29,7 @@ public sealed class NiAgdDataBlockSwapRegressionTests
     [Fact]
     public void Convert_StripLodNif_ProducesByteIdenticalPcOutput()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         var xboxPath = SampleFileFixture.FindSamplePath(XboxStripLod);
         var pcPath = SampleFileFixture.FindSamplePath(PcStripLod);
         Assert.SkipWhen(xboxPath is null || pcPath is null,

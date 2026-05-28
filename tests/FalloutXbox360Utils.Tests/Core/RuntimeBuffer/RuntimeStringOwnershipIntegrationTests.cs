@@ -5,6 +5,7 @@ using Xunit;
 namespace FalloutXbox360Utils.Tests.Core.RuntimeBuffer;
 
 [Collection(SequentialIntegrationGroup.Name)]
+[Trait("Category", BucketBTestGuard.Category)]
 public sealed class RuntimeStringOwnershipIntegrationTests(SampleFileFixture samples)
 {
     private readonly SampleFileFixture _samples = samples;
@@ -12,6 +13,7 @@ public sealed class RuntimeStringOwnershipIntegrationTests(SampleFileFixture sam
     [Fact]
     public async Task Xex44Dump_StringOwnershipSummary_FlowsThroughExtractionReporter()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipWhen(_samples.ReleaseDumpXex44 is null, "Release xex44 dump not available");
 
         var dumpPath = _samples.ReleaseDumpXex44!;

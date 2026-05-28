@@ -9,6 +9,7 @@ using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
 
+[Trait("Category", BucketBTestGuard.Category)]
 public sealed class NpcRenderSmokeTests(SampleFileFixture samples)
 {
     private const string LucyOutfitDiffusePath = @"textures\armor\lucassimms\OutfitF.dds";
@@ -18,6 +19,7 @@ public sealed class NpcRenderSmokeTests(SampleFileFixture samples)
     [Trait("Category", GpuTestGuard.Category)]
     public void BuildAndRenderVeronicaHead_CpuAndGpuReturnNonEmptySprites()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         GpuTestGuard.SkipUnlessEnabled();
         Assert.SkipWhen(samples.PcFinalEsm is null, "PC final ESM not available");
 
@@ -85,6 +87,7 @@ public sealed class NpcRenderSmokeTests(SampleFileFixture samples)
     [Fact]
     public void BuildAndRenderRedLucyBody_KeepsStaticOutfitTextureChoice()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipWhen(samples.PcFinalEsm is null, "PC final ESM not available");
 
         using var assets = CreatePcAssets();
