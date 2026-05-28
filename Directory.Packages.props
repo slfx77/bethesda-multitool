@@ -8,8 +8,8 @@
 
   <ItemGroup>
     <!-- Code analyzers (applied to FalloutXbox360Utils* projects only via Directory.Build.props) -->
-    <PackageVersion Include="SonarAnalyzer.CSharp" Version="10.4.0.108396" />
-    <PackageVersion Include="Roslynator.Analyzers" Version="4.12.10" />
+    <PackageVersion Include="SonarAnalyzer.CSharp" Version="10.27.0.140913" />
+    <PackageVersion Include="Roslynator.Analyzers" Version="4.15.0" />
 
     <!-- CLI / console -->
     <PackageVersion Include="Spectre.Console" Version="0.54.0" />
