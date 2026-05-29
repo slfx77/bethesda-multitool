@@ -52,7 +52,25 @@ public sealed class CellSectionPlanner
         var allocations = childAllocator.AllocateAll(catalog, dmpNavmeshes, masterFormIds);
         var worldspaceCatalog = WorldspaceCatalog.Build(catalog, dmpWorldspaces, masterFormIds);
 
-        var cells = BuildCellPlans(decisions);
+        // Group NAVMs by parent cell once so per-cell walks are cheap.
+        var navmsByCell = new Dictionary<uint, List<NavMeshRecord>>();
+        foreach (var navm in dmpNavmeshes)
+        {
+            if (navm.CellFormId == 0)
+            {
+                continue;
+            }
+
+            if (!navmsByCell.TryGetValue(navm.CellFormId, out var list))
+            {
+                list = [];
+                navmsByCell[navm.CellFormId] = list;
+            }
+
+            list.Add(navm);
+        }
+
+        var cells = BuildCellPlans(decisions, navmsByCell, allocations, masterFormIds);
         var worldspaces = BuildWorldspacePlans(worldspaceCatalog);
 
         return new CellSectionResult
@@ -66,7 +84,10 @@ public sealed class CellSectionPlanner
     }
 
     private static ImmutableDictionary<uint, CellPlan> BuildCellPlans(
-        IReadOnlyList<(CellCatalogEntry Entry, Disposition.DispositionDecision Decision)> decisions)
+        IReadOnlyList<(CellCatalogEntry Entry, Disposition.DispositionDecision Decision)> decisions,
+        IReadOnlyDictionary<uint, List<NavMeshRecord>> navmsByCell,
+        CellChildAllocator.AllocationResult allocations,
+        IReadOnlySet<uint> masterFormIds)
     {
         var cells = ImmutableDictionary.CreateBuilder<uint, CellPlan>();
 
@@ -78,6 +99,7 @@ public sealed class CellSectionPlanner
             }
 
             var context = entry.MasterContext ?? SynthesizeContext(entry);
+            var (persistent, vwd, temporary) = BuildChildPlans(entry, navmsByCell, allocations, masterFormIds);
             cells.Add(entry.CellFormId, new CellPlan
             {
                 CellFormId = entry.CellFormId,
@@ -95,14 +117,146 @@ public sealed class CellSectionPlanner
                     Provenance = decision.Provenance,
                 },
                 Context = context,
-                PersistentChildren = ImmutableArray<RecordPlan>.Empty,
-                VwdChildren = ImmutableArray<RecordPlan>.Empty,
-                TemporaryChildren = ImmutableArray<RecordPlan>.Empty,
+                PersistentChildren = persistent,
+                VwdChildren = vwd,
+                TemporaryChildren = temporary,
                 ParentWorldspaceFormId = context.WorldspaceFormId,
             });
         }
 
         return cells.ToImmutable();
+    }
+
+    /// <summary>
+    ///     Walk the cell's DMP placed-refs + NAVMs and emit a <see cref="RecordPlan" />
+    ///     per child, bucketed into Persistent (REFRs/ACHRs/ACREs with IsPersistent),
+    ///     VWD (currently always empty — the <c>PlacedReference</c> model doesn't expose
+    ///     a VWD flag), and Temporary (everything else + NAVMs).
+    /// </summary>
+    /// <remarks>
+    ///     LAND records aren't included in this method — LAND has no model FormID and
+    ///     its allocation needs separate handling. <c>PlanCellSectionBuilder</c> still
+    ///     drives LAND emission directly during Tier 6.1c; the planner's responsibility
+    ///     for LAND lands as a follow-up.
+    /// </remarks>
+    private static (ImmutableArray<RecordPlan> Persistent,
+        ImmutableArray<RecordPlan> Vwd,
+        ImmutableArray<RecordPlan> Temporary) BuildChildPlans(
+        CellCatalogEntry entry,
+        IReadOnlyDictionary<uint, List<NavMeshRecord>> navmsByCell,
+        CellChildAllocator.AllocationResult allocations,
+        IReadOnlySet<uint> masterFormIds)
+    {
+        if (entry.DmpModel is null)
+        {
+            return (ImmutableArray<RecordPlan>.Empty,
+                ImmutableArray<RecordPlan>.Empty,
+                ImmutableArray<RecordPlan>.Empty);
+        }
+
+        var persistent = ImmutableArray.CreateBuilder<RecordPlan>();
+        var temporary = ImmutableArray.CreateBuilder<RecordPlan>();
+
+        foreach (var placed in entry.DmpModel.PlacedObjects)
+        {
+            var plan = BuildPlacedRefPlan(placed, allocations, masterFormIds);
+            if (plan is null)
+            {
+                continue;
+            }
+
+            if (placed.IsPersistent)
+            {
+                persistent.Add(plan);
+            }
+            else
+            {
+                temporary.Add(plan);
+            }
+        }
+
+        if (navmsByCell.TryGetValue(entry.CellFormId, out var navms))
+        {
+            foreach (var navm in navms)
+            {
+                var plan = BuildNavmPlan(navm, allocations);
+                if (plan is not null)
+                {
+                    temporary.Add(plan);
+                }
+            }
+        }
+
+        return (persistent.ToImmutable(), ImmutableArray<RecordPlan>.Empty, temporary.ToImmutable());
+    }
+
+    private static RecordPlan? BuildPlacedRefPlan(
+        Models.World.PlacedReference placed,
+        CellChildAllocator.AllocationResult allocations,
+        IReadOnlySet<uint> masterFormIds)
+    {
+        if (placed.RecordType is not ("REFR" or "ACHR" or "ACRE") || placed.FormId == 0)
+        {
+            return null;
+        }
+
+        var inMaster = masterFormIds.Contains(placed.FormId);
+        var allocated = allocations.PlacedRefSourceToEmitted.TryGetValue(placed.FormId, out var emit);
+        if (!inMaster && !allocated)
+        {
+            return null; // Runtime-state ref or otherwise filtered.
+        }
+
+        var disposition = inMaster ? RecordDisposition.Override : RecordDisposition.New;
+        var emitFormId = inMaster ? placed.FormId : emit;
+
+        return new RecordPlan
+        {
+            Type = placed.RecordType,
+            Disposition = disposition,
+            FormId = emitFormId,
+            SourceFormId = placed.FormId,
+            Model = placed,
+            Master = null,
+            References = ImmutableArray<ResolvedRef>.Empty,
+            OverrideSubrecords = null,
+            ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+            Provenance = new PlanProvenance
+            {
+                PolicyId = "CellSectionPlanner.PlacedRef." + disposition,
+                Reason = inMaster
+                    ? "DMP captured a placed ref sharing FormID with master; emit override."
+                    : "DMP captured a placed ref without master counterpart; allocated plugin FormID.",
+            },
+        };
+    }
+
+    private static RecordPlan? BuildNavmPlan(
+        NavMeshRecord navm,
+        CellChildAllocator.AllocationResult allocations)
+    {
+        if (!allocations.NavmSourceToEmitted.TryGetValue(navm.FormId, out var emit))
+        {
+            return null; // Master-resident NAVM or otherwise filtered.
+        }
+
+        return new RecordPlan
+        {
+            Type = "NAVM",
+            Disposition = RecordDisposition.New,
+            FormId = emit,
+            SourceFormId = navm.FormId,
+            Model = navm,
+            Master = null,
+            References = ImmutableArray<ResolvedRef>.Empty,
+            OverrideSubrecords = null,
+            ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+            Provenance = new PlanProvenance
+            {
+                PolicyId = "CellSectionPlanner.Navm.New",
+                Reason = "DMP captured a NAVM without master counterpart; allocated plugin FormID.",
+            },
+        };
     }
 
     private static ImmutableDictionary<uint, WorldspacePlan> BuildWorldspacePlans(

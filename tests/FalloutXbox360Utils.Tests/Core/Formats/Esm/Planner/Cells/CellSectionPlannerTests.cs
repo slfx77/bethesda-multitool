@@ -1,5 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Planner;
 using FalloutXbox360Utils.Core.Formats.Esm.Planner.Cells;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Cell;
@@ -110,6 +111,119 @@ public sealed class CellSectionPlannerTests
         Assert.Equal(0x0000003Cu, wrldPlan.WorldspaceFormId);
         Assert.Equal(RecordDisposition.KeepMaster, wrldPlan.WorldspaceRecordPlan.Disposition);
         Assert.Equal(0x000ABCDEu, Assert.Single(wrldPlan.CellFormIds));
+    }
+
+    [Fact]
+    public void Persistent_Placed_Ref_Lands_In_Persistent_Bucket()
+    {
+        var planner = new CellSectionPlanner();
+        var persistentRef = new PlacedReference
+        {
+            FormId = 0xAA000001,
+            BaseFormId = 0x000ABCDF,
+            RecordType = "REFR",
+            IsPersistent = true,
+        };
+        var dmpCell = new CellRecord { FormId = 0x000ABCDE, PlacedObjects = [persistentRef] };
+        var masterContext = MakeInteriorContext(0x000ABCDE);
+
+        var result = planner.Plan(
+            masterContexts: new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = masterContext },
+            masterRecordsByFormId: new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = MakeCellMaster(0x000ABCDE) },
+            dmpCells: [dmpCell],
+            dmpNavmeshes: [],
+            dmpWorldspaces: [],
+            masterFormIds: new HashSet<uint> { 0x000ABCDE },
+            allocator: new FormIdAllocator(0x800));
+
+        var cellPlan = Assert.Single(result.CellsByFormId.Values);
+        var planForRef = Assert.Single(cellPlan.PersistentChildren);
+        Assert.Equal(0x01000800u, planForRef.FormId);
+        Assert.Equal(RecordDisposition.New, planForRef.Disposition);
+        Assert.Empty(cellPlan.TemporaryChildren);
+        Assert.Empty(cellPlan.VwdChildren);
+    }
+
+    [Fact]
+    public void NonPersistent_Placed_Ref_Lands_In_Temporary_Bucket()
+    {
+        var planner = new CellSectionPlanner();
+        var transientRef = new PlacedReference
+        {
+            FormId = 0xAA000002,
+            BaseFormId = 0x000ABCDF,
+            RecordType = "REFR",
+            IsPersistent = false,
+        };
+        var dmpCell = new CellRecord { FormId = 0x000ABCDE, PlacedObjects = [transientRef] };
+        var masterContext = MakeInteriorContext(0x000ABCDE);
+
+        var result = planner.Plan(
+            masterContexts: new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = masterContext },
+            masterRecordsByFormId: new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = MakeCellMaster(0x000ABCDE) },
+            dmpCells: [dmpCell],
+            dmpNavmeshes: [],
+            dmpWorldspaces: [],
+            masterFormIds: new HashSet<uint> { 0x000ABCDE },
+            allocator: new FormIdAllocator(0x800));
+
+        var cellPlan = Assert.Single(result.CellsByFormId.Values);
+        Assert.Single(cellPlan.TemporaryChildren);
+        Assert.Empty(cellPlan.PersistentChildren);
+    }
+
+    [Fact]
+    public void Master_Placed_Ref_Gets_Override_Disposition()
+    {
+        var planner = new CellSectionPlanner();
+        var masterRef = new PlacedReference
+        {
+            FormId = 0x000A0001, // Master-resident.
+            BaseFormId = 0x000ABCDF,
+            RecordType = "REFR",
+        };
+        var dmpCell = new CellRecord { FormId = 0x000ABCDE, PlacedObjects = [masterRef] };
+
+        var result = planner.Plan(
+            masterContexts: new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = MakeInteriorContext(0x000ABCDE) },
+            masterRecordsByFormId: new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = MakeCellMaster(0x000ABCDE) },
+            dmpCells: [dmpCell],
+            dmpNavmeshes: [],
+            dmpWorldspaces: [],
+            masterFormIds: new HashSet<uint> { 0x000ABCDE, 0x000A0001 },
+            allocator: new FormIdAllocator(0x800));
+
+        var cellPlan = Assert.Single(result.CellsByFormId.Values);
+        var planForRef = Assert.Single(cellPlan.TemporaryChildren);
+        Assert.Equal(RecordDisposition.Override, planForRef.Disposition);
+        Assert.Equal(0x000A0001u, planForRef.FormId);
+    }
+
+    [Fact]
+    public void New_Navm_Lands_In_Temporary_Bucket()
+    {
+        var planner = new CellSectionPlanner();
+        var navm = new NavMeshRecord
+        {
+            FormId = 0xAA000001,
+            CellFormId = 0x000ABCDE,
+            RawSubrecords = [new NavMeshSubrecord("DATA", [1, 2, 3, 4])],
+        };
+
+        var result = planner.Plan(
+            masterContexts: new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = MakeInteriorContext(0x000ABCDE) },
+            masterRecordsByFormId: new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = MakeCellMaster(0x000ABCDE) },
+            dmpCells: [new CellRecord { FormId = 0x000ABCDE }],
+            dmpNavmeshes: [navm],
+            dmpWorldspaces: [],
+            masterFormIds: new HashSet<uint> { 0x000ABCDE },
+            allocator: new FormIdAllocator(0x800));
+
+        var cellPlan = Assert.Single(result.CellsByFormId.Values);
+        var planForNavm = Assert.Single(cellPlan.TemporaryChildren);
+        Assert.Equal("NAVM", planForNavm.Type);
+        Assert.Equal(RecordDisposition.New, planForNavm.Disposition);
+        Assert.Equal(0x01000800u, planForNavm.FormId);
     }
 
     private static PcEsmCellContext MakeInteriorContext(uint cellFormId) => new()
