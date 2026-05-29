@@ -377,8 +377,13 @@ public static class DmpToEspCommand
     /// </summary>
     internal static HashSet<string> ResolvePlannerTypes(string[] args)
     {
-        var known = PlannedEncoders.KnownRecordTypes().ToHashSet(StringComparer.Ordinal);
         var result = new HashSet<string>(StringComparer.Ordinal);
+        if (args.Length == 0)
+        {
+            return result;
+        }
+
+        var known = PlannedEncoders.KnownRecordTypes().ToHashSet(StringComparer.Ordinal);
 
         foreach (var raw in args)
         {
@@ -409,10 +414,7 @@ public static class DmpToEspCommand
             result.Add(token);
         }
 
-        // No explicit (or only whitespace) tokens → planner-on for every signature. Matches
-        // the PluginBuildOptions record-level default so the CLI default and the GUI default
-        // produce the same build (the GUI never sets the field).
-        return result.Count == 0 ? known : result;
+        return result;
     }
 
     /// <summary>

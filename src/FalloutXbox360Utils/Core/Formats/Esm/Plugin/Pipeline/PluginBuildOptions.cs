@@ -1,5 +1,4 @@
 using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Formats.Esm.PlannedWriter;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
 
@@ -166,11 +165,12 @@ public sealed record PluginBuildOptions
     public IReadOnlyList<string> DialogueTextOverridesCsvPaths { get; init; } = [];
 
     /// <summary>
-    ///     Record signatures the two-pass <c>EsmPlanner</c> / <c>PlanWriter</c> pipeline
-    ///     owns on this run. Default is every signature in
-    ///     <see cref="PlannedEncoders.KnownRecordTypes" /> — the planner produces all bytes
-    ///     for every supported type. Callers can narrow the set to opt specific types back
-    ///     onto the legacy single-pass pipeline (CLI: <c>--planner-types STAT WEAP</c>).
+    ///     Record signatures the new two-pass <c>EsmPlanner</c> / <c>PlanWriter</c> pipeline
+    ///     owns on this run. When non-empty, the plugin builder routes those record types
+    ///     through the planner; everything else continues to use the legacy single-pass
+    ///     pipeline. Empty (default) keeps the entire build on the legacy path — Tier 0
+    ///     ships the plumbing without enabling any types; tiers 1–5 progressively add types
+    ///     here until the legacy pipeline is deleted.
     /// </summary>
     /// <remarks>
     ///     Contract: if a type is listed here, the planner produces all bytes for that type's
@@ -178,5 +178,5 @@ public sealed record PluginBuildOptions
     ///     migration switch described in the planner architecture plan.
     /// </remarks>
     public IReadOnlySet<string> PlannerEnabledRecordTypes { get; init; } =
-        PlannedEncoders.KnownRecordTypes().ToHashSet(StringComparer.Ordinal);
+        new HashSet<string>(StringComparer.Ordinal);
 }

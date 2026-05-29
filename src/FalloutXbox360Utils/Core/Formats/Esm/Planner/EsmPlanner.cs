@@ -18,6 +18,14 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Planner;
 /// </summary>
 public sealed class EsmPlanner
 {
+    /// <summary>
+    ///     Types whose plan + emission is owned by the cell-section pipeline when CELL is
+    ///     enabled. They must be excluded from the top-level RecordCatalog to avoid
+    ///     double-allocating FormIDs for the same source record.
+    /// </summary>
+    private static readonly IReadOnlySet<string> CellPipelineOwnedTypes =
+        new HashSet<string>(StringComparer.Ordinal) { "CELL", "WRLD", "REFR", "ACHR", "ACRE", "PGRE" };
+
     private readonly DispositionEngine _disposition;
     private readonly FormIdPlanner _allocation;
     private readonly ReferenceResolver _references;
@@ -66,7 +74,18 @@ public sealed class EsmPlanner
 
         var masterSource = new MasterRecordSource(masterRecords);
         var dmpSource = new DmpRecordSource(dmpRecords);
-        var catalog = RecordCatalog.Build(masterSource, dmpSource, enabledTypes);
+
+        // When CELL is enabled the cell-section pipeline owns the entire cell hierarchy
+        // (CELL/WRLD/REFR/ACHR/ACRE/PGRE) — emission, FormID allocation, and the
+        // source→emitted map. Including those types in the top-level RecordCatalog would
+        // double-allocate, producing two different emit FormIDs for the same source and
+        // crashing the AddRange merge below.
+        var catalogTypes = enabledTypes.Contains("CELL")
+            ? (IReadOnlySet<string>)enabledTypes
+                .Where(t => !CellPipelineOwnedTypes.Contains(t))
+                .ToHashSet(StringComparer.Ordinal)
+            : enabledTypes;
+        var catalog = RecordCatalog.Build(masterSource, dmpSource, catalogTypes);
 
         var cellSection = enabledTypes.Contains("CELL")
             ? RunCellSection(dmpRecords, masterFormIds, masterCellContexts, masterRecordsByFormId, cellChildAllocator)

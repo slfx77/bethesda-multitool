@@ -11,8 +11,12 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Planner.Cells;
 ///     <see cref="CellCatalogEntry" /> list. Same shape as top-level <c>RecordCatalog</c>.
 /// </summary>
 /// <remarks>
-///     The DMP side is assumed to be already-unioned (via legacy <c>CellCaptureUnioner</c>)
-///     when this runs in production. Synthetic test fixtures pass pre-unioned cells.
+///     Runs <see cref="CellCaptureUnioner" /> on the DMP input to merge repeated captures
+///     of the same logical cell (same FormID across multiple memory regions, or different
+///     FormID but matching interior EditorID / exterior grid). Pre-Tier-7b the union step
+///     lived inside legacy <c>BuildCellOverrideBundles</c>; with planner-on by default that
+///     path is bypassed, so the planner runs union itself. Idempotent on already-unioned
+///     input (test fixtures).
 /// </remarks>
 public sealed class CellCatalog
 {
@@ -28,6 +32,11 @@ public sealed class CellCatalog
         ArgumentNullException.ThrowIfNull(masterContexts);
         ArgumentNullException.ThrowIfNull(masterRecordsByFormId);
         ArgumentNullException.ThrowIfNull(dmpCells);
+
+        // Merge repeated captures of the same logical cell so a single FormID resolves to
+        // a single entry — required for the cells.Add(formId, ...) call in
+        // CellSectionPlanner.BuildCellPlans to not throw on duplicate keys.
+        dmpCells = CellCaptureUnioner.Union(dmpCells).Cells;
 
         var entries = new List<CellCatalogEntry>(masterContexts.Count + dmpCells.Count);
         var dmpByFormId = new Dictionary<uint, CellRecord>(dmpCells.Count);

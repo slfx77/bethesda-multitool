@@ -47,7 +47,15 @@ public sealed class RecordCatalog
         var dmpOverrideIndices = new HashSet<int>();
         foreach (var (type, formId, model) in dmp.Enumerate(enabledTypes))
         {
-            if (masterByFormId.TryGetValue(formId, out var masterEntry))
+            // Only pair with master when record TYPES also match. FormIDs are unique
+            // across types in vanilla ESMs, but DMP captures occasionally surface the same
+            // FormID under a different signature (runtime aliasing, parser misclassification).
+            // Cross-type pairing would produce a CatalogEntry with the master's Type and
+            // the DMP's wrong-typed Model, which the planner encoder dispatch rejects as
+            // "Model is not of type X: actual Y". Type-mismatched DMP records fall through
+            // to DmpNew so they emit through their own signature's encoder.
+            if (masterByFormId.TryGetValue(formId, out var masterEntry)
+                && string.Equals(masterEntry.Type, type, StringComparison.Ordinal))
             {
                 var idx = entries.IndexOf(masterEntry);
                 entries[idx] = masterEntry with
