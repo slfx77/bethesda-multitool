@@ -399,7 +399,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
                     var rawDefaultWaterHeight = record.IsBigEndian
                         ? BinaryPrimitives.ReadSingleBigEndian(subData[4..])
                         : BinaryPrimitives.ReadSingleLittleEndian(subData[4..]);
-                    defaultWaterHeight = WorldHeightNormalizer.NormalizeReportableHeight(rawDefaultWaterHeight);
+                    defaultWaterHeight = WorldHeightNormalizer.PreserveSentinelOrNormalize(rawDefaultWaterHeight);
                     break;
                 case "MNAM" when sub.DataLength >= 16:
                     mapUsableWidth = (int)(record.IsBigEndian

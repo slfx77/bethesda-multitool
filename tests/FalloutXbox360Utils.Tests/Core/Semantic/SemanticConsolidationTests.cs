@@ -1117,6 +1117,33 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
     }
 
     [Fact]
+    public void WorldHeightNormalizer_recognizes_no_water_sentinel()
+    {
+        Assert.True(WorldHeightNormalizer.IsNoWaterSentinel(float.MaxValue));
+        Assert.True(WorldHeightNormalizer.IsNoWaterSentinel(BitConverter.UInt32BitsToSingle(0x7F7FFFFFu)));
+        Assert.False(WorldHeightNormalizer.IsNoWaterSentinel(0f));
+        Assert.False(WorldHeightNormalizer.IsNoWaterSentinel(-4096f));
+        Assert.False(WorldHeightNormalizer.IsNoWaterSentinel(150_000f));
+        Assert.False(WorldHeightNormalizer.IsNoWaterSentinel((float?)null));
+    }
+
+    [Fact]
+    public void PreserveSentinelOrNormalize_keeps_sentinel_normalizes_others()
+    {
+        // The Bethesda "no water" marker survives untouched so renderers can detect it.
+        Assert.Equal(float.MaxValue, WorldHeightNormalizer.PreserveSentinelOrNormalize(float.MaxValue));
+        // Other out-of-range values still get coerced to 0 (existing behavior).
+        Assert.Equal(0f, WorldHeightNormalizer.PreserveSentinelOrNormalize(150_000f));
+        Assert.Equal(0f, WorldHeightNormalizer.PreserveSentinelOrNormalize(float.NaN));
+        // In-range values pass through unchanged.
+        Assert.Equal(-4096f, WorldHeightNormalizer.PreserveSentinelOrNormalize(-4096f));
+        Assert.Equal(42.5f, WorldHeightNormalizer.PreserveSentinelOrNormalize(42.5f));
+        // Nullable overload.
+        Assert.Null(WorldHeightNormalizer.PreserveSentinelOrNormalize((float?)null));
+        Assert.Equal(float.MaxValue, WorldHeightNormalizer.PreserveSentinelOrNormalize((float?)float.MaxValue));
+    }
+
+    [Fact]
     public void GeckWorldWriter_clamps_present_invalid_water_heights_in_reports()
     {
         var resolver = new FormIdResolver([], [], []);

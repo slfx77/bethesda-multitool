@@ -121,11 +121,22 @@ internal static class WorldMapCellDetailRenderer
             range = 1f;
         }
 
-        // Determine effective water height
-        var waterH = cell.WaterHeight;
-        if (!waterH.HasValue || waterH.Value is not (> -1e6f and < 1e6f))
+        // Determine effective water height. Explicit "no water" sentinel on the cell
+        // suppresses water entirely; null (no XCLW) falls back to worldspace DNAM.
+        float? waterH;
+        if (WorldHeightNormalizer.IsNoWaterSentinel(cell.WaterHeight))
         {
-            waterH = currentDefaultWaterHeight;
+            waterH = null;
+        }
+        else if (cell.WaterHeight is { } cw && cw is > -1e6f and < 1e6f)
+        {
+            waterH = cw;
+        }
+        else
+        {
+            waterH = WorldHeightNormalizer.IsNoWaterSentinel(currentDefaultWaterHeight)
+                ? null
+                : currentDefaultWaterHeight;
         }
 
         var grayscale = new byte[HmGridSize * HmGridSize];

@@ -360,7 +360,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                     var rawWaterHeight = record.IsBigEndian
                         ? BinaryPrimitives.ReadSingleBigEndian(subData)
                         : BinaryPrimitives.ReadSingleLittleEndian(subData);
-                    waterHeight = WorldHeightNormalizer.NormalizeReportableHeight(rawWaterHeight);
+                    waterHeight = WorldHeightNormalizer.PreserveSentinelOrNormalize(rawWaterHeight);
                     break;
                 case "XEZN" when sub.DataLength == 4:
                     encounterZoneFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
@@ -761,7 +761,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                 ? runtime.CandidateWorldspaceFormIds
                 : esm.CandidateWorldspaceFormIds,
             Flags = esm.Flags != 0 ? esm.Flags : runtime.Flags,
-            WaterHeight = WorldHeightNormalizer.NormalizeReportableHeight(esm.WaterHeight ?? runtime.WaterHeight),
+            WaterHeight = WorldHeightNormalizer.PreserveSentinelOrNormalize(esm.WaterHeight ?? runtime.WaterHeight),
             EncounterZoneFormId = esm.EncounterZoneFormId ?? runtime.EncounterZoneFormId,
             MusicTypeFormId = esm.MusicTypeFormId ?? runtime.MusicTypeFormId,
             AcousticSpaceFormId = esm.AcousticSpaceFormId ?? runtime.AcousticSpaceFormId,

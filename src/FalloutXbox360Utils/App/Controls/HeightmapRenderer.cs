@@ -80,11 +80,23 @@ internal static class HeightmapRenderer
             var imgCellX = cell.GridX!.Value - minX;
             var imgCellY = maxY - cell.GridY!.Value;
 
-            // Determine effective water height: cell-specific or worldspace default
-            var waterH = cell.WaterHeight;
-            if (!waterH.HasValue || waterH.Value is not (> -1e6f and < 1e6f))
+            // Determine effective water height. Explicit "no water" sentinel on the cell
+            // suppresses water entirely; null (no XCLW) falls back to worldspace DNAM;
+            // out-of-range numeric values fall back too as a safety net.
+            float? waterH;
+            if (WorldHeightNormalizer.IsNoWaterSentinel(cell.WaterHeight))
             {
-                waterH = defaultWaterHeight;
+                waterH = null;
+            }
+            else if (cell.WaterHeight is { } cw && cw is > -1e6f and < 1e6f)
+            {
+                waterH = cw;
+            }
+            else
+            {
+                waterH = WorldHeightNormalizer.IsNoWaterSentinel(defaultWaterHeight)
+                    ? null
+                    : defaultWaterHeight;
             }
 
             for (var py = 0; py < HmGridSize; py++)
