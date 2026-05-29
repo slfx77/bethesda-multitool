@@ -1,24 +1,25 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Planner;
+using FalloutXbox360Utils.Core.Formats.Esm.Planner.Cells;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Cell;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Output;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.PlannedWriter.Cells;
 
 /// <summary>
 ///     The planner-side equivalent of legacy <see cref="CellGrupBuilder.BuildCellSection" />.
-///     Walks <see cref="EmitPlan.CellsByFormId" />, converts each <see cref="Planner.Cells.CellPlan" />
-///     into a <see cref="CellOverrideBundle" />, then delegates the GRUP framing to the
-///     legacy builder. Reusing the legacy framing means the GRUP nesting / labels match
-///     byte-for-byte by construction; once the legacy pipeline is deleted in the final
-///     bulk-removal PR the framing logic absorbs into this namespace.
+///     Walks <see cref="EmitPlan.CellsByFormId" />, encodes each cell's children via the
+///     planned encoders, and delegates the GRUP framing to the legacy
+///     <see cref="CellGrupBuilder" />. Reusing the legacy framing means the GRUP nesting /
+///     labels match byte-for-byte by construction.
 /// </summary>
 public sealed class PlanCellSectionBuilder
 {
-    /// <summary>
-    ///     Build the cell section bytes from the planner's cell hierarchy. Returns null
-    ///     when the plan has no cells the writer can emit (which is the default in Tier 5b
-    ///     before the EsmPlanner is extended to populate <see cref="EmitPlan.CellsByFormId" />).
-    /// </summary>
+    private const uint CompressedFlag = 0x00040000u;
+
     public byte[]? BuildCellSection(
         EmitPlan plan,
         IReadOnlyDictionary<uint, ParsedMainRecord> masterByFormId,
@@ -28,7 +29,7 @@ public sealed class PlanCellSectionBuilder
         ArgumentNullException.ThrowIfNull(masterByFormId);
         ArgumentNullException.ThrowIfNull(options);
 
-        var bundles = ConvertCellsToBundles(plan);
+        var bundles = ConvertCellsToBundles(plan, options);
         if (bundles.Count == 0)
         {
             return null;
@@ -39,14 +40,16 @@ public sealed class PlanCellSectionBuilder
     }
 
     /// <summary>
-    ///     Convert each <see cref="Planner.Cells.CellPlan" /> entry to a bundle the legacy
-    ///     builder consumes. Tier 5b.4 ships the conversion shell — only cells with master
-    ///     records (KeepMaster / Override against master) round-trip cleanly. New CELLs
-    ///     (no master) require fresh anchor encoding that ships in a follow-up sub-tier.
+    ///     Convert each <see cref="CellPlan" /> entry to a bundle the legacy framing engine
+    ///     consumes. Encodes the child records (REFR / ACHR / ACRE / NAVM) to bytes via the
+    ///     planned encoders so the output matches what legacy would produce for the same
+    ///     inputs.
     /// </summary>
-    private static IReadOnlyList<CellOverrideBundle> ConvertCellsToBundles(EmitPlan plan)
+    private static IReadOnlyList<CellOverrideBundle> ConvertCellsToBundles(
+        EmitPlan plan, PluginBuildOptions options)
     {
         var bundles = new List<CellOverrideBundle>(plan.CellsByFormId.Count);
+        var nvexRewrites = plan.SourceToEmittedFormId;
 
         foreach (var (cellFormId, cellPlan) in plan.CellsByFormId)
         {
@@ -57,7 +60,7 @@ public sealed class PlanCellSectionBuilder
 
             if (cellPlan.CellRecordPlan.Master is null)
             {
-                continue; // New CELLs deferred; require fresh anchor encoding.
+                continue; // New CELLs deferred; require fresh anchor encoding (Tier 6.5).
             }
 
             var cellRecordBytes = CellGrupBuilder.ReconstructRecordBytes(cellPlan.CellRecordPlan.Master);
@@ -67,12 +70,104 @@ public sealed class PlanCellSectionBuilder
                 CellFormId = cellFormId,
                 Context = cellPlan.Context,
                 CellRecordBytes = cellRecordBytes,
-                PersistentChildRecords = [],
-                VwdChildRecords = [],
-                TemporaryChildRecords = [],
+                PersistentChildRecords = EncodeChildren(cellPlan.PersistentChildren, cellFormId, nvexRewrites, options),
+                VwdChildRecords = EncodeChildren(cellPlan.VwdChildren, cellFormId, nvexRewrites, options),
+                TemporaryChildRecords = EncodeChildren(cellPlan.TemporaryChildren, cellFormId, nvexRewrites, options),
             });
         }
 
         return bundles;
+    }
+
+    private static IReadOnlyList<byte[]> EncodeChildren(
+        IReadOnlyList<RecordPlan> children,
+        uint cellFormId,
+        IReadOnlyDictionary<uint, uint> nvexRewrites,
+        PluginBuildOptions options)
+    {
+        if (children.Count == 0)
+        {
+            return [];
+        }
+
+        var bytes = new List<byte[]>(children.Count);
+        foreach (var child in children)
+        {
+            var encoded = EncodeChild(child, cellFormId, nvexRewrites, options);
+            if (encoded is not null)
+            {
+                bytes.Add(encoded);
+            }
+        }
+
+        return bytes;
+    }
+
+    private static byte[]? EncodeChild(
+        RecordPlan child,
+        uint cellFormId,
+        IReadOnlyDictionary<uint, uint> nvexRewrites,
+        PluginBuildOptions options)
+    {
+        switch (child.Type)
+        {
+            case "REFR" or "ACHR" or "ACRE":
+                return EncodePlacedRef(child, options);
+            case "NAVM":
+                return EncodeNavm(child, cellFormId, nvexRewrites, options);
+            default:
+                return null;
+        }
+    }
+
+    private static byte[]? EncodePlacedRef(RecordPlan child, PluginBuildOptions options)
+    {
+        if (child.Model is not PlacedReference placed)
+        {
+            return null;
+        }
+
+        var subs = child.Disposition switch
+        {
+            RecordDisposition.New => RefrEncoder.EncodeNewPlacedReference(placed, null, null),
+            RecordDisposition.Override => RefrEncoder.EncodePlacedReference(placed),
+            _ => null,
+        };
+
+        if (subs is null || subs.Subrecords.Count == 0)
+        {
+            return null;
+        }
+
+        var flags = options.CompressRecords ? CompressedFlag : 0u;
+
+        if (child.Disposition == RecordDisposition.New)
+        {
+            return PluginRecordByteBuilder.BuildNewRecordBytes(
+                child.Type, child.FormId, flags, subs.Subrecords);
+        }
+
+        // Override path: needs the master record for header reuse. Children currently
+        // don't carry Master refs for placed overrides; defer override emission to legacy.
+        return null;
+    }
+
+    private static byte[]? EncodeNavm(
+        RecordPlan child,
+        uint cellFormId,
+        IReadOnlyDictionary<uint, uint> nvexRewrites,
+        PluginBuildOptions options)
+    {
+        if (child.Model is not NavMeshRecord navm)
+        {
+            return null;
+        }
+
+        if (child.Disposition != RecordDisposition.New)
+        {
+            return null; // KeepMaster NAVMs deferred — legacy preserves them verbatim.
+        }
+
+        return PlannedNavmEncoder.EncodeRecord(navm, cellFormId, child.FormId, nvexRewrites, options);
     }
 }

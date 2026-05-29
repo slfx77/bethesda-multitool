@@ -1,10 +1,13 @@
 using System.Collections.Immutable;
 using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Planner;
 using FalloutXbox360Utils.Core.Formats.Esm.Planner.Cells;
 using FalloutXbox360Utils.Core.Formats.Esm.PlannedWriter.Cells;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Cell;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Output;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using Xunit;
 
@@ -67,6 +70,76 @@ public sealed class PlanCellSectionBuilderParityTests
             Context = context,
             CellRecordBytes = CellGrupBuilder.ReconstructRecordBytes(master),
             PersistentChildRecords = [],
+            VwdChildRecords = [],
+            TemporaryChildRecords = [],
+        };
+        var legacyBytes = CellGrupBuilder.BuildCellSection(
+            [legacyBundle], new Dictionary<uint, ParsedMainRecord>(), null);
+
+        Assert.Equal(legacyBytes, plannerBytes);
+    }
+
+    [Fact]
+    public void Cell_With_New_Placed_Ref_Emits_Through_Planner_With_Byte_Parity()
+    {
+        var (master, context) = MakeInteriorCellMaster(0x000ABCDE);
+        var placed = new PlacedReference
+        {
+            FormId = 0x01000801,
+            BaseFormId = 0x000ABCDF,
+            RecordType = "REFR",
+            IsPersistent = true,
+        };
+        var childPlan = new RecordPlan
+        {
+            Type = "REFR",
+            Disposition = RecordDisposition.New,
+            FormId = 0x01000801,
+            Model = placed,
+            References = ImmutableArray<ResolvedRef>.Empty,
+            ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
+        };
+        var cellPlan = new CellPlan
+        {
+            CellFormId = 0x000ABCDE,
+            CellRecordPlan = new RecordPlan
+            {
+                Type = "CELL",
+                Disposition = RecordDisposition.KeepMaster,
+                FormId = 0x000ABCDE,
+                Master = master,
+                References = ImmutableArray<ResolvedRef>.Empty,
+                ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+                Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
+            },
+            Context = context,
+            PersistentChildren = ImmutableArray.Create(childPlan),
+            VwdChildren = ImmutableArray<RecordPlan>.Empty,
+            TemporaryChildren = ImmutableArray<RecordPlan>.Empty,
+        };
+
+        var plan = MakeEmptyPlan() with
+        {
+            CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(0x000ABCDE, cellPlan),
+        };
+
+        var builder = new PlanCellSectionBuilder();
+        var plannerBytes = builder.BuildCellSection(
+            plan, new Dictionary<uint, ParsedMainRecord>(), new PluginBuildOptions());
+
+        // Build the equivalent legacy child bytes via the same primitive path the planner uses.
+        var subs = RefrEncoder.EncodeNewPlacedReference(placed, validFormIds: null, remapTable: null);
+        Assert.NotEmpty(subs.Subrecords);
+        var legacyChildBytes = PluginRecordByteBuilder.BuildNewRecordBytes(
+            "REFR", 0x01000801u, 0u, subs.Subrecords);
+
+        var legacyBundle = new CellOverrideBundle
+        {
+            CellFormId = 0x000ABCDE,
+            Context = context,
+            CellRecordBytes = CellGrupBuilder.ReconstructRecordBytes(master),
+            PersistentChildRecords = [legacyChildBytes],
             VwdChildRecords = [],
             TemporaryChildRecords = [],
         };
