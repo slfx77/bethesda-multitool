@@ -1142,12 +1142,24 @@ public sealed class PluginBuilder
         degradationPolicy.SetRule(
             "PACK", "PLD2.Union",
             FalloutXbox360Utils.Core.Formats.Esm.Planner.References.DanglingAction.DowngradeContainer(pld2Downgrade));
+        degradationPolicy.SetDefaultForType(
+            "NPC_",
+            FalloutXbox360Utils.Core.Formats.Esm.Planner.References.DanglingAction.DropSubrecord);
+        degradationPolicy.SetDefaultForType(
+            "CREA",
+            FalloutXbox360Utils.Core.Formats.Esm.Planner.References.DanglingAction.DropSubrecord);
+        degradationPolicy.SetDefaultForType(
+            "PERK",
+            FalloutXbox360Utils.Core.Formats.Esm.Planner.References.DanglingAction.DropSubrecord);
         var referenceResolver = new FalloutXbox360Utils.Core.Formats.Esm.Planner.References.ReferenceResolver(
             new FalloutXbox360Utils.Core.Formats.Esm.Planner.References.IRecordReferenceWalker[]
             {
                 new FalloutXbox360Utils.Core.Formats.Esm.Planner.References.Walkers.ScriptReferenceWalker(),
                 new FalloutXbox360Utils.Core.Formats.Esm.Planner.References.Walkers.PackageReferenceWalker(),
                 new FalloutXbox360Utils.Core.Formats.Esm.Planner.References.Walkers.InfoReferenceWalker(),
+                new FalloutXbox360Utils.Core.Formats.Esm.Planner.References.Walkers.NpcReferenceWalker(),
+                new FalloutXbox360Utils.Core.Formats.Esm.Planner.References.Walkers.CreatureReferenceWalker(),
+                new FalloutXbox360Utils.Core.Formats.Esm.Planner.References.Walkers.PerkReferenceWalker(),
             },
             degradationPolicy);
 
