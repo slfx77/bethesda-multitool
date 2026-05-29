@@ -1,6 +1,7 @@
 using FalloutXbox360Utils.Core.Formats.Esm.PlannedWriter.Encoders.ComplexRef;
 using FalloutXbox360Utils.Core.Formats.Esm.PlannedWriter.Encoders.SimpleRef;
 using FalloutXbox360Utils.Core.Formats.Esm.PlannedWriter.Encoders.Trivial;
+using FalloutXbox360Utils.Core.Formats.Esm.PlannedWriter.Encoders.World;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.PlannedWriter;
 
@@ -128,5 +129,18 @@ public static class PlannedEncoders
         yield return new PlannedCmnyEncoder();
         yield return new PlannedCdckEncoder();
         yield return new PlannedFlstEncoder();
+
+        // Tier 5b kickoff — CELL + placed-reference (REFR/ACHR/ACRE) encoders. These are
+        // registered but not yet invoked by any dispatch path: cell-children records
+        // (REFR/ACHR/ACRE) emit through CellGrupBuilder's persistent/temporary/VWD
+        // children GRUPs and CELL emits through the WRLD cell-block hierarchy. Routing
+        // those through the planner is the cell-pipeline integration that finishes Tier
+        // 5b. LAND/NAVM/NAVI/PGRE are not yet ported — they lack standard IRecordEncoder
+        // paths and emit via specialized builders (LandOverrideBuilder, NavInfoMapBuilder,
+        // etc.) that need their own planner-aware abstractions.
+        yield return new PlannedCellEncoder();
+        yield return new PlannedPlacedReferenceEncoder("REFR");
+        yield return new PlannedPlacedReferenceEncoder("ACHR");
+        yield return new PlannedPlacedReferenceEncoder("ACRE");
     }
 }

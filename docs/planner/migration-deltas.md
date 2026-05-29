@@ -11,7 +11,52 @@ deltas so reviewers know what shape future entries will take.
 
 ## Open deltas
 
-_None recorded yet — Tier 1 ships strict byte-exact for every ported type._
+_None recorded yet — Tiers 1–5a all ship strict byte-exact for every ported type._
+
+## Tier 5b — cell-children pipeline (architectural gap)
+
+The per-encoder migration pattern doesn't carry the rest of the way. Tier 5b is
+**partial**: it ships `PlannedCellEncoder` plus a shared `PlannedPlacedReferenceEncoder`
+covering REFR/ACHR/ACRE, but those encoders are registered without any dispatch path
+routing through them.
+
+### What's missing
+
+- **CellGrupBuilder integration.** The legacy pipeline emits cell-children records
+  (REFR/ACHR/ACRE in persistent/temporary/VWD children GRUPs) through
+  `CellGrupBuilder`, not through `BuildGrupForType`. The dispatch shim in
+  `PluginBuilder.BuildGrupForType` therefore never invokes the planned cell-children
+  encoders. Routing cell-children emission through `PlanWriter` requires modifying
+  `CellGrupBuilder` to consult `_planWriter` when the user enables CELL / REFR / ACHR
+  / ACRE through `PlannerEnabledRecordTypes`. The plumbing parallels what
+  `BuildGrupForType` already does for top-level GRUPs.
+
+- **LAND / NAVM / NAVI / PGRE encoders.** None of these have standard `IRecordEncoder`
+  paths in the legacy code:
+    - LAND emits via `LandOverrideBuilder` → `LandEncoder.Encode(LandHeightmap,
+      LandVisualData?)`. The encoder signature is fundamentally different from the
+      single-model `IPlannedRecordEncoder<TModel>` contract — it takes two structural
+      inputs that come from cell context, not a single record model.
+    - NAVM / NAVI are emitted by `NavInfoMapBuilder` / `NavMeshOverrideBuilder` with
+      cross-record dependencies (NAVI indexes NAVMs, NAVMs reference cell context).
+      These need a tree-shaped abstraction the current encoder interface does not
+      provide.
+    - PGRE (placed grenade) is a cell-child like REFR/ACHR/ACRE but lives in a
+      different RecordCollection list; once the cell-children dispatch lands it's a
+      simple repeat of the placed-reference encoder pattern.
+
+- **CELL.New disposition.** `CellEncoder.Encode` only emits the override-mutable
+  subrecords (DATA/XCLC); new CELLs require the full subrecord stream that
+  `CellGrupBuilder` constructs as part of building the parent GRUP. The planner
+  representation needs a `RecordPlan` shape that carries cell context (parent WRLD,
+  block / sub-block labels, persistent / temporary / VWD children) into the writer.
+
+### Why ship the partial encoders now
+
+So the encoder slots exist when the cell-pipeline refactor lands. The
+`PlannedPlacedReferenceEncoder` already produces byte-identical output to legacy for
+synthetic test records — three parity tests pin that. Wiring is a one-line swap in
+`CellGrupBuilder` once that refactor begins.
 
 ## Categories
 
