@@ -35,7 +35,7 @@ internal static class SyntheticModelFactory
     ///     Record types deliberately excluded from the aggregate sweep. See the class summary.
     /// </summary>
     public static readonly IReadOnlySet<string> SkippedRecordTypes =
-        new HashSet<string>(StringComparer.Ordinal) { "CELL", "REFR", "ACHR", "ACRE" };
+        new HashSet<string>(StringComparer.Ordinal) { "CELL", "REFR", "ACHR", "ACRE", "PGRE" };
 
     /// <summary>
     ///     Hooks for record types whose minimal fixture needs extra fields beyond the

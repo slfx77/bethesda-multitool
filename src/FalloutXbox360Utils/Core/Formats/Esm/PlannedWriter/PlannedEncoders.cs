@@ -144,12 +144,18 @@ public static class PlannedEncoders
         // (REFR/ACHR/ACRE) emit through CellGrupBuilder's persistent/temporary/VWD
         // children GRUPs and CELL emits through the WRLD cell-block hierarchy. Routing
         // those through the planner is the cell-pipeline integration that finishes Tier
-        // 5b. LAND/NAVM/NAVI/PGRE are not yet ported — they lack standard IRecordEncoder
+        // 5b. LAND/NAVM/NAVI are not yet ported — they lack standard IRecordEncoder
         // paths and emit via specialized builders (LandOverrideBuilder, NavInfoMapBuilder,
         // etc.) that need their own planner-aware abstractions.
         yield return new PlannedCellEncoder();
         yield return new PlannedPlacedReferenceEncoder("REFR");
         yield return new PlannedPlacedReferenceEncoder("ACHR");
         yield return new PlannedPlacedReferenceEncoder("ACRE");
+
+        // Tier 7a — PGRE (placed grenade). Structural mirror of the placed-reference
+        // encoders; cell-children dispatch routing is a follow-up that needs PGRE→parent
+        // cell mapping on the model. Registered now so the encoder ships with the
+        // primitive in place when routing lands.
+        yield return new PlannedPgreEncoder();
     }
 }

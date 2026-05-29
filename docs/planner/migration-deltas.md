@@ -43,9 +43,10 @@ routing through them.
       cross-record dependencies (NAVI indexes NAVMs, NAVMs reference cell context).
       These need a tree-shaped abstraction the current encoder interface does not
       provide.
-    - PGRE (placed grenade) is a cell-child like REFR/ACHR/ACRE but lives in a
-      different RecordCollection list; once the cell-children dispatch lands it's a
-      simple repeat of the placed-reference encoder pattern.
+    - PGRE (placed grenade) — encoder primitive + planner wrapper landed in Tier 7a
+      (`PgreEncoder` / `PlannedPgreEncoder`); cell-children dispatch routing still
+      pending because `PlacedGrenadeRecord` doesn't yet carry a parent-cell FormID
+      and `PlanCellSectionBuilder` doesn't iterate the PGRE bucket.
 
 - **CELL.New disposition.** `CellEncoder.Encode` only emits the override-mutable
   subrecords (DATA/XCLC); new CELLs require the full subrecord stream that
