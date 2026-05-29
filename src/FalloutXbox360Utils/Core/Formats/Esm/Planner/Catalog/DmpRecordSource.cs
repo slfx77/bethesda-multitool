@@ -113,6 +113,12 @@ public sealed class DmpRecordSource
             ["LSCT"] = c => c.LoadScreenTypes.Select(r => (r.FormId, (object)r)),
             ["REGN"] = c => c.Regions.Select(r => (r.FormId, (object)r)),
             ["SCOL"] = c => c.StaticCollections.Select(r => (r.FormId, (object)r)),
+            // Tier 5a cleanup — remaining trivial top-level encoders.
+            ["ALOC"] = c => c.AudioLocationControllers.Select(r => (r.FormId, (object)r)),
+            ["CCRD"] = c => c.CaravanCards.Select(r => (r.FormId, (object)r)),
+            ["CMNY"] = c => c.CaravanMoney.Select(r => (r.FormId, (object)r)),
+            ["CDCK"] = c => c.CaravanDecks.Select(r => (r.FormId, (object)r)),
+            ["FLST"] = c => c.FormLists.Select(r => (r.FormId, (object)r)),
         };
 
     private readonly RecordCollection _collection;

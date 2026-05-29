@@ -123,5 +123,10 @@ public static class PlannedEncoders
         yield return new PlannedLsctEncoder();
         yield return new PlannedRegnEncoder();
         yield return new PlannedScolEncoder();
+        yield return new PlannedAlocEncoder();
+        yield return new PlannedCcrdEncoder();
+        yield return new PlannedCmnyEncoder();
+        yield return new PlannedCdckEncoder();
+        yield return new PlannedFlstEncoder();
     }
 }
