@@ -109,5 +109,19 @@ public static class PlannedEncoders
         yield return new PlannedCpthEncoder();
         yield return new PlannedDialEncoder();
         yield return new PlannedMesgEncoder();
+
+        // Tier 5a — remaining top-level world / misc encoders. Cell-children types
+        // (REFR/ACHR/ACRE/LAND/NAVM/PGRE) ship in Tier 5b once cell-pipeline integration
+        // routes their emission through the planner.
+        yield return new PlannedWrldEncoder();
+        yield return new PlannedLighEncoder();
+        yield return new PlannedFurnEncoder();
+        yield return new PlannedWatrEncoder();
+        yield return new PlannedWthrEncoder();
+        yield return new PlannedLgtmEncoder();
+        yield return new PlannedEczEncoder();
+        yield return new PlannedLsctEncoder();
+        yield return new PlannedRegnEncoder();
+        yield return new PlannedScolEncoder();
     }
 }

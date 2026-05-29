@@ -100,6 +100,19 @@ public sealed class DmpRecordSource
             ["CPTH"] = c => c.CameraPaths.Select(r => (r.FormId, (object)r)),
             ["DIAL"] = c => c.DialogTopics.Select(r => (r.FormId, (object)r)),
             ["MESG"] = c => c.Messages.Select(r => (r.FormId, (object)r)),
+            // Tier 5a — remaining top-level world / misc encoders. The cell-children
+            // record types (REFR/ACHR/ACRE/LAND/NAVM/PGRE) ship in Tier 5b along with
+            // the cell-pipeline integration that nests them under CELL Children GRUPs.
+            ["WRLD"] = c => c.Worldspaces.Select(r => (r.FormId, (object)r)),
+            ["LIGH"] = c => c.Lights.Select(r => (r.FormId, (object)r)),
+            ["FURN"] = c => c.Furniture.Select(r => (r.FormId, (object)r)),
+            ["WATR"] = c => c.Water.Select(r => (r.FormId, (object)r)),
+            ["WTHR"] = c => c.Weather.Select(r => (r.FormId, (object)r)),
+            ["LGTM"] = c => c.LightingTemplates.Select(r => (r.FormId, (object)r)),
+            ["ECZN"] = c => c.EncounterZones.Select(r => (r.FormId, (object)r)),
+            ["LSCT"] = c => c.LoadScreenTypes.Select(r => (r.FormId, (object)r)),
+            ["REGN"] = c => c.Regions.Select(r => (r.FormId, (object)r)),
+            ["SCOL"] = c => c.StaticCollections.Select(r => (r.FormId, (object)r)),
         };
 
     private readonly RecordCollection _collection;
