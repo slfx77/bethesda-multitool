@@ -1107,11 +1107,20 @@ public sealed class PluginBuilder
         var dispositionEngine = new FalloutXbox360Utils.Core.Formats.Esm.Planner.Disposition.DispositionEngine(
             new FalloutXbox360Utils.Core.Formats.Esm.Planner.Disposition.IDispositionPolicy[]
             {
+                new FalloutXbox360Utils.Core.Formats.Esm.Planner.Disposition.Policies.ScriptDispositionPolicy(),
+                new FalloutXbox360Utils.Core.Formats.Esm.Planner.Disposition.Policies.RuntimeStatePolicy(),
                 new FalloutXbox360Utils.Core.Formats.Esm.Planner.Disposition.Policies.DefaultDispositionPolicy(),
             });
         var degradationPolicy = new FalloutXbox360Utils.Core.Formats.Esm.Planner.References.DegradationPolicy();
+        degradationPolicy.SetDefaultForType(
+            "SCPT",
+            FalloutXbox360Utils.Core.Formats.Esm.Planner.References.DanglingAction.DropSubrecord);
         var referenceResolver = new FalloutXbox360Utils.Core.Formats.Esm.Planner.References.ReferenceResolver(
-            [], degradationPolicy);
+            new FalloutXbox360Utils.Core.Formats.Esm.Planner.References.IRecordReferenceWalker[]
+            {
+                new FalloutXbox360Utils.Core.Formats.Esm.Planner.References.Walkers.ScriptReferenceWalker(),
+            },
+            degradationPolicy);
 
         var esmPlanner = new FalloutXbox360Utils.Core.Formats.Esm.Planner.EsmPlanner(
             dispositionEngine, allocator, referenceResolver);
