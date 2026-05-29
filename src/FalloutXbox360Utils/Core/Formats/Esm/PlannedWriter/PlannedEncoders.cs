@@ -100,5 +100,14 @@ public static class PlannedEncoders
         yield return new PlannedCreaEncoder();
         yield return new PlannedQustEncoder();
         yield return new PlannedInfoEncoder();
+
+        // Tier 4 — cross-record coordination encoders. PACK PLDT degradation still
+        // happens inside legacy EncodeNew transitionally; planner-side downgrade via
+        // ResolvedRefAction.DowngradeContainer is a Tier 4 follow-up. REFR/ACHR/ACRE
+        // (placed refs) emit under CELL Children GRUPs and ship in Tier 5.
+        yield return new PlannedPackEncoder();
+        yield return new PlannedCpthEncoder();
+        yield return new PlannedDialEncoder();
+        yield return new PlannedMesgEncoder();
     }
 }

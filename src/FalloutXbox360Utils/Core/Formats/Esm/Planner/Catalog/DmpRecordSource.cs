@@ -95,6 +95,11 @@ public sealed class DmpRecordSource
             ["CREA"] = c => c.Creatures.Select(r => (r.FormId, (object)r)),
             ["QUST"] = c => c.Quests.Select(r => (r.FormId, (object)r)),
             ["INFO"] = c => c.Dialogues.Select(r => (r.FormId, (object)r)),
+            // Tier 4 — cross-record coordination trivials.
+            ["PACK"] = c => c.Packages.Select(r => (r.FormId, (object)r)),
+            ["CPTH"] = c => c.CameraPaths.Select(r => (r.FormId, (object)r)),
+            ["DIAL"] = c => c.DialogTopics.Select(r => (r.FormId, (object)r)),
+            ["MESG"] = c => c.Messages.Select(r => (r.FormId, (object)r)),
         };
 
     private readonly RecordCollection _collection;
