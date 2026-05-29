@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using FalloutXbox360Utils.Core.Formats.Esm.Planner.Cells;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Planner;
 
@@ -55,4 +56,26 @@ public sealed record EmitPlan
 
     /// <summary>Top-level plan metadata: master path, NextObjectId, encoder coverage, etc.</summary>
     public required PlanMetadata Meta { get; init; }
+
+    /// <summary>
+    ///     Per-cell decisions for cells the planner owns. Empty when the planner does not
+    ///     own the cell hierarchy (the default; legacy <c>CellGrupBuilder</c> runs). Populated
+    ///     once <c>"CELL"</c> appears in <c>PlannerEnabledRecordTypes</c> (Tier 5b.5+).
+    /// </summary>
+    public ImmutableDictionary<uint, CellPlan> CellsByFormId { get; init; } =
+        ImmutableDictionary<uint, CellPlan>.Empty;
+
+    /// <summary>
+    ///     Per-worldspace decisions for WRLD records whose cells the planner owns. Empty
+    ///     until the planner takes over the cell hierarchy.
+    /// </summary>
+    public ImmutableDictionary<uint, WorldspacePlan> WorldspacesByFormId { get; init; } =
+        ImmutableDictionary<uint, WorldspacePlan>.Empty;
+
+    /// <summary>
+    ///     New NAVM entries the planner has staged for NAVI override synthesis at write
+    ///     time. The <c>PlannedNaviEncoder</c> consumes this list once all cells emit.
+    /// </summary>
+    public ImmutableArray<PlannedNavmEntry> NavmEntries { get; init; } =
+        ImmutableArray<PlannedNavmEntry>.Empty;
 }
