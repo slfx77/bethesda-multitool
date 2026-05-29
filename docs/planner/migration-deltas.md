@@ -13,6 +13,8 @@ deltas so reviewers know what shape future entries will take.
 
 _None recorded yet — Tiers 1–5a all ship strict byte-exact for every ported type._
 
+> The C# `MigrationDeltaRegistry.Default` mirrors this table; `MigrationDeltaMarkdownSyncTests` keeps the two lists in step by DELTA-NNN id.
+
 ## Tier 5b — cell-children pipeline (architectural gap)
 
 The per-encoder migration pattern doesn't carry the rest of the way. Tier 5b is
