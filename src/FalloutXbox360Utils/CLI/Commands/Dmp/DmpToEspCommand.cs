@@ -1,5 +1,6 @@
 using System.CommandLine;
 using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.PlannedWriter;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
@@ -136,6 +137,18 @@ public static class DmpToEspCommand
         };
         command.Options.Add(skipRecordTypeOpt);
 
+        var plannerTypesOpt = new Option<string[]>("--planner-types")
+        {
+            Description =
+                "Repeatable: record-type signature (STAT, WEAP, etc.) to route through the " +
+                "two-pass planner instead of legacy emission. Use 'all' for every ported " +
+                "encoder. Empty (default) = legacy emission for every type. CELL is a valid " +
+                "token; opting it in activates the planner's cell-hierarchy writer via " +
+                "EspAssembler dispatch.",
+            AllowMultipleArgumentsPerToken = true,
+        };
+        command.Options.Add(plannerTypesOpt);
+
         command.SetAction(async (parseResult, ct) =>
         {
             var dmp = parseResult.GetValue(dmpArg)!;
@@ -161,11 +174,13 @@ public static class DmpToEspCommand
             var skipRecordTypes = new HashSet<string>(
                 skipRecordTypeArgs.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()),
                 StringComparer.Ordinal);
+            var plannerTypesArgs = parseResult.GetValue(plannerTypesOpt) ?? [];
+            var plannerTypes = ResolvePlannerTypes(plannerTypesArgs);
 
             await RunAsync(dmp, pcEsm, output, author, description, compress, validate, verbose,
                 secondaryData, secondaryData360, packAssets, writeMissingList, dialogueAudioCsv, overrideVanilla,
                 disableRefrEditorIdRemap, replaceCellTemporaries, cellAuthorityPath,
-                skipWorldspaceFormIds, skipRecordTypes, ct);
+                skipWorldspaceFormIds, skipRecordTypes, plannerTypes, ct);
         });
 
         return command;
@@ -191,6 +206,7 @@ public static class DmpToEspCommand
         string? cellAuthorityPath,
         HashSet<uint> skipWorldspaceFormIds,
         HashSet<string> skipRecordTypes,
+        HashSet<string> plannerEnabledRecordTypes,
         CancellationToken ct)
     {
         if (!File.Exists(dmpPath))
@@ -253,6 +269,7 @@ public static class DmpToEspCommand
             CellWorldspaceAuthorityWorldspaceNames = authorityLoad.WorldspaceNames,
             SkipWorldspaceFormIds = skipWorldspaceFormIds,
             SkipRecordTypes = skipRecordTypes,
+            PlannerEnabledRecordTypes = plannerEnabledRecordTypes,
             DialogueTextOverridesCsvPaths = dialogueAudioCsvPaths
         };
 
@@ -266,6 +283,12 @@ public static class DmpToEspCommand
         {
             AnsiConsole.MarkupLine(
                 $"[yellow]Skipping record types:[/] {string.Join(", ", skipRecordTypes)}");
+        }
+
+        if (plannerEnabledRecordTypes.Count > 0)
+        {
+            AnsiConsole.MarkupLine(
+                $"[cyan]Planner-enabled types:[/] {string.Join(", ", plannerEnabledRecordTypes.OrderBy(t => t, StringComparer.Ordinal))}");
         }
 
         var inputs = new DmpToEspInputs
@@ -343,6 +366,55 @@ public static class DmpToEspCommand
             AnsiConsole.MarkupLine($"[red]✗ Conversion failed:[/] {Markup.Escape(result.ErrorMessage ?? "(unknown)")}");
             Environment.Exit(1);
         }
+    }
+
+    /// <summary>
+    ///     Resolve the <c>--planner-types</c> argument list into the set written into
+    ///     <see cref="PluginBuildOptions.PlannerEnabledRecordTypes" />. Special-cases
+    ///     <c>"all"</c> → every record type the planner registry currently knows. Unknown
+    ///     types print a red error + exit code 1 so a typo can't silently fall back to
+    ///     legacy emission.
+    /// </summary>
+    internal static HashSet<string> ResolvePlannerTypes(string[] args)
+    {
+        var result = new HashSet<string>(StringComparer.Ordinal);
+        if (args.Length == 0)
+        {
+            return result;
+        }
+
+        var known = PlannedEncoders.KnownRecordTypes().ToHashSet(StringComparer.Ordinal);
+
+        foreach (var raw in args)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                continue;
+            }
+
+            var token = raw.Trim();
+            if (string.Equals(token, "all", StringComparison.OrdinalIgnoreCase))
+            {
+                foreach (var type in known)
+                {
+                    result.Add(type);
+                }
+                continue;
+            }
+
+            if (!known.Contains(token))
+            {
+                AnsiConsole.MarkupLine(
+                    $"[red]Error:[/] unknown planner type '{Markup.Escape(token)}'. " +
+                    $"Valid types: {string.Join(", ", known.OrderBy(t => t, StringComparer.Ordinal))}");
+                Environment.Exit(1);
+                return result;
+            }
+
+            result.Add(token);
+        }
+
+        return result;
     }
 
     /// <summary>
