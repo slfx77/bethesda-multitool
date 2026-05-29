@@ -10,6 +10,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using Xunit;
+using CellRecord = FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World.CellRecord;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Planner.Cells;
 
@@ -140,6 +141,71 @@ public sealed class PlanCellSectionBuilderParityTests
             Context = context,
             CellRecordBytes = CellGrupBuilder.ReconstructRecordBytes(master),
             PersistentChildRecords = [legacyChildBytes],
+            VwdChildRecords = [],
+            TemporaryChildRecords = [],
+        };
+        var legacyBytes = CellGrupBuilder.BuildCellSection(
+            [legacyBundle], new Dictionary<uint, ParsedMainRecord>(), null);
+
+        Assert.Equal(legacyBytes, plannerBytes);
+    }
+
+    [Fact]
+    public void New_Interior_Cell_Emits_Through_Planner_With_Byte_Parity()
+    {
+        var cellModel = new CellRecord
+        {
+            FormId = 0x01000801,
+            EditorId = "TestNewCell",
+            Flags = 0x01, // Interior.
+        };
+        var context = new PcEsmCellContext
+        {
+            CellFormId = 0x01000801,
+            IsInterior = true,
+            BlockGroupType = 2,
+            SubblockGroupType = 3,
+            BlockLabel = [1, 0, 0, 0],
+            SubblockLabel = [2, 0, 0, 0],
+        };
+        var cellPlan = new CellPlan
+        {
+            CellFormId = 0x01000801,
+            CellRecordPlan = new RecordPlan
+            {
+                Type = "CELL",
+                Disposition = RecordDisposition.New,
+                FormId = 0x01000801,
+                Model = cellModel,
+                References = ImmutableArray<ResolvedRef>.Empty,
+                ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+                Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
+            },
+            Context = context,
+            PersistentChildren = ImmutableArray<RecordPlan>.Empty,
+            VwdChildren = ImmutableArray<RecordPlan>.Empty,
+            TemporaryChildren = ImmutableArray<RecordPlan>.Empty,
+        };
+
+        var plan = MakeEmptyPlan() with
+        {
+            CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(0x01000801, cellPlan),
+        };
+
+        var builder = new PlanCellSectionBuilder();
+        var plannerBytes = builder.BuildCellSection(
+            plan, new Dictionary<uint, ParsedMainRecord>(), new PluginBuildOptions { CompressRecords = false });
+
+        // Build the equivalent legacy bytes by encoding the CELL through the same primitives.
+        var encoded = new CellEncoder().Encode(cellModel);
+        var legacyCellBytes = PluginRecordByteBuilder.BuildNewRecordBytes(
+            "CELL", 0x01000801u, 0u, encoded.Subrecords);
+        var legacyBundle = new CellOverrideBundle
+        {
+            CellFormId = 0x01000801,
+            Context = context,
+            CellRecordBytes = legacyCellBytes,
+            PersistentChildRecords = [],
             VwdChildRecords = [],
             TemporaryChildRecords = [],
         };

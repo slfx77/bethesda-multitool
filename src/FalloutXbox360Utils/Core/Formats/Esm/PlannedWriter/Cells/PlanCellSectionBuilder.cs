@@ -58,12 +58,11 @@ public sealed class PlanCellSectionBuilder
                 continue;
             }
 
-            if (cellPlan.CellRecordPlan.Master is null)
+            var cellRecordBytes = EncodeCellAnchor(cellPlan, options);
+            if (cellRecordBytes is null)
             {
-                continue; // New CELLs deferred; require fresh anchor encoding (Tier 6.5).
+                continue; // Skip cells we can't anchor (no master + no DMP model).
             }
-
-            var cellRecordBytes = CellGrupBuilder.ReconstructRecordBytes(cellPlan.CellRecordPlan.Master);
 
             bundles.Add(new CellOverrideBundle
             {
@@ -77,6 +76,36 @@ public sealed class PlanCellSectionBuilder
         }
 
         return bundles;
+    }
+
+    /// <summary>
+    ///     Produce the CELL record bytes the bundle hands to legacy GRUP framing. For
+    ///     KeepMaster / Override cells the master byte slice is reused verbatim; for
+    ///     <see cref="RecordDisposition.New" /> cells the CELL is fresh-encoded through
+    ///     <see cref="CellEncoder" /> + <see cref="PluginRecordByteBuilder.BuildNewRecordBytes" />.
+    ///     Returns null when neither path is available (e.g. New disposition with no model).
+    /// </summary>
+    private static byte[]? EncodeCellAnchor(CellPlan cellPlan, PluginBuildOptions options)
+    {
+        if (cellPlan.CellRecordPlan.Master is { } master)
+        {
+            return CellGrupBuilder.ReconstructRecordBytes(master);
+        }
+
+        if (cellPlan.CellRecordPlan.Model is not CellRecord cellModel)
+        {
+            return null;
+        }
+
+        var encoded = new CellEncoder().Encode(cellModel);
+        if (encoded.Subrecords.Count == 0)
+        {
+            return null;
+        }
+
+        var flags = options.CompressRecords ? CompressedFlag : 0u;
+        return PluginRecordByteBuilder.BuildNewRecordBytes(
+            "CELL", cellPlan.CellFormId, flags, encoded.Subrecords);
     }
 
     private static IReadOnlyList<byte[]> EncodeChildren(
