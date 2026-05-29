@@ -1,3 +1,5 @@
+using FalloutXbox360Utils.Core.Formats.Esm.PlannedWriter.Cells;
+using FalloutXbox360Utils.Core.Formats.Esm.Planner;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Cell;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
@@ -8,8 +10,13 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Output;
 
 internal sealed class EspAssembler(RecordEncoderRegistry encoderRegistry)
 {
+    private readonly PlanCellSectionBuilder _planCellSectionBuilder = new();
+
     /// <summary>
     ///     Concatenates TES4, emitted top-level GRUPs, and the cell hierarchy into final ESP bytes.
+    ///     The optional <paramref name="emitPlan" /> activates the planner-owned cell pipeline
+    ///     when <c>options.PlannerEnabledRecordTypes</c> contains <c>"CELL"</c>; otherwise the
+    ///     legacy <see cref="CellGrupBuilder" /> runs against <paramref name="bundles" />.
     /// </summary>
     public byte[] Assemble(
         PluginBuildOptions options,
@@ -19,7 +26,8 @@ internal sealed class EspAssembler(RecordEncoderRegistry encoderRegistry)
         IReadOnlyList<CellOverrideBundle> bundles,
         IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId,
         FormIdAllocator allocator,
-        IReadOnlyDictionary<uint, NewWorldspaceEntry>? newWorldspacesByDmpFormId)
+        IReadOnlyDictionary<uint, NewWorldspaceEntry>? newWorldspacesByDmpFormId,
+        EmitPlan? emitPlan = null)
     {
         var optionsForBuild = options with { MasterFileSize = masterFileSize };
 
@@ -56,10 +64,14 @@ internal sealed class EspAssembler(RecordEncoderRegistry encoderRegistry)
             emittedTypes.Add(kvp.Key);
         }
 
-        var cellSectionBytes = CellGrupBuilder.BuildCellSection(
-            bundles,
-            pcRecordsByFormId,
-            newWorldspacesByDmpFormId);
+        // Two-pass migration switch: when "CELL" is in PlannerEnabledRecordTypes the
+        // planner owns the entire cell hierarchy (CELL / REFR / ACHR / ACRE / LAND /
+        // NAVM / NAVI / WRLD-with-cells). Per-record opt-in is incoherent here — the
+        // cell tree is structurally atomic — so a single sentinel ("CELL") activates
+        // the whole pipeline.
+        var cellSectionBytes = options.PlannerEnabledRecordTypes.Contains("CELL") && emitPlan is not null
+            ? _planCellSectionBuilder.BuildCellSection(emitPlan, pcRecordsByFormId, options)
+            : CellGrupBuilder.BuildCellSection(bundles, pcRecordsByFormId, newWorldspacesByDmpFormId);
 
         var nextObjectId = allocator.HasAllocations ? allocator.NextObjectId : 0x800u;
         var tes4 = Tes4HeaderBuilder.Build(optionsForBuild, (uint)stats.RecordsEmitted, nextObjectId);
