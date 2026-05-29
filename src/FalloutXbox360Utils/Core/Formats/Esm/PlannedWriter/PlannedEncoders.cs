@@ -27,6 +27,15 @@ public static class PlannedEncoders
     }
 
     /// <summary>
+    ///     Distinct record-type signatures the planner pipeline can emit. Derived from
+    ///     <see cref="BuildAll" /> so newly-registered encoders are picked up automatically.
+    ///     Used by the CLI's <c>--planner-types all</c> resolution and by the aggregate
+    ///     parity harness to enumerate the encoder coverage.
+    /// </summary>
+    public static IEnumerable<string> KnownRecordTypes() =>
+        BuildAll().Select(e => e.RecordType).Distinct(StringComparer.Ordinal);
+
+    /// <summary>
     ///     Enumerate every planned encoder. Tier 1+ extends this list.
     /// </summary>
     public static IEnumerable<IPlannedRecordEncoder> BuildAll()
