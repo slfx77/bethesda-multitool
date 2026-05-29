@@ -1115,10 +1115,39 @@ public sealed class PluginBuilder
         degradationPolicy.SetDefaultForType(
             "SCPT",
             FalloutXbox360Utils.Core.Formats.Esm.Planner.References.DanglingAction.DropSubrecord);
+        degradationPolicy.SetDefaultForType(
+            "INFO",
+            FalloutXbox360Utils.Core.Formats.Esm.Planner.References.DanglingAction.DropSubrecord);
+        degradationPolicy.SetDefaultForType(
+            "PACK",
+            FalloutXbox360Utils.Core.Formats.Esm.Planner.References.DanglingAction.DropSubrecord);
+        // PACK PLDT/PLD2 union dangles reshape the location subrecord to Type 2 instead of
+        // dropping it, matching the v51 fix's behavior. The reshape constants are documented
+        // on ContainerDowngrade.
+        var pldtDowngrade = new FalloutXbox360Utils.Core.Formats.Esm.Planner.ContainerDowngrade
+        {
+            ContainerSignature = "PLDT",
+            FromShape = "Type 0 (NearReference)",
+            ToShape = "Type 2 (NearCurrentLocation)",
+        };
+        var pld2Downgrade = new FalloutXbox360Utils.Core.Formats.Esm.Planner.ContainerDowngrade
+        {
+            ContainerSignature = "PLD2",
+            FromShape = "Type 0 (NearReference)",
+            ToShape = "Type 2 (NearCurrentLocation)",
+        };
+        degradationPolicy.SetRule(
+            "PACK", "PLDT.Union",
+            FalloutXbox360Utils.Core.Formats.Esm.Planner.References.DanglingAction.DowngradeContainer(pldtDowngrade));
+        degradationPolicy.SetRule(
+            "PACK", "PLD2.Union",
+            FalloutXbox360Utils.Core.Formats.Esm.Planner.References.DanglingAction.DowngradeContainer(pld2Downgrade));
         var referenceResolver = new FalloutXbox360Utils.Core.Formats.Esm.Planner.References.ReferenceResolver(
             new FalloutXbox360Utils.Core.Formats.Esm.Planner.References.IRecordReferenceWalker[]
             {
                 new FalloutXbox360Utils.Core.Formats.Esm.Planner.References.Walkers.ScriptReferenceWalker(),
+                new FalloutXbox360Utils.Core.Formats.Esm.Planner.References.Walkers.PackageReferenceWalker(),
+                new FalloutXbox360Utils.Core.Formats.Esm.Planner.References.Walkers.InfoReferenceWalker(),
             },
             degradationPolicy);
 
