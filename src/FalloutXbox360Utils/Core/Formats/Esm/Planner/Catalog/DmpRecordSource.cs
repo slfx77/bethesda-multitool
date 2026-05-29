@@ -74,6 +74,27 @@ public sealed class DmpRecordSource
             ["ACTI"] = c => c.Activators.Select(r => (r.FormId, (object)r)),
             ["DEBR"] = c => c.Debris.Select(r => (r.FormId, (object)r)),
             ["CSTY"] = c => c.CombatStyles.Select(r => (r.FormId, (object)r)),
+            // Tier 3 — complex-ref encoders.
+            ["SCPT"] = c => c.Scripts.Select(r => (r.FormId, (object)r)),
+            ["PERK"] = c => c.Perks.Select(r => (r.FormId, (object)r)),
+            ["CONT"] = c => c.Containers.Select(r => (r.FormId, (object)r)),
+            ["IDLE"] = c => c.IdleAnimations.Select(r => (r.FormId, (object)r)),
+            ["TERM"] = c => c.Terminals.Select(r => (r.FormId, (object)r)),
+            // LeveledList: one model serves LVLI/LVLN/LVLC — partition by ListType so each
+            // signature's GRUP gets only its own records (matches EnumerateModelsByType).
+            ["LVLI"] = c => c.LeveledLists
+                .Where(r => r.ListType == "LVLI")
+                .Select(r => (r.FormId, (object)r)),
+            ["LVLN"] = c => c.LeveledLists
+                .Where(r => r.ListType == "LVLN")
+                .Select(r => (r.FormId, (object)r)),
+            ["LVLC"] = c => c.LeveledLists
+                .Where(r => r.ListType == "LVLC")
+                .Select(r => (r.FormId, (object)r)),
+            ["NPC_"] = c => c.Npcs.Select(r => (r.FormId, (object)r)),
+            ["CREA"] = c => c.Creatures.Select(r => (r.FormId, (object)r)),
+            ["QUST"] = c => c.Quests.Select(r => (r.FormId, (object)r)),
+            ["INFO"] = c => c.Dialogues.Select(r => (r.FormId, (object)r)),
         };
 
     private readonly RecordCollection _collection;

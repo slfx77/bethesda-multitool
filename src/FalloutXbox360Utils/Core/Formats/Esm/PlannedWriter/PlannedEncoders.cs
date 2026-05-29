@@ -1,3 +1,4 @@
+using FalloutXbox360Utils.Core.Formats.Esm.PlannedWriter.Encoders.ComplexRef;
 using FalloutXbox360Utils.Core.Formats.Esm.PlannedWriter.Encoders.SimpleRef;
 using FalloutXbox360Utils.Core.Formats.Esm.PlannedWriter.Encoders.Trivial;
 
@@ -81,5 +82,23 @@ public static class PlannedEncoders
         yield return new PlannedActiEncoder();
         yield return new PlannedDebrEncoder();
         yield return new PlannedCstyEncoder();
+
+        // Tier 3 — complex FormID-ref encoders. Transitional pass-through to legacy
+        // EncodeNew(model, validFormIds, remapTable); FormID resolution comes from the
+        // plan's emit set. End-to-end parity for records that reference engine-hardcoded
+        // FormIDs or master-child FormIDs (player ref, placed refs) needs additional plan
+        // plumbing — synthetic tests with no outgoing refs still pass byte-for-byte.
+        yield return new PlannedScptEncoder();
+        yield return new PlannedPerkEncoder();
+        yield return new PlannedContEncoder();
+        yield return new PlannedIdleEncoder();
+        yield return new PlannedTermEncoder();
+        yield return new PlannedLvliEncoder("LVLI");
+        yield return new PlannedLvliEncoder("LVLN");
+        yield return new PlannedLvliEncoder("LVLC");
+        yield return new PlannedNpcEncoder();
+        yield return new PlannedCreaEncoder();
+        yield return new PlannedQustEncoder();
+        yield return new PlannedInfoEncoder();
     }
 }
