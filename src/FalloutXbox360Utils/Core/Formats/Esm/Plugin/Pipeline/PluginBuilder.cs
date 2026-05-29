@@ -458,7 +458,9 @@ public sealed class PluginBuilder
             // PlannerEnabledRecordTypes, build the EmitPlan once here so BuildGrupForType's
             // dispatch shim can route those types through PlanWriter. Skipped entirely when
             // the option set is empty (the default), so the legacy pipeline runs unchanged.
-            BuildPlannerStateIfEnabled(pcRecordsList, dmpRecords, allocator, inputs);
+            BuildPlannerStateIfEnabled(
+                pcRecordsList, dmpRecords, allocator, inputs,
+                cellContexts, pcRecordsByFormId);
 
             // Phase 3: top-level record merging (GMST, GLOB, WEAP, …).
             _sink.OnPhaseStart("Merging top-level records", null);
@@ -1088,7 +1090,9 @@ public sealed class PluginBuilder
         IReadOnlyList<ParsedMainRecord> pcRecords,
         RecordCollection dmpRecords,
         FormIdAllocator allocator,
-        DmpToEspInputs inputs)
+        DmpToEspInputs inputs,
+        IReadOnlyDictionary<uint, PcEsmCellContext> masterCellContexts,
+        IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId)
     {
         _emitPlan = null;
         _planWriter = null;
@@ -1117,13 +1121,17 @@ public sealed class PluginBuilder
             dmpRecords,
             enabled,
             _masterFormIds ?? new HashSet<uint>(),
-            inputs.PcEsmPath);
+            inputs.PcEsmPath,
+            masterCellContexts: masterCellContexts,
+            masterRecordsByFormId: masterRecordsByFormId,
+            cellChildAllocator: allocator);
 
         _planWriter = new FalloutXbox360Utils.Core.Formats.Esm.PlannedWriter.PlanWriter(registry);
 
         _sink.Info("Two-pass planner",
             $"Built EmitPlan covering {enabled.Count} record type(s): " +
             $"{_emitPlan.Records.Length:N0} planned record(s), " +
+            $"{_emitPlan.CellsByFormId.Count:N0} cell plan(s), " +
             $"{_emitPlan.SourceToEmittedFormId.Count:N0} FormID allocation(s).",
             code: "planner.built");
     }

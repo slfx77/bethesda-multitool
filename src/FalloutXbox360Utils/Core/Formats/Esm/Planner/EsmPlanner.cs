@@ -2,9 +2,11 @@ using System.Collections.Immutable;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Planner.Allocation;
 using FalloutXbox360Utils.Core.Formats.Esm.Planner.Catalog;
+using FalloutXbox360Utils.Core.Formats.Esm.Planner.Cells;
 using FalloutXbox360Utils.Core.Formats.Esm.Planner.Disposition;
 using FalloutXbox360Utils.Core.Formats.Esm.Planner.References;
 using FalloutXbox360Utils.Core.Formats.Esm.Planner.Validation;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Cell;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Planner;
@@ -50,7 +52,10 @@ public sealed class EsmPlanner
         RecordCollection dmpRecords,
         IReadOnlySet<string> enabledTypes,
         IReadOnlySet<uint> masterFormIds,
-        string? masterPath)
+        string? masterPath,
+        IReadOnlyDictionary<uint, PcEsmCellContext>? masterCellContexts = null,
+        IReadOnlyDictionary<uint, ParsedMainRecord>? masterRecordsByFormId = null,
+        FormIdAllocator? cellChildAllocator = null)
     {
         var coverage = enabledTypes.ToImmutableHashSet(StringComparer.Ordinal);
 
@@ -63,13 +68,27 @@ public sealed class EsmPlanner
         var dmpSource = new DmpRecordSource(dmpRecords);
         var catalog = RecordCatalog.Build(masterSource, dmpSource, enabledTypes);
 
-        if (catalog.Count == 0)
+        var cellSection = enabledTypes.Contains("CELL")
+            ? RunCellSection(dmpRecords, masterFormIds, masterCellContexts, masterRecordsByFormId, cellChildAllocator)
+            : null;
+
+        if (catalog.Count == 0 && cellSection is null)
         {
             return Empty(coverage, masterPath);
         }
 
         var decisions = _disposition.Decide(catalog);
         var sourceToEmitted = _allocation.AllocateAll(decisions);
+
+        // Merge cell-child allocations into the plan's source→emitted map so reference
+        // resolution sees them as live FormIDs.
+        if (cellSection is { } cs)
+        {
+            sourceToEmitted = sourceToEmitted
+                .AddRange(cs.CellChildSourceToEmitted)
+                .AddRange(cs.NavmSourceToEmitted);
+        }
+
         var emittedFormIds = BuildEmittedFormIds(decisions, sourceToEmitted, masterFormIds);
         var resolvedRefsByIndex = _references.ResolveAll(decisions, emittedFormIds, sourceToEmitted);
 
@@ -82,7 +101,7 @@ public sealed class EsmPlanner
             indexByFormId[ordered[i].FormId] = i;
         }
 
-        return new EmitPlan
+        var plan = new EmitPlan
         {
             Records = ordered,
             SourceToEmittedFormId = sourceToEmitted,
@@ -96,6 +115,40 @@ public sealed class EsmPlanner
                 PlannerCoverage = coverage,
             },
         };
+
+        if (cellSection is { } cellResult)
+        {
+            plan = plan with
+            {
+                CellsByFormId = cellResult.CellsByFormId,
+                WorldspacesByFormId = cellResult.WorldspacesByFormId,
+                NavmEntries = cellResult.NavmEntries,
+            };
+        }
+
+        return plan;
+    }
+
+    private static CellSectionPlanner.CellSectionResult? RunCellSection(
+        RecordCollection dmpRecords,
+        IReadOnlySet<uint> masterFormIds,
+        IReadOnlyDictionary<uint, PcEsmCellContext>? masterCellContexts,
+        IReadOnlyDictionary<uint, ParsedMainRecord>? masterRecordsByFormId,
+        FormIdAllocator? cellChildAllocator)
+    {
+        if (masterCellContexts is null || masterRecordsByFormId is null || cellChildAllocator is null)
+        {
+            return null; // Cell-section planning requires the master cell index + an allocator.
+        }
+
+        return new CellSectionPlanner().Plan(
+            masterCellContexts,
+            masterRecordsByFormId,
+            dmpRecords.Cells,
+            dmpRecords.NavMeshes,
+            dmpRecords.Worldspaces,
+            masterFormIds,
+            cellChildAllocator);
     }
 
     private static ImmutableHashSet<uint> BuildEmittedFormIds(
