@@ -53,6 +53,16 @@ internal static class PlannerTier1ParityHelper
 
         var plannerBytes = writer.BuildGrupForType(recordType, plan, options);
 
+        // Mirror legacy BuildGrupForType's "encoder returned empty Subrecords → skip the
+        // record + return empty GRUP" behavior (see PluginBuilder.cs:1331 / PluginBuilder
+        // anyEmitted = false → return []). Without this short-circuit a deliberately-empty
+        // encoder like AvifEncoder would falsely report a parity mismatch.
+        if (legacyEncoded.Subrecords.Count == 0)
+        {
+            Assert.Empty(plannerBytes);
+            return;
+        }
+
         var legacyRecordBytes = PluginRecordByteBuilder.BuildNewRecordBytes(
             recordType, formId, 0u, legacyEncoded.Subrecords);
         var legacyGrupBytes = TopLevelRecordEmitter.WrapInTopLevelGrup(recordType, legacyRecordBytes);

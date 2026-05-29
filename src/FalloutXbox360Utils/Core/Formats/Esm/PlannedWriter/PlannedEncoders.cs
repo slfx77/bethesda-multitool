@@ -56,5 +56,30 @@ public static class PlannedEncoders
         yield return new PlannedExplEncoder();
         yield return new PlannedMgefEncoder();
         yield return new PlannedProjEncoder();
+
+        // Tier 2 expansion — character/misc/world/AI trivials. Same delegate pattern as
+        // the simple-ref encoders above.
+        yield return new PlannedSounEncoder();
+        yield return new PlannedFactEncoder();
+        yield return new PlannedHairEncoder();
+        yield return new PlannedEyesEncoder();
+        yield return new PlannedHdptEncoder();
+        yield return new PlannedBptdEncoder();
+        yield return new PlannedAvifEncoder();
+        yield return new PlannedClasEncoder();
+        yield return new PlannedRaceEncoder();
+        yield return new PlannedRepuEncoder();
+        yield return new PlannedVtypEncoder();
+        yield return new PlannedChalEncoder();
+        yield return new PlannedIngrEncoder();
+        yield return new PlannedIpctEncoder();
+        yield return new PlannedLtexEncoder();
+        yield return new PlannedMicnEncoder();
+        yield return new PlannedMuscEncoder();
+        yield return new PlannedRcctEncoder();
+        yield return new PlannedTxstEncoder();
+        yield return new PlannedActiEncoder();
+        yield return new PlannedDebrEncoder();
+        yield return new PlannedCstyEncoder();
     }
 }
