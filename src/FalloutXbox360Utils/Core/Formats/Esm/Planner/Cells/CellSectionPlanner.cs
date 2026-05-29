@@ -71,7 +71,8 @@ public sealed class CellSectionPlanner
         }
 
         var cells = BuildCellPlans(decisions, navmsByCell, allocations, masterFormIds);
-        var worldspaces = BuildWorldspacePlans(worldspaceCatalog);
+        var (worldspaces, worldspaceSourceToEmitted) =
+            BuildWorldspacePlans(worldspaceCatalog, allocator);
 
         return new CellSectionResult
         {
@@ -80,6 +81,7 @@ public sealed class CellSectionPlanner
             NavmEntries = ImmutableArray<PlannedNavmEntry>.Empty,
             CellChildSourceToEmitted = allocations.PlacedRefSourceToEmitted,
             NavmSourceToEmitted = allocations.NavmSourceToEmitted,
+            WorldspaceSourceToEmitted = worldspaceSourceToEmitted,
         };
     }
 
@@ -259,10 +261,13 @@ public sealed class CellSectionPlanner
         };
     }
 
-    private static ImmutableDictionary<uint, WorldspacePlan> BuildWorldspacePlans(
-        IReadOnlyList<WorldspaceCatalog.WorldspaceCatalogEntry> worldspaceEntries)
+    private static (ImmutableDictionary<uint, WorldspacePlan> Plans,
+        ImmutableDictionary<uint, uint> SourceToEmitted) BuildWorldspacePlans(
+        IReadOnlyList<WorldspaceCatalog.WorldspaceCatalogEntry> worldspaceEntries,
+        FormIdAllocator allocator)
     {
         var worldspaces = ImmutableDictionary.CreateBuilder<uint, WorldspacePlan>();
+        var sourceToEmitted = ImmutableDictionary.CreateBuilder<uint, uint>();
 
         foreach (var entry in worldspaceEntries)
         {
@@ -274,15 +279,27 @@ public sealed class CellSectionPlanner
                 _ => throw new InvalidOperationException($"Unknown WorldspaceCatalogSource: {entry.Source}"),
             };
 
+            // DmpNew worldspaces get a plugin-range FormID up front so cell GRUPs can wrap
+            // their child cells under the allocated anchor. KeepMaster / Override keep the
+            // existing master FormID.
+            var emitFormId = disposition == RecordDisposition.New
+                ? allocator.Allocate()
+                : entry.WorldspaceFormId;
+
+            if (disposition == RecordDisposition.New)
+            {
+                sourceToEmitted[entry.WorldspaceFormId] = emitFormId;
+            }
+
             worldspaces.Add(entry.WorldspaceFormId, new WorldspacePlan
             {
-                WorldspaceFormId = entry.WorldspaceFormId,
+                WorldspaceFormId = emitFormId,
                 WorldspaceRecordPlan = new RecordPlan
                 {
                     Type = "WRLD",
                     Disposition = disposition,
-                    FormId = entry.WorldspaceFormId,
-                    SourceFormId = entry.DmpModel?.FormId,
+                    FormId = emitFormId,
+                    SourceFormId = entry.DmpModel?.FormId ?? entry.WorldspaceFormId,
                     Model = entry.DmpModel,
                     Master = null,
                     References = ImmutableArray<ResolvedRef>.Empty,
@@ -298,7 +315,7 @@ public sealed class CellSectionPlanner
             });
         }
 
-        return worldspaces.ToImmutable();
+        return (worldspaces.ToImmutable(), sourceToEmitted.ToImmutable());
     }
 
     /// <summary>
@@ -332,6 +349,7 @@ public sealed class CellSectionPlanner
         NavmEntries = ImmutableArray<PlannedNavmEntry>.Empty,
         CellChildSourceToEmitted = ImmutableDictionary<uint, uint>.Empty,
         NavmSourceToEmitted = ImmutableDictionary<uint, uint>.Empty,
+        WorldspaceSourceToEmitted = ImmutableDictionary<uint, uint>.Empty,
     };
 
     public sealed record CellSectionResult
@@ -341,5 +359,7 @@ public sealed class CellSectionPlanner
         public required ImmutableArray<PlannedNavmEntry> NavmEntries { get; init; }
         public required ImmutableDictionary<uint, uint> CellChildSourceToEmitted { get; init; }
         public required ImmutableDictionary<uint, uint> NavmSourceToEmitted { get; init; }
+        public ImmutableDictionary<uint, uint> WorldspaceSourceToEmitted { get; init; } =
+            ImmutableDictionary<uint, uint>.Empty;
     }
 }

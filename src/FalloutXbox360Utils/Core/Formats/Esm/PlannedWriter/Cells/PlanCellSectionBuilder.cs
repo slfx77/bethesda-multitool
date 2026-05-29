@@ -2,6 +2,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Planner;
 using FalloutXbox360Utils.Core.Formats.Esm.Planner.Cells;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Cell;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Output;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
@@ -35,8 +36,57 @@ public sealed class PlanCellSectionBuilder
             return null;
         }
 
+        var newWorldspaces = BuildNewWorldspaces(plan, options);
+
         return CellGrupBuilder.BuildCellSection(
-            bundles, masterByFormId, newWorldspacesByDmpFormId: null);
+            bundles, masterByFormId, newWorldspacesByDmpFormId: newWorldspaces);
+    }
+
+    /// <summary>
+    ///     Translate each <see cref="RecordDisposition.New" /> worldspace plan into the
+    ///     legacy <see cref="NewWorldspaceEntry" /> shape <see cref="CellGrupBuilder" />
+    ///     expects: keyed by source DMP FormID, value = emitted FormID + encoded record
+    ///     bytes. Subsumes legacy <c>PreEncodeNewWorldspacesWithCells</c>.
+    /// </summary>
+    private static Dictionary<uint, NewWorldspaceEntry>? BuildNewWorldspaces(
+        EmitPlan plan, PluginBuildOptions options)
+    {
+        if (plan.WorldspacesByFormId.IsEmpty)
+        {
+            return null;
+        }
+
+        Dictionary<uint, NewWorldspaceEntry>? result = null;
+
+        foreach (var wrldPlan in plan.WorldspacesByFormId.Values)
+        {
+            if (wrldPlan.WorldspaceRecordPlan.Disposition != RecordDisposition.New)
+            {
+                continue;
+            }
+
+            if (wrldPlan.WorldspaceRecordPlan.Model is not WorldspaceRecord wrld)
+            {
+                continue;
+            }
+
+            var encoded = WrldEncoder.EncodeNew(wrld);
+            if (encoded.Subrecords.Count == 0)
+            {
+                continue;
+            }
+
+            var flags = options.CompressRecords ? CompressedFlag : 0u;
+            var bytes = PluginRecordByteBuilder.BuildNewRecordBytes(
+                "WRLD", wrldPlan.WorldspaceFormId, flags, encoded.Subrecords);
+
+            // Key by source FormID so the legacy framing's lookup-by-DMP-FormID still works.
+            var sourceFormId = wrldPlan.WorldspaceRecordPlan.SourceFormId ?? wrldPlan.WorldspaceFormId;
+            result ??= [];
+            result[sourceFormId] = new NewWorldspaceEntry(wrldPlan.WorldspaceFormId, bytes);
+        }
+
+        return result;
     }
 
     /// <summary>

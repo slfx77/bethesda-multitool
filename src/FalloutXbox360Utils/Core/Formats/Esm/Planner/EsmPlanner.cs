@@ -81,12 +81,15 @@ public sealed class EsmPlanner
         var sourceToEmitted = _allocation.AllocateAll(decisions);
 
         // Merge cell-child allocations into the plan's source→emitted map so reference
-        // resolution sees them as live FormIDs.
+        // resolution sees them as live FormIDs. New worldspaces likewise contribute their
+        // source→emitted entries so any cell still pointing at the source FormID resolves
+        // to the allocated WRLD anchor at write time.
         if (cellSection is { } cs)
         {
             sourceToEmitted = sourceToEmitted
                 .AddRange(cs.CellChildSourceToEmitted)
-                .AddRange(cs.NavmSourceToEmitted);
+                .AddRange(cs.NavmSourceToEmitted)
+                .AddRange(cs.WorldspaceSourceToEmitted);
         }
 
         var emittedFormIds = BuildEmittedFormIds(decisions, sourceToEmitted, masterFormIds);
