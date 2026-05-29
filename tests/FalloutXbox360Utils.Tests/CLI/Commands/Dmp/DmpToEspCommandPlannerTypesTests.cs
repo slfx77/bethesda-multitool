@@ -13,17 +13,25 @@ namespace FalloutXbox360Utils.Tests.CLI.Commands.Dmp;
 public sealed class DmpToEspCommandPlannerTypesTests
 {
     [Fact]
-    public void Empty_Args_Yields_Empty_Set()
+    public void Empty_Args_Yield_Every_Known_Type()
     {
+        // Tier 7b flipped the default: no explicit --planner-types means planner-on for
+        // every signature. Resolver mirrors the PluginBuildOptions record default.
         var result = DmpToEspCommand.ResolvePlannerTypes([]);
-        Assert.Empty(result);
+        var expected = PlannedEncoders.KnownRecordTypes().ToHashSet(StringComparer.Ordinal);
+
+        Assert.Equal(expected, result);
     }
 
     [Fact]
-    public void Whitespace_Args_Are_Filtered()
+    public void Whitespace_Only_Args_Yield_Every_Known_Type()
     {
+        // Whitespace-only tokens contain no real input — equivalent to passing no
+        // tokens. Falls through to the implicit "all known" default.
         var result = DmpToEspCommand.ResolvePlannerTypes(["", "   ", "\t"]);
-        Assert.Empty(result);
+        var expected = PlannedEncoders.KnownRecordTypes().ToHashSet(StringComparer.Ordinal);
+
+        Assert.Equal(expected, result);
     }
 
     [Fact]
