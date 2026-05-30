@@ -74,15 +74,96 @@ public sealed class CellSectionPlanner
         var (worldspaces, worldspaceSourceToEmitted) =
             BuildWorldspacePlans(worldspaceCatalog, allocator);
 
+        var navmEntries = BuildNavmEntries(
+            dmpCells, dmpNavmeshes, allocations.NavmSourceToEmitted, worldspaceSourceToEmitted);
+
         return new CellSectionResult
         {
             CellsByFormId = cells,
             WorldspacesByFormId = worldspaces,
-            NavmEntries = ImmutableArray<PlannedNavmEntry>.Empty,
+            NavmEntries = navmEntries,
             CellChildSourceToEmitted = allocations.PlacedRefSourceToEmitted,
             NavmSourceToEmitted = allocations.NavmSourceToEmitted,
             WorldspaceSourceToEmitted = worldspaceSourceToEmitted,
         };
+    }
+
+    /// <summary>
+    ///     Build the PlannedNavmEntry list the writer hands to NavInfoMapBuilder so master's
+    ///     NAVI gets extended with NVMI/NVCI rows pointing at our new NAVM FormIDs. Without
+    ///     this the FNV runtime null-derefs at FalloutNV+0x0069E09A during plugin load when
+    ///     NavMeshInfoMap tries to resolve a new NAVM FormID. Mirrors the legacy emission
+    ///     pattern in PluginBuilder around line 3021.
+    /// </summary>
+    private static ImmutableArray<PlannedNavmEntry> BuildNavmEntries(
+        IReadOnlyList<CellRecord> dmpCells,
+        IReadOnlyList<NavMeshRecord> dmpNavmeshes,
+        ImmutableDictionary<uint, uint> navmSourceToEmitted,
+        ImmutableDictionary<uint, uint> worldspaceSourceToEmitted)
+    {
+        if (navmSourceToEmitted.IsEmpty)
+        {
+            return ImmutableArray<PlannedNavmEntry>.Empty;
+        }
+
+        var cellsByFormId = new Dictionary<uint, CellRecord>(dmpCells.Count);
+        foreach (var cell in dmpCells)
+        {
+            cellsByFormId[cell.FormId] = cell;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<PlannedNavmEntry>(navmSourceToEmitted.Count);
+        foreach (var navm in dmpNavmeshes)
+        {
+            if (!navmSourceToEmitted.TryGetValue(navm.FormId, out var emittedNavmFormId))
+            {
+                continue; // Master-resident NAVM or filtered out by CellChildAllocator.
+            }
+
+            if (!cellsByFormId.TryGetValue(navm.CellFormId, out var parentCell))
+            {
+                continue; // Orphan NAVM — no parent cell captured. Skip rather than crash.
+            }
+
+            // LocationFormId: interior cells use the cell FormID; exterior cells use the
+            // parent worldspace FormID. For new worldspaces we must use the EMITTED FormID
+            // (post-allocation), otherwise NavMeshInfoMap setup at FalloutNV+0x0069DFDC
+            // looks up a non-existent FormID and crashes. Matches legacy logic in
+            // PluginBuilder around line 3000.
+            uint locationFid;
+            if (parentCell.IsInterior)
+            {
+                locationFid = parentCell.FormId;
+            }
+            else if (parentCell.WorldspaceFormId is { } srcWrldId
+                     && worldspaceSourceToEmitted.TryGetValue(srcWrldId, out var emittedWrldId))
+            {
+                locationFid = emittedWrldId;
+            }
+            else if (parentCell.WorldspaceFormId is { } masterWrldId)
+            {
+                locationFid = masterWrldId;
+            }
+            else
+            {
+                locationFid = parentCell.FormId;
+            }
+
+            var nvvxBytes = navm.RawSubrecords
+                .FirstOrDefault(s => s.Signature == "NVVX").Bytes ?? [];
+
+            builder.Add(new PlannedNavmEntry
+            {
+                NavmFormId = emittedNavmFormId,
+                LocationFormId = locationFid,
+                IsInterior = parentCell.IsInterior,
+                GridX = parentCell.IsInterior ? 0 : parentCell.GridX ?? 0,
+                GridY = parentCell.IsInterior ? 0 : parentCell.GridY ?? 0,
+                NvvxBytes = nvvxBytes,
+            });
+        }
+
+        return builder.ToImmutable();
     }
 
     private static ImmutableDictionary<uint, CellPlan> BuildCellPlans(

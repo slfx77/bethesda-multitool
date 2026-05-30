@@ -608,24 +608,34 @@ public sealed class PluginBuilder
 
             // NAVI override: registers every newly-emitted NAVM in master's NavMeshInfoMap.
             // Required to prevent FalloutNV+0x0069E09A null-deref during plugin load (NavMesh
-            // walked by engine -> lookup in NavMeshInfoMap -> not found -> crash). Skip when
-            // we emitted no new NAVMs (master NAVI is canonical, no extension needed).
-            if (newNavmEntries.Count > 0
+            // walked by engine -> lookup in NavMeshInfoMap -> not found -> crash). When CELL
+            // is planner-routed, BuildCellOverrideBundles still runs (its result isn't used,
+            // but it walks the same DMP records) and may populate `newNavmEntries` partially;
+            // those entries are stale because the planner allocated different FormIDs. Use
+            // _emitPlan.NavmEntries when CELL is planner-routed, the legacy list otherwise.
+            var cellPlannerRouted = inputs.Options.PlannerEnabledRecordTypes.Contains("CELL");
+            var naviSource = cellPlannerRouted && _emitPlan is not null
+                ? _emitPlan.NavmEntries
+                    .Select(e => new NewNavmEntry(e.NavmFormId, e.LocationFormId, e.IsInterior,
+                        (short)e.GridX, (short)e.GridY, e.NvvxBytes.Length > 0 ? e.NvvxBytes : null))
+                    .ToList()
+                : newNavmEntries;
+            if (naviSource.Count > 0
                 && pcRecordsByFormId.TryGetValue(NavInfoMapBuilder.MasterNaviFormId, out var masterNavi)
                 && masterNavi.Header.Signature == "NAVI")
             {
-                var naviOverrideBytes = NavInfoMapBuilder.BuildNaviOverride(masterNavi, newNavmEntries, inputs.Options);
+                var naviOverrideBytes = NavInfoMapBuilder.BuildNaviOverride(masterNavi, naviSource, inputs.Options);
                 AppendOrCreateTopLevelRecord(grupBytesByType, "NAVI", naviOverrideBytes);
                 _sink.Info("Merging cell children",
-                    $"Emitted NAVI override with {newNavmEntries.Count:N0} new NVMI+NVCI entry pair(s) " +
-                    $"(extends master 0x{NavInfoMapBuilder.MasterNaviFormId:X8}). NavMeshInfoMap can now " +
-                    "resolve our new NAVM FormIDs at plugin load.",
+                    $"Emitted NAVI override with {naviSource.Count:N0} new NVMI+NVCI entry pair(s) " +
+                    $"(extends master 0x{NavInfoMapBuilder.MasterNaviFormId:X8}, source={(cellPlannerRouted ? "planner" : "legacy")}). " +
+                    "NavMeshInfoMap can now resolve our new NAVM FormIDs at plugin load.",
                     code: "navi.override-emitted");
             }
-            else if (newNavmEntries.Count > 0)
+            else if (naviSource.Count > 0)
             {
                 _sink.Warn("Merging cell children",
-                    $"Emitted {newNavmEntries.Count:N0} new NAVM(s) but master NAVI " +
+                    $"Emitted {naviSource.Count:N0} new NAVM(s) but master NAVI " +
                     $"(0x{NavInfoMapBuilder.MasterNaviFormId:X8}) was not in the PC ESM index — skipping NAVI override.",
                     code: "navi.master-missing");
             }
