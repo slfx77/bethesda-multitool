@@ -81,9 +81,4 @@ internal sealed class WorldViewData
     ///     the authority JSON is missing or lacks the section.
     /// </summary>
     public DanglingRefAttributions DanglingRefs { get; init; } = new();
-
-#if WINDOWS_GUI
-    /// <summary>Pre-rendered sprite registry for placed object rendering (loaded from render nif output).</summary>
-    public WorldMapSpriteRegistry? SpriteRegistry { get; set; }
-#endif
 }

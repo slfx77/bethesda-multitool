@@ -151,9 +151,6 @@
                 Checked="WaterCheckBox_Changed" Unchecked="WaterCheckBox_Changed" />
       <CheckBox x:Name="DisabledCheckBox" Content="Initially Disabled" IsChecked="False"
                 Checked="DisabledCheckBox_Changed" Unchecked="DisabledCheckBox_Changed" />
-      <CheckBox x:Name="SpritesCheckBox" Content="Sprites" IsChecked="False"
-                Checked="SpritesCheckBox_Changed" Unchecked="SpritesCheckBox_Changed"
-                ToolTipService.ToolTip="Load pre-rendered model sprites (from render nif output)" />
       <TextBlock x:Name="DanglingRefsLabel" Text="Dangling REFRs:" VerticalAlignment="Center"
                  FontSize="12"
                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />

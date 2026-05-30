@@ -586,20 +586,43 @@
 
             <!--  World map content  -->
             <Grid x:Name="WorldMapContent" Visibility="Collapsed">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" MinWidth="400" />
-                <ColumnDefinition Width="8" />
-                <ColumnDefinition Width="520" MinWidth="380" />
-              </Grid.ColumnDefinitions>
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+              </Grid.RowDefinitions>
 
-              <toolkit:GridSplitter Grid.Column="1" Style="{StaticResource ResizableSplitterStyle}" />
+              <!--  View mode toggle (2D vs 3D)  -->
+              <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
+                <TextBlock Text="View:" VerticalAlignment="Center"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <ComboBox x:Name="WorldViewModeComboBox" MinWidth="120"
+                          AutomationProperties.Name="World view mode"
+                          SelectedIndex="0"
+                          SelectionChanged="WorldViewMode_SelectionChanged">
+                  <ComboBoxItem Content="2D Map" />
+                  <ComboBoxItem Content="3D View" />
+                </ComboBox>
+              </StackPanel>
 
-              <!--  Left: Win2D map  -->
-              <local:WorldMapControl x:Name="WorldMapControl" Grid.Column="0"
-                                     InspectObject="WorldMap_InspectObject"
-                                     InspectCell="WorldMap_InspectCell" />
+              <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" MinWidth="400" />
+                  <ColumnDefinition Width="8" />
+                  <ColumnDefinition Width="520" MinWidth="380" />
+                </Grid.ColumnDefinitions>
 
-              <!--  Right: Object detail panel  -->
+                <toolkit:GridSplitter Grid.Column="1" Style="{StaticResource ResizableSplitterStyle}" />
+
+                <!--  Left column hosts BOTH views; visibility swapped by WorldViewMode_SelectionChanged  -->
+                <local:WorldMapControl x:Name="WorldMapControl" Grid.Column="0"
+                                       InspectObject="WorldMap_InspectObject"
+                                       InspectCell="WorldMap_InspectCell" />
+                <local:WorldView3DControl x:Name="WorldView3DControl" Grid.Column="0"
+                                          Visibility="Collapsed"
+                                          InspectObject="WorldMap_InspectObject"
+                                          InspectCell="WorldMap_InspectCell" />
+
+                <!--  Right: Object detail panel  -->
               <Grid Grid.Column="2" Padding="12,0,0,0">
                 <Grid.RowDefinitions>
                   <RowDefinition Height="Auto" />
@@ -634,6 +657,7 @@
                     <StackPanel x:Name="WorldPropertyPanel" Spacing="2" />
                   </ScrollViewer>
                 </Border>
+              </Grid>
               </Grid>
             </Grid>
           </Grid>

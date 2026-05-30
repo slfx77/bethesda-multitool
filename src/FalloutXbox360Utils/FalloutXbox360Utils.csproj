@@ -79,8 +79,9 @@
     <PackageReference Include="SharpGLTF.Toolkit" />
     <PackageReference Include="System.CommandLine" />
     <PackageReference Include="Spectre.Console" />
-    <PackageReference Include="Veldrid" />
-    <PackageReference Include="Veldrid.SPIRV" />
+    <PackageReference Include="Vortice.Direct3D11" />
+    <PackageReference Include="Vortice.DXGI" />
+    <PackageReference Include="Vortice.D3DCompiler" />
   </ItemGroup>
 
   <!-- Windows GUI packages -->
@@ -91,6 +92,8 @@
     <PackageReference Include="CommunityToolkit.WinUI.Controls.Sizers" />
     <PackageReference Include="Microsoft.Graphics.Win2D" />
     <PackageReference Include="Microsoft.Web.WebView2" />
+    <!-- Vortice.WinUI is GUI-only: ISwapChainPanelNative for the v3 3D worldspace view. -->
+    <PackageReference Include="Vortice.WinUI" />
   </ItemGroup>
 
   <!-- DDXConv library (compiled-in, no subprocess needed) -->
@@ -105,7 +108,7 @@
                       LogicalName="FalloutXbox360Utils.pdb_layouts.json" />
     <EmbeddedResource Include="Core\Formats\Esm\Export\Resources\comparison-renderer.js"
                       LogicalName="FalloutXbox360Utils.comparison-renderer.js" />
-    <EmbeddedResource Include="Core\Formats\Nif\Rendering\Gpu\Shaders\*.glsl" />
+    <EmbeddedResource Include="Core\Formats\Nif\Rendering\Gpu\Shaders\*.hlsl" />
     <EmbeddedResource Include="Assets\MapMarkers\*.png" />
   </ItemGroup>
 

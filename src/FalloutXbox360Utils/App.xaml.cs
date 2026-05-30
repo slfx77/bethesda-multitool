@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
 using Microsoft.UI.Xaml;
 using UnhandledExceptionEventArgs = Microsoft.UI.Xaml.UnhandledExceptionEventArgs;
 
@@ -10,6 +11,8 @@ namespace FalloutXbox360Utils;
 public sealed partial class FalloutApp : Application
 {
     private const int ATTACH_PARENT_PROCESS = -1;
+    private GpuDevice? _gpuDevice;
+    private bool _gpuDeviceCreated;
 
     /// <summary>
     ///     Initializes the singleton application object.
@@ -49,6 +52,19 @@ public sealed partial class FalloutApp : Application
     /// </summary>
     public Window? MainWindow { get; private set; }
 
+    /// <summary>
+    ///     Lazily-created shared GPU device for live rendering surfaces (e.g. the v3 3D world
+    ///     view). Returns null on machines with no D3D11 backend. CLI render commands continue
+    ///     to manage their own short-lived devices independently.
+    /// </summary>
+    internal GpuDevice? GetOrCreateGpuDevice()
+    {
+        if (_gpuDeviceCreated) return _gpuDevice;
+        _gpuDevice = GpuDevice.Create();
+        _gpuDeviceCreated = true;
+        return _gpuDevice;
+    }
+
     // Console attachment for debug output when launched from terminal
 
     [DllImport("kernel32.dll")]
@@ -73,6 +89,11 @@ public sealed partial class FalloutApp : Application
         {
             Console.WriteLine("[FalloutXbox360Utils] Creating main window...");
             MainWindow = new MainWindow();
+            MainWindow.Closed += (_, _) =>
+            {
+                _gpuDevice?.Dispose();
+                _gpuDevice = null;
+            };
             Console.WriteLine("[FalloutXbox360Utils] Activating main window...");
             MainWindow.Activate();
             Console.WriteLine("[FalloutXbox360Utils] Main window activated");

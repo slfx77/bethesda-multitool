@@ -51,7 +51,7 @@ internal static class SpriteRenderBackendSelector
         AnsiConsole.MarkupLine(
             "GPU rendering: [green]{0}[/] ({1})",
             device.Backend,
-            device.Device.DeviceName);
+            device.DeviceName);
         return new SpriteRenderBackendSelection(device, renderer, false);
     }
 }

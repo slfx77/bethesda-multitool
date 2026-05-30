@@ -1,72 +1,104 @@
-using Veldrid;
+using SharpGen.Runtime;
+using Vortice.Direct3D;
+using Vortice.Direct3D11;
+using Vortice.DXGI;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
 
 /// <summary>
-///     Manages a Veldrid <see cref="GraphicsDevice" /> for headless offscreen rendering.
-///     Creates the device once and reuses it across renders. Thread-safe for sequential use.
+///     Owns a Direct3D 11 device + immediate context for headless offscreen rendering.
+///     Created once and reused across renders. Thread-safe for sequential use only.
 /// </summary>
 internal sealed class GpuDevice : IDisposable
 {
     private static readonly Logger Log = Logger.Instance;
 
-    private GpuDevice(GraphicsDevice device, GraphicsBackend backend)
+    private GpuDevice(ID3D11Device device, ID3D11DeviceContext context, string deviceName)
     {
         Device = device;
-        Backend = backend;
+        Context = context;
+        DeviceName = deviceName;
     }
 
-    public GraphicsDevice Device { get; }
-    public GraphicsBackend Backend { get; }
-    public ResourceFactory Factory => Device.ResourceFactory;
+    /// <summary>The underlying D3D11 device (resource factory).</summary>
+    public ID3D11Device Device { get; }
+
+    /// <summary>Immediate context (command recorder + CPU readback).</summary>
+    public ID3D11DeviceContext Context { get; }
+
+    /// <summary>Adapter description string, for logging.</summary>
+    public string DeviceName { get; }
+
+    /// <summary>Backend identifier kept for compatibility with the prior Veldrid surface.</summary>
+    public string Backend => "Direct3D11";
 
     public void Dispose()
     {
+        Context.Dispose();
         Device.Dispose();
     }
 
     /// <summary>
-    ///     Creates a headless GPU device (no swapchain).
-    ///     Tries Vulkan first (cross-platform), then D3D11 (Windows fallback).
+    ///     Creates a headless D3D11 device (no swapchain).
     /// </summary>
-    /// <returns>A new GpuDevice, or null if no GPU backend is available.</returns>
+    /// <returns>A new GpuDevice, or null if no D3D11 backend is available.</returns>
     public static GpuDevice? Create()
     {
-        var options = new GraphicsDeviceOptions
+        if (!OperatingSystem.IsWindows())
         {
-            PreferStandardClipSpaceYDirection = true,
-            PreferDepthRangeZeroToOne = true,
-            SwapchainDepthFormat = null // no swapchain
-        };
+            Log.Warn("D3D11 is Windows-only — no GPU backend available");
+            return null;
+        }
 
-        // Try Vulkan first (works on Windows + Linux)
+        FeatureLevel[] featureLevels =
+        [
+            FeatureLevel.Level_11_1,
+            FeatureLevel.Level_11_0,
+            FeatureLevel.Level_10_1,
+            FeatureLevel.Level_10_0
+        ];
+
         try
         {
-            var device = GraphicsDevice.CreateVulkan(options);
-            Log.Info("GPU device created: Vulkan ({0})", device.DeviceName);
-            return new GpuDevice(device, GraphicsBackend.Vulkan);
-        }
-        catch (Exception ex)
-        {
-            Log.Debug("Vulkan not available: {0}", ex.Message);
-        }
+            var result = D3D11.D3D11CreateDevice(
+                adapter: null,
+                DriverType.Hardware,
+                DeviceCreationFlags.BgraSupport,
+                featureLevels,
+                out ID3D11Device? device,
+                out FeatureLevel _,
+                out ID3D11DeviceContext? context);
 
-        // Try D3D11 (Windows fallback)
-        if (OperatingSystem.IsWindows())
-        {
-            try
+            if (result.Failure || device is null || context is null)
             {
-                var device = GraphicsDevice.CreateD3D11(options);
-                Log.Info("GPU device created: Direct3D 11 ({0})", device.DeviceName);
-                return new GpuDevice(device, GraphicsBackend.Direct3D11);
+                Log.Debug("D3D11 device creation failed: {0}", result);
+                device?.Dispose();
+                context?.Dispose();
+                return null;
             }
-            catch (Exception ex)
-            {
-                Log.Debug("D3D11 not available: {0}", ex.Message);
-            }
-        }
 
-        Log.Warn("No GPU backend available — falling back to CPU rendering");
-        return null;
+            var deviceName = QueryAdapterDescription(device);
+            Log.Info("GPU device created: Direct3D 11 ({0})", deviceName);
+            return new GpuDevice(device, context, deviceName);
+        }
+        catch (SharpGenException ex)
+        {
+            Log.Warn("D3D11 device creation threw: {0}", ex.Message);
+            return null;
+        }
+    }
+
+    private static string QueryAdapterDescription(ID3D11Device device)
+    {
+        try
+        {
+            using var dxgiDevice = device.QueryInterface<IDXGIDevice>();
+            using var adapter = dxgiDevice.GetAdapter();
+            return adapter.Description.Description;
+        }
+        catch (SharpGenException)
+        {
+            return "Unknown D3D11 adapter";
+        }
     }
 }

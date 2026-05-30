@@ -18,8 +18,10 @@
     <!-- Image / model / GPU -->
     <PackageVersion Include="Magick.NET-Q16-AnyCPU" Version="14.13.1" />
     <PackageVersion Include="SharpGLTF.Toolkit" Version="1.0.6" />
-    <PackageVersion Include="Veldrid" Version="4.9.0" />
-    <PackageVersion Include="Veldrid.SPIRV" Version="1.0.15" />
+    <PackageVersion Include="Vortice.Direct3D11" Version="3.8.3" />
+    <PackageVersion Include="Vortice.DXGI" Version="3.8.3" />
+    <PackageVersion Include="Vortice.D3DCompiler" Version="3.8.3" />
+    <PackageVersion Include="Vortice.WinUI" Version="3.8.3" />
 
     <!-- WinUI 3 / Windows App SDK -->
     <PackageVersion Include="Microsoft.WindowsAppSDK" Version="2.1.3" />

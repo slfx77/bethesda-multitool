@@ -1,35 +1,37 @@
 using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Text;
 using FalloutXbox360Utils.Core.Formats.Dds;
-using Veldrid;
-using Veldrid.SPIRV;
+using Vortice.D3DCompiler;
+using Vortice.Direct3D;
+using Vortice.Direct3D11;
+using Vortice.DXGI;
+using Vortice.Mathematics;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
 
 /// <summary>
 ///     GPU-accelerated renderer that produces the same <see cref="SpriteResult" /> as
-///     <see cref="NifSpriteRenderer" /> but using Veldrid for hardware rasterization.
-///     Supports headless rendering (no window required) on Vulkan, D3D11, and OpenGL.
+///     <see cref="NifSpriteRenderer" /> but using Direct3D 11 via Vortice for hardware
+///     rasterization. Headless — uses an offscreen color + depth render target, copies
+///     to a staging texture for CPU readback. No window required.
 /// </summary>
 internal sealed class GpuSpriteRenderer : IDisposable
 {
-    private readonly Dictionary<BlendPipelineKey, Pipeline> _blendPipelines = [];
+    private const int ConstantBufferSize = 224; // sizeof(GpuUniforms), must be 16-byte aligned
 
+    private readonly Dictionary<BlendPipelineKey, PipelineState> _blendPipelines = [];
     private readonly GpuDevice _gpu;
-    private readonly Sampler _linearSampler;
-    private readonly Pipeline _opaqueDoubleSidedPipeline;
-    private readonly Pipeline _opaquePipeline;
-    private readonly Shader[] _shaders;
+    private readonly ID3D11InputLayout _inputLayout;
+    private readonly ID3D11SamplerState _linearSampler;
+    private readonly PipelineState _opaqueDoubleSidedPipeline;
+    private readonly PipelineState _opaquePipeline;
+    private readonly ID3D11PixelShader _pixelShader;
     private readonly GpuTextureCache _textureCache;
-    private readonly ResourceLayout _textureLayout;
-    private readonly ResourceLayout _uniformLayout;
-    private uint _stagingHeight;
+    private readonly ID3D11VertexShader _vertexShader;
 
-    // Persistent staging texture for pixel readback — avoids per-frame create/destroy overhead.
-    // Resized lazily when the render target dimensions change.
-    private Texture? _stagingTexture;
+    private ID3D11Texture2D? _stagingTexture;
+    private uint _stagingHeight;
     private uint _stagingWidth;
 
     public GpuSpriteRenderer(GpuDevice gpu)
@@ -37,35 +39,30 @@ internal sealed class GpuSpriteRenderer : IDisposable
         _gpu = gpu;
         _textureCache = new GpuTextureCache(gpu.Device);
 
-        var factory = gpu.Factory;
+        // Compile HLSL shaders at runtime from embedded resources.
+        var vsBytecode = CompileEmbeddedShader("skin.vert.hlsl", "main", "vs_5_0");
+        var psBytecode = CompileEmbeddedShader("skin.frag.hlsl", "main", "ps_5_0");
 
-        // Load and compile shaders from embedded resources
-        var vertSource = LoadEmbeddedShader("skin.vert.glsl");
-        var fragSource = LoadEmbeddedShader("skin.frag.glsl");
+        _vertexShader = gpu.Device.CreateVertexShader(vsBytecode.AsSpan());
+        _pixelShader = gpu.Device.CreatePixelShader(psBytecode.AsSpan());
+        _inputLayout = gpu.Device.CreateInputLayout(GpuMeshUploader.InputElements, vsBytecode.AsSpan());
 
-        var vertDesc = new ShaderDescription(ShaderStages.Vertex, Encoding.UTF8.GetBytes(vertSource), "main");
-        var fragDesc = new ShaderDescription(ShaderStages.Fragment, Encoding.UTF8.GetBytes(fragSource), "main");
-        _shaders = factory.CreateFromSpirv(vertDesc, fragDesc);
+        _linearSampler = gpu.Device.CreateSamplerState(new SamplerDescription
+        {
+            Filter = Filter.MinMagMipLinear,
+            AddressU = TextureAddressMode.Wrap,
+            AddressV = TextureAddressMode.Wrap,
+            AddressW = TextureAddressMode.Wrap,
+            MaxAnisotropy = 1,
+            // ComparisonFunc defaults to Never — leave unset for forward compat with property renames.
+            MinLOD = 0,
+            MaxLOD = float.MaxValue
+        });
 
-        // Resource layouts
-        _uniformLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
-            new ResourceLayoutElementDescription("Uniforms", ResourceKind.UniformBuffer,
-                ShaderStages.Vertex | ShaderStages.Fragment)));
-
-        _textureLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
-            new ResourceLayoutElementDescription("tDiffuse", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
-            new ResourceLayoutElementDescription("sDiffuse", ResourceKind.Sampler, ShaderStages.Fragment),
-            new ResourceLayoutElementDescription("tNormalMap", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
-            new ResourceLayoutElementDescription("sNormalMap", ResourceKind.Sampler, ShaderStages.Fragment)));
-
-        // Linear sampler with wrapping
-        _linearSampler = factory.CreateSampler(new SamplerDescription(
-            SamplerAddressMode.Wrap, SamplerAddressMode.Wrap, SamplerAddressMode.Wrap,
-            SamplerFilter.MinLinear_MagLinear_MipLinear,
-            null, 0, 0, 0, 0, SamplerBorderColor.TransparentBlack));
-
-        _opaquePipeline = CreatePipeline(factory, null, true, false);
-        _opaqueDoubleSidedPipeline = CreatePipeline(factory, null, true, true);
+        _opaquePipeline = CreatePipelineState(gpu.Device, blendAttachment: null,
+            depthWriteEnabled: true, doubleSided: false);
+        _opaqueDoubleSidedPipeline = CreatePipelineState(gpu.Device, blendAttachment: null,
+            depthWriteEnabled: true, doubleSided: true);
     }
 
     public void Dispose()
@@ -75,80 +72,17 @@ internal sealed class GpuSpriteRenderer : IDisposable
         _opaquePipeline.Dispose();
         _opaqueDoubleSidedPipeline.Dispose();
         foreach (var pipeline in _blendPipelines.Values)
-        {
             pipeline.Dispose();
-        }
-
-        _uniformLayout.Dispose();
-        _textureLayout.Dispose();
+        _blendPipelines.Clear();
         _linearSampler.Dispose();
-        foreach (var shader in _shaders)
-            shader.Dispose();
-    }
-
-    private Pipeline CreatePipeline(
-        ResourceFactory factory,
-        BlendAttachmentDescription? blendAttachment,
-        bool depthWriteEnabled,
-        bool doubleSided)
-    {
-        var blendState = blendAttachment.HasValue
-            ? new BlendStateDescription(RgbaFloat.White, blendAttachment.Value)
-            : new BlendStateDescription(
-                RgbaFloat.White,
-                new BlendAttachmentDescription(
-                    false,
-                    BlendFactor.One,
-                    BlendFactor.Zero,
-                    BlendFunction.Add,
-                    BlendFactor.One,
-                    BlendFactor.Zero,
-                    BlendFunction.Add));
-
-        return factory.CreateGraphicsPipeline(new GraphicsPipelineDescription(
-            blendState,
-            new DepthStencilStateDescription(true, depthWriteEnabled, ComparisonKind.LessEqual),
-            new RasterizerStateDescription(
-                doubleSided ? FaceCullMode.None : FaceCullMode.Back,
-                PolygonFillMode.Solid,
-                FrontFace.CounterClockwise,
-                true,
-                false),
-            PrimitiveTopology.TriangleList,
-            new ShaderSetDescription([GpuMeshUploader.VertexLayout], _shaders),
-            [_uniformLayout, _textureLayout],
-            new OutputDescription(
-                new OutputAttachmentDescription(PixelFormat.D32_Float_S8_UInt),
-                new OutputAttachmentDescription(PixelFormat.R8_G8_B8_A8_UNorm))));
-    }
-
-    private Pipeline GetBlendPipeline(byte srcBlendMode, byte dstBlendMode, bool doubleSided)
-    {
-        var key = new BlendPipelineKey(srcBlendMode, dstBlendMode, doubleSided);
-        if (_blendPipelines.TryGetValue(key, out var existing))
-        {
-            return existing;
-        }
-
-        var blendAttachment = new BlendAttachmentDescription(
-            true,
-            ResolveBlendFactor(srcBlendMode),
-            ResolveBlendFactor(dstBlendMode),
-            BlendFunction.Add,
-            BlendFactor.One,
-            BlendFactor.One,
-            BlendFunction.Maximum);
-
-        var pipeline = CreatePipeline(_gpu.Factory, blendAttachment, false, doubleSided);
-        _blendPipelines[key] = pipeline;
-        return pipeline;
+        _inputLayout.Dispose();
+        _pixelShader.Dispose();
+        _vertexShader.Dispose();
     }
 
     /// <summary>
-    ///     Renders a model to a sprite, matching the API of
-    ///     <see cref="NifSpriteRenderer.Render(NifRenderableModel, NifTextureResolver?, float, int, int, float, float, int?)" />
-    ///     .
-    ///     Convenience wrapper around <see cref="SubmitRender" /> + <see cref="CompleteRender" />.
+    ///     Renders a model to a sprite. Convenience wrapper around
+    ///     <see cref="SubmitRender" /> + <see cref="CompleteRender" />.
     /// </summary>
     public SpriteResult? Render(NifRenderableModel model,
         NifTextureResolver? textureResolver,
@@ -176,10 +110,10 @@ internal sealed class GpuSpriteRenderer : IDisposable
     }
 
     /// <summary>
-    ///     Builds GPU command list and submits it. Returns a <see cref="PendingRender" />
-    ///     handle to retrieve results via <see cref="CompleteRender" />. Returns null if
-    ///     the model has no geometry. After this call returns, the GPU executes asynchronously —
-    ///     the caller can do CPU work (e.g., build next NPC model) before calling CompleteRender.
+    ///     Records GPU commands on the immediate context and queues a copy-to-staging-texture.
+    ///     The GPU executes asynchronously — the caller can do CPU work before
+    ///     <see cref="CompleteRender" /> blocks on staging Map. Returns null if the model
+    ///     has no geometry.
     /// </summary>
     public PendingRender? SubmitRender(NifRenderableModel model,
         NifTextureResolver? textureResolver,
@@ -190,14 +124,12 @@ internal sealed class GpuSpriteRenderer : IDisposable
         if (!model.HasGeometry)
             return null;
 
-        // Apply view rotation to get projected bounds (same logic as NifSpriteRenderer)
         var (projMinX, projMinY, projWidth, projHeight, viewMatrix) =
             ComputeViewBounds(model, azimuthDeg, elevationDeg);
 
         if (projWidth < 0.001f && projHeight < 0.001f)
             return null;
 
-        // Compute canvas size (same logic as NifSpriteRenderer.RenderCore)
         int width, height;
         if (fixedSize.HasValue)
         {
@@ -229,70 +161,77 @@ internal sealed class GpuSpriteRenderer : IDisposable
         // In view space, Y increases downward (the "screen_down" basis vector from the CPU
         // renderer). In the GPU framebuffer, row 0 = top of image, so we flip Y by passing
         // maxViewY as "bottom" and minViewY as "top" in the ortho projection.
-        var margin = 1f; // 1 unit margin
+        const float margin = 1f;
         var orthoLeft = projMinX - margin;
         var orthoRight = projMinX + projWidth + margin;
         var orthoTop = projMinY - margin; // min view Y (top of image)
         var orthoBottom = projMinY + projHeight + margin; // max view Y (bottom of image)
-        var orthoNear = -10000f;
-        var orthoFar = 10000f;
+        const float orthoNear = -10000f;
+        const float orthoFar = 10000f;
 
         var projMatrix = Matrix4x4.CreateOrthographicOffCenter(
             orthoLeft, orthoRight, orthoBottom, orthoTop, orthoNear, orthoFar);
 
         var viewProj = viewMatrix * projMatrix;
 
-        // Create offscreen framebuffer at supersampled resolution for SSAA
+        // Allocate offscreen color + depth at supersampled resolution for SSAA.
         var device = _gpu.Device;
-        var factory = device.ResourceFactory;
-        var ssWidth = width * RenderLightingConstants.SsaaFactor;
-        var ssHeight = height * RenderLightingConstants.SsaaFactor;
+        var context = _gpu.Context;
+        var ssWidth = (uint)(width * RenderLightingConstants.SsaaFactor);
+        var ssHeight = (uint)(height * RenderLightingConstants.SsaaFactor);
 
-        var colorTex = factory.CreateTexture(new TextureDescription(
-            (uint)ssWidth, (uint)ssHeight, 1, 1, 1,
-            PixelFormat.R8_G8_B8_A8_UNorm,
-            TextureUsage.RenderTarget | TextureUsage.Sampled,
-            TextureType.Texture2D));
+        var colorTex = device.CreateTexture2D(new Texture2DDescription
+        {
+            Width = ssWidth,
+            Height = ssHeight,
+            MipLevels = 1,
+            ArraySize = 1,
+            Format = Format.R8G8B8A8_UNorm,
+            SampleDescription = new SampleDescription(1, 0),
+            Usage = ResourceUsage.Default,
+            BindFlags = BindFlags.RenderTarget | BindFlags.ShaderResource,
+            CPUAccessFlags = CpuAccessFlags.None,
+            MiscFlags = ResourceOptionFlags.None
+        });
+        var colorRtv = device.CreateRenderTargetView(colorTex);
 
-        var depthTex = factory.CreateTexture(new TextureDescription(
-            (uint)ssWidth, (uint)ssHeight, 1, 1, 1,
-            PixelFormat.D32_Float_S8_UInt,
-            TextureUsage.DepthStencil,
-            TextureType.Texture2D));
+        var depthTex = device.CreateTexture2D(new Texture2DDescription
+        {
+            Width = ssWidth,
+            Height = ssHeight,
+            MipLevels = 1,
+            ArraySize = 1,
+            Format = Format.D32_Float_S8X24_UInt,
+            SampleDescription = new SampleDescription(1, 0),
+            Usage = ResourceUsage.Default,
+            BindFlags = BindFlags.DepthStencil,
+            CPUAccessFlags = CpuAccessFlags.None,
+            MiscFlags = ResourceOptionFlags.None
+        });
+        var depthDsv = device.CreateDepthStencilView(depthTex);
 
-        var framebuffer = factory.CreateFramebuffer(new FramebufferDescription(depthTex, colorTex));
-
+        // Classify + sort draw items the same way the CPU path does.
         var renderItems = new List<RenderItem>();
         foreach (var sub in model.Submeshes)
         {
             if (sub.TriangleCount == 0 || sub.VertexCount == 0)
-            {
                 continue;
-            }
 
             DecodedTexture? diffuseTexture = null;
             if (textureResolver != null && sub.DiffuseTexturePath != null)
-            {
                 diffuseTexture = textureResolver.GetTexture(sub.DiffuseTexturePath);
-            }
 
-            // Skip untextured submeshes using the same criteria as the CPU path.
-            // BSShaderNoLighting shadow/shade overlays without a texture are also skipped.
             if (textureResolver != null && diffuseTexture == null &&
                 sub.DiffuseTexturePath == null &&
                 !(sub.IsEmissive && sub.DiffuseTexturePath != null) &&
                 !(sub.UseVertexColors && sub.VertexColors != null))
-            {
                 continue;
-            }
 
             if (textureResolver != null && diffuseTexture == null &&
                 sub.DiffuseTexturePath == null &&
                 sub.IsEmissive && sub.HasAlphaBlend &&
                 !NifVertexColorPolicy.HasVertexColorData(sub))
-            {
                 continue;
-            }
 
             renderItems.Add(new RenderItem(
                 sub,
@@ -307,17 +246,18 @@ internal sealed class GpuSpriteRenderer : IDisposable
             .ThenBy(item => item.AverageZ)
             .ToList();
 
-        // Collect per-submesh GPU resources for deferred disposal after single submit.
-        // Each submesh gets its own uniform buffer to avoid overwrite conflicts when
-        // all draw calls are batched in a single command list.
-        var disposables = new List<IDisposable>();
+        // Collect per-submesh GPU resources for deferred disposal in CompleteRender.
+        var disposables = new List<IDisposable> { colorRtv, depthDsv };
 
-        var cl = factory.CreateCommandList();
-        cl.Begin();
-        cl.SetFramebuffer(framebuffer);
-        cl.ClearColorTarget(0, RgbaFloat.Clear);
-        cl.ClearDepthStencil(1f);
-        cl.SetViewport(0, new Viewport(0, 0, ssWidth, ssHeight, 0, 1));
+        // Bind the offscreen render target + viewport (immediate-context state).
+        context.OMSetRenderTargets(colorRtv, depthDsv);
+        context.ClearRenderTargetView(colorRtv, new Color4(0f, 0f, 0f, 0f));
+        context.ClearDepthStencilView(depthDsv, DepthStencilClearFlags.Depth | DepthStencilClearFlags.Stencil, 1f, 0);
+        context.RSSetViewport(0, 0, ssWidth, ssHeight, 0, 1);
+        context.IASetInputLayout(_inputLayout);
+        context.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
+        context.VSSetShader(_vertexShader);
+        context.PSSetShader(_pixelShader);
 
         foreach (var item in ordered)
         {
@@ -325,7 +265,7 @@ internal sealed class GpuSpriteRenderer : IDisposable
             var alphaState = item.AlphaState;
             var hasDiffuse = item.HasDiffuseTexture;
 
-            // Build flags bitfield
+            // Build flags bitfield (must match the bit positions in skin.frag.hlsl).
             uint flags = 0;
             if (hasDiffuse) flags |= 1; // HAS_TEXTURE
             if (sub.Normals != null) flags |= 2; // HAS_NORMALS
@@ -341,9 +281,6 @@ internal sealed class GpuSpriteRenderer : IDisposable
             if (sub.TintColor.HasValue) flags |= 512; // HAS_TINT
             if (sub.IsFaceGen) flags |= 1024; // IS_FACEGEN
 
-            // Per-submesh uniform buffer (each submesh needs different material/flags)
-            var subUniformBuffer = factory.CreateBuffer(new BufferDescription(
-                (uint)Marshal.SizeOf<GpuUniforms>(), BufferUsage.UniformBuffer));
             var uniforms = new GpuUniforms
             {
                 ViewProj = viewProj,
@@ -360,108 +297,122 @@ internal sealed class GpuSpriteRenderer : IDisposable
                 Flags = new Vector4(flags,
                     sub.SubsurfaceColor.R, sub.SubsurfaceColor.G, sub.SubsurfaceColor.B)
             };
-            device.UpdateBuffer(subUniformBuffer, 0, uniforms);
 
-            var subUniformSet = factory.CreateResourceSet(new ResourceSetDescription(
-                _uniformLayout, subUniformBuffer));
+            // Per-submesh constant buffer — separate buffers avoid overwrite races inside one frame.
+            var cbDesc = new BufferDescription
+            {
+                ByteWidth = ConstantBufferSize,
+                Usage = ResourceUsage.Default,
+                BindFlags = BindFlags.ConstantBuffer,
+                CPUAccessFlags = CpuAccessFlags.None,
+                MiscFlags = ResourceOptionFlags.None
+            };
+            var uniformsArray = new[] { uniforms };
+            var uniformsGc = GCHandle.Alloc(uniformsArray, GCHandleType.Pinned);
+            ID3D11Buffer constantBuffer;
+            try
+            {
+                constantBuffer = device.CreateBuffer(cbDesc,
+                    new SubresourceData(uniformsGc.AddrOfPinnedObject(), ConstantBufferSize));
+            }
+            finally
+            {
+                uniformsGc.Free();
+            }
 
-            // Upload mesh data
+            // Mesh upload
             var vertices = GpuMeshUploader.BuildVertices(sub);
             var vb = GpuMeshUploader.CreateVertexBuffer(device, vertices);
             var ib = GpuMeshUploader.CreateIndexBuffer(device, sub.Triangles);
 
-            // Bind textures
-            var diffuseTex = _textureCache.WhitePixel;
-            var normalMapTex = _textureCache.FlatNormal;
-
+            // Texture binds
+            var diffuseSrv = _textureCache.WhitePixel;
+            var normalSrv = _textureCache.FlatNormal;
             if (hasDiffuse && textureResolver != null && sub.DiffuseTexturePath != null)
-                diffuseTex = _textureCache.GetOrUpload(sub.DiffuseTexturePath, textureResolver);
+                diffuseSrv = _textureCache.GetOrUpload(sub.DiffuseTexturePath, textureResolver);
             if (textureResolver != null && sub.NormalMapTexturePath != null)
-                normalMapTex = _textureCache.GetOrUpload(sub.NormalMapTexturePath, textureResolver);
+                normalSrv = _textureCache.GetOrUpload(sub.NormalMapTexturePath, textureResolver);
 
-            var texSet = factory.CreateResourceSet(new ResourceSetDescription(
-                _textureLayout, diffuseTex, _linearSampler, normalMapTex, _linearSampler));
-
-            // Select pipeline variant
-            Pipeline pipeline;
+            // Pipeline selection
+            PipelineState pipeline;
             if (alphaState.RenderMode == NifAlphaRenderMode.Blend)
-            {
                 pipeline = GetBlendPipeline(alphaState.SrcBlendMode, alphaState.DstBlendMode, sub.IsDoubleSided);
-            }
             else
-            {
                 pipeline = sub.IsDoubleSided ? _opaqueDoubleSidedPipeline : _opaquePipeline;
-            }
 
-            cl.SetPipeline(pipeline);
-            cl.SetGraphicsResourceSet(0, subUniformSet);
-            cl.SetGraphicsResourceSet(1, texSet);
-            cl.SetVertexBuffer(0, vb);
-            cl.SetIndexBuffer(ib, IndexFormat.UInt16);
-            cl.DrawIndexed((uint)sub.Triangles.Length);
+            context.RSSetState(pipeline.RasterizerState);
+            context.OMSetDepthStencilState(pipeline.DepthStencilState);
+            context.OMSetBlendState(pipeline.BlendState, new Color4(1f, 1f, 1f, 1f));
+
+            context.VSSetConstantBuffer(0, constantBuffer);
+            context.PSSetConstantBuffer(0, constantBuffer);
+            context.PSSetShaderResource(0, diffuseSrv);
+            context.PSSetSampler(0, _linearSampler);
+            context.PSSetShaderResource(1, normalSrv);
+            context.PSSetSampler(1, _linearSampler);
+
+            context.IASetVertexBuffer(0, vb, (uint)Marshal.SizeOf<GpuMeshUploader.GpuVertex>());
+            context.IASetIndexBuffer(ib, Format.R16_UInt, 0);
+
+            context.DrawIndexed((uint)sub.Triangles.Length, 0, 0);
 
             disposables.Add(vb);
             disposables.Add(ib);
-            disposables.Add(texSet);
-            disposables.Add(subUniformBuffer);
-            disposables.Add(subUniformSet);
+            disposables.Add(constantBuffer);
         }
 
-        // Append readback copy to the SAME command list — single GPU submission + single WaitForIdle.
-        // Reuse staging texture if dimensions match, otherwise recreate.
-        if (_stagingTexture == null || _stagingWidth != (uint)ssWidth || _stagingHeight != (uint)ssHeight)
+        // Append readback copy. Reuse staging texture across frames when dimensions match.
+        if (_stagingTexture == null || _stagingWidth != ssWidth || _stagingHeight != ssHeight)
         {
             _stagingTexture?.Dispose();
-            _stagingTexture = factory.CreateTexture(new TextureDescription(
-                (uint)ssWidth, (uint)ssHeight, 1, 1, 1,
-                PixelFormat.R8_G8_B8_A8_UNorm,
-                TextureUsage.Staging,
-                TextureType.Texture2D));
-            _stagingWidth = (uint)ssWidth;
-            _stagingHeight = (uint)ssHeight;
+            _stagingTexture = device.CreateTexture2D(new Texture2DDescription
+            {
+                Width = ssWidth,
+                Height = ssHeight,
+                MipLevels = 1,
+                ArraySize = 1,
+                Format = Format.R8G8B8A8_UNorm,
+                SampleDescription = new SampleDescription(1, 0),
+                Usage = ResourceUsage.Staging,
+                BindFlags = BindFlags.None,
+                CPUAccessFlags = CpuAccessFlags.Read,
+                MiscFlags = ResourceOptionFlags.None
+            });
+            _stagingWidth = ssWidth;
+            _stagingHeight = ssHeight;
         }
 
-        cl.CopyTexture(colorTex, _stagingTexture);
-        cl.End();
-        device.SubmitCommands(cl);
+        context.CopyResource(_stagingTexture!, colorTex);
 
         // GPU is now executing asynchronously — caller can do CPU work before CompleteRender().
         return new PendingRender
         {
             Width = width,
             Height = height,
-            SsWidth = ssWidth,
-            SsHeight = ssHeight,
+            SsWidth = (int)ssWidth,
+            SsHeight = (int)ssHeight,
             BoundsWidth = projWidth,
             BoundsHeight = projHeight,
             HasTexture = ordered.Any(item => item.HasDiffuseTexture),
             Disposables = disposables,
-            CommandList = cl,
-            Framebuffer = framebuffer,
             ColorTexture = colorTex,
             DepthTexture = depthTex
         };
     }
 
     /// <summary>
-    ///     Waits for a previously submitted GPU render to complete, reads back the pixels,
-    ///     and returns the final sprite result. Disposes per-frame GPU resources.
+    ///     Maps the staging texture (implicit GPU sync) and reads back the pixels.
+    ///     Disposes per-frame GPU resources.
     /// </summary>
     public SpriteResult CompleteRender(PendingRender pending)
     {
-        var device = _gpu.Device;
-        device.WaitForIdle();
-
-        // Read pixels from staging texture
-        var ssPixels = ReadBackStagingPixels(device, (uint)pending.SsWidth, (uint)pending.SsHeight);
+        var context = _gpu.Context;
+        var ssPixels = ReadBackStagingPixels(context, (uint)pending.SsWidth, (uint)pending.SsHeight);
         var pixels = NifSpriteRenderer.Downsample(ssPixels, pending.SsWidth, pending.SsHeight,
             RenderLightingConstants.SsaaFactor);
 
-        // Cleanup: dispose per-submesh resources, then per-frame resources
         foreach (var d in pending.Disposables)
             d.Dispose();
-        pending.CommandList.Dispose();
-        pending.Framebuffer.Dispose();
         pending.ColorTexture.Dispose();
         pending.DepthTexture.Dispose();
 
@@ -477,9 +428,38 @@ internal sealed class GpuSpriteRenderer : IDisposable
     }
 
     /// <summary>
-    ///     Computes the view-space bounds and view matrix for a given camera angle.
-    ///     Same rotation math as NifSpriteRenderer.ApplyViewRotation.
+    ///     Evicts a specific texture from the GPU cache.
+    ///     Call after rendering each NPC to free per-NPC morphed face textures.
     /// </summary>
+    public void EvictTexture(string key)
+    {
+        _textureCache.EvictTexture(key);
+    }
+
+    private byte[] ReadBackStagingPixels(ID3D11DeviceContext context, uint width, uint height)
+    {
+        // Map() on a STAGING texture with MapMode.Read blocks until prior GPU work targeting
+        // this resource (the CopyResource we queued) completes — no explicit Flush needed.
+        var mapped = context.Map(_stagingTexture!, 0, MapMode.Read, Vortice.Direct3D11.MapFlags.None);
+        try
+        {
+            var pixels = new byte[width * height * 4];
+            var rowSize = (int)(width * 4);
+            for (uint y = 0; y < height; y++)
+            {
+                var srcOffset = (int)(y * mapped.RowPitch);
+                var dstOffset = (int)(y * rowSize);
+                Marshal.Copy(mapped.DataPointer + srcOffset, pixels, dstOffset, rowSize);
+            }
+
+            return pixels;
+        }
+        finally
+        {
+            context.Unmap(_stagingTexture!, 0);
+        }
+    }
+
     private static (float MinX, float MinY, float Width, float Height, Matrix4x4 ViewMatrix)
         ComputeViewBounds(NifRenderableModel model, float azimuthDeg, float elevationDeg)
     {
@@ -491,24 +471,19 @@ internal sealed class GpuSpriteRenderer : IDisposable
         var ct = MathF.Cos(theta);
         var st = MathF.Sin(theta);
 
-        // View basis vectors (same as NifSpriteRenderer)
         var right = new Vector3(-sa, ca, 0);
         var up = new Vector3(st * ca, st * sa, -ct);
         var forward = new Vector3(ca * ct, sa * ct, st);
 
-        // Build view matrix with basis vectors as COLUMNS (not rows).
-        // The CPU renderer uses RotatePoint which computes M * pos (matrix × column vector),
-        // where M has basis vectors as rows. System.Numerics' Vector3.Transform(pos, M)
-        // computes pos * M (row vector × matrix). To get the same result, we need the
-        // transpose: basis vectors as columns. This also ensures the GLSL shader
-        // (which reinterprets row-major bytes as column-major) sees the correct rotation.
+        // Build view matrix with basis vectors as COLUMNS in System.Numerics row-major bytes;
+        // both GLSL and HLSL re-interpret cbuffer bytes as column-major, so basis-as-columns
+        // is what `mul(uView, vec)` (HLSL) and `uView * vec` (GLSL) both expect.
         var viewMatrix = new Matrix4x4(
             right.X, up.X, forward.X, 0,
             right.Y, up.Y, forward.Y, 0,
             right.Z, up.Z, forward.Z, 0,
             0, 0, 0, 1);
 
-        // Project all vertices to find bounds
         var minX = float.MaxValue;
         var minY = float.MaxValue;
         var maxX = float.MinValue;
@@ -545,74 +520,139 @@ internal sealed class GpuSpriteRenderer : IDisposable
         return sum / count;
     }
 
-    private static BlendFactor ResolveBlendFactor(byte mode)
+    private static Blend ResolveBlendFactor(byte mode)
     {
-        // NIF alpha property blend modes follow OpenGL enumeration order
+        // NIF alpha property blend modes follow OpenGL enumeration order.
         return mode switch
         {
-            0 => BlendFactor.One,
-            1 => BlendFactor.Zero,
-            2 => BlendFactor.SourceColor,
-            3 => BlendFactor.InverseSourceColor,
-            4 => BlendFactor.DestinationColor,
-            5 => BlendFactor.InverseDestinationColor,
-            6 => BlendFactor.SourceAlpha,
-            7 => BlendFactor.InverseSourceAlpha,
-            8 => BlendFactor.DestinationAlpha,
-            9 => BlendFactor.InverseDestinationAlpha,
-            10 => BlendFactor.One, // GL_SRC_ALPHA_SATURATE — no Veldrid equivalent; approximate as One
-            _ => BlendFactor.SourceAlpha
+            0 => Blend.One,
+            1 => Blend.Zero,
+            2 => Blend.SourceColor,
+            3 => Blend.InverseSourceColor,
+            4 => Blend.DestinationColor,
+            5 => Blend.InverseDestinationColor,
+            6 => Blend.SourceAlpha,
+            7 => Blend.InverseSourceAlpha,
+            8 => Blend.DestinationAlpha,
+            9 => Blend.InverseDestinationAlpha,
+            10 => Blend.One, // GL_SRC_ALPHA_SATURATE — no D3D equivalent; approximate as One
+            _ => Blend.SourceAlpha
         };
     }
 
-    /// <summary>
-    ///     Reads pixels from the persistent staging texture (already populated via CopyTexture
-    ///     in the main command list). No additional GPU submission needed.
-    /// </summary>
-    private byte[] ReadBackStagingPixels(GraphicsDevice device, uint width, uint height)
+    private static PipelineState CreatePipelineState(
+        ID3D11Device device,
+        RenderTargetBlendDescription? blendAttachment,
+        bool depthWriteEnabled,
+        bool doubleSided)
     {
-        var map = device.Map(_stagingTexture!, MapMode.Read);
-        var pixels = new byte[width * height * 4];
-
-        // Copy row-by-row to handle potential row pitch differences
-        var rowSize = width * 4;
-        for (uint y = 0; y < height; y++)
+        var rasterizer = device.CreateRasterizerState(new RasterizerDescription
         {
-            var srcOffset = (int)(y * map.RowPitch);
-            var dstOffset = (int)(y * rowSize);
-            Marshal.Copy(map.Data + srcOffset, pixels, dstOffset, (int)rowSize);
-        }
+            FillMode = FillMode.Solid,
+            CullMode = doubleSided ? CullMode.None : CullMode.Back,
+            FrontCounterClockwise = true,
+            DepthClipEnable = true,
+            ScissorEnable = false,
+            MultisampleEnable = false,
+            AntialiasedLineEnable = false
+        });
 
-        device.Unmap(_stagingTexture!);
-        return pixels;
+        var depthStencil = device.CreateDepthStencilState(new DepthStencilDescription
+        {
+            DepthEnable = true,
+            DepthWriteMask = depthWriteEnabled ? DepthWriteMask.All : DepthWriteMask.Zero,
+            DepthFunc = ComparisonFunction.LessEqual,
+            StencilEnable = false
+        });
+
+        var rtBlend = blendAttachment ?? new RenderTargetBlendDescription
+        {
+            BlendEnable = false,
+            SourceBlend = Blend.One,
+            DestinationBlend = Blend.Zero,
+            BlendOperation = BlendOperation.Add,
+            SourceBlendAlpha = Blend.One,
+            DestinationBlendAlpha = Blend.Zero,
+            BlendOperationAlpha = BlendOperation.Add,
+            RenderTargetWriteMask = ColorWriteEnable.All
+        };
+
+        var blendDesc = new BlendDescription
+        {
+            AlphaToCoverageEnable = false,
+            IndependentBlendEnable = false
+        };
+        blendDesc.RenderTarget[0] = rtBlend;
+        var blend = device.CreateBlendState(blendDesc);
+
+        return new PipelineState(rasterizer, depthStencil, blend);
     }
 
-    private static string LoadEmbeddedShader(string name)
+    private PipelineState GetBlendPipeline(byte srcBlendMode, byte dstBlendMode, bool doubleSided)
+    {
+        var key = new BlendPipelineKey(srcBlendMode, dstBlendMode, doubleSided);
+        if (_blendPipelines.TryGetValue(key, out var existing))
+            return existing;
+
+        var rtBlend = new RenderTargetBlendDescription
+        {
+            BlendEnable = true,
+            SourceBlend = ResolveBlendFactor(srcBlendMode),
+            DestinationBlend = ResolveBlendFactor(dstBlendMode),
+            BlendOperation = BlendOperation.Add,
+            SourceBlendAlpha = Blend.One,
+            DestinationBlendAlpha = Blend.One,
+            BlendOperationAlpha = BlendOperation.Max,
+            RenderTargetWriteMask = ColorWriteEnable.All
+        };
+
+        var pipeline = CreatePipelineState(_gpu.Device, rtBlend, depthWriteEnabled: false, doubleSided);
+        _blendPipelines[key] = pipeline;
+        return pipeline;
+    }
+
+    private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile)
     {
         var assembly = Assembly.GetExecutingAssembly();
         var resourceName = assembly.GetManifestResourceNames()
-            .FirstOrDefault(n => n.EndsWith(name, StringComparison.OrdinalIgnoreCase));
-
-        if (resourceName == null)
-            throw new FileNotFoundException($"Embedded shader resource not found: {name}");
+            .FirstOrDefault(n => n.EndsWith(name, StringComparison.OrdinalIgnoreCase))
+            ?? throw new FileNotFoundException($"Embedded shader resource not found: {name}");
 
         using var stream = assembly.GetManifestResourceStream(resourceName)!;
         using var reader = new StreamReader(stream);
-        return reader.ReadToEnd();
-    }
+        var source = reader.ReadToEnd();
 
-    /// <summary>
-    ///     Evicts a specific texture from the GPU cache.
-    ///     Call after rendering each NPC to free per-NPC morphed face textures.
-    /// </summary>
-    public void EvictTexture(string key)
-    {
-        _textureCache.EvictTexture(key);
+        var compileResult = Compiler.Compile(
+            source,
+            entryPoint,
+            sourceName: name,
+            profile,
+            out Blob? bytecode,
+            out Blob? errors);
+
+        if (compileResult.Failure || bytecode is null)
+        {
+            var errorText = errors?.AsString() ?? "(no error blob)";
+            errors?.Dispose();
+            bytecode?.Dispose();
+            throw new InvalidOperationException(
+                $"HLSL compile failed for {name} ({profile}): {errorText}");
+        }
+
+        errors?.Dispose();
+        try
+        {
+            return bytecode.AsBytes().ToArray();
+        }
+        finally
+        {
+            bytecode.Dispose();
+        }
     }
 
     /// <summary>
     ///     Holds intermediate state between <see cref="SubmitRender" /> and <see cref="CompleteRender" />.
-    ///     GPU commands have been submitted but not yet waited on.
+    ///     GPU commands have been recorded but the staging Map has not blocked yet.
     /// </summary>
     internal sealed class PendingRender
     {
@@ -624,10 +664,8 @@ internal sealed class GpuSpriteRenderer : IDisposable
         public required float BoundsHeight { get; init; }
         public required bool HasTexture { get; init; }
         public required List<IDisposable> Disposables { get; init; }
-        public required CommandList CommandList { get; init; }
-        public required Framebuffer Framebuffer { get; init; }
-        public required Texture ColorTexture { get; init; }
-        public required Texture DepthTexture { get; init; }
+        public required ID3D11Texture2D ColorTexture { get; init; }
+        public required ID3D11Texture2D DepthTexture { get; init; }
     }
 
     private readonly record struct BlendPipelineKey(
@@ -641,22 +679,45 @@ internal sealed class GpuSpriteRenderer : IDisposable
         float AverageZ,
         bool HasDiffuseTexture);
 
+    private readonly struct PipelineState : IDisposable
+    {
+        public PipelineState(
+            ID3D11RasterizerState rasterizerState,
+            ID3D11DepthStencilState depthStencilState,
+            ID3D11BlendState blendState)
+        {
+            RasterizerState = rasterizerState;
+            DepthStencilState = depthStencilState;
+            BlendState = blendState;
+        }
+
+        public ID3D11RasterizerState RasterizerState { get; }
+        public ID3D11DepthStencilState DepthStencilState { get; }
+        public ID3D11BlendState BlendState { get; }
+
+        public void Dispose()
+        {
+            BlendState.Dispose();
+            DepthStencilState.Dispose();
+            RasterizerState.Dispose();
+        }
+    }
+
     /// <summary>
-    ///     GPU uniform buffer layout — must match shader Uniforms block exactly.
-    ///     Uses vec4 packing for std140 alignment.
+    ///     GPU uniform buffer layout — must match HLSL cbuffer Uniforms exactly.
+    ///     Each Vector4 / Matrix4x4 is naturally 16-byte aligned.
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
     private struct GpuUniforms
     {
-        public Matrix4x4 ViewProj; // 64 bytes
-        public Matrix4x4 View; // 64 bytes (3x3 view rotation for normals)
-        public Vector4 LightDir; // 16 bytes (xyz = dir, w = 0)
-        public Vector4 HalfVec; // 16 bytes (xyz = half, w = HdotNegL)
-        public Vector4 Ambient; // 16 bytes (x=sky, y=ground, z=lightInt, w=bumpStr)
-        public Vector4 Material; // 16 bytes (x=alpha, y=envmap, z=alphaThresh, w=alphaFunc)
-        public Vector4 TintColor; // 16 bytes (rgb=tint, a=0)
-
-        public Vector4 Flags; // 16 bytes (x=flags bitfield as float, yzw=0)
+        public Matrix4x4 ViewProj; // 64
+        public Matrix4x4 View;     // 64
+        public Vector4 LightDir;   // 16
+        public Vector4 HalfVec;    // 16
+        public Vector4 Ambient;    // 16
+        public Vector4 Material;   // 16
+        public Vector4 TintColor;  // 16
+        public Vector4 Flags;      // 16
         // Total: 224 bytes
     }
 }

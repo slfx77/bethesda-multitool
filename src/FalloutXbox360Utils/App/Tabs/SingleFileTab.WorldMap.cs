@@ -46,6 +46,7 @@ public sealed partial class SingleFileTab
                 _session.WorldViewData = worldData;
                 _session.WorldMapPopulated = true;
                 WorldMapControl.LoadData(worldData);
+                WorldView3DControl.LoadData(worldData);
                 WorldMapPlaceholder.Visibility = Visibility.Collapsed;
                 WorldMapContent.Visibility = Visibility.Visible;
                 return;
@@ -81,6 +82,7 @@ public sealed partial class SingleFileTab
             _session.WorldMapPopulated = true;
 
             WorldMapControl.LoadData(esmWorldData);
+            WorldView3DControl.LoadData(esmWorldData);
 
             WorldMapPlaceholder.Visibility = Visibility.Collapsed;
             WorldMapContent.Visibility = Visibility.Visible;
@@ -587,5 +589,21 @@ public sealed partial class SingleFileTab
         WorldMapStatusText.Text = Strings.Empty_RunAnalysisForWorldMap;
         WorldMapContent.Visibility = Visibility.Collapsed;
         WorldMapControl?.Reset();
+    }
+
+    private void WorldViewMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        // SelectedIndex 0 = 2D Map, 1 = 3D View. Swap Visibility instead of re-parenting so
+        // neither view has to rebuild on toggle.
+        //
+        // The XAML loader fires SelectionChanged when SelectedIndex="0" is applied during
+        // initial construction — BEFORE WorldMapControl and WorldView3DControl x:Name fields
+        // are assigned (they appear later in the document). The null guards keep the first
+        // synthetic fire harmless.
+        if (WorldMapControl is null || WorldView3DControl is null) return;
+
+        var show3D = WorldViewModeComboBox.SelectedIndex == 1;
+        WorldMapControl.Visibility = show3D ? Visibility.Collapsed : Visibility.Visible;
+        WorldView3DControl.Visibility = show3D ? Visibility.Visible : Visibility.Collapsed;
     }
 }

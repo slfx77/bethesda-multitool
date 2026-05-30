@@ -1,26 +1,30 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
-using Veldrid;
+using Vortice.Direct3D11;
+using Vortice.DXGI;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
 
 /// <summary>
-///     Converts <see cref="RenderableSubmesh" /> data into Veldrid vertex and index buffers.
+///     Converts <see cref="RenderableSubmesh" /> data into D3D11 vertex and index buffers.
 /// </summary>
 internal static class GpuMeshUploader
 {
     /// <summary>
-    ///     Veldrid vertex layout description matching <see cref="GpuVertex" />.
+    ///     D3D11 input element layout matching <see cref="GpuVertex" />.
+    ///     Semantic name is "TEXCOORD" with indices 0..5 — same packing as the prior
+    ///     Veldrid <c>VertexElementSemantic.TextureCoordinate</c> binding so the HLSL
+    ///     vertex shader inputs (TEXCOORD0..5) map slot-for-slot to the C# struct.
     /// </summary>
-    public static readonly VertexLayoutDescription VertexLayout = new(
-        new VertexElementDescription("aPosition", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3),
-        new VertexElementDescription("aNormal", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3),
-        new VertexElementDescription("aTexCoord", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float2),
-        new VertexElementDescription("aVertexColor", VertexElementSemantic.TextureCoordinate,
-            VertexElementFormat.Float4),
-        new VertexElementDescription("aTangent", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3),
-        new VertexElementDescription("aBitangent", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3)
-    );
+    public static readonly InputElementDescription[] InputElements =
+    [
+        new("TEXCOORD", 0, Format.R32G32B32_Float,    0, 0), // aPosition    (vec3)
+        new("TEXCOORD", 1, Format.R32G32B32_Float,   12, 0), // aNormal      (vec3)
+        new("TEXCOORD", 2, Format.R32G32_Float,      24, 0), // aTexCoord    (vec2)
+        new("TEXCOORD", 3, Format.R32G32B32A32_Float, 32, 0), // aVertexColor (vec4)
+        new("TEXCOORD", 4, Format.R32G32B32_Float,   48, 0), // aTangent     (vec3)
+        new("TEXCOORD", 5, Format.R32G32B32_Float,   60, 0)  // aBitangent   (vec3)
+    ];
 
     /// <summary>
     ///     Converts a <see cref="RenderableSubmesh" /> to a GPU vertex array.
@@ -71,25 +75,45 @@ internal static class GpuMeshUploader
     }
 
     /// <summary>
-    ///     Creates a Veldrid vertex buffer from GPU vertices.
+    ///     Creates an immutable D3D11 vertex buffer from GPU vertices.
     /// </summary>
-    public static DeviceBuffer CreateVertexBuffer(GraphicsDevice device, GpuVertex[] vertices)
+    public static ID3D11Buffer CreateVertexBuffer(ID3D11Device device, GpuVertex[] vertices)
     {
-        var size = (uint)(vertices.Length * Marshal.SizeOf<GpuVertex>());
-        var buffer = device.ResourceFactory.CreateBuffer(new BufferDescription(size, BufferUsage.VertexBuffer));
-        device.UpdateBuffer(buffer, 0, vertices);
-        return buffer;
+        return CreateImmutableBuffer(device, vertices, BindFlags.VertexBuffer);
     }
 
     /// <summary>
-    ///     Creates a Veldrid index buffer from triangle indices.
+    ///     Creates an immutable D3D11 index buffer from triangle indices.
     /// </summary>
-    public static DeviceBuffer CreateIndexBuffer(GraphicsDevice device, ushort[] indices)
+    public static ID3D11Buffer CreateIndexBuffer(ID3D11Device device, ushort[] indices)
     {
-        var size = (uint)(indices.Length * sizeof(ushort));
-        var buffer = device.ResourceFactory.CreateBuffer(new BufferDescription(size, BufferUsage.IndexBuffer));
-        device.UpdateBuffer(buffer, 0, indices);
-        return buffer;
+        return CreateImmutableBuffer(device, indices, BindFlags.IndexBuffer);
+    }
+
+    private static ID3D11Buffer CreateImmutableBuffer<T>(ID3D11Device device, T[] data, BindFlags bindFlags)
+        where T : unmanaged
+    {
+        var byteWidth = (uint)(data.Length * Marshal.SizeOf<T>());
+        var gc = GCHandle.Alloc(data, GCHandleType.Pinned);
+        try
+        {
+            var desc = new BufferDescription
+            {
+                ByteWidth = byteWidth,
+                Usage = ResourceUsage.Immutable,
+                BindFlags = bindFlags,
+                CPUAccessFlags = CpuAccessFlags.None,
+                MiscFlags = ResourceOptionFlags.None,
+                StructureByteStride = 0
+            };
+
+            var subresource = new SubresourceData(gc.AddrOfPinnedObject(), byteWidth);
+            return device.CreateBuffer(desc, subresource);
+        }
+        finally
+        {
+            gc.Free();
+        }
     }
 
     /// <summary>
