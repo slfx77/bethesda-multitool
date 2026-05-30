@@ -1,46 +1,51 @@
 using System.Numerics;
-using System.Reflection;
-using System.Runtime.InteropServices;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
+using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
-using Vortice.D3DCompiler;
-using Vortice.Direct3D;
 using Vortice.Direct3D11;
-using Vortice.DXGI;
 using Vortice.Mathematics;
 
 namespace FalloutXbox360Utils;
 
 /// <summary>
-///     Phase 0b shell for the v3 3D worldspace view. Hosts a <see cref="SwapChainPanel" />
-///     backed by a Vortice D3D11 swapchain and renders a placeholder rotating triangle.
-///     Real terrain + REFR rendering arrive in Phases 1+ of docs/v3-scope.md. Mirrors the
-///     public surface (events, LoadData, SelectObject) of <see cref="WorldMapControl" /> so
-///     the host tab can treat both views interchangeably.
+///     v3 Phase 1 worldspace view. Hosts a <see cref="SwapChainPanel" /> backed by a Vortice
+///     D3D11 swapchain (<see cref="GpuSwapChainSurface" />) and renders a wireframe grid of
+///     exterior cells using <see cref="CellGridDebugRenderer" />. A
+///     <see cref="FlythroughCameraController" /> integrates WASD/Q/E + mouse-look + scroll
+///     into a <see cref="CameraState" /> each frame.
+///     <para>
+///         Mirrors <c>WorldMapControl</c>'s public surface (events, LoadData, SelectObject)
+///         so the host tab can toggle between 2D and 3D without reshaping data flow.
+///     </para>
 /// </summary>
 public sealed partial class WorldView3DControl : UserControl, IDisposable
 {
     private static readonly Logger Log = Logger.Instance;
 
-    private readonly DateTime _startTime = DateTime.UtcNow;
-    private ID3D11Buffer? _constantBuffer;
+    private readonly CameraState _camera = new();
+    private readonly FlythroughCameraController _controller;
+    private readonly Vector2[] _pointerStartPosition = new Vector2[1];
+
+    private CellGridDebugRenderer? _cellGrid;
     private WorldViewData? _data;
     private GpuDevice? _gpu;
-    private ID3D11InputLayout? _inputLayout;
-    private ID3D11PixelShader? _pixelShader;
+    private DateTime _lastFrameTime;
+    private bool _mouseDragActive;
+    private Vector2 _previousPointerPosition;
     private bool _renderLoopAttached;
     private GpuSwapChainSurface? _surface;
-    private ID3D11Buffer? _vertexBuffer;
-    private ID3D11VertexShader? _vertexShader;
 
     public WorldView3DControl()
     {
         InitializeComponent();
+        _controller = new FlythroughCameraController(_camera);
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
     }
@@ -59,13 +64,15 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
     internal void LoadData(WorldViewData data)
     {
         _data = data;
-        // Phase 0b: the placeholder triangle ignores world data. Phases 1+ wire this through
-        // to terrain + REFR rendering.
+        TryBuildCellGrid();
+        ResetCameraToDataCentroid();
+        _ = InspectObject; // suppress unused-event warning until Phase 5 picking
+        _ = InspectCell;
     }
 
     internal void SelectObject(PlacedReference? obj)
     {
-        // Phase 0b: no picking. Phases 4+ add depth-buffer picking + selection highlight.
+        // Phase 5 will frame the camera on the selected object. For now: no-op.
         _ = obj;
     }
 
@@ -82,40 +89,53 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
 
         try
         {
-            InitializeRenderResources(_gpu);
+            _cellGrid = new CellGridDebugRenderer(_gpu);
         }
         catch (Exception ex)
         {
             Log.Warn("WorldView3DControl: render resource init failed: {0}", ex.Message);
             ShowStatus("3D view init failed — see logs.");
-            DisposeRenderResources();
             return;
         }
 
+        // The XAML markup compiler types RenderPanel as SwapChainPanel; subscribe input handlers.
         RenderPanel.SizeChanged += OnRenderPanelSizeChanged;
         RenderPanel.CompositionScaleChanged += OnRenderPanelCompositionScaleChanged;
+        RenderPanel.KeyDown += OnRenderPanelKeyDown;
+        RenderPanel.KeyUp += OnRenderPanelKeyUp;
+        RenderPanel.LostFocus += OnRenderPanelLostFocus;
+        RenderPanel.PointerPressed += OnRenderPanelPointerPressed;
+        RenderPanel.PointerMoved += OnRenderPanelPointerMoved;
+        RenderPanel.PointerReleased += OnRenderPanelPointerReleased;
+        RenderPanel.PointerWheelChanged += OnRenderPanelPointerWheelChanged;
+
+        RenderPanel.Focus(FocusState.Programmatic);
+
+        TryBuildCellGrid();
         TryEnsureSurface();
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
         DetachRenderLoop();
+
         RenderPanel.SizeChanged -= OnRenderPanelSizeChanged;
         RenderPanel.CompositionScaleChanged -= OnRenderPanelCompositionScaleChanged;
+        RenderPanel.KeyDown -= OnRenderPanelKeyDown;
+        RenderPanel.KeyUp -= OnRenderPanelKeyUp;
+        RenderPanel.LostFocus -= OnRenderPanelLostFocus;
+        RenderPanel.PointerPressed -= OnRenderPanelPointerPressed;
+        RenderPanel.PointerMoved -= OnRenderPanelPointerMoved;
+        RenderPanel.PointerReleased -= OnRenderPanelPointerReleased;
+        RenderPanel.PointerWheelChanged -= OnRenderPanelPointerWheelChanged;
+
         DisposeRenderResources();
-        // _gpu is shared with the app — do NOT dispose here.
         _gpu = null;
+        _ = _pointerStartPosition;
     }
 
-    private void OnRenderPanelSizeChanged(object sender, SizeChangedEventArgs e)
-    {
-        TryEnsureSurface();
-    }
-
-    private void OnRenderPanelCompositionScaleChanged(SwapChainPanel sender, object args)
-    {
-        TryEnsureSurface();
-    }
+    private void OnRenderPanelSizeChanged(object sender, SizeChangedEventArgs e) => TryEnsureSurface();
+    private void OnRenderPanelCompositionScaleChanged(SwapChainPanel sender, object args) => TryEnsureSurface();
 
     private void TryEnsureSurface()
     {
@@ -136,8 +156,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
                 ShowStatus("3D view: swapchain bind failed (see logs).");
                 return;
             }
-
             HideStatus();
+            _lastFrameTime = DateTime.UtcNow;
             AttachRenderLoop();
         }
         else
@@ -146,55 +166,68 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         }
     }
 
-    // Render resources ----------------------------------------------------------------------
-
-    private void InitializeRenderResources(GpuDevice gpu)
-    {
-        var vsBytecode = CompileEmbeddedShader("triangle.vert.hlsl", "main", "vs_5_0");
-        var psBytecode = CompileEmbeddedShader("triangle.frag.hlsl", "main", "ps_5_0");
-        _vertexShader = gpu.Device.CreateVertexShader(vsBytecode.AsSpan());
-        _pixelShader = gpu.Device.CreatePixelShader(psBytecode.AsSpan());
-
-        var inputElements = new[]
-        {
-            new InputElementDescription("TEXCOORD", 0, Format.R32G32_Float,        0, 0),
-            new InputElementDescription("TEXCOORD", 1, Format.R32G32B32A32_Float, 8, 0)
-        };
-        _inputLayout = gpu.Device.CreateInputLayout(inputElements, vsBytecode.AsSpan());
-
-        var vertices = new TriangleVertex[]
-        {
-            new() { Position = new Vector2(0.0f, 0.6f),  Color = new Vector4(1.0f, 0.4f, 0.4f, 1f) },
-            new() { Position = new Vector2(0.5f, -0.4f), Color = new Vector4(0.4f, 1.0f, 0.4f, 1f) },
-            new() { Position = new Vector2(-0.5f, -0.4f), Color = new Vector4(0.4f, 0.4f, 1.0f, 1f) }
-        };
-        _vertexBuffer = CreateImmutableBuffer(gpu.Device, vertices, BindFlags.VertexBuffer);
-
-        var cbDesc = new BufferDescription
-        {
-            ByteWidth = TriangleUniformsSize,
-            Usage = ResourceUsage.Default,
-            BindFlags = BindFlags.ConstantBuffer,
-            CPUAccessFlags = CpuAccessFlags.None,
-            MiscFlags = ResourceOptionFlags.None
-        };
-        _constantBuffer = gpu.Device.CreateBuffer(cbDesc);
-    }
-
     private void DisposeRenderResources()
     {
+        _cellGrid?.Dispose();
+        _cellGrid = null;
         _surface?.Dispose();
         _surface = null;
-        _constantBuffer?.Dispose();
-        _constantBuffer = null;
-        _vertexBuffer?.Dispose();
-        _vertexBuffer = null;
-        _inputLayout?.Dispose();
-        _inputLayout = null;
-        _pixelShader?.Dispose();
-        _pixelShader = null;
-        _vertexShader?.Dispose();
-        _vertexShader = null;
+    }
+
+    // Input ---------------------------------------------------------------------------------
+
+    private void OnRenderPanelKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        _controller.OnKeyDown(e.Key);
+        e.Handled = true;
+    }
+
+    private void OnRenderPanelKeyUp(object sender, KeyRoutedEventArgs e)
+    {
+        _controller.OnKeyUp(e.Key);
+        e.Handled = true;
+    }
+
+    private void OnRenderPanelLostFocus(object sender, RoutedEventArgs e)
+    {
+        // Avoid stuck movement keys when focus drops (e.g. user clicks elsewhere mid-stride).
+        _controller.ClearKeys();
+    }
+
+    private void OnRenderPanelPointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        var point = e.GetCurrentPoint(RenderPanel);
+        if (!point.Properties.IsLeftButtonPressed) return;
+
+        _mouseDragActive = RenderPanel.CapturePointer(e.Pointer);
+        _previousPointerPosition = new Vector2((float)point.Position.X, (float)point.Position.Y);
+        RenderPanel.Focus(FocusState.Pointer);
+        e.Handled = true;
+    }
+
+    private void OnRenderPanelPointerMoved(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_mouseDragActive) return;
+        var point = e.GetCurrentPoint(RenderPanel);
+        var current = new Vector2((float)point.Position.X, (float)point.Position.Y);
+        var delta = current - _previousPointerPosition;
+        _previousPointerPosition = current;
+        if (delta != Vector2.Zero) _controller.OnMouseDelta(delta);
+    }
+
+    private void OnRenderPanelPointerReleased(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_mouseDragActive) return;
+        RenderPanel.ReleasePointerCapture(e.Pointer);
+        _mouseDragActive = false;
+        e.Handled = true;
+    }
+
+    private void OnRenderPanelPointerWheelChanged(object sender, PointerRoutedEventArgs e)
+    {
+        var delta = e.GetCurrentPoint(RenderPanel).Properties.MouseWheelDelta;
+        _controller.OnScroll(delta);
+        e.Handled = true;
     }
 
     // Render loop ---------------------------------------------------------------------------
@@ -218,155 +251,107 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         if (_surface is null || _gpu is null) return;
         if (Visibility == Visibility.Collapsed) return;
 
-        var elapsed = (float)(DateTime.UtcNow - _startTime).TotalSeconds;
-        RenderFrame(elapsed);
+        var now = DateTime.UtcNow;
+        var deltaSeconds = (float)(now - _lastFrameTime).TotalSeconds;
+        _lastFrameTime = now;
+        // Clamp pathological deltas (long pause, debugger break) to keep camera step bounded.
+        if (deltaSeconds > 0.1f) deltaSeconds = 0.1f;
+
+        _controller.Update(deltaSeconds);
+        RenderFrame();
     }
 
-    private void RenderFrame(float elapsed)
+    private void RenderFrame()
     {
         var ctx = _gpu!.Context;
         var rtv = _surface!.BackBufferRtv;
 
         ctx.ClearRenderTargetView(rtv, new Color4(0x1B / 255f, 0x24 / 255f, 0x36 / 255f, 1f));
-
-        var theta = elapsed * 0.5f;
-        var uniforms = new TriangleUniforms
-        {
-            Rotation = new Vector4(MathF.Cos(theta), MathF.Sin(theta), 0, 0),
-            Aspect = new Vector4(_surface.Height / (float)_surface.Width, 0, 0, 0)
-        };
-        UpdateConstantBuffer(ctx, _constantBuffer!, uniforms);
-
         ctx.OMSetRenderTargets(rtv);
         ctx.RSSetViewport(0, 0, _surface.Width, _surface.Height, 0, 1);
-        ctx.IASetInputLayout(_inputLayout!);
-        ctx.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
-        ctx.IASetVertexBuffer(0, _vertexBuffer!, (uint)Marshal.SizeOf<TriangleVertex>());
-        ctx.VSSetShader(_vertexShader!);
-        ctx.PSSetShader(_pixelShader!);
-        ctx.VSSetConstantBuffer(0, _constantBuffer!);
 
-        ctx.Draw(3, 0);
+        var aspect = _surface.Width / (float)_surface.Height;
+        var view = _camera.GetViewMatrix();
+        var proj = _camera.GetProjectionMatrix(aspect);
+        var viewProj = view * proj;
+        var frustum = Frustum.FromViewProjection(viewProj);
+
+        var visibleCells = _cellGrid?.Render(viewProj, frustum) ?? 0;
+        var totalCells = _cellGrid?.CellCount ?? 0;
 
         _surface.Present();
+
+        UpdateHud(visibleCells, totalCells);
     }
 
-    private static void UpdateConstantBuffer(ID3D11DeviceContext ctx, ID3D11Buffer buffer, TriangleUniforms uniforms)
+    // Camera framing ------------------------------------------------------------------------
+
+    private void ResetCameraToDataCentroid()
     {
-        var arr = new[] { uniforms };
-        var gc = GCHandle.Alloc(arr, GCHandleType.Pinned);
-        try
+        if (_data is null) return;
+
+        // Compute the centroid of all exterior cells across all worldspaces. Phase 1 doesn't
+        // filter by worldspace; Phase 2 will add a worldspace selector mirroring the 2D view.
+        double sumX = 0, sumY = 0;
+        var count = 0;
+        foreach (var cell in EnumerateExteriorCells(_data))
         {
-            ctx.UpdateSubresource(buffer, 0, null, gc.AddrOfPinnedObject(), 0u, 0u);
+            sumX += cell.GridX!.Value;
+            sumY += cell.GridY!.Value;
+            count++;
         }
-        finally
+        if (count == 0) return;
+
+        var avgGridX = sumX / count;
+        var avgGridY = sumY / count;
+        var worldX = (float)(avgGridX * WorldGridConstants.CellSize);
+        var worldY = (float)(avgGridY * WorldGridConstants.CellSize);
+
+        // Position 2 cells south and well above the ground, pitched down ~30° looking north.
+        _camera.Position = new Vector3(worldX, worldY - 8192f, 32768f);
+        _camera.Yaw = 0f;
+        _camera.Pitch = -MathF.PI / 6f;
+    }
+
+    private void TryBuildCellGrid()
+    {
+        if (_cellGrid is null || _data is null) return;
+        _cellGrid.LoadData(EnumerateExteriorCells(_data));
+    }
+
+    private static IEnumerable<CellRecord> EnumerateExteriorCells(WorldViewData data)
+    {
+        foreach (var worldspace in data.Worldspaces)
         {
-            gc.Free();
+            foreach (var cell in worldspace.Cells)
+            {
+                if (cell.GridX is int && cell.GridY is int)
+                    yield return cell;
+            }
         }
     }
 
-    // Status overlay ------------------------------------------------------------------------
+    // HUD / status overlay ------------------------------------------------------------------
+
+    private void UpdateHud(int visible, int total)
+    {
+        HudText.Text =
+            $"Cells: {visible} / {total}   " +
+            $"pos: ({_camera.Position.X:0}, {_camera.Position.Y:0}, {_camera.Position.Z:0})   " +
+            $"speed: {_controller.MoveSpeed:0}   " +
+            $"WASD + Q/E   drag to look   scroll = speed";
+    }
 
     private void ShowStatus(string message)
     {
         StatusOverlay.Text = message;
         StatusOverlay.Visibility = Visibility.Visible;
+        HudPanel.Visibility = Visibility.Collapsed;
     }
 
     private void HideStatus()
     {
         StatusOverlay.Visibility = Visibility.Collapsed;
-    }
-
-    // Future-use hooks ----------------------------------------------------------------------
-
-    private void RaiseInspectObject(PlacedReference obj)
-    {
-        InspectObject?.Invoke(this, obj);
-    }
-
-    private void RaiseInspectCell(CellRecord cell)
-    {
-        InspectCell?.Invoke(this, cell);
-    }
-
-    // Shader + buffer helpers ---------------------------------------------------------------
-
-    private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile)
-    {
-        var assembly = Assembly.GetExecutingAssembly();
-        var resourceName = assembly.GetManifestResourceNames()
-            .FirstOrDefault(n => n.EndsWith(name, StringComparison.OrdinalIgnoreCase))
-            ?? throw new FileNotFoundException($"Embedded shader resource not found: {name}");
-
-        using var stream = assembly.GetManifestResourceStream(resourceName)!;
-        using var reader = new StreamReader(stream);
-        var source = reader.ReadToEnd();
-
-        var compileResult = Compiler.Compile(source, entryPoint, sourceName: name, profile,
-            out Blob? bytecode, out Blob? errors);
-
-        if (compileResult.Failure || bytecode is null)
-        {
-            var errorText = errors?.AsString() ?? "(no error blob)";
-            errors?.Dispose();
-            bytecode?.Dispose();
-            throw new InvalidOperationException(
-                $"HLSL compile failed for {name} ({profile}): {errorText}");
-        }
-
-        errors?.Dispose();
-        try
-        {
-            return bytecode.AsBytes().ToArray();
-        }
-        finally
-        {
-            bytecode.Dispose();
-        }
-    }
-
-    private static ID3D11Buffer CreateImmutableBuffer<T>(ID3D11Device device, T[] data, BindFlags bindFlags)
-        where T : unmanaged
-    {
-        var byteWidth = (uint)(data.Length * Marshal.SizeOf<T>());
-        var gc = GCHandle.Alloc(data, GCHandleType.Pinned);
-        try
-        {
-            var desc = new BufferDescription
-            {
-                ByteWidth = byteWidth,
-                Usage = ResourceUsage.Immutable,
-                BindFlags = bindFlags,
-                CPUAccessFlags = CpuAccessFlags.None,
-                MiscFlags = ResourceOptionFlags.None,
-                StructureByteStride = 0
-            };
-
-            var subresource = new SubresourceData(gc.AddrOfPinnedObject(), byteWidth);
-            return device.CreateBuffer(desc, subresource);
-        }
-        finally
-        {
-            gc.Free();
-        }
-    }
-
-    // Vertex + uniform layouts --------------------------------------------------------------
-
-    private const uint TriangleUniformsSize = 32; // sizeof(TriangleUniforms), 16-byte aligned
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct TriangleVertex
-    {
-        public Vector2 Position;
-        public Vector4 Color;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct TriangleUniforms
-    {
-        public Vector4 Rotation;
-        public Vector4 Aspect;
+        HudPanel.Visibility = Visibility.Visible;
     }
 }

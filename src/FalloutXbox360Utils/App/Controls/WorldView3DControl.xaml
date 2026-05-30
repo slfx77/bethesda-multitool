@@ -7,6 +7,7 @@
 
   <Grid>
     <SwapChainPanel x:Name="RenderPanel"
+                    IsTabStop="True"
                     AutomationProperties.Name="3D worldspace view" />
     <TextBlock x:Name="StatusOverlay"
                HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -14,5 +15,17 @@
                Foreground="{ThemeResource TextFillColorPrimaryBrush}"
                AutomationProperties.Name="3D view status"
                Visibility="Collapsed" />
+    <Border x:Name="HudPanel"
+            HorizontalAlignment="Left" VerticalAlignment="Top"
+            Margin="8" Padding="8,4"
+            CornerRadius="4"
+            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+            Opacity="0.85">
+      <TextBlock x:Name="HudText"
+                 FontFamily="Consolas" FontSize="11"
+                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                 AutomationProperties.Name="3D view HUD"
+                 Text="" />
+    </Border>
   </Grid>
 </UserControl>

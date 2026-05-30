@@ -20,6 +20,14 @@ public class SampleFileFixture
     /// <summary>PC final ESM (retail).</summary>
     public string? PcFinalEsm { get; } = FindSamplePath(@"Sample\ESM\pc_final\FalloutNV.esm");
 
+    /// <summary>Xbox 360 July 21, 2010 prototype build ESM.</summary>
+    public string? Xbox360July2010Esm { get; } =
+        FindSamplePath(@"Sample\Full_Builds\Fallout New Vegas (July 21, 2010)\FalloutNV\Data\FalloutNV.esm");
+
+    /// <summary>Xbox 360 August 22, 2010 prototype build ESM.</summary>
+    public string? Xbox360Aug2010Esm { get; } =
+        FindSamplePath(@"Sample\Full_Builds\Fallout New Vegas (Aug 22, 2010)\Diskuild_1.0.0.252\Data\FalloutNV.esm");
+
     /// <summary>Debug build memory dump.</summary>
     public string? DebugDump { get; } = FindSamplePath(@"Sample\MemoryDump\Fallout_Debug.xex.dmp");
 
