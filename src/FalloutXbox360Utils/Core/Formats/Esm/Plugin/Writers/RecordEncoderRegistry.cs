@@ -82,6 +82,7 @@ public sealed class RecordEncoderRegistry
             new SounEncoder(),
             new TxstEncoder(),
             new LtexEncoder(),
+            new GrasEncoder(),
             new AlocEncoder(),
             new MicnEncoder(),
             new IpctEncoder(),

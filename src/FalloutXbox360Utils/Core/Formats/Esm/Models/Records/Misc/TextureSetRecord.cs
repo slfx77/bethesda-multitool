@@ -33,6 +33,13 @@ public record TextureSetRecord
     /// <summary>Environment/cube map texture path (TX05).</summary>
     public string? EnvironmentMapTexture { get; init; }
 
+    /// <summary>
+    ///     Decal data (DODT subrecord, 36 bytes). Present on TXSTs that emit decals — blood
+    ///     splatter, bullet impacts, weather-driven decals, etc. Pure terrain texture sets
+    ///     typically have no DODT. Layout matches fopdoc / xEdit / SubrecordCellAndMiscSchemas.
+    /// </summary>
+    public TxstDecalData? DecalData { get; init; }
+
     /// <summary>Texture set flags (DNAM, 2 bytes).</summary>
     public ushort Flags { get; init; }
 
@@ -41,4 +48,24 @@ public record TextureSetRecord
 
     /// <summary>Whether the record was detected as big-endian (Xbox 360).</summary>
     public bool IsBigEndian { get; init; }
+}
+
+/// <summary>
+///     Decal-data payload (TXST DODT subrecord, 36 bytes). Drives the in-engine decal
+///     rendering — random size range, surface depth, shininess, parallax pass count, and
+///     ARGB tint. Components match the field order in
+///     <see cref="FalloutXbox360Utils.Core.Formats.Esm.Conversion.Schema.SubrecordCellAndMiscSchemas" />.
+/// </summary>
+public record TxstDecalData
+{
+    public float MinWidth { get; init; }
+    public float MaxWidth { get; init; }
+    public float MinHeight { get; init; }
+    public float MaxHeight { get; init; }
+    public float Depth { get; init; }
+    public float Shininess { get; init; }
+    public float ParallaxScale { get; init; }
+    public byte ParallaxPasses { get; init; }
+    public byte Flags { get; init; }
+    public uint ColorArgb { get; init; }
 }

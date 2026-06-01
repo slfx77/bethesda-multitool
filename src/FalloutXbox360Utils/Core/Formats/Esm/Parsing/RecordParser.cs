@@ -395,6 +395,7 @@ public sealed class RecordParser
         MergeRuntimeLandTextureSets(textureSets);
         var landTextures = _miscEnvironment.ParseLandscapeTextures();
         MergeRuntimeLandTextures(landTextures);
+        var grasses = _miscEnvironment.ParseGrass();
         var armorAddons = _miscItems.ParseArmorAddons();
         var water = _miscEnvironment.ParseWater();
         var bodyPartData = _miscItems.ParseBodyPartData();
@@ -531,6 +532,7 @@ public sealed class RecordParser
             MusicTypes = musicTypes,
             TextureSets = textureSets,
             LandTextures = landTextures,
+            Grasses = grasses,
             ArmorAddons = armorAddons,
             Water = water,
             BodyPartData = bodyPartData,

@@ -250,6 +250,9 @@ public record RecordCollection
     /// <summary>Parsed Landscape Texture (LTEX) records.</summary>
     public List<LandscapeTextureRecord> LandTextures { get; init; } = [];
 
+    /// <summary>Parsed Grass (GRAS) records — referenced by LTEX GNAM FormIDs.</summary>
+    public List<GrassRecord> Grasses { get; init; } = [];
+
     /// <summary>Parsed Armor Addon (ARMA) records.</summary>
     public List<ArmaRecord> ArmorAddons { get; init; } = [];
 
@@ -317,7 +320,7 @@ public record RecordCollection
         Lights.Count + Doors.Count + Statics.Count + StaticCollections.Count + Furniture.Count +
         Packages.Count +
         GenericRecords.Count +
-        Sounds.Count + MusicTypes.Count + TextureSets.Count + LandTextures.Count + ArmorAddons.Count + Water.Count +
+        Sounds.Count + MusicTypes.Count + TextureSets.Count + LandTextures.Count + Grasses.Count + ArmorAddons.Count + Water.Count +
         BodyPartData.Count + ActorValueInfos.Count + CombatStyles.Count +
         LightingTemplates.Count + NavMeshes.Count + Weather.Count;
 
@@ -428,6 +431,7 @@ public record RecordCollection
             MusicTypes = MergeList(MusicTypes, overlay.MusicTypes, r => r.FormId),
             TextureSets = MergeList(TextureSets, overlay.TextureSets, r => r.FormId),
             LandTextures = MergeList(LandTextures, overlay.LandTextures, r => r.FormId),
+            Grasses = MergeList(Grasses, overlay.Grasses, r => r.FormId),
             ArmorAddons = MergeList(ArmorAddons, overlay.ArmorAddons, r => r.FormId),
             Water = MergeList(Water, overlay.Water, r => r.FormId),
             BodyPartData = MergeList(BodyPartData, overlay.BodyPartData, r => r.FormId),

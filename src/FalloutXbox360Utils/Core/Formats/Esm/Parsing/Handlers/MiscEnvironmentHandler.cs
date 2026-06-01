@@ -439,6 +439,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         string? editorId = null;
         ObjectBounds? bounds = null;
         string? tx00 = null, tx01 = null, tx02 = null, tx03 = null, tx04 = null, tx05 = null;
+        TxstDecalData? decalData = null;
         ushort txstFlags = 0;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
@@ -476,6 +477,9 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 case "TX05":
                     tx05 = EsmStringUtils.ReadNullTermString(subData);
                     break;
+                case "DODT" when sub.DataLength == 36:
+                    decalData = ReadTxstDecalData(subData, record.IsBigEndian);
+                    break;
                 case "DNAM" when sub.DataLength >= 2:
                     txstFlags = record.IsBigEndian
                         ? BinaryPrimitives.ReadUInt16BigEndian(subData)
@@ -495,10 +499,42 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             GlowTexture = tx03,
             ParallaxTexture = tx04,
             EnvironmentMapTexture = tx05,
+            DecalData = decalData,
             Flags = txstFlags,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
+    }
+
+    private static TxstDecalData ReadTxstDecalData(ReadOnlySpan<byte> data, bool isBigEndian)
+    {
+        // Layout (36 bytes) per SubrecordCellAndMiscSchemas DODT registration:
+        //   MinWidth(f32) MaxWidth(f32) MinHeight(f32) MaxHeight(f32)
+        //   Depth(f32) Shininess(f32) ParallaxScale(f32)
+        //   ParallaxPasses(u8) Flags(u8) Padding(2)
+        //   Color(u32 ARGB)
+        return new TxstDecalData
+        {
+            MinWidth = ReadFloat(data, 0, isBigEndian),
+            MaxWidth = ReadFloat(data, 4, isBigEndian),
+            MinHeight = ReadFloat(data, 8, isBigEndian),
+            MaxHeight = ReadFloat(data, 12, isBigEndian),
+            Depth = ReadFloat(data, 16, isBigEndian),
+            Shininess = ReadFloat(data, 20, isBigEndian),
+            ParallaxScale = ReadFloat(data, 24, isBigEndian),
+            ParallaxPasses = data[28],
+            Flags = data[29],
+            ColorArgb = isBigEndian
+                ? BinaryPrimitives.ReadUInt32BigEndian(data[32..])
+                : BinaryPrimitives.ReadUInt32LittleEndian(data[32..])
+        };
+    }
+
+    private static float ReadFloat(ReadOnlySpan<byte> data, int offset, bool isBigEndian)
+    {
+        return isBigEndian
+            ? BinaryPrimitives.ReadSingleBigEndian(data[offset..])
+            : BinaryPrimitives.ReadSingleLittleEndian(data[offset..]);
     }
 
     #endregion
@@ -596,6 +632,124 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             GrassFormIds = grassFormIds,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
+    #region Grass
+
+    /// <summary>
+    ///     Parse all Grass (GRAS) records. Referenced from LTEX via the GNAM subrecord:
+    ///     each grass type is a small mesh the engine scatters across terrain painted with
+    ///     a particular landscape texture.
+    /// </summary>
+    internal List<GrassRecord> ParseGrass()
+    {
+        return ParseRecordList("GRAS", 1024,
+            ParseGrassFromAccessor,
+            record => new GrassRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
+    }
+
+    private GrassRecord? ParseGrassFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return new GrassRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            };
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        ObjectBounds? bounds = null;
+        string? modelPath = null;
+        float? modelBound = null;
+        byte[]? modelTextureData = null;
+        GrassData? grassData = null;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "OBND" when sub.DataLength == 12:
+                    bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
+                    break;
+                case "MODL":
+                    modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODB" when sub.DataLength == 4:
+                    modelBound = ReadFloat(subData, 0, record.IsBigEndian);
+                    break;
+                case "MODT":
+                    modelTextureData = subData.ToArray();
+                    break;
+                case "DATA" when sub.DataLength == 32:
+                    grassData = ReadGrassData(subData, record.IsBigEndian);
+                    break;
+            }
+        }
+
+        return new GrassRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            Bounds = bounds,
+            ModelPath = modelPath,
+            ModelBound = modelBound,
+            ModelTextureData = modelTextureData,
+            Data = grassData,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    private static GrassData ReadGrassData(ReadOnlySpan<byte> data, bool isBigEndian)
+    {
+        // Layout (32 bytes) per SubrecordCellAndMiscSchemas DATA/GRAS registration:
+        //   Density(u8) MinSlope(u8) MaxSlope(u8) Pad(1)
+        //   UnitsFromWaterAmount(u16) Pad(2)
+        //   UnitsFromWaterType(u32)
+        //   PositionRange(f32) HeightRange(f32) ColorRange(f32) WavePeriod(f32)
+        //   Flags(u8) Pad(3)
+        return new GrassData
+        {
+            Density = data[0],
+            MinSlope = data[1],
+            MaxSlope = data[2],
+            UnitsFromWaterAmount = isBigEndian
+                ? BinaryPrimitives.ReadUInt16BigEndian(data[4..])
+                : BinaryPrimitives.ReadUInt16LittleEndian(data[4..]),
+            UnitsFromWaterType = isBigEndian
+                ? BinaryPrimitives.ReadUInt32BigEndian(data[8..])
+                : BinaryPrimitives.ReadUInt32LittleEndian(data[8..]),
+            PositionRange = ReadFloat(data, 12, isBigEndian),
+            HeightRange = ReadFloat(data, 16, isBigEndian),
+            ColorRange = ReadFloat(data, 20, isBigEndian),
+            WavePeriod = ReadFloat(data, 24, isBigEndian),
+            Flags = data[28]
         };
     }
 

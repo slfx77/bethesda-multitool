@@ -1301,6 +1301,61 @@ public class ComplexNewRecordEncoderTests
     }
 
     [Fact]
+    public void TxstEncoder_EncodeNew_EmitsDodtAfterTexturesBeforeDnam()
+    {
+        var txst = new TextureSetRecord
+        {
+            FormId = 0x2401,
+            EditorId = "BloodSplatter",
+            DiffuseTexture = "textures/decals/blood_d.dds",
+            DecalData = new TxstDecalData
+            {
+                MinWidth = 12.5f,
+                MaxWidth = 64f,
+                MinHeight = 12.5f,
+                MaxHeight = 64f,
+                Depth = 1.5f,
+                Shininess = 0.25f,
+                ParallaxScale = 1f,
+                ParallaxPasses = 4,
+                Flags = 0x03,
+                ColorArgb = 0xFFAA1122
+            }
+        };
+
+        var encoded = TxstEncoder.EncodeNew(txst);
+        var sigs = encoded.Subrecords.Select(s => s.Signature).ToList();
+
+        Assert.Equal(["EDID", "TX00", "DODT", "DNAM"], sigs);
+        var dodt = Assert.Single(encoded.Subrecords, s => s.Signature == "DODT").Bytes;
+        Assert.Equal(36, dodt.Length);
+        Assert.Equal(12.5f, BinaryPrimitives.ReadSingleLittleEndian(dodt.AsSpan(0)));
+        Assert.Equal(64f, BinaryPrimitives.ReadSingleLittleEndian(dodt.AsSpan(4)));
+        Assert.Equal(1.5f, BinaryPrimitives.ReadSingleLittleEndian(dodt.AsSpan(16)));
+        Assert.Equal((byte)4, dodt[28]);
+        Assert.Equal((byte)0x03, dodt[29]);
+        // Padding stays zero.
+        Assert.Equal(0, dodt[30]);
+        Assert.Equal(0, dodt[31]);
+        Assert.Equal(0xFFAA1122u, BinaryPrimitives.ReadUInt32LittleEndian(dodt.AsSpan(32)));
+    }
+
+    [Fact]
+    public void TxstEncoder_EncodeNew_OmitsDodtWhenDecalDataIsNull()
+    {
+        var txst = new TextureSetRecord
+        {
+            FormId = 0x2402,
+            EditorId = "PlainTerrainTextureSet",
+            DiffuseTexture = "textures/landscape/dirt_d.dds"
+        };
+
+        var encoded = TxstEncoder.EncodeNew(txst);
+        var sigs = encoded.Subrecords.Select(s => s.Signature).ToList();
+        Assert.DoesNotContain("DODT", sigs);
+    }
+
+    [Fact]
     public void LtexEncoder_EncodeNew_EmitsLandscapeTextureReferences()
     {
         var ltex = new LandscapeTextureRecord
@@ -1328,6 +1383,74 @@ public class ComplexNewRecordEncoderTests
                 .Where(s => s.Signature == "GNAM")
                 .Select(s => BinaryPrimitives.ReadUInt32LittleEndian(s.Bytes))
                 .ToList());
+    }
+
+    // ====================================================================================
+    // GrasEncoder
+    // ====================================================================================
+
+    [Fact]
+    public void GrasEncoder_EncodeNew_EmitsCanonicalOrderWithDataPayload()
+    {
+        var gras = new GrassRecord
+        {
+            FormId = 0x2470,
+            EditorId = "MojaveScrub",
+            ModelPath = "meshes/landscape/grass/mojavescrub.nif",
+            ModelBound = 12.5f,
+            ModelTextureData = [0xAA, 0xBB, 0xCC, 0xDD],
+            Data = new GrassData
+            {
+                Density = 200,
+                MinSlope = 0,
+                MaxSlope = 75,
+                UnitsFromWaterAmount = 32,
+                UnitsFromWaterType = 3,
+                PositionRange = 256f,
+                HeightRange = 16f,
+                ColorRange = 0.25f,
+                WavePeriod = 4.5f,
+                Flags = 0x02
+            }
+        };
+
+        var encoded = GrasEncoder.EncodeNew(gras);
+        var sigs = encoded.Subrecords.Select(s => s.Signature).ToList();
+
+        Assert.Equal(["EDID", "MODL", "MODB", "MODT", "DATA"], sigs);
+
+        var modb = Assert.Single(encoded.Subrecords, s => s.Signature == "MODB").Bytes;
+        Assert.Equal(4, modb.Length);
+        Assert.Equal(12.5f, BinaryPrimitives.ReadSingleLittleEndian(modb));
+
+        var data = Assert.Single(encoded.Subrecords, s => s.Signature == "DATA").Bytes;
+        Assert.Equal(32, data.Length);
+        Assert.Equal(200, data[0]);
+        Assert.Equal(75, data[2]);
+        Assert.Equal((ushort)32, BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(4)));
+        Assert.Equal(3u, BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(8)));
+        Assert.Equal(256f, BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(12)));
+        Assert.Equal(4.5f, BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(24)));
+        Assert.Equal((byte)0x02, data[28]);
+        // Trailing padding bytes stay zero.
+        Assert.Equal(0, data[29]);
+        Assert.Equal(0, data[30]);
+        Assert.Equal(0, data[31]);
+    }
+
+    [Fact]
+    public void GrasEncoder_EncodeNew_OmitsMissingOptionalFields()
+    {
+        var gras = new GrassRecord
+        {
+            FormId = 0x2471,
+            EditorId = "EmptyGrass"
+        };
+
+        var encoded = GrasEncoder.EncodeNew(gras);
+        var sigs = encoded.Subrecords.Select(s => s.Signature).ToList();
+
+        Assert.Equal(["EDID"], sigs);
     }
 
     // ====================================================================================

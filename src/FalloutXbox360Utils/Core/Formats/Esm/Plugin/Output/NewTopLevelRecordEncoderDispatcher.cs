@@ -105,6 +105,7 @@ internal static class NewTopLevelRecordEncoderDispatcher
             ["SOUN"] = (model, _) => SounEncoder.EncodeNew((SoundRecord)model),
             ["TXST"] = (model, _) => TxstEncoder.EncodeNew((TextureSetRecord)model),
             ["LTEX"] = (model, _) => LtexEncoder.EncodeNew((LandscapeTextureRecord)model),
+            ["GRAS"] = (model, _) => GrasEncoder.EncodeNew((GrassRecord)model),
             ["CHAL"] = (model, _) => ChalEncoder.EncodeNew((ChallengeRecord)model),
             ["BPTD"] = (model, _) => BptdEncoder.EncodeNew((BodyPartDataRecord)model),
             ["ENCH"] = (model, _) => EnchEncoder.EncodeNew((EnchantmentRecord)model),
