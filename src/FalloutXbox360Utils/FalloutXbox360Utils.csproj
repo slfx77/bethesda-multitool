@@ -141,6 +141,7 @@
     <Compile Include="App\Helpers\FormUsageIndex.cs" />
     <Compile Include="App\Helpers\FormUsageReference.cs" />
     <Compile Include="App\Helpers\RecordDetailPropertyAdapter.cs" />
+    <Compile Include="App\Helpers\WorldGridConstants.cs" />
     <Compile Include="App\Models\EsmPropertyEntry.cs" />
     <!-- XAML files in App/ -->
     <Page Remove="App\**\*.xaml" />

@@ -39,6 +39,46 @@ public class LandSubrecordParserTests
     }
 
     [Fact]
+    public void Parses_VnmlPayload_BigEndian()
+    {
+        var vnml = new byte[VnmlSize];
+        for (var i = 0; i < vnml.Length; i++)
+        {
+            vnml[i] = (byte)(sbyte)((i % 255) - 127);
+        }
+
+        var data = BuildRecord(isBigEndian: true, ("VNML", vnml));
+        var result = LandSubrecordParser.Parse(data, data.Length, isBigEndian: true);
+
+        Assert.NotNull(result.VisualData);
+        Assert.NotNull(result.VisualData!.VertexNormals);
+        Assert.Equal(VnmlSize, result.VisualData.VertexNormals!.Length);
+        Assert.Equal(vnml, result.VisualData.VertexNormals);
+        Assert.Equal(VisualDataSource.Dmp, result.VisualData.VertexNormalsSource);
+        Assert.Equal(VisualDataSource.Dmp, result.VisualData.Source);
+        Assert.Equal(VnmlSize, result.VnmlByteCount);
+    }
+
+    [Fact]
+    public void Parses_VclrAndVnml_Together_AggregateSourceMatches()
+    {
+        var vclr = new byte[VnmlSize];
+        var vnml = new byte[VnmlSize];
+        for (var i = 0; i < vnml.Length; i++)
+        {
+            vnml[i] = (byte)i;
+        }
+
+        var data = BuildRecord(isBigEndian: false, ("VNML", vnml), ("VCLR", vclr));
+        var result = LandSubrecordParser.Parse(data, data.Length, isBigEndian: false);
+
+        Assert.NotNull(result.VisualData);
+        Assert.Equal(VisualDataSource.MasterEsm, result.VisualData!.VertexColorsSource);
+        Assert.Equal(VisualDataSource.MasterEsm, result.VisualData.VertexNormalsSource);
+        Assert.Equal(VisualDataSource.MasterEsm, result.VisualData.Source);
+    }
+
+    [Fact]
     public void Parses_VclrPayload_MasterEsm_LittleEndian()
     {
         var vclr = new byte[VnmlSize];
@@ -151,6 +191,63 @@ public class LandSubrecordParserTests
         Assert.NotNull(visual);
         Assert.True(visual!.HasVertexColors);
         Assert.Equal(VisualDataSource.MasterEsm, visual.Source);
+    }
+
+    [Fact]
+    public void LandEncoder_PrefersRuntimeVnml_OverHeightDerived()
+    {
+        var heightmap = new LandHeightmap
+        {
+            HeightOffset = 0f,
+            HeightDeltas = new sbyte[33 * 33]
+        };
+
+        var runtimeVnml = new byte[VnmlSize];
+        for (var i = 0; i < runtimeVnml.Length; i++)
+        {
+            runtimeVnml[i] = (byte)(sbyte)((i % 200) - 100);
+        }
+
+        var visual = new LandVisualData
+        {
+            VertexNormals = runtimeVnml,
+            VertexNormalsSource = VisualDataSource.Runtime,
+            Source = VisualDataSource.Runtime
+        };
+
+        var subs = LandEncoder.Encode(heightmap, visual);
+        Assert.NotNull(subs);
+        var encodedVnml = subs!.SingleOrDefault(s => s.Signature == "VNML");
+        Assert.NotNull(encodedVnml);
+        Assert.Equal(runtimeVnml, encodedVnml!.Bytes);
+    }
+
+    [Fact]
+    public void LandEncoder_FallsBackToHeightDerivedVnml_WhenRuntimeVnmlAbsent()
+    {
+        var heightmap = new LandHeightmap
+        {
+            HeightOffset = 0f,
+            HeightDeltas = new sbyte[33 * 33]
+        };
+
+        var visualNoNormals = new LandVisualData
+        {
+            VertexColors = new byte[VnmlSize],
+            VertexColorsSource = VisualDataSource.Dmp,
+            Source = VisualDataSource.Dmp
+        };
+
+        var subs = LandEncoder.Encode(heightmap, visualNoNormals);
+        Assert.NotNull(subs);
+        var encodedVnml = subs!.SingleOrDefault(s => s.Signature == "VNML");
+        Assert.NotNull(encodedVnml);
+        Assert.Equal(VnmlSize, encodedVnml!.Bytes.Length);
+        // Height-derived normals for a perfectly flat heightmap point straight up:
+        // nx = 0, ny = 0, nz = 1 → bytes (0, 0, 127).
+        Assert.Equal(0, encodedVnml.Bytes[0]);
+        Assert.Equal(0, encodedVnml.Bytes[1]);
+        Assert.Equal(127, encodedVnml.Bytes[2]);
     }
 
     [Fact]

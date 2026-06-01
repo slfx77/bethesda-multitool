@@ -582,6 +582,220 @@ public record RuntimeTerrainMesh
         return sourceColors == null ? null : InterpolateColorsToVclr(sourceColors, GridSize);
     }
 
+    /// <summary>
+    ///     Reconstruct VNML bytes from runtime vertex normals using the same detected terrain grid as VCLR.
+    ///     Returns null when Normals is missing, the canonical grid can't be reconstructed, or no valid
+    ///     normal samples land on the canonical local frame. Components are encoded as sbyte (clamp(-127..127)
+    ///     of <c>component * 127</c>) in canonical 33×33 LAND vertex order. Caller can fall back to
+    ///     height-derived normals via <c>LandEncoder.BuildVnml</c> when this returns null.
+    /// </summary>
+    public byte[]? ToLandVertexNormalBytes()
+    {
+        if (Normals is null || Normals.Length < 3)
+        {
+            return null;
+        }
+
+        var reconstruction = TryReconstructHeightGrid();
+        if (reconstruction == null)
+        {
+            return null;
+        }
+
+        var samples = CollectValidSamples();
+        if (samples.Count == 0)
+        {
+            return null;
+        }
+
+        // World-frame VNML projection is omitted in v1 — cells whose runtime mesh doesn't sit
+        // on the canonical local frame fall back to LandEncoder.BuildVnml's height-derived
+        // normals, which is the historical behavior. Add the world-frame path here if a future
+        // capture shows non-canonical meshes with meaningful normals worth preserving.
+        if (!reconstruction.UsesCanonicalLocalFrame)
+        {
+            return null;
+        }
+
+        return ToLandVertexNormalBytesFromCanonicalLocalSamples(samples);
+    }
+
+    private byte[]? ToLandVertexNormalBytesFromCanonicalLocalSamples(List<TerrainVertexSample> samples)
+    {
+        var cells = new TerrainNormalCell?[GridSize, GridSize];
+        foreach (var sample in samples)
+        {
+            var mapped = TryMapLocalSampleToCanonicalCell(sample);
+            if (mapped == null)
+            {
+                continue;
+            }
+
+            var normalOffset = sample.Index * 3;
+            if (normalOffset + 2 >= Normals!.Length)
+            {
+                continue;
+            }
+
+            var nx = Normals[normalOffset];
+            var ny = Normals[normalOffset + 1];
+            var nz = Normals[normalOffset + 2];
+            if (!IsFinite(nx) || !IsFinite(ny) || !IsFinite(nz))
+            {
+                continue;
+            }
+
+            var (gridX, gridY, fitError) = mapped.Value;
+            var existing = cells[gridY, gridX];
+            if (existing == null || fitError < existing.FitError)
+            {
+                cells[gridY, gridX] = new TerrainNormalCell(nx, ny, nz, fitError);
+            }
+        }
+
+        var sourceNormals = BuildSourceNormalGrid(cells, GridSize);
+        return sourceNormals == null ? null : ProjectSourceNormalsToVnml(sourceNormals);
+    }
+
+    private static (float Nx, float Ny, float Nz)[,]? BuildSourceNormalGrid(
+        TerrainNormalCell?[,] cells,
+        int gridSize)
+    {
+        var source = new (float Nx, float Ny, float Nz)[gridSize, gridSize];
+        var hasValue = new bool[gridSize, gridSize];
+        var sumX = 0f;
+        var sumY = 0f;
+        var sumZ = 0f;
+        var count = 0;
+
+        for (var y = 0; y < gridSize; y++)
+        {
+            for (var x = 0; x < gridSize; x++)
+            {
+                var cell = cells[y, x];
+                if (cell == null)
+                {
+                    continue;
+                }
+
+                source[y, x] = (cell.Nx, cell.Ny, cell.Nz);
+                hasValue[y, x] = true;
+                sumX += cell.Nx;
+                sumY += cell.Ny;
+                sumZ += cell.Nz;
+                count++;
+            }
+        }
+
+        if (count == 0)
+        {
+            return null;
+        }
+
+        // Fallback is the renormalized average normal across known cells — preserves "up-ish"
+        // orientation when most of the cell is unsampled.
+        var fallback = NormalizeOrUp(sumX / count, sumY / count, sumZ / count);
+        bool madeProgress;
+        do
+        {
+            madeProgress = false;
+            for (var y = 0; y < gridSize; y++)
+            {
+                for (var x = 0; x < gridSize; x++)
+                {
+                    if (hasValue[y, x])
+                    {
+                        continue;
+                    }
+
+                    var nx = 0f;
+                    var ny = 0f;
+                    var nz = 0f;
+                    var neighborCount = 0;
+                    for (var dy = -1; dy <= 1; dy++)
+                    {
+                        for (var dx = -1; dx <= 1; dx++)
+                        {
+                            if (dx == 0 && dy == 0)
+                            {
+                                continue;
+                            }
+
+                            var nXi = x + dx;
+                            var nYi = y + dy;
+                            if (nXi < 0 || nXi >= gridSize || nYi < 0 || nYi >= gridSize || !hasValue[nYi, nXi])
+                            {
+                                continue;
+                            }
+
+                            nx += source[nYi, nXi].Nx;
+                            ny += source[nYi, nXi].Ny;
+                            nz += source[nYi, nXi].Nz;
+                            neighborCount++;
+                        }
+                    }
+
+                    if (neighborCount >= 2)
+                    {
+                        source[y, x] = NormalizeOrUp(nx / neighborCount, ny / neighborCount, nz / neighborCount);
+                        hasValue[y, x] = true;
+                        madeProgress = true;
+                    }
+                }
+            }
+        } while (madeProgress);
+
+        for (var y = 0; y < gridSize; y++)
+        {
+            for (var x = 0; x < gridSize; x++)
+            {
+                if (!hasValue[y, x])
+                {
+                    source[y, x] = fallback;
+                }
+            }
+        }
+
+        return source;
+    }
+
+    private static byte[] ProjectSourceNormalsToVnml((float Nx, float Ny, float Nz)[,] source)
+    {
+        var bytes = new byte[VertexCount * 3];
+        for (var y = 0; y < GridSize; y++)
+        {
+            for (var x = 0; x < GridSize; x++)
+            {
+                var (nx, ny, nz) = source[y, x];
+                var idx = (y * GridSize + x) * 3;
+                bytes[idx + 0] = NormalComponentToByte(nx);
+                bytes[idx + 1] = NormalComponentToByte(ny);
+                bytes[idx + 2] = NormalComponentToByte(nz);
+            }
+        }
+
+        return bytes;
+    }
+
+    private static (float Nx, float Ny, float Nz) NormalizeOrUp(float nx, float ny, float nz)
+    {
+        var length = MathF.Sqrt(nx * nx + ny * ny + nz * nz);
+        if (length <= 0.0001f)
+        {
+            return (0f, 0f, 1f);
+        }
+
+        return (nx / length, ny / length, nz / length);
+    }
+
+    private static byte NormalComponentToByte(float value)
+    {
+        var scaled = Math.Clamp((int)MathF.Round(value * 127f), sbyte.MinValue, sbyte.MaxValue);
+        return unchecked((byte)(sbyte)scaled);
+    }
+
+    private sealed record TerrainNormalCell(float Nx, float Ny, float Nz, float FitError);
+
     private List<TerrainVertexSample> CollectValidSamples()
     {
         var samples = new List<TerrainVertexSample>();

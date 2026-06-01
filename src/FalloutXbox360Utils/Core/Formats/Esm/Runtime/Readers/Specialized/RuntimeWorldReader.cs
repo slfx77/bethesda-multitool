@@ -141,13 +141,13 @@ internal sealed class RuntimeWorldReader
         // Extract terrain mesh from heap pointers (ppVertices, ppNormals, ppColorsA)
         var terrainMesh = ReadTerrainMesh(loadedDataBuffer);
 
-        // Surface runtime VCLR alongside the texture layers. The terrain mesh's NiColorA
-        // array (LoadedLandData.ppColorsA) carries the engine's live vertex colors;
-        // ToLandVertexColorBytes() projects them into the canonical 17×17×3 LAND VCLR layout.
-        // Without this, cell.LandVisualData.VertexColors stays null for runtime-sourced cells
-        // even when the DMP holds the data — so the World tab's Vertex Colors layer renders
-        // empty on cells whose in-DMP ESM bytes lack VCLR (the common case for non-master
-        // worldspaces like TheStripWorld).
+        // Surface runtime VCLR + VNML alongside the texture layers. The terrain mesh's NiColorA
+        // and NiPoint3 arrays (LoadedLandData.ppColorsA, ppNormals) carry the engine's live
+        // vertex colors and normals; ToLandVertexColorBytes / ToLandVertexNormalBytes project
+        // each into the canonical 33×33×3 LAND payload. Without this, cell.LandVisualData
+        // stays empty for runtime-sourced cells even when the DMP holds the data — so the
+        // World tab's Vertex Colors / Normals layers (and the converter's LAND encoder) lose
+        // visibility into what the engine actually rendered.
         var visualData = visualExtraction.VisualData;
         if (terrainMesh is { HasColors: true })
         {
@@ -165,6 +165,26 @@ internal sealed class RuntimeWorldReader
                     {
                         VertexColors = runtimeVclr,
                         VertexColorsSource = VisualDataSource.Runtime
+                    };
+            }
+        }
+
+        if (terrainMesh is { HasNormals: true })
+        {
+            var runtimeVnml = terrainMesh.ToLandVertexNormalBytes();
+            if (runtimeVnml is { Length: > 0 })
+            {
+                visualData = visualData is null
+                    ? new LandVisualData
+                    {
+                        VertexNormals = runtimeVnml,
+                        VertexNormalsSource = VisualDataSource.Runtime,
+                        Source = VisualDataSource.Runtime
+                    }
+                    : visualData with
+                    {
+                        VertexNormals = runtimeVnml,
+                        VertexNormalsSource = VisualDataSource.Runtime
                     };
             }
         }

@@ -470,7 +470,7 @@ public static class AnalyzeCommand
             "SourceSampleCount,SourceCoveragePct,EncodedRoundTripMaxError,HasRuntimeVertexColors," +
             "LandVisualSource,VclrByteCount,VtexCount,BtxtCount,AtxtCount,VtxtCount,VtxtByteCount," +
             "UnattachedVtxtCount,UnattachedVtxtByteCount,VisualVclrLen,VisualVclrSrc," +
-            "VisualLayerCount,VisualLayerSrc,Classification");
+            "VisualVnmlLen,VisualVnmlSrc,VisualLayerCount,VisualLayerSrc,Classification");
         foreach (var row in rows)
         {
             var d = row.Diagnostic;
@@ -496,6 +496,8 @@ public static class AnalyzeCommand
                 $"{land.VisualData?.UnattachedVtxtCount ?? 0},{land.VisualData?.UnattachedVtxtByteCount ?? 0}," +
                 $"{land.VisualData?.VertexColors?.Length ?? 0}," +
                 $"{land.VisualData?.VertexColorsSource.ToString() ?? string.Empty}," +
+                $"{land.VisualData?.VertexNormals?.Length ?? 0}," +
+                $"{land.VisualData?.VertexNormalsSource.ToString() ?? string.Empty}," +
                 $"{land.VisualData?.TextureLayers.Count ?? 0}," +
                 $"{land.VisualData?.TextureLayersSource.ToString() ?? string.Empty}," +
                 $"{d.Classification}");

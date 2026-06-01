@@ -32,8 +32,10 @@ internal static class LandSubrecordParser
         LandHeightmap? heightmap = null;
         var textureLayers = new List<LandTextureLayer>();
         var vclrBlocks = new List<byte[]>();
+        byte[]? vnmlBytes = null;
         var vtexValues = new List<uint>();
         var vclrByteCount = 0;
+        var vnmlByteCount = 0;
         var vtexCount = 0;
         var btxtCount = 0;
         var atxtCount = 0;
@@ -107,6 +109,19 @@ internal static class LandSubrecordParser
                     vclrBlocks.Add(subData.ToArray());
                 }
             }
+            else if (sub.Signature == "VNML")
+            {
+                // VNML is a per-vertex signed-byte normal payload (1089 × 3 = 3267 bytes).
+                // Bytes are endian-neutral (each component is a single sbyte), so we capture
+                // them as-is regardless of <paramref name="isBigEndian" />. Multiple VNML
+                // blocks in a single record are vanishingly rare; we keep the last one
+                // seen, mirroring how VCLR aggregation tolerates duplicates.
+                vnmlByteCount += sub.DataLength;
+                if (sub.DataLength == LandVnmlSize)
+                {
+                    vnmlBytes = subData.ToArray();
+                }
+            }
             else if (sub.Signature == "VTEX")
             {
                 vtexCount += sub.DataLength / 4;
@@ -140,18 +155,20 @@ internal static class LandSubrecordParser
         var combinedIndices = vtexValues.Count > 0 ? vtexValues.ToArray() : null;
 
         LandVisualData? visualData = null;
-        if (combinedVclr is not null || combinedIndices is not null || textureLayers.Count > 0 ||
-            unattachedVtxtCount > 0)
+        if (combinedVclr is not null || vnmlBytes is not null || combinedIndices is not null ||
+            textureLayers.Count > 0 || unattachedVtxtCount > 0)
         {
             visualData = new LandVisualData
             {
                 VertexColors = combinedVclr,
+                VertexNormals = vnmlBytes,
                 TextureIndices = combinedIndices,
                 TextureLayers = textureLayers,
                 UnattachedVtxtCount = unattachedVtxtCount,
                 UnattachedVtxtByteCount = unattachedVtxtByteCount,
                 Source = source,
                 VertexColorsSource = combinedVclr is { Length: > 0 } ? source : VisualDataSource.None,
+                VertexNormalsSource = vnmlBytes is { Length: > 0 } ? source : VisualDataSource.None,
                 TextureIndicesSource = combinedIndices is { Length: > 0 } ? source : VisualDataSource.None,
                 TextureLayersSource = textureLayers.Count > 0 ? source : VisualDataSource.None
             };
@@ -161,6 +178,7 @@ internal static class LandSubrecordParser
             heightmap,
             visualData,
             vclrByteCount,
+            vnmlByteCount,
             vtexCount,
             btxtCount,
             atxtCount,
@@ -169,6 +187,8 @@ internal static class LandSubrecordParser
             unattachedVtxtCount,
             unattachedVtxtByteCount);
     }
+
+    private const int LandVnmlSize = 33 * 33 * 3;
 
     /// <summary>
     ///     Convenience overload for callers that only need <see cref="LandVisualData" /> and
@@ -241,6 +261,7 @@ internal readonly record struct LandSubrecordParseResult(
     LandHeightmap? Heightmap,
     LandVisualData? VisualData,
     int VclrByteCount,
+    int VnmlByteCount,
     int VtexCount,
     int BtxtCount,
     int AtxtCount,

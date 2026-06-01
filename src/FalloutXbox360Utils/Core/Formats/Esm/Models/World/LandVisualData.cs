@@ -8,6 +8,15 @@ public record LandVisualData
     /// <summary>VCLR payload, RGB triplets in LAND vertex order. Expected length is 3267 bytes.</summary>
     public byte[]? VertexColors { get; init; }
 
+    /// <summary>
+    ///     VNML payload, signed-byte normal components (X, Y, Z) in LAND vertex order. Expected length
+    ///     is 3267 bytes (1089 vertices × 3 components). When sourced from the runtime terrain mesh
+    ///     (<c>RuntimeTerrainMesh.Normals</c>), preserves the engine's captured normals instead of
+    ///     reconstructing them from the heightmap. <see cref="LandEncoder" /> prefers this field
+    ///     over height-derived normals when present.
+    /// </summary>
+    public byte[]? VertexNormals { get; init; }
+
     /// <summary>VTEX texture FormID/index values, decoded to host-endian integers.</summary>
     public uint[]? TextureIndices { get; init; }
 
@@ -26,6 +35,9 @@ public record LandVisualData
     /// <summary>Provenance of <see cref="VertexColors" />.</summary>
     public VisualDataSource VertexColorsSource { get; init; } = VisualDataSource.None;
 
+    /// <summary>Provenance of <see cref="VertexNormals" />.</summary>
+    public VisualDataSource VertexNormalsSource { get; init; } = VisualDataSource.None;
+
     /// <summary>Provenance of <see cref="TextureIndices" />.</summary>
     public VisualDataSource TextureIndicesSource { get; init; } = VisualDataSource.None;
 
@@ -34,11 +46,13 @@ public record LandVisualData
 
     public bool HasVertexColors => VertexColors is { Length: > 0 };
 
+    public bool HasVertexNormals => VertexNormals is { Length: > 0 };
+
     public bool HasTextureIndices => TextureIndices is { Length: > 0 };
 
     public bool HasTextureLayers => TextureLayers.Count > 0;
 
-    public bool HasAny => HasVertexColors || HasTextureIndices || HasTextureLayers;
+    public bool HasAny => HasVertexColors || HasVertexNormals || HasTextureIndices || HasTextureLayers;
 
     public int BtxtCount => TextureLayers.Count(l => l.Kind == LandTextureLayerKind.Base);
 
@@ -52,9 +66,13 @@ public record LandVisualData
         LandVisualData? primary,
         LandVisualData? fallback)
     {
-        var (vertexColors, vertexColorsSource) = ChooseValidVclr(
+        var (vertexColors, vertexColorsSource) = ChooseValidVnml(
             (primary?.VertexColors, primary?.VertexColorsSource ?? primary?.Source ?? VisualDataSource.None),
             (fallback?.VertexColors, fallback?.VertexColorsSource ?? fallback?.Source ?? VisualDataSource.None));
+
+        var (vertexNormals, vertexNormalsSource) = ChooseValidVnml(
+            (primary?.VertexNormals, primary?.VertexNormalsSource ?? primary?.Source ?? VisualDataSource.None),
+            (fallback?.VertexNormals, fallback?.VertexNormalsSource ?? fallback?.Source ?? VisualDataSource.None));
 
         var (textureIndices, textureIndicesSource) = ChooseNonEmptyArray(
             (primary?.TextureIndices, primary?.TextureIndicesSource ?? primary?.Source ?? VisualDataSource.None),
@@ -64,7 +82,7 @@ public record LandVisualData
             (primary?.TextureLayers, primary?.TextureLayersSource ?? primary?.Source ?? VisualDataSource.None),
             (fallback?.TextureLayers, fallback?.TextureLayersSource ?? fallback?.Source ?? VisualDataSource.None));
 
-        if (vertexColors is null && textureIndices is null && textureLayers.Count == 0)
+        if (vertexColors is null && vertexNormals is null && textureIndices is null && textureLayers.Count == 0)
         {
             return null;
         }
@@ -72,12 +90,14 @@ public record LandVisualData
         return new LandVisualData
         {
             VertexColors = vertexColors,
+            VertexNormals = vertexNormals,
             TextureIndices = textureIndices,
             TextureLayers = new List<LandTextureLayer>(textureLayers),
             VertexColorsSource = vertexColorsSource,
+            VertexNormalsSource = vertexNormalsSource,
             TextureIndicesSource = textureIndicesSource,
             TextureLayersSource = textureLayersSource,
-            Source = AggregateSource(vertexColorsSource, textureIndicesSource, textureLayersSource)
+            Source = AggregateSource(vertexColorsSource, vertexNormalsSource, textureIndicesSource, textureLayersSource)
         };
     }
 
@@ -86,10 +106,14 @@ public record LandVisualData
         byte[]? runtimeVertexColors,
         LandVisualData? fallback)
     {
-        var (vertexColors, vertexColorsSource) = ChooseValidVclr(
+        var (vertexColors, vertexColorsSource) = ChooseValidVnml(
             (primary?.VertexColors, primary?.VertexColorsSource ?? primary?.Source ?? VisualDataSource.None),
             (runtimeVertexColors, VisualDataSource.Runtime),
             (fallback?.VertexColors, fallback?.VertexColorsSource ?? fallback?.Source ?? VisualDataSource.None));
+
+        var (vertexNormals, vertexNormalsSource) = ChooseValidVnml(
+            (primary?.VertexNormals, primary?.VertexNormalsSource ?? primary?.Source ?? VisualDataSource.None),
+            (fallback?.VertexNormals, fallback?.VertexNormalsSource ?? fallback?.Source ?? VisualDataSource.None));
 
         var (textureIndices, textureIndicesSource) = ChooseNonEmptyArray(
             (primary?.TextureIndices, primary?.TextureIndicesSource ?? primary?.Source ?? VisualDataSource.None),
@@ -99,7 +123,7 @@ public record LandVisualData
             (primary?.TextureLayers, primary?.TextureLayersSource ?? primary?.Source ?? VisualDataSource.None),
             (fallback?.TextureLayers, fallback?.TextureLayersSource ?? fallback?.Source ?? VisualDataSource.None));
 
-        if (vertexColors is null && textureIndices is null && textureLayers.Count == 0)
+        if (vertexColors is null && vertexNormals is null && textureIndices is null && textureLayers.Count == 0)
         {
             return null;
         }
@@ -107,12 +131,14 @@ public record LandVisualData
         return new LandVisualData
         {
             VertexColors = vertexColors,
+            VertexNormals = vertexNormals,
             TextureIndices = textureIndices,
             TextureLayers = new List<LandTextureLayer>(textureLayers),
             VertexColorsSource = vertexColorsSource,
+            VertexNormalsSource = vertexNormalsSource,
             TextureIndicesSource = textureIndicesSource,
             TextureLayersSource = textureLayersSource,
-            Source = AggregateSource(vertexColorsSource, textureIndicesSource, textureLayersSource)
+            Source = AggregateSource(vertexColorsSource, vertexNormalsSource, textureIndicesSource, textureLayersSource)
         };
     }
 
@@ -121,7 +147,12 @@ public record LandVisualData
         return bytes is { Length: 33 * 33 * 3 };
     }
 
-    private static (byte[]? Bytes, VisualDataSource Source) ChooseValidVclr(
+    /// <summary>
+    ///     Selects the first candidate whose byte payload is the canonical 1089-vertex × 3-byte
+    ///     LAND per-vertex array (3267 bytes). Both VCLR (RGB triplets) and VNML (sbyte normal
+    ///     components) share this shape, so the same helper validates both.
+    /// </summary>
+    private static (byte[]? Bytes, VisualDataSource Source) ChooseValidVnml(
         params (byte[]? Bytes, VisualDataSource Source)[] candidates)
     {
         foreach (var candidate in candidates)
@@ -165,6 +196,7 @@ public record LandVisualData
 
     private static VisualDataSource AggregateSource(
         VisualDataSource vertexColorsSource,
+        VisualDataSource vertexNormalsSource,
         VisualDataSource textureIndicesSource,
         VisualDataSource textureLayersSource)
     {
@@ -172,6 +204,11 @@ public record LandVisualData
         if (vertexColorsSource != VisualDataSource.None)
         {
             distinct.Add(vertexColorsSource);
+        }
+
+        if (vertexNormalsSource != VisualDataSource.None)
+        {
+            distinct.Add(vertexNormalsSource);
         }
 
         if (textureIndicesSource != VisualDataSource.None)
