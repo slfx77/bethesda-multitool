@@ -12,6 +12,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Parsing.Subrecords;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Cell;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Nav;
@@ -3677,15 +3678,7 @@ public sealed class PluginBuilder
         var dataSize = recordBytes.Length - 24;
         var data = new byte[dataSize];
         Buffer.BlockCopy(recordBytes, 24, data, 0, dataSize);
-        var header = new DetectedMainRecord(
-            "LAND",
-            (uint)dataSize,
-            masterLandRecord.Header.Flags,
-            masterLandRecord.Header.FormId,
-            masterLandRecord.Offset,
-            false);
-
-        return EsmWorldExtractor.ExtractLandFromBuffer(data, dataSize, header)?.VisualData;
+        return LandSubrecordParser.ParseVisualOnly(data, dataSize, isBigEndian: false);
     }
 
     private static LandHeightmap? TryExtractMasterLandHeightmap(ParsedMainRecord masterLandRecord)

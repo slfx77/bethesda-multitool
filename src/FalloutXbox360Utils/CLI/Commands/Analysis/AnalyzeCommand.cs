@@ -44,9 +44,9 @@ public static class AnalyzeCommand
             Description = "Export semantic parse (GECK-style report) to file"
         };
         var verboseOpt = new Option<bool>("-v", "--verbose") { Description = "Show detailed progress" };
-        var terrainObjOpt = new Option<string?>("--terrain-obj")
+        var terrainGlbOpt = new Option<string?>("--terrain-glb")
         {
-            Description = "Export runtime terrain meshes to Wavefront OBJ file (requires -s)"
+            Description = "Export runtime terrain meshes to glTF Binary (.glb) file (requires -s)"
         };
         var terrainDiagOpt = new Option<bool>("--terrain-diag")
         {
@@ -67,7 +67,7 @@ public static class AnalyzeCommand
         command.Options.Add(extractEsmOpt);
         command.Options.Add(semanticOpt);
         command.Options.Add(verboseOpt);
-        command.Options.Add(terrainObjOpt);
+        command.Options.Add(terrainGlbOpt);
         command.Options.Add(terrainDiagOpt);
         command.Options.Add(extractMeshesOpt);
         command.Options.Add(extractTexturesOpt);
@@ -82,7 +82,7 @@ public static class AnalyzeCommand
                 ExtractEsm = parseResult.GetValue(extractEsmOpt),
                 Semantic = parseResult.GetValue(semanticOpt),
                 Verbose = parseResult.GetValue(verboseOpt),
-                TerrainObj = parseResult.GetValue(terrainObjOpt),
+                TerrainGlb = parseResult.GetValue(terrainGlbOpt),
                 TerrainDiag = parseResult.GetValue(terrainDiagOpt),
                 ExtractMeshes = parseResult.GetValue(extractMeshesOpt),
                 ExtractTextures = parseResult.GetValue(extractTexturesOpt)
@@ -163,7 +163,7 @@ public static class AnalyzeCommand
         RecordCollection? semanticResult = null;
         if (!string.IsNullOrEmpty(opts.Semantic) && result.EsmRecords != null)
         {
-            semanticResult = await ExportSemanticReportAsync(result, opts.Semantic, opts.TerrainObj);
+            semanticResult = await ExportSemanticReportAsync(result, opts.Semantic, opts.TerrainGlb);
         }
 
         if (!string.IsNullOrEmpty(opts.ExtractEsm) && result.EsmRecords != null)
@@ -257,7 +257,7 @@ public static class AnalyzeCommand
         // Collect terrain meshes from LAND records (using runtime enrichment data)
         var withMesh = scanResult.LandRecords.Count(l => l.RuntimeTerrainMesh != null);
         var withCoords = scanResult.LandRecords.Count(l => l.BestCellX.HasValue && l.BestCellY.HasValue);
-        Logger.Instance.Debug("Terrain OBJ: {0} LAND records total, {1} with mesh, {2} with coords",
+        Logger.Instance.Debug("Terrain GLB: {0} LAND records total, {1} with mesh, {2} with coords",
             scanResult.LandRecords.Count, withMesh, withCoords);
 
         var cellsWithMesh = scanResult.LandRecords
@@ -271,7 +271,7 @@ public static class AnalyzeCommand
             return;
         }
 
-        TerrainObjExporter.ExportMultiple(cellsWithMesh, outputPath);
+        TerrainGlbExporter.ExportMultiple(cellsWithMesh, outputPath);
         AnsiConsole.MarkupLine(
             $"[green]Terrain mesh exported:[/] {outputPath} ({cellsWithMesh.Count} cells, " +
             $"{cellsWithMesh.Count * RuntimeTerrainMesh.VertexCount:N0} vertices, " +
@@ -433,7 +433,7 @@ public static class AnalyzeCommand
                 $"{d.EncodedRoundTripMaxError:F1}",
                 $"[{garbColor}]{d.GarbageZCount}[/]",
                 d.HasRuntimeVertexColors ? "yes" : "no",
-                land.VisualData?.Source ?? "-",
+                land.VisualData?.Source.ToString() ?? "-",
                 $"{land.VclrByteCount}",
                 $"{land.VtexCount}",
                 $"{land.BtxtCount}",
@@ -469,7 +469,8 @@ public static class AnalyzeCommand
             "LastActiveRow,RowDiscontinuities,HeightSource,DetectedLodLevel,DetectedGridSize," +
             "SourceSampleCount,SourceCoveragePct,EncodedRoundTripMaxError,HasRuntimeVertexColors," +
             "LandVisualSource,VclrByteCount,VtexCount,BtxtCount,AtxtCount,VtxtCount,VtxtByteCount," +
-            "UnattachedVtxtCount,UnattachedVtxtByteCount,Classification");
+            "UnattachedVtxtCount,UnattachedVtxtByteCount,VisualVclrLen,VisualVclrSrc," +
+            "VisualLayerCount,VisualLayerSrc,Classification");
         foreach (var row in rows)
         {
             var d = row.Diagnostic;
@@ -490,9 +491,13 @@ public static class AnalyzeCommand
                 $"{d.GarbageZCount},{d.DominantZPercent:F1},{d.LastActiveRow}," +
                 $"{d.RowDiscontinuities},{d.HeightSource},{d.DetectedLodLevel},{d.DetectedGridSize}," +
                 $"{d.SourceSampleCount},{d.SourceCoveragePercent:F1},{d.EncodedRoundTripMaxError:F2}," +
-                $"{d.HasRuntimeVertexColors},{land.VisualData?.Source ?? ""},{land.VclrByteCount}," +
+                $"{d.HasRuntimeVertexColors},{land.VisualData?.Source.ToString() ?? string.Empty},{land.VclrByteCount}," +
                 $"{land.VtexCount},{land.BtxtCount},{land.AtxtCount},{land.VtxtCount},{land.VtxtByteCount}," +
                 $"{land.VisualData?.UnattachedVtxtCount ?? 0},{land.VisualData?.UnattachedVtxtByteCount ?? 0}," +
+                $"{land.VisualData?.VertexColors?.Length ?? 0}," +
+                $"{land.VisualData?.VertexColorsSource.ToString() ?? string.Empty}," +
+                $"{land.VisualData?.TextureLayers.Count ?? 0}," +
+                $"{land.VisualData?.TextureLayersSource.ToString() ?? string.Empty}," +
                 $"{d.Classification}");
         }
 
@@ -789,7 +794,7 @@ public static class AnalyzeCommand
         public string? ExtractEsm { get; init; }
         public string? Semantic { get; init; }
         public bool Verbose { get; init; }
-        public string? TerrainObj { get; init; }
+        public string? TerrainGlb { get; init; }
         public bool TerrainDiag { get; init; }
         public string? ExtractMeshes { get; init; }
         public string? ExtractTextures { get; init; }

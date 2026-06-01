@@ -141,6 +141,34 @@ internal sealed class RuntimeWorldReader
         // Extract terrain mesh from heap pointers (ppVertices, ppNormals, ppColorsA)
         var terrainMesh = ReadTerrainMesh(loadedDataBuffer);
 
+        // Surface runtime VCLR alongside the texture layers. The terrain mesh's NiColorA
+        // array (LoadedLandData.ppColorsA) carries the engine's live vertex colors;
+        // ToLandVertexColorBytes() projects them into the canonical 17×17×3 LAND VCLR layout.
+        // Without this, cell.LandVisualData.VertexColors stays null for runtime-sourced cells
+        // even when the DMP holds the data — so the World tab's Vertex Colors layer renders
+        // empty on cells whose in-DMP ESM bytes lack VCLR (the common case for non-master
+        // worldspaces like TheStripWorld).
+        var visualData = visualExtraction.VisualData;
+        if (terrainMesh is { HasColors: true })
+        {
+            var runtimeVclr = RuntimeTerrainColorExtractor.ExtractVclr(terrainMesh);
+            if (runtimeVclr is { Length: > 0 })
+            {
+                visualData = visualData is null
+                    ? new LandVisualData
+                    {
+                        VertexColors = runtimeVclr,
+                        VertexColorsSource = VisualDataSource.Runtime,
+                        Source = VisualDataSource.Runtime
+                    }
+                    : visualData with
+                    {
+                        VertexColors = runtimeVclr,
+                        VertexColorsSource = VisualDataSource.Runtime
+                    };
+            }
+        }
+
         return new RuntimeLoadedLandData
         {
             FormId = formId,
@@ -153,7 +181,7 @@ internal sealed class RuntimeWorldReader
             LandOffset = offset,
             LoadedDataOffset = loadedDataFileOffset.Value,
             TerrainMesh = terrainMesh,
-            VisualData = visualExtraction.VisualData,
+            VisualData = visualData,
             RuntimeLandTextures = visualExtraction.LandTextures,
             RuntimeTextureSets = visualExtraction.TextureSets,
             Diagnostics = diagnostics

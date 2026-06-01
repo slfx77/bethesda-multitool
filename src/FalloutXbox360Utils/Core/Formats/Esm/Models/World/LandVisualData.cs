@@ -20,8 +20,17 @@ public record LandVisualData
     /// <summary>Total byte count of unattached VTXT subrecords.</summary>
     public int UnattachedVtxtByteCount { get; init; }
 
-    /// <summary>Diagnostic source label, such as DMP, master, runtime-colors, or merged.</summary>
-    public string? Source { get; init; }
+    /// <summary>Aggregate provenance. Equals the unanimous per-field source, or <see cref="VisualDataSource.Merged" /> when fields disagree.</summary>
+    public VisualDataSource Source { get; init; } = VisualDataSource.None;
+
+    /// <summary>Provenance of <see cref="VertexColors" />.</summary>
+    public VisualDataSource VertexColorsSource { get; init; } = VisualDataSource.None;
+
+    /// <summary>Provenance of <see cref="TextureIndices" />.</summary>
+    public VisualDataSource TextureIndicesSource { get; init; } = VisualDataSource.None;
+
+    /// <summary>Provenance of <see cref="TextureLayers" />.</summary>
+    public VisualDataSource TextureLayersSource { get; init; } = VisualDataSource.None;
 
     public bool HasVertexColors => VertexColors is { Length: > 0 };
 
@@ -43,9 +52,17 @@ public record LandVisualData
         LandVisualData? primary,
         LandVisualData? fallback)
     {
-        var vertexColors = ChooseValidVclr(primary?.VertexColors, fallback?.VertexColors);
-        var textureIndices = ChooseNonEmptyArray(primary?.TextureIndices, fallback?.TextureIndices);
-        var textureLayers = ChooseNonEmptyLayers(primary?.TextureLayers, fallback?.TextureLayers);
+        var (vertexColors, vertexColorsSource) = ChooseValidVclr(
+            (primary?.VertexColors, primary?.VertexColorsSource ?? primary?.Source ?? VisualDataSource.None),
+            (fallback?.VertexColors, fallback?.VertexColorsSource ?? fallback?.Source ?? VisualDataSource.None));
+
+        var (textureIndices, textureIndicesSource) = ChooseNonEmptyArray(
+            (primary?.TextureIndices, primary?.TextureIndicesSource ?? primary?.Source ?? VisualDataSource.None),
+            (fallback?.TextureIndices, fallback?.TextureIndicesSource ?? fallback?.Source ?? VisualDataSource.None));
+
+        var (textureLayers, textureLayersSource) = ChooseNonEmptyLayers(
+            (primary?.TextureLayers, primary?.TextureLayersSource ?? primary?.Source ?? VisualDataSource.None),
+            (fallback?.TextureLayers, fallback?.TextureLayersSource ?? fallback?.Source ?? VisualDataSource.None));
 
         if (vertexColors is null && textureIndices is null && textureLayers.Count == 0)
         {
@@ -57,7 +74,10 @@ public record LandVisualData
             VertexColors = vertexColors,
             TextureIndices = textureIndices,
             TextureLayers = new List<LandTextureLayer>(textureLayers),
-            Source = BuildCategorySourceLabel(primary, fallback, vertexColors, textureIndices, textureLayers)
+            VertexColorsSource = vertexColorsSource,
+            TextureIndicesSource = textureIndicesSource,
+            TextureLayersSource = textureLayersSource,
+            Source = AggregateSource(vertexColorsSource, textureIndicesSource, textureLayersSource)
         };
     }
 
@@ -66,9 +86,18 @@ public record LandVisualData
         byte[]? runtimeVertexColors,
         LandVisualData? fallback)
     {
-        var vertexColors = ChooseValidVclr(primary?.VertexColors, runtimeVertexColors, fallback?.VertexColors);
-        var textureIndices = ChooseNonEmptyArray(primary?.TextureIndices, fallback?.TextureIndices);
-        var textureLayers = ChooseNonEmptyLayers(primary?.TextureLayers, fallback?.TextureLayers);
+        var (vertexColors, vertexColorsSource) = ChooseValidVclr(
+            (primary?.VertexColors, primary?.VertexColorsSource ?? primary?.Source ?? VisualDataSource.None),
+            (runtimeVertexColors, VisualDataSource.Runtime),
+            (fallback?.VertexColors, fallback?.VertexColorsSource ?? fallback?.Source ?? VisualDataSource.None));
+
+        var (textureIndices, textureIndicesSource) = ChooseNonEmptyArray(
+            (primary?.TextureIndices, primary?.TextureIndicesSource ?? primary?.Source ?? VisualDataSource.None),
+            (fallback?.TextureIndices, fallback?.TextureIndicesSource ?? fallback?.Source ?? VisualDataSource.None));
+
+        var (textureLayers, textureLayersSource) = ChooseNonEmptyLayers(
+            (primary?.TextureLayers, primary?.TextureLayersSource ?? primary?.Source ?? VisualDataSource.None),
+            (fallback?.TextureLayers, fallback?.TextureLayersSource ?? fallback?.Source ?? VisualDataSource.None));
 
         if (vertexColors is null && textureIndices is null && textureLayers.Count == 0)
         {
@@ -80,8 +109,10 @@ public record LandVisualData
             VertexColors = vertexColors,
             TextureIndices = textureIndices,
             TextureLayers = new List<LandTextureLayer>(textureLayers),
-            Source = BuildEmissionSourceLabel(primary, runtimeVertexColors, fallback, vertexColors, textureIndices,
-                textureLayers)
+            VertexColorsSource = vertexColorsSource,
+            TextureIndicesSource = textureIndicesSource,
+            TextureLayersSource = textureLayersSource,
+            Source = AggregateSource(vertexColorsSource, textureIndicesSource, textureLayersSource)
         };
     }
 
@@ -90,138 +121,74 @@ public record LandVisualData
         return bytes is { Length: 33 * 33 * 3 };
     }
 
-    private static byte[]? ChooseValidVclr(params byte[]?[] candidates)
+    private static (byte[]? Bytes, VisualDataSource Source) ChooseValidVclr(
+        params (byte[]? Bytes, VisualDataSource Source)[] candidates)
     {
         foreach (var candidate in candidates)
         {
-            if (IsValidVclr(candidate))
+            if (IsValidVclr(candidate.Bytes))
             {
                 return candidate;
             }
         }
 
-        return null;
+        return (null, VisualDataSource.None);
     }
 
-    private static uint[]? ChooseNonEmptyArray(params uint[]?[] candidates)
+    private static (uint[]? Values, VisualDataSource Source) ChooseNonEmptyArray(
+        params (uint[]? Values, VisualDataSource Source)[] candidates)
     {
         foreach (var candidate in candidates)
         {
-            if (candidate is { Length: > 0 })
+            if (candidate.Values is { Length: > 0 })
             {
                 return candidate;
             }
         }
 
-        return null;
+        return (null, VisualDataSource.None);
     }
 
-    private static List<LandTextureLayer> ChooseNonEmptyLayers(params List<LandTextureLayer>?[] candidates)
+    private static (List<LandTextureLayer> Layers, VisualDataSource Source) ChooseNonEmptyLayers(
+        params (List<LandTextureLayer>? Layers, VisualDataSource Source)[] candidates)
     {
         foreach (var candidate in candidates)
         {
-            if (candidate is { Count: > 0 })
+            if (candidate.Layers is { Count: > 0 })
             {
-                return candidate;
+                return (candidate.Layers, candidate.Source);
             }
         }
 
-        return [];
+        return ([], VisualDataSource.None);
     }
 
-    private static string BuildCategorySourceLabel(
-        LandVisualData? primary,
-        LandVisualData? fallback,
-        byte[]? selectedVertexColors,
-        uint[]? selectedTextureIndices,
-        List<LandTextureLayer> selectedTextureLayers)
+    private static VisualDataSource AggregateSource(
+        VisualDataSource vertexColorsSource,
+        VisualDataSource textureIndicesSource,
+        VisualDataSource textureLayersSource)
     {
-        var parts = new List<string>();
-
-        if (selectedVertexColors is not null)
+        var distinct = new HashSet<VisualDataSource>();
+        if (vertexColorsSource != VisualDataSource.None)
         {
-            parts.Add(ReferenceEquals(selectedVertexColors, primary?.VertexColors)
-                ? $"VCLR:{NormalizeSource(primary?.Source, "dmp")}"
-                : $"VCLR:{NormalizeSource(fallback?.Source, "fallback")}");
+            distinct.Add(vertexColorsSource);
         }
 
-        if (selectedTextureIndices is not null)
+        if (textureIndicesSource != VisualDataSource.None)
         {
-            parts.Add(ReferenceEquals(selectedTextureIndices, primary?.TextureIndices)
-                ? $"VTEX:{NormalizeSource(primary?.Source, "dmp")}"
-                : $"VTEX:{NormalizeSource(fallback?.Source, "fallback")}");
+            distinct.Add(textureIndicesSource);
         }
 
-        if (selectedTextureLayers.Count > 0)
+        if (textureLayersSource != VisualDataSource.None)
         {
-            parts.Add(ReferenceEquals(selectedTextureLayers, primary?.TextureLayers)
-                ? $"layers:{NormalizeSource(primary?.Source, "dmp")}"
-                : $"layers:{NormalizeSource(fallback?.Source, "fallback")}");
+            distinct.Add(textureLayersSource);
         }
 
-        return parts.Count > 0 ? string.Join(",", parts) : "merged";
-    }
-
-    private static string BuildEmissionSourceLabel(
-        LandVisualData? primary,
-        byte[]? runtimeVertexColors,
-        LandVisualData? fallback,
-        byte[]? selectedVertexColors,
-        uint[]? selectedTextureIndices,
-        List<LandTextureLayer> selectedTextureLayers)
-    {
-        var parts = new List<string>();
-
-        if (selectedVertexColors is not null)
+        return distinct.Count switch
         {
-            if (ReferenceEquals(selectedVertexColors, primary?.VertexColors))
-            {
-                parts.Add($"VCLR:{NormalizeSource(primary?.Source, "dmp")}");
-            }
-            else if (ReferenceEquals(selectedVertexColors, runtimeVertexColors))
-            {
-                parts.Add("VCLR:runtime");
-            }
-            else if (ReferenceEquals(selectedVertexColors, fallback?.VertexColors))
-            {
-                parts.Add($"VCLR:{NormalizeSource(fallback?.Source, "master")}");
-            }
-        }
-
-        if (selectedTextureIndices is not null)
-        {
-            parts.Add(ReferenceEquals(selectedTextureIndices, primary?.TextureIndices)
-                ? $"VTEX:{NormalizeSource(primary?.Source, "dmp")}"
-                : $"VTEX:{NormalizeSource(fallback?.Source, "master")}");
-        }
-
-        if (selectedTextureLayers.Count > 0)
-        {
-            parts.Add(ReferenceEquals(selectedTextureLayers, primary?.TextureLayers)
-                ? $"layers:{NormalizeSource(primary?.Source, "dmp")}"
-                : $"layers:{NormalizeSource(fallback?.Source, "master")}");
-        }
-
-        return parts.Count > 0 ? string.Join(",", parts) : "merged";
-    }
-
-    private static string NormalizeSource(string? source, string fallback)
-    {
-        if (string.IsNullOrWhiteSpace(source))
-        {
-            return fallback;
-        }
-
-        if (source.Contains("runtime", StringComparison.OrdinalIgnoreCase))
-        {
-            return "runtime";
-        }
-
-        if (source.Contains("master", StringComparison.OrdinalIgnoreCase))
-        {
-            return "master";
-        }
-
-        return source;
+            0 => VisualDataSource.None,
+            1 => distinct.First(),
+            _ => VisualDataSource.Merged
+        };
     }
 }

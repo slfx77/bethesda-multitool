@@ -59,7 +59,7 @@ public class RuntimeWorldReaderLandVisualTests
 
         Assert.NotNull(land);
         Assert.NotNull(land.VisualData);
-        Assert.Equal("runtime-land", land.VisualData.Source);
+        Assert.Equal(VisualDataSource.Runtime, land.VisualData.Source);
 
         var layers = land.VisualData.TextureLayers;
         Assert.Equal(2, layers.Count);

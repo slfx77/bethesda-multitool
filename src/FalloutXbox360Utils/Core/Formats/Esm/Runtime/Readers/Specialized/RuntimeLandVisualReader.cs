@@ -117,7 +117,8 @@ internal sealed class RuntimeLandVisualReader(RuntimeMemoryContext context)
             ? new LandVisualData
             {
                 TextureLayers = layers,
-                Source = "runtime-land"
+                TextureLayersSource = VisualDataSource.Runtime,
+                Source = VisualDataSource.Runtime
             }
             : null;
 

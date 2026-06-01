@@ -5,6 +5,7 @@ using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Schema;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Parsing.Subrecords;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using FalloutXbox360Utils.Core.Utils;
 
@@ -248,7 +249,7 @@ internal static class EsmWorldExtractor
                 structuralSubrecords ??= [];
                 structuralSubrecords.Add(new PlacedReferenceStructuralSubrecord(
                     sub.Signature,
-                    NormalizeStructuralSubrecord(sub.Signature, subData, header.IsBigEndian)));
+                    NormalizeStructuralSubrecord(subData, header.IsBigEndian)));
             }
         }
 
@@ -298,7 +299,6 @@ internal static class EsmWorldExtractor
     }
 
     private static byte[] NormalizeStructuralSubrecord(
-        string signature,
         ReadOnlySpan<byte> data,
         bool bigEndian)
     {
@@ -502,198 +502,33 @@ internal static class EsmWorldExtractor
 
     internal static ExtractedLandRecord? ExtractLandFromBuffer(byte[] data, int dataSize, DetectedMainRecord header)
     {
-        LandHeightmap? heightmap = null;
-        var textureLayers = new List<LandTextureLayer>();
-        var vclrBlocks = new List<byte[]>();
-        var vtexValues = new List<uint>();
-        var vclrByteCount = 0;
-        var vtexCount = 0;
-        var btxtCount = 0;
-        var atxtCount = 0;
-        var vtxtCount = 0;
-        var vtxtByteCount = 0;
-        var unattachedVtxtCount = 0;
-        var unattachedVtxtByteCount = 0;
-        int? lastAtxtLayerIndex = null;
+        var parsed = LandSubrecordParser.Parse(data, dataSize, header.IsBigEndian, header.Offset);
 
-        // Iterate through subrecords using the standard subrecord header format
-        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, header.IsBigEndian))
-        {
-            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
-
-            if (sub.Signature == "VHGT")
-            {
-                // Use schema reader for VHGT heightmap
-                var vhgt = SubrecordSchemaReader.ReadVhgtHeightmap(subData, header.IsBigEndian);
-                if (vhgt.HasValue)
-                {
-                    heightmap = new LandHeightmap
-                    {
-                        HeightOffset = vhgt.Value.heightOffset,
-                        HeightDeltas = vhgt.Value.deltas,
-                        Offset = header.Offset + 24 + sub.DataOffset
-                    };
-                }
-            }
-            else if (sub.Signature is "ATXT" or "BTXT")
-            {
-                var isAlpha = sub.Signature == "ATXT";
-                if (sub.Signature == "ATXT")
-                {
-                    atxtCount++;
-                }
-                else
-                {
-                    btxtCount++;
-                }
-
-                if (sub.DataLength < 8)
-                {
-                    continue;
-                }
-
-                // Use schema reader for texture layer FormID
-                var textureFormId = SubrecordSchemaReader.ReadNameFormId(subData, header.IsBigEndian);
-                if (textureFormId.HasValue)
-                {
-                    var quadrant = subData[4];
-                    var platformFlag = subData[5];
-                    var layer = header.IsBigEndian
-                        ? BinaryPrimitives.ReadUInt16BigEndian(subData[6..])
-                        : BinaryPrimitives.ReadUInt16LittleEndian(subData[6..]);
-
-                    textureLayers.Add(new LandTextureLayer
-                    {
-                        Kind = isAlpha ? LandTextureLayerKind.Alpha : LandTextureLayerKind.Base,
-                        TextureFormId = textureFormId.Value,
-                        Quadrant = quadrant,
-                        PlatformFlag = platformFlag,
-                        Layer = layer,
-                        Offset = header.Offset + 24 + sub.DataOffset
-                    });
-
-                    lastAtxtLayerIndex = isAlpha ? textureLayers.Count - 1 : null;
-                }
-            }
-            else if (sub.Signature == "VCLR")
-            {
-                vclrByteCount += sub.DataLength;
-                if (sub.DataLength > 0)
-                {
-                    vclrBlocks.Add(subData.ToArray());
-                }
-            }
-            else if (sub.Signature == "VTEX")
-            {
-                vtexCount += sub.DataLength / 4;
-                for (var i = 0; i + 4 <= sub.DataLength; i += 4)
-                {
-                    vtexValues.Add(header.IsBigEndian
-                        ? BinaryPrimitives.ReadUInt32BigEndian(subData.Slice(i, 4))
-                        : BinaryPrimitives.ReadUInt32LittleEndian(subData.Slice(i, 4)));
-                }
-            }
-            else if (sub.Signature == "VTXT")
-            {
-                vtxtCount++;
-                vtxtByteCount += sub.DataLength;
-
-                var entries = ParseLandTextureBlendEntries(subData, header.IsBigEndian);
-                if (lastAtxtLayerIndex.HasValue && lastAtxtLayerIndex.Value < textureLayers.Count)
-                {
-                    textureLayers[lastAtxtLayerIndex.Value].BlendEntries.AddRange(entries);
-                }
-                else
-                {
-                    unattachedVtxtCount++;
-                    unattachedVtxtByteCount += sub.DataLength;
-                }
-            }
-        }
-
-        if (heightmap == null && vclrByteCount == 0 && vtexCount == 0 &&
-            btxtCount == 0 && atxtCount == 0 && vtxtCount == 0)
+        if (parsed.Heightmap == null && parsed.VclrByteCount == 0 && parsed.VtexCount == 0 &&
+            parsed.BtxtCount == 0 && parsed.AtxtCount == 0 && parsed.VtxtCount == 0)
         {
             return null;
         }
 
-        var visualData = new LandVisualData
-        {
-            VertexColors = CombineBlocks(vclrBlocks),
-            TextureIndices = vtexValues.Count > 0 ? vtexValues.ToArray() : null,
-            TextureLayers = textureLayers,
-            UnattachedVtxtCount = unattachedVtxtCount,
-            UnattachedVtxtByteCount = unattachedVtxtByteCount,
-            Source = header.IsBigEndian ? "DMP" : "ESM"
-        };
+        var visualData = parsed.VisualData;
+        var textureLayers = visualData?.TextureLayers ?? [];
 
         return new ExtractedLandRecord
         {
             Header = header,
-            Heightmap = heightmap,
-            ParsedHeightmap = heightmap,
+            Heightmap = parsed.Heightmap,
+            ParsedHeightmap = parsed.Heightmap,
             TextureLayers = textureLayers,
-            VisualData = visualData.HasAny || visualData.UnattachedVtxtCount > 0 ? visualData : null,
-            VclrByteCount = vclrByteCount,
-            VtexCount = vtexCount,
-            BtxtCount = btxtCount,
-            AtxtCount = atxtCount,
-            VtxtCount = vtxtCount,
-            VtxtByteCount = vtxtByteCount
+            VisualData = visualData is not null && (visualData.HasAny || visualData.UnattachedVtxtCount > 0)
+                ? visualData
+                : null,
+            VclrByteCount = parsed.VclrByteCount,
+            VtexCount = parsed.VtexCount,
+            BtxtCount = parsed.BtxtCount,
+            AtxtCount = parsed.AtxtCount,
+            VtxtCount = parsed.VtxtCount,
+            VtxtByteCount = parsed.VtxtByteCount
         };
-    }
-
-    private static List<LandTextureBlendEntry> ParseLandTextureBlendEntries(
-        ReadOnlySpan<byte> data,
-        bool isBigEndian)
-    {
-        var entries = new List<LandTextureBlendEntry>(data.Length / 8);
-        for (var i = 0; i + 8 <= data.Length; i += 8)
-        {
-            var position = isBigEndian
-                ? BinaryPrimitives.ReadUInt16BigEndian(data.Slice(i, 2))
-                : BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(i, 2));
-            if (position > 288)
-            {
-                continue;
-            }
-
-            var opacity = isBigEndian
-                ? BinaryPrimitives.ReadSingleBigEndian(data.Slice(i + 4, 4))
-                : BinaryPrimitives.ReadSingleLittleEndian(data.Slice(i + 4, 4));
-            if (!float.IsFinite(opacity))
-            {
-                continue;
-            }
-
-            entries.Add(new LandTextureBlendEntry(position, data[i + 2], data[i + 3], opacity));
-        }
-
-        return entries;
-    }
-
-    private static byte[]? CombineBlocks(List<byte[]> blocks)
-    {
-        if (blocks.Count == 0)
-        {
-            return null;
-        }
-
-        if (blocks.Count == 1)
-        {
-            return blocks[0];
-        }
-
-        var total = blocks.Sum(b => b.Length);
-        var combined = new byte[total];
-        var offset = 0;
-        foreach (var block in blocks)
-        {
-            Buffer.BlockCopy(block, 0, combined, offset, block.Length);
-            offset += block.Length;
-        }
-
-        return combined;
     }
 
     #endregion
