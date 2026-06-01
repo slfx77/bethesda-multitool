@@ -410,7 +410,33 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
         }
 
         var knownFormIds = new HashSet<uint>(navMeshes.Select(n => n.FormId));
-        var added = 0;
+        var addedFromCells = 0;
+        var cellsWalked = 0;
+        foreach (var entry in Context.ScanResult.RuntimeEditorIds)
+        {
+            if (entry.FormType != 0x39)
+            {
+                continue;
+            }
+
+            cellsWalked++;
+            var discovered = Context.RuntimeReader.DiscoverNavMeshesForCell(entry);
+            foreach (var navm in discovered)
+            {
+                if (!knownFormIds.Add(navm.FormId))
+                {
+                    continue;
+                }
+
+                navMeshes.Add(navm);
+                addedFromCells++;
+            }
+        }
+
+        // Belt-and-braces: also try the NavMeshInfoMap singleton path. Currently a no-op on
+        // vanilla FNV (the singleton has no editor ID), but if a future build adds one or we
+        // pivot to PDB-global discovery, this path automatically picks up the slack.
+        var addedFromSingleton = 0;
         foreach (var entry in Context.ScanResult.RuntimeEditorIds)
         {
             if (entry.FormType != 0x38)
@@ -418,13 +444,6 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
                 continue;
             }
 
-            // NB: in practice this loop currently does nothing — vanilla FNV's NavMeshInfoMap
-            // singleton has no editor ID, so it never lands in the editor-id hash table that
-            // populates RuntimeEditorIds. The discovery infrastructure is wired correctly and
-            // proven via the LAND-pattern verification; a follow-up commit needs to switch the
-            // entry point from the singleton to per-cell pNavmeshes (TESObjectCELL +0x74), which
-            // ARE discoverable through the editor-id path because most named cells carry their
-            // EditorId.
             var discovered = Context.RuntimeReader.DiscoverNavMeshesFromInfoMap(entry);
             foreach (var navm in discovered)
             {
@@ -434,15 +453,16 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
                 }
 
                 navMeshes.Add(navm);
-                added++;
+                addedFromSingleton++;
             }
         }
 
-        if (added > 0)
+        if (addedFromCells > 0 || addedFromSingleton > 0)
         {
             Logger.Instance.Debug(
-                $"  [Semantic] Added {added} runtime-discovered NAVMs from NavMeshInfoMap " +
-                $"NiTPointerMap walk (total: {navMeshes.Count}).");
+                $"  [Semantic] Runtime NAVM discovery: walked {cellsWalked:N0} CELL entries, " +
+                $"added {addedFromCells:N0} from per-cell pNavmeshes, " +
+                $"{addedFromSingleton:N0} from NavMeshInfoMap (total: {navMeshes.Count:N0}).");
         }
     }
 

@@ -691,6 +691,18 @@ public sealed class RuntimeStructReader
         return _navMeshDiscovery.Discover(naviEntry);
     }
 
+    /// <summary>
+    ///     Walk a TESObjectCELL's per-cell NavMeshArray (the BSSimpleArray inlined at +0x74)
+    ///     and surface every BSNavMesh the engine has loaded for that cell. This is the actual
+    ///     reachable entry point for runtime NAVM discovery — the NAVI singleton has no editor
+    ///     ID so the InfoMap walk via <see cref="DiscoverNavMeshesFromInfoMap" /> currently
+    ///     can't fire.
+    /// </summary>
+    public List<NavMeshRecord> DiscoverNavMeshesForCell(RuntimeEditorIdEntry cellEntry)
+    {
+        return _navMeshDiscovery.DiscoverForCell(cellEntry);
+    }
+
     public CaravanDeckRecord? ReadRuntimeCaravanDeck(RuntimeEditorIdEntry entry)
     {
         return _caravanDecks.ReadRuntimeCaravanDeck(entry);

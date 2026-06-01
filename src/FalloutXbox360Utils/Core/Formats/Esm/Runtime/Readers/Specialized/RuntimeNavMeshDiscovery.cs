@@ -33,12 +33,18 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
 {
     private const byte NaviFormType = 0x38;
     private const byte NavmFormType = 0x43;
+    private const byte CellFormType = 0x39;
     private const int NavmeshDataSubrecordLayoutSize = 20;
     private const uint NavmeshFnvVersion = 0x0E;
 
-    // BSSimpleArray header layout — 16 bytes total. The data pointer at +0 and count at +8
-    // are all we need; capacity and allocator are ignored.
-    private const int BsSimpleArrayDataPtrOffset = 0;
+    // BSSimpleArray<T, N> layout (16 bytes) per Aug_RB PDB LF_FIELDLIST:
+    //   +0  vfptr        (NiAllocator vtable pointer; not used here but documented)
+    //   +4  pBuffer      (heap pointer to T[])
+    //   +8  iSize        (count of valid elements)
+    //   +12 iReservedSize (capacity)
+    // The "1024" template arg is the default capacity hint and does NOT add an inline buffer
+    // -- pBuffer is always heap-allocated.
+    private const int BsSimpleArrayDataPtrOffset = 4;
     private const int BsSimpleArrayCountOffset = 8;
     private const int BsSimpleArraySize = 16;
 
@@ -145,7 +151,7 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
                 itemVa = BinaryUtils.ReadUInt32BE(itemBytes, NiTMapItemNextOffset);
 
                 if (navmFormId is 0 or 0xFFFFFFFF
-                    || !seenFormIds.Add(navmFormId)
+                    || seenFormIds.Contains(navmFormId)
                     || !context.IsValidPointer(navMeshInfoVa))
                 {
                     continue;
@@ -154,7 +160,80 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
                 if (TryReadNavMeshFromInfo(navmFormId, navMeshInfoVa) is { } record)
                 {
                     results.Add(record);
+                    seenFormIds.Add(navmFormId);
                 }
+            }
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    ///     Walk the per-cell <c>NavMeshArray</c> inlined into each <c>TESObjectCELL</c> and surface
+    ///     every BSNavMesh the engine loaded for that cell. This is the actually-reachable entry
+    ///     point for runtime NAVM discovery: named cells DO have editor IDs and DO appear in
+    ///     <c>ScanResult.RuntimeEditorIds</c>, unlike the NavMeshInfoMap singleton or vanilla NAVMs
+    ///     themselves.
+    ///
+    ///     <para>
+    ///     PDB-derived layout: <c>TESObjectCELL +116</c> holds <c>NavMeshArray</c> (16 bytes, inline);
+    ///     NavMeshArray's single field <c>NavMeshes</c> is a <c>BSSimpleArray&lt;NavMeshPtr, 1024&gt;</c>
+    ///     occupying the full 16 bytes. NavMeshPtr is a 4-byte pointer to <c>NavMesh</c> (we treat
+    ///     it as a raw uint32 VA — NiPointer's refcount tracking lives elsewhere and doesn't change
+    ///     the on-heap pointer width).
+    ///     </para>
+    /// </summary>
+    public List<NavMeshRecord> DiscoverForCell(RuntimeEditorIdEntry cellEntry)
+    {
+        if (cellEntry.FormType != CellFormType)
+        {
+            return [];
+        }
+
+        var view = _fields.OpenStructView(cellEntry, CellFormType);
+        if (view == null)
+        {
+            return [];
+        }
+
+        var navMeshArrayOffset = view.Offset("pNavMeshes", "TESObjectCELL");
+        if (navMeshArrayOffset is not { } arrayStart || arrayStart + BsSimpleArraySize > view.Buffer.Length)
+        {
+            return [];
+        }
+
+        var dataPtrVa = BinaryUtils.ReadUInt32BE(view.Buffer, arrayStart + BsSimpleArrayDataPtrOffset);
+        var count = BinaryUtils.ReadUInt32BE(view.Buffer, arrayStart + BsSimpleArrayCountOffset);
+        if (count == 0 || count > MaxNavMeshesPerCell || !context.IsValidPointer(dataPtrVa))
+        {
+            return [];
+        }
+
+        var dataOffset = context.VaToFileOffset(dataPtrVa);
+        if (dataOffset is not long dataFileOffset)
+        {
+            return [];
+        }
+
+        var pointerArrayBytes = context.ReadBytes(dataFileOffset, (int)count * 4);
+        if (pointerArrayBytes is null)
+        {
+            return [];
+        }
+
+        var results = new List<NavMeshRecord>();
+        var seenFormIds = new HashSet<uint>();
+        for (var i = 0; i < count; i++)
+        {
+            var navMeshVa = BinaryUtils.ReadUInt32BE(pointerArrayBytes, i * 4);
+            if (!context.IsValidPointer(navMeshVa))
+            {
+                continue;
+            }
+
+            if (TryReadNavMeshAtVa(navMeshVa, cellEntry.FormId, seenFormIds) is { } record)
+            {
+                results.Add(record);
             }
         }
 
@@ -184,20 +263,40 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
         }
 
         var parentSpaceFormId = BinaryUtils.ReadUInt32BE(infoBytes, NavMeshInfoParentSpaceOffset);
-        var cellKey = BinaryUtils.ReadUInt32BE(infoBytes, NavMeshInfoCellKeyOffset);
         var navMeshVa = BinaryUtils.ReadUInt32BE(infoBytes, NavMeshInfoNavMeshPointerOffset);
 
-        if (!context.IsValidPointer(navMeshVa))
-        {
-            // No live BSNavMesh in memory — return a count-only stub so the diagnostic still
-            // sees the FormID but RawSubrecords stays empty.
-            return new NavMeshRecord
+        var seen = new HashSet<uint> { expectedFormId };
+        return TryReadNavMeshAtVa(navMeshVa, parentSpaceFormId, seen)
+            ?? new NavMeshRecord
             {
+                // pNavMesh was null/unmapped — return a count-only stub so the FormID is still
+                // surfaced (the discovery has found it, but the actual struct is paged out).
                 FormId = expectedFormId,
                 CellFormId = parentSpaceFormId,
                 Offset = infoFileOffset,
                 IsBigEndian = true
             };
+    }
+
+    /// <summary>
+    ///     Reads a BSNavMesh struct at the given VA, projects its vertex/triangle/door-portal
+    ///     BSSimpleArrays into canonical NVVX/NVTR/NVDP LE byte payloads, and assembles a
+    ///     <see cref="NavMeshRecord" /> with synthetic <see cref="NavMeshRecord.RawSubrecords" />.
+    ///     Returns null when the BSNavMesh struct can't be read (paged out, bad VA, etc.) or when
+    ///     its TESForm header doesn't carry a valid FormID (the engine's reserved navmeshes
+    ///     occasionally show up with FormID=0 — those are filtered).
+    /// </summary>
+    /// <param name="navMeshVa">Virtual address of the BSNavMesh instance.</param>
+    /// <param name="fallbackParentCellFormId">Parent cell FormID to use when <c>pParentCell</c> is unmapped (typically the editor-id entry's own FormID for the cell-based discovery path).</param>
+    /// <param name="seenFormIds">Per-discovery-call dedup set; mutated to record FormIDs the caller has already surfaced.</param>
+    private NavMeshRecord? TryReadNavMeshAtVa(
+        uint navMeshVa,
+        uint fallbackParentCellFormId,
+        HashSet<uint> seenFormIds)
+    {
+        if (!context.IsValidPointer(navMeshVa))
+        {
+            return null;
         }
 
         var navMeshOffset = context.VaToFileOffset(navMeshVa);
@@ -212,12 +311,18 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
             return null;
         }
 
+        // TESForm.iFormID at +12 (all TESForm-derived structs share the same prefix).
+        var navmFormId = BinaryUtils.ReadUInt32BE(navmBytes, TesFormIdOffset);
+        if (navmFormId is 0 or 0xFFFFFFFF || !seenFormIds.Add(navmFormId))
+        {
+            return null;
+        }
+
         // Parent cell pointer dereferenced to FormID. Engine sets pParentCell on every loaded
-        // navmesh; the NavMeshInfo's ParentSpaceID is the worldspace (or interior cell) which
-        // is a different thing for exteriors, so we prefer pParentCell when available and fall
-        // back to ParentSpaceID for interior navmeshes.
+        // navmesh; fall back to the caller's hint (the cell whose pNavmeshes list we walked, or
+        // the NavMeshInfo's ParentSpaceID for the singleton path) when the pointer is unmapped.
         var parentCellVa = BinaryUtils.ReadUInt32BE(navmBytes, BsNavMeshParentCellOffset);
-        var parentCellFormId = TryDereferenceFormId(parentCellVa) ?? parentSpaceFormId;
+        var parentCellFormId = TryDereferenceFormId(parentCellVa) ?? fallbackParentCellFormId;
 
         var verticesBytes = ReadArrayPayload(navmBytes, BsNavMeshVerticesOffset, NavmeshVertexSize);
         var trianglesBytes = ReadArrayPayload(navmBytes, BsNavMeshTrianglesOffset, NavmeshTriangleSize);
@@ -254,7 +359,7 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
 
         return new NavMeshRecord
         {
-            FormId = expectedFormId,
+            FormId = navmFormId,
             CellFormId = parentCellFormId,
             VertexCount = vertexCount,
             TriangleCount = triangleCount,
