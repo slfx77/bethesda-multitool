@@ -44,6 +44,7 @@ internal sealed class Program
         rootCommand.Subcommands.Add(ExportCommands.CreateExportLandCommand());
         rootCommand.Subcommands.Add(ExportCommands.CreateWorldmapCommand());
         rootCommand.Subcommands.Add(WorldMapDiagCommands.CreateWorldMapDiagCommand());
+        rootCommand.Subcommands.Add(NavmCoverageCommand.Create());
         rootCommand.Subcommands.Add(CategoryAuditCommands.CreateCategoryAuditCommand());
         rootCommand.Subcommands.Add(MapStatsCommands.CreateMapStatsCommand());
         rootCommand.Subcommands.Add(VoiceHeuristicsCommands.CreateVoiceHeuristicsCommand());
