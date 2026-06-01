@@ -30,4 +30,5 @@ internal static class WorldGridConstants
         return (new Vector3(minX, minY, CellMinZ),
                 new Vector3(minX + CellSize, minY + CellSize, CellMaxZ));
     }
+
 }

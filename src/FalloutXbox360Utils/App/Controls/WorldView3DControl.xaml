@@ -6,26 +6,46 @@
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
   <Grid>
-    <SwapChainPanel x:Name="RenderPanel"
-                    IsTabStop="True"
-                    AutomationProperties.Name="3D worldspace view" />
-    <TextBlock x:Name="StatusOverlay"
-               HorizontalAlignment="Center" VerticalAlignment="Center"
-               FontSize="14"
-               Foreground="{ThemeResource TextFillColorPrimaryBrush}"
-               AutomationProperties.Name="3D view status"
-               Visibility="Collapsed" />
-    <Border x:Name="HudPanel"
-            HorizontalAlignment="Left" VerticalAlignment="Top"
-            Margin="8" Padding="8,4"
-            CornerRadius="4"
-            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-            Opacity="0.85">
-      <TextBlock x:Name="HudText"
-                 FontFamily="Consolas" FontSize="11"
-                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                 AutomationProperties.Name="3D view HUD"
-                 Text="" />
-    </Border>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+
+    <!-- Toolbar — mirrors WorldMapControl's worldspace picker. -->
+    <Grid Grid.Row="0" Padding="0,0,0,8" ColumnSpacing="8">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+      </Grid.ColumnDefinitions>
+      <ComboBox x:Name="WorldspaceComboBox" Grid.Column="0" MinWidth="220"
+                SelectionChanged="WorldspaceComboBox_SelectionChanged"
+                AutomationProperties.Name="Worldspace"
+                PlaceholderText="Select Worldspace" />
+    </Grid>
+
+    <!-- 3D viewport — SwapChainPanel + status overlay + HUD. -->
+    <Grid Grid.Row="1">
+      <SwapChainPanel x:Name="RenderPanel"
+                      IsTabStop="True"
+                      AutomationProperties.Name="3D worldspace view" />
+      <TextBlock x:Name="StatusOverlay"
+                 HorizontalAlignment="Center" VerticalAlignment="Center"
+                 FontSize="14"
+                 Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                 AutomationProperties.Name="3D view status"
+                 Visibility="Collapsed" />
+      <Border x:Name="HudPanel"
+              HorizontalAlignment="Left" VerticalAlignment="Top"
+              Margin="8" Padding="8,4"
+              CornerRadius="4"
+              Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+              Opacity="0.85">
+        <TextBlock x:Name="HudText"
+                   FontFamily="Consolas" FontSize="11"
+                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                   AutomationProperties.Name="3D view HUD"
+                   Text="" />
+      </Border>
+    </Grid>
   </Grid>
 </UserControl>

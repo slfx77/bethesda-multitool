@@ -11,6 +11,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Vortice.Direct3D11;
 using Vortice.Mathematics;
+using Windows.System;
 
 namespace FalloutXbox360Utils;
 
@@ -32,8 +33,11 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
     private readonly CameraState _camera = new();
     private readonly FlythroughCameraController _controller;
     private readonly Vector2[] _pointerStartPosition = new Vector2[1];
+    private readonly HashSet<VirtualKey> _toggleKeysDown = [];
 
     private CellGridDebugRenderer? _cellGrid;
+    private TerrainRenderer? _terrain;
+    private WaterRenderer? _water;
     private WorldViewData? _data;
     private GpuDevice? _gpu;
     private DateTime _lastFrameTime;
@@ -41,6 +45,13 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
     private Vector2 _previousPointerPosition;
     private bool _renderLoopAttached;
     private GpuSwapChainSurface? _surface;
+    private bool _suppressWorldspaceSelectionEvent;
+    private Dictionary<(int gx, int gy), CellRecord>? _cellGridLookup;
+
+    // Layer visibility — toggled by D1/D2/D3 keys, all default-on.
+    private bool _showWireframe = true;
+    private bool _showTerrain = true;
+    private bool _showWater = true;
 
     public WorldView3DControl()
     {
@@ -64,8 +75,34 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
     internal void LoadData(WorldViewData data)
     {
         _data = data;
-        TryBuildCellGrid();
-        ResetCameraToDataCentroid();
+
+        // Mirror WorldMapControl's worldspace picker: one entry per worldspace, plus a final
+        // "Unlinked Exterior" entry when DMP-only loads surface cells with no parent worldspace.
+        _suppressWorldspaceSelectionEvent = true;
+        WorldspaceComboBox.Items.Clear();
+        foreach (var ws in data.Worldspaces)
+        {
+            var name = WorldMapColors.FormatWorldspaceName(ws);
+            WorldspaceComboBox.Items.Add($"{name} — {ws.Cells.Count} cells");
+        }
+        if (data.UnlinkedExteriorCells.Count > 0)
+        {
+            WorldspaceComboBox.Items.Add($"Unlinked Exterior ({data.UnlinkedExteriorCells.Count} cells)");
+        }
+        _suppressWorldspaceSelectionEvent = false;
+
+        if (WorldspaceComboBox.Items.Count > 0)
+        {
+            // Triggers SelectionChanged → TryBuildCellGrid + ResetCameraToDataCentroid.
+            WorldspaceComboBox.SelectedIndex = 0;
+        }
+        else
+        {
+            // No worldspaces and no unlinked exteriors — just ensure the renderers are empty.
+            TryBuildCellGrid();
+            ResetCameraToDataCentroid();
+        }
+
         _ = InspectObject; // suppress unused-event warning until Phase 5 picking
         _ = InspectCell;
     }
@@ -90,6 +127,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         try
         {
             _cellGrid = new CellGridDebugRenderer(_gpu);
+            _terrain = new TerrainRenderer(_gpu);
+            _water = new WaterRenderer(_gpu);
         }
         catch (Exception ex)
         {
@@ -111,8 +150,19 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
 
         RenderPanel.Focus(FocusState.Programmatic);
 
+        // Walk-mode ground sampling: read the camera's current cell heightmap and bilinearly
+        // interpolate. _cellGridLookup is set in TryBuildCellGrid below.
+        _controller.GroundHeightSampler = SampleGroundHeight;
+
         TryBuildCellGrid();
         TryEnsureSurface();
+    }
+
+    private float? SampleGroundHeight(float worldX, float worldY)
+    {
+        return _cellGridLookup is null
+            ? null
+            : TerrainHeightSampler.Sample(_cellGridLookup, worldX, worldY);
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
@@ -168,6 +218,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
 
     private void DisposeRenderResources()
     {
+        _water?.Dispose();
+        _water = null;
+        _terrain?.Dispose();
+        _terrain = null;
         _cellGrid?.Dispose();
         _cellGrid = null;
         _surface?.Dispose();
@@ -178,12 +232,31 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
 
     private void OnRenderPanelKeyDown(object sender, KeyRoutedEventArgs e)
     {
+        // D1/D2/D3 toggle the wireframe / terrain / water layers; F toggles between fly
+        // (free cam) and walk (ground-locked) camera modes. WinUI emits auto-repeat KeyDown
+        // events while a key is held, so guard with a "first press" set to avoid flickering
+        // the toggle 30 times per second.
+        if (e.Key is VirtualKey.Number1 or VirtualKey.Number2 or VirtualKey.Number3 or VirtualKey.F)
+        {
+            if (_toggleKeysDown.Add(e.Key))
+            {
+                if (e.Key == VirtualKey.Number1) _showWireframe = !_showWireframe;
+                else if (e.Key == VirtualKey.Number2) _showTerrain = !_showTerrain;
+                else if (e.Key == VirtualKey.Number3) _showWater = !_showWater;
+                else if (e.Key == VirtualKey.F)
+                    _controller.Mode = _controller.Mode == CameraMode.Walk ? CameraMode.Fly : CameraMode.Walk;
+            }
+            e.Handled = true;
+            return;
+        }
+
         _controller.OnKeyDown(e.Key);
         e.Handled = true;
     }
 
     private void OnRenderPanelKeyUp(object sender, KeyRoutedEventArgs e)
     {
+        _toggleKeysDown.Remove(e.Key);
         _controller.OnKeyUp(e.Key);
         e.Handled = true;
     }
@@ -192,6 +265,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
     {
         // Avoid stuck movement keys when focus drops (e.g. user clicks elsewhere mid-stride).
         _controller.ClearKeys();
+        _toggleKeysDown.Clear();
     }
 
     private void OnRenderPanelPointerPressed(object sender, PointerRoutedEventArgs e)
@@ -258,30 +332,58 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         if (deltaSeconds > 0.1f) deltaSeconds = 0.1f;
 
         _controller.Update(deltaSeconds);
-        RenderFrame();
+
+        try
+        {
+            RenderFrame();
+        }
+        catch (Exception ex)
+        {
+            // App close races teardown of the SwapChainPanel's native buffers against
+            // CompositionTarget.Rendering callbacks — Vortice's RTV wrapper can hold a stale
+            // pointer that NPEs inside the COM call. Detach the loop on first failure so
+            // we don't crash the process during normal shutdown.
+            Log.Warn("WorldView3DControl: render frame failed, detaching loop: {0}", ex.Message);
+            DetachRenderLoop();
+        }
     }
 
     private void RenderFrame()
     {
         var ctx = _gpu!.Context;
         var rtv = _surface!.BackBufferRtv;
+        var dsv = _surface.DepthStencilView;
 
         ctx.ClearRenderTargetView(rtv, new Color4(0x1B / 255f, 0x24 / 255f, 0x36 / 255f, 1f));
-        ctx.OMSetRenderTargets(rtv);
+        ctx.ClearDepthStencilView(dsv, DepthStencilClearFlags.Depth, 1f, 0);
+        ctx.OMSetRenderTargets(rtv, dsv);
         ctx.RSSetViewport(0, 0, _surface.Width, _surface.Height, 0, 1);
 
         var aspect = _surface.Width / (float)_surface.Height;
         var view = _camera.GetViewMatrix();
         var proj = _camera.GetProjectionMatrix(aspect);
         var viewProj = view * proj;
-        var frustum = Frustum.FromViewProjection(viewProj);
 
-        var visibleCells = _cellGrid?.Render(viewProj, frustum) ?? 0;
-        var totalCells = _cellGrid?.CellCount ?? 0;
+        // Cylinder culling: cells render iff their XY footprint is within FarPlane of the
+        // camera's XY position. No yaw or pitch culling — only translation moves cells in or
+        // out of the rendered set. We tried a yaw wedge but no fixed half-angle is sound at
+        // every pitch: at near-vertical downward pitch, the view-space condition
+        // y·cos(P) + H·sin(P) > 0 degenerates to "always true", and cells at any azimuth
+        // from the yaw direction can be on-screen (visible as the missing chunk in the screenshot).
+        var cylinder = new VisibilityCylinder(_camera.Position, _camera.FarPlane);
+
+        // Layer order: terrain (writes depth) → water (reads depth, alpha-blended) →
+        // wireframe (depth-disabled, drawn on top). Terrain processes cells closest-first
+        // when the upload budget is tight, so the area under the camera fills first.
+        var visibleTerrain = (_showTerrain ? _terrain?.Render(viewProj, cylinder) : null) ?? 0;
+        if (_showWater) _water?.Render(viewProj, cylinder);
+        var visibleWireframe = (_showWireframe ? _cellGrid?.Render(viewProj, cylinder) : null) ?? 0;
 
         _surface.Present();
 
-        UpdateHud(visibleCells, totalCells);
+        var visible = Math.Max(visibleTerrain, visibleWireframe);
+        var totalCells = _terrain?.CellCount ?? _cellGrid?.CellCount ?? 0;
+        UpdateHud(visible, totalCells);
     }
 
     // Camera framing ------------------------------------------------------------------------
@@ -290,11 +392,12 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
     {
         if (_data is null) return;
 
-        // Compute the centroid of all exterior cells across all worldspaces. Phase 1 doesn't
-        // filter by worldspace; Phase 2 will add a worldspace selector mirroring the 2D view.
+        // Centroid of the currently selected worldspace's exterior cells. With the v3 Phase 2a
+        // worldspace picker we always scope to one worldspace, so the camera frames the chosen
+        // one rather than the union of every worldspace in the file.
         double sumX = 0, sumY = 0;
         var count = 0;
-        foreach (var cell in EnumerateExteriorCells(_data))
+        foreach (var cell in GetSelectedWorldspaceCells(_data).Cells)
         {
             sumX += cell.GridX!.Value;
             sumY += cell.GridY!.Value;
@@ -313,33 +416,78 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         _camera.Pitch = -MathF.PI / 6f;
     }
 
-    private void TryBuildCellGrid()
+    private void WorldspaceComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_cellGrid is null || _data is null) return;
-        _cellGrid.LoadData(EnumerateExteriorCells(_data));
+        if (_suppressWorldspaceSelectionEvent || _data is null) return;
+        if (WorldspaceComboBox.SelectedIndex < 0) return;
+
+        TryBuildCellGrid();
+        ResetCameraToDataCentroid();
     }
 
-    private static IEnumerable<CellRecord> EnumerateExteriorCells(WorldViewData data)
+    private void TryBuildCellGrid()
     {
-        foreach (var worldspace in data.Worldspaces)
+        if (_data is null) return;
+
+        var (cells, defaultWaterHeight) = GetSelectedWorldspaceCells(_data);
+        var cellList = cells.ToList();
+        _cellGrid?.LoadData(cellList);
+
+        _cellGridLookup = BuildCellGridLookup(cellList);
+        _terrain?.LoadData(_cellGridLookup);
+        _water?.LoadData(_cellGridLookup, defaultWaterHeight);
+    }
+
+    /// <summary>
+    ///     Returns the exterior-cell list + default water height for whatever entry is currently
+    ///     selected in <c>WorldspaceComboBox</c>. ComboBox layout: indices 0..N-1 map to
+    ///     <c>_data.Worldspaces</c>; an optional final entry maps to <c>_data.UnlinkedExteriorCells</c>.
+    ///     Returns empty when nothing is selected (e.g. an empty file).
+    /// </summary>
+    private (IEnumerable<CellRecord> Cells, float? DefaultWaterHeight) GetSelectedWorldspaceCells(WorldViewData data)
+    {
+        var index = WorldspaceComboBox.SelectedIndex;
+        if (index < 0) return (Enumerable.Empty<CellRecord>(), null);
+
+        if (index < data.Worldspaces.Count)
         {
-            foreach (var cell in worldspace.Cells)
-            {
-                if (cell.GridX is int && cell.GridY is int)
-                    yield return cell;
-            }
+            var ws = data.Worldspaces[index];
+            return (ws.Cells.Where(c => c.GridX is int && c.GridY is int), ws.DefaultWaterHeight);
         }
+
+        // Tail entry: unlinked exterior cells. No worldspace → no DefaultWaterHeight fallback.
+        return (data.UnlinkedExteriorCells.Where(c => c.GridX is int && c.GridY is int), null);
+    }
+
+    private static Dictionary<(int gx, int gy), CellRecord> BuildCellGridLookup(IEnumerable<CellRecord> exteriorCells)
+    {
+        // First-wins dedup by (GridX, GridY), matching CellGridDebugRenderer.LoadData's
+        // policy so the three layers see the same per-cell record.
+        var lookup = new Dictionary<(int gx, int gy), CellRecord>();
+        foreach (var cell in exteriorCells)
+        {
+            if (cell.GridX is not int gx || cell.GridY is not int gy) continue;
+            var key = (gx, gy);
+            if (!lookup.ContainsKey(key)) lookup[key] = cell;
+        }
+        return lookup;
     }
 
     // HUD / status overlay ------------------------------------------------------------------
 
     private void UpdateHud(int visible, int total)
     {
+        var w = _showWireframe ? "on" : "off";
+        var t = _showTerrain ? "on" : "off";
+        var wa = _showWater ? "on" : "off";
+        var mode = _controller.Mode == CameraMode.Walk ? "walk" : "fly";
+        var keyHint = _controller.Mode == CameraMode.Walk ? "WASD" : "WASD + Q/E";
         HudText.Text =
             $"Cells: {visible} / {total}   " +
             $"pos: ({_camera.Position.X:0}, {_camera.Position.Y:0}, {_camera.Position.Z:0})   " +
             $"speed: {_controller.MoveSpeed:0}   " +
-            $"WASD + Q/E   drag to look   scroll = speed";
+            $"[F]mode:{mode} [1]wire:{w} [2]terrain:{t} [3]water:{wa}   " +
+            $"{keyHint}   drag to look";
     }
 
     private void ShowStatus(string message)

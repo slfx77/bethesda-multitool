@@ -41,6 +41,11 @@ internal sealed class CellGridDebugRenderer : IDisposable
     private int _cellCount;
     private Dictionary<(int gx, int gy), int>? _cellStartVertex;
 
+    // Single-element array reused for UpdateSubresource each frame to avoid a per-frame
+    // allocation. Small win on its own but part of a broader pass that keeps the render
+    // loop allocation-free at steady state.
+    private readonly CellGridUniforms[] _uniformsScratch = new CellGridUniforms[1];
+
     public CellGridDebugRenderer(GpuDevice gpu)
     {
         _gpu = gpu;
@@ -76,11 +81,15 @@ internal sealed class CellGridDebugRenderer : IDisposable
             AntialiasedLineEnable = true
         });
 
+        // Phase 2a: the wireframe is now drawn AFTER terrain as a debug overlay. With the
+        // swapchain surface now owning a DSV, an enabled depth test would hide the wireframe
+        // wherever terrain rises above Z=0. Disable depth so the wireframe stays on top — same
+        // visual behavior as Phase 1 (which got it for free since no DSV was bound).
         _depthState = gpu.Device.CreateDepthStencilState(new DepthStencilDescription
         {
-            DepthEnable = true,
-            DepthWriteMask = DepthWriteMask.All,
-            DepthFunc = ComparisonFunction.LessEqual,
+            DepthEnable = false,
+            DepthWriteMask = DepthWriteMask.Zero,
+            DepthFunc = ComparisonFunction.Always,
             StencilEnable = false
         });
 
@@ -159,10 +168,12 @@ internal sealed class CellGridDebugRenderer : IDisposable
     }
 
     /// <summary>
-    ///     Issues draw calls for every cell whose AABB intersects the frustum. Returns the
-    ///     count of visible cells so the host control can surface it in the status overlay.
+    ///     Issues draw calls for every cell that intersects <paramref name="cylinder" />.
+    ///     Cylinder culling matches the terrain and water renderers so all three layers cover
+    ///     the same cell set, and rotation in either direction doesn't unload the wireframe.
+    ///     Returns the count of cells drawn so the host control can surface it in the HUD.
     /// </summary>
-    public int Render(Matrix4x4 viewProj, Frustum frustum)
+    public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder)
     {
         if (_vertexBuffer is null || _cellStartVertex is null) return 0;
 
@@ -190,8 +201,7 @@ internal sealed class CellGridDebugRenderer : IDisposable
         var visible = 0;
         foreach (var (key, startVertex) in _cellStartVertex)
         {
-            var (min, max) = WorldGridConstants.GetCellWorldBounds(key.gx, key.gy);
-            if (!frustum.IntersectsAabb(min, max)) continue;
+            if (!cylinder.ContainsCell(key.gx, key.gy)) continue;
 
             ctx.Draw(8, (uint)startVertex);
             visible++;
@@ -199,10 +209,10 @@ internal sealed class CellGridDebugRenderer : IDisposable
         return visible;
     }
 
-    private static void UpdateConstantBuffer(ID3D11DeviceContext ctx, ID3D11Buffer buffer, CellGridUniforms uniforms)
+    private void UpdateConstantBuffer(ID3D11DeviceContext ctx, ID3D11Buffer buffer, CellGridUniforms uniforms)
     {
-        var arr = new[] { uniforms };
-        var gc = GCHandle.Alloc(arr, GCHandleType.Pinned);
+        _uniformsScratch[0] = uniforms;
+        var gc = GCHandle.Alloc(_uniformsScratch, GCHandleType.Pinned);
         try
         {
             ctx.UpdateSubresource(buffer, 0, null, gc.AddrOfPinnedObject(), 0u, 0u);

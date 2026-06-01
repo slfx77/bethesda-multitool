@@ -20,6 +20,8 @@ internal sealed class GpuSwapChainSurface : IDisposable
     private readonly ID3D11Device _device;
     private readonly SwapChainPanel _panel;
     private ID3D11RenderTargetView? _backBufferRtv;
+    private ID3D11Texture2D? _depthTexture;
+    private ID3D11DepthStencilView? _depthStencilView;
     private IDXGISwapChain1 _swapChain;
     private uint _width;
     private uint _height;
@@ -29,6 +31,8 @@ internal sealed class GpuSwapChainSurface : IDisposable
         SwapChainPanel panel,
         IDXGISwapChain1 swapChain,
         ID3D11RenderTargetView backBufferRtv,
+        ID3D11Texture2D depthTexture,
+        ID3D11DepthStencilView depthStencilView,
         uint width,
         uint height)
     {
@@ -36,6 +40,8 @@ internal sealed class GpuSwapChainSurface : IDisposable
         _panel = panel;
         _swapChain = swapChain;
         _backBufferRtv = backBufferRtv;
+        _depthTexture = depthTexture;
+        _depthStencilView = depthStencilView;
         _width = width;
         _height = height;
     }
@@ -43,11 +49,19 @@ internal sealed class GpuSwapChainSurface : IDisposable
     public ID3D11RenderTargetView BackBufferRtv =>
         _backBufferRtv ?? throw new ObjectDisposedException(nameof(GpuSwapChainSurface));
 
+    /// <summary>D32_Float depth-stencil view sized to match the back buffer. Bound alongside the RTV for 3D rendering.</summary>
+    public ID3D11DepthStencilView DepthStencilView =>
+        _depthStencilView ?? throw new ObjectDisposedException(nameof(GpuSwapChainSurface));
+
     public uint Width => _width;
     public uint Height => _height;
 
     public void Dispose()
     {
+        _depthStencilView?.Dispose();
+        _depthStencilView = null;
+        _depthTexture?.Dispose();
+        _depthTexture = null;
         _backBufferRtv?.Dispose();
         _backBufferRtv = null;
         _swapChain.Dispose();
@@ -100,9 +114,10 @@ internal sealed class GpuSwapChainSurface : IDisposable
 
             using var backBuffer = swapChain.GetBuffer<ID3D11Texture2D>(0);
             var rtv = gpu.Device.CreateRenderTargetView(backBuffer);
+            var (depthTexture, depthStencilView) = CreateDepthBuffer(gpu.Device, width, height);
 
             Log.Info("GpuSwapChainSurface: bound {0}x{1} to SwapChainPanel", width, height);
-            return new GpuSwapChainSurface(gpu.Device, panel, swapChain, rtv, width, height);
+            return new GpuSwapChainSurface(gpu.Device, panel, swapChain, rtv, depthTexture, depthStencilView, width, height);
         }
         catch (SharpGenException ex)
         {
@@ -121,6 +136,10 @@ internal sealed class GpuSwapChainSurface : IDisposable
         if (width == 0 || height == 0 || (_width == width && _height == height))
             return;
 
+        _depthStencilView?.Dispose();
+        _depthStencilView = null;
+        _depthTexture?.Dispose();
+        _depthTexture = null;
         _backBufferRtv?.Dispose();
         _backBufferRtv = null;
 
@@ -128,8 +147,30 @@ internal sealed class GpuSwapChainSurface : IDisposable
 
         using var backBuffer = _swapChain.GetBuffer<ID3D11Texture2D>(0);
         _backBufferRtv = _device.CreateRenderTargetView(backBuffer);
+        (_depthTexture, _depthStencilView) = CreateDepthBuffer(_device, width, height);
         _width = width;
         _height = height;
+    }
+
+    private static (ID3D11Texture2D Texture, ID3D11DepthStencilView View) CreateDepthBuffer(
+        ID3D11Device device, uint width, uint height)
+    {
+        var desc = new Texture2DDescription
+        {
+            Width = width,
+            Height = height,
+            MipLevels = 1,
+            ArraySize = 1,
+            Format = Format.D32_Float,
+            SampleDescription = new SampleDescription(1, 0),
+            Usage = ResourceUsage.Default,
+            BindFlags = BindFlags.DepthStencil,
+            CPUAccessFlags = CpuAccessFlags.None,
+            MiscFlags = ResourceOptionFlags.None
+        };
+        var texture = device.CreateTexture2D(desc);
+        var view = device.CreateDepthStencilView(texture);
+        return (texture, view);
     }
 
     /// <summary>Presents the current backbuffer to the panel with vsync.</summary>
