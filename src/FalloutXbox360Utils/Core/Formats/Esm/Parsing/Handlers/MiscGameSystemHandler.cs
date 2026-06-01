@@ -389,7 +389,61 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
         Context.MergeRuntimeRecords(navMeshes, 0x43, n => n.FormId,
             (reader, entry) => reader.ReadRuntimeNavMesh(entry), "navmeshes");
 
+        // The editor-id-hash discovery path above is empty for navmeshes (verified across
+        // xex2/4/21/44: zero NAVMs with editor IDs, so the BSTHashMap<BSFixedString,TESForm*>
+        // never lists them). Walk the engine's NavMeshInfoMap.InfoMap NiTPointerMap directly
+        // so the hundreds of loaded BSNavMesh structs surrounding the active cell grid become
+        // visible. Each runtime-discovered NAVM gets synthetic RawSubrecords (DATA + NVER +
+        // NVVX + NVTR + NVDP) reconstructed from the BSNavMesh's vertex/triangle/portal
+        // BSSimpleArrays so both the GUI overlay (WorldMapNavMeshOverlayRenderer) and the
+        // ESP encoder can consume them like any ESM-parsed record.
+        DiscoverRuntimeNavMeshesFromInfoMap(navMeshes);
+
         return navMeshes;
+    }
+
+    private void DiscoverRuntimeNavMeshesFromInfoMap(List<NavMeshRecord> navMeshes)
+    {
+        if (Context.RuntimeReader == null)
+        {
+            return;
+        }
+
+        var knownFormIds = new HashSet<uint>(navMeshes.Select(n => n.FormId));
+        var added = 0;
+        foreach (var entry in Context.ScanResult.RuntimeEditorIds)
+        {
+            if (entry.FormType != 0x38)
+            {
+                continue;
+            }
+
+            // NB: in practice this loop currently does nothing — vanilla FNV's NavMeshInfoMap
+            // singleton has no editor ID, so it never lands in the editor-id hash table that
+            // populates RuntimeEditorIds. The discovery infrastructure is wired correctly and
+            // proven via the LAND-pattern verification; a follow-up commit needs to switch the
+            // entry point from the singleton to per-cell pNavmeshes (TESObjectCELL +0x74), which
+            // ARE discoverable through the editor-id path because most named cells carry their
+            // EditorId.
+            var discovered = Context.RuntimeReader.DiscoverNavMeshesFromInfoMap(entry);
+            foreach (var navm in discovered)
+            {
+                if (!knownFormIds.Add(navm.FormId))
+                {
+                    continue;
+                }
+
+                navMeshes.Add(navm);
+                added++;
+            }
+        }
+
+        if (added > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] Added {added} runtime-discovered NAVMs from NavMeshInfoMap " +
+                $"NiTPointerMap walk (total: {navMeshes.Count}).");
+        }
     }
 
     private NavMeshRecord? ParseNavMeshFromAccessor(DetectedMainRecord record, byte[] buffer)

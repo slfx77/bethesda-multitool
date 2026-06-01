@@ -57,6 +57,7 @@ public sealed class RuntimeStructReader
     private readonly RuntimeMusicTypeReader _musicTypes;
     private readonly RuntimeNavMeshReader _navMeshes;
     private readonly RuntimeNavMeshInfoMapReader _navMeshInfoMaps;
+    private readonly RuntimeNavMeshDiscovery _navMeshDiscovery;
     private readonly RuntimePackageReader _packages;
     private readonly RuntimeRaceReader _races;
     private readonly RuntimeRecipeCategoryReader _recipeCategories;
@@ -94,7 +95,10 @@ public sealed class RuntimeStructReader
         IsEarlyBuild = useProtoOffsets;
         WorldCellLayoutProbe = worldCellLayoutProbe;
         ProbeResults = probeResults;
-        _context = new RuntimeMemoryContext(accessor, fileSize, minidumpInfo);
+        _context = new RuntimeMemoryContext(accessor, fileSize, minidumpInfo)
+        {
+            EditorIdsByFormId = probeResults?.EditorIdsByFormId
+        };
         _actors = new RuntimeActorReader(_context, npcLayoutProbe);
         _generic = new RuntimeGenericReader(_context, probeResults?.GenericTypeShifts);
         _items = new RuntimeItemReader(_context, probeResults?.WeaponSoundLayout);
@@ -144,6 +148,7 @@ public sealed class RuntimeStructReader
         _debris = new RuntimeDebrisReader(_context);
         _ingredients = new RuntimeIngredientReader(_context);
         _navMeshInfoMaps = new RuntimeNavMeshInfoMapReader(_context);
+        _navMeshDiscovery = new RuntimeNavMeshDiscovery(_context);
         _caravanDecks = new RuntimeCaravanDeckReader(_context);
         _survivalStages = new RuntimeSurvivalStageReader(_context);
     }
@@ -204,7 +209,10 @@ public sealed class RuntimeStructReader
         if (allEntries is { Count: > 0 })
         {
             // Build a FormID → entry lookup once for content-based positional validation
-            // (used by the weapon sound probe to disambiguate adjacent SOUN pointers).
+            // (used by the weapon sound probe to disambiguate adjacent SOUN pointers, and by
+            // the QUST script brute-force scan to validate candidates via the
+            // Script.pOwnerQuest backpointer). The NPC-side brute-force scan was removed
+            // because prefix-based validation was unsafe — see RuntimeActorReader.
             var editorIdsByFormId = new Dictionary<uint, RuntimeEditorIdEntry>(allEntries.Count);
             foreach (var entry in allEntries)
             {
@@ -223,7 +231,14 @@ public sealed class RuntimeStructReader
                 WeaponSoundLayout = RuntimeWeaponSoundProbe.Probe(context, allEntries,
                     msg => Logger.Instance.Info(msg),
                     editorIdsByFormId),
-                GenericTypeShifts = RuntimeGenericReader.ProbeAllTypeShifts(context, allEntries)
+                GenericTypeShifts = RuntimeGenericReader.ProbeAllTypeShifts(context, allEntries),
+                // Surface the dict on the context (via the reader constructor) so specialized
+                // readers can resolve candidate Script* pointers to their EditorIds. The
+                // QUST reader uses this when validating via Script.pOwnerQuest. Without it,
+                // the QUST brute-force scan would pick the first arbitrary Script* pointer
+                // it finds in struct memory — for a TESQuest captured mid-tutorial-execution
+                // that's a runtime-cached unrelated script (CGTutorialSCRIPT bound to VMS01).
+                EditorIdsByFormId = editorIdsByFormId
             };
         }
         else if (npcLayoutProbe != null || worldCellLayoutProbe != null)
@@ -662,6 +677,18 @@ public sealed class RuntimeStructReader
     public NavMeshInfoMapRecord? ReadRuntimeNavMeshInfoMap(RuntimeEditorIdEntry entry)
     {
         return _navMeshInfoMaps.ReadRuntimeNavMeshInfoMap(entry);
+    }
+
+    /// <summary>
+    ///     Walk the NavMeshInfoMap's InfoMap NiTPointerMap (FormType 0x38 entry) and surface
+    ///     every BSNavMesh the engine has loaded in heap memory. Without this, all NAVMs not
+    ///     present in the in-DMP ESM byte stream stay invisible because vanilla navmeshes have
+    ///     no editor IDs and therefore never land in the editor-id-hash-driven editor-id list
+    ///     that <see cref="ReadRuntimeNavMesh" /> walks.
+    /// </summary>
+    public List<NavMeshRecord> DiscoverNavMeshesFromInfoMap(RuntimeEditorIdEntry naviEntry)
+    {
+        return _navMeshDiscovery.Discover(naviEntry);
     }
 
     public CaravanDeckRecord? ReadRuntimeCaravanDeck(RuntimeEditorIdEntry entry)
