@@ -76,15 +76,16 @@ internal static class NpcGlbTintColorEncoder
             return Vector4.One;
         }
 
-        // When the submesh has a hair tint, the HCLR color has already been baked into the
-        // diffuse texture by BakeDiffuseTexture. Hair / brow / lash / beard NIFs ship with
-        // vertex colors that the engine ignores (BSShaderFlags2 bit 5 cleared) — RGB
-        // typically encodes AO / shadow masks and the alpha channel softens hair-card
-        // edges. Letting either through here causes raw vertex RGB to double-modulate the
-        // tint (lime-green hair on a blonde NPC) and vertex alpha < cutout-threshold to
-        // discard hair-card triangles. Force fully-opaque white so the tinted texture is
-        // the sole source of color and coverage.
-        if (HasTintColor(submesh))
+        // Hair / brow / lash / beard NIFs ship with vertex colors that the engine ignores
+        // (BSShaderFlags2 bit 5 cleared = UseVertexColors=false). RGB typically encodes
+        // AO / shadow masks and the alpha channel softens hair-card edges. When the submesh
+        // has an HCLR-derived hair tint AND vertex colors are flagged off, letting either
+        // through here causes raw vertex RGB to double-modulate the tint (lime-green hair on
+        // a blonde NPC) and vertex alpha < cutout-threshold to discard hair-card triangles.
+        // Force fully-opaque white so the tinted texture is the sole source of color and
+        // coverage. When UseVertexColors is set (armor with HCLR-style tint, gloves, etc.),
+        // preserve raw RGBA: those submeshes do use vertex colors as authored.
+        if (HasTintColor(submesh) && !submesh.UseVertexColors)
         {
             return Vector4.One;
         }
