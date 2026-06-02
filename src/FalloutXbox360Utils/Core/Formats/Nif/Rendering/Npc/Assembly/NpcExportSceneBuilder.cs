@@ -15,7 +15,7 @@ internal static class NpcExportSceneBuilder
 {
     private static readonly Logger Log = Logger.Instance;
 
-    internal static NpcExportScene? Build(
+    internal static GlbScene? Build(
         NpcAppearance npc,
         NpcMeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
@@ -38,9 +38,9 @@ internal static class NpcExportSceneBuilder
     }
 
     internal static Dictionary<string, int> AddNodes(
-        NpcExportScene scene,
+        GlbScene scene,
         IEnumerable<NifExportExtractor.ExtractedNode> nodes,
-        NpcExportNodeKind kind)
+        GlbNodeKind kind)
     {
         var nodeList = nodes.ToList();
         var blockToSceneNode = new Dictionary<int, int>();
@@ -49,7 +49,7 @@ internal static class NpcExportSceneBuilder
             var parentSceneNode = node.ParentBlockIndex is int parentBlockIndex &&
                                   blockToSceneNode.TryGetValue(parentBlockIndex, out var existingParent)
                 ? existingParent
-                : NpcExportScene.RootNodeIndex;
+                : GlbScene.RootNodeIndex;
             blockToSceneNode[node.BlockIndex] = scene.AddNode(
                 $"{node.Name}_{node.BlockIndex}",
                 parentSceneNode,
@@ -68,7 +68,7 @@ internal static class NpcExportSceneBuilder
     }
 
     internal static void AddSkinnedNif(
-        NpcExportScene scene,
+        GlbScene scene,
         string nifPath,
         NpcMeshArchiveSet meshArchives,
         Dictionary<string, int> nodeIndicesByBoneName,
@@ -101,7 +101,7 @@ internal static class NpcExportSceneBuilder
     }
 
     internal static void AddSkinnedPart(
-        NpcExportScene scene,
+        GlbScene scene,
         NifExportExtractor.ExtractedMeshPart part,
         Dictionary<string, int> nodeIndicesByBoneName)
     {
@@ -117,11 +117,11 @@ internal static class NpcExportSceneBuilder
             jointNodeIndices[index] = jointNodeIndex;
         }
 
-        scene.MeshParts.Add(new NpcExportMeshPart
+        scene.MeshParts.Add(new GlbMeshPart
         {
             Name = part.Name,
             Submesh = CloneSubmesh(part.Submesh),
-            Skin = new NpcExportSkinBinding
+            Skin = new GlbSkinBinding
             {
                 JointNodeIndices = jointNodeIndices,
                 InverseBindMatrices = part.Skin.InverseBindMatrices,
@@ -131,7 +131,7 @@ internal static class NpcExportSceneBuilder
     }
 
     internal static void AddExtractedRigidPart(
-        NpcExportScene scene,
+        GlbScene scene,
         NifExportExtractor.ExtractedMeshPart part,
         Matrix4x4 worldTransform,
         string label)
@@ -141,7 +141,7 @@ internal static class NpcExportSceneBuilder
         AddRigidSubmesh(scene, label, rigidSubmesh);
     }
 
-    internal static void AddRigidModel(NpcExportScene scene, string label, NifRenderableModel model)
+    internal static void AddRigidModel(GlbScene scene, string label, NifRenderableModel model)
     {
         foreach (var submesh in model.Submeshes)
         {
@@ -149,15 +149,15 @@ internal static class NpcExportSceneBuilder
         }
     }
 
-    internal static void AddRigidSubmesh(NpcExportScene scene, string label, RenderableSubmesh submesh)
+    internal static void AddRigidSubmesh(GlbScene scene, string label, RenderableSubmesh submesh)
     {
         var nodeIndex = scene.AddNode(
             $"{Path.GetFileNameWithoutExtension(label)}_{scene.MeshParts.Count}",
-            NpcExportScene.RootNodeIndex,
+            GlbScene.RootNodeIndex,
             Matrix4x4.Identity,
             Matrix4x4.Identity,
-            NpcExportNodeKind.Attachment);
-        scene.MeshParts.Add(new NpcExportMeshPart
+            GlbNodeKind.Attachment);
+        scene.MeshParts.Add(new GlbMeshPart
         {
             Name = Path.GetFileNameWithoutExtension(label),
             NodeIndex = nodeIndex,
@@ -211,7 +211,7 @@ internal static class NpcExportSceneBuilder
     }
 
     internal sealed record SkeletonContext(
-        NpcExportScene Scene,
+        GlbScene Scene,
         Dictionary<string, Matrix4x4> BoneTransforms,
         Dictionary<string, Matrix4x4>? PoseDeltas,
         Dictionary<string, int> NodeIndicesByBoneName);

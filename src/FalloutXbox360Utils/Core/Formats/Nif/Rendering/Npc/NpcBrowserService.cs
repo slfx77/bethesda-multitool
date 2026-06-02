@@ -249,7 +249,7 @@ internal sealed class NpcBrowserService : IDisposable
             return null;
         }
 
-        return NpcGlbWriter.WriteToBytes(scene, _textureResolver);
+        return GlbWriter.WriteToBytes(scene, _textureResolver);
     }
 
     public byte[]? BuildCreatureGlb(uint creatureFormId, bool bindPose = false)
@@ -281,7 +281,7 @@ internal sealed class NpcBrowserService : IDisposable
             return null;
         }
 
-        return NpcGlbWriter.WriteToBytes(scene, _textureResolver);
+        return GlbWriter.WriteToBytes(scene, _textureResolver);
     }
 
     public byte[]? RenderPng(
@@ -384,7 +384,7 @@ internal sealed class NpcBrowserService : IDisposable
                     if (scene != null && scene.MeshParts.Count > 0)
                     {
                         var outputPath = Path.Combine(outputDir, NpcExportFileNaming.BuildFileName(npc));
-                        NpcGlbWriter.Write(scene, _textureResolver, outputPath);
+                        GlbWriter.Write(scene, _textureResolver, outputPath);
                     }
                 }
                 catch

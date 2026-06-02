@@ -54,12 +54,20 @@ internal static class NifAlphaClassifier
             return true;
         }
 
-        if (ContainsHairHint(submesh.ShapeName))
-        {
-            return true;
-        }
+        return IsHairLikeSubmesh(submesh);
+    }
 
-        return ContainsHairHint(submesh.DiffuseTexturePath);
+    /// <summary>
+    ///     True when the submesh is hair, eyebrow, or eyelash geometry (identified by shape
+    ///     name or diffuse texture path). Used by the GPU renderer to route these submeshes
+    ///     to an alpha-to-coverage pipeline — Bethesda's engine renders them with A2C +
+    ///     multi-pass sort (see BSRenderState::SetAlphaToCoverageEnable in the engine), and
+    ///     a single-pass plain blend would otherwise stack to brown patches on the forehead.
+    /// </summary>
+    internal static bool IsHairLikeSubmesh(RenderableSubmesh submesh)
+    {
+        return ContainsHairHint(submesh.ShapeName) ||
+               ContainsHairHint(submesh.DiffuseTexturePath);
 
         static bool ContainsHairHint(string? value)
         {

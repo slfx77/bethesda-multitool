@@ -137,7 +137,7 @@ internal sealed class NifBrowserService : IDisposable
         var scene = NifExportSceneBuilder.Build(data, nif, sourceLabel);
         if (scene == null || scene.MeshParts.Count == 0) return null;
 
-        return NpcGlbWriter.WriteToBytes(scene, _textureResolver);
+        return GlbWriter.WriteToBytes(scene, _textureResolver);
     }
 
     /// <summary>

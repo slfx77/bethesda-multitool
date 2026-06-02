@@ -2,26 +2,26 @@ using System.Numerics;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
 
-internal sealed class NpcExportScene
+internal sealed class GlbScene
 {
     private readonly Dictionary<string, int> _namedNodes =
         new(StringComparer.OrdinalIgnoreCase);
 
-    public NpcExportScene()
+    public GlbScene()
     {
-        Nodes.Add(new NpcExportNode
+        Nodes.Add(new GlbNode
         {
             Name = "SceneRoot",
             ParentIndex = null,
             LocalTransform = Matrix4x4.Identity,
             WorldTransform = Matrix4x4.Identity,
-            Kind = NpcExportNodeKind.Root
+            Kind = GlbNodeKind.Root
         });
     }
 
-    public List<NpcExportNode> Nodes { get; } = [];
+    public List<GlbNode> Nodes { get; } = [];
 
-    public List<NpcExportMeshPart> MeshParts { get; } = [];
+    public List<GlbMeshPart> MeshParts { get; } = [];
 
     public static int RootNodeIndex => 0;
 
@@ -30,11 +30,11 @@ internal sealed class NpcExportScene
         int? parentIndex,
         Matrix4x4 localTransform,
         Matrix4x4 worldTransform,
-        NpcExportNodeKind kind,
+        GlbNodeKind kind,
         string? lookupName = null)
     {
         var nodeIndex = Nodes.Count;
-        Nodes.Add(new NpcExportNode
+        Nodes.Add(new GlbNode
         {
             Name = name,
             ParentIndex = parentIndex,

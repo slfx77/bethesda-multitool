@@ -60,6 +60,9 @@ internal static class NpcGlbAlphaTexturePacker
                     threshold = (byte)Math.Clamp(255 - threshold, 0, 255);
                     hasTextureTransform = true;
                     break;
+                case 4: // GREATER: keep if α > threshold ≡ glTF "discard if α < threshold+1"
+                    threshold = (byte)Math.Clamp(threshold + 1, 0, 255);
+                    break;
                 case 6: // GEQUAL
                     threshold = (byte)Math.Clamp(threshold - 1, 0, 255);
                     break;

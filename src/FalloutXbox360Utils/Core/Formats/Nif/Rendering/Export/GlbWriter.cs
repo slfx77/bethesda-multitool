@@ -6,13 +6,16 @@ using SharpGLTF.Memory;
 using SharpGLTF.Scenes;
 using SharpGLTF.Schema2;
 using AlphaMode = SharpGLTF.Materials.AlphaMode;
+using TextureMipMapFilter = SharpGLTF.Schema2.TextureMipMapFilter;
+using TextureInterpolationFilter = SharpGLTF.Schema2.TextureInterpolationFilter;
+using TextureWrapMode = SharpGLTF.Schema2.TextureWrapMode;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
 
-internal static class NpcGlbWriter
+internal static class GlbWriter
 {
     internal static void Write(
-        NpcExportScene scene,
+        GlbScene scene,
         NifTextureResolver textureResolver,
         string outputPath)
     {
@@ -28,7 +31,7 @@ internal static class NpcGlbWriter
     }
 
     internal static byte[] WriteToBytes(
-        NpcExportScene scene,
+        GlbScene scene,
         NifTextureResolver textureResolver)
     {
         using var ms = new MemoryStream();
@@ -37,7 +40,7 @@ internal static class NpcGlbWriter
     }
 
     private static ModelRoot BuildGltfScene(
-        NpcExportScene scene,
+        GlbScene scene,
         NifTextureResolver textureResolver)
     {
         ArgumentNullException.ThrowIfNull(scene);
@@ -79,7 +82,7 @@ internal static class NpcGlbWriter
                     continue;
                 }
 
-                var nodeIndex = meshPart.NodeIndex ?? NpcExportScene.RootNodeIndex;
+                var nodeIndex = meshPart.NodeIndex ?? GlbScene.RootNodeIndex;
                 sceneBuilder.AddRigidMesh(rigidMesh, nodeBuilders[nodeIndex]);
             }
         }
@@ -97,7 +100,7 @@ internal static class NpcGlbWriter
         GltfNormalDiagnostic.FixWindingOrder(submesh);
     }
 
-    private static Dictionary<int, NodeBuilder> BuildNodeBuilders(NpcExportScene scene)
+    private static Dictionary<int, NodeBuilder> BuildNodeBuilders(GlbScene scene)
     {
         var usedNodes = CollectUsedNodeIndices(scene);
         var builders = new Dictionary<int, NodeBuilder>();
@@ -119,9 +122,9 @@ internal static class NpcGlbWriter
         return builders;
     }
 
-    private static HashSet<int> CollectUsedNodeIndices(NpcExportScene scene)
+    private static HashSet<int> CollectUsedNodeIndices(GlbScene scene)
     {
-        var used = new HashSet<int> { NpcExportScene.RootNodeIndex };
+        var used = new HashSet<int> { GlbScene.RootNodeIndex };
 
         foreach (var meshPart in scene.MeshParts)
         {
@@ -134,7 +137,7 @@ internal static class NpcGlbWriter
             }
             else
             {
-                AddNodeAndAncestors(scene, meshPart.NodeIndex ?? NpcExportScene.RootNodeIndex, used);
+                AddNodeAndAncestors(scene, meshPart.NodeIndex ?? GlbScene.RootNodeIndex, used);
             }
         }
 
@@ -142,7 +145,7 @@ internal static class NpcGlbWriter
     }
 
     private static void AddNodeAndAncestors(
-        NpcExportScene scene,
+        GlbScene scene,
         int nodeIndex,
         HashSet<int> used)
     {
@@ -160,7 +163,7 @@ internal static class NpcGlbWriter
     }
 
     private static MeshBuilder<VertexPositionNormalTangent, VertexColor1Texture1, VertexEmpty> BuildRigidMesh(
-        NpcExportMeshPart meshPart,
+        GlbMeshPart meshPart,
         NifTextureResolver textureResolver,
         Dictionary<MaterialCacheKey, MaterialBuilder> materialCache)
     {
@@ -181,7 +184,7 @@ internal static class NpcGlbWriter
     }
 
     private static MeshBuilder<VertexPositionNormalTangent, VertexColor1Texture1, VertexJoints4> BuildSkinnedMesh(
-        NpcExportMeshPart meshPart,
+        GlbMeshPart meshPart,
         NifTextureResolver textureResolver,
         Dictionary<MaterialCacheKey, MaterialBuilder> materialCache)
     {
@@ -218,7 +221,7 @@ internal static class NpcGlbWriter
     private static VertexBuilder<VertexPositionNormalTangent, VertexColor1Texture1, VertexJoints4> CreateSkinnedVertex(
         RenderableSubmesh submesh,
         Vector4[]? tangents,
-        NpcExportSkinBinding skin,
+        GlbSkinBinding skin,
         int vertexIndex)
     {
         var bindings = skin.PerVertexInfluences[vertexIndex];
@@ -479,8 +482,30 @@ internal static class NpcGlbWriter
                 break;
         }
 
+        NeutralizeSamplers(material);
+
         materialCache[key] = material;
         return material;
+    }
+
+    /// <summary>
+    ///     Set REPEAT wrap + non-mipmapped LINEAR minification on every texture channel.
+    ///     Without this, glTF viewers default to LINEAR_MIPMAP_LINEAR; on heavily-tiled
+    ///     content (e.g. tree bark with V ≈ −18 → −1) the GPU's screen-space derivative
+    ///     of UV crosses each integer boundary and snaps to the coarsest mip, producing
+    ///     evenly-spaced dark bands along the seam. NIFSkope doesn't hit this because its
+    ///     software sampler doesn't pick mip level from derivatives.
+    /// </summary>
+    private static void NeutralizeSamplers(MaterialBuilder material)
+    {
+        foreach (var channel in material.Channels)
+        {
+            channel.Texture?.WithSampler(
+                TextureWrapMode.REPEAT,
+                TextureWrapMode.REPEAT,
+                TextureMipMapFilter.LINEAR,
+                TextureInterpolationFilter.LINEAR);
+        }
     }
 
     private static string BuildTextureName(string? texturePath, string fallbackFileName)

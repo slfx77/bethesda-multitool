@@ -12,7 +12,7 @@ internal static class GltfNormalDiagnostic
 {
     private static readonly Logger Log = Logger.Instance;
 
-    internal static void Run(NpcExportScene scene)
+    internal static void Run(GlbScene scene)
     {
         ArgumentNullException.ThrowIfNull(scene);
 
@@ -77,7 +77,7 @@ internal static class GltfNormalDiagnostic
     ///     to glTF coordinate space (Y-up). Call this to check whether the coordinate
     ///     conversion itself introduces flips.
     /// </summary>
-    internal static void RunWithCoordinateConversion(NpcExportScene scene)
+    internal static void RunWithCoordinateConversion(GlbScene scene)
     {
         ArgumentNullException.ThrowIfNull(scene);
 

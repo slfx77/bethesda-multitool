@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
 
-internal sealed class NpcExportSkinBinding
+internal sealed class GlbSkinBinding
 {
     public required int[] JointNodeIndices { get; init; }
 

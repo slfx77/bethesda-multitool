@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
 
-internal sealed class NpcExportNode
+internal sealed class GlbNode
 {
     public required string Name { get; init; }
 
@@ -14,5 +14,5 @@ internal sealed class NpcExportNode
 
     public required Matrix4x4 WorldTransform { get; init; }
 
-    public required NpcExportNodeKind Kind { get; init; }
+    public required GlbNodeKind Kind { get; init; }
 }

@@ -189,14 +189,27 @@ internal static class FaceGenMeshMorpher
                 // the triangle winding is reversed at this vertex. Flip to preserve the
                 // original outward direction.
                 var dot = normals[v] * originalNormals[v] +
-                          normals[v + 1] * originalNormals[v + 1] +
-                          normals[v + 2] * originalNormals[v + 2];
+                          normals[v + 1] * originalNormals[v + 1]
+                          + normals[v + 2] * originalNormals[v + 2];
                 if (dot < 0f)
                 {
                     normals[v] = -normals[v];
                     normals[v + 1] = -normals[v + 1];
                     normals[v + 2] = -normals[v + 2];
                 }
+            }
+            else
+            {
+                // Accumulated face cross products cancelled to ~zero (concave inflection,
+                // spiky vertex with opposing triangle clusters, or a rim where surrounding
+                // triangles point in many directions). Falling back to the authored normal
+                // keeps the vertex shadable — leaving it at zero makes the lighting equation
+                // produce black pixels, which read as holes (eyelid rim, brow seam) and
+                // sometimes as bright spots after the seam weld averages a near-zero with
+                // its neighbours.
+                normals[v] = originalNormals[v];
+                normals[v + 1] = originalNormals[v + 1];
+                normals[v + 2] = originalNormals[v + 2];
             }
         }
 
@@ -212,6 +225,9 @@ internal static class FaceGenMeshMorpher
     ///     Averages normals of vertices that share the same position (within epsilon).
     ///     EGM morphing breaks seam-vertex normal sharing, causing visible hard edges
     ///     at mesh boundaries (neck, ears). This restores smooth normals at those seams.
+    ///     Co-located vertices whose normals point into opposite hemispheres are intentional
+    ///     mesh splits (e.g. mouth interior vs face exterior) and are welded into separate
+    ///     groups so the +N/-N pair never averages to a zero-length garbage normal.
     /// </summary>
     internal static void WeldSeamNormals(float[] positions, float[] normals)
     {
@@ -245,8 +261,8 @@ internal static class FaceGenMeshMorpher
             list.Add(i);
         }
 
-        // For each vertex, check its bucket and the 26 neighbors for co-located vertices.
         var welded = new bool[vertexCount];
+        var members = new List<int>();
         foreach (var (bucketKey, indices) in buckets)
         {
             for (var ai = 0; ai < indices.Count; ai++)
@@ -257,87 +273,43 @@ internal static class FaceGenMeshMorpher
                     continue;
                 }
 
-                // Collect all vertices at the same position (including from neighbor buckets).
-                var ax = positions[a * 3];
-                var ay = positions[a * 3 + 1];
-                var az = positions[a * 3 + 2];
+                // Use the seed's current normal as the hemisphere reference. Co-located
+                // vertices whose normal points the same way (dot > 0) are part of this
+                // weld group; opposite-hemisphere co-located vertices are seam partners
+                // and will be welded in their own iteration with their own seed.
+                var seedNx = normals[a * 3];
+                var seedNy = normals[a * 3 + 1];
+                var seedNz = normals[a * 3 + 2];
 
-                var sumNx = normals[a * 3];
-                var sumNy = normals[a * 3 + 1];
-                var sumNz = normals[a * 3 + 2];
-                var count = 1;
+                members.Clear();
+                members.Add(a);
+                var sumNx = seedNx;
+                var sumNy = seedNy;
+                var sumNz = seedNz;
 
-                // Check same bucket (remaining vertices after a).
-                for (var bi = ai + 1; bi < indices.Count; bi++)
-                {
-                    var b = indices[bi];
-                    if (welded[b])
-                    {
-                        continue;
-                    }
+                CollectColocatedMembers(
+                    positions,
+                    normals,
+                    bucketKey,
+                    buckets,
+                    indices,
+                    a,
+                    ai,
+                    seedNx,
+                    seedNy,
+                    seedNz,
+                    epsilonSq,
+                    welded,
+                    members,
+                    ref sumNx,
+                    ref sumNy,
+                    ref sumNz);
 
-                    var dx = positions[b * 3] - ax;
-                    var dy = positions[b * 3 + 1] - ay;
-                    var dz = positions[b * 3 + 2] - az;
-                    if (dx * dx + dy * dy + dz * dz > epsilonSq)
-                    {
-                        continue;
-                    }
-
-                    sumNx += normals[b * 3];
-                    sumNy += normals[b * 3 + 1];
-                    sumNz += normals[b * 3 + 2];
-                    count++;
-                }
-
-                // Check 26 neighbor buckets for boundary cases.
-                for (var ox = -1; ox <= 1; ox++)
-                {
-                    for (var oy = -1; oy <= 1; oy++)
-                    {
-                        for (var oz = -1; oz <= 1; oz++)
-                        {
-                            if (ox == 0 && oy == 0 && oz == 0)
-                            {
-                                continue;
-                            }
-
-                            var neighborKey = (bucketKey.Item1 + ox, bucketKey.Item2 + oy, bucketKey.Item3 + oz);
-                            if (!buckets.TryGetValue(neighborKey, out var neighborList))
-                            {
-                                continue;
-                            }
-
-                            foreach (var b in neighborList)
-                            {
-                                if (welded[b])
-                                {
-                                    continue;
-                                }
-
-                                var dx = positions[b * 3] - ax;
-                                var dy = positions[b * 3 + 1] - ay;
-                                var dz = positions[b * 3 + 2] - az;
-                                if (dx * dx + dy * dy + dz * dz > epsilonSq)
-                                {
-                                    continue;
-                                }
-
-                                sumNx += normals[b * 3];
-                                sumNy += normals[b * 3 + 1];
-                                sumNz += normals[b * 3 + 2];
-                                count++;
-                            }
-                        }
-                    }
-                }
-
-                if (count <= 1)
+                if (members.Count <= 1)
                 {
                     continue;
                 }
 
-                // Normalize the averaged normal.
                 var len = MathF.Sqrt(sumNx * sumNx + sumNy * sumNy + sumNz * sumNz);
                 if (len <= 1e-7f)
                 {
@@ -348,72 +320,142 @@ internal static class FaceGenMeshMorpher
                 var wny = sumNy / len;
                 var wnz = sumNz / len;
 
-                // Apply to all co-located vertices (re-scan to find them).
-                for (var bi = ai; bi < indices.Count; bi++)
+                foreach (var m in members)
                 {
-                    var b = indices[bi];
-                    if (bi != ai && welded[b])
-                    {
-                        continue;
-                    }
-
-                    var dx = positions[b * 3] - ax;
-                    var dy = positions[b * 3 + 1] - ay;
-                    var dz = positions[b * 3 + 2] - az;
-                    if (bi != ai && dx * dx + dy * dy + dz * dz > epsilonSq)
-                    {
-                        continue;
-                    }
-
-                    normals[b * 3] = wnx;
-                    normals[b * 3 + 1] = wny;
-                    normals[b * 3 + 2] = wnz;
-                    welded[b] = true;
+                    normals[m * 3] = wnx;
+                    normals[m * 3 + 1] = wny;
+                    normals[m * 3 + 2] = wnz;
+                    welded[m] = true;
                 }
+            }
+        }
+    }
 
-                // Apply to neighbor bucket vertices too.
-                for (var ox = -1; ox <= 1; ox++)
+    private static void CollectColocatedMembers(
+        float[] positions,
+        float[] normals,
+        (int, int, int) bucketKey,
+        Dictionary<(int, int, int), List<int>> buckets,
+        List<int> bucketIndices,
+        int seedIndex,
+        int seedListPos,
+        float seedNx,
+        float seedNy,
+        float seedNz,
+        float epsilonSq,
+        bool[] welded,
+        List<int> members,
+        ref float sumNx,
+        ref float sumNy,
+        ref float sumNz)
+    {
+        var ax = positions[seedIndex * 3];
+        var ay = positions[seedIndex * 3 + 1];
+        var az = positions[seedIndex * 3 + 2];
+
+        for (var bi = seedListPos + 1; bi < bucketIndices.Count; bi++)
+        {
+            TryAddMember(
+                positions,
+                normals,
+                bucketIndices[bi],
+                ax,
+                ay,
+                az,
+                seedNx,
+                seedNy,
+                seedNz,
+                epsilonSq,
+                welded,
+                members,
+                ref sumNx,
+                ref sumNy,
+                ref sumNz);
+        }
+
+        for (var ox = -1; ox <= 1; ox++)
+        {
+            for (var oy = -1; oy <= 1; oy++)
+            {
+                for (var oz = -1; oz <= 1; oz++)
                 {
-                    for (var oy = -1; oy <= 1; oy++)
+                    if (ox == 0 && oy == 0 && oz == 0)
                     {
-                        for (var oz = -1; oz <= 1; oz++)
-                        {
-                            if (ox == 0 && oy == 0 && oz == 0)
-                            {
-                                continue;
-                            }
+                        continue;
+                    }
 
-                            var neighborKey = (bucketKey.Item1 + ox, bucketKey.Item2 + oy, bucketKey.Item3 + oz);
-                            if (!buckets.TryGetValue(neighborKey, out var neighborList))
-                            {
-                                continue;
-                            }
+                    var neighborKey = (bucketKey.Item1 + ox, bucketKey.Item2 + oy, bucketKey.Item3 + oz);
+                    if (!buckets.TryGetValue(neighborKey, out var neighborList))
+                    {
+                        continue;
+                    }
 
-                            foreach (var b in neighborList)
-                            {
-                                if (welded[b])
-                                {
-                                    continue;
-                                }
-
-                                var dx = positions[b * 3] - ax;
-                                var dy = positions[b * 3 + 1] - ay;
-                                var dz = positions[b * 3 + 2] - az;
-                                if (dx * dx + dy * dy + dz * dz > epsilonSq)
-                                {
-                                    continue;
-                                }
-
-                                normals[b * 3] = wnx;
-                                normals[b * 3 + 1] = wny;
-                                normals[b * 3 + 2] = wnz;
-                                welded[b] = true;
-                            }
-                        }
+                    foreach (var b in neighborList)
+                    {
+                        TryAddMember(
+                            positions,
+                            normals,
+                            b,
+                            ax,
+                            ay,
+                            az,
+                            seedNx,
+                            seedNy,
+                            seedNz,
+                            epsilonSq,
+                            welded,
+                            members,
+                            ref sumNx,
+                            ref sumNy,
+                            ref sumNz);
                     }
                 }
             }
         }
+    }
+
+    private static void TryAddMember(
+        float[] positions,
+        float[] normals,
+        int b,
+        float ax,
+        float ay,
+        float az,
+        float seedNx,
+        float seedNy,
+        float seedNz,
+        float epsilonSq,
+        bool[] welded,
+        List<int> members,
+        ref float sumNx,
+        ref float sumNy,
+        ref float sumNz)
+    {
+        if (welded[b])
+        {
+            return;
+        }
+
+        var dx = positions[b * 3] - ax;
+        var dy = positions[b * 3 + 1] - ay;
+        var dz = positions[b * 3 + 2] - az;
+        if (dx * dx + dy * dy + dz * dz > epsilonSq)
+        {
+            return;
+        }
+
+        var bNx = normals[b * 3];
+        var bNy = normals[b * 3 + 1];
+        var bNz = normals[b * 3 + 2];
+        if (seedNx * bNx + seedNy * bNy + seedNz * bNz <= 0f)
+        {
+            return;
+        }
+
+        sumNx += bNx;
+        sumNy += bNy;
+        sumNz += bNz;
+        members.Add(b);
     }
 
     internal static void RecalculateBounds(NifRenderableModel model)

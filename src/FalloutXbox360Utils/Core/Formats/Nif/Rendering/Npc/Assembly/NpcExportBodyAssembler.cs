@@ -15,7 +15,7 @@ internal static class NpcExportBodyAssembler
     private static readonly Logger Log = Logger.Instance;
 
     internal static void AddBodyEquipment(
-        NpcExportScene scene,
+        GlbScene scene,
         NpcCompositionPlan plan,
         NpcMeshArchiveSet meshArchives,
         NpcExportSceneBuilder.SkeletonContext skeletonContext)
@@ -72,7 +72,7 @@ internal static class NpcExportBodyAssembler
     }
 
     internal static void AddBodyEquipment(
-        NpcExportScene scene,
+        GlbScene scene,
         NpcAppearance npc,
         NpcMeshArchiveSet meshArchives,
         Dictionary<string, int> nodeIndicesByBoneName,
@@ -146,7 +146,7 @@ internal static class NpcExportBodyAssembler
     }
 
     internal static void AddWeapon(
-        NpcExportScene scene,
+        GlbScene scene,
         NpcAppearance npc,
         NpcMeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
@@ -325,7 +325,7 @@ internal static class NpcExportBodyAssembler
     }
 
     internal static void AddWeapon(
-        NpcExportScene scene,
+        GlbScene scene,
         NpcCompositionPlan plan,
         NpcMeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,

@@ -610,20 +610,20 @@ public sealed class NpcExportHelperTests
     [Fact]
     public void Write_TwoSkinnedPartsUsingSharedSkeleton_ReloadsWithSeparateSkins()
     {
-        var scene = new NpcExportScene();
+        var scene = new GlbScene();
         var pelvisNode = scene.AddNode(
             "Bip01 Pelvis",
-            NpcExportScene.RootNodeIndex,
+            GlbScene.RootNodeIndex,
             Matrix4x4.Identity,
             Matrix4x4.Identity,
-            NpcExportNodeKind.Skeleton,
+            GlbNodeKind.Skeleton,
             "Bip01 Pelvis");
         var spineNode = scene.AddNode(
             "Bip01 Spine",
             pelvisNode,
             Matrix4x4.Identity,
             Matrix4x4.Identity,
-            NpcExportNodeKind.Skeleton,
+            GlbNodeKind.Skeleton,
             "Bip01 Spine");
 
         scene.MeshParts.Add(CreateSkinnedMeshPart("BodyA", pelvisNode, spineNode, 0f));
@@ -633,7 +633,7 @@ public sealed class NpcExportHelperTests
         using var outputDir = new TemporaryDirectory();
         var outputPath = Path.Combine(outputDir.Path, "shared-skeleton.glb");
 
-        NpcGlbWriter.Write(scene, textureResolver, outputPath);
+        GlbWriter.Write(scene, textureResolver, outputPath);
 
         var model = ModelRoot.Load(outputPath);
 
@@ -657,14 +657,14 @@ public sealed class NpcExportHelperTests
     [Fact]
     public void Write_RigidMesh_ConvertsBethesdaAxesForGlb()
     {
-        var scene = new NpcExportScene();
+        var scene = new GlbScene();
         var nodeIndex = scene.AddNode(
             "Rigid",
-            NpcExportScene.RootNodeIndex,
+            GlbScene.RootNodeIndex,
             Matrix4x4.Identity,
             Matrix4x4.Identity,
-            NpcExportNodeKind.Attachment);
-        scene.MeshParts.Add(new NpcExportMeshPart
+            GlbNodeKind.Attachment);
+        scene.MeshParts.Add(new GlbMeshPart
         {
             Name = "Rigid",
             NodeIndex = nodeIndex,
@@ -691,7 +691,7 @@ public sealed class NpcExportHelperTests
         using var outputDir = new TemporaryDirectory();
         var outputPath = Path.Combine(outputDir.Path, "rigid-axis.glb");
 
-        NpcGlbWriter.Write(scene, textureResolver, outputPath);
+        GlbWriter.Write(scene, textureResolver, outputPath);
 
         var model = ModelRoot.Load(outputPath);
         var primitive = model.LogicalMeshes.Single().Primitives.Single();
@@ -702,13 +702,13 @@ public sealed class NpcExportHelperTests
         Assert.Contains(positions, position => IsNearlyEqual(position, new Vector3(0f, 1f, 0f)));
     }
 
-    private static NpcExportMeshPart CreateSkinnedMeshPart(
+    private static GlbMeshPart CreateSkinnedMeshPart(
         string name,
         int pelvisNode,
         int spineNode,
         float xOffset)
     {
-        return new NpcExportMeshPart
+        return new GlbMeshPart
         {
             Name = name,
             Submesh = new RenderableSubmesh
@@ -734,7 +734,7 @@ public sealed class NpcExportHelperTests
                     0f, 1f
                 ]
             },
-            Skin = new NpcExportSkinBinding
+            Skin = new GlbSkinBinding
             {
                 JointNodeIndices = [pelvisNode, spineNode],
                 InverseBindMatrices = [Matrix4x4.Identity, Matrix4x4.Identity],

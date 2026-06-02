@@ -6,7 +6,7 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
 
 internal static class NifExportSceneBuilder
 {
-    internal static NpcExportScene? Build(byte[] data, NifInfo nif, string sourceLabel)
+    internal static GlbScene? Build(byte[] data, NifInfo nif, string sourceLabel)
     {
         var extracted = NifExportExtractor.Extract(data, nif);
         if (extracted.MeshParts.Count == 0)
@@ -14,14 +14,14 @@ internal static class NifExportSceneBuilder
             return null;
         }
 
-        var scene = new NpcExportScene();
+        var scene = new GlbScene();
         var nodeIndicesByName = AddNodes(scene, extracted.Nodes);
 
         foreach (var part in extracted.MeshParts)
         {
             if (part.Skin != null && TryCreateSkinBinding(part.Skin, nodeIndicesByName, out var skinBinding))
             {
-                scene.MeshParts.Add(new NpcExportMeshPart
+                scene.MeshParts.Add(new GlbMeshPart
                 {
                     Name = part.Name,
                     Submesh = CloneSubmesh(part.Submesh),
@@ -34,11 +34,11 @@ internal static class NifExportSceneBuilder
             ApplyWorldTransform(rigidSubmesh, part.ShapeWorldTransform);
             var nodeIndex = scene.AddNode(
                 $"{Path.GetFileNameWithoutExtension(sourceLabel)}_{scene.MeshParts.Count}",
-                NpcExportScene.RootNodeIndex,
+                GlbScene.RootNodeIndex,
                 Matrix4x4.Identity,
                 Matrix4x4.Identity,
-                NpcExportNodeKind.Attachment);
-            scene.MeshParts.Add(new NpcExportMeshPart
+                GlbNodeKind.Attachment);
+            scene.MeshParts.Add(new GlbMeshPart
             {
                 Name = part.Name,
                 NodeIndex = nodeIndex,
@@ -54,7 +54,7 @@ internal static class NifExportSceneBuilder
     ///     Loads skeleton first, applies idle animation if available, then loads
     ///     all NIFZ body meshes bound to the skeleton bones.
     /// </summary>
-    internal static NpcExportScene? BuildCreature(
+    internal static GlbScene? BuildCreature(
         string skeletonPath,
         string[] bodyModelPaths,
         NpcMeshArchiveSet meshArchives,
@@ -77,7 +77,7 @@ internal static class NifExportSceneBuilder
     }
 
     private static Dictionary<string, int> AddNodes(
-        NpcExportScene scene,
+        GlbScene scene,
         IEnumerable<NifExportExtractor.ExtractedNode> nodes)
     {
         var nodeList = nodes.ToList();
@@ -89,14 +89,14 @@ internal static class NifExportSceneBuilder
             var parentSceneNode = node.ParentBlockIndex is int parentBlockIndex &&
                                   blockToSceneNode.TryGetValue(parentBlockIndex, out var existingParent)
                 ? existingParent
-                : NpcExportScene.RootNodeIndex;
+                : GlbScene.RootNodeIndex;
 
             var sceneNodeIndex = scene.AddNode(
                 $"{node.Name}_{node.BlockIndex}",
                 parentSceneNode,
                 node.LocalTransform,
                 node.WorldTransform,
-                NpcExportNodeKind.Skeleton,
+                GlbNodeKind.Skeleton,
                 node.LookupName);
             blockToSceneNode[node.BlockIndex] = sceneNodeIndex;
 
@@ -112,7 +112,7 @@ internal static class NifExportSceneBuilder
     private static bool TryCreateSkinBinding(
         NifExportExtractor.ExtractedSkinBinding skin,
         Dictionary<string, int> nodeIndicesByName,
-        out NpcExportSkinBinding? binding)
+        out GlbSkinBinding? binding)
     {
         var jointNodeIndices = new int[skin.BoneNames.Length];
         for (var index = 0; index < skin.BoneNames.Length; index++)
@@ -126,7 +126,7 @@ internal static class NifExportSceneBuilder
             jointNodeIndices[index] = jointNodeIndex;
         }
 
-        binding = new NpcExportSkinBinding
+        binding = new GlbSkinBinding
         {
             JointNodeIndices = jointNodeIndices,
             InverseBindMatrices = skin.InverseBindMatrices,

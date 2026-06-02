@@ -76,16 +76,20 @@ internal static class NpcGlbTintColorEncoder
             return Vector4.One;
         }
 
-        var color = NifVertexColorPolicy.Read(submesh, vertexIndex);
-
-        // When the submesh has a tint color, neutralize RGB to white and keep only alpha.
-        // The tint is baked into the glTF base color texture, so raw vertex RGB would
-        // double-apply the color. Vertex alpha is preserved for transparency blending.
-        if (HasTintColor(submesh) && !submesh.UseVertexColors)
+        // When the submesh has a hair tint, the HCLR color has already been baked into the
+        // diffuse texture by BakeDiffuseTexture. Hair / brow / lash / beard NIFs ship with
+        // vertex colors that the engine ignores (BSShaderFlags2 bit 5 cleared) — RGB
+        // typically encodes AO / shadow masks and the alpha channel softens hair-card
+        // edges. Letting either through here causes raw vertex RGB to double-modulate the
+        // tint (lime-green hair on a blonde NPC) and vertex alpha < cutout-threshold to
+        // discard hair-card triangles. Force fully-opaque white so the tinted texture is
+        // the sole source of color and coverage.
+        if (HasTintColor(submesh))
         {
-            return new Vector4(1f, 1f, 1f, color.A / 255f);
+            return Vector4.One;
         }
 
+        var color = NifVertexColorPolicy.Read(submesh, vertexIndex);
         return new Vector4(
             color.R / 255f,
             color.G / 255f,

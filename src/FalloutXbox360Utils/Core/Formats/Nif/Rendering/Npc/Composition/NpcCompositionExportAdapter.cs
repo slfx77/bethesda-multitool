@@ -6,7 +6,7 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
 
 internal static class NpcCompositionExportAdapter
 {
-    internal static NpcExportScene? BuildNpc(
+    internal static GlbScene? BuildNpc(
         NpcCompositionPlan plan,
         NpcMeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
@@ -22,7 +22,7 @@ internal static class NpcCompositionExportAdapter
             : BuildFullBodyScene(plan, meshArchives, textureResolver, compositionCaches);
     }
 
-    internal static NpcExportScene? BuildCreature(
+    internal static GlbScene? BuildCreature(
         CreatureCompositionPlan plan,
         NpcMeshArchiveSet meshArchives)
     {
@@ -39,11 +39,11 @@ internal static class NpcCompositionExportAdapter
             skeletonRaw.Value.Data,
             skeletonRaw.Value.Info,
             plan.AnimationOverrides);
-        var scene = new NpcExportScene();
+        var scene = new GlbScene();
         var nodeIndicesByName = NpcExportSceneBuilder.AddNodes(
             scene,
             extractedSkeleton.Nodes,
-            NpcExportNodeKind.Skeleton);
+            GlbNodeKind.Skeleton);
 
         foreach (var bodyPath in plan.BodyModelPaths)
         {
@@ -95,7 +95,7 @@ internal static class NpcCompositionExportAdapter
         return scene.MeshParts.Count > 0 ? scene : null;
     }
 
-    private static NpcExportScene? BuildFullBodyScene(
+    private static GlbScene? BuildFullBodyScene(
         NpcCompositionPlan plan,
         NpcMeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
@@ -139,7 +139,7 @@ internal static class NpcCompositionExportAdapter
         return scene.MeshParts.Count > 0 ? scene : null;
     }
 
-    private static NpcExportScene? BuildHeadOnlyScene(
+    private static GlbScene? BuildHeadOnlyScene(
         NpcCompositionPlan plan,
         NpcMeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
@@ -150,7 +150,7 @@ internal static class NpcCompositionExportAdapter
             return null;
         }
 
-        var scene = new NpcExportScene();
+        var scene = new GlbScene();
         Dictionary<string, int>? nodeIndicesByBoneName = null;
         if (plan.Head.BaseHeadNifPath != null)
         {
@@ -161,7 +161,7 @@ internal static class NpcCompositionExportAdapter
                 nodeIndicesByBoneName = NpcExportSceneBuilder.AddNodes(
                     scene,
                     headNodes.Nodes,
-                    NpcExportNodeKind.Skeleton);
+                    GlbNodeKind.Skeleton);
             }
         }
 
@@ -212,11 +212,11 @@ internal static class NpcCompositionExportAdapter
             skeletonRaw.Value.Data,
             skeletonRaw.Value.Info,
             plan.Skeleton.AnimationOverrides);
-        var scene = new NpcExportScene();
+        var scene = new GlbScene();
         var nodeIndicesByBoneName = NpcExportSceneBuilder.AddNodes(
             scene,
             extractedSkeleton.Nodes,
-            NpcExportNodeKind.Skeleton);
+            GlbNodeKind.Skeleton);
         return new NpcExportSceneBuilder.SkeletonContext(
             scene,
             plan.Skeleton.BodySkinningBones,

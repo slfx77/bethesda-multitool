@@ -12,7 +12,7 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
 internal static class NpcExportHeadAssembler
 {
     internal static void AddHeadContent(
-        NpcExportScene scene,
+        GlbScene scene,
         NpcCompositionPlan plan,
         NpcMeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
@@ -119,7 +119,7 @@ internal static class NpcExportHeadAssembler
     }
 
     internal static void AddHeadContent(
-        NpcExportScene scene,
+        GlbScene scene,
         NpcAppearance npc,
         NpcMeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
@@ -222,7 +222,7 @@ internal static class NpcExportHeadAssembler
     }
 
     private static void AddHair(
-        NpcExportScene scene,
+        GlbScene scene,
         NpcAppearance npc,
         NpcMeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
@@ -311,7 +311,7 @@ internal static class NpcExportHeadAssembler
     }
 
     private static void AddRaceFaceParts(
-        NpcExportScene scene,
+        GlbScene scene,
         NpcAppearance npc,
         NpcMeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
@@ -394,7 +394,7 @@ internal static class NpcExportHeadAssembler
     }
 
     private static void AddHeadParts(
-        NpcExportScene scene,
+        GlbScene scene,
         NpcAppearance npc,
         NpcMeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
@@ -458,7 +458,7 @@ internal static class NpcExportHeadAssembler
     }
 
     private static void AddEyes(
-        NpcExportScene scene,
+        GlbScene scene,
         NpcAppearance npc,
         NpcMeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
@@ -530,7 +530,7 @@ internal static class NpcExportHeadAssembler
     }
 
     private static void AddHeadEquipment(
-        NpcExportScene scene,
+        GlbScene scene,
         NpcAppearance npc,
         NpcMeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,

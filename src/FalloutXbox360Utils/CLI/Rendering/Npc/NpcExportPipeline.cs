@@ -106,7 +106,7 @@ internal static class NpcExportPipeline
                     var outputPath = Path.Combine(
                         settings.OutputDir,
                         NpcExportFileNaming.BuildFileName(npc));
-                    NpcGlbWriter.Write(scene, textureResolver, outputPath);
+                    GlbWriter.Write(scene, textureResolver, outputPath);
                     GltfValidatorRunner.ValidateOrThrow(outputPath);
                     textureResolver.EvictTexture(NpcTextureHelpers.BuildNpcFaceEgtTextureKey(npc));
                     exported++;
@@ -161,7 +161,7 @@ internal static class NpcExportPipeline
 
                     var name = creature.EditorId ?? $"{formId:X8}";
                     var outputPath = Path.Combine(settings.OutputDir, $"{name}.glb");
-                    NpcGlbWriter.Write(scene, textureResolver, outputPath);
+                    GlbWriter.Write(scene, textureResolver, outputPath);
                     GltfValidatorRunner.ValidateOrThrow(outputPath);
                     exported++;
 
@@ -191,7 +191,7 @@ internal static class NpcExportPipeline
             failed);
     }
 
-    private static void NormalizeSceneWinding(NpcExportScene scene)
+    private static void NormalizeSceneWinding(GlbScene scene)
     {
         foreach (var meshPart in scene.MeshParts)
         {

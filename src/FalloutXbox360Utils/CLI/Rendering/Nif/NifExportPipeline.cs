@@ -53,7 +53,7 @@ internal static class NifExportPipeline
             ? new NifTextureResolver(settings.TextureSourcePaths)
             : new NifTextureResolver();
 
-        NpcGlbWriter.Write(scene, textureResolver, settings.OutputPath);
+        GlbWriter.Write(scene, textureResolver, settings.OutputPath);
         GltfValidatorRunner.ValidateOrThrow(settings.OutputPath);
 
         AnsiConsole.MarkupLine(

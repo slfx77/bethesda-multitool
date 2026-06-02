@@ -192,7 +192,7 @@ internal static class ExportCreatureCommand
                     var fileName = $"{creature.EditorId ?? $"creature_{formId:X8}"}.glb";
                     var outputPath = Path.Combine(outputDir, fileName);
 
-                    NpcGlbWriter.Write(scene, textureResolver, outputPath);
+                    GlbWriter.Write(scene, textureResolver, outputPath);
                     try
                     {
                         GltfValidatorRunner.ValidateOrThrow(outputPath);
