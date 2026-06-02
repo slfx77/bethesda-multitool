@@ -1,18 +1,21 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Terrain;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
 
 namespace FalloutXbox360Utils;
 
 /// <summary>
-///     Per-loaded-world render cache. Keeps decoded LAND/runtime terrain and derived texture
-///     grids scoped to one <see cref="WorldViewData" /> instance.
+///     Per-loaded-world render cache. Keeps decoded LAND/runtime terrain, derived texture
+///     grids, and the v3 Phase 3 per-cell baked placement lists scoped to one
+///     <see cref="WorldViewData" /> instance.
 /// </summary>
 internal sealed class WorldRenderCache
 {
     private readonly object _lock = new();
     private readonly Dictionary<CellRecord, DecodedTerrainCell> _terrain = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<CellRecord, TextureWinnerGrid?> _textureWinners = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<CellRecord, IReadOnlyList<RenderableReference>> _placements = new(ReferenceEqualityComparer.Instance);
 
     internal DecodedTerrainCell GetTerrain(CellRecord cell)
     {
@@ -44,6 +47,42 @@ internal sealed class WorldRenderCache
                 : null;
             _textureWinners[cell] = winners;
             return winners;
+        }
+    }
+
+    /// <summary>
+    ///     v3 Phase 3 — returns this cell's static-mesh placements with world transforms and
+    ///     bounding spheres pre-computed. Filters out ACHR/ACRE (skinned actors, deferred to v4)
+    ///     and refs without a resolved ModelPath. Result is cached per cell across frames;
+    ///     <see cref="ReferenceRenderer" /> iterates this directly in its per-frame loop.
+    /// </summary>
+    internal IReadOnlyList<RenderableReference> GetPlacementList(CellRecord cell)
+    {
+        lock (_lock)
+        {
+            if (_placements.TryGetValue(cell, out var cached))
+            {
+                return cached;
+            }
+
+            var placements = cell.PlacedObjects;
+            if (placements.Count == 0)
+            {
+                _placements[cell] = Array.Empty<RenderableReference>();
+                return _placements[cell];
+            }
+
+            var built = new List<RenderableReference>(placements.Count);
+            foreach (var p in placements)
+            {
+                var renderable = RenderableReference.TryBuild(p);
+                if (renderable.HasValue) built.Add(renderable.Value);
+            }
+            IReadOnlyList<RenderableReference> list = built.Count == 0
+                ? Array.Empty<RenderableReference>()
+                : built;
+            _placements[cell] = list;
+            return list;
         }
     }
 

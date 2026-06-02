@@ -4,6 +4,8 @@ using System.Numerics;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
+using FalloutXbox360Utils.CLI;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc;
@@ -55,6 +57,13 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
     private TerrainTextureResolver? _textureResolver;
     private TerrainOpacityTextureCache? _opacityCache;
     private WaterRenderer? _water;
+    // v3 Phase 3 placed-object pipeline. Parallel to the terrain pipeline; owns its own
+    // NifTextureResolver + GpuTextureCache so terrain texture caching isn't perturbed.
+    private NpcMeshArchiveSet? _meshArchives;
+    private NifTextureResolver? _referenceTextureResolver;
+    private GpuTextureCache? _referenceTextureCache;
+    private ReferenceMeshCache? _referenceMeshCache;
+    private ReferenceRenderer? _references;
     private WorldViewData? _data;
     private GpuDevice? _gpu;
     private DateTime _lastFrameTime;
@@ -68,10 +77,12 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
     private double _lastControllerUpdateMilliseconds;
 
     // Layer visibility — toggled by D1/D2/D3 keys, all default-on. D4 toggles textured-vs-VCLR-only.
+    // D5 toggles placed-object (REFR) rendering (v3 Phase 3).
     private bool _showWireframe = true;
     private bool _showTerrain = true;
     private bool _showWater = true;
     private bool _vclrOnlyMode;
+    private bool _showReferences = true;
     private float _renderDistance = DefaultRenderDistance;
 
     public WorldView3DControl()
@@ -106,9 +117,11 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
     {
         _data = data;
 
-        // Tear down any prior terrain pipeline (a second LoadData = switching ESMs) so the
-        // texture caches don't leak across data sets. Order: TerrainRenderer references the
-        // resolver + opacity cache, so dispose it first.
+        // Tear down any prior pipelines (a second LoadData = switching ESMs) so the texture
+        // caches don't leak across data sets. ReferenceRenderer references the mesh+texture
+        // caches; dispose those last. TerrainRenderer references the resolver + opacity
+        // cache, so dispose it first.
+        DisposeReferencePipeline();
         _terrain?.Dispose(); _terrain = null;
         _opacityCache?.Dispose(); _opacityCache = null;
         _textureResolver?.Dispose(); _textureResolver = null;
@@ -146,6 +159,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
                 _opacityCache?.Dispose(); _opacityCache = null;
                 _textureResolver?.Dispose(); _textureResolver = null;
             }
+
+            TryInitReferencePipeline();
         }
 
         // Mirror WorldMapControl's worldspace picker: one entry per worldspace, plus a final
@@ -275,6 +290,94 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         }
     }
 
+    /// <summary>
+    ///     Mesh-BSA parallel of <see cref="DiscoverTextureBsaPaths" />. Globs the primary file's
+    ///     directory + every Load Order entry's directory for the BSA(s) that <c>BsaDiscovery</c>
+    ///     classifies as meshes archives (the primary + each entry's extras). Dedupes by full
+    ///     path so identical Load Order entries don't open the same BSA twice.
+    /// </summary>
+    private static string[] DiscoverMeshBsaPaths(WorldViewData data)
+    {
+        var seenDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenBsas = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var result = new List<string>();
+
+        AddFrom(data.SourceFilePath);
+        if (data.AdditionalDataPaths is not null)
+        {
+            foreach (var path in data.AdditionalDataPaths) AddFrom(path);
+        }
+        return result.ToArray();
+
+        void AddFrom(string? candidatePath)
+        {
+            if (string.IsNullOrEmpty(candidatePath)) return;
+            var dir = Path.GetDirectoryName(Path.GetFullPath(candidatePath));
+            if (string.IsNullOrEmpty(dir) || !seenDirs.Add(dir)) return;
+            var discovery = BsaDiscovery.Discover(candidatePath);
+            if (discovery.MeshesBsaPath is { } primary && seenBsas.Add(primary))
+            {
+                result.Add(primary);
+            }
+            if (discovery.ExtraMeshesBsaPaths is { } extras)
+            {
+                foreach (var extra in extras)
+                {
+                    if (seenBsas.Add(extra)) result.Add(extra);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    ///     v3 Phase 3 placed-object pipeline init. Mirrors the terrain pipeline init in
+    ///     <see cref="LoadData" /> but lives in its own method since it needs the Meshes BSA
+    ///     discovery in addition to the textures BSAs. Soft-fails when no Meshes BSA is found
+    ///     (REFRs simply don't render — terrain still does).
+    /// </summary>
+    private void TryInitReferencePipeline()
+    {
+        if (_gpu is null || _data is null) return;
+
+        try
+        {
+            var meshBsas = DiscoverMeshBsaPaths(_data);
+            if (meshBsas.Length == 0)
+            {
+                Log.Warn(
+                    "WorldView3DControl: no *Meshes*.bsa from '{0}' or {1} Load Order paths — REFRs will be skipped. Add an ESM whose Data folder contains a Meshes BSA to the Load Order.",
+                    Path.GetDirectoryName(_data.SourceFilePath ?? "") ?? "(unknown)",
+                    _data.AdditionalDataPaths.Count);
+                return;
+            }
+
+            var textureBsas = DiscoverTextureBsaPaths(_data);
+            _meshArchives = NpcMeshArchiveSet.Open(meshBsas[0], meshBsas.Length > 1 ? meshBsas[1..] : null);
+            _referenceTextureResolver = new NifTextureResolver(textureBsas);
+            _referenceTextureCache = new GpuTextureCache(_gpu.Device);
+            _referenceMeshCache = new ReferenceMeshCache(
+                _gpu.Device, _meshArchives, _referenceTextureResolver, _referenceTextureCache, capacity: 2048);
+            _references = new ReferenceRenderer(_gpu, _referenceMeshCache);
+            Log.Info("WorldView3DControl: reference pipeline initialised ({0} meshes BSA(s), {1} textures BSA(s)).",
+                meshBsas.Length, textureBsas.Length);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn("WorldView3DControl: reference pipeline init failed: {0}", ex.Message);
+            DisposeReferencePipeline();
+        }
+    }
+
+    /// <summary>Releases every resource owned by the placed-object pipeline in safe order.</summary>
+    private void DisposeReferencePipeline()
+    {
+        _references?.Dispose(); _references = null;
+        _referenceMeshCache?.Dispose(); _referenceMeshCache = null;
+        _referenceTextureCache?.Dispose(); _referenceTextureCache = null;
+        _referenceTextureResolver?.Dispose(); _referenceTextureResolver = null;
+        _meshArchives?.Dispose(); _meshArchives = null;
+    }
+
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
         DetachRenderLoop();
@@ -328,6 +431,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
 
     private void DisposeRenderResources()
     {
+        // Reference pipeline disposes first — it borrows the texture caches / mesh archives
+        // but owns its own copy, so this is independent of the terrain stack.
+        DisposeReferencePipeline();
         _water?.Dispose();
         _water = null;
         _terrain?.Dispose();
@@ -352,7 +458,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         // streaming render distance. WinUI emits auto-repeat KeyDown events while a key is held,
         // so guard with a "first press" set.
         if (e.Key is VirtualKey.Number1 or VirtualKey.Number2 or VirtualKey.Number3
-            or VirtualKey.Number4 or VirtualKey.F or VirtualKey.PageUp or VirtualKey.PageDown)
+            or VirtualKey.Number4 or VirtualKey.Number5
+            or VirtualKey.F or VirtualKey.PageUp or VirtualKey.PageDown)
         {
             if (_toggleKeysDown.Add(e.Key))
             {
@@ -364,6 +471,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
                     _vclrOnlyMode = !_vclrOnlyMode;
                     _terrain?.SetVclrOnlyMode(_vclrOnlyMode);
                 }
+                else if (e.Key == VirtualKey.Number5) _showReferences = !_showReferences;
                 else if (e.Key == VirtualKey.F)
                     _controller.Mode = _controller.Mode == CameraMode.Walk ? CameraMode.Fly : CameraMode.Walk;
                 else if (e.Key == VirtualKey.PageUp)
@@ -519,6 +627,12 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         var visibleTerrain = (_showTerrain ? _terrain?.Render(viewProj, cylinder) : null) ?? 0;
         var terrainMilliseconds = ElapsedMilliseconds(stageStarted);
 
+        // Phase 3 — placed objects render between terrain (depth write) and water (alpha-blend
+        // over depth). Alpha-tested foliage discards in the shader, no sorting needed.
+        stageStarted = Stopwatch.GetTimestamp();
+        var visibleReferences = (_showReferences ? _references?.Render(viewProj, cylinder) : null) ?? 0;
+        var referencesMilliseconds = ElapsedMilliseconds(stageStarted);
+
         stageStarted = Stopwatch.GetTimestamp();
         var visibleWater = (_showWater ? _water?.Render(viewProj, cylinder) : null) ?? 0;
         var waterMilliseconds = ElapsedMilliseconds(stageStarted);
@@ -534,8 +648,16 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         stageStarted = Stopwatch.GetTimestamp();
         var visible = Math.Max(visibleTerrain, visibleWireframe);
         var totalCells = _terrain?.CellCount ?? _cellGrid?.CellCount ?? 0;
-        UpdateHud(visible, totalCells, visibleWater);
+        UpdateHud(visible, totalCells, visibleWater, visibleReferences);
         var hudMilliseconds = ElapsedMilliseconds(stageStarted);
+
+        // Surface the reference-stage timing in the debug log even without extending the
+        // FrameProfileAccumulator schema (its shape is owned by the user's instrumentation;
+        // I don't want to step on it). Emits at the same cadence as the profile log.
+        if (_profileLogging && referencesMilliseconds > 0.1)
+        {
+            Log.Debug("Phase3 refs draw={0} ms={1:0.00}", visibleReferences, referencesMilliseconds);
+        }
 
         var sample = new FrameProfileSample(
             TotalMilliseconds: ElapsedMilliseconds(frameStarted),
@@ -611,6 +733,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         _cellGrid?.LoadData(cellList, _spatialIndex);
         _terrain?.LoadData(_cellGridLookup, _spatialIndex, _data.RenderCache);
         _water?.LoadData(_cellGridLookup, defaultWaterHeight, _spatialIndex);
+        _references?.LoadData(_data.RenderCache, _cellGridLookup);
     }
 
     /// <summary>
@@ -655,20 +778,21 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
 
     // HUD / status overlay ------------------------------------------------------------------
 
-    private void UpdateHud(int visible, int total, int visibleWater)
+    private void UpdateHud(int visible, int total, int visibleWater, int visibleReferences)
     {
         var w = _showWireframe ? "on" : "off";
         var t = _showTerrain ? "on" : "off";
         var wa = _showWater ? "on" : "off";
         var v = _vclrOnlyMode ? "on" : "off";
+        var r = _showReferences ? "on" : "off";
         var mode = _controller.Mode == CameraMode.Walk ? "walk" : "fly";
         var keyHint = _controller.Mode == CameraMode.Walk ? "WASD" : "WASD + Q/E";
         var text =
-            $"Cells: {visible} / {total}   " +
+            $"Cells: {visible} / {total}   refs: {visibleReferences}   " +
             $"pos: ({_camera.Position.X:0}, {_camera.Position.Y:0}, {_camera.Position.Z:0})   " +
             $"speed: {_controller.MoveSpeed:0}   " +
             $"dist: {_renderDistance / WorldGridConstants.CellSize:0.#}c   " +
-            $"[F]mode:{mode} [1]wire:{w} [2]terrain:{t} [3]water:{wa} [4]vclr-only:{v}   " +
+            $"[F]mode:{mode} [1]wire:{w} [2]terrain:{t} [3]water:{wa} [4]vclr-only:{v} [5]refs:{r}   " +
             $"PgUp/PgDn   {keyHint}   drag to look";
         if (_showFrameStats && _terrain is not null)
         {
