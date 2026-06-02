@@ -1,5 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.SaveGame;
@@ -88,7 +89,10 @@ internal static class WorldMapOverlayBuilder
             SpawnIndex = spawnIndex,
             UsageIndex = usageIndex,
             RefPositionIndex = refPositionIndex,
-            DanglingRefs = DanglingRefAttributions.LoadDefault()
+            DanglingRefs = DanglingRefAttributions.LoadDefault(),
+            NavMeshesByCell = BuildNavMeshIndex(semantic.NavMeshes),
+            LandTexturesByFormId = BuildLandTextureIndex(semantic.LandTextures),
+            TextureSetsByFormId = BuildTextureSetIndex(semantic.TextureSets)
         };
     }
 
@@ -208,8 +212,49 @@ internal static class WorldMapOverlayBuilder
             RefPositionIndex = refPositionIndex,
             SaveOverlayMarkers = overlayMarkers,
             PlayerPosition = playerPos,
-            DanglingRefs = DanglingRefAttributions.LoadDefault()
+            DanglingRefs = DanglingRefAttributions.LoadDefault(),
+            NavMeshesByCell = BuildNavMeshIndex(suppRecords.NavMeshes),
+            LandTexturesByFormId = BuildLandTextureIndex(suppRecords.LandTextures),
+            TextureSetsByFormId = BuildTextureSetIndex(suppRecords.TextureSets)
         };
+    }
+
+    private static Dictionary<uint, List<NavMeshRecord>> BuildNavMeshIndex(List<NavMeshRecord> navMeshes)
+    {
+        var dict = new Dictionary<uint, List<NavMeshRecord>>();
+        foreach (var nm in navMeshes)
+        {
+            if (nm.CellFormId == 0) continue;
+            if (!dict.TryGetValue(nm.CellFormId, out var list))
+            {
+                list = new List<NavMeshRecord>();
+                dict[nm.CellFormId] = list;
+            }
+            list.Add(nm);
+        }
+        return dict;
+    }
+
+    private static Dictionary<uint, LandscapeTextureRecord> BuildLandTextureIndex(
+        List<LandscapeTextureRecord> records)
+    {
+        var dict = new Dictionary<uint, LandscapeTextureRecord>(records.Count);
+        foreach (var r in records)
+        {
+            dict.TryAdd(r.FormId, r);
+        }
+        return dict;
+    }
+
+    private static Dictionary<uint, TextureSetRecord> BuildTextureSetIndex(
+        List<TextureSetRecord> records)
+    {
+        var dict = new Dictionary<uint, TextureSetRecord>(records.Count);
+        foreach (var r in records)
+        {
+            dict.TryAdd(r.FormId, r);
+        }
+        return dict;
     }
 
     private static List<PlacedReference> BuildSaveOverlayMarkers(

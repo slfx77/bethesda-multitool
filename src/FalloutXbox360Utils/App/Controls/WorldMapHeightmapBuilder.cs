@@ -6,7 +6,8 @@ using Microsoft.Graphics.Canvas.UI.Xaml;
 namespace FalloutXbox360Utils;
 
 /// <summary>
-///     Builds world-level heightmap CanvasBitmaps from cached or computed data.
+///     Builds world-level layer CanvasBitmaps from cached or computed data.
+///     Dispatches on <see cref="WorldMapLayer" />.
 /// </summary>
 internal static class WorldMapHeightmapBuilder
 {
@@ -18,7 +19,42 @@ internal static class WorldMapHeightmapBuilder
         WorldspaceRecord? selectedWorldspace,
         WorldViewData? data,
         float? currentDefaultWaterHeight,
-        HeightmapColorScheme colorScheme, bool showWater)
+        HeightmapColorScheme colorScheme, bool showWater,
+        WorldMapLayer layer = WorldMapLayer.Heightmap,
+        WorldRenderCache? cache = null)
+    {
+        return layer switch
+        {
+            WorldMapLayer.Heightmap => BuildHeightmap(
+                canvas, activeCells, cachedGrayscale, cachedWaterMask,
+                cachedHmWidth, cachedHmHeight, selectedWorldspace, data,
+                currentDefaultWaterHeight, colorScheme, showWater, cache),
+            WorldMapLayer.VertexColors => Wrap(canvas,
+                WorldMapLayerRenderer.RenderVertexColors(activeCells, currentDefaultWaterHeight, showWater, cache)),
+            WorldMapLayer.TerrainRegions => Wrap(canvas,
+                WorldMapLayerRenderer.RenderTerrainRegions(activeCells, currentDefaultWaterHeight, showWater, cache)),
+            // The TerrainTextures layer is rendered per-cell at the call site (see
+            // WorldMapControl.EnsureHeightmapBitmap); this branch is only reached when no
+            // Textures BSA is available and we fall back to the regions view.
+            WorldMapLayer.TerrainTextures => Wrap(canvas,
+                WorldMapLayerRenderer.RenderTerrainTexturesRegionsFallback(
+                    activeCells, currentDefaultWaterHeight, showWater, cache)),
+            WorldMapLayer.Slope => Wrap(canvas,
+                WorldMapLayerRenderer.RenderSlope(activeCells, currentDefaultWaterHeight, showWater, cache)),
+            _ => null
+        };
+    }
+
+    private static HeightmapInfo? BuildHeightmap(
+        CanvasControl canvas,
+        List<CellRecord> activeCells,
+        byte[]? cachedGrayscale, byte[]? cachedWaterMask,
+        int cachedHmWidth, int cachedHmHeight,
+        WorldspaceRecord? selectedWorldspace,
+        WorldViewData? data,
+        float? currentDefaultWaterHeight,
+        HeightmapColorScheme colorScheme, bool showWater,
+        WorldRenderCache? cache)
     {
         // Use pre-computed grayscale/waterMask from background thread when available
         if (cachedGrayscale != null && cachedHmWidth > 0 &&
@@ -42,7 +78,7 @@ internal static class WorldMapHeightmapBuilder
             return null;
         }
 
-        var result = HeightmapRenderer.ComputeHeightmapData(activeCells, currentDefaultWaterHeight);
+        var result = HeightmapRenderer.ComputeHeightmapData(activeCells, currentDefaultWaterHeight, cache);
         if (result == null)
         {
             return null;
@@ -55,6 +91,46 @@ internal static class WorldMapHeightmapBuilder
             canvas, tintedPixels, imgW, imgH,
             Windows.Graphics.DirectX.DirectXPixelFormat.R8G8B8A8UIntNormalized);
         return new HeightmapInfo(bmp, minX, maxY, imgW, imgH);
+    }
+
+    private static HeightmapInfo? Wrap(CanvasControl canvas, WorldMapLayerRenderer.LayerBitmap? layer)
+    {
+        if (layer is not { } b) return null;
+        var bitmap = CanvasBitmap.CreateFromBytes(
+            canvas, b.Pixels, b.Width, b.Height,
+            Windows.Graphics.DirectX.DirectXPixelFormat.R8G8B8A8UIntNormalized);
+        return new HeightmapInfo(bitmap, b.MinCellX, b.MaxCellY, b.Width, b.Height);
+    }
+
+    /// <summary>
+    ///     Builds the per-cell <see cref="CanvasBitmap" /> dictionary for the TerrainTextures
+    ///     layer. Each entry is a TexturePixelsPerCell × TexturePixelsPerCell GPU bitmap
+    ///     keyed by (cellGridX, cellGridY). Returns null when no cells produced any pixels
+    ///     (e.g. an unlinked-cells worldspace with no LAND coverage).
+    /// </summary>
+    internal static Dictionary<(int gx, int gy), CanvasBitmap>? BuildTerrainTextureCells(
+        CanvasControl canvas,
+        List<CellRecord> activeCells,
+        LandscapeTexturePalette palette,
+        float? currentDefaultWaterHeight,
+        bool showWater,
+        WorldRenderCache? cache = null)
+    {
+        var perCell = WorldMapLayerRenderer.RenderTerrainTexturesPerCell(
+            activeCells, palette, currentDefaultWaterHeight, showWater, cache);
+        if (perCell is null) return null;
+
+        var result = new Dictionary<(int gx, int gy), CanvasBitmap>(perCell.Count);
+        foreach (var (key, pixels) in perCell)
+        {
+            var bmp = CanvasBitmap.CreateFromBytes(
+                canvas, pixels,
+                WorldMapLayerRenderer.TexturePixelsPerCell,
+                WorldMapLayerRenderer.TexturePixelsPerCell,
+                Windows.Graphics.DirectX.DirectXPixelFormat.R8G8B8A8UIntNormalized);
+            result[key] = bmp;
+        }
+        return result;
     }
 
     internal readonly struct HeightmapInfo(

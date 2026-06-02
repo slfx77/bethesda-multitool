@@ -21,6 +21,7 @@ namespace FalloutXbox360Utils;
 internal static class WorldMapDanglingRefOverlayRenderer
 {
     private const float CellWorldSize = 4096f;
+    [ThreadStatic] private static List<DanglingRefPosition>? t_danglingScratch;
 
     // Per-confidence base color (alpha applied per-cell based on ref count).
     private static readonly Color HighColor = Color.FromArgb(255, 220, 80, 220);
@@ -36,6 +37,7 @@ internal static class WorldMapDanglingRefOverlayRenderer
         WorldViewData data,
         DanglingRefThreshold threshold,
         uint? activeWorldspaceFormId,
+        WorldSpatialIndex? spatialIndex,
         float zoom,
         Vector2 panOffset,
         float canvasWidth,
@@ -96,7 +98,7 @@ internal static class WorldMapDanglingRefOverlayRenderer
         // category color used for normal placed objects (looked up by base form ID), and is
         // outlined with a tier color tied to the threshold dropdown (High/Med/Low).
         DrawIndividualMarkers(ds, attributions.Positions, data, threshold,
-            activeWorldspaceFormId, zoom, tlWorld, brWorld);
+            activeWorldspaceFormId, spatialIndex, zoom, tlWorld, brWorld);
 
         // Per-cell count + cell name badges at sufficient zoom
         if (zoom <= 0.05f || drawCount == 0)
@@ -170,10 +172,11 @@ internal static class WorldMapDanglingRefOverlayRenderer
 
     private static void DrawIndividualMarkers(
         CanvasDrawingSession ds,
-        IReadOnlyList<DanglingRefPosition> positions,
+        List<DanglingRefPosition> positions,
         WorldViewData data,
         DanglingRefThreshold threshold,
         uint? activeWorldspaceFormId,
+        WorldSpatialIndex? spatialIndex,
         float zoom,
         Vector2 tlWorld,
         Vector2 brWorld)
@@ -187,7 +190,15 @@ internal static class WorldMapDanglingRefOverlayRenderer
         var outlineWidth = OutlineWidthPerZoom / zoom;
         var unknownColor = Color.FromArgb(255, 80, 80, 80);
 
-        foreach (var p in positions)
+        IEnumerable<DanglingRefPosition> candidates = positions;
+        if (spatialIndex is not null)
+        {
+            var scratch = t_danglingScratch ??= new List<DanglingRefPosition>(128);
+            spatialIndex.QueryDanglingInViewport(tlWorld, brWorld, scratch, markerRadius * 2f);
+            candidates = scratch;
+        }
+
+        foreach (var p in candidates)
         {
             if (!DanglingRefAttributions.PassesThreshold(p.Confidence, threshold))
             {
@@ -257,7 +268,8 @@ internal static class WorldMapDanglingRefOverlayRenderer
         DanglingRefThreshold threshold,
         uint? activeWorldspaceFormId,
         Vector2 worldPos,
-        float zoom)
+        float zoom,
+        WorldSpatialIndex? spatialIndex = null)
     {
         if (threshold == DanglingRefThreshold.None || attributions.Positions.Count == 0)
         {
@@ -267,10 +279,19 @@ internal static class WorldMapDanglingRefOverlayRenderer
         // Use the drawn marker radius with a small screen-space padding (~3 px) so a
         // tiny dot at high zoom still has a forgiving click target.
         var radius = (MarkerRadiusPerZoom + 3f) / zoom;
+        var radiusSq = radius * radius;
         var bestDist = float.MaxValue;
         DanglingRefPosition? best = null;
 
-        foreach (var p in attributions.Positions)
+        IEnumerable<DanglingRefPosition> candidates = attributions.Positions;
+        if (spatialIndex is not null)
+        {
+            var scratch = t_danglingScratch ??= new List<DanglingRefPosition>(128);
+            spatialIndex.QueryDanglingNear(worldPos, radius, scratch);
+            candidates = scratch;
+        }
+
+        foreach (var p in candidates)
         {
             if (!DanglingRefAttributions.PassesThreshold(p.Confidence, threshold))
             {
@@ -286,8 +307,8 @@ internal static class WorldMapDanglingRefOverlayRenderer
 
             var dx = worldPos.X - p.X;
             var dy = worldPos.Y - (-p.Y);
-            var d = MathF.Sqrt(dx * dx + dy * dy);
-            if (d <= radius && d < bestDist)
+            var d = dx * dx + dy * dy;
+            if (d <= radiusSq && d < bestDist)
             {
                 bestDist = d;
                 best = p;

@@ -1,5 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 
@@ -10,6 +11,8 @@ namespace FalloutXbox360Utils;
 /// </summary>
 internal sealed class WorldViewData
 {
+    public WorldRenderCache RenderCache { get; } = new();
+
     public required List<WorldspaceRecord> Worldspaces { get; init; }
     public required List<CellRecord> InteriorCells { get; init; }
     public required Dictionary<uint, ObjectBounds> BoundsIndex { get; init; }
@@ -81,4 +84,29 @@ internal sealed class WorldViewData
     ///     the authority JSON is missing or lacks the section.
     /// </summary>
     public DanglingRefAttributions DanglingRefs { get; init; } = new();
+
+    /// <summary>
+    ///     NAVM records keyed by parent CellFormId. Used by the Nav Mesh layer overlay.
+    ///     A cell can have multiple NAVMs (e.g. small auxiliary patches alongside the main
+    ///     navmesh), so values are lists. Empty when the source had no navmeshes
+    ///     (e.g. save files, DMP captures lacking NAVM).
+    /// </summary>
+    public Dictionary<uint, List<NavMeshRecord>> NavMeshesByCell { get; init; } = new();
+
+    /// <summary>Landscape texture records keyed by FormID. Used by the rendered-terrain layer.</summary>
+    public IReadOnlyDictionary<uint, LandscapeTextureRecord> LandTexturesByFormId { get; init; } =
+        new Dictionary<uint, LandscapeTextureRecord>();
+
+    /// <summary>Texture set records keyed by FormID. Used by the rendered-terrain layer.</summary>
+    public IReadOnlyDictionary<uint, TextureSetRecord> TextureSetsByFormId { get; init; } =
+        new Dictionary<uint, TextureSetRecord>();
+
+    /// <summary>
+    ///     Additional data-file paths (ESM/ESP/DMP) from the active Load Order. When a DMP file
+    ///     is loaded as <see cref="SourceFilePath" />, it has no adjacent BSAs of its own;
+    ///     <see cref="WorldView3DControl" /> falls back to these paths to discover texture BSAs
+    ///     in their parent Data folders. Settable post-construction so
+    ///     <see cref="WorldMapOverlayBuilder" /> can stay agnostic of session/load-order state.
+    /// </summary>
+    public IReadOnlyList<string> AdditionalDataPaths { get; set; } = [];
 }

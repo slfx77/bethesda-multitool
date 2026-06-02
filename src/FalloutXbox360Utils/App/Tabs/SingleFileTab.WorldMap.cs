@@ -43,6 +43,7 @@ public sealed partial class SingleFileTab
                     return;
                 }
 
+                worldData.AdditionalDataPaths = CollectLoadOrderPaths();
                 _session.WorldViewData = worldData;
                 _session.WorldMapPopulated = true;
                 WorldMapControl.LoadData(worldData);
@@ -78,6 +79,7 @@ public sealed partial class SingleFileTab
             var esmWorldData = await Task.Run(() =>
                 WorldMapOverlayBuilder.BuildFromRecords(semantic, filePath));
 
+            esmWorldData.AdditionalDataPaths = CollectLoadOrderPaths();
             _session.WorldViewData = esmWorldData;
             _session.WorldMapPopulated = true;
 
@@ -91,6 +93,23 @@ public sealed partial class SingleFileTab
         {
             WorldMapProgressBar.Visibility = Visibility.Collapsed;
         }
+    }
+
+    /// <summary>
+    ///     Snapshots the file paths of every loaded entry in the active Load Order so the 3D
+    ///     viewer can discover BSAs in their parent Data folders. Especially load-bearing for
+    ///     DMP loads, which carry no adjacent BSAs of their own; without Load Order entries the
+    ///     3D viewer would have nowhere to source ground textures and would render all-white.
+    /// </summary>
+    private IReadOnlyList<string> CollectLoadOrderPaths()
+    {
+        if (_session.LoadOrder.Entries.Count == 0) return Array.Empty<string>();
+        var paths = new List<string>(_session.LoadOrder.Entries.Count);
+        foreach (var entry in _session.LoadOrder.Entries)
+        {
+            if (!string.IsNullOrEmpty(entry.FilePath)) paths.Add(entry.FilePath);
+        }
+        return paths;
     }
 
     /// <summary>

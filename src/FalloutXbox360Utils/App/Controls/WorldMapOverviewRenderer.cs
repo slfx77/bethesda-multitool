@@ -21,6 +21,7 @@ namespace FalloutXbox360Utils;
 internal static class WorldMapOverviewRenderer
 {
     private const float CellWorldSize = 4096f;
+    [ThreadStatic] private static List<PlacedReference>? t_refScratch;
 
     /// <summary>
     ///     Maximum half-extent in world units for rendering a placed object's bounding box.
@@ -35,9 +36,11 @@ internal static class WorldMapOverviewRenderer
         List<CellRecord> activeCells,
         List<PlacedReference> filteredMarkers,
         Dictionary<(int x, int y), CellRecord>? cellGridLookup,
+        WorldSpatialIndex? spatialIndex,
         CanvasBitmap? worldHeightmapBitmap,
         int worldHmPixelWidth, int worldHmPixelHeight,
         int worldHmMinX, int worldHmMaxY,
+        IReadOnlyDictionary<(int gx, int gy), CanvasBitmap>? textureCellBitmaps,
         float zoom, Vector2 panOffset,
         float canvasWidth, float canvasHeight,
         HashSet<PlacedObjectCategory> hiddenCategories,
@@ -50,8 +53,14 @@ internal static class WorldMapOverviewRenderer
         var transform = WorldMapViewportHelper.GetViewTransform(zoom, panOffset);
         ds.Transform = transform;
 
-        // 1. Heightmap background
-        if (worldHeightmapBitmap != null)
+        // 1. Layer background — either a single giant bitmap (most layers) or a per-cell
+        //    composite (TerrainTextures, to dodge the GPU max-texture-size limit). Only one
+        //    is set at a time per EnsureHeightmapBitmap.
+        if (textureCellBitmaps is not null)
+        {
+            DrawTextureCellBitmaps(ds, textureCellBitmaps);
+        }
+        else if (worldHeightmapBitmap != null)
         {
             var pixelScale = CellWorldSize / 33f; // HmGridSize
             var bitmapWorldW = worldHmPixelWidth * pixelScale;
@@ -64,7 +73,8 @@ internal static class WorldMapOverviewRenderer
         }
 
         // 2. Cell grid
-        DrawCellGrid(ds, activeCells, cellGridLookup, worldHeightmapBitmap,
+        DrawCellGrid(ds, activeCells, cellGridLookup,
+            worldHeightmapBitmap is not null || textureCellBitmaps is not null,
             zoom, panOffset, canvasWidth, canvasHeight);
 
         // 3. Placed objects (LOD-based)
@@ -73,39 +83,30 @@ internal static class WorldMapOverviewRenderer
             var (tlWorld, brWorld) = WorldMapViewportHelper.GetVisibleWorldBounds(
                 canvasWidth, canvasHeight, zoom, panOffset);
 
-            foreach (var cell in activeCells)
+            if (spatialIndex is not null)
             {
-                if (!cell.HasPersistentObjects &&
-                    !WorldMapViewportHelper.IsCellVisible(cell, tlWorld, brWorld))
+                var refs = GetRefScratch();
+                spatialIndex.QueryRefsInViewport(tlWorld, brWorld, refs, MaxHalfExtent);
+                foreach (var obj in refs)
                 {
-                    continue;
+                    DrawPlacedObjectInOverview(ds, obj, data, hiddenCategories,
+                        hideDisabledActors, tlWorld, brWorld, zoom);
                 }
-
-                foreach (var obj in cell.PlacedObjects)
+            }
+            else
+            {
+                foreach (var cell in activeCells)
                 {
-                    if (hiddenCategories.Contains(GetObjectCategory(obj, data)))
+                    if (!cell.HasPersistentObjects &&
+                        !WorldMapViewportHelper.IsCellVisible(cell, tlWorld, brWorld))
                     {
                         continue;
                     }
 
-                    if (hideDisabledActors && obj.IsInitiallyDisabled)
+                    foreach (var obj in cell.PlacedObjects)
                     {
-                        continue;
-                    }
-
-                    if (!WorldMapViewportHelper.IsPointInView(obj.X, -obj.Y, tlWorld, brWorld,
-                            WorldMapViewportHelper.GetObjectViewMargin(obj, data)))
-                    {
-                        continue;
-                    }
-
-                    if (zoom > 0.07f)
-                    {
-                        DrawPlacedObjectBox(ds, obj, data, zoom, outlineOnly: true);
-                    }
-                    else
-                    {
-                        DrawPlacedObjectDot(ds, obj, data, zoom);
+                        DrawPlacedObjectInOverview(ds, obj, data, hiddenCategories,
+                            hideDisabledActors, tlWorld, brWorld, zoom);
                     }
                 }
             }
@@ -116,11 +117,11 @@ internal static class WorldMapOverviewRenderer
             zoom, panOffset, canvasWidth, canvasHeight, colorScheme);
 
         // 4b. NPC/Creature dots (always visible)
-        DrawActorDots(ds, data, activeCells, hiddenCategories, hideDisabledActors,
+        DrawActorDots(ds, data, activeCells, spatialIndex, hiddenCategories, hideDisabledActors,
             zoom, panOffset, canvasWidth, canvasHeight);
 
         // 4c. Save overlay markers (save file positions)
-        DrawSaveOverlay(ds, data, zoom, panOffset, canvasWidth, canvasHeight);
+        DrawSaveOverlay(ds, data, spatialIndex, zoom, panOffset, canvasWidth, canvasHeight);
 
         // 5. Selected object highlight
         if (selectedObject != null)
@@ -140,7 +141,7 @@ internal static class WorldMapOverviewRenderer
         CanvasDrawingSession ds,
         List<CellRecord> activeCells,
         Dictionary<(int x, int y), CellRecord>? cellGridLookup,
-        CanvasBitmap? worldHeightmapBitmap,
+        bool hasLayerBackground,
         float zoom, Vector2 panOffset,
         float canvasWidth, float canvasHeight)
     {
@@ -164,7 +165,7 @@ internal static class WorldMapOverviewRenderer
         endCellY = Math.Min(endCellY, 200);
 
         // When the worldspace has no heightmap data, fill existing cells with black
-        if (worldHeightmapBitmap == null && cellGridLookup is { Count: > 0 })
+        if (!hasLayerBackground && cellGridLookup is { Count: > 0 })
         {
             var cellFill = Color.FromArgb(255, 8, 8, 10);
             foreach (var ((cx, cy), _) in cellGridLookup)
@@ -304,6 +305,7 @@ internal static class WorldMapOverviewRenderer
         CanvasDrawingSession ds,
         WorldViewData _data,
         List<CellRecord> activeCells,
+        WorldSpatialIndex? spatialIndex,
         HashSet<PlacedObjectCategory> hiddenCategories,
         bool hideDisabledActors,
         float zoom, Vector2 panOffset,
@@ -328,6 +330,19 @@ internal static class WorldMapOverviewRenderer
         var npcColor = WorldMapColors.GetCategoryColor(PlacedObjectCategory.Npc);
         var creatureColor = WorldMapColors.GetCategoryColor(PlacedObjectCategory.Creature);
 
+        if (spatialIndex is not null)
+        {
+            var refs = GetRefScratch();
+            spatialIndex.QueryActorsInViewport(tlWorld, brWorld, refs, dotRadius * 2);
+            foreach (var obj in refs)
+            {
+                DrawActorDotIfVisible(ds, obj, npcHidden, creatureHidden, hideDisabledActors,
+                    tlWorld, brWorld, dotRadius, outlineWidth, npcColor, creatureColor);
+            }
+
+            return;
+        }
+
         foreach (var cell in activeCells)
         {
             if (cell.GridX.HasValue && cell.GridY.HasValue && !cell.HasPersistentObjects
@@ -348,30 +363,8 @@ internal static class WorldMapOverviewRenderer
                     continue;
                 }
 
-                Color color;
-                if (obj.RecordType == "ACHR" && !npcHidden)
-                {
-                    color = npcColor;
-                }
-                else if (obj.RecordType == "ACRE" && !creatureHidden)
-                {
-                    color = creatureColor;
-                }
-                else
-                {
-                    continue;
-                }
-
-                var pos = new Vector2(obj.X, -obj.Y);
-                if (!WorldMapViewportHelper.IsPointInView(pos.X, pos.Y, tlWorld, brWorld, dotRadius * 2))
-                {
-                    continue;
-                }
-
-                var fillAlpha = obj.IsInitiallyDisabled ? (byte)60 : (byte)180;
-                var outlineAlpha = obj.IsInitiallyDisabled ? (byte)80 : (byte)255;
-                ds.FillCircle(pos, dotRadius, WorldMapColors.WithAlpha(color, fillAlpha));
-                ds.DrawCircle(pos, dotRadius, WorldMapColors.WithAlpha(Colors.White, outlineAlpha), outlineWidth);
+                DrawActorDotIfVisible(ds, obj, npcHidden, creatureHidden, hideDisabledActors,
+                    tlWorld, brWorld, dotRadius, outlineWidth, npcColor, creatureColor);
             }
         }
     }
@@ -379,6 +372,7 @@ internal static class WorldMapOverviewRenderer
     internal static void DrawSaveOverlay(
         CanvasDrawingSession ds,
         WorldViewData data,
+        WorldSpatialIndex? spatialIndex,
         float zoom, Vector2 panOffset,
         float canvasWidth, float canvasHeight)
     {
@@ -396,23 +390,24 @@ internal static class WorldMapOverviewRenderer
         var acreColor = Color.FromArgb(255, 255, 140, 0);
         var refrColor = Color.FromArgb(255, 120, 120, 120);
 
-        foreach (var obj in data.SaveOverlayMarkers)
+        var saveRefs = data.SaveOverlayMarkers;
+        if (spatialIndex is not null)
         {
-            var pos = new Vector2(obj.X, -obj.Y);
-            if (!WorldMapViewportHelper.IsPointInView(pos.X, pos.Y, tlWorld, brWorld, dotRadius * 2))
+            var refs = GetRefScratch();
+            spatialIndex.QuerySaveRefsInViewport(tlWorld, brWorld, refs, dotRadius * 2);
+            foreach (var obj in refs)
             {
-                continue;
+                DrawSaveOverlayRef(ds, obj, tlWorld, brWorld, dotRadius, outlineWidth,
+                    achrColor, acreColor, refrColor);
             }
-
-            var color = obj.RecordType switch
+        }
+        else if (saveRefs is not null)
+        {
+            foreach (var obj in saveRefs)
             {
-                "ACHR" => achrColor,
-                "ACRE" => acreColor,
-                _ => refrColor
-            };
-
-            ds.FillCircle(pos, dotRadius, WorldMapColors.WithAlpha(color, 150));
-            ds.DrawCircle(pos, dotRadius, WorldMapColors.WithAlpha(Colors.White, 200), outlineWidth);
+                DrawSaveOverlayRef(ds, obj, tlWorld, brWorld, dotRadius, outlineWidth,
+                    achrColor, acreColor, refrColor);
+            }
         }
 
         // Player marker (prominent)
@@ -642,5 +637,148 @@ internal static class WorldMapOverviewRenderer
             _ => data?.CategoryIndex.GetValueOrDefault(obj.BaseFormId, PlacedObjectCategory.Unknown)
                  ?? PlacedObjectCategory.Unknown
         };
+    }
+
+    /// <summary>
+    ///     Composites the per-cell TerrainTextures bitmaps. Each entry is its own
+    ///     <see cref="CanvasBitmap" /> drawn into the cell's world rect. Cell screen-space
+    ///     position matches the heightmap convention (Y inverted from grid space).
+    /// </summary>
+    private static void DrawTextureCellBitmaps(
+        CanvasDrawingSession ds,
+        IReadOnlyDictionary<(int gx, int gy), CanvasBitmap> bitmaps)
+    {
+        foreach (var ((gx, gy), bmp) in bitmaps)
+        {
+            var originX = gx * CellWorldSize;
+            var originY = -(gy + 1) * CellWorldSize;
+            ds.DrawImage(bmp, new Rect(originX, originY, CellWorldSize, CellWorldSize));
+        }
+    }
+
+    private static List<PlacedReference> GetRefScratch()
+    {
+        var list = t_refScratch;
+        if (list is null)
+        {
+            list = new List<PlacedReference>(512);
+            t_refScratch = list;
+        }
+
+        list.Clear();
+        return list;
+    }
+
+    private static void DrawActorDotIfVisible(
+        CanvasDrawingSession ds,
+        PlacedReference obj,
+        bool npcHidden,
+        bool creatureHidden,
+        bool hideDisabledActors,
+        Vector2 tlWorld,
+        Vector2 brWorld,
+        float dotRadius,
+        float outlineWidth,
+        Color npcColor,
+        Color creatureColor)
+    {
+        if (obj.IsMapMarker)
+        {
+            return;
+        }
+
+        if (hideDisabledActors && obj.IsInitiallyDisabled)
+        {
+            return;
+        }
+
+        Color color;
+        if (obj.RecordType == "ACHR" && !npcHidden)
+        {
+            color = npcColor;
+        }
+        else if (obj.RecordType == "ACRE" && !creatureHidden)
+        {
+            color = creatureColor;
+        }
+        else
+        {
+            return;
+        }
+
+        var pos = new Vector2(obj.X, -obj.Y);
+        if (!WorldMapViewportHelper.IsPointInView(pos.X, pos.Y, tlWorld, brWorld, dotRadius * 2))
+        {
+            return;
+        }
+
+        var fillAlpha = obj.IsInitiallyDisabled ? (byte)60 : (byte)180;
+        var outlineAlpha = obj.IsInitiallyDisabled ? (byte)80 : (byte)255;
+        ds.FillCircle(pos, dotRadius, WorldMapColors.WithAlpha(color, fillAlpha));
+        ds.DrawCircle(pos, dotRadius, WorldMapColors.WithAlpha(Colors.White, outlineAlpha), outlineWidth);
+    }
+
+    private static void DrawSaveOverlayRef(
+        CanvasDrawingSession ds,
+        PlacedReference obj,
+        Vector2 tlWorld,
+        Vector2 brWorld,
+        float dotRadius,
+        float outlineWidth,
+        Color achrColor,
+        Color acreColor,
+        Color refrColor)
+    {
+        var pos = new Vector2(obj.X, -obj.Y);
+        if (!WorldMapViewportHelper.IsPointInView(pos.X, pos.Y, tlWorld, brWorld, dotRadius * 2))
+        {
+            return;
+        }
+
+        var color = obj.RecordType switch
+        {
+            "ACHR" => achrColor,
+            "ACRE" => acreColor,
+            _ => refrColor
+        };
+
+        ds.FillCircle(pos, dotRadius, WorldMapColors.WithAlpha(color, 150));
+        ds.DrawCircle(pos, dotRadius, WorldMapColors.WithAlpha(Colors.White, 200), outlineWidth);
+    }
+
+    private static void DrawPlacedObjectInOverview(
+        CanvasDrawingSession ds,
+        PlacedReference obj,
+        WorldViewData data,
+        HashSet<PlacedObjectCategory> hiddenCategories,
+        bool hideDisabledActors,
+        Vector2 tlWorld,
+        Vector2 brWorld,
+        float zoom)
+    {
+        if (hiddenCategories.Contains(GetObjectCategory(obj, data)))
+        {
+            return;
+        }
+
+        if (hideDisabledActors && obj.IsInitiallyDisabled)
+        {
+            return;
+        }
+
+        if (!WorldMapViewportHelper.IsPointInView(obj.X, -obj.Y, tlWorld, brWorld,
+                WorldMapViewportHelper.GetObjectViewMargin(obj, data)))
+        {
+            return;
+        }
+
+        if (zoom > 0.07f)
+        {
+            DrawPlacedObjectBox(ds, obj, data, zoom, outlineOnly: true);
+        }
+        else
+        {
+            DrawPlacedObjectDot(ds, obj, data, zoom);
+        }
     }
 }

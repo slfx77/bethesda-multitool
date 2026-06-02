@@ -95,21 +95,53 @@ internal static class WorldMapCellDetailRenderer
     internal static CanvasBitmap? BuildCellHeightmapBitmap(
         CanvasControl canvas, CellRecord cell,
         float? currentDefaultWaterHeight,
-        HeightmapColorScheme colorScheme, bool showWater)
+        HeightmapColorScheme colorScheme, bool showWater,
+        WorldMapLayer layer = WorldMapLayer.Heightmap,
+        WorldViewData? data = null,
+        WorldRenderCache? cache = null)
     {
-        if (cell.Heightmap == null)
+        if (layer != WorldMapLayer.Heightmap)
+        {
+            var layerPixels = layer switch
+            {
+                WorldMapLayer.VertexColors =>
+                    WorldMapLayerRenderer.RenderVertexColorsForCell(cell, currentDefaultWaterHeight, showWater, cache),
+                WorldMapLayer.TerrainRegions =>
+                    WorldMapLayerRenderer.RenderTerrainRegionsForCell(cell, currentDefaultWaterHeight, showWater, cache),
+                WorldMapLayer.TerrainTextures =>
+                    WorldMapLayerRenderer.RenderTerrainTexturesForCell(cell,
+                        data is null ? null : LandscapeTexturePalette.GetOrCreate(data),
+                        currentDefaultWaterHeight, showWater, cache),
+                WorldMapLayer.Slope =>
+                    WorldMapLayerRenderer.RenderSlopeForCell(cell, currentDefaultWaterHeight, showWater, cache),
+                _ => null
+            };
+            if (layerPixels == null) return null;
+            // Match the heightmap path's alpha so the cell grid border remains visible.
+            for (var i = 3; i < layerPixels.Length; i += 4) layerPixels[i] = 200;
+            // Terrain Textures renders at a higher pixel density than the other cell layers
+            // (HmGridSize × TextureLayerScale per axis) so the BTXT tiling reads sharply.
+            var dim = layer == WorldMapLayer.TerrainTextures
+                ? WorldMapLayerRenderer.TexturePixelsPerCell
+                : HmGridSize;
+            return CanvasBitmap.CreateFromBytes(
+                canvas, layerPixels, dim, dim,
+                Windows.Graphics.DirectX.DirectXPixelFormat.R8G8B8A8UIntNormalized);
+        }
+
+        var terrain = cache?.GetTerrain(cell) ?? DecodedTerrainCell.Decode(cell);
+        if (!terrain.HasTerrain)
         {
             return null;
         }
 
-        var heights = cell.Heightmap.CalculateHeights();
         var minH = float.MaxValue;
         var maxH = float.MinValue;
         for (var y = 0; y < HmGridSize; y++)
         {
             for (var x = 0; x < HmGridSize; x++)
             {
-                var h = heights[y, x];
+                var h = terrain.HeightAt(x, y);
                 if (h < minH) minH = h;
                 if (h > maxH) maxH = h;
             }
@@ -123,21 +155,7 @@ internal static class WorldMapCellDetailRenderer
 
         // Determine effective water height. Explicit "no water" sentinel on the cell
         // suppresses water entirely; null (no XCLW) falls back to worldspace DNAM.
-        float? waterH;
-        if (WorldHeightNormalizer.IsNoWaterSentinel(cell.WaterHeight))
-        {
-            waterH = null;
-        }
-        else if (cell.WaterHeight is { } cw && cw is > -1e6f and < 1e6f)
-        {
-            waterH = cw;
-        }
-        else
-        {
-            waterH = WorldHeightNormalizer.IsNoWaterSentinel(currentDefaultWaterHeight)
-                ? null
-                : currentDefaultWaterHeight;
-        }
+        var waterH = WorldRenderCache.ResolveEffectiveWaterHeight(cell, currentDefaultWaterHeight);
 
         var grayscale = new byte[HmGridSize * HmGridSize];
         var waterMask = new byte[HmGridSize * HmGridSize];
@@ -146,20 +164,17 @@ internal static class WorldMapCellDetailRenderer
         {
             for (var px = 0; px < HmGridSize; px++)
             {
-                var height = heights[HmGridSize - 1 - py, px];
+                var height = terrain.HeightAt(px, HmGridSize - 1 - py);
                 var normalized = (height - minH) / range;
                 var idx = py * HmGridSize + px;
                 grayscale[idx] = (byte)(Math.Clamp(normalized, 0f, 1f) * 255);
-
-                if (waterH.HasValue && waterH.Value is > -1e6f and < 1e6f &&
-                    height < waterH.Value)
-                {
-                    waterMask[idx] = 180;
-                }
             }
         }
 
-        HeightmapRenderer.BlurWaterMask(waterMask, HmGridSize, HmGridSize);
+        if (terrain.GetLowResWaterMask(waterH) is { } cachedWaterMask)
+        {
+            Array.Copy(cachedWaterMask, waterMask, waterMask.Length);
+        }
 
         var pixels = HeightmapRenderer.ApplyTintAndWater(grayscale, waterMask, HmGridSize, HmGridSize,
             colorScheme, showWater, alpha: 200);

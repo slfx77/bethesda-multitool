@@ -30,6 +30,13 @@ internal static class WorldMapHitTester
     internal static float HitTestObjectBounds(
         Vector2 worldPos, PlacedReference obj, WorldViewData data, float zoom)
     {
+        var distSq = HitTestObjectBoundsSquared(worldPos, obj, data, zoom);
+        return distSq >= float.MaxValue ? float.MaxValue : MathF.Sqrt(distSq);
+    }
+
+    private static float HitTestObjectBoundsSquared(
+        Vector2 worldPos, PlacedReference obj, WorldViewData data, float zoom)
+    {
         var pos = new Vector2(obj.X, -obj.Y);
 
         if (data.BoundsIndex.TryGetValue(obj.BaseFormId, out var bounds))
@@ -48,7 +55,7 @@ internal static class WorldMapHitTester
                 if (localPoint.X >= pos.X - halfW - pad && localPoint.X <= pos.X + halfW + pad &&
                     localPoint.Y >= pos.Y - halfH - pad && localPoint.Y <= pos.Y + halfH + pad)
                 {
-                    return Vector2.Distance(worldPos, pos);
+                    return WorldSpatialIndex.DistanceSquared(worldPos, pos);
                 }
 
                 return float.MaxValue;
@@ -56,8 +63,9 @@ internal static class WorldMapHitTester
         }
 
         // No valid OBND -- fallback to circle
-        var dist = Vector2.Distance(worldPos, pos);
-        return dist <= 12f / zoom ? dist : float.MaxValue;
+        var distSq = WorldSpatialIndex.DistanceSquared(worldPos, pos);
+        var radius = 12f / zoom;
+        return distSq <= radius * radius ? distSq : float.MaxValue;
     }
 
     /// <summary>
@@ -136,7 +144,8 @@ internal static class WorldMapHitTester
         List<CellRecord> activeCells,
         Dictionary<(int x, int y), CellRecord>? cellGridLookup,
         HashSet<PlacedObjectCategory> hiddenCategories,
-        bool hideDisabledActors, float zoom)
+        bool hideDisabledActors, float zoom,
+        WorldSpatialIndex? spatialIndex = null)
     {
         if (zoom < 0.02f || activeCells.Count == 0)
         {
@@ -145,6 +154,7 @@ internal static class WorldMapHitTester
 
         var useBounds = zoom > 0.07f;
         var hitRadius = 30f / zoom;
+        var queryRadius = useBounds ? Math.Max(hitRadius, MaxHalfExtent + 5f / zoom) : hitRadius;
 
         // Two-pass: prefer normal-sized objects over large-bounds objects so that
         // items beneath oversized bounding boxes remain clickable.
@@ -153,56 +163,13 @@ internal static class WorldMapHitTester
         PlacedReference? closestLarge = null;
         var closestLargeDist = float.MaxValue;
 
-        // Only check cells near the cursor (3x3 grid around cursor cell)
-        var cellX = (int)Math.Floor(worldPos.X / CellWorldSize);
-        var cellY = (int)Math.Floor(-worldPos.Y / CellWorldSize);
-
-        for (var dx = -1; dx <= 1; dx++)
+        if (spatialIndex is not null)
         {
-            for (var dy = -1; dy <= 1; dy++)
+            var candidates = s_refHitScratch ??= new List<PlacedReference>(128);
+            spatialIndex.QueryRefsNear(worldPos, queryRadius, candidates);
+            foreach (var obj in candidates)
             {
-                if (cellGridLookup?.TryGetValue((cellX + dx, cellY + dy), out var cell) != true)
-                {
-                    continue;
-                }
-
-                foreach (var obj in cell!.PlacedObjects)
-                {
-                    if (hiddenCategories.Contains(WorldMapOverviewRenderer.GetObjectCategory(obj, data)))
-                    {
-                        continue;
-                    }
-
-                    if (hideDisabledActors && obj.IsInitiallyDisabled)
-                    {
-                        continue;
-                    }
-
-                    // At low zoom, only actors and map markers are rendered
-                    if (zoom < 0.05f && obj.RecordType is not ("ACHR" or "ACRE") && !obj.IsMapMarker)
-                    {
-                        continue;
-                    }
-
-                    ClassifyHit(worldPos, obj, data, useBounds, hitRadius, zoom,
-                        ref closestSmall, ref closestSmallDist,
-                        ref closestLarge, ref closestLargeDist);
-                }
-            }
-        }
-
-        // Also check persistent cells
-        foreach (var cell in activeCells)
-        {
-            if (cell.GridX.HasValue && cell.GridY.HasValue && !cell.HasPersistentObjects)
-            {
-                continue;
-            }
-
-            foreach (var obj in cell.PlacedObjects)
-            {
-                if (obj.IsMapMarker ||
-                    hiddenCategories.Contains(WorldMapOverviewRenderer.GetObjectCategory(obj, data)))
+                if (hiddenCategories.Contains(WorldMapOverviewRenderer.GetObjectCategory(obj, data)))
                 {
                     continue;
                 }
@@ -212,8 +179,8 @@ internal static class WorldMapHitTester
                     continue;
                 }
 
-                // At low zoom, only actors are rendered via DrawActorDots
-                if (zoom < 0.05f && obj.RecordType is not ("ACHR" or "ACRE"))
+                // At low zoom, only actors and map markers are rendered
+                if (zoom < 0.05f && obj.RecordType is not ("ACHR" or "ACRE") && !obj.IsMapMarker)
                 {
                     continue;
                 }
@@ -221,6 +188,79 @@ internal static class WorldMapHitTester
                 ClassifyHit(worldPos, obj, data, useBounds, hitRadius, zoom,
                     ref closestSmall, ref closestSmallDist,
                     ref closestLarge, ref closestLargeDist);
+            }
+        }
+        else
+        {
+            // Only check cells near the cursor (3x3 grid around cursor cell)
+            var cellX = (int)Math.Floor(worldPos.X / CellWorldSize);
+            var cellY = (int)Math.Floor(-worldPos.Y / CellWorldSize);
+
+            for (var dx = -1; dx <= 1; dx++)
+            {
+                for (var dy = -1; dy <= 1; dy++)
+                {
+                    if (cellGridLookup?.TryGetValue((cellX + dx, cellY + dy), out var cell) != true)
+                    {
+                        continue;
+                    }
+
+                    foreach (var obj in cell!.PlacedObjects)
+                    {
+                        if (hiddenCategories.Contains(WorldMapOverviewRenderer.GetObjectCategory(obj, data)))
+                        {
+                            continue;
+                        }
+
+                        if (hideDisabledActors && obj.IsInitiallyDisabled)
+                        {
+                            continue;
+                        }
+
+                        // At low zoom, only actors and map markers are rendered
+                        if (zoom < 0.05f && obj.RecordType is not ("ACHR" or "ACRE") && !obj.IsMapMarker)
+                        {
+                            continue;
+                        }
+
+                        ClassifyHit(worldPos, obj, data, useBounds, hitRadius, zoom,
+                            ref closestSmall, ref closestSmallDist,
+                            ref closestLarge, ref closestLargeDist);
+                    }
+                }
+            }
+
+            // Also check persistent cells
+            foreach (var cell in activeCells)
+            {
+                if (cell.GridX.HasValue && cell.GridY.HasValue && !cell.HasPersistentObjects)
+                {
+                    continue;
+                }
+
+                foreach (var obj in cell.PlacedObjects)
+                {
+                    if (obj.IsMapMarker ||
+                        hiddenCategories.Contains(WorldMapOverviewRenderer.GetObjectCategory(obj, data)))
+                    {
+                        continue;
+                    }
+
+                    if (hideDisabledActors && obj.IsInitiallyDisabled)
+                    {
+                        continue;
+                    }
+
+                    // At low zoom, only actors are rendered via DrawActorDots
+                    if (zoom < 0.05f && obj.RecordType is not ("ACHR" or "ACRE"))
+                    {
+                        continue;
+                    }
+
+                    ClassifyHit(worldPos, obj, data, useBounds, hitRadius, zoom,
+                        ref closestSmall, ref closestSmallDist,
+                        ref closestLarge, ref closestLargeDist);
+                }
             }
         }
 
@@ -240,13 +280,13 @@ internal static class WorldMapHitTester
         float dist;
         if (useBounds)
         {
-            dist = HitTestObjectBounds(worldPos, obj, data, zoom);
+            dist = HitTestObjectBoundsSquared(worldPos, obj, data, zoom);
         }
         else
         {
             var objPos = new Vector2(obj.X, -obj.Y);
-            dist = Vector2.Distance(worldPos, objPos);
-            if (dist >= hitRadius)
+            dist = WorldSpatialIndex.DistanceSquared(worldPos, objPos);
+            if (dist >= hitRadius * hitRadius)
             {
                 dist = float.MaxValue;
             }
@@ -277,7 +317,8 @@ internal static class WorldMapHitTester
 
     internal static PlacedReference? HitTestMapMarker(
         Vector2 worldPos, List<PlacedReference> filteredMarkers,
-        HashSet<PlacedObjectCategory> hiddenCategories, float zoom)
+        HashSet<PlacedObjectCategory> hiddenCategories, float zoom,
+        WorldSpatialIndex? spatialIndex = null)
     {
         if (filteredMarkers.Count == 0 || hiddenCategories.Contains(PlacedObjectCategory.MapMarker))
         {
@@ -285,17 +326,25 @@ internal static class WorldMapHitTester
         }
 
         PlacedReference? closest = null;
-        var closestDist = float.MaxValue;
+        var closestDistSq = float.MaxValue;
         var hitRadius = 20f / zoom;
+        var hitRadiusSq = hitRadius * hitRadius;
 
-        foreach (var marker in filteredMarkers)
+        var candidates = filteredMarkers;
+        if (spatialIndex is not null)
+        {
+            candidates = s_refHitScratch ??= new List<PlacedReference>(128);
+            spatialIndex.QueryMarkersNear(worldPos, hitRadius, candidates);
+        }
+
+        foreach (var marker in candidates)
         {
             var markerPos = new Vector2(marker.X, -marker.Y);
-            var dist = Vector2.Distance(worldPos, markerPos);
+            var distSq = WorldSpatialIndex.DistanceSquared(worldPos, markerPos);
 
-            if (dist < hitRadius && dist < closestDist)
+            if (distSq < hitRadiusSq && distSq < closestDistSq)
             {
-                closestDist = dist;
+                closestDistSq = distSq;
                 closest = marker;
             }
         }
@@ -314,6 +363,7 @@ internal static class WorldMapHitTester
         CellRecord? selectedCell,
         List<PlacedReference> filteredMarkers,
         Dictionary<(int x, int y), CellRecord>? cellGridLookup,
+        WorldSpatialIndex? spatialIndex,
         HashSet<PlacedObjectCategory> hiddenCategories,
         bool hideDisabledActors,
         float zoom, Vector2 panOffset)
@@ -328,7 +378,7 @@ internal static class WorldMapHitTester
         if (mode == WorldMapControl.ViewMode.WorldOverview)
         {
             // Check map markers first (they're drawn on top)
-            var marker = HitTestMapMarker(worldPos, filteredMarkers, hiddenCategories, zoom);
+            var marker = HitTestMapMarker(worldPos, filteredMarkers, hiddenCategories, zoom, spatialIndex);
             if (marker != null)
             {
                 return ClickResult.InspectObject(marker);
@@ -336,7 +386,7 @@ internal static class WorldMapHitTester
 
             // Check placed objects
             var obj = HitTestPlacedObjectInOverview(worldPos, data, activeCells, cellGridLookup,
-                hiddenCategories, hideDisabledActors, zoom);
+                hiddenCategories, hideDisabledActors, zoom, spatialIndex);
             if (obj != null)
             {
                 return ClickResult.InspectObject(obj);
@@ -381,11 +431,12 @@ internal static class WorldMapHitTester
         List<CellRecord> activeCells,
         List<PlacedReference> filteredMarkers,
         Dictionary<(int x, int y), CellRecord>? cellGridLookup,
+        WorldSpatialIndex? spatialIndex,
         HashSet<PlacedObjectCategory> hiddenCategories,
         bool hideDisabledActors, float zoom)
     {
         // Check map markers first
-        var marker = HitTestMapMarker(worldPos, filteredMarkers, hiddenCategories, zoom);
+        var marker = HitTestMapMarker(worldPos, filteredMarkers, hiddenCategories, zoom, spatialIndex);
         if (marker != null)
         {
             var markerName = marker.MarkerName ?? "Unknown";
@@ -395,7 +446,7 @@ internal static class WorldMapHitTester
 
         // Check placed objects
         var hitObj = HitTestPlacedObjectInOverview(worldPos, data, activeCells, cellGridLookup,
-            hiddenCategories, hideDisabledActors, zoom);
+            hiddenCategories, hideDisabledActors, zoom, spatialIndex);
         if (hitObj != null)
         {
             var name = PlacedObjectCategoryResolver.GetReferenceAwareName(hitObj, data.Resolver);
@@ -424,6 +475,8 @@ internal static class WorldMapHitTester
         internal PlacedReference? HoveredObject { get; } = hoveredObject;
         internal bool IsInteractive { get; } = isInteractive;
     }
+
+    [ThreadStatic] private static List<PlacedReference>? s_refHitScratch;
 
     internal readonly struct ClickResult
     {

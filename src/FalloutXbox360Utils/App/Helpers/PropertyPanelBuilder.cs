@@ -111,7 +111,9 @@ internal static class PropertyPanelBuilder
         var subItemsContainer = new Border
         {
             Child = subItemsGrid,
-            Margin = new Thickness(18, 0, 0, 0)
+            // Bottom margin keeps the last list item from butting against the next category header's
+            // colored background — sub-items only contribute 1px bottom padding versus 2px for simple rows.
+            Margin = new Thickness(18, 0, 0, 4)
         };
         Grid.SetRow(subItemsContainer, currentRow);
         Grid.SetColumn(subItemsContainer, 1);

@@ -34,9 +34,16 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     // --- Cell grid lookup ---
     private Dictionary<(int x, int y), CellRecord>? _cellGridLookup;
     private CanvasBitmap? _cellHeightmapBitmap;
+    private WorldSpatialIndex? _spatialIndex;
 
     // --- Heightmap tinting ---
     private HeightmapColorScheme _currentColorScheme = HeightmapColorScheme.Amber;
+
+    // --- Layer selection ---
+    private WorldMapLayer _currentLayer = WorldMapLayer.Heightmap;
+
+    // --- Overlay toggles ---
+    private bool _showNavMesh;
 
     // --- Cursor ---
     private InputSystemCursorShape _currentCursorShape = InputSystemCursorShape.Arrow;
@@ -71,8 +78,15 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     // --- Heightmap bitmaps ---
     private CanvasBitmap? _worldHeightmapBitmap;
     private bool _worldHeightmapDirty = true;
+    private int _worldHeightmapBuildVersion;
     private int _worldHmMinX, _worldHmMaxY;
     private int _worldHmPixelWidth, _worldHmPixelHeight;
+
+    /// <summary>
+    ///     Per-cell GPU bitmaps for overview layers that would exceed D3D's max texture size
+    ///     as one large bitmap. Composited cell-by-cell in <see cref="WorldMapOverviewRenderer" />.
+    /// </summary>
+    private Dictionary<(int gx, int gy), CanvasBitmap>? _layerCellBitmaps;
 
     // --- Pan/Zoom ---
     private float _zoom = 0.05f;
@@ -111,6 +125,13 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         {
             ColorSchemeComboBox.SelectedIndex = defaultIdx;
         }
+
+        LayerComboBox.Items.Clear();
+        foreach (var layer in Enum.GetValues<WorldMapLayer>())
+        {
+            LayerComboBox.Items.Add(layer.DisplayName());
+        }
+        LayerComboBox.SelectedIndex = (int)_currentLayer;
 
         WorldspaceComboBox.Items.Clear();
         foreach (var ws in data.Worldspaces)
@@ -153,7 +174,42 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     private void BuildLegendPanel()
     {
-        WorldMapLegendBuilder.Populate(LegendPanel, _hiddenCategories, () => MapCanvas.Invalidate());
+        WorldMapLegendBuilder.Populate(LegendPanel, _hiddenCategories,
+            () => MapCanvas.Invalidate(), OnLegendCategoryToggled);
+    }
+
+    private void OnLegendCategoryToggled(PlacedObjectCategory category)
+    {
+        // Keep the toolbar Map markers checkbox in sync with legend clicks.
+        if (category != PlacedObjectCategory.MapMarker || MapMarkersCheckBox is null) return;
+        var visible = !_hiddenCategories.Contains(PlacedObjectCategory.MapMarker);
+        if (MapMarkersCheckBox.IsChecked == visible) return;
+        _suppressMarkersCheckboxEvent = true;
+        MapMarkersCheckBox.IsChecked = visible;
+        _suppressMarkersCheckboxEvent = false;
+    }
+
+    private bool _suppressMarkersCheckboxEvent;
+
+    private void MapMarkersCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_suppressMarkersCheckboxEvent) return;
+        if (MapMarkersCheckBox.IsChecked == true)
+        {
+            _hiddenCategories.Remove(PlacedObjectCategory.MapMarker);
+        }
+        else
+        {
+            _hiddenCategories.Add(PlacedObjectCategory.MapMarker);
+        }
+        BuildLegendPanel();
+        MapCanvas?.Invalidate();
+    }
+
+    private void NavMeshCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        _showNavMesh = NavMeshCheckBox?.IsChecked == true;
+        MapCanvas?.Invalidate();
     }
 
     private void SetCanvasMode(bool canvasVisible)
@@ -174,11 +230,15 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private void WaterCheckBox_Changed(object sender, RoutedEventArgs e)
     {
         _showWater = WaterCheckBox.IsChecked == true;
-        _worldHeightmapBitmap?.Dispose();
-        _worldHeightmapBitmap = null;
+        InvalidateWorldBitmap(keepCurrentBitmap: true);
         _cellHeightmapBitmap?.Dispose();
         _cellHeightmapBitmap = null;
-        _worldHeightmapDirty = true;
+        if (_state.SelectedCell is not null)
+        {
+            _cellHeightmapBitmap = WorldMapCellDetailRenderer.BuildCellHeightmapBitmap(
+                MapCanvas, _state.SelectedCell, _currentDefaultWaterHeight,
+                _currentColorScheme, _showWater, _currentLayer, _data, _data?.RenderCache);
+        }
         MapCanvas.Invalidate();
     }
 
@@ -209,15 +269,22 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     public void Reset()
     {
         _data = null;
+        _spatialIndex = null;
+        _cellGridLookup = null;
         _state.Reset();
         _hiddenCategories.Clear();
         _hideDisabledActors = true;
         _showWater = true;
         WaterCheckBox.IsChecked = true;
         DisabledCheckBox.IsChecked = false;
+        _suppressMarkersCheckboxEvent = true;
+        MapMarkersCheckBox.IsChecked = true;
+        _suppressMarkersCheckboxEvent = false;
+        _showNavMesh = false;
+        NavMeshCheckBox.IsChecked = false;
+        DisposeWorldBitmaps();
         _worldHeightmapDirty = true;
-        _worldHeightmapBitmap?.Dispose();
-        _worldHeightmapBitmap = null;
+        HideLayerBuildStatus();
         _cellHeightmapBitmap?.Dispose();
         _cellHeightmapBitmap = null;
         WorldspaceComboBox.Items.Clear();
@@ -227,11 +294,43 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     public void Dispose()
     {
-        _worldHeightmapBitmap?.Dispose();
-        _worldHeightmapBitmap = null;
+        DisposeWorldBitmaps();
         _cellHeightmapBitmap?.Dispose();
         _cellHeightmapBitmap = null;
         DisposeMarkerIcons();
+    }
+
+    /// <summary>Invalidates any in-flight async build without necessarily clearing the current layer.</summary>
+    private void InvalidateWorldBitmap(bool keepCurrentBitmap)
+    {
+        _worldHeightmapBuildVersion++;
+        _worldHeightmapDirty = true;
+        if (!keepCurrentBitmap)
+        {
+            ClearWorldBitmaps();
+        }
+    }
+
+    /// <summary>
+    ///     Disposes the world-overview bitmap (single or per-cell dict). The per-cell dict
+    ///     entries are device-bound <see cref="CanvasBitmap" />s so each one needs explicit
+    ///     disposal.
+    /// </summary>
+    private void DisposeWorldBitmaps()
+    {
+        _worldHeightmapBuildVersion++;
+        ClearWorldBitmaps();
+    }
+
+    private void ClearWorldBitmaps()
+    {
+        _worldHeightmapBitmap?.Dispose();
+        _worldHeightmapBitmap = null;
+        if (_layerCellBitmaps is not null)
+        {
+            foreach (var bmp in _layerCellBitmaps.Values) bmp.Dispose();
+            _layerCellBitmaps = null;
+        }
     }
 
     // ========================================================================
@@ -252,9 +351,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     private void ApplyWorldspaceSwitch()
     {
-        _worldHeightmapBitmap?.Dispose();
-        _worldHeightmapBitmap = null;
-        _worldHeightmapDirty = true;
+        InvalidateWorldBitmap(keepCurrentBitmap: false);
         _worldHmMinX = _worldHmMaxY = _worldHmPixelWidth = _worldHmPixelHeight = 0;
         _cellHeightmapBitmap?.Dispose();
         _cellHeightmapBitmap = null;
@@ -274,12 +371,41 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         }
 
         _currentColorScheme = HeightmapColorScheme.Presets[idx];
-        _worldHeightmapBitmap?.Dispose();
-        _worldHeightmapBitmap = null;
+        InvalidateWorldBitmap(keepCurrentBitmap: true);
         _cellHeightmapBitmap?.Dispose();
         _cellHeightmapBitmap = null;
-        _worldHeightmapDirty = true;
         MapCanvas.Invalidate();
+    }
+
+    private void LayerComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        var idx = LayerComboBox.SelectedIndex;
+        var values = Enum.GetValues<WorldMapLayer>();
+        if (idx < 0 || idx >= values.Length) return;
+
+        _currentLayer = values[idx];
+
+        // Color scheme only applies to the heightmap layer (user-confirmed).
+        // Null-guard because the SelectionChanged event can fire during XAML load before
+        // sibling fields are assigned (see winui3_selectionchanged_early_fire memory).
+        if (ColorSchemeComboBox is not null)
+        {
+            ColorSchemeComboBox.Visibility = _currentLayer == WorldMapLayer.Heightmap
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
+
+        InvalidateWorldBitmap(keepCurrentBitmap: true);
+
+        if (_cellHeightmapBitmap is not null && _state.SelectedCell is not null)
+        {
+            _cellHeightmapBitmap.Dispose();
+            _cellHeightmapBitmap = WorldMapCellDetailRenderer.BuildCellHeightmapBitmap(
+                MapCanvas, _state.SelectedCell, _currentDefaultWaterHeight,
+                _currentColorScheme, _showWater, _currentLayer, _data, _data?.RenderCache);
+        }
+
+        MapCanvas?.Invalidate();
     }
 
     internal WorldNavState CaptureNavState() => new(
@@ -362,7 +488,32 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     {
         if (_data == null) return;
 
-        var layout = WorldMapExporter.ComputeExportLayout(GetActiveCells(), ExportLongEdge);
+        var activeCells = GetActiveCells();
+        var cellsWithGrid = activeCells.Where(c => c.GridX.HasValue && c.GridY.HasValue).ToList();
+        if (cellsWithGrid.Count == 0) return;
+
+        var minGx = cellsWithGrid.Min(c => c.GridX!.Value);
+        var maxGx = cellsWithGrid.Max(c => c.GridX!.Value);
+        var minGy = cellsWithGrid.Min(c => c.GridY!.Value);
+        var maxGy = cellsWithGrid.Max(c => c.GridY!.Value);
+        var cellsWide = maxGx - minGx + 1;
+        var cellsTall = maxGy - minGy + 1;
+
+        var dialog = new MapExportDialog(
+            cellsWide, cellsTall,
+            initialIncludeMarkers: !_hiddenCategories.Contains(PlacedObjectCategory.MapMarker),
+            initialIncludeNavMesh: _showNavMesh,
+            initialIncludeWater: _showWater,
+            initialLongEdgePx: ExportLongEdge)
+        {
+            XamlRoot = XamlRoot
+        };
+
+        var dialogResult = await dialog.ShowAsync();
+        if (dialogResult != ContentDialogResult.Primary) return;
+        var req = dialog.GetRequest();
+
+        var layout = WorldMapExporter.ComputeExportLayout(activeCells, req.LongEdgePx);
         if (layout == null) return;
 
         var wsName = _state.SelectedWorldspace?.EditorId ?? _state.SelectedWorldspace?.FullName ?? "worldspace";
@@ -374,21 +525,65 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         var file = await picker.PickSaveFileAsync();
         if (file == null) return;
 
-        EnsureHeightmapBitmap();
         EnsureMarkerIcons(MapCanvas);
+
+        // Build a fresh bitmap matching the dialog's water choice; the on-screen bitmap may
+        // have been built with the opposite water flag. For the TerrainTextures layer we
+        // build the per-cell GPU bitmap dictionary instead — same reason as the live view
+        // (a single bitmap exceeds the GPU max-texture-size on large worldspaces).
+        WorldMapHeightmapBuilder.HeightmapInfo? bitmapInfo = null;
+        Dictionary<(int gx, int gy), CanvasBitmap>? exportCellBitmaps = null;
+        if (_currentLayer == WorldMapLayer.TerrainTextures && _data is not null
+            && LandscapeTexturePalette.GetOrCreate(_data) is { } exportPalette)
+        {
+            exportCellBitmaps = WorldMapHeightmapBuilder.BuildTerrainTextureCells(
+                MapCanvas, activeCells, exportPalette,
+                _currentDefaultWaterHeight, req.IncludeWater, _data.RenderCache);
+        }
+        else
+        {
+            bitmapInfo = WorldMapHeightmapBuilder.Build(
+                MapCanvas, activeCells, _cachedGrayscale, _cachedWaterMask,
+                _cachedHmWidth, _cachedHmHeight,
+                _state.SelectedWorldspace, _data,
+                _currentDefaultWaterHeight, _currentColorScheme, req.IncludeWater,
+                _currentLayer, _data?.RenderCache);
+        }
+
+        // Apply markers preference: hidden if user unchecked Map markers in the dialog.
+        var exportHiddenCategories = new HashSet<PlacedObjectCategory>(_hiddenCategories);
+        if (!req.IncludeMarkers)
+        {
+            exportHiddenCategories.Add(PlacedObjectCategory.MapMarker);
+        }
+        else
+        {
+            exportHiddenCategories.Remove(PlacedObjectCategory.MapMarker);
+        }
 
         ExportButton.IsEnabled = false;
         try
         {
-            var (imageW, imageH, ppc, minGx, maxGx, minGy, maxGy) = layout.Value;
+            var (imageW, imageH, ppc, lMinGx, lMaxGx, lMinGy, lMaxGy) = layout.Value;
             await WorldMapExporter.ExportWorldspacePngAsync(
-                file.Path, imageW, imageH, ppc, minGx, maxGx, minGy, maxGy,
-                MapCanvas, _worldHeightmapBitmap,
-                _worldHmPixelWidth, _worldHmPixelHeight, _worldHmMinX, _worldHmMaxY,
-                _state.FilteredMarkers, _hiddenCategories, _markerIconBitmaps, _currentColorScheme);
+                file.Path, imageW, imageH, ppc, lMinGx, lMaxGx, lMinGy, lMaxGy,
+                MapCanvas,
+                bitmapInfo?.Bitmap ?? _worldHeightmapBitmap,
+                bitmapInfo?.PixelWidth ?? _worldHmPixelWidth,
+                bitmapInfo?.PixelHeight ?? _worldHmPixelHeight,
+                bitmapInfo?.MinX ?? _worldHmMinX,
+                bitmapInfo?.MaxY ?? _worldHmMaxY,
+                exportCellBitmaps,
+                _state.FilteredMarkers, exportHiddenCategories, _markerIconBitmaps, _currentColorScheme,
+                _data, activeCells, req.IncludeNavMesh);
         }
         finally
         {
+            bitmapInfo?.Bitmap.Dispose();
+            if (exportCellBitmaps is not null)
+            {
+                foreach (var bmp in exportCellBitmaps.Values) bmp.Dispose();
+            }
             ExportButton.IsEnabled = true;
         }
     }
@@ -451,13 +646,23 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         {
             EnsureMarkerIcons(sender);
             WorldMapOverviewRenderer.DrawWorldOverview(
-                ds, _data, GetActiveCells(), _state.FilteredMarkers, _cellGridLookup,
+                ds, _data, GetActiveCells(), _state.FilteredMarkers, _cellGridLookup, _spatialIndex,
                 _worldHeightmapBitmap,
                 _worldHmPixelWidth, _worldHmPixelHeight, _worldHmMinX, _worldHmMaxY,
+                _layerCellBitmaps,
                 _zoom, _panOffset, canvasW, canvasH,
                 _hiddenCategories, _hideDisabledActors,
                 _state.SelectedObject, _hoveredObject,
                 _markerIconBitmaps, _currentColorScheme);
+
+            if (_showNavMesh)
+            {
+                ds.Transform = WorldMapViewportHelper.GetViewTransform(_zoom, _panOffset);
+                var (tlWorld, brWorld) = WorldMapViewportHelper.GetVisibleWorldBounds(
+                    canvasW, canvasH, _zoom, _panOffset);
+                WorldMapNavMeshOverlayRenderer.DrawWorldOverview(
+                    ds, _data, GetActiveCells(), _spatialIndex, tlWorld, brWorld, _zoom);
+            }
 
             // Dangling-REFR overlay (opt-in via DanglingRefsComboBox).
             // Drawn after overview so tinted cells overlay heightmap + cell grid.
@@ -467,6 +672,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             WorldMapDanglingRefOverlayRenderer.DrawOverlay(
                 ds, _data.DanglingRefs, _data, _danglingThreshold,
                 _state.SelectedWorldspace?.FormId,
+                _spatialIndex,
                 _zoom, _panOffset, canvasW, canvasH);
         }
         else if (_state.SelectedCell != null)
@@ -476,6 +682,12 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                 _zoom, _panOffset, canvasW, canvasH,
                 _hiddenCategories, _hideDisabledActors,
                 _state.SelectedObject, _hoveredObject);
+
+            if (_showNavMesh)
+            {
+                ds.Transform = WorldMapViewportHelper.GetViewTransform(_zoom, _panOffset);
+                WorldMapNavMeshOverlayRenderer.DrawCellDetail(ds, _data, _state.SelectedCell, _zoom);
+            }
         }
 
         // HUD (screen-space)
@@ -540,7 +752,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             {
                 hitDangling = WorldMapDanglingRefOverlayRenderer.HitTest(
                     _data.DanglingRefs, _danglingThreshold,
-                    _state.SelectedWorldspace?.FormId, worldPos, _zoom);
+                    _state.SelectedWorldspace?.FormId, worldPos, _zoom, _spatialIndex);
             }
 
             if (hitDangling != null)
@@ -557,7 +769,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             {
                 var hover = WorldMapHitTester.ProcessOverviewHover(
                     worldPos, _data, GetActiveCells(), _state.FilteredMarkers, _cellGridLookup,
-                    _hiddenCategories, _hideDisabledActors, _zoom);
+                    _spatialIndex, _hiddenCategories, _hideDisabledActors, _zoom);
                 HoverInfoText.Text = hover.StatusText;
                 SetInteractiveCursor(hover.IsInteractive);
                 if (hover.HoveredObject != _hoveredObject)
@@ -585,7 +797,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                 var worldClick = WorldMapViewportHelper.ScreenToWorld(_pointerDownScreen, _zoom, _panOffset);
                 var hitDangling = WorldMapDanglingRefOverlayRenderer.HitTest(
                     _data.DanglingRefs, _danglingThreshold,
-                    _state.SelectedWorldspace?.FormId, worldClick, _zoom);
+                    _state.SelectedWorldspace?.FormId, worldClick, _zoom, _spatialIndex);
                 if (hitDangling != null)
                 {
                     var synthetic = WorldMapDanglingRefOverlayRenderer.SynthesizePlacedReference(hitDangling);
@@ -599,7 +811,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             var result = WorldMapHitTester.HandleClick(
                 _pointerDownScreen, _state.Mode, _data, GetActiveCells(),
                 _state.SelectedCell,
-                _state.FilteredMarkers, _cellGridLookup, _hiddenCategories, _hideDisabledActors,
+                _state.FilteredMarkers, _cellGridLookup, _spatialIndex, _hiddenCategories, _hideDisabledActors,
                 _zoom, _panOffset);
 
             switch (result.Action)
@@ -655,7 +867,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
         _cellHeightmapBitmap?.Dispose();
         _cellHeightmapBitmap = WorldMapCellDetailRenderer.BuildCellHeightmapBitmap(
-            MapCanvas, cell, _currentDefaultWaterHeight, _currentColorScheme, _showWater);
+            MapCanvas, cell, _currentDefaultWaterHeight, _currentColorScheme, _showWater,
+            _currentLayer, _data, _data?.RenderCache);
 
         WorldMapViewportHelper.ZoomToFitCell(cell,
             (float)MapCanvas.ActualWidth, (float)MapCanvas.ActualHeight,
@@ -779,7 +992,20 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     private void BuildCellGridLookup()
     {
-        _cellGridLookup = _state.BuildCellGridLookup();
+        if (_data is null)
+        {
+            _cellGridLookup = null;
+            _spatialIndex = null;
+            return;
+        }
+
+        _spatialIndex = WorldSpatialIndex.Build(
+            _data,
+            GetActiveCells(),
+            _state.FilteredMarkers,
+            _state.SelectedWorldspace?.FormId,
+            _currentDefaultWaterHeight);
+        _cellGridLookup = _spatialIndex.CellsByGrid.ToDictionary(kv => kv.Key, kv => kv.Value);
     }
 
     private void ApplyZoomToFitWorldspace()
@@ -793,26 +1019,122 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private void EnsureHeightmapBitmap()
     {
         if (!_worldHeightmapDirty || GetActiveCells().Count == 0) return;
+        if (_data is null) return;
+
+        _worldHeightmapDirty = false;
+
+        var version = ++_worldHeightmapBuildVersion;
+        ShowLayerBuildStatus($"Building {_currentLayer.DisplayName()}...", busy: true);
+        var request = new LayerBuildRequest(
+            version,
+            GetActiveCells().ToList(),
+            _state.SelectedWorldspace,
+            _data,
+            _currentDefaultWaterHeight,
+            _currentColorScheme,
+            _showWater,
+            _currentLayer,
+            _cachedGrayscale,
+            _cachedWaterMask,
+            _cachedHmWidth,
+            _cachedHmHeight,
+            _data.RenderCache,
+            _currentLayer == WorldMapLayer.TerrainTextures
+                ? LandscapeTexturePalette.GetOrCreate(_data)
+                : null);
+
+        _ = BuildAndApplyWorldBitmapAsync(request);
+    }
+
+    private async Task BuildAndApplyWorldBitmapAsync(LayerBuildRequest request)
+    {
+        try
+        {
+            var result = await WorldLayerBuildService.BuildAsync(request).ConfigureAwait(false);
+            _ = DispatcherQueue.TryEnqueue(() => ApplyWorldBitmapBuildResult(result));
+        }
+        catch (Exception ex)
+        {
+            _ = DispatcherQueue.TryEnqueue(() =>
+            {
+                if (request.Version == _worldHeightmapBuildVersion)
+                {
+                    _worldHeightmapDirty = false;
+                    ShowLayerBuildStatus($"{request.Layer.DisplayName()} failed: {ex.Message}", busy: false);
+                    MapCanvas.Invalidate();
+                }
+            });
+        }
+    }
+
+    private void ApplyWorldBitmapBuildResult(LayerBuildResult result)
+    {
+        if (result.Version != _worldHeightmapBuildVersion)
+        {
+            return;
+        }
+
+        var hasContent = result.Bitmap is not null || result.CellPixels is not null;
+        if (!hasContent)
+        {
+            ShowLayerBuildStatus(result.Message ?? $"{_currentLayer.DisplayName()} has no renderable data.", busy: false);
+            MapCanvas.Invalidate();
+            return;
+        }
 
         _worldHeightmapBitmap?.Dispose();
         _worldHeightmapBitmap = null;
-
-        var info = WorldMapHeightmapBuilder.Build(
-            MapCanvas, GetActiveCells(), _cachedGrayscale, _cachedWaterMask,
-            _cachedHmWidth, _cachedHmHeight,
-            _state.SelectedWorldspace, _data,
-            _currentDefaultWaterHeight, _currentColorScheme, _showWater);
-
-        if (info.HasValue)
+        if (_layerCellBitmaps is not null)
         {
-            _worldHeightmapBitmap = info.Value.Bitmap;
-            _worldHmMinX = info.Value.MinX;
-            _worldHmMaxY = info.Value.MaxY;
-            _worldHmPixelWidth = info.Value.PixelWidth;
-            _worldHmPixelHeight = info.Value.PixelHeight;
+            foreach (var bmp in _layerCellBitmaps.Values) bmp.Dispose();
+            _layerCellBitmaps = null;
         }
 
-        _worldHeightmapDirty = false;
+        if (result.CellPixels is not null)
+        {
+            _layerCellBitmaps = new Dictionary<(int gx, int gy), CanvasBitmap>(result.CellPixels.Count);
+            foreach (var (key, pixels) in result.CellPixels)
+            {
+                _layerCellBitmaps[key] = CanvasBitmap.CreateFromBytes(
+                    MapCanvas,
+                    pixels,
+                    result.CellPixelsPerCell,
+                    result.CellPixelsPerCell,
+                    Windows.Graphics.DirectX.DirectXPixelFormat.R8G8B8A8UIntNormalized);
+            }
+        }
+        else if (result.Bitmap is { } bitmap)
+        {
+            _worldHeightmapBitmap = CanvasBitmap.CreateFromBytes(
+                MapCanvas,
+                bitmap.Pixels,
+                bitmap.Width,
+                bitmap.Height,
+                Windows.Graphics.DirectX.DirectXPixelFormat.R8G8B8A8UIntNormalized);
+            _worldHmMinX = bitmap.MinCellX;
+            _worldHmMaxY = bitmap.MaxCellY;
+            _worldHmPixelWidth = bitmap.Width;
+            _worldHmPixelHeight = bitmap.Height;
+        }
+
+        HideLayerBuildStatus();
+        MapCanvas.Invalidate();
+    }
+
+    private void ShowLayerBuildStatus(string message, bool busy)
+    {
+        if (LayerBuildOverlay is null) return;
+        LayerBuildStatusText.Text = message;
+        LayerBuildProgress.IsActive = busy;
+        LayerBuildProgress.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+        LayerBuildOverlay.Visibility = Visibility.Visible;
+    }
+
+    private void HideLayerBuildStatus()
+    {
+        if (LayerBuildOverlay is null) return;
+        LayerBuildProgress.IsActive = false;
+        LayerBuildOverlay.Visibility = Visibility.Collapsed;
     }
 
     private void SetInteractiveCursor(bool interactive)

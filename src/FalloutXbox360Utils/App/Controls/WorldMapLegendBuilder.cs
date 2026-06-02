@@ -15,7 +15,8 @@ internal static class WorldMapLegendBuilder
     internal static void Populate(
         StackPanel panel,
         HashSet<PlacedObjectCategory> hiddenCategories,
-        Action invalidateCanvas)
+        Action invalidateCanvas,
+        Action<PlacedObjectCategory>? onCategoryToggled = null)
     {
         panel.Children.Clear();
         var grayBorder = new Microsoft.UI.Xaml.Media.SolidColorBrush(Color.FromArgb(255, 100, 100, 100));
@@ -60,8 +61,18 @@ internal static class WorldMapLegendBuilder
                 Padding = new Thickness(6, 3, 8, 3), HorizontalAlignment = HorizontalAlignment.Stretch
             };
 
-            var enabled = true;
+            var enabled = !hiddenCategories.Contains(category);
             var capturedCategory = category;
+
+            // Reflect the persisted hidden state in the initial visuals so the legend stays
+            // in sync with external toggles (e.g. the toolbar Map markers checkbox).
+            if (!enabled)
+            {
+                item.BorderBrush = grayBorder;
+                item.Background = grayFill;
+                swatch.Background = graySwatchBrush;
+                label.Foreground = dimTextBrush;
+            }
 
             item.PointerPressed += (_, args) => args.Handled = true;
             item.PointerReleased += (_, args) =>
@@ -86,6 +97,7 @@ internal static class WorldMapLegendBuilder
                 }
 
                 invalidateCanvas();
+                onCategoryToggled?.Invoke(capturedCategory);
             };
 
             panel.Children.Add(item);

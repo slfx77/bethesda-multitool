@@ -17,21 +17,35 @@ internal static class HeightmapRenderer
     ///     Stage 1 of the two-stage pipeline. Can be called from a background thread.
     /// </summary>
     internal static (byte[] Grayscale, byte[] WaterMask, int Width, int Height, int MinCellX, int MaxCellY)?
-        ComputeHeightmapData(List<CellRecord> cellSource, float? defaultWaterHeight = null)
+        ComputeHeightmapData(
+            List<CellRecord> cellSource,
+            float? defaultWaterHeight = null,
+            WorldRenderCache? cache = null)
     {
-        var cells = cellSource
-            .Where(c => c.Heightmap != null && c.GridX.HasValue && c.GridY.HasValue)
-            .ToList();
+        var cells = new List<(CellRecord Cell, DecodedTerrainCell Terrain)>();
+        foreach (var cell in cellSource)
+        {
+            if (!cell.GridX.HasValue || !cell.GridY.HasValue)
+            {
+                continue;
+            }
+
+            var terrain = cache?.GetTerrain(cell) ?? DecodedTerrainCell.Decode(cell);
+            if (terrain.HasTerrain)
+            {
+                cells.Add((cell, terrain));
+            }
+        }
 
         if (cells.Count == 0)
         {
             return null;
         }
 
-        var minX = cells.Min(c => c.GridX!.Value);
-        var maxX = cells.Max(c => c.GridX!.Value);
-        var minY = cells.Min(c => c.GridY!.Value);
-        var maxY = cells.Max(c => c.GridY!.Value);
+        var minX = cells.Min(c => c.Cell.GridX!.Value);
+        var maxX = cells.Max(c => c.Cell.GridX!.Value);
+        var minY = cells.Min(c => c.Cell.GridY!.Value);
+        var maxY = cells.Max(c => c.Cell.GridY!.Value);
         var gridW = maxX - minX + 1;
         var gridH = maxY - minY + 1;
         var imgW = gridW * HmGridSize;
@@ -40,17 +54,14 @@ internal static class HeightmapRenderer
         // Compute global height range
         var globalMin = float.MaxValue;
         var globalMax = float.MinValue;
-        var heightCache = new Dictionary<CellRecord, float[,]>();
 
-        foreach (var cell in cells)
+        foreach (var (_, terrain) in cells)
         {
-            var heights = cell.Heightmap!.CalculateHeights();
-            heightCache[cell] = heights;
             for (var y = 0; y < HmGridSize; y++)
             {
                 for (var x = 0; x < HmGridSize; x++)
                 {
-                    var h = heights[y, x];
+                    var h = terrain.HeightAt(x, y);
                     if (h < globalMin)
                     {
                         globalMin = h;
@@ -74,36 +85,21 @@ internal static class HeightmapRenderer
         var grayscale = new byte[imgW * imgH];
         var waterMask = new byte[imgW * imgH];
 
-        foreach (var cell in cells)
+        foreach (var (cell, terrain) in cells)
         {
-            var heights = heightCache[cell];
             var imgCellX = cell.GridX!.Value - minX;
             var imgCellY = maxY - cell.GridY!.Value;
 
             // Determine effective water height. Explicit "no water" sentinel on the cell
-            // suppresses water entirely; null (no XCLW) falls back to worldspace DNAM;
-            // out-of-range numeric values fall back too as a safety net.
-            float? waterH;
-            if (WorldHeightNormalizer.IsNoWaterSentinel(cell.WaterHeight))
-            {
-                waterH = null;
-            }
-            else if (cell.WaterHeight is { } cw && cw is > -1e6f and < 1e6f)
-            {
-                waterH = cw;
-            }
-            else
-            {
-                waterH = WorldHeightNormalizer.IsNoWaterSentinel(defaultWaterHeight)
-                    ? null
-                    : defaultWaterHeight;
-            }
+            // suppresses water entirely. Null (no XCLW) falls back to worldspace DNAM.
+            // Out-of-range numeric values fall back too as a safety net.
+            var waterH = WorldRenderCache.ResolveEffectiveWaterHeight(cell, defaultWaterHeight);
 
             for (var py = 0; py < HmGridSize; py++)
             {
                 for (var px = 0; px < HmGridSize; px++)
                 {
-                    var height = heights[HmGridSize - 1 - py, px];
+                    var height = terrain.HeightAt(px, HmGridSize - 1 - py);
                     var normalized = (height - globalMin) / globalRange;
                     var gray = (byte)(Math.Clamp(normalized, 0f, 1f) * 255);
 

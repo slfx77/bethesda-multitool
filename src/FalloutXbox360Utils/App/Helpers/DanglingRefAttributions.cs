@@ -198,7 +198,7 @@ public sealed class DanglingRefAttributions
         if (el.TryGetProperty("base_form_id", out var bfEl) &&
             bfEl.ValueKind == JsonValueKind.String)
         {
-            TryParseHexUInt(bfEl.GetString(), out baseFid);
+            _ = TryParseHexUInt(bfEl.GetString(), out baseFid);
         }
 
         byte baseFormType = 0;

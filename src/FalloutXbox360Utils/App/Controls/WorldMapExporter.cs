@@ -55,10 +55,14 @@ internal static class WorldMapExporter
         CanvasBitmap? worldHeightmapBitmap,
         int worldHmPixelWidth, int worldHmPixelHeight,
         int worldHmMinX, int worldHmMaxY,
+        IReadOnlyDictionary<(int gx, int gy), CanvasBitmap>? textureCellBitmaps,
         List<PlacedReference> filteredMarkers,
         HashSet<PlacedObjectCategory> hiddenCategories,
         Dictionary<MapMarkerType, CanvasBitmap>? markerIconBitmaps,
-        HeightmapColorScheme colorScheme)
+        HeightmapColorScheme colorScheme,
+        WorldViewData? data = null,
+        List<CellRecord>? activeCells = null,
+        bool drawNavMesh = false)
     {
         using var renderTarget = new CanvasRenderTarget(mapCanvas, imageW, imageH, 96);
         var device = renderTarget.Device;
@@ -81,8 +85,19 @@ internal static class WorldMapExporter
             ds.Transform = Matrix3x2.CreateTranslation(-worldOriginX, -worldOriginY)
                            * Matrix3x2.CreateScale(pixelsPerWorldUnit);
 
-            // 1. Heightmap
-            if (worldHeightmapBitmap != null)
+            // 1. Layer background — single bitmap for most layers, per-cell for
+            //    TerrainTextures (to dodge the GPU max-texture-size limit on large worldspaces).
+            //    Only one path is active per export.
+            if (textureCellBitmaps is not null)
+            {
+                foreach (var ((gx, gy), bmp) in textureCellBitmaps)
+                {
+                    var originX = gx * CellWorldSize;
+                    var originY = -(gy + 1) * CellWorldSize;
+                    ds.DrawImage(bmp, new Rect(originX, originY, CellWorldSize, CellWorldSize));
+                }
+            }
+            else if (worldHeightmapBitmap != null)
             {
                 var pixelScale = CellWorldSize / HmGridSize;
                 var bitmapWorldW = worldHmPixelWidth * pixelScale;
@@ -96,7 +111,20 @@ internal static class WorldMapExporter
             // 2. Cell grid
             WorldMapDrawingHelper.DrawExportCellGrid(ds, minGridX, maxGridX, minGridY, maxGridY, pixelsPerWorldUnit);
 
-            // 3. Map markers
+            // 3. Nav mesh overlay (below markers so labels stay on top).
+            if (drawNavMesh && data != null && activeCells != null)
+            {
+                WorldMapNavMeshOverlayRenderer.DrawWorldOverview(
+                    ds,
+                    data,
+                    activeCells,
+                    spatialIndex: null,
+                    new Vector2(worldOriginX, worldOriginY),
+                    new Vector2(worldMaxX, -worldMinY),
+                    pixelsPerWorldUnit);
+            }
+
+            // 4. Map markers
             DrawExportMapMarkers(ds, device, pixelsPerWorldUnit, imageW, imageH,
                 worldOriginX, worldMaxX, worldMinY, worldMaxY, sizing,
                 filteredMarkers, hiddenCategories, markerIconBitmaps, colorScheme);
