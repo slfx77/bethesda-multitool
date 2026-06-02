@@ -26,10 +26,7 @@ public sealed class PlanReferenceLookup
 
     public PlanReferenceLookup(RecordPlan record, EmitPlan? plan)
     {
-        if (record is null)
-        {
-            throw new ArgumentNullException(nameof(record));
-        }
+        ArgumentNullException.ThrowIfNull(record);
 
         _plan = plan;
         _byPath = new Dictionary<string, ResolvedRef>(record.References.Length, StringComparer.Ordinal);

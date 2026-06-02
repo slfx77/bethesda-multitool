@@ -6,13 +6,13 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Planner.Validation;
 ///     Phase E — drop-propagation + containment ordering + invariant assertion.
 ///     Output is the final immutable plan suitable for the writer.
 /// </summary>
-public sealed class PlanValidator
+public static class PlanValidator
 {
     /// <summary>
     ///     Run all three validation steps and return the ordered record list + any
     ///     diagnostics surfaced along the way.
     /// </summary>
-    public (ImmutableArray<RecordPlan> Records, ImmutableArray<PlanDiagnostic> Diagnostics) Validate(
+    public static (ImmutableArray<RecordPlan> Records, ImmutableArray<PlanDiagnostic> Diagnostics) Validate(
         ImmutableArray<RecordPlan> records)
     {
         var propagated = DropPropagator.Propagate(records);

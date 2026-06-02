@@ -20,10 +20,7 @@ public sealed class ReferenceResolver
         IEnumerable<IRecordReferenceWalker> walkers,
         DegradationPolicy policy)
     {
-        if (walkers is null)
-        {
-            throw new ArgumentNullException(nameof(walkers));
-        }
+        ArgumentNullException.ThrowIfNull(walkers);
 
         _policy = policy ?? throw new ArgumentNullException(nameof(policy));
 

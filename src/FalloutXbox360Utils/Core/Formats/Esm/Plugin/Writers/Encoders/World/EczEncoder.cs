@@ -12,8 +12,8 @@ public sealed class EczEncoder : IRecordEncoder
     private static readonly Dictionary<string, Func<EncounterZoneRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
     {
         ["Owner"] = m => m.OwnerFormId,
-        ["Rank"] = m => (sbyte)m.Rank,
-        ["MinimumLevel"] = m => (sbyte)m.MinimumLevel,
+        ["Rank"] = m => m.Rank,
+        ["MinimumLevel"] = m => m.MinimumLevel,
         ["Flags"] = m => m.Flags,
     };
 

@@ -89,7 +89,7 @@ public sealed class EspAssemblerDispatchTests
             CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(cellFormId, cellPlan),
         };
 
-        var plannerBytes = new PlanCellSectionBuilder().BuildCellSection(
+        var plannerBytes = PlanCellSectionBuilder.BuildCellSection(
             plan, new Dictionary<uint, ParsedMainRecord>(), new PluginBuildOptions());
 
         Assert.Equal(legacyBytes, plannerBytes);

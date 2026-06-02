@@ -21,7 +21,7 @@ public sealed class SounEncoder : IRecordEncoder
     {
         ["MinAttenuationDistance"] = m => (byte)m.MinAttenuationDistance,
         ["MaxAttenuationDistance"] = m => (byte)m.MaxAttenuationDistance,
-        ["FreqAdjustment"] = m => (sbyte)m.RandomPercentChance,
+        ["FreqAdjustment"] = m => m.RandomPercentChance,
         ["Flags"] = m => m.Flags,
         ["StaticAttenuation"] = m => m.StaticAttenuation,
         ["EndTime"] = m => m.EndTime,

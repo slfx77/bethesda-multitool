@@ -140,6 +140,28 @@ public class ConditionSanitizerTests
     }
 
     [Fact]
+    public void Filter_keeps_gender_conditions_as_sex_enums()
+    {
+        var conds = new List<DialogueCondition>
+        {
+            new() { FunctionIndex = GetPCIsSex, Parameter1 = 0u },
+            new() { FunctionIndex = GetIsSex, Parameter1 = 1u }
+        };
+
+        var validFormIds = new HashSet<uint>();
+        var remapped = 0;
+        var dropped = 0;
+        var result = ConditionSanitizer.Filter(conds, validFormIds, remapTable: null,
+            ref remapped, ref dropped);
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal(0u, result[0].Parameter1);
+        Assert.Equal(1u, result[1].Parameter1);
+        Assert.Equal(0, dropped);
+        Assert.Equal(0, remapped);
+    }
+
+    [Fact]
     public void Filter_drops_condition_when_RunOn_Reference_is_dangling()
     {
         // Existing policy: RunOn=2 (Reference) with a dangling Reference FormID drops the

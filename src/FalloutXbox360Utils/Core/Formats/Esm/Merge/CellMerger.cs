@@ -7,6 +7,12 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Merge;
 ///     Cell-merge mode chosen for a single cell based on the runtime DMP snapshot's contents.
 ///     Drives whether temporary children are merged into the master cell or treated as an
 ///     authoritative replacement snapshot.
+///     Binary policy: persistent-only DMP captures merge into the master cell, anything with
+///     non-persistent content authoritatively replaces it. Persistent vs non-persistent is the
+///     load-bearing distinction — the DMP only carries non-persistent geometry for a cell when
+///     the engine had that cell streamed in, which makes the snapshot authoritative for
+///     temporary content. Persistent-only captures (map markers, persistent NPCs) say nothing
+///     about temporaries either way.
 /// </summary>
 public enum CellMergeMode
 {
@@ -18,17 +24,12 @@ public enum CellMergeMode
     PersistentOnly,
 
     /// <summary>
-    ///     The DMP cell carries temporary refs, but not enough static/layout evidence to
-    ///     prove the full cell was loaded. Merge the captured refs into the master cell and
-    ///     preserve missing master children.
-    /// </summary>
-    HasTemporary,
-
-    /// <summary>
-    ///     The DMP cell carries non-persistent static/layout placement evidence, so the
-    ///     runtime snapshot is authoritative for ordinary temporary geometry and clutter.
-    ///     Missing master children are not copied wholesale; only script-critical and
-    ///     structural refs are retained.
+    ///     The DMP cell carries at least one non-persistent reference, so the runtime snapshot
+    ///     is treated as authoritative for ordinary temporary geometry and clutter. Persistent
+    ///     master refs are still preserved (repositioned via override when DMP also captured
+    ///     them); non-persistent master refs not in the DMP snapshot are delete-marked unless
+    ///     <c>CellStructuralReferencePreserver.ShouldPreserveInLoadedReplacement</c> keeps
+    ///     them (scripted refs, structural markers).
     /// </summary>
     LoadedReplacement,
 
@@ -46,28 +47,21 @@ public enum CellMergeMode
 public static class CellMerger
 {
     /// <summary>
-    ///     Classify the merge mode for a single DMP cell. Returns <see cref="CellMergeMode.Skip" />
-    ///     when none of the DMP's placed objects match a PC ESM ref FormID.
+    ///     Classify the merge mode for a single DMP cell. Any non-persistent overrideable ref
+    ///     flips the cell to <see cref="CellMergeMode.LoadedReplacement" />; otherwise persistent
+    ///     refs alone give <see cref="CellMergeMode.PersistentOnly" />. Returns
+    ///     <see cref="CellMergeMode.Skip" /> when none of the DMP's placed objects match a PC
+    ///     ESM ref FormID.
     /// </summary>
     public static CellMergeMode Classify(
         CellRecord dmpCell,
-        IReadOnlySet<uint> pcEsmRefFormIds,
-        Func<PlacedReference, bool>? isLoadedPlacement = null,
-        int loadedPlacementThreshold = 1)
+        IReadOnlySet<uint> pcEsmRefFormIds)
     {
         var hasOverrideablePersistent = false;
         var hasOverrideableTemporary = false;
-        var loadedPlacementCount = 0;
-        loadedPlacementThreshold = Math.Max(1, loadedPlacementThreshold);
 
         foreach (var placed in dmpCell.PlacedObjects)
         {
-            if (!placed.IsPersistent
-                && isLoadedPlacement?.Invoke(placed) == true)
-            {
-                loadedPlacementCount++;
-            }
-
             if (!pcEsmRefFormIds.Contains(placed.FormId))
             {
                 continue;
@@ -83,14 +77,9 @@ public static class CellMerger
             }
         }
 
-        if (loadedPlacementCount >= loadedPlacementThreshold)
-        {
-            return CellMergeMode.LoadedReplacement;
-        }
-
         if (hasOverrideableTemporary)
         {
-            return CellMergeMode.HasTemporary;
+            return CellMergeMode.LoadedReplacement;
         }
 
         return hasOverrideablePersistent ? CellMergeMode.PersistentOnly : CellMergeMode.Skip;
@@ -98,10 +87,10 @@ public static class CellMerger
 
     /// <summary>
     ///     Returns the placed refs that should be emitted as overrides for the chosen mode:
-    ///     <see cref="CellMergeMode.PersistentOnly" /> emits only persistent refs;
-    ///     <see cref="CellMergeMode.HasTemporary" /> and
-    ///     <see cref="CellMergeMode.LoadedReplacement" /> emit both. Refs without a matching
-    ///     PC ESM FormID are filtered out — v2 does not emit new refs.
+    ///     <see cref="CellMergeMode.PersistentOnly" /> emits only persistent refs (and map
+    ///     markers, which behave as persistent for routing); <see cref="CellMergeMode.LoadedReplacement" />
+    ///     emits both. Refs without a matching PC ESM FormID are filtered out — v2 does not
+    ///     emit new refs.
     /// </summary>
     public static IEnumerable<PlacedReference> SelectOverrideRefs(
         CellRecord dmpCell,
@@ -120,7 +109,7 @@ public static class CellMerger
                 continue;
             }
 
-            if (mode == CellMergeMode.PersistentOnly && !placed.IsPersistent)
+            if (mode == CellMergeMode.PersistentOnly && !placed.IsPersistent && !placed.IsMapMarker)
             {
                 continue;
             }

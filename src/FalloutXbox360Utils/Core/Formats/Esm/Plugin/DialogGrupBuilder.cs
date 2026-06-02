@@ -413,7 +413,7 @@ internal static class DialogGrupBuilder
     private static int ApplyRootReturnTopicLinks(
         Dictionary<uint, List<DialogueRecord>> infosByEmittedDial,
         Dictionary<uint, List<DialogueRecord>> infosByMasterDial,
-        IReadOnlyDictionary<uint, string> dialEditorIdByFormId)
+        Dictionary<uint, string> dialEditorIdByFormId)
     {
         var rootLinksBySpeaker = new Dictionary<(uint Quest, uint? Speaker), List<uint>>();
         var rootLinksByQuest = new Dictionary<uint, List<uint>>();
@@ -560,7 +560,7 @@ internal static class DialogGrupBuilder
 
     private static uint ResolvePreallocatedInfoId(
         DialogueRecord info,
-        IReadOnlyDictionary<uint, uint> infoFormIdMap,
+        Dictionary<uint, uint> infoFormIdMap,
         FormIdAllocator allocator)
     {
         return info.FormId != 0 && infoFormIdMap.TryGetValue(info.FormId, out var allocated)
@@ -618,10 +618,11 @@ internal static class DialogGrupBuilder
             return;
         }
 
-        // Resolve quest EDID via the INFO's QSTI. Prefer the unified DMP + master lookup;
-        // fall back to scanning master records directly so master-quest INFOs still get a
-        // QuestEditorId. Engine voice-filename construction prepends the quest EDID, so we
-        // need this even when the quest itself is unchanged from master.
+        // Resolve the quest EditorId via the INFO record's QSTI link. We first try the
+        // unified DMP and master lookup, then fall back to scanning master records directly
+        // so that master-quest INFOs still receive a QuestEditorId. The engine constructs
+        // voice filenames by prepending the quest EditorId, so this attribution is needed
+        // even when the quest itself is unchanged from master.
         string? questEdid = null;
         if (patched.QuestFormId is { } qfid && qfid != 0)
         {

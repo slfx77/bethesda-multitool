@@ -23,13 +23,12 @@ public sealed class EsmPlanner
     ///     enabled. They must be excluded from the top-level RecordCatalog to avoid
     ///     double-allocating FormIDs for the same source record.
     /// </summary>
-    private static readonly IReadOnlySet<string> CellPipelineOwnedTypes =
-        new HashSet<string>(StringComparer.Ordinal) { "CELL", "WRLD", "REFR", "ACHR", "ACRE", "PGRE" };
+    private static readonly HashSet<string> CellPipelineOwnedTypes =
+        new(StringComparer.Ordinal) { "CELL", "WRLD", "REFR", "ACHR", "ACRE", "PGRE" };
 
     private readonly DispositionEngine _disposition;
     private readonly FormIdPlanner _allocation;
     private readonly ReferenceResolver _references;
-    private readonly PlanValidator _validator = new();
 
     public EsmPlanner(
         DispositionEngine disposition,
@@ -115,7 +114,7 @@ public sealed class EsmPlanner
         var resolvedRefsByIndex = _references.ResolveAll(decisions, emittedFormIds, sourceToEmitted);
 
         var records = BuildRecordPlans(decisions, sourceToEmitted, resolvedRefsByIndex);
-        var (ordered, diagnostics) = _validator.Validate(records);
+        var (ordered, diagnostics) = PlanValidator.Validate(records);
 
         var indexByFormId = ImmutableDictionary.CreateBuilder<uint, int>();
         for (var i = 0; i < ordered.Length; i++)
@@ -163,7 +162,7 @@ public sealed class EsmPlanner
             return null; // Cell-section planning requires the master cell index + an allocator.
         }
 
-        return new CellSectionPlanner().Plan(
+        return CellSectionPlanner.Plan(
             masterCellContexts,
             masterRecordsByFormId,
             dmpRecords.Cells,

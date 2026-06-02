@@ -5,7 +5,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Planner.Catalog;
 ///     list. The disposition engine consumes the output and never reaches back to the
 ///     <c>ParsedMainRecord</c> / <c>RecordCollection</c> inputs directly.
 /// </summary>
-public sealed class RecordCatalog
+public static class RecordCatalog
 {
     /// <summary>
     ///     Combine master + DMP records into a catalog covering only
@@ -17,15 +17,8 @@ public sealed class RecordCatalog
         DmpRecordSource dmp,
         IReadOnlySet<string> enabledTypes)
     {
-        if (master is null)
-        {
-            throw new ArgumentNullException(nameof(master));
-        }
-
-        if (dmp is null)
-        {
-            throw new ArgumentNullException(nameof(dmp));
-        }
+        ArgumentNullException.ThrowIfNull(master);
+        ArgumentNullException.ThrowIfNull(dmp);
 
         if (enabledTypes.Count == 0)
         {

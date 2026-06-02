@@ -157,13 +157,41 @@ public class DeletedRefSynthesizerTests
         Assert.Single(bundle.Temporary);
     }
 
+    [Fact]
+    public void Synthesize_LoadedReplacementPolicy_DeletesOrdinaryTempsPreservesActorsAndPersistentRefs()
+    {
+        var masterRefs = new[]
+        {
+            MakeRef(0x900, persistent: false, "OrdinaryStatic"),
+            MakeRecord("ACHR", 0x901, persistent: false, "ScriptActor"),
+            MakeRef(0x902, persistent: true, "PersistentQuestRef")
+        };
+        var dmpFormIds = new HashSet<uint>();
+
+        var bundle = DeletedRefSynthesizer.Synthesize(
+            masterRefs,
+            dmpFormIds,
+            masterRef => masterRef.Header.Signature is "ACHR" or "ACRE" ||
+                         (masterRef.Header.Flags & PersistentFlag) != 0);
+
+        Assert.Empty(bundle.Persistent);
+        Assert.Single(bundle.Temporary);
+        var deletedFormId = BinaryPrimitives.ReadUInt32LittleEndian(bundle.Temporary[0].AsSpan(12, 4));
+        Assert.Equal(0x900u, deletedFormId);
+    }
+
     private static ParsedMainRecord MakeRef(uint formId, bool persistent, string editorId)
+    {
+        return MakeRecord("REFR", formId, persistent, editorId);
+    }
+
+    private static ParsedMainRecord MakeRecord(string signature, uint formId, bool persistent, string editorId)
     {
         return new ParsedMainRecord
         {
             Header = new MainRecordHeader
             {
-                Signature = "REFR",
+                Signature = signature,
                 FormId = formId,
                 Flags = persistent ? PersistentFlag : 0,
                 Version = 0x000F

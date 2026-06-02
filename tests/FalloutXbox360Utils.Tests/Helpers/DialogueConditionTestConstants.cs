@@ -10,7 +10,9 @@ internal static class DialogueConditionTestConstants
 {
     public const ushort GetActorValue = 0x000E;     // Param1 = ActorValue enum (NOT a FormID)
     public const ushort GetIsRace = 0x0045;         // Param1 = Race FormID
+    public const ushort GetIsSex = 0x0046;          // Param1 = Sex enum (0 Male, 1 Female)
     public const ushort GetIsID = 0x0048;           // Param1 = Object FormID
+    public const ushort GetPCIsSex = 0x0083;        // Param1 = Sex enum (0 Male, 1 Female)
     public const ushort GetQuestRunning = 0x0038;   // Param1 = Quest FormID
     public const ushort HasPerk = 0x01C1;           // Param1 = Perk FormID, Param2 = Int
 }

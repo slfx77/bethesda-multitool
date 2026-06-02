@@ -18,15 +18,27 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 /// </summary>
 public sealed class ScptEncoder : IRecordEncoder
 {
+    // SCHR canonical ESM layout per fopdoc (Records/Subrecords/SCHR.md):
+    //   Padding(4) + RefCount(uint32) + CompiledSize(uint32) + VariableCount(uint32) +
+    //   Type(uint16) + Flags(uint16).
+    // The runtime SCRIPT_HEADER struct has a different layout (VariableCount at offset 0,
+    // uiLastID at offset 12, 3 separate bool bytes for IsQuestScript/IsMagicEffectScript/
+    // IsCompiled); we map runtime model fields to canonical positions here.
+    //
+    // VariableCount: bound the engine uses to size SLSD lookup. Emit the actual count of
+    //   SLSD entries we'll write (script.Variables.Count) rather than the runtime's
+    //   uiLastID — uiLastID can exceed Variables.Count after the runtime allocates dynamic
+    //   variables we don't capture, causing the engine to look for SLSD slots that don't
+    //   exist and log "Variable ID NNNNNNNN not found in 'UNKNOWN' script".
+    // Type: 0 = Object, 1 = Quest, 0x100 = Effect (mutually exclusive in vanilla content).
+    // Flags: 0x0001 = Enabled.
     private static readonly Dictionary<string, Func<ScriptRecord, object?>> SchrExtractors = new(StringComparer.Ordinal)
     {
-        ["VariableCount"] = m => m.VariableCount,
-        ["RefObjectCount"] = m => m.RefObjectCount,
+        ["RefCount"] = m => m.RefObjectCount,
         ["CompiledSize"] = m => m.CompiledSize,
-        ["LastVariableId"] = m => m.LastVariableId,
-        ["IsQuestScript"] = m => m.IsQuestScript ? (byte)1 : (byte)0,
-        ["IsMagicEffectScript"] = m => m.IsMagicEffectScript ? (byte)1 : (byte)0,
-        ["IsCompiled"] = m => m.IsCompiled ? (byte)1 : (byte)0,
+        ["VariableCount"] = m => (uint)m.Variables.Count,
+        ["Type"] = m => GetSchrType(m),
+        ["Flags"] = m => (ushort)(m.IsCompiled ? 0x0001 : 0x0000),
     };
 
     private static readonly Dictionary<string, Func<ScriptVariableInfo, object?>> SlsdExtractors = new(StringComparer.Ordinal)
@@ -39,6 +51,13 @@ public sealed class ScptEncoder : IRecordEncoder
 
     public string RecordType => "SCPT";
     public Type ModelType => typeof(ScriptRecord);
+
+    private static ushort GetSchrType(ScriptRecord m)
+    {
+        if (m.IsMagicEffectScript) return 0x100;
+        if (m.IsQuestScript) return 1;
+        return 0;
+    }
 
     /// <summary>
     ///     Encode a new SCPT record from scratch in fopdoc canonical order:

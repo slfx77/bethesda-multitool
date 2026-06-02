@@ -43,10 +43,7 @@ public sealed class PlanWriter
             throw new ArgumentException("Record type required.", nameof(recordType));
         }
 
-        if (plan is null)
-        {
-            throw new ArgumentNullException(nameof(plan));
-        }
+        ArgumentNullException.ThrowIfNull(plan);
 
         if (!_encoders.Contains(recordType))
         {

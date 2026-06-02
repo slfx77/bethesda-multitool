@@ -53,10 +53,7 @@ public static class FieldPath
     public static string IndexedMember(string signature, int index, string memberName)
     {
         EnsureSignature(signature);
-        if (index < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(index));
-        }
+        ArgumentOutOfRangeException.ThrowIfNegative(index);
 
         if (string.IsNullOrWhiteSpace(memberName))
         {

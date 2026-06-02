@@ -162,6 +162,33 @@ public class InfoQustOverrideTests
     }
 
     [Fact]
+    public void QustEncoder_Override_NeverEmitsData_PreservesMasterFlagsAndPriority()
+    {
+        // The runtime TESQuest.flags byte co-locates ESM-canonical bits (StartGameEnabled,
+        // AllowRepeatedTopics, AllowRepeatedStages) with engine-set state bits (Started,
+        // Active, Completed). Emitting DATA on the override path either wipes master's
+        // StartGameEnabled bit (Doc Mitchell's VMS01 intro never auto-starts; player stuck
+        // in bed) or carries a runtime Started bit (Sunny Smiles' "Back in the Saddle"
+        // appears already in progress before the player meets her). Both symptoms surfaced
+        // in the 2026-05-27 xex44 capture. Pin the contract: DATA is never emitted, even
+        // when FULL is, so the merge engine retains master's authoring bytes verbatim.
+        var quest = new QuestRecord
+        {
+            FormId = 0x000F1234,
+            FullName = "Prototype Quest Title",
+            Flags = 0xFF, // worst-case: every runtime-state bit set
+            Priority = 99,
+            QuestDelay = 7.5f
+        };
+
+        var encoded = new QustEncoder().Encode(quest);
+
+        Assert.NotEmpty(encoded.Subrecords);
+        Assert.Contains(encoded.Subrecords, s => s.Signature == "FULL");
+        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "DATA");
+    }
+
+    [Fact]
     public void QustEncoder_New_EmitsEdid()
     {
         // The new-record path keeps emitting EDID (overrides do not).

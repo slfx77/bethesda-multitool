@@ -24,17 +24,31 @@ public class ScriptDialogueEncoderTests
     [Fact]
     public void ScptEncoder_EncodeNew_EmitsEdidAndSchrInOrder()
     {
+        // SCHR canonical ESM layout per fopdoc:
+        //   offset 0..3:   Unused (zero-filled padding)
+        //   offset 4..7:   RefCount
+        //   offset 8..11:  CompiledSize
+        //   offset 12..15: VariableCount (= Variables.Count emitted as SLSDs)
+        //   offset 16..17: Type uint16 (0=Object, 1=Quest, 0x100=Effect)
+        //   offset 18..19: Flags uint16 (0x0001=Enabled)
         var script = new ScriptRecord
         {
             FormId = 0x800,
             EditorId = "MyScript",
-            VariableCount = 3,
             RefObjectCount = 2,
             CompiledSize = 16,
-            LastVariableId = 3,
             IsQuestScript = true,
             IsMagicEffectScript = false,
-            IsCompiled = true
+            IsCompiled = true,
+            // 3 local variables — the encoder's VariableCount field is derived from
+            // Variables.Count, not from the runtime VariableCount property, so the SLSD
+            // entries we emit always match the engine's VariableCount expectation.
+            Variables =
+            [
+                new ScriptVariableInfo(1, "var1", 0),
+                new ScriptVariableInfo(2, "var2", 0),
+                new ScriptVariableInfo(3, "var3", 0)
+            ]
         };
 
         var encoded = ScptEncoder.EncodeNew(script);
@@ -44,14 +58,12 @@ public class ScriptDialogueEncoderTests
 
         var schr = encoded.Subrecords[1].Bytes;
         Assert.Equal(20, schr.Length);
-        Assert.Equal(3u, BinaryPrimitives.ReadUInt32LittleEndian(schr.AsSpan(0, 4)));
-        Assert.Equal(2u, BinaryPrimitives.ReadUInt32LittleEndian(schr.AsSpan(4, 4)));
-        Assert.Equal(16u, BinaryPrimitives.ReadUInt32LittleEndian(schr.AsSpan(8, 4)));
-        Assert.Equal(3u, BinaryPrimitives.ReadUInt32LittleEndian(schr.AsSpan(12, 4)));
-        Assert.Equal(1, schr[16]); // IsQuestScript
-        Assert.Equal(0, schr[17]); // IsMagicEffectScript
-        Assert.Equal(1, schr[18]); // IsCompiled
-        Assert.Equal(0, schr[19]); // padding
+        Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(schr.AsSpan(0, 4))); // Unused
+        Assert.Equal(2u, BinaryPrimitives.ReadUInt32LittleEndian(schr.AsSpan(4, 4))); // RefCount
+        Assert.Equal(16u, BinaryPrimitives.ReadUInt32LittleEndian(schr.AsSpan(8, 4))); // CompiledSize
+        Assert.Equal(3u, BinaryPrimitives.ReadUInt32LittleEndian(schr.AsSpan(12, 4))); // VariableCount
+        Assert.Equal(0x0001, BinaryPrimitives.ReadUInt16LittleEndian(schr.AsSpan(16, 2))); // Type = Quest
+        Assert.Equal(0x0001, BinaryPrimitives.ReadUInt16LittleEndian(schr.AsSpan(18, 2))); // Flags = Enabled
     }
 
     [Fact]
@@ -351,10 +363,15 @@ public class ScriptDialogueEncoderTests
 
         var schr = encoded.Subrecords.First(s => s.Signature == "SCHR");
         Assert.Equal(20, schr.Bytes.Length);
-        Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(schr.Bytes.AsSpan(0, 4)));  // VariableCount
-        Assert.Equal(1u, BinaryPrimitives.ReadUInt32LittleEndian(schr.Bytes.AsSpan(4, 4)));  // RefObjectCount
+        // SCHR canonical ESM layout per fopdoc — INFO result scripts declare VariableCount=0
+        // because they don't carry their own SLSD/SCVR list; Type=0 (Object) and Flags=0x0001
+        // (Enabled, because CompiledData is non-empty so the engine treats this as compiled).
+        Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(schr.Bytes.AsSpan(0, 4)));  // Unused
+        Assert.Equal(1u, BinaryPrimitives.ReadUInt32LittleEndian(schr.Bytes.AsSpan(4, 4)));  // RefCount
         Assert.Equal(2u, BinaryPrimitives.ReadUInt32LittleEndian(schr.Bytes.AsSpan(8, 4)));  // CompiledSize
-        Assert.Equal(1, schr.Bytes[18]); // IsCompiled — set because CompiledData has bytes
+        Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(schr.Bytes.AsSpan(12, 4))); // VariableCount
+        Assert.Equal(0x0000, BinaryPrimitives.ReadUInt16LittleEndian(schr.Bytes.AsSpan(16, 2))); // Type = Object
+        Assert.Equal(0x0001, BinaryPrimitives.ReadUInt16LittleEndian(schr.Bytes.AsSpan(18, 2))); // Flags = Enabled
 
         var scda = Assert.Single(encoded.Subrecords, s => s.Signature == "SCDA");
         Assert.Equal(new byte[] { 0xAA, 0xBB }, scda.Bytes);

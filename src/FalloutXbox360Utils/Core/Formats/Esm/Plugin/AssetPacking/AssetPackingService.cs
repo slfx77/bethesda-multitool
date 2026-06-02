@@ -785,7 +785,7 @@ public sealed class AssetPackingService
         }
     }
 
-    private static long EstimateBsaSize(IReadOnlyList<(string Path, byte[] Data)> files)
+    private static long EstimateBsaSize(List<(string Path, byte[] Data)> files)
     {
         var unique = new Dictionary<(string Folder, string Name), byte[]>(files.Count);
         foreach (var (path, data) in files)

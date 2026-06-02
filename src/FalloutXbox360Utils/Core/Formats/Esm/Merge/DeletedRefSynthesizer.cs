@@ -16,10 +16,11 @@ public sealed record DeletedRefBundle
 }
 
 /// <summary>
-///     For cells in <see cref="CellMergeMode.HasTemporary" /> mode, computes the set difference
-///     between the master ESM's refs in a cell and the DMP's refs in the same cell, and emits a
-///     deletion-flag override (record header flag <c>0x00000020</c>) for each ref that's in the
-///     master but not in the DMP. This implements the "wipeout" semantics from the user's spec.
+///     For cells in <see cref="CellMergeMode.LoadedReplacement" /> mode, computes the set
+///     difference between the master ESM's refs in a cell and the DMP's refs in the same cell,
+///     and emits a deletion-flag override (record header flag <c>0x00000020</c>) for each ref
+///     that's in the master but not in the DMP and isn't kept by the preservation filter. This
+///     implements the "wipeout" semantics from the user's spec.
 ///     Per xEdit convention, a deleted override has a minimal subrecord stream — just the EDID
 ///     copied verbatim from the master record. The compressed flag is cleared on output.
 /// </summary>

@@ -359,23 +359,25 @@ public sealed class InfoEncoder : IRecordEncoder
         var refCount = (uint)(script?.ReferencedObjects.Count ?? 0);
 
         // Inline result scripts are Object-type (not quest, not magic-effect). Master ESM
-        // always sets IsCompiled=1 even when CompiledSize=0 — the engine reads this as
-        // "compiled form, no bytecode", a no-op. Setting IsCompiled=0 on an empty script
-        // tells the engine the script needs runtime compilation, which can trigger spurious
-        // behavior (observed: actors playing crucified idle every few seconds).
-        // Use SchemaDictionarySerializer directly because the values are computed from the
-        // result script's referenced-objects and compiled-data sizes, not model properties.
+        // always sets Flags=0x0001 (Enabled) even when CompiledSize=0 — the engine reads
+        // this as "compiled form, no bytecode", a no-op. Setting Flags=0 on an empty
+        // script tells the engine the script needs runtime compilation, which can trigger
+        // spurious behavior (observed: actors playing crucified idle every few seconds).
+        // SCHR layout per fopdoc canonical: Padding(4) + RefCount(uint32) + CompiledSize(uint32)
+        // + VariableCount(uint32) + Type(uint16) + Flags(uint16). Note INFO result scripts
+        // declare VariableCount=0 because they don't carry their own SLSD/SCVR list — any
+        // bytecode reference to local variables 0x0E etc. would dangle. Vanilla INFO result
+        // scripts confine themselves to global/object references; if a captured proto result
+        // script's bytecode does reference locals, that's a separate decoder issue.
         var schrSchema = SubrecordSchemaRegistry.GetSchema("SCHR", "", 20)
             ?? throw new InvalidOperationException("SCHR schema missing.");
         var schrValues = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
-            ["VariableCount"] = 0u,
-            ["RefObjectCount"] = refCount,
+            ["RefCount"] = refCount,
             ["CompiledSize"] = (uint)compiledSize,
-            ["LastVariableId"] = 0u,
-            ["IsQuestScript"] = (byte)0,
-            ["IsMagicEffectScript"] = (byte)0,
-            ["IsCompiled"] = (byte)1,
+            ["VariableCount"] = 0u,
+            ["Type"] = (ushort)0, // 0 = Object script
+            ["Flags"] = (ushort)0x0001, // 0x0001 = Enabled
         };
         subs.Add(new EncodedSubrecord("SCHR", SchemaDictionarySerializer.Serialize(schrSchema, schrValues)));
 

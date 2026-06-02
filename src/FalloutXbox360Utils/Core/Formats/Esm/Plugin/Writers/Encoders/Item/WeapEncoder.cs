@@ -33,8 +33,9 @@ public sealed class WeapEncoder : IRecordEncoder
         ["CriticalEffect"] = m => m.CriticalEffectFormId ?? 0u,
     };
 
-    // DNAM (204B) — see SubrecordItemSchemas WEAP DNAM. Many schema↔model name divergences;
-    // Projectile / ProjectileFormId is set by caller via `with { }` mutation before serialization.
+    // DNAM payload is 204 bytes long. See the WEAP DNAM entry in SubrecordItemSchemas for
+    // field layout. The schema and model use different names for many fields. The caller
+    // mutates Projectile / ProjectileFormId on the record before serialization.
     private static readonly Dictionary<string, Func<WeaponRecord, object?>> DnamExtractors = new(StringComparer.Ordinal)
     {
         ["WeaponType"] = m => (sbyte)m.WeaponType,
@@ -80,8 +81,8 @@ public sealed class WeapEncoder : IRecordEncoder
         // ModActionOne/Two/Three + ModActionOneValue/Two/Three not in model → zero-fill.
         ["PowerAttackOverrideAnim"] = m => m.PowerAttackOverrideAnim,
         ["StrengthRequirement"] = m => m.StrengthRequirement,
-        ["ModReloadClipAnimation"] = m => (sbyte)m.ModReloadClipAnimation,
-        ["ModFireAnimation"] = m => (sbyte)m.ModFireAnimation,
+        ["ModReloadClipAnimation"] = m => m.ModReloadClipAnimation,
+        ["ModFireAnimation"] = m => m.ModFireAnimation,
         ["AmmoRegenRate"] = m => m.AmmoRegenRate,
         ["KillImpulse"] = m => m.KillImpulse,
         // ModActionOneValueTwo/Two/Three not in model → zero-fill.

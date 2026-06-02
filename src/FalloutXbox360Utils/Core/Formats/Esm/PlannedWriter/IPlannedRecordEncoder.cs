@@ -25,7 +25,7 @@ public interface IPlannedRecordEncoder
 ///     Strongly-typed variant of <see cref="IPlannedRecordEncoder" /> for ergonomic
 ///     implementations.
 /// </summary>
-public interface IPlannedRecordEncoder<TModel> : IPlannedRecordEncoder where TModel : class
+public interface IPlannedRecordEncoder<in TModel> : IPlannedRecordEncoder where TModel : class
 {
     /// <summary>Strongly-typed Encode method.</summary>
     EncodedRecord Encode(TModel model, RecordPlan plan, PlanReferenceLookup refs);

@@ -73,6 +73,18 @@ public class CellEncoderTests
     }
 
     [Fact]
+    public void Encode_ClearsWaterFlagWhenXclwIsSuppressed()
+    {
+        var cell = new CellRecord { FormId = 0x42, EditorId = "DryExterior", Flags = 0x02, WaterHeight = 2048f };
+
+        var encoded = new CellEncoder().Encode(cell);
+
+        var data = Assert.Single(encoded.Subrecords, s => s.Signature == "DATA");
+        Assert.Equal(0, data.Bytes[0] & 0x02);
+        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "XCLW");
+    }
+
+    [Fact]
     public void Encode_OmitsExteriorXclwWithoutTerrainEvidence()
     {
         var cell = new CellRecord { FormId = 0x42, EditorId = "Exterior", Flags = 0x02, WaterHeight = 2048f };
@@ -131,10 +143,48 @@ public class CellEncoderTests
     }
 
     [Fact]
-    public void Encode_WarnsWhenEditorIdMissing()
+    public void Encode_WarnsWhenInteriorCellMissesEditorId()
     {
-        var cell = new CellRecord { FormId = 0x42, EditorId = null };
+        // Interior cells (Flags bit 0 set) need an EDID for editor/script navigation —
+        // missing one is a real problem the user should hear about.
+        var cell = new CellRecord { FormId = 0x42, EditorId = null, Flags = 0x01 };
+
         var encoded = new CellEncoder().Encode(cell);
-        Assert.NotEmpty(encoded.Warnings);
+
+        Assert.Contains(encoded.Warnings, w => w.Contains("has no EditorId"));
+    }
+
+    [Fact]
+    public void Encode_DoesNotWarnWhenExteriorCellMissesEditorId()
+    {
+        // Exterior cells are identified by XCLC grid coords, not editor names — a missing
+        // EDID is the norm in vanilla content (every wilderness cell). Warning would be noise.
+        var cell = new CellRecord
+        {
+            FormId = 0x42, EditorId = null, Flags = 0x00, GridX = 0, GridY = 0
+        };
+
+        var encoded = new CellEncoder().Encode(cell);
+
+        Assert.DoesNotContain(encoded.Warnings, w => w.Contains("has no EditorId"));
+    }
+
+    [Fact]
+    public void Encode_DoesNotEmitEdidWhenEditorIdIsNullOrEmpty()
+    {
+        // Worldspace persistent cells (block -1, sub-block -1 of each WRLD) have no EDID
+        // in master FalloutNV.esm. Appending an empty EDID subrecord via the merge engine
+        // crashes the engine's special-case handling of the persistent cell during havok
+        // cell-attach — confirmed across 13 master worldspaces in the v52-xex44 crash.
+        // The encoder must emit zero EDID subrecords when EditorId is null/empty so the
+        // merge engine retains master's "no EDID" shape.
+        var nullEdid = new CellRecord { FormId = 0x42, EditorId = null, Flags = 0x00 };
+        var emptyEdid = new CellRecord { FormId = 0x43, EditorId = "", Flags = 0x00 };
+
+        var enc1 = new CellEncoder().Encode(nullEdid);
+        var enc2 = new CellEncoder().Encode(emptyEdid);
+
+        Assert.DoesNotContain(enc1.Subrecords, s => s.Signature == "EDID");
+        Assert.DoesNotContain(enc2.Subrecords, s => s.Signature == "EDID");
     }
 }

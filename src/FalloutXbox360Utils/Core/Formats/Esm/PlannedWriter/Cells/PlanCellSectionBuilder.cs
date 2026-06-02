@@ -4,6 +4,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Planner;
 using FalloutXbox360Utils.Core.Formats.Esm.Planner.Cells;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Cell;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Nav;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Output;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
@@ -17,11 +18,10 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.PlannedWriter.Cells;
 ///     <see cref="CellGrupBuilder" />. Reusing the legacy framing means the GRUP nesting /
 ///     labels match byte-for-byte by construction.
 /// </summary>
-public sealed class PlanCellSectionBuilder
+public static class PlanCellSectionBuilder
 {
     private const uint CompressedFlag = 0x00040000u;
-
-    public byte[]? BuildCellSection(
+    public static byte[]? BuildCellSection(
         EmitPlan plan,
         IReadOnlyDictionary<uint, ParsedMainRecord> masterByFormId,
         PluginBuildOptions options)
@@ -36,10 +36,64 @@ public sealed class PlanCellSectionBuilder
             return null;
         }
 
+        SanitizeNavmNvexInBundles(bundles, plan, masterByFormId);
+
         var newWorldspaces = BuildNewWorldspaces(plan, options);
 
         return CellGrupBuilder.BuildCellSection(
             bundles, masterByFormId, newWorldspacesByDmpFormId: newWorldspaces);
+    }
+
+    /// <summary>
+    ///     Post-emission pass that drops NVEX entries pointing at NAVM FormIDs that aren't
+    ///     in the emitted set, and patches DATA.EdgeLinkCount to match the kept entries.
+    ///     Mirrors the legacy <c>PluginBuilder.SanitizeNavmNvexInBundles</c> hook.
+    ///     Without this the engine spams PATHFINDING errors every frame for plugin NAVMs
+    ///     whose NVEX cross-links don't resolve, eventually filling the log to GB.
+    /// </summary>
+    private static void SanitizeNavmNvexInBundles(
+        List<CellOverrideBundle> bundles,
+        EmitPlan plan,
+        IReadOnlyDictionary<uint, ParsedMainRecord> masterByFormId)
+    {
+        var validTargets = new HashSet<uint>(plan.NavmEntries.Length);
+        foreach (var entry in plan.NavmEntries)
+        {
+            validTargets.Add(entry.NavmFormId);
+        }
+        foreach (var (formId, record) in masterByFormId)
+        {
+            if (string.Equals(record.Header.Signature, "NAVM", StringComparison.Ordinal))
+            {
+                validTargets.Add(formId);
+            }
+        }
+
+        for (var b = 0; b < bundles.Count; b++)
+        {
+            var bundle = bundles[b];
+            var newTemp = new List<byte[]>(bundle.TemporaryChildRecords.Count);
+            var bundleChanged = false;
+            foreach (var rec in bundle.TemporaryChildRecords)
+            {
+                if (rec.Length < 4 || rec[0] != (byte)'N' || rec[1] != (byte)'A'
+                    || rec[2] != (byte)'V' || rec[3] != (byte)'M')
+                {
+                    newTemp.Add(rec);
+                    continue;
+                }
+                var sanitized = NavMeshByteRewriter.SanitizeNvexInNavmRecord(rec, validTargets, out _);
+                newTemp.Add(sanitized);
+                if (!ReferenceEquals(sanitized, rec))
+                {
+                    bundleChanged = true;
+                }
+            }
+            if (bundleChanged)
+            {
+                bundles[b] = bundle with { TemporaryChildRecords = newTemp };
+            }
+        }
     }
 
     /// <summary>
@@ -95,7 +149,7 @@ public sealed class PlanCellSectionBuilder
     ///     planned encoders so the output matches what legacy would produce for the same
     ///     inputs.
     /// </summary>
-    private static IReadOnlyList<CellOverrideBundle> ConvertCellsToBundles(
+    private static List<CellOverrideBundle> ConvertCellsToBundles(
         EmitPlan plan, PluginBuildOptions options)
     {
         var bundles = new List<CellOverrideBundle>(plan.CellsByFormId.Count);
@@ -158,7 +212,7 @@ public sealed class PlanCellSectionBuilder
             "CELL", cellPlan.CellFormId, flags, encoded.Subrecords);
     }
 
-    private static IReadOnlyList<byte[]> EncodeChildren(
+    private static List<byte[]> EncodeChildren(
         IReadOnlyList<RecordPlan> children,
         uint cellFormId,
         IReadOnlyDictionary<uint, uint> nvexRewrites,

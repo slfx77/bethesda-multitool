@@ -21,10 +21,9 @@ public sealed class CellSectionPlannerTests
     [Fact]
     public void Plan_With_One_Master_Cell_Produces_One_KeepMaster_Cell_Plan()
     {
-        var planner = new CellSectionPlanner();
         var masterContext = MakeInteriorContext(0x000ABCDE);
 
-        var result = planner.Plan(
+        var result = CellSectionPlanner.Plan(
             masterContexts: new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = masterContext },
             masterRecordsByFormId: new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = MakeCellMaster(0x000ABCDE) },
             dmpCells: [],
@@ -44,11 +43,10 @@ public sealed class CellSectionPlannerTests
     [Fact]
     public void Plan_With_Dmp_Override_Marks_Cell_Override()
     {
-        var planner = new CellSectionPlanner();
         var masterContext = MakeInteriorContext(0x000ABCDE);
         var dmpCell = new CellRecord { FormId = 0x000ABCDE, EditorId = "TestCell" };
 
-        var result = planner.Plan(
+        var result = CellSectionPlanner.Plan(
             masterContexts: new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = masterContext },
             masterRecordsByFormId: new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = MakeCellMaster(0x000ABCDE) },
             dmpCells: [dmpCell],
@@ -65,7 +63,6 @@ public sealed class CellSectionPlannerTests
     [Fact]
     public void Plan_With_Dmp_New_Cell_Synthesizes_Context()
     {
-        var planner = new CellSectionPlanner();
         var dmpCell = new CellRecord
         {
             FormId = 0x01000801,
@@ -75,7 +72,7 @@ public sealed class CellSectionPlannerTests
             GridY = -3,
         };
 
-        var result = planner.Plan(
+        var result = CellSectionPlanner.Plan(
             masterContexts: new Dictionary<uint, PcEsmCellContext>(),
             masterRecordsByFormId: new Dictionary<uint, ParsedMainRecord>(),
             dmpCells: [dmpCell],
@@ -94,11 +91,10 @@ public sealed class CellSectionPlannerTests
     [Fact]
     public void Plan_Builds_Worldspace_Plan_From_Cell_Catalog()
     {
-        var planner = new CellSectionPlanner();
         var exteriorContext = MakeExteriorContext(0x000ABCDE, worldspaceFormId: 0x0000003C);
         var master = MakeCellMaster(0x000ABCDE);
 
-        var result = planner.Plan(
+        var result = CellSectionPlanner.Plan(
             masterContexts: new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = exteriorContext },
             masterRecordsByFormId: new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = master },
             dmpCells: [],
@@ -116,7 +112,6 @@ public sealed class CellSectionPlannerTests
     [Fact]
     public void Persistent_Placed_Ref_Lands_In_Persistent_Bucket()
     {
-        var planner = new CellSectionPlanner();
         var persistentRef = new PlacedReference
         {
             FormId = 0xAA000001,
@@ -127,7 +122,7 @@ public sealed class CellSectionPlannerTests
         var dmpCell = new CellRecord { FormId = 0x000ABCDE, PlacedObjects = [persistentRef] };
         var masterContext = MakeInteriorContext(0x000ABCDE);
 
-        var result = planner.Plan(
+        var result = CellSectionPlanner.Plan(
             masterContexts: new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = masterContext },
             masterRecordsByFormId: new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = MakeCellMaster(0x000ABCDE) },
             dmpCells: [dmpCell],
@@ -147,7 +142,6 @@ public sealed class CellSectionPlannerTests
     [Fact]
     public void NonPersistent_Placed_Ref_Lands_In_Temporary_Bucket()
     {
-        var planner = new CellSectionPlanner();
         var transientRef = new PlacedReference
         {
             FormId = 0xAA000002,
@@ -158,7 +152,7 @@ public sealed class CellSectionPlannerTests
         var dmpCell = new CellRecord { FormId = 0x000ABCDE, PlacedObjects = [transientRef] };
         var masterContext = MakeInteriorContext(0x000ABCDE);
 
-        var result = planner.Plan(
+        var result = CellSectionPlanner.Plan(
             masterContexts: new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = masterContext },
             masterRecordsByFormId: new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = MakeCellMaster(0x000ABCDE) },
             dmpCells: [dmpCell],
@@ -175,7 +169,6 @@ public sealed class CellSectionPlannerTests
     [Fact]
     public void Master_Placed_Ref_Gets_Override_Disposition()
     {
-        var planner = new CellSectionPlanner();
         var masterRef = new PlacedReference
         {
             FormId = 0x000A0001, // Master-resident.
@@ -184,7 +177,7 @@ public sealed class CellSectionPlannerTests
         };
         var dmpCell = new CellRecord { FormId = 0x000ABCDE, PlacedObjects = [masterRef] };
 
-        var result = planner.Plan(
+        var result = CellSectionPlanner.Plan(
             masterContexts: new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = MakeInteriorContext(0x000ABCDE) },
             masterRecordsByFormId: new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = MakeCellMaster(0x000ABCDE) },
             dmpCells: [dmpCell],
@@ -202,7 +195,6 @@ public sealed class CellSectionPlannerTests
     [Fact]
     public void New_Navm_Lands_In_Temporary_Bucket()
     {
-        var planner = new CellSectionPlanner();
         var navm = new NavMeshRecord
         {
             FormId = 0xAA000001,
@@ -210,7 +202,7 @@ public sealed class CellSectionPlannerTests
             RawSubrecords = [new NavMeshSubrecord("DATA", [1, 2, 3, 4])],
         };
 
-        var result = planner.Plan(
+        var result = CellSectionPlanner.Plan(
             masterContexts: new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = MakeInteriorContext(0x000ABCDE) },
             masterRecordsByFormId: new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = MakeCellMaster(0x000ABCDE) },
             dmpCells: [new CellRecord { FormId = 0x000ABCDE }],

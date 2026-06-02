@@ -15,31 +15,20 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.PlannedWriter;
 ///     The replay is pure — it never consults <c>SubrecordMergePolicy</c>, only the planner's
 ///     decision array. Policy lookups belong in phase B (Disposition).
 /// </remarks>
-public sealed class SubrecordReplay
+public static class SubrecordReplay
 {
     /// <summary>
     ///     Replay one override record. Throws <see cref="NotImplementedException" /> until
     ///     a tier needs it; Tier 0 ships the type signature only.
     /// </summary>
-    public IReadOnlyList<EncodedSubrecord> Replay(
+    public static IReadOnlyList<EncodedSubrecord> Replay(
         ParsedMainRecord master,
         EncodedRecord encoded,
         IReadOnlyList<SubrecordDecision> decisions)
     {
-        if (master is null)
-        {
-            throw new ArgumentNullException(nameof(master));
-        }
-
-        if (encoded is null)
-        {
-            throw new ArgumentNullException(nameof(encoded));
-        }
-
-        if (decisions is null)
-        {
-            throw new ArgumentNullException(nameof(decisions));
-        }
+        ArgumentNullException.ThrowIfNull(master);
+        ArgumentNullException.ThrowIfNull(encoded);
+        ArgumentNullException.ThrowIfNull(decisions);
 
         throw new NotImplementedException(
             "SubrecordReplay is stubbed until Tier 3 introduces real override records through the planned writer.");

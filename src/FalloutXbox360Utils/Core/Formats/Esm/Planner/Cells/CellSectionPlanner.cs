@@ -23,7 +23,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Planner.Cells;
 /// </remarks>
 public sealed class CellSectionPlanner
 {
-    public CellSectionResult Plan(
+    public static CellSectionResult Plan(
         IReadOnlyDictionary<uint, PcEsmCellContext> masterContexts,
         IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId,
         IReadOnlyList<CellRecord> dmpCells,

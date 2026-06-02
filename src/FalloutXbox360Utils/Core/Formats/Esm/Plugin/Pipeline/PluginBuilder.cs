@@ -611,9 +611,9 @@ public sealed class PluginBuilder
             // Required to prevent FalloutNV+0x0069E09A null-deref during plugin load (NavMesh
             // walked by engine -> lookup in NavMeshInfoMap -> not found -> crash). When CELL
             // is planner-routed, BuildCellOverrideBundles still runs (its result isn't used,
-            // but it walks the same DMP records) and may populate `newNavmEntries` partially;
-            // those entries are stale because the planner allocated different FormIDs. Use
-            // _emitPlan.NavmEntries when CELL is planner-routed, the legacy list otherwise.
+            // but it walks the same DMP records) and may populate the legacy list partially.
+            // Those entries are stale because the planner allocated different FormIDs. Use
+            // the planner's NavmEntries when CELL is planner-routed, the legacy list otherwise.
             var cellPlannerRouted = inputs.Options.PlannerEnabledRecordTypes.Contains("CELL");
             var naviSource = cellPlannerRouted && _emitPlan is not null
                 ? _emitPlan.NavmEntries
@@ -2119,6 +2119,13 @@ public sealed class PluginBuilder
         mergedCells = RepartitionPlacementsByMasterParent(mergedCells, pcRecordsByFormId,
             refToCell, cellContexts, options);
 
+        // Plan 1.4: pre-populate cell.LandVisualData with master-ESM LAND fallback at the
+        // same (worldspace, grid) so the downstream cell loop reads the merged value
+        // directly. Replaces the in-loop TryExtractMasterLandVisualData lookup and lets
+        // any GUI/CLI consumer that loads master ESM see the same enriched model.
+        mergedCells = EsmLandEnricher.EnrichCellsWithMasterEsmLandFallback(
+            mergedCells.ToList(), _masterExteriorCellByGrid, landsByCell, pcRecordsByFormId);
+
         // Phase A — index DMP-captured NAVMs by their parent cell FormID and allocate
         // emitted FormIDs upfront. Allocating ahead of the per-cell loop guarantees that
         // NVEX cross-navmesh links (which reference other NAVMs) can be rewritten to
@@ -2866,14 +2873,17 @@ public sealed class PluginBuilder
                 }
 
                 ParsedMainRecord? masterLandRecord = null;
-                LandVisualData? masterLandVisualData = null;
                 LandHeightmap? masterLandHeightmap = null;
                 if (masterLandFormId.HasValue)
                 {
                     pcRecordsByFormId.TryGetValue(masterLandFormId.Value, out masterLandRecord);
                     if (masterLandRecord is not null)
                     {
-                        masterLandVisualData = TryExtractMasterLandVisualData(masterLandRecord);
+                        // Plan 1.4: master visual data is pre-merged into dmpCell.LandVisualData
+                        // by EsmLandEnricher.EnrichCellsWithMasterEsmLandFallback above; only
+                        // the heightmap fallback still flows through this call site (flat-
+                        // override rejection in LandOverrideBuilder needs the master baseline
+                        // separately).
                         masterLandHeightmap = TryExtractMasterLandHeightmap(masterLandRecord);
                     }
                 }
@@ -2886,7 +2896,7 @@ public sealed class PluginBuilder
                         stats,
                         out var landBytes,
                         masterLandFormId,
-                        masterLandVisualData,
+                        masterVisualData: null,
                         masterLandHeightmap))
                 {
                     temporaryPrefixRecords.Add(landBytes);
@@ -3660,25 +3670,6 @@ public sealed class PluginBuilder
                 TextureLayers = textureLayers ?? visualData.TextureLayers
             }
             : visualData;
-    }
-
-    private static LandVisualData? TryExtractMasterLandVisualData(ParsedMainRecord masterLandRecord)
-    {
-        if (masterLandRecord.Header.Signature != "LAND")
-        {
-            return null;
-        }
-
-        var recordBytes = CellGrupBuilder.ReconstructRecordBytes(masterLandRecord);
-        if (recordBytes.Length <= 24)
-        {
-            return null;
-        }
-
-        var dataSize = recordBytes.Length - 24;
-        var data = new byte[dataSize];
-        Buffer.BlockCopy(recordBytes, 24, data, 0, dataSize);
-        return LandSubrecordParser.ParseVisualOnly(data, dataSize, isBigEndian: false);
     }
 
     private static LandHeightmap? TryExtractMasterLandHeightmap(ParsedMainRecord masterLandRecord)

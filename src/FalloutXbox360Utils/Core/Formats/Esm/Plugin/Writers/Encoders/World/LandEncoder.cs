@@ -77,7 +77,7 @@ public static class LandEncoder
         }
         subs.Add(new EncodedSubrecord("DATA", new byte[] { dataFlags, 0, 0, 0 }));
 
-        // VNML — prefer the runtime mesh's captured normals when surfaced on visualData;
+        // VNML — prefer the runtime mesh's captured normals when surfaced on visualData,
         // otherwise compute from the reconstructed height grid. Runtime VNML wins because it
         // reflects the engine's live shading data, which can diverge from height-derived
         // gradients on cells where the runtime mesh was tessellated differently from a

@@ -22,10 +22,7 @@ public sealed class DispositionEngine
 
     public DispositionEngine(IEnumerable<IDispositionPolicy> policies)
     {
-        if (policies is null)
-        {
-            throw new ArgumentNullException(nameof(policies));
-        }
+        ArgumentNullException.ThrowIfNull(policies);
 
         foreach (var policy in policies)
         {

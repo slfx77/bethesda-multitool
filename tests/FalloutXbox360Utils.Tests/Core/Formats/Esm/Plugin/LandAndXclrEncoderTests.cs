@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Nav;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 using Xunit;
@@ -34,6 +35,24 @@ public class LandAndXclrEncoderTests
         Assert.Equal("DATA", subs[0].Signature);
         Assert.Equal("VNML", subs[1].Signature);
         Assert.Equal("VHGT", subs[2].Signature);
+    }
+
+    [Fact]
+    public void LandOverrideBuilder_RejectsFlatCandidateWhenMasterIsNonFlat()
+    {
+        var candidate = ExactHeightmap(_ => 128f);
+        var master = ExactHeightmap((x, y) => 128f + x + y);
+
+        Assert.True(LandOverrideBuilder.ShouldRejectFlatOverride(candidate, master));
+    }
+
+    [Fact]
+    public void LandOverrideBuilder_KeepsFlatCandidateWhenMasterIsAlsoFlat()
+    {
+        var candidate = ExactHeightmap(_ => 128f);
+        var master = ExactHeightmap(_ => 256f);
+
+        Assert.False(LandOverrideBuilder.ShouldRejectFlatOverride(candidate, master));
     }
 
     [Fact]
@@ -412,5 +431,29 @@ public class LandAndXclrEncoderTests
         Assert.True(xclwIdx >= 0, "XCLW missing");
         Assert.True(xclrIdx >= 0, "XCLR missing");
         Assert.True(xclwIdx < xclrIdx, "XCLW must come before XCLR");
+    }
+
+    private static LandHeightmap ExactHeightmap(Func<int, int, float> valueFactory)
+    {
+        var heights = new float[33, 33];
+        for (var y = 0; y < 33; y++)
+        {
+            for (var x = 0; x < 33; x++)
+            {
+                heights[y, x] = valueFactory(x, y);
+            }
+        }
+
+        return new LandHeightmap
+        {
+            HeightOffset = 0f,
+            HeightDeltas = new sbyte[33 * 33],
+            ExactHeights = heights
+        };
+    }
+
+    private static LandHeightmap ExactHeightmap(Func<int, float> valueFactory)
+    {
+        return ExactHeightmap((x, _) => valueFactory(x));
     }
 }

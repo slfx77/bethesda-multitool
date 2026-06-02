@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
@@ -75,6 +76,32 @@ public class PlacedRefEncoderTests
         Assert.Equal("XSCL", encoded.Subrecords[0].Signature);
         Assert.Equal(2.5f, BinaryPrimitives.ReadSingleLittleEndian(encoded.Subrecords[0].Bytes));
         Assert.Equal("DATA", encoded.Subrecords[1].Signature);
+    }
+
+    [Fact]
+    public void RefrEncoder_OverrideMapMarker_EmitsMarkerDeltaSubrecordsWithoutFnam()
+    {
+        var refr = new PlacedReference
+        {
+            FormId = 1,
+            BaseFormId = 0x10,
+            IsMapMarker = true,
+            MarkerName = "Beta Primm",
+            MarkerType = MapMarkerType.City,
+            X = -12.0f,
+            Y = 34.0f,
+            Z = 56.0f,
+            Scale = 1.0f
+        };
+
+        var encoded = new RefrEncoder().Encode(refr);
+
+        Assert.Contains(encoded.Subrecords, s => s.Signature == "XMRK");
+        Assert.Contains(encoded.Subrecords, s => s.Signature == "FULL");
+        var tnam = Assert.Single(encoded.Subrecords, s => s.Signature == "TNAM");
+        Assert.Equal((byte)MapMarkerType.City, tnam.Bytes[0]);
+        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "FNAM");
+        Assert.Equal("DATA", encoded.Subrecords[^1].Signature);
     }
 
     [Fact]

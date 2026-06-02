@@ -27,16 +27,35 @@ internal sealed class LandOverrideBuilder(
         landBytes = [];
 
         var heightmap = dmpCell.Heightmap;
+        var heightmapSource = heightmap is null ? null : "captured LAND";
         if (heightmap is null && dmpCell.RuntimeTerrainMesh is not null)
         {
             try
             {
                 heightmap = RuntimeTerrainHeightmapEncoder.Encode(dmpCell.RuntimeTerrainMesh);
+                heightmapSource = "runtime terrain mesh";
             }
             catch
             {
                 heightmap = null;
+                heightmapSource = null;
             }
+        }
+
+        if (heightmap is not null && ShouldRejectFlatOverride(heightmap, fallbackHeightmap))
+        {
+            if (options.VerboseDecisions)
+            {
+                var candidateRange = CalculateHeightRange(heightmap);
+                var fallbackRange = CalculateHeightRange(fallbackHeightmap!);
+                sink.Decision("Merging cell children",
+                    $"Rejected effectively-flat {heightmapSource ?? "DMP"} LAND for exterior cell " +
+                    $"0x{dmpCell.FormId:X8} (range {candidateRange.Range:F2}) and kept master " +
+                    $"LAND range {fallbackRange.Range:F2}.",
+                    "LAND", existingLandFormId ?? dmpCell.FormId, "land.flat-rejected");
+            }
+
+            heightmap = fallbackHeightmap;
         }
 
         if (heightmap is null)
@@ -104,5 +123,43 @@ internal sealed class LandOverrideBuilder(
         }
 
         return true;
+    }
+
+    internal static bool ShouldRejectFlatOverride(LandHeightmap candidate, LandHeightmap? fallbackHeightmap)
+    {
+        return fallbackHeightmap is not null
+               && IsEffectivelyFlat(candidate)
+               && !IsEffectivelyFlat(fallbackHeightmap);
+    }
+
+    internal static bool IsEffectivelyFlat(LandHeightmap heightmap, float tolerance = 1.0f)
+    {
+        var range = CalculateHeightRange(heightmap);
+        return range.Range <= tolerance;
+    }
+
+    private static (float Min, float Max, float Range) CalculateHeightRange(LandHeightmap heightmap)
+    {
+        var heights = heightmap.CalculateHeights();
+        var min = float.PositiveInfinity;
+        var max = float.NegativeInfinity;
+        for (var y = 0; y < heights.GetLength(0); y++)
+        {
+            for (var x = 0; x < heights.GetLength(1); x++)
+            {
+                var value = heights[y, x];
+                if (value < min)
+                {
+                    min = value;
+                }
+
+                if (value > max)
+                {
+                    max = value;
+                }
+            }
+        }
+
+        return (min, max, max - min);
     }
 }

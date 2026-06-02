@@ -161,9 +161,9 @@ internal static class GreetingEntrySynthesizer
     private static List<uint> SelectEntryTopics(
         uint speakerId,
         uint questId,
-        IReadOnlyDictionary<(uint Speaker, uint Quest), HashSet<uint>> candidateTopicsByPair,
-        IReadOnlyDictionary<(uint Speaker, uint Quest), HashSet<uint>> incomingTopicsByPair,
-        IReadOnlyDictionary<uint, DialogTopicRecord> topicBySource,
+        Dictionary<(uint Speaker, uint Quest), HashSet<uint>> candidateTopicsByPair,
+        Dictionary<(uint Speaker, uint Quest), HashSet<uint>> incomingTopicsByPair,
+        Dictionary<uint, DialogTopicRecord> topicBySource,
         IReadOnlyDictionary<uint, uint> dialFormIdMap)
     {
         var pair = (speakerId, questId);

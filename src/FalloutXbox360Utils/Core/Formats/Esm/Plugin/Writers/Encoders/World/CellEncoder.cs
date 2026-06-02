@@ -32,13 +32,25 @@ public sealed class CellEncoder : IRecordEncoder
         var subs = new List<EncodedSubrecord>();
         var warnings = new List<string>();
 
-        if (string.IsNullOrEmpty(cell.EditorId))
+        // Interior cells need an EDID for editor/script navigation; exterior cells are
+        // identified by XCLC grid coords and legitimately have no EDID, so the missing-EDID
+        // warning would be pure noise on exteriors.
+        if (string.IsNullOrEmpty(cell.EditorId) && cell.IsInterior)
         {
-            warnings.Add($"New CELL 0x{cell.FormId:X8} has no EditorId — emitting empty EDID.");
+            warnings.Add($"New interior CELL 0x{cell.FormId:X8} has no EditorId — emitting empty EDID.");
         }
 
-        // EDID — required.
-        subs.Add(EncodeStringSubrecord("EDID", cell.EditorId ?? string.Empty));
+        // EDID — emit only when we have a non-empty value. Worldspace persistent cells
+        // (block -1, sub-block -1 of each worldspace) legitimately have no EDID in master.
+        // Appending an empty EDID subrecord to a master cell that has none confuses the
+        // engine's special-case handling of the persistent cell and crashes havok during
+        // cell-attach across every modified worldspace (the v52-xex44 multi-worldspace
+        // crash). When EditorId is null/empty, the merge engine retains master's "no EDID"
+        // shape. When EditorId is set, our value overrides master's first EDID slot.
+        if (!string.IsNullOrEmpty(cell.EditorId))
+        {
+            subs.Add(EncodeStringSubrecord("EDID", cell.EditorId));
+        }
 
         if (!string.IsNullOrEmpty(cell.FullName))
         {
@@ -49,9 +61,15 @@ public sealed class CellEncoder : IRecordEncoder
         // The model's IsInterior is computed from Flags bit 0 already, but we sanitize:
         // if cell.IsInterior, force bit 0 on; else force it off.
         var rawFlags = cell.Flags;
+        var emitWater = ShouldEmitCellWater(cell, warnings);
         var dataFlags = cell.IsInterior
             ? (byte)(rawFlags | 0x01)
             : (byte)(rawFlags & ~0x01);
+        if (!emitWater)
+        {
+            dataFlags = (byte)(dataFlags & ~0x02);
+        }
+
         subs.Add(new EncodedSubrecord("DATA", [dataFlags]));
 
         // XCLC — exterior cells only. 12 bytes: int32 X, int32 Y, uint32 ForceHideLand=0.
@@ -82,7 +100,7 @@ public sealed class CellEncoder : IRecordEncoder
             }
         }
 
-        if (ShouldEmitCellWater(cell, warnings))
+        if (emitWater)
         {
             var xclw = new byte[4];
             SubrecordEncoder.WriteFloat(xclw, 0, cell.WaterHeight.GetValueOrDefault());

@@ -18,7 +18,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Planner.Cells;
 ///     path is bypassed, so the planner runs union itself. Idempotent on already-unioned
 ///     input (test fixtures).
 /// </remarks>
-public sealed class CellCatalog
+public static class CellCatalog
 {
     /// <summary>
     ///     Build the catalog. The output preserves master discovery order, then appends

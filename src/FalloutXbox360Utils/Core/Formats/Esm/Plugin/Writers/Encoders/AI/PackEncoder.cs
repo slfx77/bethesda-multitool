@@ -41,7 +41,7 @@ public sealed class PackEncoder : IRecordEncoder
         ["Month"] = m => (byte)m.Month,
         ["DayOfWeek"] = m => (byte)m.DayOfWeek,
         ["Date"] = m => (byte)m.Date,
-        ["Time"] = m => (sbyte)m.Time,
+        ["Time"] = m => m.Time,
         ["Duration"] = m => m.Duration,
     };
 

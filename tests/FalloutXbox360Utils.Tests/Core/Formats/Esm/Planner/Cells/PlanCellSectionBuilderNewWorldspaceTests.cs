@@ -101,8 +101,7 @@ public sealed class PlanCellSectionBuilderNewWorldspaceTests
         };
 
         var options = new PluginBuildOptions { CompressRecords = false };
-        var builder = new PlanCellSectionBuilder();
-        var plannerBytes = builder.BuildCellSection(plan, new Dictionary<uint, ParsedMainRecord>(), options);
+        var plannerBytes = PlanCellSectionBuilder.BuildCellSection(plan, new Dictionary<uint, ParsedMainRecord>(), options);
 
         // Reconstruct the legacy path: encode the same CELL and WRLD via the primitive
         // encoders and feed them into CellGrupBuilder.BuildCellSection.

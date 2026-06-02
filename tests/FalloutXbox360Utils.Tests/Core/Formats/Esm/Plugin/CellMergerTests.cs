@@ -25,7 +25,7 @@ public class CellMergerTests
     }
 
     [Fact]
-    public void Classify_ContainsTemporaryRef_ReturnsHasTemporary()
+    public void Classify_ContainsAnyOverrideableTemporaryRef_ReturnsLoadedReplacement()
     {
         var dmpCell = new CellRecord
         {
@@ -36,44 +36,40 @@ public class CellMergerTests
             ]
         };
 
-        Assert.Equal(CellMergeMode.HasTemporary, CellMerger.Classify(dmpCell, PcRefs));
+        Assert.Equal(CellMergeMode.LoadedReplacement, CellMerger.Classify(dmpCell, PcRefs));
     }
 
     [Fact]
-    public void Classify_ContainsLoadedPlacement_ReturnsLoadedReplacement()
+    public void Classify_SingleNonPersistentRef_StillFlipsToReplacement()
     {
+        // Binary policy: even a single non-persistent ref in the DMP capture is treated as
+        // authoritative for the cell's temporary content. There is no threshold gate.
+        var dmpCell = new CellRecord
+        {
+            FormId = 0xCC,
+            PlacedObjects = [
+                new PlacedReference { FormId = 0x200, IsPersistent = false }
+            ]
+        };
+
+        Assert.Equal(CellMergeMode.LoadedReplacement, CellMerger.Classify(dmpCell, PcRefs));
+    }
+
+    [Fact]
+    public void Classify_NonPersistentRefNotInMaster_DoesNotFlipReplacement()
+    {
+        // A non-persistent ref whose FormID isn't in master can't count as "overrideable" —
+        // there's no master ref to replace, so the cell stays in PersistentOnly (or Skip).
         var dmpCell = new CellRecord
         {
             FormId = 0xCC,
             PlacedObjects = [
                 new PlacedReference { FormId = 0x100, IsPersistent = true },
-                new PlacedReference { FormId = 0xDEAD, IsPersistent = false, BaseFormId = 0x300 }
+                new PlacedReference { FormId = 0xDEAD, IsPersistent = false }
             ]
         };
 
-        Assert.Equal(
-            CellMergeMode.LoadedReplacement,
-            CellMerger.Classify(dmpCell, PcRefs, placed => placed.BaseFormId == 0x300));
-    }
-
-    [Fact]
-    public void Classify_LoadedPlacementBelowThreshold_ReturnsSparseTemporaryMerge()
-    {
-        var dmpCell = new CellRecord
-        {
-            FormId = 0xCC,
-            PlacedObjects = [
-                new PlacedReference { FormId = 0x200, IsPersistent = false, BaseFormId = 0x300 }
-            ]
-        };
-
-        Assert.Equal(
-            CellMergeMode.HasTemporary,
-            CellMerger.Classify(
-                dmpCell,
-                PcRefs,
-                placed => placed.BaseFormId == 0x300,
-                loadedPlacementThreshold: 2));
+        Assert.Equal(CellMergeMode.PersistentOnly, CellMerger.Classify(dmpCell, PcRefs));
     }
 
     [Fact]
@@ -110,24 +106,22 @@ public class CellMergerTests
     }
 
     [Fact]
-    public void SelectOverrideRefs_HasTemporary_IncludesBothPersistentAndTemporary()
+    public void SelectOverrideRefs_PersistentOnly_IncludesMapMarkerOverride()
     {
         var dmpCell = new CellRecord
         {
             FormId = 0xCC,
             PlacedObjects = [
                 new PlacedReference { FormId = 0x100, IsPersistent = true },
-                new PlacedReference { FormId = 0x200, IsPersistent = false },
-                new PlacedReference { FormId = 0xDEAD, IsPersistent = false } // not in PC ESM
+                new PlacedReference { FormId = 0x200, IsPersistent = false, IsMapMarker = true }
             ]
         };
 
-        var refs = CellMerger.SelectOverrideRefs(dmpCell, CellMergeMode.HasTemporary, PcRefs).ToList();
+        var refs = CellMerger.SelectOverrideRefs(dmpCell, CellMergeMode.PersistentOnly, PcRefs).ToList();
 
         Assert.Equal(2, refs.Count);
         Assert.Contains(refs, r => r.FormId == 0x100);
         Assert.Contains(refs, r => r.FormId == 0x200);
-        Assert.DoesNotContain(refs, r => r.FormId == 0xDEAD);
     }
 
     [Fact]

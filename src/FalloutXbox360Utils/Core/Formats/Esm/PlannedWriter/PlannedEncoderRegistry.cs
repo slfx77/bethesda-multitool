@@ -13,10 +13,7 @@ public sealed class PlannedEncoderRegistry
 
     public PlannedEncoderRegistry(IEnumerable<IPlannedRecordEncoder> encoders)
     {
-        if (encoders is null)
-        {
-            throw new ArgumentNullException(nameof(encoders));
-        }
+        ArgumentNullException.ThrowIfNull(encoders);
 
         foreach (var encoder in encoders)
         {

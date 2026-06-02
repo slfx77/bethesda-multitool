@@ -10,8 +10,6 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Output;
 
 internal sealed class EspAssembler(RecordEncoderRegistry encoderRegistry)
 {
-    private readonly PlanCellSectionBuilder _planCellSectionBuilder = new();
-
     /// <summary>
     ///     Concatenates TES4, emitted top-level GRUPs, and the cell hierarchy into final ESP bytes.
     ///     The optional <paramref name="emitPlan" /> activates the planner-owned cell pipeline
@@ -70,7 +68,7 @@ internal sealed class EspAssembler(RecordEncoderRegistry encoderRegistry)
         // cell tree is structurally atomic — so a single sentinel ("CELL") activates
         // the whole pipeline.
         var cellSectionBytes = options.PlannerEnabledRecordTypes.Contains("CELL") && emitPlan is not null
-            ? _planCellSectionBuilder.BuildCellSection(emitPlan, pcRecordsByFormId, options)
+            ? PlanCellSectionBuilder.BuildCellSection(emitPlan, pcRecordsByFormId, options)
             : CellGrupBuilder.BuildCellSection(bundles, pcRecordsByFormId, newWorldspacesByDmpFormId);
 
         var nextObjectId = allocator.HasAllocations ? allocator.NextObjectId : 0x800u;

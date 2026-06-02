@@ -25,9 +25,7 @@ public sealed class PlanCellSectionBuilderParityTests
     public void Empty_Plan_Returns_Null()
     {
         var plan = MakeEmptyPlan();
-        var builder = new PlanCellSectionBuilder();
-
-        var bytes = builder.BuildCellSection(
+        var bytes = PlanCellSectionBuilder.BuildCellSection(
             plan, new Dictionary<uint, ParsedMainRecord>(), new PluginBuildOptions());
 
         Assert.Null(bytes);
@@ -61,8 +59,7 @@ public sealed class PlanCellSectionBuilderParityTests
             CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(0x000ABCDE, cellPlan),
         };
 
-        var builder = new PlanCellSectionBuilder();
-        var plannerBytes = builder.BuildCellSection(
+        var plannerBytes = PlanCellSectionBuilder.BuildCellSection(
             plan, new Dictionary<uint, ParsedMainRecord>(), new PluginBuildOptions());
 
         var legacyBundle = new CellOverrideBundle
@@ -125,8 +122,7 @@ public sealed class PlanCellSectionBuilderParityTests
             CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(0x000ABCDE, cellPlan),
         };
 
-        var builder = new PlanCellSectionBuilder();
-        var plannerBytes = builder.BuildCellSection(
+        var plannerBytes = PlanCellSectionBuilder.BuildCellSection(
             plan, new Dictionary<uint, ParsedMainRecord>(), new PluginBuildOptions());
 
         // Build the equivalent legacy child bytes via the same primitive path the planner uses.
@@ -192,8 +188,7 @@ public sealed class PlanCellSectionBuilderParityTests
             CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(0x01000801, cellPlan),
         };
 
-        var builder = new PlanCellSectionBuilder();
-        var plannerBytes = builder.BuildCellSection(
+        var plannerBytes = PlanCellSectionBuilder.BuildCellSection(
             plan, new Dictionary<uint, ParsedMainRecord>(), new PluginBuildOptions { CompressRecords = false });
 
         // Build the equivalent legacy bytes by encoding the CELL through the same primitives.

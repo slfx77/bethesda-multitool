@@ -66,13 +66,23 @@ public sealed class QustEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("FULL", quest.FullName));
         }
 
-        // DATA (8 bytes): byte Flags(0) + byte Priority(1) + pad(2..3) + float QuestDelay.
-        // Single-occurrence; safe to replace.
-        subs.Add(SchemaModelSerializer.SerializeSubrecord("DATA", "QUST", 8, quest, DataExtractors));
-
-        // If only DATA was emitted (no FULL mutation), fall through to empty so the
-        // merge engine retains the master's QUST verbatim — DATA flags rarely differ.
-        if (subs.Count == 1)
+        // DATA emission is deliberately omitted from the override path. The byte
+        // contains:
+        //   - byte 0: Flags — the runtime TESQuest struct co-locates ESM-canonical bits
+        //     (StartGameEnabled 0x01, AllowRepeatedConversationTopics 0x04, AllowRepeated
+        //     Stages 0x08) with engine-set state bits (Started, Active, Completed). The
+        //     DMP capture sees the engine's CURRENT runtime state, not the authoring
+        //     intent — emitting it as an override either (a) wipes master's StartGame
+        //     Enabled bit (Doc Mitchell's VMS01 intro never auto-starts; player stuck
+        //     in bed) or (b) carries the runtime Started bit (Sunny Smiles' "Back in
+        //     the Saddle" appears already in progress before the player meets her).
+        //     Both observed in the 2026-05-27 xex44 capture.
+        //   - byte 1: Priority — authoring field; master's value is canonical.
+        //   - bytes 4..7: QuestDelay — runtime can reset this between save loads.
+        // Letting the merge engine retain master's DATA verbatim is strictly safer
+        // than emitting a runtime snapshot. If a proto build legitimately needs a
+        // different DATA byte, route it through EncodeNew or a dedicated diagnostic.
+        if (subs.Count == 0)
         {
             return new EncodedRecord { Subrecords = [], Warnings = [] };
         }
