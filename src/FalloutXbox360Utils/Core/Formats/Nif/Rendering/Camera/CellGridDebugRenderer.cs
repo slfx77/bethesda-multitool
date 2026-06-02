@@ -18,10 +18,9 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
 ///     frustum culling work end-to-end before Phases 2–3 add terrain + REFR meshes.
 ///     <para>
 ///         All 4 corner vertices per cell are uploaded once at <see cref="LoadData" /> in
-///         line-list pair order (8 vertices per cell). Per frame, the renderer iterates
-///         frustum-visible cells and issues one <c>Draw(8, startVertex)</c> per cell. For
-///         the densest worldspace (~30k cells) this is ~1k draws/frame typical, well within
-///         budget for D3D11.
+///         line-list pair order (8 vertices per cell). Per frame, the renderer issues one
+///         draw for the whole grid and lets the GPU clip off-screen lines; this keeps the
+///         debug layer cheap even on very dense worldspaces.
 ///     </para>
 /// </summary>
 internal sealed class CellGridDebugRenderer : IDisposable
@@ -38,13 +37,20 @@ internal sealed class CellGridDebugRenderer : IDisposable
     private readonly ID3D11BlendState _blendState;
 
     private ID3D11Buffer? _vertexBuffer;
+    private readonly List<(int gx, int gy)> _cells = [];
+    private readonly List<(int gx, int gy)> _visibleKeyScratch = [];
+    private readonly List<global::FalloutXbox360Utils.WorldSpatialCell> _visibleCellScratch = [];
+    private Vector3[] _vertexScratch = [];
+    private GCHandle _vertexScratchHandle;
+    private int _vertexCellCapacity;
     private int _cellCount;
-    private Dictionary<(int gx, int gy), int>? _cellStartVertex;
+    private global::FalloutXbox360Utils.WorldSpatialIndex? _spatialIndex;
 
     // Single-element array reused for UpdateSubresource each frame to avoid a per-frame
     // allocation. Small win on its own but part of a broader pass that keeps the render
     // loop allocation-free at steady state.
     private readonly CellGridUniforms[] _uniformsScratch = new CellGridUniforms[1];
+    private GCHandle _uniformsScratchHandle;
 
     public CellGridDebugRenderer(GpuDevice gpu)
     {
@@ -106,11 +112,15 @@ internal sealed class CellGridDebugRenderer : IDisposable
             RenderTargetWriteMask = ColorWriteEnable.All
         };
         _blendState = gpu.Device.CreateBlendState(blendDesc);
+
+        _uniformsScratchHandle = GCHandle.Alloc(_uniformsScratch, GCHandleType.Pinned);
     }
 
     public void Dispose()
     {
         _vertexBuffer?.Dispose();
+        if (_vertexScratchHandle.IsAllocated) _vertexScratchHandle.Free();
+        if (_uniformsScratchHandle.IsAllocated) _uniformsScratchHandle.Free();
         _blendState.Dispose();
         _depthState.Dispose();
         _rasterizer.Dispose();
@@ -128,54 +138,50 @@ internal sealed class CellGridDebugRenderer : IDisposable
     ///     LoadData on the host control; the buffer is reused across frames.
     /// </summary>
     public void LoadData(IEnumerable<CellRecord> exteriorCells)
+        => LoadData(exteriorCells, spatialIndex: null);
+
+    public void LoadData(
+        IEnumerable<CellRecord> exteriorCells,
+        global::FalloutXbox360Utils.WorldSpatialIndex? spatialIndex)
     {
         _vertexBuffer?.Dispose();
         _vertexBuffer = null;
-        _cellStartVertex = new Dictionary<(int, int), int>();
+        if (_vertexScratchHandle.IsAllocated) _vertexScratchHandle.Free();
+        _vertexScratch = [];
+        _vertexCellCapacity = 0;
         _cellCount = 0;
+        _spatialIndex = spatialIndex;
+        _cells.Clear();
 
-        var cells = new List<(int gx, int gy)>();
+        var seen = new HashSet<(int gx, int gy)>();
         foreach (var cell in exteriorCells)
         {
             if (cell.GridX is not int gx || cell.GridY is not int gy) continue;
             var key = (gx, gy);
-            if (_cellStartVertex.ContainsKey(key)) continue; // dedupe; later DLC overrides keep first
-            _cellStartVertex[key] = cells.Count * 8;
-            cells.Add(key);
+            if (!seen.Add(key)) continue; // dedupe; later DLC overrides keep first
+            _cells.Add(key);
         }
 
-        _cellCount = cells.Count;
+        _cellCount = _cells.Count;
         if (_cellCount == 0) return;
 
-        var vertices = new Vector3[_cellCount * 8];
-        for (var i = 0; i < cells.Count; i++)
-        {
-            var (gx, gy) = cells[i];
-            var x0 = gx * WorldGridConstants.CellSize;
-            var y0 = gy * WorldGridConstants.CellSize;
-            var x1 = x0 + WorldGridConstants.CellSize;
-            var y1 = y0 + WorldGridConstants.CellSize;
-            const float z = 0f;
-            var baseIdx = i * 8;
-            // 4 edges, line-list pairs: (south, east, north, west) at Z=0.
-            vertices[baseIdx + 0] = new Vector3(x0, y0, z); vertices[baseIdx + 1] = new Vector3(x1, y0, z);
-            vertices[baseIdx + 2] = new Vector3(x1, y0, z); vertices[baseIdx + 3] = new Vector3(x1, y1, z);
-            vertices[baseIdx + 4] = new Vector3(x1, y1, z); vertices[baseIdx + 5] = new Vector3(x0, y1, z);
-            vertices[baseIdx + 6] = new Vector3(x0, y1, z); vertices[baseIdx + 7] = new Vector3(x0, y0, z);
-        }
-
-        _vertexBuffer = CreateImmutableBuffer(_gpu.Device, vertices, BindFlags.VertexBuffer);
+        EnsureVertexCapacity(Math.Min(_cellCount, 1024));
     }
 
     /// <summary>
-    ///     Issues draw calls for every cell that intersects <paramref name="cylinder" />.
-    ///     Cylinder culling matches the terrain and water renderers so all three layers cover
-    ///     the same cell set, and rotation in either direction doesn't unload the wireframe.
-    ///     Returns the count of cells drawn so the host control can surface it in the HUD.
+    ///     Issues one line-list draw for cells inside <paramref name="cylinder" />. Earlier
+    ///     versions submitted the whole grid and relied on GPU clipping, but that made the
+    ///     debug layer dominate large worldspaces even when terrain was distance-limited.
     /// </summary>
     public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder)
     {
-        if (_vertexBuffer is null || _cellStartVertex is null) return 0;
+        if (_cellCount == 0) return 0;
+
+        var visibleCells = GatherVisibleCells(cylinder);
+        if (visibleCells == 0) return 0;
+
+        EnsureVertexCapacity(visibleCells);
+        UpdateVisibleVertices(cylinder, visibleCells);
 
         var ctx = _gpu.Context;
 
@@ -189,7 +195,7 @@ internal sealed class CellGridDebugRenderer : IDisposable
 
         ctx.IASetInputLayout(_inputLayout);
         ctx.IASetPrimitiveTopology(PrimitiveTopology.LineList);
-        ctx.IASetVertexBuffer(0, _vertexBuffer, (uint)Marshal.SizeOf<Vector3>());
+        ctx.IASetVertexBuffer(0, _vertexBuffer!, (uint)Marshal.SizeOf<Vector3>());
         ctx.VSSetShader(_vertexShader);
         ctx.PSSetShader(_pixelShader);
         ctx.VSSetConstantBuffer(0, _constantBuffer);
@@ -198,29 +204,110 @@ internal sealed class CellGridDebugRenderer : IDisposable
         ctx.OMSetDepthStencilState(_depthState);
         ctx.OMSetBlendState(_blendState, new Color4(1f, 1f, 1f, 1f));
 
-        var visible = 0;
-        foreach (var (key, startVertex) in _cellStartVertex)
-        {
-            if (!cylinder.ContainsCell(key.gx, key.gy)) continue;
+        ctx.Draw((uint)(visibleCells * 8), 0);
+        return visibleCells;
+    }
 
-            ctx.Draw(8, (uint)startVertex);
-            visible++;
+    private int GatherVisibleCells(VisibilityCylinder cylinder)
+    {
+        if (_spatialIndex is not null)
+        {
+            _spatialIndex.QueryCellsInRadius(
+                cylinder.Position.X,
+                -cylinder.Position.Y,
+                cylinder.Radius,
+                _visibleCellScratch);
+            return _visibleCellScratch.Count;
         }
-        return visible;
+
+        _visibleKeyScratch.Clear();
+        foreach (var key in _cells)
+        {
+            if (cylinder.ContainsCell(key.gx, key.gy))
+            {
+                _visibleKeyScratch.Add(key);
+            }
+        }
+        return _visibleKeyScratch.Count;
+    }
+
+    private void UpdateVisibleVertices(VisibilityCylinder cylinder, int visibleCells)
+    {
+        if (_spatialIndex is not null)
+        {
+            for (var i = 0; i < visibleCells; i++)
+            {
+                WriteCellVertices(i, _visibleCellScratch[i].Key);
+            }
+        }
+        else
+        {
+            _ = cylinder;
+            for (var i = 0; i < visibleCells; i++)
+            {
+                WriteCellVertices(i, _visibleKeyScratch[i]);
+            }
+        }
+
+        _gpu.Context.UpdateSubresource(
+            _vertexBuffer!,
+            0,
+            null,
+            _vertexScratchHandle.AddrOfPinnedObject(),
+            0u,
+            0u);
+    }
+
+    private void WriteCellVertices(int cellIndex, (int gx, int gy) key)
+    {
+        var (gx, gy) = key;
+        var x0 = gx * WorldGridConstants.CellSize;
+        var y0 = gy * WorldGridConstants.CellSize;
+        var x1 = x0 + WorldGridConstants.CellSize;
+        var y1 = y0 + WorldGridConstants.CellSize;
+        const float z = 0f;
+        var baseIdx = cellIndex * 8;
+        _vertexScratch[baseIdx + 0] = new Vector3(x0, y0, z);
+        _vertexScratch[baseIdx + 1] = new Vector3(x1, y0, z);
+        _vertexScratch[baseIdx + 2] = new Vector3(x1, y0, z);
+        _vertexScratch[baseIdx + 3] = new Vector3(x1, y1, z);
+        _vertexScratch[baseIdx + 4] = new Vector3(x1, y1, z);
+        _vertexScratch[baseIdx + 5] = new Vector3(x0, y1, z);
+        _vertexScratch[baseIdx + 6] = new Vector3(x0, y1, z);
+        _vertexScratch[baseIdx + 7] = new Vector3(x0, y0, z);
+    }
+
+    private void EnsureVertexCapacity(int requestedCells)
+    {
+        if (requestedCells <= _vertexCellCapacity && _vertexBuffer is not null)
+        {
+            return;
+        }
+
+        if (_vertexScratchHandle.IsAllocated) _vertexScratchHandle.Free();
+        _vertexBuffer?.Dispose();
+
+        var capacity = Math.Max(1, requestedCells);
+        _vertexCellCapacity = capacity;
+        _vertexScratch = new Vector3[capacity * 8];
+        _vertexScratchHandle = GCHandle.Alloc(_vertexScratch, GCHandleType.Pinned);
+
+        var byteWidth = (uint)(_vertexScratch.Length * Marshal.SizeOf<Vector3>());
+        _vertexBuffer = _gpu.Device.CreateBuffer(new BufferDescription
+        {
+            ByteWidth = byteWidth,
+            Usage = ResourceUsage.Default,
+            BindFlags = BindFlags.VertexBuffer,
+            CPUAccessFlags = CpuAccessFlags.None,
+            MiscFlags = ResourceOptionFlags.None,
+            StructureByteStride = 0
+        });
     }
 
     private void UpdateConstantBuffer(ID3D11DeviceContext ctx, ID3D11Buffer buffer, CellGridUniforms uniforms)
     {
         _uniformsScratch[0] = uniforms;
-        var gc = GCHandle.Alloc(_uniformsScratch, GCHandleType.Pinned);
-        try
-        {
-            ctx.UpdateSubresource(buffer, 0, null, gc.AddrOfPinnedObject(), 0u, 0u);
-        }
-        finally
-        {
-            gc.Free();
-        }
+        ctx.UpdateSubresource(buffer, 0, null, _uniformsScratchHandle.AddrOfPinnedObject(), 0u, 0u);
     }
 
     private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile)
@@ -248,27 +335,6 @@ internal sealed class CellGridDebugRenderer : IDisposable
         errors?.Dispose();
         try { return bytecode.AsBytes().ToArray(); }
         finally { bytecode.Dispose(); }
-    }
-
-    private static ID3D11Buffer CreateImmutableBuffer<T>(ID3D11Device device, T[] data, BindFlags bindFlags)
-        where T : unmanaged
-    {
-        var byteWidth = (uint)(data.Length * Marshal.SizeOf<T>());
-        var gc = GCHandle.Alloc(data, GCHandleType.Pinned);
-        try
-        {
-            var desc = new BufferDescription
-            {
-                ByteWidth = byteWidth,
-                Usage = ResourceUsage.Immutable,
-                BindFlags = bindFlags,
-                CPUAccessFlags = CpuAccessFlags.None,
-                MiscFlags = ResourceOptionFlags.None,
-                StructureByteStride = 0
-            };
-            return device.CreateBuffer(desc, new SubresourceData(gc.AddrOfPinnedObject(), byteWidth));
-        }
-        finally { gc.Free(); }
     }
 
     [StructLayout(LayoutKind.Sequential)]

@@ -214,6 +214,69 @@ public sealed class TerrainMeshBuilderTests
         Assert.True(t2.Z > 0, $"triangle 2 should face +Z, got {t2}");
     }
 
+    [Fact]
+    public void Build_SplitsIndicesIntoFourQuadrantRanges()
+    {
+        // v3 Phase 2b — the 6144-index buffer is laid out as 4 contiguous quadrant ranges of
+        // 1536 indices each, in order 0=SW, 1=SE, 2=NW, 3=NE. Each range may only reference
+        // vertices in its 17×17 sub-grid (including the shared center cross).
+        var cell = new CellRecord
+        {
+            FormId = 0x1,
+            GridX = 0,
+            GridY = 0,
+            Heightmap = new LandHeightmap
+            {
+                HeightOffset = 0f,
+                HeightDeltas = new sbyte[33 * 33]
+            }
+        };
+
+        var mesh = TerrainMeshBuilder.Build(cell);
+        Assert.NotNull(mesh);
+        var indices = mesh.Value.Indices;
+
+        Assert.Equal(1536, TerrainMeshBuilder.IndicesPerQuadrant);
+
+        for (var q = 0; q < 4; q++)
+        {
+            var iMin = (q & 1) == 0 ? 0 : 16;
+            var jMin = (q & 2) == 0 ? 0 : 16;
+            var start = q * TerrainMeshBuilder.IndicesPerQuadrant;
+            var end = start + TerrainMeshBuilder.IndicesPerQuadrant;
+            for (var k = start; k < end; k++)
+            {
+                var v = indices[k];
+                var vi = v % 33;
+                var vj = v / 33;
+                Assert.InRange(vi, iMin, iMin + 16);
+                Assert.InRange(vj, jMin, jMin + 16);
+            }
+        }
+    }
+
+    [Fact]
+    public void BuildSharedIndexBufferData_MatchesPerCellMeshIndices()
+    {
+        var cell = new CellRecord
+        {
+            FormId = 0x1,
+            GridX = 0,
+            GridY = 0,
+            Heightmap = new LandHeightmap
+            {
+                HeightOffset = 0f,
+                HeightDeltas = new sbyte[33 * 33]
+            }
+        };
+
+        var mesh = TerrainMeshBuilder.Build(cell);
+        var shared = TerrainMeshBuilder.BuildSharedIndexBufferData();
+
+        Assert.NotNull(mesh);
+        Assert.Equal(mesh.Value.Indices, shared);
+    }
+
     private static Vector3 TriangleNormal(Vector3 a, Vector3 b, Vector3 c)
     {
         return Vector3.Cross(b - a, c - a);

@@ -24,7 +24,7 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
 /// </summary>
 internal sealed class WaterRenderer : IDisposable
 {
-    private const uint UniformsByteSize = 96; // float4x4 (64) + float4 (16) + float4 (16)
+    private const uint UniformsByteSize = 64; // float4x4
 
     private static readonly Vector4 DefaultWaterColor = new(0.118f, 0.216f, 0.471f, 0.65f);
 
@@ -36,14 +36,21 @@ internal sealed class WaterRenderer : IDisposable
     private readonly ID3D11DepthStencilState _depthState;
     private readonly ID3D11BlendState _blendState;
 
-    private Dictionary<(int gx, int gy), CellRecord>? _cells;
+    private readonly List<global::FalloutXbox360Utils.WorldWaterCell> _waterCells = new();
+    private readonly List<global::FalloutXbox360Utils.WorldWaterCell> _visibleWaterScratch = new();
     private float? _worldspaceDefaultWaterHeight;
+    private global::FalloutXbox360Utils.WorldSpatialIndex? _spatialIndex;
+    private ID3D11Buffer? _instanceBuffer;
+    private ID3D11ShaderResourceView? _instanceSrv;
+    private WaterInstance[] _instanceScratch = [];
+    private GCHandle _instanceScratchHandle;
 
     // Single-element array reused for the per-cell UpdateSubresource. Per-cell allocation
     // would otherwise tally to ~200 visible water cells × 96 bytes × 60 Hz ≈ 1.1 MB/sec of
     // garbage and contribute to the Gen 2 GC pressure that shows up as a periodic hitch on
     // large worldspaces.
     private readonly WaterUniforms[] _uniformsScratch = new WaterUniforms[1];
+    private GCHandle _uniformsScratchHandle;
 
     public WaterRenderer(GpuDevice gpu)
     {
@@ -98,10 +105,16 @@ internal sealed class WaterRenderer : IDisposable
             RenderTargetWriteMask = ColorWriteEnable.All
         };
         _blendState = gpu.Device.CreateBlendState(blendDesc);
+
+        _uniformsScratchHandle = GCHandle.Alloc(_uniformsScratch, GCHandleType.Pinned);
     }
 
     public void Dispose()
     {
+        if (_instanceScratchHandle.IsAllocated) _instanceScratchHandle.Free();
+        _instanceSrv?.Dispose();
+        _instanceBuffer?.Dispose();
+        if (_uniformsScratchHandle.IsAllocated) _uniformsScratchHandle.Free();
         _blendState.Dispose();
         _depthState.Dispose();
         _rasterizer.Dispose();
@@ -113,9 +126,31 @@ internal sealed class WaterRenderer : IDisposable
     public void LoadData(
         Dictionary<(int gx, int gy), CellRecord> cells,
         float? worldspaceDefaultWaterHeight)
+        => LoadData(cells, worldspaceDefaultWaterHeight, spatialIndex: null);
+
+    public void LoadData(
+        Dictionary<(int gx, int gy), CellRecord> cells,
+        float? worldspaceDefaultWaterHeight,
+        global::FalloutXbox360Utils.WorldSpatialIndex? spatialIndex)
     {
-        _cells = cells;
         _worldspaceDefaultWaterHeight = worldspaceDefaultWaterHeight;
+        _spatialIndex = spatialIndex;
+        _waterCells.Clear();
+
+        if (spatialIndex is not null)
+        {
+            _waterCells.AddRange(spatialIndex.WaterCells);
+        }
+        else
+        {
+            foreach (var (key, cell) in cells)
+            {
+                if (ResolveWaterHeight(cell) is float z)
+                    _waterCells.Add(new global::FalloutXbox360Utils.WorldWaterCell(key, cell, z));
+            }
+        }
+
+        EnsureInstanceCapacity(_waterCells.Count);
     }
 
     /// <summary>
@@ -126,7 +161,7 @@ internal sealed class WaterRenderer : IDisposable
     /// </summary>
     public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder)
     {
-        if (_cells is null || _cells.Count == 0) return 0;
+        if (_waterCells.Count == 0) return 0;
 
         var ctx = _gpu.Context;
 
@@ -136,34 +171,65 @@ internal sealed class WaterRenderer : IDisposable
         ctx.PSSetShader(_pixelShader);
         ctx.VSSetConstantBuffer(0, _constantBuffer);
         ctx.PSSetConstantBuffer(0, _constantBuffer);
+        if (_instanceSrv is not null)
+        {
+            ctx.VSSetShaderResource(0, _instanceSrv);
+        }
         ctx.RSSetState(_rasterizer);
         ctx.OMSetDepthStencilState(_depthState);
         ctx.OMSetBlendState(_blendState, new Color4(1f, 1f, 1f, 1f));
 
-        var drawn = 0;
-        foreach (var (key, cell) in _cells)
+        var visible = GatherVisibleWater(cylinder);
+        if (visible == 0)
         {
-            var waterHeight = ResolveWaterHeight(cell);
-            if (waterHeight is not float z) continue;
+            return 0;
+        }
 
-            if (!cylinder.ContainsCell(key.gx, key.gy)) continue;
-
-            var uniforms = new WaterUniforms
+        EnsureInstanceCapacity(visible);
+        for (var i = 0; i < visible; i++)
+        {
+            var water = _visibleWaterScratch[i];
+            var key = water.Key;
+            _instanceScratch[i] = new WaterInstance
             {
-                ViewProj = viewProj,
                 CellOriginAndWater = new Vector4(
                     key.gx * WorldGridConstants.CellSize,
                     key.gy * WorldGridConstants.CellSize,
-                    z,
+                    water.Height,
                     WorldGridConstants.CellSize),
                 Color = DefaultWaterColor
             };
-            UpdateConstantBuffer(ctx, _constantBuffer, uniforms);
-
-            ctx.Draw(6, 0);
-            drawn++;
         }
-        return drawn;
+
+        UpdateConstantBuffer(ctx, _constantBuffer, new WaterUniforms { ViewProj = viewProj });
+        UpdateInstanceBuffer(ctx, visible);
+        ctx.DrawInstanced(6, (uint)visible, 0, 0);
+        return visible;
+    }
+
+    private int GatherVisibleWater(VisibilityCylinder cylinder)
+    {
+        _visibleWaterScratch.Clear();
+        if (_spatialIndex is not null)
+        {
+            _spatialIndex.QueryWaterCellsInRadius(
+                cylinder.Position.X,
+                -cylinder.Position.Y,
+                cylinder.Radius,
+                _visibleWaterScratch);
+            return _visibleWaterScratch.Count;
+        }
+
+        foreach (var water in _waterCells)
+        {
+            var key = water.Key;
+            if (cylinder.ContainsCell(key.gx, key.gy))
+            {
+                _visibleWaterScratch.Add(water);
+            }
+        }
+
+        return _visibleWaterScratch.Count;
     }
 
     private float? ResolveWaterHeight(CellRecord cell)
@@ -182,15 +248,46 @@ internal sealed class WaterRenderer : IDisposable
     private void UpdateConstantBuffer(ID3D11DeviceContext ctx, ID3D11Buffer buffer, WaterUniforms uniforms)
     {
         _uniformsScratch[0] = uniforms;
-        var gc = GCHandle.Alloc(_uniformsScratch, GCHandleType.Pinned);
-        try
+        ctx.UpdateSubresource(buffer, 0, null, _uniformsScratchHandle.AddrOfPinnedObject(), 0u, 0u);
+    }
+
+    private void UpdateInstanceBuffer(ID3D11DeviceContext ctx, int instanceCount)
+    {
+        if (_instanceBuffer is null || instanceCount == 0)
         {
-            ctx.UpdateSubresource(buffer, 0, null, gc.AddrOfPinnedObject(), 0u, 0u);
+            return;
         }
-        finally
+
+        ctx.UpdateSubresource(_instanceBuffer, 0, null, _instanceScratchHandle.AddrOfPinnedObject(), 0u, 0u);
+    }
+
+    private void EnsureInstanceCapacity(int requested)
+    {
+        if (requested <= _instanceScratch.Length && _instanceBuffer is not null && _instanceSrv is not null)
         {
-            gc.Free();
+            return;
         }
+
+        if (_instanceScratchHandle.IsAllocated) _instanceScratchHandle.Free();
+        _instanceSrv?.Dispose();
+        _instanceBuffer?.Dispose();
+        _instanceSrv = null;
+        _instanceBuffer = null;
+
+        var capacity = Math.Max(1, requested);
+        _instanceScratch = new WaterInstance[capacity];
+        _instanceScratchHandle = GCHandle.Alloc(_instanceScratch, GCHandleType.Pinned);
+        var byteWidth = (uint)(capacity * Marshal.SizeOf<WaterInstance>());
+        _instanceBuffer = _gpu.Device.CreateBuffer(new BufferDescription
+        {
+            ByteWidth = byteWidth,
+            Usage = ResourceUsage.Default,
+            BindFlags = BindFlags.ShaderResource,
+            CPUAccessFlags = CpuAccessFlags.None,
+            MiscFlags = ResourceOptionFlags.BufferStructured,
+            StructureByteStride = (uint)Marshal.SizeOf<WaterInstance>()
+        });
+        _instanceSrv = _gpu.Device.CreateShaderResourceView(_instanceBuffer);
     }
 
     private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile)
@@ -224,6 +321,11 @@ internal sealed class WaterRenderer : IDisposable
     private struct WaterUniforms
     {
         public Matrix4x4 ViewProj;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WaterInstance
+    {
         public Vector4 CellOriginAndWater;
         public Vector4 Color;
     }

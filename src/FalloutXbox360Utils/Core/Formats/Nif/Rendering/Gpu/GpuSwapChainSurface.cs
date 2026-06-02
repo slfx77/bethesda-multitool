@@ -9,45 +9,59 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
 
 /// <summary>
 ///     Vortice D3D11 swapchain bound to a WinUI 3 <see cref="SwapChainPanel" /> via
-///     <see cref="ISwapChainPanelNative" />. Owns the back-buffer render target view
-///     and recreates it on resize. Lives next to <see cref="GpuDevice" /> so the
-///     same D3D11 device powers both headless sprite rendering and the live 3D view.
+///     <see cref="ISwapChainPanelNative" />. The depth-stencil texture/view is owned and
+///     cached across frames; the back-buffer render-target view is NOT cached — see
+///     <see cref="AcquireBackBufferRtv" /> for why.
 /// </summary>
 internal sealed class GpuSwapChainSurface : IDisposable
 {
     private static readonly Logger Log = Logger.Instance;
 
     private readonly ID3D11Device _device;
-    private readonly SwapChainPanel _panel;
-    private ID3D11RenderTargetView? _backBufferRtv;
+    private readonly IDXGISwapChain1 _swapChain;
     private ID3D11Texture2D? _depthTexture;
     private ID3D11DepthStencilView? _depthStencilView;
-    private IDXGISwapChain1 _swapChain;
     private uint _width;
     private uint _height;
 
     private GpuSwapChainSurface(
         ID3D11Device device,
-        SwapChainPanel panel,
         IDXGISwapChain1 swapChain,
-        ID3D11RenderTargetView backBufferRtv,
         ID3D11Texture2D depthTexture,
         ID3D11DepthStencilView depthStencilView,
         uint width,
         uint height)
     {
         _device = device;
-        _panel = panel;
         _swapChain = swapChain;
-        _backBufferRtv = backBufferRtv;
         _depthTexture = depthTexture;
         _depthStencilView = depthStencilView;
         _width = width;
         _height = height;
     }
 
-    public ID3D11RenderTargetView BackBufferRtv =>
-        _backBufferRtv ?? throw new ObjectDisposedException(nameof(GpuSwapChainSurface));
+    /// <summary>
+    ///     Acquires a fresh back-buffer render-target view for the current frame. The caller
+    ///     owns the returned wrapper and must dispose it (use <c>using var rtv = ...</c>).
+    ///     <para>
+    ///         Why fresh per frame: caching the RTV across frames is technically allowed in
+    ///         pure D3D11, but the Vortice + WinUI 3 SwapChainPanel composition path makes it
+    ///         fragile — when the compositor processes the panel ↔ swapchain link (which can
+    ///         happen on first composition, after a panel re-parent during a 2D/3D toggle, or
+    ///         after a CompositionScaleChanged), the cached RTV wrapper's underlying COM
+    ///         pointer goes stale and the next <c>ClearRenderTargetView</c> NREs deep inside
+    ///         Vortice. Reacquiring from <c>GetBuffer(0)</c> per frame eliminates the stale
+    ///         state entirely. <c>GetBuffer(0)</c> in DXGI flip model returns the current
+    ///         backbuffer's COM object cheaply (it's an internal AddRef on a cached pointer);
+    ///         and per-frame <c>CreateRenderTargetView</c> on a known-valid texture is a few
+    ///         microseconds — well under the per-frame budget at 60 Hz.
+    ///     </para>
+    /// </summary>
+    public ID3D11RenderTargetView AcquireBackBufferRtv()
+    {
+        using var backBuffer = _swapChain.GetBuffer<ID3D11Texture2D>(0);
+        return _device.CreateRenderTargetView(backBuffer);
+    }
 
     /// <summary>D32_Float depth-stencil view sized to match the back buffer. Bound alongside the RTV for 3D rendering.</summary>
     public ID3D11DepthStencilView DepthStencilView =>
@@ -62,8 +76,6 @@ internal sealed class GpuSwapChainSurface : IDisposable
         _depthStencilView = null;
         _depthTexture?.Dispose();
         _depthTexture = null;
-        _backBufferRtv?.Dispose();
-        _backBufferRtv = null;
         _swapChain.Dispose();
     }
 
@@ -112,12 +124,10 @@ internal sealed class GpuSwapChainSurface : IDisposable
                 native.SetSwapChain(swapChain).CheckError();
             }
 
-            using var backBuffer = swapChain.GetBuffer<ID3D11Texture2D>(0);
-            var rtv = gpu.Device.CreateRenderTargetView(backBuffer);
             var (depthTexture, depthStencilView) = CreateDepthBuffer(gpu.Device, width, height);
 
             Log.Info("GpuSwapChainSurface: bound {0}x{1} to SwapChainPanel", width, height);
-            return new GpuSwapChainSurface(gpu.Device, panel, swapChain, rtv, depthTexture, depthStencilView, width, height);
+            return new GpuSwapChainSurface(gpu.Device, swapChain, depthTexture, depthStencilView, width, height);
         }
         catch (SharpGenException ex)
         {
@@ -140,13 +150,9 @@ internal sealed class GpuSwapChainSurface : IDisposable
         _depthStencilView = null;
         _depthTexture?.Dispose();
         _depthTexture = null;
-        _backBufferRtv?.Dispose();
-        _backBufferRtv = null;
 
         _swapChain.ResizeBuffers(2, width, height, Format.Unknown, SwapChainFlags.None).CheckError();
 
-        using var backBuffer = _swapChain.GetBuffer<ID3D11Texture2D>(0);
-        _backBufferRtv = _device.CreateRenderTargetView(backBuffer);
         (_depthTexture, _depthStencilView) = CreateDepthBuffer(_device, width, height);
         _width = width;
         _height = height;

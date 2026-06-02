@@ -20,12 +20,24 @@ internal sealed class GpuSpriteRenderer : IDisposable
 {
     private const int ConstantBufferSize = 224; // sizeof(GpuUniforms), must be 16-byte aligned
 
+    /// <summary>
+    ///     MSAA sample count for the offscreen color + depth render targets. 4x is the
+    ///     universally-supported D3D11 sample count and is required to make alpha-to-coverage
+    ///     produce sub-pixel hair coverage (Bethesda's engine renders hair via
+    ///     BSRenderState::SetAlphaToCoverageEnable). Pure SSAA shading anti-aliasing still
+    ///     applies on top — A2C handles the alpha→coverage conversion that prevents the
+    ///     hair-strand stacking artifact.
+    /// </summary>
+    private const int MsaaSampleCount = 4;
+
     private readonly Dictionary<BlendPipelineKey, PipelineState> _blendPipelines = [];
     private readonly GpuDevice _gpu;
     private readonly ID3D11InputLayout _inputLayout;
     private readonly ID3D11SamplerState _linearSampler;
     private readonly PipelineState _opaqueDoubleSidedPipeline;
     private readonly PipelineState _opaquePipeline;
+    private readonly PipelineState _a2CPipeline;
+    private readonly PipelineState _a2CDoubleSidedPipeline;
     private readonly ID3D11PixelShader _pixelShader;
     private readonly GpuTextureCache _textureCache;
     private readonly ID3D11VertexShader _vertexShader;
@@ -60,9 +72,21 @@ internal sealed class GpuSpriteRenderer : IDisposable
         });
 
         _opaquePipeline = CreatePipelineState(gpu.Device, blendAttachment: null,
-            depthWriteEnabled: true, doubleSided: false);
+            depthWriteEnabled: true, doubleSided: false, alphaToCoverage: false);
         _opaqueDoubleSidedPipeline = CreatePipelineState(gpu.Device, blendAttachment: null,
-            depthWriteEnabled: true, doubleSided: true);
+            depthWriteEnabled: true, doubleSided: true, alphaToCoverage: false);
+
+        // Alpha-to-coverage pipelines for hair/brow/lash. A2C interprets the shader's alpha
+        // output as a per-sample coverage mask: sub-pixels with alpha above their stochastic
+        // threshold survive (write depth + colour), the rest are discarded. Combined with the
+        // MSAA render target this gives sub-pixel-soft edges without the per-strand stacking
+        // that a single-pass standard blend produces. Blend itself is disabled — A2C does the
+        // compositing through the coverage mask, and we want depth writes for each surviving
+        // sample so closer hair strands occlude farther ones.
+        _a2CPipeline = CreatePipelineState(gpu.Device, blendAttachment: null,
+            depthWriteEnabled: true, doubleSided: false, alphaToCoverage: true);
+        _a2CDoubleSidedPipeline = CreatePipelineState(gpu.Device, blendAttachment: null,
+            depthWriteEnabled: true, doubleSided: true, alphaToCoverage: true);
     }
 
     public void Dispose()
@@ -71,6 +95,8 @@ internal sealed class GpuSpriteRenderer : IDisposable
         _textureCache.Dispose();
         _opaquePipeline.Dispose();
         _opaqueDoubleSidedPipeline.Dispose();
+        _a2CPipeline.Dispose();
+        _a2CDoubleSidedPipeline.Dispose();
         foreach (var pipeline in _blendPipelines.Values)
             pipeline.Dispose();
         _blendPipelines.Clear();
@@ -180,7 +206,26 @@ internal sealed class GpuSpriteRenderer : IDisposable
         var ssWidth = (uint)(width * RenderLightingConstants.SsaaFactor);
         var ssHeight = (uint)(height * RenderLightingConstants.SsaaFactor);
 
+        // MSAA color render target — the A2C pipeline writes per-sample coverage here, and
+        // a non-MSAA resolve target receives the averaged result before staging copy.
         var colorTex = device.CreateTexture2D(new Texture2DDescription
+        {
+            Width = ssWidth,
+            Height = ssHeight,
+            MipLevels = 1,
+            ArraySize = 1,
+            Format = Format.R8G8B8A8_UNorm,
+            SampleDescription = new SampleDescription(MsaaSampleCount, 0),
+            Usage = ResourceUsage.Default,
+            BindFlags = BindFlags.RenderTarget,
+            CPUAccessFlags = CpuAccessFlags.None,
+            MiscFlags = ResourceOptionFlags.None
+        });
+        var colorRtv = device.CreateRenderTargetView(colorTex);
+
+        // Non-MSAA resolve target — `ResolveSubresource` averages contributing samples from
+        // colorTex into this single-sample texture before we copy to the staging readback.
+        var resolveTex = device.CreateTexture2D(new Texture2DDescription
         {
             Width = ssWidth,
             Height = ssHeight,
@@ -189,11 +234,10 @@ internal sealed class GpuSpriteRenderer : IDisposable
             Format = Format.R8G8B8A8_UNorm,
             SampleDescription = new SampleDescription(1, 0),
             Usage = ResourceUsage.Default,
-            BindFlags = BindFlags.RenderTarget | BindFlags.ShaderResource,
+            BindFlags = BindFlags.RenderTarget,
             CPUAccessFlags = CpuAccessFlags.None,
             MiscFlags = ResourceOptionFlags.None
         });
-        var colorRtv = device.CreateRenderTargetView(colorTex);
 
         var depthTex = device.CreateTexture2D(new Texture2DDescription
         {
@@ -202,7 +246,7 @@ internal sealed class GpuSpriteRenderer : IDisposable
             MipLevels = 1,
             ArraySize = 1,
             Format = Format.D32_Float_S8X24_UInt,
-            SampleDescription = new SampleDescription(1, 0),
+            SampleDescription = new SampleDescription(MsaaSampleCount, 0),
             Usage = ResourceUsage.Default,
             BindFlags = BindFlags.DepthStencil,
             CPUAccessFlags = CpuAccessFlags.None,
@@ -247,7 +291,7 @@ internal sealed class GpuSpriteRenderer : IDisposable
             .ToList();
 
         // Collect per-submesh GPU resources for deferred disposal in CompleteRender.
-        var disposables = new List<IDisposable> { colorRtv, depthDsv };
+        var disposables = new List<IDisposable> { colorRtv, depthDsv, resolveTex };
 
         // Bind the offscreen render target + viewport (immediate-context state).
         context.OMSetRenderTargets(colorRtv, depthDsv);
@@ -333,12 +377,27 @@ internal sealed class GpuSpriteRenderer : IDisposable
             if (textureResolver != null && sub.NormalMapTexturePath != null)
                 normalSrv = _textureCache.GetOrUpload(sub.NormalMapTexturePath, textureResolver);
 
-            // Pipeline selection
+            // Pipeline selection. Hair / brow / lash submeshes use alpha-to-coverage instead
+            // of standard blend — the MSAA hardware writes per-sample coverage from the alpha
+            // channel and the resolve averages contributing samples, matching what the engine
+            // does via BSRenderState::SetAlphaToCoverageEnable and avoiding the strand-stacking
+            // that single-pass blend produces (visible as brown patches on the forehead).
+            // Other blend submeshes (glass, fog, generic transparency) keep the standard
+            // SRC_ALPHA blend pipeline.
             PipelineState pipeline;
-            if (alphaState.RenderMode == NifAlphaRenderMode.Blend)
+            if (alphaState.RenderMode == NifAlphaRenderMode.Blend &&
+                NifAlphaClassifier.IsHairLikeSubmesh(sub))
+            {
+                pipeline = sub.IsDoubleSided ? _a2CDoubleSidedPipeline : _a2CPipeline;
+            }
+            else if (alphaState.RenderMode == NifAlphaRenderMode.Blend)
+            {
                 pipeline = GetBlendPipeline(alphaState.SrcBlendMode, alphaState.DstBlendMode, sub.IsDoubleSided);
+            }
             else
+            {
                 pipeline = sub.IsDoubleSided ? _opaqueDoubleSidedPipeline : _opaquePipeline;
+            }
 
             context.RSSetState(pipeline.RasterizerState);
             context.OMSetDepthStencilState(pipeline.DepthStencilState);
@@ -382,7 +441,10 @@ internal sealed class GpuSpriteRenderer : IDisposable
             _stagingHeight = ssHeight;
         }
 
-        context.CopyResource(_stagingTexture!, colorTex);
+        // MSAA color → non-MSAA resolveTex (averages contributing samples per pixel), then
+        // copy to staging for CPU readback.
+        context.ResolveSubresource(resolveTex, 0, colorTex, 0, Format.R8G8B8A8_UNorm);
+        context.CopyResource(_stagingTexture!, resolveTex);
 
         // GPU is now executing asynchronously — caller can do CPU work before CompleteRender().
         return new PendingRender
@@ -475,9 +537,9 @@ internal sealed class GpuSpriteRenderer : IDisposable
         var up = new Vector3(st * ca, st * sa, -ct);
         var forward = new Vector3(ca * ct, sa * ct, st);
 
-        // Build view matrix with basis vectors as COLUMNS in System.Numerics row-major bytes;
-        // both GLSL and HLSL re-interpret cbuffer bytes as column-major, so basis-as-columns
-        // is what `mul(uView, vec)` (HLSL) and `uView * vec` (GLSL) both expect.
+        // Build view matrix with basis vectors as COLUMNS in System.Numerics row-major bytes.
+        // Both GLSL and HLSL re-interpret cbuffer bytes as column-major, so basis-as-columns
+        // is what mul(uView, vec) in HLSL and uView * vec in GLSL both expect.
         var viewMatrix = new Matrix4x4(
             right.X, up.X, forward.X, 0,
             right.Y, up.Y, forward.Y, 0,
@@ -544,7 +606,8 @@ internal sealed class GpuSpriteRenderer : IDisposable
         ID3D11Device device,
         RenderTargetBlendDescription? blendAttachment,
         bool depthWriteEnabled,
-        bool doubleSided)
+        bool doubleSided,
+        bool alphaToCoverage)
     {
         var rasterizer = device.CreateRasterizerState(new RasterizerDescription
         {
@@ -553,7 +616,7 @@ internal sealed class GpuSpriteRenderer : IDisposable
             FrontCounterClockwise = true,
             DepthClipEnable = true,
             ScissorEnable = false,
-            MultisampleEnable = false,
+            MultisampleEnable = true,
             AntialiasedLineEnable = false
         });
 
@@ -579,7 +642,7 @@ internal sealed class GpuSpriteRenderer : IDisposable
 
         var blendDesc = new BlendDescription
         {
-            AlphaToCoverageEnable = false,
+            AlphaToCoverageEnable = alphaToCoverage,
             IndependentBlendEnable = false
         };
         blendDesc.RenderTarget[0] = rtBlend;
@@ -606,7 +669,8 @@ internal sealed class GpuSpriteRenderer : IDisposable
             RenderTargetWriteMask = ColorWriteEnable.All
         };
 
-        var pipeline = CreatePipelineState(_gpu.Device, rtBlend, depthWriteEnabled: false, doubleSided);
+        var pipeline = CreatePipelineState(_gpu.Device, rtBlend, depthWriteEnabled: false,
+            doubleSided, alphaToCoverage: false);
         _blendPipelines[key] = pipeline;
         return pipeline;
     }

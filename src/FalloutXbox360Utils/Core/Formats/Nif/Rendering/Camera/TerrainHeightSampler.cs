@@ -22,16 +22,25 @@ internal static class TerrainHeightSampler
     public static float? Sample(
         IReadOnlyDictionary<(int gx, int gy), CellRecord> cells,
         float worldX,
-        float worldY)
+        float worldY,
+        global::FalloutXbox360Utils.WorldRenderCache? cache = null)
     {
         var gx = (int)MathF.Floor(worldX / global::FalloutXbox360Utils.WorldGridConstants.CellSize);
         var gy = (int)MathF.Floor(worldY / global::FalloutXbox360Utils.WorldGridConstants.CellSize);
 
         if (!cells.TryGetValue((gx, gy), out var cell)) return null;
-        var heightmap = cell.Heightmap ?? cell.RuntimeTerrainMesh?.ToLandHeightmap();
-        if (heightmap is null) return null;
-
-        var heights = heightmap.CalculateHeights();
+        var terrain = cache?.GetTerrain(cell);
+        float[,]? heights = null;
+        if (terrain is null)
+        {
+            var heightmap = cell.Heightmap ?? cell.RuntimeTerrainMesh?.ToLandHeightmap();
+            if (heightmap is null) return null;
+            heights = heightmap.CalculateHeights();
+        }
+        else if (!terrain.HasTerrain)
+        {
+            return null;
+        }
 
         // Local position within the cell, in vertex units [0..32].
         var localXVerts = (worldX - gx * global::FalloutXbox360Utils.WorldGridConstants.CellSize) / global::FalloutXbox360Utils.WorldGridConstants.CellSize * LastIndex;
@@ -45,10 +54,10 @@ internal static class TerrainHeightSampler
         var fx = Math.Clamp(localXVerts - i0, 0f, 1f);
         var fy = Math.Clamp(localYVerts - j0, 0f, 1f);
 
-        var h00 = heights[j0, i0];
-        var h10 = heights[j0, i1];
-        var h01 = heights[j1, i0];
-        var h11 = heights[j1, i1];
+        var h00 = terrain?.HeightAt(i0, j0) ?? heights![j0, i0];
+        var h10 = terrain?.HeightAt(i1, j0) ?? heights![j0, i1];
+        var h01 = terrain?.HeightAt(i0, j1) ?? heights![j1, i0];
+        var h11 = terrain?.HeightAt(i1, j1) ?? heights![j1, i1];
 
         var h0 = h00 * (1 - fx) + h10 * fx;
         var h1 = h01 * (1 - fx) + h11 * fx;

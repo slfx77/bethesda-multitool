@@ -143,7 +143,7 @@ internal sealed class FlythroughCameraController
 
     private void ApplyScroll()
     {
-        if (_accumulatedScroll == 0f) return;
+        if (MathF.Abs(_accumulatedScroll) < float.Epsilon) return;
         var ticks = _accumulatedScroll / ScrollNormalization;
         // ScrollSpeedFactor^ticks — wheel up (+) speeds up, wheel down (-) slows down.
         // Different speed ranges per mode: fly spans 16..200k (covers slow scout to teleport),

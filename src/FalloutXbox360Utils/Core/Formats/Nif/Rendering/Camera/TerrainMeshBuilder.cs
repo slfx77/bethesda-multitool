@@ -37,6 +37,16 @@ internal static class TerrainMeshBuilder
     /// <summary>Index count for one cell mesh: 32×32 quads × 6 indices = 6144.</summary>
     public const int IndexCount = LastIndex * LastIndex * 6;
 
+    /// <summary>
+    ///     Indices per quadrant: 16×16 quads × 6 indices = 1536. The full index buffer is laid
+    ///     out as four contiguous quadrant ranges so the v3 Phase 2b textured-terrain renderer
+    ///     can issue one <c>DrawIndexed(IndicesPerQuadrant, q * IndicesPerQuadrant, 0)</c> per
+    ///     quadrant with its own bound texture set. Quadrant order matches the LAND BTXT/ATXT
+    ///     <c>Quadrant</c> byte: <c>0 = bottom-left (SW)</c>, <c>1 = bottom-right (SE)</c>,
+    ///     <c>2 = top-left (NW)</c>, <c>3 = top-right (NE)</c>.
+    /// </summary>
+    public const int IndicesPerQuadrant = 16 * 16 * 6;
+
     /// <summary>Spacing between adjacent grid vertices in world units (4096 / 32 = 128).</summary>
     private const float VertexSpacing = TerrainConstants.LandVertexSpacing;
 
@@ -55,9 +65,20 @@ internal static class TerrainMeshBuilder
     }
 
     /// <summary>
-    ///     Builds the mesh into caller-provided buffers. Returns <c>true</c> on success.
-    ///     <paramref name="vertices" /> must be at least <see cref="VertexCount" /> in length;
-    ///     <paramref name="indices" /> at least <see cref="IndexCount" />.
+    ///     Builds the invariant index buffer used by every 33×33 LAND cell mesh. Renderers
+    ///     should upload this once and reuse it across all cells.
+    /// </summary>
+    public static ushort[] BuildSharedIndexBufferData()
+    {
+        var indices = new ushort[IndexCount];
+        FillIndices(indices);
+        return indices;
+    }
+
+    /// <summary>
+     ///     Builds the mesh into caller-provided buffers. Returns <c>true</c> on success.
+     ///     <paramref name="vertices" /> must be at least <see cref="VertexCount" /> in length;
+     ///     <paramref name="indices" /> at least <see cref="IndexCount" />.
     /// </summary>
     public static bool TryBuild(CellRecord cell, Span<GpuMeshUploader.GpuVertex> vertices, Span<ushort> indices)
     {
@@ -66,16 +87,44 @@ internal static class TerrainMeshBuilder
         if (indices.Length < IndexCount)
             throw new ArgumentException($"Index span must be at least {IndexCount} long.", nameof(indices));
 
+        if (!TryBuildVertices(cell, vertices)) return false;
+        FillIndices(indices);
+        return true;
+    }
+
+    /// <summary>
+    ///     Builds only the per-cell vertex data into a caller-provided buffer. The index buffer
+    ///     is cell-invariant; hot-path renderers should use <see cref="BuildSharedIndexBufferData" />
+    ///     once and call this method for each uploaded cell.
+    /// </summary>
+    public static bool TryBuildVertices(CellRecord cell, Span<GpuMeshUploader.GpuVertex> vertices)
+        => TryBuildVertices(cell, vertices, cache: null);
+
+    public static bool TryBuildVertices(
+        CellRecord cell,
+        Span<GpuMeshUploader.GpuVertex> vertices,
+        global::FalloutXbox360Utils.WorldRenderCache? cache)
+    {
+        if (vertices.Length < VertexCount)
+            throw new ArgumentException($"Vertex span must be at least {VertexCount} long.", nameof(vertices));
+
         if (cell.GridX is not int gx || cell.GridY is not int gy) return false;
+
+        var originX = gx * TerrainConstants.LandCellWorldSize;
+        var originY = gy * TerrainConstants.LandCellWorldSize;
+        var terrain = cache?.GetTerrain(cell);
+        if (terrain is not null)
+        {
+            if (!terrain.HasTerrain) return false;
+
+            FillVertices(terrain.Heights, originX, originY, cell.LandVisualData?.VertexColors, vertices);
+            return true;
+        }
 
         var heights = ResolveHeights(cell);
         if (heights is null) return false;
 
-        var originX = gx * TerrainConstants.LandCellWorldSize;
-        var originY = gy * TerrainConstants.LandCellWorldSize;
-
         FillVertices(heights, originX, originY, cell.LandVisualData?.VertexColors, vertices);
-        FillIndices(indices);
         return true;
     }
 
@@ -118,6 +167,38 @@ internal static class TerrainMeshBuilder
         }
     }
 
+    private static void FillVertices(
+        float[] heights,
+        float originX,
+        float originY,
+        byte[]? vertexColors,
+        Span<GpuMeshUploader.GpuVertex> vertices)
+    {
+        var hasColors = vertexColors is { Length: >= VertexCount * 3 };
+
+        for (var j = 0; j < Grid; j++)
+        {
+            for (var i = 0; i < Grid; i++)
+            {
+                var idx = j * Grid + i;
+                var position = new Vector3(
+                    originX + i * VertexSpacing,
+                    originY + j * VertexSpacing,
+                    heights[idx]);
+
+                vertices[idx] = new GpuMeshUploader.GpuVertex
+                {
+                    Position = position,
+                    Normal = ComputeNormal(heights, i, j),
+                    TexCoord = new Vector2(i / (float)LastIndex, j / (float)LastIndex),
+                    VertexColor = hasColors ? ReadVertexColor(vertexColors!, idx) : Vector4.One,
+                    Tangent = Vector3.Zero,
+                    Bitangent = Vector3.Zero
+                };
+            }
+        }
+    }
+
     private static Vector3 ComputeNormal(float[,] heights, int i, int j)
     {
         // Central differences in cell-local units, falling back to forward/backward at edges.
@@ -129,6 +210,24 @@ internal static class TerrainMeshBuilder
         float hyPlus = j < LastIndex ? heights[j + 1, i] : heights[j, i];
 
         // Span = 2 * spacing for interior, 1 * spacing at edges (forward/backward diff).
+        var xSpan = (i > 0 && i < LastIndex) ? 2f * VertexSpacing : VertexSpacing;
+        var ySpan = (j > 0 && j < LastIndex) ? 2f * VertexSpacing : VertexSpacing;
+
+        var dx = (hxPlus - hxMinus) / xSpan;
+        var dy = (hyPlus - hyMinus) / ySpan;
+
+        var normal = new Vector3(-dx, -dy, 1f);
+        var length = normal.Length();
+        return length > 0 ? normal / length : Vector3.UnitZ;
+    }
+
+    private static Vector3 ComputeNormal(float[] heights, int i, int j)
+    {
+        float hxMinus = i > 0 ? heights[j * Grid + i - 1] : heights[j * Grid + i];
+        float hxPlus = i < LastIndex ? heights[j * Grid + i + 1] : heights[j * Grid + i];
+        float hyMinus = j > 0 ? heights[(j - 1) * Grid + i] : heights[j * Grid + i];
+        float hyPlus = j < LastIndex ? heights[(j + 1) * Grid + i] : heights[j * Grid + i];
+
         var xSpan = (i > 0 && i < LastIndex) ? 2f * VertexSpacing : VertexSpacing;
         var ySpan = (j > 0 && j < LastIndex) ? 2f * VertexSpacing : VertexSpacing;
 
@@ -152,20 +251,29 @@ internal static class TerrainMeshBuilder
 
     private static void FillIndices(Span<ushort> indices)
     {
+        // Four quadrant ranges of 1536 indices each, in order 0=SW, 1=SE, 2=NW, 3=NE.
+        // Each quadrant emits 16×16 quads, each quad = 2 CCW triangles. Vertices on the
+        // center cross (i=16 or j=16) are NOT duplicated — adjacent quadrant ranges both
+        // reference the shared vertex indices, so the seam is geometrically watertight.
         var k = 0;
-        for (var j = 0; j < LastIndex; j++)
+        for (var q = 0; q < 4; q++)
         {
-            for (var i = 0; i < LastIndex; i++)
+            var iStart = (q & 1) == 0 ? 0 : 16;
+            var jStart = (q & 2) == 0 ? 0 : 16;
+            for (var j = jStart; j < jStart + 16; j++)
             {
-                // Quad corners: v00 = (i, j), v10 = (i+1, j), v01 = (i, j+1), v11 = (i+1, j+1).
-                // CCW winding when viewed from +Z (matches CullMode.Back if/when we tighten it).
-                var v00 = (ushort)(j * Grid + i);
-                var v10 = (ushort)(j * Grid + i + 1);
-                var v01 = (ushort)((j + 1) * Grid + i);
-                var v11 = (ushort)((j + 1) * Grid + i + 1);
+                for (var i = iStart; i < iStart + 16; i++)
+                {
+                    // Quad corners: v00 = (i, j), v10 = (i+1, j), v01 = (i, j+1), v11 = (i+1, j+1).
+                    // CCW winding when viewed from +Z (matches CullMode.Back if/when we tighten it).
+                    var v00 = (ushort)(j * Grid + i);
+                    var v10 = (ushort)(j * Grid + i + 1);
+                    var v01 = (ushort)((j + 1) * Grid + i);
+                    var v11 = (ushort)((j + 1) * Grid + i + 1);
 
-                indices[k++] = v00; indices[k++] = v10; indices[k++] = v01;
-                indices[k++] = v01; indices[k++] = v10; indices[k++] = v11;
+                    indices[k++] = v00; indices[k++] = v10; indices[k++] = v01;
+                    indices[k++] = v01; indices[k++] = v10; indices[k++] = v11;
+                }
             }
         }
     }

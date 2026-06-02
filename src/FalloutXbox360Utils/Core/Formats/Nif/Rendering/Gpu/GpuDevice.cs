@@ -30,7 +30,7 @@ internal sealed class GpuDevice : IDisposable
     public string DeviceName { get; }
 
     /// <summary>Backend identifier kept for compatibility with the prior Veldrid surface.</summary>
-    public string Backend => "Direct3D11";
+    public static string Backend => "Direct3D11";
 
     public void Dispose()
     {
