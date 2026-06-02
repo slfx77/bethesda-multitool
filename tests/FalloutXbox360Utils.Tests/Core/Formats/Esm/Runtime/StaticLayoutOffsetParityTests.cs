@@ -50,7 +50,11 @@ public sealed class StaticLayoutOffsetParityTests
     [InlineData(RuntimeDialogueLayouts.DialQuestInfoListOffset, "m_listQuestInfo", "TESTopic")]
     [InlineData(RuntimeDialogueLayouts.DialDummyPromptOffset, "cDummyPrompt", "TESTopic")]
     [InlineData(RuntimeDialogueLayouts.DialJournalIndexOffset, "m_iJournalIndex", "TESTopic")]
-    [InlineData(RuntimeDialogueLayouts.DialTopicCountOffset, "m_uiTopicCount", "TESTopic")]
+    // m_uiTopicCount existed in Release_Beta TESTopic at offset 84 but was removed in
+    // MemDebug (Aug 22). RuntimeDialogueLayouts.DialTopicCountOffset and its readers
+    // (RuntimeWorldReader probe at PDB+68+shift) still target the byte position for
+    // Release_Beta-shape DMPs; this parity case is dropped because the canonical PDB
+    // doesn't model the field.
     public void DialFields_MatchPdb(int layoutValue, string fieldName, string owner)
     {
         AssertFieldOffsetEquals(0x45, fieldName, owner, layoutValue);
@@ -128,7 +132,7 @@ public sealed class StaticLayoutOffsetParityTests
     [InlineData(0x1B, 172)] // CONT (covered only at PDB level — RuntimeItemLayouts no longer
                             //       declares CONT offsets; RuntimeContainerReader owns its own.)
     [InlineData(0x1F, 188)] // MISC / KEY share size
-    [InlineData(0x28, 924)] // WEAP
+    [InlineData(0x28, 920)] // WEAP (MemDebug Aug 22; Release_Beta was 924)
     [InlineData(0x29, 236)] // AMMO
     [InlineData(0x2E, 188)] // KEYM (= MISC)
     [InlineData(0x2F, 232)] // ALCH

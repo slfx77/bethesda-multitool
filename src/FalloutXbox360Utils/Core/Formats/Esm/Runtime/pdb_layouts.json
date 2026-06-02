@@ -1,7 +1,7 @@
 {
   "source": "Fallout_Release_MemDebug.pdb",
   "tesFormSize": 40,
-  "generatedAt": "2026-03-01T19:35:44.4198199Z",
+  "generatedAt": "2026-06-02T08:37:45.7730537Z",
   "types": {
     "0x01": {
       "formType": 1,
@@ -79,7 +79,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESFile",
-          "typeDetail": "0x2679"
+          "typeDetail": "0x26AB"
         },
         {
           "name": "m_Path",
@@ -87,7 +87,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESFile",
-          "typeDetail": "0x2679"
+          "typeDetail": "0x26AB"
         },
         {
           "name": "m_pBuffer",
@@ -391,7 +391,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "Setting",
-          "typeDetail": "0xCA51"
+          "typeDetail": "0xCBED"
         },
         {
           "name": "pKey",
@@ -511,7 +511,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "BGSTextureSet",
-          "typeDetail": "0x0002AF8A"
+          "typeDetail": "0x0002B1B8"
         },
         {
           "name": "pDecalData",
@@ -535,7 +535,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "BGSTextureSet",
-          "typeDetail": "0x0002AF8C"
+          "typeDetail": "0x0002B1BA"
         }
       ]
     },
@@ -783,7 +783,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESAttributes",
-          "typeDetail": "0x55EF"
+          "typeDetail": "0x568A"
         },
         {
           "name": "data",
@@ -1391,7 +1391,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESRace",
-          "typeDetail": "0x000244D5"
+          "typeDetail": "0x0002471B"
         },
         {
           "name": "cDefaultHairColor",
@@ -1399,7 +1399,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESRace",
-          "typeDetail": "0x3002"
+          "typeDetail": "0x3055"
         },
         {
           "name": "fClampFaceGeoValue",
@@ -1431,7 +1431,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESRace",
-          "typeDetail": "0x000244D7"
+          "typeDetail": "0x0002471D"
         },
         {
           "name": "ppHeadTextureFiles",
@@ -1439,7 +1439,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESRace",
-          "typeDetail": "0x000244D9"
+          "typeDetail": "0x0002471F"
         },
         {
           "name": "ppBodyTextureFiles",
@@ -1447,7 +1447,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESRace",
-          "typeDetail": "0x000244DB"
+          "typeDetail": "0x00024721"
         },
         {
           "name": "ppBodyModelFiles",
@@ -1455,7 +1455,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESRace",
-          "typeDetail": "0x000244DD"
+          "typeDetail": "0x00024723"
         },
         {
           "name": "pBodyTextureModels",
@@ -1463,7 +1463,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESRace",
-          "typeDetail": "0x000244DE"
+          "typeDetail": "0x00024724"
         },
         {
           "name": "MeanFaceCoordFemale",
@@ -1471,7 +1471,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESRace",
-          "typeDetail": "0xDB2C"
+          "typeDetail": "0xDCC8"
         },
         {
           "name": "MeanFaceCoordMale",
@@ -1479,7 +1479,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESRace",
-          "typeDetail": "0xDB2C"
+          "typeDetail": "0xDCC8"
         },
         {
           "name": "sFaceCoordNum",
@@ -1495,7 +1495,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESRace",
-          "typeDetail": "0x000244DF"
+          "typeDetail": "0x00024725"
         },
         {
           "name": "pOldRace",
@@ -1903,7 +1903,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESSkill",
-          "typeDetail": "0x0002ED90"
+          "typeDetail": "0x0002F004"
         }
       ]
     },
@@ -3359,7 +3359,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESBipedModelForm",
-          "typeDetail": "0x000153DC"
+          "typeDetail": "0x00015582"
         },
         {
           "name": "worldModel",
@@ -3367,7 +3367,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESBipedModelForm",
-          "typeDetail": "0x000153DC"
+          "typeDetail": "0x00015582"
         },
         {
           "name": "inventoryIcon",
@@ -3375,7 +3375,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESBipedModelForm",
-          "typeDetail": "0x00017F27"
+          "typeDetail": "0x000180CD"
         },
         {
           "name": "messageIcon",
@@ -3383,7 +3383,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESBipedModelForm",
-          "typeDetail": "0x00017F28"
+          "typeDetail": "0x000180CE"
         },
         {
           "name": "ConstraintTemplate",
@@ -3895,7 +3895,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESBipedModelForm",
-          "typeDetail": "0x000153DC"
+          "typeDetail": "0x00015582"
         },
         {
           "name": "worldModel",
@@ -3903,7 +3903,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESBipedModelForm",
-          "typeDetail": "0x000153DC"
+          "typeDetail": "0x00015582"
         },
         {
           "name": "inventoryIcon",
@@ -3911,7 +3911,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESBipedModelForm",
-          "typeDetail": "0x00017F27"
+          "typeDetail": "0x000180CD"
         },
         {
           "name": "messageIcon",
@@ -3919,7 +3919,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESBipedModelForm",
-          "typeDetail": "0x00017F28"
+          "typeDetail": "0x000180CE"
         },
         {
           "name": "ConstraintTemplate",
@@ -5895,7 +5895,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESProduceForm",
-          "typeDetail": "0x3B5C"
+          "typeDetail": "0x3BAF"
         },
         {
           "name": "cFormType",
@@ -6319,7 +6319,7 @@
       "formType": 40,
       "recordCode": "WEAP",
       "className": "TESObjectWEAP",
-      "structSize": 924,
+      "structSize": 920,
       "fields": [
         {
           "name": "cFormType",
@@ -6936,14 +6936,6 @@
           "kind": "bool",
           "owner": "TESObjectWEAP",
           "typeDetail": null
-        },
-        {
-          "name": "pLastAmmo",
-          "offset": 920,
-          "size": 4,
-          "kind": "pointer",
-          "owner": "TESObjectWEAP",
-          "typeDetail": "TESAmmo"
         }
       ]
     },
@@ -7407,7 +7399,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESAttributes",
-          "typeDetail": "0x55EF"
+          "typeDetail": "0x568A"
         },
         {
           "name": "kfFilenames",
@@ -7503,7 +7495,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESNPC",
-          "typeDetail": "0xDB2C"
+          "typeDetail": "0xDCC8"
         },
         {
           "name": "pAlternateFaceOffsetCoord",
@@ -7863,7 +7855,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESAttributes",
-          "typeDetail": "0x55EF"
+          "typeDetail": "0x568A"
         },
         {
           "name": "kfFilenames",
@@ -9799,7 +9791,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESImageSpaceModifiableCountForm\u003C6\u003E",
-          "typeDetail": "0x00025B75"
+          "typeDetail": "0x00025DED"
         },
         {
           "name": "cloudTexture",
@@ -9807,7 +9799,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESWeather",
-          "typeDetail": "0x00026557"
+          "typeDetail": "0x000267A7"
         },
         {
           "name": "ucCloudLayerSpeed",
@@ -9815,7 +9807,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESWeather",
-          "typeDetail": "0x3B5C"
+          "typeDetail": "0x3BAF"
         },
         {
           "name": "uiCloudColorData",
@@ -9823,7 +9815,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESWeather",
-          "typeDetail": "0x00026558"
+          "typeDetail": "0x000267A8"
         },
         {
           "name": "precipNIF",
@@ -9839,7 +9831,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESWeather",
-          "typeDetail": "0x6433"
+          "typeDetail": "0x64F8"
         },
         {
           "name": "fFogData",
@@ -9847,7 +9839,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESWeather",
-          "typeDetail": "0x00012D08"
+          "typeDetail": "0x00012EAE"
         },
         {
           "name": "uiColorData",
@@ -9855,7 +9847,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESWeather",
-          "typeDetail": "0x00026559"
+          "typeDetail": "0x000267A9"
         },
         {
           "name": "soundList",
@@ -9871,7 +9863,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESWeather",
-          "typeDetail": "0x0002655A"
+          "typeDetail": "0x000267AA"
         },
         {
           "name": "pImageSpaceParameterMods",
@@ -9879,7 +9871,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESWeather",
-          "typeDetail": "0x0002655B"
+          "typeDetail": "0x000267AB"
         },
         {
           "name": "iNumCloudLayers",
@@ -9983,7 +9975,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESClimate",
-          "typeDetail": "0x000259A9"
+          "typeDetail": "0x00025BF0"
         },
         {
           "name": "ucData",
@@ -9991,7 +9983,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESClimate",
-          "typeDetail": "0x16C7"
+          "typeDetail": "0x16C8"
         },
         {
           "name": "strName",
@@ -15168,14 +15160,6 @@
           "kind": "int32",
           "owner": "TESTopic",
           "typeDetail": null
-        },
-        {
-          "name": "m_uiTopicCount",
-          "offset": 84,
-          "size": 4,
-          "kind": "uint32",
-          "owner": "TESTopic",
-          "typeDetail": null
         }
       ]
     },
@@ -16391,7 +16375,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESWaterForm",
-          "typeDetail": "0x000270E8"
+          "typeDetail": "0x000273A3"
         },
         {
           "name": "iCurrentTextureSelect01",
@@ -17039,7 +17023,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESImageSpaceModifier",
-          "typeDetail": "0x00022BBC"
+          "typeDetail": "0x00022E22"
         },
         {
           "name": "BlurInterpolator",
@@ -17151,7 +17135,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESImageSpaceModifier",
-          "typeDetail": "0x00022BBF"
+          "typeDetail": "0x00022E25"
         },
         {
           "name": "pBlurFloatKey",
@@ -17551,7 +17535,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "BGSBodyPartData",
-          "typeDetail": "0x00020296"
+          "typeDetail": "0x000204D1"
         },
         {
           "name": "pRagdollData",
@@ -17879,7 +17863,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "ActorValueInfo",
-          "typeDetail": "0x000144AF"
+          "typeDetail": "0x00014655"
         },
         {
           "name": "iEnumCount",
@@ -17895,7 +17879,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "ActorValueInfo",
-          "typeDetail": "0xDDC1"
+          "typeDetail": "0xDF5D"
         }
       ]
     },
@@ -18519,7 +18503,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "BGSImpactDataSet",
-          "typeDetail": "0x00019E79"
+          "typeDetail": "0x0001A023"
         }
       ]
     },
@@ -18703,7 +18687,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESBipedModelForm",
-          "typeDetail": "0x000153DC"
+          "typeDetail": "0x00015582"
         },
         {
           "name": "worldModel",
@@ -18711,7 +18695,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESBipedModelForm",
-          "typeDetail": "0x000153DC"
+          "typeDetail": "0x00015582"
         },
         {
           "name": "inventoryIcon",
@@ -18719,7 +18703,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESBipedModelForm",
-          "typeDetail": "0x00017F27"
+          "typeDetail": "0x000180CD"
         },
         {
           "name": "messageIcon",
@@ -18727,7 +18711,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESBipedModelForm",
-          "typeDetail": "0x00017F28"
+          "typeDetail": "0x000180CE"
         },
         {
           "name": "ConstraintTemplate",
@@ -19239,7 +19223,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "BGSDefaultObjectManager",
-          "typeDetail": "0x00022015"
+          "typeDetail": "0x0002227B"
         }
       ]
     },
@@ -20223,7 +20207,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESCasino",
-          "typeDetail": "0x000130A8"
+          "typeDetail": "0x0001324E"
         },
         {
           "name": "textureArrayList",
@@ -20231,7 +20215,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESCasino",
-          "typeDetail": "0x000130A9"
+          "typeDetail": "0x0001324F"
         },
         {
           "name": "data",
@@ -21527,7 +21511,7 @@
           "size": 0,
           "kind": "unknown",
           "owner": "TESCaravanMoney",
-          "typeDetail": "0x000153DC"
+          "typeDetail": "0x00015582"
         }
       ]
     },

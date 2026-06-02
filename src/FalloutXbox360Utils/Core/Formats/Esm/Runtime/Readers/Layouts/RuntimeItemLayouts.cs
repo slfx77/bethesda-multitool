@@ -41,9 +41,9 @@ internal sealed class RuntimeItemLayouts
     /// </summary>
     internal int BoundsOffset => 36 + _s;
 
-    #region TESObjectWEAP — PDB size 908, Debug dump 912, Release dump 924
+    #region TESObjectWEAP — PDB size 904 (MemDebug, Aug 22), Debug dump 912, Release dump 920
 
-    internal int WeapStructSize => 908 + _s;
+    internal int WeapStructSize => 904 + _s;
     internal int WeapModelPathOffset => 64 + _s;
     internal int WeapValueOffset => 136 + _s;
     internal int WeapWeightOffset => 144 + _s;
