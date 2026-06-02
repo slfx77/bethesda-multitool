@@ -2964,15 +2964,16 @@ public sealed class PluginBuilder
             // Phase A pre-allocated the emitted FormIDs so NVEX cross-references can
             // resolve across cells in this emission batch.
             //
-            // DIAGNOSTIC GATE: drop master-cell augmentation. Adding a second navmesh on top
-            // of vanilla's may confuse AI pathing (idle NPCs flip-flopping to the crucified
-            // animation every few seconds — same symptom as the original INFO emission bug,
-            // but here surfacing after we re-enabled new NAVMs). Only emit new NAVMs whose
-            // parent cell is itself NEW (FormID in our plugin range).
-            const bool SkipMasterCellNavmAugmentationForBisect = true;
+            // STOPGAP GATE: drop master-cell augmentation by default. Adding a second navmesh
+            // on top of vanilla's may confuse AI pathing (idle NPCs flip-flopping to the
+            // crucified animation every few seconds — same symptom as the original INFO
+            // emission bug). Opt in via PluginBuildOptions.EmitMasterCellNavmAugmentation
+            // for smoke testing; the flag stays default-false until xenia smoke confirms
+            // the symptom doesn't return.
+            var skipMasterCellNavmAugmentation = !options.EmitMasterCellNavmAugmentation;
             var cellIsNew = (dmpCell.FormId & 0xFF000000) == 0x01000000
                             || !pcRecordsByFormId.ContainsKey(dmpCell.FormId);
-            if (SkipMasterCellNavmAugmentationForBisect
+            if (skipMasterCellNavmAugmentation
                 && !cellIsNew
                 && dmpNavmsByCell.TryGetValue(dmpCell.FormId, out var skippedAugList))
             {
