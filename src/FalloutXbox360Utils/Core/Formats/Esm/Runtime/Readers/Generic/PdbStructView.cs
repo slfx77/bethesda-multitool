@@ -18,21 +18,18 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
 internal sealed class PdbStructView
 {
     private readonly RuntimePdbFieldAccessor _accessor;
-    private readonly RuntimeMemoryContext _context;
     private readonly RuntimeEditorIdEntry? _entry;
     private Dictionary<string, int>? _ownerShifts;
     private List<(int MinOffset, int MaxOffset, int Shift)>? _shifts;
 
     internal PdbStructView(
         RuntimePdbFieldAccessor accessor,
-        RuntimeMemoryContext context,
         PdbTypeLayout layout,
         byte[] buffer,
         long fileOffset,
         RuntimeEditorIdEntry? entry)
     {
         _accessor = accessor;
-        _context = context;
         _entry = entry;
         Layout = layout;
         Buffer = buffer;

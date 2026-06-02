@@ -3,6 +3,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models.Dialogue;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
 using static FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Layouts.RuntimeDialogueLayouts;
@@ -15,7 +16,10 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 /// </summary>
 internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
 {
+    private const byte ScptFormType = 0x11;
+
     private readonly RuntimeMemoryContext _context = context;
+    private readonly RuntimePdbFieldAccessor _pdbFields = new(context);
 
     // Build-specific offset shift for Note/Quest/Terminal structs.
     private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
@@ -92,24 +96,19 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
 
         // Follow pFormScript pointer → Script* → get Script FormID (0x11 = SCPT).
         // Brute-force fallback when the canonical slot is null: scan the whole TESQuest
-        // struct for any 4-byte pointer that resolves to a Script form. Proto builds may
-        // attach scripts via a different field path (e.g. an aggregated form-list pointer
-        // we haven't reverse-engineered), and a missing SCRI on the quest cascades into
-        // empty CTDA / AddTopic / dialogue-tree state. Same rationale as the NPC fallback
-        // in RuntimeActorReader.BruteForceScanForScriptPointer.
+        // struct for any 4-byte pointer that resolves to a Script form, and accept only
+        // candidates whose own `pOwnerQuest` backpointer resolves to THIS quest's FormID.
+        // This is deterministic — a quest script's pOwnerQuest is the authoritative binding
+        // between Script and TESQuest in the runtime — and rejects unrelated Script*
+        // pointers that incidentally lay nearby in struct memory (e.g. CGTutorialSCRIPT
+        // mid-tutorial in VMS01's runtime cache). Naming-prefix matching is the wrong
+        // shape: it both false-positives (VMS01PartsSCRIPT is an object script attached
+        // to a misc item, not the quest) and false-negatives (any non-standard naming).
+        // See memory/quest_script_brute_force_scan.md.
         var scriptFormId = _context.FollowPointerToFormId(buffer, QustScriptOffset, 0x11);
         if (scriptFormId is null or 0)
         {
-            for (var probe = 4; probe + 4 <= buffer.Length; probe += 4)
-            {
-                if (probe == QustScriptOffset) continue;
-                var candidate = _context.FollowPointerToFormId(buffer, probe, 0x11);
-                if (candidate is > 0)
-                {
-                    scriptFormId = candidate;
-                    break;
-                }
-            }
+            scriptFormId = ScanForOwnerLinkedQuestScript(buffer, entry.FormId);
         }
 
         var stages = WalkQuestStageList(offset, entry.FormId);
@@ -129,6 +128,43 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
             Offset = offset,
             IsBigEndian = true
         };
+    }
+
+    /// <summary>
+    ///     Walk every 4-byte-aligned offset in the TESQuest buffer, treat each as a candidate
+    ///     big-endian pointer, and try resolving it to a Script form (FormType 0x11). Only
+    ///     accept candidates whose runtime <c>Script.pOwnerQuest</c> backpointer resolves to
+    ///     <paramref name="questFormId" /> — this is the authoritative quest↔script binding
+    ///     the engine itself uses, so it both rejects unrelated Script* pointers in struct
+    ///     memory (CGTutorialSCRIPT etc.) and avoids the naming-convention pitfalls of a
+    ///     string-based check (e.g. VMS01PartsSCRIPT shares a prefix with VMS01 but is an
+    ///     object script attached to a misc item, not the quest).
+    ///     Returns null when the editor-id lookup is unavailable (test fixtures) or no
+    ///     candidate's pOwnerQuest matches — both signal "can't validate, don't guess".
+    /// </summary>
+    private uint? ScanForOwnerLinkedQuestScript(byte[] buffer, uint questFormId)
+    {
+        if (_context.EditorIdsByFormId is null)
+        {
+            return null;
+        }
+
+        for (var probe = 4; probe + 4 <= buffer.Length; probe += 4)
+        {
+            if (probe == QustScriptOffset) continue;
+            var candidate = _context.FollowPointerToFormId(buffer, probe, 0x11);
+            if (candidate is not > 0) continue;
+            if (!_context.EditorIdsByFormId.TryGetValue(candidate.Value, out var candidateEntry)) continue;
+            var candidateView = _pdbFields.OpenStructView(candidateEntry, ScptFormType);
+            if (candidateView is null) continue;
+            var candidateOwnerQuest = candidateView.FormIdPointer("pOwnerQuest", "Script");
+            if (candidateOwnerQuest == questFormId)
+            {
+                return candidate;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -164,7 +200,7 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
     ///     </para>
     ///     <para>
     ///     If a newer PDB is sourced in the future, revisit this method; until
-    ///     then any "TODO: read pPassword" attempts will reproduce the Tier 3.2
+    ///     then any naive "read pPassword" attempts will reproduce the Tier 3.2
     ///     wrong-offset behaviour (reading <c>0x00</c> or <c>0xFF</c> garbage from
     ///     +180 that downstream clamps mask as VeryEasy).
     ///     </para>
@@ -734,18 +770,23 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
 
     #region Terminal Struct Layout (Proto Debug PDB base + _s)
 
-    // BGSTerminal: PDB declares structSize 184 with pPassword(+176) + Data(+180);
-    // runtime is 180 bytes with Data(+176) and no pPassword (Tier 3.2). We still
-    // read 184 bytes (TermStructSize unchanged) to stay byte-compatible with the
-    // previous code that allocated a 184-byte buffer — the extra 4 bytes are
-    // simply unused. Constants are `pdb-or-runtime offset - _s` so adding the
-    // build shift yields the runtime-correct offset.
+    // BGSTerminal layout. The PDB declares a 184-byte struct with a password pointer
+    // immediately followed by the data block at offset 180. The runtime struct is
+    // actually 180 bytes long with the data block at offset 176 and no password
+    // pointer at all (this is the Tier 3.2 finding). We still read 184 bytes so the
+    // TermStructSize value stays byte-compatible with the previous code that
+    // allocated a 184-byte buffer; the trailing four bytes are unused. All Term
+    // constants are expressed as "pdb-or-runtime offset minus build shift", so
+    // adding the build shift back in yields the runtime-correct offset.
     //
     // Update history:
-    //   - Phase 1B.6: probe deleted; +4 baked into TermMenuItemListOffset.
-    //   - Phase 1B.7: Difficulty/Flags moved from +132/+133 to PDB +180/+181.
-    //   - Tier 3.2:   Difficulty/Flags moved from PDB +180/+181 to actual runtime
-    //                 +176/+177 (validated against ESM DNAM payloads).
+    //   - Phase 1B.6: the menu-item-list probe was deleted and its plus-four shift
+    //     was baked into TermMenuItemListOffset.
+    //   - Phase 1B.7: the difficulty and flags bytes moved from the early
+    //     plus-132/plus-133 location to the PDB-declared plus-180/plus-181.
+    //   - Tier 3.2: the difficulty and flags bytes moved again, from the PDB
+    //     plus-180/plus-181 to the actual runtime plus-176/plus-177 (validated
+    //     against ESM DNAM payloads).
     private int TermStructSize => 168 + _s;          // 184 bytes (4 unused at end)
     private int TermDifficultyOffset => 160 + _s;    // TERMINAL_DATA byte 0 (runtime +176)
     private int TermFlagsOffset => 161 + _s;         // TERMINAL_DATA byte 1 (runtime +177)

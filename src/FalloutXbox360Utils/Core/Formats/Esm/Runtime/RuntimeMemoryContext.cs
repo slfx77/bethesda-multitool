@@ -1,4 +1,5 @@
 using System.Text;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
 
@@ -20,6 +21,19 @@ internal sealed class RuntimeMemoryContext(
     public IMemoryAccessor Accessor { get; } = accessor;
     public long FileSize { get; } = fileSize;
     public MinidumpInfo MinidumpInfo { get; } = minidumpInfo;
+
+    /// <summary>
+    ///     FormID → enumerated runtime entry (editor id, form type, base offset). Populated
+    ///     by <see cref="RuntimeStructReader.CreateWithAutoDetect(IMemoryAccessor,long,MinidumpInfo,System.Collections.Generic.IReadOnlyList{RuntimeEditorIdEntry},System.Collections.Generic.IReadOnlyList{RuntimeEditorIdEntry},System.Collections.Generic.IReadOnlyList{RuntimeEditorIdEntry},System.Collections.Generic.IReadOnlyList{RuntimeEditorIdEntry},System.Collections.Generic.IReadOnlyList{RuntimeEditorIdEntry},System.Collections.Generic.IReadOnlyList{RuntimeEditorIdEntry})" />
+    ///     when an <c>allEntries</c> list is available. The QUST script scan uses this to
+    ///     resolve candidate Script* pointers to EditorIds before validating via the
+    ///     Script.pOwnerQuest backpointer; other specialized readers may use it for
+    ///     similar resolve-then-validate flows.
+    ///     Null in test fixtures and other lightweight construction paths; consumers must
+    ///     gracefully degrade (typically: skip the probe, return null, and let downstream
+    ///     editor-id-suffix heuristics handle the missing value).
+    /// </summary>
+    public IReadOnlyDictionary<uint, RuntimeEditorIdEntry>? EditorIdsByFormId { get; internal set; }
 
     /// <summary>
     ///     Check if a 32-bit value is a valid Xbox 360 pointer within captured memory.

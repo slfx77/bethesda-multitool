@@ -257,7 +257,6 @@ internal static class RuntimeNpcLayoutProbe
         {
             var view = new PdbStructView(
                     new RuntimePdbFieldAccessor(context),
-                    context,
                     npcLayout,
                     buffer,
                     sample.Offset,
@@ -306,19 +305,19 @@ internal static class RuntimeNpcLayoutProbe
                 details.Append($"HDPT={headParts.Count}, ");
             }
 
-            if (fields.ReadNpcHairLength(view) != null)
+            if (RuntimeNpcFieldReader.ReadNpcHairLength(view) != null)
             {
                 score += SecondarySignalScore;
                 details.Append("HairLen, ");
             }
 
-            if (fields.ReadNpcHeight(view) != null)
+            if (RuntimeNpcFieldReader.ReadNpcHeight(view) != null)
             {
                 score += SecondarySignalScore;
                 details.Append("Height, ");
             }
 
-            if (fields.ReadNpcWeight(view) != null)
+            if (RuntimeNpcFieldReader.ReadNpcWeight(view) != null)
             {
                 score += SecondarySignalScore;
                 details.Append("Weight, ");

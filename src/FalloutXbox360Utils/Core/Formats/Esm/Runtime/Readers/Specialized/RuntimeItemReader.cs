@@ -23,11 +23,14 @@ internal sealed class RuntimeItemReader(
     private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
         MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
 
-    // Selected weapon sound layout variant (V1 = early FO3-derived, V2 = FNV).
-    // The probe picks whichever pattern-matches better; default to V2 if no probe result.
-    // (RuntimeWeaponSoundProbe's FineShift dimension was deleted in Phase 1B.6 — always
-    // 0 across every observed dump. The WeapCritProbe was deleted in the same phase;
-    // its -8 result was baked into RuntimeItemLayouts.WeapCrit*Offset constants.)
+    // Selected weapon sound layout variant. V1 corresponds to the early FO3-derived
+    // layout, V2 to the FNV layout. The probe picks whichever pattern matches better,
+    // defaulting to V2 when no probe result is available.
+    //
+    // History: the FineShift dimension on RuntimeWeaponSoundProbe was deleted in Phase
+    // 1B.6 because it was always zero across every observed dump. The WeapCritProbe was
+    // deleted in the same phase; its negative-eight result was baked into the
+    // RuntimeItemLayouts.WeapCrit offset constants.
     private readonly RuntimeWeaponSoundLayoutVariant _weaponSoundVariant =
         weaponSoundProbe?.Variant ?? RuntimeWeaponSoundLayoutVariant.V2;
 

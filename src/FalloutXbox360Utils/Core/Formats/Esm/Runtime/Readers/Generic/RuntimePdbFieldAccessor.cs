@@ -34,7 +34,7 @@ internal sealed class RuntimePdbFieldAccessor(RuntimeMemoryContext context)
         var data = ReadStruct(entry, pdbFormType);
         return data is null
             ? null
-            : new PdbStructView(this, _context, data.Value.Layout, data.Value.Buffer, data.Value.FileOffset, entry);
+            : new PdbStructView(this, data.Value.Layout, data.Value.Buffer, data.Value.FileOffset, entry);
     }
 
     internal (PdbTypeLayout Layout, byte[] Buffer, long FileOffset)? ReadStruct(RuntimeEditorIdEntry entry)

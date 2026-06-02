@@ -703,6 +703,60 @@ public sealed class RuntimeStructReader
         return _navMeshDiscovery.DiscoverForCell(cellEntry);
     }
 
+    /// <summary>
+    ///     VA-driven companion to <see cref="DiscoverNavMeshesForCell" />: walks the cell's
+    ///     <c>NavMeshArray</c> without requiring a <see cref="RuntimeEditorIdEntry" />. Used by
+    ///     <see cref="MiscGameSystemHandler" /> when handing off cells discovered via paths
+    ///     other than the editor-id hash (pAllForms walk, worldspace grid, heap-scan).
+    /// </summary>
+    public List<NavMeshRecord> DiscoverNavMeshesForCellVa(uint cellVa, uint cellFormId)
+    {
+        return _navMeshDiscovery.DiscoverForCellVa(cellVa, cellFormId);
+    }
+
+    /// <summary>
+    ///     Direct BSNavMesh projection: reads a single BSNavMesh struct at the given VA and
+    ///     returns its synthetic <see cref="NavMeshRecord" /> without going through a cell
+    ///     parent. Used by Path 4 in <see cref="MiscGameSystemHandler" /> to surface
+    ///     runtime-only NAVMs from pAllForms (FormType 0x43) when the cell graph has detached
+    ///     NavMeshArrays.
+    /// </summary>
+    public NavMeshRecord? DiscoverNavMeshAtVa(uint navMeshVa, uint fallbackParentCellFormId)
+    {
+        return _navMeshDiscovery.DiscoverForNavMeshVa(navMeshVa, fallbackParentCellFormId);
+    }
+
+    /// <summary>
+    ///     Factory for the multi-source <see cref="RuntimeCellEnumerator" />. Returns null when
+    ///     the upstream pointer-triple scan failed to locate <c>pAllForms</c> (no enumeration is
+    ///     possible without it). Consumers should fall back to the editor-id-only path in that
+    ///     case.
+    /// </summary>
+    internal RuntimeCellEnumerator? CreateRuntimeCellEnumerator(
+        uint pAllFormsVa,
+        IReadOnlyDictionary<byte, byte>? driftRemap = null)
+    {
+        if (pAllFormsVa == 0)
+        {
+            return null;
+        }
+
+        return new RuntimeCellEnumerator(_context, _context.MinidumpInfo, pAllFormsVa, driftRemap);
+    }
+
+    /// <summary>
+    ///     Factory for the BSNavMesh structural validator used by Phase 2d to filter Path 4
+    ///     candidates. Holds a snapshot of the cell VAs surfaced by
+    ///     <see cref="RuntimeCellEnumerator" /> so Strict mode can cross-reference each
+    ///     candidate's <c>pParentCell</c> field against a trusted runtime cell set.
+    /// </summary>
+    internal BsNavMeshStructuralValidator CreateBsNavMeshValidator(
+        IReadOnlySet<uint> knownCellVas,
+        BsNavMeshValidationMode mode)
+    {
+        return new BsNavMeshStructuralValidator(_context, knownCellVas, mode);
+    }
+
     public CaravanDeckRecord? ReadRuntimeCaravanDeck(RuntimeEditorIdEntry entry)
     {
         return _caravanDecks.ReadRuntimeCaravanDeck(entry);

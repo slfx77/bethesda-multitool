@@ -329,7 +329,7 @@ internal sealed class RuntimeNpcFieldReader
     ///     Returns null if the value is zero (NULL/unset) or invalid.
     ///     Empirically verified: Sunny=0.60, Doc=0.29, Arcade=0.69, Boone=NULL, Raul=NULL.
     /// </summary>
-    public float? ReadNpcHairLength(PdbStructView view)
+    public static float? ReadNpcHairLength(PdbStructView view)
     {
         var off = view.Offset("fHairLength", "TESNPC");
         if (off is not { } o || o + 4 > view.Buffer.Length)
@@ -356,7 +356,7 @@ internal sealed class RuntimeNpcFieldReader
     ///     Read hair color uint32 (iHairColor, packed 0x00BBGGRR) via the view's
     ///     PDB-name lookup. Returns null if the value is zero (unset).
     /// </summary>
-    public uint? ReadNpcHairColor(PdbStructView view)
+    public static uint? ReadNpcHairColor(PdbStructView view)
     {
         var value = view.UInt32("iHairColor", "TESNPC");
         return value == 0 ? null : value;
@@ -422,7 +422,7 @@ internal sealed class RuntimeNpcFieldReader
     ///     view's PDB-name lookup. Returns null if the value is zero/unset or out of
     ///     reasonable range.
     /// </summary>
-    public float? ReadNpcHeight(PdbStructView view)
+    public static float? ReadNpcHeight(PdbStructView view)
     {
         var off = view.Offset("fHeight", "TESNPC");
         if (off is not { } o || o + 4 > view.Buffer.Length)
@@ -453,7 +453,7 @@ internal sealed class RuntimeNpcFieldReader
     ///     Read NPC weight (fWeight, float 0-1000, GECK body morph slider) via the
     ///     view's PDB-name lookup. Returns null if the value looks invalid.
     /// </summary>
-    public float? ReadNpcWeight(PdbStructView view)
+    public static float? ReadNpcWeight(PdbStructView view)
     {
         var off = view.Offset("fWeight", "TESNPC");
         if (off is not { } o || o + 4 > view.Buffer.Length)
@@ -484,7 +484,7 @@ internal sealed class RuntimeNpcFieldReader
     ///     Read blood impact material enum (eBloodImpactMaterial, byte) via the view's
     ///     PDB-name lookup. FNV values: 0=Default, 1=Metal, 2=CinderBlock, 3=Stone.
     /// </summary>
-    public byte? ReadNpcBloodImpactMaterial(PdbStructView view)
+    public static byte? ReadNpcBloodImpactMaterial(PdbStructView view)
     {
         var off = view.Offset("eBloodImpactMaterial", "TESNPC");
         if (off is not { } o || o >= view.Buffer.Length)
@@ -500,7 +500,7 @@ internal sealed class RuntimeNpcFieldReader
     ///     Read last race face preset number (sLastRaceFaceNum, uint16) via the view's
     ///     PDB-name lookup.
     /// </summary>
-    public ushort? ReadNpcRaceFacePreset(PdbStructView view)
+    public static ushort? ReadNpcRaceFacePreset(PdbStructView view)
     {
         var off = view.Offset("sLastRaceFaceNum", "TESNPC");
         if (off is not { } o || o + 2 > view.Buffer.Length)
@@ -789,14 +789,14 @@ internal sealed class RuntimeNpcFieldReader
     // WithShift("TESNPC", 16 + _appearanceShift) registration at the view-opening
     // site in RuntimeActorReader.ReadRuntimeNpc.
     //
-    // Core-region reads (TESActorBaseData / TESScriptableForm / TESRaceForm /
-    // TESHealthForm / TESAIForm / TESContainer / TESSpellList / TESNPC fields up
-    // through offset 320) were migrated to view-based lookups in Phase 1B.20.
+    // Core-region reads of TESActorBaseData, TESScriptableForm, TESRaceForm,
+    // TESHealthForm, TESAIForm, TESContainer, TESSpellList, and TESNPC fields up
+    // through offset 320 were migrated to view-based lookups in Phase 1B.20.
     //
-    // ReadSize is probe-derived (Debug 492 / Release 508). NpcAcbsOffset /
-    // NpcScriptPtrOffset / NpcRacePtrOffset / NpcClassPtrOffset feed
-    // RuntimeNpcLayoutProbe.ScoreSample, which runs BEFORE a stable view exists;
-    // they're kept here as probe-only duplicates of what the view eventually
+    // ReadSize is probe-derived: 492 for Debug builds and 508 for Release. The
+    // NpcAcbs, NpcScriptPtr, NpcRacePtr, and NpcClassPtr offsets are consumed by
+    // RuntimeNpcLayoutProbe.ScoreSample, which runs before a stable view exists.
+    // They are retained here as probe-only duplicates of what the view eventually
     // resolves the same fields to.
     public int NpcStructSize => _layout.ReadSize;
 

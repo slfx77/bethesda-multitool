@@ -49,7 +49,7 @@ internal sealed class RuntimeActorReader
     private PdbStructView? WrapActorBufferInView(byte[] buffer, long fileOffset, RuntimeEditorIdEntry entry, byte pdbFormType)
     {
         var layout = PdbStructLayouts.Get(pdbFormType);
-        return layout is null ? null : new PdbStructView(_pdbFields, _context, layout, buffer, fileOffset, entry);
+        return layout is null ? null : new PdbStructView(_pdbFields, layout, buffer, fileOffset, entry);
     }
 
     /// <summary>
@@ -103,20 +103,17 @@ internal sealed class RuntimeActorReader
         }
 
         // Read script pointer before ACBS validation so it's available even for minimal NPCs.
+        // When pFormScript is null we leave the binding null and let
+        // PluginBuilder.AttachOrphanScriptsByEditorId resolve it from the parsed SCPT set
+        // via the exact `{npcEditorId}Script` / `{npcEditorId}SCRIPT` naming convention.
+        // The previous brute-force scan walked every 4-byte slot of the TESNPC struct and
+        // accepted any Script* whose EditorId merely *started* with the NPC's EditorId —
+        // VMS01DocMitchell falsely matched VMS01PartsSCRIPT, binding the wrong script and
+        // producing "Variable ID 0x34 not found" errors plus the Doc Mitchell / Sunny Smiles
+        // quest-state regressions. The orphan-attachment heuristic (exact name match against
+        // parsed scripts) is the load-bearing recovery path; the prefix-based memory scan
+        // adds nothing and false-positives. See memory/quest_script_brute_force_scan.md.
         var scriptFormId = view.FormIdPointer("pFormScript", "TESScriptableForm", 0x11);
-
-        // When the canonical pFormScript slot is null, fall back to a brute-force scan of
-        // the TESNPC struct: walk every 4-byte-aligned offset and try resolving it as a
-        // pointer to a Script (FormType 0x11). Proto builds occasionally store the script
-        // reference at a different offset (e.g. embedded in an aggregated form list or via
-        // a different TESScriptableForm derivation path) — without this fallback, scripts
-        // like UlyssesScript get emitted as orphan SCPT records with no SCRI binding,
-        // breaking script-driven dialogue chains (AddTopic / GetVariable conditions).
-        if (scriptFormId is null or 0)
-        {
-            var scriptPtrOffset = view.Offset("pFormScript", "TESScriptableForm") ?? (248 + _s);
-            scriptFormId = BruteForceScanForScriptPointer(buffer, scriptPtrOffset);
-        }
 
         // Read ACBS stats block (PDB TESActorBaseData::actorData)
         var acbsOffset = view.Offset("actorData", "TESActorBaseData") ?? (52 + _s);
@@ -163,8 +160,8 @@ internal sealed class RuntimeActorReader
         var hair = view.FormIdPointer("pHair", "TESNPC", 0x0A);
         var eyes = view.FormIdPointer("pEyeColor", "TESNPC", 0x0B);
         var combatStyle = view.FormIdPointer("pCombatStyle", "TESNPC", 0x4A);
-        var hairLength = NpcFields.ReadNpcHairLength(view);
-        var hairColor = NpcFields.ReadNpcHairColor(view);
+        var hairLength = RuntimeNpcFieldReader.ReadNpcHairLength(view);
+        var hairColor = RuntimeNpcFieldReader.ReadNpcHairColor(view);
         var headPartFormIds = NpcFields.ReadNpcHeadPartFormIds(view);
 
         // Late-appearance PDB-derived fields. The owner shift + optional band shift
@@ -172,10 +169,10 @@ internal sealed class RuntimeActorReader
         // of any per-build drift.
         var originalRace = view.FormIdPointer("pOriginalRace", "TESNPC", 0x0C);
         var faceNpc = view.FormIdPointer("pFaceNPC", "TESNPC", 0x2A);
-        var height = NpcFields.ReadNpcHeight(view);
-        var weight = NpcFields.ReadNpcWeight(view);
-        var bloodImpactMaterial = NpcFields.ReadNpcBloodImpactMaterial(view);
-        var raceFacePreset = NpcFields.ReadNpcRaceFacePreset(view);
+        var height = RuntimeNpcFieldReader.ReadNpcHeight(view);
+        var weight = RuntimeNpcFieldReader.ReadNpcWeight(view);
+        var bloodImpactMaterial = RuntimeNpcFieldReader.ReadNpcBloodImpactMaterial(view);
+        var raceFacePreset = RuntimeNpcFieldReader.ReadNpcRaceFacePreset(view);
 
         // Read FaceGen morph data (follow pointers to float arrays in module space)
         var fggs = NpcFields.ReadFaceGenMorphArray(buffer, NpcFields.NpcFggsLayout);
@@ -730,32 +727,4 @@ internal sealed class RuntimeActorReader
     }
 
     #endregion
-
-    /// <summary>
-    ///     Brute-force scan: walk every 4-byte-aligned offset in the actor base struct,
-    ///     treat each as a candidate big-endian pointer, and try resolving it to a Script
-    ///     form (TESForm with FormType 0x11). Returns the first non-zero Script FormID it
-    ///     finds, or null. Skips the canonical pFormScript offset that the caller already
-    ///     checked. Used when the runtime layout's expected slot was empty, which happens
-    ///     for proto builds where the script reference lives at a different offset than the
-    ///     PDB-derived constant predicts.
-    /// </summary>
-    private uint? BruteForceScanForScriptPointer(byte[] buffer, int skipOffset)
-    {
-        for (var off = 4; off + 4 <= buffer.Length; off += 4)
-        {
-            if (off == skipOffset)
-            {
-                continue;
-            }
-
-            var candidate = _context.FollowPointerToFormId(buffer, off, 0x11);
-            if (candidate is > 0)
-            {
-                return candidate;
-            }
-        }
-
-        return null;
-    }
 }

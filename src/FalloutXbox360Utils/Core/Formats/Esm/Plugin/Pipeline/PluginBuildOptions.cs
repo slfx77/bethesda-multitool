@@ -46,6 +46,16 @@ public sealed record PluginBuildOptions
     public bool VerboseDecisions { get; init; }
 
     /// <summary>
+    ///     When true, the converter emits DMP-captured NAVMs whose parent cell is itself a
+    ///     master cell (master-cell augmentation). Defaults to false: master-cell augmentation
+    ///     has historically surfaced a crucified-animation symptom even after the Phase 7b
+    ///     <c>TesConditionListWalker</c> fix, and the NAVI override builder has not been
+    ///     smoke-validated on the master-cell augmentation path. Set true only when running
+    ///     a smoke build that intends to test that path.
+    /// </summary>
+    public bool EmitMasterCellNavmAugmentation { get; init; }
+
+    /// <summary>
     ///     Starting local FormID for newly-allocated records. Defaults to 0x800 to match the
     ///     GECK convention that local IDs below 0x800 are reserved for the engine.
     /// </summary>

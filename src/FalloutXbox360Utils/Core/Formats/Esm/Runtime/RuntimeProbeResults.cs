@@ -1,3 +1,5 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
+
 namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 
 /// <summary>
@@ -20,4 +22,12 @@ internal sealed class RuntimeProbeResults
     ///     Key = FormType byte, Value = shift in bytes to apply to all non-TESForm fields.
     /// </summary>
     public IReadOnlyDictionary<byte, int>? GenericTypeShifts { get; init; }
+
+    /// <summary>
+    ///     FormID → enumerated runtime entry lookup. Surfaced on <see cref="RuntimeMemoryContext" />
+    ///     so specialized readers can resolve candidate pointers to their EditorIds — primarily
+    ///     used by the QUST script scan to look up candidate Script* pointers before validating
+    ///     via the Script.pOwnerQuest backpointer.
+    /// </summary>
+    public IReadOnlyDictionary<uint, RuntimeEditorIdEntry>? EditorIdsByFormId { get; init; }
 }

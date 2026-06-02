@@ -687,7 +687,7 @@ internal sealed class RuntimeCellReader
     private PdbStructView OpenWorldspaceView(
         RuntimeEditorIdEntry entry, byte[] buffer, PdbTypeLayout layout)
     {
-        return new PdbStructView(_fields, _context, layout, buffer, entry.TesFormOffset!.Value, entry)
+        return new PdbStructView(_fields, layout, buffer, entry.TesFormOffset!.Value, entry)
             .WithShift(WorldShiftStartOffset, int.MaxValue, _layout.WorldShift);
     }
 

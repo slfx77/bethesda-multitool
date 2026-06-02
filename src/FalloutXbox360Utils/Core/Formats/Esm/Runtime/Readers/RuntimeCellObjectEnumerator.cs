@@ -32,7 +32,7 @@ internal sealed class RuntimeCellObjectEnumerator
 
     private PdbStructView OpenCellView(byte[] buffer, long fileOffset, PdbTypeLayout layout)
     {
-        return new PdbStructView(_fields, _context, layout, buffer, fileOffset, entry: null)
+        return new PdbStructView(_fields, layout, buffer, fileOffset, entry: null)
             .WithShift(CellShiftStartOffset, int.MaxValue, _cellShift);
     }
 
