@@ -1,4 +1,5 @@
 #if WINDOWS_GUI
+using System.Diagnostics;
 using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -133,6 +134,8 @@ internal sealed class CellGridDebugRenderer : IDisposable
     /// <summary>Total exterior-cell count last loaded (used for the status overlay).</summary>
     public int CellCount => _cellCount;
 
+    public global::FalloutXbox360Utils.WorldRenderStats LastStats { get; } = new();
+
     /// <summary>
     ///     Rebuilds the cell-grid vertex buffer from the supplied exterior cells. Call once per
     ///     LoadData on the host control; the buffer is reused across frames.
@@ -175,16 +178,41 @@ internal sealed class CellGridDebugRenderer : IDisposable
     /// </summary>
     public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder)
     {
+        LastStats.Reset();
         if (_cellCount == 0) return 0;
 
+        var started = Stopwatch.GetTimestamp();
+        var segmentStarted = started;
         var visibleCells = GatherVisibleCells(cylinder);
-        if (visibleCells == 0) return 0;
+        LastStats.VisibleCandidates = visibleCells;
+        LastStats.VisibleGatherMilliseconds = ElapsedMilliseconds(segmentStarted);
+        if (visibleCells == 0)
+        {
+            LastStats.CpuFrameMilliseconds = ElapsedMilliseconds(started);
+            return 0;
+        }
 
+        segmentStarted = Stopwatch.GetTimestamp();
         EnsureVertexCapacity(visibleCells);
-        UpdateVisibleVertices(cylinder, visibleCells);
+        LastStats.ResourceResizeMilliseconds = ElapsedMilliseconds(segmentStarted);
+
+        segmentStarted = Stopwatch.GetTimestamp();
+        WriteVisibleVertices(cylinder, visibleCells);
+        LastStats.InstanceBuildMilliseconds = ElapsedMilliseconds(segmentStarted);
 
         var ctx = _gpu.Context;
 
+        segmentStarted = Stopwatch.GetTimestamp();
+        ctx.UpdateSubresource(
+            _vertexBuffer!,
+            0,
+            null,
+            _vertexScratchHandle.AddrOfPinnedObject(),
+            0u,
+            0u);
+        LastStats.GpuUploadMilliseconds = ElapsedMilliseconds(segmentStarted);
+
+        segmentStarted = Stopwatch.GetTimestamp();
         // Upload uniforms (viewProj + line color) — same matrix-byte semantics as skin shaders.
         var uniforms = new CellGridUniforms
         {
@@ -205,6 +233,9 @@ internal sealed class CellGridDebugRenderer : IDisposable
         ctx.OMSetBlendState(_blendState, new Color4(1f, 1f, 1f, 1f));
 
         ctx.Draw((uint)(visibleCells * 8), 0);
+        LastStats.DrawCallMilliseconds = ElapsedMilliseconds(segmentStarted);
+        LastStats.WireframeDraws = visibleCells;
+        LastStats.CpuFrameMilliseconds = ElapsedMilliseconds(started);
         return visibleCells;
     }
 
@@ -231,7 +262,7 @@ internal sealed class CellGridDebugRenderer : IDisposable
         return _visibleKeyScratch.Count;
     }
 
-    private void UpdateVisibleVertices(VisibilityCylinder cylinder, int visibleCells)
+    private void WriteVisibleVertices(VisibilityCylinder cylinder, int visibleCells)
     {
         if (_spatialIndex is not null)
         {
@@ -248,14 +279,6 @@ internal sealed class CellGridDebugRenderer : IDisposable
                 WriteCellVertices(i, _visibleKeyScratch[i]);
             }
         }
-
-        _gpu.Context.UpdateSubresource(
-            _vertexBuffer!,
-            0,
-            null,
-            _vertexScratchHandle.AddrOfPinnedObject(),
-            0u,
-            0u);
     }
 
     private void WriteCellVertices(int cellIndex, (int gx, int gy) key)
@@ -303,6 +326,9 @@ internal sealed class CellGridDebugRenderer : IDisposable
             StructureByteStride = 0
         });
     }
+
+    private static double ElapsedMilliseconds(long started) =>
+        Stopwatch.GetElapsedTime(started).TotalMilliseconds;
 
     private void UpdateConstantBuffer(ID3D11DeviceContext ctx, ID3D11Buffer buffer, CellGridUniforms uniforms)
     {

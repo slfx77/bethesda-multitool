@@ -1,4 +1,5 @@
 #if WINDOWS_GUI
+using System.Diagnostics;
 using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -109,6 +110,8 @@ internal sealed class WaterRenderer : IDisposable
         _uniformsScratchHandle = GCHandle.Alloc(_uniformsScratch, GCHandleType.Pinned);
     }
 
+    public global::FalloutXbox360Utils.WorldRenderStats LastStats { get; } = new();
+
     public void Dispose()
     {
         if (_instanceScratchHandle.IsAllocated) _instanceScratchHandle.Free();
@@ -161,8 +164,11 @@ internal sealed class WaterRenderer : IDisposable
     /// </summary>
     public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder)
     {
+        LastStats.Reset();
         if (_waterCells.Count == 0) return 0;
 
+        var started = Stopwatch.GetTimestamp();
+        var segmentStarted = started;
         var ctx = _gpu.Context;
 
         ctx.IASetInputLayout(null); // no vertex buffer; VS reads SV_VertexID directly
@@ -178,14 +184,23 @@ internal sealed class WaterRenderer : IDisposable
         ctx.RSSetState(_rasterizer);
         ctx.OMSetDepthStencilState(_depthState);
         ctx.OMSetBlendState(_blendState, new Color4(1f, 1f, 1f, 1f));
+        LastStats.StateSetupMilliseconds = ElapsedMilliseconds(segmentStarted);
 
+        segmentStarted = Stopwatch.GetTimestamp();
         var visible = GatherVisibleWater(cylinder);
+        LastStats.VisibleCandidates = visible;
+        LastStats.VisibleGatherMilliseconds = ElapsedMilliseconds(segmentStarted);
         if (visible == 0)
         {
+            LastStats.CpuFrameMilliseconds = ElapsedMilliseconds(started);
             return 0;
         }
 
+        segmentStarted = Stopwatch.GetTimestamp();
         EnsureInstanceCapacity(visible);
+        LastStats.ResourceResizeMilliseconds = ElapsedMilliseconds(segmentStarted);
+
+        segmentStarted = Stopwatch.GetTimestamp();
         for (var i = 0; i < visible; i++)
         {
             var water = _visibleWaterScratch[i];
@@ -200,10 +215,18 @@ internal sealed class WaterRenderer : IDisposable
                 Color = DefaultWaterColor
             };
         }
+        LastStats.InstanceBuildMilliseconds = ElapsedMilliseconds(segmentStarted);
 
+        segmentStarted = Stopwatch.GetTimestamp();
         UpdateConstantBuffer(ctx, _constantBuffer, new WaterUniforms { ViewProj = viewProj });
         UpdateInstanceBuffer(ctx, visible);
+        LastStats.GpuUploadMilliseconds = ElapsedMilliseconds(segmentStarted);
+
+        segmentStarted = Stopwatch.GetTimestamp();
         ctx.DrawInstanced(6, (uint)visible, 0, 0);
+        LastStats.DrawCallMilliseconds = ElapsedMilliseconds(segmentStarted);
+        LastStats.WaterDraws = visible;
+        LastStats.CpuFrameMilliseconds = ElapsedMilliseconds(started);
         return visible;
     }
 
@@ -289,6 +312,9 @@ internal sealed class WaterRenderer : IDisposable
         });
         _instanceSrv = _gpu.Device.CreateShaderResourceView(_instanceBuffer);
     }
+
+    private static double ElapsedMilliseconds(long started) =>
+        Stopwatch.GetElapsedTime(started).TotalMilliseconds;
 
     private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile)
     {

@@ -263,6 +263,8 @@ internal sealed class TerrainRenderer : IDisposable
         _textureResolver.ResetFrameStats();
         _opacityCache.ResetFrameStats();
 
+        var segmentStarted = Stopwatch.GetTimestamp();
+
         // Per-frame constants
         _perFrameScratch[0] = viewProj;
         UpdateConstantBuffer(ctx, _perFrameCb, _perFrameScratchHandle.AddrOfPinnedObject());
@@ -287,6 +289,9 @@ internal sealed class TerrainRenderer : IDisposable
         ctx.OMSetDepthStencilState(_depthState);
         ctx.OMSetBlendState(_blendState, new Color4(1f, 1f, 1f, 1f));
         ctx.IASetIndexBuffer(_sharedIndexBuffer, Format.R16_UInt, 0);
+
+        LastStats.StateSetupMilliseconds = ElapsedMilliseconds(segmentStarted);
+        segmentStarted = Stopwatch.GetTimestamp();
 
         // Pass 1a — gather visible cells with their XY distance² to camera as sort key.
         _visibleScratch.Clear();
@@ -317,13 +322,18 @@ internal sealed class TerrainRenderer : IDisposable
         }
 
         LastStats.VisibleCandidates = _visibleScratch.Count;
+        LastStats.VisibleGatherMilliseconds = ElapsedMilliseconds(segmentStarted);
+
+        segmentStarted = Stopwatch.GetTimestamp();
         _visibleScratch.Sort(ByDistanceAscending);
+        LastStats.VisibleSortMilliseconds = ElapsedMilliseconds(segmentStarted);
 
         // Reset SRV binding cache each frame — D3D11 doesn't persist binds across frames
         // in any useful way (and we wouldn't trust caller-bound state anyway).
         for (var i = 0; i < _lastBoundSrvs.Length; i++) _lastBoundSrvs[i] = null;
 
         // Pass 1b — build (if budget allows) + draw, in distance order.
+        segmentStarted = Stopwatch.GetTimestamp();
         var uploadBudget = MaxNewUploadsPerFrame;
         var vertexStride = (uint)Marshal.SizeOf<GpuMeshUploader.GpuVertex>();
         var drawn = 0;
@@ -334,12 +344,17 @@ internal sealed class TerrainRenderer : IDisposable
 
             ctx.IASetVertexBuffer(0, entry.VertexBuffer, vertexStride);
 
+            var quadrantStarted = Stopwatch.GetTimestamp();
             var anyQuadrantDrawn = DrawCellQuadrants(ctx, vc.Key, vc.Cell);
+            LastStats.QuadrantDrawMilliseconds += ElapsedMilliseconds(quadrantStarted);
             if (anyQuadrantDrawn) drawn++;
         }
+        LastStats.DrawLoopMilliseconds = ElapsedMilliseconds(segmentStarted);
 
         // Pass 2 — idle 8-neighbor pre-upload, closest-first.
+        segmentStarted = Stopwatch.GetTimestamp();
         PreUploadVisibleNeighbors(ref uploadBudget);
+        LastStats.NeighborPreUploadMilliseconds = ElapsedMilliseconds(segmentStarted);
 
         LastStats.TerrainDraws = drawn;
         LastStats.TextureCacheMisses = _textureResolver.FrameCacheMisses;
@@ -396,6 +411,7 @@ internal sealed class TerrainRenderer : IDisposable
                 (uint)TerrainMeshBuilder.IndicesPerQuadrant,
                 (uint)(q * TerrainMeshBuilder.IndicesPerQuadrant),
                 0);
+            LastStats.TerrainQuadrantDraws++;
             anyDrawn = true;
         }
         return anyDrawn;
@@ -481,7 +497,10 @@ internal sealed class TerrainRenderer : IDisposable
                     if (!_cells.TryGetValue(nkey, out var ncell)) continue;
 
                     if (TryBuildAndCache(nkey, ncell) is not null)
+                    {
+                        LastStats.NewPreUploads++;
                         uploadBudget--;
+                    }
                 }
             }
         }
@@ -502,20 +521,31 @@ internal sealed class TerrainRenderer : IDisposable
 
     private CachedCellMesh? TryBuildAndCache((int gx, int gy) key, CellRecord cell)
     {
-        if (!TerrainMeshBuilder.TryBuildVertices(cell, _vertexScratch, _renderCache))
+        var started = Stopwatch.GetTimestamp();
+        try
         {
-            _knownUnusableCells.Add(key);
-            return null;
-        }
+            if (!TerrainMeshBuilder.TryBuildVertices(cell, _vertexScratch, _renderCache))
+            {
+                _knownUnusableCells.Add(key);
+                return null;
+            }
 
-        var vb = GpuMeshUploader.CreateVertexBuffer(_gpu.Device, _vertexScratch);
-        var entry = new CachedCellMesh
+            var vb = GpuMeshUploader.CreateVertexBuffer(_gpu.Device, _vertexScratch);
+            var entry = new CachedCellMesh
+            {
+                VertexBuffer = vb
+            };
+            _meshCache.Insert(key, entry);
+            return entry;
+        }
+        finally
         {
-            VertexBuffer = vb
-        };
-        _meshCache.Insert(key, entry);
-        return entry;
+            LastStats.MeshBuildUploadMilliseconds += ElapsedMilliseconds(started);
+        }
     }
+
+    private static double ElapsedMilliseconds(long started) =>
+        Stopwatch.GetElapsedTime(started).TotalMilliseconds;
 
     private static ID3D11Buffer CreateCb(ID3D11Device device, uint byteWidth) =>
         device.CreateBuffer(new BufferDescription

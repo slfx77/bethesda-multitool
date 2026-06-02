@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Globalization;
 using System.Numerics;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
@@ -42,6 +44,11 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
     private readonly HashSet<VirtualKey> _toggleKeysDown = [];
     private readonly bool _showFrameStats =
         Environment.GetEnvironmentVariable("FALLOUT_VIEWER_FRAME_STATS") == "1";
+    private readonly bool _profileLogging =
+        Environment.GetEnvironmentVariable("FALLOUT_VIEWER_PROFILE_LOG") == "1";
+    private readonly int _profileLogIntervalMilliseconds =
+        ParsePositiveInt(Environment.GetEnvironmentVariable("FALLOUT_VIEWER_PROFILE_INTERVAL_MS"), 2000);
+    private readonly FrameProfileAccumulator _profileAccumulator = new();
 
     private CellGridDebugRenderer? _cellGrid;
     private TerrainRenderer? _terrain;
@@ -58,6 +65,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
     private bool _suppressWorldspaceSelectionEvent;
     private Dictionary<(int gx, int gy), CellRecord>? _cellGridLookup;
     private WorldSpatialIndex? _spatialIndex;
+    private double _lastControllerUpdateMilliseconds;
 
     // Layer visibility — toggled by D1/D2/D3 keys, all default-on. D4 toggles textured-vs-VCLR-only.
     private bool _showWireframe = true;
@@ -73,6 +81,14 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         _camera.FarPlane = _renderDistance;
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
+
+        if (_profileLogging)
+        {
+            Log.Info(
+                "WorldView3DControl: profile logging enabled; interval={0}ms. " +
+                "Set FALLOUT_VIEWER_PROFILE_LOG=0 to disable.",
+                _profileLogIntervalMilliseconds);
+        }
     }
 
     public void Dispose()
@@ -440,7 +456,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         // Clamp pathological deltas (long pause, debugger break) to keep camera step bounded.
         if (deltaSeconds > 0.1f) deltaSeconds = 0.1f;
 
+        var controllerStarted = Stopwatch.GetTimestamp();
         _controller.Update(deltaSeconds);
+        _lastControllerUpdateMilliseconds = ElapsedMilliseconds(controllerStarted);
 
         try
         {
@@ -458,18 +476,24 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
 
     private void RenderFrame()
     {
+        var frameStarted = Stopwatch.GetTimestamp();
+        var stageStarted = frameStarted;
         var ctx = _gpu!.Context;
         // Acquire a FRESH back-buffer RTV every frame (see GpuSwapChainSurface.AcquireBackBufferRtv
         // for the rationale — caching across frames produces a Vortice RTV wrapper with a stale
         // native COM pointer after WinUI's first composition pass on the swap chain).
         using var rtv = _surface!.AcquireBackBufferRtv();
         var dsv = _surface.DepthStencilView;
+        var acquireMilliseconds = ElapsedMilliseconds(stageStarted);
 
+        stageStarted = Stopwatch.GetTimestamp();
         ctx.ClearRenderTargetView(rtv, new Color4(0x1B / 255f, 0x24 / 255f, 0x36 / 255f, 1f));
         ctx.ClearDepthStencilView(dsv, DepthStencilClearFlags.Depth, 1f, 0);
         ctx.OMSetRenderTargets(rtv, dsv);
         ctx.RSSetViewport(0, 0, _surface.Width, _surface.Height, 0, 1);
+        var clearSetupMilliseconds = ElapsedMilliseconds(stageStarted);
 
+        stageStarted = Stopwatch.GetTimestamp();
         var aspect = _surface.Width / (float)_surface.Height;
         _camera.FarPlane = _renderDistance;
         var view = _camera.GetViewMatrix();
@@ -483,6 +507,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         // the view-space condition y·cos(P) + H·sin(P) > 0 degenerates to "always true",
         // and cells at any azimuth from the yaw direction can be on-screen.
         var cylinder = new VisibilityCylinder(_camera.Position, _renderDistance);
+        var cameraMilliseconds = ElapsedMilliseconds(stageStarted);
 
         // Historical note: the projection FarPlane default was 800k world units (~195 cells).
         // That is useful for screenshots, but it makes the real-time path submit most or all
@@ -490,15 +515,45 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         // Layer order: terrain (writes depth) → water (reads depth, alpha-blended) →
         // wireframe (depth-disabled, drawn on top). Terrain processes cells closest-first
         // when the upload budget is tight, so the area under the camera fills first.
+        stageStarted = Stopwatch.GetTimestamp();
         var visibleTerrain = (_showTerrain ? _terrain?.Render(viewProj, cylinder) : null) ?? 0;
+        var terrainMilliseconds = ElapsedMilliseconds(stageStarted);
+
+        stageStarted = Stopwatch.GetTimestamp();
         var visibleWater = (_showWater ? _water?.Render(viewProj, cylinder) : null) ?? 0;
+        var waterMilliseconds = ElapsedMilliseconds(stageStarted);
+
+        stageStarted = Stopwatch.GetTimestamp();
         var visibleWireframe = (_showWireframe ? _cellGrid?.Render(viewProj, cylinder) : null) ?? 0;
+        var wireframeMilliseconds = ElapsedMilliseconds(stageStarted);
 
+        stageStarted = Stopwatch.GetTimestamp();
         _surface.Present();
+        var presentMilliseconds = ElapsedMilliseconds(stageStarted);
 
+        stageStarted = Stopwatch.GetTimestamp();
         var visible = Math.Max(visibleTerrain, visibleWireframe);
         var totalCells = _terrain?.CellCount ?? _cellGrid?.CellCount ?? 0;
         UpdateHud(visible, totalCells, visibleWater);
+        var hudMilliseconds = ElapsedMilliseconds(stageStarted);
+
+        var sample = new FrameProfileSample(
+            TotalMilliseconds: ElapsedMilliseconds(frameStarted),
+            ControllerMilliseconds: _lastControllerUpdateMilliseconds,
+            AcquireMilliseconds: acquireMilliseconds,
+            ClearSetupMilliseconds: clearSetupMilliseconds,
+            CameraMilliseconds: cameraMilliseconds,
+            TerrainMilliseconds: terrainMilliseconds,
+            WaterMilliseconds: waterMilliseconds,
+            WireframeMilliseconds: wireframeMilliseconds,
+            PresentMilliseconds: presentMilliseconds,
+            HudMilliseconds: hudMilliseconds,
+            VisibleTerrain: visibleTerrain,
+            VisibleWater: visibleWater,
+            VisibleWireframe: visibleWireframe,
+            TotalCells: totalCells,
+            RenderDistanceCells: _renderDistance / WorldGridConstants.CellSize);
+        MaybeLogProfile(sample);
     }
 
     // Camera framing ------------------------------------------------------------------------
@@ -627,6 +682,23 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         HudText.Text = text;
     }
 
+    private void MaybeLogProfile(FrameProfileSample sample)
+    {
+        if (!_profileLogging)
+        {
+            return;
+        }
+
+        var terrain = _showTerrain ? _terrain?.LastStats.Snapshot() : null;
+        var water = _showWater ? _water?.LastStats.Snapshot() : null;
+        var wireframe = _showWireframe ? _cellGrid?.LastStats.Snapshot() : null;
+        _profileAccumulator.Add(sample, terrain, water, wireframe);
+        if (_profileAccumulator.TryFlush(_profileLogIntervalMilliseconds, out var message))
+        {
+            Log.Info(message);
+        }
+    }
+
     private void SetRenderDistance(float distance)
     {
         _renderDistance = Math.Clamp(distance, MinRenderDistance, MaxRenderDistance);
@@ -644,5 +716,257 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
     {
         StatusOverlay.Visibility = Visibility.Collapsed;
         HudPanel.Visibility = Visibility.Visible;
+    }
+
+    private static int ParsePositiveInt(string? value, int fallback)
+    {
+        return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) &&
+               parsed > 0
+            ? parsed
+            : fallback;
+    }
+
+    private static double ElapsedMilliseconds(long started) =>
+        Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+
+    private readonly record struct FrameProfileSample(
+        double TotalMilliseconds,
+        double ControllerMilliseconds,
+        double AcquireMilliseconds,
+        double ClearSetupMilliseconds,
+        double CameraMilliseconds,
+        double TerrainMilliseconds,
+        double WaterMilliseconds,
+        double WireframeMilliseconds,
+        double PresentMilliseconds,
+        double HudMilliseconds,
+        int VisibleTerrain,
+        int VisibleWater,
+        int VisibleWireframe,
+        int TotalCells,
+        float RenderDistanceCells);
+
+    private sealed class FrameProfileAccumulator
+    {
+        private long _intervalStarted = Stopwatch.GetTimestamp();
+        private int _frames;
+        private double _frameTotal;
+        private double _frameMax;
+        private double _controller;
+        private double _acquire;
+        private double _clearSetup;
+        private double _camera;
+        private double _terrainFrame;
+        private double _waterFrame;
+        private double _wireframeFrame;
+        private double _present;
+        private double _hud;
+        private double _terrainState;
+        private double _terrainGather;
+        private double _terrainSort;
+        private double _terrainDrawLoop;
+        private double _terrainQuadrants;
+        private double _terrainMeshUpload;
+        private double _terrainPreUpload;
+        private double _terrainCpu;
+        private double _waterState;
+        private double _waterGather;
+        private double _waterInstanceBuild;
+        private double _waterUpload;
+        private double _waterDrawCall;
+        private double _waterCpu;
+        private double _wireGather;
+        private double _wireVertexBuild;
+        private double _wireUpload;
+        private double _wireDrawCall;
+        private double _wireCpu;
+        private double _visibleTerrain;
+        private double _visibleWater;
+        private double _visibleWireframe;
+        private double _terrainCandidates;
+        private double _terrainDraws;
+        private double _terrainQuadrantDraws;
+        private double _terrainUploads;
+        private double _terrainPreUploads;
+        private double _textureMisses;
+        private double _opacityMisses;
+        private int _lastTotalCells;
+        private float _lastRenderDistanceCells;
+
+        internal void Add(
+            FrameProfileSample sample,
+            WorldRenderStats? terrain,
+            WorldRenderStats? water,
+            WorldRenderStats? wireframe)
+        {
+            _frames++;
+            _frameTotal += sample.TotalMilliseconds;
+            _frameMax = Math.Max(_frameMax, sample.TotalMilliseconds);
+            _controller += sample.ControllerMilliseconds;
+            _acquire += sample.AcquireMilliseconds;
+            _clearSetup += sample.ClearSetupMilliseconds;
+            _camera += sample.CameraMilliseconds;
+            _terrainFrame += sample.TerrainMilliseconds;
+            _waterFrame += sample.WaterMilliseconds;
+            _wireframeFrame += sample.WireframeMilliseconds;
+            _present += sample.PresentMilliseconds;
+            _hud += sample.HudMilliseconds;
+            _visibleTerrain += sample.VisibleTerrain;
+            _visibleWater += sample.VisibleWater;
+            _visibleWireframe += sample.VisibleWireframe;
+            _lastTotalCells = sample.TotalCells;
+            _lastRenderDistanceCells = sample.RenderDistanceCells;
+
+            if (terrain is not null)
+            {
+                _terrainState += terrain.StateSetupMilliseconds;
+                _terrainGather += terrain.VisibleGatherMilliseconds;
+                _terrainSort += terrain.VisibleSortMilliseconds;
+                _terrainDrawLoop += terrain.DrawLoopMilliseconds;
+                _terrainQuadrants += terrain.QuadrantDrawMilliseconds;
+                _terrainMeshUpload += terrain.MeshBuildUploadMilliseconds;
+                _terrainPreUpload += terrain.NeighborPreUploadMilliseconds;
+                _terrainCpu += terrain.CpuFrameMilliseconds;
+                _terrainCandidates += terrain.VisibleCandidates;
+                _terrainDraws += terrain.TerrainDraws;
+                _terrainQuadrantDraws += terrain.TerrainQuadrantDraws;
+                _terrainUploads += terrain.NewUploads;
+                _terrainPreUploads += terrain.NewPreUploads;
+                _textureMisses += terrain.TextureCacheMisses;
+                _opacityMisses += terrain.OpacityCacheMisses;
+            }
+
+            if (water is not null)
+            {
+                _waterState += water.StateSetupMilliseconds;
+                _waterGather += water.VisibleGatherMilliseconds;
+                _waterInstanceBuild += water.InstanceBuildMilliseconds;
+                _waterUpload += water.GpuUploadMilliseconds;
+                _waterDrawCall += water.DrawCallMilliseconds;
+                _waterCpu += water.CpuFrameMilliseconds;
+            }
+
+            if (wireframe is not null)
+            {
+                _wireGather += wireframe.VisibleGatherMilliseconds;
+                _wireVertexBuild += wireframe.InstanceBuildMilliseconds;
+                _wireUpload += wireframe.GpuUploadMilliseconds;
+                _wireDrawCall += wireframe.DrawCallMilliseconds;
+                _wireCpu += wireframe.CpuFrameMilliseconds;
+            }
+        }
+
+        internal bool TryFlush(int intervalMilliseconds, out string message)
+        {
+            var elapsed = Stopwatch.GetElapsedTime(_intervalStarted).TotalMilliseconds;
+            if (_frames == 0 || elapsed < intervalMilliseconds)
+            {
+                message = "";
+                return false;
+            }
+
+            double Avg(double value) => value / _frames;
+            message = string.Format(
+                CultureInfo.InvariantCulture,
+                "3D profile {0}f/{1:0.0}s cells={2} dist={3:0.#}c " +
+                "frame avg/max={4:0.00}/{5:0.00}ms stages ctrl={6:0.00} acquire={7:0.00} clear={8:0.00} camera={9:0.00} " +
+                "terrain={10:0.00} water={11:0.00} wire={12:0.00} present={13:0.00} hud={14:0.00} | " +
+                "terrain cpu={15:0.00} state={16:0.00} gather={17:0.00} sort={18:0.00} loop={19:0.00} " +
+                "quadrants={20:0.00} meshUpload={21:0.00} preUpload={22:0.00} cand={23:0.0} cells={24:0.0} qdraw={25:0.0} " +
+                "uploads={26:0.0}+{27:0.0} texMiss={28:0.0} opMiss={29:0.0} | " +
+                "water cpu={30:0.00} gather={31:0.00} build={32:0.00} upload={33:0.00} draw={34:0.00} cells={35:0.0} | " +
+                "wire cpu={36:0.00} gather={37:0.00} vertices={38:0.00} upload={39:0.00} draw={40:0.00} cells={41:0.0}",
+                _frames,
+                elapsed / 1000.0,
+                _lastTotalCells,
+                _lastRenderDistanceCells,
+                Avg(_frameTotal),
+                _frameMax,
+                Avg(_controller),
+                Avg(_acquire),
+                Avg(_clearSetup),
+                Avg(_camera),
+                Avg(_terrainFrame),
+                Avg(_waterFrame),
+                Avg(_wireframeFrame),
+                Avg(_present),
+                Avg(_hud),
+                Avg(_terrainCpu),
+                Avg(_terrainState),
+                Avg(_terrainGather),
+                Avg(_terrainSort),
+                Avg(_terrainDrawLoop),
+                Avg(_terrainQuadrants),
+                Avg(_terrainMeshUpload),
+                Avg(_terrainPreUpload),
+                Avg(_terrainCandidates),
+                Avg(_terrainDraws),
+                Avg(_terrainQuadrantDraws),
+                Avg(_terrainUploads),
+                Avg(_terrainPreUploads),
+                Avg(_textureMisses),
+                Avg(_opacityMisses),
+                Avg(_waterCpu),
+                Avg(_waterGather),
+                Avg(_waterInstanceBuild),
+                Avg(_waterUpload),
+                Avg(_waterDrawCall),
+                Avg(_visibleWater),
+                Avg(_wireCpu),
+                Avg(_wireGather),
+                Avg(_wireVertexBuild),
+                Avg(_wireUpload),
+                Avg(_wireDrawCall),
+                Avg(_visibleWireframe));
+
+            Reset();
+            return true;
+        }
+
+        private void Reset()
+        {
+            _intervalStarted = Stopwatch.GetTimestamp();
+            _frames = 0;
+            _frameTotal = 0;
+            _frameMax = 0;
+            _controller = 0;
+            _acquire = 0;
+            _clearSetup = 0;
+            _camera = 0;
+            _terrainFrame = 0;
+            _waterFrame = 0;
+            _wireframeFrame = 0;
+            _present = 0;
+            _hud = 0;
+            _terrainState = 0;
+            _terrainGather = 0;
+            _terrainSort = 0;
+            _terrainDrawLoop = 0;
+            _terrainQuadrants = 0;
+            _terrainMeshUpload = 0;
+            _terrainPreUpload = 0;
+            _terrainCpu = 0;
+            _waterState = 0;
+            _waterGather = 0;
+            _waterInstanceBuild = 0;
+            _waterUpload = 0;
+            _waterDrawCall = 0;
+            _waterCpu = 0;
+            _wireGather = 0;
+            _wireVertexBuild = 0;
+            _wireUpload = 0;
+            _wireDrawCall = 0;
+            _wireCpu = 0;
+            _visibleTerrain = 0;
+            _visibleWater = 0;
+            _visibleWireframe = 0;
+            _terrainCandidates = 0;
+            _terrainDraws = 0;
+            _terrainQuadrantDraws = 0;
+            _terrainUploads = 0;
+            _terrainPreUploads = 0;
+            _textureMisses = 0;
+            _opacityMisses = 0;
+        }
     }
 }
