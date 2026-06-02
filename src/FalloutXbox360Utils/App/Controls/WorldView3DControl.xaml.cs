@@ -866,58 +866,25 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
             }
 
             double Avg(double value) => value / _frames;
-            message = string.Format(
-                CultureInfo.InvariantCulture,
-                "3D profile {0}f/{1:0.0}s cells={2} dist={3:0.#}c " +
-                "frame avg/max={4:0.00}/{5:0.00}ms stages ctrl={6:0.00} acquire={7:0.00} clear={8:0.00} camera={9:0.00} " +
-                "terrain={10:0.00} water={11:0.00} wire={12:0.00} present={13:0.00} hud={14:0.00} | " +
-                "terrain cpu={15:0.00} state={16:0.00} gather={17:0.00} sort={18:0.00} loop={19:0.00} " +
-                "quadrants={20:0.00} meshUpload={21:0.00} preUpload={22:0.00} cand={23:0.0} cells={24:0.0} qdraw={25:0.0} " +
-                "uploads={26:0.0}+{27:0.0} texMiss={28:0.0} opMiss={29:0.0} | " +
-                "water cpu={30:0.00} gather={31:0.00} build={32:0.00} upload={33:0.00} draw={34:0.00} cells={35:0.0} | " +
-                "wire cpu={36:0.00} gather={37:0.00} vertices={38:0.00} upload={39:0.00} draw={40:0.00} cells={41:0.0}",
-                _frames,
-                elapsed / 1000.0,
-                _lastTotalCells,
-                _lastRenderDistanceCells,
-                Avg(_frameTotal),
-                _frameMax,
-                Avg(_controller),
-                Avg(_acquire),
-                Avg(_clearSetup),
-                Avg(_camera),
-                Avg(_terrainFrame),
-                Avg(_waterFrame),
-                Avg(_wireframeFrame),
-                Avg(_present),
-                Avg(_hud),
-                Avg(_terrainCpu),
-                Avg(_terrainState),
-                Avg(_terrainGather),
-                Avg(_terrainSort),
-                Avg(_terrainDrawLoop),
-                Avg(_terrainQuadrants),
-                Avg(_terrainMeshUpload),
-                Avg(_terrainPreUpload),
-                Avg(_terrainCandidates),
-                Avg(_terrainDraws),
-                Avg(_terrainQuadrantDraws),
-                Avg(_terrainUploads),
-                Avg(_terrainPreUploads),
-                Avg(_textureMisses),
-                Avg(_opacityMisses),
-                Avg(_waterCpu),
-                Avg(_waterGather),
-                Avg(_waterInstanceBuild),
-                Avg(_waterUpload),
-                Avg(_waterDrawCall),
-                Avg(_visibleWater),
-                Avg(_wireCpu),
-                Avg(_wireGather),
-                Avg(_wireVertexBuild),
-                Avg(_wireUpload),
-                Avg(_wireDrawCall),
-                Avg(_visibleWireframe));
+            // FormattableString.Invariant applies per-piece because `+` between interpolated
+            // strings collapses each side to `string`, which the wrapper would then reject.
+            message =
+                FormattableString.Invariant($"3D profile {_frames}f/{elapsed / 1000.0:0.0}s cells={_lastTotalCells} dist={_lastRenderDistanceCells:0.#}c ") +
+                FormattableString.Invariant($"frame avg/max={Avg(_frameTotal):0.00}/{_frameMax:0.00}ms ") +
+                FormattableString.Invariant($"stages ctrl={Avg(_controller):0.00} acquire={Avg(_acquire):0.00} clear={Avg(_clearSetup):0.00} ") +
+                FormattableString.Invariant($"camera={Avg(_camera):0.00} terrain={Avg(_terrainFrame):0.00} water={Avg(_waterFrame):0.00} ") +
+                FormattableString.Invariant($"wire={Avg(_wireframeFrame):0.00} present={Avg(_present):0.00} hud={Avg(_hud):0.00} | ") +
+                FormattableString.Invariant($"terrain cpu={Avg(_terrainCpu):0.00} state={Avg(_terrainState):0.00} gather={Avg(_terrainGather):0.00} ") +
+                FormattableString.Invariant($"sort={Avg(_terrainSort):0.00} loop={Avg(_terrainDrawLoop):0.00} quadrants={Avg(_terrainQuadrants):0.00} ") +
+                FormattableString.Invariant($"meshUpload={Avg(_terrainMeshUpload):0.00} preUpload={Avg(_terrainPreUpload):0.00} ") +
+                FormattableString.Invariant($"cand={Avg(_terrainCandidates):0.0} visible={Avg(_visibleTerrain):0.0} cells={Avg(_terrainDraws):0.0} ") +
+                FormattableString.Invariant($"qdraw={Avg(_terrainQuadrantDraws):0.0} uploads={Avg(_terrainUploads):0.0}+{Avg(_terrainPreUploads):0.0} ") +
+                FormattableString.Invariant($"texMiss={Avg(_textureMisses):0.0} opMiss={Avg(_opacityMisses):0.0} | ") +
+                FormattableString.Invariant($"water cpu={Avg(_waterCpu):0.00} state={Avg(_waterState):0.00} gather={Avg(_waterGather):0.00} ") +
+                FormattableString.Invariant($"build={Avg(_waterInstanceBuild):0.00} upload={Avg(_waterUpload):0.00} draw={Avg(_waterDrawCall):0.00} ") +
+                FormattableString.Invariant($"cells={Avg(_visibleWater):0.0} | ") +
+                FormattableString.Invariant($"wire cpu={Avg(_wireCpu):0.00} gather={Avg(_wireGather):0.00} vertices={Avg(_wireVertexBuild):0.00} ") +
+                FormattableString.Invariant($"upload={Avg(_wireUpload):0.00} draw={Avg(_wireDrawCall):0.00} cells={Avg(_visibleWireframe):0.0}");
 
             Reset();
             return true;
