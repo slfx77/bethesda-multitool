@@ -483,7 +483,29 @@ internal static class SubrecordCellAndMiscSchemas
             Description = "Sound Data"
         };
 
-        // DNAM - IMGS (floats)
+        // IMGS - HDR/Cinematic/Tint/DoF parameter subrecords. All-float, fixed sizes per
+        // fopdoc; the DNAM is variable-length (DoF data, typically 24-48 bytes).
+        schemas[new SubrecordSchemaRegistry.SchemaKey("HNAM", "IMGS", 36)] = new SubrecordSchema(
+            F.Float("EyeAdaptSpeed"), F.Float("BlurRadius"), F.Float("BlurPasses"),
+            F.Float("EmissiveMult"), F.Float("TargetLum"), F.Float("UpperLumClamp"),
+            F.Float("BrightScale"), F.Float("BrightClamp"), F.Float("LumRampNoTex"))
+        {
+            Description = "Image Space HDR"
+        };
+
+        schemas[new SubrecordSchemaRegistry.SchemaKey("CNAM", "IMGS", 12)] = new SubrecordSchema(
+            F.Float("Saturation"), F.Float("Brightness"), F.Float("Contrast"))
+        {
+            Description = "Image Space Cinematic"
+        };
+
+        schemas[new SubrecordSchemaRegistry.SchemaKey("TNAM", "IMGS", 16)] = new SubrecordSchema(
+            F.Float("Amount"), F.Float("Red"), F.Float("Green"), F.Float("Blue"))
+        {
+            Description = "Image Space Tint"
+        };
+
+        // DNAM - IMGS (variable float array, DoF parameters)
         schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "IMGS")] = SubrecordSchema.FloatArray;
 
         // DNAM - PWAT (8 bytes)

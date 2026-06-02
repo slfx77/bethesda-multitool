@@ -866,25 +866,25 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
             }
 
             double Avg(double value) => value / _frames;
-            // FormattableString.Invariant applies per-piece because `+` between interpolated
-            // strings collapses each side to `string`, which the wrapper would then reject.
+            // Apply invariant formatting per piece because concatenating interpolated strings
+            // first would format each segment with the current UI culture.
             message =
-                FormattableString.Invariant($"3D profile {_frames}f/{elapsed / 1000.0:0.0}s cells={_lastTotalCells} dist={_lastRenderDistanceCells:0.#}c ") +
-                FormattableString.Invariant($"frame avg/max={Avg(_frameTotal):0.00}/{_frameMax:0.00}ms ") +
-                FormattableString.Invariant($"stages ctrl={Avg(_controller):0.00} acquire={Avg(_acquire):0.00} clear={Avg(_clearSetup):0.00} ") +
-                FormattableString.Invariant($"camera={Avg(_camera):0.00} terrain={Avg(_terrainFrame):0.00} water={Avg(_waterFrame):0.00} ") +
-                FormattableString.Invariant($"wire={Avg(_wireframeFrame):0.00} present={Avg(_present):0.00} hud={Avg(_hud):0.00} | ") +
-                FormattableString.Invariant($"terrain cpu={Avg(_terrainCpu):0.00} state={Avg(_terrainState):0.00} gather={Avg(_terrainGather):0.00} ") +
-                FormattableString.Invariant($"sort={Avg(_terrainSort):0.00} loop={Avg(_terrainDrawLoop):0.00} quadrants={Avg(_terrainQuadrants):0.00} ") +
-                FormattableString.Invariant($"meshUpload={Avg(_terrainMeshUpload):0.00} preUpload={Avg(_terrainPreUpload):0.00} ") +
-                FormattableString.Invariant($"cand={Avg(_terrainCandidates):0.0} visible={Avg(_visibleTerrain):0.0} cells={Avg(_terrainDraws):0.0} ") +
-                FormattableString.Invariant($"qdraw={Avg(_terrainQuadrantDraws):0.0} uploads={Avg(_terrainUploads):0.0}+{Avg(_terrainPreUploads):0.0} ") +
-                FormattableString.Invariant($"texMiss={Avg(_textureMisses):0.0} opMiss={Avg(_opacityMisses):0.0} | ") +
-                FormattableString.Invariant($"water cpu={Avg(_waterCpu):0.00} state={Avg(_waterState):0.00} gather={Avg(_waterGather):0.00} ") +
-                FormattableString.Invariant($"build={Avg(_waterInstanceBuild):0.00} upload={Avg(_waterUpload):0.00} draw={Avg(_waterDrawCall):0.00} ") +
-                FormattableString.Invariant($"cells={Avg(_visibleWater):0.0} | ") +
-                FormattableString.Invariant($"wire cpu={Avg(_wireCpu):0.00} gather={Avg(_wireGather):0.00} vertices={Avg(_wireVertexBuild):0.00} ") +
-                FormattableString.Invariant($"upload={Avg(_wireUpload):0.00} draw={Avg(_wireDrawCall):0.00} cells={Avg(_visibleWireframe):0.0}");
+                string.Create(CultureInfo.InvariantCulture, $"3D profile {_frames}f/{elapsed / 1000.0:0.0}s cells={_lastTotalCells} dist={_lastRenderDistanceCells:0.#}c ") +
+                string.Create(CultureInfo.InvariantCulture, $"frame avg/max={Avg(_frameTotal):0.00}/{_frameMax:0.00}ms ") +
+                string.Create(CultureInfo.InvariantCulture, $"stages ctrl={Avg(_controller):0.00} acquire={Avg(_acquire):0.00} clear={Avg(_clearSetup):0.00} ") +
+                string.Create(CultureInfo.InvariantCulture, $"camera={Avg(_camera):0.00} terrain={Avg(_terrainFrame):0.00} water={Avg(_waterFrame):0.00} ") +
+                string.Create(CultureInfo.InvariantCulture, $"wire={Avg(_wireframeFrame):0.00} present={Avg(_present):0.00} hud={Avg(_hud):0.00} | ") +
+                string.Create(CultureInfo.InvariantCulture, $"terrain cpu={Avg(_terrainCpu):0.00} state={Avg(_terrainState):0.00} gather={Avg(_terrainGather):0.00} ") +
+                string.Create(CultureInfo.InvariantCulture, $"sort={Avg(_terrainSort):0.00} loop={Avg(_terrainDrawLoop):0.00} quadrants={Avg(_terrainQuadrants):0.00} ") +
+                string.Create(CultureInfo.InvariantCulture, $"meshUpload={Avg(_terrainMeshUpload):0.00} preUpload={Avg(_terrainPreUpload):0.00} ") +
+                string.Create(CultureInfo.InvariantCulture, $"cand={Avg(_terrainCandidates):0.0} visible={Avg(_visibleTerrain):0.0} cells={Avg(_terrainDraws):0.0} ") +
+                string.Create(CultureInfo.InvariantCulture, $"qdraw={Avg(_terrainQuadrantDraws):0.0} uploads={Avg(_terrainUploads):0.0}+{Avg(_terrainPreUploads):0.0} ") +
+                string.Create(CultureInfo.InvariantCulture, $"texMiss={Avg(_textureMisses):0.0} opMiss={Avg(_opacityMisses):0.0} | ") +
+                string.Create(CultureInfo.InvariantCulture, $"water cpu={Avg(_waterCpu):0.00} state={Avg(_waterState):0.00} gather={Avg(_waterGather):0.00} ") +
+                string.Create(CultureInfo.InvariantCulture, $"build={Avg(_waterInstanceBuild):0.00} upload={Avg(_waterUpload):0.00} draw={Avg(_waterDrawCall):0.00} ") +
+                string.Create(CultureInfo.InvariantCulture, $"cells={Avg(_visibleWater):0.0} | ") +
+                string.Create(CultureInfo.InvariantCulture, $"wire cpu={Avg(_wireCpu):0.00} gather={Avg(_wireGather):0.00} vertices={Avg(_wireVertexBuild):0.00} ") +
+                string.Create(CultureInfo.InvariantCulture, $"upload={Avg(_wireUpload):0.00} draw={Avg(_wireDrawCall):0.00} cells={Avg(_visibleWireframe):0.0}");
 
             Reset();
             return true;
