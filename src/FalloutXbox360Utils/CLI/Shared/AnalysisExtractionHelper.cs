@@ -218,14 +218,12 @@ internal static class AnalysisExtractionHelper
         var meshes3D = meshes.Where(m => m.Is3D).ToList();
         var meshesUI = meshes.Where(m => !m.Is3D).ToList();
 
-        // Export combined OBJ with only 3D meshes (UI meshes are useless in a viewer)
-        var combinedPath = Path.Combine(outputDir, "meshes_3d_combined.obj");
+        var combinedPath = Path.Combine(outputDir, "meshes_3d_combined.glb");
         if (meshes3D.Count > 0)
         {
-            MeshObjExporter.ExportMultiple(meshes3D, combinedPath, sceneGraph, modelNameIndex);
+            MeshGlbExporter.ExportMultiple(meshes3D, combinedPath, sceneGraph, modelNameIndex);
         }
 
-        // Export individual OBJ files into 3d/ and ui/ subdirectories
         ExportMeshSubdirectory(meshes3D, Path.Combine(outputDir, "3d"), sceneGraph, modelNameIndex);
         ExportMeshSubdirectory(meshesUI, Path.Combine(outputDir, "ui"), sceneGraph, modelNameIndex);
 
@@ -342,7 +340,7 @@ internal static class AnalysisExtractionHelper
         {
             var mesh = meshes[i];
             var name = AssetNameResolver.ResolveMeshName(mesh, i, sceneGraph, modelNameIndex);
-            MeshObjExporter.Export(mesh, Path.Combine(dir, $"{name}.obj"), name);
+            MeshGlbExporter.Export(mesh, Path.Combine(dir, $"{name}.glb"), name);
         }
     }
 

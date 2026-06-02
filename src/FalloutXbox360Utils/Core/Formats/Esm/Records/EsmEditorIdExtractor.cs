@@ -319,6 +319,11 @@ internal static class EsmEditorIdExtractor
         // Pass 3: Walk pAllForms hash table for LAND entries (LAND records lack editor IDs)
         if (candidate.AllFormsVa != 0)
         {
+            // Persist the discovered VA so downstream consumers (e.g. RuntimeCellEnumerator)
+            // can walk the same hash for additional form-type enumeration without re-scanning
+            // the data section.
+            scanResult.PAllFormsVa = candidate.AllFormsVa;
+
             EditorIdLookupTables.ExtractLandFormsFromAllFormsTable(
                 accessor, fileSize, minidumpInfo, scanResult, candidate.AllFormsVa, log);
         }

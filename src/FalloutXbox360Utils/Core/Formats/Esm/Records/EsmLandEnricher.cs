@@ -2,6 +2,8 @@ using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Parsing.Subrecords;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Cell;
 using FalloutXbox360Utils.Core.Formats.Esm.Terrain;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Records;
@@ -239,5 +241,128 @@ internal static class EsmLandEnricher
             .ThenByDescending(c => !c.IsInterior)
             .ThenByDescending(c => c.PlacedObjects.Count)
             .First();
+    }
+
+    /// <summary>
+    ///     Plan 1.4 lift: for each exterior <see cref="CellRecord" /> whose
+    ///     <see cref="CellRecord.LandVisualData" /> has any missing category (VCLR / VNML /
+    ///     TextureLayers / TextureIndices), merge the matching master-ESM LAND visual data
+    ///     into the cell record at parse-enrichment time. Mirrors the per-field provenance
+    ///     semantics of <see cref="LandVisualData.MergeForEmission" />: existing per-field
+    ///     values win, master fallback only fills in nulls. Subsequent consumers (the ESP
+    ///     converter, the WinUI World tab's Vertex Colors / Terrain Textures layers, the
+    ///     v3 viewer) read <c>cell.LandVisualData</c> directly and see the same merged
+    ///     model instead of each needing its own fallback path.
+    /// </summary>
+    /// <param name="cells">
+    ///     Input cell list. The returned list has the same length and order; cells whose
+    ///     <c>LandVisualData</c> grew new categories from master are replaced via record
+    ///     <c>with</c>, all others come back identical-by-reference.
+    /// </param>
+    /// <param name="masterExteriorCellByGrid">
+    ///     <c>(worldspaceFormId, gridX, gridY) → master-CELL FormId</c> index. Comes from
+    ///     <see cref="PluginBuilder" />'s <c>_masterExteriorCellByGrid</c> in the converter
+    ///     pipeline; can be built directly in the GUI when master ESM is loaded.
+    /// </param>
+    /// <param name="landsByCell">
+    ///     <c>master-CELL FormId → list of master-LAND FormIds</c> mapping.
+    /// </param>
+    /// <param name="pcRecordsByFormId">
+    ///     Master-ESM <see cref="ParsedMainRecord" /> store keyed by FormId. Used to pull
+    ///     the raw LAND record bytes via <see cref="CellGrupBuilder.ReconstructRecordBytes" />.
+    /// </param>
+    internal static IReadOnlyList<CellRecord> EnrichCellsWithMasterEsmLandFallback(
+        IReadOnlyList<CellRecord> cells,
+        IReadOnlyDictionary<(uint Worldspace, int GridX, int GridY), uint> masterExteriorCellByGrid,
+        IReadOnlyDictionary<uint, List<uint>> landsByCell,
+        IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId)
+    {
+        if (cells.Count == 0 || masterExteriorCellByGrid.Count == 0)
+        {
+            return cells;
+        }
+
+        // Cache parsed master visuals by LAND FormId so worldspaces with thousands of
+        // exterior cells don't re-parse the same master LAND record for every visit.
+        var masterVisualCache = new Dictionary<uint, LandVisualData?>();
+        var result = new List<CellRecord>(cells.Count);
+
+        foreach (var cell in cells)
+        {
+            var enriched = TryApplyMasterFallback(
+                cell, masterExteriorCellByGrid, landsByCell, pcRecordsByFormId, masterVisualCache);
+            result.Add(enriched ?? cell);
+        }
+
+        return result;
+    }
+
+    private static CellRecord? TryApplyMasterFallback(
+        CellRecord cell,
+        IReadOnlyDictionary<(uint Worldspace, int GridX, int GridY), uint> masterExteriorCellByGrid,
+        IReadOnlyDictionary<uint, List<uint>> landsByCell,
+        IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId,
+        Dictionary<uint, LandVisualData?> masterVisualCache)
+    {
+        if (cell.IsInterior
+            || cell.WorldspaceFormId is not { } wsId
+            || cell.GridX is not { } gx
+            || cell.GridY is not { } gy)
+        {
+            return null;
+        }
+
+        if (!masterExteriorCellByGrid.TryGetValue((wsId, gx, gy), out var masterCellFormId)
+            || !landsByCell.TryGetValue(masterCellFormId, out var masterLandFormIds)
+            || masterLandFormIds.Count == 0)
+        {
+            return null;
+        }
+
+        var masterLandFormId = masterLandFormIds[0];
+        if (!masterVisualCache.TryGetValue(masterLandFormId, out var masterVisualData))
+        {
+            masterVisualData = TryExtractMasterLandVisualData(masterLandFormId, pcRecordsByFormId);
+            masterVisualCache[masterLandFormId] = masterVisualData;
+        }
+
+        if (masterVisualData is null)
+        {
+            return null;
+        }
+
+        var merged = LandVisualData.MergeForEmission(
+            primary: cell.LandVisualData,
+            runtimeVertexColors: null,
+            fallback: masterVisualData);
+
+        if (merged is null || ReferenceEquals(merged, cell.LandVisualData))
+        {
+            return null;
+        }
+
+        return cell with { LandVisualData = merged };
+    }
+
+    private static LandVisualData? TryExtractMasterLandVisualData(
+        uint masterLandFormId,
+        IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId)
+    {
+        if (!pcRecordsByFormId.TryGetValue(masterLandFormId, out var masterLandRecord)
+            || masterLandRecord.Header.Signature != "LAND")
+        {
+            return null;
+        }
+
+        var recordBytes = CellGrupBuilder.ReconstructRecordBytes(masterLandRecord);
+        if (recordBytes.Length <= 24)
+        {
+            return null;
+        }
+
+        var dataSize = recordBytes.Length - 24;
+        var data = new byte[dataSize];
+        Buffer.BlockCopy(recordBytes, 24, data, 0, dataSize);
+        return LandSubrecordParser.ParseVisualOnly(data, dataSize, isBigEndian: false);
     }
 }

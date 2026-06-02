@@ -48,21 +48,21 @@ public static class WorldCommand
 
         var inputArg = new Argument<string>("input") { Description = "Path to ESM file" };
         var formIdArg = new Argument<string>("formid") { Description = "Cell FormID (hex, e.g. 0x00012345)" };
-        var exportObjOpt = new Option<string?>("--export-obj")
+        var exportGlbOpt = new Option<string?>("--export-glb")
         {
-            Description = "Export runtime terrain mesh to Wavefront OBJ file"
+            Description = "Export runtime terrain mesh to glTF Binary (.glb) file"
         };
 
         command.Arguments.Add(inputArg);
         command.Arguments.Add(formIdArg);
-        command.Options.Add(exportObjOpt);
+        command.Options.Add(exportGlbOpt);
 
         command.SetAction(async (parseResult, cancellationToken) =>
         {
             var input = parseResult.GetValue(inputArg)!;
             var formIdStr = parseResult.GetValue(formIdArg)!;
-            var exportObj = parseResult.GetValue(exportObjOpt);
-            await RunCellAsync(input, formIdStr, exportObj, cancellationToken);
+            var exportGlb = parseResult.GetValue(exportGlbOpt);
+            await RunCellAsync(input, formIdStr, exportGlb, cancellationToken);
         });
 
         return command;
@@ -139,7 +139,7 @@ public static class WorldCommand
     }
 
     private static async Task RunCellAsync(
-        string input, string formIdStr, string? exportObjPath, CancellationToken cancellationToken)
+        string input, string formIdStr, string? exportGlbPath, CancellationToken cancellationToken)
     {
         var formId = CliHelpers.ParseFormId(formIdStr) ?? 0;
         if (formId == 0)
@@ -169,7 +169,7 @@ public static class WorldCommand
         var resolver = result.CreateResolver();
 
         RenderCellDetails(cell, worldspaceName);
-        HandleTerrainMeshExport(cell, exportObjPath);
+        HandleTerrainMeshExport(cell, exportGlbPath);
         RenderPlacedObjects(cell, resolver);
     }
 
@@ -225,22 +225,22 @@ public static class WorldCommand
         AnsiConsole.WriteLine();
     }
 
-    private static void HandleTerrainMeshExport(CellRecord cell, string? exportObjPath)
+    private static void HandleTerrainMeshExport(CellRecord cell, string? exportGlbPath)
     {
-        if (exportObjPath == null)
+        if (exportGlbPath == null)
         {
             return;
         }
 
         if (cell.RuntimeTerrainMesh != null)
         {
-            TerrainObjExporter.Export(
+            TerrainGlbExporter.Export(
                 cell.RuntimeTerrainMesh,
                 cell.GridX ?? 0, cell.GridY ?? 0,
-                exportObjPath);
+                exportGlbPath);
             AnsiConsole.MarkupLine(
                 "[green]Terrain mesh exported to:[/] {0} ({1} vertices)",
-                exportObjPath, RuntimeTerrainMesh.VertexCount);
+                exportGlbPath, RuntimeTerrainMesh.VertexCount);
         }
         else
         {

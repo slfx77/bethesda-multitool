@@ -41,6 +41,8 @@ internal sealed class Program
         rootCommand.Subcommands.Add(GrupCommands.CreateGrupsCommand());
         rootCommand.Subcommands.Add(ToftCommands.CreateToftCommand());
         rootCommand.Subcommands.Add(LandCommands.CreateLandSummaryCommand());
+        rootCommand.Subcommands.Add(CellTexturesCommand.Create());
+        rootCommand.Subcommands.Add(LtexAuditCommand.Create());
         rootCommand.Subcommands.Add(ExportCommands.CreateExportLandCommand());
         rootCommand.Subcommands.Add(ExportCommands.CreateWorldmapCommand());
         rootCommand.Subcommands.Add(WorldMapDiagCommands.CreateWorldMapDiagCommand());

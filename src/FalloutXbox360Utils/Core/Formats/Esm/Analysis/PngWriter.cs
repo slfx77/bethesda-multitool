@@ -21,7 +21,7 @@ public static class PngWriter
         };
 
         using var image = new MagickImage(pixels, settings);
-        image.Write(path, MagickFormat.Png);
+        WritePngViaStream(image, path);
     }
 
     /// <summary>
@@ -38,7 +38,7 @@ public static class PngWriter
         };
 
         using var image = new MagickImage(pixels, settings);
-        image.Write(path, MagickFormat.Png);
+        WritePngViaStream(image, path);
     }
 
     /// <summary>
@@ -48,6 +48,14 @@ public static class PngWriter
     {
         var pngBytes = EncodeRgba(pixels, width, height);
         File.WriteAllBytes(path, pngBytes);
+    }
+
+    // Magick.NET's path-based Write goes through native fopen, which fails on Windows paths >= MAX_PATH (260).
+    // Routing through FileStream lets .NET 6+ apply its long-path handling transparently.
+    private static void WritePngViaStream(MagickImage image, string path)
+    {
+        using var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
+        image.Write(stream, MagickFormat.Png);
     }
 
     public static byte[] EncodeRgba(byte[] pixels, int width, int height)

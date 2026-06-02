@@ -409,33 +409,91 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
             return;
         }
 
-        var knownFormIds = new HashSet<uint>(navMeshes.Select(n => n.FormId));
-        var addedFromCells = 0;
-        var cellsWalked = 0;
-        foreach (var entry in Context.ScanResult.RuntimeEditorIds)
-        {
-            if (entry.FormType != 0x39)
-            {
-                continue;
-            }
+        var knownNavmFormIds = new HashSet<uint>(navMeshes.Select(n => n.FormId));
 
-            cellsWalked++;
-            var discovered = Context.RuntimeReader.DiscoverNavMeshesForCell(entry);
+        // Build the drift remap from drift-corrected editor-id entries. RuntimeBuildOffsets.
+        // ApplyDriftCorrection populates OriginalFormType on entries whose raw heap-memory
+        // FormType byte got remapped to a canonical value. The enumerator applies this remap
+        // to every raw byte it reads in Path 1's pAllForms walk + Path 2/3 cell validation so
+        // the canonical 0x39/0x41/0x43 constants work across early-build drift (e.g. Nov 2009
+        // +1 shift at 0x46). Identity (null) when no drift was detected.
+        var driftRemap = BuildDriftRemap(Context.ScanResult.RuntimeEditorIds);
+
+        // Multi-source cell enumeration (Phase 2c). Falls back to editor-id-only enumeration
+        // (Path 0 inline) when the upstream pointer-triple scan didn't expose pAllForms.
+        var enumerator = Context.RuntimeReader.CreateRuntimeCellEnumerator(
+            Context.ScanResult.PAllFormsVa,
+            driftRemap);
+        var wrldFormIds = Context.ScanResult.MainRecords
+            .Where(r => r.RecordType == "WRLD")
+            .Select(r => r.FormId)
+            .ToHashSet();
+        // navMeshes at this point contains only byte-stream NAVMs (Path 0/runtime merge has
+        // already run via MergeRuntimeRecords above). Their FormIDs anchor Path 4's NAVM-byte
+        // calibration so undetected-drift builds (e.g. xex.dmp) still classify NAVMs in
+        // pAllForms even when the upstream drift detector returned null.
+        var navmFormIds = navMeshes.Select(n => n.FormId).Where(id => id != 0).ToHashSet();
+        var cells = enumerator?.Enumerate(Context.ScanResult.RuntimeEditorIds, wrldFormIds, navmFormIds)
+                    ?? FallbackEnumerateEditorIdCellsOnly(Context.ScanResult.RuntimeEditorIds);
+
+        var perSourceAdds = new int[4];
+        var cellsWithNavm = 0;
+        foreach (var hit in cells.Cells)
+        {
+            var discovered = Context.RuntimeReader.DiscoverNavMeshesForCellVa(hit.CellVa, hit.FormId);
+            var addedThisCell = 0;
             foreach (var navm in discovered)
             {
-                if (!knownFormIds.Add(navm.FormId))
+                if (!knownNavmFormIds.Add(navm.FormId))
                 {
                     continue;
                 }
 
                 navMeshes.Add(navm);
-                addedFromCells++;
+                perSourceAdds[(int)hit.Source]++;
+                addedThisCell++;
+            }
+
+            if (addedThisCell > 0)
+            {
+                cellsWithNavm++;
             }
         }
 
-        // Belt-and-braces: also try the NavMeshInfoMap singleton path. Currently a no-op on
-        // vanilla FNV (the singleton has no editor ID), but if a future build adds one or we
-        // pivot to PDB-global discovery, this path automatically picks up the slack.
+        // Path 4: walk pAllForms directly for NAVM entries. BSNavMesh is TESForm-derived so
+        // each pAllForms value VA can be projected straight into a synthetic NavMeshRecord
+        // without going through the cell graph. On dumps where the engine has detached
+        // NavMeshArrays from cells (empirically: every cell path tested on xex21 had
+        // pNavMeshes=null even for active grid cells), this is the only path that surfaces
+        // runtime NAVM data.
+        //
+        // Two validator modes:
+        //   * Permissive over NavMeshVas — calibration is anchored or drift-confirmed, so
+        //     candidates here are already trustworthy; the validator only catches rare
+        //     shape outliers (e.g. paged-out structs) and allows detached navmeshes through.
+        //   * Strict over NavMeshVaCandidates — uncalibrated build (no anchor, no drift);
+        //     the enumerator emitted a speculative byte-window net and the validator
+        //     cross-references each candidate's pParentCell against KnownCellVas to reject
+        //     non-BSNavMesh structs (DIAL / INFO / etc. at neighbouring FormType bytes).
+        var knownCellVas = new HashSet<uint>(cells.Cells.Count);
+        foreach (var hit in cells.Cells)
+        {
+            knownCellVas.Add(hit.CellVa);
+        }
+
+        var permissiveValidator = Context.RuntimeReader.CreateBsNavMeshValidator(
+            knownCellVas, BsNavMeshValidationMode.Permissive);
+        var strictValidator = Context.RuntimeReader.CreateBsNavMeshValidator(
+            knownCellVas, BsNavMeshValidationMode.Strict);
+
+        var (addedFromDirectNavm, rejectedFromDirectNavm) = TryAddValidatedNavMeshes(
+            cells.NavMeshVas, permissiveValidator, navMeshes, knownNavmFormIds);
+        var (addedFromSpeculative, rejectedFromSpeculative) = TryAddValidatedNavMeshes(
+            cells.NavMeshVaCandidates, strictValidator, navMeshes, knownNavmFormIds);
+
+        // Belt-and-braces: NAVI singleton path. Currently a no-op on vanilla FNV (the singleton
+        // has no editor ID), but if a future build adds one or we pivot to PDB-global discovery,
+        // this picks up the slack.
         var addedFromSingleton = 0;
         foreach (var entry in Context.ScanResult.RuntimeEditorIds)
         {
@@ -447,7 +505,7 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
             var discovered = Context.RuntimeReader.DiscoverNavMeshesFromInfoMap(entry);
             foreach (var navm in discovered)
             {
-                if (!knownFormIds.Add(navm.FormId))
+                if (!knownNavmFormIds.Add(navm.FormId))
                 {
                     continue;
                 }
@@ -457,13 +515,120 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
             }
         }
 
-        if (addedFromCells > 0 || addedFromSingleton > 0)
+        var stats = cells.Stats;
+        if (perSourceAdds.Sum() > 0 || addedFromSingleton > 0
+            || addedFromDirectNavm > 0 || addedFromSpeculative > 0
+            || stats.UniqueTotal > 0)
         {
             Logger.Instance.Debug(
-                $"  [Semantic] Runtime NAVM discovery: walked {cellsWalked:N0} CELL entries, " +
-                $"added {addedFromCells:N0} from per-cell pNavmeshes, " +
-                $"{addedFromSingleton:N0} from NavMeshInfoMap (total: {navMeshes.Count:N0}).");
+                $"  [Semantic] Runtime NAVM discovery cells: editor-id={stats.FromEditorIdHash:N0}, " +
+                $"all-forms={stats.FromAllFormsHash:N0}, worldspace-grid={stats.FromWorldspaceGrid:N0}, " +
+                $"heap-scan={stats.FromHeapScan:N0} (unique={stats.UniqueTotal:N0}); " +
+                $"direct-navm-vas={cells.NavMeshVas.Count:N0}, " +
+                $"speculative-navm-vas={cells.NavMeshVaCandidates.Count:N0}");
+            Logger.Instance.Debug(
+                $"  [Semantic] Runtime NAVM discovery navmeshes: +{perSourceAdds[0]:N0}/+{perSourceAdds[1]:N0}/" +
+                $"+{perSourceAdds[2]:N0}/+{perSourceAdds[3]:N0} per-cell-source, " +
+                $"+{addedFromDirectNavm:N0} direct (-{rejectedFromDirectNavm:N0} rejected), " +
+                $"+{addedFromSpeculative:N0} speculative (-{rejectedFromSpeculative:N0} rejected), " +
+                $"+{addedFromSingleton:N0} NAVI singleton " +
+                $"({cellsWithNavm:N0} cells produced ≥1 NAVM, grand total {navMeshes.Count:N0}).");
         }
+    }
+
+    /// <summary>
+    ///     Validate each candidate VA with <paramref name="validator" />, then project surviving
+    ///     candidates into <see cref="NavMeshRecord" /> via <see cref="RuntimeStructReader.DiscoverNavMeshAtVa" />.
+    ///     Dedup by FormID against <paramref name="knownNavmFormIds" /> (mutated). Returns
+    ///     (added count, rejected count). "Rejected" only counts validator-side rejections;
+    ///     a null return from <c>DiscoverNavMeshAtVa</c> after validation passed (rare: the
+    ///     struct page-faulted in between) counts as neither added nor rejected.
+    /// </summary>
+    private (int Added, int Rejected) TryAddValidatedNavMeshes(
+        IReadOnlyList<uint> candidateVas,
+        BsNavMeshStructuralValidator validator,
+        List<NavMeshRecord> navMeshes,
+        HashSet<uint> knownNavmFormIds)
+    {
+        if (candidateVas.Count == 0 || Context.RuntimeReader == null)
+        {
+            return (0, 0);
+        }
+
+        var added = 0;
+        var rejected = 0;
+        foreach (var navMeshVa in candidateVas)
+        {
+            if (!validator.LooksLikeBsNavMesh(navMeshVa))
+            {
+                rejected++;
+                continue;
+            }
+
+            var navm = Context.RuntimeReader.DiscoverNavMeshAtVa(navMeshVa, fallbackParentCellFormId: 0);
+            if (navm is null)
+            {
+                continue;
+            }
+
+            if (!knownNavmFormIds.Add(navm.FormId))
+            {
+                continue;
+            }
+
+            navMeshes.Add(navm);
+            added++;
+        }
+
+        return (added, rejected);
+    }
+
+    /// <summary>
+    ///     Reconstructs the drift remap (raw-byte → canonical-byte) from
+    ///     <see cref="RuntimeEditorIdEntry.OriginalFormType" /> fields. These are populated
+    ///     upstream by <c>RuntimeBuildOffsets.ApplyDriftCorrection</c> only when an entry's
+    ///     FormType byte was changed; absence means identity. The reconstructed dictionary
+    ///     is passed into <see cref="RuntimeCellEnumerator" /> so its raw-heap reads
+    ///     (Path 1 pAllForms walk, Path 2/3 cell validators) use the same canonical FormType
+    ///     space as the editor-id entries it shares with Path 0.
+    /// </summary>
+    private static Dictionary<byte, byte>? BuildDriftRemap(
+        IReadOnlyList<RuntimeEditorIdEntry> editorIdEntries)
+    {
+        Dictionary<byte, byte>? remap = null;
+        foreach (var entry in editorIdEntries)
+        {
+            if (entry.OriginalFormType is not { } original || original == entry.FormType)
+            {
+                continue;
+            }
+
+            remap ??= [];
+            remap.TryAdd(original, entry.FormType);
+        }
+
+        return remap;
+    }
+
+    private static RuntimeCellEnumeration FallbackEnumerateEditorIdCellsOnly(
+        IReadOnlyList<RuntimeEditorIdEntry> editorIdEntries)
+    {
+        var hits = new List<RuntimeCellHit>();
+        foreach (var entry in editorIdEntries)
+        {
+            if (entry.FormType != 0x39 || entry.TesFormPointer is not { } ptr || ptr == 0 || entry.FormId == 0)
+            {
+                continue;
+            }
+
+            hits.Add(new RuntimeCellHit(entry.FormId, unchecked((uint)ptr), RuntimeCellSource.EditorIdHash));
+        }
+
+        return new RuntimeCellEnumeration(
+            hits,
+            new RuntimeCellEnumeratorStats(hits.Count, 0, 0, 0, hits.Count),
+            [],
+            []);
     }
 
     private NavMeshRecord? ParseNavMeshFromAccessor(DetectedMainRecord record, byte[] buffer)

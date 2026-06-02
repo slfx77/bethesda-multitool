@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
 using FalloutXbox360Utils.Core.Formats.Esm.Script;
@@ -14,6 +15,8 @@ public sealed record EsmScriptDiagnosticsResult(
     IReadOnlyList<EsmScriptDiagnosticTargetMatchRow> TargetMatches,
     IReadOnlyList<EsmScriptDiagnosticRecordRow> Records,
     IReadOnlyList<EsmScriptDiagnosticDialogueRow> Dialogue,
+    IReadOnlyList<EsmScriptDialogueAuditRow> DialogueAudit,
+    IReadOnlyList<EsmScriptConditionAuditRow> Conditions,
     IReadOnlyList<EsmScriptDiagnosticBlockRow> ScriptBlocks,
     IReadOnlyList<EsmScriptDiagnosticReferenceRow> ScriptReferences);
 
@@ -51,6 +54,43 @@ public sealed record EsmScriptDiagnosticDialogueRow(
     int ResponseCount,
     bool HasResultScript,
     string ResponsePreview);
+
+public sealed record EsmScriptDialogueAuditRow(
+    string Target,
+    uint InfoFormId,
+    uint TopicFormId,
+    string TopicLabel,
+    uint QuestFormId,
+    uint SpeakerFormId,
+    string RootClassification,
+    bool HasIncomingTopicEdge,
+    bool HasExplicitRootLink,
+    bool IsTerminalReturnCandidate,
+    bool HasGoodbyeForSpeakerQuest,
+    string RawTcltBytes,
+    string LinkToTopics,
+    string FollowUpInfos,
+    string ResponsePreview);
+
+public sealed record EsmScriptConditionAuditRow(
+    string Target,
+    string Relation,
+    string RecordType,
+    uint FormId,
+    string EditorId,
+    int ConditionIndex,
+    string FunctionName,
+    ushort FunctionIndex,
+    byte Type,
+    float ComparisonValue,
+    uint Parameter1,
+    string Parameter1Label,
+    uint Parameter2,
+    string Parameter2Label,
+    uint RunOn,
+    uint Reference,
+    string ReferenceLabel,
+    string RawBytes);
 
 public sealed record EsmScriptDiagnosticBlockRow(
     string Target,
@@ -279,6 +319,8 @@ public static class EsmScriptDiagnosticsAnalyzer
 
         var recordRows = BuildRecordRows(recordRelations, byFormId, index);
         var dialogueRows = BuildDialogueRows(recordRelations, byFormId, index);
+        var dialogueAuditRows = BuildDialogueAuditRows(dialogueRows, byFormId);
+        var conditionRows = BuildConditionRows(recordRows, byFormId, index);
         var scriptBlocks = new List<EsmScriptDiagnosticBlockRow>();
         var scriptRefs = new List<EsmScriptDiagnosticReferenceRow>();
 
@@ -302,6 +344,8 @@ public static class EsmScriptDiagnosticsAnalyzer
                 .ToList(),
             recordRows,
             dialogueRows,
+            dialogueAuditRows,
+            conditionRows,
             scriptBlocks
                 .OrderBy(r => r.Target, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(r => r.RecordType, StringComparer.Ordinal)
@@ -326,6 +370,10 @@ public static class EsmScriptDiagnosticsAnalyzer
             Encoding.UTF8);
         File.WriteAllText(Path.Combine(outputDirectory, "target_dialogue.csv"), BuildDialogueCsv(result),
             Encoding.UTF8);
+        File.WriteAllText(Path.Combine(outputDirectory, "target_dialogue_audit.csv"),
+            BuildDialogueAuditCsv(result), Encoding.UTF8);
+        File.WriteAllText(Path.Combine(outputDirectory, "target_conditions.csv"),
+            BuildConditionsCsv(result), Encoding.UTF8);
         File.WriteAllText(Path.Combine(outputDirectory, "target_result_scripts.csv"), BuildScriptBlocksCsv(result),
             Encoding.UTF8);
         File.WriteAllText(Path.Combine(outputDirectory, "target_scro_refs.csv"), BuildScriptReferencesCsv(result),
@@ -382,7 +430,7 @@ public static class EsmScriptDiagnosticsAnalyzer
 
     private static List<EsmScriptDiagnosticRecordRow> BuildRecordRows(
         Dictionary<(string Target, string RecordType, uint FormId), HashSet<string>> relations,
-        IReadOnlyDictionary<uint, ParsedMainRecord> byFormId,
+        Dictionary<uint, ParsedMainRecord> byFormId,
         IReadOnlyDictionary<uint, FormIdInfo> index)
     {
         return relations
@@ -407,7 +455,7 @@ public static class EsmScriptDiagnosticsAnalyzer
 
     private static List<EsmScriptDiagnosticDialogueRow> BuildDialogueRows(
         Dictionary<(string Target, string RecordType, uint FormId), HashSet<string>> relations,
-        IReadOnlyDictionary<uint, ParsedMainRecord> byFormId,
+        Dictionary<uint, ParsedMainRecord> byFormId,
         IReadOnlyDictionary<uint, FormIdInfo> index)
     {
         var rows = new List<EsmScriptDiagnosticDialogueRow>();
@@ -454,6 +502,158 @@ public static class EsmScriptDiagnosticsAnalyzer
             .OrderBy(r => r.Target, StringComparer.OrdinalIgnoreCase)
             .ThenBy(r => r.TopicFormId)
             .ThenBy(r => r.InfoFormId)
+            .ToList();
+    }
+
+    private static List<EsmScriptDialogueAuditRow> BuildDialogueAuditRows(
+        IReadOnlyList<EsmScriptDiagnosticDialogueRow> dialogueRows,
+        Dictionary<uint, ParsedMainRecord> byFormId)
+    {
+        var incomingByTargetQuestSpeaker = new Dictionary<(string Target, uint Quest, uint Speaker), HashSet<uint>>();
+        var goodbyePairs = new HashSet<(string Target, uint Quest, uint Speaker)>();
+        var rowByInfo = dialogueRows.ToDictionary(r => r.InfoFormId);
+
+        foreach (var row in dialogueRows)
+        {
+            var key = (row.Target, row.QuestFormId, row.SpeakerFormId);
+            if (row.TopicFormId == 0x000000D4)
+            {
+                goodbyePairs.Add(key);
+            }
+
+            if (!incomingByTargetQuestSpeaker.TryGetValue(key, out var incoming))
+            {
+                incoming = [];
+                incomingByTargetQuestSpeaker[key] = incoming;
+            }
+
+            foreach (var topic in ParseFormIds(row.LinkToTopics))
+            {
+                incoming.Add(topic);
+            }
+
+            foreach (var infoId in ParseFormIds(row.FollowUpInfos))
+            {
+                if (rowByInfo.TryGetValue(infoId, out var followUp))
+                {
+                    incoming.Add(followUp.TopicFormId);
+                }
+            }
+
+            if (row.LinkFromTopics.Length > 0 && row.TopicFormId != 0)
+            {
+                incoming.Add(row.TopicFormId);
+            }
+        }
+
+        var results = new List<EsmScriptDialogueAuditRow>();
+        foreach (var row in dialogueRows)
+        {
+            byFormId.TryGetValue(row.InfoFormId, out var record);
+            var key = (row.Target, row.QuestFormId, row.SpeakerFormId);
+            incomingByTargetQuestSpeaker.TryGetValue(key, out var incoming);
+            var hasIncoming = incoming?.Contains(row.TopicFormId) == true;
+            var hasExplicitRootLink = row.TopicFormId == 0x000000C8 && row.LinkToTopics.Length > 0;
+            var isGoodbye = row.TopicFormId == 0x000000D4;
+            var isTerminalReturnCandidate =
+                row.TopicFormId is not 0 and not 0x000000C8 and not 0x000000D4
+                && row.ResponseCount > 0
+                && row.LinkToTopics.Length > 0
+                && row.FollowUpInfos.Length == 0
+                && row.AddTopics.Length == 0;
+
+            string classification;
+            if (hasExplicitRootLink)
+            {
+                classification = "ExplicitGreetingRoot";
+            }
+            else if (isGoodbye)
+            {
+                classification = "Goodbye";
+            }
+            else if (isTerminalReturnCandidate)
+            {
+                classification = "TerminalReturnCandidate";
+            }
+            else if (hasIncoming)
+            {
+                classification = "InternalLinkedTopic";
+            }
+            else
+            {
+                classification = "AmbiguousVisibleRoot";
+            }
+
+            results.Add(new EsmScriptDialogueAuditRow(
+                row.Target,
+                row.InfoFormId,
+                row.TopicFormId,
+                row.TopicLabel,
+                row.QuestFormId,
+                row.SpeakerFormId,
+                classification,
+                hasIncoming,
+                hasExplicitRootLink,
+                isTerminalReturnCandidate,
+                goodbyePairs.Contains(key),
+                record is null ? string.Empty : FormatRawSubrecordBytes(record, "TCLT"),
+                row.LinkToTopics,
+                row.FollowUpInfos,
+                row.ResponsePreview));
+        }
+
+        return results
+            .OrderBy(r => r.Target, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(r => r.TopicFormId)
+            .ThenBy(r => r.InfoFormId)
+            .ToList();
+    }
+
+    private static List<EsmScriptConditionAuditRow> BuildConditionRows(
+        IReadOnlyList<EsmScriptDiagnosticRecordRow> recordRows,
+        Dictionary<uint, ParsedMainRecord> byFormId,
+        IReadOnlyDictionary<uint, FormIdInfo> index)
+    {
+        var results = new List<EsmScriptConditionAuditRow>();
+        foreach (var recordRow in recordRows)
+        {
+            if (!byFormId.TryGetValue(recordRow.FormId, out var record))
+            {
+                continue;
+            }
+
+            var conditionIndex = 0;
+            foreach (var sub in record.Subrecords.Where(s => s.Signature == "CTDA" && s.Data.Length >= 28))
+            {
+                conditionIndex++;
+                var condition = CtdaParser.Decode(sub.Data, sub.BigEndian);
+                results.Add(new EsmScriptConditionAuditRow(
+                    recordRow.Target,
+                    recordRow.Relation,
+                    recordRow.RecordType,
+                    recordRow.FormId,
+                    recordRow.EditorId,
+                    conditionIndex,
+                    ResolveConditionFunctionName(condition.FunctionIndex),
+                    condition.FunctionIndex,
+                    condition.Type,
+                    condition.ComparisonValue,
+                    condition.Parameter1,
+                    ResolveParameterLabel(index, condition.FunctionIndex, 0, condition.Parameter1),
+                    condition.Parameter2,
+                    ResolveParameterLabel(index, condition.FunctionIndex, 1, condition.Parameter2),
+                    condition.RunOn,
+                    condition.Reference,
+                    ResolveLabel(index, condition.Reference),
+                    Convert.ToHexString(sub.Data)));
+            }
+        }
+
+        return results
+            .OrderBy(r => r.Target, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(r => r.RecordType, StringComparer.Ordinal)
+            .ThenBy(r => r.FormId)
+            .ThenBy(r => r.ConditionIndex)
             .ToList();
     }
 
@@ -571,7 +771,7 @@ public static class EsmScriptDiagnosticsAnalyzer
         }
     }
 
-    private static bool IsInfoRelatedToActor(ParsedMainRecord record, IReadOnlySet<uint> actorIds)
+    private static bool IsInfoRelatedToActor(ParsedMainRecord record, HashSet<uint> actorIds)
     {
         if (actorIds.Count == 0)
         {
@@ -608,7 +808,7 @@ public static class EsmScriptDiagnosticsAnalyzer
         return false;
     }
 
-    private static bool ContainsAnyFormReference(ParsedMainRecord record, IReadOnlySet<uint> formIds)
+    private static bool ContainsAnyFormReference(ParsedMainRecord record, HashSet<uint> formIds)
     {
         if (formIds.Count == 0)
         {
@@ -676,7 +876,7 @@ public static class EsmScriptDiagnosticsAnalyzer
         return 0;
     }
 
-    private static IReadOnlyList<uint> ReadFormIdSubrecords(ParsedMainRecord record, string signature)
+    private static List<uint> ReadFormIdSubrecords(ParsedMainRecord record, string signature)
     {
         return record.Subrecords
             .Where(s => s.Signature == signature && s.Data.Length >= 4)
@@ -697,7 +897,7 @@ public static class EsmScriptDiagnosticsAnalyzer
     }
 
     private static string ReadFirstStringSubrecord(
-        IReadOnlyList<ParsedSubrecord> subrecords,
+        List<ParsedSubrecord> subrecords,
         string signature,
         int start,
         int end)
@@ -752,7 +952,7 @@ public static class EsmScriptDiagnosticsAnalyzer
     }
 
     private static List<ScriptVariableInfo> ReadScriptVariables(
-        IReadOnlyList<ParsedSubrecord> subrecords,
+        List<ParsedSubrecord> subrecords,
         int start,
         int end)
     {
@@ -787,7 +987,7 @@ public static class EsmScriptDiagnosticsAnalyzer
     }
 
     private static List<ScriptReferenceSlot> ReadScriptReferences(
-        IReadOnlyList<ParsedSubrecord> subrecords,
+        List<ParsedSubrecord> subrecords,
         int start,
         int end)
     {
@@ -826,7 +1026,7 @@ public static class EsmScriptDiagnosticsAnalyzer
             BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(8, 4)));
     }
 
-    private static int FindScriptBlockEnd(IReadOnlyList<ParsedSubrecord> subrecords, int start)
+    private static int FindScriptBlockEnd(List<ParsedSubrecord> subrecords, int start)
     {
         for (var i = start; i < subrecords.Count; i++)
         {
@@ -856,7 +1056,7 @@ public static class EsmScriptDiagnosticsAnalyzer
         return -1;
     }
 
-    private static string BuildSubrecordOrder(IReadOnlyList<ParsedSubrecord> subrecords, int schrIndex, int end)
+    private static string BuildSubrecordOrder(List<ParsedSubrecord> subrecords, int schrIndex, int end)
     {
         var start = schrIndex >= 0 ? schrIndex : Math.Max(0, end - 1);
         var signatures = subrecords
@@ -1019,6 +1219,63 @@ public static class EsmScriptDiagnosticsAnalyzer
         return string.Join(' ', formIds.Where(id => id != 0).Select(id => $"0x{id:X8}"));
     }
 
+    private static List<uint> ParseFormIds(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return [];
+        }
+
+        var result = new List<uint>();
+        foreach (var token in text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var value = token.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                ? token[2..]
+                : token;
+            if (uint.TryParse(value, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var formId))
+            {
+                result.Add(formId);
+            }
+        }
+
+        return result;
+    }
+
+    private static string FormatRawSubrecordBytes(ParsedMainRecord record, string signature)
+    {
+        return string.Join(' ', record.Subrecords
+            .Where(s => s.Signature == signature)
+            .Select(s => Convert.ToHexString(s.Data)));
+    }
+
+    private static string ResolveConditionFunctionName(ushort conditionFunctionIndex)
+    {
+        var name = PerkConditionParameterResolver.ResolveScriptFunctionName(conditionFunctionIndex);
+        return string.IsNullOrWhiteSpace(name)
+            ? $"Func0x{conditionFunctionIndex:X4}"
+            : name;
+    }
+
+    private static string ResolveParameterLabel(
+        IReadOnlyDictionary<uint, FormIdInfo> index,
+        ushort functionIndex,
+        int parameterIndex,
+        uint rawValue)
+    {
+        var resolved = PerkConditionParameterResolver.ResolveParameter(functionIndex, parameterIndex, rawValue);
+        if (!string.IsNullOrWhiteSpace(resolved.Display))
+        {
+            return resolved.Display;
+        }
+
+        if (resolved.FormId.HasValue)
+        {
+            return ResolveLabel(index, resolved.FormId.Value);
+        }
+
+        return ResolveLabel(index, rawValue);
+    }
+
     private static string Truncate(string? value, int maxLength)
     {
         if (string.IsNullOrEmpty(value) || value.Length <= maxLength)
@@ -1090,6 +1347,65 @@ public static class EsmScriptDiagnosticsAnalyzer
                 row.ResponseCount,
                 row.HasResultScript,
                 Csv(row.ResponsePreview)));
+        }
+
+        return sb.ToString();
+    }
+
+    private static string BuildDialogueAuditCsv(EsmScriptDiagnosticsResult result)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine(
+            "target,info_form_id,topic_form_id,topic_label,quest_form_id,speaker_form_id,root_classification,has_incoming_topic_edge,has_explicit_root_link,is_terminal_return_candidate,has_goodbye_for_speaker_quest,raw_tclt_bytes,link_to_topics,follow_up_infos,response_preview");
+        foreach (var row in result.DialogueAudit)
+        {
+            sb.AppendLine(string.Join(',',
+                Csv(row.Target),
+                Csv($"0x{row.InfoFormId:X8}"),
+                Csv(row.TopicFormId == 0 ? string.Empty : $"0x{row.TopicFormId:X8}"),
+                Csv(row.TopicLabel),
+                Csv(row.QuestFormId == 0 ? string.Empty : $"0x{row.QuestFormId:X8}"),
+                Csv(row.SpeakerFormId == 0 ? string.Empty : $"0x{row.SpeakerFormId:X8}"),
+                Csv(row.RootClassification),
+                row.HasIncomingTopicEdge,
+                row.HasExplicitRootLink,
+                row.IsTerminalReturnCandidate,
+                row.HasGoodbyeForSpeakerQuest,
+                Csv(row.RawTcltBytes),
+                Csv(row.LinkToTopics),
+                Csv(row.FollowUpInfos),
+                Csv(row.ResponsePreview)));
+        }
+
+        return sb.ToString();
+    }
+
+    private static string BuildConditionsCsv(EsmScriptDiagnosticsResult result)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine(
+            "target,relation,record_type,form_id,editor_id,condition_index,function_name,function_index,type,comparison_value,parameter1,parameter1_label,parameter2,parameter2_label,run_on,reference,reference_label,raw_bytes");
+        foreach (var row in result.Conditions)
+        {
+            sb.AppendLine(string.Join(',',
+                Csv(row.Target),
+                Csv(row.Relation),
+                Csv(row.RecordType),
+                Csv($"0x{row.FormId:X8}"),
+                Csv(row.EditorId),
+                row.ConditionIndex,
+                Csv(row.FunctionName),
+                Csv($"0x{row.FunctionIndex:X4}"),
+                row.Type,
+                row.ComparisonValue.ToString(CultureInfo.InvariantCulture),
+                Csv($"0x{row.Parameter1:X8}"),
+                Csv(row.Parameter1Label),
+                Csv($"0x{row.Parameter2:X8}"),
+                Csv(row.Parameter2Label),
+                row.RunOn,
+                Csv(row.Reference == 0 ? string.Empty : $"0x{row.Reference:X8}"),
+                Csv(row.ReferenceLabel),
+                Csv(row.RawBytes)));
         }
 
         return sb.ToString();

@@ -361,26 +361,41 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
                     break;
 
                 case "SCHR" when sub.DataLength >= 20:
-                    // PDB SCRIPT_HEADER: variableCount(4), refObjectCount(4), dataSize(4),
-                    // m_uiLastID(4), bIsQuestScript(1), bIsMagicEffectScript(1), bIsCompiled(1), pad(1)
+                    // Canonical ESM SCHR layout per fopdoc (Records/Subrecords/SCHR.md):
+                    //   offset 0..3:   Unused (4 bytes)
+                    //   offset 4..7:   RefCount (uint32)
+                    //   offset 8..11:  CompiledSize (uint32)
+                    //   offset 12..15: VariableCount (uint32)
+                    //   offset 16..17: Type (uint16; 0=Object, 1=Quest, 0x100=Effect)
+                    //   offset 18..19: Flags (uint16; 0x0001=Enabled)
+                    // The runtime SCRIPT_HEADER struct has VariableCount at offset 0 and
+                    // uiLastID at offset 12 — different layout. This parser is for the
+                    // serialized ESM/ESP record, not the runtime struct.
+                    ushort scriptType;
+                    ushort scriptFlags;
                     if (record.IsBigEndian)
                     {
-                        variableCount = BinaryPrimitives.ReadUInt32BigEndian(subData);
                         refObjectCount = BinaryPrimitives.ReadUInt32BigEndian(subData[4..]);
                         compiledSize = BinaryPrimitives.ReadUInt32BigEndian(subData[8..]);
-                        lastVariableId = BinaryPrimitives.ReadUInt32BigEndian(subData[12..]);
+                        variableCount = BinaryPrimitives.ReadUInt32BigEndian(subData[12..]);
+                        scriptType = BinaryPrimitives.ReadUInt16BigEndian(subData[16..]);
+                        scriptFlags = BinaryPrimitives.ReadUInt16BigEndian(subData[18..]);
                     }
                     else
                     {
-                        variableCount = BinaryPrimitives.ReadUInt32LittleEndian(subData);
                         refObjectCount = BinaryPrimitives.ReadUInt32LittleEndian(subData[4..]);
                         compiledSize = BinaryPrimitives.ReadUInt32LittleEndian(subData[8..]);
-                        lastVariableId = BinaryPrimitives.ReadUInt32LittleEndian(subData[12..]);
+                        variableCount = BinaryPrimitives.ReadUInt32LittleEndian(subData[12..]);
+                        scriptType = BinaryPrimitives.ReadUInt16LittleEndian(subData[16..]);
+                        scriptFlags = BinaryPrimitives.ReadUInt16LittleEndian(subData[18..]);
                     }
 
-                    isQuestScript = subData[16] != 0;
-                    isMagicEffectScript = subData[17] != 0;
-                    isCompiled = subData[18] != 0;
+                    isQuestScript = scriptType == 1;
+                    isMagicEffectScript = scriptType == 0x100;
+                    isCompiled = (scriptFlags & 0x0001) != 0;
+                    // lastVariableId is no longer carried by ESM SCHR — runtime-only field.
+                    // Leave it at its declaration default (0); runtime readers populate it
+                    // from the PDB struct layout if needed for diagnostics.
                     break;
 
                 case "SCTX":

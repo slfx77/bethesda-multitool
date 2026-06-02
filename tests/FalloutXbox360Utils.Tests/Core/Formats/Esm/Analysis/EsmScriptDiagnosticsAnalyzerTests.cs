@@ -56,6 +56,10 @@ public sealed class EsmScriptDiagnosticsAnalyzerTests
         Assert.Equal(ulysses, dialogue.SpeakerFormId);
         Assert.Contains("0xFE000101", dialogue.FollowUpInfos, StringComparison.Ordinal);
         Assert.True(dialogue.HasResultScript);
+        var audit = Assert.Single(result.DialogueAudit, row => row.InfoFormId == infoId);
+        Assert.Equal("InternalLinkedTopic", audit.RootClassification);
+        Assert.True(audit.HasIncomingTopicEdge);
+        Assert.Contains("000200FE", audit.RawTcltBytes, StringComparison.OrdinalIgnoreCase);
 
         var script = Assert.Single(result.ScriptBlocks, row => row.FormId == infoId);
         Assert.True(script.CompiledSizeMatches);
@@ -132,6 +136,33 @@ public sealed class EsmScriptDiagnosticsAnalyzerTests
         var packageRef = Assert.Single(result.ScriptReferences, row => row.ParentRecordType == "PACK");
         Assert.Equal("Resolved", packageRef.Status);
         Assert.Equal("ChompsMarker", packageRef.ResolvedEditorId);
+    }
+
+    [Fact]
+    public void AnalyzeRecords_AuditsSexConditionsWithoutTreatingEnumAsFormId()
+    {
+        const uint actorId = 0x00112233;
+        const uint infoId = 0xFE000100;
+
+        var result = EsmScriptDiagnosticsAnalyzer.AnalyzeRecords(
+            "generated.esp",
+            [
+                Record("NPC_", actorId,
+                    StringSub("EDID", "UlyssesNPC"),
+                    StringSub("FULL", "Ulysses")),
+                Record("INFO", infoId,
+                    CtdaGetIsId(actorId),
+                    CtdaGetPCIsSex(0),
+                    Sub("TRDT", new byte[24]),
+                    StringSub("NAM1", "You are a man."))
+            ],
+            ["Ulysses"]);
+
+        var sexCondition = Assert.Single(result.Conditions, row => row.FunctionName == "GetPCIsSex");
+        Assert.Equal(0x0083, sexCondition.FunctionIndex);
+        Assert.Equal(0u, sexCondition.Parameter1);
+        Assert.Equal("Male", sexCondition.Parameter1Label);
+        Assert.StartsWith("00", sexCondition.RawBytes, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -299,6 +330,80 @@ public sealed class EsmScriptDiagnosticsAnalyzerTests
     }
 
     [Fact]
+    public void Provenance_MatchesInfoByQuestTopicSpeakerAndResponseBeforeLooseResponseText()
+    {
+        const uint actorId = 0x00112233;
+        const uint infoId = 0xFE000100;
+        const uint topicId = 0xFE000200;
+        const uint questId = 0xFE000300;
+        byte[] bytecode = [0xFF, 0xFF, 0x00, 0x00];
+
+        var generated =
+            new[]
+            {
+                Record("NPC_", actorId,
+                    StringSub("EDID", "Ulysses"),
+                    StringSub("FULL", "Ulysses")),
+                Record("INFO", infoId,
+                    FormIdSubrecord("TPIC", topicId),
+                    FormIdSubrecord("QSTI", questId),
+                    CtdaGetIsId(actorId),
+                    ScriptHeader(refCount: 0, compiledSize: 0),
+                    Sub("NEXT"),
+                    Sub("TRDT", new byte[24]),
+                    StringSub("NAM1", "Travel with me."))
+            };
+
+        var diagnostics = EsmScriptDiagnosticsAnalyzer.AnalyzeRecords("generated.esp", generated, ["Ulysses"]);
+        var provenance = EsmScriptProvenanceAnalyzer.AnalyzeRecords(
+            generated,
+            diagnostics,
+            new RecordCollection
+            {
+                Dialogues =
+                [
+                    new DialogueRecord
+                    {
+                        FormId = 0x00100001,
+                        TopicFormId = 0x00ABCDEF,
+                        QuestFormId = questId,
+                        SpeakerFormId = actorId,
+                        Responses = [new DialogueResponse { Text = "Travel with me." }],
+                        ResultScripts =
+                        [
+                            new DialogueResultScript
+                            {
+                                CompiledData = bytecode
+                            }
+                        ],
+                        HasResultScript = true
+                    },
+                    new DialogueRecord
+                    {
+                        FormId = 0x00100002,
+                        TopicFormId = topicId,
+                        QuestFormId = questId,
+                        SpeakerFormId = actorId,
+                        Responses = [new DialogueResponse { Text = "Travel with me." }],
+                        ResultScripts =
+                        [
+                            new DialogueResultScript
+                            {
+                                CompiledData = bytecode
+                            }
+                        ],
+                        HasResultScript = true
+                    }
+                ]
+            },
+            null);
+
+        var row = Assert.Single(provenance.ResultScripts);
+        Assert.Equal("info-quest-topic-speaker-response", row.MatchStrategy);
+        Assert.Equal(0x00100002u, row.SourceInfoFormId);
+    }
+
+    [Fact]
     public void Provenance_TreatsCanonicalEmptyInfoEndBlockAsPreserved()
     {
         const uint actorId = 0x00112233;
@@ -443,6 +548,15 @@ public sealed class EsmScriptDiagnosticsAnalyzerTests
         BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(4), 1.0f);
         BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(8), 0x48);
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(12), actorFormId);
+        return Sub("CTDA", data);
+    }
+
+    private static ParsedSubrecord CtdaGetPCIsSex(uint sex)
+    {
+        var data = new byte[28];
+        BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(4), 1.0f);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(8), 0x83);
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(12), sex);
         return Sub("CTDA", data);
     }
 

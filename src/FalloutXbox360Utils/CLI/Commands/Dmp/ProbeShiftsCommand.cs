@@ -436,7 +436,17 @@ internal static class ProbeShiftsCommand
     {
         AppendIndent(sb, indent);
         sb.Append('"').Append(name).Append("\": ");
-        sb.Append(value.HasValue ? (value.Value ? "true" : "false") : "null");
+        string literal;
+        if (!value.HasValue)
+        {
+            literal = "null";
+        }
+        else
+        {
+            literal = value.Value ? "true" : "false";
+        }
+
+        sb.Append(literal);
         sb.Append(",\n");
     }
 
@@ -640,7 +650,15 @@ internal static class ProbeShiftsCommand
 
         var distinct = present.Distinct().OrderBy(v => v).ToList();
         var allZero = distinct.Count == 1 && distinct[0] == 0;
-        var color = allZero ? "green" : (distinct.Count == 1 ? "cyan" : "yellow");
+        string color;
+        if (allZero)
+        {
+            color = "green";
+        }
+        else
+        {
+            color = distinct.Count == 1 ? "cyan" : "yellow";
+        }
         var values_str = string.Join(", ", distinct.Select(v => v.ToString(CultureInfo.InvariantCulture)));
         AnsiConsole.MarkupLine(
             $"  [{color}]{Markup.Escape(label),-18}[/]  values={{ {values_str} }} ({present.Count}/{present.Count} samples)");

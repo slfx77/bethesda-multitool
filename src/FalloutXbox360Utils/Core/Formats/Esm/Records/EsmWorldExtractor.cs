@@ -38,7 +38,11 @@ internal static class EsmWorldExtractor
         EsmRecordScanResult scanResult,
         Dictionary<uint, string>? editorIdMap = null)
     {
-        var buffer = ArrayPool<byte>.Shared.Rent(1024); // REFR records are typically small
+        // REFR records are usually small (<1 KB) but heavily-scripted refs or those carrying
+        // large XPRD/XLOC payloads can exceed it. The previous fixed 1 KB rent + Math.Min
+        // silently dropped any tail past 1024 bytes; grow on demand instead.
+        const int InitialBufferSize = 4 * 1024;
+        var buffer = ArrayPool<byte>.Shared.Rent(InitialBufferSize);
 
         try
         {
@@ -49,11 +53,17 @@ internal static class EsmWorldExtractor
             foreach (var header in refrRecords)
             {
                 var dataStart = header.Offset + 24;
-                var dataSize = (int)Math.Min(header.DataSize, 1024);
+                var dataSize = (int)header.DataSize;
 
                 if (dataStart + dataSize > fileSize)
                 {
                     continue;
+                }
+
+                if (dataSize > buffer.Length)
+                {
+                    ArrayPool<byte>.Shared.Return(buffer);
+                    buffer = ArrayPool<byte>.Shared.Rent(dataSize);
                 }
 
                 accessor.ReadArray(dataStart, buffer, 0, dataSize);
@@ -336,7 +346,12 @@ internal static class EsmWorldExtractor
         long fileSize,
         EsmRecordScanResult scanResult)
     {
-        var buffer = ArrayPool<byte>.Shared.Rent(16384); // LAND records: compressed ~2-6KB, decompressed ~12KB
+        // Xbox 360 LAND records can be 20+ KB compressed (decompressed ~25 KB). The previous
+        // fixed 16 KB rent silently truncated any LAND past that, dropping later subrecords —
+        // commonly the NE quadrant's BTXT/ATXT layers, which manifest as voids in the rendered
+        // terrain layer. Start at 64 KB and grow on demand for any outlier record.
+        const int InitialBufferSize = 64 * 1024;
+        var buffer = ArrayPool<byte>.Shared.Rent(InitialBufferSize);
 
         try
         {
@@ -346,11 +361,17 @@ internal static class EsmWorldExtractor
             {
                 // Read the record data (after 24-byte header)
                 var dataStart = header.Offset + 24;
-                var dataSize = (int)Math.Min(header.DataSize, 16384);
+                var dataSize = (int)header.DataSize;
 
                 if (dataStart + dataSize > fileSize)
                 {
                     continue;
+                }
+
+                if (dataSize > buffer.Length)
+                {
+                    ArrayPool<byte>.Shared.Return(buffer);
+                    buffer = ArrayPool<byte>.Shared.Rent(dataSize);
                 }
 
                 accessor.ReadArray(dataStart, buffer, 0, dataSize);

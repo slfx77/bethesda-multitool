@@ -393,7 +393,7 @@ public sealed class RecordParserContext
     public (byte[] Data, int Size)? ReadRecordData(DetectedMainRecord record, byte[] buffer)
     {
         var dataStart = record.Offset + 24;
-        var dataSize = (int)Math.Min(record.DataSize, buffer.Length);
+        var dataSize = (int)record.DataSize;
 
         if (dataStart + dataSize > FileSize)
         {
@@ -403,11 +403,17 @@ public sealed class RecordParserContext
             return null;
         }
 
-        Accessor!.ReadArray(dataStart, buffer, 0, dataSize);
+        // The previous Math.Min(record.DataSize, buffer.Length) silently truncated any record
+        // larger than the caller's rented buffer — most visibly LAND quadrants whose later
+        // subrecords sat past the cut, but the same shape affects any handler with a small
+        // shared buffer (NPC, CREA, PACK, BOOK, ITEM, …). Allocate an exact-size array when
+        // the caller's buffer is too small so oversized records still parse correctly.
+        var useBuffer = dataSize > buffer.Length ? new byte[dataSize] : buffer;
+        Accessor!.ReadArray(dataStart, useBuffer, 0, dataSize);
 
         if (!record.IsCompressed)
         {
-            return (buffer, dataSize);
+            return (useBuffer, dataSize);
         }
 
         if (dataSize <= 4)
@@ -418,7 +424,7 @@ public sealed class RecordParserContext
         }
 
         var decompressed = EsmParser.DecompressRecordData(
-            buffer.AsSpan(0, dataSize), record.IsBigEndian);
+            useBuffer.AsSpan(0, dataSize), record.IsBigEndian);
         if (decompressed == null)
         {
             Logger.Instance.Debug(

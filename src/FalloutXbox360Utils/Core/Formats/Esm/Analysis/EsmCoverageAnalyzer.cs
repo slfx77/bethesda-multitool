@@ -304,7 +304,7 @@ public static class EsmCoverageAnalyzer
             analysis.Diagnostics);
     }
 
-    private static int FindScriptBlockEnd(IReadOnlyList<ParsedSubrecord> subrecords, int start)
+    private static int FindScriptBlockEnd(List<ParsedSubrecord> subrecords, int start)
     {
         for (var i = start; i < subrecords.Count; i++)
         {
@@ -318,7 +318,7 @@ public static class EsmCoverageAnalyzer
     }
 
     private static int FindFirstSubrecord(
-        IReadOnlyList<ParsedSubrecord> subrecords,
+        List<ParsedSubrecord> subrecords,
         string signature,
         int start,
         int end)

@@ -60,7 +60,7 @@ public static class EsmDiagnoseScriptsCommand
 
     private static async Task<int> RunAsync(
         string input,
-        IReadOnlyList<string> actors,
+        string[] actors,
         IReadOnlySet<uint> explicitRecordFormIds,
         string? sourceDmp,
         string? pcEsm,
@@ -85,7 +85,7 @@ public static class EsmDiagnoseScriptsCommand
             return 1;
         }
 
-        var targets = actors.Count > 0
+        var targets = actors.Length > 0
             ? actors.Where(a => !string.IsNullOrWhiteSpace(a)).ToList()
             : ["Ulysses", "Chomps Lewis"];
 

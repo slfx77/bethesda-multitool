@@ -276,23 +276,6 @@ internal static class CrossDumpAggregator
         public string? EditorId { get; set; }
     }
 
-    private static Dictionary<uint, (string? EditorId, string? FullName)> BuildWorldspaceNameLookup(
-        IReadOnlyList<WorldspaceRecord> worldspaces)
-    {
-        var lookup = new Dictionary<uint, (string? EditorId, string? FullName)>(worldspaces.Count);
-        foreach (var worldspace in worldspaces)
-        {
-            if (worldspace.FormId == 0)
-            {
-                continue;
-            }
-
-            lookup[worldspace.FormId] = (worldspace.EditorId, worldspace.FullName);
-        }
-
-        return lookup;
-    }
-
     internal static void RecordWorldspaceObservation(
         uint wsFid,
         string? displayName,

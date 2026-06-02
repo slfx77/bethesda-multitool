@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Text;
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Utils;
@@ -410,15 +411,11 @@ public static class EsmParser
                 return null;
             }
 
-            // Remaining bytes are zlib-compressed data
-            var zlibData = compressedData[4..];
-
-            using var inputStream = new MemoryStream(zlibData.ToArray());
-            using var zlibStream = new ZLibStream(inputStream, CompressionMode.Decompress);
-            using var outputStream = new MemoryStream((int)decompressedSize);
-
-            zlibStream.CopyTo(outputStream);
-            return outputStream.ToArray();
+            // Reuse the shared helper so we get the same validation + raw-deflate fallback the
+            // analysis path uses. Without the fallback we silently returned truncated payloads
+            // for compressed records whose ZLibStream stops short of the declared size — cell
+            // quadrant texture layers went missing because their subrecords sat past the cut.
+            return EsmHelpers.DecompressZlib(compressedData[4..].ToArray(), (int)decompressedSize);
         }
         catch
         {

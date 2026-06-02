@@ -208,7 +208,7 @@ internal static class ReportConsistencyCommand
     }
 
     private static string MatchProjectionFilePath(
-        IReadOnlyList<CrossDumpSourceProjection> projections,
+        List<CrossDumpSourceProjection> projections,
         string fileName)
     {
         foreach (var projection in projections)

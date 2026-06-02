@@ -77,6 +77,7 @@ public static class EsmCommand
         command.Subcommands.Add(EsmStatsCommand.CreateStatsCommand());
         command.Subcommands.Add(EsmCoverageCommand.CreateCoverageCommand());
         command.Subcommands.Add(EsmDiagnoseScriptsCommand.CreateDiagnoseScriptsCommand());
+        command.Subcommands.Add(EsmGameplayAuditCommand.CreateGameplayAuditCommand());
         command.Subcommands.Add(EsmDumpCommand.CreateDumpCommand());
         command.Subcommands.Add(EsmDumpCommand.CreateTraceCommand());
         command.Subcommands.Add(EsmConvertCommand.CreateConvertCommand());

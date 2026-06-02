@@ -72,6 +72,15 @@ public record EsmRecordScanResult
     // Runtime REFR/ACHR/ACRE form entries from pAllForms hash table
     public List<RuntimeEditorIdEntry> RuntimeRefrFormEntries { get; init; } = [];
 
+    /// <summary>
+    ///     Virtual address of the engine's pAllForms hash table (NiTMapBase&lt;uint, TESForm*&gt;)
+    ///     discovered during the data-section pointer-triple scan in <see cref="EsmEditorIdExtractor" />.
+    ///     0 when discovery failed or the dump didn't expose the triple. Consumers that walk pAllForms
+    ///     for additional form-type enumeration (e.g. the runtime cell enumerator for NAVM discovery)
+    ///     read this VA rather than re-scanning the data section.
+    /// </summary>
+    public uint PAllFormsVa { get; set; }
+
     /// <summary>Cell FormID → parent Worldspace FormID mapping (from ESM GRUP hierarchy).</summary>
     public Dictionary<uint, uint> CellToWorldspaceMap { get; init; } = [];
 

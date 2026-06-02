@@ -23,6 +23,7 @@ public static class DialogueCommand
         command.Subcommands.Add(DialogueTreeCommand.CreateTreeCommand());
         command.Subcommands.Add(CreateTopicCommand());
         command.Subcommands.Add(DialogueTreeCommand.CreateNpcCommand());
+        command.Subcommands.Add(DialoguePlayerLinesCommand.CreatePlayerLinesCommand());
         command.Subcommands.Add(DialogueProvenanceCommand.CreateProvenanceCommand());
 
         return command;

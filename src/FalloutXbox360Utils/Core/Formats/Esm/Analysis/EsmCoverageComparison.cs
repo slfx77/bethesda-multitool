@@ -138,7 +138,7 @@ public static class EsmCoverageComparison
         return string.Join('|', issues);
     }
 
-    private static IReadOnlyList<EsmScriptBytecodeCoverageRow> ReadScriptBytecodeCoverageCsv(string path)
+    private static List<EsmScriptBytecodeCoverageRow> ReadScriptBytecodeCoverageCsv(string path)
     {
         if (!File.Exists(path))
         {
@@ -243,7 +243,8 @@ public static class EsmCoverageComparison
         var sb = new StringBuilder();
         var inQuotes = false;
 
-        for (var i = 0; i < line.Length; i++)
+        var i = 0;
+        while (i < line.Length)
         {
             var c = line[i];
             if (c == '"')
@@ -251,13 +252,12 @@ public static class EsmCoverageComparison
                 if (inQuotes && i + 1 < line.Length && line[i + 1] == '"')
                 {
                     sb.Append('"');
-                    i++;
-                }
-                else
-                {
-                    inQuotes = !inQuotes;
+                    i += 2;
+                    continue;
                 }
 
+                inQuotes = !inQuotes;
+                i++;
                 continue;
             }
 
@@ -265,10 +265,12 @@ public static class EsmCoverageComparison
             {
                 fields.Add(sb.ToString());
                 sb.Clear();
+                i++;
                 continue;
             }
 
             sb.Append(c);
+            i++;
         }
 
         fields.Add(sb.ToString());

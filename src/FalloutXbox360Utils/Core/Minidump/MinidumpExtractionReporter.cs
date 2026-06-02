@@ -212,27 +212,24 @@ internal static class MinidumpExtractionReporter
                     var sceneGraph = analysisResult.SceneGraphMap
                                      ?? new Dictionary<long, SceneGraphInfo>();
 
-                    var objDir = Path.Combine(extractDir, "obj");
+                    var glbDir = Path.Combine(extractDir, "glb");
 
-                    // Combined 3D-only OBJ
-                    MeshObjExporter.ExportMultiple(meshes3D,
-                        Path.Combine(objDir, "meshes_3d_combined.obj"),
+                    MeshGlbExporter.ExportMultiple(meshes3D,
+                        Path.Combine(glbDir, "meshes_3d_combined.glb"),
                         sceneGraph, modelNameIndex);
 
-                    // Individual 3D OBJ files
-                    var meshDir = Path.Combine(objDir, "3d");
+                    var meshDir = Path.Combine(glbDir, "3d");
                     Directory.CreateDirectory(meshDir);
                     for (var i = 0; i < meshes3D.Count; i++)
                     {
                         var mesh = meshes3D[i];
                         var name = AssetNameResolver.ResolveMeshName(
                             mesh, i, sceneGraph, modelNameIndex);
-                        MeshObjExporter.Export(mesh, Path.Combine(meshDir, $"{name}.obj"), name);
+                        MeshGlbExporter.Export(mesh, Path.Combine(meshDir, $"{name}.glb"), name);
                     }
 
-                    // Summary CSV (3D meshes only)
-                    MeshObjExporter.ExportSummary(meshes3D,
-                        Path.Combine(objDir, "meshes_summary.csv"));
+                    MeshGlbExporter.ExportSummary(meshes3D,
+                        Path.Combine(glbDir, "meshes_summary.csv"));
 
                     runtimeMeshesExported = meshes3D.Count;
                 }

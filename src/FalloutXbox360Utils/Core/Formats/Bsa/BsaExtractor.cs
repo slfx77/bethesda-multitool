@@ -63,7 +63,7 @@ public sealed class BsaExtractor : IDisposable
     public bool DdxConversionEnabled => _enabledExtensions.Contains(".ddx") && GetOrCreateConverter(".ddx") != null;
 
     /// <summary>Whether XMA conversion is enabled and available.</summary>
-    public bool XmaConversionEnabled => _enabledExtensions.Contains(".xma") && XmaWavConverter.IsAvailable;
+    public bool XmaConversionEnabled => _xmaConversionEnabled;
 
     /// <summary>Whether NIF conversion is enabled and available.</summary>
     public bool NifConversionEnabled => _enabledExtensions.Contains(".nif") && GetOrCreateConverter(".nif") != null;
@@ -130,6 +130,7 @@ public sealed class BsaExtractor : IDisposable
         if (!enable)
         {
             _enabledExtensions.Remove(".xma");
+            _xmaConversionEnabled = false;
             return true;
         }
 

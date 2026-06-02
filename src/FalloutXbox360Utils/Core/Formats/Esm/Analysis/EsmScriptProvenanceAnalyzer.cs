@@ -157,7 +157,7 @@ public static class EsmScriptProvenanceAnalyzer
     }
 
     private static List<BlockSnapshot> BuildEmittedSnapshots(
-        IReadOnlyDictionary<uint, ParsedMainRecord> generatedByFormId,
+        Dictionary<uint, ParsedMainRecord> generatedByFormId,
         IReadOnlyList<EsmScriptDiagnosticRecordRow> recordRows)
     {
         var snapshots = new List<BlockSnapshot>();
@@ -195,7 +195,7 @@ public static class EsmScriptProvenanceAnalyzer
         string recordType,
         uint formId,
         string editorId,
-        IReadOnlyList<ParsedSubrecord> subrecords,
+        List<ParsedSubrecord> subrecords,
         bool isBigEndianBytecode,
         string origin,
         string matchStrategy)
@@ -273,7 +273,7 @@ public static class EsmScriptProvenanceAnalyzer
         int blockStart,
         int blockEnd,
         int scdaIndex,
-        IReadOnlyList<ParsedSubrecord> subrecords,
+        List<ParsedSubrecord> subrecords,
         bool isBigEndianBytecode,
         string origin,
         string matchStrategy)
@@ -309,6 +309,8 @@ public static class EsmScriptProvenanceAnalyzer
             return;
         }
 
+        var labels = BuildSimpleLabelIndex(records);
+
         foreach (var script in records.Scripts)
         {
             var snapshot = new BlockSnapshot(
@@ -331,7 +333,22 @@ public static class EsmScriptProvenanceAnalyzer
         foreach (var dialogue in records.Dialogues)
         {
             var snapshots = dialogue.ResultScripts.Count == 0
-                ? new List<BlockSnapshot>()
+                ? [
+                    new BlockSnapshot(
+                        string.Empty,
+                        string.Empty,
+                        "INFO",
+                        dialogue.FormId,
+                        dialogue.EditorId ?? string.Empty,
+                        0,
+                        [],
+                        string.Empty,
+                        [],
+                        [],
+                        dialogue.IsBigEndian,
+                        origin,
+                        "dialogue-empty")
+                ]
                 : dialogue.ResultScripts
                     .Select((script, index) => new BlockSnapshot(
                         string.Empty,
@@ -348,7 +365,7 @@ public static class EsmScriptProvenanceAnalyzer
                         origin,
                         "dialogue"))
                     .ToList();
-            lookup.AddDialogue(dialogue, snapshots, origin);
+            lookup.AddDialogue(dialogue, snapshots, labels);
         }
 
         foreach (var package in records.Packages)
@@ -405,7 +422,7 @@ public static class EsmScriptProvenanceAnalyzer
             var source = match.Blocks.FirstOrDefault(b => b.BlockIndex == emitted.BlockIndex);
             if (source is null && emitted.RecordType != "INFO")
             {
-                source = match.Blocks.FirstOrDefault();
+                source = match.Blocks.Count > 0 ? match.Blocks[0] : null;
             }
 
             var maxSlots = Math.Max(source?.References.Count ?? 0, emitted.References.Count);
@@ -528,7 +545,7 @@ public static class EsmScriptProvenanceAnalyzer
 
     private static List<EsmTargetStateTraceRow> BuildStateTraceRows(
         EsmScriptDiagnosticsResult diagnostics,
-        IReadOnlyDictionary<uint, ParsedMainRecord> generatedByFormId,
+        Dictionary<uint, ParsedMainRecord> generatedByFormId,
         IReadOnlyDictionary<uint, LabelInfo> labels)
     {
         var rows = new List<EsmTargetStateTraceRow>();
@@ -657,10 +674,60 @@ public static class EsmScriptProvenanceAnalyzer
             }
 
             var responseKey = NormalizeText(dialogueRow?.ResponsePreview);
+            if (dialogueRow is not null && responseKey.Length > 0)
+            {
+                var compositeKey = new InfoCompositeKey(
+                    dialogueRow.QuestFormId,
+                    dialogueRow.TopicFormId,
+                    dialogueRow.SpeakerFormId,
+                    responseKey);
+                if (sourceLookup.DialogueByComposite.TryGetValue(compositeKey, out var byComposite))
+                {
+                    return new SourceMatch("info-quest-topic-speaker-response", byComposite);
+                }
+
+                var topicSpeakerKey = compositeKey with { QuestFormId = 0 };
+                if (sourceLookup.DialogueByComposite.TryGetValue(topicSpeakerKey, out var byTopicSpeaker))
+                {
+                    return new SourceMatch("info-topic-speaker-response", byTopicSpeaker);
+                }
+
+                var questSpeakerKey = compositeKey with { TopicFormId = 0 };
+                if (sourceLookup.DialogueByComposite.TryGetValue(questSpeakerKey, out var byQuestSpeaker))
+                {
+                    return new SourceMatch("info-quest-speaker-response", byQuestSpeaker);
+                }
+            }
+
             if (responseKey.Length > 0 &&
                 sourceLookup.DialogueByResponse.TryGetValue(responseKey, out var byResponse))
             {
                 return new SourceMatch("info-response-text", byResponse);
+            }
+
+            if (dialogueRow is not null)
+            {
+                var topicKey = new InfoTopicKey(
+                    dialogueRow.QuestFormId,
+                    dialogueRow.TopicFormId,
+                    dialogueRow.SpeakerFormId);
+                if (sourceLookup.DialogueByTopic.TryGetValue(topicKey, out var byTopic))
+                {
+                    return new SourceMatch("info-quest-topic-speaker", byTopic);
+                }
+
+                var topicSpeakerKey = topicKey with { QuestFormId = 0 };
+                if (sourceLookup.DialogueByTopic.TryGetValue(topicSpeakerKey, out var byTopicSpeaker))
+                {
+                    return new SourceMatch("info-topic-speaker", byTopicSpeaker);
+                }
+
+                var topicLabelKey = NormalizeText(dialogueRow.TopicLabel);
+                if (topicLabelKey.Length > 0 &&
+                    sourceLookup.DialogueByTopicLabel.TryGetValue(topicLabelKey, out var byTopicLabel))
+                {
+                    return new SourceMatch("info-topic-label", byTopicLabel);
+                }
             }
         }
 
@@ -815,6 +882,22 @@ public static class EsmScriptProvenanceAnalyzer
         }
     }
 
+    private static Dictionary<uint, string> BuildSimpleLabelIndex(RecordCollection records)
+    {
+        var labels = new Dictionary<uint, string>();
+        foreach (var (formId, fullName) in records.FormIdToDisplayName)
+        {
+            labels[formId] = fullName;
+        }
+
+        foreach (var (formId, editorId) in records.FormIdToEditorId)
+        {
+            labels[formId] = editorId;
+        }
+
+        return labels;
+    }
+
     private static Dictionary<uint, LabelInfo> MergeLabels(
         IReadOnlyDictionary<uint, LabelInfo> primary,
         IReadOnlyDictionary<uint, LabelInfo> fallback)
@@ -828,7 +911,7 @@ public static class EsmScriptProvenanceAnalyzer
         return labels;
     }
 
-    private static IReadOnlyList<ScriptReferenceSlot> ToReferenceSlots(IEnumerable<uint> referencedObjects)
+    private static List<ScriptReferenceSlot> ToReferenceSlots(IEnumerable<uint> referencedObjects)
     {
         return referencedObjects
             .Select(r => (r & 0x80000000) != 0
@@ -837,7 +920,7 @@ public static class EsmScriptProvenanceAnalyzer
             .ToList();
     }
 
-    private static int FindScriptBlockEnd(IReadOnlyList<ParsedSubrecord> subrecords, int start)
+    private static int FindScriptBlockEnd(List<ParsedSubrecord> subrecords, int start)
     {
         for (var i = start; i < subrecords.Count; i++)
         {
@@ -851,7 +934,7 @@ public static class EsmScriptProvenanceAnalyzer
     }
 
     private static int FindFirstSubrecord(
-        IReadOnlyList<ParsedSubrecord> subrecords,
+        List<ParsedSubrecord> subrecords,
         string signature,
         int start,
         int end)
@@ -868,7 +951,7 @@ public static class EsmScriptProvenanceAnalyzer
     }
 
     private static List<ScriptVariableInfo> ReadScriptVariables(
-        IReadOnlyList<ParsedSubrecord> subrecords,
+        List<ParsedSubrecord> subrecords,
         int start,
         int end)
     {
@@ -900,7 +983,7 @@ public static class EsmScriptProvenanceAnalyzer
     }
 
     private static List<ScriptReferenceSlot> ReadScriptReferences(
-        IReadOnlyList<ParsedSubrecord> subrecords,
+        List<ParsedSubrecord> subrecords,
         int start,
         int end)
     {
@@ -932,7 +1015,7 @@ public static class EsmScriptProvenanceAnalyzer
     }
 
     private static string ReadFirstStringSubrecord(
-        IReadOnlyList<ParsedSubrecord> subrecords,
+        List<ParsedSubrecord> subrecords,
         string signature,
         int start,
         int end)
@@ -1157,6 +1240,9 @@ public static class EsmScriptProvenanceAnalyzer
         public Dictionary<string, BlockSnapshot> ScriptsByEditorId { get; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<uint, List<BlockSnapshot>> DialogueByFormId { get; } = [];
         public Dictionary<string, List<BlockSnapshot>> DialogueByResponse { get; } = new(StringComparer.Ordinal);
+        public Dictionary<InfoCompositeKey, List<BlockSnapshot>> DialogueByComposite { get; } = [];
+        public Dictionary<InfoTopicKey, List<BlockSnapshot>> DialogueByTopic { get; } = [];
+        public Dictionary<string, List<BlockSnapshot>> DialogueByTopicLabel { get; } = new(StringComparer.Ordinal);
         public Dictionary<uint, List<BlockSnapshot>> PackageByFormId { get; } = [];
         public Dictionary<string, List<BlockSnapshot>> PackageByEditorId { get; } = new(StringComparer.OrdinalIgnoreCase);
 
@@ -1169,15 +1255,66 @@ public static class EsmScriptProvenanceAnalyzer
             }
         }
 
-        public void AddDialogue(DialogueRecord dialogue, List<BlockSnapshot> snapshots, string origin)
+        public void AddDialogue(
+            DialogueRecord dialogue,
+            List<BlockSnapshot> snapshots,
+            Dictionary<uint, string> labels)
         {
             DialogueByFormId.TryAdd(dialogue.FormId, snapshots);
+            AddTopic(dialogue.QuestFormId ?? 0, dialogue.TopicFormId ?? 0, dialogue.SpeakerFormId ?? 0,
+                snapshots);
+            AddTopic(0, dialogue.TopicFormId ?? 0, dialogue.SpeakerFormId ?? 0, snapshots);
+            if (dialogue.TopicFormId.HasValue &&
+                labels.TryGetValue(dialogue.TopicFormId.Value, out var topicLabel))
+            {
+                var topicLabelKey = NormalizeText(topicLabel);
+                if (topicLabelKey.Length > 0)
+                {
+                    DialogueByTopicLabel.TryAdd(topicLabelKey, snapshots);
+                }
+            }
+
             var firstResponse = dialogue.Responses.FirstOrDefault()?.Text;
             var responseKey = NormalizeText(firstResponse);
             if (responseKey.Length > 0)
             {
                 DialogueByResponse.TryAdd(responseKey, snapshots);
+                AddComposite(dialogue.QuestFormId ?? 0, dialogue.TopicFormId ?? 0, dialogue.SpeakerFormId ?? 0,
+                    responseKey, snapshots);
+                AddComposite(0, dialogue.TopicFormId ?? 0, dialogue.SpeakerFormId ?? 0, responseKey, snapshots);
+                AddComposite(dialogue.QuestFormId ?? 0, 0, dialogue.SpeakerFormId ?? 0, responseKey, snapshots);
             }
+        }
+
+        private void AddComposite(
+            uint questFormId,
+            uint topicFormId,
+            uint speakerFormId,
+            string responseKey,
+            List<BlockSnapshot> snapshots)
+        {
+            if ((topicFormId == 0 && questFormId == 0) || speakerFormId == 0 || responseKey.Length == 0)
+            {
+                return;
+            }
+
+            DialogueByComposite.TryAdd(
+                new InfoCompositeKey(questFormId, topicFormId, speakerFormId, responseKey),
+                snapshots);
+        }
+
+        private void AddTopic(
+            uint questFormId,
+            uint topicFormId,
+            uint speakerFormId,
+            List<BlockSnapshot> snapshots)
+        {
+            if (topicFormId == 0 || speakerFormId == 0)
+            {
+                return;
+            }
+
+            DialogueByTopic.TryAdd(new InfoTopicKey(questFormId, topicFormId, speakerFormId), snapshots);
         }
 
         public void AddPackage(PackageRecord package, List<BlockSnapshot> snapshots)
@@ -1191,6 +1328,17 @@ public static class EsmScriptProvenanceAnalyzer
     }
 
     private sealed record SourceMatch(string Strategy, IReadOnlyList<BlockSnapshot> Blocks);
+
+    private readonly record struct InfoCompositeKey(
+        uint QuestFormId,
+        uint TopicFormId,
+        uint SpeakerFormId,
+        string ResponseKey);
+
+    private readonly record struct InfoTopicKey(
+        uint QuestFormId,
+        uint TopicFormId,
+        uint SpeakerFormId);
 
     private sealed record BlockSnapshot(
         string Target,

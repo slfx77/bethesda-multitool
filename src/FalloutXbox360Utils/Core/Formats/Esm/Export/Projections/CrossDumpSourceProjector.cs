@@ -128,7 +128,7 @@ internal static class CrossDumpSourceProjector
 
     // ---------- Skeleton builders ----------
 
-    private static List<CellSkeleton> BuildCellSkeletons(IReadOnlyList<CellRecord> cells)
+    private static List<CellSkeleton> BuildCellSkeletons(List<CellRecord> cells)
     {
         var skeletons = new List<CellSkeleton>(cells.Count);
         foreach (var cell in cells)
@@ -157,7 +157,7 @@ internal static class CrossDumpSourceProjector
         return skeletons;
     }
 
-    private static List<ScriptSkeleton> BuildScriptSkeletons(IReadOnlyList<ScriptRecord> scripts)
+    private static List<ScriptSkeleton> BuildScriptSkeletons(List<ScriptRecord> scripts)
     {
         var skeletons = new List<ScriptSkeleton>(scripts.Count);
         foreach (var script in scripts)
@@ -181,7 +181,7 @@ internal static class CrossDumpSourceProjector
     // ---------- Observation builders (load-order; chronological replay is the aggregator's job) ----------
 
     private static List<WorldspaceObservation> BuildWorldspaceObservations(
-        IReadOnlyList<WorldspaceRecord> worldspaces)
+        List<WorldspaceRecord> worldspaces)
     {
         var observations = new List<WorldspaceObservation>(worldspaces.Count);
         foreach (var worldspace in worldspaces)
@@ -200,7 +200,7 @@ internal static class CrossDumpSourceProjector
         return observations;
     }
 
-    private static List<CellGroupObservation> BuildCellGroupObservations(IReadOnlyList<CellRecord> cells)
+    private static List<CellGroupObservation> BuildCellGroupObservations(List<CellRecord> cells)
     {
         var observations = new List<CellGroupObservation>(cells.Count);
         foreach (var cell in cells)
@@ -223,7 +223,7 @@ internal static class CrossDumpSourceProjector
     }
 
     private static Dictionary<uint, DialogueObservation> BuildDialogueObservations(
-        IReadOnlyList<DialogueRecord> dialogues)
+        List<DialogueRecord> dialogues)
     {
         var map = new Dictionary<uint, DialogueObservation>(dialogues.Count);
         foreach (var dialogue in dialogues)
@@ -249,8 +249,8 @@ internal static class CrossDumpSourceProjector
     }
 
     private static Dictionary<uint, DialogTopicObservation> BuildDialogTopicObservations(
-        IReadOnlyList<DialogTopicRecord> topics,
-        IReadOnlyDictionary<uint, string> searchTextByTopicFormId)
+        List<DialogTopicRecord> topics,
+        Dictionary<uint, string> searchTextByTopicFormId)
     {
         var map = new Dictionary<uint, DialogTopicObservation>(topics.Count);
         foreach (var topic in topics)
