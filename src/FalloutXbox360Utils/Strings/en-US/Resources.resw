@@ -768,7 +768,13 @@
     <value>No Source Folder Selected</value>
   </data>
   <data name="EmptyRepacker_Subtitle.Text" xml:space="preserve">
-    <value>Click 'Select Source...' to choose an Xbox 360 Fallout: New Vegas installation</value>
+    <value>Enter a path below or click 'Browse...' to choose an Xbox 360 Fallout: New Vegas installation folder</value>
+  </data>
+  <data name="Input_RepackerSourcePath.PlaceholderText" xml:space="preserve">
+    <value>C:\Path\to\folder\containing\Fallout.exe</value>
+  </data>
+  <data name="Input_RepackerOutputPath.PlaceholderText" xml:space="preserve">
+    <value>Select or enter output directory...</value>
   </data>
   <data name="Checkbox_UpdateUserIni.Content" xml:space="preserve">
     <value>Update user Fallout.ini (backup will be created)</value>

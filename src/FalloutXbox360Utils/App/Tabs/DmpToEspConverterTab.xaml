@@ -37,6 +37,31 @@
           AutomationProperties.Name="Remove folder" />
       </Grid>
     </DataTemplate>
+    <DataTemplate x:Key="DialogueCsvRowTemplate" x:DataType="local:DialogueCsvEntry">
+      <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,2" ColumnSpacing="8">
+        <TextBlock
+          Grid.Column="0"
+          VerticalAlignment="Center"
+          Opacity="0.6"
+          Text="&#x2261;"
+          FontSize="16" />
+        <TextBlock
+          Grid.Column="1"
+          VerticalAlignment="Center"
+          Text="{Binding Path}"
+          TextTrimming="CharacterEllipsis"
+          ToolTipService.ToolTip="{Binding Path}" />
+        <Button
+          Grid.Column="2"
+          Content="&#xE711;"
+          FontFamily="Segoe MDL2 Assets"
+          FontSize="10"
+          Padding="6,4"
+          Background="Transparent"
+          Tag="{Binding}"
+          AutomationProperties.Name="Remove dialogue CSV" />
+      </Grid>
+    </DataTemplate>
   </UserControl.Resources>
 
   <Grid VerticalAlignment="Stretch">
@@ -71,7 +96,8 @@
             <CheckBox
               x:Name="CompressRecordsCheckBox"
               Content="Compress records"
-              MinWidth="0" />
+              MinWidth="0"
+              ToolTipService.ToolTip="zlib-compresses each record in the output ESP, typically shrinking the file by 30-60% with no loss of data. Fully compatible with Fallout: New Vegas. Turn off only if you need to inspect or diff the raw uncompressed record bytes." />
           </StackPanel>
 
           <StackPanel Spacing="4">
@@ -79,13 +105,15 @@
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <CheckBox
               x:Name="ValidateOutputCheckBox"
-              Content="Validate output by re-parsing"
+              Content="Validate output by re-parsing (recommended)"
               IsChecked="True"
-              MinWidth="0" />
+              MinWidth="0"
+              ToolTipService.ToolTip="After writing the ESP, re-parses it to catch malformed records before the game ever loads them. Adds a few seconds on large conversions but surfaces encoder bugs as a build-time failure instead of an in-game crash." />
             <CheckBox
               x:Name="VerboseDecisionsCheckBox"
-              Content="Verbose decisions (per-record events)"
-              MinWidth="0" />
+              Content="Verbose per-record decisions"
+              MinWidth="0"
+              ToolTipService.ToolTip="Emits a progress event for every choice the converter makes per record — picked source vs. master, fields preserved or dropped, sanitization steps. Useful for debugging a specific record but produces tens of thousands of log entries on full conversions." />
           </StackPanel>
 
           <StackPanel Spacing="4">
@@ -93,21 +121,25 @@
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <CheckBox
               x:Name="WriteMissingListCheckBox"
-              Content="Write missing-assets list (.missing.txt next to BSA)"
-              MinWidth="0" />
+              Content="Write missing-assets report"
+              MinWidth="0"
+              ToolTipService.ToolTip="Writes a sidecar .missing.txt next to the output BSA listing every asset the packer couldn't find, fuzzy-matched, or failed to convert. Useful for tracking down which prototype assets you still need to source." />
             <CheckBox
               x:Name="OverrideVanillaCheckBox"
-              Content="Override vanilla assets with secondary folders"
-              MinWidth="0" />
+              Content="Let secondary folders override vanilla assets"
+              MinWidth="0"
+              ToolTipService.ToolTip="When an asset exists both in your PC Data folder and in a secondary folder, prefer the secondary copy. Off by default — vanilla wins and secondary folders only fill gaps. Turn on when your secondary folders contain prototype versions you want to ship." />
             <CheckBox
               x:Name="RefrEditorIdRemapCheckBox"
-              Content="Rescue dangling REFRs via EditorID-stem remap"
+              Content="Remap dangling REFRs by EditorID stem (recommended)"
               IsChecked="True"
-              MinWidth="0" />
+              MinWidth="0"
+              ToolTipService.ToolTip="When a placed reference in the dump points at a base record that no longer exists by FormID, try to bind it to a vanilla object whose EditorID shares the same stem (e.g. SCOLParkingLotChunk03 → SCOLParkingLotChunk03b). Recovers placements that would otherwise be silently dropped." />
             <CheckBox
               x:Name="ReplaceCellTemporariesCheckBox"
-              Content="Replace cell temporaries (clean diff; keeps persistent refs)"
-              MinWidth="0" />
+              Content="Replace cell temporaries on shared cells (advanced)"
+              MinWidth="0"
+              ToolTipService.ToolTip="When a cell appears in both vanilla and the dump, drop every master temporary ref that isn't in the dump. Persistent refs (quest-bound objects, scripted NPCs) are always preserved. Off by default — turn on for clean cell-by-cell diffs at the cost of losing harmless vanilla clutter." />
           </StackPanel>
         </StackPanel>
       </ScrollViewer>
@@ -258,13 +290,53 @@
                   Click="AddSecondaryFolderButton_Click"
                   HorizontalAlignment="Left"
                   AutomationProperties.Name="Add secondary data folder" />
+                <TextBlock
+                  x:Name="DialogueCsvLabel"
+                  Text="Dialogue audio CSVs (Fallout Audio Transcriber exports; supplies voice/lip requests for INFO records)"
+                  TextWrapping="Wrap"
+                  FontSize="11"
+                  Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                  Margin="0,8,0,0" />
+                <ListView
+                  x:Name="DialogueCsvListView"
+                  CanReorderItems="True"
+                  AllowDrop="True"
+                  ItemTemplate="{StaticResource DialogueCsvRowTemplate}"
+                  SelectionMode="None"
+                  MinHeight="60"
+                  MaxHeight="140"
+                  BorderThickness="1"
+                  BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                  AutomationProperties.Name="Dialogue audio CSVs"
+                  AutomationProperties.LabeledBy="{Binding ElementName=DialogueCsvLabel}">
+                  <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem">
+                      <Setter Property="Padding" Value="6,4,6,4" />
+                      <Setter Property="MinHeight" Value="0" />
+                      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    </Style>
+                  </ListView.ItemContainerStyle>
+                </ListView>
+                <TextBlock
+                  x:Name="DialogueCsvEmptyHint"
+                  Text="No dialogue CSVs. Click &quot;Add CSV…&quot; to add one."
+                  FontStyle="Italic"
+                  FontSize="11"
+                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Button
+                  x:Name="AddDialogueCsvButton"
+                  Content="Add CSV…"
+                  Click="AddDialogueCsvButton_Click"
+                  HorizontalAlignment="Left"
+                  AutomationProperties.Name="Add dialogue audio CSV" />
                 <CheckBox
                   x:Name="PackAssetsCheckBox"
-                  Content="Pack missing assets into BSA after conversion"
+                  Content="Pack missing assets into a BSA"
                   Checked="PackAssetsCheckBox_Toggled"
                   Unchecked="PackAssetsCheckBox_Toggled"
                   MinWidth="0"
-                  Margin="0,4,0,0" />
+                  Margin="0,4,0,0"
+                  ToolTipService.ToolTip="After the ESP is written, scans it for asset paths that aren't in your PC Data folder, sources them from the secondary folders above, and packs them into a BSA next to the ESP. Required to play the converted plugin without copying loose files into Data." />
                 <TextBlock x:Name="OutputBsaLabel" Text="Output BSA path" />
                 <Grid ColumnSpacing="6">
                   <Grid.ColumnDefinitions>

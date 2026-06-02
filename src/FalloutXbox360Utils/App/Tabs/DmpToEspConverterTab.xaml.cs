@@ -26,6 +26,7 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
     private const int LogMaxBatchSize = 250;
 
     private readonly List<ConversionEventEntry> _allEvents = [];
+    private readonly ObservableCollection<DialogueCsvEntry> _dialogueCsvs = [];
     private readonly DispatcherTimer _logDrainTimer;
     private readonly ObservableCollection<SecondaryFolderEntry> _secondaries = [];
     private Channel<ConversionEventEntry>? _channel;
@@ -48,6 +49,11 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
         SecondariesListView.ContainerContentChanging += SecondariesListView_ContainerContentChanging;
         _secondaries.CollectionChanged += (_, _) => UpdateSecondariesEmptyHint();
         UpdateSecondariesEmptyHint();
+
+        DialogueCsvListView.ItemsSource = _dialogueCsvs;
+        DialogueCsvListView.ContainerContentChanging += DialogueCsvListView_ContainerContentChanging;
+        _dialogueCsvs.CollectionChanged += (_, _) => UpdateDialogueCsvEmptyHint();
+        UpdateDialogueCsvEmptyHint();
     }
 
     private void UpdateSecondariesEmptyHint()
@@ -81,6 +87,40 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
         if (sender is Button btn && btn.Tag is SecondaryFolderEntry entry)
         {
             _secondaries.Remove(entry);
+        }
+    }
+
+    private void UpdateDialogueCsvEmptyHint()
+    {
+        DialogueCsvEmptyHint.Visibility = _dialogueCsvs.Count == 0
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
+    private void DialogueCsvListView_ContainerContentChanging(
+        ListViewBase sender, ContainerContentChangingEventArgs args)
+    {
+        if (args.Phase != 0)
+        {
+            return;
+        }
+
+        var root = args.ItemContainer.ContentTemplateRoot as Grid;
+        var removeBtn = root?.Children.OfType<Button>().FirstOrDefault();
+        if (removeBtn == null)
+        {
+            return;
+        }
+
+        removeBtn.Click -= RemoveDialogueCsvClick;
+        removeBtn.Click += RemoveDialogueCsvClick;
+    }
+
+    private void RemoveDialogueCsvClick(object sender, RoutedEventArgs _)
+    {
+        if (sender is Button btn && btn.Tag is DialogueCsvEntry entry)
+        {
+            _dialogueCsvs.Remove(entry);
         }
     }
 
@@ -190,6 +230,34 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
         });
     }
 
+    private async void AddDialogueCsvButton_Click(object sender, RoutedEventArgs e)
+    {
+        var picker = new FileOpenPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
+        picker.FileTypeFilter.Add(".csv");
+        picker.FileTypeFilter.Add("*");
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow));
+
+        // Multi-select so the user can add several CSV exports in one picker session,
+        // mirroring how the CLI's --dialogue-audio-csv option accepts repeated values.
+        var files = await picker.PickMultipleFilesAsync();
+        if (files == null)
+        {
+            return;
+        }
+
+        foreach (var file in files)
+        {
+            var path = file.Path;
+            if (_dialogueCsvs.Any(entry =>
+                    string.Equals(entry.Path, path, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue; // Already in the list.
+            }
+
+            _dialogueCsvs.Add(new DialogueCsvEntry { Path = path });
+        }
+    }
+
     private async void BrowseOutputBsaButton_Click(object sender, RoutedEventArgs e)
     {
         var picker = new FileSavePicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
@@ -230,6 +298,27 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
                 Path = entry.Path,
                 IsXbox360Format = entry.IsXbox360Format
             });
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    ///     Snapshot the current dialogue-audio CSV paths into the plain string list that
+    ///     <see cref="PluginBuildOptions.DialogueTextOverridesCsvPaths" /> and
+    ///     <see cref="AssetPackingOptions.DialogueAudioCsvPaths" /> both consume.
+    /// </summary>
+    private List<string> SnapshotDialogueCsvs()
+    {
+        var result = new List<string>(_dialogueCsvs.Count);
+        foreach (var entry in _dialogueCsvs)
+        {
+            if (string.IsNullOrWhiteSpace(entry.Path))
+            {
+                continue;
+            }
+
+            result.Add(entry.Path);
         }
 
         return result;
@@ -290,6 +379,7 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
         var renameFolders = PackAssetsCheckBox.IsChecked == true
             ? SnapshotSecondaryFolders()
             : new List<SecondaryDataFolder>();
+        var dialogueCsvPaths = SnapshotDialogueCsvs();
         var authorityLoad = CellWorldspaceAuthorityJson.Load(null);
 
         var options = new PluginBuildOptions
@@ -310,7 +400,8 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
             CellMetadataAuthority = authorityLoad.Cells,
             CellReferenceParentAuthority = authorityLoad.RefToCell,
             CellReferenceParentWindows = authorityLoad.RefWindows,
-            CellWorldspaceAuthorityWorldspaceNames = authorityLoad.WorldspaceNames
+            CellWorldspaceAuthorityWorldspaceNames = authorityLoad.WorldspaceNames,
+            DialogueTextOverridesCsvPaths = dialogueCsvPaths
         };
 
         // Set up a buffered channel for progress events.
@@ -548,7 +639,8 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
             OutputBsaPath = OutputBsaTextBox.Text,
             VerbosePerAsset = VerboseDecisionsCheckBox.IsChecked == true,
             WriteAuditFile = WriteMissingListCheckBox.IsChecked == true,
-            OverrideVanillaBaseline = OverrideVanillaCheckBox.IsChecked == true
+            OverrideVanillaBaseline = OverrideVanillaCheckBox.IsChecked == true,
+            DialogueAudioCsvPaths = SnapshotDialogueCsvs()
         };
     }
 

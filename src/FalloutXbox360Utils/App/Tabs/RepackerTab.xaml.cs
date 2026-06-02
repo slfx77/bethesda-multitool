@@ -29,6 +29,7 @@ public sealed partial class RepackerTab : UserControl, IDisposable, IHasSettings
 
     private string? _sourcePath;
     private bool _sourceValid;
+    private string? _lastValidatedSourcePath;
 
     public RepackerTab()
     {
@@ -142,14 +143,53 @@ public sealed partial class RepackerTab : UserControl, IDisposable, IHasSettings
             return;
         }
 
-        await ValidateSourceFolderAsync(folder.Path);
+        SourcePathTextBox.Text = folder.Path;
+    }
+
+    private async void SourcePathTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        var currentPath = SourcePathTextBox.Text?.Trim();
+
+        if (string.IsNullOrEmpty(currentPath) || !Directory.Exists(currentPath))
+        {
+            _sourcePath = null;
+            _sourceValid = false;
+            _lastValidatedSourcePath = null;
+            ResetSourceState();
+            UpdateEmptyState();
+            return;
+        }
+
+        if (string.Equals(currentPath, _lastValidatedSourcePath, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        _lastValidatedSourcePath = currentPath;
+        await ValidateSourceFolderAsync(currentPath);
+    }
+
+    private void OutputPathTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        var path = OutputPathTextBox.Text?.Trim();
+        _outputPath = string.IsNullOrEmpty(path) ? null : path;
+        UpdateConvertButtonState();
+    }
+
+    private void ResetSourceState()
+    {
+        foreach (var category in _categories)
+        {
+            category.FileCount = 0;
+            category.SubItems.Clear();
+        }
+
+        TotalFilesText.Text = "0";
     }
 
     private async Task ValidateSourceFolderAsync(string path)
     {
         _sourcePath = path;
-        SourcePathText.Text = Path.GetFileName(path);
-        SourcePathText.SetValue(ToolTipService.ToolTipProperty, path);
 
         var validation = RepackerService.ValidateSourceFolder(path);
         _sourceValid = validation.IsValid;
@@ -266,11 +306,7 @@ public sealed partial class RepackerTab : UserControl, IDisposable, IHasSettings
             return;
         }
 
-        _outputPath = folder.Path;
-        OutputPathText.Text = Path.GetFileName(folder.Path);
-        OutputPathText.SetValue(ToolTipService.ToolTipProperty, folder.Path);
-        OutputPathText.Foreground = new SolidColorBrush(Colors.White);
-        UpdateConvertButtonState();
+        OutputPathTextBox.Text = folder.Path;
     }
 
     private async void ConvertButton_Click(object sender, RoutedEventArgs e)
@@ -322,7 +358,7 @@ public sealed partial class RepackerTab : UserControl, IDisposable, IHasSettings
         // Setup UI for conversion
         _cts = new CancellationTokenSource();
         ConvertButton.IsEnabled = false;
-        CancelButton.Visibility = Visibility.Visible;
+        CancelButton.IsEnabled = true;
         ConversionProgress.Visibility = Visibility.Visible;
         ConversionProgress.Value = 0;
         ConversionProgress.IsIndeterminate = true;
@@ -373,7 +409,7 @@ public sealed partial class RepackerTab : UserControl, IDisposable, IHasSettings
         {
             _cts = null;
             ConvertButton.IsEnabled = true;
-            CancelButton.Visibility = Visibility.Collapsed;
+            CancelButton.IsEnabled = false;
             ConversionProgress.Visibility = Visibility.Collapsed;
             ConversionProgress.IsIndeterminate = false;
             ProgressDetailText.Text = "";

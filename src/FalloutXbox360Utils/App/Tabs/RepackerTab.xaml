@@ -39,34 +39,19 @@
       </Grid.RowDefinitions>
 
       <!-- Header row -->
-      <Grid Grid.Row="0"
-            Margin="0,0,0,8">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
-        <StackPanel Style="{StaticResource TabHeaderStackPanelStyle}">
-          <TextBlock
-            x:Uid="Header_Repacker"
-            AutomationProperties.HeadingLevel="Level1"
-            Style="{StaticResource SubtitleTextBlockStyle}" />
-          <TextBlock
-            x:Uid="Subtitle_Repacker"
-            Style="{StaticResource TabSubtitleStyle}" />
-        </StackPanel>
-        <StackPanel
-          Grid.Column="1"
-          Style="{StaticResource SelectButtonsPanelStyle}">
-          <Button
-            x:Uid="Button_SelectSource"
-            Click="SelectSourceButton_Click" />
-          <Button
-            x:Uid="Button_SelectOutput"
-            Click="SelectOutputButton_Click" />
-        </StackPanel>
-      </Grid>
+      <StackPanel Grid.Row="0"
+                  Style="{StaticResource TabHeaderStackPanelStyle}"
+                  Margin="0,0,0,8">
+        <TextBlock
+          x:Uid="Header_Repacker"
+          AutomationProperties.HeadingLevel="Level1"
+          Style="{StaticResource SubtitleTextBlockStyle}" />
+        <TextBlock
+          x:Uid="Subtitle_Repacker"
+          Style="{StaticResource TabSubtitleStyle}" />
+      </StackPanel>
 
-      <!-- Source Info Card -->
+      <!-- Source Info Card (status / total files / ffmpeg) -->
       <Border
         x:Name="SourceInfoCard"
         Grid.Row="1"
@@ -75,69 +60,42 @@
         Visibility="Collapsed">
         <Grid Padding="12">
           <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
           </Grid.ColumnDefinitions>
           <StackPanel Grid.Column="0"
-                      Orientation="Vertical"
-                      Spacing="4">
-            <StackPanel Orientation="Horizontal"
-                        Spacing="8">
-              <TextBlock x:Uid="Label_Source"
-                         FontWeight="SemiBold" />
-              <TextBlock x:Name="SourcePathText"
-                         Text="-"
-                         TextTrimming="CharacterEllipsis"
-                         MaxWidth="400" />
-            </StackPanel>
-            <StackPanel Orientation="Horizontal"
-                        Spacing="8">
-              <TextBlock x:Uid="Label_Status"
-                         FontWeight="SemiBold" />
-              <FontIcon x:Name="ValidationIcon"
-                        FontSize="14"
-                        Glyph="&#xE73E;"
-                        Foreground="Green"
-                        VerticalAlignment="Center" />
-              <TextBlock x:Name="ValidationText"
-                         Text="Valid Xbox 360 installation"
-                         Foreground="Green" />
-            </StackPanel>
+                      Orientation="Horizontal"
+                      Spacing="8">
+            <TextBlock x:Uid="Label_Status"
+                       FontWeight="SemiBold" />
+            <FontIcon x:Name="ValidationIcon"
+                      FontSize="14"
+                      Glyph="&#xE73E;"
+                      Foreground="Green"
+                      VerticalAlignment="Center" />
+            <TextBlock x:Name="ValidationText"
+                       Text="Valid Xbox 360 installation"
+                       Foreground="Green" />
           </StackPanel>
           <StackPanel Grid.Column="1"
+                      Orientation="Horizontal"
                       HorizontalAlignment="Center"
-                      Orientation="Vertical"
-                      Spacing="4">
-            <StackPanel Orientation="Horizontal"
-                        Spacing="8">
-              <TextBlock x:Uid="Label_Output"
-                         FontWeight="SemiBold" />
-              <TextBlock x:Name="OutputPathText"
-                         Text="(not selected)"
-                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                         TextTrimming="CharacterEllipsis"
-                         MaxWidth="400" />
-            </StackPanel>
-            <StackPanel Orientation="Horizontal"
-                        Spacing="8">
-              <TextBlock x:Uid="Label_TotalFiles"
-                         FontWeight="SemiBold" />
-              <TextBlock x:Name="TotalFilesText"
-                         Text="0" />
-            </StackPanel>
+                      Spacing="8">
+            <TextBlock x:Uid="Label_TotalFiles"
+                       FontWeight="SemiBold" />
+            <TextBlock x:Name="TotalFilesText"
+                       Text="0" />
           </StackPanel>
           <StackPanel Grid.Column="2"
-                      Orientation="Vertical"
-                      Spacing="4">
-            <StackPanel Orientation="Horizontal"
-                        Spacing="8">
-              <TextBlock x:Uid="Label_FFmpeg"
-                         FontWeight="SemiBold" />
-              <TextBlock x:Name="FfmpegStatusText"
-                         Text="Available"
-                         Foreground="Green" />
-            </StackPanel>
+                      Orientation="Horizontal"
+                      HorizontalAlignment="Right"
+                      Spacing="8">
+            <TextBlock x:Uid="Label_FFmpeg"
+                       FontWeight="SemiBold" />
+            <TextBlock x:Name="FfmpegStatusText"
+                       Text="Available"
+                       Foreground="Green" />
           </StackPanel>
         </Grid>
       </Border>
@@ -290,7 +248,8 @@
         Style="{StaticResource CardBorderStyle}">
         <StackPanel HorizontalAlignment="Center"
                     VerticalAlignment="Center"
-                    Spacing="16">
+                    Spacing="16"
+                    MaxWidth="520">
           <FontIcon FontSize="64"
                     Glyph="&#xE777;"
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
@@ -300,11 +259,8 @@
                      TextAlignment="Center" />
           <TextBlock x:Uid="EmptyRepacker_Subtitle"
                      Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                     TextAlignment="Center" />
-          <Button x:Uid="Button_SelectSource"
-                  HorizontalAlignment="Center"
-                  Click="SelectSourceButton_Click"
-                  Style="{StaticResource AccentButtonStyle}" />
+                     TextAlignment="Center"
+                     TextWrapping="Wrap" />
         </StackPanel>
       </Border>
 
@@ -312,7 +268,7 @@
       <Border
         x:Name="StatsCard"
         Grid.Row="3"
-        Margin="0,8,0,0"
+        Margin="0,0,0,8"
         Style="{StaticResource CardBorderStyle}"
         Visibility="Collapsed">
         <Grid Padding="12">
@@ -338,43 +294,99 @@
         </Grid>
       </Border>
 
-      <!-- Progress Bar -->
-      <ProgressBar
-        x:Name="ConversionProgress"
-        Grid.Row="4"
-        Margin="0,8,0,0"
-        Maximum="100"
-        Visibility="Collapsed" />
-
-      <!-- Action Buttons -->
-      <Grid Grid.Row="5"
-            Margin="0,8,0,0">
+      <!-- Progress row (bar + detail text) -->
+      <Grid Grid.Row="4"
+            Margin="0,0,0,8">
         <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <ProgressBar
+          x:Name="ConversionProgress"
+          Grid.Column="0"
+          Width="220"
+          VerticalAlignment="Center"
+          Maximum="100"
+          Visibility="Collapsed" />
+        <TextBlock x:Name="ProgressDetailText"
+                   Grid.Column="1"
+                   Margin="12,0,0,0"
+                   VerticalAlignment="Center"
+                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                   TextTrimming="CharacterEllipsis" />
+      </Grid>
+
+      <!-- Input/Output Section -->
+      <Grid Grid.Row="5"
+            Style="{StaticResource IoSectionGridStyle}"
+            Margin="0">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
 
-        <TextBlock x:Name="ProgressDetailText"
+        <!-- Source path -->
+        <TextBlock x:Name="SourcePathLabel"
+                   x:Uid="Label_Source"
+                   Grid.Row="0"
                    Grid.Column="0"
-                   VerticalAlignment="Center"
-                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                   TextTrimming="CharacterEllipsis" />
-
-        <Button
-          x:Name="CancelButton"
-          x:Uid="Button_Cancel"
-          Grid.Column="1"
-          Margin="0,0,8,0"
-          Click="CancelButton_Click"
-          Visibility="Collapsed" />
+                   Style="{StaticResource IoLabelStyle}" />
+        <TextBox x:Name="SourcePathTextBox"
+                 x:Uid="Input_RepackerSourcePath"
+                 Grid.Row="0"
+                 Grid.Column="1"
+                 Style="{StaticResource IoTextBoxStyle}"
+                 AutomationProperties.LabeledBy="{Binding ElementName=SourcePathLabel}"
+                 TextChanged="SourcePathTextBox_TextChanged" />
+        <Button x:Uid="Button_Browse"
+                Grid.Row="0"
+                Grid.Column="2"
+                AutomationProperties.Name="Browse for source folder"
+                Click="SelectSourceButton_Click" />
         <Button
           x:Name="ConvertButton"
           x:Uid="Button_StartConversion"
-          Grid.Column="2"
+          Grid.Row="0"
+          Grid.Column="3"
+          MinWidth="160"
+          Margin="8,0,0,0"
           Click="ConvertButton_Click"
           IsEnabled="False"
           Style="{StaticResource AccentButtonStyle}" />
+
+        <!-- Output path -->
+        <TextBlock x:Name="OutputPathLabel"
+                   x:Uid="Label_Output"
+                   Grid.Row="1"
+                   Grid.Column="0"
+                   Style="{StaticResource IoLabelStyle}" />
+        <TextBox x:Name="OutputPathTextBox"
+                 x:Uid="Input_RepackerOutputPath"
+                 Grid.Row="1"
+                 Grid.Column="1"
+                 Style="{StaticResource IoTextBoxStyle}"
+                 AutomationProperties.LabeledBy="{Binding ElementName=OutputPathLabel}"
+                 TextChanged="OutputPathTextBox_TextChanged" />
+        <Button x:Uid="Button_Browse"
+                Grid.Row="1"
+                Grid.Column="2"
+                AutomationProperties.Name="Browse for output folder"
+                Click="SelectOutputButton_Click" />
+        <Button
+          x:Name="CancelButton"
+          x:Uid="Button_Cancel"
+          Grid.Row="1"
+          Grid.Column="3"
+          MinWidth="160"
+          Margin="8,0,0,0"
+          Click="CancelButton_Click"
+          IsEnabled="False" />
       </Grid>
     </Grid>
   </Grid>
