@@ -7,6 +7,109 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0-alpha.1] - 2026-06-02
+
+First alpha release of the 3.x line. The headline additions are the **DMP→ESP converter** (turn Xbox 360 memory dumps into PC-loadable plugins) and the **v3 worldspace 3D viewer** (real-time WinUI viewer with terrain, water, and placed references). Both ship as alpha-quality — known gaps and crashes are documented in the [`memory/`](memory/) topic notes.
+
+### Added
+
+#### DMP→ESP converter
+
+- **`dmp-to-esp` pipeline**: A complete two-pass plugin builder that reconstructs a vanilla-formatted PC ESP from an Xbox 360 minidump, optionally merged against the PC master ESM. The pipeline currently covers ~60 FormTypes with end-to-end (runtime read → encoder → emit) coverage and is opt-in via CLI flags or the new **DMP-to-ESP Converter GUI tab** (multi-DMP picker, dialogue CSV inputs, secondary-data overlays, live event log).
+- **Encoder coverage**: end-to-end encoders for `ARMA`, `ARMO`, `BOOK`, `CARD`, `CCRD`, `CDCK`, `CELL`, `CMNY`, `COBJ`, `CONT`, `CPTH`, `CREA`, `DEBR`, `DIAL`, `DOOR`, `EXPL`, `GLOB`, `GMST`, `IDLE`, `IMAD`, `IMGS`, `IMOD`, `INFO`, `KEYM`, `LAND`, `LIGH`, `LSCT`, `LTEX`, `LVLI`/`LVLN`/`LVLC`, `MGEF`, `NAVI`, `NAVM`, `NOTE`, `NPC_`, `PACK`, `PERK`, `PROJ`, `PWAT`, `QUST`, `RACE`, `RCCT`, `RCPE`, `REFR`/`ACHR`/`ACRE`, `REGN`, `SCPT`, `SCOL`, `SOUN`, `SPEL`, `STAT`, `TERM`, `TREE`, `TXST`, `VTYP`, `WEAP`, `WRLD`.
+- **Asset packing**: When emitting a plugin that references new mesh/texture/voice assets, the converter scans NIF subrecords for embedded texture paths, walks engine voice-file path conventions, and ingests dialogue CSV exports, then packs the required files into a co-emitted BSA whose layout matches per-content-category vanilla FNV archives (`BsaWriter.MatchVanillaLayout`).
+- **Cell-authority data**: `data/cell_worldspace_authority.json` ships pre-computed cell → worldspace ownership for the four reference builds and is consumed by the converter to back-fill missing parent-cell links and to validate runtime-only cell recoveries.
+- **Sanitizer pipeline**: post-emission scrubbers for NVEX dangling links, INFO CTDA dangling references (the "crucify on every NPC" idle bug), QUST/PERK condition lists, optional-FormID subrecords, and placed-ref FormIDs. Each sanitizer has synthetic in-memory tests under `tests/.../Plugin/`.
+
+#### v3 Worldspace 3D Viewer
+
+- **Phase 0**: GPU pipeline migrated from Veldrid to Vortice.Windows / D3D11 (see [`memory/render_backend_vortice.md`](memory/render_backend_vortice.md) for the decision log); new `GpuDevice` + `GpuSwapChainSurface` host a `SwapChainPanel` inside WinUI 3.
+- **Phase 1**: Camera (`CameraState` + `FlythroughCameraController`), cell-origin transforms, frustum culling.
+- **Phase 2a**: Per-cell terrain meshes from runtime VHGT/VNML data (`TerrainMeshBuilder`, `TerrainHeightSampler`), water rendering, walk mode for ground-following navigation.
+- **Phase 2b**: Per-cell landscape texturing via opacity-blended `terrain_textured` shaders, `TerrainOpacityTextureCache`, `TerrainTextureResolver` (LTEX → texture lookup with engine-default fallback); world-map 2D overlay system (`WorldMapLayerRenderer`, `WorldMapNavMeshOverlayRenderer`, `WorldSpatialIndex`, `WorldRenderCache`); multi-format Map Export dialog; per-stage frame profiling (env-flag gated `FALLOUT_VIEWER_PROFILE_LOG=1`).
+- **Phase 2c**: Instanced 3D rendering of placed references (statics, doors, containers, lights) via `ReferenceRenderer` + `ReferenceMeshCache` with NIF → GPU buffer caching and frustum culling.
+
+#### ESP Planner (two-pass pipeline)
+
+- **Tier 0-7**: A from-scratch planner/encoder pipeline that walks DMP + master ESM in a catalog → disposition → reference-resolution → plan-write sequence. Replaces the prior single-pass converter on most record types; gated via `--planner-types` CLI flag. Covers cell-section orchestration (`PlanCellSectionBuilder`, `CellSectionPlanner`), reference walkers for SCPT/PACK/INFO/NPC_/CREA/PERK, and a `MigrationDelta` parity-harness foundation.
+- **Specialized cell-child encoders**: LAND, NAVM, NAVI emission routed through planner-aware writers.
+- **PGRE encoder + planner wrapper**: Tier 7a primitive for emitting placed grenade refs through the planner pipeline.
+
+#### Runtime readers
+
+- **PdbStructView abstraction**: data-driven runtime struct reading via PDB-derived field layouts; `PdbStructView.WithShift(owner, shift)` for offset adjustments. ~30 specialized readers migrated.
+- **Typed runtime readers** for every remaining FormType the converter touches; coverage tracked in `docs/runtime-parity-matrix.json` (ratchet test asserts the matrix matches `RecordCollection`).
+- **`BsNavMeshStructuralValidator`** + **`RuntimeCellEnumerator`** + **`RuntimeNavMeshDiscovery`**: per-cell nav-mesh walk with NULL-parent + stale-pointer rejection.
+- **`TesFormHeaderProbe`**: candidate-offset header probing unblocks MSTT/FLOR multi-inheritance reads.
+
+#### New CLI / analysis commands
+
+- `report validate` / `report consistency` — per-build field-domain sanity checks + cross-build agreement diffs (with `--from-html` to reuse a `dmp compare` output)
+- `dmp analyze` / `dmp compare` / `dmp formtype-census` / `dmp scan-cell` — unified DMP analysis surface
+- `dialogue player-lines` — per-quest player-line snapshots matching the GECK Topic browser
+- `esm gameplay-audit` — cross-record gameplay-flag audit (ACBS UseTraits, QUST DATA, INFO Trespass/Aggro)
+- `esm diagnose-scripts` / `esm script-provenance` — SCDA endian + SCHR layout + SCRO remap diagnostics
+- EsmAnalyzer additions: `cell-textures`, `ltex-audit`, `navm-coverage`
+
+#### Infrastructure
+
+- **GitHub release pipeline**: `.github/workflows/build.yml` builds and publishes Windows GUI, Windows CLI, Linux CLI, and Audio Transcriber artifacts on `v*` tag push; alpha/beta/rc/pre tags auto-mark as prerelease.
+- **Centralized package versions**: `Directory.Packages.props` (introduced in this cycle) is the single source of truth for NuGet versions.
+- **Test discipline framework**: `SyntheticStructFactory` + `RuntimeReaderTestFixture` + `BucketBTestGuard` + offset-reader test helpers under `tests/.../Helpers/`. Snippet-based legacy harness retired.
+
+### Changed
+
+- **GLB exporter generalized**: `NpcGlbWriter` → `GlbWriter`; `NpcExportMeshPart`/`Node`/`NodeKind`/`Scene`/`SkinBinding` → `Glb*`. The NPC scene assemblers now emit through the same writer used by `MeshGlbExporter` and `TerrainGlbExporter`.
+- **WindowsAppSDK 1.8 → 2.1.3** + WinUI ecosystem upgrade.
+- **Dependency bumps**: Spectre.Console, System.CommandLine, Magick.NET, NAudio, SonarAnalyzer.CSharp (10.4 → 10.27), Roslynator (4.12.10 → 4.15.0), DDXConv submodule.
+- **Plugin/ tree reorganized** into themed subfolders (`Output/`, `Pipeline/`, `Writers/Encoders/<RecordCategory>/`, `Nav/`, `AssetPacking/`, etc.).
+- **Cross-dump comparison pipeline** rewritten in 10 phases as a projection-based streaming pipeline; old `CrossDumpComparisonPipeline` deleted.
+- **`SchemaModelSerializer`** + **`SubrecordSchemaView`** replace the older `SubrecordDataReader.ReadFields` / `HasSchema` pattern (~45 encoder subrecords migrated; parser side migrated 16 handlers).
+- **`SubrecordSchemaRegistry`**: opaque `ByteArray` schema fields replaced with named `UInt8` sequences for diff-friendliness.
+- **Plugin builder v23**: full encoder coverage + validation + merge + nav-mesh emission. Versioned `v8` … `v55` smoke milestones rolled up into the planner pipeline.
+
+### Fixed
+
+- **SCDA bytecode endian** — script bytecode emitted to PC ESPs was the source's Xbox 360 big-endian bytes unswapped, so every converted quest's scripts dead-loaded. Decimal 7424 in 23K log errors = byte-reversed `ScriptName` opcode 0x001D. Fixed via `ScriptBytecodeEndianConverter` that reuses the decompiler as a structural walker.
+- **DIAL QSTI remap missing** — `DialEncoder.EncodeNew` wrote QSTI verbatim; new DIALs referenced proto QUST FormIDs causing the engine to filter all their topics out (player only saw GOODBYE for Ulysses). Fixed by `SanitizeDialReferences` (mirrors `SanitizeInfoReferences`).
+- **SCHR canonical layout** — `InfoEncoder` + `ScptEncoder` were emitting SCHR with the runtime `SCRIPT_HEADER` PDB layout, which diverges from the canonical fopdoc 20-byte layout at offsets 0, 12, and 16-19. Result: thousands of `SCRIPTS: Variable ID NNNNNNNN not found` errors. Now emit canonical layout (Padding/RefCount/CompiledSize/VariableCount/Type/Flags).
+- **CellEncoder empty EDID** — empty EDID subrecord was emitted on every cell override; xEdit's `wbCELL` definition requires EDID to be optional and first-when-present. Now skipped when null/empty.
+- **CellMerger binary policy** — persistent-only DMP captures merge into master, anything with non-persistent content authoritatively replaces it (no threshold mode).
+- **QUST DATA override removal** — the runtime byte co-locates ESM-authored flags (StartGameEnabled, Allow*) with engine state bits (Started, Active, Completed). DMP-captured DATA either wiped master flags (Doc Mitchell's intro never starting) or carried runtime state (Sunny Smiles' quest appearing pre-started).
+- **NPC actor merge policy** — retain only FormID identity fields (RNAM, SCRI, ZNAM, CNAM, ENAM, VTCK, HNAM, PNAM); discard everything else from DMP captures of master NPCs.
+- **CREA encoding gap** — proto-only creatures (Speedy, Sleepy) were emitted as stubs because the encoder only modeled 9 of ~30 subrecords; expanded to OBND/PNAM/TNAM/BNAM/WNAM/NAM4/NAM5/VTCK/ZNAM/TPLT/CNTO/CSCR/CSDT*, plus the runtime reader and ESM parser extensions required to feed them.
+- **MSTT / FLOR multi-inheritance** — `BGSMovableStatic` puts `TESFullName` + `BGSDestructibleObjectForm` BEFORE `TESForm`, so `EsmEditorIdExtractor` was reading garbage `cFormType`/`iFormID`. Fixed via `TesFormHeaderProbe` (candidate offsets `{+4/+12, +24/+32, +16/+24}`).
+- **INFO CTDA Reference sanitizer** — sanitize CTDA `Reference` field on new INFOs to prevent the "crucify animation broadcast on every NPC" runtime symptom.
+- **XCNT on ACHR** — placed-actor records carried `XCNT` from the DMP's live instance counter, causing the engine to append "(N)" to display names (e.g. "Ulysses (20770)"). Bethesda overloaded XCNT — stack count on REFR, runtime spawn counter on ACHR. RefrEncoder now emits XCNT only when `RecordType == "REFR"`.
+- **NIF embedded asset gap** — asset packer's DMP scanner required null terminators; NIF `SizedString` texture paths slipped past it. `NifEmbeddedAssetCollector` pre-pass closes the gap. Was why Ulysses outfit + hair shipped without their textures.
+- **NiAGDDataBlock.Data swap** — `Data` declared as `byte[][]` but holds packed 4-byte floats; the converter walked byte-by-byte and skipped the swap. Parity sweep across 14,854 Xbox/PC NIF pairs surfaced 2,282 affected LOD meshes; fix collapses that to 0.
+- **BSPartFlag endian** — Xbox 360 stores `BSPartFlag` as a native byte pair, not a byte-swapped ushort. `BytePackedBitflagTypes` opt-out keeps the bytes verbatim.
+- **Quest script brute-force scan** — `RuntimeQuestTerminalReader.ReadRuntimeQuest` was picking arbitrary `Script*` pointers from TESQuest memory when `pFormScript` was null. Caused Doc Mitchell "Finished" regression (CGTutorialSCRIPT was the wrong bind). Same antipattern in `RuntimeActorReader.BruteForceScanForScriptPointer` — removed entirely.
+- **XCLW no-water sentinel** — `0x7F7FFFFF` (float.MaxValue) in XCLW / DNAM means "no water in this cell." `WorldHeightNormalizer` was coercing it to 0, flooding test/proto worldspaces. Now preserved through parse + render.
+
+### Removed
+
+- **OBJ mesh / terrain exporters** — `MeshObjExporter` + `TerrainObjExporter` replaced by `MeshGlbExporter` + `TerrainGlbExporter`. Anyone consuming OBJ output via the CLI needs to switch to GLB.
+- **`NpcExport{MeshPart,Node,NodeKind,Scene,SkinBinding}.cs`** — renamed to `Glb*` as part of the GLB writer generalization.
+- **`CrossDumpComparisonPipeline.cs`** — collapsed to a projection-pipeline shim and then deleted.
+- **Brute-force script-pointer scans** in `RuntimeActorReader` and `RuntimeQuestTerminalReader`.
+
+### Refactored
+
+- **Plugin/ root** reorganized into themed subfolders (`Output/`, `Pipeline/`, `Writers/Encoders/<RecordCategory>/`, `Nav/`, `AssetPacking/`).
+- **Encoders/** mirrored to Models/Records subfolders.
+- **Test suite consolidation** — dedupe fixtures, parameterize Fact clusters, rename for SUT clarity. Snippet-based legacy harness retired.
+- **`PdbStructView`** + **`SubrecordSchemaView`** + **`SchemaModelSerializer`** introduced as the data-driven runtime / schema-driven encoder primitives that displace the older hand-coded layouts.
+
+### Known limitations (alpha)
+
+- DMP→ESP master-cell NAVM augmentation gated off by default (`PluginBuildOptions.EmitMasterCellNavmAugmentation`); some new NAVM cells require an extended NAVI override that the planner doesn't yet emit.
+- WastelandNV-specific crash under investigation (other worldspaces render fine).
+- v3 viewer's reference renderer is in alpha — texture / material support limited to diffuse, no shader effects.
+- Many memory notes (`memory/`) document specific gaps still being investigated; treat the alpha as "use, file issues, expect rough edges."
+
+## [2.4.0] - 2026-04-10
+
 ### Added
 
 - **GUI Accessibility**: every interactive control in the WinUI 3 app now has an accessible name for screen readers (`AutomationProperties.Name` / `LabeledBy` / `x:Uid`). Page and section headers expose `HeadingLevel` for structure navigation. Icon-only buttons have both tooltips and accessible names. Color-coded status text is paired with the underlying text value so information isn't conveyed by color alone. A new xunit ratchet test (`XamlAccessibilityRatchetTests`) fails the build if a new control lands without accessible metadata.
