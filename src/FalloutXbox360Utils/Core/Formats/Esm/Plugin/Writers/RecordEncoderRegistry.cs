@@ -86,6 +86,7 @@ public sealed class RecordEncoderRegistry
             new PwatEncoder(),
             new TreeEncoder(),
             new ImgsEncoder(),
+            new ImadEncoder(),
             new AlocEncoder(),
             new MicnEncoder(),
             new IpctEncoder(),
