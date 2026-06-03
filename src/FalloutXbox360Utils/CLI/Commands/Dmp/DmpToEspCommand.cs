@@ -88,6 +88,14 @@ public static class DmpToEspCommand
                           "placements for it, delete every master temporary ref not in the DMP. Master " +
                           "persistent refs (and therefore quest-bound objects) are preserved. Off by default."
         };
+        var emitMasterCellNavmAugmentationOpt = new Option<bool>("--emit-master-cell-navm-augmentation")
+        {
+            Description = "Smoke flag: emit DMP-captured NAVMs whose parent cell is a master cell " +
+                          "(master-cell augmentation). Defaults to drop — the NAVI override builder " +
+                          "is wired but the master-cell augmentation path has not been smoke-validated. " +
+                          "Set to test whether the crucified-animation symptom has been fixed by Phase " +
+                          "7b TesConditionListWalker."
+        };
 
         var command = new Command("to-esp", "Convert a DMP to a PC plugin ESP overlay against a master ESM");
         command.Arguments.Add(dmpArg);
@@ -106,6 +114,7 @@ public static class DmpToEspCommand
         command.Options.Add(overrideVanillaOpt);
         command.Options.Add(disableRefrEditorIdRemapOpt);
         command.Options.Add(replaceCellTemporariesOpt);
+        command.Options.Add(emitMasterCellNavmAugmentationOpt);
 
         var cellAuthorityOpt = new Option<string?>("--cell-authority")
         {
@@ -167,6 +176,7 @@ public static class DmpToEspCommand
             var overrideVanilla = parseResult.GetValue(overrideVanillaOpt);
             var disableRefrEditorIdRemap = parseResult.GetValue(disableRefrEditorIdRemapOpt);
             var replaceCellTemporaries = parseResult.GetValue(replaceCellTemporariesOpt);
+            var emitMasterCellNavmAugmentation = parseResult.GetValue(emitMasterCellNavmAugmentationOpt);
             var cellAuthorityPath = parseResult.GetValue(cellAuthorityOpt);
             var skipWorldspaceArgs = parseResult.GetValue(skipWorldspaceOpt) ?? [];
             var skipWorldspaceFormIds = ParseHexFormIdSet(skipWorldspaceArgs);
@@ -179,8 +189,8 @@ public static class DmpToEspCommand
 
             await RunAsync(dmp, pcEsm, output, author, description, compress, validate, verbose,
                 secondaryData, secondaryData360, packAssets, writeMissingList, dialogueAudioCsv, overrideVanilla,
-                disableRefrEditorIdRemap, replaceCellTemporaries, cellAuthorityPath,
-                skipWorldspaceFormIds, skipRecordTypes, plannerTypes, ct);
+                disableRefrEditorIdRemap, replaceCellTemporaries, emitMasterCellNavmAugmentation,
+                cellAuthorityPath, skipWorldspaceFormIds, skipRecordTypes, plannerTypes, ct);
         });
 
         return command;
@@ -203,6 +213,7 @@ public static class DmpToEspCommand
         bool overrideVanilla,
         bool disableRefrEditorIdRemap,
         bool replaceCellTemporaries,
+        bool emitMasterCellNavmAugmentation,
         string? cellAuthorityPath,
         HashSet<uint> skipWorldspaceFormIds,
         HashSet<string> skipRecordTypes,
@@ -262,6 +273,7 @@ public static class DmpToEspCommand
             AssetRenameOverrideVanilla = overrideVanilla,
             EnableRefrBaseEditorIdRemap = !disableRefrEditorIdRemap,
             ReplaceCellTemporariesOnOverride = replaceCellTemporaries,
+            EmitMasterCellNavmAugmentation = emitMasterCellNavmAugmentation,
             CellWorldspaceAuthority = authorityLoad.CellToWorldspace,
             CellMetadataAuthority = authorityLoad.Cells,
             CellReferenceParentAuthority = authorityLoad.RefToCell,
