@@ -5,9 +5,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Planner.Parity;
 /// <summary>
 ///     Authoritative list of <see cref="MigrationDelta" /> entries. Parity tests consult
 ///     <see cref="IsTolerated" /> when a record-type byte diff appears between the planner
-///     and legacy pipelines. The human-readable log lives at
-///     <c>docs/planner/migration-deltas.md</c>; a sync test asserts the two lists agree
-///     by DELTA-NNN id.
+///     and legacy pipelines.
 /// </summary>
 public sealed class MigrationDeltaRegistry
 {
@@ -19,9 +17,9 @@ public sealed class MigrationDeltaRegistry
     }
 
     /// <summary>
-    ///     The default registry shipped with the build. Starts empty at Tier 6.6 baseline
-    ///     (mirrors <c>docs/planner/migration-deltas.md</c>'s "Open deltas: _None recorded
-    ///     yet_"); new entries land here alongside their markdown counterparts.
+    ///     The default registry shipped with the build. Starts empty at the Tier 6.6
+    ///     baseline; new entries land here when a user-approved planner-vs-legacy byte
+    ///     diff needs to pass the parity harness.
     /// </summary>
     public static MigrationDeltaRegistry Default { get; } =
         new(ImmutableArray<MigrationDelta>.Empty);

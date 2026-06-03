@@ -122,7 +122,7 @@ public sealed class RuntimeParityMatrixTests
     private static JsonDocument LoadMatrix()
     {
         var root = FindRepoRoot();
-        var path = Path.Combine(root, "docs", "runtime-parity-matrix.json");
+        var path = Path.Combine(root, "tests", "FalloutXbox360Utils.Tests", "Resources", "runtime-parity-matrix.json");
         Assert.True(File.Exists(path), $"Runtime parity matrix not found: {path}");
         return JsonDocument.Parse(File.ReadAllText(path));
     }
@@ -132,8 +132,7 @@ public sealed class RuntimeParityMatrixTests
         var dir = AppContext.BaseDirectory;
         for (var i = 0; i < 10; i++)
         {
-            if (File.Exists(Path.Combine(dir, "Xbox360MemoryCarver.slnx")) ||
-                File.Exists(Path.Combine(dir, "docs", "runtime-parity-matrix.json")))
+            if (File.Exists(Path.Combine(dir, "FalloutXbox360Utils.slnx")))
             {
                 return dir;
             }

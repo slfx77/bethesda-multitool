@@ -7,9 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **Research / investigation docs**: pruned `docs/` to format-only documentation. Removed `Xbox_360_ESM_Conversion_Transforms.md`, `RTTI-ESM-Coverage.md`, `investigate-*.md` (3 files), `parity/` (SUMMARY + 2 baseline JSONs), `planner/migration-deltas.md`, `v3-scope.md`, plus the unused `runtime-refr-extra-baselines.json` and `runtime-world-cell-probe-baselines.json`.
+- **In-repo memory notes**: removed `memory/bsa_mixed_archive_layout.md`, `memory/bsa_split_2gb_boundary.md`, `memory/dialogue_topic_link_remap.md` — investigation notes, not format docs.
+- `MigrationDeltaMarkdownSyncTests.cs` — paired with the deleted `docs/planner/migration-deltas.md`; the C# `MigrationDeltaRegistry` is now the sole source of truth for delta entries.
+
+### Changed
+
+- **`runtime-parity-matrix.json` moved** from `docs/` to `tests/FalloutXbox360Utils.Tests/Resources/`. It's a load-bearing test fixture (consumed by `RuntimeParityMatrixTests`), not documentation.
+
 ## [3.0.0-alpha.1] - 2026-06-02
 
-First alpha release of the 3.x line. The headline additions are the **DMP→ESP converter** (turn Xbox 360 memory dumps into PC-loadable plugins) and the **v3 worldspace 3D viewer** (real-time WinUI viewer with terrain, water, and placed references). Both ship as alpha-quality — known gaps and crashes are documented in the [`memory/`](memory/) topic notes.
+First alpha release of the 3.x line. The headline additions are the **DMP→ESP converter** (turn Xbox 360 memory dumps into PC-loadable plugins) and the **v3 worldspace 3D viewer** (real-time WinUI viewer with terrain, water, and placed references). Both ship as alpha-quality — known limitations are listed at the bottom of this entry. (Subsequent unreleased work prunes investigation/research notes that briefly lived in `docs/` and `memory/`; this entry's references to them point at the v3.0.0-alpha.1 tag snapshot.)
 
 ### Added
 
@@ -23,7 +33,7 @@ First alpha release of the 3.x line. The headline additions are the **DMP→ESP 
 
 #### v3 Worldspace 3D Viewer
 
-- **Phase 0**: GPU pipeline migrated from Veldrid to Vortice.Windows / D3D11 (see [`memory/render_backend_vortice.md`](memory/render_backend_vortice.md) for the decision log); new `GpuDevice` + `GpuSwapChainSurface` host a `SwapChainPanel` inside WinUI 3.
+- **Phase 0**: GPU pipeline migrated from Veldrid to Vortice.Windows / D3D11; new `GpuDevice` + `GpuSwapChainSurface` host a `SwapChainPanel` inside WinUI 3.
 - **Phase 1**: Camera (`CameraState` + `FlythroughCameraController`), cell-origin transforms, frustum culling.
 - **Phase 2a**: Per-cell terrain meshes from runtime VHGT/VNML data (`TerrainMeshBuilder`, `TerrainHeightSampler`), water rendering, walk mode for ground-following navigation.
 - **Phase 2b**: Per-cell landscape texturing via opacity-blended `terrain_textured` shaders, `TerrainOpacityTextureCache`, `TerrainTextureResolver` (LTEX → texture lookup with engine-default fallback); world-map 2D overlay system (`WorldMapLayerRenderer`, `WorldMapNavMeshOverlayRenderer`, `WorldSpatialIndex`, `WorldRenderCache`); multi-format Map Export dialog; per-stage frame profiling (env-flag gated `FALLOUT_VIEWER_PROFILE_LOG=1`).
@@ -38,7 +48,7 @@ First alpha release of the 3.x line. The headline additions are the **DMP→ESP 
 #### Runtime readers
 
 - **PdbStructView abstraction**: data-driven runtime struct reading via PDB-derived field layouts; `PdbStructView.WithShift(owner, shift)` for offset adjustments. ~30 specialized readers migrated.
-- **Typed runtime readers** for every remaining FormType the converter touches; coverage tracked in `docs/runtime-parity-matrix.json` (ratchet test asserts the matrix matches `RecordCollection`).
+- **Typed runtime readers** for every remaining FormType the converter touches; coverage tracked in a parity-matrix JSON consumed by `RuntimeParityMatrixTests` (ratchet asserts the matrix matches `RecordCollection`).
 - **`BsNavMeshStructuralValidator`** + **`RuntimeCellEnumerator`** + **`RuntimeNavMeshDiscovery`**: per-cell nav-mesh walk with NULL-parent + stale-pointer rejection.
 - **`TesFormHeaderProbe`**: candidate-offset header probing unblocks MSTT/FLOR multi-inheritance reads.
 
@@ -106,7 +116,7 @@ First alpha release of the 3.x line. The headline additions are the **DMP→ESP 
 - DMP→ESP master-cell NAVM augmentation gated off by default (`PluginBuildOptions.EmitMasterCellNavmAugmentation`); some new NAVM cells require an extended NAVI override that the planner doesn't yet emit.
 - WastelandNV-specific crash under investigation (other worldspaces render fine).
 - v3 viewer's reference renderer is in alpha — texture / material support limited to diffuse, no shader effects.
-- Many memory notes (`memory/`) document specific gaps still being investigated; treat the alpha as "use, file issues, expect rough edges."
+- Treat the alpha as "use, file issues, expect rough edges" — many edge cases are still under investigation.
 
 ## [2.4.0] - 2026-04-10
 

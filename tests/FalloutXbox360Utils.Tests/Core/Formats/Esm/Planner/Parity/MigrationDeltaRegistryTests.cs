@@ -9,9 +9,8 @@ public sealed class MigrationDeltaRegistryTests
     [Fact]
     public void Default_Registry_Is_Empty_At_Tier_6_6_Baseline()
     {
-        // Tier 6.6 baseline mirrors migration-deltas.md: "Open deltas: _None recorded yet_".
-        // When a real delta lands the markdown grows a DELTA-NNN section and this assertion
-        // gets updated alongside it.
+        // The default registry ships with no entries — a real delta lands only when a
+        // user-approved planner-vs-legacy byte diff needs to pass the parity harness.
         Assert.Empty(MigrationDeltaRegistry.Default.Deltas);
     }
 

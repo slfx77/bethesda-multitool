@@ -262,11 +262,9 @@ XMA to WAV conversion requires [FFmpeg](https://www.ffmpeg.org/download.html) on
 ## Documentation
 
 - [Xbox 360 ESM Format](docs/Xbox_360_ESM_Format.md) - ESM binary format and hybrid endianness
-- [ESM Conversion Transforms](docs/Xbox_360_ESM_Conversion_Transforms.md) - Conversion field mappings
 - [DDX Format](docs/Xbox_360_DDX_Format.md) - DDX texture format documentation
 - [PDB Runtime Structures](docs/PDB_Runtime_Structures.md) - Gamebryo runtime struct layouts
 - [Script Bytecode Format](docs/PDB_Script_Bytecode_Format.md) - ObScript SCDA bytecode format
-- [RTTI to ESM Coverage](docs/RTTI-ESM-Coverage.md) - C++ RTTI class to ESM record type mapping
 
 ## License
 

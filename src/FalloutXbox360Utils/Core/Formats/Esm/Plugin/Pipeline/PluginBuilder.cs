@@ -1283,7 +1283,7 @@ public sealed class PluginBuilder
         // BuildAsync (BuildPlannerStateIfEnabled); we just dispatch to PlanWriter here.
         // "CELL" is the cell-hierarchy sentinel — that key activates the whole cell
         // pipeline (CELL/REFR/ACHR/ACRE/LAND/NAVM/NAVI) through EspAssembler instead of
-        // through this top-level dispatch. See docs/planner/migration-deltas.md.
+        // through this top-level dispatch.
         if (options.PlannerEnabledRecordTypes.Contains(recordType) && recordType != "CELL")
         {
             if (_planWriter is null || _emitPlan is null)

@@ -8,11 +8,6 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Planner.Parity;
 ///     <see cref="MigrationDeltaRegistry" /> when a record-type byte diff appears; if the
 ///     diff matches a registered delta the harness passes (with a note); otherwise it fails.
 /// </summary>
-/// <remarks>
-///     The companion human-readable log is [docs/planner/migration-deltas.md]. The C# entries
-///     here are authoritative for tests; <see cref="MigrationDeltaRegistry" /> ships with the
-///     same set the markdown documents.
-/// </remarks>
 public sealed record MigrationDelta
 {
     /// <summary>Stable identifier in the form <c>DELTA-001</c>.</summary>
