@@ -146,7 +146,7 @@ internal sealed class NpcRecordHandler(RecordParserContext context) : RecordHand
                     eyesFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
                 case "HCLR" when sub.DataLength >= 3:
-                    hairColor = ReadHairColor(subData);
+                    hairColor = ReadHairColor(subData, record.IsBigEndian);
                     break;
                 case "NAM6" when sub.DataLength == 4:
                     height = ReadNpcHeight(subData, record.IsBigEndian);
@@ -314,13 +314,26 @@ internal sealed class NpcRecordHandler(RecordParserContext context) : RecordHand
         return !float.IsNaN(value) && !float.IsInfinity(value);
     }
 
-    private static uint ReadHairColor(ReadOnlySpan<byte> data)
+    private static uint ReadHairColor(ReadOnlySpan<byte> data, bool isBigEndian)
     {
-        // HCLR is byte-oriented color data in subrecord order, not a FormID-style integer.
-        // Store it in the packed format NpcRecord.FormatHairColor expects: 0x00BBGGRR.
-        var r = data[0];
-        var g = data[1];
-        var b = data[2];
+        // HCLR is the uint32 0x00BBGGRR (R = low byte, padding = top byte).
+        // PC little-endian stores it on disk as [R, G, B, 0]; Xbox 360 big-endian stores it
+        // as [0, B, G, R]. Reading raw bytes [0..2] as [R,G,B] on a big-endian record drops
+        // R and shifts the channels (silver #C0C0C0 reads as teal #00C0C0).
+        byte r, g, b;
+        if (isBigEndian && data.Length >= 4)
+        {
+            r = data[3];
+            g = data[2];
+            b = data[1];
+        }
+        else
+        {
+            r = data[0];
+            g = data[1];
+            b = data[2];
+        }
+
         return (uint)(r | (g << 8) | (b << 16));
     }
 }

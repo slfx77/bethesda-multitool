@@ -123,7 +123,15 @@ public sealed record SubrecordMergePolicy
             "ENAM", // Eyes FormID
             "VTCK", // Voice Type FormID
             "HNAM", // Hair FormID
-            "PNAM" // Head Part FormID list (multi-occurrence)
+            "PNAM", // Head Part FormID list (multi-occurrence)
+            // PKID — AI package list (multi-occurrence). The DMP-reconstructed proto packages —
+            // especially Patrol packages — carry route markers / XLKR chains we don't fully
+            // reconstruct, so building PatrolActorPackageData from them AVs at load
+            // (RSFoxtrotLenk 0x00116B40: master's AtRadio+Sandbox packages replaced by the broken
+            // proto FoxtrotCommPatrol 0x0100160D → eip 0x0040FE9F). Retain master's package list so
+            // overridden actors keep working AI; orphaned proto PACKs are then harmless. Reconstructing
+            // proto patrol routes end-to-end is the deferred deep fix. (memory/proto_ai_package_crash.md)
+            "PKID"
         };
 
         // DoNotAppendFromDmp must include every identity field + COED (the inventory-pair

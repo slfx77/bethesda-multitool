@@ -109,6 +109,147 @@ public class NpcPkidSanitizerTests
         Assert.Equal(2, encoded.Subrecords.Count(s => s.Signature == "PKID"));
     }
 
+    // ====================================================================================
+    // Reference-field remap tests for INAM / VTCK / TPLT / RNAM / CNAM. These fields used
+    // to emit their FormIDs verbatim; the planner regression guard found NPCs in proto DMPs
+    // whose RNAM / CNAM pointed at phantom-master FormIDs (proto-allocated, master-prefix,
+    // not actually in master), making the engine resolve to nonexistent records. The
+    // FormIdReferenceResolver wraps remap-the-target-if-needed + drop-if-dangling so the
+    // emitted record only references real records.
+    // ====================================================================================
+
+    [Fact]
+    public void EncodeNew_emits_RNAM_verbatim_when_race_is_in_master()
+    {
+        // Typical case: master Race FormID. The resolver passes it through unchanged.
+        var npc = MakeNpcWithRefs(race: 0x00019C5Fu);
+        var valid = new HashSet<uint> { 0x00019C5Fu };
+
+        var encoded = NpcEncoder.EncodeNew(npc, validFormIds: valid);
+
+        var rnams = encoded.Subrecords.Where(s => s.Signature == "RNAM").ToList();
+        Assert.Single(rnams);
+        Assert.Equal(0x00019C5Fu, BinaryPrimitives.ReadUInt32LittleEndian(rnams[0].Bytes));
+    }
+
+    [Fact]
+    public void EncodeNew_remaps_RNAM_to_allocated_FormId_when_race_was_remapped()
+    {
+        // Proto-only race that we allocated a fresh FormID for. The resolver swaps the
+        // source FormID for the allocated one.
+        var npc = MakeNpcWithRefs(race: 0xDEADBEEFu);
+        var valid = new HashSet<uint> { 0x01001234u };
+        var remap = new Dictionary<uint, uint> { [0xDEADBEEFu] = 0x01001234u };
+
+        var encoded = NpcEncoder.EncodeNew(npc, validFormIds: valid, remapTable: remap);
+
+        var rnams = encoded.Subrecords.Where(s => s.Signature == "RNAM").ToList();
+        Assert.Single(rnams);
+        Assert.Equal(0x01001234u, BinaryPrimitives.ReadUInt32LittleEndian(rnams[0].Bytes));
+    }
+
+    [Fact]
+    public void EncodeNew_drops_RNAM_with_warning_when_race_is_phantom_master()
+    {
+        // Phantom-master case: race FormID looks like master (0x0010ABCD) but isn't in
+        // master and isn't in the remap table. Emitting verbatim would point the engine at
+        // a nonexistent record. The resolver returns null → subrecord dropped → warning.
+        var npc = MakeNpcWithRefs(race: 0x0010ABCDu);
+        var valid = new HashSet<uint>();
+
+        var encoded = NpcEncoder.EncodeNew(npc, validFormIds: valid);
+
+        Assert.Empty(encoded.Subrecords.Where(s => s.Signature == "RNAM"));
+        Assert.Contains(encoded.Warnings, w => w.Contains("RNAM") && w.Contains("dangles"));
+    }
+
+    [Fact]
+    public void EncodeNew_drops_CNAM_with_warning_when_class_is_phantom_master()
+    {
+        var npc = MakeNpcWithRefs(@class: 0x0010ABCDu);
+        var valid = new HashSet<uint>();
+
+        var encoded = NpcEncoder.EncodeNew(npc, validFormIds: valid);
+
+        Assert.Empty(encoded.Subrecords.Where(s => s.Signature == "CNAM"));
+        Assert.Contains(encoded.Warnings, w => w.Contains("CNAM") && w.Contains("dangles"));
+    }
+
+    [Fact]
+    public void EncodeNew_drops_VTCK_with_warning_when_voicetype_is_phantom_master()
+    {
+        var npc = MakeNpcWithRefs(voiceType: 0x0010ABCDu);
+        var valid = new HashSet<uint>();
+
+        var encoded = NpcEncoder.EncodeNew(npc, validFormIds: valid);
+
+        Assert.Empty(encoded.Subrecords.Where(s => s.Signature == "VTCK"));
+        Assert.Contains(encoded.Warnings, w => w.Contains("VTCK") && w.Contains("dangles"));
+    }
+
+    [Fact]
+    public void EncodeNew_drops_INAM_with_warning_when_deathitem_is_phantom_master()
+    {
+        var npc = MakeNpcWithRefs(deathItem: 0x0010ABCDu);
+        var valid = new HashSet<uint>();
+
+        var encoded = NpcEncoder.EncodeNew(npc, validFormIds: valid);
+
+        Assert.Empty(encoded.Subrecords.Where(s => s.Signature == "INAM"));
+        Assert.Contains(encoded.Warnings, w => w.Contains("INAM") && w.Contains("dangles"));
+    }
+
+    [Fact]
+    public void EncodeNew_emits_all_reference_fields_verbatim_when_no_validFormIds_supplied()
+    {
+        // Backward-compat: when neither validFormIds nor remapTable are supplied the
+        // resolver passes everything through. Existing override-mode callers must not
+        // regress.
+        var npc = MakeNpcWithRefs(
+            race: 0x00019C5Fu, @class: 0x00057E6Au, voiceType: 0x000A0E11u,
+            deathItem: 0x000ABCDEu);
+
+        var encoded = NpcEncoder.EncodeNew(npc);
+
+        Assert.Single(encoded.Subrecords.Where(s => s.Signature == "RNAM"));
+        Assert.Single(encoded.Subrecords.Where(s => s.Signature == "CNAM"));
+        Assert.Single(encoded.Subrecords.Where(s => s.Signature == "VTCK"));
+        Assert.Single(encoded.Subrecords.Where(s => s.Signature == "INAM"));
+    }
+
+    private static NpcRecord MakeNpcWithRefs(
+        uint? race = null,
+        uint? @class = null,
+        uint? voiceType = null,
+        uint? deathItem = null,
+        uint? template = null)
+    {
+        return new NpcRecord
+        {
+            FormId = 0x010008E0,
+            EditorId = "NewNpc",
+            FullName = "Test NPC",
+            Race = race,
+            Class = @class,
+            VoiceType = voiceType,
+            DeathItem = deathItem,
+            Template = template,
+            Stats = new ActorBaseSubrecord(
+                Flags: 0,
+                FatigueBase: 0,
+                BarterGold: 0,
+                Level: 1,
+                CalcMin: 1,
+                CalcMax: 1,
+                SpeedMultiplier: 100,
+                KarmaAlignment: 0f,
+                DispositionBase: 0,
+                TemplateFlags: 0,
+                Offset: 0,
+                IsBigEndian: false),
+        };
+    }
+
     private static NpcRecord MakeNpc(uint[] packages)
     {
         return new NpcRecord

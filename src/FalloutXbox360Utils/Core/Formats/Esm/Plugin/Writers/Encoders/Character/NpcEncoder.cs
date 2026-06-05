@@ -101,24 +101,71 @@ public sealed class NpcEncoder : IRecordEncoder
             subs.Add(SchemaModelSerializer.SerializeSubrecord("SNAM", "NPC_", 8, membership, SnamExtractors));
         }
 
+        // INAM/VTCK/TPLT/RNAM/CNAM all reference other records by FormID. For the typical
+        // case (master target) FormIdReferenceResolver is a no-op — it returns the value
+        // unchanged. For proto-allocated targets that we've since re-FormID'd, the resolver
+        // maps source → emitted. For phantom-master targets (proto FormID in master numeric
+        // range but not in actual master) the resolver returns null and we drop the
+        // subrecord rather than emit a reference to a nonexistent record. Mirrors the
+        // SCRI / SPLO / CNTO pattern below.
         if (npc.DeathItem.HasValue)
         {
-            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("INAM", npc.DeathItem.Value));
+            var resolvedDeathItem = FormIdReferenceResolver.Resolve(
+                npc.DeathItem.Value, validFormIds, remapTable);
+            if (resolvedDeathItem.HasValue)
+            {
+                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("INAM", resolvedDeathItem.Value));
+            }
+            else
+            {
+                warnings?.Add(
+                    $"New NPC_ 0x{npc.FormId:X8} INAM 0x{npc.DeathItem.Value:X8} dangles — subrecord skipped.");
+            }
         }
 
         if (npc.VoiceType.HasValue)
         {
-            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("VTCK", npc.VoiceType.Value));
+            var resolvedVoiceType = FormIdReferenceResolver.Resolve(
+                npc.VoiceType.Value, validFormIds, remapTable);
+            if (resolvedVoiceType.HasValue)
+            {
+                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("VTCK", resolvedVoiceType.Value));
+            }
+            else
+            {
+                warnings?.Add(
+                    $"New NPC_ 0x{npc.FormId:X8} VTCK 0x{npc.VoiceType.Value:X8} dangles — subrecord skipped.");
+            }
         }
 
         if (resolvedTemplate.HasValue)
         {
-            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("TPLT", resolvedTemplate.Value));
+            var resolvedTpl = FormIdReferenceResolver.Resolve(
+                resolvedTemplate.Value, validFormIds, remapTable);
+            if (resolvedTpl.HasValue)
+            {
+                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("TPLT", resolvedTpl.Value));
+            }
+            else
+            {
+                warnings?.Add(
+                    $"New NPC_ 0x{npc.FormId:X8} TPLT 0x{resolvedTemplate.Value:X8} dangles — subrecord skipped.");
+            }
         }
 
         if (npc.Race.HasValue)
         {
-            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("RNAM", npc.Race.Value));
+            var resolvedRace = FormIdReferenceResolver.Resolve(
+                npc.Race.Value, validFormIds, remapTable);
+            if (resolvedRace.HasValue)
+            {
+                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("RNAM", resolvedRace.Value));
+            }
+            else
+            {
+                warnings?.Add(
+                    $"New NPC_ 0x{npc.FormId:X8} RNAM 0x{npc.Race.Value:X8} dangles — subrecord skipped.");
+            }
         }
 
         // SPLO — spell/ability list. One subrecord per spell. Skip dangling entries.
@@ -219,7 +266,17 @@ public sealed class NpcEncoder : IRecordEncoder
 
         if (npc.Class.HasValue)
         {
-            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("CNAM", npc.Class.Value));
+            var resolvedClass = FormIdReferenceResolver.Resolve(
+                npc.Class.Value, validFormIds, remapTable);
+            if (resolvedClass.HasValue)
+            {
+                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("CNAM", resolvedClass.Value));
+            }
+            else
+            {
+                warnings?.Add(
+                    $"New NPC_ 0x{npc.FormId:X8} CNAM 0x{npc.Class.Value:X8} dangles — subrecord skipped.");
+            }
         }
     }
 
