@@ -154,6 +154,11 @@ internal static class ResultsFormatter
                 ("NPCs", r.Npcs.Count), ("Creatures", r.Creatures.Count), ("Races", r.Races.Count),
                 ("Factions", r.Factions.Count)
             ]),
+            ("Character Appearance",
+            [
+                ("Eyes", r.Eyes.Count), ("Hair", r.Hair.Count), ("Head Parts", r.HeadParts.Count),
+                ("Voice Types", r.VoiceTypes.Count)
+            ]),
             ("AI",
             [
                 ("AI Packages", r.Packages.Count)
@@ -193,6 +198,8 @@ internal static class ResultsFormatter
             ("Crafting & Combat",
             [
                 ("Weapon Mods", r.WeaponMods.Count), ("Recipes", r.Recipes.Count),
+                ("Recipe Categories", r.RecipeCategories.Count),
+                ("Constructible Objects", r.ConstructibleObjects.Count),
                 ("Projectiles", r.Projectiles.Count),
                 ("Explosions", r.Explosions.Count)
             ])

@@ -530,11 +530,16 @@ internal static class PropertyPanelBuilder
             columnsGrid.Children.Add(columnPanels[c]);
         }
 
-        for (var i = 0; i < categories.Length; i++)
+        // Skip categories whose rows are all zero (BuildCategoryCard hides zero rows, so they would
+        // otherwise render as an empty title-only card). Round-robin on rendered cards keeps columns balanced.
+        var rendered = 0;
+        foreach (var (name, records) in categories)
         {
-            var (name, records) = categories[i];
+            if (records.All(rec => rec.Count == 0)) continue;
+
             var card = BuildCategoryCard(name, records);
-            columnPanels[i % 3].Children.Add(card);
+            columnPanels[rendered % 3].Children.Add(card);
+            rendered++;
         }
 
         return columnsGrid;
