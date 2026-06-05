@@ -29,6 +29,17 @@ internal static class CellStructuralReferencePreserver
         "Culling"
     ];
 
+    /// <summary>
+    ///     Subrecords stripped from preserved master refs before re-emission. XEMI (Emittance —
+    ///     links a ref to a REGN for ambient light tint) is dereferenced by the engine during
+    ///     master-init when the plugin is ESM-flagged, BEFORE the REGN FormID is linked, so it
+    ///     reads the raw FormID as a pointer and AVs (the Doc Mitchell light-rays crash on cell
+    ///     exit). Emittance is a cosmetic runtime grid the engine recomputes; dropping the link
+    ///     on preserved refs avoids the eager-resolve crash with no gameplay effect.
+    /// </summary>
+    private static readonly HashSet<string> EsmUnsafePreservedSubrecords =
+        new(StringComparer.Ordinal) { "XEMI" };
+
     public static int PreserveMissing(
         IReadOnlyList<ParsedMainRecord> masterRefs,
         ISet<uint> dmpFormIdsInCell,
@@ -46,7 +57,7 @@ internal static class CellStructuralReferencePreserver
                 continue;
             }
 
-            var bytes = CellGrupBuilder.ReconstructRecordBytes(masterRef);
+            var bytes = CellGrupBuilder.ReconstructRecordBytes(masterRef, EsmUnsafePreservedSubrecords);
             if ((masterRef.Header.Flags & 0x00000400u) != 0)
             {
                 persistentRecords.Add(bytes);
@@ -99,7 +110,8 @@ internal static class CellStructuralReferencePreserver
         List<byte[]> vwdRecords,
         List<byte[]> temporaryRecords,
         ConversionPipelineStats stats,
-        bool hasAuthoritativeDmpStructuralRefs = false)
+        bool hasAuthoritativeDmpStructuralRefs = false,
+        IReadOnlySet<string>? dmpCapturedBaseTypes = null)
     {
         var preserved = 0;
         foreach (var masterRef in masterRefs)
@@ -107,7 +119,7 @@ internal static class CellStructuralReferencePreserver
             var formId = masterRef.Header.FormId;
             if (coveredMasterFormIdsInCell.Contains(formId)
                 || (hasAuthoritativeDmpStructuralRefs && IsStructuralCellRef(masterRef, pcRecordsByFormId))
-                || !ShouldPreserveInLoadedReplacement(masterRef, pcRecordsByFormId))
+                || !ShouldPreserveInLoadedReplacement(masterRef, pcRecordsByFormId, dmpCapturedBaseTypes))
             {
                 continue;
             }
@@ -123,7 +135,8 @@ internal static class CellStructuralReferencePreserver
 
     public static bool ShouldPreserveInLoadedReplacement(
         ParsedMainRecord masterRef,
-        IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId)
+        IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId,
+        IReadOnlySet<string>? dmpCapturedBaseTypes = null)
     {
         if (masterRef.Header.Signature is "ACHR" or "ACRE")
         {
@@ -141,9 +154,34 @@ internal static class CellStructuralReferencePreserver
         }
 
         var baseFormId = ReadNameFormId(masterRef);
-        return baseFormId.HasValue
-               && pcRecordsByFormId.TryGetValue(baseFormId.Value, out var baseRecord)
-               && HasScriptSubrecord(baseRecord);
+        var baseLookupOk = baseFormId.HasValue
+                          && pcRecordsByFormId.TryGetValue(baseFormId.Value, out var baseRecord);
+        var baseRecordResolved = baseLookupOk
+            ? pcRecordsByFormId[baseFormId!.Value]
+            : null;
+
+        if (baseRecordResolved is not null && HasScriptSubrecord(baseRecordResolved))
+        {
+            return true;
+        }
+
+        // Type-set-based preservation. If the DMP's placement snapshot didn't capture any
+        // refs whose base record matches this master ref's base type signature, treat the
+        // master ref as "out of scope for the DMP override" and preserve it. Addresses the
+        // sparse-cell-replacement bug (Doc Mitchell's house: DMP captures DOOR+ACHR+FURN
+        // only, master statics get wiped). The check is intentionally late so the existing
+        // script / persistent / actor preservation still wins for genuinely-script-bearing
+        // refs even when their base type happens to be in the DMP set.
+        if (dmpCapturedBaseTypes is not null && baseRecordResolved is not null)
+        {
+            var baseSig = baseRecordResolved.Header.Signature;
+            if (!dmpCapturedBaseTypes.Contains(baseSig))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public static bool IsStructuralCellRef(
@@ -197,7 +235,7 @@ internal static class CellStructuralReferencePreserver
         List<byte[]> vwdRecords,
         List<byte[]> temporaryRecords)
     {
-        var bytes = CellGrupBuilder.ReconstructRecordBytes(masterRef);
+        var bytes = CellGrupBuilder.ReconstructRecordBytes(masterRef, EsmUnsafePreservedSubrecords);
         var groupType = masterChildLocations.TryGetValue(masterRef.Header.FormId, out var location)
             ? location.GroupType
             : GetDefaultChildGroupType(masterRef);

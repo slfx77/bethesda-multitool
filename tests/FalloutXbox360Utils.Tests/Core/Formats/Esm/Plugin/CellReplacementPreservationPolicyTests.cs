@@ -304,4 +304,102 @@ public class CellReplacementPreservationPolicyTests
         BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(8, 4), z);
         return new ParsedSubrecord { Signature = "DATA", Data = data };
     }
+
+    // ====================================================================================
+    // Type-set-based preservation tests for the Doc Mitchell sparse-cell-replacement bug.
+    // When the DMP capture for a LoadedReplacement cell only contains certain base types
+    // (e.g. DOOR / ACHR / FURN — typical of a small interior cell where the player walked
+    // through), master refs whose base type IS NOT in the DMP capture should be preserved
+    // rather than delete-marked. Without this, master STATs disappear and the cell looks
+    // empty.
+    // ====================================================================================
+
+    [Fact]
+    public void ShouldPreserveInLoadedReplacement_Preserves_Master_Stat_When_Dmp_Has_No_Stat()
+    {
+        const uint masterStatRefFormId = 0x300;
+        const uint masterStatBaseFormId = 0x150;
+        var statRef = MakeMasterRef(masterStatRefFormId, masterStatBaseFormId, persistent: false, 0f, 0f, 0f);
+        var statBase = MakeBaseRecord("STAT", masterStatBaseFormId);
+        var pcRecords = new Dictionary<uint, ParsedMainRecord>
+        {
+            [masterStatBaseFormId] = statBase
+        };
+
+        // DMP captured only DOOR + ACHR + FURN — no STAT. Master STAT must be preserved.
+        var dmpCapturedBaseTypes = new HashSet<string>(StringComparer.Ordinal) { "DOOR", "ACHR", "FURN" };
+
+        var shouldPreserve = CellStructuralReferencePreserver.ShouldPreserveInLoadedReplacement(
+            statRef, pcRecords, dmpCapturedBaseTypes);
+
+        Assert.True(shouldPreserve);
+    }
+
+    [Fact]
+    public void ShouldPreserveInLoadedReplacement_Allows_Master_Stat_Deletion_When_Dmp_Has_Stat()
+    {
+        // When the DMP captured STAT placements, master's STATs are authoritatively under
+        // the DMP's control. ShouldPreserveInLoadedReplacement returns false for ordinary
+        // refs (the binary policy's intent stands when DMP did capture the type).
+        const uint masterStatRefFormId = 0x300;
+        const uint masterStatBaseFormId = 0x150;
+        var statRef = MakeMasterRef(masterStatRefFormId, masterStatBaseFormId, persistent: false, 0f, 0f, 0f);
+        var statBase = MakeBaseRecord("STAT", masterStatBaseFormId);
+        var pcRecords = new Dictionary<uint, ParsedMainRecord>
+        {
+            [masterStatBaseFormId] = statBase
+        };
+
+        var dmpCapturedBaseTypes = new HashSet<string>(StringComparer.Ordinal) { "DOOR", "ACHR", "STAT" };
+
+        var shouldPreserve = CellStructuralReferencePreserver.ShouldPreserveInLoadedReplacement(
+            statRef, pcRecords, dmpCapturedBaseTypes);
+
+        Assert.False(shouldPreserve);
+    }
+
+    [Fact]
+    public void ShouldPreserveInLoadedReplacement_Script_Bearing_Wins_Even_When_Type_Set_Match()
+    {
+        // The existing script-critical rule still takes precedence. Even if the DMP captured
+        // a STAT and our master ref's base is also STAT, a script-bearing ref must survive.
+        const uint masterStatRefFormId = 0x300;
+        const uint masterStatBaseFormId = 0x150;
+        var scriptedStatRef = MakeMasterRef(
+            masterStatRefFormId, masterStatBaseFormId, persistent: false, 0f, 0f, 0f,
+            extraSubrecords: [MakeFormIdSubrecord("SCRI", 0x500)]);
+        var statBase = MakeBaseRecord("STAT", masterStatBaseFormId);
+        var pcRecords = new Dictionary<uint, ParsedMainRecord>
+        {
+            [masterStatBaseFormId] = statBase
+        };
+
+        var dmpCapturedBaseTypes = new HashSet<string>(StringComparer.Ordinal) { "STAT" };
+
+        var shouldPreserve = CellStructuralReferencePreserver.ShouldPreserveInLoadedReplacement(
+            scriptedStatRef, pcRecords, dmpCapturedBaseTypes);
+
+        Assert.True(shouldPreserve); // SCRI rule wins
+    }
+
+    [Fact]
+    public void ShouldPreserveInLoadedReplacement_Falls_Back_To_Binary_When_TypeSet_Is_Null()
+    {
+        // When no dmpCapturedBaseTypes is supplied (existing callers / legacy tests), the
+        // method behavior matches the pre-fix binary policy: ordinary STAT refs are not
+        // preserved.
+        const uint masterStatRefFormId = 0x300;
+        const uint masterStatBaseFormId = 0x150;
+        var statRef = MakeMasterRef(masterStatRefFormId, masterStatBaseFormId, persistent: false, 0f, 0f, 0f);
+        var statBase = MakeBaseRecord("STAT", masterStatBaseFormId);
+        var pcRecords = new Dictionary<uint, ParsedMainRecord>
+        {
+            [masterStatBaseFormId] = statBase
+        };
+
+        var shouldPreserve = CellStructuralReferencePreserver.ShouldPreserveInLoadedReplacement(
+            statRef, pcRecords);
+
+        Assert.False(shouldPreserve);
+    }
 }

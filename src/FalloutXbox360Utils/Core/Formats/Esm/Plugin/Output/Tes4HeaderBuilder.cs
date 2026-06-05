@@ -59,8 +59,15 @@ public static class Tes4HeaderBuilder
         {
             Signature = "TES4",
             DataSize = (uint)subrecordBytes.Length,
-            // ESP plugin flag set: 0x00000000. The master/ESM bit (0x00000001) stays clear.
-            Flags = 0,
+            // ESM/master flag (0x00000001) is set ONLY when the plugin carries navmesh edits
+            // (master-cell NAVM augmentation + the NAVI override). FNV/FO3 require any plugin with
+            // navmesh edits to be ESM-flagged or the NavMeshInfoMap desyncs (fopdoc NAVI; GECK
+            // Bethsoft_Tutorial_Navmesh). But the ESM flag (especially with a .esm extension)
+            // makes the engine EAGER-load/init this plugin's overrides during master setup, which
+            // races our cell-override ref init and AVs the AI thread (Doc Mitchell). So when we
+            // emit NO navmesh edits, we leave the plugin as a plain ESP (deferred load) — no flag
+            // needed, no eager-init race. Tie the flag to the one thing that actually requires it.
+            Flags = options.EmitMasterCellNavmAugmentation ? 0x00000001u : 0u,
             FormId = 0,
             Timestamp = 0,
             VcsInfo = 0,

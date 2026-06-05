@@ -88,13 +88,14 @@ public static class DmpToEspCommand
                           "placements for it, delete every master temporary ref not in the DMP. Master " +
                           "persistent refs (and therefore quest-bound objects) are preserved. Off by default."
         };
-        var emitMasterCellNavmAugmentationOpt = new Option<bool>("--emit-master-cell-navm-augmentation")
+        var noMasterCellNavmAugmentationOpt = new Option<bool>("--no-master-cell-navm-augmentation")
         {
-            Description = "Smoke flag: emit DMP-captured NAVMs whose parent cell is a master cell " +
-                          "(master-cell augmentation). Defaults to drop — the NAVI override builder " +
-                          "is wired but the master-cell augmentation path has not been smoke-validated. " +
-                          "Set to test whether the crucified-animation symptom has been fixed by Phase " +
-                          "7b TesConditionListWalker."
+            Description = "Disable emitting DMP-captured proto NAVMs into overridden master cells. " +
+                          "Augmentation is ON by default: when a master cell is already overridden " +
+                          "(new refs / captured terrain) the proto's navmesh rides along so NPCs " +
+                          "pathfind on the reshaped layout. Master's own NAVMs are NOT copied — engine " +
+                          "RE proves they load from master via the cell file-list merge. Pass this to " +
+                          "suppress master-cell NAVM emission for rollback."
         };
 
         var command = new Command("to-esp", "Convert a DMP to a PC plugin ESP overlay against a master ESM");
@@ -114,7 +115,7 @@ public static class DmpToEspCommand
         command.Options.Add(overrideVanillaOpt);
         command.Options.Add(disableRefrEditorIdRemapOpt);
         command.Options.Add(replaceCellTemporariesOpt);
-        command.Options.Add(emitMasterCellNavmAugmentationOpt);
+        command.Options.Add(noMasterCellNavmAugmentationOpt);
 
         var cellAuthorityOpt = new Option<string?>("--cell-authority")
         {
@@ -176,7 +177,7 @@ public static class DmpToEspCommand
             var overrideVanilla = parseResult.GetValue(overrideVanillaOpt);
             var disableRefrEditorIdRemap = parseResult.GetValue(disableRefrEditorIdRemapOpt);
             var replaceCellTemporaries = parseResult.GetValue(replaceCellTemporariesOpt);
-            var emitMasterCellNavmAugmentation = parseResult.GetValue(emitMasterCellNavmAugmentationOpt);
+            var emitMasterCellNavmAugmentation = !parseResult.GetValue(noMasterCellNavmAugmentationOpt);
             var cellAuthorityPath = parseResult.GetValue(cellAuthorityOpt);
             var skipWorldspaceArgs = parseResult.GetValue(skipWorldspaceOpt) ?? [];
             var skipWorldspaceFormIds = ParseHexFormIdSet(skipWorldspaceArgs);

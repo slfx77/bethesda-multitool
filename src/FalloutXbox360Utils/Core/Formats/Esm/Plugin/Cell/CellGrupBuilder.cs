@@ -327,12 +327,30 @@ public static class CellGrupBuilder
     ///     compressed flag is cleared on output.
     /// </remarks>
     public static byte[] ReconstructRecordBytes(ParsedMainRecord parsed)
+        => ReconstructRecordBytes(parsed, stripSubrecordSignatures: null);
+
+    /// <summary>
+    ///     Reconstructs a parsed main record's raw bytes, optionally omitting subrecords whose
+    ///     signature is in <paramref name="stripSubrecordSignatures" />. Used by
+    ///     <see cref="CellStructuralReferencePreserver" /> to drop emittance links (XEMI) from
+    ///     preserved master refs: when the plugin is ESM-flagged the engine eager-resolves these
+    ///     during master-init and dereferences the still-unlinked REGN FormID as a pointer
+    ///     (the Doc Mitchell light-rays AV). Emittance is a cosmetic runtime grid the engine rebuilds.
+    /// </summary>
+    public static byte[] ReconstructRecordBytes(
+        ParsedMainRecord parsed, IReadOnlySet<string>? stripSubrecordSignatures)
     {
         using var subStream = new MemoryStream();
         using (var subWriter = new BinaryWriter(subStream, Encoding.Latin1, true))
         {
             foreach (var sub in parsed.Subrecords)
             {
+                if (stripSubrecordSignatures is not null
+                    && stripSubrecordSignatures.Contains(sub.Signature))
+                {
+                    continue;
+                }
+
                 SubrecordEncoder.WriteSubrecord(subWriter, sub.Signature, sub.Data);
             }
         }

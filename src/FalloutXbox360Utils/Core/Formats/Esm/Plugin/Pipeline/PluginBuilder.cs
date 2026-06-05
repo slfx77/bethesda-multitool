@@ -309,9 +309,6 @@ public sealed class PluginBuilder
             // plugin overrides a cell, FNV's full-GRUP-replacement semantics drop the
             // master's NAVMs unless we re-emit them — and a cell with no navmesh leaves
             // idle NPCs unanchored (they sink under physics when standing still while
-            // pathfinding still works mid-walk). Build a per-cell NAVM index so override
-            // bundles can copy these records verbatim.
-            var navmsByCell = masterIndex.NavmsByCell;
             var landsByCell = masterIndex.LandsByCell;
 
             // Build the cell-context index — maps each CELL FormID to its master GRUP context
@@ -602,7 +599,7 @@ public sealed class PluginBuilder
             var pcRefFormIds = new HashSet<uint>(refToCell.Keys);
             var bundles = BuildCellOverrideBundles(
                 dmpRecords, pcRecordsByFormId, refToCell, masterChildLocations, pcRefFormIds, cellContexts,
-                navmsByCell, landsByCell, allocator, grupBytesByType, inputs.Options, stats,
+                landsByCell, allocator, grupBytesByType, inputs.Options, stats,
                 out var newNavmEntries, ct);
             _sink.Info("Merging cell children",
                 $"Built {bundles.Count:N0} cell-override bundle(s); allocated {allocator.NextLocalId - allocator.BaseLocalId:N0} new FormID(s).");
@@ -1185,7 +1182,8 @@ public sealed class PluginBuilder
             inputs.PcEsmPath,
             masterCellContexts: masterCellContexts,
             masterRecordsByFormId: masterRecordsByFormId,
-            cellChildAllocator: allocator);
+            cellChildAllocator: allocator,
+            emitMasterCellNavmAugmentation: inputs.Options.EmitMasterCellNavmAugmentation);
 
         _planWriter = new FalloutXbox360Utils.Core.Formats.Esm.PlannedWriter.PlanWriter(registry);
 
@@ -1433,7 +1431,7 @@ public sealed class PluginBuilder
             }
 
             if (TryEncodeProvenScriptBearingOverride(
-                    recordType, model, pcRecords, formId, options, stats, out var scriptOverrideBytes))
+                    recordType, model, pcRecords, formId, options, out var scriptOverrideBytes))
             {
                 grupBodyStream.Write(scriptOverrideBytes);
                 anyEmitted = true;
@@ -1659,7 +1657,6 @@ public sealed class PluginBuilder
         Dictionary<uint, ParsedMainRecord> pcRecords,
         uint formId,
         PluginBuildOptions options,
-        ConversionPipelineStats stats,
         out byte[] recordBytes)
     {
         recordBytes = [];
@@ -1668,65 +1665,15 @@ public sealed class PluginBuilder
             return false;
         }
 
-        if (recordType == "SCPT" && model is ScriptRecord script)
-        {
-            if (!HasMeaningfulScriptContent(script))
-            {
-                return false;
-            }
-
-            // Refuse to downgrade master's compiled bytecode. Proto captures often carry
-            // populated Variables / ReferencedObjects but an empty (or truncated) CompiledData
-            // because the proto build hadn't fully compiled the script yet — for VCGTutorialSCRIPT
-            // (Doc Mitchell intro) the proto has 0 bytes vs master's 2151, and emitting the
-            // override neuters the tutorial flow ("Travel onwards" → opens SPECIAL menu instead
-            // of advancing). For VCG02SCRIPT (Sunny / Back in the Saddle) the proto has 4 bytes
-            // vs master's 83, with the same downgrade effect. Strictly require our SCDA to be
-            // at least as large as master's before allowing the override; if not, keep master's
-            // mature script intact. Real fix is to investigate why the runtime reader produces
-            // truncated bytecode for these scripts (separate from this stopgap).
-            var protoCompiledSize = script.CompiledData?.Length ?? 0;
-            var masterScdaIndex = masterRecord.Subrecords.FindIndex(s => s.Signature == "SCDA");
-            var masterCompiledSize = masterScdaIndex >= 0 ? masterRecord.Subrecords[masterScdaIndex].Data.Length : 0;
-            if (masterCompiledSize > 0 && protoCompiledSize < masterCompiledSize)
-            {
-                if (options.VerboseDecisions)
-                {
-                    _sink.Decision("Merging top-level records",
-                        $"Refused SCPT 0x{formId:X8} override: proto SCDA {protoCompiledSize}B < master {masterCompiledSize}B — would downgrade compiled script.",
-                        recordType, formId, "script.override-refused-downgrade");
-                }
-
-                return false;
-            }
-
-            var encoded = ScptEncoder.EncodeNew(
-                script,
-                BuildAllValidFormIdSet(),
-                _newRecordSourceToAllocated.Count > 0 ? _newRecordSourceToAllocated : null);
-            foreach (var warning in encoded.Warnings)
-            {
-                stats.Warnings++;
-                _sink.Warn("Merging top-level records", warning, recordType, formId);
-            }
-
-            if (encoded.Subrecords.Count == 0 ||
-                !ScriptRelevantSubrecordsDiffer(masterRecord, encoded.Subrecords))
-            {
-                return false;
-            }
-
-            recordBytes = PluginRecordByteBuilder.BuildOverrideRecordBytes(
-                masterRecord, BuildSubrecordBytes(encoded.Subrecords), options);
-            if (options.VerboseDecisions)
-            {
-                _sink.Decision("Merging top-level records",
-                    "Emitted full SCPT override because DMP script bytecode/source/refs differ from master.",
-                    recordType, formId, "script.override-proven-delta");
-            }
-
-            return true;
-        }
+        // SCPT overrides of master scripts are intentionally NOT emitted (preserve master
+        // verbatim; only genuinely-new SCPTs are emitted, via the new-record path). DMP
+        // reconstruction of an existing master script is unreliable — wrong VariableCount /
+        // bytecode length / garbage SCRO refs (e.g. vNiptonSCRIPT 0x00138493 came out
+        // 357B/7 vars vs master 163B/11 vars, no SCTX). Overriding clobbers the local-variable
+        // table that the master's own dialogue conditions resolve against — the xex22 v58-v65
+        // title-screen crash (~1492 "variable not found" in GREETING/quest-init, then AV). The
+        // old size-only downgrade guard caught truncation but not corruption. See
+        // memory/titlescreen_crash_script_override.md.
 
         if (recordType == "QUST" && model is QuestRecord quest && quest.Script.HasValue)
         {
@@ -1778,61 +1725,6 @@ public sealed class PluginBuilder
         allValidFormIdsUnion.UnionWith(_emittedNewFormIds);
         allValidFormIdsUnion.UnionWith(RuntimeStateRecordPolicy.EngineFormIds);
         return allValidFormIdsUnion;
-    }
-
-    private static bool HasMeaningfulScriptContent(ScriptRecord script)
-    {
-        return script.CompiledData is { Length: > 0 }
-               || !string.IsNullOrWhiteSpace(script.SourceText)
-               || script.Variables.Count > 0
-               || script.ReferencedObjects.Count > 0;
-    }
-
-    private static bool ScriptRelevantSubrecordsDiffer(
-        ParsedMainRecord masterRecord,
-        IReadOnlyList<EncodedSubrecord> candidateSubrecords)
-    {
-        static bool Relevant(string signature)
-        {
-            return signature is "SCHR" or "SCDA" or "SCTX" or "SLSD" or "SCVR" or "SCRO" or "SCRV";
-        }
-
-        var masterRelevant = masterRecord.Subrecords
-            .Where(s => Relevant(s.Signature))
-            .Select(s => (s.Signature, Bytes: s.Data))
-            .ToList();
-        var candidateRelevant = candidateSubrecords
-            .Where(s => Relevant(s.Signature))
-            .Select(s => (s.Signature, Bytes: s.Bytes))
-            .ToList();
-
-        if (masterRelevant.Count != candidateRelevant.Count)
-        {
-            return true;
-        }
-
-        for (var i = 0; i < masterRelevant.Count; i++)
-        {
-            if (masterRelevant[i].Signature != candidateRelevant[i].Signature ||
-                !masterRelevant[i].Bytes.AsSpan().SequenceEqual(candidateRelevant[i].Bytes))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static byte[] BuildSubrecordBytes(IReadOnlyList<EncodedSubrecord> subrecords)
-    {
-        using var subStream = new MemoryStream();
-        using var writer = new BinaryWriter(subStream, Encoding.Latin1, true);
-        foreach (var sub in subrecords)
-        {
-            SubrecordEncoder.WriteSubrecord(writer, sub.Signature, sub.Bytes);
-        }
-
-        return subStream.ToArray();
     }
 
     private static byte[] BuildMasterSubrecordsWithReplacement(
@@ -2060,7 +1952,6 @@ public sealed class PluginBuilder
         Dictionary<uint, MasterChildLocation> masterChildLocations,
         IReadOnlySet<uint> pcRefFormIds,
         Dictionary<uint, PcEsmCellContext> cellContexts,
-        Dictionary<uint, List<uint>> navmsByCell,
         Dictionary<uint, List<uint>> landsByCell,
         FormIdAllocator allocator,
         Dictionary<string, byte[]> grupBytesByType,
@@ -2792,10 +2683,22 @@ public sealed class PluginBuilder
                     {
                         var hasAuthoritativeDmpStructuralRefs = dmpCell.PlacedObjects.Any(
                             placed => placed.StructuralData is { HasAny: true });
+
+                        // Type-set-based preservation. Compute the set of base-record
+                        // signatures the DMP captured in this cell; the preserver keeps
+                        // master refs whose base type ISN'T in that set. Addresses sparse-
+                        // cell-replacement (Doc Mitchell's house: DMP captures DOOR+ACHR+FURN
+                        // but no STAT, so master statics should stay). Without this, the
+                        // binary LoadedReplacement mode wipes master content the DMP
+                        // didn't even attempt to author.
+                        var dmpCapturedBaseTypes = ComputeDmpCapturedBaseTypes(
+                            dmpCell.PlacedObjects, pcRecordsByFormId);
+
                         preservedMasterRefs = CellStructuralReferencePreserver.PreserveLoadedReplacementMissing(
                             masterRefs!, coveredMasterRefFormIdsInCell, masterChildLocations,
                             pcRecordsByFormId, persistentRecords, vwdRecords, temporaryRecords, stats,
-                            hasAuthoritativeDmpStructuralRefs);
+                            hasAuthoritativeDmpStructuralRefs,
+                            dmpCapturedBaseTypes);
                         preservationReason = "script-critical/structural";
 
                         var deleted = DeletedRefSynthesizer.Synthesize(
@@ -2805,7 +2708,7 @@ public sealed class PluginBuilder
                                 (!hasAuthoritativeDmpStructuralRefs ||
                                  !CellStructuralReferencePreserver.IsStructuralCellRef(masterRef, pcRecordsByFormId))
                                 && CellStructuralReferencePreserver.ShouldPreserveInLoadedReplacement(
-                                    masterRef, pcRecordsByFormId));
+                                    masterRef, pcRecordsByFormId, dmpCapturedBaseTypes));
                         persistentRecords.AddRange(deleted.Persistent);
                         temporaryRecords.AddRange(deleted.Temporary);
                         var deletedCount = deleted.Persistent.Count + deleted.Temporary.Count;
@@ -2920,60 +2823,29 @@ public sealed class PluginBuilder
                 }
             }
 
-            // For override cells, copy vanilla's NAVM (NavMesh) records verbatim into our
-            // Temporary Children. FNV's plugin format replaces a master cell's Temporary
-            // Children GRUP wholesale when a plugin overrides it — so without this step,
-            // every override cell loses its navmesh and NPCs in those cells sink under
-            // physics when standing still (idle actors aren't snapped to terrain without
-            // a navmesh to anchor them; they pathfind fine mid-walk).
-            if (pcCellExists
-                && navmsByCell.TryGetValue(masterChildLookupFormId, out var masterNavmFormIds))
-            {
-                var prependedCount = 0;
-                foreach (var navmFormId in masterNavmFormIds)
-                {
-                    if (!pcRecordsByFormId.TryGetValue(navmFormId, out var navmRecord))
-                    {
-                        continue;
-                    }
-
-                    // Reuse the cell-record reconstruction path; it just emits a
-                    // ParsedMainRecord back to its on-disk bytes (header + subrecord
-                    // stream). NAVM records are opaque payloads as far as we're concerned.
-                    var navmBytes = CellGrupBuilder.ReconstructRecordBytes(navmRecord);
-                    temporaryPrefixRecords.Add(navmBytes);
-                    prependedCount++;
-                }
-
-                if (prependedCount > 0)
-                {
-                    stats.IncrementEmitted("NAVM");
-                    if (options.VerboseDecisions)
-                    {
-                        _sink.Decision("Merging cell children",
-                            $"Preserved {prependedCount} vanilla NAVM record(s) in override cell " +
-                            $"0x{dmpCell.FormId:X8} so idle NPCs stay anchored.",
-                            "CELL", dmpCell.FormId, "navm.preserved");
-                    }
-                }
-            }
-
             // Phase B — emit DMP-captured NAVMs whose CellFormId points at this cell.
-            // Covers two cases: cells in proto-only worldspaces (no master NAVMs at all)
-            // and master-cell augmentation (DMP captured a navmesh master doesn't have).
-            // Phase A pre-allocated the emitted FormIDs so NVEX cross-references can
-            // resolve across cells in this emission batch.
+            //   • New / proto-only cells: always emit (no master mesh exists).
+            //   • Master cells: emit the proto's NAVM only when the cell is already being
+            //     overridden for other reasons. The content guard above (persistent/vwd/
+            //     temporary + captured-terrain) already skips content-less existing cells, so
+            //     reaching here for a master cell means it has new placed refs or captured
+            //     terrain — i.e. the navmesh rides along with a genuine content override; we
+            //     never create a navmesh-only override.
             //
-            // STOPGAP GATE: drop master-cell augmentation by default. Adding a second navmesh
-            // on top of vanilla's may confuse AI pathing (idle NPCs flip-flopping to the
-            // crucified animation every few seconds — same symptom as the original INFO
-            // emission bug). Opt in via PluginBuildOptions.EmitMasterCellNavmAugmentation
-            // for smoke testing; the flag stays default-false until xenia smoke confirms
-            // the symptom doesn't return.
-            var skipMasterCellNavmAugmentation = !options.EmitMasterCellNavmAugmentation;
+            // We do NOT copy master's existing NAVM records. Engine RE proves they survive an
+            // override on their own: NavMesh::Load resolves its parent cell from the DATA
+            // FormID, and TESObjectCELL::LoadAllTempData iterates the cell's entire TESForm
+            // file-list (master + our plugin) and merges every file's Temporary Children
+            // without clearing the cell's navmesh array (memory/navm_engine_load_mechanism.md).
+            // The matching NVMI/NVCI for our new NAVM go into the NAVI override downstream,
+            // which independently carries master's full NVMI/NVCI set. The old verbatim-
+            // preservation cascade (which ballooned v63 to 34 MB and crashed at load) is gone.
+            //
+            // EmitMasterCellNavmAugmentation (default true) gates the master-cell case for
+            // rollback; set it false to suppress master-cell NAVM emission entirely.
             var cellIsNew = (dmpCell.FormId & 0xFF000000) == 0x01000000
                             || !pcRecordsByFormId.ContainsKey(dmpCell.FormId);
-            if (skipMasterCellNavmAugmentation
+            if (!options.EmitMasterCellNavmAugmentation
                 && !cellIsNew
                 && dmpNavmsByCell.TryGetValue(dmpCell.FormId, out var skippedAugList))
             {
@@ -2985,9 +2857,9 @@ public sealed class PluginBuilder
                 if (options.VerboseDecisions)
                 {
                     _sink.Decision("Merging cell children",
-                        $"Master-cell NAVM augmentation gated: dropped {skipped} new NAVM(s) " +
+                        $"Master-cell NAVM augmentation disabled: dropped {skipped} new NAVM(s) " +
                         $"in master cell 0x{dmpCell.FormId:X8}.",
-                        "CELL", dmpCell.FormId, "navm.master-cell-aug-gated");
+                        "CELL", dmpCell.FormId, "navm.master-cell-aug-disabled");
                 }
                 dmpNavmsByCell.Remove(dmpCell.FormId);
             }
@@ -4327,8 +4199,23 @@ public sealed class PluginBuilder
                 placed.RecordType, knownBaseRecordType);
         }
 
-        return false;
+        return IsEngineReservedBase(placed.BaseFormId);
     }
+
+    /// <summary>
+    ///     True when <paramref name="baseFormId" /> is an engine-hardcoded form rather than an
+    ///     ESM record. FormIDs in the reserved low range (below 0x800) — PlayerRef, the
+    ///     XMarker/XMarkerHeading/DefaultObjectManager set, etc. — are baked into the game EXE,
+    ///     not authored in any ESM. A placed ref pointing at one is valid even though it's
+    ///     "neither in master nor freshly emitted"; dropping it would corrupt the cell's
+    ///     reference graph and can leave dependent refs (enable-parent chains, etc.)
+    ///     uninitialized at runtime. Real master records below 0x800 are caught by the
+    ///     pcRecordsByFormId / master lookups before this fallback, so this only rescues
+    ///     genuine EXE forms.
+    /// </summary>
+    private static bool IsEngineReservedBase(uint baseFormId)
+        => baseFormId is > 0 and < 0x800u
+           || RuntimeStateRecordPolicy.EngineFormIds.Contains(baseFormId);
 
     private bool ValidateEncodedPlacedBase(
         string placedRecordType,
@@ -4411,7 +4298,7 @@ public sealed class PluginBuilder
                 placedRecordType, knownBaseRecordType);
         }
 
-        return false;
+        return IsEngineReservedBase(baseFormId);
     }
 
     /// <summary>
@@ -5329,6 +5216,35 @@ public sealed class PluginBuilder
     }
 
     /// <summary>
+    ///     Compute the set of base-record signatures (e.g. <c>STAT</c>, <c>DOOR</c>,
+    ///     <c>FURN</c>) represented among the placed objects the DMP captured for a cell.
+    ///     Used by the <c>LoadedReplacement</c> preservation path to keep master refs whose
+    ///     base type the DMP didn't capture — addresses sparse-cell captures like Doc
+    ///     Mitchell's house where the DMP captures only DOOR/ACHR/FURN and master statics
+    ///     would otherwise be wiped.
+    /// </summary>
+    private static IReadOnlySet<string> ComputeDmpCapturedBaseTypes(
+        IReadOnlyList<PlacedReference> placedObjects,
+        IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId)
+    {
+        var result = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var placed in placedObjects)
+        {
+            if (placed.BaseFormId == 0)
+            {
+                continue;
+            }
+
+            if (pcRecordsByFormId.TryGetValue(placed.BaseFormId, out var baseRecord)
+                && !string.IsNullOrEmpty(baseRecord.Header.Signature))
+            {
+                result.Add(baseRecord.Header.Signature);
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
     ///     Walks the digested record collection and yields per-type model lists for the
     ///     simple-type set. Cell children (REFR/ACHR/ACRE) are NOT yielded here — they have
     ///     their own pipeline (see <see cref="BuildCellOverrideBundles" />).
@@ -5430,6 +5346,10 @@ public sealed class PluginBuilder
         yield return ("CMNY", records.CaravanMoney);
         yield return ("CDCK", records.CaravanDecks);
         yield return ("INGR", records.Ingredients);
+        // FLOR has no typed model — pull flora out of the shared GenericRecords list by signature.
+        // Yielded after SCPT/SOUN/INGR so its PFIG (ingredient) / SCRI (script) / SNAM (sound)
+        // references are remapped against already-allocated new FormIDs.
+        yield return ("FLOR", records.GenericRecords.Where(g => g.RecordType == "FLOR"));
         yield return ("LSCT", records.LoadScreenTypes);
         yield return ("IDLE", records.IdleAnimations);
         yield return ("IPCT", records.ImpactData);

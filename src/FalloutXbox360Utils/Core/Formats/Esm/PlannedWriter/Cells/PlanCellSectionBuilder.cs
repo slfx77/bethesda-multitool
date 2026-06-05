@@ -298,7 +298,9 @@ public static class PlanCellSectionBuilder
 
         if (child.Disposition != RecordDisposition.New)
         {
-            return null; // KeepMaster NAVMs deferred — legacy preserves them verbatim.
+            return null; // Master (KeepMaster) NAVMs are intentionally not emitted: engine RE
+                         // shows they load from master via the cell's TESForm file-list merge
+                         // (memory/navm_engine_load_mechanism.md), so copying them is redundant.
         }
 
         return PlannedNavmEncoder.EncodeRecord(navm, cellFormId, child.FormId, nvexRewrites, options);

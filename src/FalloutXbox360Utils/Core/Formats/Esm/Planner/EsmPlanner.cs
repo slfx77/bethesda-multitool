@@ -62,7 +62,8 @@ public sealed class EsmPlanner
         string? masterPath,
         IReadOnlyDictionary<uint, PcEsmCellContext>? masterCellContexts = null,
         IReadOnlyDictionary<uint, ParsedMainRecord>? masterRecordsByFormId = null,
-        FormIdAllocator? cellChildAllocator = null)
+        FormIdAllocator? cellChildAllocator = null,
+        bool emitMasterCellNavmAugmentation = false)
     {
         var coverage = enabledTypes.ToImmutableHashSet(StringComparer.Ordinal);
 
@@ -87,7 +88,9 @@ public sealed class EsmPlanner
         var catalog = RecordCatalog.Build(masterSource, dmpSource, catalogTypes);
 
         var cellSection = enabledTypes.Contains("CELL")
-            ? RunCellSection(dmpRecords, masterFormIds, masterCellContexts, masterRecordsByFormId, cellChildAllocator)
+            ? RunCellSection(
+                dmpRecords, masterFormIds, masterCellContexts, masterRecordsByFormId,
+                cellChildAllocator, emitMasterCellNavmAugmentation)
             : null;
 
         if (catalog.Count == 0 && cellSection is null)
@@ -98,6 +101,14 @@ public sealed class EsmPlanner
         var decisions = _disposition.Decide(catalog);
         var sourceToEmitted = _allocation.AllocateAll(decisions);
 
+        // No phantom-master invariant at this layer: the top-level FormIdPlanner allocates
+        // for EVERY DmpNew regardless of whether the source FormID happens to be in master
+        // (e.g. DMP-duplicate captures where the second one falls through to DmpNew). Each
+        // gets a fresh plugin-range FormID, so emission is safe by construction. The
+        // phantom-master risk was the CellChildAllocator's per-type skip conditions, fixed
+        // by the v60 cell-Pass-0 patch and the gap-#1 placed-ref-allowlist tightening.
+        // The post-write PhantomMasterFormIdRegressionTests guard catches any future leak.
+
         // Merge cell-child allocations into the plan's source→emitted map so reference
         // resolution sees them as live FormIDs. New worldspaces likewise contribute their
         // source→emitted entries so any cell still pointing at the source FormID resolves
@@ -105,6 +116,7 @@ public sealed class EsmPlanner
         if (cellSection is { } cs)
         {
             sourceToEmitted = sourceToEmitted
+                .AddRange(cs.CellSourceToEmitted)
                 .AddRange(cs.CellChildSourceToEmitted)
                 .AddRange(cs.NavmSourceToEmitted)
                 .AddRange(cs.WorldspaceSourceToEmitted);
@@ -155,7 +167,8 @@ public sealed class EsmPlanner
         IReadOnlySet<uint> masterFormIds,
         IReadOnlyDictionary<uint, PcEsmCellContext>? masterCellContexts,
         IReadOnlyDictionary<uint, ParsedMainRecord>? masterRecordsByFormId,
-        FormIdAllocator? cellChildAllocator)
+        FormIdAllocator? cellChildAllocator,
+        bool emitMasterCellNavmAugmentation)
     {
         if (masterCellContexts is null || masterRecordsByFormId is null || cellChildAllocator is null)
         {
@@ -169,7 +182,8 @@ public sealed class EsmPlanner
             dmpRecords.NavMeshes,
             dmpRecords.Worldspaces,
             masterFormIds,
-            cellChildAllocator);
+            cellChildAllocator,
+            emitMasterCellNavmAugmentation);
     }
 
     private static ImmutableHashSet<uint> BuildEmittedFormIds(

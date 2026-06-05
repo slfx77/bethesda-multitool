@@ -46,14 +46,23 @@ public sealed record PluginBuildOptions
     public bool VerboseDecisions { get; init; }
 
     /// <summary>
-    ///     When true, the converter emits DMP-captured NAVMs whose parent cell is itself a
-    ///     master cell (master-cell augmentation). Defaults to false: master-cell augmentation
-    ///     has historically surfaced a crucified-animation symptom even after the Phase 7b
-    ///     <c>TesConditionListWalker</c> fix, and the NAVI override builder has not been
-    ///     smoke-validated on the master-cell augmentation path. Set true only when running
-    ///     a smoke build that intends to test that path.
+    ///     When a master cell is already being overridden because the DMP captured new
+    ///     content (new placed refs / captured terrain), also emit the proto-authored
+    ///     NAVM(s) the DMP captured for that cell so NPCs pathfind on the reshaped layout.
+    ///     Default <c>true</c>.
+    ///
+    ///     This does NOT copy master's existing NAVM records into our plugin and does NOT
+    ///     create navmesh-only cell overrides. Decompilation of the engine load path
+    ///     (<c>NavMesh::Load</c> resolves its parent cell from the DATA subrecord FormID;
+    ///     <c>TESObjectCELL::LoadAllTempData</c> iterates the cell's entire TESForm
+    ///     file-list and merges every file's Temporary Children — see
+    ///     memory/navm_engine_load_mechanism.md) proves master's navmeshes survive an
+    ///     override on their own, so the old verbatim-preservation cascade (which ballooned
+    ///     v63 to 34 MB and crashed at load) is unnecessary. The NAVI override carrying
+    ///     master's full NVMI/NVCI set plus our new entries is still required and is built
+    ///     independently of NAVM-record emission.
     /// </summary>
-    public bool EmitMasterCellNavmAugmentation { get; init; }
+    public bool EmitMasterCellNavmAugmentation { get; init; } = true;
 
     /// <summary>
     ///     Starting local FormID for newly-allocated records. Defaults to 0x800 to match the

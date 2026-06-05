@@ -7,7 +7,13 @@
   xmlns:local="using:FalloutXbox360Utils">
   <UserControl.Resources>
     <DataTemplate x:Key="SecondaryFolderRowTemplate" x:DataType="local:SecondaryFolderEntry">
-      <Grid ColumnDefinitions="Auto,*,Auto,Auto" Margin="0,2" ColumnSpacing="8">
+      <Grid Margin="0,2" ColumnSpacing="8">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
         <TextBlock
           Grid.Column="0"
           VerticalAlignment="Center"
@@ -38,7 +44,12 @@
       </Grid>
     </DataTemplate>
     <DataTemplate x:Key="DialogueCsvRowTemplate" x:DataType="local:DialogueCsvEntry">
-      <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,2" ColumnSpacing="8">
+      <Grid Margin="0,2" ColumnSpacing="8">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
         <TextBlock
           Grid.Column="0"
           VerticalAlignment="Center"

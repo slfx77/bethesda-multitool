@@ -152,6 +152,10 @@ public static class PluginSemanticValidator
                 }
                 else if (masterFormIds is not null
                     && baseId.HasValue && baseId.Value != 0 && baseId.Value != 0xFFFFFFFFu
+                    // Engine-hardcoded forms (FormIDs below 0x800: PlayerRef, marker/default
+                    // objects, etc.) live in the game EXE, not any ESM, so they're legitimately
+                    // absent from master ∪ plugin — don't flag a ref that points at one.
+                    && baseId.Value >= 0x800u
                     && !masterFormIds.Contains(baseId.Value) && !pluginFormIds.Contains(baseId.Value))
                 {
                     refrBaseDangling.Add(

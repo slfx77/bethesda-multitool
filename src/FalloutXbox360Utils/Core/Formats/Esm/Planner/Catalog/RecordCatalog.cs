@@ -27,13 +27,19 @@ public static class RecordCatalog
 
         var entries = new List<CatalogEntry>();
 
+        // Track the master entry's *index* in `entries` alongside its value so duplicate
+        // DMP-record FormIDs don't fall into List.IndexOf, which compares records by
+        // value — once we mutate entries[idx] for the first DMP duplicate, subsequent
+        // IndexOf(masterEntry) calls miss and return -1, throwing on `entries[-1] = …`.
         var masterByFormId = new Dictionary<uint, CatalogEntry>();
+        var masterEntryIndexByFormId = new Dictionary<uint, int>();
         foreach (var entry in master.Enumerate(enabledTypes))
         {
             entries.Add(entry);
             if (entry.MasterFormId is { } formId)
             {
                 masterByFormId[formId] = entry;
+                masterEntryIndexByFormId[formId] = entries.Count - 1;
             }
         }
 
@@ -48,17 +54,23 @@ public static class RecordCatalog
             // "Model is not of type X: actual Y". Type-mismatched DMP records fall through
             // to DmpNew so they emit through their own signature's encoder.
             if (masterByFormId.TryGetValue(formId, out var masterEntry)
-                && string.Equals(masterEntry.Type, type, StringComparison.Ordinal))
+                && string.Equals(masterEntry.Type, type, StringComparison.Ordinal)
+                && masterEntryIndexByFormId.TryGetValue(formId, out var idx))
             {
-                var idx = entries.IndexOf(masterEntry);
-                entries[idx] = masterEntry with
+                // First DMP record with this FormID wins the override slot. Later
+                // duplicates fall through to DmpNew so the downstream emission warning
+                // surfaces the conflict (rather than silently dropping) and the planner
+                // doesn't crash on the second IndexOf.
+                if (dmpOverrideIndices.Add(idx))
                 {
-                    Source = SourceKind.DmpOverride,
-                    DmpFormId = formId,
-                    Model = model,
-                };
-                dmpOverrideIndices.Add(idx);
-                continue;
+                    entries[idx] = masterEntry with
+                    {
+                        Source = SourceKind.DmpOverride,
+                        DmpFormId = formId,
+                        Model = model,
+                    };
+                    continue;
+                }
             }
 
             entries.Add(new CatalogEntry

@@ -30,7 +30,8 @@ public sealed class CellSectionPlanner
         IReadOnlyList<NavMeshRecord> dmpNavmeshes,
         IReadOnlyList<WorldspaceRecord> dmpWorldspaces,
         IReadOnlySet<uint> masterFormIds,
-        FormIdAllocator allocator)
+        FormIdAllocator allocator,
+        bool emitMasterCellNavmAugmentation = false)
     {
         ArgumentNullException.ThrowIfNull(masterContexts);
         ArgumentNullException.ThrowIfNull(masterRecordsByFormId);
@@ -45,6 +46,14 @@ public sealed class CellSectionPlanner
         {
             return Empty();
         }
+
+        // Phase A.5 — coord-based pairing. Catches proto cells at master coords that carry
+        // different FormIDs than master's (xex22.v61 produced 522 such collisions in
+        // WastelandNV alone). Without this, both the master cell and the proto cell survive
+        // to emission and the engine destroys one of them with a "Cell will be destroyed"
+        // warning. After reconciliation: one DmpOverride entry per coord-match, keyed on
+        // master's FormID with proto's placement data attached.
+        catalog = CoordBasedCellPairingPass.Reconcile(catalog, masterRecordsByFormId);
 
         var dispositionEngine = new CellDispositionEngine([new DefaultCellDispositionPolicy()]);
         var decisions = dispositionEngine.Decide(catalog);
@@ -75,13 +84,16 @@ public sealed class CellSectionPlanner
             BuildWorldspacePlans(worldspaceCatalog, allocator);
 
         var navmEntries = BuildNavmEntries(
-            dmpCells, dmpNavmeshes, allocations.NavmSourceToEmitted, worldspaceSourceToEmitted);
+            dmpCells, dmpNavmeshes, allocations.NavmSourceToEmitted,
+            allocations.CellSourceToEmitted, worldspaceSourceToEmitted,
+            masterContexts, emitMasterCellNavmAugmentation);
 
         return new CellSectionResult
         {
             CellsByFormId = cells,
             WorldspacesByFormId = worldspaces,
             NavmEntries = navmEntries,
+            CellSourceToEmitted = allocations.CellSourceToEmitted,
             CellChildSourceToEmitted = allocations.PlacedRefSourceToEmitted,
             NavmSourceToEmitted = allocations.NavmSourceToEmitted,
             WorldspaceSourceToEmitted = worldspaceSourceToEmitted,
@@ -99,7 +111,10 @@ public sealed class CellSectionPlanner
         IReadOnlyList<CellRecord> dmpCells,
         IReadOnlyList<NavMeshRecord> dmpNavmeshes,
         ImmutableDictionary<uint, uint> navmSourceToEmitted,
-        ImmutableDictionary<uint, uint> worldspaceSourceToEmitted)
+        ImmutableDictionary<uint, uint> cellSourceToEmitted,
+        ImmutableDictionary<uint, uint> worldspaceSourceToEmitted,
+        IReadOnlyDictionary<uint, PcEsmCellContext> masterContexts,
+        bool emitMasterCellNavmAugmentation)
     {
         if (navmSourceToEmitted.IsEmpty)
         {
@@ -125,15 +140,33 @@ public sealed class CellSectionPlanner
                 continue; // Orphan NAVM — no parent cell captured. Skip rather than crash.
             }
 
+            // Master-cell NAVM augmentation (default on). Emit the proto's NAVM for an
+            // overridden master cell so NPCs pathfind on the reshaped layout. The planner
+            // never copies master's own NAVMs (KeepMaster NAVMs are not emitted — see
+            // PlanCellSectionBuilder.EncodeNavm); engine RE proves they load from master via
+            // the cell's TESForm file-list merge (memory/navm_engine_load_mechanism.md), so no
+            // verbatim-preservation cascade is needed. Flag gates the master-cell case for
+            // rollback only.
+            if (!emitMasterCellNavmAugmentation && masterContexts.ContainsKey(navm.CellFormId))
+            {
+                continue;
+            }
+
             // LocationFormId: interior cells use the cell FormID; exterior cells use the
             // parent worldspace FormID. For new worldspaces we must use the EMITTED FormID
             // (post-allocation), otherwise NavMeshInfoMap setup at FalloutNV+0x0069DFDC
             // looks up a non-existent FormID and crashes. Matches legacy logic in
             // PluginBuilder around line 3000.
+            //
+            // Cell FormIDs follow the same emitted-FormID rule: if Pass 0 reallocated
+            // the parent cell (proto FormID didn't match a master cell), the runtime
+            // sees the cell at its emitted FormID, not its source.
             uint locationFid;
             if (parentCell.IsInterior)
             {
-                locationFid = parentCell.FormId;
+                locationFid = cellSourceToEmitted.TryGetValue(parentCell.FormId, out var emittedCellFid)
+                    ? emittedCellFid
+                    : parentCell.FormId;
             }
             else if (parentCell.WorldspaceFormId is { } srcWrldId
                      && worldspaceSourceToEmitted.TryGetValue(srcWrldId, out var emittedWrldId))
@@ -146,7 +179,9 @@ public sealed class CellSectionPlanner
             }
             else
             {
-                locationFid = parentCell.FormId;
+                locationFid = cellSourceToEmitted.TryGetValue(parentCell.FormId, out var emittedCellFid)
+                    ? emittedCellFid
+                    : parentCell.FormId;
             }
 
             var nvvxBytes = navm.RawSubrecords
@@ -183,14 +218,24 @@ public sealed class CellSectionPlanner
 
             var context = entry.MasterContext ?? SynthesizeContext(entry);
             var (persistent, vwd, temporary) = BuildChildPlans(entry, navmsByCell, allocations, masterFormIds);
-            cells.Add(entry.CellFormId, new CellPlan
+            // DmpNew cells whose proto FormID isn't in master get a fresh plugin-range
+            // FormID in Pass 0 of the allocator. Use that emitted ID as the cell's plan
+            // key (== record FormID == GRUP label) so the engine sees the cell as new
+            // content owned by our ESP rather than as an override of a master cell that
+            // doesn't exist.
+            var emittedCellFormId = allocations.CellSourceToEmitted.TryGetValue(
+                entry.CellFormId, out var alloc)
+                ? alloc
+                : entry.CellFormId;
+
+            cells.Add(emittedCellFormId, new CellPlan
             {
-                CellFormId = entry.CellFormId,
+                CellFormId = emittedCellFormId,
                 CellRecordPlan = new RecordPlan
                 {
                     Type = "CELL",
                     Disposition = decision.Disposition,
-                    FormId = entry.CellFormId,
+                    FormId = emittedCellFormId,
                     SourceFormId = entry.DmpModel?.FormId,
                     Model = entry.DmpModel,
                     Master = entry.MasterRecord,
@@ -441,6 +486,8 @@ public sealed class CellSectionPlanner
         public required ImmutableDictionary<uint, uint> CellChildSourceToEmitted { get; init; }
         public required ImmutableDictionary<uint, uint> NavmSourceToEmitted { get; init; }
         public ImmutableDictionary<uint, uint> WorldspaceSourceToEmitted { get; init; } =
+            ImmutableDictionary<uint, uint>.Empty;
+        public ImmutableDictionary<uint, uint> CellSourceToEmitted { get; init; } =
             ImmutableDictionary<uint, uint>.Empty;
     }
 }
