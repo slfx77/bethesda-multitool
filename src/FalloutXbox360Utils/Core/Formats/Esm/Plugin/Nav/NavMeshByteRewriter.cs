@@ -14,23 +14,45 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Nav;
 ///         <item><description><b>NVEX</b> subrecord (per 10-byte entry, bytes 4..7): replace navmesh FormID via
 ///             the navmFormIdRewrites map when the original is a DMP FormID we've allocated a new ID for.
 ///             Entries whose target isn't in the rewrites dict are left intact (master FormIDs round-trip as-is).</description></item>
+///         <item><description><b>NVTR</b> subrecord: run <see cref="NavMeshReciprocityRepair" /> to clear
+///             out-of-bounds, self-pointing, or non-reciprocal neighbor-triangle indices. Required for
+///             both proto-ESM-byte-stream NAVMs (engine may have mutated the underlying pages after load)
+///             and runtime-synth NAVMs (mid-flight obstacle / FlipTriangle state).</description></item>
 ///     </list>
-///     Other subrecords (EDID, NVVX, NVTR, NVDP, NVCA) pass through verbatim. The caller is
+///     Other subrecords (EDID, NVVX, NVDP, NVCA) pass through verbatim. The caller is
 ///     responsible for allocating the new record-level FormID and assembling the final
 ///     record via <see cref="FalloutXbox360Utils.Core.Formats.Esm.Plugin.Output.PluginRecordByteBuilder.BuildNewRecordBytes" />.
 /// </summary>
 internal static class NavMeshByteRewriter
 {
     /// <summary>
-    ///     Apply DATA-cell and NVEX-navmesh rewrites to a captured NAVM subrecord list.
-    ///     Returns a new <see cref="EncodedSubrecord" /> list; the input is not mutated
-    ///     (the underlying byte arrays are copied before patching).
+    ///     Apply DATA-cell, NVEX-navmesh, and NVTR-reciprocity rewrites to a captured NAVM
+    ///     subrecord list. Returns a new <see cref="EncodedSubrecord" /> list; the input is
+    ///     not mutated (the underlying byte arrays are copied before patching).
     /// </summary>
     public static List<EncodedSubrecord> Rewrite(
         IReadOnlyList<NavMeshSubrecord> capturedSubrecords,
         uint newCellFormId,
         IReadOnlyDictionary<uint, uint> navmFormIdRewrites)
     {
+        // First drop runtime obstacle-split triangles (those lacking the 0x800 "real" flag) —
+        // they overlap the base mesh and are what the engine's load-time validator chokes on.
+        // This rewrites NVTR/NVCA/NVDP/DATA together, so it must run before the per-subrecord
+        // winding / adjacency passes below (which then operate on the clean triangle set).
+        capturedSubrecords = NavMeshObstacleTriangleFilter.Filter(capturedSubrecords);
+
+        // NVTR winding repair needs the vertex positions from NVVX (which is emitted earlier
+        // in the canonical subrecord order, but grab it up front so we don't depend on order).
+        byte[]? nvvxBytes = null;
+        foreach (var sub in capturedSubrecords)
+        {
+            if (sub.Signature == "NVVX")
+            {
+                nvvxBytes = sub.Bytes;
+                break;
+            }
+        }
+
         var result = new List<EncodedSubrecord>(capturedSubrecords.Count);
         foreach (var sub in capturedSubrecords)
         {
@@ -48,6 +70,27 @@ internal static class NavMeshByteRewriter
                     // NVEX entries are 10 bytes each: uint32 Type + uint32 NavmeshFormID + uint16 Triangle.
                     // Walk the array and rewrite each NavmeshFormID via the dict where present.
                     PatchNvexEntries(bytes, navmFormIdRewrites);
+                    break;
+                case "NVTR":
+                    // 1) Normalize triangle winding against NVVX vertices so every triangle's
+                    //    surface normal faces the mesh's dominant direction. Runtime capture can
+                    //    serialize mid-flight flipped triangles; uniform winding keeps the engine's
+                    //    seam normal check happy. (No-op when winding is already uniform.)
+                    NavMeshWindingRepair.Repair(bytes, nvvxBytes);
+                    // 2) Rebuild the triangle neighbour links from the geometry, replacing the
+                    //    runtime capture's mutated/inconsistent adjacency. This is the load-bearing
+                    //    fix for the Gomorrah01 entry crash: the captured links pointed at triangles
+                    //    that no longer share an edge ("opposite normals but are linked") and dropped
+                    //    links between triangles that do ("should have a link, but doesn't"), feeding
+                    //    NavMeshSearchClosePoint a bad neighbour → AV. Geometry-derived adjacency is
+                    //    always reciprocal and matches the mesh exactly. NVVX is passed so vertices
+                    //    at the same position (runtime obstacle-split duplicates) weld before edge
+                    //    matching — otherwise shared edges with different indices stay unlinked.
+                    NavMeshAdjacencyRebuild.Repair(bytes, nvvxBytes);
+                    // 3) Reciprocity sweep — redundant after a full rebuild (which is reciprocal by
+                    //    construction) but kept as a cheap invariant guard for any future NVTR path
+                    //    that reaches here without the rebuild.
+                    NavMeshReciprocityRepair.Repair(bytes);
                     break;
             }
             result.Add(new EncodedSubrecord(sub.Signature, bytes));
