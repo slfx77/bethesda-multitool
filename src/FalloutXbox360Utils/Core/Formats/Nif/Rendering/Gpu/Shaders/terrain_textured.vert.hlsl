@@ -1,45 +1,52 @@
-// v3 Phase 2b textured-terrain vertex shader. Projects heightmap vertices to clip space,
-// derives world-space UV for diffuse sampling, and emits a per-quadrant local UV that the
-// pixel shader uses to sample the 17x17 R8 opacity textures uploaded from VTXT BlendEntries.
+// v3 Phase 2c+ engine-accurate terrain vertex shader. Replaces the prior per-quadrant
+// origin/scale math with per-vertex blend weights: each vertex carries a Vector4 of weights
+// into up to 4 cell-wide diffuse texture slots, sourced from `CellTerrainTextureSet`. The
+// per-pixel weighted sum in the fragment shader reproduces the engine's per-vertex blend
+// table behaviour, so cross-quadrant boundaries and (with neighbor-fed weight tables)
+// cross-cell boundaries fade smoothly instead of the prior hard seam.
 //
-// The cell-local TEXCOORD on the vertex carries (i/32, j/32). The pixel shader's quadrant
-// UV is (cellLocalUv - quadrantOrigin) * 2 so it ranges [0, 1] within each 17x17 quadrant.
-// quadrantOrigin is one of {(0,0), (0.5,0), (0,0.5), (0.5,0.5)} for Q=0..3 (SW, SE, NW, NE).
-//
-// Matrix bytes: System.Numerics.Matrix4x4 stores row-major in CPU memory; HLSL cbuffers
-// interpret matrix bytes column-major by default. CPU side does NOT transpose, so
-// `mul(M, v)` matches `M * v` on the CPU (same convention as terrain.vert.hlsl).
+// Slot 0 vertex stream: shared GpuMeshUploader.GpuVertex (position/normal/texcoord/color/
+// tangent/bitangent), unchanged so the slot-0 buffer is the same shared format other 3D
+// passes use.
+// Slot 1 vertex stream: per-vertex aLayerWeights (float4), built per-cell from the engine-
+// accurate per-vertex weight table and uploaded as an independent D3D11 buffer per cell.
 
-cbuffer PerFrame    : register(b0)
+cbuffer PerFrame : register(b0)
 {
     float4x4 uViewProj;
 };
 
-cbuffer PerQuadrant : register(b1)
+// b2 = PerMode (debug + UV scale). Per-quadrant b1 from the prior layout is gone; the engine-
+// accurate path has no per-quadrant constants — everything per-cell varies via the textures
+// bound at t0..t3 + the per-vertex weight stream.
+cbuffer PerMode : register(b2)
 {
-    // xy = quadrant origin in cell-local UV (0|0.5, 0|0.5)
-    // z  = layer count (1..4)
-    // w  = diffuse UV scale (world units -> texture repeats; e.g. 1/256 = 16 tiles per cell)
-    float4 uQuadrantUvOrigin_LayerCount_UvScale;
+    // x = 1.0 → VCLR-only debug mode (skip texture sampling)
+    // y = diffuse UV scale (world units → texture repeats; 1/512 = 8 repeats per cell)
+    // zw = padding
+    float4 uDebugMode_UvScale_Pad;
 };
 
 struct VSInput
 {
-    float3 aPosition    : TEXCOORD0;
-    float3 aNormal      : TEXCOORD1;
-    float2 aTexCoord    : TEXCOORD2;
-    float4 aVertexColor : TEXCOORD3;
-    float3 aTangent     : TEXCOORD4;
-    float3 aBitangent   : TEXCOORD5;
+    // Slot 0
+    float3 aPosition     : TEXCOORD0;
+    float3 aNormal       : TEXCOORD1;
+    float2 aTexCoord     : TEXCOORD2;  // unused on this path; kept for layout-stability
+    float4 aVertexColor  : TEXCOORD3;
+    float3 aTangent      : TEXCOORD4;  // unused
+    float3 aBitangent    : TEXCOORD5;  // unused
+    // Slot 1
+    float4 aLayerWeights : TEXCOORD6;
 };
 
 struct VSOutput
 {
-    float4 Position     : SV_Position;
-    float3 vWorldNormal : TEXCOORD0;
-    float4 vVertexColor : TEXCOORD1;
-    float2 vWorldUv     : TEXCOORD2;
-    float2 vQuadrantUv  : TEXCOORD3;
+    float4 Position      : SV_Position;
+    float3 vWorldNormal  : TEXCOORD0;
+    float4 vVertexColor  : TEXCOORD1;
+    float2 vWorldUv      : TEXCOORD2;
+    float4 vLayerWeights : TEXCOORD3;
 };
 
 VSOutput main(VSInput input)
@@ -48,7 +55,7 @@ VSOutput main(VSInput input)
     o.Position = mul(uViewProj, float4(input.aPosition, 1.0));
     o.vWorldNormal = input.aNormal;
     o.vVertexColor = input.aVertexColor;
-    o.vWorldUv = input.aPosition.xy * uQuadrantUvOrigin_LayerCount_UvScale.w;
-    o.vQuadrantUv = (input.aTexCoord - uQuadrantUvOrigin_LayerCount_UvScale.xy) * 2.0;
+    o.vWorldUv = input.aPosition.xy * uDebugMode_UvScale_Pad.y;
+    o.vLayerWeights = input.aLayerWeights;
     return o;
 }

@@ -56,6 +56,7 @@ artifacts/
 
 # Tools folder - ignore most but allow specific tools
 tools/*
+!tools/disasm_shader.py
 !tools/Shared/
 tools/Shared/bin/
 tools/Shared/obj/
@@ -74,6 +75,9 @@ tools/MinidumpAnalyzer/obj/
 !tools/BsaAnalyzer/
 tools/BsaAnalyzer/bin/
 tools/BsaAnalyzer/obj/
+!tools/ShaderProbe/
+tools/ShaderProbe/bin/
+tools/ShaderProbe/obj/
 
 # Python remnants (if any)
 .venv/

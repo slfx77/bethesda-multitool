@@ -1,40 +1,40 @@
-// v3 Phase 2b textured-terrain pixel shader. Samples up to 4 diffuse textures bound at
-// t0..t3 with world-space UV (wrap, anisotropic), blends each successive layer over the
-// previous using the corresponding R8 opacity texture at t4..t6 sampled with quadrant-local
-// UV (clamp, bilinear). Final color is modulated by per-vertex VCLR and a single hardcoded
-// Lambert sun for shape.
+// v3 Phase 2c+ engine-accurate terrain fragment shader. Samples up to 4 diffuse textures
+// bound at t0..t3 (cell-wide, from CellTerrainTextureSet's top-4-by-total-weight selection)
+// and composes them by the per-vertex weights interpolated across the cell mesh. Mirrors the
+// per-vertex weighted sum the engine's NiTerrainLandShader does, so quadrant midlines and
+// (with neighbor-fed weight tables) cell boundaries fade smoothly across rather than
+// snapping at a hard edge.
 //
-// The shader uses explicit per-layer `if` branches rather than an array+loop because
-// Vortice's HLSL compile is finicky about non-literal array indexing on texture arrays.
-// Up to N=4 layers per quadrant (1 base + 3 alpha) — cells with more layers truncate at
-// the C# side (TerrainRenderer.SelectQuadrant) and silently drop the extras.
+// All diffuse samples share the same world-space UV (anisotropic wrap) so tiling stays
+// sharp at any zoom — that's the property the pre-baked-composite alternative would have
+// given up.
 
 Texture2D    tDiffuse0 : register(t0);
 Texture2D    tDiffuse1 : register(t1);
 Texture2D    tDiffuse2 : register(t2);
 Texture2D    tDiffuse3 : register(t3);
-Texture2D    tOpacity0 : register(t4);
-Texture2D    tOpacity1 : register(t5);
-Texture2D    tOpacity2 : register(t6);
 SamplerState sDiffuse  : register(s0);
-SamplerState sOpacity  : register(s1);
 
-cbuffer PerFrame    : register(b0) { float4x4 uViewProj; }
-cbuffer PerQuadrant : register(b1) { float4 uQuadrantUvOrigin_LayerCount_UvScale; }
-cbuffer PerMode     : register(b2)
+cbuffer PerFrame : register(b0)
 {
-    // x = 1.0 → VCLR-only debug mode (skip texture sampling, render Phase 2a look)
-    // y..w = padding
-    float4 uDebugMode_Pad;
+    float4x4 uViewProj;
+};
+
+cbuffer PerMode : register(b2)
+{
+    // x = 1.0 → VCLR-only debug mode
+    // y = uv scale (mirrors vertex shader so it stays in sync)
+    // zw = padding
+    float4 uDebugMode_UvScale_Pad;
 };
 
 struct PSInput
 {
-    float4 Position     : SV_Position;
-    float3 vWorldNormal : TEXCOORD0;
-    float4 vVertexColor : TEXCOORD1;
-    float2 vWorldUv     : TEXCOORD2;
-    float2 vQuadrantUv  : TEXCOORD3;
+    float4 Position      : SV_Position;
+    float3 vWorldNormal  : TEXCOORD0;
+    float4 vVertexColor  : TEXCOORD1;
+    float2 vWorldUv      : TEXCOORD2;
+    float4 vLayerWeights : TEXCOORD3;
 };
 
 float4 main(PSInput input) : SV_Target
@@ -43,32 +43,51 @@ float4 main(PSInput input) : SV_Target
     float lambert = saturate(dot(normal, normalize(float3(0.5, 0.5, 1.0))));
     float shade = 0.4 + 0.6 * lambert;
 
-    if (uDebugMode_Pad.x > 0.5)
+    if (uDebugMode_UvScale_Pad.x > 0.5)
     {
         return float4(input.vVertexColor.rgb * shade, 1.0);
     }
 
-    int layerCount = (int)uQuadrantUvOrigin_LayerCount_UvScale.z;
-    float3 color = tDiffuse0.Sample(sDiffuse, input.vWorldUv).rgb;
+    // Engine-accurate weighted sum across the 4 cell-wide slots. Per-vertex weights were
+    // renormalized at table-build time to sum to ~1, but bilinear interpolation across the
+    // mesh may shift the sum slightly (especially near vertices with empty weight sets) —
+    // the totalWeight rescale below restores energy conservation per pixel.
+    float3 color = 0;
+    float totalWeight = 0;
 
-    if (layerCount >= 2)
+    if (input.vLayerWeights.x > 0)
     {
-        float a1 = tOpacity0.Sample(sOpacity, input.vQuadrantUv).r;
-        color = lerp(color, tDiffuse1.Sample(sDiffuse, input.vWorldUv).rgb, a1);
+        color += input.vLayerWeights.x * tDiffuse0.Sample(sDiffuse, input.vWorldUv).rgb;
+        totalWeight += input.vLayerWeights.x;
     }
-    if (layerCount >= 3)
+    if (input.vLayerWeights.y > 0)
     {
-        float a2 = tOpacity1.Sample(sOpacity, input.vQuadrantUv).r;
-        color = lerp(color, tDiffuse2.Sample(sDiffuse, input.vWorldUv).rgb, a2);
+        color += input.vLayerWeights.y * tDiffuse1.Sample(sDiffuse, input.vWorldUv).rgb;
+        totalWeight += input.vLayerWeights.y;
     }
-    if (layerCount >= 4)
+    if (input.vLayerWeights.z > 0)
     {
-        float a3 = tOpacity2.Sample(sOpacity, input.vQuadrantUv).r;
-        color = lerp(color, tDiffuse3.Sample(sDiffuse, input.vWorldUv).rgb, a3);
+        color += input.vLayerWeights.z * tDiffuse2.Sample(sDiffuse, input.vWorldUv).rgb;
+        totalWeight += input.vLayerWeights.z;
+    }
+    if (input.vLayerWeights.w > 0)
+    {
+        color += input.vLayerWeights.w * tDiffuse3.Sample(sDiffuse, input.vWorldUv).rgb;
+        totalWeight += input.vLayerWeights.w;
+    }
+
+    if (totalWeight > 0.001)
+    {
+        color /= totalWeight;
+    }
+    else
+    {
+        // Vertex with no slot contributions — typically corner of a cell whose every
+        // neighbor was also empty. Render as engine-default to match the 2D fallback.
+        color = tDiffuse0.Sample(sDiffuse, input.vWorldUv).rgb;
     }
 
     // VCLR is per-vertex tint Bethesda uses for art direction (sun bleach, moist edges).
-    // Multiplicative so default-white VCLR leaves the texture untouched.
     color *= input.vVertexColor.rgb;
     return float4(color * shade, 1.0);
 }
