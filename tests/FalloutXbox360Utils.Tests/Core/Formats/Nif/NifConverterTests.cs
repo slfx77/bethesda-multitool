@@ -52,75 +52,7 @@ public class NifConverterTests
 
     #endregion
 
-    #region HalfToFloat (BinaryUtils)
-
-    [Fact]
-    public void HalfToFloat_Zero_ReturnsZero()
-    {
-        Assert.Equal(0.0f, BinaryUtils.HalfToFloat(0x0000));
-    }
-
-    [Fact]
-    public void HalfToFloat_NegativeZero_ReturnsNegativeZero()
-    {
-        var result = BinaryUtils.HalfToFloat(0x8000);
-        Assert.True(float.IsNegativeInfinity(1.0f / result));
-    }
-
-    [Fact]
-    public void HalfToFloat_One_ReturnsOne()
-    {
-        // Half-precision 1.0 = 0x3C00
-        var result = BinaryUtils.HalfToFloat(0x3C00);
-        Assert.Equal(1.0f, result, 0.001f);
-    }
-
-    [Fact]
-    public void HalfToFloat_Half_ReturnsHalf()
-    {
-        // Half-precision 0.5 = 0x3800
-        var result = BinaryUtils.HalfToFloat(0x3800);
-        Assert.Equal(0.5f, result, 0.001f);
-    }
-
-    [Fact]
-    public void HalfToFloat_NegativeValue_ReturnsNegative()
-    {
-        // Half-precision -2.5 = 0xC100
-        var result = BinaryUtils.HalfToFloat(0xC100);
-        Assert.Equal(-2.5f, result, 0.01f);
-    }
-
-    [Fact]
-    public void HalfToFloat_PositiveInfinity_ReturnsPositiveInfinity()
-    {
-        // Half-precision +Inf = 0x7C00
-        Assert.Equal(float.PositiveInfinity, BinaryUtils.HalfToFloat(0x7C00));
-    }
-
-    [Fact]
-    public void HalfToFloat_NegativeInfinity_ReturnsNegativeInfinity()
-    {
-        // Half-precision -Inf = 0xFC00
-        Assert.Equal(float.NegativeInfinity, BinaryUtils.HalfToFloat(0xFC00));
-    }
-
-    [Fact]
-    public void HalfToFloat_NaN_ReturnsNaN()
-    {
-        // Half-precision NaN = 0x7C01 (exponent all 1s, mantissa non-zero)
-        Assert.True(float.IsNaN(BinaryUtils.HalfToFloat(0x7C01)));
-    }
-
-    [Fact]
-    public void HalfToFloat_Denormalized_ReturnsSmallValue()
-    {
-        // Half-precision denormalized: 0x0001 = smallest positive subnormal
-        var result = BinaryUtils.HalfToFloat(0x0001);
-        Assert.True(result > 0.0f && result < 0.001f);
-    }
-
-    #endregion
+    // HalfToFloat is a BinaryUtils method; its tests live in BinaryUtilsEndianTests.
 
     #region Convert - Error cases
 
