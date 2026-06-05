@@ -95,6 +95,7 @@ public sealed class RecordEncoderRegistry
             new CmnyEncoder(),
             new CdckEncoder(),
             new RcctEncoder(),
+            new FlorEncoder(),
             // SCPT MUST be registered before any record type that carries a SCRI subrecord
             // (NPC_, CREA, QUST, ACTI, etc.). EspAssembler emits GRUPs in registration order,
             // and the FNV engine resolves SCRI inline during load — forward references to a

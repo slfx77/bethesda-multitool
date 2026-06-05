@@ -99,38 +99,10 @@ public sealed class RecordParser
         var totalSw = Stopwatch.StartNew();
         var phaseSw = Stopwatch.StartNew();
 
-        // Parsed record types
-        var parsedTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "NPC_", "CREA", "RACE", "FACT", "ECZN",
-            "QUST", "DIAL", "INFO", "NOTE", "BOOK", "TERM", "SCPT",
-            "WEAP", "ARMO", "AMMO", "ALCH", "MISC", "KEYM", "CONT",
-            "PERK", "SPEL", "CELL", "WRLD", "GMST",
-            "GLOB", "ENCH", "MGEF", "IMOD", "RCPE", "CHAL", "REPU",
-            "PROJ", "EXPL", "MESG", "CLAS",
-            "FLST", "ACTI", "LIGH", "DOOR", "STAT", "FURN",
-            "PACK",
-            // SCOL has a typed handler (see _miscStaticObjects.ParseStaticCollections).
-            // Generic record types (Phase 1)
-            "MSTT", "TACT", "CAMS", "ANIO", "IPDS", "EFSH", "RGDL", "LSCR",
-            "ASPC", "MSET", "CHIP", "CSNO", "DOBJ", "ADDN", "TREE", "IMAD",
-            "IDLM", "PWAT",
-            // FLOR (Flora) was previously dropped — added so xander roots, broc flowers,
-            // mutfruit, etc. carry through to the output ESP even when no DMP is supplied.
-            "FLOR",
-            "SCOL",
-            // Specialized record types (Phase 2)
-            "SOUN", "MUSC", "TXST", "LTEX", "ARMA", "WATR", "BPTD", "AVIF", "CSTY", "LGTM", "NAVM", "WTHR",
-            // Phase 10 generic-only additions
-            "IMGS", "CLMT", "GRAS", "AMEF",
-            // Phase 10 typed handlers
-            "HDPT", "VTYP", "MICN", "LSCT", "IDLE", "CPTH", "IPCT", "ALOC",
-            "PGRE", "REGN", "CCRD", "DEBR",
-            "INGR", "NAVI", "CMNY", "CDCK", "RADS", "DEHY", "HUNG", "SLPD",
-            // Special-modeled records routed through cell/terrain/header paths instead of
-            // normal top-level typed lists.
-            "TES4", "REFR", "ACHR", "ACRE", "LAND"
-        };
+        // Parsed record types — single source of truth lives in EsmParsedRecordTypes, which is
+        // completeness-checked against RecordCollection so a new parser can't silently end up
+        // mislabeled as "not parsed". Anything not in this set falls into UnparsedTypeCounts below.
+        var parsedTypes = EsmParsedRecordTypes.Codes;
 
         // Count all record types and compute unparsed counts
         var allTypeCounts = _context.ScanResult.MainRecords
@@ -365,7 +337,11 @@ public sealed class RecordParser
             "IDLM", "PWAT",
             // SCOL is parsed via the typed _miscStaticObjects.ParseStaticCollections() path.
             // Phase 10: small PDB-defined types with no parity-relevant fields beyond identity
-            "IMGS", "CLMT", "GRAS", "AMEF"
+            "IMGS", "CLMT", "GRAS", "AMEF",
+            // FLOR (Flora): harvestable plants. ESM-side coverage so flora carries through
+            // (EDID/FULL/MODL/OBND + PFIG ingredient, SNAM sound, SCRI script via schema/fallback)
+            // even when no DMP is supplied — previously only the runtime RuntimeFlorReader populated it.
+            "FLOR"
         };
         var genericRecords = new List<GenericEsmRecord>();
         foreach (var type in genericTypes)
@@ -876,6 +852,16 @@ public sealed class RecordParser
     public List<FurnitureRecord> ParseFurniture()
     {
         return _miscStaticObjects.ParseFurniture();
+    }
+
+    /// <summary>
+    ///     Parses all records of a generic (schema/identity-only) type into <see cref="GenericEsmRecord" />s.
+    ///     Exposed primarily for focused parser coverage tests (e.g. FLOR); the full parse drives this
+    ///     internally via the genericTypes loop in <see cref="ParseAll" />.
+    /// </summary>
+    public List<GenericEsmRecord> ParseGenericRecords(string recordType)
+    {
+        return _misc.ParseGenericRecords(recordType);
     }
 
     // AI

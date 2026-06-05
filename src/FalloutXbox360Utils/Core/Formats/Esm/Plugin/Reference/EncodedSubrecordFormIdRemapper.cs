@@ -136,6 +136,12 @@ internal static class EncodedSubrecordFormIdRemapper
             return signature is "TNAM" or "GNAM" ? Offset0WhenAtLeast4(subrecord) : [];
         }
 
+        if (recordType == "FLOR")
+        {
+            // PFIG (ingredient), SCRI (script), SNAM (sound) — all single FormIDs at offset 0.
+            return signature is "PFIG" or "SCRI" or "SNAM" ? Offset0WhenAtLeast4(subrecord) : [];
+        }
+
         return recordType switch
         {
             "SCPT" => signature == "SCRO" ? Offset0WhenAtLeast4(subrecord) : [],

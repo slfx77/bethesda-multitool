@@ -84,6 +84,8 @@ internal static class NewTopLevelRecordEncoderDispatcher
             ["ARMA"] = (model, _) => ArmaEncoder.EncodeNew((ArmaRecord)model),
             ["RCPE"] = (model, _) => RcpeEncoder.EncodeNew((RecipeRecord)model),
             ["RCCT"] = (model, _) => RcctEncoder.EncodeNew((RecipeCategoryRecord)model),
+            // FLOR has no typed model — it is captured/parsed as a GenericEsmRecord.
+            ["FLOR"] = (model, _) => FlorEncoder.EncodeNew((GenericEsmRecord)model),
             ["COBJ"] = (model, _) => CobjEncoder.EncodeNew((ConstructibleObjectRecord)model),
             ["EYES"] = (model, _) => EyesEncoder.EncodeNew((EyesRecord)model),
             ["HAIR"] = (model, _) => HairEncoder.EncodeNew((HairRecord)model),

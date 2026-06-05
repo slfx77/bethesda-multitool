@@ -8,6 +8,15 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 ///     Override path is a no-op — DIAL definitions don't mutate at runtime.
 ///     DATA (2 bytes): byte TopicType(0) + byte Flags(1) — raw bytes, no endian swap.
 ///     PNAM (4 bytes): float Priority — topic ordering weight.
+///     <para>
+///     <b>FormID-remap contract:</b> the encoder emits <c>dial.QuestFormId</c> (QSTI) and
+///     <c>dial.SpeakerFormId</c> (TNAM) verbatim — no defensive
+///     <see cref="FormIdReferenceResolver" /> call. It relies on
+///     <c>DialogGrupBuilder.SanitizeDialReferences</c> patching the model upstream so
+///     proto FormIDs are remapped to allocated ones before this method runs. Any new
+///     caller that bypasses the sanitizer would emit phantom-master FormIDs; the systemic
+///     regression guard in <c>PhantomMasterFormIdRegressionTests</c> catches that.
+///     </para>
 /// </summary>
 public sealed class DialEncoder : IRecordEncoder
 {
