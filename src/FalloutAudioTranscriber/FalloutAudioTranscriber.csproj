@@ -53,8 +53,7 @@
        We don't need its string resources, so excluding the entire PRI is safe. -->
   <Target Name="RemoveReferencedProjectPri" BeforeTargets="_GenerateProjectPriConfigurationFiles">
     <ItemGroup>
-      <_PriFile Remove="@(_PriFile)"
-                Condition="$([System.String]::new('%(Filename)').StartsWith('FalloutXbox360Utils'))" />
+      <_PriFile Remove="@(_PriFile)" Condition="$([System.String]::new('%(Filename)').StartsWith('FalloutXbox360Utils'))" />
     </ItemGroup>
   </Target>
 
@@ -64,10 +63,7 @@
        project's DLL comes from its bin directory, not its source tree, so this is safe. -->
   <Target Name="RemoveReferencedProjectPublishContent" BeforeTargets="_ComputeFilesToBundle">
     <ItemGroup>
-      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
-                             Condition="$([System.String]::new('%(FullPath)').Contains('FalloutXbox360Utils')) AND
-                   !$([System.String]::new('%(FullPath)').Contains('bin')) AND
-                   !$([System.String]::new('%(FullPath)').Contains('.nuget'))" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="$([System.String]::new('%(FullPath)').Contains('FalloutXbox360Utils')) AND&#xD;&#xA;                   !$([System.String]::new('%(FullPath)').Contains('bin')) AND&#xD;&#xA;                   !$([System.String]::new('%(FullPath)').Contains('.nuget'))" />
     </ItemGroup>
   </Target>
 

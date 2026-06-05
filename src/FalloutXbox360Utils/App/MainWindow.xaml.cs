@@ -19,6 +19,19 @@ public sealed partial class MainWindow : Window
         Instance = this;
         try
         {
+            // WinUI 3 apps have no attached console, so Spectre/Console output is invisible.
+            // Mirror the same log stream to a known file so diagnostic Log.Info/Log.Warn calls
+            // (e.g. BSA discovery, terrain palette resolution) are inspectable post-mortem.
+            try
+            {
+                var logPath = Path.Combine(Path.GetTempPath(), "FalloutXbox360Utils-gui.log");
+                FalloutXbox360Utils.Core.Logger.Instance.SetLogFile(logPath);
+            }
+            catch
+            {
+                // File-logging is a diagnostics-only convenience; never fail startup over it.
+            }
+
             Console.WriteLine("[MainWindow] Constructor starting...");
             InitializeComponent();
             Console.WriteLine("[MainWindow] InitializeComponent complete");

@@ -60,6 +60,14 @@ public sealed partial class SingleFileTab
                 csvPath,
                 status => DispatcherQueue.TryEnqueue(() => StatusTextBlock.Text = status));
 
+            // Switch back to Idle before OnLoadOrderChanged so the re-triggered tab handler
+            // actually runs. SubTabView_SelectionChanged guards on `_pipelinePhase == Idle`
+            // and early-returns otherwise — if we stayed in Parsing here, PopulateWorldMapAsync
+            // would never re-run and the world map would keep its stale (empty) load-order
+            // AdditionalDataPaths even though Entries was just populated.
+            SetPipelinePhase(AnalysisPipelinePhase.Idle);
+            AnalysisProgressBar.IsIndeterminate = false;
+
             await OnLoadOrderChanged();
             StatusTextBlock.Text = "Load order data loaded.";
         }
@@ -72,6 +80,7 @@ public sealed partial class SingleFileTab
         }
         finally
         {
+            // Idempotent — already Idle on the happy path; this catches the exception path.
             SetPipelinePhase(AnalysisPipelinePhase.Idle);
             AnalysisProgressBar.IsIndeterminate = false;
         }
