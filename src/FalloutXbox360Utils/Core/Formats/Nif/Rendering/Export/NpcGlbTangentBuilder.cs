@@ -146,9 +146,14 @@ internal static class NpcGlbTangentBuilder
             submesh.Normals![offset],
             submesh.Normals[offset + 1],
             submesh.Normals[offset + 2]);
+        // Must match GlbWriter.ReadNormal's fallback (Vector3.UnitY) so the tangent
+        // computed against this fallback is orthogonal to the normal actually written
+        // into the GLB. Mismatched fallbacks (UnitZ here, UnitY in GlbWriter) produce
+        // a broken TBN frame at every vertex with a degenerate authored normal, which
+        // glTF PBR viewers amplify as splotches/holes near seam vertices.
         return normal.LengthSquared() > 0.000001f
             ? Vector3.Normalize(normal)
-            : Vector3.UnitZ;
+            : Vector3.UnitY;
     }
 
     private static Vector2 ReadUv(RenderableSubmesh submesh, int vertexIndex)

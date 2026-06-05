@@ -298,8 +298,14 @@ public sealed class NpcExportHelperTests
     }
 
     [Fact]
-    public void BuildVertexColor_TintedMeshPreservesRawVertexColorsWhenFlagSet()
+    public void BuildVertexColor_TintedSubmeshIgnoresVertexColorsEvenWhenFlagSet()
     {
+        // When a submesh carries a tint colour, the tinted texture is the sole colour
+        // source and vertex colours are ignored (NpcGlbTintColorEncoder.BuildVertexColor)
+        // — even though UseVertexColors is set, because that flag is forced true upstream
+        // and is not a reliable gate. Returning white keeps vertex-colour modulation neutral
+        // so hair-card AO masks can't wash out the baked tint (auburn-hair-renders-green
+        // regression).
         var submesh = new RenderableSubmesh
         {
             Positions = [0f, 0f, 0f],
@@ -311,10 +317,7 @@ public sealed class NpcExportHelperTests
 
         var color = NpcGlbTintColorEncoder.BuildVertexColor(submesh, 0);
 
-        Assert.Equal(32f / 255f, color.X, 3);
-        Assert.Equal(96f / 255f, color.Y, 3);
-        Assert.Equal(192f / 255f, color.Z, 3);
-        Assert.Equal(128f / 255f, color.W, 3);
+        Assert.Equal(Vector4.One, color);
     }
 
     [Fact]
@@ -486,29 +489,6 @@ public sealed class NpcExportHelperTests
         Assert.Equal(0.50f, baseColor.Y, 2);
         Assert.Equal(0.40f, baseColor.Z, 2);
         Assert.Equal(1f, baseColor.W, 3);
-    }
-
-    [Fact]
-    public void BuildVertexColor_TintedSubmeshPreservesRawVertexColors()
-    {
-        var submesh = new RenderableSubmesh
-        {
-            Positions = [0f, 0f, 0f],
-            Triangles = [],
-            UseVertexColors = true,
-            VertexColors =
-            [
-                255, 128, 64, 192
-            ],
-            TintColor = (0.30f, 0.25f, 0.20f)
-        };
-
-        var color = NpcGlbTintColorEncoder.BuildVertexColor(submesh, 0);
-
-        Assert.Equal(1f, color.X, 3);
-        Assert.Equal(128f / 255f, color.Y, 3);
-        Assert.Equal(64f / 255f, color.Z, 3);
-        Assert.Equal(192f / 255f, color.W, 3);
     }
 
     [Fact]

@@ -38,6 +38,29 @@ internal static class NpcExportHeadAssembler
                         part.Submesh.DiffuseTexturePath = headPlan.EffectiveHeadTexturePath;
                     }
 
+                    // FaceGen morph + seam-normal weld must run BEFORE the scene-add call
+                    // — NpcExportSceneBuilder.AddSkinnedPart / AddExtractedRigidPart both
+                    // deep-clone the submesh (CloneSubmesh) and any later mutation of
+                    // part.Submesh is lost. The previous post-loop RecalculateNormals call
+                    // was operating on the orphaned original and never reached the GLB.
+                    if (headPlan.HeadPreSkinMorphDeltas != null)
+                    {
+                        FaceGenMeshMorpher.RecalculateNormals(part.Submesh);
+                    }
+                    else if (part.Submesh.Normals != null)
+                    {
+                        // Always weld co-located seam normals (eye sockets, mouth interior,
+                        // neck rim), even on the non-morphed code path. The glTF PBR pipeline
+                        // amplifies per-vertex TBN inconsistency at unwelded seams into visible
+                        // splotches / triangular holes that the rasterizer's per-pixel shader
+                        // smooths over. WeldSeamNormals is hemisphere-split so opposing-normal
+                        // seam partners (mouth interior vs face exterior) stay in distinct weld
+                        // groups instead of cancelling to a zero direction.
+                        FaceGenMeshMorpher.WeldSeamNormals(
+                            part.Submesh.Positions,
+                            part.Submesh.Normals);
+                    }
+
                     if (part.Skin != null && nodeIndicesByBoneName != null)
                     {
                         NpcExportSceneBuilder.AddSkinnedPart(scene, part, nodeIndicesByBoneName);
@@ -49,14 +72,6 @@ internal static class NpcExportHeadAssembler
                             part,
                             part.ShapeWorldTransform,
                             headPlan.BaseHeadNifPath);
-                    }
-                }
-
-                if (headPlan.HeadPreSkinMorphDeltas != null)
-                {
-                    foreach (var part in extracted.MeshParts)
-                    {
-                        FaceGenMeshMorpher.RecalculateNormals(part.Submesh);
                     }
                 }
 
@@ -155,6 +170,20 @@ internal static class NpcExportHeadAssembler
                         part.Submesh.DiffuseTexturePath = fullHeadTexturePath;
                     }
 
+                    // Morph + seam weld must run BEFORE scene-add since the scene-add
+                    // deep-clones the submesh (see other AddHeadContent overload for full
+                    // explanation). Post-add mutation never reaches the GLB.
+                    if (headPreSkinDeltas != null)
+                    {
+                        FaceGenMeshMorpher.RecalculateNormals(part.Submesh);
+                    }
+                    else if (part.Submesh.Normals != null)
+                    {
+                        FaceGenMeshMorpher.WeldSeamNormals(
+                            part.Submesh.Positions,
+                            part.Submesh.Normals);
+                    }
+
                     if (part.Skin != null && nodeIndicesByBoneName != null)
                     {
                         NpcExportSceneBuilder.AddSkinnedPart(scene, part, nodeIndicesByBoneName);
@@ -163,14 +192,6 @@ internal static class NpcExportHeadAssembler
                     {
                         NpcExportSceneBuilder.AddExtractedRigidPart(scene, part, part.ShapeWorldTransform,
                             npc.BaseHeadNifPath);
-                    }
-                }
-
-                if (headPreSkinDeltas != null)
-                {
-                    foreach (var part in extracted.MeshParts)
-                    {
-                        FaceGenMeshMorpher.RecalculateNormals(part.Submesh);
                     }
                 }
 
@@ -219,6 +240,25 @@ internal static class NpcExportHeadAssembler
             attachmentBoneTransforms, bonelessAttachmentTransform);
         AddHeadEquipment(scene, npc, meshArchives, textureResolver, egmCache, usedBaseRaceMesh,
             nodeIndicesByBoneName, attachmentBoneTransforms, bonelessAttachmentTransform, !settings.NoEquip);
+    }
+
+    /// <summary>
+    ///     Welds co-located vertex normals on every submesh of a renderable model.
+    ///     Must be called before <see cref="NpcExportSceneBuilder.AddRigidModel" />
+    ///     (and its peers) because those deep-clone the submesh — any normal mutation
+    ///     afterwards never reaches the exported GLB. The weld is hemisphere-split, so
+    ///     opposing seam partners (e.g. mouth interior vs face exterior) don't average
+    ///     to zero. Idempotent: re-welding already-welded vertices is a no-op.
+    /// </summary>
+    private static void WeldSubmeshSeams(NifRenderableModel model)
+    {
+        foreach (var submesh in model.Submeshes)
+        {
+            if (submesh.Normals != null)
+            {
+                FaceGenMeshMorpher.WeldSeamNormals(submesh.Positions, submesh.Normals);
+            }
+        }
     }
 
     private static void AddHair(
@@ -389,6 +429,7 @@ internal static class NpcExportHeadAssembler
                     NpcRenderHelpers.HeadAttachmentRootPolicy.CompensateRotatedRoot);
             }
 
+            WeldSubmeshSeams(partModel);
             NpcExportSceneBuilder.AddRigidModel(scene, facePartPath, partModel);
         }
     }
@@ -453,6 +494,7 @@ internal static class NpcExportHeadAssembler
                 submesh.IsDoubleSided = true;
             }
 
+            WeldSubmeshSeams(partModel);
             NpcExportSceneBuilder.AddRigidModel(scene, headPartPath, partModel);
         }
     }
@@ -525,6 +567,7 @@ internal static class NpcExportHeadAssembler
                 }
             }
 
+            WeldSubmeshSeams(eyeModel);
             NpcExportSceneBuilder.AddRigidModel(scene, eyePath, eyeModel);
         }
     }

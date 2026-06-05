@@ -76,16 +76,17 @@ internal static class NpcGlbTintColorEncoder
             return Vector4.One;
         }
 
-        // Hair / brow / lash / beard NIFs ship with vertex colors that the engine ignores
-        // (BSShaderFlags2 bit 5 cleared = UseVertexColors=false). RGB typically encodes
-        // AO / shadow masks and the alpha channel softens hair-card edges. When the submesh
-        // has an HCLR-derived hair tint AND vertex colors are flagged off, letting either
-        // through here causes raw vertex RGB to double-modulate the tint (lime-green hair on
-        // a blonde NPC) and vertex alpha < cutout-threshold to discard hair-card triangles.
-        // Force fully-opaque white so the tinted texture is the sole source of color and
-        // coverage. When UseVertexColors is set (armor with HCLR-style tint, gloves, etc.),
-        // preserve raw RGBA: those submeshes do use vertex colors as authored.
-        if (HasTintColor(submesh) && !submesh.UseVertexColors)
+        // Mirror the rasterizer's rule (NifScanlineRasterizer.cs:307-331): when a submesh
+        // carries a tint colour, the tinted texture is the sole colour source and vertex
+        // colours are ignored — engine shader paths bound to tint-receiving geometry
+        // (NPC hair / brow / lash, skin / armour HCLR overrides) substitute tint × texture
+        // for vertex-colour modulation. Without this we'd multiply the auburn baked
+        // diffuse (R≈0.18, G≈0.09, B≈0.02) by hair-card AO masks (R≈0.08, G/B=1.0),
+        // killing the red channel and rendering hair green. The previous extra
+        // `!submesh.UseVertexColors` guard was a misread: BSShaderFlags2 bit 5 is forced
+        // to true upstream (NifExportExtractor.cs:353) because it's unreliable as a
+        // gating signal on shipped meshes, so reading the flag here told us nothing.
+        if (HasTintColor(submesh))
         {
             return Vector4.One;
         }

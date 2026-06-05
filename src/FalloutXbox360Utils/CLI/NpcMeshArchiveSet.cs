@@ -9,17 +9,24 @@ namespace FalloutXbox360Utils.CLI;
 internal sealed class NpcMeshArchiveSet : IDisposable
 {
     private readonly Dictionary<string, MeshArchiveHit?> _hitCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _hitCacheLock = new();
     private readonly List<MeshArchiveSource> _sources;
 
     private NpcMeshArchiveSet(List<MeshArchiveSource> sources)
     {
         _sources = sources;
         ArchivePaths = sources.Select(source => source.ArchivePath).ToArray();
+        ArchiveSetIdentity = string.Join(
+            "|",
+            sources.Select(static source =>
+                $"{source.ArchivePath}:{source.ArchiveLength}:{source.ArchiveLastWriteUtcTicks}"));
     }
 
     public string PrimaryPath => _sources[0].ArchivePath;
 
     public IReadOnlyList<string> ArchivePaths { get; }
+
+    internal string ArchiveSetIdentity { get; }
 
     public void Dispose()
     {
@@ -47,10 +54,15 @@ internal sealed class NpcMeshArchiveSet : IDisposable
         var sources = new List<MeshArchiveSource>(paths.Count);
         foreach (var path in paths)
         {
+            var fileInfo = new FileInfo(path);
+            var archive = BsaParser.Parse(path);
             sources.Add(new MeshArchiveSource(
                 path,
-                BsaParser.Parse(path),
-                new BsaExtractor(path)));
+                archive,
+                new BsaExtractor(path),
+                BuildFileIndex(archive),
+                fileInfo.Length,
+                fileInfo.LastWriteTimeUtc.Ticks));
         }
 
         return new NpcMeshArchiveSet(sources);
@@ -71,35 +83,104 @@ internal sealed class NpcMeshArchiveSet : IDisposable
         return true;
     }
 
+    internal NpcMeshArchiveLookupMetadata GetLookupMetadata(string virtualPath)
+    {
+        var normalized = virtualPath.Replace('/', '\\');
+        var hit = ResolveHit(normalized);
+        if (hit is null)
+        {
+            return new NpcMeshArchiveLookupMetadata(
+                normalized,
+                Found: false,
+                ArchiveSetIdentity,
+                ArchivePath: null,
+                ArchiveLength: null,
+                ArchiveLastWriteUtcTicks: null,
+                FileNameHash: null,
+                FileRawSize: null,
+                FileSize: null,
+                FileOffset: null);
+        }
+
+        return new NpcMeshArchiveLookupMetadata(
+            normalized,
+            Found: true,
+            ArchiveSetIdentity,
+            hit.Source.ArchivePath,
+            hit.Source.ArchiveLength,
+            hit.Source.ArchiveLastWriteUtcTicks,
+            hit.FileRecord.NameHash,
+            hit.FileRecord.RawSize,
+            hit.FileRecord.Size,
+            hit.FileRecord.Offset);
+    }
+
     private MeshArchiveHit? ResolveHit(string virtualPath)
     {
         var normalized = virtualPath.Replace('/', '\\');
-        if (_hitCache.TryGetValue(normalized, out var cached))
+        // Thread-safe: BsaExtractor.ExtractFile is already lock-free (memory-mapped), so the only
+        // shared mutable state across concurrent decode tasks is this resolution cache. Guarding it
+        // here lets ReferenceMeshCache12 drop its coarse archive lock and decode meshes in parallel.
+        lock (_hitCacheLock)
         {
-            return cached;
-        }
-
-        foreach (var source in _sources)
-        {
-            var fileRecord = source.Archive.FindFile(normalized);
-            if (fileRecord != null)
+            if (_hitCache.TryGetValue(normalized, out var cached))
             {
-                var hit = new MeshArchiveHit(source, fileRecord);
-                _hitCache[normalized] = hit;
-                return hit;
+                return cached;
             }
+
+            foreach (var source in _sources)
+            {
+                if (source.FileIndex.TryGetValue(normalized, out var fileRecord))
+                {
+                    var hit = new MeshArchiveHit(source, fileRecord);
+                    _hitCache[normalized] = hit;
+                    return hit;
+                }
+            }
+
+            _hitCache[normalized] = null;
+            return null;
+        }
+    }
+
+    internal static Dictionary<string, BsaFileRecord> BuildFileIndex(BsaArchive archive)
+    {
+        var fileIndex = new Dictionary<string, BsaFileRecord>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in archive.AllFiles)
+        {
+            var path = file.FullPath;
+            if (string.IsNullOrEmpty(path))
+            {
+                continue;
+            }
+
+            fileIndex[path.Replace('/', '\\')] = file;
         }
 
-        _hitCache[normalized] = null;
-        return null;
+        return fileIndex;
     }
 
     private sealed record MeshArchiveSource(
         string ArchivePath,
         BsaArchive Archive,
-        BsaExtractor Extractor);
+        BsaExtractor Extractor,
+        Dictionary<string, BsaFileRecord> FileIndex,
+        long ArchiveLength,
+        long ArchiveLastWriteUtcTicks);
 
     private sealed record MeshArchiveHit(
         MeshArchiveSource Source,
         BsaFileRecord FileRecord);
 }
+
+internal sealed record NpcMeshArchiveLookupMetadata(
+    string NormalizedPath,
+    bool Found,
+    string ArchiveSetIdentity,
+    string? ArchivePath,
+    long? ArchiveLength,
+    long? ArchiveLastWriteUtcTicks,
+    ulong? FileNameHash,
+    uint? FileRawSize,
+    uint? FileSize,
+    uint? FileOffset);

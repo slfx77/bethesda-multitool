@@ -369,7 +369,8 @@ internal static class GlbWriter
         // Disable DoubleSided for alpha-blended materials to prevent back faces rendering
         // over front faces in glTF viewers that don't do per-primitive depth sorting.
         material.WithDoubleSide(submesh.IsDoubleSided &&
-                                preparedAlpha.RenderMode != NifAlphaRenderMode.Blend);
+                                preparedAlpha.RenderMode != NifAlphaRenderMode.Blend &&
+                                preparedAlpha.RenderMode != NifAlphaRenderMode.AlphaToCoverage);
         if (preparedAlpha.Texture != null)
         {
             var image = ImageBuilder.From(
@@ -479,6 +480,18 @@ internal static class GlbWriter
                 break;
             case NifAlphaRenderMode.Cutout:
                 material.WithAlpha(AlphaMode.MASK, preparedAlpha.AlphaThreshold / 255f);
+                break;
+            case NifAlphaRenderMode.AlphaToCoverage:
+                // glTF has no native A2C; map to pure BLEND. The earlier two-primitive
+                // MASK depth-prepass + BLEND colour pass approximation gave correct
+                // depth-write occlusion at hair-card intersections but produced a hard
+                // visible boundary between the MASK opaque core and the BLEND soft halo.
+                // Pure BLEND is the cleaner trade-off — soft strand-aligned silhouettes
+                // matching the rasterizer's appearance, at the cost of z-fighting where
+                // hair cards genuinely intersect (accepted per user direction). The
+                // rasterizer's A2C stochastic dither stays in place for the WinUI
+                // viewer; this is the GLB-export branch only.
+                material.WithAlpha(AlphaMode.BLEND);
                 break;
         }
 
