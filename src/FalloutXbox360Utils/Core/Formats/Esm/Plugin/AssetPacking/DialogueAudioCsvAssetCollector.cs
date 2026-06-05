@@ -299,6 +299,27 @@ internal static class DialogueAudioCsvAssetCollector
                 }
             }
 
+            // Master-override case: the CSV's FormID hit our INFO set but we didn't allocate
+            // a new ID for it (it's a master override, FormID preserved). The proto-shape CSV
+            // path (proto voice type + temp-prefixed topic stem) doesn't resolve anywhere —
+            // FNV vanilla ships the canonical engine-shape path under falloutnv.esm. Pull the
+            // binding by (formId, resp) so ExpandDialogueAudioRequests can emit the engine-
+            // shape master-baseline path instead of the proto-shape, eliminating thousands of
+            // "missing" noise entries that never affected runtime (engine falls back to the
+            // master file's voice folder when ours doesn't ship the audio).
+            if (matchedBinding is null && !allocatedFormId.HasValue
+                && bindingsByAllocated is not null
+                && dialogueFormIds.Contains(formId))
+            {
+                var resp = ExtractResponseNumberFromPath(filePath);
+                if (resp.HasValue
+                    && bindingsByAllocated.TryGetValue((formId, resp.Value), out var b))
+                {
+                    matchedBinding = b;
+                    allocatedFormId = formId;
+                }
+            }
+
             var matchedPath = false;
             foreach (var (resolveAs, packAs) in ExpandDialogueAudioRequests(
                          filePath, formId, allocatedFormId, outputEspFileName,
@@ -692,6 +713,12 @@ internal static class DialogueAudioCsvAssetCollector
         }
 
         string packPath;
+        // When set, masterResolvePath is the engine-shape path under falloutnv.esm — the
+        // canonical location vanilla ships master-override voice files. Substituting it as
+        // resolveAs lets the resolver hit baseline (AlreadyInBaseline) and skip packing
+        // entirely; the runtime engine falls back to the master file's voice folder when
+        // our ESP doesn't ship audio, so the line plays normally.
+        string? masterResolvePath = null;
         if (matchedBinding is not null
             && !string.IsNullOrWhiteSpace(outputEspFileName)
             && !string.IsNullOrEmpty(matchedBinding.QuestEditorId)
@@ -713,6 +740,23 @@ internal static class DialogueAudioCsvAssetCollector
                 allocatedFormId.Value,
                 matchedBinding.ResponseNumber,
                 ext0);
+
+            // Master-override INFOs (FormID preserved through conversion) live at the
+            // engine-shape master path in FNV vanilla. Compute that path here so the
+            // caller can request it instead of the proto-shape CSV path — drops the
+            // proto-shape from the missing report without touching runtime behavior.
+            // Only the FNV master is checked; FO3-derived INFOs are out of scope.
+            if (sourceFormId != 0 && sourceFormId == allocatedFormId.Value)
+            {
+                masterResolvePath = EngineVoicePathBuilder.Build(
+                    "falloutnv.esm",
+                    matchedBinding.VoiceTypeEditorId!,
+                    matchedBinding.QuestEditorId!,
+                    matchedBinding.ParentDialEditorId,
+                    allocatedFormId.Value,
+                    matchedBinding.ResponseNumber,
+                    ext0);
+            }
         }
         else if (allocatedFormId.HasValue && !string.IsNullOrWhiteSpace(outputEspFileName))
         {
@@ -723,18 +767,24 @@ internal static class DialogueAudioCsvAssetCollector
             packPath = normalized;
         }
 
+        // For master overrides with a known engine-shape path, emit only the master-baseline
+        // resolveAs — the proto-shape never resolves anywhere and just adds noise to the
+        // missing report. The packAs stays at the engine-shape under our ESP token so that
+        // IF baseline somehow misses (FO3-routed bindings, mis-merged voice types), the
+        // packer still routes bytes to the right runtime location.
+        var resolveBasePath = masterResolvePath ?? normalized;
         var ext = Path.GetExtension(normalized);
         if (ext.Equals(".lip", StringComparison.OrdinalIgnoreCase))
         {
-            yield return (normalized, packPath);
+            yield return (resolveBasePath, packPath);
             yield break;
         }
 
         // PC FNV voice playback expects paired OGG audio and LIP sync assets. April CSV
         // rows usually name Xbox XMA files, so request the runtime OGG path and let
         // resolution extension-swap back to XMA in a secondary 360 source.
-        yield return (Path.ChangeExtension(normalized, ".ogg"), Path.ChangeExtension(packPath, ".ogg"));
-        yield return (Path.ChangeExtension(normalized, ".lip"), Path.ChangeExtension(packPath, ".lip"));
+        yield return (Path.ChangeExtension(resolveBasePath, ".ogg"), Path.ChangeExtension(packPath, ".ogg"));
+        yield return (Path.ChangeExtension(resolveBasePath, ".lip"), Path.ChangeExtension(packPath, ".lip"));
     }
 
     /// <summary>

@@ -28,6 +28,36 @@ public class BinaryUtilsTests
 
     #endregion
 
+    #region IsAllZero Tests
+
+    [Fact]
+    public void IsAllZero_EmptySpan_ReturnsTrue()
+    {
+        Assert.True(BinaryUtils.IsAllZero(ReadOnlySpan<byte>.Empty));
+    }
+
+    [Fact]
+    public void IsAllZero_AllZeroBytes_ReturnsTrue()
+    {
+        Assert.True(BinaryUtils.IsAllZero(new byte[16]));
+    }
+
+    [Fact]
+    public void IsAllZero_LeadingZerosThenNonZero_ReturnsFalse()
+    {
+        byte[] data = [0, 0, 0, 0, 0, 0, 0, 1];
+        Assert.False(BinaryUtils.IsAllZero(data));
+    }
+
+    [Fact]
+    public void IsAllZero_NonZeroFirstByte_ReturnsFalse()
+    {
+        byte[] data = [0x33, 0x58, 0x44, 0x4F]; // "3XDO" — a real DDX magic
+        Assert.False(BinaryUtils.IsAllZero(data));
+    }
+
+    #endregion
+
     #region AlignOffset Tests
 
     [Theory]

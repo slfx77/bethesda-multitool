@@ -165,6 +165,23 @@ internal sealed class DataFolderResolver
             }
         }
 
+        // Final containment pass — same parent directory, one loose stem strictly contains
+        // the other as a substring (both ≥ MinContainmentStem). Catches mid-stem renames
+        // that substring-suffix misses because they're not anchored at either end, e.g.
+        // `enclavehelmet01.nif` ↔ same-folder `helmet.nif`. Gated on uniqueness: when more
+        // than one candidate in the folder qualifies, we'd be guessing — return missing
+        // instead. This keeps the false-positive rate at zero on directories with multiple
+        // similarly-named siblings (e.g. mccarran `_section1..4` ↔ multiple letter-suffixed
+        // candidates).
+        if (best is null)
+        {
+            var containmentHit = FindDirectoryContainmentMatch(normalizedPath, requestedTokens);
+            if (containmentHit is not null)
+            {
+                return containmentHit;
+            }
+        }
+
         if (best is null)
         {
             return Miss(normalizedPath);
@@ -178,6 +195,19 @@ internal sealed class DataFolderResolver
             SourceFolderIndex = best.FolderIndex,
             FuzzySuffixTokens = best.SuffixScore
         };
+    }
+
+    /// <summary>
+    ///     Resolve a path using only the exact + extension-swap strategies — no fuzzy
+    ///     fallback. Used for specular-companion (<c>_s</c>) lookups, where a fuzzy match to a
+    ///     different sibling (e.g. the diffuse or normal map) is never correct: it yields a
+    ///     wrong-resolution specular that can't be merged into the normal map's alpha. When no
+    ///     exact <c>_s</c> exists, returns <see cref="AssetResolutionKind.Missing" /> so the
+    ///     caller falls back to a neutral specular instead of an unrelated texture.
+    /// </summary>
+    public DataFolderResolution ResolveExactOnly(string normalizedPath)
+    {
+        return TryResolveOrderedExactStrategies(normalizedPath) ?? Miss(normalizedPath);
     }
 
     private DataFolderResolution? TryResolveOrderedExactStrategies(string normalizedPath)
@@ -321,7 +351,7 @@ internal sealed class DataFolderResolver
     private DataFolderResolution? FindSubstringSuffixMatch(string normalizedPath, string[] requestedTokens)
     {
         const int MinStemLength = 6;
-        const int MaxLengthDelta = 4;
+        const int MaxLengthDelta = 6;
 
         var basename = Path.GetFileName(normalizedPath);
         var requestedStem = AssetPathRules.ComputeLooseBasename(basename);
@@ -416,6 +446,108 @@ internal sealed class DataFolderResolver
             ResolvedPath = bestSource.NormalizedPath,
             SourceFolderIndex = bestFolderIndex == int.MaxValue ? -1 : bestFolderIndex,
             FuzzySuffixTokens = TokenizePath(bestSource.NormalizedPath).Length
+        };
+    }
+
+    /// <summary>
+    ///     Directory-anchored containment match: when both the request and a candidate
+    ///     share the immediate parent directory, and one loose stem strictly contains
+    ///     the other as a substring, return the candidate. Only fires when exactly ONE
+    ///     candidate in the directory qualifies, across all baseline + secondary folders —
+    ///     ambiguity returns missing.
+    ///     <para>
+    ///         The substring-suffix pass only catches starts-with / ends-with anchored
+    ///         renames within a tight length delta. This pass relaxes the anchoring (allows
+    ///         mid-stem matches) but tightens the safety with strict uniqueness, so it
+    ///         catches cases like <c>enclavehelmet01.nif</c> ↔ <c>helmet.nif</c> in the same
+    ///         <c>enclavepowerarmor</c> folder, while declining to guess when a directory
+    ///         carries many similar siblings.
+    ///     </para>
+    /// </summary>
+    private DataFolderResolution? FindDirectoryContainmentMatch(string normalizedPath, string[] requestedTokens)
+    {
+        const int MinContainmentStem = 6;
+
+        var basename = Path.GetFileName(normalizedPath);
+        var requestedStem = AssetPathRules.ComputeLooseBasename(basename);
+        if (requestedStem.Length < MinContainmentStem)
+        {
+            return null;
+        }
+
+        var requestedExt = Path.GetExtension(basename);
+
+        var lastDir = requestedTokens.Length >= 2 ? requestedTokens[^2] : null;
+        if (string.IsNullOrEmpty(lastDir))
+        {
+            return null;
+        }
+
+        var folders = new List<(DataFolderIndex Index, int FolderIndex)>(_secondaries.Count + 1);
+        folders.Add((_baseline, -1));
+        for (var i = 0; i < _secondaries.Count; i++)
+        {
+            folders.Add((_secondaries[i], i));
+        }
+
+        AssetSource? uniqueSource = null;
+        var uniqueFolderIndex = int.MaxValue;
+        var matchCount = 0;
+
+        foreach (var (index, folderIndex) in folders)
+        {
+            foreach (var candidate in index.EnumerateByLastDirectory(lastDir))
+            {
+                if (!AssetPathRules.ExtensionsAreCompatible(requestedExt, candidate.NormalizedPath))
+                {
+                    continue;
+                }
+
+                var candidateStem = AssetPathRules.ComputeLooseBasename(
+                    Path.GetFileName(candidate.NormalizedPath));
+                if (candidateStem.Length < MinContainmentStem)
+                {
+                    continue;
+                }
+
+                // Skip stems we've already covered via the prior passes — pure equality
+                // would have been caught by the loose-basename match, and the
+                // starts-with/ends-with shapes are already in FindSubstringSuffixMatch.
+                if (string.Equals(candidateStem, requestedStem, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var isContained = requestedStem.Contains(candidateStem, StringComparison.Ordinal)
+                                  || candidateStem.Contains(requestedStem, StringComparison.Ordinal);
+                if (!isContained)
+                {
+                    continue;
+                }
+
+                matchCount++;
+                if (matchCount > 1)
+                {
+                    return null; // ambiguous — bail rather than guess
+                }
+
+                uniqueSource = candidate;
+                uniqueFolderIndex = folderIndex;
+            }
+        }
+
+        if (uniqueSource is null)
+        {
+            return null;
+        }
+
+        return new DataFolderResolution
+        {
+            Kind = AssetResolutionKind.ResolvedFuzzy,
+            Source = uniqueSource,
+            ResolvedPath = uniqueSource.NormalizedPath,
+            SourceFolderIndex = uniqueFolderIndex == int.MaxValue ? -1 : uniqueFolderIndex,
+            FuzzySuffixTokens = TokenizePath(uniqueSource.NormalizedPath).Length
         };
     }
 

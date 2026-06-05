@@ -255,6 +255,126 @@ public class DataFolderResolverTests : IDisposable
     }
 
     [Fact]
+    public void Resolve_SubstringSuffix_DeltaSixCharsCatchesSpaceSuffixRename()
+    {
+        // Proto request "dinotoy static.nif" (loose stem `dinotoystatic`, length 13) vs
+        // FNV-final candidate "dinotoy.nif" (loose stem `dinotoy`, length 7) — same folder,
+        // starts-with the candidate stem, delta = 6. Previously rejected at the 4-char
+        // budget; the bump to 6 brings this clean rename into the substring-suffix pass.
+        var baselineDir = MakeDataFolder("baseline");
+        WriteLooseFile(baselineDir, "meshes\\clutter\\dinotoy.nif", [0xAA]);
+
+        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        baseline.Build();
+
+        var resolver = new DataFolderResolver(baseline, []);
+        var result = resolver.Resolve("meshes\\clutter\\dinotoy static.nif");
+
+        Assert.Equal(AssetResolutionKind.ResolvedFuzzy, result.Kind);
+        Assert.NotNull(result.Source);
+        Assert.Equal("meshes\\clutter\\dinotoy.nif", result.ResolvedPath);
+    }
+
+    [Fact]
+    public void Resolve_ContainmentPass_SameFolderMidStemRename_UniqueCandidate()
+    {
+        // Proto request "enclavehelmet01.nif" (loose stem `enclavehelmet01`, length 15)
+        // vs FNV-final "helmet.nif" (loose stem `helmet`, length 6) — same folder, the
+        // candidate stem is contained as a substring inside the request stem (not anchored
+        // at either end → substring-suffix would miss it). Other files in the folder
+        // (backpack, glovel, glover, go, enclavearmor) don't satisfy the containment
+        // predicate, so the unique-candidate gate fires and we pack `helmet.nif`.
+        var baselineDir = MakeDataFolder("baseline");
+        Directory.CreateDirectory(baselineDir);
+        var secondaryDir = MakeDataFolder("fo3");
+        WriteLooseFile(secondaryDir, "meshes\\armor\\enclavepowerarmor\\helmet.nif", [0x01]);
+        WriteLooseFile(secondaryDir, "meshes\\armor\\enclavepowerarmor\\backpack.nif", [0x02]);
+        WriteLooseFile(secondaryDir, "meshes\\armor\\enclavepowerarmor\\glovel.nif", [0x03]);
+        WriteLooseFile(secondaryDir, "meshes\\armor\\enclavepowerarmor\\glover.nif", [0x04]);
+        WriteLooseFile(secondaryDir, "meshes\\armor\\enclavepowerarmor\\enclavearmor.nif", [0x05]);
+
+        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        baseline.Build();
+        using var secondary = new DataFolderIndex(secondaryDir, xbox360FormatHint: false);
+        secondary.Build();
+
+        var resolver = new DataFolderResolver(baseline, [secondary]);
+        var result = resolver.Resolve("meshes\\armor\\enclavepowerarmor\\enclavehelmet01.nif");
+
+        Assert.Equal(AssetResolutionKind.ResolvedFuzzy, result.Kind);
+        Assert.NotNull(result.Source);
+        Assert.Equal("meshes\\armor\\enclavepowerarmor\\helmet.nif", result.ResolvedPath);
+        Assert.Equal(0, result.SourceFolderIndex);
+    }
+
+    [Fact]
+    public void Resolve_ContainmentPass_AmbiguousFolder_ReturnsMissing()
+    {
+        // Two candidates in the same folder both contained-by-substring in the request
+        // (`helmet` ⊂ `enclavehelmet01`, `helmetgo` ⊂ `enclavehelmetgo01`). The uniqueness
+        // gate must bail rather than guess which one the proto meant.
+        var baselineDir = MakeDataFolder("baseline");
+        Directory.CreateDirectory(baselineDir);
+        var secondaryDir = MakeDataFolder("fo3");
+        WriteLooseFile(secondaryDir, "meshes\\armor\\enclavepowerarmor\\helmet.nif", [0x01]);
+        WriteLooseFile(secondaryDir, "meshes\\armor\\enclavepowerarmor\\helmetgo.nif", [0x02]);
+
+        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        baseline.Build();
+        using var secondary = new DataFolderIndex(secondaryDir, xbox360FormatHint: false);
+        secondary.Build();
+
+        var resolver = new DataFolderResolver(baseline, [secondary]);
+        // Constructed so BOTH candidate stems are strictly contained: `helmet` ⊂
+        // `enclavehelmetgo01`, AND `helmetgo` ⊂ `enclavehelmetgo01`.
+        var result = resolver.Resolve("meshes\\armor\\enclavepowerarmor\\enclavehelmetgo01.nif");
+
+        Assert.Equal(AssetResolutionKind.Missing, result.Kind);
+    }
+
+    [Fact]
+    public void Resolve_ContainmentPass_DifferentFolder_StaysMissing()
+    {
+        // Same containment shape, but the candidate is in a sibling folder. Containment
+        // is directory-anchored — refuse to cross folders.
+        var baselineDir = MakeDataFolder("baseline");
+        Directory.CreateDirectory(baselineDir);
+        var secondaryDir = MakeDataFolder("fo3");
+        WriteLooseFile(secondaryDir, "meshes\\armor\\someotherfolder\\helmet.nif", [0x01]);
+
+        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        baseline.Build();
+        using var secondary = new DataFolderIndex(secondaryDir, xbox360FormatHint: false);
+        secondary.Build();
+
+        var resolver = new DataFolderResolver(baseline, [secondary]);
+        var result = resolver.Resolve("meshes\\armor\\enclavepowerarmor\\enclavehelmet01.nif");
+
+        Assert.Equal(AssetResolutionKind.Missing, result.Kind);
+    }
+
+    [Fact]
+    public void Resolve_ContainmentPass_ExtensionMismatch_StaysMissing()
+    {
+        // `helmet.dds` is contained by `enclavehelmet01.nif` by loose-stem alone, but the
+        // extensions aren't in the same swap class — refuse to cross asset families.
+        var baselineDir = MakeDataFolder("baseline");
+        Directory.CreateDirectory(baselineDir);
+        var secondaryDir = MakeDataFolder("fo3");
+        WriteLooseFile(secondaryDir, "meshes\\armor\\enclavepowerarmor\\helmet.dds", [0x01]);
+
+        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        baseline.Build();
+        using var secondary = new DataFolderIndex(secondaryDir, xbox360FormatHint: false);
+        secondary.Build();
+
+        var resolver = new DataFolderResolver(baseline, [secondary]);
+        var result = resolver.Resolve("meshes\\armor\\enclavepowerarmor\\enclavehelmet01.nif");
+
+        Assert.Equal(AssetResolutionKind.Missing, result.Kind);
+    }
+
+    [Fact]
     public void Resolve_OverrideVanilla_ReturnsMissingWhenNeitherHas()
     {
         var baselineDir = MakeDataFolder("baseline");
@@ -271,5 +391,57 @@ public class DataFolderResolverTests : IDisposable
         var result = resolver.Resolve("meshes\\nowhere.nif");
 
         Assert.Equal(AssetResolutionKind.Missing, result.Kind);
+    }
+
+    [Fact]
+    public void ResolveExactOnly_NoExactMatch_DoesNotFuzzyMatchSibling()
+    {
+        // A specular-companion lookup for `barrierbulletholes_s.ddx` when only the diffuse
+        // (`barrierbulletholes`) and normal (`_n`) siblings exist. The full fuzzy resolver
+        // would match the diffuse via the substring-suffix pass (wrong-resolution spec);
+        // ResolveExactOnly must refuse and return Missing so the caller uses neutral gray.
+        var baselineDir = MakeDataFolder("baseline");
+        Directory.CreateDirectory(baselineDir);
+        var secondaryDir = MakeDataFolder("proto");
+        WriteLooseFile(secondaryDir, "textures\\architecture\\barrier\\barrierbulletholes.ddx", [0x01]);
+        WriteLooseFile(secondaryDir, "textures\\architecture\\barrier\\barrierbulletholes_n.ddx", [0x02]);
+
+        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        baseline.Build();
+        using var secondary = new DataFolderIndex(secondaryDir, xbox360FormatHint: true);
+        secondary.Build();
+
+        var resolver = new DataFolderResolver(baseline, [secondary]);
+        const string companion = "textures\\architecture\\barrier\\barrierbulletholes_s.ddx";
+
+        // Sanity: the fuzzy resolver DOES (wrongly) match a sibling here.
+        Assert.NotEqual(AssetResolutionKind.Missing, resolver.Resolve(companion).Kind);
+
+        // Exact-only must not.
+        var exact = resolver.ResolveExactOnly(companion);
+        Assert.Equal(AssetResolutionKind.Missing, exact.Kind);
+        Assert.Null(exact.Source);
+    }
+
+    [Fact]
+    public void ResolveExactOnly_ExactSiblingPresent_ResolvesIt()
+    {
+        // When the real `_s` companion exists at the exact sibling path, exact-only resolves
+        // it (here via the .ddx↔.dds extension swap), so a genuine specular is still used.
+        var baselineDir = MakeDataFolder("baseline");
+        Directory.CreateDirectory(baselineDir);
+        var secondaryDir = MakeDataFolder("proto");
+        WriteLooseFile(secondaryDir, "textures\\weapons\\gun_s.ddx", [0x42]);
+
+        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        baseline.Build();
+        using var secondary = new DataFolderIndex(secondaryDir, xbox360FormatHint: true);
+        secondary.Build();
+
+        var resolver = new DataFolderResolver(baseline, [secondary]);
+        var result = resolver.ResolveExactOnly("textures\\weapons\\gun_s.dds");
+
+        Assert.NotNull(result.Source);
+        Assert.Equal("textures\\weapons\\gun_s.ddx", result.ResolvedPath);
     }
 }

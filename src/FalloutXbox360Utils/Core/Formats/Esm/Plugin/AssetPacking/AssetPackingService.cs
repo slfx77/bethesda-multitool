@@ -3,6 +3,7 @@ using System.Diagnostics;
 using FalloutXbox360Utils.Core.Formats.Bsa;
 using FalloutXbox360Utils.Core.Formats.Esm.Reporting;
 using FalloutXbox360Utils.Core.Semantic;
+using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
 
@@ -96,6 +97,7 @@ public sealed class AssetPackingService
             using var baseline = new DataFolderIndex(options.BaselineDataFolder, false);
             baseline.Build();
             sink.Info("AssetPacking", $"Baseline indexed {baseline.EntryCount} entries");
+            WarnIfTruncated(sink, baseline, "Baseline");
 
             var secondaryDisposables = new List<DataFolderIndex>();
             try
@@ -109,6 +111,7 @@ public sealed class AssetPackingService
                     idx.Build();
                     sink.Info("AssetPacking",
                         $"  → {idx.EntryCount} entries");
+                    WarnIfTruncated(sink, idx, Path.GetFileName(secondary.Path.TrimEnd('\\', '/')));
                     secondaryDisposables.Add(idx);
                 }
 
@@ -126,7 +129,10 @@ public sealed class AssetPackingService
                         return null;
                     }
 
-                    var companionResolution = resolver.Resolve(normalized);
+                    // Exact-only: a specular companion must be the literal `_s` sibling.
+                    // The full fuzzy resolver would otherwise match an unrelated sibling
+                    // (the diffuse / normal) at a different resolution, breaking the merge.
+                    var companionResolution = resolver.ResolveExactOnly(normalized);
                     if (companionResolution.Source is null)
                     {
                         return null;
@@ -464,6 +470,28 @@ public sealed class AssetPackingService
                 RequestedPath = requestedPath,
                 Kind = AssetResolutionKind.Missing
             });
+            return;
+        }
+
+        // Defense in depth: a zero-filled payload (e.g. a record in a partial-recovery
+        // BSA's zero tail that slipped past index-time truncation detection, or a mid-file
+        // zero hole) must never be packed — it would ship garbage the runtime can't load.
+        // Report it as Missing so the audit surfaces it honestly. Cheap: the bytes are
+        // already in memory and the check short-circuits on the first non-zero byte.
+        if (rawBytes.Length == 0 || BinaryUtils.IsAllZero(rawBytes))
+        {
+            Interlocked.Increment(ref stats.Missing);
+            resolutions.Add(new AssetResolution
+            {
+                RequestedPath = requestedPath,
+                Kind = AssetResolutionKind.Missing
+            });
+            if (options.VerbosePerAsset)
+            {
+                sink.Warn("AssetPacking",
+                    $"Zero-filled source skipped: {resolution.ResolvedPath} (requested {requestedPath})");
+            }
+
             return;
         }
 
@@ -986,6 +1014,16 @@ public sealed class AssetPackingService
     private static AssetPackingStats EmptyStats(TimeSpan elapsed)
     {
         return new AssetPackingStats { Elapsed = elapsed };
+    }
+
+    private static void WarnIfTruncated(IConversionProgressSink sink, DataFolderIndex index, string label)
+    {
+        if (index.TruncatedEntrySkipCount > 0)
+        {
+            sink.Warn("AssetPacking",
+                $"  → {label}: skipped {index.TruncatedEntrySkipCount:N0} zero-filled entries " +
+                "(truncated / partial-recovery BSA); resolution will fall through to other sources");
+        }
     }
 
     /// <summary>

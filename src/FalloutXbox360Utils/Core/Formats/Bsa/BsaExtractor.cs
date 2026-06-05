@@ -5,6 +5,7 @@ using System.Buffers;
 using System.IO.Compression;
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Formats.Xma;
+using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Bsa;
 
@@ -22,6 +23,7 @@ public sealed class BsaExtractor : IDisposable
     private readonly bool _embedFileNames;
     private readonly HashSet<string> _enabledExtensions = new(StringComparer.OrdinalIgnoreCase);
     private readonly MemoryMappedFile _mappedFile;
+    private readonly long _archiveFileLength;
     private bool _disposed;
     private bool _verbose;
 
@@ -34,6 +36,7 @@ public sealed class BsaExtractor : IDisposable
     public BsaExtractor(string filePath)
     {
         Archive = BsaParser.Parse(filePath);
+        _archiveFileLength = new FileInfo(filePath).Length;
         _mappedFile = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
         _defaultCompressed = Archive.Header.DefaultCompressed;
         _embedFileNames = Archive.Header.EmbedFileNames;
@@ -50,6 +53,7 @@ public sealed class BsaExtractor : IDisposable
             throw new ArgumentException("Stream must be a FileStream for memory-mapped access", nameof(stream));
         }
 
+        _archiveFileLength = fs.Length;
         _mappedFile =
             MemoryMappedFile.CreateFromFile(fs, null, 0, MemoryMappedFileAccess.Read, HandleInheritability.None, false);
         _defaultCompressed = Archive.Header.DefaultCompressed;
@@ -247,6 +251,112 @@ public sealed class BsaExtractor : IDisposable
 
         _converterCache[extension] = converter;
         return converter;
+    }
+
+    /// <summary>
+    ///     Find the offset just past the last non-zero byte in the underlying archive file.
+    ///     Returns the archive length when the file is fully intact.
+    ///     <para>
+    ///         Partially-recovered ("partial data") BSAs keep an intact header + file table
+    ///         but have a zero-filled payload tail: the file is allocated to its full size,
+    ///         yet only the leading region was actually written. Any file record whose data
+    ///         offset is at or beyond this boundary extracts to all zeros. Callers use the
+    ///         boundary to drop those ghost entries so resolution can fall through to a
+    ///         complete source instead of silently packing zeros.
+    ///     </para>
+    ///     <para>
+    ///         Detection is a binary search for the last non-zero byte over 4 KB chunks
+    ///         (~log2(size) reads), so it costs only a handful of reads even on multi-GB
+    ///         archives. It assumes the dead region is a contiguous tail — the observed
+    ///         failure mode for truncated recoveries; mid-file holes are not detected here.
+    ///     </para>
+    /// </summary>
+    public long FindDataTruncationBoundary()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        const int ChunkSize = 4096;
+        var fileLength = _archiveFileLength;
+        if (fileLength <= 0)
+        {
+            return fileLength;
+        }
+
+        // If the final chunk holds any data, the file isn't tail-truncated — common case.
+        var lastChunkStart = Math.Max(0, fileLength - ChunkSize);
+        if (!IsRegionZero(lastChunkStart, (int)(fileLength - lastChunkStart)))
+        {
+            return fileLength;
+        }
+
+        // Binary search the last chunk that contains a non-zero byte. lo = highest chunk
+        // start known to contain data (none yet); hi = lowest chunk start known to be zero.
+        long lo = 0;
+        var hi = lastChunkStart;
+        long lastDataChunkStart = -1;
+        while (lo <= hi)
+        {
+            var midChunk = lo + (hi - lo) / 2 / ChunkSize * ChunkSize;
+            var len = (int)Math.Min(ChunkSize, fileLength - midChunk);
+            if (IsRegionZero(midChunk, len))
+            {
+                hi = midChunk - ChunkSize;
+            }
+            else
+            {
+                lastDataChunkStart = midChunk;
+                lo = midChunk + ChunkSize;
+            }
+        }
+
+        if (lastDataChunkStart < 0)
+        {
+            // Whole file is zero (header/table would have failed to parse, but be safe).
+            return 0;
+        }
+
+        // Find the exact last non-zero byte within the last data-bearing chunk.
+        var chunkLen = (int)Math.Min(ChunkSize, fileLength - lastDataChunkStart);
+        var buffer = ArrayPool<byte>.Shared.Rent(chunkLen);
+        try
+        {
+            using var accessor =
+                _mappedFile.CreateViewAccessor(lastDataChunkStart, chunkLen, MemoryMappedFileAccess.Read);
+            accessor.ReadArray(0, buffer, 0, chunkLen);
+            for (var i = chunkLen - 1; i >= 0; i--)
+            {
+                if (buffer[i] != 0)
+                {
+                    return lastDataChunkStart + i + 1;
+                }
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        return lastDataChunkStart;
+    }
+
+    private bool IsRegionZero(long offset, int length)
+    {
+        if (length <= 0)
+        {
+            return true;
+        }
+
+        var buffer = ArrayPool<byte>.Shared.Rent(length);
+        try
+        {
+            using var accessor = _mappedFile.CreateViewAccessor(offset, length, MemoryMappedFileAccess.Read);
+            accessor.ReadArray(0, buffer, 0, length);
+            return BinaryUtils.IsAllZero(buffer.AsSpan(0, length));
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
 
     /// <summary>

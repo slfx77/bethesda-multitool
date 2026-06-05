@@ -399,6 +399,17 @@ public static class BinaryUtils
     }
 
     /// <summary>
+    ///     Return true when every byte in the span is zero (or the span is empty).
+    ///     Short-circuits on the first non-zero byte, so it is effectively O(1) for real
+    ///     data that starts with a magic/header. Used to detect zero-filled payloads from
+    ///     partially-recovered archives.
+    /// </summary>
+    public static bool IsAllZero(ReadOnlySpan<byte> data)
+    {
+        return !data.ContainsAnyExcept((byte)0);
+    }
+
+    /// <summary>
     ///     Sanitize filename by removing/replacing invalid characters.
     /// </summary>
     public static string SanitizeFilename(string filename)

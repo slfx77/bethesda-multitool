@@ -77,6 +77,16 @@ internal sealed class DataFolderIndex : IDisposable
 
     private readonly List<BsaExtractor> _ownedExtractors = [];
 
+    /// <summary>
+    ///     The path actually used for indexing — equal to <see cref="DataFolderPath" /> when
+    ///     that already points at a Data folder, or an auto-detected child Data folder when
+    ///     the user supplied an install root (e.g. <c>Fallout 3 goty</c> →
+    ///     <c>Fallout 3 goty\Data</c>) or an Xbox 360 disc layout (e.g.
+    ///     <c>Fallout New Vegas (July 21, 2010)</c> →
+    ///     <c>Fallout New Vegas (July 21, 2010)\FalloutNV\Data</c>).
+    /// </summary>
+    private string _effectiveDataFolderPath = string.Empty;
+
     private bool _disposed;
 
     public DataFolderIndex(string dataFolderPath, bool xbox360FormatHint)
@@ -97,6 +107,14 @@ internal sealed class DataFolderIndex : IDisposable
 
     /// <summary>How many entries were indexed across loose files + all BSAs.</summary>
     public int EntryCount => _byPath.Count;
+
+    /// <summary>
+    ///     How many BSA file records were skipped during indexing because their payload
+    ///     lies in a zero-filled tail of a partially-recovered ("partial data") archive.
+    ///     Those entries would extract to all zeros, so they're dropped to let resolution
+    ///     fall through to a complete source instead of packing garbage.
+    /// </summary>
+    public int TruncatedEntrySkipCount { get; private set; }
 
     public void Dispose()
     {
@@ -138,11 +156,75 @@ internal sealed class DataFolderIndex : IDisposable
 
         Clear();
 
+        // Auto-detect the actual Data folder when the user passes a parent. The PC install
+        // layout puts BSAs under <root>\Data\ (FO3 GotY, FNV Steam) and the Xbox 360 disc
+        // layout puts them under <root>\<GameName>\Data\ (e.g. proto FalloutNV\Data). Without
+        // this descent, IndexLooseFiles registers paths as "Data\meshes\..." (which won't
+        // match runtime requests for "meshes\...") and IndexBsas misses every BSA entirely
+        // because Directory.GetFiles top-only doesn't recurse.
+        _effectiveDataFolderPath = ResolveDataPathOrSelf(DataFolderPath);
+
         // 1) Loose files (highest priority within this folder)
         IndexLooseFiles();
 
         // 2) BSAs in alphabetical order (mirrors FNV's SArchiveList convention)
         IndexBsas();
+    }
+
+    private static string ResolveDataPathOrSelf(string rootPath)
+    {
+        // If the user already pointed at a Data folder (BSAs at top level, or a Data\ child
+        // that itself contains BSAs we'd shadow), keep it.
+        if (DirectoryHasAnyBsa(rootPath))
+        {
+            return rootPath;
+        }
+
+        // PC install layout: <root>\Data
+        var directChild = Path.Combine(rootPath, "Data");
+        if (DirectoryHasAnyBsa(directChild))
+        {
+            return directChild;
+        }
+
+        // Xbox 360 disc layout: <root>\<GameName>\Data (e.g. FalloutNV\Data on proto discs).
+        IEnumerable<string> immediateSubdirs;
+        try
+        {
+            immediateSubdirs = Directory.EnumerateDirectories(rootPath);
+        }
+        catch
+        {
+            return rootPath;
+        }
+
+        foreach (var subdir in immediateSubdirs)
+        {
+            var nested = Path.Combine(subdir, "Data");
+            if (DirectoryHasAnyBsa(nested))
+            {
+                return nested;
+            }
+        }
+
+        return rootPath;
+    }
+
+    private static bool DirectoryHasAnyBsa(string path)
+    {
+        if (!Directory.Exists(path))
+        {
+            return false;
+        }
+
+        try
+        {
+            return Directory.EnumerateFiles(path, "*.bsa", SearchOption.TopDirectoryOnly).Any();
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     /// <summary>
@@ -219,9 +301,10 @@ internal sealed class DataFolderIndex : IDisposable
     {
         // Walk the entire Data folder tree once. Capture only files whose extension
         // looks like an asset; everything else is irrelevant to the packer.
-        var rootLen = DataFolderPath.Length;
-        if (DataFolderPath.EndsWith(Path.DirectorySeparatorChar) ||
-            DataFolderPath.EndsWith(Path.AltDirectorySeparatorChar))
+        var dataRoot = _effectiveDataFolderPath;
+        var rootLen = dataRoot.Length;
+        if (dataRoot.EndsWith(Path.DirectorySeparatorChar) ||
+            dataRoot.EndsWith(Path.AltDirectorySeparatorChar))
         {
             // already trailing separator
         }
@@ -233,7 +316,7 @@ internal sealed class DataFolderIndex : IDisposable
         IEnumerable<string> looseFiles;
         try
         {
-            looseFiles = Directory.EnumerateFiles(DataFolderPath, "*", SearchOption.AllDirectories);
+            looseFiles = Directory.EnumerateFiles(dataRoot, "*", SearchOption.AllDirectories);
         }
         catch
         {
@@ -272,7 +355,7 @@ internal sealed class DataFolderIndex : IDisposable
         string[] bsaPaths;
         try
         {
-            bsaPaths = Directory.GetFiles(DataFolderPath, "*.bsa", SearchOption.TopDirectoryOnly);
+            bsaPaths = Directory.GetFiles(_effectiveDataFolderPath, "*.bsa", SearchOption.TopDirectoryOnly);
         }
         catch
         {
@@ -297,10 +380,21 @@ internal sealed class DataFolderIndex : IDisposable
             var isXbox360 = extractor.Archive.Header.IsXbox360;
             var archiveFileName = Path.GetFileName(bsaPath);
 
+            // Partially-recovered BSAs keep an intact file table but a zero-filled payload
+            // tail. Records pointing past the last real byte extract to all zeros, so skip
+            // them — resolution then falls through to a complete source.
+            var dataBoundary = extractor.FindDataTruncationBoundary();
+
             foreach (var record in extractor.Archive.AllFiles)
             {
                 if (record.Name is null || record.Folder is null)
                 {
+                    continue;
+                }
+
+                if (record.Offset >= dataBoundary)
+                {
+                    TruncatedEntrySkipCount++;
                     continue;
                 }
 
@@ -428,5 +522,6 @@ internal sealed class DataFolderIndex : IDisposable
         _byBasename.Clear();
         _byLooseBasename.Clear();
         _byLastDirectory.Clear();
+        TruncatedEntrySkipCount = 0;
     }
 }

@@ -274,6 +274,131 @@ public class DialogueAudioCsvAssetCollectorTests
             paths);
     }
 
+    [Fact]
+    public void CollectFromCsv_MasterOverride_RewritesResolveAsToBaselineEngineShape()
+    {
+        // CSV row references a master INFO (FormID preserved through conversion, NOT
+        // remapped). The proto-shape path uses the proto-era voice type folder
+        // ("creaturesupermutant") and a "temp" prefix on the topic stem — neither
+        // resolves against vanilla. The binding stores the engine-shape components
+        // (creatureuniquemarcus + vdialoguejacobs), so the collector should swap the
+        // resolveAs onto the master-baseline engine-shape path. The runtime engine
+        // falls back to the master file's voice folder when our ESP doesn't ship audio,
+        // so this is purely a noise-reduction in the missing report.
+        using var csv = new TempFile();
+        File.WriteAllText(csv.Path,
+            """
+            File,FormID,VoiceType,Speaker,Quest,Source,Text
+            sound\voice\falloutnv.esm\creaturesupermutant\tempvdialoguej_vdialoguejacobs_0013de80_1.xma,0013DE80,creaturesupermutant,Marcus,Jacobstown NPC Dialogue,whisper,line.
+            """);
+
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var renames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var dialogueFormIds = new HashSet<uint> { 0x0013DE80u };
+        // No remap: master-override case.
+        var bindings = new List<EmittedDialogueAudioBinding>
+        {
+            new()
+            {
+                AllocatedInfoFormId = 0x0013DE80u,
+                ParentDialEditorId = "vdialoguejacobs",
+                VoiceTypeEditorId = "creatureuniquemarcus",
+                QuestEditorId = "vdialoguej",
+                ResponseNumber = 1
+            }
+        };
+        var allocIndex = DialogueAudioCsvAssetCollector.BuildAudioBindingByAllocatedIndex(bindings);
+
+        var result = DialogueAudioCsvAssetCollector.CollectFromCsv(
+            csv.Path, dialogueFormIds, paths,
+            newRecordSourceToAllocated: null,
+            outputEspFileName: "v58-xex22.esp",
+            packPathRenames: renames,
+            bindingsByAllocated: allocIndex);
+
+        Assert.Equal(1, result.RowsRead);
+        Assert.Equal(1, result.RowsMatched);
+
+        // The proto-shape resolveAs is gone — replaced with the master engine-shape path
+        // that lives in FNV vanilla baseline.
+        Assert.DoesNotContain(
+            "sound\\voice\\falloutnv.esm\\creaturesupermutant\\tempvdialoguej_vdialoguejacobs_0013de80_1.ogg",
+            paths);
+        Assert.DoesNotContain(
+            "sound\\voice\\falloutnv.esm\\creaturesupermutant\\tempvdialoguej_vdialoguejacobs_0013de80_1.lip",
+            paths);
+
+        // Engine-shape master path is requested instead — vanilla's BSA ships it here.
+        Assert.Contains(
+            "sound\\voice\\falloutnv.esm\\creatureuniquemarcus\\vdialoguej_vdialoguejacobs_0013de80_1.ogg",
+            paths);
+        Assert.Contains(
+            "sound\\voice\\falloutnv.esm\\creatureuniquemarcus\\vdialoguej_vdialoguejacobs_0013de80_1.lip",
+            paths);
+
+        // packAs stays at the engine-shape under our ESP token — if baseline somehow
+        // misses (e.g. FO3-routed binding), the packer still routes bytes correctly.
+        Assert.True(renames.TryGetValue(
+            "sound\\voice\\falloutnv.esm\\creatureuniquemarcus\\vdialoguej_vdialoguejacobs_0013de80_1.ogg",
+            out var renamed));
+        Assert.Equal(
+            "sound\\voice\\v58-xex22.esp\\creatureuniquemarcus\\vdialoguej_vdialoguejacobs_0013de80_1.ogg",
+            renamed);
+    }
+
+    [Fact]
+    public void CollectFromCsv_NewInfoRemap_KeepsProtoShapeResolveAs()
+    {
+        // For NEW INFOs (FormID remapped from proto to our allocator's allocated FormID),
+        // vanilla has nothing — the proto data folder is the only source. The proto-shape
+        // resolveAs MUST stay so the data-folder resolver can find the bytes via the
+        // April / July dialogue folder's actual proto-era files. Only the packAs gets
+        // rewritten onto the engine-shape under our ESP token. Verifies the master-shape
+        // rewrite is gated on sourceFormId == allocatedFormId.
+        using var csv = new TempFile();
+        File.WriteAllText(csv.Path,
+            """
+            File,FormID,VoiceType,Speaker,Quest,Source,Text
+            sound\voice\falloutnv.esm\maleadult01default\tempvdialogueulysses_greeting_00133fcd_1.xma,00133FCD,maleadult01default,,,whisper,line.
+            """);
+
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var renames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var dialogueFormIds = new HashSet<uint> { 0x00133FCDu };
+        var remap = new Dictionary<uint, uint> { [0x00133FCDu] = 0x01001234u };
+        var bindings = new List<EmittedDialogueAudioBinding>
+        {
+            new()
+            {
+                AllocatedInfoFormId = 0x01001234u,
+                ParentDialEditorId = "vdialogueulysses_greeting",
+                VoiceTypeEditorId = "maleadult01default",
+                QuestEditorId = "vdialogueulysses",
+                ResponseNumber = 1
+            }
+        };
+        var allocIndex = DialogueAudioCsvAssetCollector.BuildAudioBindingByAllocatedIndex(bindings);
+
+        var result = DialogueAudioCsvAssetCollector.CollectFromCsv(
+            csv.Path, dialogueFormIds, paths,
+            newRecordSourceToAllocated: remap,
+            outputEspFileName: "v58-xex22.esp",
+            packPathRenames: renames,
+            bindingsByAllocated: allocIndex);
+
+        Assert.Equal(1, result.RowsRead);
+        Assert.Equal(1, result.RowsMatched);
+
+        // Proto-shape resolveAs stays for new INFOs — that's where the proto data folder
+        // ships the bytes.
+        Assert.Contains(
+            "sound\\voice\\falloutnv.esm\\maleadult01default\\tempvdialogueulysses_greeting_00133fcd_1.ogg",
+            paths);
+        Assert.DoesNotContain(
+            "sound\\voice\\falloutnv.esm\\maleadult01default\\vdialogueulysses_greeting_00001234_1.ogg",
+            paths);
+    }
+
     private sealed class TempFile : IDisposable
     {
         public string Path { get; } = System.IO.Path.Combine(
