@@ -55,7 +55,7 @@ internal static class WorldMapExporter
         CanvasBitmap? worldHeightmapBitmap,
         int worldHmPixelWidth, int worldHmPixelHeight,
         int worldHmMinX, int worldHmMaxY,
-        IReadOnlyDictionary<(int gx, int gy), CanvasBitmap>? textureCellBitmaps,
+        IReadOnlyDictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap>? textureCellBitmaps,
         List<PlacedReference> filteredMarkers,
         HashSet<PlacedObjectCategory> hiddenCategories,
         Dictionary<MapMarkerType, CanvasBitmap>? markerIconBitmaps,
@@ -90,7 +90,18 @@ internal static class WorldMapExporter
             //    Only one path is active per export.
             if (textureCellBitmaps is not null)
             {
-                foreach (var ((gx, gy), bmp) in textureCellBitmaps)
+                // Same best-available-resolution picker as WorldMapOverviewRenderer.DrawTextureCellBitmaps.
+                // Export caches are typically single-resolution but this keeps the contract consistent.
+                var bestPerCell = new Dictionary<(int gx, int gy), (int ppc, CanvasBitmap bmp)>();
+                foreach (var (key, bmp) in textureCellBitmaps)
+                {
+                    var cellKey = (key.gx, key.gy);
+                    if (!bestPerCell.TryGetValue(cellKey, out var current) || key.pixelsPerCell > current.ppc)
+                    {
+                        bestPerCell[cellKey] = (key.pixelsPerCell, bmp);
+                    }
+                }
+                foreach (var ((gx, gy), (_, bmp)) in bestPerCell)
                 {
                     var originX = gx * CellWorldSize;
                     var originY = -(gy + 1) * CellWorldSize;

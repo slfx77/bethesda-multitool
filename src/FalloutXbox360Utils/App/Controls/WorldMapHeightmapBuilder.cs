@@ -108,27 +108,29 @@ internal static class WorldMapHeightmapBuilder
     ///     keyed by (cellGridX, cellGridY). Returns null when no cells produced any pixels
     ///     (e.g. an unlinked-cells worldspace with no LAND coverage).
     /// </summary>
-    internal static Dictionary<(int gx, int gy), CanvasBitmap>? BuildTerrainTextureCells(
+    internal static Dictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap>? BuildTerrainTextureCells(
         CanvasControl canvas,
         List<CellRecord> activeCells,
         LandscapeTexturePalette palette,
         float? currentDefaultWaterHeight,
         bool showWater,
-        WorldRenderCache? cache = null)
+        WorldRenderCache? cache = null,
+        int pixelsPerCell = WorldMapLayerRenderer.TexturePixelsPerCell)
     {
+        pixelsPerCell = WorldMapLayerRenderer.NormalizeTexturePixelsPerCell(pixelsPerCell);
         var perCell = WorldMapLayerRenderer.RenderTerrainTexturesPerCell(
-            activeCells, palette, currentDefaultWaterHeight, showWater, cache);
+            activeCells, palette, currentDefaultWaterHeight, showWater, cache, pixelsPerCell);
         if (perCell is null) return null;
 
-        var result = new Dictionary<(int gx, int gy), CanvasBitmap>(perCell.Count);
-        foreach (var (key, pixels) in perCell)
+        var result = new Dictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap>(perCell.Count);
+        foreach (var ((gx, gy), pixels) in perCell)
         {
             var bmp = CanvasBitmap.CreateFromBytes(
                 canvas, pixels,
-                WorldMapLayerRenderer.TexturePixelsPerCell,
-                WorldMapLayerRenderer.TexturePixelsPerCell,
+                pixelsPerCell,
+                pixelsPerCell,
                 Windows.Graphics.DirectX.DirectXPixelFormat.R8G8B8A8UIntNormalized);
-            result[key] = bmp;
+            result[(gx, gy, pixelsPerCell)] = bmp;
         }
         return result;
     }

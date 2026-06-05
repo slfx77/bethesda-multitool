@@ -92,7 +92,8 @@ internal static class WorldMapOverlayBuilder
             DanglingRefs = DanglingRefAttributions.LoadDefault(),
             NavMeshesByCell = BuildNavMeshIndex(semantic.NavMeshes),
             LandTexturesByFormId = BuildLandTextureIndex(semantic.LandTextures),
-            TextureSetsByFormId = BuildTextureSetIndex(semantic.TextureSets)
+            TextureSetsByFormId = BuildTextureSetIndex(semantic.TextureSets),
+            WatersByFormId = BuildWaterIndex(semantic.Water)
         };
     }
 
@@ -215,7 +216,8 @@ internal static class WorldMapOverlayBuilder
             DanglingRefs = DanglingRefAttributions.LoadDefault(),
             NavMeshesByCell = BuildNavMeshIndex(suppRecords.NavMeshes),
             LandTexturesByFormId = BuildLandTextureIndex(suppRecords.LandTextures),
-            TextureSetsByFormId = BuildTextureSetIndex(suppRecords.TextureSets)
+            TextureSetsByFormId = BuildTextureSetIndex(suppRecords.TextureSets),
+            WatersByFormId = BuildWaterIndex(suppRecords.Water)
         };
     }
 
@@ -250,6 +252,16 @@ internal static class WorldMapOverlayBuilder
         List<TextureSetRecord> records)
     {
         var dict = new Dictionary<uint, TextureSetRecord>(records.Count);
+        foreach (var r in records)
+        {
+            dict.TryAdd(r.FormId, r);
+        }
+        return dict;
+    }
+
+    private static Dictionary<uint, WaterRecord> BuildWaterIndex(List<WaterRecord> records)
+    {
+        var dict = new Dictionary<uint, WaterRecord>(records.Count);
         foreach (var r in records)
         {
             dict.TryAdd(r.FormId, r);

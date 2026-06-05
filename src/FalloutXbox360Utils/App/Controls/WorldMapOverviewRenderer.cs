@@ -24,6 +24,15 @@ internal static class WorldMapOverviewRenderer
     [ThreadStatic] private static List<PlacedReference>? t_refScratch;
 
     /// <summary>
+    ///     Reusable per-frame dedup dict for <see cref="DrawTextureCellBitmaps" />. Sized to
+    ///     ~256 entries (typical fill viewport) on first frame; subsequent frames clear + refill
+    ///     without allocating. The dict holds <see cref="CanvasBitmap" /> references across
+    ///     frames — fine because both the source dict and this scratch live on the UI thread,
+    ///     so no stale-reference race exists.
+    /// </summary>
+    [ThreadStatic] private static Dictionary<(int gx, int gy), (int ppc, CanvasBitmap bmp)>? t_bestPerCellScratch;
+
+    /// <summary>
     ///     Maximum half-extent in world units for rendering a placed object's bounding box.
     ///     Half a cell (2048) is generous for even the largest buildings; anything beyond
     ///     this is likely corrupted OBND data or extreme scale and would obscure the map.
@@ -40,7 +49,7 @@ internal static class WorldMapOverviewRenderer
         CanvasBitmap? worldHeightmapBitmap,
         int worldHmPixelWidth, int worldHmPixelHeight,
         int worldHmMinX, int worldHmMaxY,
-        IReadOnlyDictionary<(int gx, int gy), CanvasBitmap>? textureCellBitmaps,
+        IReadOnlyDictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap>? textureCellBitmaps,
         float zoom, Vector2 panOffset,
         float canvasWidth, float canvasHeight,
         HashSet<PlacedObjectCategory> hiddenCategories,
@@ -184,19 +193,31 @@ internal static class WorldMapOverviewRenderer
         var gridColor = Color.FromArgb(40, 255, 255, 255);
         var lineWidth = 1f / zoom;
 
-        // Vertical lines
+        // Aggregate all H + V grid lines into a single CanvasGeometry so the Win2D command
+        // list carries one DrawGeometry instead of up to ~800 individual DrawLine calls per
+        // frame. Each line is an open figure on the path. Geometry + path builder are both
+        // IDisposable; `using` is correct.
+        var startWorldY = startCellY * CellWorldSize;
+        var endWorldY = endCellY * CellWorldSize;
+        var startWorldX = startCellX * CellWorldSize;
+        var endWorldX = endCellX * CellWorldSize;
+        using var pathBuilder = new CanvasPathBuilder(ds);
         for (var cx = startCellX; cx <= endCellX; cx++)
         {
             var worldX = cx * CellWorldSize;
-            ds.DrawLine(worldX, startCellY * CellWorldSize, worldX, endCellY * CellWorldSize, gridColor, lineWidth);
+            pathBuilder.BeginFigure(worldX, startWorldY);
+            pathBuilder.AddLine(worldX, endWorldY);
+            pathBuilder.EndFigure(CanvasFigureLoop.Open);
         }
-
-        // Horizontal lines
         for (var cy = startCellY; cy <= endCellY; cy++)
         {
             var worldY = cy * CellWorldSize;
-            ds.DrawLine(startCellX * CellWorldSize, worldY, endCellX * CellWorldSize, worldY, gridColor, lineWidth);
+            pathBuilder.BeginFigure(startWorldX, worldY);
+            pathBuilder.AddLine(endWorldX, worldY);
+            pathBuilder.EndFigure(CanvasFigureLoop.Open);
         }
+        using var gridGeometry = CanvasGeometry.CreatePath(pathBuilder);
+        ds.DrawGeometry(gridGeometry, gridColor, lineWidth);
 
         // Cell coordinate labels at sufficient zoom
         if (zoom > 0.05f)
@@ -641,14 +662,31 @@ internal static class WorldMapOverviewRenderer
 
     /// <summary>
     ///     Composites the per-cell TerrainTextures bitmaps. Each entry is its own
-    ///     <see cref="CanvasBitmap" /> drawn into the cell's world rect. Cell screen-space
-    ///     position matches the heightmap convention (Y inverted from grid space).
+    ///     <see cref="CanvasBitmap" /> drawn into the cell's world rect. With multi-resolution
+    ///     caching (P2) the dict may hold multiple <c>pixelsPerCell</c> entries for the same
+    ///     <c>(gx, gy)</c>; we draw the highest-resolution one available — Win2D handles the
+    ///     downsample, and a higher-res stand-in always reads better than a blurry lower-res
+    ///     fallback. Cesium's "Ancestor Meets SSE" pattern.
     /// </summary>
     private static void DrawTextureCellBitmaps(
         CanvasDrawingSession ds,
-        IReadOnlyDictionary<(int gx, int gy), CanvasBitmap> bitmaps)
+        IReadOnlyDictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap> bitmaps)
     {
-        foreach (var ((gx, gy), bmp) in bitmaps)
+        // Per-frame scan over ≤256 entries (typical fill viewport) to pick best-available per
+        // (gx, gy). Reused thread-local scratch dict avoids a 60-Hz allocation; clear + refill
+        // keeps GC out of the critical path.
+        var bestPerCell = t_bestPerCellScratch ??= new Dictionary<(int gx, int gy), (int ppc, CanvasBitmap bmp)>(256);
+        bestPerCell.Clear();
+        foreach (var (key, bmp) in bitmaps)
+        {
+            var cellKey = (key.gx, key.gy);
+            if (!bestPerCell.TryGetValue(cellKey, out var current) || key.pixelsPerCell > current.ppc)
+            {
+                bestPerCell[cellKey] = (key.pixelsPerCell, bmp);
+            }
+        }
+
+        foreach (var ((gx, gy), (_, bmp)) in bestPerCell)
         {
             var originX = gx * CellWorldSize;
             var originY = -(gy + 1) * CellWorldSize;

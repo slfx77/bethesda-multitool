@@ -1,3 +1,6 @@
+using System.Collections.Concurrent;
+using System.Threading;
+using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures;
@@ -15,20 +18,25 @@ namespace FalloutXbox360Utils;
 internal sealed class LandscapeTexturePalette
 {
     /// <summary>
-    ///     Output tile resolution. 128 gives enough texel headroom that the texture layer's
-    ///     ~33 sample points per cell-axis-per-tile (HmGridSize × TextureLayerScale / 4 tiles
-    ///     per cell) keep most of the tile's detail. Smaller tiles starved the high-res
-    ///     sampler; larger ones quickly burn cache memory across all the LTEXes a worldspace
-    ///     references.
+    ///     Output tile resolution. 128 gives enough texel headroom for the base overview
+    ///     bucket's ~16 samples per cell-axis-per-tile, while the high-res bucket keeps ~66.
+    ///     Smaller tiles starved the sampler; larger ones quickly burn cache memory across
+    ///     all the LTEXes a worldspace references.
     /// </summary>
     private const int TileSize = 128;
 
     private const int TileBytes = TileSize * TileSize * 4;
 
-    /// <summary>FNV landscape textures default to ~4 tiles per cell at runtime; matches in-game scale.</summary>
-    private const float TilesPerCell = 4f;
+    /// <summary>
+    ///     Matches TESObjectLAND::InitializeStatics: fLandTextureTilingMult defaults to 2,
+    ///     producing a 0.5 UV step per 256-unit LAND interval, or 8 repeats per cell.
+    ///     <c>internal</c> so the per-cell rasterizer can precompute its tile-space stride
+    ///     and call the <see cref="Sample(uint, float, float)" /> tile-fraction overload
+    ///     once per pixel instead of doing the float-modulo in the inner loop.
+    /// </summary>
+    internal const float WorldUnitsPerTile = 512f;
 
-    private const float WorldUnitsPerTile = 4096f / TilesPerCell;
+    private static readonly Logger Log = Logger.Instance;
 
     private static readonly Dictionary<string, LandscapeTexturePalette> s_cache =
         new(StringComparer.OrdinalIgnoreCase);
@@ -38,19 +46,31 @@ internal sealed class LandscapeTexturePalette
     /// <summary>Sentinel used to memoize "tried to load but failed" so we don't retry every pixel.</summary>
     private static readonly byte[] s_missSentinel = [];
 
-    /// <summary>
-    ///     Path of FNV's engine-default landscape texture. Per <c>SDefaultLandDiffuseTexture</c>
-    ///     in Fallout.ini across every shipped FNV build (and FO3 PC final). Xbox 360 BSAs hold
-    ///     the .ddx variant; the load path retries with that extension if .dds isn't present.
-    /// </summary>
-    private const string EngineDefaultDiffusePath = @"textures\landscape\DirtWasteland01.dds";
+    // Engine-default landscape texture path lives in EngineDefaultLandscapeTexture.DiffusePath
+    // (sibling helper under Core/Formats/Nif/Rendering/Textures/). Shared with the 3D viewer's
+    // TerrainTextureResolver so both views fall back to the same DirtWasteland01 asset.
 
     private readonly WorldViewData _data;
     private readonly List<INifTextureSource> _sources;
-    private readonly object _tileLock = new();
-    private readonly Dictionary<uint, byte[]> _tiles = new();
+
+    /// <summary>
+    ///     Serializes BSA I/O on cache misses. The underlying <see cref="INifTextureSource" />
+    ///     readers are not safe for concurrent calls — two workers loading different tiles at
+    ///     the same time can corrupt the BSA file handle. After <see cref="Preload" /> this
+    ///     lock is uncontended; the parallel decode hot path never reaches it because every
+    ///     LTEX has a cache hit.
+    /// </summary>
+    private readonly object _tileLoadLock = new();
+
+    /// <summary>
+    ///     <see cref="ConcurrentDictionary{TKey, TValue}" /> so the per-pixel
+    ///     <see cref="Sample" /> path is fully lock-free on a cache hit. With 6 parallel
+    ///     workers × millions of samples, a regular Dictionary lock made this the worst
+    ///     bottleneck in the streaming pipeline.
+    /// </summary>
+    private readonly ConcurrentDictionary<uint, byte[]> _tiles = new();
     private byte[]? _engineDefaultTile;
-    private bool _engineDefaultLoaded;
+    private int _engineDefaultLoaded;  // 0 = not loaded, 1 = loaded; written via Volatile to publish the tile
 
     private LandscapeTexturePalette(WorldViewData data, List<INifTextureSource> sources)
     {
@@ -59,30 +79,52 @@ internal sealed class LandscapeTexturePalette
     }
 
     /// <summary>
-    ///     Returns the palette for this WorldViewData, or null when the source ESM path is
-    ///     unknown or no texture BSAs were discovered next to it.
+    ///     Returns the palette for this WorldViewData, or null when no texture BSAs can be
+    ///     discovered (e.g. a DMP loaded standalone with no Load Order pointing at a Data
+    ///     folder). Discovery walks both the primary <see cref="WorldViewData.SourceFilePath" />
+    ///     and every <see cref="WorldViewData.AdditionalDataPaths" /> entry, so DMP files
+    ///     opened with a Load Order pick up textures from the load-order ESMs' Data folder.
+    ///     Cache key includes the additional paths so changing the Load Order mid-session
+    ///     produces a fresh palette instead of returning stale BSAs.
     /// </summary>
     internal static LandscapeTexturePalette? GetOrCreate(WorldViewData data)
     {
         var esmPath = data.SourceFilePath;
         if (string.IsNullOrEmpty(esmPath)) return null;
 
+        var additionalKey = data.AdditionalDataPaths is { Count: > 0 } extra
+            ? string.Join("|", extra)
+            : "";
+        var cacheKey = $"{esmPath}|{additionalKey}";
+
         lock (s_cacheLock)
         {
-            if (s_cache.TryGetValue(esmPath, out var cached))
+            if (s_cache.TryGetValue(cacheKey, out var cached))
             {
                 return cached;
             }
 
-            var discovery = BsaDiscovery.Discover(esmPath);
-            if (discovery.TexturesBsaPaths.Length == 0)
+            var bsaPaths = WorldDataBsaPathResolver.DiscoverTextureBsaPaths(data);
+            if (bsaPaths.Length == 0)
             {
+                Log.Warn(
+                    "LandscapeTexturePalette: no texture BSAs discovered for '{0}' ({1} load-order path(s) probed) — terrain textures layer will fall back to regions view.",
+                    Path.GetFileName(esmPath),
+                    data.AdditionalDataPaths?.Count ?? 0);
                 return null;
             }
 
-            var sources = NifTextureArchiveSourceFactory.Create(discovery.TexturesBsaPaths);
+            Log.Info(
+                "LandscapeTexturePalette: discovered {0} texture BSA(s) for '{1}' (from {2} load-order path(s); {3} LTEX, {4} TXST records).",
+                bsaPaths.Length,
+                Path.GetFileName(esmPath),
+                data.AdditionalDataPaths?.Count ?? 0,
+                data.LandTexturesByFormId.Count,
+                data.TextureSetsByFormId.Count);
+
+            var sources = NifTextureArchiveSourceFactory.Create(bsaPaths);
             var palette = new LandscapeTexturePalette(data, sources);
-            s_cache[esmPath] = palette;
+            s_cache[cacheKey] = palette;
             return palette;
         }
     }
@@ -108,6 +150,12 @@ internal sealed class LandscapeTexturePalette
         {
             _ = TryGetTile(formId);
         }
+
+        // Load the engine-default tile here too. Any cell quadrant without a BTXT samples
+        // it, and the parallel decode path needs it pre-warmed — BSA readers are not
+        // thread-safe so two workers racing to load DirtWasteland01 throws and aborts the
+        // whole Parallel.ForEachAsync. Done after the LTEX loop so the lock is uncontended.
+        _ = GetEngineDefaultTile();
     }
 
     internal Task PreloadAsync(IEnumerable<CellRecord> cells)
@@ -116,76 +164,129 @@ internal sealed class LandscapeTexturePalette
         return Task.Run(() => Preload(snapshot));
     }
 
-    /// <summary>Sample the per-world-coord color for this LTEX FormID. Wraps in tile space.</summary>
-    internal (byte R, byte G, byte B)? Sample(uint ltexFormId, float worldX, float worldY)
+    /// <summary>
+    ///     Sample the diffuse color for this LTEX FormID at pre-resolved tile-space fractions.
+    ///     <paramref name="tileFracX" /> and <paramref name="tileFracY" /> must already be in
+    ///     <c>[0, 1)</c> — the per-cell rasterizer is expected to seed them from
+    ///     <see cref="WorldToTileFraction" /> once and advance them by a precomputed stride per
+    ///     pixel, which keeps the float-modulo out of the per-pixel inner loop.
+    /// </summary>
+    internal (byte R, byte G, byte B)? Sample(uint ltexFormId, float tileFracX, float tileFracY)
     {
         var tile = TryGetTile(ltexFormId);
         if (tile is null) return null;
-        return SampleFromTile(tile, worldX, worldY);
+        return SampleFromTileFraction(tile, tileFracX, tileFracY);
     }
 
     /// <summary>
     ///     Sample FNV's engine-default landscape diffuse texture
-    ///     (<c>textures\landscape\DirtWasteland01</c>) at the given world coord. Returns null
-    ///     only if the BSA doesn't ship that texture, in which case the caller should fall back
-    ///     to a hardcoded RGB tint.
+    ///     (<c>textures\landscape\DirtWasteland01</c>) at pre-resolved tile-space fractions.
+    ///     Returns null only if the BSA doesn't ship that texture, in which case the caller
+    ///     should fall back to a hardcoded RGB tint.
     /// </summary>
-    internal (byte R, byte G, byte B)? SampleEngineDefault(float worldX, float worldY)
+    internal (byte R, byte G, byte B)? SampleEngineDefault(float tileFracX, float tileFracY)
     {
         var tile = GetEngineDefaultTile();
         if (tile is null) return null;
-        return SampleFromTile(tile, worldX, worldY);
+        return SampleFromTileFraction(tile, tileFracX, tileFracY);
     }
 
-    private static (byte R, byte G, byte B) SampleFromTile(byte[] tile, float worldX, float worldY)
+    /// <summary>
+    ///     Map a world coordinate to a tile-space fraction in <c>[0, 1)</c>. Wraps both
+    ///     positive and negative inputs. Use this once per row/column at the start of a
+    ///     per-cell render to seed the per-pixel stepper; the stepper advances by a
+    ///     precomputed stride and wraps with a single subtract/add, so the per-pixel hot path
+    ///     never executes a float-modulo.
+    /// </summary>
+    internal static float WorldToTileFraction(float worldCoord)
     {
-        var fracX = ((worldX % WorldUnitsPerTile) + WorldUnitsPerTile) % WorldUnitsPerTile / WorldUnitsPerTile;
-        var fracY = ((worldY % WorldUnitsPerTile) + WorldUnitsPerTile) % WorldUnitsPerTile / WorldUnitsPerTile;
+        var fr = worldCoord % WorldUnitsPerTile;
+        if (fr < 0f) fr += WorldUnitsPerTile;
+        return fr / WorldUnitsPerTile;
+    }
 
-        var tx = Math.Clamp((int)(fracX * TileSize), 0, TileSize - 1);
-        var ty = Math.Clamp((int)(fracY * TileSize), 0, TileSize - 1);
-        var idx = (ty * TileSize + tx) * 4;
-        return (tile[idx], tile[idx + 1], tile[idx + 2]);
+    private static (byte R, byte G, byte B) SampleFromTileFraction(byte[] tile, float tileFracX, float tileFracY)
+    {
+        // Caller-side stepper guarantees [0, 1); a defensive clamp here avoids out-of-bounds
+        // reads if rounding error pushes the input slightly past 1.0 (e.g., accumulated
+        // single-precision drift over a 528-pixel row).
+        if (tileFracX < 0f) tileFracX = 0f; else if (tileFracX >= 1f) tileFracX = 0.9999999f;
+        if (tileFracY < 0f) tileFracY = 0f; else if (tileFracY >= 1f) tileFracY = 0.9999999f;
+
+        var x = tileFracX * TileSize;
+        var y = tileFracY * TileSize;
+        var x0 = (int)x;
+        var y0 = (int)y;
+        var x1 = (x0 + 1) % TileSize;
+        var y1 = (y0 + 1) % TileSize;
+        var fx = x - x0;
+        var fy = y - y0;
+
+        var c00 = Pixel(tile, x0, y0);
+        var c10 = Pixel(tile, x1, y0);
+        var c01 = Pixel(tile, x0, y1);
+        var c11 = Pixel(tile, x1, y1);
+
+        return (
+            LerpByte(Lerp(c00.R, c10.R, fx), Lerp(c01.R, c11.R, fx), fy),
+            LerpByte(Lerp(c00.G, c10.G, fx), Lerp(c01.G, c11.G, fx), fy),
+            LerpByte(Lerp(c00.B, c10.B, fx), Lerp(c01.B, c11.B, fx), fy));
     }
 
     private byte[]? GetEngineDefaultTile()
     {
-        lock (_tileLock)
+        // Fast path: lock-free read of the published flag. Once Preload (or any earlier call)
+        // has loaded the tile, all subsequent calls hit this branch — including all the
+        // per-pixel SampleEngineDefault calls inside the parallel decode workers.
+        if (Volatile.Read(ref _engineDefaultLoaded) != 0)
         {
-            if (_engineDefaultLoaded) return _engineDefaultTile;
+            return _engineDefaultTile;
         }
 
-        var loaded = LoadTileFromPath(EngineDefaultDiffusePath);
-        lock (_tileLock)
+        // Slow path: serialize the BSA I/O. `_sources` is not thread-safe; two workers loading
+        // the engine-default concurrently can corrupt the BSA file handle and throw, aborting
+        // the whole Parallel.ForEachAsync.
+        lock (_tileLoadLock)
         {
-            if (!_engineDefaultLoaded)
-            {
-                _engineDefaultTile = loaded;
-                _engineDefaultLoaded = true;
-            }
-
+            if (_engineDefaultLoaded != 0) return _engineDefaultTile;
+            _engineDefaultTile = LoadTileFromPath(EngineDefaultLandscapeTexture.DiffusePath);
+            // Volatile.Write publishes the tile reference BEFORE the flag — readers using
+            // Volatile.Read on the flag see both writes in order.
+            Volatile.Write(ref _engineDefaultLoaded, 1);
             return _engineDefaultTile;
         }
     }
 
     private byte[]? TryGetTile(uint ltexFormId)
     {
-        lock (_tileLock)
+        // Fast path: lock-free read on ConcurrentDictionary. After Preload, every parallel
+        // worker hits this branch and never touches a lock — the critical perf win that lets
+        // the streaming pipeline actually use its 6 worker threads.
+        if (_tiles.TryGetValue(ltexFormId, out var cached))
         {
-            if (_tiles.TryGetValue(ltexFormId, out var cached))
-            {
-                return cached.Length == 0 ? null : cached;
-            }
+            return cached.Length == 0 ? null : cached;
         }
 
-        var loaded = LoadTileForLtex(ltexFormId);
-        lock (_tileLock)
+        // Slow path: cache miss. Serialize the BSA I/O via _tileLoadLock since the readers
+        // aren't thread-safe.
+        lock (_tileLoadLock)
         {
             if (_tiles.TryGetValue(ltexFormId, out var existing))
             {
                 return existing.Length == 0 ? null : existing;
             }
-
+            var loaded = LoadTileForLtex(ltexFormId);
+            if (loaded is null)
+            {
+                // LTEX has no resolvable tile (missing TXST, BSA entry, broken DDX, …).
+                // Cache the engine-default tile bytes under this FormID so subsequent
+                // samples take the lock-free fast path with a single dictionary lookup
+                // instead of routing through a separate SampleEngineDefault call on every
+                // pixel. Mirrors what the per-pixel sampler would compose anyway, just
+                // collapses two lookups into one. Monitor (lock) is reentrant on the same
+                // thread, so the nested acquire inside GetEngineDefaultTile is fine.
+                loaded = GetEngineDefaultTile();
+            }
             _tiles[ltexFormId] = loaded ?? s_missSentinel;
             return loaded;
         }
@@ -193,12 +294,9 @@ internal sealed class LandscapeTexturePalette
 
     private byte[]? LoadTileForLtex(uint ltexFormId)
     {
-        if (!_data.LandTexturesByFormId.TryGetValue(ltexFormId, out var ltex)) return null;
-        if (!ltex.TextureSetFormId.HasValue) return null;
-        if (!_data.TextureSetsByFormId.TryGetValue(ltex.TextureSetFormId.Value, out var txst)) return null;
-        if (string.IsNullOrEmpty(txst.DiffuseTexture)) return null;
-
-        return LoadTileFromPath(txst.DiffuseTexture);
+        var path = LandscapeTexturePathResolver.ResolveDiffuse(
+            ltexFormId, _data.LandTexturesByFormId, _data.TextureSetsByFormId);
+        return path is null ? null : LoadTileFromPath(path);
     }
 
     private byte[]? LoadTileFromPath(string ddsPath)
@@ -236,18 +334,60 @@ internal sealed class LandscapeTexturePalette
         var result = new byte[TileBytes];
         for (var ty = 0; ty < TileSize; ty++)
         {
-            var sy = (int)((long)ty * height / TileSize);
+            var sy = ((ty + 0.5f) * height / TileSize) - 0.5f;
             for (var tx = 0; tx < TileSize; tx++)
             {
-                var sx = (int)((long)tx * width / TileSize);
-                var srcIdx = (sy * width + sx) * 4;
+                var sx = ((tx + 0.5f) * width / TileSize) - 0.5f;
                 var dstIdx = (ty * TileSize + tx) * 4;
-                result[dstIdx] = pixels[srcIdx];
-                result[dstIdx + 1] = pixels[srcIdx + 1];
-                result[dstIdx + 2] = pixels[srcIdx + 2];
-                result[dstIdx + 3] = pixels[srcIdx + 3];
+                var (r, g, b, a) = SampleSourceBilinear(pixels, width, height, sx, sy);
+                result[dstIdx] = r;
+                result[dstIdx + 1] = g;
+                result[dstIdx + 2] = b;
+                result[dstIdx + 3] = a;
             }
         }
         return result;
     }
+
+    private static (byte R, byte G, byte B) Pixel(byte[] tile, int x, int y)
+    {
+        var idx = (y * TileSize + x) * 4;
+        return (tile[idx], tile[idx + 1], tile[idx + 2]);
+    }
+
+    private static (byte R, byte G, byte B, byte A) SampleSourceBilinear(
+        byte[] pixels, int width, int height, float x, float y)
+    {
+        x = Math.Clamp(x, 0f, width - 1f);
+        y = Math.Clamp(y, 0f, height - 1f);
+
+        var x0 = (int)MathF.Floor(x);
+        var y0 = (int)MathF.Floor(y);
+        var x1 = Math.Min(x0 + 1, width - 1);
+        var y1 = Math.Min(y0 + 1, height - 1);
+        var fx = x - x0;
+        var fy = y - y0;
+
+        var c00 = SourcePixel(pixels, width, x0, y0);
+        var c10 = SourcePixel(pixels, width, x1, y0);
+        var c01 = SourcePixel(pixels, width, x0, y1);
+        var c11 = SourcePixel(pixels, width, x1, y1);
+
+        return (
+            LerpByte(Lerp(c00.R, c10.R, fx), Lerp(c01.R, c11.R, fx), fy),
+            LerpByte(Lerp(c00.G, c10.G, fx), Lerp(c01.G, c11.G, fx), fy),
+            LerpByte(Lerp(c00.B, c10.B, fx), Lerp(c01.B, c11.B, fx), fy),
+            LerpByte(Lerp(c00.A, c10.A, fx), Lerp(c01.A, c11.A, fx), fy));
+    }
+
+    private static (byte R, byte G, byte B, byte A) SourcePixel(byte[] pixels, int width, int x, int y)
+    {
+        var idx = (y * width + x) * 4;
+        return (pixels[idx], pixels[idx + 1], pixels[idx + 2], pixels[idx + 3]);
+    }
+
+    private static float Lerp(byte a, byte b, float t) => a + (b - a) * t;
+
+    private static byte LerpByte(float a, float b, float t) =>
+        (byte)Math.Clamp(a + (b - a) * t, 0f, 255f);
 }

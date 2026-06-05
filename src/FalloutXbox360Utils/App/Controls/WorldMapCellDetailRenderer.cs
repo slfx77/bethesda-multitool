@@ -111,7 +111,8 @@ internal static class WorldMapCellDetailRenderer
                 WorldMapLayer.TerrainTextures =>
                     WorldMapLayerRenderer.RenderTerrainTexturesForCell(cell,
                         data is null ? null : LandscapeTexturePalette.GetOrCreate(data),
-                        currentDefaultWaterHeight, showWater, cache),
+                        currentDefaultWaterHeight, showWater, cache,
+                        WorldMapLayerRenderer.MaxTexturePixelsPerCell),
                 WorldMapLayer.Slope =>
                     WorldMapLayerRenderer.RenderSlopeForCell(cell, currentDefaultWaterHeight, showWater, cache),
                 _ => null
@@ -119,11 +120,7 @@ internal static class WorldMapCellDetailRenderer
             if (layerPixels == null) return null;
             // Match the heightmap path's alpha so the cell grid border remains visible.
             for (var i = 3; i < layerPixels.Length; i += 4) layerPixels[i] = 200;
-            // Terrain Textures renders at a higher pixel density than the other cell layers
-            // (HmGridSize × TextureLayerScale per axis) so the BTXT tiling reads sharply.
-            var dim = layer == WorldMapLayer.TerrainTextures
-                ? WorldMapLayerRenderer.TexturePixelsPerCell
-                : HmGridSize;
+            var dim = (int)Math.Sqrt(layerPixels.Length / 4d);
             return CanvasBitmap.CreateFromBytes(
                 canvas, layerPixels, dim, dim,
                 Windows.Graphics.DirectX.DirectXPixelFormat.R8G8B8A8UIntNormalized);

@@ -102,6 +102,14 @@ internal sealed class WorldViewData
         new Dictionary<uint, TextureSetRecord>();
 
     /// <summary>
+    ///     Water (WATR) records keyed by FormID. Used by the 2D map's water overlay so each
+    ///     worldspace can sample its own NNAM noise tile (Potomac muddy brown vs Lake Mead
+    ///     clean blue, etc.) instead of a hardcoded blue tint.
+    /// </summary>
+    public IReadOnlyDictionary<uint, WaterRecord> WatersByFormId { get; init; } =
+        new Dictionary<uint, WaterRecord>();
+
+    /// <summary>
     ///     Additional data-file paths (ESM/ESP/DMP) from the active Load Order. When a DMP file
     ///     is loaded as <see cref="SourceFilePath" />, it has no adjacent BSAs of its own;
     ///     <see cref="WorldView3DControl" /> falls back to these paths to discover texture BSAs

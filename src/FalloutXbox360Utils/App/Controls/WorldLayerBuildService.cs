@@ -13,18 +13,20 @@ internal static class WorldLayerBuildService
         {
             if (request.Layer == WorldMapLayer.TerrainTextures && request.Palette is not null)
             {
+                var pixelsPerCell = WorldMapLayerRenderer.NormalizeTexturePixelsPerCell(request.TexturePixelsPerCell);
                 await request.Palette.PreloadAsync(request.ActiveCells).ConfigureAwait(false);
                 var cells = WorldMapLayerRenderer.RenderTerrainTexturesPerCell(
                     request.ActiveCells,
                     request.Palette,
                     request.DefaultWaterHeight,
                     request.ShowWater,
-                    request.Cache);
+                    request.Cache,
+                    pixelsPerCell);
                 return new LayerBuildResult(
                     request.Version,
                     null,
                     cells,
-                    WorldMapLayerRenderer.TexturePixelsPerCell,
+                    pixelsPerCell,
                     cells is null ? "Terrain textures produced no renderable cells." : null);
             }
 
@@ -168,7 +170,8 @@ internal sealed record LayerBuildRequest(
     int CachedWidth,
     int CachedHeight,
     WorldRenderCache Cache,
-    LandscapeTexturePalette? Palette);
+    LandscapeTexturePalette? Palette,
+    int TexturePixelsPerCell = WorldMapLayerRenderer.TexturePixelsPerCell);
 
 internal sealed record LayerBuildResult(
     int Version,

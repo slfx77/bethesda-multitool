@@ -1,6 +1,9 @@
 using System.Numerics;
+using System.Runtime.CompilerServices;
+using System.Threading.Channels;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures;
 
 namespace FalloutXbox360Utils;
 
@@ -103,6 +106,12 @@ internal static class WorldMapLayerRenderer
     internal const int TexturePixelsPerCell = HmGridSize * TextureLayerScale;
 
     /// <summary>
+    ///     Highest overview/detail cell texture resolution used by the viewport-dependent
+    ///     terrain texture path. 528 = 16 samples per LAND vertex interval.
+    /// </summary>
+    internal const int MaxTexturePixelsPerCell = TexturePixelsPerCell * 4;
+
+    /// <summary>
     ///     Renders the terrain-textures layer as one RGBA bitmap per cell. Composed at draw
     ///     time by the caller. This per-cell architecture avoids the giant-bitmap path's
     ///     GPU max-texture-size cliff on large worldspaces (WastelandNV is 128 cells wide;
@@ -112,17 +121,131 @@ internal static class WorldMapLayerRenderer
     internal static Dictionary<(int gx, int gy), byte[]>? RenderTerrainTexturesPerCell(
         List<CellRecord> cellSource, LandscapeTexturePalette palette,
         float? defaultWaterHeight, bool showWater,
-        WorldRenderCache? cache = null)
+        WorldRenderCache? cache = null,
+        int pixelsPerCell = TexturePixelsPerCell)
     {
+        pixelsPerCell = NormalizeTexturePixelsPerCell(pixelsPerCell);
         palette.Preload(cellSource);
+        var cellByGrid = BuildCellGridIndex(cellSource);
         var result = new Dictionary<(int gx, int gy), byte[]>();
         foreach (var cell in EnumerateCellsWithGrid(cellSource))
         {
-            var bytes = RenderTerrainTextureCellOverview(cell, palette, defaultWaterHeight, showWater, cache);
+            var bytes = RenderTerrainTextureCellOverview(
+                cell, palette, defaultWaterHeight, showWater, cache, pixelsPerCell, cellByGrid);
             if (bytes is null) continue;
             result[(cell.GridX!.Value, cell.GridY!.Value)] = bytes;
         }
         return result.Count == 0 ? null : result;
+    }
+
+    /// <summary>One streamed cell from <see cref="StreamTerrainTexturesPerCell" />.</summary>
+    internal readonly record struct TerrainTextureCellResult(
+        int GridX, int GridY, int PixelsPerCell, byte[] Pixels);
+
+    /// <summary>
+    ///     Decodes cells in parallel on background workers and yields each completed cell
+    ///     immediately via <see cref="IAsyncEnumerable{T}" />. Mirrors the Mapbox GL / Cesium
+    ///     pattern of "render whatever tiles are currently available" — the UI consumer can
+    ///     upload each cell to the GPU and invalidate the canvas one cell at a time so the
+    ///     user sees terrain populate progressively instead of waiting for the whole viewport.
+    ///     <para>
+    ///         Worker count is <c>max(1, ProcessorCount - 2)</c> to leave headroom for the UI
+    ///         thread + the parallel-foreach orchestrator. <see cref="LandscapeTexturePalette" />
+    ///         tile loads are warmed via <see cref="LandscapeTexturePalette.PreloadAsync" />
+    ///         BEFORE the parallel work starts so workers don't contend on tile-cache locks
+    ///         during the per-pixel sample loop.
+    ///     </para>
+    /// </summary>
+    internal static async IAsyncEnumerable<TerrainTextureCellResult> StreamTerrainTexturesPerCell(
+        IReadOnlyList<CellRecord> cellSource,
+        LandscapeTexturePalette palette,
+        float? defaultWaterHeight,
+        bool showWater,
+        WorldRenderCache? cache,
+        int pixelsPerCell,
+        WaterColorPalette? waterPalette = null,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        pixelsPerCell = NormalizeTexturePixelsPerCell(pixelsPerCell);
+
+        // Warm the landscape-texture tile cache off-thread so the per-pixel Sample() paths in
+        // the parallel workers take the no-lock fast paths. The water palette holds two RGB
+        // tuples (no I/O), so there's nothing to preload there.
+        await palette.PreloadAsync(cellSource).ConfigureAwait(false);
+
+        // Build the (gx, gy) → CellRecord index and the materialized cell list in one pass.
+        // The parallel workers read the index concurrently — safe because it's only mutated
+        // here, before the workers start. Iterating the materialized list (vs the
+        // yield-based EnumerateCellsWithGrid) skips the iterator-state-machine allocation.
+        var cellByGrid = BuildCellGridIndexAndList(cellSource, out var workableCells);
+
+        var channel = Channel.CreateUnbounded<TerrainTextureCellResult>(
+            new UnboundedChannelOptions
+            {
+                SingleWriter = false,
+                SingleReader = true,
+                AllowSynchronousContinuations = false
+            });
+
+        var workers = Math.Max(1, Environment.ProcessorCount - 2);
+        var renderTask = Task.Run(async () =>
+        {
+            try
+            {
+                await Parallel.ForEachAsync(
+                    workableCells,
+                    new ParallelOptions
+                    {
+                        MaxDegreeOfParallelism = workers,
+                        CancellationToken = ct
+                    },
+                    (cell, innerCt) =>
+                    {
+                        innerCt.ThrowIfCancellationRequested();
+                        try
+                        {
+                            // Per-cell try/catch so a single bad cell (corrupt LAND data,
+                            // unexpected thread-safety issue in a downstream helper, etc.)
+                            // doesn't abort the whole Parallel.ForEachAsync — Parallel's
+                            // default behaviour is to cancel sibling workers on first
+                            // throw, which would manifest as "rendering stops at a radius"
+                            // from the user's POV. Log + skip the offender, continue with
+                            // the rest of the viewport.
+                            var bytes = RenderTerrainTextureCellOverview(
+                                cell, palette, defaultWaterHeight, showWater, cache, pixelsPerCell, cellByGrid, waterPalette);
+                            if (bytes is not null)
+                            {
+                                channel.Writer.TryWrite(new TerrainTextureCellResult(
+                                    cell.GridX!.Value, cell.GridY!.Value, pixelsPerCell, bytes));
+                            }
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            throw;
+                        }
+                        catch (Exception ex)
+                        {
+                            FalloutXbox360Utils.Core.Logger.Instance.Warn(
+                                "TerrainTextures: cell ({0},{1}) render failed and will be skipped: {2}",
+                                cell.GridX!.Value, cell.GridY!.Value, ex);
+                        }
+                        return ValueTask.CompletedTask;
+                    }).ConfigureAwait(false);
+            }
+            finally
+            {
+                channel.Writer.TryComplete();
+            }
+        }, ct);
+
+        await foreach (var result in channel.Reader.ReadAllAsync(ct).ConfigureAwait(false))
+        {
+            yield return result;
+        }
+
+        // Surface any exception from the worker task. If ct cancelled, this throws
+        // OperationCanceledException which the caller's await-foreach catches.
+        await renderTask.ConfigureAwait(false);
     }
 
     internal static Dictionary<(int gx, int gy), byte[]>? RenderVertexColorsPerCell(
@@ -164,18 +287,157 @@ internal static class WorldMapLayerRenderer
     private static byte[]? RenderTerrainTextureCellOverview(
         CellRecord cell, LandscapeTexturePalette palette,
         float? defaultWaterHeight, bool showWater,
-        WorldRenderCache? cache)
+        WorldRenderCache? cache,
+        int pixelsPerCell,
+        IReadOnlyDictionary<(int gx, int gy), CellRecord>? cellByGrid = null,
+        WaterColorPalette? waterPalette = null)
     {
         if (!cell.GridX.HasValue || !cell.GridY.HasValue) return null;
 
         var layers = cell.LandVisualData?.TextureLayers;
-        var stack = layers is { Count: > 0 } ? BuildTextureBlendStack(layers) : null;
 
-        var rgba = new byte[TexturePixelsPerCell * TexturePixelsPerCell * 4];
-        BlitTerrainTexturesBlended(rgba, TexturePixelsPerCell, TexturePixelsPerCell, stack, palette,
+        // Cross-cell blend: with a (gx,gy)→CellRecord lookup, feed each direction's neighbor
+        // layers to the weight-table builder so this cell's edge vertices accumulate the
+        // neighbor's adjacent edge-quadrant BTXTs/ATXTs. Otherwise (single-cell detail view)
+        // we skip the cross-cell fade and just render this cell's own contributions.
+        IReadOnlyList<LandTextureLayer>? eastN = null, westN = null, northN = null, southN = null;
+        if (cellByGrid is not null)
+        {
+            var gx = cell.GridX.Value;
+            var gy = cell.GridY.Value;
+            eastN = NeighborLayers(cellByGrid, gx + 1, gy);
+            westN = NeighborLayers(cellByGrid, gx - 1, gy);
+            northN = NeighborLayers(cellByGrid, gx, gy + 1);
+            southN = NeighborLayers(cellByGrid, gx, gy - 1);
+        }
+
+        // Build a table when this cell or at least one neighbor has REAL layer data. The
+        // "this cell has no layers but a neighbor does" case uses the synthetic engine-default
+        // own layers so the cross-cell fade also extends INTO this cell's near-edge pixels —
+        // otherwise the no-layer cell renders as pure engine-default and the boundary is a
+        // step from "neighbor's blended edge" to "this cell's solid default."
+        var hasOwnLayers = layers is { Count: > 0 };
+        var hasRealNeighbor = IsRealLayerList(eastN) || IsRealLayerList(westN)
+                           || IsRealLayerList(northN) || IsRealLayerList(southN);
+
+        CellLayerWeightTable? table = null;
+        if (hasOwnLayers || hasRealNeighbor)
+        {
+            var srcLayers = hasOwnLayers ? layers! : s_engineDefaultSyntheticLayers;
+            // Reuse the per-worker scratch table across cells. BuildInto resets the vertex
+            // grid and refills it without allocating a fresh 33×33 array or the ATXT dense
+            // grids — those live on the table instance and are pooled across calls.
+            var pooled = t_weightTableScratch ??= new CellLayerWeightTable();
+            if (CellLayerWeightTable.BuildInto(pooled, srcLayers, eastN, westN, northN, southN))
+            {
+                table = pooled;
+            }
+        }
+
+        var rgba = new byte[pixelsPerCell * pixelsPerCell * 4];
+        BlitTerrainTexturesBlended(rgba, pixelsPerCell, pixelsPerCell, table, palette,
             cell.GridX.Value, cell.GridY.Value, imgCellX: 0, imgCellY: 0);
-        ApplyCellWaterOverlay(rgba, cell, defaultWaterHeight, showWater, TexturePixelsPerCell, cache);
+        ApplyCellWaterOverlay(rgba, cell, defaultWaterHeight, showWater, pixelsPerCell, cache, cellByGrid, waterPalette);
         return rgba;
+    }
+
+    private static IReadOnlyList<LandTextureLayer>? NeighborLayers(
+        IReadOnlyDictionary<(int gx, int gy), CellRecord> index, int gx, int gy)
+    {
+        // Cell absent from the grid (e.g. worldspace edge) → no contribution: this cell's
+        // edge keeps its own BTXT, matching the fact that nothing is drawn beyond the
+        // worldspace boundary.
+        if (!index.TryGetValue((gx, gy), out var neighbor)) return null;
+
+        // Cell present but with no layers → contribute the engine-default sentinel. The
+        // renderer paints this neighbor as solid DirtWasteland01, so this cell's edge needs
+        // to blend toward that texture or you see a hard line where the engine default
+        // begins.
+        var layers = neighbor.LandVisualData?.TextureLayers;
+        if (layers is not { Count: > 0 }) return s_engineDefaultSyntheticLayers;
+        return layers;
+    }
+
+    /// <summary>
+    ///     Per-worker scratch <see cref="CellLayerWeightTable" /> reused across the streaming
+    ///     parallel-foreach. Allocating a fresh 33×33 vertex grid per cell was the largest
+    ///     source of transient SOH pressure during a viewport rebuild (~15 MB for 290 cells);
+    ///     reusing one instance per worker thread brings that to zero. Follows the existing
+    ///     <c>t_xScratch</c> + <see cref="ThreadStaticAttribute" /> convention used by the
+    ///     other world-map renderers (see <c>WorldMapOverviewRenderer.t_refScratch</c>).
+    /// </summary>
+    [ThreadStatic]
+    private static CellLayerWeightTable? t_weightTableScratch;
+
+    /// <summary>
+    ///     Synthetic "all four quadrants are engine-default" layer set, used to represent a
+    ///     neighbor cell that's part of the worldspace but has no LAND texture layers. The
+    ///     <see cref="CellLayerWeightTable.EngineDefaultSentinelFormId" /> in each layer
+    ///     routes through the same engine-default sampling path as missing-BTXT quadrants in
+    ///     real cells, so the cross-cell blend treats "neighbor with no texture data" exactly
+    ///     the way the renderer paints that neighbor.
+    /// </summary>
+    private static readonly IReadOnlyList<LandTextureLayer> s_engineDefaultSyntheticLayers =
+    [
+        new LandTextureLayer { Kind = LandTextureLayerKind.Base, TextureFormId = CellLayerWeightTable.EngineDefaultSentinelFormId, Quadrant = 0 },
+        new LandTextureLayer { Kind = LandTextureLayerKind.Base, TextureFormId = CellLayerWeightTable.EngineDefaultSentinelFormId, Quadrant = 1 },
+        new LandTextureLayer { Kind = LandTextureLayerKind.Base, TextureFormId = CellLayerWeightTable.EngineDefaultSentinelFormId, Quadrant = 2 },
+        new LandTextureLayer { Kind = LandTextureLayerKind.Base, TextureFormId = CellLayerWeightTable.EngineDefaultSentinelFormId, Quadrant = 3 },
+    ];
+
+    /// <summary>
+    ///     "Real" = a neighbor that actually has authored LAND texture layers, NOT the
+    ///     synthetic engine-default stand-in that <see cref="NeighborLayers" /> returns for
+    ///     no-layer cells. Distinguishes "this cell has a real neighbor to blend toward"
+    ///     (worth building a table) from "this cell and its neighbors are all engine-default"
+    ///     (just fall through to the per-pixel engine-default fallback, no table needed).
+    /// </summary>
+    private static bool IsRealLayerList(IReadOnlyList<LandTextureLayer>? layers)
+        => layers is { Count: > 0 } && !ReferenceEquals(layers, s_engineDefaultSyntheticLayers);
+
+    /// <summary>
+    ///     Build a (gx, gy) → CellRecord index from the cell source. Used by streaming/batch
+    ///     terrain-texture renders to feed neighbor layers into <see cref="CellLayerWeightTable" />
+    ///     for the cross-cell blend. Cells without grid coords are skipped.
+    /// </summary>
+    private static Dictionary<(int gx, int gy), CellRecord> BuildCellGridIndex(
+        IReadOnlyList<CellRecord> cellSource)
+    {
+        var index = new Dictionary<(int gx, int gy), CellRecord>(cellSource.Count);
+        for (var i = 0; i < cellSource.Count; i++)
+        {
+            var c = cellSource[i];
+            if (c.GridX is int gx && c.GridY is int gy)
+            {
+                index[(gx, gy)] = c;
+            }
+        }
+        return index;
+    }
+
+    /// <summary>
+    ///     Combined index + materialized workable-cell list. Streaming paths need both the
+    ///     neighbor-lookup dict and a stable list to pass to <c>Parallel.ForEachAsync</c>;
+    ///     this folds the two passes over <paramref name="cellSource" /> into one and avoids
+    ///     the per-iteration yield-iterator state machine that <see cref="EnumerateCellsWithGrid" />
+    ///     would otherwise allocate.
+    /// </summary>
+    private static Dictionary<(int gx, int gy), CellRecord> BuildCellGridIndexAndList(
+        IReadOnlyList<CellRecord> cellSource,
+        out List<CellRecord> workableCells)
+    {
+        var index = new Dictionary<(int gx, int gy), CellRecord>(cellSource.Count);
+        workableCells = new List<CellRecord>(cellSource.Count);
+        for (var i = 0; i < cellSource.Count; i++)
+        {
+            var c = cellSource[i];
+            if (c.GridX is int gx && c.GridY is int gy)
+            {
+                index[(gx, gy)] = c;
+                workableCells.Add(c);
+            }
+        }
+        return index;
     }
 
     /// <summary>
@@ -187,30 +449,6 @@ internal static class WorldMapLayerRenderer
         List<CellRecord> cellSource, float? defaultWaterHeight, bool showWater,
         WorldRenderCache? cache = null)
         => RenderTerrainRegions(cellSource, defaultWaterHeight, showWater, cache);
-
-    /// <summary>
-    ///     Nearest-neighbor upscale of a single-channel byte mask. Used to lift the
-    ///     <see cref="HmGridSize" />-per-cell waterMask up to the texture layer's
-    ///     <see cref="TexturePixelsPerCell" /> resolution. Since waterMask is sparse and
-    ///     largely per-cell anyway, nearest-neighbor is visually indistinguishable from
-    ///     recomputing the mask at high res.
-    /// </summary>
-    private static byte[] UpscaleMaskNearest(byte[] src, int srcW, int srcH, int scale)
-    {
-        var dstW = srcW * scale;
-        var dstH = srcH * scale;
-        var dst = new byte[dstW * dstH];
-        for (var dy = 0; dy < dstH; dy++)
-        {
-            var sy = dy / scale;
-            for (var dx = 0; dx < dstW; dx++)
-            {
-                var sx = dx / scale;
-                dst[dy * dstW + dx] = src[sy * srcW + sx];
-            }
-        }
-        return dst;
-    }
 
     internal static LayerBitmap? RenderSlope(
         List<CellRecord> cellSource, float? defaultWaterHeight, bool showWater,
@@ -311,7 +549,8 @@ internal static class WorldMapLayerRenderer
     internal static byte[]? RenderTerrainTexturesForCell(
         CellRecord cell, LandscapeTexturePalette? palette,
         float? defaultWaterHeight, bool showWater,
-        WorldRenderCache? cache = null)
+        WorldRenderCache? cache = null,
+        int pixelsPerCell = TexturePixelsPerCell)
     {
         if (palette is null)
         {
@@ -319,15 +558,16 @@ internal static class WorldMapLayerRenderer
         }
 
         if (!cell.GridX.HasValue || !cell.GridY.HasValue) return null;
+        pixelsPerCell = NormalizeTexturePixelsPerCell(pixelsPerCell);
 
         var layers = cell.LandVisualData?.TextureLayers;
-        var stack = layers is { Count: > 0 } ? BuildTextureBlendStack(layers) : null;
+        var table = layers is { Count: > 0 } ? CellLayerWeightTable.Build(layers) : null;
 
         palette.Preload([cell]);
-        var rgba = new byte[TexturePixelsPerCell * TexturePixelsPerCell * 4];
-        BlitTerrainTexturesBlended(rgba, TexturePixelsPerCell, TexturePixelsPerCell, stack, palette,
+        var rgba = new byte[pixelsPerCell * pixelsPerCell * 4];
+        BlitTerrainTexturesBlended(rgba, pixelsPerCell, pixelsPerCell, table, palette,
             cell.GridX.Value, cell.GridY.Value, imgCellX: 0, imgCellY: 0);
-        ApplyCellWaterOverlay(rgba, cell, defaultWaterHeight, showWater, TexturePixelsPerCell, cache);
+        ApplyCellWaterOverlay(rgba, cell, defaultWaterHeight, showWater, pixelsPerCell, cache);
         return rgba;
     }
 
@@ -405,69 +645,122 @@ internal static class WorldMapLayerRenderer
     }
 
     /// <summary>
-    ///     Sample-based blit for the rendered "Terrain textures" layer. For each vertex,
-    ///     compute its world position and ask the palette for the winning LTEX's diffuse
-    ///     color at that position. When no winner exists, or the winner's texture failed to
-    ///     load, falls back to the engine-default landscape texture (DirtWasteland01 per the
-    ///     Fallout.ini <c>SDefaultLandDiffuseTexture</c>). If even that can't load (no Textures
-    ///     BSA), falls back to a hardcoded RGB tint.
-    /// </summary>
-    /// <summary>
-    ///     Pixel-shader equivalent of the 3D viewer's terrain blend (terrain_textured.frag.hlsl):
-    ///     for each pixel, sample the BTXT base of its quadrant, then walk the ATXT layers in
-    ///     render order doing <c>color = lerp(color, layerSample, opacity)</c>. The per-vertex
-    ///     opacity grid is bilinearly interpolated across the pixel grid so the transitions
-    ///     between ATXT zones are smooth instead of stepped at half-opacity (the prior
-    ///     "winners-with-0.5-threshold" approach).
+    ///     Sample-based blit for the rendered "Terrain textures" layer. For each pixel, find
+    ///     its four enclosing cell-wide vertices and bilinearly interpolate their per-vertex
+    ///     <c>(LTEX_FormID, weight)</c> contributions before sampling the diffuse texture for
+    ///     each unique FormID. This mirrors what <c>NiTerrainLandShader</c> does in the live
+    ///     engine (and what xLODGen replicates offline): shared edge vertices on the cell
+    ///     midlines (vx=16 / vy=16) and the cell center (16,16) hold contributions from
+    ///     2 or 4 quadrants' BTXTs respectively, so the bilinear interp produces a smooth
+    ///     cross-quadrant blend instead of the hard seam a per-quadrant lookup gives.
+    ///     When no LTEX FormID has a loaded tile (or the cell has no LAND texture layers
+    ///     at all), falls back to the engine-default landscape texture (DirtWasteland01 per
+    ///     the Fallout.ini <c>SDefaultLandDiffuseTexture</c>); if even that can't load (no
+    ///     Textures BSA), falls back to a hardcoded RGB tint.
     /// </summary>
     private static void BlitTerrainTexturesBlended(
-        byte[] rgba, int stride, int pixelsPerCell, TextureBlendStack? stack,
+        byte[] rgba, int stride, int pixelsPerCell, CellLayerWeightTable? table,
         LandscapeTexturePalette palette,
         int cellGridX, int cellGridY, int imgCellX, int imgCellY)
     {
-        var worldUnitsPerPixel = 4096f / pixelsPerCell;
+        var worldUnitsPerPixel = 4096f / (pixelsPerCell - 1);
         var pixelToVertex = (float)(HmGridSize - 1) / (pixelsPerCell - 1);
         var cellOriginX = cellGridX * 4096f;
         var cellOriginY = cellGridY * 4096f;
 
+        // Hoist tile-space UV math out of the per-pixel inner loop. Inside a cell
+        // worldX/worldY are linear in px/py, so `worldX % WorldUnitsPerTile / WorldUnitsPerTile`
+        // is a sawtooth with constant stride. Precompute the stride + seed each row's
+        // tileFracX/Y; the inner loop advances them with a single add + conditional wrap
+        // (worldUnitsPerPixel < WorldUnitsPerTile for any sane pixelsPerCell, so one wrap
+        // step is sufficient).
+        var tileStridePerPixel = worldUnitsPerPixel / LandscapeTexturePalette.WorldUnitsPerTile;
+        var tileFracX0 = LandscapeTexturePalette.WorldToTileFraction(cellOriginX);
+        var worldYAtPy0 = cellOriginY + (pixelsPerCell - 1) * worldUnitsPerPixel;
+        var tileFracY = LandscapeTexturePalette.WorldToTileFraction(worldYAtPy0);
+
+        // Cap of 16 covers the worst case at the cell-center vertex (up to 4 BTXTs + up to
+        // 12 ATXTs); any single 2×2 enclosing vertex neighborhood after dedup stays under
+        // this bound. Stack-allocated, zero GC.
+        Span<LayerWeight> combined = stackalloc LayerWeight[16];
+
         for (var py = 0; py < pixelsPerCell; py++)
         {
-            // Image py=0 is north. World Y grows northward, so flip py to get the world-Y offset.
-            var worldY = cellOriginY + (pixelsPerCell - 1 - py) * worldUnitsPerPixel;
             var vyFloat = py * pixelToVertex;  // 0..(HmGridSize-1)
+            var vy0 = (int)vyFloat;
+            if (vy0 > HmGridSize - 2) vy0 = HmGridSize - 2;
+            var fy = vyFloat - vy0;
+
+            // Per-row tileFracX stepper resets to the cell-origin column fraction.
+            var tileFracX = tileFracX0;
 
             for (var px = 0; px < pixelsPerCell; px++)
             {
-                var worldX = cellOriginX + px * worldUnitsPerPixel;
                 var vxFloat = px * pixelToVertex;
+                var vx0 = (int)vxFloat;
+                if (vx0 > HmGridSize - 2) vx0 = HmGridSize - 2;
+                var fx = vxFloat - vx0;
 
                 (byte R, byte G, byte B)? color = null;
-                if (stack is not null)
+                if (table is not null)
                 {
-                    var (quad, qxFloat, qyFloat) = ResolveQuadrantFractional(vxFloat, vyFloat);
+                    ref var v00 = ref table.At(vx0, vy0);
+                    ref var v10 = ref table.At(vx0 + 1, vy0);
+                    ref var v01 = ref table.At(vx0, vy0 + 1);
+                    ref var v11 = ref table.At(vx0 + 1, vy0 + 1);
 
-                    // BTXT base for this quadrant.
-                    var baseFormId = stack.BaseFormIds[quad];
-                    if (baseFormId.HasValue)
+                    // Fast path: when all four enclosing vertices carry a single LTEX entry
+                    // and they're all the same FormID, the bilinear blend collapses to a
+                    // single sample. Covers ~75-90% of pixels (pure-interior + uniform-BTXT
+                    // open-desert cells).
+                    if (v00.Count == 1 && v10.Count == 1 && v01.Count == 1 && v11.Count == 1
+                        && v00.E0.FormId == v10.E0.FormId
+                        && v00.E0.FormId == v01.E0.FormId
+                        && v00.E0.FormId == v11.E0.FormId)
                     {
-                        color = palette.Sample(baseFormId.Value, worldX, worldY);
+                        color = SampleLayer(palette, v00.E0.FormId, tileFracX, tileFracY);
                     }
-
-                    // ATXT layers for this quadrant, in render order, lerp on top of base.
-                    foreach (var alpha in stack.AlphaLayers)
+                    else
                     {
-                        if (alpha.Quadrant != quad) continue;
-                        var opacity = BilinearOpacity(alpha.OpacityGrid, qxFloat, qyFloat);
-                        if (opacity <= 0f) continue;
-                        var alphaSample = palette.Sample(alpha.TextureFormId, worldX, worldY);
-                        if (alphaSample is null) continue;
-                        color = color is null
-                            ? alphaSample
-                            : LerpRgb(color.Value, alphaSample.Value, opacity);
+                        var w00 = (1f - fx) * (1f - fy);
+                        var w10 = fx * (1f - fy);
+                        var w01 = (1f - fx) * fy;
+                        var w11 = fx * fy;
+
+                        var combinedCount = 0;
+                        AccumulateVertexWeights(ref v00, w00, combined, ref combinedCount);
+                        AccumulateVertexWeights(ref v10, w10, combined, ref combinedCount);
+                        AccumulateVertexWeights(ref v01, w01, combined, ref combinedCount);
+                        AccumulateVertexWeights(ref v11, w11, combined, ref combinedCount);
+
+                        var weightedR = 0f;
+                        var weightedG = 0f;
+                        var weightedB = 0f;
+                        var totalWeight = 0f;
+
+                        for (var i = 0; i < combinedCount; i++)
+                        {
+                            var entry = combined[i];
+                            if (entry.Weight <= 0f) continue;
+                            var sample = SampleLayer(palette, entry.FormId, tileFracX, tileFracY);
+                            if (sample is null) continue;
+                            AddWeighted(sample.Value, entry.Weight,
+                                ref weightedR, ref weightedG, ref weightedB);
+                            totalWeight += entry.Weight;
+                        }
+
+                        if (totalWeight > 0f)
+                        {
+                            var inv = 1f / totalWeight;
+                            color = (
+                                FloatToByte(weightedR * inv),
+                                FloatToByte(weightedG * inv),
+                                FloatToByte(weightedB * inv));
+                        }
                     }
                 }
 
-                color ??= palette.SampleEngineDefault(worldX, worldY);
+                color ??= palette.SampleEngineDefault(tileFracX, tileFracY);
                 var (r, g, b) = color ?? (DefaultTerrainR, DefaultTerrainG, DefaultTerrainB);
 
                 var imgX = imgCellX * pixelsPerCell + px;
@@ -477,136 +770,96 @@ internal static class WorldMapLayerRenderer
                 rgba[dst + 1] = g;
                 rgba[dst + 2] = b;
                 rgba[dst + 3] = 255;
+
+                tileFracX += tileStridePerPixel;
+                if (tileFracX >= 1f) tileFracX -= 1f;
+            }
+
+            // Image py=0 is north; world Y grows northward, so the per-row tile fraction
+            // decreases as py advances.
+            tileFracY -= tileStridePerPixel;
+            if (tileFracY < 0f) tileFracY += 1f;
+        }
+    }
+
+    /// <summary>
+    ///     Resolve one layer-weight entry to a diffuse color sample at pre-resolved tile-space
+    ///     fractions. The engine-default sentinel
+    ///     (<see cref="CellLayerWeightTable.EngineDefaultSentinelFormId" />) routes to the
+    ///     palette's DirtWasteland01 fallback; any other FormID samples the LTEX's tile, with
+    ///     a fallback to the engine default when the tile failed to load (BSA missing, TXST
+    ///     broken, etc.). With the engine-default write-through in
+    ///     <c>LandscapeTexturePalette.TryGetTile</c>, the second-call fallback below is
+    ///     essentially unreachable on a healthy install — kept defensive for the case where
+    ///     even the engine-default texture is absent.
+    /// </summary>
+    private static (byte R, byte G, byte B)? SampleLayer(
+        LandscapeTexturePalette palette, uint formId, float tileFracX, float tileFracY)
+    {
+        if (formId == CellLayerWeightTable.EngineDefaultSentinelFormId)
+        {
+            return palette.SampleEngineDefault(tileFracX, tileFracY);
+        }
+        return palette.Sample(formId, tileFracX, tileFracY)
+            ?? palette.SampleEngineDefault(tileFracX, tileFracY);
+    }
+
+    /// <summary>
+    ///     Pull one vertex's entries into <paramref name="combined" />, multiplied by the
+    ///     bilinear weight. Entries with the same FormID across the four enclosing vertices
+    ///     are merged in place so we only sample each unique LTEX once per pixel. Caller-side
+    ///     <paramref name="combined" /> is a stack-allocated span of capacity 16; entries past
+    ///     the cap are dropped (analysis bounds the count at ≤16, so the cap shouldn't be hit
+    ///     in practice).
+    /// </summary>
+    private static void AccumulateVertexWeights(
+        ref VertexWeights v, float bw, Span<LayerWeight> combined, ref int count)
+    {
+        if (bw <= 0f || v.Count == 0) return;
+        AccumulateOne(v.E0.FormId, v.E0.Weight * bw, combined, ref count);
+        if (v.Count > 1) AccumulateOne(v.E1.FormId, v.E1.Weight * bw, combined, ref count);
+        if (v.Count > 2) AccumulateOne(v.E2.FormId, v.E2.Weight * bw, combined, ref count);
+        if (v.Count > 3) AccumulateOne(v.E3.FormId, v.E3.Weight * bw, combined, ref count);
+        if (v.Overflow is not null)
+        {
+            var n = v.Count - 4;
+            for (var i = 0; i < n; i++)
+            {
+                AccumulateOne(v.Overflow[i].FormId, v.Overflow[i].Weight * bw, combined, ref count);
             }
         }
     }
 
-    private const int QuadSize = 17;
-    private const int QuadVertCount = QuadSize * QuadSize;
-
-    /// <summary>BTXT base + ATXT layer stack for one cell, ready for per-pixel blending.</summary>
-    private sealed class TextureBlendStack
+    private static void AccumulateOne(uint formId, float weight, Span<LayerWeight> combined, ref int count)
     {
-        /// <summary>Base diffuse FormID per quadrant (0=SW, 1=SE, 2=NW, 3=NE). Null when absent.</summary>
-        internal uint?[] BaseFormIds { get; } = new uint?[4];
-
-        /// <summary>ATXT layers in render order (quadrant ASC, layer-index ASC).</summary>
-        internal List<AlphaLayer> AlphaLayers { get; } = new();
-    }
-
-    /// <summary>One ATXT alpha layer: a diffuse FormID + dense 17×17 per-vertex opacity grid.</summary>
-    private sealed class AlphaLayer
-    {
-        internal int Quadrant { get; init; }
-        internal uint TextureFormId { get; init; }
-
-        /// <summary>Row-major, [qy * QuadSize + qx], qy=0 is the SW edge of the quadrant.</summary>
-        internal float[] OpacityGrid { get; init; } = new float[QuadVertCount];
-    }
-
-    /// <summary>
-    ///     Build a <see cref="TextureBlendStack" /> from a cell's LAND texture layers. BTXT
-    ///     becomes per-quadrant base; ATXT layers are flattened into ordered layers each with
-    ///     their own dense opacity grid (sparse BlendEntries → dense float[17*17]). Returns
-    ///     null when no layer contributes any texture data.
-    /// </summary>
-    private static TextureBlendStack? BuildTextureBlendStack(List<LandTextureLayer> layers)
-    {
-        var stack = new TextureBlendStack();
-        var any = false;
-
-        foreach (var layer in layers)
+        if (weight <= 0f) return;
+        for (var i = 0; i < count; i++)
         {
-            if (layer.Quadrant >= 4) continue;
-            if (layer.Kind == LandTextureLayerKind.Base)
+            if (combined[i].FormId == formId)
             {
-                stack.BaseFormIds[layer.Quadrant] = layer.TextureFormId;
-                any = true;
+                combined[i] = new LayerWeight(formId, combined[i].Weight + weight);
+                return;
             }
         }
-
-        var alphaLayers = layers
-            .Where(l => l.Kind == LandTextureLayerKind.Alpha && l.Quadrant < 4)
-            .OrderBy(l => l.Quadrant)
-            .ThenBy(l => l.Layer);
-
-        foreach (var layer in alphaLayers)
+        if (count < combined.Length)
         {
-            var grid = new float[QuadVertCount];
-            foreach (var entry in layer.BlendEntries)
-            {
-                if (entry.Position < QuadVertCount)
-                {
-                    grid[entry.Position] = entry.Opacity;
-                }
-            }
-            stack.AlphaLayers.Add(new AlphaLayer
-            {
-                Quadrant = layer.Quadrant,
-                TextureFormId = layer.TextureFormId,
-                OpacityGrid = grid
-            });
-            any = true;
+            combined[count++] = new LayerWeight(formId, weight);
         }
-
-        return any ? stack : null;
     }
 
-    /// <summary>
-    ///     Map a cell-image vertex-space float coord (0..HmGridSize-1) to its quadrant and the
-    ///     fractional quadrant-local coord. Quadrant convention: 0=SW, 1=SE, 2=NW, 3=NE; the
-    ///     quadrant-local (0,0) is the SW corner (per VTXT Position layout). Boundary pixels
-    ///     (vx=16 or vy=16) clamp into the north/east quadrants.
-    /// </summary>
-    private static (int Quadrant, float QxFloat, float QyFloat) ResolveQuadrantFractional(
-        float vxFloat, float vyFloat)
+    private static void AddWeighted(
+        (byte R, byte G, byte B) color,
+        float weight,
+        ref float r,
+        ref float g,
+        ref float b)
     {
-        var isNorth = vyFloat <= 16f;
-        var isEast = vxFloat >= 16f;
-        var quad = (isNorth, isEast) switch
-        {
-            (true, false) => 2,
-            (true, true) => 3,
-            (false, false) => 0,
-            (false, true) => 1
-        };
-        var qxFloat = isEast ? vxFloat - 16f : vxFloat;
-        var qyFloat = isNorth ? 16f - vyFloat : 32f - vyFloat;
-        return (quad,
-            Math.Clamp(qxFloat, 0f, QuadSize - 1),
-            Math.Clamp(qyFloat, 0f, QuadSize - 1));
+        r += color.R * weight;
+        g += color.G * weight;
+        b += color.B * weight;
     }
 
-    /// <summary>
-    ///     Bilinearly sample the 17×17 opacity grid at fractional quad-local (qx, qy). Returns
-    ///     a value in [0, 1].
-    /// </summary>
-    private static float BilinearOpacity(float[] grid, float qx, float qy)
-    {
-        var x0 = (int)qx;
-        var y0 = (int)qy;
-        var x1 = Math.Min(x0 + 1, QuadSize - 1);
-        var y1 = Math.Min(y0 + 1, QuadSize - 1);
-        var fx = qx - x0;
-        var fy = qy - y0;
-        var o00 = grid[y0 * QuadSize + x0];
-        var o10 = grid[y0 * QuadSize + x1];
-        var o01 = grid[y1 * QuadSize + x0];
-        var o11 = grid[y1 * QuadSize + x1];
-        var top = o00 + (o10 - o00) * fx;
-        var bot = o01 + (o11 - o01) * fx;
-        return top + (bot - top) * fy;
-    }
-
-    private static (byte R, byte G, byte B) LerpRgb(
-        (byte R, byte G, byte B) a, (byte R, byte G, byte B) b, float t)
-    {
-        t = Math.Clamp(t, 0f, 1f);
-        return (
-            (byte)(a.R + (b.R - a.R) * t),
-            (byte)(a.G + (b.G - a.G) * t),
-            (byte)(a.B + (b.B - a.B) * t));
-    }
+    private static byte FloatToByte(float value) => (byte)Math.Clamp(MathF.Round(value), 0f, 255f);
 
     // ========================================================================
     // Hillshade
@@ -690,10 +943,11 @@ internal static class WorldMapLayerRenderer
         return rgba;
     }
 
-    private static IEnumerable<CellRecord> EnumerateCellsWithGrid(List<CellRecord> cellSource)
+    private static IEnumerable<CellRecord> EnumerateCellsWithGrid(IReadOnlyList<CellRecord> cellSource)
     {
-        foreach (var c in cellSource)
+        for (var i = 0; i < cellSource.Count; i++)
         {
+            var c = cellSource[i];
             if (c.GridX.HasValue && c.GridY.HasValue)
             {
                 yield return c;
@@ -706,26 +960,88 @@ internal static class WorldMapLayerRenderer
 
     private static void ApplyCellWaterOverlay(byte[] rgba, CellRecord cell, float? defaultWaterHeight, bool showWater,
         int pixelsPerCell = HmGridSize,
-        WorldRenderCache? cache = null)
+        WorldRenderCache? cache = null,
+        IReadOnlyDictionary<(int gx, int gy), CellRecord>? cellByGrid = null,
+        WaterColorPalette? waterPalette = null)
     {
         if (!showWater) return;
 
-        // Build the water mask at HmGridSize (cell heightmap native resolution), then nearest-
-        // neighbor upscale to pixelsPerCell so it composites with high-res texture bitmaps.
+        // Water mask: when the texture path requests pixelsPerCell > HmGridSize we build the
+        // mask directly at the target resolution by bilinear-interpolating heights per pixel
+        // and producing a linear shoreline fade from the height-vs-waterH delta. That replaces
+        // the legacy "build at 33×33, blur, nearest-neighbor upscale" chain, which produced
+        // visible blocky shorelines at high zoom. Cross-cell continuity is automatic because
+        // adjacent cells share their edge vertices — no neighbor params needed in this path.
+        // The 33×33 path stays for heightmap-overview mode where pixelsPerCell == HmGridSize
+        // (the upscale step was the only thing that needed replacing). Neighbor extension is
+        // still required there because the 3×3 box blur clamps at borders.
         var terrain = cache?.GetTerrain(cell) ?? DecodedTerrainCell.Decode(cell);
-        var lowResMask = terrain.GetLowResWaterMask(ResolveWaterHeight(cell, defaultWaterHeight));
-        if (lowResMask is null) return;
+        var waterH = ResolveWaterHeight(cell, defaultWaterHeight);
 
+        byte[]? hiResMask;
         if (pixelsPerCell == HmGridSize)
         {
-            OverlayWater(rgba, lowResMask, HmGridSize, HmGridSize);
+            byte[]? lowResMask;
+            if (cellByGrid is not null && cell.GridX is int gx && cell.GridY is int gy)
+            {
+                lowResMask = DecodedTerrainCell.BuildLowResWaterMaskWithNeighbors(
+                    terrain,
+                    GetNeighborTerrain(cellByGrid, gx, gy + 1, cache),
+                    GetNeighborTerrain(cellByGrid, gx, gy - 1, cache),
+                    GetNeighborTerrain(cellByGrid, gx + 1, gy, cache),
+                    GetNeighborTerrain(cellByGrid, gx - 1, gy, cache),
+                    waterH);
+            }
+            else
+            {
+                lowResMask = terrain.GetLowResWaterMask(waterH);
+            }
+            if (lowResMask is null) return;
+            hiResMask = lowResMask;
         }
         else
         {
-            var scale = pixelsPerCell / HmGridSize;
-            var hiResMask = UpscaleMaskNearest(lowResMask, HmGridSize, HmGridSize, scale);
+            hiResMask = terrain.GetHiResWaterMask(waterH, pixelsPerCell);
+            if (hiResMask is null) return;
+        }
+
+        // DNAM color path: when the WATR record exposed Shallow/Deep colors, lerp Shallow→Deep
+        // by mask intensity so different worldspaces' waters (Potomac muddy brown vs Lake Mead
+        // clean blue, Vault water, etc.) actually look different. Fall back to the legacy
+        // solid blue when the WATR record is missing or has no DNAM colors — preserves the
+        // pre-DNAM look exactly.
+        if (waterPalette is not null)
+        {
+            OverlayWaterColored(rgba, hiResMask, pixelsPerCell, pixelsPerCell, waterPalette);
+        }
+        else
+        {
             OverlayWater(rgba, hiResMask, pixelsPerCell, pixelsPerCell);
         }
+    }
+
+    private static DecodedTerrainCell? GetNeighborTerrain(
+        IReadOnlyDictionary<(int gx, int gy), CellRecord> cellByGrid,
+        int gx, int gy,
+        WorldRenderCache? cache)
+    {
+        if (!cellByGrid.TryGetValue((gx, gy), out var neighborCell)) return null;
+        return cache?.GetTerrain(neighborCell) ?? DecodedTerrainCell.Decode(neighborCell);
+    }
+
+    internal static int NormalizeTexturePixelsPerCell(int pixelsPerCell)
+    {
+        if (pixelsPerCell <= TexturePixelsPerCell)
+        {
+            return TexturePixelsPerCell;
+        }
+
+        if (pixelsPerCell <= TexturePixelsPerCell * 2)
+        {
+            return TexturePixelsPerCell * 2;
+        }
+
+        return MaxTexturePixelsPerCell;
     }
 
     private static void OverlayWater(byte[] rgba, byte[] waterMask, int width, int height)
@@ -739,6 +1055,54 @@ internal static class WorldMapLayerRenderer
             rgba[dst] = (byte)(rgba[dst] + (WaterR - rgba[dst]) * factor);
             rgba[dst + 1] = (byte)(rgba[dst + 1] + (WaterG - rgba[dst + 1]) * factor);
             rgba[dst + 2] = (byte)(rgba[dst + 2] + (WaterB - rgba[dst + 2]) * factor);
+        }
+    }
+
+    /// <summary>
+    ///     Two-color water overlay: lerp Shallow→Deep by the (blurred) water-mask intensity,
+    ///     then lerp terrain→that color by the same intensity. Mask interiors saturate around
+    ///     ~180 (the planted "below water" value before blur), so dividing by that gives a
+    ///     full Shallow→Deep range at interior vs shoreline. Coverage uses /255 to preserve
+    ///     the existing shoreline softness from <see cref="OverlayWater" />.
+    ///     <para>
+    ///         From the runtime decompile of <c>TESWaterSystem::UpdateWaterShaderProperties</c>:
+    ///         the pixel shader picks between Shallow and Deep based on the view depth (Fog
+    ///         depth params), then mixes Reflection over via Fresnel. We can't reproduce the
+    ///         Fresnel/Reflection pass at overview scale, but Shallow→Deep-by-coverage gives
+    ///         a perceptually-close result and uses values straight off the WATR record.
+    ///     </para>
+    /// </summary>
+    private static void OverlayWaterColored(
+        byte[] rgba, byte[] waterMask, int width, int height, WaterColorPalette colors)
+    {
+        const float MaskInteriorMax = 180f; // BuildLowResWaterMaskWithNeighbors plants 180 pre-blur
+
+        var pixelCount = width * height;
+        var shallowR = colors.Shallow.R; var shallowG = colors.Shallow.G; var shallowB = colors.Shallow.B;
+        var deepR = colors.Deep.R; var deepG = colors.Deep.G; var deepB = colors.Deep.B;
+
+        for (var i = 0; i < pixelCount; i++)
+        {
+            var maskValue = waterMask[i];
+            if (maskValue == 0) continue;
+
+            // Depth proxy: full mask = interior = Deep; partial = shoreline = mostly Shallow.
+            // Clamp >1 so blur values that happen to exceed the planted 180 (none today, but
+            // future kernel changes might) don't push the lerp past the Deep endpoint.
+            var depthT = maskValue / MaskInteriorMax;
+            if (depthT > 1f) depthT = 1f;
+
+            var waterR = shallowR + (deepR - shallowR) * depthT;
+            var waterG = shallowG + (deepG - shallowG) * depthT;
+            var waterB = shallowB + (deepB - shallowB) * depthT;
+
+            // Coverage: same /255 mask-to-alpha as the solid-tint fallback, so shoreline AA
+            // looks identical to the pre-DNAM path — only the in-water tint colour changed.
+            var coverage = maskValue / 255f;
+            var dst = i * 4;
+            rgba[dst] = (byte)(rgba[dst] + (waterR - rgba[dst]) * coverage);
+            rgba[dst + 1] = (byte)(rgba[dst + 1] + (waterG - rgba[dst + 1]) * coverage);
+            rgba[dst + 2] = (byte)(rgba[dst + 2] + (waterB - rgba[dst + 2]) * coverage);
         }
     }
 

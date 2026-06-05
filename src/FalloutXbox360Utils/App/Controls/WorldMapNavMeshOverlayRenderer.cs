@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using Microsoft.Graphics.Canvas;
 using Microsoft.Graphics.Canvas.Geometry;
+using Windows.Foundation;
 using Windows.UI;
 
 namespace FalloutXbox360Utils;
@@ -20,6 +21,14 @@ internal static class WorldMapNavMeshOverlayRenderer
 
     /// <summary>Edge color, brighter so triangle boundaries stand out.</summary>
     private static readonly Color s_edgeColor = Color.FromArgb(200, 150, 255, 180);
+
+    private static readonly Color s_summaryFillColor = Color.FromArgb(45, 80, 220, 120);
+    private static readonly Color s_summaryEdgeColor = Color.FromArgb(90, 150, 255, 180);
+
+    private const float OverviewGeometryMinZoom = 0.012f;
+    private const float OverviewEdgesMinZoom = 0.025f;
+    private const int MaxLowZoomGeometryCells = 256;
+    private const int MaxOverviewGeometryCells = 1024;
 
     /// <summary>Parsed-geometry (CPU-side) cache; entries drop when their NavMeshRecord is GC'd.</summary>
     private static readonly ConditionalWeakTable<NavMeshRecord, ParsedGeometry?> s_parsedCache = new();
@@ -49,30 +58,45 @@ internal static class WorldMapNavMeshOverlayRenderer
     {
         if (data.NavMeshesByCell.Count == 0) return;
 
-        EnsureDevice(ds);
-        var strokeWidth = Math.Max(1f / zoom, 2f);
+        var entries = t_navScratch ??= new List<NavMeshCellEntry>(128);
 
         if (spatialIndex is not null)
         {
-            var entries = t_navScratch ??= new List<NavMeshCellEntry>(128);
             spatialIndex.QueryNavMeshCellsInViewport(tlWorld, brWorld, entries);
-            foreach (var entry in entries)
+        }
+        else
+        {
+            entries.Clear();
+            foreach (var cell in activeCells)
             {
-                foreach (var nm in entry.NavMeshes)
+                if (!WorldMapViewportHelper.IsCellVisible(cell, tlWorld, brWorld))
                 {
-                    DrawNavMesh(ds, nm, strokeWidth);
+                    continue;
+                }
+
+                if (data.NavMeshesByCell.TryGetValue(cell.FormId, out var list))
+                {
+                    entries.Add(new NavMeshCellEntry(cell, list));
                 }
             }
+        }
 
+        if (entries.Count == 0) return;
+
+        if (ShouldUseOverviewSummary(zoom, entries.Count))
+        {
+            DrawNavMeshCellSummary(ds, entries, zoom);
             return;
         }
 
-        foreach (var cell in activeCells)
+        EnsureDevice(ds);
+        var strokeWidth = Math.Max(1f / zoom, 2f);
+        var drawEdges = zoom >= OverviewEdgesMinZoom || entries.Count <= MaxLowZoomGeometryCells;
+        foreach (var entry in entries)
         {
-            if (!data.NavMeshesByCell.TryGetValue(cell.FormId, out var list)) continue;
-            foreach (var nm in list)
+            foreach (var nm in entry.NavMeshes)
             {
-                DrawNavMesh(ds, nm, strokeWidth);
+                DrawNavMesh(ds, nm, strokeWidth, drawEdges);
             }
         }
     }
@@ -93,17 +117,67 @@ internal static class WorldMapNavMeshOverlayRenderer
         var strokeWidth = Math.Max(1f / zoom, 2f);
         foreach (var nm in list)
         {
-            DrawNavMesh(ds, nm, strokeWidth);
+            DrawNavMesh(ds, nm, strokeWidth, drawEdges: true);
         }
     }
 
-    private static void DrawNavMesh(CanvasDrawingSession ds, NavMeshRecord nm, float strokeWidth)
+    private static bool ShouldUseOverviewSummary(float zoom, int visibleNavMeshCells)
+    {
+        if (visibleNavMeshCells > MaxOverviewGeometryCells)
+        {
+            return true;
+        }
+
+        if (zoom < OverviewGeometryMinZoom)
+        {
+            return true;
+        }
+
+        return zoom < OverviewEdgesMinZoom && visibleNavMeshCells > MaxLowZoomGeometryCells;
+    }
+
+    private static void DrawNavMeshCellSummary(
+        CanvasDrawingSession ds,
+        List<NavMeshCellEntry> entries,
+        float zoom)
+    {
+        var drawEdges = zoom >= OverviewGeometryMinZoom && entries.Count <= MaxLowZoomGeometryCells;
+        var edgeWidth = Math.Max(1f / zoom, 2f);
+        foreach (var entry in entries)
+        {
+            var cell = entry.Cell;
+            if (cell.GridX is not int gx || cell.GridY is not int gy)
+            {
+                continue;
+            }
+
+            var rect = new Rect(
+                gx * WorldGridConstants.CellSize,
+                -(gy + 1) * WorldGridConstants.CellSize,
+                WorldGridConstants.CellSize,
+                WorldGridConstants.CellSize);
+            ds.FillRectangle(rect, s_summaryFillColor);
+            if (drawEdges)
+            {
+                ds.DrawRectangle(rect, s_summaryEdgeColor, edgeWidth);
+            }
+        }
+    }
+
+    private static void DrawNavMesh(
+        CanvasDrawingSession ds,
+        NavMeshRecord nm,
+        float strokeWidth,
+        bool drawEdges)
     {
         var geom = GetOrBuildGeometry(ds, nm);
         if (geom is null) return;
 
         ds.FillGeometry(geom, s_fillColor);
-        ds.DrawGeometry(geom, s_edgeColor, strokeWidth);
+        if (drawEdges)
+        {
+            ds.DrawGeometry(geom, s_edgeColor, strokeWidth);
+        }
     }
 
     /// <summary>
