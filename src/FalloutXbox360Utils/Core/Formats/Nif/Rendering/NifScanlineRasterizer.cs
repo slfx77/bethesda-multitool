@@ -236,7 +236,7 @@ internal static class NifScanlineRasterizer
                 {
                     RasterizeTexturedPixel(
                         pixels, depthBuffer, faceKind,
-                        tri, w0, w1, w2, z, idx, pIdx,
+                        tri, w0, w1, w2, z, idx, pIdx, px, py,
                         shade, specIntensity, isBackFacing,
                         duDx, dvDx, duDy, dvDy);
                 }
@@ -244,7 +244,7 @@ internal static class NifScanlineRasterizer
                 {
                     RasterizeUntexturedPixel(
                         pixels, depthBuffer, faceKind,
-                        tri, w0, w1, w2, z, idx, pIdx,
+                        tri, w0, w1, w2, z, idx, pIdx, px, py,
                         shade, isBackFacing);
                 }
 
@@ -256,7 +256,7 @@ internal static class NifScanlineRasterizer
     private static void RasterizeTexturedPixel(
         byte[] pixels, float[] depthBuffer, byte[] faceKind,
         TriangleData tri, float w0, float w1, float w2,
-        float z, int idx, int pIdx,
+        float z, int idx, int pIdx, int px, int py,
         float shade, float specIntensity, bool isBackFacing,
         float duDx, float dvDx, float duDy, float dvDy)
     {
@@ -276,7 +276,14 @@ internal static class NifScanlineRasterizer
             a = (byte)Math.Clamp(a * vca / 255f, 0, 255);
         }
 
-        if (tri.HasAlphaTest && tri.AlphaRenderMode != NifAlphaRenderMode.Blend)
+        if (tri.AlphaRenderMode == NifAlphaRenderMode.AlphaToCoverage)
+        {
+            // Stochastic alpha test: pass = opaque write, fail = discard. The Bayer 2x2 dither
+            // gives 4 distinct thresholds per output pixel under SsaaFactor=2 supersampling,
+            // matching what GPU 4x MSAA + A2C does at the hardware level.
+            if (a <= StochasticAlphaThreshold(px, py)) return;
+        }
+        else if (tri.HasAlphaTest && tri.AlphaRenderMode != NifAlphaRenderMode.Blend)
         {
             var pass = tri.AlphaTestFunction switch
             {
@@ -401,7 +408,7 @@ internal static class NifScanlineRasterizer
     private static void RasterizeUntexturedPixel(
         byte[] pixels, float[] depthBuffer, byte[] faceKind,
         TriangleData tri, float w0, float w1, float w2,
-        float z, int idx, int pIdx,
+        float z, int idx, int pIdx, int px, int py,
         float shade, bool isBackFacing)
     {
         var brightness = (byte)(shade * 220 + 35);
@@ -410,7 +417,11 @@ internal static class NifScanlineRasterizer
             ? Math.Clamp(tri.A0 * w0 + tri.A1 * w1 + tri.A2 * w2, 0f, 255f)
             : 255f;
 
-        if (tri.HasAlphaTest)
+        if (tri.AlphaRenderMode == NifAlphaRenderMode.AlphaToCoverage)
+        {
+            if (vertexAlpha <= StochasticAlphaThreshold(px, py)) return;
+        }
+        else if (tri.HasAlphaTest)
         {
             var pass = tri.AlphaTestFunction switch
             {
@@ -507,5 +518,20 @@ internal static class NifScanlineRasterizer
 
             pixels[pIdx + 3] = Math.Max(pixels[pIdx + 3], (byte)Math.Clamp(srcA * 255f, 0f, 255f));
         }
+    }
+
+    /// <summary>
+    ///     Bayer 2x2 dither thresholds (half-centered, bytes). Each of the four supersamples
+    ///     within an output pixel (under <see cref="RenderLightingConstants.SsaaFactor" />=2)
+    ///     gets a distinct threshold, so a fragment's alpha translates into one of five
+    ///     coverage levels after the box downsample — matching what hardware 4x MSAA + A2C
+    ///     produces on the GPU path. Pattern is screen-space-stable so the noise stays still
+    ///     between frames.
+    /// </summary>
+    private static readonly byte[] BayerThresholds2X2 = [32, 159, 223, 96];
+
+    private static byte StochasticAlphaThreshold(int px, int py)
+    {
+        return BayerThresholds2X2[((py & 1) << 1) | (px & 1)];
     }
 }

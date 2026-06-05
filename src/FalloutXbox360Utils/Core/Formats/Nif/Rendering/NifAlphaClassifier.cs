@@ -22,8 +22,14 @@ internal static class NifAlphaClassifier
             alphaTestFunction = 4;
         }
 
+        // Hair / brow / lash submeshes use alpha-to-coverage instead of plain blend.
+        // Bethesda's engine renders these via BSRenderState::SetAlphaToCoverageEnable to avoid
+        // strand stacking (visible as brown patches on the forehead with standard sorted blend).
+        // The CPU rasterizer turns this into a stochastic per-pixel Bayer threshold; the GPU
+        // renderer routes to its AlphaToCoverageEnable pipeline on the 4x MSAA render target.
         var renderMode = (hasAlphaBlend, hasAlphaTest) switch
         {
+            (true, _) when IsHairLikeSubmesh(submesh) => NifAlphaRenderMode.AlphaToCoverage,
             (true, _) => NifAlphaRenderMode.Blend,
             (_, true) => NifAlphaRenderMode.Cutout,
             _ => NifAlphaRenderMode.Opaque

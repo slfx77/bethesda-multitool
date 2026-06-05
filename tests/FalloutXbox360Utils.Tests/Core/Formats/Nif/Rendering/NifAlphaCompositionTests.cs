@@ -1,6 +1,7 @@
 using FalloutXbox360Utils.Core.Formats.Dds;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 
@@ -89,10 +90,10 @@ public sealed class NifAlphaCompositionTests
         var cpuSprite = RenderCpu(model, textureResolver);
         AssertPairShowsOpaqueBaseAndTransparentGrime(cpuSprite);
 
-        using var gpu = GpuDevice.Create();
+        using var gpu = GpuDevice12.Create();
         Assert.SkipWhen(gpu is null, "GPU backend not available");
 
-        using var renderer = new GpuSpriteRenderer(gpu!);
+        using var renderer = new GpuSpriteRenderer12(gpu!);
         var gpuSprite = renderer.Render(
             model,
             textureResolver,
@@ -130,10 +131,10 @@ public sealed class NifAlphaCompositionTests
                 alphaTestThreshold: 0,
                 alphaTestFunction: 4));
 
-        using var gpu = GpuDevice.Create();
+        using var gpu = GpuDevice12.Create();
         Assert.SkipWhen(gpu is null, "GPU backend not available");
 
-        using var renderer = new GpuSpriteRenderer(gpu!);
+        using var renderer = new GpuSpriteRenderer12(gpu!);
         var gpuSprite = renderer.Render(
             model,
             textureResolver,
@@ -175,10 +176,10 @@ public sealed class NifAlphaCompositionTests
                 dstBlendMode: dstBlendMode,
                 isEmissive: true));
 
-        using var gpu = GpuDevice.Create();
+        using var gpu = GpuDevice12.Create();
         Assert.SkipWhen(gpu is null, "GPU backend not available");
 
-        using var renderer = new GpuSpriteRenderer(gpu!);
+        using var renderer = new GpuSpriteRenderer12(gpu!);
         var gpuSprite = renderer.Render(
             model,
             textureResolver,
@@ -245,10 +246,10 @@ public sealed class NifAlphaCompositionTests
         Assert.NotNull(cpuSprite);
         AssertPixelIsNearNeutralWhite(ReadPixel(cpuSprite!, cpuSprite.Width / 2, cpuSprite.Height / 2));
 
-        using var gpu = GpuDevice.Create();
+        using var gpu = GpuDevice12.Create();
         Assert.SkipWhen(gpu is null, "GPU backend not available");
 
-        using var renderer = new GpuSpriteRenderer(gpu!);
+        using var renderer = new GpuSpriteRenderer12(gpu!);
         var gpuSprite = renderer.Render(
             model,
             textureResolver,
