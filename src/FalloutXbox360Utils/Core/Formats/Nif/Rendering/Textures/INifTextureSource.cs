@@ -8,4 +8,6 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures;
 internal interface INifTextureSource : IDisposable
 {
     DecodedTexture? TryLoad(string path);
+
+    byte[]? TryLoadRaw(string path);
 }

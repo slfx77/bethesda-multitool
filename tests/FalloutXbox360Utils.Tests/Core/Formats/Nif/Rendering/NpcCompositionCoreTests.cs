@@ -4,6 +4,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
 using FalloutXbox360Utils.Tests.Helpers;
@@ -167,9 +168,9 @@ public sealed class NpcCompositionCoreTests(SampleFileFixture samples)
             48);
         AssertSpriteHasVisiblePixels(cpuSprite);
 
-        using var gpu = GpuDevice.Create();
+        using var gpu = GpuDevice12.Create();
         Assert.SkipWhen(gpu is null, "GPU backend not available");
-        using var renderer = new GpuSpriteRenderer(gpu!);
+        using var renderer = new GpuSpriteRenderer12(gpu!);
         var gpuSprite = renderer.Render(
             model,
             assets.TextureResolver,

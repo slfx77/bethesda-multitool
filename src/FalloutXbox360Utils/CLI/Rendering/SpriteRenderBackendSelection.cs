@@ -1,12 +1,16 @@
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
 namespace FalloutXbox360Utils.CLI.Rendering;
 
+/// <summary>
+///     CLI sprite render backend handle. Null <see cref="Device" /> + <see cref="Renderer" />
+///     means the caller should fall back to the CPU software renderer.
+/// </summary>
 internal sealed class SpriteRenderBackendSelection : IDisposable
 {
     internal SpriteRenderBackendSelection(
-        GpuDevice? device,
-        GpuSpriteRenderer? renderer,
+        GpuDevice12? device,
+        GpuSpriteRenderer12? renderer,
         bool shouldAbort)
     {
         Device = device;
@@ -14,9 +18,9 @@ internal sealed class SpriteRenderBackendSelection : IDisposable
         ShouldAbort = shouldAbort;
     }
 
-    internal GpuDevice? Device { get; }
+    internal GpuDevice12? Device { get; }
 
-    internal GpuSpriteRenderer? Renderer { get; }
+    internal GpuSpriteRenderer12? Renderer { get; }
 
     internal bool ShouldAbort { get; }
 

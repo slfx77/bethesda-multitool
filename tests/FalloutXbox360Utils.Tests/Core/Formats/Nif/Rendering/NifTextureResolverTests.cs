@@ -18,6 +18,26 @@ public sealed class NifTextureResolverTests
     }
 
     [Fact]
+    public void TexturePathUtility_StripsLeadingDataPrefix()
+    {
+        // Vanilla FNV's WATR DefaultWater (FormID 0x00000018) stores its NNAM as
+        // "data\textures\water\genaratednoise01.dds" — the engine strips the "data\"
+        // before BSA lookup (entries are rooted at Data\). Without the strip we double
+        // the prefix into "textures\data\textures\…" and every load misses.
+        var normalized = NifTexturePathUtility.Normalize(@"data\textures\water\genaratednoise01.dds");
+
+        Assert.Equal(@"textures\water\genaratednoise01.dds", normalized);
+    }
+
+    [Fact]
+    public void TexturePathUtility_StripsDataPrefixCaseInsensitive()
+    {
+        var normalized = NifTexturePathUtility.Normalize(@"Data\textures\water\foo.dds");
+
+        Assert.Equal(@"textures\water\foo.dds", normalized);
+    }
+
+    [Fact]
     public void ResolveTextureSetPathsAndShaderFlags_FromLightingProperty()
     {
         const string diffusePath = @"textures\characters\boone\face.dds";

@@ -1,6 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
@@ -314,7 +314,7 @@ internal static class NpcRenderPipeline
 
     private static void RenderNpcsPipelinedGpu(
         List<NpcAppearance> appearances,
-        GpuSpriteRenderer gpuRenderer,
+        GpuSpriteRenderer12 gpuRenderer,
         NpcMeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         NpcRenderCaches caches,
@@ -341,7 +341,7 @@ internal static class NpcRenderPipeline
                 for (var viewIndex = 0; viewIndex < views.Length; viewIndex++)
                 {
                     var (suffix, azimuth, elevation) = views[viewIndex];
-                    GpuSpriteRenderer.PendingRender? pending = null;
+                    GpuSpriteRenderer12.PendingRender? pending = null;
 
                     if (currentModel is { HasGeometry: true })
                     {
@@ -528,8 +528,8 @@ internal static class NpcRenderPipeline
     private sealed class NpcGpuRenderResources : IDisposable
     {
         private NpcGpuRenderResources(
-            GpuDevice? device,
-            GpuSpriteRenderer? renderer,
+            GpuDevice12? device,
+            GpuSpriteRenderer12? renderer,
             bool shouldAbort)
         {
             Device = device;
@@ -537,8 +537,8 @@ internal static class NpcRenderPipeline
             ShouldAbort = shouldAbort;
         }
 
-        internal GpuDevice? Device { get; }
-        internal GpuSpriteRenderer? Renderer { get; }
+        internal GpuDevice12? Device { get; }
+        internal GpuSpriteRenderer12? Renderer { get; }
         internal bool ShouldAbort { get; }
 
         public void Dispose()

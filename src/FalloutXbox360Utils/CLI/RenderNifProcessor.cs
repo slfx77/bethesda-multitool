@@ -5,7 +5,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Nif;
 using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI;
@@ -18,7 +18,7 @@ internal static class RenderNifProcessor
     /// <summary>
     ///     Creates GPU device and renderer if not force-CPU. Returns null if GPU unavailable.
     /// </summary>
-    private static (GpuDevice? device, GpuSpriteRenderer? renderer) TryCreateGpuRenderer(
+    private static (GpuDevice12? device, GpuSpriteRenderer12? renderer) TryCreateGpuRenderer(
         NifRenderSettings s)
     {
         var selection = SpriteRenderBackendSelector.Create(
@@ -313,7 +313,7 @@ internal static class RenderNifProcessor
     private static List<SpriteIndexEntry>? ProcessNifData(byte[] nifData, string baseName,
         string outputDir, RenderParams renderParams, NifTextureResolver? textureResolver,
         EsmModelCrossReference? crossRef, string modelPath, NifRenderSettings s,
-        GpuSpriteRenderer? gpuRenderer = null)
+        GpuSpriteRenderer12? gpuRenderer = null)
     {
         if (nifData.Length == 0)
         {

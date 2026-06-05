@@ -4,6 +4,7 @@ using FalloutXbox360Utils.CLI.Rendering.Npc;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 
@@ -66,10 +67,10 @@ public sealed class NpcRenderSmokeTests(SampleFileFixture samples)
         AssertSpriteHasVisiblePixels(cpuSprite);
         Assert.True(cpuSprite!.HasTexture);
 
-        using var gpu = GpuDevice.Create();
+        using var gpu = GpuDevice12.Create();
         Assert.SkipWhen(gpu is null, "GPU backend not available");
 
-        using var renderer = new GpuSpriteRenderer(gpu!);
+        using var renderer = new GpuSpriteRenderer12(gpu!);
         var gpuSprite = renderer.Render(
             model,
             assets.TextureResolver,

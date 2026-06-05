@@ -1,40 +1,100 @@
 // v3 Phase 3 placed-object pixel shader. Samples the diffuse texture, applies alpha-test for
 // foliage / fence / wire-mesh REFRs, modulates by vertex color and Lambert lighting using the
 // same hardcoded sun direction as terrain (keeps the scene visually coherent).
+//
+// 4a — bindless: `textures[]` is an unbounded array indexed by the per-instance
+// `TexIndices.x` (diffuse) / `.y` (normal). Slot indices come from
+// GpuTextureCache12.Entry.BindlessIndex. NonUniformResourceIndex tells the compiler
+// adjacent pixels in a quad may sample different textures (true when bucket walk
+// interleaves multiple meshes via ExecuteIndirect in 4b).
 
-Texture2D    tDiffuse  : register(t0);
-SamplerState sDiffuse  : register(s0); // wrap, anisotropic (set in C#)
+// space1 so the unbounded array doesn't collide with the legacy terrain/water SRV table
+// or the reference instance root SRV in space0.
+Texture2D    textures[]   : register(t0, space1);
+SamplerState sDiffuse     : register(s0); // wrap, anisotropic (set in C#)
+SamplerState sNormalMap   : register(s1); // wrap, anisotropic (set in C#)
 
 cbuffer PerFrame : register(b0) { float4x4 uViewProj; }
-cbuffer PerDraw  : register(b1)
-{
-    float4x4 uWorld;
-    float4   uAlphaTestThreshold_DoubleSided_Pad;
-}
-
 struct PSInput
 {
     float4 Position     : SV_Position;
     float3 vWorldNormal : TEXCOORD0;
     float2 vTexCoord    : TEXCOORD1;
     float4 vVertexColor : TEXCOORD2;
+    float3 vTangent     : TEXCOORD3;
+    float3 vBitangent   : TEXCOORD4;
+    nointerpolation float4 vAlphaState  : TEXCOORD5;
+    nointerpolation float4 vRenderState : TEXCOORD6;
+    nointerpolation float4 vTextureState : TEXCOORD7;
+    nointerpolation uint4  vTexIndices  : TEXCOORD8;
+    bool   IsFrontFace  : SV_IsFrontFace;
 };
+
+bool PassAlphaTest(float alpha, float threshold, float functionId)
+{
+    if (functionId < 0.0) return true;
+
+    int fn = (int)round(functionId);
+    if (fn == 0) return true;                  // ALWAYS
+    if (fn == 1) return alpha < threshold;     // LESS
+    if (fn == 2) return abs(alpha - threshold) <= (0.5 / 255.0); // EQUAL
+    if (fn == 3) return alpha <= threshold;    // LEQUAL
+    if (fn == 4) return alpha > threshold;     // GREATER
+    if (fn == 5) return abs(alpha - threshold) > (0.5 / 255.0);  // NOTEQUAL
+    if (fn == 6) return alpha >= threshold;    // GEQUAL
+    return false;                              // NEVER / invalid
+}
 
 float4 main(PSInput input) : SV_Target
 {
-    float4 sample = tDiffuse.Sample(sDiffuse, input.vTexCoord);
+    float4 sample = textures[NonUniformResourceIndex(input.vTexIndices.x)].Sample(sDiffuse, input.vTexCoord);
+    float sampleAlpha = saturate(sample.a * input.vVertexColor.a);
 
     // Alpha-test branch — controlled per-draw so foliage with NiAlphaProperty bit 9 set
-    // discards transparent pixels rather than rendering them as opaque. Threshold of 0 means
-    // alpha-test is disabled (most opaque meshes).
-    float threshold = uAlphaTestThreshold_DoubleSided_Pad.x;
-    if (threshold > 0.0 && sample.a < threshold) discard;
+    // discards transparent pixels rather than rendering them as opaque. Full NIF comparison
+    // function is preserved; function < 0 disables testing for opaque and blended draws.
+    if (!PassAlphaTest(sampleAlpha, input.vAlphaState.x, input.vAlphaState.y)) discard;
 
     float3 normal = normalize(input.vWorldNormal);
+    if (input.vRenderState.x > 0.5 && !input.IsFrontFace)
+    {
+        normal = -normal;
+    }
+
+    if (input.vRenderState.y > 0.5)
+    {
+        float3 normalSample = textures[NonUniformResourceIndex(input.vTexIndices.y)].Sample(sNormalMap, input.vTexCoord).rgb;
+        float3 mapN;
+        if (input.vTextureState.x > 0.5)
+        {
+            float2 xy = normalSample.rg * 2.0 - 1.0;
+            mapN = float3(xy, sqrt(saturate(1.0 - dot(xy, xy))));
+        }
+        else
+        {
+            mapN = normalSample * 2.0 - 1.0;
+        }
+
+        mapN.y = -mapN.y; // DirectX convention (Y-down normal maps), matching skin.frag.hlsl.
+        mapN.xy *= input.vRenderState.z;
+
+        float3 T = normalize(input.vTangent);
+        float3 B = normalize(input.vBitangent);
+        float3x3 TBN = float3x3(T, B, normal);
+        normal = normalize(mul(mapN, TBN));
+    }
+
     float lambert = saturate(dot(normal, normalize(float3(0.5, 0.5, 1.0))));
     float shade = 0.4 + 0.6 * lambert;
+    if (input.vRenderState.w > 0.5)
+    {
+        shade = 1.0;
+    }
 
     // Vertex color modulates the diffuse — NIFs use it for art-direction tints (e.g. dusty
     // rocks, painted billboards). Default-white VCLR leaves the texture untouched.
-    return float4(sample.rgb * input.vVertexColor.rgb * shade, 1.0);
+    float outAlpha = input.vAlphaState.w > 0.5
+        ? saturate(sampleAlpha * input.vAlphaState.z)
+        : 1.0;
+    return float4(sample.rgb * input.vVertexColor.rgb * shade, outAlpha);
 }

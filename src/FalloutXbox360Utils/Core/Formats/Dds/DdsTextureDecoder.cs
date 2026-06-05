@@ -29,7 +29,22 @@ internal static class DdsTextureDecoder
         }
 
         var mipCount = Math.Max(1, (int)BitConverter.ToUInt32(ddsData, 28));
+        var pfFlags = BitConverter.ToUInt32(ddsData, 80);
         var fourcc = Encoding.ASCII.GetString(ddsData, 84, 4).TrimEnd('\0');
+
+        // DDPF_FOURCC = 0x04 — pixel data is in a FourCC-named format (compressed or D3D
+        // pixel format). DDPF_RGB = 0x40 — pixel data is uncompressed RGB(A) and the
+        // R/G/B/A bit masks at offsets 92..107 say how the channels are packed in each
+        // pixel. Some Bethesda assets (notably water noise tiles like FNV's
+        // genaratednoise01.dds) ship as uncompressed BGRA8 with FourCC==0 — they take the
+        // FOURCC switch's default arm without RGB support and silently fail to load.
+        if ((pfFlags & 0x4) == 0 || string.IsNullOrEmpty(fourcc))
+        {
+            if ((pfFlags & 0x40) != 0)
+            {
+                return DecodeUncompressedRgb(ddsData, width, height, mipCount);
+            }
+        }
 
         return fourcc switch
         {
@@ -75,6 +90,76 @@ internal static class DdsTextureDecoder
                 static (mipWidth, mipHeight) => GetCompressedLevelSize(mipWidth, mipHeight, 16)),
             _ => null
         };
+    }
+
+    /// <summary>
+    ///     Walks the mip chain of an uncompressed RGB/RGBA DDS and emits an RGBA8 byte array
+    ///     per mip. Supports 32-bit BGRA / RGBA / ABGR / ARGB layouts and 24-bit BGR / RGB
+    ///     (zero-fills alpha). The channel routing comes from the bit masks at DDS offsets
+    ///     92..107, so format detection is data-driven rather than fourCC-tag-driven.
+    ///     Returns null for any layout the mask check doesn't recognize.
+    /// </summary>
+    private static DecodedTexture? DecodeUncompressedRgb(byte[] data, int width, int height, int mipCount)
+    {
+        var bitCount = (int)BitConverter.ToUInt32(data, 88);
+        if (bitCount is not (24 or 32)) return null;
+
+        var rMask = BitConverter.ToUInt32(data, 92);
+        var gMask = BitConverter.ToUInt32(data, 96);
+        var bMask = BitConverter.ToUInt32(data, 100);
+        var aMask = BitConverter.ToUInt32(data, 104);
+
+        // Resolve the byte offset within each pixel for each channel from the mask. With
+        // standard 8-bit-per-channel masks the mask sits in exactly one byte; locate which.
+        int? rOff = MaskToByteOffset(rMask);
+        int? gOff = MaskToByteOffset(gMask);
+        int? bOff = MaskToByteOffset(bMask);
+        int? aOff = bitCount == 32 ? MaskToByteOffset(aMask) : null;
+        if (rOff is null || gOff is null || bOff is null) return null;
+        if (bitCount == 32 && aOff is null) return null;
+
+        var bytesPerPixel = bitCount / 8;
+        return DecodeMipChain(
+            data,
+            128,
+            width,
+            height,
+            mipCount,
+            (src, off, w, h) => DecodeRgbLevel(src, off, w, h, bytesPerPixel,
+                rOff.Value, gOff.Value, bOff.Value, aOff),
+            (w, h) => w * h * bytesPerPixel);
+    }
+
+    private static int? MaskToByteOffset(uint mask)
+    {
+        return mask switch
+        {
+            0x000000FFu => 0,
+            0x0000FF00u => 1,
+            0x00FF0000u => 2,
+            0xFF000000u => 3,
+            _ => null
+        };
+    }
+
+    private static byte[]? DecodeRgbLevel(
+        byte[] data, int offset, int width, int height,
+        int bytesPerPixel, int rOff, int gOff, int bOff, int? aOff)
+    {
+        var sourceSize = width * height * bytesPerPixel;
+        if (offset + sourceSize > data.Length) return null;
+
+        var pixels = new byte[width * height * 4];
+        for (var i = 0; i < width * height; i++)
+        {
+            var src = offset + i * bytesPerPixel;
+            var dst = i * 4;
+            pixels[dst] = data[src + rOff];
+            pixels[dst + 1] = data[src + gOff];
+            pixels[dst + 2] = data[src + bOff];
+            pixels[dst + 3] = aOff is int a ? data[src + a] : (byte)255;
+        }
+        return pixels;
     }
 
     private static DecodedTexture? DecodeMipChain(

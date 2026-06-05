@@ -16,6 +16,24 @@ internal sealed class NifTextureArchiveSource(
 
     public DecodedTexture? TryLoad(string path)
     {
+        try
+        {
+            var rawData = TryLoadRaw(path);
+            if (rawData is null)
+            {
+                return null;
+            }
+
+            return NifTextureLoader.DecodeTextureData(rawData);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public byte[]? TryLoadRaw(string path)
+    {
         if (!FileIndex.TryGetValue(path, out var fileRecord))
         {
             return null;
@@ -23,8 +41,7 @@ internal sealed class NifTextureArchiveSource(
 
         try
         {
-            var rawData = Extractor.ExtractFile(fileRecord);
-            return NifTextureLoader.DecodeTextureData(rawData);
+            return Extractor.ExtractFile(fileRecord);
         }
         catch
         {

@@ -306,6 +306,14 @@ public class BinaryUtilsEndianTests
         Assert.Equal(expected, BinaryUtils.HalfToFloat(input), 0.001f);
     }
 
+    [Fact]
+    public void HalfToFloat_Denormalized_ReturnsSmallValue()
+    {
+        // Half-precision denormalized: 0x0001 = smallest positive subnormal
+        var result = BinaryUtils.HalfToFloat(0x0001);
+        Assert.True(result > 0.0f && result < 0.001f);
+    }
+
     #endregion
 
     #region Offset reads at non-zero positions

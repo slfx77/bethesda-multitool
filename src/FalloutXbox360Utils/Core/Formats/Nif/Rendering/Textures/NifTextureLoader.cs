@@ -33,7 +33,7 @@ internal static class NifTextureLoader
     /// <summary>
     ///     If the data is a DDX texture (Xbox 360 format), convert it to DDS in memory.
     /// </summary>
-    private static byte[] ConvertDdxIfNeeded(byte[] data)
+    internal static byte[] ConvertDdxIfNeeded(byte[] data)
     {
         if (data.Length < 4)
         {

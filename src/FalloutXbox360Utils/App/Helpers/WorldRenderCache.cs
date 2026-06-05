@@ -2,6 +2,8 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Terrain;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures;
+using System.Numerics;
 
 namespace FalloutXbox360Utils;
 
@@ -16,6 +18,14 @@ internal sealed class WorldRenderCache
     private readonly Dictionary<CellRecord, DecodedTerrainCell> _terrain = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<CellRecord, TextureWinnerGrid?> _textureWinners = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<CellRecord, IReadOnlyList<RenderableReference>> _placements = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<CellRecord, ReferencePlacementSpatialIndex> _placementSpatialIndexes = new(ReferenceEqualityComparer.Instance);
+
+    // 4-pre Item C — bake terrain neighbor lookups + per-quadrant CellLayerWeightTable
+    // at LoadData (or lazily on first build). Inputs are worldspace-static (cell LAND +
+    // cardinal neighbors' LAND); see TerrainRenderer12.BuildCellTextureSet. Moves
+    // ~0.05 ms per cell out of TryBuildAndCache, smoothing the 16-cell-per-frame mesh
+    // build burst when entering a new area.
+    private readonly Dictionary<CellRecord, CellTerrainTextureSet?> _terrainTextureSets = new(ReferenceEqualityComparer.Instance);
 
     internal DecodedTerrainCell GetTerrain(CellRecord cell)
     {
@@ -51,6 +61,31 @@ internal sealed class WorldRenderCache
     }
 
     /// <summary>
+    ///     4-pre Item C — returns the cached <see cref="CellTerrainTextureSet" /> for this
+    ///     cell, building it on first miss via <paramref name="builder" /> (which must call
+    ///     <c>TerrainRenderer12.BuildCellTextureSet</c> or equivalent — the cache itself
+    ///     doesn't know how to walk neighbor LAND records). Subsequent calls return the
+    ///     cached set. Both the cell's own LAND data and the cardinal neighbors'
+    ///     LAND data are worldspace-static, so a single bake per cell is sufficient.
+    /// </summary>
+    internal CellTerrainTextureSet? GetOrBuildTerrainTextureSet(
+        CellRecord cell,
+        Func<CellTerrainTextureSet?> builder)
+    {
+        lock (_lock)
+        {
+            if (_terrainTextureSets.TryGetValue(cell, out var cached))
+            {
+                return cached;
+            }
+
+            var built = builder();
+            _terrainTextureSets[cell] = built;
+            return built;
+        }
+    }
+
+    /// <summary>
     ///     v3 Phase 3 — returns this cell's static-mesh placements with world transforms and
     ///     bounding spheres pre-computed. Filters out ACHR/ACRE (skinned actors, deferred to v4)
     ///     and refs without a resolved ModelPath. Result is cached per cell across frames;
@@ -60,47 +95,205 @@ internal sealed class WorldRenderCache
     {
         lock (_lock)
         {
-            if (_placements.TryGetValue(cell, out var cached))
-            {
-                return cached;
-            }
-
-            var placements = cell.PlacedObjects;
-            if (placements.Count == 0)
-            {
-                _placements[cell] = Array.Empty<RenderableReference>();
-                return _placements[cell];
-            }
-
-            var built = new List<RenderableReference>(placements.Count);
-            foreach (var p in placements)
-            {
-                var renderable = RenderableReference.TryBuild(p);
-                if (renderable.HasValue) built.Add(renderable.Value);
-            }
-            IReadOnlyList<RenderableReference> list = built.Count == 0
-                ? Array.Empty<RenderableReference>()
-                : built;
-            _placements[cell] = list;
-            return list;
+            return GetPlacementListLocked(cell);
         }
+    }
+
+    /// <summary>
+    ///     Returns this cell's static-mesh references whose cached aggregate bucket bounds may
+    ///     intersect the current reference visibility volume. The renderer still runs exact
+    ///     per-reference sphere/frustum tests afterward; this only avoids visiting whole
+    ///     sub-cell buckets that are definitely outside.
+    /// </summary>
+    internal int QueryPlacementCandidates(
+        CellRecord cell,
+        float centerX,
+        float centerY,
+        float radius,
+        Frustum? frustum,
+        float frustumMargin,
+        List<RenderableReference> destination)
+    {
+        ReferencePlacementSpatialIndex index;
+        lock (_lock)
+        {
+            if (!_placementSpatialIndexes.TryGetValue(cell, out index!))
+            {
+                index = ReferencePlacementSpatialIndex.Build(GetPlacementListLocked(cell));
+                _placementSpatialIndexes[cell] = index;
+            }
+        }
+
+        index.Query(centerX, centerY, radius, frustum, frustumMargin, destination);
+        return index.Count;
+    }
+
+    private IReadOnlyList<RenderableReference> GetPlacementListLocked(CellRecord cell)
+    {
+        if (_placements.TryGetValue(cell, out var cached))
+        {
+            return cached;
+        }
+
+        var placements = cell.PlacedObjects;
+        if (placements.Count == 0)
+        {
+            _placements[cell] = Array.Empty<RenderableReference>();
+            return _placements[cell];
+        }
+
+        var built = new List<RenderableReference>(placements.Count);
+        foreach (var p in placements)
+        {
+            var renderable = RenderableReference.TryBuild(p);
+            if (renderable.HasValue) built.Add(renderable.Value);
+        }
+        // Sort by ModelPath so consecutive draws batch on the same SRV — adjacent REFRs
+        // of the same model (road segments, fence posts, lamp poles, etc.) collapse into
+        // a single texture bind in ReferenceRenderer.BindSrvIfChanged. Ordinal compare is
+        // cheap and stable enough; we don't need a particular order, only batching.
+        built.Sort(static (a, b) => string.CompareOrdinal(a.ModelPath, b.ModelPath));
+        IReadOnlyList<RenderableReference> list = built.Count == 0
+            ? Array.Empty<RenderableReference>()
+            : built;
+        _placements[cell] = list;
+        return list;
     }
 
     internal static float? ResolveEffectiveWaterHeight(CellRecord cell, float? defaultWaterHeight)
     {
-        if (WorldHeightNormalizer.IsNoWaterSentinel(cell.WaterHeight))
-        {
-            return null;
-        }
-
+        // Sentinel XCLW (float.MaxValue) on a cell means "no explicit override — use the
+        // worldspace default," NOT "this cell has no water." Vanilla WastelandNV's Colorado
+        // river cells follow exactly this pattern: HasWater flag is set, XCLW is the
+        // sentinel, and the engine renders water at the worldspace DNAM level (-2300 in
+        // WastelandNV). The range guard below naturally rejects the sentinel (~3.4e38) and
+        // falls through to the worldspace fallback. The 2026-05-28 short-circuit that
+        // returned null here suppressed water for every such cell — the visible regression
+        // was "Colorado river displays empty."
         if (cell.WaterHeight is { } cellWater && cellWater is > -1e6f and < 1e6f)
         {
             return cellWater;
         }
 
+        // Worldspace-level sentinel still means "no default water plane exists" — leave it
+        // as the genuine no-water signal, since the worldspace author intent is the only
+        // place that distinction can come from once the cell has no explicit override.
         return WorldHeightNormalizer.IsNoWaterSentinel(defaultWaterHeight)
             ? null
             : defaultWaterHeight;
+    }
+}
+
+internal sealed class ReferencePlacementSpatialIndex
+{
+    private const float BucketSize = WorldGridConstants.CellSize / 4f;
+    private static readonly ReferencePlacementSpatialIndex Empty = new([], 0);
+
+    private readonly ReferencePlacementBucket[] _buckets;
+
+    private ReferencePlacementSpatialIndex(ReferencePlacementBucket[] buckets, int count)
+    {
+        _buckets = buckets;
+        Count = count;
+    }
+
+    internal int Count { get; }
+
+    internal static ReferencePlacementSpatialIndex Build(IReadOnlyList<RenderableReference> placements)
+    {
+        if (placements.Count == 0)
+        {
+            return Empty;
+        }
+
+        var builders = new Dictionary<(int bx, int by), ReferencePlacementBucketBuilder>();
+        foreach (var placement in placements)
+        {
+            var key = BucketKey(placement.BoundsCenter.X, placement.BoundsCenter.Y);
+            if (!builders.TryGetValue(key, out var builder))
+            {
+                builder = new ReferencePlacementBucketBuilder();
+                builders[key] = builder;
+            }
+
+            builder.Add(placement);
+        }
+
+        var buckets = new ReferencePlacementBucket[builders.Count];
+        var index = 0;
+        foreach (var builder in builders.Values)
+        {
+            buckets[index++] = builder.ToBucket();
+        }
+
+        return new ReferencePlacementSpatialIndex(buckets, placements.Count);
+    }
+
+    internal void Query(
+        float centerX,
+        float centerY,
+        float radius,
+        Frustum? frustum,
+        float frustumMargin,
+        List<RenderableReference> destination)
+    {
+        var radiusSq = radius * radius;
+        var margin = frustumMargin > 0f ? new Vector3(frustumMargin) : Vector3.Zero;
+        foreach (var bucket in _buckets)
+        {
+            if (!IntersectsCylinder(bucket.Min, bucket.Max, centerX, centerY, radiusSq))
+            {
+                continue;
+            }
+
+            if (frustum.HasValue && !frustum.Value.IntersectsAabb(bucket.Min - margin, bucket.Max + margin))
+            {
+                continue;
+            }
+
+            foreach (var placement in bucket.Placements)
+            {
+                destination.Add(placement);
+            }
+        }
+    }
+
+    private static bool IntersectsCylinder(Vector3 min, Vector3 max, float centerX, float centerY, float radiusSq)
+    {
+        var closestX = Math.Clamp(centerX, min.X, max.X);
+        var closestY = Math.Clamp(centerY, min.Y, max.Y);
+        var dx = centerX - closestX;
+        var dy = centerY - closestY;
+        return dx * dx + dy * dy <= radiusSq;
+    }
+
+    private static (int bx, int by) BucketKey(float x, float y) =>
+        ((int)MathF.Floor(x / BucketSize), (int)MathF.Floor(y / BucketSize));
+
+    private readonly record struct ReferencePlacementBucket(
+        RenderableReference[] Placements,
+        Vector3 Min,
+        Vector3 Max);
+
+    private sealed class ReferencePlacementBucketBuilder
+    {
+        private readonly List<RenderableReference> _placements = [];
+        private Vector3 _min = new(float.PositiveInfinity);
+        private Vector3 _max = new(float.NegativeInfinity);
+
+        internal void Add(RenderableReference placement)
+        {
+            _placements.Add(placement);
+
+            var radius = placement.BoundsRadius;
+            var itemMin = placement.BoundsCenter - new Vector3(radius);
+            var itemMax = placement.BoundsCenter + new Vector3(radius);
+            _min = Vector3.Min(_min, itemMin);
+            _max = Vector3.Max(_max, itemMax);
+        }
+
+        internal ReferencePlacementBucket ToBucket() =>
+            new(_placements.ToArray(), _min, _max);
     }
 }
 
@@ -194,6 +387,199 @@ internal sealed class DecodedTerrainCell
             LowResWaterMask = mask;
             return mask;
         }
+    }
+
+    /// <summary>
+    ///     Build a 33×33 water mask whose blur spans this cell AND its four cardinal
+    ///     neighbors' edge vertices, so the soft fade matches what the heightmap layer
+    ///     produces from its single bitmap-wide mask. Without neighbor extension, the
+    ///     per-cell 3×3 box blur runs against clamped borders and the water boundary
+    ///     ends in a hard rectangular cutoff at cell edges (visible regression in the
+    ///     texture-mode 2D map). Not cached because the neighbor configuration varies
+    ///     by viewport.
+    /// </summary>
+    /// <summary>
+    ///     Build a water mask at <paramref name="pixelsPerCell" /> resolution by
+    ///     bilinear-interpolating the 33×33 heightmap at every output pixel and producing a
+    ///     linear shoreline fade based on the height-vs-waterH delta. This is the texture-
+    ///     path replacement for "build at 33×33 then nearest-neighbor upscale" — the latter
+    ///     produced visible blocky shorelines at high zoom (TexturePixelsPerCell ≥ 132).
+    ///     <para>
+    ///         Cross-cell continuity is automatic because adjacent cells share their edge
+    ///         vertices: this cell's east column = east neighbor's west column. No neighbor
+    ///         parameters needed (unlike the 33×33 path, which had to extend the grid because
+    ///         the post-blur kernel clamped at cell borders).
+    ///     </para>
+    ///     <para>
+    ///         Shoreline softness: <paramref name="shorelineSoftnessUnits" /> defines the
+    ///         half-width (in game vertical units) of the fade band around the waterline.
+    ///         <c>h ≤ waterH - softness</c> ⇒ fully water (180); <c>h ≥ waterH + softness</c>
+    ///         ⇒ fully land (0); linear in between. Visual band width on screen = softness /
+    ///         local terrain slope — steep banks render crisp, gentle shores fade soft.
+    ///     </para>
+    ///     <para>
+    ///         Not cached: size varies with zoom and the texture stream rebuilds per pass
+    ///         anyway. Allocates one <c>byte[pxs*pxs]</c> per cell per call — same shape as
+    ///         the legacy <see cref="DecodedTerrainCell.GetLowResWaterMask" /> + upscale chain.
+    ///     </para>
+    /// </summary>
+    internal byte[]? GetHiResWaterMask(float? effectiveWaterHeight, int pixelsPerCell,
+        float shorelineSoftnessUnits = 8f)
+    {
+        if (!HasTerrain || effectiveWaterHeight is not (> -1e6f and < 1e6f)) return null;
+        if (pixelsPerCell < 2) return null;
+
+        var waterH = effectiveWaterHeight.Value;
+        const byte InteriorIntensity = 180;
+        var twoSoft = 2f * shorelineSoftnessUnits;
+        var span = (float)(GridSize - 1); // 32 quad-spaces across the cell
+        var vertsPerPixel = span / (pixelsPerCell - 1);
+
+        var mask = new byte[pixelsPerCell * pixelsPerCell];
+        for (var py = 0; py < pixelsPerCell; py++)
+        {
+            // py=0 → north edge of the cell = vertex y=GridSize-1 (matches the flip used by
+            // GetLowResWaterMask and the downstream image space).
+            var vy = span - py * vertsPerPixel;
+            var vy0 = (int)vy;
+            if (vy0 >= GridSize - 1) vy0 = GridSize - 2;
+            if (vy0 < 0) vy0 = 0;
+            var fy = vy - vy0;
+
+            for (var px = 0; px < pixelsPerCell; px++)
+            {
+                var vx = px * vertsPerPixel;
+                var vx0 = (int)vx;
+                if (vx0 >= GridSize - 1) vx0 = GridSize - 2;
+                if (vx0 < 0) vx0 = 0;
+                var fx = vx - vx0;
+
+                var h00 = HeightAt(vx0, vy0);
+                var h10 = HeightAt(vx0 + 1, vy0);
+                var h01 = HeightAt(vx0, vy0 + 1);
+                var h11 = HeightAt(vx0 + 1, vy0 + 1);
+                var top = h00 * (1f - fx) + h10 * fx;
+                var bot = h01 * (1f - fx) + h11 * fx;
+                var h = top * (1f - fy) + bot * fy;
+
+                var t = (waterH - h + shorelineSoftnessUnits) / twoSoft;
+                byte v;
+                if (t <= 0f) v = 0;
+                else if (t >= 1f) v = InteriorIntensity;
+                else v = (byte)(t * InteriorIntensity);
+                mask[py * pixelsPerCell + px] = v;
+            }
+        }
+        return mask;
+    }
+
+    internal static byte[]? BuildLowResWaterMaskWithNeighbors(
+        DecodedTerrainCell self,
+        DecodedTerrainCell? north,
+        DecodedTerrainCell? south,
+        DecodedTerrainCell? east,
+        DecodedTerrainCell? west,
+        float? effectiveWaterHeight)
+    {
+        if (!self.HasTerrain || effectiveWaterHeight is not (> -1e6f and < 1e6f))
+        {
+            return null;
+        }
+        var waterH = effectiveWaterHeight.Value;
+
+        const int N = GridSize;      // 33
+        const int E = N + 2;         // 35 — 1 vertex of context per side
+
+        var extMask = new byte[E * E];
+
+        // Inner 33×33: this cell's own vertices.
+        for (var py = 0; py < N; py++)
+        {
+            var srcY = N - 1 - py;
+            for (var px = 0; px < N; px++)
+            {
+                if (self.HeightAt(px, srcY) < waterH)
+                {
+                    extMask[(py + 1) * E + (px + 1)] = 180;
+                }
+            }
+        }
+
+        // North border (extMask row 0): one vertex NORTH of our north edge — the north
+        // neighbor's second-from-south row (its srcY=1; its srcY=0 IS our north edge).
+        if (north != null && north.HasTerrain)
+        {
+            for (var px = 0; px < N; px++)
+            {
+                if (north.HeightAt(px, 1) < waterH) extMask[(px + 1)] = 180;
+            }
+        }
+        else
+        {
+            for (var px = 0; px < N; px++) extMask[(px + 1)] = extMask[E + (px + 1)];
+        }
+
+        // South border (extMask row N+1): south neighbor's second-from-north row (srcY=N-2).
+        if (south != null && south.HasTerrain)
+        {
+            for (var px = 0; px < N; px++)
+            {
+                if (south.HeightAt(px, N - 2) < waterH) extMask[(N + 1) * E + (px + 1)] = 180;
+            }
+        }
+        else
+        {
+            for (var px = 0; px < N; px++) extMask[(N + 1) * E + (px + 1)] = extMask[N * E + (px + 1)];
+        }
+
+        // West border (extMask col 0): west neighbor's second-from-east column (x=N-2).
+        if (west != null && west.HasTerrain)
+        {
+            for (var py = 0; py < N; py++)
+            {
+                var srcY = N - 1 - py;
+                if (west.HeightAt(N - 2, srcY) < waterH) extMask[(py + 1) * E] = 180;
+            }
+        }
+        else
+        {
+            for (var py = 0; py < N; py++) extMask[(py + 1) * E] = extMask[(py + 1) * E + 1];
+        }
+
+        // East border (extMask col N+1): east neighbor's second-from-west column (x=1).
+        if (east != null && east.HasTerrain)
+        {
+            for (var py = 0; py < N; py++)
+            {
+                var srcY = N - 1 - py;
+                if (east.HeightAt(1, srcY) < waterH) extMask[(py + 1) * E + (N + 1)] = 180;
+            }
+        }
+        else
+        {
+            for (var py = 0; py < N; py++) extMask[(py + 1) * E + (N + 1)] = extMask[(py + 1) * E + N];
+        }
+
+        // Corners: cheap approximation — duplicate the adjacent cardinal edge. Diagonal
+        // neighbors would be ideal but the cardinal extension already kills the visible
+        // cutoff; a corner approximation error is one pixel out of ~135 and dominated
+        // by the blur kernel.
+        extMask[0] = extMask[1];                              // NW
+        extMask[E - 1] = extMask[E - 2];                      // NE
+        extMask[(E - 1) * E] = extMask[(E - 1) * E + 1];      // SW
+        extMask[(E - 1) * E + (E - 1)] = extMask[(E - 1) * E + (E - 2)]; // SE
+
+        // Blur the extended 35×35; crop the centre 33×33.
+        BlurWaterMask(extMask, E, E);
+        var mask = new byte[N * N];
+        for (var py = 0; py < N; py++)
+        {
+            for (var px = 0; px < N; px++)
+            {
+                mask[py * N + px] = extMask[(py + 1) * E + (px + 1)];
+            }
+        }
+        return mask;
     }
 
     private static void BlurWaterMask(byte[] mask, int width, int height)

@@ -12,6 +12,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>preview</LangVersion>
+    <!-- Required for the renderer's Map/Unmap helpers that write to D3D11 mapped memory via
+         raw pointers. Marshal.StructureToPtr<T> boxes the value type per call — unacceptable
+         at ~1500 draws/frame. Limited to the renderer helpers; not for general use. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- Application icon for both CLI and GUI executables -->
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
   </PropertyGroup>
@@ -49,6 +53,8 @@
     <InternalsVisibleTo Include="NifAnalyzer" />
     <InternalsVisibleTo Include="MinidumpAnalyzer" />
     <InternalsVisibleTo Include="FalloutAudioTranscriber" />
+    <InternalsVisibleTo Include="FalloutRendererProfiler" />
+    <InternalsVisibleTo Include="FalloutMap2DProfiler" />
     <InternalsVisibleTo Include="EgtAnalyzer" />
   </ItemGroup>
 
@@ -80,6 +86,7 @@
     <PackageReference Include="System.CommandLine" />
     <PackageReference Include="Spectre.Console" />
     <PackageReference Include="Vortice.Direct3D11" />
+    <PackageReference Include="Vortice.Direct3D12" />
     <PackageReference Include="Vortice.DXGI" />
     <PackageReference Include="Vortice.D3DCompiler" />
   </ItemGroup>
@@ -146,7 +153,9 @@
     <Compile Include="App\Helpers\WorldGridConstants.cs" />
     <Compile Include="App\Helpers\WorldRenderCache.cs" />
     <Compile Include="App\Helpers\WorldRenderStats.cs" />
+    <Compile Include="App\Helpers\WaterColorPalette.cs" />
     <Compile Include="App\Helpers\WorldSpatialIndex.cs" />
+    <Compile Include="App\Helpers\WorldViewStressBookmarkFinder.cs" />
     <Compile Include="App\Models\EsmPropertyEntry.cs" />
     <Compile Include="App\Models\WorldViewData.cs" />
     <!-- XAML files in App/ -->

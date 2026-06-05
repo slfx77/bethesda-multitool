@@ -10,11 +10,12 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
 ///     recomposing the world matrix and re-resolving the filter conditions per cell visit.
 ///     <para>
 ///         <see cref="WorldMatrix" /> is the composed model-to-world matrix. Per the
-///         Fallout / NifSkope / GECK convention, rotations apply in X→Y→Z body order with Z
-///         as the up axis, then translation: <c>world = S · Rx · Ry · Rz · T</c> in
-///         row-vector (System.Numerics) algebra. The vertex shader does
+///         Gamebryo / NifSkope Euler convention the world rotation is column-vector
+///         <c>Rx * Ry * Rz</c> (radians, right-handed CCW; Z up). System.Numerics is
+///         row-vector, so the equivalent is <c>world = S * Rz * Ry * Rx * T</c> in
+///         row-vector algebra. The vertex shader does
 ///         <c>mul(viewProj, mul(world, position))</c>; CPU-side this matches
-///         <c>position · world · viewProj</c>.
+///         <c>position * world * viewProj</c>.
 ///     </para>
 ///     <para>
 ///         <see cref="BoundsCenter" /> + <see cref="BoundsRadius" /> are a conservative
@@ -27,8 +28,20 @@ internal readonly record struct RenderableReference(
     Matrix4x4 WorldMatrix,
     string ModelPath,
     Vector3 BoundsCenter,
-    float BoundsRadius)
+    float BoundsRadius,
+    uint MeshId)
 {
+    /// <summary>
+    ///     4-pre Item B — computes the stable per-process MeshId from a ModelPath. Used to
+    ///     dedupe the per-REFR mesh-cache lookup in the cull loop: instead of doing a
+    ///     case-insensitive string hash + dict lookup per REFR (~80 ns × 5000 REFRs), the
+    ///     cull loop reads from a per-frame <c>Dictionary&lt;uint, CachedNifMesh12?&gt;</c>
+    ///     by the int MeshId (~25 ns hash). Same-process guarantee is sufficient: the
+    ///     registry / per-frame resolve map both live and die with the process.
+    /// </summary>
+    public static uint ComputeMeshId(string modelPath)
+        => (uint)string.GetHashCode(modelPath, StringComparison.OrdinalIgnoreCase);
+
     /// <summary>
     ///     Builds a <see cref="RenderableReference" /> from a <see cref="PlacedReference" />.
     ///     Returns <c>null</c> for ACHR/ACRE (skinned actors — deferred to v4), refs without a
@@ -54,25 +67,28 @@ internal readonly record struct RenderableReference(
             WorldMatrix: world,
             ModelPath: placement.ModelPath!,
             BoundsCenter: center,
-            BoundsRadius: radius);
+            BoundsRadius: radius,
+            MeshId: ComputeMeshId(placement.ModelPath!));
     }
 
     /// <summary>
-    ///     <c>world = S · Rx · Ry · Rz · T</c> in row-vector algebra (System.Numerics). The
-    ///     rotation order matches the documented Bethesda / NifSkope convention: X applied
-    ///     first, then Y, then Z, around the world (post-scale, pre-translate) axes.
-    ///     <para>
-    ///         If smoke testing reveals a different ordering (rare but possible per build),
-    ///         the fix is reordering these three lines — no surrounding changes needed.
-    ///     </para>
+    ///     <c>world = S * Rz * Ry * Rx * T</c> in row-vector algebra (System.Numerics). The
+    ///     rotation matches the Gamebryo / NifSkope Euler convention (NifSkope
+    ///     <c>Matrix::fromEuler</c>): <c>Rx * Ry * Rz</c> on a column vector. System.Numerics
+    ///     is row-vector, so the equivalent product is the transpose-reversed
+    ///     <c>Rz * Ry * Rx</c> below. Reversing this to X,Y,Z composes the inverse rotation
+    ///     and only matches the engine for single-axis (e.g. yaw-only) placements; multi-axis
+    ///     props such as the HELIOS One collectors then face the wrong way.
     /// </summary>
     private static Matrix4x4 ComposeWorldMatrix(PlacedReference p)
     {
         var scale = p.Scale > 0f ? p.Scale : 1f;
+        // Order matters: see method doc. Z, then Y, then X in System.Numerics row-vector
+        // form == column-vector Rx*Ry*Rz, the Gamebryo/NifSkope Euler convention.
         return Matrix4x4.CreateScale(scale)
-             * Matrix4x4.CreateRotationX(p.RotX)
-             * Matrix4x4.CreateRotationY(p.RotY)
              * Matrix4x4.CreateRotationZ(p.RotZ)
+             * Matrix4x4.CreateRotationY(p.RotY)
+             * Matrix4x4.CreateRotationX(p.RotX)
              * Matrix4x4.CreateTranslation(p.X, p.Y, p.Z);
     }
 

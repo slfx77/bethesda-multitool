@@ -42,6 +42,7 @@
               Opacity="0.85">
         <TextBlock x:Name="HudText"
                    FontFamily="Consolas" FontSize="11"
+                   TextWrapping="Wrap"
                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                    AutomationProperties.Name="3D view HUD"
                    Text="" />

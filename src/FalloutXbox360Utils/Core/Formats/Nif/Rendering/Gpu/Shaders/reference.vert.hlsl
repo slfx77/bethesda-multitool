@@ -16,9 +16,17 @@ cbuffer PerFrame : register(b0)
 cbuffer PerDraw : register(b1)
 {
     float4x4 uWorld;
-    // x = alpha-test threshold in [0, 1]; 0 disables. y = double-sided flag (unused in VS,
-    // shader-side equivalent of CullMode.None handled by the C# rasterizer state). zw = pad.
-    float4 uAlphaTestThreshold_DoubleSided_Pad;
+    // uAlphaState: x = alpha-test threshold, y = alpha-test function, z = material alpha,
+    // w = blended-mode flag. Unused in VS; kept for PerDraw cbuffer layout parity with PS.
+    float4 uAlphaState;
+    // uRenderState: x = double-sided, y = has bump map, z = bump strength, w = unlit/emissive.
+    // Unused in VS; cull state is handled on the CPU side.
+    float4 uRenderState;
+    // uTextureState: x = BC5/ATI2 normal map, yzw reserved.
+    float4 uTextureState;
+    // 4a — bindless TexIndices: .x diffuse slot, .y normal slot, .zw reserved. Mirrors
+    // the instanced VS's per-instance struct; the PS reads vTexIndices regardless of path.
+    uint4  uTexIndices;
 };
 
 struct VSInput
@@ -37,6 +45,12 @@ struct VSOutput
     float3 vWorldNormal : TEXCOORD0;
     float2 vTexCoord    : TEXCOORD1;
     float4 vVertexColor : TEXCOORD2;
+    float3 vTangent     : TEXCOORD3;
+    float3 vBitangent   : TEXCOORD4;
+    nointerpolation float4 vAlphaState  : TEXCOORD5;
+    nointerpolation float4 vRenderState : TEXCOORD6;
+    nointerpolation float4 vTextureState : TEXCOORD7;
+    nointerpolation uint4  vTexIndices  : TEXCOORD8;
 };
 
 VSOutput main(VSInput input)
@@ -49,5 +63,11 @@ VSOutput main(VSInput input)
     o.vWorldNormal = mul((float3x3)uWorld, input.aNormal);
     o.vTexCoord = input.aTexCoord;
     o.vVertexColor = input.aVertexColor;
+    o.vTangent = mul((float3x3)uWorld, input.aTangent);
+    o.vBitangent = mul((float3x3)uWorld, input.aBitangent);
+    o.vAlphaState = uAlphaState;
+    o.vRenderState = uRenderState;
+    o.vTextureState = uTextureState;
+    o.vTexIndices = uTexIndices;
     return o;
 }

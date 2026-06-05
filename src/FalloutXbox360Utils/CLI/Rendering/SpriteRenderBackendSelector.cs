@@ -1,8 +1,13 @@
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI.Rendering;
 
+/// <summary>
+///     Picks the CLI sprite render backend. D3D12 is the only supported GPU path; falls
+///     back to the CPU software renderer when D3D12 is unavailable (or when <c>--cpu</c>
+///     is forced). <c>FALLOUT_VIEWER_D3D12_DEBUG=1</c> enables the validation layer.
+/// </summary>
 internal static class SpriteRenderBackendSelector
 {
     internal static SpriteRenderBackendSelection Create(
@@ -30,7 +35,8 @@ internal static class SpriteRenderBackendSelector
             return new SpriteRenderBackendSelection(null, null, false);
         }
 
-        var device = GpuDevice.Create();
+        var enableDebugLayer = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_D3D12_DEBUG") == "1";
+        var device = GpuDevice12.Create(enableDebugLayer);
         if (device == null)
         {
             if (forceGpu)
@@ -47,10 +53,10 @@ internal static class SpriteRenderBackendSelector
             return new SpriteRenderBackendSelection(null, null, false);
         }
 
-        var renderer = new GpuSpriteRenderer(device);
+        var renderer = new GpuSpriteRenderer12(device);
         AnsiConsole.MarkupLine(
             "GPU rendering: [green]{0}[/] ({1})",
-            GpuDevice.Backend,
+            GpuDevice12.Backend,
             device.DeviceName);
         return new SpriteRenderBackendSelection(device, renderer, false);
     }

@@ -11,9 +11,7 @@ internal sealed class NifTextureDirectorySource(string rootPath) : INifTextureSo
 
     public DecodedTexture? TryLoad(string path)
     {
-        var primaryPath = Path.Combine(
-            _rootPath,
-            path.Replace('\\', Path.DirectorySeparatorChar));
+        var primaryPath = ResolveLocalPath(path);
         string? alternatePath;
         if (path.EndsWith(".dds", StringComparison.OrdinalIgnoreCase))
         {
@@ -53,7 +51,30 @@ internal sealed class NifTextureDirectorySource(string rootPath) : INifTextureSo
         return null;
     }
 
+    public byte[]? TryLoadRaw(string path)
+    {
+        var primaryPath = ResolveLocalPath(path);
+        if (!File.Exists(primaryPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            return File.ReadAllBytes(primaryPath);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public void Dispose()
     {
     }
+
+    private string ResolveLocalPath(string path) =>
+        Path.Combine(
+            _rootPath,
+            path.Replace('\\', Path.DirectorySeparatorChar));
 }

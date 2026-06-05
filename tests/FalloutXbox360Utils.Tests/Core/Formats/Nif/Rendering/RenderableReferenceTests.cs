@@ -86,6 +86,69 @@ public sealed class RenderableReferenceTests
     }
 
     [Fact]
+    public void TryBuild_MultiAxisRotation_MatchesGamebryoNifSkopeEulerConvention()
+    {
+        // Regression guard for the rotation-composition order. The authoritative Gamebryo /
+        // NIF Euler convention (NifSkope Matrix::fromEuler) builds, for a column vector,
+        // world = Rx * Ry * Rz * local. For single-axis placements the order is irrelevant,
+        // so a reversed product (Rz * Ry * Rx) still looks correct for yaw-only props — which
+        // is exactly why the bug only showed on multi-axis objects like the HELIOS One
+        // collectors. We therefore validate against a rotation with ALL THREE axes non-trivial.
+        const float rx = 0.30f, ry = 0.60f, rz = 1.10f;
+
+        var placement = new PlacedReference
+        {
+            FormId = 0x1,
+            BaseFormId = 0x2,
+            ModelPath = "meshes/test.nif",
+            RecordType = "REFR",
+            X = 0f, Y = 0f, Z = 0f, // pure rotation: no translation to subtract out
+            RotX = rx, RotY = ry, RotZ = rz,
+            Scale = 1f
+        };
+
+        var world = RenderableReference.TryBuild(placement)!.Value.WorldMatrix;
+
+        // Compare every local basis axis against the NifSkope column-vector reference. If all
+        // three rotated axes match, the full 3x3 rotation matches.
+        foreach (var axis in new[] { Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ })
+        {
+            var actual = Vector3.Transform(axis, world);
+            var expected = NifSkopeFromEulerColumn(rx, ry, rz, axis);
+            Assert.Equal(expected.X, actual.X, 4);
+            Assert.Equal(expected.Y, actual.Y, 4);
+            Assert.Equal(expected.Z, actual.Z, 4);
+        }
+    }
+
+    /// <summary>
+    ///     Reference implementation of NifSkope's <c>Matrix::fromEuler</c> (niftypes.cpp),
+    ///     i.e. column-vector <c>world = Rx * Ry * Rz * local</c>. Returns the world-space
+    ///     direction of a local basis vector under that convention.
+    /// </summary>
+    private static Vector3 NifSkopeFromEulerColumn(float x, float y, float z, Vector3 local)
+    {
+        float sinX = MathF.Sin(x), cosX = MathF.Cos(x);
+        float sinY = MathF.Sin(y), cosY = MathF.Cos(y);
+        float sinZ = MathF.Sin(z), cosZ = MathF.Cos(z);
+
+        var m00 = cosY * cosZ;
+        var m01 = -cosY * sinZ;
+        var m02 = sinY;
+        var m10 = sinX * sinY * cosZ + sinZ * cosX;
+        var m11 = cosX * cosZ - sinX * sinY * sinZ;
+        var m12 = -sinX * cosY;
+        var m20 = sinX * sinZ - cosX * sinY * cosZ;
+        var m21 = cosX * sinY * sinZ + sinX * cosZ;
+        var m22 = cosX * cosY;
+
+        return new Vector3(
+            m00 * local.X + m01 * local.Y + m02 * local.Z,
+            m10 * local.X + m11 * local.Y + m12 * local.Z,
+            m20 * local.X + m21 * local.Y + m22 * local.Z);
+    }
+
+    [Fact]
     public void TryBuild_ZeroScale_ClampsToUnitScaleToAvoidDegenerateMatrix()
     {
         // Some DMP captures surface REFRs with Scale=0 (parser fallback). A zero-scale matrix

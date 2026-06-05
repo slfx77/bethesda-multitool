@@ -47,6 +47,16 @@ internal readonly record struct Frustum(
             && TestPlane(Far, min, max);
     }
 
+    public bool IntersectsSphere(Vector3 center, float radius)
+    {
+        return TestSpherePlane(Left, center, radius)
+            && TestSpherePlane(Right, center, radius)
+            && TestSpherePlane(Bottom, center, radius)
+            && TestSpherePlane(Top, center, radius)
+            && TestSpherePlane(Near, center, radius)
+            && TestSpherePlane(Far, center, radius);
+    }
+
     private static bool TestPlane(Plane plane, Vector3 min, Vector3 max)
     {
         // Positive vertex: the box corner furthest along the plane normal.
@@ -57,6 +67,9 @@ internal readonly record struct Frustum(
 
         return Vector3.Dot(plane.Normal, positive) + plane.D >= 0f;
     }
+
+    private static bool TestSpherePlane(Plane plane, Vector3 center, float radius) =>
+        Vector3.Dot(plane.Normal, center) + plane.D >= -radius;
 
     private static Plane NormalizePlane(Plane p)
     {
