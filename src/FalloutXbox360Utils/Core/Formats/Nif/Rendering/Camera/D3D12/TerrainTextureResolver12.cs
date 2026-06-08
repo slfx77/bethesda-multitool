@@ -51,6 +51,14 @@ internal sealed class TerrainTextureResolver12 : IDisposable
 
     public int FrameRgbaTextureUploads => _textureCache.FrameRgbaFallbackUploads;
 
+    public int FrameQueuedTextureResolves => _textureCache.FrameQueuedResolves;
+
+    public int FrameActiveTextureResolves => _textureCache.FrameActiveResolves;
+
+    public int PendingTextureResolves => _textureCache.PendingResolveCount;
+
+    public int PendingTextureUploads => _textureCache.PendingUploadCount;
+
     public void ResetFrameStats()
     {
         FrameCacheMisses = 0;
@@ -78,6 +86,20 @@ internal sealed class TerrainTextureResolver12 : IDisposable
         var entry = _textureCache.GetOrUpload(path);
         _byLtex[ltexFormId] = entry;
         return entry;
+    }
+
+    /// <summary>
+    ///     Resolves an arbitrary texture path (e.g. a WATR NNAM noise/normal map) as a normal map
+    ///     and returns its stable bindless SRV index, or <c>null</c> when no path is given. The
+    ///     upload streams asynchronously through the same <see cref="GpuTextureCache12" /> as
+    ///     terrain — the index is valid in the slot-4 bindless table immediately (pointing at the
+    ///     flat-normal placeholder until the real texture lands). Used by the water renderer so it
+    ///     samples the engine's actual NNAM perturbation instead of a procedural stand-in.
+    /// </summary>
+    public uint? ResolveNormalMapBindlessIndex(string? texturePath)
+    {
+        if (string.IsNullOrWhiteSpace(texturePath)) return null;
+        return _textureCache.GetOrUpload(texturePath, isNormalMap: true).BindlessIndex;
     }
 
     public void Dispose()

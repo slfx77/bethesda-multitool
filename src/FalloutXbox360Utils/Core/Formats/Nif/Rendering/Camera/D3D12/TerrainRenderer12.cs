@@ -1,6 +1,7 @@
 #if WINDOWS_GUI
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -32,7 +33,9 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12;
 internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
 {
     private const uint PerFrameByteSize = 64;     // float4x4 viewProj
+    private const uint PerDrawByteSize = 64;      // uint4[4] = 16 terrain texture bindless indices
     private const uint PerModeByteSize = 16;      // float4 (debugMode.x, uvScale, pad, pad)
+    private const ShaderFlags EnableUnboundedDescriptorTables = (ShaderFlags)0x00100000;
     private const int MaxNewUploadsPerFrame = 16;
 
     // Wall-clock ceiling on render-thread cell build/upload work per frame. Bounds the
@@ -41,12 +44,20 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     // Tuned against MeshBuildUploadMilliseconds.
     private const double MaxMeshBuildMillisecondsPerFrame = 2.0;
 
-    // Async cell build (mirrors ReferenceMeshCache12): heightmap + texture-set + blend-weight
-    // build runs on background tasks; only GPU buffer creation, SRV resolve, and cache insert stay
-    // on the render thread. Concurrency scales to cores (leave one for the render/UI thread) — the
-    // CPU build never touches D3D12 so a wider pool only shortens latency, it cannot spike a frame.
-    private static readonly int MaxConcurrentBuildTasks = Math.Clamp(Environment.ProcessorCount - 1, 4, 16);
-    private static readonly int MaxBuildStartsPerFrame = MaxConcurrentBuildTasks;
+    // Async cell build runs off the render thread, but it still allocates enough to compete with
+    // mesh decode and trigger visible GC pauses. Keep the default conservative and tune via env
+    // when profiling throughput on a specific machine.
+    private static readonly int MaxConcurrentBuildTasks = ParsePositiveIntEnvironment(
+        "FALLOUT_VIEWER_TERRAIN_BUILD_CONCURRENCY",
+        defaultValue: 2,
+        min: 1,
+        max: 16);
+
+    private static readonly int MaxBuildStartsPerFrame = ParsePositiveIntEnvironment(
+        "FALLOUT_VIEWER_TERRAIN_BUILD_STARTS_PER_FRAME",
+        defaultValue: MaxConcurrentBuildTasks,
+        min: 1,
+        max: MaxConcurrentBuildTasks);
 
     private const int MinCacheCapacity = 1024;
     private const int CacheHeadroom = 256;
@@ -56,8 +67,10 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     /// <summary>
     ///     Input layout matching the engine-accurate terrain shader: slot 0 is the shared
     ///     <see cref="GpuMeshUploader.GpuVertex" /> (6 attributes, TEXCOORD0..5); slot 1 is
-    ///     the per-cell <see cref="CellTerrainTextureSet" /> blend-weight stream — one float4
-    ///     per vertex, uploaded as an independent buffer per cached cell.
+    ///     the per-cell <see cref="CellTerrainTextureSet" /> blend-weight stream — four float4s
+    ///     per vertex (16 layer weights, TEXCOORD6..9), uploaded as an independent buffer per
+    ///     cached cell. Sixteen weights match the 2D blit's per-pixel layer ceiling, so the 3D
+    ///     terrain blend is now non-lossy.
     /// </summary>
     private static readonly InputElementDescription[] TerrainInputElements =
     [
@@ -67,7 +80,10 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         new("TEXCOORD", 3, Format.R32G32B32A32_Float, 32, 0), // aVertexColor
         new("TEXCOORD", 4, Format.R32G32B32_Float,   48, 0), // aTangent (unused)
         new("TEXCOORD", 5, Format.R32G32B32_Float,   60, 0), // aBitangent (unused)
-        new("TEXCOORD", 6, Format.R32G32B32A32_Float, 0, 1)  // aLayerWeights (slot 1)
+        new("TEXCOORD", 6, Format.R32G32B32A32_Float,  0, 1), // aLayerWeights0 (slot 1, slots 0..3)
+        new("TEXCOORD", 7, Format.R32G32B32A32_Float, 16, 1), // aLayerWeights1 (slots 4..7)
+        new("TEXCOORD", 8, Format.R32G32B32A32_Float, 32, 1), // aLayerWeights2 (slots 8..11)
+        new("TEXCOORD", 9, Format.R32G32B32A32_Float, 48, 1)  // aLayerWeights3 (slots 12..15)
     ];
 
     private static readonly Comparison<VisibleCell> ByDistanceAscending =
@@ -95,7 +111,8 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     private readonly List<global::FalloutXbox360Utils.WorldSpatialCell> _candidateScratch = new();
     private readonly GpuMeshUploader.GpuVertex[] _vertexScratch =
         new GpuMeshUploader.GpuVertex[TerrainMeshBuilder.VertexCount];
-    private readonly Vector4[] _blendWeightScratch = new Vector4[TerrainMeshBuilder.VertexCount];
+    private readonly Vector4[] _blendWeightScratch =
+        new Vector4[TerrainMeshBuilder.VertexCount * CellTerrainTextureSet.SlotVectors];
 
     // Async cell-build bookkeeping. _buildQueue / _queuedOrBuilding / _frameBuildStarts and the
     // whole upload path are touched ONLY on the render thread (LoadData and Render run on the same
@@ -111,13 +128,6 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     private int _activeBuildTasks;
     private int _frameBuildStarts;
     private int _loadGeneration;
-
-    // SRV-bind dedup: the engine-accurate path binds 4 cell-wide diffuse SRVs per cell,
-    // down from the prior 4+3=7 per-quadrant binding. Adjacent cells in open-desert
-    // WastelandNV almost always share the dominant LTEX, so the dedup still avoids a
-    // descriptor-table alloc + 4 SRV writes on most cell transitions.
-    private readonly ID3D12Resource?[] _lastSrvSlots = new ID3D12Resource?[CellTerrainTextureSet.MaxSlots];
-    private readonly ID3D12Resource[] _currentSrvSlots = new ID3D12Resource[CellTerrainTextureSet.MaxSlots];
 
     private Dictionary<(int gx, int gy), CellRecord>? _cells;
     private global::FalloutXbox360Utils.WorldSpatialIndex? _spatialIndex;
@@ -299,10 +309,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         cmd.IASetIndexBuffer(_sharedIbv);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, perFrameAlloc.GpuAddress);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerModeCbv, perModeAlloc.GpuAddress);
-
-        // Reset SRV-bind dedup tracking each frame — descriptors from the prior frame live
-        // in a different heap slot and may have been overwritten by other renderers since.
-        Array.Clear(_lastSrvSlots);
+        cmd.SetGraphicsRootDescriptorTable(GpuRootSignature12.Slots.BindlessSrvTable, _cbvSrvUavHeap.BindlessHeapStartGpu);
 
         LastStats.StateSetupMilliseconds = ElapsedMilliseconds(segmentStarted);
         segmentStarted = StartTiming();
@@ -367,7 +374,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         var uploadBudget = MaxNewUploadsPerFrame;
         var uploadTimeBudget = new FrameUploadTimeBudget(MaxMeshBuildMillisecondsPerFrame);
         var vertexStride = (uint)Marshal.SizeOf<GpuMeshUploader.GpuVertex>();
-        const uint blendWeightStride = 16; // sizeof(Vector4)
+        const uint blendWeightStride = 64; // SlotVectors (4) × sizeof(Vector4)
         var drawn = 0;
         if (_missingVisibleScratch.Count > 0)
         {
@@ -413,6 +420,10 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         LastStats.TextureCacheMisses = _textureResolver.FrameCacheMisses;
         LastStats.TextureCompressedUploads = _textureResolver.FrameCompressedTextureUploads;
         LastStats.TextureRgbaFallbackUploads = _textureResolver.FrameRgbaTextureUploads;
+        LastStats.TextureQueuedResolves = _textureResolver.FrameQueuedTextureResolves;
+        LastStats.TextureActiveResolves = _textureResolver.FrameActiveTextureResolves;
+        LastStats.TexturePendingResolves = _textureResolver.PendingTextureResolves;
+        LastStats.TexturePendingUploads = _textureResolver.PendingTextureUploads;
         LastStats.CpuFrameMilliseconds = ElapsedMilliseconds(started);
         return drawn;
 
@@ -461,40 +472,17 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     }
 
     /// <summary>
-    ///     Engine-accurate per-cell draw: binds the cell's 4 cell-wide diffuse SRVs (resolved
-    ///     once at mesh-build time via <see cref="CellTerrainTextureSet" />) and issues a
+    ///     Engine-accurate per-cell draw: binds the cell's 4 cell-wide diffuse bindless indices
+    ///     (resolved once at mesh-build time via <see cref="CellTerrainTextureSet" />) and issues a
     ///     single DrawIndexedInstanced for the full 33×33 mesh. The per-vertex blend weights
     ///     bound at vertex slot 1 carry all per-cell variation, so the prior 4-quadrant
     ///     sub-draws + per-quadrant constant buffer are gone.
     /// </summary>
     private void DrawCell(ID3D12GraphicsCommandList cmd, CachedCellMesh12 entry)
     {
-        // Dedup: when adjacent cells reuse the same SlotResources references (very common
-        // in open-desert WastelandNV where many cells share one BTXT), the prior descriptor
-        // table is still active and we can skip the allocate+write+bind sequence.
-        var srvsChanged = false;
-        for (var i = 0; i < CellTerrainTextureSet.MaxSlots; i++)
-        {
-            _currentSrvSlots[i] = entry.SlotResources[i];
-            if (!ReferenceEquals(_lastSrvSlots[i], _currentSrvSlots[i])) srvsChanged = true;
-        }
-
-        if (srvsChanged)
-        {
-            var descriptors = _cbvSrvUavHeap.Allocate(CellTerrainTextureSet.MaxSlots);
-            var cpuStart = descriptors.Cpu;
-            var size = descriptors.DescriptorSize;
-            for (var i = 0; i < CellTerrainTextureSet.MaxSlots; i++)
-            {
-                _gpu.Device.CopyDescriptorsSimple(
-                    1,
-                    new CpuDescriptorHandle(cpuStart, i, size),
-                    entry.SlotPersistentSrvs[i],
-                    DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView);
-            }
-            cmd.SetGraphicsRootDescriptorTable(GpuRootSignature12.Slots.SrvTable, descriptors.Gpu);
-            Array.Copy(_currentSrvSlots, _lastSrvSlots, CellTerrainTextureSet.MaxSlots);
-        }
+        var perDrawAlloc = _ringBuffer.Allocate(_recorder.FrameIndex, PerDrawByteSize, GpuRingBuffer12.CbAlignment);
+        unsafe { *(TerrainTextureIndices*)perDrawAlloc.CpuPtr = entry.TextureIndices; }
+        cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerDrawCbv, perDrawAlloc.GpuAddress);
 
         cmd.DrawIndexedInstanced(
             indexCountPerInstance: (uint)TerrainMeshBuilder.IndexCount,
@@ -650,7 +638,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             ? renderCache.GetOrBuildTerrainTextureSet(cell, () => BuildCellTextureSet(key, cell, cells))
             : BuildCellTextureSet(key, cell, cells);
 
-        var blendWeights = new Vector4[TerrainMeshBuilder.VertexCount];
+        var blendWeights = new Vector4[TerrainMeshBuilder.VertexCount * CellTerrainTextureSet.SlotVectors];
         PopulateBlendWeights(textureSet, blendWeights);
         return new BuiltCellCpuData(vertices, blendWeights, textureSet, Unusable: false, generation);
     }
@@ -728,6 +716,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     private CachedCellMesh12? UploadBuiltCell((int gx, int gy) key, BuiltCellCpuData cpu)
     {
         var started = StartTiming();
+        var success = false;
         try
         {
             var vb = GpuMeshBufferFactory12.CreateDefaultBuffer(
@@ -743,24 +732,36 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
                 cpu.BlendWeights!,
                 ResourceStates.VertexAndConstantBuffer);
 
-            var slotResources = new ID3D12Resource[CellTerrainTextureSet.MaxSlots];
-            var slotPersistentSrvs = new CpuDescriptorHandle[CellTerrainTextureSet.MaxSlots];
-            ResolveSlotResources(cpu.TextureSet, slotResources, slotPersistentSrvs);
+            var textureIndices = ResolveSlotTextureIndices(cpu.TextureSet);
 
             var entry = new CachedCellMesh12
             {
                 VertexBuffer = vb,
                 BlendWeightBuffer = blendBuffer,
-                SlotResources = slotResources,
-                SlotPersistentSrvs = slotPersistentSrvs,
+                TextureIndices = textureIndices,
                 DeletionQueue = _deletionQueue,
             };
             _meshCache.Insert(key, entry);
+            success = true;
             return entry;
         }
         finally
         {
-            LastStats.MeshBuildUploadMilliseconds += ElapsedMilliseconds(started);
+            var elapsed = ElapsedMilliseconds(started);
+            LastStats.MeshBuildUploadMilliseconds += elapsed;
+            if (RendererProfilerTrace.IsEnabled)
+            {
+                RendererProfilerTrace.Event("resource-event", new Dictionary<string, object?>
+                {
+                    ["resource"] = "terrain-mesh",
+                    ["phase"] = "upload",
+                    ["source"] = "async-built-cell",
+                    ["gridX"] = key.gx,
+                    ["gridY"] = key.gy,
+                    ["elapsedMs"] = elapsed,
+                    ["success"] = success
+                });
+            }
         }
     }
 
@@ -771,6 +772,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     private CachedCellMesh12? TryBuildAndCacheSync((int gx, int gy) key, CellRecord cell)
     {
         var started = StartTiming();
+        var success = false;
         try
         {
             if (!TerrainMeshBuilder.TryBuildVertices(cell, _vertexScratch, _renderCache))
@@ -797,24 +799,36 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
                 _blendWeightScratch,
                 ResourceStates.VertexAndConstantBuffer);
 
-            var slotResources = new ID3D12Resource[CellTerrainTextureSet.MaxSlots];
-            var slotPersistentSrvs = new CpuDescriptorHandle[CellTerrainTextureSet.MaxSlots];
-            ResolveSlotResources(textureSet, slotResources, slotPersistentSrvs);
+            var textureIndices = ResolveSlotTextureIndices(textureSet);
 
             var entry = new CachedCellMesh12
             {
                 VertexBuffer = vb,
                 BlendWeightBuffer = blendBuffer,
-                SlotResources = slotResources,
-                SlotPersistentSrvs = slotPersistentSrvs,
+                TextureIndices = textureIndices,
                 DeletionQueue = _deletionQueue,
             };
             _meshCache.Insert(key, entry);
+            success = true;
             return entry;
         }
         finally
         {
-            LastStats.MeshBuildUploadMilliseconds += ElapsedMilliseconds(started);
+            var elapsed = ElapsedMilliseconds(started);
+            LastStats.MeshBuildUploadMilliseconds += elapsed;
+            if (RendererProfilerTrace.IsEnabled)
+            {
+                RendererProfilerTrace.Event("resource-event", new Dictionary<string, object?>
+                {
+                    ["resource"] = "terrain-mesh",
+                    ["phase"] = "build-upload",
+                    ["source"] = "sync-cell",
+                    ["gridX"] = key.gx,
+                    ["gridY"] = key.gy,
+                    ["elapsedMs"] = elapsed,
+                    ["success"] = success
+                });
+            }
         }
     }
 
@@ -890,6 +904,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             Array.Clear(dest);
             return;
         }
+        const int vectors = CellTerrainTextureSet.SlotVectors;
         for (var j = 0; j < CellLayerWeightTable.CellVertexCount; j++)
         {
             var cellVy = CellLayerWeightTable.CellVertexCount - 1 - j;
@@ -897,37 +912,51 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             {
                 var meshIdx = j * CellLayerWeightTable.CellVertexCount + i;
                 var tableIdx = cellVy * CellLayerWeightTable.CellVertexCount + i;
-                dest[meshIdx] = set.VertexWeights[tableIdx];
+                for (var k = 0; k < vectors; k++)
+                {
+                    dest[meshIdx * vectors + k] = set.VertexWeights[tableIdx * vectors + k];
+                }
             }
         }
     }
 
     /// <summary>
-    ///     Resolve the 4 cell-wide diffuse SRVs the new shader binds. The engine-default
-    ///     sentinel routes to the resolver's EngineDefault entry (DirtWasteland01); empty
-    ///     slots also fall back there so all 4 sample positions in the shader have a valid
-    ///     resource even when fewer than 4 LTEXs were assigned by the projection.
+    ///     Resolve the 4 cell-wide diffuse bindless texture indices the terrain shader samples.
+    ///     The engine-default sentinel routes to DirtWasteland01; empty slots also fall back there
+    ///     so all 4 sample positions remain valid when fewer than 4 LTEXs are assigned.
     /// </summary>
-    private void ResolveSlotResources(
-        CellTerrainTextureSet? set,
-        ID3D12Resource[] slotResources,
-        CpuDescriptorHandle[] slotPersistentSrvs)
+    private TerrainTextureIndices ResolveSlotTextureIndices(CellTerrainTextureSet? set)
     {
         var active = set?.ActiveSlotCount ?? 0;
-        for (var s = 0; s < CellTerrainTextureSet.MaxSlots; s++)
+        var indices = new TerrainTextureIndices();
+        unsafe
         {
-            var entry = s < active && set!.SlotFormIds[s] != CellLayerWeightTable.EngineDefaultSentinelFormId
-                ? _textureResolver.Resolve(set.SlotFormIds[s])
-                : _textureResolver.EngineDefault;
-            slotResources[s] = entry.Texture;
-            slotPersistentSrvs[s] = entry.PersistentSrv;
+            for (var slot = 0; slot < CellTerrainTextureSet.MaxSlots; slot++)
+            {
+                var entry = slot < active && set!.SlotFormIds[slot] != CellLayerWeightTable.EngineDefaultSentinelFormId
+                    ? _textureResolver.Resolve(set.SlotFormIds[slot])
+                    : _textureResolver.EngineDefault;
+                indices.Index[slot] = entry.BindlessIndex;
+            }
         }
+        return indices;
     }
 
     private long StartTiming() => DetailedProfilingEnabled ? Stopwatch.GetTimestamp() : 0;
 
     private static double ElapsedMilliseconds(long started) =>
         started == 0 ? 0 : Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+
+    private static int ParsePositiveIntEnvironment(string name, int defaultValue, int min, int max)
+    {
+        var raw = Environment.GetEnvironmentVariable(name);
+        if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
+        {
+            return defaultValue;
+        }
+
+        return Math.Clamp(value, min, max);
+    }
 
     private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile)
     {
@@ -940,8 +969,21 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         using var reader = new StreamReader(stream);
         var source = reader.ReadToEnd();
 
-        var result = Compiler.Compile(source, entryPoint, sourceName: name, profile,
-            out Blob? bytecode, out Blob? errors);
+        var shaderFlags = source.Contains("textures[]", StringComparison.Ordinal)
+            ? EnableUnboundedDescriptorTables
+            : ShaderFlags.None;
+
+        var result = Compiler.Compile(
+            source,
+            Array.Empty<ShaderMacro>(),
+            include: null!,
+            entryPoint,
+            sourceName: name,
+            profile,
+            shaderFlags,
+            EffectFlags.None,
+            out Blob? bytecode,
+            out Blob? errors);
 
         if (result.Failure || bytecode is null)
         {
@@ -957,6 +999,16 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     }
 
     private readonly record struct VisibleCell((int gx, int gy) Key, CellRecord Cell, float DistSq);
+
+    /// <summary>
+    ///     Per-cell bindless diffuse texture indices for the 16 blend slots, laid out as
+    ///     <c>uint4[4]</c> to match the terrain fragment shader's <c>uTextureIndices[4]</c>.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    private unsafe struct TerrainTextureIndices
+    {
+        public fixed uint Index[CellTerrainTextureSet.MaxSlots];
+    }
 
     /// <summary>
     ///     CPU-only product of a background cell build. Holds freshly-allocated per-task arrays (so
@@ -979,14 +1031,12 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     {
         public required ID3D12Resource VertexBuffer { get; init; }
         public required ID3D12Resource BlendWeightBuffer { get; init; }
-        /// <summary>The 4 cell-wide diffuse textures (cached references; owned by TerrainTextureResolver12).</summary>
-        public required ID3D12Resource[] SlotResources { get; init; }
-        public required CpuDescriptorHandle[] SlotPersistentSrvs { get; init; }
+        public required TerrainTextureIndices TextureIndices { get; init; }
         public required GpuDeletionQueue12 DeletionQueue { get; init; }
 
         // Route through the deletion queue so LRU eviction can't release a buffer that the
-        // GPU is still consuming from the previous frame's command list. SlotResources are
-        // owned by TerrainTextureResolver12 and disposed there — don't enqueue them.
+        // GPU is still consuming from the previous frame's command list. Textures are owned by
+        // TerrainTextureResolver12 and referenced through stable bindless indices.
         public void Dispose()
         {
             DeletionQueue.EnqueueDispose(VertexBuffer);

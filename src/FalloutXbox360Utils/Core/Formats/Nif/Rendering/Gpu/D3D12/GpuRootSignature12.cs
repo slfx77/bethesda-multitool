@@ -12,7 +12,7 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 ///         <item>0: root CBV at <c>b0</c> — per-frame uniforms (viewProj). VS + PS.</item>
 ///         <item>1: root CBV at <c>b1</c> — per-draw uniforms (world matrix + flags). VS + PS.</item>
 ///         <item>2: root CBV at <c>b2</c> — per-mode/debug uniforms. VS + PS.</item>
-///         <item>3: legacy descriptor table for <c>t0..t7, space0</c> — terrain/water SRVs. VS + PS.</item>
+///         <item>3: legacy descriptor table for <c>t0..t7, space0</c> — water and transition SRVs. VS + PS.</item>
 ///         <item>4: unbounded descriptor table for <c>t0.., space1</c> — bindless textures. VS + PS.</item>
 ///         <item>5: root SRV at <c>t8, space0</c> — reference instance structured buffer. VS.</item>
 ///     </list>
@@ -48,10 +48,10 @@ internal sealed class GpuRootSignature12 : IDisposable
     }
 
     /// <summary>SRV slots <c>t0..t(N-1)</c> reserved in the legacy table at slot
-    /// <see cref="Slots.SrvTable" /> (space 0). Sized for the terrain renderer's
-    /// pre-bindless texture set + water's per-frame structured-buffer SRV.
-    /// 4a's bindless texture array lives in <see cref="Slots.BindlessSrvTable" /> at
-    /// space 1 — orthogonal to this range, so the two coexist during the transition.</summary>
+    /// <see cref="Slots.SrvTable" /> (space 0). Water still uses this path for its per-frame
+    /// structured-buffer SRV. 4a's bindless texture array lives in
+    /// <see cref="Slots.BindlessSrvTable" /> at space 1 — orthogonal to this range, so the two
+    /// coexist during the transition.</summary>
     public const uint SrvTableSize = 8;
 
     private bool _disposed;
@@ -86,8 +86,8 @@ internal sealed class GpuRootSignature12 : IDisposable
             new RootDescriptor1(shaderRegister: 2, registerSpace: 0),
             ShaderVisibility.All);
 
-        // Slot 3: legacy SRV table t0..t(SrvTableSize-1) in space 0. Terrain and water
-        // still use CopyDescriptorsSimple paths here. DescriptorsVolatile so per-frame
+        // Slot 3: legacy SRV table t0..t(SrvTableSize-1) in space 0. Water still uses the
+        // CopyDescriptorsSimple path here. DescriptorsVolatile so per-frame
         // CopyDescriptorsSimple writes are visible to the GPU mid-frame.
         var srvRange = new DescriptorRange1
         {

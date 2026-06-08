@@ -16,9 +16,9 @@ cbuffer PerFrame : register(b0)
     float4x4 uViewProj;
 };
 
-// b2 = PerMode (debug + UV scale). Per-quadrant b1 from the prior layout is gone; the engine-
-// accurate path has no per-quadrant constants — everything per-cell varies via the textures
-// bound at t0..t3 + the per-vertex weight stream.
+// b1 = PerCell texture indices, consumed by the fragment shader. b2 = PerMode
+// (debug + UV scale). Per-quadrant constants from the prior layout are gone; everything
+// per-cell varies via bindless texture indices + the per-vertex weight stream.
 cbuffer PerMode : register(b2)
 {
     // x = 1.0 → VCLR-only debug mode (skip texture sampling)
@@ -36,8 +36,11 @@ struct VSInput
     float4 aVertexColor  : TEXCOORD3;
     float3 aTangent      : TEXCOORD4;  // unused
     float3 aBitangent    : TEXCOORD5;  // unused
-    // Slot 1
-    float4 aLayerWeights : TEXCOORD6;
+    // Slot 1 — 16 per-vertex layer weights as four float4s (slots 0..3, 4..7, 8..11, 12..15).
+    float4 aLayerWeights0 : TEXCOORD6;
+    float4 aLayerWeights1 : TEXCOORD7;
+    float4 aLayerWeights2 : TEXCOORD8;
+    float4 aLayerWeights3 : TEXCOORD9;
 };
 
 struct VSOutput
@@ -46,7 +49,10 @@ struct VSOutput
     float3 vWorldNormal  : TEXCOORD0;
     float4 vVertexColor  : TEXCOORD1;
     float2 vWorldUv      : TEXCOORD2;
-    float4 vLayerWeights : TEXCOORD3;
+    float4 vLayerWeights0 : TEXCOORD3;
+    float4 vLayerWeights1 : TEXCOORD4;
+    float4 vLayerWeights2 : TEXCOORD5;
+    float4 vLayerWeights3 : TEXCOORD6;
 };
 
 VSOutput main(VSInput input)
@@ -56,6 +62,9 @@ VSOutput main(VSInput input)
     o.vWorldNormal = input.aNormal;
     o.vVertexColor = input.aVertexColor;
     o.vWorldUv = input.aPosition.xy * uDebugMode_UvScale_Pad.y;
-    o.vLayerWeights = input.aLayerWeights;
+    o.vLayerWeights0 = input.aLayerWeights0;
+    o.vLayerWeights1 = input.aLayerWeights1;
+    o.vLayerWeights2 = input.aLayerWeights2;
+    o.vLayerWeights3 = input.aLayerWeights3;
     return o;
 }

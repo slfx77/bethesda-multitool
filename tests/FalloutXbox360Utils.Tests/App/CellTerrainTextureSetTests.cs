@@ -5,10 +5,11 @@ using Xunit;
 namespace FalloutXbox360Utils.Tests.App;
 
 /// <summary>
-///     Verifies the fixed-4-slot projection that the 3D renderer consumes. The variable-length
-///     <see cref="CellLayerWeightTable" /> output is collapsed into 4 LTEX texture slots + a
-///     per-vertex <see cref="System.Numerics.Vector4" /> of weights, with top-N-by-cell-weight
-///     selection when there are more than 4 unique LTEXs.
+///     Verifies the per-cell texture-slot projection the 3D renderer consumes. The variable-length
+///     <see cref="CellLayerWeightTable" /> output is projected into up to
+///     <see cref="CellTerrainTextureSet.MaxSlots" /> (16) LTEX slots + a per-vertex weight vector
+///     (packed as <see cref="CellTerrainTextureSet.SlotVectors" /> Vector4s). Sixteen slots match
+///     the 2D blit's per-pixel layer ceiling, so the projection is non-lossy for real cells.
 /// </summary>
 public sealed class CellTerrainTextureSetTests
 {
@@ -18,7 +19,7 @@ public sealed class CellTerrainTextureSetTests
     private const uint BtxtNe = 0x10004;
 
     [Fact]
-    public void FourBtxts_OneQuadrantEach_AllFourSlotsPopulated()
+    public void FourBtxts_OneQuadrantEach_PopulatesExactlyFourSlots()
     {
         var layers = new List<LandTextureLayer>
         {
@@ -30,8 +31,9 @@ public sealed class CellTerrainTextureSetTests
 
         Assert.NotNull(set);
         Assert.Equal(4, set!.ActiveSlotCount);
+        // Only the active slots hold the four BTXTs; unused slots stay 0 (don't include them).
         Assert.Equal(new[] { BtxtSw, BtxtSe, BtxtNw, BtxtNe }.ToHashSet(),
-                     set.SlotFormIds.ToHashSet());
+                     set.SlotFormIds.Take(set.ActiveSlotCount).ToHashSet());
     }
 
     [Fact]
@@ -45,23 +47,20 @@ public sealed class CellTerrainTextureSetTests
         var set = CellTerrainTextureSet.Project(table);
 
         Assert.NotNull(set);
-        // NW interior vertex (4, 4): should have weight=1 in the slot that holds BtxtNw and
-        // 0 elsewhere.
+        // NW interior vertex (4, 4): full weight on the BtxtNw slot, 0 on every other slot.
         var nwSlot = Array.IndexOf(set!.SlotFormIds, BtxtNw);
-        Assert.InRange(nwSlot, 0, 3);
+        Assert.InRange(nwSlot, 0, CellTerrainTextureSet.MaxSlots - 1);
 
-        var w = set.VertexWeights[4 * 33 + 4];  // vy=4, vx=4
-        // Walk all 4 slots; the BtxtNw slot has ~1, the others have ~0.
-        for (var s = 0; s < 4; s++)
+        var w = ReadVertexWeights(set, vx: 4, vy: 4);
+        for (var s = 0; s < CellTerrainTextureSet.MaxSlots; s++)
         {
-            var weight = s switch { 0 => w.X, 1 => w.Y, 2 => w.Z, _ => w.W };
-            if (s == nwSlot) Assert.Equal(1f, weight, 4);
-            else Assert.Equal(0f, weight, 4);
+            if (s == nwSlot) Assert.Equal(1f, w[s], 4);
+            else Assert.Equal(0f, w[s], 4);
         }
     }
 
     [Fact]
-    public void CellCenterVertex_BlendsTwentyFivePercentAcrossAllFourSlots()
+    public void CellCenterVertex_BlendsTwentyFivePercentAcrossTheFourQuadrantSlots()
     {
         var layers = new List<LandTextureLayer>
         {
@@ -71,28 +70,26 @@ public sealed class CellTerrainTextureSetTests
         var set = CellTerrainTextureSet.Project(table);
 
         Assert.NotNull(set);
-        var w = set!.VertexWeights[16 * 33 + 16];  // cell center
-        // Sum should be ~1, each slot should be ~0.25.
-        Assert.Equal(1f, w.X + w.Y + w.Z + w.W, 4);
-        Assert.Equal(0.25f, w.X, 4);
-        Assert.Equal(0.25f, w.Y, 4);
-        Assert.Equal(0.25f, w.Z, 4);
-        Assert.Equal(0.25f, w.W, 4);
+        var w = ReadVertexWeights(set!, vx: 16, vy: 16); // cell center — all 4 quadrants meet
+        var total = 0f;
+        foreach (var btxt in new[] { BtxtSw, BtxtSe, BtxtNw, BtxtNe })
+        {
+            var slot = Array.IndexOf(set!.SlotFormIds, btxt);
+            Assert.InRange(slot, 0, CellTerrainTextureSet.MaxSlots - 1);
+            Assert.Equal(0.25f, w[slot], 4);
+        }
+        for (var s = 0; s < CellTerrainTextureSet.MaxSlots; s++) total += w[s];
+        Assert.Equal(1f, total, 4);
     }
 
     [Fact]
-    public void MoreThanFourLtexs_KeepsTopFourByTotalWeight()
+    public void MoreThanFourLtexs_KeepsAllLayers_NonLossy()
     {
-        // Five distinct BTXTs would mean one quadrant has 2 BTXTs — not legal in real data,
-        // but ATXTs can create the same situation: a quadrant with BTXT + 3 ATXTs across 4
-        // quadrants gives 4 + 12 = 16 LTEXs. Easier to fabricate the truncation case with a
-        // synthetic spread of ATXTs that each cover a single vertex with tiny opacity.
+        // Four BTXTs (one per quadrant) + a single-vertex ATXT = 5 distinct LTEXs. The old
+        // 4-slot projection dropped the lightest; the 16-slot projection keeps every layer.
         var layers = new List<LandTextureLayer>
         {
             BtxtLayer(BtxtSw, 0), BtxtLayer(BtxtSe, 1), BtxtLayer(BtxtNw, 2), BtxtLayer(BtxtNe, 3),
-            // Q0 ATXT covering ONE vertex with high opacity — its total cell-wide weight is
-            // ~1, but each of the 4 BTXTs has total ~272 (17×17 vertices). So the BTXTs
-            // should dominate the top-4; the ATXT gets dropped.
             new LandTextureLayer
             {
                 Kind = LandTextureLayerKind.Alpha,
@@ -110,17 +107,31 @@ public sealed class CellTerrainTextureSetTests
         var set = CellTerrainTextureSet.Project(table);
 
         Assert.NotNull(set);
-        Assert.Equal(4, set!.ActiveSlotCount);
-        // The 4 BTXTs (each covering 1/4 of the cell) outweigh the single-vertex ATXT.
-        Assert.DoesNotContain(0xDEADu, set.SlotFormIds);
-        Assert.Equal(new[] { BtxtSw, BtxtSe, BtxtNw, BtxtNe }.ToHashSet(),
-                     set.SlotFormIds.ToHashSet());
+        Assert.Equal(5, set!.ActiveSlotCount);
+        Assert.Contains(0xDEADu, set.SlotFormIds);
+        Assert.Equal(new[] { BtxtSw, BtxtSe, BtxtNw, BtxtNe, 0xDEADu }.ToHashSet(),
+                     set.SlotFormIds.Take(set.ActiveSlotCount).ToHashSet());
     }
 
     [Fact]
     public void NullTable_ReturnsNull()
     {
         Assert.Null(CellTerrainTextureSet.Project(null));
+    }
+
+    private static float[] ReadVertexWeights(CellTerrainTextureSet set, int vx, int vy)
+    {
+        var vertexIndex = vy * CellLayerWeightTable.CellVertexCount + vx;
+        var w = new float[CellTerrainTextureSet.MaxSlots];
+        for (var k = 0; k < CellTerrainTextureSet.SlotVectors; k++)
+        {
+            var v = set.VertexWeights[vertexIndex * CellTerrainTextureSet.SlotVectors + k];
+            w[k * 4 + 0] = v.X;
+            w[k * 4 + 1] = v.Y;
+            w[k * 4 + 2] = v.Z;
+            w[k * 4 + 3] = v.W;
+        }
+        return w;
     }
 
     private static LandTextureLayer BtxtLayer(uint formId, byte quadrant) => new()

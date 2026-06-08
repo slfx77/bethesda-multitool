@@ -5,26 +5,34 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures;
 /// <summary>
 ///     Per-cell fixed-slot texture binding + per-vertex blend weights derived from a
 ///     <see cref="CellLayerWeightTable" />. The 3D terrain renderer binds up to
-///     <see cref="MaxSlots" /> diffuse textures per cell and reads a Vector4 of weights per
-///     vertex; the fragment shader's job collapses to <c>color = Σ slot_i_weight × t_i.Sample(uv)</c>.
+///     <see cref="MaxSlots" /> diffuse textures per cell and reads <see cref="SlotVectors" />
+///     Vector4s of weights per vertex; the fragment shader's job is
+///     <c>color = Σ slot_i_weight × t_i.Sample(uv)</c> over the active slots.
 ///
-///     Why a fixed 4-slot cap: the engine-accurate per-vertex weight list is variable-length
-///     (up to ~16 entries at the cell-center vertex in pathological cases), but a stable
-///     shader signature needs a fixed number of texture slots. 4 matches the upper bound for
-///     "typical" FNV cells (a handful share four BTXTs across quadrants, ATXTs are usually
-///     spatial-not-additive). Cells that exceed 4 truncate to their top-4-by-total-weight
-///     contributors; the lost layers are minor visual contributions, comparable to the prior
-///     3D shader's hardcoded "Up to 4 layers per quadrant — extras silently dropped" policy.
+///     <para>
+///         Slot cap: 16. The engine-accurate per-vertex weight list is variable-length (the 2D
+///         per-pixel blit blends up to 16 unique FormIDs at the four bilinear-surrounding
+///         vertices), so 16 matches that ceiling — the 3D path is now non-lossy for every real
+///         FNV cell and renders exactly what the shared <see cref="CellLayerWeightTable" />
+///         produces. Cells that somehow exceed 16 distinct LTEXs truncate to their
+///         top-16-by-total-weight contributors (vanishingly rare; the lost layers are minor).
+///     </para>
 /// </summary>
 public sealed class CellTerrainTextureSet
 {
-    public const int MaxSlots = 4;
+    public const int MaxSlots = 16;
+
+    /// <summary>Number of <see cref="Vector4" />s needed to hold <see cref="MaxSlots" /> per-vertex
+    /// weights (4 weights per Vector4). The terrain mesh's slot-1 vertex stream is this many
+    /// float4s wide.</summary>
+    public const int SlotVectors = MaxSlots / 4;
+
     public const int VertexCount = CellLayerWeightTable.CellVertexCount * CellLayerWeightTable.CellVertexCount;
 
     /// <summary>
-    ///     LTEX FormID bound to slot index 0..3. <c>0</c> is the engine-default sentinel
-    ///     (see <see cref="CellLayerWeightTable.EngineDefaultSentinelFormId" />); the
-    ///     renderer maps it to DirtWasteland01. Slot count = <see cref="ActiveSlotCount" />;
+    ///     LTEX FormID bound to slot index 0..<see cref="MaxSlots" />-1. <c>0</c> is the
+    ///     engine-default sentinel (see <see cref="CellLayerWeightTable.EngineDefaultSentinelFormId" />);
+    ///     the renderer maps it to DirtWasteland01. Slot count = <see cref="ActiveSlotCount" />;
     ///     remaining slots are 0.
     /// </summary>
     public readonly uint[] SlotFormIds = new uint[MaxSlots];
@@ -33,27 +41,26 @@ public sealed class CellTerrainTextureSet
     public int ActiveSlotCount;
 
     /// <summary>
-    ///     Per-vertex blend weights into the 4 slots. Row-major, index = vy * 33 + vx, matching
-    ///     <see cref="CellLayerWeightTable.At" />. Weights sum to ~1 at vertices with any
-    ///     contribution; sum to 0 at empty vertices (caller should bind an engine-default
-    ///     fallback for those).
+    ///     Per-vertex blend weights into the <see cref="MaxSlots" /> slots, packed as
+    ///     <see cref="SlotVectors" /> Vector4s per vertex. Layout: index = (vy * 33 + vx) *
+    ///     SlotVectors + k, where k selects the 4-slot group (slots 4k..4k+3). Weights sum to ~1
+    ///     at vertices with any contribution; 0 at empty vertices.
     /// </summary>
-    public readonly Vector4[] VertexWeights = new Vector4[VertexCount];
+    public readonly Vector4[] VertexWeights = new Vector4[VertexCount * SlotVectors];
 
     /// <summary>
     ///     Project a <see cref="CellLayerWeightTable" /> onto the fixed-slot representation.
     ///     Picks the top-<see cref="MaxSlots" /> LTEXs by total cell-wide weight, then for each
-    ///     vertex sums its contributions into the slot each FormID was assigned to. Vertices
-    ///     whose entire weight set falls outside the top-4 contribute nothing and get all-zero
-    ///     weights (renderer must handle the "no contribution" case — typically falls back to
-    ///     the engine-default sentinel via slot 0).
+    ///     vertex sums its contributions into the slot each FormID was assigned to and
+    ///     renormalizes so the per-vertex weight vector sums to 1. Vertices whose entire weight
+    ///     set falls outside the top-N contribute nothing and get all-zero weights (the renderer
+    ///     binds an engine-default fallback for those).
     /// </summary>
     public static CellTerrainTextureSet? Project(CellLayerWeightTable? table)
     {
         if (table is null) return null;
 
-        // Phase 1: sum total weight per unique FormID across the cell, so we can pick the
-        // top-MaxSlots most significant contributors.
+        // Phase 1: sum total weight per unique FormID across the cell, to pick the top-MaxSlots.
         var totals = new Dictionary<uint, float>();
         for (var i = 0; i < table.Vertices.Length; i++)
         {
@@ -70,9 +77,6 @@ public sealed class CellTerrainTextureSet
         }
         if (totals.Count == 0) return null;
 
-        // Stable top-N: sort by weight descending; ties keep dictionary order (deterministic
-        // enough for a given input — the unstable case is two LTEXs with identical totals, in
-        // which case which one wins is cosmetic).
         var sorted = new List<KeyValuePair<uint, float>>(totals);
         sorted.Sort(static (a, b) => b.Value.CompareTo(a.Value));
 
@@ -86,28 +90,36 @@ public sealed class CellTerrainTextureSet
             formIdToSlot[sorted[s].Key] = s;
         }
 
-        // Phase 2: per-vertex projection. For each cell vertex, take each (FormID, weight)
-        // entry and add it to the corresponding slot's weight if that FormID survived the
-        // top-N cut. Then renormalize so the per-vertex weight vector sums to 1 — necessary
-        // because the truncation removes some weight that the variable-length table had
-        // already renormalized to 1 against.
+        // Phase 2: per-vertex projection into a scratch float[MaxSlots], renormalize, then pack
+        // into the SlotVectors Vector4s.
+        Span<float> w = stackalloc float[MaxSlots];
         for (var i = 0; i < table.Vertices.Length; i++)
         {
+            w.Clear();
             ref readonly var v = ref table.Vertices[i];
-            var w = Vector4.Zero;
-            if (v.Count > 0) AddIfSlotted(formIdToSlot, v.E0, ref w);
-            if (v.Count > 1) AddIfSlotted(formIdToSlot, v.E1, ref w);
-            if (v.Count > 2) AddIfSlotted(formIdToSlot, v.E2, ref w);
-            if (v.Count > 3) AddIfSlotted(formIdToSlot, v.E3, ref w);
+            if (v.Count > 0) AddIfSlotted(formIdToSlot, v.E0, w);
+            if (v.Count > 1) AddIfSlotted(formIdToSlot, v.E1, w);
+            if (v.Count > 2) AddIfSlotted(formIdToSlot, v.E2, w);
+            if (v.Count > 3) AddIfSlotted(formIdToSlot, v.E3, w);
             if (v.Overflow is not null)
             {
                 var n = v.Count - 4;
-                for (var k = 0; k < n; k++) AddIfSlotted(formIdToSlot, v.Overflow[k], ref w);
+                for (var k = 0; k < n; k++) AddIfSlotted(formIdToSlot, v.Overflow[k], w);
             }
 
-            var total = w.X + w.Y + w.Z + w.W;
-            if (total > 0f && MathF.Abs(total - 1f) > 1e-4f) w *= 1f / total;
-            set.VertexWeights[i] = w;
+            var total = 0f;
+            for (var s = 0; s < MaxSlots; s++) total += w[s];
+            if (total > 0f && MathF.Abs(total - 1f) > 1e-4f)
+            {
+                var inv = 1f / total;
+                for (var s = 0; s < MaxSlots; s++) w[s] *= inv;
+            }
+
+            for (var k = 0; k < SlotVectors; k++)
+            {
+                set.VertexWeights[i * SlotVectors + k] = new Vector4(
+                    w[k * 4 + 0], w[k * 4 + 1], w[k * 4 + 2], w[k * 4 + 3]);
+            }
         }
 
         return set;
@@ -128,15 +140,11 @@ public sealed class CellTerrainTextureSet
     private static void AddIfSlotted(
         Dictionary<uint, int> formIdToSlot,
         LayerWeight entry,
-        ref Vector4 weights)
+        Span<float> weights)
     {
-        if (!formIdToSlot.TryGetValue(entry.FormId, out var slot)) return;
-        switch (slot)
+        if (formIdToSlot.TryGetValue(entry.FormId, out var slot))
         {
-            case 0: weights.X += entry.Weight; break;
-            case 1: weights.Y += entry.Weight; break;
-            case 2: weights.Z += entry.Weight; break;
-            case 3: weights.W += entry.Weight; break;
+            weights[slot] += entry.Weight;
         }
     }
 }
