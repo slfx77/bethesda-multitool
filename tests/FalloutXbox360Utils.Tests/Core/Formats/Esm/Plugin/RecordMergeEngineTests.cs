@@ -141,8 +141,12 @@ public class RecordMergeEngineTests
     }
 
     [Fact]
-    public void Merge_ActorPolicy_AllowsPackageListOverride()
+    public void Merge_ActorPolicy_RetainsPackageListFromMaster()
     {
+        // PKID (the actor's AI package list) is an identity field: a prototype patrol package
+        // captured from the DMP crashes PatrolActorPackageData when it replaces a master
+        // package the runtime route was built against. So the actor policy retains master's
+        // PKID and does NOT take the DMP's, nor append it. (See proto_ai_package_crash.)
         var vanillaPackage = BitConverter.GetBytes(0x000E62E1u);
         var capturedFollowerPackage = BitConverter.GetBytes(0x01000958u);
         var esm = MakeEsmRecord("NPC_",
@@ -156,10 +160,10 @@ public class RecordMergeEngineTests
 
         var merge = RecordMergeEngine.Merge(esm, dmpEncoded, SubrecordMergePolicy.ForRecordType("NPC_"));
 
-        Assert.Contains("PKID", merge.DmpSignaturesUsed);
-        Assert.DoesNotContain("PKID", merge.EsmSignaturesRetained);
+        Assert.Contains("PKID", merge.EsmSignaturesRetained);
+        Assert.DoesNotContain("PKID", merge.DmpSignaturesUsed);
         Assert.DoesNotContain("PKID", merge.DmpSignaturesAppended);
-        Assert.Equal(capturedFollowerPackage, ReadFirstSubrecordPayload(merge.SubrecordBytes, "PKID"));
+        Assert.Equal(vanillaPackage, ReadFirstSubrecordPayload(merge.SubrecordBytes, "PKID"));
     }
 
     private static int FindSubrecordIndex(byte[] stream, string sig)

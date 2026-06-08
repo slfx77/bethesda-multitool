@@ -64,12 +64,43 @@ public class Tes4HeaderBuilderTests
     }
 
     [Fact]
-    public void Build_FlagsClear_PluginIsNotMaster()
+    public void Build_FlagsClear_WhenNoNavmAugmentation()
     {
-        var bytes = BuildSimple();
+        // The ESM/master flag is tied to navmesh augmentation: with augmentation OFF the
+        // plugin carries no navmesh edits, so it stays a plain ESP (deferred load, no
+        // eager-init race). This is the playability config.
+        var bytes = Tes4HeaderBuilder.Build(
+            new PluginBuildOptions
+            {
+                MasterFileName = "FalloutNV.esm",
+                MasterFileSize = 100,
+                EmitMasterCellNavmAugmentation = false
+            },
+            numRecords: 0,
+            nextObjectId: 0x800);
+
         // Header flags live at bytes 8–11 (little-endian uint32).
         var flags = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(8, 4));
-        Assert.Equal(0u, flags & 0x00000001u); // master flag
+        Assert.Equal(0u, flags & 0x00000001u); // master flag clear
+    }
+
+    [Fact]
+    public void Build_FlagsSet_WhenNavmAugmentationEnabled()
+    {
+        // With master-cell navmesh augmentation ON the plugin emits NAVM/NAVI edits, which
+        // FNV requires to ride on an ESM-flagged plugin or the NavMeshInfoMap desyncs.
+        var bytes = Tes4HeaderBuilder.Build(
+            new PluginBuildOptions
+            {
+                MasterFileName = "FalloutNV.esm",
+                MasterFileSize = 100,
+                EmitMasterCellNavmAugmentation = true
+            },
+            numRecords: 0,
+            nextObjectId: 0x800);
+
+        var flags = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(8, 4));
+        Assert.Equal(0x00000001u, flags & 0x00000001u); // master flag set
     }
 
     [Fact]
