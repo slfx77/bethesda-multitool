@@ -13,6 +13,11 @@ internal interface IReferenceRenderer : IWorldRenderer
     /// previous frame. Surfaced in the HUD chip.</summary>
     int ReferencesDrawnLastFrame { get; }
 
+    /// <summary>When <c>false</c> (default), references with the Initially Disabled flag
+    /// (header <c>0x0800</c>) are skipped at render time — matching the 2D viewer's default.
+    /// Toggled by the "Initially Disabled" checkbox; no cache rebuild (render-time filter).</summary>
+    bool ShowInitiallyDisabled { get; set; }
+
     void LoadData(
         global::FalloutXbox360Utils.WorldRenderCache renderCache,
         Dictionary<(int gx, int gy), CellRecord> cells,

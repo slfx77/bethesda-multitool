@@ -1,3 +1,4 @@
+using System.IO;
 using System.Numerics;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
@@ -29,7 +30,8 @@ internal readonly record struct RenderableReference(
     string ModelPath,
     Vector3 BoundsCenter,
     float BoundsRadius,
-    uint MeshId)
+    uint MeshId,
+    bool IsInitiallyDisabled)
 {
     /// <summary>
     ///     4-pre Item B — computes the stable per-process MeshId from a ModelPath. Used to
@@ -62,33 +64,99 @@ internal readonly record struct RenderableReference(
         var world = ComposeWorldMatrix(placement);
         var (center, radius) = ComposeWorldBounds(placement, world);
 
+        if (DumpFilter is { Length: > 0 } && placement.ModelPath!.Contains(DumpFilter, StringComparison.OrdinalIgnoreCase))
+            DumpRefr(placement, world);
+
         return new RenderableReference(
             FormId: placement.FormId,
             WorldMatrix: world,
             ModelPath: placement.ModelPath!,
             BoundsCenter: center,
             BoundsRadius: radius,
-            MeshId: ComputeMeshId(placement.ModelPath!));
+            MeshId: ComputeMeshId(placement.ModelPath!),
+            IsInitiallyDisabled: placement.IsInitiallyDisabled);
     }
 
     /// <summary>
-    ///     <c>world = S * Rz * Ry * Rx * T</c> in row-vector algebra (System.Numerics). The
-    ///     rotation matches the Gamebryo / NifSkope Euler convention (NifSkope
-    ///     <c>Matrix::fromEuler</c>): <c>Rx * Ry * Rz</c> on a column vector. System.Numerics
-    ///     is row-vector, so the equivalent product is the transpose-reversed
-    ///     <c>Rz * Ry * Rx</c> below. Reversing this to X,Y,Z composes the inverse rotation
-    ///     and only matches the engine for single-axis (e.g. yaw-only) placements; multi-axis
-    ///     props such as the HELIOS One collectors then face the wrong way.
+    ///     <c>world = S * Rz * Ry * Rx * T</c> in row-vector algebra (System.Numerics). This
+    ///     reproduces the engine's REFR orientation matrix EXACTLY — proven by decompiling the
+    ///     Xbox 360 MemDebug XEX (tools/GhidraProject/refr_rotation_decompiled.txt):
+    ///     <list type="bullet">
+    ///       <item>
+    ///         <c>TESObjectREFR::GetOrientation</c> (VA 0x823A3738) calls
+    ///         <c>NiMatrix3::FromEulerAnglesXYZ(rotX, rotY, rotZ)</c> (VA 0x82E20B38).
+    ///       </item>
+    ///       <item>
+    ///         <c>FromEulerAnglesXYZ</c> builds <c>M = Rx · (Ry · Rz)</c> — column-vector
+    ///         standard right-handed rotations (each <c>Make*Rotation</c> is the textbook RH
+    ///         matrix, e.g. <c>MakeZRotation = [c,-s,0; s,c,0; 0,0,1]</c>).
+    ///       </item>
+    ///     </list>
+    ///     System.Numerics is row-vector: <c>Vector3.Transform(v, A*B) == Transform(Transform(v,A),B)</c>
+    ///     and <c>Transform(v, CreateRotationZ(θ)) == MakeZRotation(θ)·v</c>. So the product
+    ///     <c>CreateRotationZ · CreateRotationY · CreateRotationX</c> below evaluates, under
+    ///     <c>Vector3.Transform</c>, to <c>Rx·Ry·Rz·v = M·v</c> — the engine matrix applied to a
+    ///     column vector. Verified by <c>EngineRotationConventionTests</c> against the decompiled
+    ///     per-axis builders. Do NOT negate or transpose RotZ: a yaw negation only appears to help
+    ///     because axis-aligned / symmetric props hide it, while diagonal props (fences, the HELIOS
+    ///     collector ring) then face the wrong way. Any residual on-screen rotation error is a
+    ///     view→screen handedness issue, not this matrix.
     /// </summary>
+    // Live ground-truth diagnostic. Set FALLOUT_VIEWER_DUMP_REFR=<substring> (matched against the
+    // ModelPath, e.g. "road" or "dome") to append, for every matching placed object the live viewer
+    // loads, the parsed rotation AND the world-space bearing its local +X/+Y axes end up pointing —
+    // so we can compare the GUI's actual computed orientation against the engine/data. Output:
+    // %TEMP%\fallout_refr_dump.txt. Capped to avoid runaway writes.
+    private static readonly string? DumpFilter =
+        Environment.GetEnvironmentVariable("FALLOUT_VIEWER_DUMP_REFR");
+    private static readonly object DumpLock = new();
+    private static int _dumpCount;
+
+    private static void DumpRefr(PlacedReference p, Matrix4x4 world)
+    {
+        lock (DumpLock)
+        {
+            if (_dumpCount >= 800) return;
+            _dumpCount++;
+            var origin = Vector3.Transform(Vector3.Zero, world);
+            var lx = Vector3.Transform(Vector3.UnitX, world) - origin;
+            var ly = Vector3.Transform(Vector3.UnitY, world) - origin;
+            var lz = Vector3.Transform(Vector3.UnitZ, world) - origin;
+            static float Bearing(Vector3 v) => MathF.Atan2(v.Y, v.X) * 180f / MathF.PI;
+            var line =
+                $"0x{p.FormId:X8} '{p.ModelPath}' pos=({p.X:F0},{p.Y:F0},{p.Z:F0}) " +
+                $"rotZdeg={p.RotZ * 180f / MathF.PI:F1} rotX={p.RotX:F3} rotY={p.RotY:F3} scale={p.Scale:F2} " +
+                $"|+X->bearing {Bearing(lx):F1} (z {lx.Z:F2}) |+Y->bearing {Bearing(ly):F1} (z {ly.Z:F2}) " +
+                $"|+Z->({lz.X:F2},{lz.Y:F2},{lz.Z:F2})";
+            try
+            {
+                File.AppendAllText(Path.Combine(Path.GetTempPath(), "fallout_refr_dump.txt"), line + Environment.NewLine);
+            }
+            catch
+            {
+                // Diagnostic only — never let a logging failure break rendering.
+            }
+        }
+    }
+
     private static Matrix4x4 ComposeWorldMatrix(PlacedReference p)
     {
         var scale = p.Scale > 0f ? p.Scale : 1f;
-        // Order matters: see method doc. Z, then Y, then X in System.Numerics row-vector
-        // form == column-vector Rx*Ry*Rz, the Gamebryo/NifSkope Euler convention.
+        // The engine BUILDS its orientation as M = Rx·Ry·Rz (NiMatrix3::FromEulerAnglesXYZ,
+        // VA 0x82E20B38 — decompile-proven) but APPLIES it with the OPPOSITE handedness when it
+        // places the NiNode, so the on-screen orientation is the transpose Mᵀ (the inverse
+        // rotation). Empirically confirmed: with plain M, cardinal-aligned 180°-symmetric props
+        // (roads/walls at 0/90/180/270) looked right while diagonals were ~90° off — the exact
+        // signature of a yaw negation, which Mᵀ produces. Transposing also fixes pitch/roll
+        // (rocks) and asymmetric facings (HELIOS collectors, the REPCONN dome). The product below
+        // already equals Mᵀ under Vector3.Transform (v·M = Mᵀ·v), so transposing it yields M and
+        // the transform applies Mᵀ·v on-screen — the engine's convention.
+        var rotation = Matrix4x4.Transpose(
+            Matrix4x4.CreateRotationZ(p.RotZ)
+            * Matrix4x4.CreateRotationY(p.RotY)
+            * Matrix4x4.CreateRotationX(p.RotX));
         return Matrix4x4.CreateScale(scale)
-             * Matrix4x4.CreateRotationZ(p.RotZ)
-             * Matrix4x4.CreateRotationY(p.RotY)
-             * Matrix4x4.CreateRotationX(p.RotX)
+             * rotation
              * Matrix4x4.CreateTranslation(p.X, p.Y, p.Z);
     }
 

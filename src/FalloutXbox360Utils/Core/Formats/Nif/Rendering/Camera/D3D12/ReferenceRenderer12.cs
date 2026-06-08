@@ -1,5 +1,6 @@
 #if WINDOWS_GUI
 using System.Diagnostics;
+using System.Globalization;
 using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -22,19 +23,27 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 {
     private const uint PerFrameByteSize = 64;
     private const uint PerDrawByteSize = 128;
-    private const uint InstanceDrawByteSize = 16;
-    private const float ReferenceBumpStrength = 0.35f;
+    // 3 float4 (material) + uint4 (tex indices) + uint base + uint3 pad = 80 bytes.
+    private const uint InstanceDrawByteSize = 80;
     private const float FrustumCullMargin = 512f;
 
-    // Raised from 16: decode is now parallel (meshes get decoded fast), so the per-frame GPU
-    // upload count is the gate on pop-in. Mesh buffer uploads are small/cheap relative to a
-    // terrain cell, and terrain build is fully async now, so the render thread has the headroom.
-    private const int MaxNewUploadsPerFrame = 48;
+    // Cold mesh realization is render-thread work. Keep the default smooth, with env overrides
+    // for profiling throughput-vs-frame-pacing tradeoffs on specific machines.
+    private static readonly int MaxNewUploadsPerFrame = ParsePositiveIntEnvironment(
+        "FALLOUT_VIEWER_REFERENCE_UPLOADS_PER_FRAME",
+        defaultValue: 8,
+        min: 1,
+        max: 48);
 
     // Wall-clock ceiling on render-thread mesh-upload work per frame: caps *how long* uploading
     // may take (MaxNewUploadsPerFrame caps *how many*) so a frame entering a dense area can't
-    // spike. Relaxed from 2 ms now that terrain no longer competes for render-thread build time.
-    private const double MaxUploadMillisecondsPerFrame = 5.0;
+    // spike. A single very large mesh can still consume a frame, but this stops clusters of
+    // completed decoded meshes from being realized together.
+    private static readonly double MaxUploadMillisecondsPerFrame = ParsePositiveDoubleEnvironment(
+        "FALLOUT_VIEWER_REFERENCE_UPLOAD_MS_PER_FRAME",
+        defaultValue: 2.0,
+        min: 0.25,
+        max: 10.0);
 
     // A5 — distance LOD for tiny clutter only. References whose bounding radius is below this are
     // culled past SmallPropDistanceFraction of the view distance. Kept deliberately small (96) so
@@ -57,9 +66,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private readonly byte[] _blendedVsBytecode;
     private readonly byte[] _psBytecode;
     private readonly Dictionary<BlendPipelineKey, ID3D12PipelineState> _blendPsos = new();
-    private readonly Dictionary<ReferenceBatchKey, OpaqueBatchState> _opaqueBatches = new();
+    private readonly Dictionary<CachedSubmesh12, OpaqueBatchState> _opaqueBatches = new();
     private readonly List<OpaqueBatchState> _activeOpaqueBatches = new(256);
-    private readonly List<ReferenceBatchKey> _staleOpaqueBatchKeys = new(64);
+    private readonly List<CachedSubmesh12> _staleOpaqueBatchKeys = new(64);
     private readonly List<BlendedReferenceDraw> _blendedDraws = new(256);
     private readonly List<global::FalloutXbox360Utils.WorldSpatialCell> _candidateCells = new();
 
@@ -120,6 +129,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     public int ReferencesDrawnLastFrame { get; private set; }
     public global::FalloutXbox360Utils.WorldRenderStats LastStats { get; } = new();
     public bool DetailedProfilingEnabled { get; set; }
+    public bool ShowInitiallyDisabled { get; set; }
 
     public void LoadData(
         global::FalloutXbox360Utils.WorldRenderCache renderCache,
@@ -160,7 +170,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         var cylinderRadius = cylinder.Radius;
         var cylinderX = cylinder.Position.X;
         var cylinderY = cylinder.Position.Y;
-        Frustum? frustum = _disableReferenceFrustum ? null : Frustum.FromViewProjection(viewProj);
+        var hasFrustum = !_disableReferenceFrustum;
+        var frustum = hasFrustum ? Frustum.FromViewProjection(viewProj) : default;
+        Frustum? broadphaseFrustum = hasFrustum ? frustum : null;
 
         double cullMs = 0;
         double meshUploadMs = 0;
@@ -171,6 +183,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         int candidates = 0;
         int culled = 0;
         int missingMeshes = 0;
+        int texturePending = 0;
         int referencesWithReadyMesh = 0;
         int submeshDraws = 0;
         int srvBinds = 0;
@@ -188,7 +201,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 cylinderX,
                 cylinderY,
                 cylinderRadius,
-                frustum,
+                broadphaseFrustum,
                 FrustumCullMargin,
                 _cullCandidateScratch);
             if (totalPlacements == 0)
@@ -218,6 +231,13 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             var smallPropCutoffSq = smallPropCutoff * smallPropCutoff;
             foreach (var r in _cullCandidateScratch)
             {
+                // Hide initially-disabled REFRs unless the toggle is on (default off = hidden),
+                // matching the 2D viewer. Counted as culled so the HUD reflects the filter.
+                if (!ShowInitiallyDisabled && r.IsInitiallyDisabled)
+                {
+                    culled++;
+                    continue;
+                }
                 var dx = r.BoundsCenter.X - cylinderX;
                 var dy = r.BoundsCenter.Y - cylinderY;
                 var distSq = dx * dx + dy * dy;
@@ -232,9 +252,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 {
                     rejected = true;
                 }
-                if (!rejected && frustum.HasValue)
+                if (!rejected && hasFrustum)
                 {
-                    rejected = !frustum.Value.IntersectsSphere(r.BoundsCenter, r.BoundsRadius + FrustumCullMargin);
+                    rejected = !frustum.IntersectsSphere(r.BoundsCenter, r.BoundsRadius + FrustumCullMargin);
                 }
                 if (rejected) culled++;
                 else _cullSurvivorScratch.Add(r);
@@ -267,13 +287,15 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     missingMeshes++;
                     continue;
                 }
+                if (!mesh.TexturesReady)
+                {
+                    texturePending++;
+                    continue;
+                }
 
                 var anySubmeshDrawn = false;
                 foreach (var sub in mesh.Submeshes)
                 {
-                    var alphaState = BuildAlphaState(sub);
-                    var renderState = BuildRenderState(sub);
-                    var textureState = BuildTextureState(sub);
                     if (sub.AlphaRenderMode == NifAlphaRenderMode.Blend)
                     {
                         var worldCenter = Vector3.Transform(sub.LocalBoundsCenter, r.WorldMatrix);
@@ -281,25 +303,21 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                             r.WorldMatrix,
                             sub,
                             Vector3.DistanceSquared(worldCenter, cylinder.Position),
-                            alphaState,
-                            renderState,
-                            textureState));
+                            sub.AlphaState,
+                            sub.RenderState,
+                            sub.TextureState));
                         anySubmeshDrawn = true;
                         continue;
                     }
 
                     var pso = sub.DoubleSided ? _opaqueDoublePso : _opaqueBackPso;
-                    var key = new ReferenceBatchKey(sub, pso);
-                    var batch = GetOpaqueBatch(key);
-                    // 4a — bindless TexIndices: diffuse on .x, normal on .y. The PS samples
-                    // `textures[NonUniformResourceIndex(input.TexIndices.x)]` against the
-                    // persistent shader-visible heap that GpuTextureCache12 wrote at upload time.
-                    var texIndices = new TexIndexQuad(
-                        sub.Diffuse.BindlessIndex,
-                        sub.Normal.BindlessIndex,
-                        0,
-                        0);
-                    batch.Instances.Add(new ReferenceInstance(r.WorldMatrix, alphaState, renderState, textureState, texIndices));
+                    var batch = GetOpaqueBatch(sub, pso);
+                    // Only the world matrix is per-instance. Material/texture state
+                    // (AlphaState/RenderState/TextureState + bindless TexIndices) is identical
+                    // across the whole batch — it comes from the submesh, which IS the batch key
+                    // — so it is uploaded once per batch via the InstanceDraw CBV at draw time
+                    // instead of being copied into every instance record.
+                    batch.Instances.Add(r.WorldMatrix);
                     anySubmeshDrawn = true;
                 }
 
@@ -321,6 +339,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         LastStats.ReferenceCandidates = candidates;
         LastStats.ReferenceCulled = culled;
         LastStats.ReferenceMeshMissing = missingMeshes;
+        LastStats.ReferenceTexturePending = texturePending;
         LastStats.ReferenceDrawn = referencesWithReadyMesh;
         LastStats.ReferenceSubmeshDraws = submeshDraws;
         LastStats.ReferenceSrvBinds = srvBinds;
@@ -332,8 +351,14 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         LastStats.ReferenceCpuDecodedMeshCacheHits = _meshCache.FrameCpuDecodedCacheHits;
         LastStats.ReferenceCpuDecodedMeshCacheMisses = _meshCache.FrameCpuDecodedCacheMisses;
         LastStats.ReferenceCpuDecodedMeshNegativeHits = _meshCache.FrameCpuDecodedNegativeHits;
+        LastStats.ReferenceGpuUploads = _meshCache.FrameGpuUploads;
+        LastStats.ReferenceUploadByteBudgetDeferrals = _meshCache.FrameByteBudgetDeferrals;
         LastStats.ReferenceCompressedTextureUploads = _meshCache.FrameCompressedTextureUploads;
         LastStats.ReferenceRgbaTextureUploads = _meshCache.FrameRgbaTextureUploads;
+        LastStats.ReferenceTextureQueuedResolves = _meshCache.FrameQueuedTextureResolves;
+        LastStats.ReferenceTextureActiveResolves = _meshCache.FrameActiveTextureResolves;
+        LastStats.ReferenceTexturePendingResolves = _meshCache.PendingTextureResolves;
+        LastStats.ReferenceTexturePendingUploads = _meshCache.PendingTextureUploads;
         LastStats.ReferenceCullMilliseconds = cullMs;
         LastStats.ReferenceMeshUploadMilliseconds = meshUploadMs;
         LastStats.ReferenceCbUpdateMilliseconds = cbUpdateMs;
@@ -402,7 +427,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         }
         if (totalInstances == 0) return;
 
-        var instanceStride = (uint)Marshal.SizeOf<ReferenceInstance>();
+        var instanceStride = (uint)Marshal.SizeOf<Matrix4x4>();
         var instanceBytes = instanceStride * (uint)totalInstances;
         var instanceAlloc = _ringBuffer.Allocate(frameIndex, instanceBytes + instanceStride - 1, alignment: 16);
         var instanceByteOffset = AlignUp(instanceAlloc.ByteOffset, instanceStride);
@@ -411,13 +436,16 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         var offset = 0;
         unsafe
         {
-            var span = new Span<ReferenceInstance>((void*)instanceCpuPtr, totalInstances);
+            // Bulk-copy each batch's world matrices in one memcpy (CollectionsMarshal.AsSpan ->
+            // Span.CopyTo) rather than per-element struct assignment. Only the 64-byte matrix is
+            // copied now; per-batch material moves into the InstanceDraw CBV below.
+            var span = new Span<Matrix4x4>((void*)instanceCpuPtr, totalInstances);
             foreach (var batchState in _activeOpaqueBatches)
             {
-                foreach (var instance in batchState.Instances)
-                {
-                    span[offset++] = instance;
-                }
+                var worlds = batchState.Instances;
+                if (worlds.Count == 0) continue;
+                CollectionsMarshal.AsSpan(worlds).CopyTo(span.Slice(offset, worlds.Count));
+                offset += worlds.Count;
             }
         }
 
@@ -430,24 +458,31 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             var batch = batchState.Instances;
             if (batch.Count == 0) continue;
 
-            var key = batchState.Key;
-            if (!ReferenceEquals(currentPso, key.Pso))
+            if (!ReferenceEquals(currentPso, batchState.Pso))
             {
-                cmd.SetPipelineState(key.Pso);
-                currentPso = key.Pso;
+                cmd.SetPipelineState(batchState.Pso);
+                currentPso = batchState.Pso;
             }
 
             var cbStarted = StartTiming();
-            var instanceDraw = new InstanceDrawConstants(startInstance);
+            // Per-batch material/texture state pulled from the submesh (the batch key) — these
+            // are identical for every instance in the batch, so they live here, not per instance.
+            var sub = batchState.Submesh;
+            var instanceDraw = new InstanceDrawConstants(
+                sub.AlphaState,
+                sub.RenderState,
+                sub.TextureState,
+                new TexIndexQuad(sub.Diffuse.BindlessIndex, sub.Normal.BindlessIndex, 0, 0),
+                startInstance);
             var instanceDrawAlloc = _ringBuffer.Allocate(frameIndex, InstanceDrawByteSize, GpuRingBuffer12.CbAlignment);
             unsafe { *(InstanceDrawConstants*)instanceDrawAlloc.CpuPtr = instanceDraw; }
             cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerDrawCbv, instanceDrawAlloc.GpuAddress);
             cbUpdateMs += ElapsedMilliseconds(cbStarted);
 
             var drawStarted = StartTiming();
-            cmd.IASetVertexBuffers(0, key.Submesh.VertexBufferView);
-            cmd.IASetIndexBuffer(key.Submesh.IndexBufferView);
-            cmd.DrawIndexedInstanced((uint)key.Submesh.IndexCount, (uint)batch.Count, 0, 0, 0);
+            cmd.IASetVertexBuffers(0, batchState.Submesh.VertexBufferView);
+            cmd.IASetIndexBuffer(batchState.Submesh.IndexBufferView);
+            cmd.DrawIndexedInstanced((uint)batchState.Submesh.IndexCount, (uint)batch.Count, 0, 0, 0);
             drawCallMs += ElapsedMilliseconds(drawStarted);
             startInstance += (uint)batch.Count;
             submeshDraws++;
@@ -625,12 +660,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         return _gpu.Device.CreateGraphicsPipelineState(psoDesc);
     }
 
-    private OpaqueBatchState GetOpaqueBatch(ReferenceBatchKey key)
+    private OpaqueBatchState GetOpaqueBatch(CachedSubmesh12 submesh, ID3D12PipelineState pso)
     {
-        if (!_opaqueBatches.TryGetValue(key, out var batch))
+        if (!_opaqueBatches.TryGetValue(submesh, out var batch))
         {
-            batch = new OpaqueBatchState(key);
-            _opaqueBatches.Add(key, batch);
+            batch = new OpaqueBatchState(submesh, pso);
+            _opaqueBatches.Add(submesh, batch);
         }
 
         if (batch.LastTouchedFrame != _opaqueBatchFrameId)
@@ -679,34 +714,32 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         _staleOpaqueBatchKeys.Clear();
     }
 
-    private static Vector4 BuildAlphaState(CachedSubmesh12 sub)
-    {
-        var alphaTestEnabled = sub.AlphaRenderMode != NifAlphaRenderMode.Blend && sub.AlphaTest;
-        return new Vector4(
-            alphaTestEnabled ? sub.AlphaTestThreshold : 0f,
-            alphaTestEnabled ? sub.AlphaTestFunction : -1f,
-            Math.Clamp(sub.MaterialAlpha, 0f, 1f),
-            sub.AlphaRenderMode == NifAlphaRenderMode.Blend ? 1f : 0f);
-    }
-
-    private static Vector4 BuildRenderState(CachedSubmesh12 sub) =>
-        new(
-            sub.DoubleSided ? 1f : 0f,
-            sub.HasBump ? 1f : 0f,
-            ReferenceBumpStrength,
-            sub.IsEmissive ? 1f : 0f);
-
-    private static Vector4 BuildTextureState(CachedSubmesh12 sub) =>
-        new(
-            sub.Normal.NormalDecodeMode == GpuNormalDecodeMode.Bc5ReconstructZ ? 1f : 0f,
-            0f,
-            0f,
-            0f);
-
     private long StartTiming() => DetailedProfilingEnabled ? Stopwatch.GetTimestamp() : 0;
 
     private static double ElapsedMilliseconds(long started) =>
         started == 0 ? 0 : Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+
+    private static int ParsePositiveIntEnvironment(string name, int defaultValue, int min, int max)
+    {
+        var raw = Environment.GetEnvironmentVariable(name);
+        if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
+        {
+            return defaultValue;
+        }
+
+        return Math.Clamp(value, min, max);
+    }
+
+    private static double ParsePositiveDoubleEnvironment(string name, double defaultValue, double min, double max)
+    {
+        var raw = Environment.GetEnvironmentVariable(name);
+        if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
+        {
+            return defaultValue;
+        }
+
+        return Math.Clamp(value, min, max);
+    }
 
     private static uint AlignUp(uint value, uint alignment) =>
         alignment == 0 ? value : ((value + alignment - 1) / alignment) * alignment;
@@ -757,32 +790,30 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         public Vector4 AlphaState;
         public Vector4 RenderState;
         public Vector4 TextureState;
-        // 4a — bindless TexIndices for the blended draw path. Mirrors ReferenceInstance's
-        // last field so the shader interface stays uniform (PS expects vTexIndices regardless
-        // of which VS produced it). TextureState + TexIndices bring this to 128 bytes total.
+        // 4a — bindless TexIndices for the (non-instanced) blended draw path. Kept here so the
+        // PS interface stays uniform (it expects vTexIndices regardless of which VS produced it).
+        // TextureState + TexIndices bring this to 128 bytes total.
         public TexIndexQuad TexIndices;
     }
 
+    /// <summary>
+    ///     Per-batch (per <c>DrawIndexedInstanced</c>) constants for the instanced opaque path,
+    ///     matching the <c>InstanceDraw</c> cbuffer in <c>reference_instanced.vert.hlsl</c>.
+    ///     Material/texture state is identical across a batch (it comes from the submesh, the
+    ///     batch key), so it is uploaded once here instead of per instance. <see cref="InstanceBase" />
+    ///     is the start offset of this batch's world matrices inside the shared instance buffer.
+    ///     `.x` of <see cref="TexIndices" /> is the diffuse bindless slot, `.y` the normal slot.
+    /// </summary>
     [StructLayout(LayoutKind.Sequential)]
     private readonly record struct InstanceDrawConstants(
+        Vector4 AlphaState,
+        Vector4 RenderState,
+        Vector4 TextureState,
+        TexIndexQuad TexIndices,
         uint InstanceBase,
         uint Padding0 = 0,
         uint Padding1 = 0,
         uint Padding2 = 0);
-
-    /// <summary>
-    ///     Per-instance data uploaded into a structured buffer (bound as root SRV t8) and read by
-    ///     <c>reference_instanced.vert.hlsl</c>. `.x` of <see cref="TexIndices" /> is the
-    ///     diffuse bindless slot and `.y` is the normal bindless slot. <see cref="TextureState" />
-    ///     carries GPU texture decode flags.
-    /// </summary>
-    [StructLayout(LayoutKind.Sequential)]
-    private readonly record struct ReferenceInstance(
-        Matrix4x4 World,
-        Vector4 AlphaState,
-        Vector4 RenderState,
-        Vector4 TextureState,
-        TexIndexQuad TexIndices);
 
     /// <summary>
     ///     Packed 4-uint TexIndices field. C# has no <c>uint4</c> primitive, so we lay out
@@ -794,14 +825,16 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     [StructLayout(LayoutKind.Sequential)]
     private readonly record struct TexIndexQuad(uint X, uint Y, uint Z, uint W);
 
-    private readonly record struct ReferenceBatchKey(CachedSubmesh12 Submesh, ID3D12PipelineState Pso);
-
     private readonly record struct BlendPipelineKey(byte SrcBlendMode, byte DstBlendMode, bool DoubleSided);
 
-    private sealed class OpaqueBatchState(ReferenceBatchKey key)
+    private sealed class OpaqueBatchState(CachedSubmesh12 submesh, ID3D12PipelineState pso)
     {
-        public ReferenceBatchKey Key { get; } = key;
-        public List<ReferenceInstance> Instances { get; } = new(16);
+        public CachedSubmesh12 Submesh { get; } = submesh;
+        public ID3D12PipelineState Pso { get; } = pso;
+
+        /// <summary>Per-instance world matrices for this batch (the only per-instance data;
+        /// material/texture state is per-batch and lives in the InstanceDraw CBV at draw time).</summary>
+        public List<Matrix4x4> Instances { get; } = new(16);
         public int LastTouchedFrame { get; set; }
     }
 

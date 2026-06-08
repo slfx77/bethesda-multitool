@@ -1,29 +1,28 @@
-// Placed-object instancing vertex shader. Per-reference world/render state is bound as
-// a root SRV at t8, while material textures use the shared bindless pixel-shader table.
+// Placed-object instancing vertex shader. Per-reference world matrices are bound as a
+// root SRV at t8; per-batch material/texture state rides in the InstanceDraw cbuffer
+// (identical across a batch — uploading it per instance was pure redundancy). Material
+// textures use the shared bindless pixel-shader table.
 
 cbuffer PerFrame : register(b0)
 {
     float4x4 uViewProj;
 };
 
+// Per-batch (one DrawIndexedInstanced) constants. TextureState.x marks BC5/ATI2 normal
+// decode; TexIndices.x = diffuse bindless slot, .y = normal bindless slot. uInstanceBase
+// is the start offset of this batch's worlds inside the shared instance buffer.
 cbuffer InstanceDraw : register(b1)
 {
-    uint uInstanceBase;
-    float3 uInstanceDrawPad;
+    float4 uAlphaState;
+    float4 uRenderState;
+    float4 uTextureState;
+    uint4  uTexIndices;
+    uint   uInstanceBase;
+    uint3  uInstanceDrawPad;
 };
 
-// Per-instance struct is 128 bytes. TextureState.x marks BC5/ATI2 normal decode;
-// TexIndices.x = diffuse bindless slot and .y = normal bindless slot.
-struct ReferenceInstance
-{
-    float4x4 World;
-    float4 AlphaState;
-    float4 RenderState;
-    float4 TextureState;
-    uint4  TexIndices;
-};
-
-StructuredBuffer<ReferenceInstance> uInstances : register(t8);
+// Per-instance data is now JUST the world matrix (64 bytes). Everything else is per-batch.
+StructuredBuffer<float4x4> uInstanceWorlds : register(t8);
 
 struct VSInput
 {
@@ -51,19 +50,19 @@ struct VSOutput
 
 VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
 {
-    ReferenceInstance instance = uInstances[uInstanceBase + instanceId];
+    float4x4 world = uInstanceWorlds[uInstanceBase + instanceId];
 
     VSOutput o;
-    float4 worldPos = mul(instance.World, float4(input.aPosition, 1.0));
+    float4 worldPos = mul(world, float4(input.aPosition, 1.0));
     o.Position = mul(uViewProj, worldPos);
-    o.vWorldNormal = mul((float3x3)instance.World, input.aNormal);
+    o.vWorldNormal = mul((float3x3)world, input.aNormal);
     o.vTexCoord = input.aTexCoord;
     o.vVertexColor = input.aVertexColor;
-    o.vTangent = mul((float3x3)instance.World, input.aTangent);
-    o.vBitangent = mul((float3x3)instance.World, input.aBitangent);
-    o.vAlphaState = instance.AlphaState;
-    o.vRenderState = instance.RenderState;
-    o.vTextureState = instance.TextureState;
-    o.vTexIndices = instance.TexIndices;
+    o.vTangent = mul((float3x3)world, input.aTangent);
+    o.vBitangent = mul((float3x3)world, input.aBitangent);
+    o.vAlphaState = uAlphaState;
+    o.vRenderState = uRenderState;
+    o.vTextureState = uTextureState;
+    o.vTexIndices = uTexIndices;
     return o;
 }

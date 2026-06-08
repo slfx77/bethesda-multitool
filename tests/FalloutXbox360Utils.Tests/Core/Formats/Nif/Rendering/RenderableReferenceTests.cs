@@ -60,9 +60,10 @@ public sealed class RenderableReferenceTests
     }
 
     [Fact]
-    public void TryBuild_RefrWithRotZ90AndScale2_RotatesLocalUnitXToWorldY()
+    public void TryBuild_RefrWithRotZ90AndScale2_RotatesLocalUnitXToWorldNegativeY()
     {
-        // Rotation: +π/2 around Z (yaw) takes local +X → world +Y (right-handed, Z-up).
+        // Rotation: +π/2 around Z (yaw). The engine BUILDS MakeZRotation but APPLIES it transposed
+        // when placing the NiNode, so on-screen the yaw is inverted: local +X → world −Y.
         // Scale: ×2 amplifies the translated component.
         var placement = new PlacedReference
         {
@@ -79,21 +80,20 @@ public sealed class RenderableReferenceTests
         var local = new Vector3(1f, 0f, 0f);
         var world = Vector3.Transform(local, built.WorldMatrix);
 
-        // local (1, 0, 0) → scale → (2, 0, 0) → Rz(π/2) → (0, 2, 0) → translate → (100, 2, 0)
+        // local (1, 0, 0) → scale → (2, 0, 0) → Rz(π/2)ᵀ → (0, −2, 0) → translate → (100, −2, 0)
         Assert.Equal(100f, world.X, 3);
-        Assert.Equal(2f, world.Y, 3);
+        Assert.Equal(-2f, world.Y, 3);
         Assert.Equal(0f, world.Z, 3);
     }
 
     [Fact]
-    public void TryBuild_MultiAxisRotation_MatchesGamebryoNifSkopeEulerConvention()
+    public void TryBuild_MultiAxisRotation_AppliesTransposeOfGamebryoEulerMatrix()
     {
-        // Regression guard for the rotation-composition order. The authoritative Gamebryo /
-        // NIF Euler convention (NifSkope Matrix::fromEuler) builds, for a column vector,
-        // world = Rx * Ry * Rz * local. For single-axis placements the order is irrelevant,
-        // so a reversed product (Rz * Ry * Rx) still looks correct for yaw-only props — which
-        // is exactly why the bug only showed on multi-axis objects like the HELIOS One
-        // collectors. We therefore validate against a rotation with ALL THREE axes non-trivial.
+        // The engine builds the Gamebryo Euler matrix M = Rx·Ry·Rz (NifSkope Matrix::fromEuler,
+        // confirmed by decompiling NiMatrix3::FromEulerAnglesXYZ) but APPLIES it transposed when
+        // placing the NiNode, so the on-screen rotation is Mᵀ. (Empirically: with plain M,
+        // cardinal-aligned symmetric props looked right while diagonals were ~90° off.) Validate
+        // against Mᵀ·local with all three axes non-trivial so order + transpose are both pinned.
         const float rx = 0.30f, ry = 0.60f, rz = 1.10f;
 
         var placement = new PlacedReference
@@ -109,12 +109,12 @@ public sealed class RenderableReferenceTests
 
         var world = RenderableReference.TryBuild(placement)!.Value.WorldMatrix;
 
-        // Compare every local basis axis against the NifSkope column-vector reference. If all
-        // three rotated axes match, the full 3x3 rotation matches.
+        // Compare every local basis axis against Mᵀ·local. If all three rotated axes match, the
+        // full 3x3 rotation matches the engine's applied (transposed) orientation.
         foreach (var axis in new[] { Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ })
         {
             var actual = Vector3.Transform(axis, world);
-            var expected = NifSkopeFromEulerColumn(rx, ry, rz, axis);
+            var expected = GamebryoEulerMatrixTransposed(rx, ry, rz, axis);
             Assert.Equal(expected.X, actual.X, 4);
             Assert.Equal(expected.Y, actual.Y, 4);
             Assert.Equal(expected.Z, actual.Z, 4);
@@ -122,11 +122,12 @@ public sealed class RenderableReferenceTests
     }
 
     /// <summary>
-    ///     Reference implementation of NifSkope's <c>Matrix::fromEuler</c> (niftypes.cpp),
-    ///     i.e. column-vector <c>world = Rx * Ry * Rz * local</c>. Returns the world-space
-    ///     direction of a local basis vector under that convention.
+    ///     Gamebryo's Euler matrix <c>M = Rx · Ry · Rz</c> (NifSkope <c>Matrix::fromEuler</c>,
+    ///     niftypes.cpp), APPLIED TRANSPOSED — i.e. returns <c>Mᵀ · local</c>, the engine's on-screen
+    ///     orientation. (Plain <c>M · local</c> would be the column-vector build; the engine renders
+    ///     its inverse.)
     /// </summary>
-    private static Vector3 NifSkopeFromEulerColumn(float x, float y, float z, Vector3 local)
+    private static Vector3 GamebryoEulerMatrixTransposed(float x, float y, float z, Vector3 local)
     {
         float sinX = MathF.Sin(x), cosX = MathF.Cos(x);
         float sinY = MathF.Sin(y), cosY = MathF.Cos(y);
@@ -142,10 +143,11 @@ public sealed class RenderableReferenceTests
         var m21 = cosX * sinY * sinZ + sinX * cosZ;
         var m22 = cosX * cosY;
 
+        // Mᵀ · local: dot each COLUMN of M with local (transposed index pattern).
         return new Vector3(
-            m00 * local.X + m01 * local.Y + m02 * local.Z,
-            m10 * local.X + m11 * local.Y + m12 * local.Z,
-            m20 * local.X + m21 * local.Y + m22 * local.Z);
+            m00 * local.X + m10 * local.Y + m20 * local.Z,
+            m01 * local.X + m11 * local.Y + m21 * local.Z,
+            m02 * local.X + m12 * local.Y + m22 * local.Z);
     }
 
     [Fact]
