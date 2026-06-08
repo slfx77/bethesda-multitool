@@ -49,11 +49,11 @@ internal sealed class EsmTestFileBuilder
         var isBigEndian = EsmParser.IsBigEndian(fileData);
         var (parsedRecords, grupHeaders) = EsmParser.EnumerateRecordsWithGrups(fileData);
 
-        var (cellToWorldspace, landToWorldspace, cellToRefr, topicToInfo) =
+        var (cellToWorldspace, landToWorldspace, cellToRefr, topicToInfo, landToCell) =
             EsmFileAnalyzer.BuildAllMaps(parsedRecords, grupHeaders);
 
         var scanResult = EsmDataExtractor.ConvertToScanResult(
-            parsedRecords, isBigEndian, cellToWorldspace, landToWorldspace, cellToRefr, topicToInfo);
+            parsedRecords, isBigEndian, cellToWorldspace, landToWorldspace, cellToRefr, topicToInfo, landToCell);
 
         EsmDataExtractor.ExtractRefrRecordsFromParsed(scanResult, parsedRecords, isBigEndian);
 

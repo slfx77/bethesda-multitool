@@ -127,7 +127,7 @@ public static class EsmFileAnalyzer
                 FilesFound = parsedRecords.Count
             });
 
-            var (cellToWorldspace, landToWorldspace, cellToRefrMap, topicToInfoMap) =
+            var (cellToWorldspace, landToWorldspace, cellToRefrMap, topicToInfoMap, landToCellMap) =
                 BuildAllMaps(parsedRecords, grupHeaders);
             if (verbose)
             {
@@ -138,11 +138,13 @@ public static class EsmFileAnalyzer
                             $"{cellToRefrMap.Values.Sum(v => v.Count)} placed references");
                 logger.Info($"[ESM Analysis] Topic\u2192INFO map: {topicToInfoMap.Count} topics with " +
                             $"{topicToInfoMap.Values.Sum(v => v.Count)} child INFOs");
+                logger.Info($"[ESM Analysis] LAND\u2192Cell map: {landToCellMap.Count} LAND records mapped " +
+                            "to parent cell (structural)");
             }
 
             result.EsmRecords =
                 EsmDataExtractor.ConvertToScanResult(parsedRecords, isBigEndian, cellToWorldspace, landToWorldspace,
-                    cellToRefrMap, topicToInfoMap);
+                    cellToRefrMap, topicToInfoMap, landToCellMap);
             EsmDataExtractor.ExtractRefrRecordsFromParsed(result.EsmRecords, parsedRecords, isBigEndian);
 
             // Extract LAND records for heightmap rendering in World tab
@@ -220,13 +222,19 @@ public static class EsmFileAnalyzer
         Dictionary<uint, uint> CellToWorldspace,
         Dictionary<uint, uint> LandToWorldspace,
         Dictionary<uint, List<uint>> CellToRefr,
-        Dictionary<uint, List<uint>> TopicToInfo)
+        Dictionary<uint, List<uint>> TopicToInfo,
+        Dictionary<uint, uint> LandToCell)
         BuildAllMaps(List<ParsedMainRecord> records, List<GrupHeaderInfo> grupHeaders)
     {
         var cellToWorldspace = new Dictionary<uint, uint>();
         var landToWorldspace = new Dictionary<uint, uint>();
         var cellToRefr = new Dictionary<uint, List<uint>>();
         var topicToInfo = new Dictionary<uint, List<uint>>();
+
+        // LAND FormID -> parent CELL FormID, resolved STRUCTURALLY from the Cell Children GRUPs
+        // (same source REFR/ACHR/ACRE use). This is the authoritative parentage; the proximity
+        // heuristic in EsmWorldExtractor is only a fallback for structure-less inputs (DMP).
+        var landToCell = new Dictionary<uint, uint>();
 
         // Build interval maps for each GRUP type (sorts internally)
         // Type 1 = World Children — label is parent WRLD FormID
@@ -263,6 +271,15 @@ public static class EsmFileAnalyzer
                     if (idx >= 0)
                     {
                         landToWorldspace[record.Header.FormId] = worldChildren.GetLabelAsFormId(idx);
+                    }
+
+                    // Structural parent CELL: LAND lives in the cell's Temporary Children GRUP
+                    // (type 9), exactly like the placed objects handled below. The GRUP label is
+                    // the parent CELL FormID, so this is exact — no offset-proximity guessing.
+                    var cellIdx = cellChildren.FindContainingInterval(record.Offset);
+                    if (cellIdx >= 0)
+                    {
+                        landToCell[record.Header.FormId] = cellChildren.GetLabelAsFormId(cellIdx);
                     }
 
                     break;
@@ -306,7 +323,7 @@ public static class EsmFileAnalyzer
             }
         }
 
-        return (cellToWorldspace, landToWorldspace, cellToRefr, topicToInfo);
+        return (cellToWorldspace, landToWorldspace, cellToRefr, topicToInfo, landToCell);
     }
 
     /// <summary>

@@ -22,7 +22,8 @@ internal static class EsmDataExtractor
         Dictionary<uint, uint>? cellToWorldspaceMap = null,
         Dictionary<uint, uint>? landToWorldspaceMap = null,
         Dictionary<uint, List<uint>>? cellToRefrMap = null,
-        Dictionary<uint, List<uint>>? topicToInfoMap = null)
+        Dictionary<uint, List<uint>>? topicToInfoMap = null,
+        Dictionary<uint, uint>? landToCellMap = null)
     {
         var mainRecords = new List<DetectedMainRecord>();
         var editorIds = new List<EdidRecord>();
@@ -124,7 +125,8 @@ internal static class EsmDataExtractor
             CellToWorldspaceMap = cellToWorldspaceMap ?? [],
             LandToWorldspaceMap = landToWorldspaceMap ?? [],
             CellToRefrMap = cellToRefrMap ?? [],
-            TopicToInfoMap = topicToInfoMap ?? []
+            TopicToInfoMap = topicToInfoMap ?? [],
+            LandToCellMap = landToCellMap ?? []
         };
     }
 

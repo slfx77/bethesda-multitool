@@ -408,13 +408,15 @@ internal static class EsmWorldExtractor
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        // Match LAND records to nearby parent CELL/XCLC metadata for cell coordinates and worldspace.
-        // In ESM structure, CELL (containing XCLC) precedes its child LAND record by ~100-500 bytes.
-        // DMP fragments are less orderly, so keep a bounded proximity search but preserve the exact
-        // parent CELL FormID whenever it is recoverable. That prevents later worldspace/cell matching
-        // from collapsing unrelated worldspaces that share the same grid coordinate.
+        // Associate LAND records with their parent CELL (for cell coordinates and worldspace).
+        // PREFERRED: the structural LAND->CELL map built from the GRUP hierarchy (LandToCellMap) —
+        // exact and immune to record density. FALLBACK (memory dumps, which have no GRUP headers, so
+        // the map is empty): a bounded offset-proximity search. The old code used proximity for ALL
+        // inputs; in dense ESM cells the LAND can sit >10 KB after its CELL (lots of placed-object
+        // REFRs in between), so the proximity window missed and the cell rendered as a hole.
         if (scanResult.LandRecords.Count > 0 &&
-            (scanResult.CellGrids.Count > 0 || scanResult.MainRecords.Any(r => r.RecordType == "CELL") ||
+            (scanResult.LandToCellMap.Count > 0 || scanResult.CellGrids.Count > 0 ||
+             scanResult.MainRecords.Any(r => r.RecordType == "CELL") ||
              scanResult.LandToWorldspaceMap.Count > 0))
         {
             var sortedGrids = scanResult.CellGrids.OrderBy(g => g.Offset).ToList();
@@ -422,13 +424,40 @@ internal static class EsmWorldExtractor
                 .Where(r => r.RecordType == "CELL")
                 .OrderBy(r => r.Offset)
                 .ToList();
+
+            // CELL FormID -> its XCLC grid coords, for structural CellX/CellY backfill once the
+            // structural parent is known. CellGrids carry a structural parent CELL FormID (read from
+            // the owning CELL record header), so this lookup is exact.
+            var gridByCellFormId = new Dictionary<uint, CellGridSubrecord>();
+            foreach (var grid in scanResult.CellGrids)
+            {
+                if (grid.CellFormId is uint cellFormId)
+                {
+                    gridByCellFormId.TryAdd(cellFormId, grid);
+                }
+            }
+
             var enriched = new List<ExtractedLandRecord>();
 
             foreach (var land in scanResult.LandRecords)
             {
-                var match = FindClosestGridBefore(land.Header.Offset, sortedGrids);
-                var parentCell = FindClosestCellBefore(land.Header.Offset, sortedCells);
-                var parentCellFormId = match?.CellFormId ?? parentCell?.FormId;
+                CellGridSubrecord? match;
+                uint? parentCellFormId;
+                bool fromStructural;
+                if (scanResult.LandToCellMap.TryGetValue(land.Header.FormId, out var structuralCellFormId))
+                {
+                    // Structural parentage: exact, and skips the per-LAND O(n) proximity scans.
+                    fromStructural = true;
+                    parentCellFormId = structuralCellFormId;
+                    match = gridByCellFormId.GetValueOrDefault(structuralCellFormId);
+                }
+                else
+                {
+                    fromStructural = false;
+                    match = FindClosestGridBefore(land.Header.Offset, sortedGrids);
+                    var parentCell = FindClosestCellBefore(land.Header.Offset, sortedCells);
+                    parentCellFormId = match?.CellFormId ?? parentCell?.FormId;
+                }
 
                 uint? worldspaceFormId = null;
                 if (scanResult.LandToWorldspaceMap.TryGetValue(land.Header.FormId, out var landWorldspace))
@@ -448,7 +477,11 @@ internal static class EsmWorldExtractor
                     worldspaceFormId = parentCellWorldspace;
                 }
 
+                // Cross-worldspace guard only applies to the proximity fallback, where the parent can
+                // be misattributed to a neighbor in another worldspace. A structural parent is
+                // authoritative and must never be nullified.
                 var parentConflictsWithLandWorldspace =
+                    !fromStructural &&
                     worldspaceFormId.HasValue &&
                     parentCellWorldspace.HasValue &&
                     worldspaceFormId.Value != parentCellWorldspace.Value;

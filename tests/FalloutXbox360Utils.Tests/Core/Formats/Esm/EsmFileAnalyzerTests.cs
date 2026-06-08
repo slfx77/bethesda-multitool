@@ -71,7 +71,7 @@ public sealed class EsmFileAnalyzerTests(SampleFileFixture samples) : IDisposabl
             MakeRecord("CELL", 2000, 0x00001003) // Outside the GRUP — should NOT map
         };
 
-        var (cellToWorld, landToWorld, cellToRefr, topicToInfo) =
+        var (cellToWorld, landToWorld, cellToRefr, topicToInfo, _) =
             EsmFileAnalyzer.BuildAllMaps(records, grupHeaders);
 
         // CELL at 1050 is inside [1000..1500) → mapped to worldspace 0x0003C2EC
@@ -106,7 +106,7 @@ public sealed class EsmFileAnalyzerTests(SampleFileFixture samples) : IDisposabl
             MakeRecord("ACRE", 2200, 0x0000B003)
         };
 
-        var (cellToWorld, landToWorld, cellToRefr, topicToInfo) =
+        var (cellToWorld, landToWorld, cellToRefr, topicToInfo, _) =
             EsmFileAnalyzer.BuildAllMaps(records, grupHeaders);
 
         // All three REFR/ACHR/ACRE should be mapped to cell 0x0000A001
@@ -119,6 +119,39 @@ public sealed class EsmFileAnalyzerTests(SampleFileFixture samples) : IDisposabl
 
         Assert.Empty(cellToWorld);
         Assert.Empty(landToWorld);
+        Assert.Empty(topicToInfo);
+    }
+
+    [Fact]
+    public void BuildAllMaps_LandInCellChildren_MapsToParentCellAndWorldspace()
+    {
+        // Real structure: a LAND lives in its cell's Temporary Children GRUP (type 9), which is
+        // nested inside the World Children GRUP (type 1). The LAND offset is therefore inside both.
+        // Place the LAND far (>10 KB) from the CELL header to prove parentage is resolved
+        // structurally, not by the old offset-proximity heuristic (which had a 10 KB window).
+        var grupHeaders = new List<GrupHeaderInfo>
+        {
+            MakeGrup(1000, 60_000, 0x0003C2EC, 1), // World Children — worldspace
+            MakeGrup(2000, 40_000, 0x0000A001, 9) // Cell Temporary Children — parent cell
+        };
+
+        var records = new List<ParsedMainRecord>
+        {
+            MakeRecord("CELL", 1500, 0x0000A001),
+            MakeRecord("LAND", 30_000, 0x0000B001) // 28 KB past the CELL header — beyond proximity
+        };
+
+        var (_, landToWorld, cellToRefr, topicToInfo, landToCell) =
+            EsmFileAnalyzer.BuildAllMaps(records, grupHeaders);
+
+        // LAND maps STRUCTURALLY to its parent cell regardless of offset distance.
+        Assert.Single(landToCell);
+        Assert.Equal(0x0000A001u, landToCell[0x0000B001u]);
+
+        // Worldspace association is preserved.
+        Assert.Equal(0x0003C2ECu, landToWorld[0x0000B001u]);
+
+        Assert.Empty(cellToRefr);
         Assert.Empty(topicToInfo);
     }
 
@@ -137,7 +170,7 @@ public sealed class EsmFileAnalyzerTests(SampleFileFixture samples) : IDisposabl
             MakeRecord("INFO", 5100, 0x000E0002)
         };
 
-        var (cellToWorld, landToWorld, cellToRefr, topicToInfo) =
+        var (cellToWorld, landToWorld, cellToRefr, topicToInfo, _) =
             EsmFileAnalyzer.BuildAllMaps(records, grupHeaders);
 
         Assert.Single(topicToInfo);
@@ -154,7 +187,7 @@ public sealed class EsmFileAnalyzerTests(SampleFileFixture samples) : IDisposabl
     [Fact]
     public void BuildAllMaps_EmptyInputs_ReturnsEmptyMaps()
     {
-        var (cellToWorld, landToWorld, cellToRefr, topicToInfo) =
+        var (cellToWorld, landToWorld, cellToRefr, topicToInfo, _) =
             EsmFileAnalyzer.BuildAllMaps([], []);
 
         Assert.Empty(cellToWorld);
@@ -181,7 +214,7 @@ public sealed class EsmFileAnalyzerTests(SampleFileFixture samples) : IDisposabl
             MakeRecord("INFO", 1150, 0x3001)
         };
 
-        var (cellToWorld, landToWorld, cellToRefr, topicToInfo) =
+        var (cellToWorld, landToWorld, cellToRefr, topicToInfo, _) =
             EsmFileAnalyzer.BuildAllMaps(records, grupHeaders);
 
         Assert.Single(cellToWorld);
@@ -214,7 +247,7 @@ public sealed class EsmFileAnalyzerTests(SampleFileFixture samples) : IDisposabl
             MakeRecord("NPC_", 300, 0xF002)
         };
 
-        var (cellToWorld, landToWorld, cellToRefr, topicToInfo) =
+        var (cellToWorld, landToWorld, cellToRefr, topicToInfo, _) =
             EsmFileAnalyzer.BuildAllMaps(records, grupHeaders);
 
         Assert.Empty(cellToWorld);

@@ -87,6 +87,14 @@ public record EsmRecordScanResult
     /// <summary>LAND FormID → parent Worldspace FormID mapping (from ESM GRUP hierarchy).</summary>
     public Dictionary<uint, uint> LandToWorldspaceMap { get; init; } = [];
 
+    /// <summary>
+    ///     LAND FormID → parent CELL FormID mapping, resolved structurally from the Cell Children
+    ///     GRUP hierarchy (types 8/9/10). Authoritative parentage used by
+    ///     <see cref="EsmWorldExtractor" /> in preference to the offset-proximity fallback.
+    ///     Empty for structure-less inputs (memory dumps), where the proximity fallback still runs.
+    /// </summary>
+    public Dictionary<uint, uint> LandToCellMap { get; init; } = [];
+
     /// <summary>Cell FormID → child REFR/ACHR/ACRE FormIDs (from ESM GRUP hierarchy type 8/9/10).</summary>
     public Dictionary<uint, List<uint>> CellToRefrMap { get; init; } = [];
 
