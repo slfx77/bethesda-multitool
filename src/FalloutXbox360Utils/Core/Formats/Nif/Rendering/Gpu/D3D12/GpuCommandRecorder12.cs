@@ -76,6 +76,9 @@ internal sealed class GpuCommandRecorder12 : IDisposable
     /// (0 when it did not wait). Surfaced so the bump decision is measured, not guessed.</summary>
     public double LastFrameFenceWaitMilliseconds { get; private set; }
 
+    /// <summary>Fence value signaled by the most recent <see cref="EndFrame" /> submission.</summary>
+    public ulong LastSubmittedFenceValue { get; private set; }
+
     /// <summary>
     ///     Defers disposal of a short-lived resource used by the currently open command list
     ///     until the fence value signaled for that submission has completed. Upload staging
@@ -144,6 +147,7 @@ internal sealed class GpuCommandRecorder12 : IDisposable
         var signalValue = _nextFenceValue++;
         _gpu.DirectQueue.Signal(_gpu.FrameFence, signalValue).CheckError();
         _frameFenceValues[_frameIndex] = signalValue;
+        LastSubmittedFenceValue = signalValue;
         for (var i = 0; i < _currentFrameRetirements.Count; i++)
         {
             _fenceRetirements.Enqueue(new FenceRetirement(_currentFrameRetirements[i], signalValue));

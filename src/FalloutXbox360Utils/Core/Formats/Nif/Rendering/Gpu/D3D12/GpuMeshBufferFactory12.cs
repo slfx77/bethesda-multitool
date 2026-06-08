@@ -84,11 +84,14 @@ internal static unsafe class GpuMeshBufferFactory12
             throw new ArgumentException("Refusing to create a zero-length buffer.", nameof(data));
 
         var byteWidth = (uint)(data.Length * sizeof(T));
+        // Buffers are always created in COMMON (D3D12 ignores any other initial state and the
+        // debug layer warns if one is supplied); the CopyBufferRegion below implicitly promotes
+        // COMMON→COPY_DEST, then the barrier transitions COPY_DEST→finalState.
         var resource = gpu.Device.CreateCommittedResource<ID3D12Resource>(
             HeapProperties.DefaultHeapProperties,
             HeapFlags.None,
             ResourceDescription.Buffer(byteWidth),
-            ResourceStates.CopyDest,
+            ResourceStates.Common,
             optimizedClearValue: null);
 
         var staging = gpu.Device.CreateCommittedResource<ID3D12Resource>(

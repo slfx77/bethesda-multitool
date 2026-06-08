@@ -10,6 +10,10 @@ internal sealed class WorldRenderStats
     internal int TextureCacheMisses { get; set; }
     internal int TextureCompressedUploads { get; set; }
     internal int TextureRgbaFallbackUploads { get; set; }
+    internal int TextureQueuedResolves { get; set; }
+    internal int TextureActiveResolves { get; set; }
+    internal int TexturePendingResolves { get; set; }
+    internal int TexturePendingUploads { get; set; }
     internal int WaterDraws { get; set; }
     internal int WireframeDraws { get; set; }
     internal double CpuFrameMilliseconds { get; set; }
@@ -34,6 +38,7 @@ internal sealed class WorldRenderStats
     internal int ReferenceCandidates { get; set; }       // sum of PlacedObjects across visited cells
     internal int ReferenceCulled { get; set; }           // dropped by per-REFR cylinder test
     internal int ReferenceMeshMissing { get; set; }      // GetOrUpload returned null this frame
+    internal int ReferenceTexturePending { get; set; }   // mesh ready, but at least one texture still streaming
     internal int ReferenceDrawn { get; set; }            // REFRs that issued ≥1 submesh draw
     internal int ReferenceSubmeshDraws { get; set; }     // total DrawIndexed calls
     internal int ReferenceSrvBinds { get; set; }         // distinct PSSetShaderResource calls (post BindSrvIfChanged dedup)
@@ -46,8 +51,14 @@ internal sealed class WorldRenderStats
     internal int ReferenceCpuDecodedMeshCacheHits { get; set; }
     internal int ReferenceCpuDecodedMeshCacheMisses { get; set; }
     internal int ReferenceCpuDecodedMeshNegativeHits { get; set; }
+    internal int ReferenceGpuUploads { get; set; }
+    internal int ReferenceUploadByteBudgetDeferrals { get; set; }
     internal int ReferenceCompressedTextureUploads { get; set; }
     internal int ReferenceRgbaTextureUploads { get; set; }
+    internal int ReferenceTextureQueuedResolves { get; set; }
+    internal int ReferenceTextureActiveResolves { get; set; }
+    internal int ReferenceTexturePendingResolves { get; set; }
+    internal int ReferenceTexturePendingUploads { get; set; }
     internal int ReferenceBatches { get; set; }
     internal int ReferenceInstances { get; set; }
     internal int ReferenceInstancedDraws { get; set; }
@@ -69,6 +80,10 @@ internal sealed class WorldRenderStats
         TextureCacheMisses = 0;
         TextureCompressedUploads = 0;
         TextureRgbaFallbackUploads = 0;
+        TextureQueuedResolves = 0;
+        TextureActiveResolves = 0;
+        TexturePendingResolves = 0;
+        TexturePendingUploads = 0;
         WaterDraws = 0;
         WireframeDraws = 0;
         CpuFrameMilliseconds = 0;
@@ -87,6 +102,7 @@ internal sealed class WorldRenderStats
         ReferenceCandidates = 0;
         ReferenceCulled = 0;
         ReferenceMeshMissing = 0;
+        ReferenceTexturePending = 0;
         ReferenceDrawn = 0;
         ReferenceSubmeshDraws = 0;
         ReferenceSrvBinds = 0;
@@ -99,8 +115,14 @@ internal sealed class WorldRenderStats
         ReferenceCpuDecodedMeshCacheHits = 0;
         ReferenceCpuDecodedMeshCacheMisses = 0;
         ReferenceCpuDecodedMeshNegativeHits = 0;
+        ReferenceGpuUploads = 0;
+        ReferenceUploadByteBudgetDeferrals = 0;
         ReferenceCompressedTextureUploads = 0;
         ReferenceRgbaTextureUploads = 0;
+        ReferenceTextureQueuedResolves = 0;
+        ReferenceTextureActiveResolves = 0;
+        ReferenceTexturePendingResolves = 0;
+        ReferenceTexturePendingUploads = 0;
         ReferenceBatches = 0;
         ReferenceInstances = 0;
         ReferenceInstancedDraws = 0;
@@ -123,6 +145,10 @@ internal sealed class WorldRenderStats
         TextureCacheMisses = TextureCacheMisses,
         TextureCompressedUploads = TextureCompressedUploads,
         TextureRgbaFallbackUploads = TextureRgbaFallbackUploads,
+        TextureQueuedResolves = TextureQueuedResolves,
+        TextureActiveResolves = TextureActiveResolves,
+        TexturePendingResolves = TexturePendingResolves,
+        TexturePendingUploads = TexturePendingUploads,
         WaterDraws = WaterDraws,
         WireframeDraws = WireframeDraws,
         CpuFrameMilliseconds = CpuFrameMilliseconds,
@@ -141,6 +167,7 @@ internal sealed class WorldRenderStats
         ReferenceCandidates = ReferenceCandidates,
         ReferenceCulled = ReferenceCulled,
         ReferenceMeshMissing = ReferenceMeshMissing,
+        ReferenceTexturePending = ReferenceTexturePending,
         ReferenceDrawn = ReferenceDrawn,
         ReferenceSubmeshDraws = ReferenceSubmeshDraws,
         ReferenceSrvBinds = ReferenceSrvBinds,
@@ -153,8 +180,14 @@ internal sealed class WorldRenderStats
         ReferenceCpuDecodedMeshCacheHits = ReferenceCpuDecodedMeshCacheHits,
         ReferenceCpuDecodedMeshCacheMisses = ReferenceCpuDecodedMeshCacheMisses,
         ReferenceCpuDecodedMeshNegativeHits = ReferenceCpuDecodedMeshNegativeHits,
+        ReferenceGpuUploads = ReferenceGpuUploads,
+        ReferenceUploadByteBudgetDeferrals = ReferenceUploadByteBudgetDeferrals,
         ReferenceCompressedTextureUploads = ReferenceCompressedTextureUploads,
         ReferenceRgbaTextureUploads = ReferenceRgbaTextureUploads,
+        ReferenceTextureQueuedResolves = ReferenceTextureQueuedResolves,
+        ReferenceTextureActiveResolves = ReferenceTextureActiveResolves,
+        ReferenceTexturePendingResolves = ReferenceTexturePendingResolves,
+        ReferenceTexturePendingUploads = ReferenceTexturePendingUploads,
         ReferenceBatches = ReferenceBatches,
         ReferenceInstances = ReferenceInstances,
         ReferenceInstancedDraws = ReferenceInstancedDraws,

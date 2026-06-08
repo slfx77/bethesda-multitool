@@ -1,20 +1,50 @@
+using System.Collections.Concurrent;
 using Vortice.Direct3D12;
 using Vortice.DXGI;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
 /// <summary>
 ///     D3D12 texture cache for terrain and reference rendering. Texture misses resolve to
-///     stable bindless entries immediately, then the real DEFAULT-heap upload is processed
-///     through a bounded per-frame queue.
+///     stable bindless entries immediately, then the real DEFAULT-heap upload streams on a
+///     dedicated copy queue off the render thread.
+///     <para>
+///         Pipeline: a cold <see cref="GetOrUpload" /> returns a fallback placeholder and queues
+///         a background DDS/DDX resolve (<see cref="BoundedAsyncResolveQueue{TResult}" />). When
+///         the payload is ready it is handed to a dedicated uploader thread
+///         (<see cref="GpuUploadDispatcher12" />) that creates the GPU texture, fills staging, and
+///         records the mip copies on a copy queue (<see cref="GpuUploadQueue12" />) — none of that
+///         touches the per-frame direct command list. Once the copy fence completes, the render
+///         thread transitions the texture to a shader-read state and points the placeholder's
+///         persistent SRV slot at it, so callers upgrade placeholder → textured transparently
+///         (the bindless index is stable and draw records never rebuild).
+///     </para>
+///     <para>
+///         This removes the staging memcpy + <c>CopyTextureRegion</c> + barrier (previously the
+///         dominant streaming-hitch source — a single multi-MB texture could spike a frame) from
+///         the render thread entirely.
+///     </para>
 /// </summary>
 internal sealed unsafe class GpuTextureCache12 : IDisposable
 {
-    // Raised from 4 / 16 MB: with decode now parallelized, texture upload is the gate on how fast
-    // meshes go from placeholder (white/flat-normal) to textured. Higher throughput shrinks the
-    // visible untextured→textured window. Still bounded so a single frame can't stall on uploads.
+    // Per-frame caps now bound how fast resolved textures are HANDED to the uploader (copy-queue /
+    // staging-VRAM pressure), not render-thread time — the upload itself is async. Kept generous so
+    // the placeholder→textured window stays short.
     private const int DefaultMaxUploadsPerFrame = 16;
     private const long DefaultMaxUploadBytesPerFrame = 48L * 1024L * 1024L;
+    private static readonly int DefaultMaxConcurrentTextureResolves = ParsePositiveIntEnvironment(
+        "FALLOUT_VIEWER_TEXTURE_RESOLVE_CONCURRENCY",
+        defaultValue: 2,
+        min: 1,
+        max: 8);
+
+    // Release each decoded texture payload's CPU mip bytes from the resolver cache once it's on the
+    // GPU (default on) — they're dead weight afterward and otherwise accumulate to multi-GB managed
+    // heap → GC stalls. FALLOUT_VIEWER_RETAIN_TEXTURE_PAYLOADS=1 keeps the old retain-forever
+    // behavior (for A/B measurement / fallback).
+    private static readonly bool ReleaseTexturePayloadsAfterUpload =
+        Environment.GetEnvironmentVariable("FALLOUT_VIEWER_RETAIN_TEXTURE_PAYLOADS") != "1";
 
     private readonly GpuDevice12 _gpu;
     private readonly GpuCommandRecorder12 _recorder;
@@ -22,8 +52,14 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
     private readonly GpuDeletionQueue12? _deletionQueue;
     private readonly GpuDescriptorHeapAllocator12 _heap;
     private readonly Dictionary<string, TextureUploadNode> _cache = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Queue<TextureUploadNode> _uploadQueue = new();
+    private readonly Queue<TextureUploadNode> _pendingDispatch = new();
+    private readonly BoundedAsyncResolveQueue<GpuTexturePayload> _resolveQueue;
     private readonly List<ID3D12Resource> _ownedTextures = new();
+    // Async copy-queue upload machinery (owned per-cache, mirroring _resolveQueue ownership).
+    private readonly GpuUploadQueue12 _copyUploadQueue;
+    private readonly GpuUploadDispatcher12 _uploadDispatcher;
+    private readonly ConcurrentQueue<CompletedUpload> _completedUploads = new();
+    private readonly List<CompletedUpload> _pendingPromote = new();
     private Entry? _whitePixel;
     private Entry? _flatNormal;
     private int _pendingUploadCount;
@@ -41,6 +77,14 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
         _heap = heap;
         _resolver = resolver;
         _deletionQueue = deletionQueue;
+        // Resolve DDS/DDX payloads off the render thread. Keep the default conservative because
+        // DDX conversion and DDS parsing allocate enough to cause visible UI/render pauses when
+        // too many complete in the same window.
+        _resolveQueue = new BoundedAsyncResolveQueue<GpuTexturePayload>(
+            maxConcurrent: DefaultMaxConcurrentTextureResolves,
+            resolve: ResolvePayload);
+        _copyUploadQueue = new GpuUploadQueue12(gpu);
+        _uploadDispatcher = new GpuUploadDispatcher12();
     }
 
     /// <summary>1x1 opaque white texture used as the fallback diffuse.</summary>
@@ -61,7 +105,18 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
 
     public long FrameUploadBytes { get; private set; }
 
+    /// <summary>Texture paths newly queued for background payload resolution this frame.</summary>
+    public int FrameQueuedResolves { get; private set; }
+
+    /// <summary>Background payload-resolution tasks running right now.</summary>
+    public int FrameActiveResolves => _resolveQueue.ActiveCount;
+
     public int PendingUploadCount => _pendingUploadCount;
+
+    public int PendingResolveCount => _resolveQueue.QueuedCount;
+
+    /// <summary>Upload work items handed to the uploader thread but not yet processed.</summary>
+    public int PendingUploadDispatch => _uploadDispatcher.PendingCount;
 
     public void ResetFrameStats()
     {
@@ -69,12 +124,16 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
         FrameRgbaFallbackUploads = 0;
         FrameQueuedUploads = 0;
         FrameUploadBytes = 0;
-        ProcessQueuedUploads();
+        FrameQueuedResolves = 0;
+        PromoteCompletedUploads();
+        DrainResolvedPayloads();
+        DispatchQueuedUploads();
+        _resolveQueue.Pump();
     }
 
     /// <summary>
     ///     Returns a stable cached entry for <paramref name="path" />. On a cold miss the
-    ///     entry initially points at a fallback texture; the queued upload later overwrites
+    ///     entry initially points at a fallback texture; the streamed upload later overwrites
     ///     the same persistent descriptor slot so existing terrain/reference caches update
     ///     without rebuilding their draw records.
     /// </summary>
@@ -88,26 +147,34 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
 
         if (_cache.TryGetValue(cacheKey, out var node))
         {
-            QueueUpload(node, countAsQueuedThisFrame: true);
+            // Resolved (payload present) but not yet resident → make sure it is queued for dispatch.
+            // Still resolving (payload null) → just return the placeholder; the background resolution
+            // queues the dispatch itself once it completes.
+            if (node.Payload is not null)
+            {
+                EnqueueForDispatch(node, newlyPending: false);
+            }
             return node.Entry;
         }
 
+        var fallback = isNormalMap ? FlatNormal : WhitePixel;
         if (_resolver is null)
         {
-            return isNormalMap ? FlatNormal : WhitePixel;
+            return fallback;
         }
 
-        var payload = _resolver.GetTexture(cacheKey);
-        if (payload is null || payload.Width <= 0 || payload.Height <= 0 || payload.MipCount <= 0)
-        {
-            return isNormalMap ? FlatNormal : WhitePixel;
-        }
-
-        var fallback = isNormalMap ? FlatNormal : WhitePixel;
+        // Cold miss: hand back a fallback placeholder immediately and resolve the real DDS/DDX payload
+        // on a background thread. The streamed GPU upload later overwrites this Entry's persistent
+        // descriptor slot in place, so callers that cached the Entry upgrade from placeholder →
+        // textured transparently (BindlessIndex is stable).
         var entry = CreatePlaceholderEntry(fallback);
-        node = new TextureUploadNode(cacheKey, payload, entry);
+        node = new TextureUploadNode(cacheKey, entry);
         _cache[cacheKey] = node;
-        QueueUpload(node, countAsQueuedThisFrame: true);
+        if (_resolveQueue.Enqueue(cacheKey))
+        {
+            FrameQueuedResolves++;
+        }
+        _resolveQueue.Pump();
         return entry;
     }
 
@@ -115,127 +182,277 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        // Stop the uploader thread first so no upload completion / copy submission races teardown.
+        _uploadDispatcher.Dispose();
+        // Let in-flight background resolutions finish before the host disposes the resolver they read
+        // from (BSA archives). Mirrors ReferenceMeshCache12's decode-task drain on dispose; the host
+        // disposes this cache before the resolver, so this keeps that ordering safe.
+        if (!_resolveQueue.WaitForDrain(TimeSpan.FromSeconds(5)))
+        {
+            Logger.Instance.Warn("GpuTextureCache12: texture resolution task(s) still running during dispose.");
+        }
+        // Flush + dispose the copy queue: drains outstanding copies and retires their staging. After
+        // this every uploaded DEFAULT texture is GPU-idle and safe to release.
+        _copyUploadQueue.Dispose();
+
+        // Release textures that finished uploading but were never promoted (cache torn down first).
+        while (_completedUploads.TryDequeue(out var leftover))
+        {
+            if (leftover.Texture is not null) DisposeResource(leftover.Texture);
+        }
+        foreach (var pending in _pendingPromote)
+        {
+            if (pending.Texture is not null) DisposeResource(pending.Texture);
+        }
+        _pendingPromote.Clear();
+
         foreach (var t in _ownedTextures) DisposeResource(t);
         if (_whitePixel is Entry wp) DisposeResource(wp.Texture);
         if (_flatNormal is Entry fn) DisposeResource(fn.Texture);
         _ownedTextures.Clear();
-        _uploadQueue.Clear();
+        _pendingDispatch.Clear();
         _cache.Clear();
         _pendingUploadCount = 0;
         // _heap is owned by the host (WorldView3DControl); do not dispose here.
     }
 
-    private void QueueUpload(TextureUploadNode node, bool countAsQueuedThisFrame)
+    /// <summary>
+    ///     Render-thread step: enqueue a resolved-but-not-resident node onto the dispatch queue so
+    ///     <see cref="DispatchQueuedUploads" /> can hand it to the uploader thread. Idempotent — a
+    ///     node already queued, dispatched, resident or failed is left alone. <paramref
+    ///     name="newlyPending" /> increments the pending counter exactly once, at first resolution.
+    /// </summary>
+    private void EnqueueForDispatch(TextureUploadNode node, bool newlyPending)
     {
-        if (node.Entry.IsResident || node.Failed || node.Queued)
+        if (node.Payload is null || node.Entry.IsResident || node.Failed || node.InDispatchQueue || node.Dispatched)
         {
             return;
         }
 
-        node.Queued = true;
-        _uploadQueue.Enqueue(node);
-        _pendingUploadCount++;
-        if (countAsQueuedThisFrame)
+        if (newlyPending)
         {
-            FrameQueuedUploads++;
+            _pendingUploadCount++;
         }
+        node.InDispatchQueue = true;
+        _pendingDispatch.Enqueue(node);
     }
 
-    private void ProcessQueuedUploads()
+    /// <summary>
+    ///     Render-thread step: hand resolved nodes to the uploader thread, up to the per-frame
+    ///     count + byte caps (which bound copy-queue / staging-VRAM pressure, not frame time).
+    /// </summary>
+    private void DispatchQueuedUploads()
     {
         var uploadLimit = Math.Max(1, MaxUploadsPerFrame);
-        var byteBudget = Math.Max(1, MaxUploadBytesPerFrame);
-        var uploaded = 0;
-        var uploadedBytes = 0L;
+        var byteBudget = new FrameUploadByteBudget(MaxUploadBytesPerFrame);
 
-        while (_uploadQueue.Count > 0 && uploaded < uploadLimit)
+        while (_pendingDispatch.Count > 0 && byteBudget.Count < uploadLimit)
         {
-            var node = _uploadQueue.Dequeue();
-            node.Queued = false;
-            _pendingUploadCount--;
+            var node = _pendingDispatch.Dequeue();
+            node.InDispatchQueue = false;
 
-            if (node.Entry.IsResident || node.Failed)
+            var payload = node.Payload;
+            if (payload is null || node.Entry.IsResident || node.Failed)
             {
                 continue;
             }
 
-            var byteSize = Math.Max(1L, node.Payload.ByteSize);
-            if (uploaded > 0 && uploadedBytes + byteSize > byteBudget)
+            var byteSize = Math.Max(1L, payload.ByteSize);
+            if (!byteBudget.CanUpload(byteSize))
             {
-                QueueUpload(node, countAsQueuedThisFrame: false);
+                // Over the per-frame admission budget → requeue and stop; retry next frame.
+                node.InDispatchQueue = true;
+                _pendingDispatch.Enqueue(node);
                 break;
             }
 
-            if (TryUploadQueuedTexture(node))
+            var cacheKey = node.Path;
+            node.Dispatched = true;
+            if (_uploadDispatcher.TryEnqueue(() => RunUploadOnUploaderThread(cacheKey, payload)))
             {
-                uploaded++;
-                uploadedBytes += byteSize;
-                FrameUploadBytes += byteSize;
+                byteBudget.Record(byteSize);
+                FrameQueuedUploads++;
             }
             else
             {
-                node.Failed = true;
+                // Uploader queue full → requeue for a later frame (no render-thread blocking).
+                node.Dispatched = false;
+                node.InDispatchQueue = true;
+                _pendingDispatch.Enqueue(node);
+                break;
             }
         }
     }
 
-    private bool TryUploadQueuedTexture(TextureUploadNode node)
+    /// <summary>
+    ///     Render-thread step: convert background resolution results into dispatch-queue entries.
+    ///     Invalid or missing payloads leave the node permanently on its fallback placeholder.
+    /// </summary>
+    private void DrainResolvedPayloads()
     {
-        try
+        while (_resolveQueue.TryDequeueCompleted(out var cacheKey, out var payload))
         {
-            UploadQueuedTexture(node);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Logger.Instance.Warn(
-                "GpuTextureCache12: texture upload failed for '{0}': {1}",
-                node.Path,
-                ex.Message);
-            return false;
+            if (!_cache.TryGetValue(cacheKey, out var node))
+            {
+                continue;
+            }
+
+            if (payload is null || payload.Width <= 0 || payload.Height <= 0 || payload.MipCount <= 0)
+            {
+                node.Failed = true;
+                node.Entry.MarkUnavailable();
+                continue;
+            }
+
+            node.Payload = payload;
+            EnqueueForDispatch(node, newlyPending: true);
         }
     }
 
-    private void DisposeResource(ID3D12Resource resource)
+    /// <summary>
+    ///     Render-thread step: complete uploads whose copy fence has passed. The copy left the
+    ///     texture in COMMON (decayed from COPY_DEST); transition it to a shader-read state on the
+    ///     direct queue, write the real SRV into the placeholder's persistent slot, and mark it
+    ///     resident. Recorded into the open frame command list before any draws sample it.
+    /// </summary>
+    private void PromoteCompletedUploads()
     {
-        if (_deletionQueue is not null)
+        // Move newly-finished uploads off the cross-thread queue; settle failures immediately.
+        while (_completedUploads.TryDequeue(out var completed))
         {
-            _deletionQueue.EnqueueDispose(resource);
+            if (completed.Texture is null)
+            {
+                if (_cache.TryGetValue(completed.CacheKey, out var failedNode) &&
+                    !failedNode.Entry.IsResident && !failedNode.Failed)
+                {
+                    failedNode.Failed = true;
+                    failedNode.Entry.MarkUnavailable();
+                    failedNode.Dispatched = false;
+                    failedNode.Payload = null; // free the decoded bytes; this node won't upload again.
+                    _pendingUploadCount--;
+                }
+                continue;
+            }
+
+            _pendingPromote.Add(completed);
         }
-        else
+
+        if (_pendingPromote.Count == 0)
         {
-            resource.Dispose();
+            return;
         }
+
+        var completedFence = _copyUploadQueue.LastCompletedValue;
+        var cmd = _recorder.CommandList;
+        var keep = 0;
+        for (var i = 0; i < _pendingPromote.Count; i++)
+        {
+            var c = _pendingPromote[i];
+            if (c.CopyFenceValue > completedFence)
+            {
+                _pendingPromote[keep++] = c; // copy not finished yet — re-check next frame.
+                continue;
+            }
+
+            if (!_cache.TryGetValue(c.CacheKey, out var node) || node.Entry.IsResident || node.Failed)
+            {
+                // Node evicted/cleared or already satisfied → the uploaded texture is orphaned.
+                DisposeResource(c.Texture!);
+                continue;
+            }
+
+            cmd.ResourceBarrierTransition(c.Texture!, ResourceStates.Common, ResourceStates.PixelShaderResource);
+            _gpu.Device.CreateShaderResourceView(c.Texture, c.SrvDesc, node.Entry.PersistentSrv);
+            node.Entry.ReplaceTexture(c.Texture!, c.SrvDesc, c.Format, c.NormalDecodeMode);
+            node.Dispatched = false;
+            // Drop the decoded payload's mip bytes now that the texture is resident on the GPU.
+            // The node is the second strong ref (alongside the resolver cache, released on the
+            // uploader thread); clearing it here is what actually frees the bytes — otherwise every
+            // resident texture's CPU bytes are retained for the session (multi-GB heap / GC stalls).
+            node.Payload = null;
+            _ownedTextures.Add(c.Texture!);
+            _pendingUploadCount--;
+
+            if (c.IsCompressed)
+            {
+                FrameCompressedUploads++;
+            }
+            else
+            {
+                FrameRgbaFallbackUploads++;
+            }
+            FrameUploadBytes += c.ByteSize;
+        }
+        _pendingPromote.RemoveRange(keep, _pendingPromote.Count - keep);
     }
 
-    private void UploadQueuedTexture(TextureUploadNode node)
+    /// <summary>
+    ///     Background-thread payload resolution (BSA read + DDX→DDS + BCn decode). Runs through the
+    ///     resolver's own thread-safe cache; never touches render-thread state.
+    /// </summary>
+    private GpuTexturePayload? ResolvePayload(string cacheKey)
     {
-        var payload = node.Payload;
-        var width = (uint)payload.Width;
-        var height = (uint)payload.Height;
-        var mipCount = (ushort)payload.MipCount;
-        if (width == 0 || height == 0 || mipCount == 0)
+        if (_resolver is null)
         {
-            throw new InvalidOperationException("Degenerate texture payload.");
+            return null;
         }
 
-        var dxgiFormat = ToDxgiFormat(payload.Format);
-        var desc = ResourceDescription.Texture2D(
-            dxgiFormat, width, height,
-            arraySize: 1, mipLevels: mipCount,
-            sampleCount: 1, sampleQuality: 0,
-            ResourceFlags.None);
+        var started = RendererProfilerTrace.IsEnabled ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+        var payload = _resolver.GetTexture(cacheKey);
+        if (started != 0)
+        {
+            RendererProfilerTrace.Event("resource-event", new Dictionary<string, object?>
+            {
+                ["resource"] = "texture",
+                ["phase"] = "resolve",
+                ["path"] = cacheKey,
+                ["found"] = payload is not null,
+                ["compressed"] = payload?.IsCompressed,
+                ["bytes"] = payload?.ByteSize ?? 0,
+                ["elapsedMs"] = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds
+            });
+        }
 
+        return payload;
+    }
+
+    /// <summary>
+    ///     Uploader-thread step: create the DEFAULT texture (in COMMON), fill staging, and submit
+    ///     the mip copies on the copy queue. Publishes a <see cref="CompletedUpload" /> (with the
+    ///     copy fence value) for the render thread to promote; on failure publishes a null-texture
+    ///     completion so the node settles onto its fallback. Never touches render-thread state.
+    /// </summary>
+    private void RunUploadOnUploaderThread(string cacheKey, GpuTexturePayload payload)
+    {
+        var started = RendererProfilerTrace.IsEnabled ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
         ID3D12Resource? texture = null;
         ID3D12Resource? staging = null;
-        var recordedGpuUse = false;
         try
         {
+            var width = (uint)payload.Width;
+            var height = (uint)payload.Height;
+            var mipCount = (ushort)payload.MipCount;
+            if (width == 0 || height == 0 || mipCount == 0)
+            {
+                throw new InvalidOperationException("Degenerate texture payload.");
+            }
+
+            var dxgiFormat = ToDxgiFormat(payload.Format);
+            var desc = ResourceDescription.Texture2D(
+                dxgiFormat, width, height,
+                arraySize: 1, mipLevels: mipCount,
+                sampleCount: 1, sampleQuality: 0,
+                ResourceFlags.None);
+
+            // COMMON initial state: a copy queue implicitly promotes COMMON→COPY_DEST for the copy
+            // and the resource decays back to COMMON on copy-list completion. The render thread then
+            // transitions COMMON→PIXEL_SHADER_RESOURCE after the copy fence passes (copy queues can't
+            // transition to shader-read states themselves).
             texture = _gpu.Device.CreateCommittedResource<ID3D12Resource>(
                 HeapProperties.DefaultHeapProperties,
                 HeapFlags.None,
                 desc,
-                ResourceStates.CopyDest,
+                ResourceStates.Common,
                 optimizedClearValue: null);
 
             var footprints = new PlacedSubresourceFootPrint[mipCount];
@@ -287,59 +504,69 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
                 staging.Unmap(0, null);
             }
 
-            var cmd = _recorder.CommandList;
-            for (uint mip = 0; mip < mipCount; mip++)
-            {
-                var srcLoc = new TextureCopyLocation(staging, footprints[mip]);
-                var dstLoc = new TextureCopyLocation(texture, mip);
-                cmd.CopyTextureRegion(dstLoc, 0, 0, 0, srcLoc);
-            }
-            recordedGpuUse = true;
-            cmd.ResourceBarrierTransition(texture, ResourceStates.CopyDest, ResourceStates.PixelShaderResource);
+            var textureResource = texture;
+            var stagingResource = staging;
+            // record() runs synchronously inside Submit on this (uploader) thread; the staging
+            // buffer is retired once the returned copy fence completes.
+            var copyFenceValue = _copyUploadQueue.Submit(
+                list =>
+                {
+                    for (uint mip = 0; mip < mipCount; mip++)
+                    {
+                        var srcLoc = new TextureCopyLocation(stagingResource, footprints[mip]);
+                        var dstLoc = new TextureCopyLocation(textureResource, mip);
+                        list.CopyTextureRegion(dstLoc, 0, 0, 0, srcLoc);
+                    }
+                },
+                new IDisposable[] { stagingResource });
 
             var srvDesc = MakeSrvDesc(mipCount, dxgiFormat);
-            _gpu.Device.CreateShaderResourceView(texture, srvDesc, node.Entry.PersistentSrv);
-            node.Entry.ReplaceTexture(texture, srvDesc, payload.Format, payload.NormalDecodeMode);
-            _ownedTextures.Add(texture);
-            _recorder.EnqueueDisposeAfterCurrentFrame(staging);
-
+            _completedUploads.Enqueue(new CompletedUpload(
+                cacheKey, texture, srvDesc, payload.Format, payload.NormalDecodeMode,
+                payload.ByteSize, payload.IsCompressed, copyFenceValue));
+            // The decoded CPU payload is now in the GPU staging buffer — release its mip bytes from
+            // the resolver cache so they don't accumulate in managed memory (the dominant heap /
+            // GC-stall source under heavy streaming). The path is never re-requested (the Entry is
+            // cached), so this costs nothing.
+            if (ReleaseTexturePayloadsAfterUpload)
+            {
+                _resolver?.Release(cacheKey);
+            }
+            // Ownership transferred: texture → render thread (via the completion); staging → copy
+            // queue retirement. Clear locals so the catch/finally don't double-free them.
             texture = null;
             staging = null;
 
-            if (payload.IsCompressed)
+            if (started != 0)
             {
-                FrameCompressedUploads++;
-            }
-            else
-            {
-                FrameRgbaFallbackUploads++;
+                RendererProfilerTrace.Event("resource-event", new Dictionary<string, object?>
+                {
+                    ["resource"] = "texture",
+                    ["phase"] = "gpu-upload",
+                    ["path"] = cacheKey,
+                    ["format"] = payload.Format.ToString(),
+                    ["width"] = payload.Width,
+                    ["height"] = payload.Height,
+                    ["mipCount"] = payload.MipCount,
+                    ["compressed"] = payload.IsCompressed,
+                    ["bytes"] = payload.ByteSize,
+                    ["elapsedMs"] = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds
+                });
             }
         }
-        finally
+        catch (Exception ex)
         {
-            if (staging is not null)
-            {
-                if (recordedGpuUse)
-                {
-                    _recorder.EnqueueDisposeAfterCurrentFrame(staging);
-                }
-                else
-                {
-                    staging.Dispose();
-                }
-            }
-
-            if (texture is not null)
-            {
-                if (recordedGpuUse)
-                {
-                    _recorder.EnqueueDisposeAfterCurrentFrame(texture);
-                }
-                else
-                {
-                    texture.Dispose();
-                }
-            }
+            Logger.Instance.Warn(
+                "GpuTextureCache12: texture upload failed for '{0}': {1}",
+                cacheKey,
+                ex.Message);
+            // A copy-queue submission can be the first call to observe a GPU device removal —
+            // attribute it here (no-op if the device is fine). Needs FALLOUT_VIEWER_DRED=1 for detail.
+            try { _gpu.LogDeviceRemovedDiagnostics("texture-upload"); }
+            catch (Exception dredEx) { Logger.Instance.Warn("GpuTextureCache12: DRED dump threw: {0}", dredEx.Message); }
+            staging?.Dispose();
+            texture?.Dispose();
+            _completedUploads.Enqueue(CompletedUpload.Failure(cacheKey));
         }
     }
 
@@ -458,6 +685,18 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
         return new Entry(texture, srvDesc, alloc.Cpu, alloc.BindlessIndex, format, normalDecodeMode, isResident);
     }
 
+    private void DisposeResource(ID3D12Resource resource)
+    {
+        if (_deletionQueue is not null)
+        {
+            _deletionQueue.EnqueueDispose(resource);
+        }
+        else
+        {
+            resource.Dispose();
+        }
+    }
+
     private static ShaderResourceViewDescription MakeSrvDesc(ushort mipCount, Format format)
     {
         return new ShaderResourceViewDescription
@@ -505,30 +744,67 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
         return (uint)Math.Max(1, (level.Height + 3) / 4);
     }
 
+    private static int ParsePositiveIntEnvironment(string name, int defaultValue, int min, int max)
+    {
+        var raw = Environment.GetEnvironmentVariable(name);
+        if (!int.TryParse(raw, out var value))
+        {
+            return defaultValue;
+        }
+
+        return Math.Clamp(value, min, max);
+    }
+
     private sealed class TextureUploadNode
     {
-        internal TextureUploadNode(string path, GpuTexturePayload payload, Entry entry)
+        internal TextureUploadNode(string path, Entry entry)
         {
             Path = path;
-            Payload = payload;
             Entry = entry;
         }
 
         internal string Path { get; }
 
-        internal GpuTexturePayload Payload { get; }
-
         internal Entry Entry { get; }
 
-        internal bool Queued { get; set; }
+        /// <summary>
+        ///     Null while the background resolution stage is still running (or after a permanent
+        ///     failure, paired with <see cref="Failed" />); set once a payload is ready to upload.
+        /// </summary>
+        internal GpuTexturePayload? Payload { get; set; }
+
+        /// <summary>Sitting in the render-thread dispatch queue awaiting handoff to the uploader.</summary>
+        internal bool InDispatchQueue { get; set; }
+
+        /// <summary>Handed to the uploader thread and awaiting copy completion + promotion.</summary>
+        internal bool Dispatched { get; set; }
 
         internal bool Failed { get; set; }
     }
 
     /// <summary>
+    ///     An uploaded texture published by the uploader thread for the render thread to promote
+    ///     once <see cref="CopyFenceValue" /> completes. A null <see cref="Texture" /> signals a
+    ///     failed upload (the target node settles onto its fallback).
+    /// </summary>
+    private readonly record struct CompletedUpload(
+        string CacheKey,
+        ID3D12Resource? Texture,
+        ShaderResourceViewDescription SrvDesc,
+        GpuTexturePayloadFormat Format,
+        GpuNormalDecodeMode NormalDecodeMode,
+        long ByteSize,
+        bool IsCompressed,
+        ulong CopyFenceValue)
+    {
+        internal static CompletedUpload Failure(string cacheKey) =>
+            new(cacheKey, null, default, default, default, 0, false, 0);
+    }
+
+    /// <summary>
     ///     One cached texture descriptor. Cold texture misses receive a non-resident entry
-    ///     backed by a fallback SRV; queued upload completion overwrites the same descriptor
-    ///     slot and mutates the metadata read by reference draw constants.
+    ///     backed by a fallback SRV; upload completion overwrites the same descriptor slot and
+    ///     mutates the metadata read by reference draw constants.
     /// </summary>
     public sealed class Entry
     {
@@ -548,6 +824,7 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
             Format = format;
             NormalDecodeMode = normalDecodeMode;
             IsResident = isResident;
+            IsReady = isResident;
         }
 
         public ID3D12Resource Texture { get; private set; }
@@ -564,6 +841,14 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
 
         public bool IsResident { get; private set; }
 
+        /// <summary>
+        ///     True once this entry no longer represents an in-flight placeholder. Successful
+        ///     uploads set both <see cref="IsResident" /> and <see cref="IsReady" />; failed or
+        ///     missing textures leave the fallback SRV in place but still become ready so callers
+        ///     do not hide the owning geometry forever.
+        /// </summary>
+        public bool IsReady { get; private set; }
+
         internal void ReplaceTexture(
             ID3D12Resource texture,
             ShaderResourceViewDescription srvDesc,
@@ -575,6 +860,12 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
             Format = format;
             NormalDecodeMode = normalDecodeMode;
             IsResident = true;
+            IsReady = true;
+        }
+
+        internal void MarkUnavailable()
+        {
+            IsReady = true;
         }
     }
 }

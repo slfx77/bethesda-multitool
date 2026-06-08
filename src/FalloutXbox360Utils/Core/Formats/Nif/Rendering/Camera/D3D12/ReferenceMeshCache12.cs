@@ -1,4 +1,5 @@
 #if WINDOWS_GUI
+using System.Diagnostics;
 using System.Numerics;
 using System.Threading;
 using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
@@ -16,26 +17,39 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 {
     private static readonly Logger Log = Logger.Instance;
 
-    // Decode runs entirely on background Task.Run threads (BSA read → parse → endian convert →
-    // geometry extract) and never touches the render thread, so we scale it to the machine instead
-    // of the old hard-coded 2. Leave one core for the render/UI thread; clamp to [4,16] so small
-    // machines still fill the pool and large ones don't oversubscribe. Downstream work stays
-    // bounded by the 256 MB decoded-mesh cache budget and the per-frame GPU upload budget, so a
-    // wider decode pool only shortens the "one type at a time" pop-in — it does not spike a frame.
-    private static readonly int DefaultMaxConcurrentDecodeTasks = Math.Clamp(Environment.ProcessorCount - 1, 4, 16);
+    // Cold NIF conversion allocates heavily and competes with the UI/render thread. Keep the
+    // default conservative for smooth motion, with env overrides for profiling specific machines.
+    private static readonly int DefaultMaxConcurrentDecodeTasks = ParsePositiveIntEnvironment(
+        "FALLOUT_VIEWER_REFERENCE_DECODE_CONCURRENCY",
+        defaultValue: 2,
+        min: 1,
+        max: 16);
 
-    // Start as many decodes per frame as the pool can hold so it fills in one burst rather than
-    // ramping two-per-frame; the `_activeDecodeTasks < MaxConcurrentDecodeTasks` gate in
-    // StartQueuedDecodes is the real throttle.
-    private static readonly int DefaultMaxDecodeStartsPerFrame = DefaultMaxConcurrentDecodeTasks;
+    private static readonly int DefaultMaxDecodeStartsPerFrame = ParsePositiveIntEnvironment(
+        "FALLOUT_VIEWER_REFERENCE_DECODE_STARTS_PER_FRAME",
+        defaultValue: DefaultMaxConcurrentDecodeTasks,
+        min: 1,
+        max: DefaultMaxConcurrentDecodeTasks);
     private const long DefaultDecodedMeshCacheByteBudget = 256L * 1024L * 1024L;
+    private const float ReferenceBumpStrength = 0.35f;
+
+    // Size-aware ceiling on render-thread mesh-upload work per frame. The integer upload budget
+    // (passed by the renderer) caps *how many* meshes upload; this caps the *bytes*, checked before
+    // each upload so a frame that has already spent its budget defers an expensive mesh to the next
+    // frame instead of overshooting on it. Sized so a typical 48-mesh frame passes but a burst of
+    // unusually large meshes is spread across frames.
+    private static readonly long DefaultMaxUploadBytesPerFrame = ParsePositiveLongEnvironment(
+        "FALLOUT_VIEWER_REFERENCE_UPLOAD_BYTES_PER_FRAME",
+        defaultValue: 4L * 1024L * 1024L,
+        min: 1L * 1024L * 1024L,
+        max: 64L * 1024L * 1024L);
 
     private readonly GpuDevice12 _gpu;
-    private readonly GpuCommandRecorder12 _recorder;
     private readonly CLI.NpcMeshArchiveSet _meshArchives;
     private readonly NifTextureResolver _textureResolver;
     private readonly GpuTextureCache12 _textureCache;
     private readonly GpuDeletionQueue12 _deletionQueue;
+    private readonly GpuGeometryArena12 _geometryArena;
     private readonly Dictionary<string, Node> _entries = new(StringComparer.OrdinalIgnoreCase);
     private readonly LinkedList<string> _order = new();
     private readonly Queue<string> _decodeQueue = new();
@@ -50,11 +64,11 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     private int _activeDecodeTasks;
     private int _totalMissingModelPaths;
     private int _totalSkinnedModelPaths;
+    private FrameUploadByteBudget _frameUploadByteBudget;
     private bool _disposed;
 
     public ReferenceMeshCache12(
         GpuDevice12 gpu,
-        GpuCommandRecorder12 recorder,
         CLI.NpcMeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         GpuTextureCache12 textureCache,
@@ -66,11 +80,11 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             throw new ArgumentOutOfRangeException(nameof(capacity), "Capacity must be > 0.");
 
         _gpu = gpu;
-        _recorder = recorder;
         _meshArchives = meshArchives;
         _textureResolver = textureResolver;
         _textureCache = textureCache;
         _deletionQueue = deletionQueue;
+        _geometryArena = new GpuGeometryArena12(_gpu);
         _persistentDecodedCache = persistentDecodedCache ?? ReferenceDecodedMeshDiskCache12.CreateFromEnvironment();
         Capacity = capacity;
     }
@@ -80,6 +94,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     public int MaxDecodeStartsPerFrame { get; init; } = DefaultMaxDecodeStartsPerFrame;
     public int MaxConcurrentDecodeTasks { get; init; } = DefaultMaxConcurrentDecodeTasks;
     public long DecodedMeshCacheByteBudget { get; init; } = DefaultDecodedMeshCacheByteBudget;
+    public long MaxUploadBytesPerFrame { get; init; } = DefaultMaxUploadBytesPerFrame;
     public int FrameCacheMisses { get; private set; }
     public int FrameDecodeRequests { get; private set; }
     public int FrameQueuedDecodes { get; private set; }
@@ -89,8 +104,13 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     public int FrameCpuDecodedCacheMisses { get; private set; }
     public int FrameCpuDecodedNegativeHits { get; private set; }
     public int FrameGpuUploads { get; private set; }
+    public int FrameByteBudgetDeferrals { get; private set; }
     public int FrameCompressedTextureUploads => _textureCache.FrameCompressedUploads;
     public int FrameRgbaTextureUploads => _textureCache.FrameRgbaFallbackUploads;
+    public int FrameQueuedTextureResolves => _textureCache.FrameQueuedResolves;
+    public int FrameActiveTextureResolves => _textureCache.FrameActiveResolves;
+    public int PendingTextureResolves => _textureCache.PendingResolveCount;
+    public int PendingTextureUploads => _textureCache.PendingUploadCount;
     public int TotalMissingModelPaths => Volatile.Read(ref _totalMissingModelPaths);
     public int TotalSkinnedModelPaths => Volatile.Read(ref _totalSkinnedModelPaths);
 
@@ -104,6 +124,8 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         FrameCpuDecodedCacheMisses = 0;
         FrameCpuDecodedNegativeHits = 0;
         FrameGpuUploads = 0;
+        FrameByteBudgetDeferrals = 0;
+        _frameUploadByteBudget = new FrameUploadByteBudget(MaxUploadBytesPerFrame);
         _textureCache.ResetFrameStats();
         PruneCompletedDecodeTasks();
     }
@@ -172,6 +194,11 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             _decodedCacheOrder.Clear();
             _decodedCacheBytes = 0;
         }
+
+        // Frees the arena's UPLOAD blocks. The host calls WaitForGpuIdle before disposing this cache,
+        // so no draw still references them; any arena frees the meshes above enqueued on the deletion
+        // queue become no-ops (GpuGeometryArena12.Free is disposed-guarded).
+        _geometryArena.Dispose();
     }
 
     private CachedNifMesh12? ResolveExisting(string modelPath, Node node, ref int uploadBudget)
@@ -257,9 +284,18 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         {
             return true;
         }
+        // Size-aware gate: defer an upload the frame can't afford to a later frame (DecodedCacheAvailable
+        // stays set, so it retries) instead of overshooting the frame on one big mesh. Never blocks the
+        // first upload of a frame, so a mesh larger than the whole budget still makes progress.
+        if (!_frameUploadByteBudget.CanUpload(decoded.ByteSize))
+        {
+            FrameByteBudgetDeferrals++;
+            return true;
+        }
 
         uploadBudget--;
         FrameGpuUploads++;
+        _frameUploadByteBudget.Record(decoded.ByteSize);
         mesh = UploadDecodedMesh(modelPath, decoded.Mesh);
         if (mesh is null)
         {
@@ -550,81 +586,136 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
     private DecodedNifMesh12? DecodeMesh(string modelPath)
     {
+        var started = RendererProfilerTrace.IsEnabled ? Stopwatch.GetTimestamp() : 0;
         var lookupPath = NormalizeModelPath(modelPath);
+        var result = "missing";
+        var nifBytes = 0;
+        var submeshCount = 0;
 
-        // No lock needed: NpcMeshArchiveSet.TryExtractFile resolves under its own cache lock and
-        // BsaExtractor.ExtractFile is memory-mapped/lock-free, so concurrent decode tasks extract
-        // in parallel. This is what actually parallelizes mesh streaming (removing the old coarse
-        // archive lock that serialized every decode despite the wider task pool).
-        if (!_meshArchives.TryExtractFile(lookupPath, out var nifData, out _) || nifData.Length == 0)
+        try
         {
-            Interlocked.Increment(ref _totalMissingModelPaths);
-            return null;
+            // No lock needed: NpcMeshArchiveSet.TryExtractFile resolves under its own cache lock and
+            // BsaExtractor.ExtractFile is memory-mapped/lock-free, so concurrent decode tasks extract
+            // in parallel. This is what actually parallelizes mesh streaming (removing the old coarse
+            // archive lock that serialized every decode despite the wider task pool).
+            if (!_meshArchives.TryExtractFile(lookupPath, out var nifData, out _) || nifData.Length == 0)
+            {
+                Interlocked.Increment(ref _totalMissingModelPaths);
+                return null;
+            }
+
+            nifBytes = nifData.Length;
+            var nif = NifParser.Parse(nifData);
+            if (nif is null)
+            {
+                result = "parse-failed";
+                return null;
+            }
+
+            if (nif.IsBigEndian)
+            {
+                var converted = NifConverter.Convert(nifData);
+                if (!converted.Success || converted.OutputData is null)
+                {
+                    result = "convert-failed";
+                    return null;
+                }
+                nifData = converted.OutputData;
+                nif = NifParser.Parse(nifData);
+                if (nif is null)
+                {
+                    result = "converted-parse-failed";
+                    return null;
+                }
+            }
+
+            var model = NifGeometryExtractor.Extract(
+                nifData, nif,
+                textureResolver: _textureResolver,
+                bindPoseOnly: false,
+                skipSkinning: true);
+
+            if (model is null)
+            {
+                result = "extract-failed";
+                return null;
+            }
+            if (model.WasSkinned)
+            {
+                result = "skinned";
+                Interlocked.Increment(ref _totalSkinnedModelPaths);
+                return null;
+            }
+            if (!model.HasGeometry)
+            {
+                result = "empty";
+                return null;
+            }
+
+            var submeshes = new List<DecodedSubmesh12>(model.Submeshes.Count);
+            foreach (var sub in model.Submeshes)
+            {
+                if (sub.Positions.Length == 0 || sub.Triangles.Length == 0) continue;
+
+                var alphaState = NifAlphaClassifier.Classify(sub, diffuseTexture: null);
+                var alphaRenderMode = alphaState.RenderMode == NifAlphaRenderMode.AlphaToCoverage
+                    ? NifAlphaRenderMode.Blend
+                    : alphaState.RenderMode;
+                var hasBump = sub.Tangents != null &&
+                              sub.Bitangents != null &&
+                              !string.IsNullOrEmpty(sub.NormalMapTexturePath);
+
+                submeshes.Add(new DecodedSubmesh12(
+                    GpuMeshUploader.BuildVertices(sub),
+                    sub.Triangles,
+                    sub.DiffuseTexturePath,
+                    hasBump ? sub.NormalMapTexturePath : null,
+                    hasBump,
+                    alphaRenderMode,
+                    alphaState.HasAlphaBlend,
+                    alphaState.HasAlphaTest,
+                    alphaState.AlphaTestThreshold / 255f,
+                    alphaState.AlphaTestFunction,
+                    alphaState.SrcBlendMode,
+                    alphaState.DstBlendMode,
+                    alphaState.MaterialAlpha,
+                    sub.IsDoubleSided,
+                    sub.IsEmissive,
+                    ComputeLocalBoundsCenter(sub.Positions)));
+            }
+
+            if (submeshes.Count == 0)
+            {
+                result = "empty";
+                return null;
+            }
+
+            submeshCount = submeshes.Count;
+            result = "success";
+            return new DecodedNifMesh12(submeshes);
         }
-
-        var nif = NifParser.Parse(nifData);
-        if (nif is null) return null;
-
-        if (nif.IsBigEndian)
+        finally
         {
-            var converted = NifConverter.Convert(nifData);
-            if (!converted.Success || converted.OutputData is null) return null;
-            nifData = converted.OutputData;
-            nif = NifParser.Parse(nifData);
-            if (nif is null) return null;
+            if (started != 0)
+            {
+                RendererProfilerTrace.Event("resource-event", new Dictionary<string, object?>
+                {
+                    ["resource"] = "reference-mesh",
+                    ["phase"] = "decode",
+                    ["path"] = lookupPath,
+                    ["result"] = result,
+                    ["bytes"] = nifBytes,
+                    ["submeshes"] = submeshCount,
+                    ["elapsedMs"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds
+                });
+            }
         }
-
-        var model = NifGeometryExtractor.Extract(
-            nifData, nif,
-            textureResolver: _textureResolver,
-            bindPoseOnly: false,
-            skipSkinning: true);
-
-        if (model is null) return null;
-        if (model.WasSkinned)
-        {
-            Interlocked.Increment(ref _totalSkinnedModelPaths);
-            return null;
-        }
-        if (!model.HasGeometry) return null;
-
-        var submeshes = new List<DecodedSubmesh12>(model.Submeshes.Count);
-        foreach (var sub in model.Submeshes)
-        {
-            if (sub.Positions.Length == 0 || sub.Triangles.Length == 0) continue;
-
-            var alphaState = NifAlphaClassifier.Classify(sub, diffuseTexture: null);
-            var alphaRenderMode = alphaState.RenderMode == NifAlphaRenderMode.AlphaToCoverage
-                ? NifAlphaRenderMode.Blend
-                : alphaState.RenderMode;
-            var hasBump = sub.Tangents != null &&
-                          sub.Bitangents != null &&
-                          !string.IsNullOrEmpty(sub.NormalMapTexturePath);
-
-            submeshes.Add(new DecodedSubmesh12(
-                GpuMeshUploader.BuildVertices(sub),
-                sub.Triangles,
-                sub.DiffuseTexturePath,
-                hasBump ? sub.NormalMapTexturePath : null,
-                hasBump,
-                alphaRenderMode,
-                alphaState.HasAlphaBlend,
-                alphaState.HasAlphaTest,
-                alphaState.AlphaTestThreshold / 255f,
-                alphaState.AlphaTestFunction,
-                alphaState.SrcBlendMode,
-                alphaState.DstBlendMode,
-                alphaState.MaterialAlpha,
-                sub.IsDoubleSided,
-                sub.IsEmissive,
-                ComputeLocalBoundsCenter(sub.Positions)));
-        }
-
-        return submeshes.Count == 0 ? null : new DecodedNifMesh12(submeshes);
     }
 
     private CachedNifMesh12? UploadDecodedMesh(string modelPath, DecodedNifMesh12 decoded)
     {
+        var started = RendererProfilerTrace.IsEnabled ? Stopwatch.GetTimestamp() : 0;
+        var success = false;
         var totalVertexCount = 0;
         var totalIndexCount = 0;
         foreach (var sub in decoded.Submeshes)
@@ -655,28 +746,19 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             indexCursor += sub.Indices.Length;
         }
 
-        ID3D12Resource? vertexBuffer = null;
-        ID3D12Resource? indexBuffer = null;
+        GeometryAllocation12 geometry;
         try
         {
-            vertexBuffer = GpuMeshBufferFactory12.CreateDefaultBuffer(
-                _gpu,
-                _recorder.CommandList,
-                _deletionQueue,
-                vertices,
-                ResourceStates.VertexAndConstantBuffer);
-            indexBuffer = GpuMeshBufferFactory12.CreateDefaultBuffer(
-                _gpu,
-                _recorder.CommandList,
-                _deletionQueue,
-                indices,
-                ResourceStates.IndexBuffer);
+            // memcpy the packed vertex/index bytes into a shared UPLOAD-heap arena sub-range — no
+            // per-mesh committed resource, staging buffer, copy, or barrier (the churn the profiler
+            // flagged). VBV/IBV bind directly against the arena block's GPU virtual address.
+            geometry = _geometryArena.Upload(
+                System.Runtime.InteropServices.MemoryMarshal.AsBytes<GpuMeshUploader.GpuVertex>(vertices),
+                System.Runtime.InteropServices.MemoryMarshal.AsBytes<ushort>(indices));
         }
         catch (Exception ex)
         {
-            Log.Warn("ReferenceMeshCache12: packed mesh buffer upload failed for '{0}': {1}", modelPath, ex.Message);
-            if (vertexBuffer is not null) _deletionQueue.EnqueueDispose(vertexBuffer);
-            if (indexBuffer is not null) _deletionQueue.EnqueueDispose(indexBuffer);
+            Log.Warn("ReferenceMeshCache12: geometry arena upload failed for '{0}': {1}", modelPath, ex.Message);
             return null;
         }
 
@@ -700,18 +782,23 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                 var indexByteSize = CheckedByteSize(sub.Indices.Length, sizeof(ushort));
                 submeshes.Add(new CachedSubmesh12
                 {
-                    VertexBufferView = GpuMeshBufferFactory12.VertexBufferViewOf(
-                        vertexBuffer!,
-                        vertexByteOffset,
-                        vertexByteSize,
-                        vertexStride),
-                    IndexBufferView = GpuMeshBufferFactory12.IndexBufferViewOf(
-                        indexBuffer!,
-                        indexByteOffset,
-                        indexByteSize),
+                    VertexBufferView = new VertexBufferView
+                    {
+                        BufferLocation = geometry.VertexBufferLocation + vertexByteOffset,
+                        SizeInBytes = vertexByteSize,
+                        StrideInBytes = vertexStride
+                    },
+                    IndexBufferView = new IndexBufferView
+                    {
+                        BufferLocation = geometry.IndexBufferLocation + indexByteOffset,
+                        SizeInBytes = indexByteSize,
+                        Format = Vortice.DXGI.Format.R16_UInt
+                    },
                     IndexCount = sub.Indices.Length,
                     Diffuse = diffuse,
                     Normal = normal,
+                    AlphaState = BuildAlphaState(sub),
+                    RenderState = BuildRenderState(sub),
                     HasBump = sub.HasBump,
                     AlphaRenderMode = sub.AlphaRenderMode,
                     AlphaBlend = sub.AlphaBlend,
@@ -734,13 +821,47 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
         if (submeshes.Count == 0)
         {
-            _deletionQueue.EnqueueDispose(vertexBuffer);
-            _deletionQueue.EnqueueDispose(indexBuffer);
+            // No CachedNifMesh12 is created and no draw referenced the range, so reclaim it now.
+            _geometryArena.Free(geometry);
             return null;
         }
 
-        return new CachedNifMesh12(submeshes, vertexBuffer, indexBuffer, _deletionQueue);
+        success = true;
+        var cached = new CachedNifMesh12(submeshes, geometry, _geometryArena, _deletionQueue);
+        if (started != 0)
+        {
+            RendererProfilerTrace.Event("resource-event", new Dictionary<string, object?>
+            {
+                ["resource"] = "reference-mesh",
+                ["phase"] = "gpu-upload",
+                ["path"] = modelPath,
+                ["success"] = success,
+                ["vertices"] = totalVertexCount,
+                ["indices"] = totalIndexCount,
+                ["submeshes"] = submeshes.Count,
+                ["elapsedMs"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds
+            });
+        }
+
+        return cached;
     }
+
+    private static Vector4 BuildAlphaState(DecodedSubmesh12 sub)
+    {
+        var alphaTestEnabled = sub.AlphaRenderMode != NifAlphaRenderMode.Blend && sub.AlphaTest;
+        return new Vector4(
+            alphaTestEnabled ? sub.AlphaTestThreshold : 0f,
+            alphaTestEnabled ? sub.AlphaTestFunction : -1f,
+            Math.Clamp(sub.MaterialAlpha, 0f, 1f),
+            sub.AlphaRenderMode == NifAlphaRenderMode.Blend ? 1f : 0f);
+    }
+
+    private static Vector4 BuildRenderState(DecodedSubmesh12 sub) =>
+        new(
+            sub.DoubleSided ? 1f : 0f,
+            sub.HasBump ? 1f : 0f,
+            ReferenceBumpStrength,
+            sub.IsEmissive ? 1f : 0f);
 
     private static uint CheckedByteSize(int elementCount, uint elementSize) =>
         checked((uint)((long)elementCount * elementSize));
@@ -765,6 +886,28 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         return normalized.StartsWith("meshes\\", StringComparison.OrdinalIgnoreCase)
             ? normalized
             : "meshes\\" + normalized.TrimStart('\\');
+    }
+
+    private static int ParsePositiveIntEnvironment(string name, int defaultValue, int min, int max)
+    {
+        var raw = Environment.GetEnvironmentVariable(name);
+        if (!int.TryParse(raw, out var value))
+        {
+            return defaultValue;
+        }
+
+        return Math.Clamp(value, min, max);
+    }
+
+    private static long ParsePositiveLongEnvironment(string name, long defaultValue, long min, long max)
+    {
+        var raw = Environment.GetEnvironmentVariable(name);
+        if (!long.TryParse(raw, out var value))
+        {
+            return defaultValue;
+        }
+
+        return Math.Clamp(value, min, max);
     }
 
     private sealed class Node(
@@ -814,38 +957,92 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
 internal sealed class CachedNifMesh12 : IDisposable
 {
-    private readonly ID3D12Resource _vertexBuffer;
-    private readonly ID3D12Resource _indexBuffer;
+    private readonly GeometryAllocation12 _geometry;
+    private readonly GpuGeometryArena12 _arena;
     private readonly GpuDeletionQueue12 _deletionQueue;
+    private bool _texturesReady;
 
     public CachedNifMesh12(
         IReadOnlyList<CachedSubmesh12> submeshes,
-        ID3D12Resource vertexBuffer,
-        ID3D12Resource indexBuffer,
+        GeometryAllocation12 geometry,
+        GpuGeometryArena12 arena,
         GpuDeletionQueue12 deletionQueue)
     {
         Submeshes = submeshes;
-        _vertexBuffer = vertexBuffer;
-        _indexBuffer = indexBuffer;
+        _geometry = geometry;
+        _arena = arena;
         _deletionQueue = deletionQueue;
     }
 
     public IReadOnlyList<CachedSubmesh12> Submeshes { get; }
 
+    public bool TexturesReady
+    {
+        get
+        {
+            if (_texturesReady)
+            {
+                return true;
+            }
+
+            foreach (var submesh in Submeshes)
+            {
+                if (!submesh.TexturesReady)
+                {
+                    return false;
+                }
+            }
+
+            _texturesReady = true;
+            return true;
+        }
+    }
+
     public void Dispose()
     {
-        _deletionQueue.EnqueueDispose(_vertexBuffer);
-        _deletionQueue.EnqueueDispose(_indexBuffer);
+        // Defer the arena free by FramesInFlight frames so in-flight draws referencing this mesh's
+        // sub-range drain before the range is handed back out — the same GPU-safety guarantee the
+        // deletion queue gave the per-mesh committed buffers this replaced.
+        _deletionQueue.EnqueueDispose(_arena.DeferredFreeHandle(_geometry));
     }
 }
 
 internal sealed class CachedSubmesh12
 {
+    private Vector4 _textureState;
+    private bool _textureStateCached;
+
     public required VertexBufferView VertexBufferView { get; init; }
     public required IndexBufferView IndexBufferView { get; init; }
     public required int IndexCount { get; init; }
     public required GpuTextureCache12.Entry Diffuse { get; init; }
     public required GpuTextureCache12.Entry Normal { get; init; }
+    public required Vector4 AlphaState { get; init; }
+    public required Vector4 RenderState { get; init; }
+    public Vector4 TextureState
+    {
+        get
+        {
+            if (_textureStateCached)
+            {
+                return _textureState;
+            }
+
+            var state = new Vector4(
+                Normal.NormalDecodeMode == GpuNormalDecodeMode.Bc5ReconstructZ ? 1f : 0f,
+                0f,
+                0f,
+                0f);
+            if (TexturesReady)
+            {
+                _textureState = state;
+                _textureStateCached = true;
+            }
+
+            return state;
+        }
+    }
+    public bool TexturesReady => Diffuse.IsReady && Normal.IsReady;
     public required bool HasBump { get; init; }
     public required NifAlphaRenderMode AlphaRenderMode { get; init; }
     public required bool AlphaBlend { get; init; }

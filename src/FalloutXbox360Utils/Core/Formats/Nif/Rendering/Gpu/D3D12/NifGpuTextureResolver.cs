@@ -6,6 +6,17 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
 internal sealed class NifGpuTextureResolver : IDisposable
 {
+    private static readonly Logger Log = Logger.Instance;
+
+    /// <summary>
+    ///     RGBA fallback decodes that produce more than this many bytes (mip 0 + chain) are
+    ///     logged at warning level. The uncompressed fallback path allocates <c>w*h*4</c> per
+    ///     mip — a 4096² fallback is ~85 MB and a confirmed render-thread upload spike source
+    ///     (it exceeds the per-frame texture upload budget on its own). Surfacing it makes the
+    ///     spike attributable instead of an unexplained frame stall.
+    /// </summary>
+    private const long LargeRgbaFallbackWarnBytes = 16L * 1024L * 1024L;
+
     private readonly ConcurrentDictionary<string, GpuTexturePayload?> _cache =
         new(StringComparer.OrdinalIgnoreCase);
 
@@ -42,6 +53,25 @@ internal sealed class NifGpuTextureResolver : IDisposable
         return _cache.GetOrAdd(normalized, LoadTexture);
     }
 
+    /// <summary>
+    ///     Drops the cached decoded payload for <paramref name="texturePath" /> once it has been
+    ///     uploaded to the GPU. The CPU-side mip <c>byte[]</c>s are dead weight after upload — the
+    ///     texture lives on the GPU and the consumer (<see cref="GpuTextureCache12" />) caches the
+    ///     resident SRV, so the path is never re-requested. Without this, every streamed texture's
+    ///     decoded bytes accumulate in managed memory (thousands of textures → multi-GB heap → GC
+    ///     stalls). Negative (null = not-found) entries are kept so a missing texture isn't
+    ///     re-searched across the BSAs. Thread-safe.
+    /// </summary>
+    public void Release(string texturePath)
+    {
+        var normalized = NifTexturePathUtility.Normalize(texturePath);
+        if (_cache.TryGetValue(normalized, out var existing) && existing is not null)
+        {
+            // Remove-if-still-this-entry so a concurrent re-decode can't be clobbered.
+            _cache.TryRemove(new KeyValuePair<string, GpuTexturePayload?>(normalized, existing));
+        }
+    }
+
     private GpuTexturePayload? LoadTexture(string path)
     {
         Interlocked.Increment(ref _cacheMisses);
@@ -67,7 +97,7 @@ internal sealed class NifGpuTextureResolver : IDisposable
                 continue;
             }
 
-            var texture = DecodeRawTexture(rawData);
+            var texture = DecodeRawTexture(rawData, path);
             if (texture is not null)
             {
                 return texture;
@@ -77,7 +107,7 @@ internal sealed class NifGpuTextureResolver : IDisposable
         return null;
     }
 
-    private static GpuTexturePayload? DecodeRawTexture(byte[] rawData)
+    private static GpuTexturePayload? DecodeRawTexture(byte[] rawData, string path)
     {
         var ddsData = NifTextureLoader.ConvertDdxIfNeeded(rawData);
         var compressed = DdsGpuTexturePayloadParser.Parse(ddsData);
@@ -87,8 +117,23 @@ internal sealed class NifGpuTextureResolver : IDisposable
         }
 
         var decoded = DdsTextureDecoder.Decode(ddsData);
-        return decoded is null
-            ? null
-            : GpuTexturePayload.FromRgba(decoded);
+        if (decoded is null)
+        {
+            return null;
+        }
+
+        var payload = GpuTexturePayload.FromRgba(decoded);
+        // BCn parse failed → uncompressed RGBA fallback. This is the slow/large branch: it both
+        // costs a full CPU decode here and produces a 4× larger upload than a BCn payload. Large
+        // ones are a known per-frame upload spike, so make them visible in the log.
+        if (payload.ByteSize >= LargeRgbaFallbackWarnBytes)
+        {
+            Log.Warn(
+                "NifGpuTextureResolver: large uncompressed RGBA fallback for '{0}' ({1}x{2}, {3:N0} bytes). " +
+                "BCn parse failed for this DDS/DDX; consider re-checking the source format.",
+                path, payload.Width, payload.Height, payload.ByteSize);
+        }
+
+        return payload;
     }
 }

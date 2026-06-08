@@ -26,7 +26,8 @@ internal sealed class GpuDevice12 : IDisposable
         ID3D12Fence frameFence,
         string deviceName,
         FeatureLevel featureLevel,
-        ID3D12InfoQueue? infoQueue)
+        ID3D12InfoQueue? infoQueue,
+        bool dredEnabled)
     {
         Device = device;
         DirectQueue = directQueue;
@@ -34,6 +35,7 @@ internal sealed class GpuDevice12 : IDisposable
         DeviceName = deviceName;
         FeatureLevel = featureLevel;
         _infoQueue = infoQueue;
+        DredEnabled = dredEnabled;
     }
 
     private readonly ID3D12InfoQueue? _infoQueue;
@@ -54,6 +56,12 @@ internal sealed class GpuDevice12 : IDisposable
 
     /// <summary>Highest feature level the device was created at (≥ 12_0).</summary>
     public FeatureLevel FeatureLevel { get; }
+
+    /// <summary>True when DRED (Device Removed Extended Data) was force-enabled at device
+    /// creation, so <see cref="LogDeviceRemovedDiagnostics" /> can dump GPU auto-breadcrumbs +
+    /// the page-fault VA after a device removal. Enabled by FALLOUT_VIEWER_DRED=1 (or the debug
+    /// layer). Off by default — breadcrumbs add per-command GPU overhead.</summary>
+    public bool DredEnabled { get; }
 
     /// <summary>Backend identifier for HUD + log lines. Mirrors <see cref="GpuDevice.Backend" />.</summary>
     public static string Backend => "Direct3D12";
@@ -82,6 +90,117 @@ internal sealed class GpuDevice12 : IDisposable
         }
         _infoQueue.ClearStoredMessages();
     }
+
+    /// <summary>
+    ///     Call from a render/upload failure handler to attribute a GPU device removal. Logs the
+    ///     device-removed reason (HUNG / RESET / DRIVER_INTERNAL_ERROR / page-fault), and — when
+    ///     DRED was enabled (<see cref="DredEnabled" />) — the page-fault VA plus the offending
+    ///     allocations and the last GPU auto-breadcrumb op per command queue. No-op (returns
+    ///     quietly) when the device has NOT actually been removed, so it's safe to call from any
+    ///     catch block. Multiple calls are harmless.
+    /// </summary>
+    public void LogDeviceRemovedDiagnostics(string context)
+    {
+        Result reason;
+        try
+        {
+            reason = Device.DeviceRemovedReason;
+        }
+        catch (SharpGenException ex)
+        {
+            Log.Warn("GpuDevice12: could not query DeviceRemovedReason ({0}): {1}", context, ex.Message);
+            return;
+        }
+
+        // S_OK → the device is fine; whatever threw was not a device removal.
+        if (reason.Success)
+        {
+            return;
+        }
+
+        Log.Error("GpuDevice12: GPU DEVICE REMOVED [{0}] reason=0x{1:X8} ({2})",
+            context, reason.Code, DescribeDeviceRemovedReason(reason.Code));
+
+        if (!DredEnabled)
+        {
+            Log.Error("GpuDevice12: set FALLOUT_VIEWER_DRED=1 and reproduce to capture the GPU breadcrumb + page-fault VA.");
+            return;
+        }
+
+        try
+        {
+            using var dred = Device.QueryInterfaceOrNull<ID3D12DeviceRemovedExtendedData>();
+            if (dred is null)
+            {
+                Log.Warn("GpuDevice12: DRED interface unavailable on this device.");
+                return;
+            }
+
+            if (dred.GetPageFaultAllocationOutput(out var pageFault).Success && pageFault.PageFaultVA != 0)
+            {
+                Log.Error("GpuDevice12: DRED page-fault GPU VA = 0x{0:X}", pageFault.PageFaultVA);
+                LogAllocationNodes("live-at-fault", pageFault.HeadExistingAllocationNode);
+                LogAllocationNodes("recently-freed", pageFault.HeadRecentFreedAllocationNode);
+            }
+
+            if (dred.GetAutoBreadcrumbsOutput(out var breadcrumbs).Success)
+            {
+                var node = breadcrumbs.HeadAutoBreadcrumbNode;
+                var nodeCount = 0;
+                while (node is not null && nodeCount < 32)
+                {
+                    var lastCompleted = node.LastBreadcrumbValue;
+                    Log.Error("GpuDevice12: DRED breadcrumb queue='{0}' list='{1}' completed={2}/{3} ops",
+                        node.CommandQueueDebugName ?? "(unnamed)",
+                        node.CommandListDebugName ?? "(unnamed)",
+                        lastCompleted.HasValue ? lastCompleted.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) : "?",
+                        node.BreadcrumbCount);
+
+                    // The GPU stopped at the last completed breadcrumb — log the op there + neighbours.
+                    var history = node.CommandHistory;
+                    if (history is { Length: > 0 } && lastCompleted is { } idx && idx < history.Length)
+                    {
+                        var from = Math.Max(0, idx - 2);
+                        var to = Math.Min(history.Length - 1, idx + 2);
+                        for (var i = from; i <= to; i++)
+                        {
+                            Log.Error("GpuDevice12:   op[{0}]{1} = {2}", i, i == idx ? " <-- GPU stopped here" : string.Empty, history[i]);
+                        }
+                    }
+
+                    node = node.Next;
+                    nodeCount++;
+                }
+            }
+        }
+        catch (SharpGenException ex)
+        {
+            Log.Warn("GpuDevice12: DRED dump failed ({0}): {1}", context, ex.Message);
+        }
+    }
+
+    private static void LogAllocationNodes(string label, DredAllocationNode? head)
+    {
+        var node = head;
+        var count = 0;
+        while (node is not null && count < 16)
+        {
+            Log.Error("GpuDevice12:   {0} allocation '{1}' ({2})", label, node.ObjectName ?? "(unnamed)", node.AllocationType);
+            node = node.Next;
+            count++;
+        }
+    }
+
+    private static string DescribeDeviceRemovedReason(int code) => (uint)code switch
+    {
+        0x887A0006 => "DXGI_ERROR_DEVICE_HUNG — the app's own GPU commands hung/faulted (TDR)",
+        0x887A0005 => "DXGI_ERROR_DEVICE_REMOVED",
+        0x887A0007 => "DXGI_ERROR_DEVICE_RESET — unexpected device reset",
+        0x887A0020 => "DXGI_ERROR_DRIVER_INTERNAL_ERROR",
+        0x887A0001 => "DXGI_ERROR_INVALID_CALL",
+        0x80070057 => "E_INVALIDARG",
+        _ => "see DXGI/D3D12 HRESULT reference"
+    };
 
     public void Dispose()
     {
@@ -140,6 +259,42 @@ internal sealed class GpuDevice12 : IDisposable
             }
         }
 
+        // DRED (Device Removed Extended Data) must be force-enabled BEFORE device creation, like
+        // the debug layer. It captures GPU auto-breadcrumbs + the page-fault VA so a device
+        // removal (TDR / GPU page fault — the usual cause of a "crash with no managed exception")
+        // can be attributed via LogDeviceRemovedDiagnostics. Opt-in (FALLOUT_VIEWER_DRED=1) because
+        // breadcrumbs add per-command overhead; also on whenever the debug layer is on.
+        var enableDred = enableDebugLayer || Environment.GetEnvironmentVariable("FALLOUT_VIEWER_DRED") == "1";
+        if (enableDred)
+        {
+            try
+            {
+                var dredResult = Vortice.Direct3D12.D3D12.D3D12GetDebugInterface(
+                    out ID3D12DeviceRemovedExtendedDataSettings? dredSettings);
+                if (dredResult.Success && dredSettings is not null)
+                {
+                    dredSettings.SetAutoBreadcrumbsEnablement(DredEnablement.ForcedOn);
+                    dredSettings.SetPageFaultEnablement(DredEnablement.ForcedOn);
+                    // NOTE: deliberately NOT enabling Watson dump — SetWatsonDumpEnablement(ForcedOn)
+                    // raises a __fastfail (0xC0000409) on device removal, which kills the process
+                    // before our managed catch can run LogDeviceRemovedDiagnostics (and before the
+                    // log flushes). We want the removal to surface as a catchable HRESULT instead.
+                    dredSettings.Dispose();
+                    Log.Info("GpuDevice12: DRED enabled (auto-breadcrumbs + page-fault).");
+                }
+                else
+                {
+                    Log.Warn("GpuDevice12: DRED requested but D3D12GetDebugInterface(DRED settings) failed ({0}).", dredResult);
+                    enableDred = false;
+                }
+            }
+            catch (SharpGenException ex)
+            {
+                Log.Warn("GpuDevice12: DRED enable failed: {0}", ex.Message);
+                enableDred = false;
+            }
+        }
+
         FeatureLevel[] featureLevels =
         [
             FeatureLevel.Level_12_2,
@@ -193,7 +348,7 @@ internal sealed class GpuDevice12 : IDisposable
 
                     var deviceName = QueryAdapterDescription(device);
                     Log.Info("GpuDevice12: created Direct3D 12 device at {0} ({1})", minLevel, deviceName);
-                    return new GpuDevice12(device, queue, fence, deviceName, minLevel, infoQueue);
+                    return new GpuDevice12(device, queue, fence, deviceName, minLevel, infoQueue, enableDred);
                 }
                 catch
                 {
