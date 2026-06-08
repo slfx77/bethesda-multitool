@@ -1,4 +1,3 @@
-using System.Buffers.Binary;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
@@ -31,7 +30,7 @@ internal static class WorldMapNavMeshOverlayRenderer
     private const int MaxOverviewGeometryCells = 1024;
 
     /// <summary>Parsed-geometry (CPU-side) cache; entries drop when their NavMeshRecord is GC'd.</summary>
-    private static readonly ConditionalWeakTable<NavMeshRecord, ParsedGeometry?> s_parsedCache = new();
+    private static readonly ConditionalWeakTable<NavMeshRecord, NavMeshGeometry?> s_parsedCache = new();
 
     /// <summary>
     ///     Device-bound <see cref="CanvasGeometry" /> cache. Strong refs are fine: WorldViewData
@@ -205,7 +204,7 @@ internal static class WorldMapNavMeshOverlayRenderer
         return geom;
     }
 
-    private static CanvasGeometry BuildGeometryFromParsed(CanvasDrawingSession ds, ParsedGeometry parsed)
+    private static CanvasGeometry BuildGeometryFromParsed(CanvasDrawingSession ds, NavMeshGeometry parsed)
     {
         using var pathBuilder = new CanvasPathBuilder(ds);
         for (var t = 0; t < parsed.Triangles.Length; t++)
@@ -225,61 +224,15 @@ internal static class WorldMapNavMeshOverlayRenderer
         return CanvasGeometry.CreatePath(pathBuilder);
     }
 
-    private static ParsedGeometry? ParseOrGet(NavMeshRecord nm)
+    private static NavMeshGeometry? ParseOrGet(NavMeshRecord nm)
     {
         if (s_parsedCache.TryGetValue(nm, out var cached))
         {
             return cached;
         }
 
-        var parsed = Parse(nm);
+        var parsed = NavMeshGeometry.TryParse(nm);
         s_parsedCache.AddOrUpdate(nm, parsed);
         return parsed;
-    }
-
-    private static ParsedGeometry? Parse(NavMeshRecord nm)
-    {
-        byte[]? nvvx = null;
-        byte[]? nvtr = null;
-        foreach (var sub in nm.RawSubrecords)
-        {
-            if (sub.Signature == "NVVX") nvvx = sub.Bytes;
-            else if (sub.Signature == "NVTR") nvtr = sub.Bytes;
-        }
-
-        if (nvvx is null || nvtr is null) return null;
-        if (nvvx.Length % 12 != 0 || nvtr.Length % 16 != 0) return null;
-
-        var vertexCount = nvvx.Length / 12;
-        var triCount = nvtr.Length / 16;
-        if (vertexCount == 0 || triCount == 0) return null;
-
-        var verts = new Vector3[vertexCount];
-        for (var i = 0; i < vertexCount; i++)
-        {
-            var off = i * 12;
-            verts[i] = new Vector3(
-                BinaryPrimitives.ReadSingleLittleEndian(nvvx.AsSpan(off, 4)),
-                BinaryPrimitives.ReadSingleLittleEndian(nvvx.AsSpan(off + 4, 4)),
-                BinaryPrimitives.ReadSingleLittleEndian(nvvx.AsSpan(off + 8, 4)));
-        }
-
-        var tris = new (ushort, ushort, ushort)[triCount];
-        for (var i = 0; i < triCount; i++)
-        {
-            var off = i * 16;
-            tris[i] = (
-                BinaryPrimitives.ReadUInt16LittleEndian(nvtr.AsSpan(off, 2)),
-                BinaryPrimitives.ReadUInt16LittleEndian(nvtr.AsSpan(off + 2, 2)),
-                BinaryPrimitives.ReadUInt16LittleEndian(nvtr.AsSpan(off + 4, 2)));
-        }
-
-        return new ParsedGeometry(verts, tris);
-    }
-
-    private sealed class ParsedGeometry(Vector3[] vertices, (ushort A, ushort B, ushort C)[] triangles)
-    {
-        internal Vector3[] Vertices { get; } = vertices;
-        internal (ushort A, ushort B, ushort C)[] Triangles { get; } = triangles;
     }
 }
