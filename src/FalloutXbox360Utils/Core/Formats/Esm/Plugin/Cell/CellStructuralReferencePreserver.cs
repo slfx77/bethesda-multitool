@@ -30,6 +30,29 @@ internal static class CellStructuralReferencePreserver
     ];
 
     /// <summary>
+    ///     Engine default-object base FormIDs for the render-culling markers: room, portal,
+    ///     occlusion, and multibound. The COLLISION marker (base 0x21) is deliberately excluded —
+    ///     it drives physics/navigation, not rendering, so it is kept even when the render-culling
+    ///     graph is dropped. See <see cref="IsRenderCullingMarker" />.
+    /// </summary>
+    private static readonly HashSet<uint> RenderCullingMarkerBaseFormIds =
+    [
+        0x00000015, // MultiBoundMarker
+        0x00000017, // OcclusionMarker
+        0x0000001F, // RoomMarker
+        0x00000020 // PortalMarker
+    ];
+
+    private static readonly string[] RenderCullingBaseEditorIdNeedles =
+    [
+        "RoomMarker",
+        "PortalMarker",
+        "Occlusion",
+        "MultiBound",
+        "Culling"
+    ];
+
+    /// <summary>
     ///     Subrecords stripped from preserved master refs before re-emission. XEMI (Emittance —
     ///     links a ref to a REGN for ambient light tint) is dereferenced by the engine during
     ///     master-init when the plugin is ESM-flagged, BEFORE the REGN FormID is linked, so it
@@ -111,13 +134,15 @@ internal static class CellStructuralReferencePreserver
         List<byte[]> temporaryRecords,
         ConversionPipelineStats stats,
         bool hasAuthoritativeDmpStructuralRefs = false,
-        IReadOnlySet<string>? dmpCapturedBaseTypes = null)
+        IReadOnlySet<string>? dmpCapturedBaseTypes = null,
+        bool dropRenderCullingMarkers = false)
     {
         var preserved = 0;
         foreach (var masterRef in masterRefs)
         {
             var formId = masterRef.Header.FormId;
             if (coveredMasterFormIdsInCell.Contains(formId)
+                || (dropRenderCullingMarkers && IsRenderCullingMarker(masterRef, pcRecordsByFormId))
                 || (hasAuthoritativeDmpStructuralRefs && IsStructuralCellRef(masterRef, pcRecordsByFormId))
                 || !ShouldPreserveInLoadedReplacement(masterRef, pcRecordsByFormId, dmpCapturedBaseTypes))
             {
@@ -218,6 +243,44 @@ internal static class CellStructuralReferencePreserver
 
         return StructuralBaseEditorIdNeedles.Any(needle =>
             baseRecord.EditorId!.Contains(needle, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    ///     True when <paramref name="masterRef" /> is a render-culling marker REFR — a room,
+    ///     portal, occlusion, or multibound marker (base 0x15/0x17/0x1F/0x20, or a base whose
+    ///     editor ID names one). These define the cell's portal/occlusion graph. For interiors
+    ///     that get authoritatively replaced with prototype layouts, the master (final-game)
+    ///     graph is positioned for final geometry and no longer matches the proto placements —
+    ///     and it cannot be reconstructed from the DMP (XPRM/XPOD/XOCP bounds are not in the
+    ///     runtime <c>TESObjectREFR</c> struct), so the only coherent option is to drop the
+    ///     markers entirely, disabling portal culling so all present geometry renders.
+    ///     The COLLISION marker (base 0x21) is intentionally NOT matched: it drives physics and
+    ///     navigation rather than rendering, and is kept.
+    /// </summary>
+    public static bool IsRenderCullingMarker(
+        ParsedMainRecord masterRef,
+        IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId)
+    {
+        if (masterRef.Header.Signature != "REFR")
+        {
+            return false;
+        }
+
+        var baseFormId = ReadNameFormId(masterRef);
+        if (!baseFormId.HasValue)
+        {
+            return false;
+        }
+
+        if (RenderCullingMarkerBaseFormIds.Contains(baseFormId.Value))
+        {
+            return true;
+        }
+
+        return pcRecordsByFormId.TryGetValue(baseFormId.Value, out var baseRecord)
+               && !string.IsNullOrEmpty(baseRecord.EditorId)
+               && RenderCullingBaseEditorIdNeedles.Any(needle =>
+                   baseRecord.EditorId!.Contains(needle, StringComparison.OrdinalIgnoreCase));
     }
 
     public static uint? ReadNameFormId(ParsedMainRecord record)

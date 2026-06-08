@@ -12,6 +12,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
 using FalloutXbox360Utils.Core.Formats.Esm.Parsing.Subrecords;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Cell;
@@ -127,6 +128,14 @@ public sealed class PluginBuilder
     ///     FormID) is a load-time warning, strictly better than today's silent Type-2 degradation.
     /// </summary>
     private readonly Dictionary<uint, uint> _preAllocatedRefFormIds = new();
+
+    /// <summary>DMP source ref FormID → the DMP cell it was captured in (Phase 0). Used to
+    /// reconcile pre-allocated-but-unemitted refs (phantom package destinations) to the cell
+    /// that should have emitted them.</summary>
+    private readonly Dictionary<uint, uint> _preAllocRefSourceCell = new();
+
+    /// <summary>DMP source ref FormIDs that Phase 4 actually emitted (vs merely pre-allocated).</summary>
+    private readonly HashSet<uint> _emittedPlacedRefSources = new();
 
     /// <summary>
     ///     Read-only test surface for <see cref="_preAllocatedRefFormIds" />. Tests assert
@@ -288,6 +297,8 @@ public sealed class PluginBuilder
             _emittedNewFormIds.Clear();
             _emittedNewFormIdsByType.Clear();
             _preAllocatedRefFormIds.Clear();
+            _preAllocRefSourceCell.Clear();
+            _emittedPlacedRefSources.Clear();
             _placedRefValidFormIdsCache = null;
             _renderUnsafeNewNpcFormIds.Clear();
             _emittedExteriorCellCoords.Clear();
@@ -445,6 +456,14 @@ public sealed class PluginBuilder
             // fail. Re-bind the VTCK to a matching VTYP whose EditorId is
             // "MaleUnique<NpcEditorId>" / "FemaleUnique<NpcEditorId>" — vanilla's convention.
             AttachOrphanVoiceTypesByEditorId(dmpRecords);
+
+            // Recover orphan placed refs that share a (worldspace, grid) with a non-virtual cell
+            // before the grid-collision dedup drops them. Gated on _masterFormIds so MASTER cells
+            // are never keepers — merging orphan refs into a live master persistent cell (e.g.
+            // TheStripWorldNew's 0x0013B310) corrupts a real game cell and crashes on GridCellArray
+            // attach. Targets cut/proto content only (e.g. TheStripWorld's VStreetFluff markers).
+            // Must run before Phase 0 so recovered refs are pre-allocated + emitted.
+            WorldRecordHandler.MergeColocatedVirtualOrphanCells(dmpRecords.Cells, _masterFormIds);
 
             // Phase 0: pre-allocate FormIDs for new placed refs so PACK PLDT (and any other
             // Phase-3 encoder consuming BuildAllValidFormIdSet) can resolve Union references
@@ -680,6 +699,36 @@ public sealed class PluginBuilder
 
                 validationReport = $"{roundTrip}\n\n{semantic.Report}";
                 _sink.OnPhaseEnd("Validating output", stats);
+            }
+
+            // DIAG: reconcile pre-allocated placed refs against actual Phase 4 emission. A ref
+            // pre-allocated (so PACK PLDT/PTDT could resolve to it) but never emitted is a phantom
+            // package destination → the engine warps the owning actor ("teleport along a path").
+            // Group the phantoms by their source DMP cell so the unemitted-cell cause is visible.
+            var phantomByCell = new Dictionary<uint, int>();
+            foreach (var (source, cellFid) in _preAllocRefSourceCell)
+            {
+                if (!_emittedPlacedRefSources.Contains(source))
+                {
+                    phantomByCell[cellFid] = phantomByCell.GetValueOrDefault(cellFid) + 1;
+                }
+            }
+
+            if (phantomByCell.Count > 0)
+            {
+                var totalPhantom = phantomByCell.Values.Sum();
+                _sink.Warn("Reconciling placed refs",
+                    $"{totalPhantom:N0} pre-allocated placed ref(s) across {phantomByCell.Count:N0} DMP " +
+                    "cell(s) were NOT emitted — packages referencing them dangle (actor warps to a " +
+                    "missing destination).",
+                    "ESP", 0, "phantom.preallocated-unemitted");
+                foreach (var (cellFid, count) in phantomByCell.OrderByDescending(kv => kv.Value).Take(40))
+                {
+                    var inMaster = _masterFormIds?.Contains(cellFid) == true;
+                    _sink.Decision("Reconciling placed refs",
+                        $"DMP cell 0x{cellFid:X8} (in master: {inMaster}): {count} pre-allocated ref(s) unemitted.",
+                        "CELL", cellFid, "phantom.cell");
+                }
             }
 
             sw.Stop();
@@ -1064,6 +1113,21 @@ public sealed class PluginBuilder
                     continue;
                 }
 
+                // Mirror Phase 4 base-validity: a ref whose base is a runtime-dynamic form
+                // (load-order index 0xFF — engine-spawned leveled-list actors, scripted clones,
+                // etc.) has no persistent record, so Phase 4's IsValidPlacedBaseForOutput always
+                // drops it. Pre-allocating it here and marking it "emitted" would leave a phantom
+                // FormID in the validity set that Phase 3 encoders (notably PACK PLDT/PTDT) then
+                // resolve to — producing a package whose location/target reference is never
+                // written. At runtime the engine can't path the owning actor to that destination
+                // and warps it ("teleport along a path"; ~457 such refs on xex22, the source of
+                // the "Unable to find Package Location/Target Reference" floods). Skip them so the
+                // PACK sanitizer falls back to NearCurrentLocation/ObjectType instead.
+                if (IsRuntimeDynamicBase(placed.BaseFormId))
+                {
+                    continue;
+                }
+
                 // Dedup across cell-capture unions — the same source REFR FormID can appear
                 // under multiple DMP cell captures (the union pass runs in Phase 4, so Phase 0
                 // sees the raw per-cell lists). Mirrors NAVM dedup at PluginBuilder.cs:1835.
@@ -1074,6 +1138,7 @@ public sealed class PluginBuilder
 
                 var pre = allocator.Allocate();
                 _preAllocatedRefFormIds[placed.FormId] = pre;
+                _preAllocRefSourceCell[placed.FormId] = cell.FormId;
                 TrackEmittedNewFormId(placed.RecordType, pre);
                 TrackNewRecordSourceAlias(placed.RecordType, placed.FormId, pre);
             }
@@ -1880,6 +1945,37 @@ public sealed class PluginBuilder
         }
 
         var dmpSourceFormId = ExtractFormId(model);
+
+        // Engine default-object marker dedup. PortalMarker (0x20) and OcclusionMarker (0x17)
+        // are engine-only forms with no authoring record in any ESM, so a DMP capture of one
+        // looks like a brand-new prototype record here. Emitting it as a duplicate STAT and
+        // re-basing the cell's structural REFRs (XPOD portals / XOCP occlusion planes) onto
+        // the duplicate breaks the room/portal/occlusion graph — the engine no longer treats
+        // those refs as portals/occluders and the room culls to black (Gomorrah01: five portal
+        // REFRs re-based onto a duplicate "PortalMarker" STAT). Instead, alias the source
+        // FormID to the canonical engine marker FormID (so the structural refs re-base onto the
+        // real marker via TryRemapPlacedBaseAlias) and suppress the duplicate record.
+        var newRecordEditorId = ReadEncodedEditorId(validatedSubrecords);
+        if (EngineDefaultObjectMarkers.TryGetCanonicalFormId(newRecordEditorId, out var canonicalMarkerFormId))
+        {
+            if (dmpSourceFormId != 0 && dmpSourceFormId != canonicalMarkerFormId)
+            {
+                TrackNewRecordSourceAlias(recordType, dmpSourceFormId, canonicalMarkerFormId);
+            }
+
+            stats.IncrementDropReason("marker.engine-default-object-dedup");
+            if (options.VerboseDecisions)
+            {
+                _sink.Decision("Merging top-level records",
+                    $"Suppressed duplicate engine default-object marker '{newRecordEditorId}' " +
+                    $"(source 0x{dmpSourceFormId:X8}); aliased to canonical engine FormID " +
+                    $"0x{canonicalMarkerFormId:X8} so structural refs re-base onto the real marker.",
+                    recordType, dmpSourceFormId, "marker.engine-default-object-dedup");
+            }
+
+            return false;
+        }
+
         var renderUnsafeNewNpc = recordType == "NPC_" && !NpcHasRenderableTemplate(validatedSubrecords);
         var allocatedFormId = allocator.Allocate();
         var flags = options.CompressRecords ? 0x00040000u : 0u;
@@ -2275,6 +2371,20 @@ public sealed class PluginBuilder
                     _newRecordSourceToAllocated);
             }
 
+            // Interiors that get authoritatively replaced with prototype layouts: the master
+            // (final-game) room/portal/occlusion graph is positioned for FINAL geometry and no
+            // longer matches the proto placements (1,546 new refs / 781 deleted / 42% moved in
+            // Gomorrah01), and it cannot be rebuilt from the DMP — XPRM/XPOD/XOCP bounds are not
+            // in the runtime TESObjectREFR struct. Keeping it mis-culls present geometry (a door
+            // visible from one spot, culled from another). Drop the render-culling markers
+            // (room/portal/occlusion/multibound) entirely so portal culling is disabled and all
+            // present geometry renders. Collision markers (base 0x21) are kept — they drive
+            // physics/navigation, not rendering.
+            var dropRenderCullingMarkers = pcCellExists
+                                           && dmpCell.IsInterior
+                                           && mode == CellMergeMode.LoadedReplacement
+                                           && !replaceTemporaries;
+
             var persistentRecords = new List<byte[]>();
             var vwdRecords = new List<byte[]>();
             var temporaryRecords = new List<byte[]>();
@@ -2303,6 +2413,29 @@ public sealed class PluginBuilder
                 var placedForEmit = !refIsInMaster
                     ? RemapNewPlacedActorBase(placed, actorBaseRemap, options)
                     : placed;
+
+                if (dropRenderCullingMarkers
+                    && refIsInMaster
+                    && pcRecordsByFormId.TryGetValue(placed.FormId, out var masterMarkerRecord)
+                    && CellStructuralReferencePreserver.IsRenderCullingMarker(masterMarkerRecord, pcRecordsByFormId))
+                {
+                    // Don't emit captured render-culling markers as overrides (that would re-cull
+                    // with stale final bounds), and don't mark them covered — so the deletion pass
+                    // below removes master's copy too. The result is an interior with no room/
+                    // portal graph: portal culling off, everything renders.
+                    stats.IncrementSkipped(placed.RecordType);
+                    stats.IncrementDropReason("cell.render-culling-marker-dropped");
+                    if (options.VerboseDecisions)
+                    {
+                        _sink.Decision("Merging cell children",
+                            $"Dropping render-culling marker {placed.RecordType} 0x{placed.FormId:X8} " +
+                            $"(base 0x{placedForEmit.BaseFormId:X8}) in replaced interior cell " +
+                            $"0x{emittedCellFormId:X8}; proto layout invalidates final's portal graph.",
+                            placed.RecordType, placed.FormId, "cell.render-culling-marker-dropped");
+                    }
+
+                    continue;
+                }
 
                 if (!pcCellExists && refIsInMaster)
                 {
@@ -2484,6 +2617,17 @@ public sealed class PluginBuilder
                 // but new markers missing" symptom).
                 if (mode == CellMergeMode.PersistentOnly && !placed.IsPersistent && !placedForEmit.IsMapMarker)
                 {
+                    stats.IncrementSkipped(placed.RecordType);
+                    stats.IncrementDropReason("cell.persistent-only-nonpersistent-ref");
+                    if (options.VerboseDecisions)
+                    {
+                        _sink.Decision("Merging cell children",
+                            $"Skipping {placed.RecordType} 0x{placed.FormId:X8} (base 0x{placedForEmit.BaseFormId:X8}) " +
+                            $"in cell 0x{dmpCell.FormId:X8} — PersistentOnly mode + ref not flagged persistent + " +
+                            "not a map marker.",
+                            placed.RecordType, placed.FormId, "cell.persistent-only-nonpersistent-ref");
+                    }
+
                     continue;
                 }
 
@@ -2621,6 +2765,7 @@ public sealed class PluginBuilder
                 }
 
                 stats.IncrementEmitted(placed.RecordType);
+                _emittedPlacedRefSources.Add(placed.FormId);
             }
 
             var hasCapturedTerrain = !dmpCell.IsInterior &&
@@ -2698,15 +2843,21 @@ public sealed class PluginBuilder
                             masterRefs!, coveredMasterRefFormIdsInCell, masterChildLocations,
                             pcRecordsByFormId, persistentRecords, vwdRecords, temporaryRecords, stats,
                             hasAuthoritativeDmpStructuralRefs,
-                            dmpCapturedBaseTypes);
+                            dmpCapturedBaseTypes,
+                            dropRenderCullingMarkers);
                         preservationReason = "script-critical/structural";
 
                         var deleted = DeletedRefSynthesizer.Synthesize(
                             masterRefs!,
                             coveredMasterRefFormIdsInCell,
                             masterRef =>
-                                (!hasAuthoritativeDmpStructuralRefs ||
-                                 !CellStructuralReferencePreserver.IsStructuralCellRef(masterRef, pcRecordsByFormId))
+                                // Render-culling markers in a replaced interior are force-deleted
+                                // (never preserved), regardless of persistence/script/structural
+                                // status, so final's stale portal graph is fully removed.
+                                !(dropRenderCullingMarkers &&
+                                  CellStructuralReferencePreserver.IsRenderCullingMarker(masterRef, pcRecordsByFormId))
+                                && (!hasAuthoritativeDmpStructuralRefs ||
+                                    !CellStructuralReferencePreserver.IsStructuralCellRef(masterRef, pcRecordsByFormId))
                                 && CellStructuralReferencePreserver.ShouldPreserveInLoadedReplacement(
                                     masterRef, pcRecordsByFormId, dmpCapturedBaseTypes));
                         persistentRecords.AddRange(deleted.Persistent);
@@ -4217,6 +4368,16 @@ public sealed class PluginBuilder
         => baseFormId is > 0 and < 0x800u
            || RuntimeStateRecordPolicy.EngineFormIds.Contains(baseFormId);
 
+    /// <summary>
+    ///     True when <paramref name="baseFormId" /> is a runtime-dynamic form — load-order
+    ///     index 0xFF (0xFFxxxxxx). FNV reserves that index for forms the engine creates at
+    ///     runtime (leveled-list spawns, scripted clones, temporary references) and never
+    ///     persists to any ESM/ESP. A placed ref pointing at one can never be emitted, so it
+    ///     must not be pre-allocated into the validity set.
+    /// </summary>
+    private static bool IsRuntimeDynamicBase(uint baseFormId)
+        => baseFormId >= 0xFF000000u;
+
     private bool ValidateEncodedPlacedBase(
         string placedRecordType,
         uint placedFormId,
@@ -5370,6 +5531,23 @@ public sealed class PluginBuilder
                    ?? throw new InvalidOperationException(
                        $"Model {model.GetType().Name} has no FormId property.");
         return (uint)prop.GetValue(model)!;
+    }
+
+    /// <summary>
+    ///     Read the editor ID from an encoded record's EDID subrecord (the first one), or null
+    ///     when absent. Used to recognise engine default-object markers
+    ///     (<see cref="EngineDefaultObjectMarkers" />) on the new-record path.
+    /// </summary>
+    private static string? ReadEncodedEditorId(IReadOnlyList<EncodedSubrecord> subrecords)
+    {
+        var edid = subrecords.FirstOrDefault(static s => s.Signature == "EDID");
+        if (edid is null || edid.Bytes.Length == 0)
+        {
+            return null;
+        }
+
+        var editorId = System.Text.Encoding.Latin1.GetString(edid.Bytes).TrimEnd('\0');
+        return editorId.Length == 0 ? null : editorId;
     }
 
     /// <summary>

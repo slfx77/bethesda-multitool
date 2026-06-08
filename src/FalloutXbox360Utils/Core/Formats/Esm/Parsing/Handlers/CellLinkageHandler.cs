@@ -201,6 +201,216 @@ internal static class CellLinkageHandler
         return reassigned;
     }
 
+    /// <summary>
+    ///     DMP fallback: assign worldspace ownership directly from the runtime pCellMap to any
+    ///     exterior cell still lacking a worldspace. <see cref="ResolveRuntimeAnchoredCellRuns" />
+    ///     only anchors ambiguous cells reachable from a runtime-owned FormID/grid run; an isolated
+    ///     cell that <em>is</em> in a walked pCellMap but has no neighbors and no bounds candidates
+    ///     would otherwise stay null. The pCellMap owner is authoritative (see
+    ///     <c>RuntimeDataEnricher.EnrichWorldspaceCellMaps</c>), so this is a safe last-step backfill
+    ///     mirroring the direct lookup the cell-inventory path already trusts. Grid is backfilled
+    ///     from the map entry only when the cell lacks it (exterior cells need grid to emit).
+    /// </summary>
+    internal static int AssignRuntimeCellMapOwners(
+        List<CellRecord> cells,
+        IReadOnlyDictionary<uint, RuntimeWorldspaceData>? runtimeWorldspaceMaps)
+    {
+        if (cells.Count == 0 || runtimeWorldspaceMaps is not { Count: > 0 })
+        {
+            return 0;
+        }
+
+        var ownerByCell = new Dictionary<uint, RuntimeCellMapEntry>();
+        var worldspaceByCell = new Dictionary<uint, uint>();
+        foreach (var (worldspaceFormId, worldspaceData) in runtimeWorldspaceMaps)
+        {
+            foreach (var entry in worldspaceData.Cells)
+            {
+                if (worldspaceByCell.TryAdd(entry.CellFormId, worldspaceFormId))
+                {
+                    ownerByCell[entry.CellFormId] = entry;
+                }
+            }
+        }
+
+        if (worldspaceByCell.Count == 0)
+        {
+            return 0;
+        }
+
+        var assigned = 0;
+        for (var i = 0; i < cells.Count; i++)
+        {
+            var cell = cells[i];
+            if (cell.IsInterior || cell.IsPersistentCell || cell.WorldspaceFormId is > 0)
+            {
+                continue;
+            }
+
+            if (!worldspaceByCell.TryGetValue(cell.FormId, out var owner) || owner == 0)
+            {
+                continue;
+            }
+
+            var entry = ownerByCell[cell.FormId];
+            cells[i] = cell with
+            {
+                WorldspaceFormId = owner,
+                WorldspaceAssignmentSource = SourceRuntimeCellMap,
+                GridX = cell.GridX ?? entry.GridX,
+                GridY = cell.GridY ?? entry.GridY,
+                CandidateWorldspaceFormIds = cell.CandidateWorldspaceFormIds.Count > 0
+                    ? cell.CandidateWorldspaceFormIds
+                    : [owner]
+            };
+            assigned++;
+        }
+
+        if (assigned > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] AssignRuntimeCellMapOwners: assigned {assigned} exterior cell(s) from runtime pCellMap");
+        }
+
+        return assigned;
+    }
+
+    /// <summary>
+    ///     DMP fallback: reclassify structurally-interior cells that were captured with the interior
+    ///     flag cleared. A valid <em>exterior</em> cell always carries both a parent worldspace and
+    ///     grid coordinates; a cell flagged exterior yet missing <em>both</em> a worldspace and grid
+    ///     cannot be exterior and is treated as interior so it emits via the interior path instead of
+    ///     being skipped for "missing parent worldspace." Surfaced by cut/dev cells such as the
+    ///     <c>HiddenValley*Sim</c> VR areas (cCellFlags 0x52 — no 0x01 interior bit, pWorldSpace null,
+    ///     no grid). Runs after all worldspace inference so a cell that legitimately resolved a
+    ///     worldspace (and therefore is exterior) is never flipped. Virtual orphan-recovery cells are
+    ///     left untouched.
+    /// </summary>
+    internal static int NormalizeStructurallyInteriorCells(List<CellRecord> cells)
+    {
+        var reclassified = 0;
+        for (var i = 0; i < cells.Count; i++)
+        {
+            var cell = cells[i];
+            if (cell.IsInterior ||
+                cell.IsVirtual ||
+                cell.IsPersistentCell ||
+                cell.WorldspaceFormId is > 0 ||
+                cell.GridX.HasValue ||
+                cell.GridY.HasValue)
+            {
+                continue;
+            }
+
+            cells[i] = cell with { Flags = (byte)(cell.Flags | 0x01) };
+            reclassified++;
+        }
+
+        if (reclassified > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] NormalizeStructurallyInteriorCells: reclassified {reclassified} worldspace-less, grid-less exterior cell(s) as interior");
+        }
+
+        return reclassified;
+    }
+
+    /// <summary>
+    ///     DMP fallback: merge orphan-recovery VIRTUAL cells into a co-located non-virtual cell of
+    ///     the same worldspace and grid. Orphan refs whose parent cell couldn't be resolved are
+    ///     placed in synthetic virtual cells keyed by world position; when a non-virtual cell already
+    ///     occupies that (worldspace, grid) the emission-time grid-collision dedup
+    ///     (<c>PluginBuilder._emittedExteriorCellCoords</c>) drops the virtual cell and loses its
+    ///     refs. Seen in the cut <c>TheStripWorld</c>: the VStreetFluff travel markers were recovered
+    ///     into a virtual (0,0) cell colliding with the worldspace persistent cell, so the markers
+    ///     never emitted and every package referencing them dangled. Consolidate the refs into the
+    ///     surviving non-virtual cell (deduping by FormID) and drop the now-redundant virtual cell so
+    ///     the refs emit. Strictly recovers refs the dedup would otherwise discard.
+    ///     <para>
+    ///     <paramref name="masterFormIds" /> (master ESM record FormIDs) excludes master cells from
+    ///     being keepers — recovery targets cut/proto content only. Merging orphan refs into a MASTER
+    ///     cell (e.g. a live worldspace's persistent cell such as TheStripWorldNew's 0x0013B310)
+    ///     corrupts a real game cell and crashes on GridCellArray attach; for master worldspaces the
+    ///     orphan refs are redundant with master, so dropping them (the prior behavior) is correct.
+    ///     </para>
+    /// </summary>
+    internal static int MergeColocatedVirtualOrphanCells(
+        List<CellRecord> cells,
+        IReadOnlySet<uint>? masterFormIds = null)
+    {
+        var keeperByKey = new Dictionary<(uint Worldspace, int GridX, int GridY), int>();
+        for (var i = 0; i < cells.Count; i++)
+        {
+            var c = cells[i];
+            if (c.IsVirtual || c.IsInterior || c.WorldspaceFormId is not > 0 ||
+                !c.GridX.HasValue || !c.GridY.HasValue ||
+                masterFormIds?.Contains(c.FormId) == true)
+            {
+                continue;
+            }
+
+            keeperByKey.TryAdd((c.WorldspaceFormId.Value, c.GridX.Value, c.GridY.Value), i);
+        }
+
+        if (keeperByKey.Count == 0)
+        {
+            return 0;
+        }
+
+        var mergedRefs = 0;
+        var consumedVirtual = new HashSet<int>();
+        for (var i = 0; i < cells.Count; i++)
+        {
+            var c = cells[i];
+            if (!c.IsVirtual || c.IsInterior || c.IsUnresolvedBucket || c.WorldspaceFormId is not > 0 ||
+                !c.GridX.HasValue || !c.GridY.HasValue || c.PlacedObjects.Count == 0)
+            {
+                continue;
+            }
+
+            if (!keeperByKey.TryGetValue((c.WorldspaceFormId.Value, c.GridX.Value, c.GridY.Value),
+                    out var keeperIndex) || keeperIndex == i)
+            {
+                continue;
+            }
+
+            var keeper = cells[keeperIndex];
+            var seen = new HashSet<uint>(keeper.PlacedObjects.Select(p => p.FormId));
+            var additions = c.PlacedObjects.Where(p => seen.Add(p.FormId)).ToList();
+            if (additions.Count > 0)
+            {
+                var newPlaced = new List<PlacedReference>(keeper.PlacedObjects);
+                newPlaced.AddRange(additions);
+                cells[keeperIndex] = keeper with { PlacedObjects = newPlaced };
+                mergedRefs += additions.Count;
+            }
+
+            consumedVirtual.Add(i);
+        }
+
+        if (consumedVirtual.Count == 0)
+        {
+            return 0;
+        }
+
+        var kept = new List<CellRecord>(cells.Count - consumedVirtual.Count);
+        for (var i = 0; i < cells.Count; i++)
+        {
+            if (!consumedVirtual.Contains(i))
+            {
+                kept.Add(cells[i]);
+            }
+        }
+
+        cells.Clear();
+        cells.AddRange(kept);
+
+        Logger.Instance.Debug(
+            $"  [Semantic] MergeColocatedVirtualOrphanCells: merged {mergedRefs} placed ref(s) from " +
+            $"{consumedVirtual.Count} virtual cell(s) into co-located non-virtual cells");
+        return mergedRefs;
+    }
+
     private static List<int> BuildAdjacentFormIdComponent(
         uint startFormId,
         List<CellRecord> cells,

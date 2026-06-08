@@ -289,6 +289,20 @@ public sealed class RecordParser
                 $"  [Semantic] Deduplicated {globallyDeduplicated} duplicate placed ref copy(s) across cells");
         }
 
+        // DMP fallback (after all worldspace inference): backfill worldspace ownership from the
+        // runtime pCellMap for any exterior cell still null, then reclassify worldspace-less,
+        // grid-less "exterior" cells as interior (cut/dev cells captured without the interior bit,
+        // e.g. HiddenValley*Sim). Guarded to the DMP path — ESM GRUP parsing already has exact
+        // ownership and never produces these malformed cells.
+        if (_context.ScanResult.CellToWorldspaceMap.Count == 0)
+        {
+            WorldRecordHandler.AssignRuntimeCellMapOwners(cells, _context.RuntimeWorldspaceCellMaps);
+            WorldRecordHandler.NormalizeStructurallyInteriorCells(cells);
+            // NOTE: co-located virtual-orphan-cell merge runs later in PluginBuilder, where the
+            // master FormID set is available to exclude master cells as keepers (merging orphan
+            // refs into a live master persistent cell crashes the engine on GridCellArray attach).
+        }
+
         WorldRecordHandler.EnsureWorldspacesForCells(cells, worldspaces, _context);
         WorldRecordHandler.LinkCellsToWorldspaces(cells, worldspaces);
         var packages = _ai.ParsePackages();

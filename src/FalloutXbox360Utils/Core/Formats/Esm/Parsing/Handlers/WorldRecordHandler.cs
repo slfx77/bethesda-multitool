@@ -144,6 +144,38 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
     }
 
     /// <summary>
+    ///     DMP fallback: assign worldspace ownership directly from the runtime pCellMap to any
+    ///     exterior cell still lacking one. Delegates to <see cref="CellLinkageHandler" />.
+    /// </summary>
+    internal static int AssignRuntimeCellMapOwners(
+        List<CellRecord> cells,
+        IReadOnlyDictionary<uint, RuntimeWorldspaceData>? runtimeWorldspaceMaps)
+    {
+        return CellLinkageHandler.AssignRuntimeCellMapOwners(cells, runtimeWorldspaceMaps);
+    }
+
+    /// <summary>
+    ///     DMP fallback: reclassify worldspace-less, grid-less exterior cells as interior.
+    ///     Delegates to <see cref="CellLinkageHandler" />.
+    /// </summary>
+    internal static int NormalizeStructurallyInteriorCells(List<CellRecord> cells)
+    {
+        return CellLinkageHandler.NormalizeStructurallyInteriorCells(cells);
+    }
+
+    /// <summary>
+    ///     DMP fallback: merge orphan-recovery virtual cells into a co-located non-virtual cell of
+    ///     the same worldspace and grid so their refs are not lost to grid-collision dedup.
+    ///     Delegates to <see cref="CellLinkageHandler" />.
+    /// </summary>
+    internal static int MergeColocatedVirtualOrphanCells(
+        List<CellRecord> cells,
+        IReadOnlySet<uint>? masterFormIds = null)
+    {
+        return CellLinkageHandler.MergeColocatedVirtualOrphanCells(cells, masterFormIds);
+    }
+
+    /// <summary>
     ///     Links parsed cells to their parent worldspace's Cells list.
     ///     Delegates to <see cref="CellLinkageHandler" />.
     /// </summary>
