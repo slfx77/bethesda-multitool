@@ -118,7 +118,15 @@ internal sealed class WorldSpatialIndex
             var waterHeight = WorldRenderCache.ResolveEffectiveWaterHeight(cell, defaultWaterHeight);
             if (waterHeight is (> -1e6f and < 1e6f))
             {
-                var water = new WorldWaterCell(key, cell, waterHeight.Value);
+                // Exterior water: one cell-sized quad at the grid origin. The OriginXY/FootprintSize
+                // fields carry that explicitly so the renderer is grid-agnostic (interiors supply
+                // their own footprint — see BuildInterior).
+                var water = new WorldWaterCell(
+                    key,
+                    cell,
+                    waterHeight.Value,
+                    new Vector2(key.gx * WorldGridConstants.CellSize, key.gy * WorldGridConstants.CellSize),
+                    WorldGridConstants.CellSize);
                 index._waterCells.Add(water);
                 chunk.WaterCells.Add(water);
             }
@@ -130,6 +138,108 @@ internal sealed class WorldSpatialIndex
         }
 
         return index;
+    }
+
+    /// <summary>
+    ///     Synthetic grid key for an interior cell (which has no real grid coords). Placed on the
+    ///     tile at its placed-object centroid, in the same game-Y grid convention as exterior
+    ///     <see cref="CellRecord.GridY" /> and the ref buckets — so the cylinder cell enumeration
+    ///     (<see cref="QueryCellsInRadius" />) yields it once the camera is framed on the cell.
+    /// </summary>
+    internal static (int gx, int gy) SyntheticInteriorKey(CellRecord interior)
+    {
+        double sumX = 0, sumY = 0;
+        var count = 0;
+        foreach (var obj in interior.PlacedObjects)
+        {
+            if (!float.IsFinite(obj.X) || !float.IsFinite(obj.Y)) continue;
+            sumX += obj.X;
+            sumY += obj.Y;
+            count++;
+        }
+        if (count == 0) return (0, 0);
+        var cx = (float)(sumX / count);
+        var cy = (float)(sumY / count);
+        return ((int)MathF.Floor(cx / WorldGridConstants.CellSize), (int)MathF.Floor(cy / WorldGridConstants.CellSize));
+    }
+
+    /// <summary>
+    ///     Builds a single-cell index for an interior. Interiors have no LAND/grid and live in
+    ///     their own absolute coordinate space, so this bypasses <see cref="Build" />'s
+    ///     null-grid→persistent shunt: the cell is placed on a synthetic grid key, all placed
+    ///     objects are bucketed, navmeshes are stashed by that key, and (if the cell has water)
+    ///     one water cell is added with a footprint derived from the placed-object AABB. The 3D
+    ///     reference broadphase already works in absolute space, so references render unchanged.
+    /// </summary>
+    internal static WorldSpatialIndex BuildInterior(WorldViewData data, CellRecord interior)
+    {
+        var index = new WorldSpatialIndex();
+        var key = SyntheticInteriorKey(interior);
+        index._cellsByGrid[key] = interior;
+
+        foreach (var obj in interior.PlacedObjects)
+        {
+            AddBucketed(index._refsByBucket, obj);
+            if (obj.RecordType is "ACHR" or "ACRE")
+            {
+                AddBucketed(index._actorsByBucket, obj);
+            }
+        }
+
+        if (data.NavMeshesByCell.TryGetValue(interior.FormId, out var navMeshes) && navMeshes.Count > 0)
+        {
+            index._navMeshesByGrid[key] = navMeshes;
+        }
+
+        var chunk = index.GetOrCreateChunk(key.gx, key.gy);
+        chunk.Cells.Add(new WorldSpatialCell(key, interior, CellCenterCanvas(key.gx, key.gy)));
+
+        // Interior water height comes from XCLW directly (no worldspace DNAM fallback).
+        var waterHeight = WorldRenderCache.ResolveEffectiveWaterHeight(interior, defaultWaterHeight: null);
+        if (waterHeight is (> -1e6f and < 1e6f))
+        {
+            var (originXY, footprint) = ComputeInteriorWaterFootprint(interior);
+            var water = new WorldWaterCell(key, interior, waterHeight.Value, originXY, footprint);
+            index._waterCells.Add(water);
+            chunk.WaterCells.Add(water);
+        }
+
+        foreach (var c in index._chunksByGrid.Values)
+        {
+            c.Seal();
+        }
+
+        return index;
+    }
+
+    /// <summary>
+    ///     Square water footprint covering an interior's placed-object XY extent (padded), so the
+    ///     water plane reaches the room walls instead of the exterior cell-sized quad. Floors at
+    ///     one cell so tiny rooms still get a visible plane.
+    /// </summary>
+    private static (Vector2 OriginXY, float FootprintSize) ComputeInteriorWaterFootprint(CellRecord interior)
+    {
+        var minX = float.MaxValue;
+        var minY = float.MaxValue;
+        var maxX = float.MinValue;
+        var maxY = float.MinValue;
+        var any = false;
+        foreach (var obj in interior.PlacedObjects)
+        {
+            if (!float.IsFinite(obj.X) || !float.IsFinite(obj.Y)) continue;
+            minX = MathF.Min(minX, obj.X);
+            minY = MathF.Min(minY, obj.Y);
+            maxX = MathF.Max(maxX, obj.X);
+            maxY = MathF.Max(maxY, obj.Y);
+            any = true;
+        }
+        if (!any) return (Vector2.Zero, WorldGridConstants.CellSize);
+
+        var side = MathF.Max(maxX - minX, maxY - minY) * 1.2f;
+        if (side < WorldGridConstants.CellSize) side = WorldGridConstants.CellSize;
+        var centerX = (minX + maxX) * 0.5f;
+        var centerY = (minY + maxY) * 0.5f;
+        return (new Vector2(centerX - side * 0.5f, centerY - side * 0.5f), side);
     }
 
     internal bool TryGetCell(int gx, int gy, out CellRecord cell) =>
@@ -558,7 +668,9 @@ internal readonly record struct WorldSpatialCell(
 internal readonly record struct WorldWaterCell(
     (int gx, int gy) Key,
     CellRecord Cell,
-    float Height);
+    float Height,
+    Vector2 OriginXY,
+    float FootprintSize);
 
 internal readonly record struct NavMeshCellEntry(
     CellRecord Cell,
