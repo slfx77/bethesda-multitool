@@ -7,6 +7,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.CLI;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc;
 using Microsoft.UI.Input;
@@ -36,6 +37,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
     private const float MinRenderDistance = WorldGridConstants.CellSize * 4f;
     private const float MaxRenderDistance = 800_000f;
     private const float RenderDistanceStep = 1.25f;
+    private const double HudUpdateIntervalMilliseconds = 250d;
 
     private readonly CameraState _camera = new();
     private readonly FlythroughCameraController _controller;
@@ -47,6 +49,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         Environment.GetEnvironmentVariable("FALLOUT_VIEWER_PROFILE_LOG") == "1";
     private readonly int _profileLogIntervalMilliseconds =
         ParsePositiveInt(Environment.GetEnvironmentVariable("FALLOUT_VIEWER_PROFILE_INTERVAL_MS"), 2000);
+    private readonly double _stallThresholdMilliseconds =
+        ParseNonNegativeDouble(Environment.GetEnvironmentVariable("FALLOUT_VIEWER_STALL_THRESHOLD_MS"), 0);
+    private readonly bool _forceGpuTimestamps =
+        Environment.GetEnvironmentVariable("FALLOUT_VIEWER_GPU_TIMESTAMPS") == "1";
     private readonly string? _stressScene =
         Environment.GetEnvironmentVariable("FALLOUT_VIEWER_STRESS_SCENE");
     private readonly FrameProfileAccumulator _profileAccumulator = new();
@@ -58,6 +64,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.Abstractions.ITerrainRenderer? _terrain;
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.TerrainTextureResolver12? _textureResolver12;
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.Abstractions.IWaterRenderer? _water;
+    private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.Abstractions.INavMeshRenderer? _navMesh;
     // v3 Phase 3 placed-object pipeline. Parallel to the terrain pipeline; owns separate
     // CPU NIF texture metadata and D3D12 GPU texture payload resolvers.
     private NpcMeshArchiveSet? _meshArchives;
@@ -79,16 +86,29 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuRingBuffer12? _ringBuffer12;
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDescriptorHeapAllocator12? _cbvSrvUavHeap12;
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuRootSignature12? _rootSignature12;
+    private GpuTimestampProfiler12? _gpuTimestampProfiler12;
     // Step 2c — deferred-release queue for D3D12 resources evicted from LRU caches. D3D12
     // doesn't auto-track GPU vs CPU lifetime; disposing a vertex/texture while the GPU is
     // still reading it crashes the process. Resources go here instead of being disposed
     // immediately, and are released N frames later.
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDeletionQueue12? _deletionQueue12;
     private bool _suppressWorldspaceSelectionEvent;
+    // Interior entries are appended to WorldspaceComboBox after the worldspaces + optional
+    // unlinked-exterior entry. The unlinked entry is conditional, so track the interior start
+    // index explicitly rather than inferring it from Worldspaces.Count.
+    private int _interiorEntryStartIndex = -1;
+    private readonly List<CellRecord> _interiorCellsInComboOrder = new();
     private Dictionary<(int gx, int gy), CellRecord>? _cellGridLookup;
     private WorldSpatialIndex? _spatialIndex;
     private double _lastControllerUpdateMilliseconds;
     private bool _stressBookmarkApplied;
+    private bool _gpuTimestampsAutoEnabled;
+    private long _profileFrameIndex;
+    private long _lastHudUpdateTimestamp;
+    private string? _lastHudText;
+    private int _lastGcGen0Collections = GC.CollectionCount(0);
+    private int _lastGcGen1Collections = GC.CollectionCount(1);
+    private int _lastGcGen2Collections = GC.CollectionCount(2);
 
     // Layer visibility — toggled by D1/D2/D3 keys, all default-on. D4 toggles textured-vs-VCLR-only.
     // D5 toggles placed-object (REFR) rendering (v3 Phase 3).
@@ -97,6 +117,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
     private bool _showWater = true;
     private bool _vclrOnlyMode;
     private bool _showReferences = true;
+    private bool _showNavMesh;
+    private bool _showDisabled;
     private float _renderDistance = DefaultRenderDistance;
 
     public WorldView3DControl()
@@ -191,6 +213,18 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         if (data.UnlinkedExteriorCells.Count > 0)
         {
             WorldspaceComboBox.Items.Add($"Unlinked Exterior ({data.UnlinkedExteriorCells.Count} cells)");
+        }
+
+        // Append interior cells (those with at least one static-mesh REFR) after the worldspace +
+        // unlinked entries, mirroring the 2D viewer's interior browser.
+        _interiorCellsInComboOrder.Clear();
+        _interiorEntryStartIndex = WorldspaceComboBox.Items.Count;
+        foreach (var interior in data.InteriorCells)
+        {
+            if (!InteriorHasRenderableRefs(interior)) continue;
+            _interiorCellsInComboOrder.Add(interior);
+            var label = interior.EditorId ?? interior.FullName ?? $"0x{interior.FormId:X8}";
+            WorldspaceComboBox.Items.Add($"Interior: {label}");
         }
         _suppressWorldspaceSelectionEvent = false;
 
@@ -348,13 +382,14 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
             _referenceTextureCache12 = new FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTextureCache12(
                 _gpu12, _commandRecorder12, _cbvSrvUavHeap12!, _referenceGpuTextureResolver12, _deletionQueue12);
             _referenceMeshCache12 = new FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.ReferenceMeshCache12(
-                _gpu12, _commandRecorder12, _meshArchives, _referenceTextureResolver, _referenceTextureCache12,
+                _gpu12, _meshArchives, _referenceTextureResolver, _referenceTextureCache12,
                 _deletionQueue12, capacity: 2048);
             _references = new FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.ReferenceRenderer12(
                 _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12,
                 _cbvSrvUavHeap12, _referenceMeshCache12)
             {
                 DetailedProfilingEnabled = _profileLogging,
+                ShowInitiallyDisabled = _showDisabled, // persist the toggle across ESM reloads
             };
             Log.Info("WorldView3DControl: reference pipeline initialised ({0} meshes BSA(s), {1} textures BSA(s)).",
                 meshBsas.Length, textureBsas.Length);
@@ -418,8 +453,16 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         if (width <= 0 || double.IsNaN(width) || double.IsInfinity(width)) return;
 
         var maxPanelWidth = Math.Max(0d, width - 16d);
-        HudPanel.MaxWidth = maxPanelWidth;
-        HudText.MaxWidth = Math.Max(0d, maxPanelWidth - 16d);
+        if (ShouldUpdateLayoutValue(HudPanel.MaxWidth, maxPanelWidth))
+        {
+            HudPanel.MaxWidth = maxPanelWidth;
+        }
+
+        var maxTextWidth = Math.Max(0d, maxPanelWidth - 16d);
+        if (ShouldUpdateLayoutValue(HudText.MaxWidth, maxTextWidth))
+        {
+            HudText.MaxWidth = maxTextWidth;
+        }
     }
 
     private void TryEnsureSurface()
@@ -464,6 +507,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         // Reference pipeline disposes first — it borrows the texture caches / mesh archives
         // but owns its own copy, so this is independent of the terrain stack.
         DisposeReferencePipeline();
+        _navMesh?.Dispose();
+        _navMesh = null;
         _water?.Dispose();
         _water = null;
         _terrain?.Dispose();
@@ -485,7 +530,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         // streaming render distance. WinUI emits auto-repeat KeyDown events while a key is held,
         // so guard with a "first press" set.
         if (e.Key is VirtualKey.Number1 or VirtualKey.Number2 or VirtualKey.Number3
-            or VirtualKey.Number4 or VirtualKey.Number5
+            or VirtualKey.Number4 or VirtualKey.Number5 or VirtualKey.Number6 or VirtualKey.Number7
             or VirtualKey.F or VirtualKey.PageUp or VirtualKey.PageDown)
         {
             if (_toggleKeysDown.Add(e.Key))
@@ -499,6 +544,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
                     _terrain?.SetVclrOnlyMode(_vclrOnlyMode);
                 }
                 else if (e.Key == VirtualKey.Number5) _showReferences = !_showReferences;
+                else if (e.Key == VirtualKey.Number6) SetShowNavMesh(!_showNavMesh);
+                else if (e.Key == VirtualKey.Number7) SetShowDisabled(!_showDisabled);
                 else if (e.Key == VirtualKey.F)
                     _controller.Mode = _controller.Mode == CameraMode.Walk ? CameraMode.Fly : CameraMode.Walk;
                 else if (e.Key == VirtualKey.PageUp)
@@ -606,6 +653,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
             // pump won't get a chance. No-op unless FALLOUT_VIEWER_D3D12_DEBUG=1.
             try { _gpu12?.PumpDebugMessages(); }
             catch (Exception pumpEx) { Log.Warn("PumpDebugMessages on render-frame failure threw: {0}", pumpEx.Message); }
+            // If the GPU device was removed (TDR / page fault — the usual "crash with no cause"),
+            // attribute it. No-op when the device is fine. Needs FALLOUT_VIEWER_DRED=1 for breadcrumbs.
+            try { _gpu12?.LogDeviceRemovedDiagnostics("render-frame"); }
+            catch (Exception dredEx) { Log.Warn("LogDeviceRemovedDiagnostics on render-frame failure threw: {0}", dredEx.Message); }
             DetachRenderLoop();
         }
     }
@@ -617,12 +668,17 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
     /// </summary>
     private void RenderFrameD3D12()
     {
+        var frameNumber = ++_profileFrameIndex;
         var frameStarted = StartProfileTimestamp();
         var recorder = _commandRecorder12!;
         var surface = _surface12!;
 
         var segmentStarted = StartProfileTimestamp();
         recorder.BeginFrame();
+        EmitCompletedGpuFrames();
+        _gpuTimestampProfiler12?.BeginFrame(recorder.FrameIndex);
+        var cmd = recorder.CommandList;
+        _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.FrameStart);
         // Deletion queue advances frame counter — releases resources whose hold has elapsed.
         // Must run AFTER BeginFrame's fence wait so the prior GPU work is known complete.
         _deletionQueue12!.Tick();
@@ -633,7 +689,6 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         _gpu12!.PumpDebugMessages();
         var beginFrameMs = ElapsedMilliseconds(segmentStarted);
 
-        var cmd = recorder.CommandList;
         segmentStarted = StartProfileTimestamp();
         var (backBuffer, rtvHandle) = surface.AcquireBackBufferRtv();
         var acquireMs = ElapsedMilliseconds(segmentStarted);
@@ -652,10 +707,14 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         cmd.RSSetViewport(new Vortice.Mathematics.Viewport(0, 0, surface.Width, surface.Height, 0f, 1f));
         cmd.RSSetScissorRect((int)surface.Width, (int)surface.Height);
 
-        // Bind the shared root signature + shader-visible descriptor heaps once per frame.
+        // Bind the shared shader-visible descriptor heap + root signature once per frame.
+        // SetDescriptorHeaps MUST precede SetGraphicsRootSignature: the root signature carries
+        // CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED (bindless), and D3D12 requires the CBV/SRV/UAV heap
+        // to be bound before a directly-indexed root signature is set (else the debug layer
+        // errors every frame and bindless lookups read from an unbound heap).
         // Each renderer sets only its own PSO + per-slot bindings inside Render().
-        cmd.SetGraphicsRootSignature(_rootSignature12!.RootSignature);
         cmd.SetDescriptorHeaps(1, new[] { _cbvSrvUavHeap12.Heap });
+        cmd.SetGraphicsRootSignature(_rootSignature12!.RootSignature);
         var clearSetupMs = ElapsedMilliseconds(segmentStarted);
 
         segmentStarted = StartProfileTimestamp();
@@ -672,22 +731,33 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         // alpha-blended depth-read, so it must come after terrain + references (which write
         // the depth that water samples). Wireframe last so it stays on top (depth-disabled).
         segmentStarted = StartProfileTimestamp();
+        _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.TerrainStart);
         var visibleTerrain = _showTerrain ? _terrain?.Render(viewProj, cylinder) ?? 0 : 0;
+        _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.TerrainEnd);
         var terrainMs = ElapsedMilliseconds(segmentStarted);
         segmentStarted = StartProfileTimestamp();
+        _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.ReferencesStart);
         var visibleReferences = _showReferences ? _references?.Render(viewProj, cylinder) ?? 0 : 0;
+        _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.ReferencesEnd);
         var referencesMs = ElapsedMilliseconds(segmentStarted);
         segmentStarted = StartProfileTimestamp();
+        _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.WaterStart);
         var visibleWater = _showWater ? _water?.Render(viewProj, cylinder) ?? 0 : 0;
+        _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.WaterEnd);
         var waterMs = ElapsedMilliseconds(segmentStarted);
+        // Navmesh overlay — translucent, drawn after water (depth-read) and before the
+        // depth-disabled wireframe so the grid still stays on top.
+        var visibleNavMesh = _showNavMesh ? _navMesh?.Render(viewProj, cylinder) ?? 0 : 0;
         segmentStarted = StartProfileTimestamp();
+        _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.WireframeStart);
         var visibleWireframe = _showWireframe ? _cellGrid?.Render(viewProj, cylinder) ?? 0 : 0;
+        _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.WireframeEnd);
         var wireframeMs = ElapsedMilliseconds(segmentStarted);
 
         segmentStarted = StartProfileTimestamp();
         var visible = Math.Max(visibleTerrain, visibleWireframe);
         var totalCells = _terrain?.CellCount ?? _cellGrid?.CellCount ?? 0;
-        UpdateHud(visible, totalCells, visibleWater, visibleReferences);
+        UpdateHud(visible, totalCells, visibleWater, visibleReferences, visibleNavMesh);
         var hudMs = ElapsedMilliseconds(segmentStarted);
 
         segmentStarted = StartProfileTimestamp();
@@ -696,38 +766,190 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
             Vortice.Direct3D12.ResourceStates.RenderTarget,
             Vortice.Direct3D12.ResourceStates.Present);
 
+        _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.FrameEnd);
+        _gpuTimestampProfiler12?.ResolveActiveFrame(cmd);
         recorder.EndFrame();
+        _gpuTimestampProfiler12?.MarkActiveFrameSubmitted(frameNumber, recorder.LastSubmittedFenceValue);
         var endFrameMs = ElapsedMilliseconds(segmentStarted);
         segmentStarted = StartProfileTimestamp();
         surface.Present();
         var presentMs = ElapsedMilliseconds(segmentStarted);
 
+        var totalFrameMs = ElapsedMilliseconds(frameStarted);
+        var gcGen0Collections = GC.CollectionCount(0);
+        var gcGen1Collections = GC.CollectionCount(1);
+        var gcGen2Collections = GC.CollectionCount(2);
+        var gcGen0Delta = gcGen0Collections - _lastGcGen0Collections;
+        var gcGen1Delta = gcGen1Collections - _lastGcGen1Collections;
+        var gcGen2Delta = gcGen2Collections - _lastGcGen2Collections;
+        _lastGcGen0Collections = gcGen0Collections;
+        _lastGcGen1Collections = gcGen1Collections;
+        _lastGcGen2Collections = gcGen2Collections;
+
+        var terrainStats = _showTerrain ? _terrain?.LastStats.Snapshot() : null;
+        var waterStats = _showWater ? _water?.LastStats.Snapshot() : null;
+        var wireframeStats = _showWireframe ? _cellGrid?.LastStats.Snapshot() : null;
+        var referenceStats = _showReferences ? _references?.LastStats.Snapshot() : null;
+        var sample = new FrameProfileSample(
+            FrameNumber: frameNumber,
+            TotalMilliseconds: totalFrameMs,
+            ControllerMilliseconds: _lastControllerUpdateMilliseconds,
+            BeginFrameMilliseconds: beginFrameMs,
+            FenceWaitMilliseconds: recorder.LastFrameFenceWaitMilliseconds,
+            AcquireMilliseconds: acquireMs,
+            ClearSetupMilliseconds: clearSetupMs,
+            CameraMilliseconds: cameraMs,
+            TerrainMilliseconds: terrainMs,
+            ReferencesMilliseconds: referencesMs,
+            WaterMilliseconds: waterMs,
+            WireframeMilliseconds: wireframeMs,
+            EndFrameMilliseconds: endFrameMs,
+            PresentMilliseconds: presentMs,
+            HudMilliseconds: hudMs,
+            VisibleTerrain: visibleTerrain,
+            VisibleReferences: visibleReferences,
+            VisibleWater: visibleWater,
+            VisibleWireframe: visibleWireframe,
+            TotalCells: totalCells,
+            RenderDistanceCells: _renderDistance / WorldGridConstants.CellSize,
+            ViewportWidth: surface.Width,
+            ViewportHeight: surface.Height,
+            DescriptorCount: _cbvSrvUavHeap12.CurrentFramePeak,
+            RingBytes: _ringBuffer12.CurrentFrameBytes,
+            GcGen0Collections: gcGen0Delta,
+            GcGen1Collections: gcGen1Delta,
+            GcGen2Collections: gcGen2Delta,
+            ManagedMemoryBytes: GC.GetTotalMemory(false));
+
         if (_profileLogging)
         {
-            MaybeLogProfile(new FrameProfileSample(
-                TotalMilliseconds: ElapsedMilliseconds(frameStarted),
-                ControllerMilliseconds: _lastControllerUpdateMilliseconds,
-                BeginFrameMilliseconds: beginFrameMs,
-                AcquireMilliseconds: acquireMs,
-                ClearSetupMilliseconds: clearSetupMs,
-                CameraMilliseconds: cameraMs,
-                TerrainMilliseconds: terrainMs,
-                ReferencesMilliseconds: referencesMs,
-                WaterMilliseconds: waterMs,
-                WireframeMilliseconds: wireframeMs,
-                EndFrameMilliseconds: endFrameMs,
-                PresentMilliseconds: presentMs,
-                HudMilliseconds: hudMs,
-                VisibleTerrain: visibleTerrain,
-                VisibleReferences: visibleReferences,
-                VisibleWater: visibleWater,
-                VisibleWireframe: visibleWireframe,
-                TotalCells: totalCells,
-                RenderDistanceCells: _renderDistance / WorldGridConstants.CellSize,
-                ViewportWidth: surface.Width,
-                ViewportHeight: surface.Height,
-                DescriptorCount: _cbvSrvUavHeap12.CurrentFramePeak,
-                RingBytes: _ringBuffer12.CurrentFrameBytes));
+            MaybeLogProfile(sample, terrainStats, waterStats, wireframeStats, referenceStats);
+        }
+
+        if (_stallThresholdMilliseconds > 0 && sample.TotalMilliseconds >= _stallThresholdMilliseconds)
+        {
+            EmitFrameStall(sample, terrainStats, waterStats, wireframeStats, referenceStats);
+            if (_gpuTimestampProfiler12 is null && !_gpuTimestampsAutoEnabled)
+            {
+                _gpuTimestampsAutoEnabled = true;
+                EnableGpuTimestamps("auto-stall");
+            }
+        }
+    }
+
+    private void EnableGpuTimestamps(string reason)
+    {
+        if (_gpuTimestampProfiler12 is not null || _gpu12 is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _gpuTimestampProfiler12 = new GpuTimestampProfiler12(_gpu12);
+            Log.Info("WorldView3DControl: D3D12 GPU timestamp profiling enabled ({0}).", reason);
+            RendererProfilerTrace.Event("gpu-timestamps-enabled", new Dictionary<string, object?>
+            {
+                ["frame"] = _profileFrameIndex,
+                ["reason"] = reason
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Warn("WorldView3DControl: failed to enable GPU timestamp profiling: {0}", ex.Message);
+        }
+    }
+
+    private void EmitCompletedGpuFrames()
+    {
+        if (_gpuTimestampProfiler12 is null || !RendererProfilerTrace.IsEnabled)
+        {
+            return;
+        }
+
+        while (_gpuTimestampProfiler12.TryCollectCompleted(out var timings))
+        {
+            RendererProfilerTrace.Event("gpu-frame", new Dictionary<string, object?>
+            {
+                ["frame"] = timings.FrameNumber,
+                ["gpuFrameMs"] = timings.FrameMilliseconds,
+                ["gpuTerrainMs"] = timings.TerrainMilliseconds,
+                ["gpuReferencesMs"] = timings.ReferencesMilliseconds,
+                ["gpuWaterMs"] = timings.WaterMilliseconds,
+                ["gpuWireframeMs"] = timings.WireframeMilliseconds
+            });
+        }
+    }
+
+    private void EmitFrameStall(
+        FrameProfileSample sample,
+        WorldRenderStats? terrain,
+        WorldRenderStats? water,
+        WorldRenderStats? wireframe,
+        WorldRenderStats? references)
+    {
+        Log.Warn(
+            "3D stall frame={0} total={1:0.00}ms threshold={2:0.00}ms terrain={3:0.00}ms refs={4:0.00}ms present={5:0.00}ms fence={6:0.00}ms",
+            sample.FrameNumber,
+            sample.TotalMilliseconds,
+            _stallThresholdMilliseconds,
+            sample.TerrainMilliseconds,
+            sample.ReferencesMilliseconds,
+            sample.PresentMilliseconds,
+            sample.FenceWaitMilliseconds);
+
+        var fields = BuildFrameFields(sample);
+        fields["thresholdMs"] = _stallThresholdMilliseconds;
+        AddStats(fields, "terrain.", terrain);
+        AddStats(fields, "water.", water);
+        AddStats(fields, "wire.", wireframe);
+        AddStats(fields, "refs.", references);
+        RendererProfilerTrace.Event("frame-stall", fields);
+    }
+
+    private Dictionary<string, object?> BuildFrameFields(FrameProfileSample sample)
+    {
+        var fields = RendererProfilerTrace.CameraPoseFields(Profiler_CameraPose);
+        fields["frame"] = sample.FrameNumber;
+        fields["frameMs"] = sample.TotalMilliseconds;
+        fields["controllerMs"] = sample.ControllerMilliseconds;
+        fields["beginFrameMs"] = sample.BeginFrameMilliseconds;
+        fields["fenceWaitMs"] = sample.FenceWaitMilliseconds;
+        fields["acquireMs"] = sample.AcquireMilliseconds;
+        fields["clearMs"] = sample.ClearSetupMilliseconds;
+        fields["cameraMs"] = sample.CameraMilliseconds;
+        fields["terrainMs"] = sample.TerrainMilliseconds;
+        fields["referencesMs"] = sample.ReferencesMilliseconds;
+        fields["waterMs"] = sample.WaterMilliseconds;
+        fields["wireframeMs"] = sample.WireframeMilliseconds;
+        fields["endFrameMs"] = sample.EndFrameMilliseconds;
+        fields["presentMs"] = sample.PresentMilliseconds;
+        fields["hudMs"] = sample.HudMilliseconds;
+        fields["visibleTerrain"] = sample.VisibleTerrain;
+        fields["visibleReferences"] = sample.VisibleReferences;
+        fields["visibleWater"] = sample.VisibleWater;
+        fields["visibleWireframe"] = sample.VisibleWireframe;
+        fields["totalCells"] = sample.TotalCells;
+        fields["renderDistanceCells"] = sample.RenderDistanceCells;
+        fields["viewportWidth"] = sample.ViewportWidth;
+        fields["viewportHeight"] = sample.ViewportHeight;
+        fields["descriptorCount"] = sample.DescriptorCount;
+        fields["ringBytes"] = sample.RingBytes;
+        fields["gcGen0"] = sample.GcGen0Collections;
+        fields["gcGen1"] = sample.GcGen1Collections;
+        fields["gcGen2"] = sample.GcGen2Collections;
+        fields["managedMemoryBytes"] = sample.ManagedMemoryBytes;
+        return fields;
+    }
+
+    private static void AddStats(
+        IDictionary<string, object?> fields,
+        string prefix,
+        WorldRenderStats? stats)
+    {
+        foreach (var item in RendererProfilerTrace.StatsFields(prefix, stats))
+        {
+            fields[item.Key] = item.Value;
         }
     }
 
@@ -774,6 +996,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
             _rootSignature12 = FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuRootSignature12.Create(_gpu12);
             _deletionQueue12 = new FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDeletionQueue12(
                 framesToHold: FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuCommandRecorder12.FramesInFlight);
+            if (_forceGpuTimestamps)
+            {
+                EnableGpuTimestamps("forced");
+            }
 
             // Step 2b — instantiate the simplest D3D12 renderer end-to-end. This proves
             // PSO creation + ring-buffer-backed CB/VB + root signature + command list draws
@@ -788,6 +1014,14 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
             // discovered at LoadData), so we can instantiate up front alongside CellGrid.
             _water = new FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.WaterRenderer12(
                 _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12, _cbvSrvUavHeap12, _deletionQueue12)
+            {
+                DetailedProfilingEnabled = _profileLogging,
+            };
+
+            // Navmesh overlay — like water/cellgrid, no per-ESM dependency at construction;
+            // the navmesh-by-cell data + spatial index arrive in LoadData via TryBuildCellGrid.
+            _navMesh = new FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.NavMeshRenderer12(
+                _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12, _deletionQueue12)
             {
                 DetailedProfilingEnabled = _profileLogging,
             };
@@ -810,6 +1044,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
     private void DisposeD3D12Backend()
     {
         _commandRecorder12?.WaitForGpuIdle();
+        _gpuTimestampProfiler12?.Dispose(); _gpuTimestampProfiler12 = null;
         // Drain pending deletions now that the GPU is idle — anything queued is safe to release.
         _deletionQueue12?.Dispose(); _deletionQueue12 = null;
         _rootSignature12?.Dispose(); _rootSignature12 = null;
@@ -825,6 +1060,14 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
     private void ResetCameraToDataCentroid()
     {
         if (_data is null) return;
+
+        // Interiors have no grid coords (GridX/GridY null) — frame on the placed-object bounds
+        // instead, and never run the GridX!.Value dereference below.
+        if (SelectedInterior() is { } interior)
+        {
+            ResetCameraToInteriorBounds(interior);
+            return;
+        }
 
         // Centroid of the currently selected worldspace's exterior cells. With the v3 Phase 2a
         // worldspace picker we always scope to one worldspace, so the camera frames the chosen
@@ -850,11 +1093,81 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         _camera.Pitch = -MathF.PI / 6f;
     }
 
+    /// <summary>
+    ///     Frames the camera on an interior cell's placed-object bounds (absolute coords; interiors
+    ///     have no grid). Sizes the pull-back + streaming render distance to the cell extent so the
+    ///     cylinder snugly covers it. Same pitched-down posture as the exterior framing.
+    /// </summary>
+    private void ResetCameraToInteriorBounds(CellRecord interior)
+    {
+        float minX = float.MaxValue, minY = float.MaxValue, minZ = float.MaxValue;
+        float maxX = float.MinValue, maxY = float.MinValue, maxZ = float.MinValue;
+        var count = 0;
+        foreach (var o in interior.PlacedObjects)
+        {
+            if (!float.IsFinite(o.X) || !float.IsFinite(o.Y) || !float.IsFinite(o.Z)) continue;
+            minX = MathF.Min(minX, o.X); minY = MathF.Min(minY, o.Y); minZ = MathF.Min(minZ, o.Z);
+            maxX = MathF.Max(maxX, o.X); maxY = MathF.Max(maxY, o.Y); maxZ = MathF.Max(maxZ, o.Z);
+            count++;
+        }
+        if (count == 0) return;
+
+        var centerX = (minX + maxX) * 0.5f;
+        var centerY = (minY + maxY) * 0.5f;
+        var centerZ = (minZ + maxZ) * 0.5f;
+        var extent = MathF.Max(maxX - minX, maxY - minY);
+        var dist = MathF.Max(extent, WorldGridConstants.CellSize) * 0.75f;
+
+        // No render-distance change: the default streaming radius (16 cells) dwarfs any interior,
+        // and only this single cell exists in the index, so there's nothing else to stream in.
+        _camera.Position = new Vector3(centerX, centerY - dist, centerZ + extent * 0.5f + 4096f);
+        _camera.Yaw = 0f;
+        _camera.Pitch = -MathF.PI / 6f;
+    }
+
     private int SelectInitialWorldspaceIndex(WorldViewData data)
     {
+        // Debug/repro hook: FALLOUT_VIEWER_WORLDSPACE=<substring> forces the initial worldspace
+        // by EditorID/FullName match (e.g. "Strip"), so the profiler can target a specific
+        // worldspace headlessly. Falls through to the normal selection when unset or unmatched.
+        var forced = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_WORLDSPACE");
+        if (!string.IsNullOrWhiteSpace(forced))
+        {
+            // Exact EditorID/FullName match first so e.g. "TheStripWorld" does not match
+            // "TheStripWorldNew"; only fall back to a substring match if nothing is exact.
+            for (var i = 0; i < data.Worldspaces.Count; i++)
+            {
+                var ws = data.Worldspaces[i];
+                if (string.Equals(ws.EditorId, forced, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(ws.FullName, forced, StringComparison.OrdinalIgnoreCase))
+                {
+                    return i;
+                }
+            }
+            for (var i = 0; i < data.Worldspaces.Count; i++)
+            {
+                var ws = data.Worldspaces[i];
+                if (ContainsWorldspaceToken(ws.EditorId, forced) || ContainsWorldspaceToken(ws.FullName, forced))
+                {
+                    return i;
+                }
+            }
+        }
+
         if (!IsWastelandNvHeavyStressScene())
         {
             return 0;
+        }
+
+        // Prefer the exact "WastelandNV" worldspace (FNV's full Mojave). The loose
+        // WorldspaceLooksLikeWastelandNv match below also matches near-names like "WastelandNVMini",
+        // which would silently pick a far lighter scene than the stress test intends.
+        for (var i = 0; i < data.Worldspaces.Count; i++)
+        {
+            if (string.Equals(data.Worldspaces[i].EditorId, "WastelandNV", StringComparison.OrdinalIgnoreCase))
+            {
+                return i;
+            }
         }
 
         for (var i = 0; i < data.Worldspaces.Count; i++)
@@ -908,7 +1221,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
     }
 
     private bool IsWastelandNvHeavyStressScene() =>
-        string.Equals(_stressScene, "WastelandNVHeavy", StringComparison.OrdinalIgnoreCase);
+        string.Equals(_stressScene, "WastelandNVHeavy", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(_stressScene, "WastelandNV", StringComparison.OrdinalIgnoreCase);
 
     private static bool WorldspaceLooksLikeWastelandNv(WorldspaceRecord worldspace) =>
         ContainsWorldspaceToken(worldspace.EditorId, "WastelandNV") ||
@@ -918,19 +1232,44 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
     private static bool ContainsWorldspaceToken(string? value, string token) =>
         value?.Contains(token, StringComparison.OrdinalIgnoreCase) == true;
 
+    // Toolbar checkboxes mirror the 2D viewer. Handlers fire once during XAML load with
+    // IsChecked="True" (Water only) before sibling fields are assigned, so each must be safe to
+    // call before LoadData — they touch only their own control (assigned) and null-guarded state.
+    private void WaterCheckBox_Changed(object sender, RoutedEventArgs e)
+        => _showWater = WaterCheckBox.IsChecked == true;
+
+    private void NavMeshCheckBox_Changed(object sender, RoutedEventArgs e)
+        => SetShowNavMesh(NavMeshCheckBox.IsChecked == true);
+
+    private void DisabledCheckBox_Changed(object sender, RoutedEventArgs e)
+        => SetShowDisabled(DisabledCheckBox.IsChecked == true);
+
     private void WorldspaceComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_suppressWorldspaceSelectionEvent || _data is null) return;
         if (WorldspaceComboBox.SelectedIndex < 0) return;
 
         TryBuildCellGrid();
-        ResetCameraToDataCentroid();
-        ApplyStressSceneBookmarkIfRequested();
+        if (SelectedInterior() is { } interior)
+        {
+            ResetCameraToInteriorBounds(interior);
+        }
+        else
+        {
+            ResetCameraToDataCentroid();
+            ApplyStressSceneBookmarkIfRequested();
+        }
     }
 
     private void TryBuildCellGrid()
     {
         if (_data is null) return;
+
+        if (SelectedInterior() is { } interior)
+        {
+            BuildInteriorCellGrid(interior);
+            return;
+        }
 
         var (cells, defaultWaterHeight) = GetSelectedWorldspaceCells(_data);
         var cellList = cells.ToList();
@@ -941,10 +1280,75 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
             _data, cellList, markers, activeWorldspaceFormId, defaultWaterHeight);
 
         _cellGridLookup = _spatialIndex.CellsByGrid.ToDictionary(kv => kv.Key, kv => kv.Value);
+        var appearance = GetSelectedWaterAppearance(_data);
+        var noiseIndex = _textureResolver12?.ResolveNormalMapBindlessIndex(appearance?.NoiseTexture);
         _cellGrid?.LoadData(cellList, _spatialIndex);
         _terrain?.LoadData(_cellGridLookup, _spatialIndex, _data.RenderCache);
-        _water?.LoadData(_cellGridLookup, defaultWaterHeight, _spatialIndex);
+        _water?.LoadData(_cellGridLookup, defaultWaterHeight, _spatialIndex, appearance, noiseIndex);
         _references?.LoadData(_data.RenderCache, _cellGridLookup, _spatialIndex);
+        _navMesh?.LoadData(_data.NavMeshesByCell, _cellGridLookup, _spatialIndex);
+    }
+
+    /// <summary>
+    ///     Resolves the WATR appearance (DNAM Shallow/Deep/Reflection colors) for the selected
+    ///     worldspace's default water — mirrors the 2D viewer, which colors the whole worldspace
+    ///     from its single <c>WaterFormId</c>. Null (unlinked-exterior / no WATR) lets the
+    ///     renderer fall back to a default tint.
+    /// </summary>
+    private FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World.WaterAppearance? GetSelectedWaterAppearance(WorldViewData data)
+    {
+        var index = WorldspaceComboBox.SelectedIndex;
+        if (index < 0 || index >= data.Worldspaces.Count) return null;
+        if (data.Worldspaces[index].WaterFormId is not uint waterFormId) return null;
+        return data.WatersByFormId.TryGetValue(waterFormId, out var water)
+            ? FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World.WaterAppearance.FromWaterRecord(water)
+            : null;
+    }
+
+    /// <summary>True when the worldspace picker currently has an interior entry selected.</summary>
+    private bool IsInteriorSelected()
+    {
+        var index = WorldspaceComboBox.SelectedIndex;
+        return _interiorEntryStartIndex >= 0
+            && index >= _interiorEntryStartIndex
+            && index - _interiorEntryStartIndex < _interiorCellsInComboOrder.Count;
+    }
+
+    /// <summary>The selected interior cell, or null when an exterior/unlinked entry is selected.</summary>
+    private CellRecord? SelectedInterior()
+        => IsInteriorSelected()
+            ? _interiorCellsInComboOrder[WorldspaceComboBox.SelectedIndex - _interiorEntryStartIndex]
+            : null;
+
+    private static bool InteriorHasRenderableRefs(CellRecord cell)
+    {
+        foreach (var o in cell.PlacedObjects)
+        {
+            if (o.RecordType is "ACHR" or "ACRE") continue;
+            if (!string.IsNullOrEmpty(o.ModelPath)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    ///     Single-cell load path for an interior: builds a synthetic-grid spatial index
+    ///     (<see cref="WorldSpatialIndex.BuildInterior" />) and loads the renderers against it.
+    ///     Terrain has no LAND so it renders nothing; references/water/navmesh resolve via the
+    ///     synthetic key. Water uses the interior's own XCLW (no worldspace default), default tint.
+    /// </summary>
+    private void BuildInteriorCellGrid(CellRecord interior)
+    {
+        if (_data is null) return;
+
+        _spatialIndex = WorldSpatialIndex.BuildInterior(_data, interior);
+        _cellGridLookup = _spatialIndex.CellsByGrid.ToDictionary(kv => kv.Key, kv => kv.Value);
+        var cellList = new List<CellRecord> { interior };
+
+        _cellGrid?.LoadData(cellList, _spatialIndex);
+        _terrain?.LoadData(_cellGridLookup, _spatialIndex, _data.RenderCache);
+        _water?.LoadData(_cellGridLookup, worldspaceDefaultWaterHeight: null, _spatialIndex);
+        _references?.LoadData(_data.RenderCache, _cellGridLookup, _spatialIndex);
+        _navMesh?.LoadData(_data.NavMeshesByCell, _cellGridLookup, _spatialIndex);
     }
 
     /// <summary>
@@ -956,7 +1360,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
     private (IEnumerable<CellRecord> Cells, float? DefaultWaterHeight) GetSelectedWorldspaceCells(WorldViewData data)
     {
         var index = WorldspaceComboBox.SelectedIndex;
-        if (index < 0) return (Enumerable.Empty<CellRecord>(), null);
+        if (index < 0 || IsInteriorSelected()) return (Enumerable.Empty<CellRecord>(), null);
 
         if (index < data.Worldspaces.Count)
         {
@@ -989,13 +1393,28 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
 
     // HUD / status overlay ------------------------------------------------------------------
 
-    private void UpdateHud(int visible, int total, int visibleWater, int visibleReferences)
+    private void UpdateHud(int visible, int total, int visibleWater, int visibleReferences, int visibleNavMesh)
     {
+        if (StatusOverlay.Visibility != Visibility.Visible && HudPanel.Visibility != Visibility.Visible)
+        {
+            HudPanel.Visibility = Visibility.Visible;
+        }
+
+        var now = Stopwatch.GetTimestamp();
+        if (_lastHudUpdateTimestamp != 0 &&
+            Stopwatch.GetElapsedTime(_lastHudUpdateTimestamp, now).TotalMilliseconds < HudUpdateIntervalMilliseconds)
+        {
+            return;
+        }
+        _lastHudUpdateTimestamp = now;
+
         var w = _showWireframe ? "on" : "off";
         var t = _showTerrain ? "on" : "off";
         var wa = _showWater ? "on" : "off";
         var v = _vclrOnlyMode ? "on" : "off";
         var r = _showReferences ? "on" : "off";
+        var nm = _showNavMesh ? "on" : "off";
+        var dis = _showDisabled ? "shown" : "hidden";
         var mode = _controller.Mode == CameraMode.Walk ? "walk" : "fly";
         var keyHint = _controller.Mode == CameraMode.Walk ? "WASD" : "WASD + Q/E";
         // Backend chip — D3D12 shows the feature level for at-a-glance diagnostics.
@@ -1004,11 +1423,11 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
             : "D3D11";
         var text =
             $"[{backend}]   " +
-            $"Cells: {visible} / {total}   refs: {visibleReferences}   " +
+            $"Cells: {visible} / {total}   refs: {visibleReferences}   nav: {visibleNavMesh}   " +
             $"pos: ({_camera.Position.X:0}, {_camera.Position.Y:0}, {_camera.Position.Z:0})   " +
             $"speed: {_controller.MoveSpeed:0}   " +
             $"dist: {_renderDistance / WorldGridConstants.CellSize:0.#}c   " +
-            $"[F]mode:{mode} [1]wire:{w} [2]terrain:{t} [3]water:{wa} [4]vclr-only:{v} [5]refs:{r}   " +
+            $"[F]mode:{mode} [1]wire:{w} [2]terrain:{t} [3]water:{wa} [4]vclr-only:{v} [5]refs:{r} [6]nav:{nm} [7]disabled:{dis}   " +
             $"PgUp/PgDn   {keyHint}   drag to look";
         if (_showFrameStats && _terrain is not null)
         {
@@ -1027,6 +1446,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
                     $"instDraw:{rstats.ReferenceInstancedDraws} blendDraw:{rstats.ReferenceBlendedDraws} " +
                     $"srvBinds:{rstats.ReferenceSrvBinds} meshMiss:{rstats.ReferenceMeshCacheMisses} " +
                     $"qDec:{rstats.ReferenceQueuedDecodes} actDec:{rstats.ReferenceActiveDecodes} " +
+                    $"texPend:{rstats.ReferenceTexturePending} " +
                     $"cpuHit:{rstats.ReferenceCpuDecodedMeshCacheHits} bcTex:{rstats.ReferenceCompressedTextureUploads} rgbaTex:{rstats.ReferenceRgbaTextureUploads} " +
                     $"cull:{rstats.ReferenceCullMilliseconds:0.0} mesh:{rstats.ReferenceMeshUploadMilliseconds:0.0} " +
                     $"cb:{rstats.ReferenceCbUpdateMilliseconds:0.0} srv:{rstats.ReferenceSrvBindMilliseconds:0.0} " +
@@ -1034,29 +1454,39 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
             }
         }
 
-        UpdateHudLayoutBounds();
-        HudText.Text = text;
+        if (!string.Equals(_lastHudText, text, StringComparison.Ordinal))
+        {
+            _lastHudText = text;
+            HudText.Text = text;
+        }
         if (StatusOverlay.Visibility != Visibility.Visible)
         {
             HudPanel.Visibility = Visibility.Visible;
         }
     }
 
-    private void MaybeLogProfile(FrameProfileSample sample)
+    private void MaybeLogProfile(
+        FrameProfileSample sample,
+        WorldRenderStats? terrain,
+        WorldRenderStats? water,
+        WorldRenderStats? wireframe,
+        WorldRenderStats? references)
     {
         if (!_profileLogging)
         {
             return;
         }
 
-        var terrain = _showTerrain ? _terrain?.LastStats.Snapshot() : null;
-        var water = _showWater ? _water?.LastStats.Snapshot() : null;
-        var wireframe = _showWireframe ? _cellGrid?.LastStats.Snapshot() : null;
-        var references = _showReferences ? _references?.LastStats.Snapshot() : null;
         _profileAccumulator.Add(sample, terrain, water, wireframe, references);
-        if (_profileAccumulator.TryFlush(_profileLogIntervalMilliseconds, out var message))
+        if (_profileAccumulator.TryFlush(_profileLogIntervalMilliseconds, out var message, out var aggregate))
         {
             Log.Info(message);
+            var fields = new Dictionary<string, object?>(aggregate, StringComparer.Ordinal);
+            foreach (var item in RendererProfilerTrace.CameraPoseFields(Profiler_CameraPose))
+            {
+                fields[item.Key] = item.Value;
+            }
+            RendererProfilerTrace.Event("frame-aggregate", fields);
         }
     }
 
@@ -1064,6 +1494,33 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
     {
         _renderDistance = Math.Clamp(distance, MinRenderDistance, MaxRenderDistance);
         _camera.FarPlane = _renderDistance;
+    }
+
+    /// <summary>Single point for the navmesh-layer toggle (keyboard key 6 + the toolbar
+    /// checkbox both route here so field, checkbox, and render state stay in sync).</summary>
+    private void SetShowNavMesh(bool on)
+    {
+        _showNavMesh = on;
+        if (NavMeshCheckBox is not null && NavMeshCheckBox.IsChecked != on)
+        {
+            NavMeshCheckBox.IsChecked = on;
+        }
+    }
+
+    /// <summary>Single point for the initially-disabled-objects toggle. Default off = disabled
+    /// REFRs hidden, matching the 2D viewer. Applies straight to the live reference renderer
+    /// (render-time filter — no cache rebuild).</summary>
+    private void SetShowDisabled(bool on)
+    {
+        _showDisabled = on;
+        if (_references is not null)
+        {
+            _references.ShowInitiallyDisabled = on;
+        }
+        if (DisabledCheckBox is not null && DisabledCheckBox.IsChecked != on)
+        {
+            DisabledCheckBox.IsChecked = on;
+        }
     }
 
     private void ShowStatus(string message)
@@ -1077,6 +1534,37 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
     {
         StatusOverlay.Visibility = Visibility.Collapsed;
         HudPanel.Visibility = Visibility.Visible;
+        _lastHudUpdateTimestamp = 0;
+    }
+
+    // Profiler-driving surface --------------------------------------------------------------
+
+    internal long Profiler_FrameIndex => _profileFrameIndex;
+
+    internal RendererProfilerCameraPose Profiler_CameraPose =>
+        new(_camera.Position, _camera.Yaw, _camera.Pitch, _renderDistance);
+
+    internal WorldRenderStats? Profiler_TerrainStats => _terrain?.LastStats.Snapshot();
+    internal WorldRenderStats? Profiler_ReferenceStats => _references?.LastStats.Snapshot();
+    internal WorldRenderStats? Profiler_WaterStats => _water?.LastStats.Snapshot();
+    internal WorldRenderStats? Profiler_WireframeStats => _cellGrid?.LastStats.Snapshot();
+
+    internal void Profiler_SetCameraPose(RendererProfilerCameraPose pose)
+    {
+        _camera.Position = pose.Position;
+        _camera.Yaw = pose.Yaw;
+        _camera.Pitch = Math.Clamp(
+            pose.Pitch,
+            -MathF.PI * 0.5f + 0.01f,
+            MathF.PI * 0.5f - 0.01f);
+        SetRenderDistance(pose.RenderDistance);
+    }
+
+    internal void Profiler_ClearInputState()
+    {
+        _controller.ClearKeys();
+        _toggleKeysDown.Clear();
+        _mouseDragActive = false;
     }
 
     private static int ParsePositiveInt(string? value, int fallback)
@@ -1087,15 +1575,35 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
             : fallback;
     }
 
+    private static double ParseNonNegativeDouble(string? value, double fallback)
+    {
+        return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) &&
+               parsed >= 0
+            ? parsed
+            : fallback;
+    }
+
+    private static bool ShouldUpdateLayoutValue(double current, double next)
+    {
+        if (double.IsNaN(current) || double.IsInfinity(current))
+        {
+            return true;
+        }
+
+        return Math.Abs(current - next) >= 0.5d;
+    }
+
     private long StartProfileTimestamp() => _profileLogging ? Stopwatch.GetTimestamp() : 0;
 
     private static double ElapsedMilliseconds(long started) =>
         started == 0 ? 0 : Stopwatch.GetElapsedTime(started).TotalMilliseconds;
 
     private readonly record struct FrameProfileSample(
+        long FrameNumber,
         double TotalMilliseconds,
         double ControllerMilliseconds,
         double BeginFrameMilliseconds,
+        double FenceWaitMilliseconds,
         double AcquireMilliseconds,
         double ClearSetupMilliseconds,
         double CameraMilliseconds,
@@ -1115,16 +1623,22 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         uint ViewportWidth,
         uint ViewportHeight,
         uint DescriptorCount,
-        uint RingBytes);
+        uint RingBytes,
+        int GcGen0Collections,
+        int GcGen1Collections,
+        int GcGen2Collections,
+        long ManagedMemoryBytes);
 
     private sealed class FrameProfileAccumulator
     {
         private long _intervalStarted = Stopwatch.GetTimestamp();
         private int _frames;
+        private long _lastFrameNumber;
         private double _frameTotal;
         private double _frameMax;
         private double _controller;
         private double _beginFrame;
+        private double _fenceWait;
         private double _acquire;
         private double _clearSetup;
         private double _camera;
@@ -1172,6 +1686,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         private double _refCandidates;
         private double _refCulled;
         private double _refMeshMissing;
+        private double _refTexturePending;
         private double _refDrawn;
         private double _refSubmeshDraws;
         private double _refSrvBinds;
@@ -1209,10 +1724,12 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
             WorldRenderStats? references)
         {
             _frames++;
+            _lastFrameNumber = sample.FrameNumber;
             _frameTotal += sample.TotalMilliseconds;
             _frameMax = Math.Max(_frameMax, sample.TotalMilliseconds);
             _controller += sample.ControllerMilliseconds;
             _beginFrame += sample.BeginFrameMilliseconds;
+            _fenceWait += sample.FenceWaitMilliseconds;
             _acquire += sample.AcquireMilliseconds;
             _clearSetup += sample.ClearSetupMilliseconds;
             _camera += sample.CameraMilliseconds;
@@ -1279,6 +1796,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
                 _refCandidates += references.ReferenceCandidates;
                 _refCulled += references.ReferenceCulled;
                 _refMeshMissing += references.ReferenceMeshMissing;
+                _refTexturePending += references.ReferenceTexturePending;
                 _refDrawn += references.ReferenceDrawn;
                 _refSubmeshDraws += references.ReferenceSubmeshDraws;
                 _refSrvBinds += references.ReferenceSrvBinds;
@@ -1306,22 +1824,70 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
             }
         }
 
-        internal bool TryFlush(int intervalMilliseconds, out string message)
+        internal bool TryFlush(
+            int intervalMilliseconds,
+            out string message,
+            out IReadOnlyDictionary<string, object?> aggregate)
         {
             var elapsed = Stopwatch.GetElapsedTime(_intervalStarted).TotalMilliseconds;
             if (_frames == 0 || elapsed < intervalMilliseconds)
             {
                 message = "";
+                aggregate = new Dictionary<string, object?>();
                 return false;
             }
 
             double Avg(double value) => value / _frames;
+            aggregate = new Dictionary<string, object?>
+            {
+                ["lastFrame"] = _lastFrameNumber,
+                ["frames"] = _frames,
+                ["elapsedSeconds"] = elapsed / 1000.0,
+                ["viewportWidth"] = _lastViewportWidth,
+                ["viewportHeight"] = _lastViewportHeight,
+                ["totalCells"] = _lastTotalCells,
+                ["renderDistanceCells"] = _lastRenderDistanceCells,
+                ["frameAvgMs"] = Avg(_frameTotal),
+                ["frameMaxMs"] = _frameMax,
+                ["controllerAvgMs"] = Avg(_controller),
+                ["beginFrameAvgMs"] = Avg(_beginFrame),
+                ["fenceWaitAvgMs"] = Avg(_fenceWait),
+                ["acquireAvgMs"] = Avg(_acquire),
+                ["clearAvgMs"] = Avg(_clearSetup),
+                ["cameraAvgMs"] = Avg(_camera),
+                ["terrainAvgMs"] = Avg(_terrainFrame),
+                ["referencesAvgMs"] = Avg(_referencesFrame),
+                ["waterAvgMs"] = Avg(_waterFrame),
+                ["wireframeAvgMs"] = Avg(_wireframeFrame),
+                ["endFrameAvgMs"] = Avg(_endFrame),
+                ["presentAvgMs"] = Avg(_present),
+                ["hudAvgMs"] = Avg(_hud),
+                ["descriptorAvg"] = Avg(_descriptors),
+                ["ringBytesAvg"] = Avg(_ringBytes),
+                ["visibleTerrainAvg"] = Avg(_visibleTerrain),
+                ["visibleReferencesAvg"] = Avg(_visibleReferences),
+                ["visibleWaterAvg"] = Avg(_visibleWater),
+                ["visibleWireframeAvg"] = Avg(_visibleWireframe),
+                ["terrainCpuAvgMs"] = Avg(_terrainCpu),
+                ["terrainLoopAvgMs"] = Avg(_terrainDrawLoop),
+                ["terrainMeshUploadAvgMs"] = Avg(_terrainMeshUpload),
+                ["refsCpuAvgMs"] = Avg(_refState + _refCull + _refMeshUpload + _refCb + _refSrvBind + _refDrawCall),
+                ["refsCullAvgMs"] = Avg(_refCull),
+                ["refsMeshUploadAvgMs"] = Avg(_refMeshUpload),
+                ["refsCbAvgMs"] = Avg(_refCb),
+                ["refsDrawAvgMs"] = Avg(_refDrawCall),
+                ["refsTexturePendingAvg"] = Avg(_refTexturePending),
+                ["refsDrawnAvg"] = Avg(_refDrawn),
+                ["refsSubmeshAvg"] = Avg(_refSubmeshDraws),
+                ["refsBatchesAvg"] = Avg(_refBatches),
+                ["refsInstancesAvg"] = Avg(_refInstances)
+            };
             // Apply invariant formatting per piece because concatenating interpolated strings
             // first would format each segment with the current UI culture.
                 message =
                 string.Create(CultureInfo.InvariantCulture, $"3D profile {_frames}f/{elapsed / 1000.0:0.0}s {_lastViewportWidth}x{_lastViewportHeight} cells={_lastTotalCells} dist={_lastRenderDistanceCells:0.#}c ") +
                 string.Create(CultureInfo.InvariantCulture, $"frame avg/max={Avg(_frameTotal):0.00}/{_frameMax:0.00}ms ") +
-                string.Create(CultureInfo.InvariantCulture, $"stages ctrl={Avg(_controller):0.00} begin={Avg(_beginFrame):0.00} acquire={Avg(_acquire):0.00} clear={Avg(_clearSetup):0.00} ") +
+                string.Create(CultureInfo.InvariantCulture, $"stages ctrl={Avg(_controller):0.00} begin={Avg(_beginFrame):0.00} fence={Avg(_fenceWait):0.00} acquire={Avg(_acquire):0.00} clear={Avg(_clearSetup):0.00} ") +
                 string.Create(CultureInfo.InvariantCulture, $"camera={Avg(_camera):0.00} terrain={Avg(_terrainFrame):0.00} refs={Avg(_referencesFrame):0.00} water={Avg(_waterFrame):0.00} ") +
                 string.Create(CultureInfo.InvariantCulture, $"wire={Avg(_wireframeFrame):0.00} end={Avg(_endFrame):0.00} present={Avg(_present):0.00} hud={Avg(_hud):0.00} ") +
                 string.Create(CultureInfo.InvariantCulture, $"desc={Avg(_descriptors):0.0} ringKB={Avg(_ringBytes) / 1024.0:0.0} | ") +
@@ -1340,7 +1906,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
                 string.Create(CultureInfo.InvariantCulture, $"refs state={Avg(_refState):0.00} cull={Avg(_refCull):0.00} meshUp={Avg(_refMeshUpload):0.00} ") +
                 string.Create(CultureInfo.InvariantCulture, $"cb={Avg(_refCb):0.00} srvBind={Avg(_refSrvBind):0.00} draw={Avg(_refDrawCall):0.00} ") +
                 string.Create(CultureInfo.InvariantCulture, $"cells={Avg(_refCellsVisited):0.0} cand={Avg(_refCandidates):0.0} culled={Avg(_refCulled):0.0} ") +
-                string.Create(CultureInfo.InvariantCulture, $"miss={Avg(_refMeshMissing):0.0} drawn={Avg(_refDrawn):0.0} submesh={Avg(_refSubmeshDraws):0.0} ") +
+                string.Create(CultureInfo.InvariantCulture, $"miss={Avg(_refMeshMissing):0.0} texPend={Avg(_refTexturePending):0.0} drawn={Avg(_refDrawn):0.0} submesh={Avg(_refSubmeshDraws):0.0} ") +
                 string.Create(CultureInfo.InvariantCulture, $"srvBinds={Avg(_refSrvBinds):0.0} cullFlips={Avg(_refCullFlips):0.0} meshMisses={Avg(_refMeshMisses):0.0} ") +
                 string.Create(CultureInfo.InvariantCulture, $"decodeReq={Avg(_refDecodeRequests):0.0} qDec={Avg(_refQueuedDecodes):0.0} startDec={Avg(_refDecodeStarts):0.0} activeDec={Avg(_refActiveDecodes):0.0} ") +
                 string.Create(CultureInfo.InvariantCulture, $"cpuMeshHit={Avg(_refCpuDecodedHits):0.0} cpuMeshMiss={Avg(_refCpuDecodedMisses):0.0} cpuMeshNeg={Avg(_refCpuDecodedNegativeHits):0.0} ") +
@@ -1355,10 +1921,12 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         {
             _intervalStarted = Stopwatch.GetTimestamp();
             _frames = 0;
+            _lastFrameNumber = 0;
             _frameTotal = 0;
             _frameMax = 0;
             _controller = 0;
             _beginFrame = 0;
+            _fenceWait = 0;
             _acquire = 0;
             _clearSetup = 0;
             _camera = 0;
@@ -1406,6 +1974,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
             _refCandidates = 0;
             _refCulled = 0;
             _refMeshMissing = 0;
+            _refTexturePending = 0;
             _refDrawn = 0;
             _refSubmeshDraws = 0;
             _refSrvBinds = 0;
