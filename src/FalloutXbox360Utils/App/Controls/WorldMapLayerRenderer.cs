@@ -122,7 +122,8 @@ internal static class WorldMapLayerRenderer
         List<CellRecord> cellSource, LandscapeTexturePalette palette,
         float? defaultWaterHeight, bool showWater,
         WorldRenderCache? cache = null,
-        int pixelsPerCell = TexturePixelsPerCell)
+        int pixelsPerCell = TexturePixelsPerCell,
+        WaterColorPalette? waterPalette = null)
     {
         pixelsPerCell = NormalizeTexturePixelsPerCell(pixelsPerCell);
         palette.Preload(cellSource);
@@ -131,7 +132,7 @@ internal static class WorldMapLayerRenderer
         foreach (var cell in EnumerateCellsWithGrid(cellSource))
         {
             var bytes = RenderTerrainTextureCellOverview(
-                cell, palette, defaultWaterHeight, showWater, cache, pixelsPerCell, cellByGrid);
+                cell, palette, defaultWaterHeight, showWater, cache, pixelsPerCell, cellByGrid, waterPalette);
             if (bytes is null) continue;
             result[(cell.GridX!.Value, cell.GridY!.Value)] = bytes;
         }

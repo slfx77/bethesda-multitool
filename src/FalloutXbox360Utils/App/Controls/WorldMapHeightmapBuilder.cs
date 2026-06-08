@@ -115,11 +115,12 @@ internal static class WorldMapHeightmapBuilder
         float? currentDefaultWaterHeight,
         bool showWater,
         WorldRenderCache? cache = null,
-        int pixelsPerCell = WorldMapLayerRenderer.TexturePixelsPerCell)
+        int pixelsPerCell = WorldMapLayerRenderer.TexturePixelsPerCell,
+        WaterColorPalette? waterPalette = null)
     {
         pixelsPerCell = WorldMapLayerRenderer.NormalizeTexturePixelsPerCell(pixelsPerCell);
         var perCell = WorldMapLayerRenderer.RenderTerrainTexturesPerCell(
-            activeCells, palette, currentDefaultWaterHeight, showWater, cache, pixelsPerCell);
+            activeCells, palette, currentDefaultWaterHeight, showWater, cache, pixelsPerCell, waterPalette);
         if (perCell is null) return null;
 
         var result = new Dictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap>(perCell.Count);

@@ -57,7 +57,8 @@ internal static class WorldMapOverviewRenderer
         PlacedReference? selectedObject,
         PlacedReference? hoveredObject,
         Dictionary<MapMarkerType, CanvasBitmap>? markerIconBitmaps,
-        HeightmapColorScheme colorScheme)
+        HeightmapColorScheme colorScheme,
+        bool showCellGrid = true)
     {
         var transform = WorldMapViewportHelper.GetViewTransform(zoom, panOffset);
         ds.Transform = transform;
@@ -81,10 +82,13 @@ internal static class WorldMapOverviewRenderer
                 new Rect(bitmapX, bitmapY, bitmapWorldW, bitmapWorldH));
         }
 
-        // 2. Cell grid
-        DrawCellGrid(ds, activeCells, cellGridLookup,
-            worldHeightmapBitmap is not null || textureCellBitmaps is not null,
-            zoom, panOffset, canvasWidth, canvasHeight);
+        // 2. Cell grid (optional overlay)
+        if (showCellGrid)
+        {
+            DrawCellGrid(ds, activeCells, cellGridLookup,
+                worldHeightmapBitmap is not null || textureCellBitmaps is not null,
+                zoom, panOffset, canvasWidth, canvasHeight);
+        }
 
         // 3. Placed objects (LOD-based)
         if (zoom > 0.05f && activeCells.Count > 0)

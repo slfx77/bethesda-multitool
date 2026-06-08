@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Numerics;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
@@ -82,6 +83,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private Vector2 _pointerDownScreen;
     private bool _pointerWasDragged;
     private bool _showWater = true;
+    private bool _showCellGrid = true;
     private bool _suppressNavEvents;
 
     // --- Heightmap bitmaps ---
@@ -99,14 +101,87 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private CancellationTokenSource? _terrainStreamCts;
 
     /// <summary>
+    ///     Completed terrain-texture cells waiting to become device-bound
+    ///     <see cref="CanvasBitmap" />s on the UI thread. Background stream workers enqueue here
+    ///     (cheap, lock-free); the throttle timer drains at most
+    ///     <see cref="MaxCellAppliesPerTick" /> per tick. This caps the per-frame GPU-upload cost
+    ///     so a burst of thousands of completed cells (zoomed-out pan) can't starve pointer input
+    ///     — the prior design enqueued one <c>DispatcherQueue.TryEnqueue</c> per cell with no
+    ///     ceiling. Each item carries the cache generation captured when its stream started; stale
+    ///     items are dropped by the gen check in <see cref="ApplyOneTerrainTextureCell" />.
+    /// </summary>
+    private readonly ConcurrentQueue<(int cacheGen, WorldMapLayerRenderer.TerrainTextureCellResult cell)>
+        _pendingCellApplies = new();
+
+    /// <summary>
+    ///     Keys (gx, gy, pixelsPerCell) that are currently queued in <see cref="_pendingCellApplies" />
+    ///     or being decoded by an in-flight stream. A rebuild excludes these from its build set so
+    ///     overlapping rebuilds during a pan don't re-request the same cells over and over (the cause
+    ///     of the "constant refresh" churn: 49k re-decodes/uploads for a 16k-cell viewport). Written
+    ///     by background workers on enqueue, removed on the UI thread at drain — hence concurrent.
+    /// </summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<(int gx, int gy, int pixelsPerCell), byte>
+        _inFlightCellKeys = new();
+
+    /// <summary>Max cell bitmaps uploaded per timer tick. ~48 × 30 ticks/s ≈ 1440 uploads/s.</summary>
+    private const int MaxCellAppliesPerTick = 48;
+
+    /// <summary>
+    ///     In-flight TerrainTextures streams (Interlocked). Keeps the throttle timer ticking while
+    ///     workers are still producing cells, even when <see cref="_pendingCellApplies" /> momentarily
+    ///     drains empty between producer batches — otherwise the timer's idle self-stop could fire
+    ///     mid-stream and later-produced cells would never be drained.
+    /// </summary>
+    private int _activeTerrainStreams;
+
+    /// <summary>
+    ///     Coalesces the expensive TerrainTextures viewport rebuild (spatial query + cache diff +
+    ///     sort + stream dispatch) off the per-frame draw callback. The draw path only does a cheap
+    ///     viewport-key compare and flags <see cref="_viewportRebuildPending" />; this timer runs the
+    ///     heavy work at most ~30×/s and drains <see cref="_pendingCellApplies" />. Lazily created,
+    ///     self-stops when idle. Only used for the live TerrainTextures overview layer.
+    /// </summary>
+    private DispatcherTimer? _viewportRebuildTimer;
+
+    private bool _viewportRebuildPending;
+
+    /// <summary>~2 frames @60fps: low enough that cells still pop in during a continuous pan, high
+    ///     enough that a fast pan crossing many cell boundaries doesn't rebuild 60×/s.</summary>
+    private const int ViewportRebuildThrottleMs = 33;
+
+    /// <summary>
+    ///     Countdown that suppresses the viewport rebuild while a zoom gesture is in progress. Each
+    ///     wheel notch re-arms it; the rebuild timer decrements it per tick and only re-streams once it
+    ///     hits zero. During the gesture the draw callback composites the existing bitmaps at the live
+    ///     transform (Win2D upscales), so the zoom stays smooth and just sharpens on settle — instead
+    ///     of re-streaming the whole viewport at every intermediate zoom level / pixels-per-cell tier.
+    ///     Pan does not arm this (only <see cref="MapCanvas_PointerWheelChanged" />), so pan keeps its
+    ///     progressive pop-in.
+    /// </summary>
+    private int _zoomSettleTicks;
+
+    private const int ZoomSettleTicks = 4; // ~132 ms at the 33 ms timer cadence
+
+    /// <summary>
     ///     Per-cell GPU bitmaps for overview layers that would exceed D3D's max texture size
     ///     as one large bitmap. Composited cell-by-cell in <see cref="WorldMapOverviewRenderer" />.
     ///     Key is <c>(gridX, gridY, pixelsPerCell)</c> so multiple resolutions of the same cell
     ///     can coexist — when the user zooms across a resolution threshold the previous tier
     ///     remains as a visual stand-in (Cesium's "Ancestor Meets SSE" pattern) until the
     ///     target-resolution bitmap finishes building.
+    ///     <para>
+    ///         <see cref="OrderedDictionary{TKey,TValue}" /> (not <c>Dictionary</c>) because LRU
+    ///         eviction depends on iteration-order = insertion-order. <c>Dictionary</c>'s
+    ///         internal free-list reuses removed slots in LIFO order, so after a mass-eviction
+    ///         (e.g. zoom-in shrinks cap from 18k → 256) every new add lands in a low-index
+    ///         slot and is then re-evicted by the next <c>Keys.First()</c> call — the cells
+    ///         appear in the cache for one frame, then vanish. The 2026-06-05 profiler trace
+    ///         captured this as add → evict for the same key, repeatedly. Switching to
+    ///         <c>OrderedDictionary</c> gives strict insertion order: <see cref="OrderedDictionary{TKey,TValue}.GetAt(int)" />
+    ///         at index 0 is genuinely the oldest entry.
+    ///     </para>
     /// </summary>
-    private Dictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap>? _layerCellBitmaps;
+    private OrderedDictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap>? _layerCellBitmaps;
 
     /// <summary>Which layer the cached cell bitmaps belong to. Used to detect layer switches.</summary>
     private WorldMapLayer? _layerCellBitmapsLayer;
@@ -275,6 +350,13 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         MapCanvas?.Invalidate();
     }
 
+    private void CellGridCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        // Pure overlay toggle — no bitmap rebuild, just redraw the composite with/without the grid.
+        _showCellGrid = CellGridCheckBox?.IsChecked == true;
+        MapCanvas?.Invalidate();
+    }
+
     private void SetCanvasMode(bool canvasVisible)
     {
         MapCanvas.Visibility = canvasVisible ? Visibility.Visible : Visibility.Collapsed;
@@ -391,10 +473,15 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     /// <summary>
     ///     Cancels any in-flight TerrainTextures streaming build so its background workers
-    ///     stop decoding cells the user has already panned away from. Cheap and idempotent.
+    ///     stop decoding cells the user has already panned away from. Also stops the throttle
+    ///     timer and drops any cells buffered for apply (they belong to the abandoned stream).
+    ///     Cheap and idempotent — a still-needed viewport will re-arm the timer from the draw path.
     /// </summary>
     private void CancelTerrainStream()
     {
+        StopViewportTimer();
+        _pendingCellApplies.Clear();
+        _inFlightCellKeys.Clear();
         if (_terrainStreamCts is null) return;
         try { _terrainStreamCts.Cancel(); }
         catch (ObjectDisposedException) { }
@@ -417,6 +504,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private void ClearWorldBitmaps()
     {
         _terrainTextureViewportKey = null;
+        _pendingCellApplies.Clear();
+        _inFlightCellKeys.Clear();
         _worldHeightmapBitmap?.Dispose();
         _worldHeightmapBitmap = null;
         if (_layerCellBitmaps is not null)
@@ -608,9 +697,11 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
         var dialog = new MapExportDialog(
             cellsWide, cellsTall,
+            initialLayer: _currentLayer,
             initialIncludeMarkers: !_hiddenCategories.Contains(PlacedObjectCategory.MapMarker),
             initialIncludeNavMesh: _showNavMesh,
             initialIncludeWater: _showWater,
+            initialIncludeGrid: _showCellGrid,
             initialLongEdgePx: ExportLongEdge)
         {
             XamlRoot = XamlRoot
@@ -620,8 +711,26 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         if (dialogResult != ContentDialogResult.Primary) return;
         var req = dialog.GetRequest();
 
-        var layout = WorldMapExporter.ComputeExportLayout(activeCells, req.LongEdgePx);
-        if (layout == null) return;
+        // Resolve output px/cell. Don't upscale beyond the layer's real source detail (132/528 for
+        // texture, 132 for the 33-native heightmap-family layers).
+        var maxGridDim = Math.Max(cellsWide, cellsTall);
+        var maxSourcePpc = req.Layer == WorldMapLayer.TerrainTextures
+            ? WorldMapLayerRenderer.MaxTexturePixelsPerCell
+            : WorldMapLayerRenderer.HeightmapPixelsPerCell * 4;
+        var ppc = Math.Clamp(req.LongEdgePx / maxGridDim, 1, maxSourcePpc);
+
+        int cellsPerTile;
+        if (req.Tiled)
+        {
+            // Split into tiles each within the GPU max-texture bound.
+            cellsPerTile = Math.Max(1, WorldMapExporter.ExportMaxTileDimension / ppc);
+        }
+        else
+        {
+            // Single image: clamp px/cell so the whole worldspace fits one texture.
+            ppc = Math.Min(ppc, Math.Max(1, WorldMapExporter.ExportMaxTileDimension / maxGridDim));
+            cellsPerTile = maxGridDim;
+        }
 
         var wsName = _state.SelectedWorldspace?.EditorId ?? _state.SelectedWorldspace?.FullName ?? "worldspace";
         var picker = new FileSavePicker { SuggestedStartLocation = PickerLocationId.PicturesLibrary };
@@ -634,29 +743,6 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
         EnsureMarkerIcons(MapCanvas);
 
-        // Build a fresh bitmap matching the dialog's water choice; the on-screen bitmap may
-        // have been built with the opposite water flag. For the TerrainTextures layer we
-        // build the per-cell GPU bitmap dictionary instead — same reason as the live view
-        // (a single bitmap exceeds the GPU max-texture-size on large worldspaces).
-        WorldMapHeightmapBuilder.HeightmapInfo? bitmapInfo = null;
-        Dictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap>? exportCellBitmaps = null;
-        if (_currentLayer == WorldMapLayer.TerrainTextures && _data is not null
-            && LandscapeTexturePalette.GetOrCreate(_data) is { } exportPalette)
-        {
-            exportCellBitmaps = WorldMapHeightmapBuilder.BuildTerrainTextureCells(
-                MapCanvas, activeCells, exportPalette,
-                _currentDefaultWaterHeight, req.IncludeWater, _data.RenderCache);
-        }
-        else
-        {
-            bitmapInfo = WorldMapHeightmapBuilder.Build(
-                MapCanvas, activeCells, _cachedGrayscale, _cachedWaterMask,
-                _cachedHmWidth, _cachedHmHeight,
-                _state.SelectedWorldspace, _data,
-                _currentDefaultWaterHeight, _currentColorScheme, req.IncludeWater,
-                _currentLayer, _data?.RenderCache);
-        }
-
         // Apply markers preference: hidden if user unchecked Map markers in the dialog.
         var exportHiddenCategories = new HashSet<PlacedObjectCategory>(_hiddenCategories);
         if (!req.IncludeMarkers)
@@ -668,30 +754,170 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             exportHiddenCategories.Remove(PlacedObjectCategory.MapMarker);
         }
 
+        var progressDialog = new ExportProgressController(XamlRoot);
+        _ = progressDialog.ShowAsync();
         ExportButton.IsEnabled = false;
         try
         {
-            var (imageW, imageH, ppc, lMinGx, lMaxGx, lMinGy, lMaxGy) = layout.Value;
-            await WorldMapExporter.ExportWorldspacePngAsync(
-                file.Path, imageW, imageH, ppc, lMinGx, lMaxGx, lMinGy, lMaxGy,
-                MapCanvas,
-                bitmapInfo?.Bitmap ?? _worldHeightmapBitmap,
-                bitmapInfo?.PixelWidth ?? _worldHmPixelWidth,
-                bitmapInfo?.PixelHeight ?? _worldHmPixelHeight,
-                bitmapInfo?.MinX ?? _worldHmMinX,
-                bitmapInfo?.MaxY ?? _worldHmMaxY,
-                exportCellBitmaps,
-                _state.FilteredMarkers, exportHiddenCategories, _markerIconBitmaps, _currentColorScheme,
-                _data, activeCells, req.IncludeNavMesh);
+            await RunExportAsync(req, activeCells, file.Path, minGx, maxGx, minGy, maxGy,
+                ppc, cellsPerTile, exportHiddenCategories, progressDialog, progressDialog.Cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // User cancelled — leave whatever tiles were already written.
+        }
+        catch (Exception ex)
+        {
+            FalloutXbox360Utils.Core.Logger.Instance.Warn("Map export failed: {0}", ex.ToString());
         }
         finally
         {
-            bitmapInfo?.Bitmap.Dispose();
-            if (exportCellBitmaps is not null)
-            {
-                foreach (var bmp in exportCellBitmaps.Values) bmp.Dispose();
-            }
+            progressDialog.Complete();
             ExportButton.IsEnabled = true;
+        }
+    }
+
+    /// <summary>
+    ///     Renders the export as one capped image or a grid of GPU-bounded tiles. Decodes each tile's
+    ///     terrain cells off the UI thread (bounded memory: only the tile's cells, plus a 1-cell margin
+    ///     so cross-tile edge blending is seamless), uploads + composites + saves on the UI thread, and
+    ///     reports progress between tiles so the modal dialog animates. Tiled runs emit
+    ///     <c>{name}_r{row}_c{col}.png</c> plus a <c>{name}_manifest.json</c>.
+    /// </summary>
+    private async Task RunExportAsync(
+        MapExportRequest req, List<CellRecord> activeCells, string basePath,
+        int minGx, int maxGx, int minGy, int maxGy, int ppc, int cellsPerTile,
+        HashSet<PlacedObjectCategory> hiddenCategories,
+        ExportProgressController progress, CancellationToken ct)
+    {
+        var cols = (maxGx - minGx) / cellsPerTile + 1;
+        var rows = (maxGy - minGy) / cellsPerTile + 1;
+        var totalTiles = cols * rows;
+        var tiled = totalTiles > 1;
+
+        // Texture layer decodes per-tile; other layers build their single (small) 33-px/cell bitmap
+        // once and reuse it for every tile (Win2D clips it to each tile's bounds).
+        LandscapeTexturePalette? palette = null;
+        WaterColorPalette? waterPalette = null;
+        if (req.Layer == WorldMapLayer.TerrainTextures && _data is not null)
+        {
+            palette = LandscapeTexturePalette.GetOrCreate(_data);
+            waterPalette = req.IncludeWater && _state.SelectedWorldspace?.WaterFormId is uint wid
+                ? WaterColorPalette.GetOrCreate(_data, wid)
+                : null;
+        }
+
+        WorldMapHeightmapBuilder.HeightmapInfo? single = null;
+        if (palette is null)
+        {
+            single = WorldMapHeightmapBuilder.Build(
+                MapCanvas, activeCells, _cachedGrayscale, _cachedWaterMask,
+                _cachedHmWidth, _cachedHmHeight,
+                _state.SelectedWorldspace, _data,
+                _currentDefaultWaterHeight, _currentColorScheme, req.IncludeWater,
+                req.Layer, _data?.RenderCache);
+        }
+
+        var dir = Path.GetDirectoryName(basePath) ?? "";
+        var name = Path.GetFileNameWithoutExtension(basePath);
+        var ext = Path.GetExtension(basePath);
+        if (string.IsNullOrEmpty(ext)) ext = ".png";
+        var manifestTiles = new List<object>();
+
+        try
+        {
+            var tileIndex = 0;
+            for (var tj = 0; tj < rows; tj++)
+            {
+                for (var ti = 0; ti < cols; ti++)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    tileIndex++;
+                    progress.Report(tiled ? "Rendering tile" : "Rendering", tileIndex, totalTiles);
+                    await Task.Yield(); // let the dialog paint the new status before the heavy work
+
+                    var tgx0 = minGx + (ti * cellsPerTile);
+                    var tgx1 = Math.Min(maxGx, tgx0 + cellsPerTile - 1);
+                    var tgy0 = minGy + (tj * cellsPerTile);
+                    var tgy1 = Math.Min(maxGy, tgy0 + cellsPerTile - 1);
+                    var tileW = (tgx1 - tgx0 + 1) * ppc;
+                    var tileH = (tgy1 - tgy0 + 1) * ppc;
+
+                    Dictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap>? tileBitmaps = null;
+                    if (palette is not null)
+                    {
+                        // +1-cell margin so edge cells see their cross-tile neighbours when blending.
+                        var marginCells = activeCells.Where(c =>
+                            c.GridX is int gx && c.GridY is int gy &&
+                            gx >= tgx0 - 1 && gx <= tgx1 + 1 && gy >= tgy0 - 1 && gy <= tgy1 + 1).ToList();
+                        var cache = _data?.RenderCache;
+                        var includeWater = req.IncludeWater;
+                        var waterHeight = _currentDefaultWaterHeight;
+                        var pal = palette;
+                        var wpal = waterPalette;
+                        var perCell = await Task.Run(
+                            () => WorldMapLayerRenderer.RenderTerrainTexturesPerCell(
+                                marginCells, pal, waterHeight, includeWater, cache, ppc, wpal), ct);
+                        if (perCell is not null)
+                        {
+                            tileBitmaps = new Dictionary<(int, int, int), CanvasBitmap>(perCell.Count);
+                            foreach (var ((gx, gy), bytes) in perCell)
+                            {
+                                tileBitmaps[(gx, gy, ppc)] = CanvasBitmap.CreateFromBytes(
+                                    MapCanvas, bytes, ppc, ppc,
+                                    Windows.Graphics.DirectX.DirectXPixelFormat.R8G8B8A8UIntNormalized);
+                            }
+                        }
+                    }
+
+                    var tilePath = tiled ? Path.Combine(dir, $"{name}_r{tj}_c{ti}{ext}") : basePath;
+                    try
+                    {
+                        await WorldMapExporter.ExportWorldspacePngAsync(
+                            tilePath, tileW, tileH, ppc, tgx0, tgx1, tgy0, tgy1,
+                            MapCanvas,
+                            single?.Bitmap, single?.PixelWidth ?? 0, single?.PixelHeight ?? 0,
+                            single?.MinX ?? 0, single?.MaxY ?? 0,
+                            tileBitmaps,
+                            _state.FilteredMarkers, hiddenCategories, _markerIconBitmaps, _currentColorScheme,
+                            _data, activeCells, req.IncludeNavMesh, req.IncludeGrid);
+                    }
+                    finally
+                    {
+                        if (tileBitmaps is not null)
+                        {
+                            foreach (var bmp in tileBitmaps.Values) bmp.Dispose();
+                        }
+                    }
+
+                    manifestTiles.Add(new
+                    {
+                        row = tj, col = ti, file = Path.GetFileName(tilePath),
+                        gridX0 = tgx0, gridX1 = tgx1, gridY0 = tgy0, gridY1 = tgy1,
+                        imageW = tileW, imageH = tileH
+                    });
+                }
+            }
+
+            if (tiled)
+            {
+                progress.Report("Writing manifest", totalTiles, totalTiles);
+                var manifest = new
+                {
+                    layer = req.Layer.ToString(),
+                    pixelsPerCell = ppc,
+                    tilesWide = cols, tilesTall = rows,
+                    gridX0 = minGx, gridX1 = maxGx, gridY0 = minGy, gridY1 = maxGy,
+                    tiles = manifestTiles
+                };
+                var json = System.Text.Json.JsonSerializer.Serialize(
+                    manifest, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+                await File.WriteAllTextAsync(Path.Combine(dir, $"{name}_manifest.json"), json, ct);
+            }
+        }
+        finally
+        {
+            single?.Bitmap.Dispose();
         }
     }
 
@@ -768,7 +994,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                 _zoom, _panOffset, canvasW, canvasH,
                 _hiddenCategories, _hideDisabledActors,
                 _state.SelectedObject, _hoveredObject,
-                _markerIconBitmaps, _currentColorScheme);
+                _markerIconBitmaps, _currentColorScheme,
+                _showCellGrid);
 
             if (_showNavMesh)
             {
@@ -969,6 +1196,15 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         var worldAfterZoom = Vector2.Transform(worldBeforeZoom, newTransform);
         _panOffset = screenPos - worldAfterZoom;
 
+        // Arm the zoom-settle window for the streaming layer only: defer the (expensive, higher-res)
+        // re-stream until the zoom stops. The draw composites the existing bitmaps scaled meanwhile.
+        // Other layers use a single bitmap and don't re-stream on zoom, so they need no settle.
+        if (_state.Mode == ViewMode.WorldOverview && _currentLayer == WorldMapLayer.TerrainTextures)
+        {
+            _zoomSettleTicks = ZoomSettleTicks;
+            EnsureViewportTimerRunning();
+        }
+
         MapCanvas.Invalidate();
         e.Handled = true;
     }
@@ -1137,99 +1373,148 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             out _zoom, out _panOffset);
     }
 
+    /// <summary>
+    ///     Called from the draw callback every frame. For the live TerrainTextures overview this is
+    ///     deliberately cheap: it does NOT query the spatial index, diff the cache, sort, or dispatch
+    ///     a stream inline (all of which scale with visible-cell count and would stutter a zoomed-out
+    ///     pan). It only compares a cheaply-computed viewport key and, when it changed, flags a
+    ///     rebuild for the throttle timer (<see cref="RebuildTerrainTextureViewport" />). Other layers
+    ///     keep the original synchronous single-bitmap build, gated on <see cref="_worldHeightmapDirty" />.
+    /// </summary>
     private void EnsureHeightmapBitmap(float canvasW, float canvasH)
     {
         if (_data is null) return;
 
-        var activeCells = GetActiveCells();
-        if (activeCells.Count == 0) return;
-
-        var requestCells = activeCells.ToList();
-        var texturePixelsPerCell = WorldMapLayerRenderer.TexturePixelsPerCell;
-        TerrainTextureViewportKey? terrainTextureKey = null;
         var isTerrainTexturesViewport = _state.Mode == ViewMode.WorldOverview &&
             _currentLayer == WorldMapLayer.TerrainTextures;
-        var viewportCellCount = activeCells.Count;
 
         if (isTerrainTexturesViewport)
         {
-            var viewportRequest = BuildTerrainTextureViewportRequest(canvasW, canvasH, activeCells);
-            requestCells = viewportRequest.Cells;
-            texturePixelsPerCell = viewportRequest.PixelsPerCell;
-            terrainTextureKey = viewportRequest.Key;
-            viewportCellCount = viewportRequest.Cells.Count;
-
-            // Scale the in-stream LRU cap to the current viewport BEFORE the stream starts.
-            // Otherwise, with a large viewport (~6000 cells for zoomed-out WastelandNV), the
-            // 256-entry default would evict cells we just rendered, in the same stream, before
-            // the user ever sees them — "Loading" goes away with most of the view still blank.
-            //
-            // ×3 budget: 1× current viewport + 1× zoom-transition stand-ins at a stale resolution
-            // + 1× pan-back history (cells the user just scrolled off-screen). The 1× pan slot
-            // is what makes "pan off, pan back" a cache hit instead of a re-render — see the
-            // eager-evict removal further down in this method.
-            _layerCellBitmapCap = Math.Max(MinLayerCellBitmapCap, viewportRequest.Cells.Count * 3);
-
-            if (_terrainTextureViewportKey != terrainTextureKey)
+            // Hot path — cheap viewport-key compute only. The quantized key changes when the
+            // visible cell-grid bounds (or resolution) change; that's the signal to schedule the
+            // expensive rebuild on the timer. A pan smaller than a cell, or a pan back over the
+            // same cells, leaves the key unchanged and costs nothing here.
+            var key = ComputeTerrainViewportBounds(canvasW, canvasH, out _, out _, out _, out _, out _);
+            if (_terrainTextureViewportKey != key)
             {
-                _worldHeightmapDirty = true;
+                _viewportRebuildPending = true;
+                EnsureViewportTimerRunning();
             }
+
+            return;
         }
 
+        // Non-TerrainTextures layers build a single aggregate bitmap; per-cell cost is low so the
+        // batch path is fine and the work is dirty-gated (rebuilt only on layer/data/toggle change).
         if (!_worldHeightmapDirty) return;
+
+        var activeCells = GetActiveCells();
+        if (activeCells.Count == 0) return;
+
+        _worldHeightmapDirty = false;
+        _terrainTextureViewportKey = null;
+
+        var version = ++_worldHeightmapBuildVersion;
+        ShowLayerBuildStatus($"Building {_currentLayer.DisplayName()}...", busy: true);
+
+        var request = new LayerBuildRequest(
+            version,
+            activeCells.ToList(),
+            _state.SelectedWorldspace,
+            _data,
+            _currentDefaultWaterHeight,
+            _currentColorScheme,
+            _showWater,
+            _currentLayer,
+            _cachedGrayscale,
+            _cachedWaterMask,
+            _cachedHmWidth,
+            _cachedHmHeight,
+            _data.RenderCache,
+            null,
+            WorldMapLayerRenderer.TexturePixelsPerCell);
+
+        _ = BuildAndApplyWorldBitmapAsync(request);
+    }
+
+    /// <summary>
+    ///     The heavy TerrainTextures viewport rebuild, run only from the throttle timer (≤~30×/s)
+    ///     instead of every draw frame. Queries the spatial index, diffs the cell-bitmap cache,
+    ///     sorts the to-build set urgent-first, and dispatches the background streaming build.
+    /// </summary>
+    private void RebuildTerrainTextureViewport(float canvasW, float canvasH)
+    {
+        if (_data is null) return;
+        if (_state.Mode != ViewMode.WorldOverview || _currentLayer != WorldMapLayer.TerrainTextures) return;
+
+        var activeCells = GetActiveCells();
+        if (activeCells.Count == 0) return;
+
+        var viewportRequest = BuildTerrainTextureViewportRequest(canvasW, canvasH, activeCells);
+        var requestCells = viewportRequest.Cells;
+        var texturePixelsPerCell = viewportRequest.PixelsPerCell;
+        var terrainTextureKey = viewportRequest.Key;
+        var viewportCellCount = viewportRequest.Cells.Count;
+
+        // Scale the in-stream LRU cap to the current viewport BEFORE the stream starts.
+        // Otherwise, with a large viewport (~6000 cells for zoomed-out WastelandNV), the
+        // 256-entry default would evict cells we just rendered, in the same stream, before
+        // the user ever sees them — "Loading" goes away with most of the view still blank.
+        //
+        // ×3 budget: 1× current viewport + 1× zoom-transition stand-ins at a stale resolution
+        // + 1× pan-back history (cells the user just scrolled off-screen). The 1× pan slot
+        // is what makes "pan off, pan back" a cache hit instead of a re-render — see the
+        // LRU touch below.
+        _layerCellBitmapCap = Math.Max(MinLayerCellBitmapCap, viewportRequest.Cells.Count * 3);
 
         // Incremental rebuild for the TerrainTextures live view: keep already-built cell
         // bitmaps inside the new viewport, evict cells that scrolled off, and dispatch a
         // build only for the cells we don't have at the target resolution yet. With the
         // multi-resolution cache (P2), old-resolution bitmaps remain as visual stand-ins
         // while target-resolution ones build — no blank during zoom transitions.
-        var canReuseCache = isTerrainTexturesViewport
-            && _layerCellBitmaps is not null
+        var canReuseCache = _layerCellBitmaps is not null
             && _layerCellBitmapsLayer == _currentLayer;
 
         if (canReuseCache)
         {
-            // Pan-back cache hit: don't eagerly evict cells just because they scrolled out of
-            // the current viewport. Cells that left recently are still in the dict and pan-back
-            // lands on a hit instead of re-rendering. Memory is bounded by _layerCellBitmapCap
-            // (viewport×3) — the per-add LRU prune in ApplyOneTerrainTextureCell handles
-            // eviction when new cells overflow the budget.
-
-            // LRU-on-read: .NET dict iteration order is INSERTION order (not actual LRU). The
-            // LRU prune in ApplyOneTerrainTextureCell pops Keys.First() — i.e. the earliest-
-            // inserted key — which is often a cell that's been on screen across many streams
-            // and never got re-rendered (the filter below excludes already-cached cells from
-            // the next stream). Without this touch, the user sees "cells paint, then disappear"
-            // as the FIFO eviction kicks out currently-visible cells. Remove-then-add reinserts
-            // each in-viewport key at the dict's tail so they form the MRU end; off-viewport
-            // cells sit at the head and evict first when the cap is hit.
-            var neededKeys = new HashSet<(int gx, int gy)>(requestCells.Count);
+            // Single pass over the viewport request (not the whole cache): for each requested
+            // cell, either it's already cached at the target resolution (drop from the build set,
+            // and LRU-touch it so it doesn't evict first) or it needs building. This replaces the
+            // old full-cache `.ToList()` copy + HashSet + Remove/Add loop + `.Where().ToList()`,
+            // which were all O(cache size) and ran on the UI thread (per the throttle, ≤~30×/s).
+            //
+            // LRU touch (Remove-then-Add to relocate to the MRU tail; the OrderedDictionary indexer
+            // setter replaces IN PLACE and would NOT move the entry) only matters when the cache is
+            // over cap and eviction can actually fire — `underPressure` skips the array-shuffling in
+            // the common steady-state pan.
+            var underPressure = _layerCellBitmaps!.Count > _layerCellBitmapCap;
+            var toBuild = new List<CellRecord>(requestCells.Count);
             foreach (var c in requestCells)
             {
-                if (c.GridX is int gx && c.GridY is int gy) neededKeys.Add((gx, gy));
-            }
-            foreach (var kv in _layerCellBitmaps!.ToList())
-            {
-                if (neededKeys.Contains((kv.Key.gx, kv.Key.gy)))
+                if (c.GridX is not int gx || c.GridY is not int gy) continue;
+                var key = (gx, gy, texturePixelsPerCell);
+                if (_layerCellBitmaps.TryGetValue(key, out var bmp))
                 {
-                    _layerCellBitmaps.Remove(kv.Key);
-                    _layerCellBitmaps[kv.Key] = kv.Value;
+                    if (underPressure)
+                    {
+                        _layerCellBitmaps.Remove(key);
+                        _layerCellBitmaps.Add(key, bmp);
+                    }
+                }
+                else if (!_inFlightCellKeys.ContainsKey(key))
+                {
+                    // Not cached AND not already queued/decoding — schedule it. Excluding in-flight
+                    // keys stops successive rebuilds during a pan from re-requesting the same cells
+                    // (which produced the ~3× re-decode/re-upload churn at far zoom).
+                    toBuild.Add(c);
                 }
             }
 
-            // Only build the cells that aren't already cached AT THE TARGET RESOLUTION.
-            // Cells present only at the wrong resolution stay (visual stand-in via the draw-time
-            // best-available picker) AND get scheduled for build at the target res.
-            requestCells = requestCells
-                .Where(c => c.GridX is int gx && c.GridY is int gy
-                    && !_layerCellBitmaps!.ContainsKey((gx, gy, texturePixelsPerCell)))
-                .ToList();
-
+            requestCells = toBuild;
             _terrainTextureViewportKey = terrainTextureKey;
-            _worldHeightmapDirty = false;
 
             Map2DProfilerTrace.Event("viewport-rebuild",
-                $"layer={_currentLayer} ppc={texturePixelsPerCell} viewport={viewportCellCount} cap={_layerCellBitmapCap} cacheSize={_layerCellBitmaps?.Count ?? 0} toBuild={requestCells.Count}");
+                $"layer={_currentLayer} ppc={texturePixelsPerCell} viewport={viewportCellCount} cap={_layerCellBitmapCap} cacheSize={_layerCellBitmaps.Count} toBuild={requestCells.Count}");
 
             if (requestCells.Count == 0)
             {
@@ -1243,82 +1528,152 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         else
         {
             // Layer / resolution / worldspace changed: replace the whole cache.
-            _worldHeightmapDirty = false;
             _terrainTextureViewportKey = terrainTextureKey;
             Map2DProfilerTrace.Event("viewport-rebuild",
                 $"layer={_currentLayer} ppc={texturePixelsPerCell} viewport={viewportCellCount} cap={_layerCellBitmapCap} cacheSize=0 toBuild={requestCells.Count} kind=full");
         }
 
-        var version = ++_worldHeightmapBuildVersion;
-        ShowLayerBuildStatus($"Building {_currentLayer.DisplayName()}...", busy: true);
-
-        // TerrainTextures streams cells individually via IAsyncEnumerable so the user sees
-        // the viewport populate progressively. Every other layer still goes through the
-        // batch BuildAsync path because their per-cell cost is much lower (no per-pixel
-        // palette sampling) and the batch reduces overhead.
-        if (isTerrainTexturesViewport
-            && LandscapeTexturePalette.GetOrCreate(_data) is { } palette
-            && requestCells.Count > 0)
+        if (LandscapeTexturePalette.GetOrCreate(_data) is not { } palette || requestCells.Count == 0)
         {
-            // Urgent-first ordering (P3): sort by squared distance from viewport center so
-            // the parallel worker pool picks central cells before margin/preload cells.
-            // Cesium's Preload priority tier — Urgent (visible) drains before Normal/Preload.
-            var (vpTl, vpBr) = WorldMapViewportHelper.GetVisibleWorldBounds(canvasW, canvasH, _zoom, _panOffset);
-            var centerX = (vpTl.X + vpBr.X) * 0.5f;
-            var centerY = (vpTl.Y + vpBr.Y) * 0.5f;
-            requestCells.Sort((a, b) =>
-            {
-                var ax = (a.GridX!.Value + 0.5f) * WorldGridConstants.CellSize - centerX;
-                var ay = -(a.GridY!.Value + 0.5f) * WorldGridConstants.CellSize - centerY;
-                var bx = (b.GridX!.Value + 0.5f) * WorldGridConstants.CellSize - centerX;
-                var by = -(b.GridY!.Value + 0.5f) * WorldGridConstants.CellSize - centerY;
-                return (ax * ax + ay * ay).CompareTo(bx * bx + by * by);
-            });
-
-            _terrainStreamCts?.Cancel();
-            _terrainStreamCts?.Dispose();
-            _terrainStreamCts = new CancellationTokenSource();
-            // Capture cache-gen on the UI thread BEFORE the stream starts. Worker threads read
-            // this value when enqueuing apply tasks; if cache-gen bumps after the stream begins
-            // (worldspace switch, layer change), the captured generation goes stale and the
-            // applies drop on the ApplyOne side. Per-stream `version` is kept for status-banner
-            // messages but no longer controls apply-drop — pan-induced version bumps are common
-            // and would needlessly kill in-flight applies whose cache target is still valid.
-            var cacheGen = _layerCellBitmapsCacheGen;
-            Map2DProfilerTrace.Event("stream-start",
-                $"v={version} cacheGen={cacheGen} ppc={texturePixelsPerCell} requested={requestCells.Count}");
-            _ = StreamAndApplyTerrainTexturesAsync(
-                version, cacheGen, requestCells, palette, texturePixelsPerCell, _terrainStreamCts.Token);
             return;
         }
 
-        var request = new LayerBuildRequest(
-            version,
-            requestCells,
-            _state.SelectedWorldspace,
-            _data,
-            _currentDefaultWaterHeight,
-            _currentColorScheme,
-            _showWater,
-            _currentLayer,
-            _cachedGrayscale,
-            _cachedWaterMask,
-            _cachedHmWidth,
-            _cachedHmHeight,
-            _data.RenderCache,
-            _currentLayer == WorldMapLayer.TerrainTextures
-                ? LandscapeTexturePalette.GetOrCreate(_data)
-                : null,
-            texturePixelsPerCell);
+        var version = ++_worldHeightmapBuildVersion;
+        ShowLayerBuildStatus($"Building {_currentLayer.DisplayName()}...", busy: true);
 
-        _ = BuildAndApplyWorldBitmapAsync(request);
+        // Urgent-first ordering (P3): sort by squared distance from viewport center so
+        // the parallel worker pool picks central cells before margin/preload cells.
+        // Cesium's Preload priority tier — Urgent (visible) drains before Normal/Preload.
+        var (vpTl, vpBr) = WorldMapViewportHelper.GetVisibleWorldBounds(canvasW, canvasH, _zoom, _panOffset);
+        var centerX = (vpTl.X + vpBr.X) * 0.5f;
+        var centerY = (vpTl.Y + vpBr.Y) * 0.5f;
+        requestCells.Sort((a, b) =>
+        {
+            var ax = (a.GridX!.Value + 0.5f) * WorldGridConstants.CellSize - centerX;
+            var ay = -(a.GridY!.Value + 0.5f) * WorldGridConstants.CellSize - centerY;
+            var bx = (b.GridX!.Value + 0.5f) * WorldGridConstants.CellSize - centerX;
+            var by = -(b.GridY!.Value + 0.5f) * WorldGridConstants.CellSize - centerY;
+            return (ax * ax + ay * ay).CompareTo(bx * bx + by * by);
+        });
+
+        _terrainStreamCts?.Cancel();
+        _terrainStreamCts?.Dispose();
+        _terrainStreamCts = new CancellationTokenSource();
+        // Capture cache-gen on the UI thread BEFORE the stream starts. Worker threads read
+        // this value when enqueuing apply tasks; if cache-gen bumps after the stream begins
+        // (worldspace switch, layer change), the captured generation goes stale and the
+        // applies drop on the ApplyOne side. Per-stream `version` is kept for status-banner
+        // messages but no longer controls apply-drop — pan-induced rebuilds are common
+        // and would needlessly kill in-flight applies whose cache target is still valid.
+        var cacheGen = _layerCellBitmapsCacheGen;
+        Map2DProfilerTrace.Event("stream-start",
+            $"v={version} cacheGen={cacheGen} ppc={texturePixelsPerCell} requested={requestCells.Count}");
+        Interlocked.Increment(ref _activeTerrainStreams);
+        _ = StreamAndApplyTerrainTexturesAsync(
+            version, cacheGen, requestCells, palette, texturePixelsPerCell, _terrainStreamCts.Token);
+    }
+
+    /// <summary>Lazily creates and starts the viewport-rebuild throttle timer (UI thread only).</summary>
+    private void EnsureViewportTimerRunning()
+    {
+        if (_viewportRebuildTimer is null)
+        {
+            _viewportRebuildTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(ViewportRebuildThrottleMs)
+            };
+            _viewportRebuildTimer.Tick += ViewportRebuildTimer_Tick;
+        }
+
+        if (!_viewportRebuildTimer.IsEnabled) _viewportRebuildTimer.Start();
+    }
+
+    private void StopViewportTimer() => _viewportRebuildTimer?.Stop();
+
+    /// <summary>
+    ///     Single timer tick: drain a bounded batch of completed cell bitmaps onto the GPU, then run
+    ///     at most one throttled viewport rebuild. Self-stops when there's nothing left to do so we
+    ///     don't keep a ~30 Hz wakeup alive forever.
+    /// </summary>
+    private void ViewportRebuildTimer_Tick(object? sender, object e)
+    {
+        // After unload the DispatcherQueue goes null; there's no UI left to update.
+        if (DispatcherQueue is null)
+        {
+            StopViewportTimer();
+            return;
+        }
+
+        DrainPendingCellApplies();
+
+        // While a zoom gesture is settling, hold off the rebuild (keep pending set) so we don't
+        // re-stream throwaway intermediate zoom levels. Each wheel notch re-arms _zoomSettleTicks.
+        if (_zoomSettleTicks > 0)
+        {
+            _zoomSettleTicks--;
+        }
+        else if (_viewportRebuildPending
+            && _state.Mode == ViewMode.WorldOverview
+            && _currentLayer == WorldMapLayer.TerrainTextures)
+        {
+            _viewportRebuildPending = false;
+            RebuildTerrainTextureViewport((float)MapCanvas.ActualWidth, (float)MapCanvas.ActualHeight);
+        }
+
+        // Idle: no pending rebuild, not zoom-settling, not actively panning, nothing left to apply,
+        // and no stream still producing cells. Stop until the next viewport change / pointer event.
+        if (!_viewportRebuildPending
+            && _zoomSettleTicks == 0
+            && !_isPanning
+            && _pendingCellApplies.IsEmpty
+            && Volatile.Read(ref _activeTerrainStreams) == 0)
+        {
+            StopViewportTimer();
+        }
+    }
+
+    /// <summary>
+    ///     Drains completed cells from <see cref="_pendingCellApplies" />. Genuine GPU uploads are
+    ///     capped at <see cref="MaxCellAppliesPerTick" /> per tick so a burst can't starve input;
+    ///     but cells that are stale (cache replaced) or ALREADY present at the target resolution are
+    ///     skipped cheaply and do NOT count against the budget. Skipping already-cached cells is what
+    ///     stops the "constant refresh" churn: overlapping streams re-produce cells the viewport
+    ///     already shows, and re-uploading them (dispose + CreateFromBytes + invalidate) every frame
+    ///     was the wasted work observed after the image was already complete. One coalesced
+    ///     invalidate at the end, only if something new was actually uploaded.
+    /// </summary>
+    private void DrainPendingCellApplies()
+    {
+        var uploads = 0;
+        var applied = false;
+        while (_pendingCellApplies.TryDequeue(out var item))
+        {
+            var key = (item.cell.GridX, item.cell.GridY, item.cell.PixelsPerCell);
+            _inFlightCellKeys.TryRemove(key, out _);
+
+            // Stale generation (layer/worldspace switch) — drop cheaply.
+            if (item.cacheGen != _layerCellBitmapsCacheGen) continue;
+
+            // Already displayed at this resolution — the bitmap would be byte-identical, so skip the
+            // redundant dispose+upload+invalidate. Cheap skip, uncapped, so a large duplicate backlog
+            // clears in one tick and the timer can idle instead of looping.
+            if (_layerCellBitmaps is not null && _layerCellBitmaps.ContainsKey(key)) continue;
+
+            ApplyOneTerrainTextureCell(item.cacheGen, item.cell);
+            applied = true;
+            if (++uploads >= MaxCellAppliesPerTick) break;
+        }
+
+        if (applied) MapCanvas.Invalidate();
     }
 
     /// <summary>
     ///     Consumes the per-cell streaming output from
-    ///     <see cref="WorldMapLayerRenderer.StreamTerrainTexturesPerCell" /> and pushes each
-    ///     completed cell to the UI thread for immediate <see cref="CanvasBitmap" /> upload
-    ///     + canvas invalidation. Cells appear progressively instead of all-at-once.
+    ///     <see cref="WorldMapLayerRenderer.StreamTerrainTexturesPerCell" /> and buffers each
+    ///     completed cell into <see cref="_pendingCellApplies" />. The throttle timer drains the
+    ///     buffer at a bounded rate (<see cref="DrainPendingCellApplies" />), so a burst of
+    ///     thousands of completed cells can't flood the UI thread with GPU uploads and starve
+    ///     pointer input. Cells still appear progressively, just paced.
     /// </summary>
     private async Task StreamAndApplyTerrainTexturesAsync(
         int version,
@@ -1330,7 +1685,6 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     {
         var requestedCount = requestCells.Count;
         var producedCount = 0;
-        var rejectedByQueue = 0;
         try
         {
             await foreach (var cell in WorldMapLayerRenderer.StreamTerrainTexturesPerCell(
@@ -1344,25 +1698,20 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                     ct).WithCancellation(ct).ConfigureAwait(false))
             {
                 producedCount++;
-                // Hop to the UI thread to create the device-bound bitmap + invalidate the canvas.
-                // DispatcherQueue can be null after the control unloads (tab switch, shutdown);
-                // bail cleanly so we don't NRE — the cancellation token usually catches this
-                // first, but defensive null-check makes shutdown races silent.
-                var queue = DispatcherQueue;
-                if (queue is null) break;
-                if (!queue.TryEnqueue(() => ApplyOneTerrainTextureCell(cacheGen, cell)))
-                {
-                    rejectedByQueue++;
-                }
+                // Buffer for the throttle timer to drain on the UI thread (bounded per tick).
+                // Enqueue is lock-free and never blocks the worker; the captured cacheGen lets a
+                // stale apply (from before a cache replacement) be dropped at drain time. Mark the
+                // key in-flight so concurrent rebuilds don't re-request a cell already queued here.
+                _inFlightCellKeys[(cell.GridX, cell.GridY, cell.PixelsPerCell)] = 0;
+                _pendingCellApplies.Enqueue((cacheGen, cell));
             }
 
             FalloutXbox360Utils.Core.Logger.Instance.Info(
-                "TerrainTextures stream v{0} complete: requested={1}, produced={2}, queue-rejected={3}, skipped-by-worker={4}",
-                version, requestedCount, producedCount, rejectedByQueue,
-                requestedCount - producedCount - rejectedByQueue);
+                "TerrainTextures stream v{0} complete: requested={1}, produced={2}, skipped-by-worker={3}",
+                version, requestedCount, producedCount, requestedCount - producedCount);
 
             Map2DProfilerTrace.Event("stream-end",
-                $"v={version} cacheGen={cacheGen} requested={requestedCount} produced={producedCount} queue-rejected={rejectedByQueue}");
+                $"v={version} cacheGen={cacheGen} requested={requestedCount} produced={producedCount}");
 
             var doneQueue = DispatcherQueue;
             doneQueue?.TryEnqueue(() =>
@@ -1388,6 +1737,10 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                     busy: false);
                 MapCanvas.Invalidate();
             });
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _activeTerrainStreams);
         }
     }
 
@@ -1416,41 +1769,59 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         }
 
         var key = (cell.GridX, cell.GridY, cell.PixelsPerCell);
-        _layerCellBitmaps ??= new Dictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap>();
+        _layerCellBitmaps ??= new OrderedDictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap>();
         var replacedStale = _layerCellBitmaps.TryGetValue(key, out var stale);
-        if (replacedStale) stale!.Dispose();
-        _layerCellBitmaps[key] = CanvasBitmap.CreateFromBytes(
+        if (replacedStale)
+        {
+            stale!.Dispose();
+            // Remove so the re-add lands at the tail (LRU MRU end). The indexer setter on
+            // OrderedDictionary preserves position and would leave a replaced entry near the
+            // dict head, where it would be evicted first instead of last.
+            _layerCellBitmaps.Remove(key);
+        }
+        _layerCellBitmaps.Add(key, CanvasBitmap.CreateFromBytes(
             MapCanvas,
             cell.Pixels,
             cell.PixelsPerCell,
             cell.PixelsPerCell,
-            Windows.Graphics.DirectX.DirectXPixelFormat.R8G8B8A8UIntNormalized);
+            Windows.Graphics.DirectX.DirectXPixelFormat.R8G8B8A8UIntNormalized));
         _layerCellBitmapsLayer = WorldMapLayer.TerrainTextures;
 
         Map2DProfilerTrace.Event("cache-add",
             $"cell=({cell.GridX},{cell.GridY},{cell.PixelsPerCell}) replaced={replacedStale} dictSize={_layerCellBitmaps.Count} cap={_layerCellBitmapCap}");
 
-        // Memory cap. Once we exceed the soft limit, drop the oldest insertion-order entry.
-        // Insertion order is .NET dict iteration order (post-net5); not strict LRU but close
-        // enough — viewport-leave already evicts most of the stale ones in EnsureHeightmapBitmap.
-        // The cap is scaled per-viewport (see _layerCellBitmapCap) so streamed cells aren't
-        // evicted by later-streamed cells in the same stream.
+        // Memory cap. Once we exceed the soft limit, drop the LRU head — guaranteed to be the
+        // genuinely oldest entry because OrderedDictionary preserves insertion order strictly
+        // (see _layerCellBitmaps doc-comment for the pre-2026-06-05 Dictionary bug this fixed).
+        // viewport-leave already evicts most of the stale ones in EnsureHeightmapBitmap; this
+        // cap is the safety net for resolutions retained across zoom thresholds plus the
+        // viewport×3 budget for pan-back stand-ins.
         while (_layerCellBitmaps.Count > _layerCellBitmapCap)
         {
-            var oldestKey = _layerCellBitmaps.Keys.First();
-            _layerCellBitmaps[oldestKey].Dispose();
-            _layerCellBitmaps.Remove(oldestKey);
+            var oldest = _layerCellBitmaps.GetAt(0);
+            oldest.Value.Dispose();
+            _layerCellBitmaps.RemoveAt(0);
             Map2DProfilerTrace.Event("cache-evict",
-                $"cell=({oldestKey.gx},{oldestKey.gy},{oldestKey.pixelsPerCell}) reason=cap dictSize={_layerCellBitmaps.Count} cap={_layerCellBitmapCap}");
+                $"cell=({oldest.Key.gx},{oldest.Key.gy},{oldest.Key.pixelsPerCell}) reason=cap dictSize={_layerCellBitmaps.Count} cap={_layerCellBitmapCap}");
         }
 
-        MapCanvas.Invalidate();
+        // Canvas invalidation is hoisted to DrainPendingCellApplies (one per drained batch)
+        // so a 48-cell tick coalesces into a single redraw instead of 48.
     }
 
-    private TerrainTextureViewportRequest BuildTerrainTextureViewportRequest(
-        float canvasW, float canvasH, List<CellRecord> activeCells)
+    /// <summary>
+    ///     Computes the quantized TerrainTextures viewport key and its world-space bounds (with the
+    ///     pan-direction preload bias) WITHOUT touching the spatial index. Shared by the cheap
+    ///     per-frame key compare in <see cref="EnsureHeightmapBitmap" /> and the heavy
+    ///     <see cref="BuildTerrainTextureViewportRequest" /> so both derive the key from identical
+    ///     math — if they diverged, rebuilds would fire spuriously or never.
+    /// </summary>
+    private TerrainTextureViewportKey ComputeTerrainViewportBounds(
+        float canvasW, float canvasH,
+        out float minCanvasX, out float maxCanvasX, out float minCanvasY, out float maxCanvasY,
+        out int pixelsPerCell)
     {
-        var pixelsPerCell = ChooseTerrainTexturePixelsPerCell(_zoom);
+        pixelsPerCell = ChooseTerrainTexturePixelsPerCell(_zoom);
         var (tlWorld, brWorld) = WorldMapViewportHelper.GetVisibleWorldBounds(
             canvasW, canvasH, _zoom, _panOffset);
 
@@ -1471,17 +1842,26 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         var biasTopWorld = _panVelocity.Y > velocityThresholdPx ? preloadWorld : marginWorld;
         var biasBottomWorld = _panVelocity.Y < -velocityThresholdPx ? preloadWorld : marginWorld;
 
-        var minCanvasX = Math.Min(tlWorld.X, brWorld.X) - biasLeft;
-        var maxCanvasX = Math.Max(tlWorld.X, brWorld.X) + biasRight;
+        minCanvasX = Math.Min(tlWorld.X, brWorld.X) - biasLeft;
+        maxCanvasX = Math.Max(tlWorld.X, brWorld.X) + biasRight;
         // World Y grows northward, so the screen-top edge is the WORLD MAX-Y and screen-bottom is WORLD MIN-Y.
-        var minCanvasY = Math.Min(tlWorld.Y, brWorld.Y) - biasBottomWorld;
-        var maxCanvasY = Math.Max(tlWorld.Y, brWorld.Y) + biasTopWorld;
+        minCanvasY = Math.Min(tlWorld.Y, brWorld.Y) - biasBottomWorld;
+        maxCanvasY = Math.Max(tlWorld.Y, brWorld.Y) + biasTopWorld;
 
         var minGx = (int)MathF.Floor(minCanvasX / WorldGridConstants.CellSize);
         var maxGx = (int)MathF.Floor(maxCanvasX / WorldGridConstants.CellSize);
         var minGy = (int)MathF.Floor(-maxCanvasY / WorldGridConstants.CellSize);
         var maxGy = (int)MathF.Floor(-minCanvasY / WorldGridConstants.CellSize);
-        var key = new TerrainTextureViewportKey(minGx, maxGx, minGy, maxGy, pixelsPerCell);
+        return new TerrainTextureViewportKey(minGx, maxGx, minGy, maxGy, pixelsPerCell);
+    }
+
+    private TerrainTextureViewportRequest BuildTerrainTextureViewportRequest(
+        float canvasW, float canvasH, List<CellRecord> activeCells)
+    {
+        var key = ComputeTerrainViewportBounds(
+            canvasW, canvasH,
+            out var minCanvasX, out var maxCanvasX, out var minCanvasY, out var maxCanvasY,
+            out var pixelsPerCell);
 
         var visibleCells = new List<CellRecord>();
         if (_spatialIndex is not null)
@@ -1500,7 +1880,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                     continue;
                 }
 
-                if (gx >= minGx && gx <= maxGx && gy >= minGy && gy <= maxGy)
+                if (gx >= key.MinGx && gx <= key.MaxGx && gy >= key.MinGy && gy <= key.MaxGy)
                 {
                     visibleCells.Add(cell);
                 }
@@ -1604,17 +1984,21 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
         if (result.CellPixels is not null)
         {
-            _layerCellBitmaps ??= new Dictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap>(result.CellPixels.Count);
+            _layerCellBitmaps ??= new OrderedDictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap>(result.CellPixels.Count);
             foreach (var ((gx, gy), pixels) in result.CellPixels)
             {
                 var tripleKey = (gx, gy, result.CellPixelsPerCell);
-                if (_layerCellBitmaps.TryGetValue(tripleKey, out var stale)) stale.Dispose();
-                _layerCellBitmaps[tripleKey] = CanvasBitmap.CreateFromBytes(
+                if (_layerCellBitmaps.TryGetValue(tripleKey, out var stale))
+                {
+                    stale.Dispose();
+                    _layerCellBitmaps.Remove(tripleKey);
+                }
+                _layerCellBitmaps.Add(tripleKey, CanvasBitmap.CreateFromBytes(
                     MapCanvas,
                     pixels,
                     result.CellPixelsPerCell,
                     result.CellPixelsPerCell,
-                    Windows.Graphics.DirectX.DirectXPixelFormat.R8G8B8A8UIntNormalized);
+                    Windows.Graphics.DirectX.DirectXPixelFormat.R8G8B8A8UIntNormalized));
             }
             _layerCellBitmapsLayer = _currentLayer;
         }

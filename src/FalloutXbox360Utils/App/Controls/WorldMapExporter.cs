@@ -24,29 +24,13 @@ internal static class WorldMapExporter
     private const int HmGridSize = 33;
 
     /// <summary>
-    ///     Computes the export grid layout from active cells.
-    ///     Returns null if there are no cells with grid coordinates.
+    ///     Max single-image dimension (per axis) for one PNG. D3D11 feature-level 11 guarantees a
+    ///     16384 px max texture dimension; a single <see cref="CanvasRenderTarget" /> can't exceed it.
+    ///     The default (non-tiled) export clamps to this; "Tiled high-res" splits the output into a
+    ///     grid of tiles each within this bound. (WorldLayerBuildService uses a more conservative
+    ///     8192 for its single-bitmap path.)
     /// </summary>
-    internal static (int ImageW, int ImageH, int PixelsPerCell,
-        int MinGridX, int MaxGridX, int MinGridY, int MaxGridY)? ComputeExportLayout(
-            List<CellRecord> cells, int exportLongEdge)
-    {
-        var cellsWithGrid = cells.Where(c => c.GridX.HasValue && c.GridY.HasValue).ToList();
-        if (cellsWithGrid.Count == 0) return null;
-
-        var minGridX = cellsWithGrid.Min(c => c.GridX!.Value);
-        var maxGridX = cellsWithGrid.Max(c => c.GridX!.Value);
-        var minGridY = cellsWithGrid.Min(c => c.GridY!.Value);
-        var maxGridY = cellsWithGrid.Max(c => c.GridY!.Value);
-
-        var gridW = maxGridX - minGridX + 1;
-        var gridH = maxGridY - minGridY + 1;
-        var maxGridDim = Math.Max(gridW, gridH);
-        var pixelsPerCell = Math.Max(exportLongEdge / maxGridDim, 1);
-
-        return (gridW * pixelsPerCell, gridH * pixelsPerCell, pixelsPerCell,
-            minGridX, maxGridX, minGridY, maxGridY);
-    }
+    internal const int ExportMaxTileDimension = 16384;
 
     internal static async Task ExportWorldspacePngAsync(
         string filePath, int imageW, int imageH, int pixelsPerCell,
@@ -62,7 +46,8 @@ internal static class WorldMapExporter
         HeightmapColorScheme colorScheme,
         WorldViewData? data = null,
         List<CellRecord>? activeCells = null,
-        bool drawNavMesh = false)
+        bool drawNavMesh = false,
+        bool drawGrid = true)
     {
         using var renderTarget = new CanvasRenderTarget(mapCanvas, imageW, imageH, 96);
         var device = renderTarget.Device;
@@ -119,8 +104,11 @@ internal static class WorldMapExporter
                     new Rect(bitmapX, bitmapY, bitmapWorldW, bitmapWorldH));
             }
 
-            // 2. Cell grid
-            WorldMapDrawingHelper.DrawExportCellGrid(ds, minGridX, maxGridX, minGridY, maxGridY, pixelsPerWorldUnit);
+            // 2. Cell grid (optional)
+            if (drawGrid)
+            {
+                WorldMapDrawingHelper.DrawExportCellGrid(ds, minGridX, maxGridX, minGridY, maxGridY, pixelsPerWorldUnit);
+            }
 
             // 3. Nav mesh overlay (below markers so labels stay on top).
             if (drawNavMesh && data != null && activeCells != null)

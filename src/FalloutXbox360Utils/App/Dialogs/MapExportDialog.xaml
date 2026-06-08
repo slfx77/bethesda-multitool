@@ -14,6 +14,14 @@
   <StackPanel Spacing="14" MinWidth="380">
 
     <StackPanel Spacing="4">
+      <TextBlock Text="Layer" Style="{StaticResource BodyStrongTextBlockStyle}"
+                 AutomationProperties.HeadingLevel="Level2" />
+      <ComboBox x:Name="LayerComboBox" HorizontalAlignment="Stretch"
+                SelectionChanged="LayerComboBox_SelectionChanged"
+                AutomationProperties.Name="Export layer" />
+    </StackPanel>
+
+    <StackPanel Spacing="4">
       <TextBlock Text="Resolution" Style="{StaticResource BodyStrongTextBlockStyle}"
                  AutomationProperties.HeadingLevel="Level2" />
       <TextBlock x:Name="WorldSizeText" FontSize="11"
@@ -46,7 +54,7 @@
       </Grid.ColumnDefinitions>
       <TextBlock Grid.Column="0" Text="Long edge:" VerticalAlignment="Center" />
       <NumberBox Grid.Column="1" x:Name="LongEdgeNumberBox"
-                 Minimum="32" Maximum="32768" SmallChange="64" LargeChange="512"
+                 Minimum="32" Maximum="131072" SmallChange="64" LargeChange="512"
                  SpinButtonPlacementMode="Inline"
                  ValueChanged="LongEdgeNumberBox_ValueChanged"
                  AutomationProperties.Name="Long edge in pixels" />
@@ -62,6 +70,9 @@
       <CheckBox x:Name="MarkersCheckBox" Content="Map markers" />
       <CheckBox x:Name="NavMeshCheckBox" Content="Nav mesh" />
       <CheckBox x:Name="WaterCheckBox" Content="Water" />
+      <CheckBox x:Name="GridCheckBox" Content="Cell grid" />
+      <CheckBox x:Name="TiledCheckBox" Content="Tiled high-res (multiple PNGs + manifest)"
+                Checked="TiledCheckBox_Changed" Unchecked="TiledCheckBox_Changed" />
     </StackPanel>
 
   </StackPanel>

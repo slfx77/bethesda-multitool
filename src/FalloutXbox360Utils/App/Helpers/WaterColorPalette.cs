@@ -39,31 +39,11 @@ internal sealed record WaterColorPalette(
     /// </summary>
     internal static WaterColorPalette? FromVisualProperties(IReadOnlyDictionary<string, object?>? props)
     {
-        if (props is null) return null;
-
-        var shallow = ExtractColor(props, "ShallowColor");
-        var deep = ExtractColor(props, "DeepColor");
-        if (shallow is null && deep is null) return null;
-
-        var s = shallow ?? deep!.Value;
-        var d = deep ?? shallow!.Value;
-        return new WaterColorPalette(s, d);
-    }
-
-    private static (byte R, byte G, byte B)? ExtractColor(
-        IReadOnlyDictionary<string, object?> props, string key)
-    {
-        if (!props.TryGetValue(key, out var value) || value is null) return null;
-        var packed = value switch
-        {
-            uint u => u,
-            int i => (uint)i,
-            _ => 0u
-        };
-        // A packed value of 0 is ambiguous (could be "no color set" or "actual black"); treat
-        // as missing so a record with only one valid color falls back to that one rather than
-        // lerping toward black.
-        if (packed == 0) return null;
-        return ((byte)(packed & 0xFF), (byte)((packed >> 8) & 0xFF), (byte)((packed >> 16) & 0xFF));
+        // Delegate to the shared Core decoder so the packed-uint32 → RGB mapping lives in one
+        // place (the 3D WaterRenderer12 reads the same WaterAppearance). The 2D overlay only
+        // needs Shallow + Deep; Reflection is decoded but unused here (runtime Fresnel-mixes it,
+        // which isn't reproducible at overview scale).
+        var appearance = WaterAppearance.FromVisualProperties(props, noiseTexture: null);
+        return appearance is null ? null : new WaterColorPalette(appearance.Shallow, appearance.Deep);
     }
 }
