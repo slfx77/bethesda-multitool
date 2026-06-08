@@ -27,9 +27,20 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12;
 /// </summary>
 internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
 {
-    private const uint UniformsByteSize = 64; // float4x4 viewProj
+    // viewProj(64) + 3 DNAM colors(48) + camPosTime(16) + noiseParams(16) + surface0/1(32) + 3 layers(48)
+    private const uint UniformsByteSize = 224;
 
-    private static readonly Vector4 DefaultWaterColor = new(0.118f, 0.216f, 0.471f, 0.65f);
+    // Sentinel meaning "no resolved NNAM normal map" — the shader then uses a procedural ripple
+    // normal so proto/test worldspaces with no water texture still animate.
+    private const uint NoNormalMap = 0xFFFFFFFF;
+
+    // World units per NNAM tile. FNV cells are 4096 units; ~2 tiles/cell reads as gentle swell.
+    private const uint NoiseTilingWorldUnits = 2048;
+
+    // Fallback tints when the worldspace has no resolvable WATR appearance (DNAM colors).
+    private static readonly Vector3 DefaultShallow = new(0.12f, 0.24f, 0.32f);
+    private static readonly Vector3 DefaultDeep = new(0.03f, 0.09f, 0.16f);
+    private static readonly Vector3 DefaultReflection = new(0.22f, 0.32f, 0.40f);
 
     private readonly GpuDevice12 _gpu;
     private readonly GpuCommandRecorder12 _recorder;
@@ -43,6 +54,9 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     private readonly List<global::FalloutXbox360Utils.WorldWaterCell> _waterCells = new();
     private readonly List<global::FalloutXbox360Utils.WorldWaterCell> _visibleWaterScratch = new();
     private float? _worldspaceDefaultWaterHeight;
+    private FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World.WaterAppearance? _appearance;
+    private uint _noiseBindlessIndex = NoNormalMap;
+    private readonly long _startTimestamp = Stopwatch.GetTimestamp();
     private global::FalloutXbox360Utils.WorldSpatialIndex? _spatialIndex;
 
     // Persistent-mapped UPLOAD-heap structured buffer. Resized when the visible water cell
@@ -142,9 +156,26 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         Dictionary<(int gx, int gy), CellRecord> cells,
         float? worldspaceDefaultWaterHeight,
         global::FalloutXbox360Utils.WorldSpatialIndex? spatialIndex)
+        => LoadData(cells, worldspaceDefaultWaterHeight, spatialIndex, appearance: null);
+
+    public void LoadData(
+        Dictionary<(int gx, int gy), CellRecord> cells,
+        float? worldspaceDefaultWaterHeight,
+        global::FalloutXbox360Utils.WorldSpatialIndex? spatialIndex,
+        FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World.WaterAppearance? appearance)
+        => LoadData(cells, worldspaceDefaultWaterHeight, spatialIndex, appearance, normalMapBindlessIndex: null);
+
+    public void LoadData(
+        Dictionary<(int gx, int gy), CellRecord> cells,
+        float? worldspaceDefaultWaterHeight,
+        global::FalloutXbox360Utils.WorldSpatialIndex? spatialIndex,
+        FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World.WaterAppearance? appearance,
+        uint? normalMapBindlessIndex)
     {
         _worldspaceDefaultWaterHeight = worldspaceDefaultWaterHeight;
         _spatialIndex = spatialIndex;
+        _appearance = appearance;
+        _noiseBindlessIndex = normalMapBindlessIndex ?? NoNormalMap;
         _waterCells.Clear();
 
         if (spatialIndex is not null)
@@ -156,7 +187,14 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             foreach (var (key, cell) in cells)
             {
                 if (ResolveWaterHeight(cell) is float z)
-                    _waterCells.Add(new global::FalloutXbox360Utils.WorldWaterCell(key, cell, z));
+                {
+                    _waterCells.Add(new global::FalloutXbox360Utils.WorldWaterCell(
+                        key,
+                        cell,
+                        z,
+                        new Vector2(key.gx * WorldGridConstants.CellSize, key.gy * WorldGridConstants.CellSize),
+                        WorldGridConstants.CellSize));
+                }
             }
         }
 
@@ -190,23 +228,46 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         for (var i = 0; i < visible; i++)
         {
             var water = _visibleWaterScratch[i];
-            var key = water.Key;
             _instanceScratch[i] = new WaterInstance
             {
-                CellOriginAndWater = new Vector4(
-                    key.gx * WorldGridConstants.CellSize,
-                    key.gy * WorldGridConstants.CellSize,
+                // OriginXY/FootprintSize are grid-derived for exteriors and AABB-derived for
+                // interiors (see WorldSpatialIndex.BuildInterior), so this is grid-agnostic.
+                CellOriginAndFootprint = new Vector4(
+                    water.OriginXY.X,
+                    water.OriginXY.Y,
                     water.Height,
-                    WorldGridConstants.CellSize),
-                Color = DefaultWaterColor,
+                    water.FootprintSize),
             };
         }
         LastStats.InstanceBuildMilliseconds = ElapsedMilliseconds(segmentStarted);
 
         segmentStarted = StartTiming();
-        // Per-frame CB (b0) — viewProj only.
+        // Per-frame CB (b0) — viewProj + DNAM colors + (camera pos, elapsed time) for the
+        // procedural ripple/Fresnel/specular shading.
+        var elapsedSeconds = (float)Stopwatch.GetElapsedTime(_startTimestamp).TotalSeconds;
         var perFrameAlloc = _ringBuffer.Allocate(frameIndex, UniformsByteSize, GpuRingBuffer12.CbAlignment);
-        unsafe { *(Matrix4x4*)perFrameAlloc.CpuPtr = viewProj; }
+        var surface = _appearance?.Surface ?? FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World.WaterSurfaceParams.Default;
+        unsafe
+        {
+            *(WaterFrameUniforms*)perFrameAlloc.CpuPtr = new WaterFrameUniforms
+            {
+                ViewProj = viewProj,
+                Shallow = ColorToVector4(_appearance?.Shallow, DefaultShallow),
+                Deep = ColorToVector4(_appearance?.Deep, DefaultDeep),
+                Reflection = ColorToVector4(_appearance?.Reflection, DefaultReflection),
+                CamPosTime = new Vector4(cylinder.Position, elapsedSeconds),
+                // x = NNAM bindless index (NoNormalMap → procedural ripple); y = world units/tile.
+                NoiseIndex = _noiseBindlessIndex,
+                NoiseTiling = NoiseTilingWorldUnits,
+                NoisePad0 = 0,
+                NoisePad1 = 0,
+                Surface0 = new Vector4(surface.NormalsUvScale, surface.FresnelAmount, surface.ReflectivityAmount, surface.Shininess),
+                Surface1 = new Vector4(surface.SunPower, surface.DepthFalloffStart, surface.DepthFalloffEnd, 0f),
+                Layer1 = LayerToVector4(surface.Layer1),
+                Layer2 = LayerToVector4(surface.Layer2),
+                Layer3 = LayerToVector4(surface.Layer3),
+            };
+        }
 
         // Copy CPU instance scratch into the persistent-mapped UPLOAD buffer.
         UploadInstances(visible);
@@ -225,6 +286,9 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, perFrameAlloc.GpuAddress);
         cmd.SetGraphicsRootDescriptorTable(GpuRootSignature12.Slots.SrvTable, srvAlloc.Gpu);
+        // Bind the shared bindless texture table (space1, t0..) at the heap head so the PS can
+        // sample the resolved NNAM normal map via NonUniformResourceIndex(uNoiseParams.x).
+        cmd.SetGraphicsRootDescriptorTable(GpuRootSignature12.Slots.BindlessSrvTable, _cbvSrvUavHeap.BindlessHeapStartGpu);
 
         // 6 vertices per quad, `visible` instances.
         cmd.DrawInstanced(6, (uint)visible, 0, 0);
@@ -359,6 +423,12 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     private static double ElapsedMilliseconds(long started) =>
         started == 0 ? 0 : Stopwatch.GetElapsedTime(started).TotalMilliseconds;
 
+    // D3DCOMPILE_ENABLE_UNBOUNDED_DESCRIPTOR_TABLES — required by fxc/D3DCompile for any shader
+    // that declares an unbounded resource array (e.g. `Texture2D gWaterTextures[] : register(t0, space1)`).
+    // Mirrors the flag TerrainRenderer12/ReferenceRenderer12 set for their bindless shaders; without it
+    // the compile fails X3596 and the whole D3D12 backend init aborts.
+    private const ShaderFlags EnableUnboundedDescriptorTables = (ShaderFlags)0x00100000;
+
     private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile)
     {
         var assembly = Assembly.GetExecutingAssembly();
@@ -370,7 +440,22 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         using var reader = new StreamReader(stream);
         var source = reader.ReadToEnd();
 
-        var result = Compiler.Compile(source, entryPoint, sourceName: name, profile,
+        // Detect the unbounded-array declaration by its shape (`[] : register`) rather than a fixed
+        // variable name — water's array is `gWaterTextures[]`, so the name-specific `textures[]` check
+        // the other renderers use would miss it.
+        var shaderFlags = source.Contains("[] : register", StringComparison.Ordinal)
+            ? EnableUnboundedDescriptorTables
+            : ShaderFlags.None;
+
+        var result = Compiler.Compile(
+            source,
+            Array.Empty<ShaderMacro>(),
+            include: null!,
+            entryPoint,
+            sourceName: name,
+            profile,
+            shaderFlags,
+            EffectFlags.None,
             out Blob? bytecode, out Blob? errors);
 
         if (result.Failure || bytecode is null)
@@ -386,11 +471,42 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         finally { bytecode.Dispose(); }
     }
 
+    private static Vector4 ColorToVector4((byte R, byte G, byte B)? color, Vector3 fallback)
+    {
+        if (color is not { } c) return new Vector4(fallback, 1f);
+        return new Vector4(c.R / 255f, c.G / 255f, c.B / 255f, 1f);
+    }
+
+    private static Vector4 LayerToVector4(
+        FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World.WaterNoiseLayer layer)
+        => new(layer.UvScale, layer.WindDirDegrees, layer.WindSpeed, layer.AmpScale);
+
     [StructLayout(LayoutKind.Sequential)]
     private struct WaterInstance
     {
-        public Vector4 CellOriginAndWater;
-        public Vector4 Color;
+        public Vector4 CellOriginAndFootprint; // xy = origin, z = water height, w = footprint size
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WaterFrameUniforms
+    {
+        public Matrix4x4 ViewProj;
+        public Vector4 Shallow;
+        public Vector4 Deep;
+        public Vector4 Reflection;
+        public Vector4 CamPosTime;
+        // A uint4 register (HLSL uNoiseParams): x = NNAM bindless index, y = world units/tile.
+        // Kept as raw uints so the index reaches the shader bit-exact (no float reinterpretation).
+        public uint NoiseIndex;
+        public uint NoiseTiling;
+        public uint NoisePad0;
+        public uint NoisePad1;
+        // Engine-faithful WATR DNAM shading params (see WaterSurfaceParams).
+        public Vector4 Surface0; // NormalsUvScale, FresnelAmount, ReflectivityAmount, Shininess
+        public Vector4 Surface1; // SunPower, DepthFalloffStart, DepthFalloffEnd, spare
+        public Vector4 Layer1;   // UvScale, WindDirDegrees, WindSpeed, AmpScale
+        public Vector4 Layer2;
+        public Vector4 Layer3;
     }
 }
 #endif

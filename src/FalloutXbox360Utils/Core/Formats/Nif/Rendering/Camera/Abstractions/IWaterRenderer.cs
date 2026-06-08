@@ -17,4 +17,24 @@ internal interface IWaterRenderer : IWorldRenderer
         Dictionary<(int gx, int gy), CellRecord> cells,
         float? worldspaceDefaultWaterHeight,
         global::FalloutXbox360Utils.WorldSpatialIndex? spatialIndex);
+
+    /// <summary>Loads water cells plus the worldspace's resolved WATR appearance (DNAM colors)
+    /// used to tint + light the surface. <paramref name="appearance" /> null falls back to a
+    /// default tint.</summary>
+    void LoadData(
+        Dictionary<(int gx, int gy), CellRecord> cells,
+        float? worldspaceDefaultWaterHeight,
+        global::FalloutXbox360Utils.WorldSpatialIndex? spatialIndex,
+        WaterAppearance? appearance);
+
+    /// <summary>As above, plus the bindless SRV index of the resolved WATR NNAM noise/normal map
+    /// (from <c>TerrainTextureResolver12.ResolveNormalMapBindlessIndex</c>). <paramref
+    /// name="normalMapBindlessIndex" /> null makes the surface fall back to a procedural ripple
+    /// normal — proto/test worlds with no water texture still animate.</summary>
+    void LoadData(
+        Dictionary<(int gx, int gy), CellRecord> cells,
+        float? worldspaceDefaultWaterHeight,
+        global::FalloutXbox360Utils.WorldSpatialIndex? spatialIndex,
+        WaterAppearance? appearance,
+        uint? normalMapBindlessIndex);
 }
