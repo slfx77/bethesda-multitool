@@ -1,21 +1,29 @@
 using System.Globalization;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
 
 namespace FalloutRendererProfiler;
 
 internal sealed record RendererProfilerOptions
 {
-    internal static RendererProfilerOptions Default { get; } = new()
-    {
-        ProfileOutputPath = CreateDefaultProfileOutputPath()
-    };
+    internal const string DefaultStressScene = "WastelandNVHeavy";
+
+    internal static RendererProfilerOptions Default { get; } = CreateDefault();
 
     internal string? InputPath { get; init; }
     internal string? DataDirectory { get; init; }
     internal IReadOnlyList<string> LoadOrderPaths { get; init; } = [];
     internal string ProfileOutputPath { get; init; } = CreateDefaultProfileOutputPath();
+    internal string ProfileJsonlOutputPath { get; init; } =
+        CreateDefaultProfileJsonlOutputPath(CreateDefaultProfileOutputPath());
     internal int ProfileIntervalMilliseconds { get; init; } = 2000;
     internal int? DurationSeconds { get; init; }
-    internal string? StressScene { get; init; }
+    internal string? StressScene { get; init; } = DefaultStressScene;
+    internal RendererCameraMotionKind CameraMotion { get; init; } = RendererCameraMotionKind.Static;
+    internal float CameraSpeed { get; init; } = 2048f;
+    /// <summary>Render distance in cells. Null = keep the worldspace/bookmark default (16 cells).</summary>
+    internal float? RenderDistanceCells { get; init; }
+    internal double StallThresholdMilliseconds { get; init; } = 50;
+    internal bool ForceGpuTimestamps { get; init; }
     internal bool ShowFrameStats { get; init; } = true;
     internal bool EnablePersistentMeshCache { get; init; }
     internal bool Verbose { get; init; }
@@ -34,9 +42,15 @@ internal sealed record RendererProfilerOptions
         Optional:
           --load-order <paths>        Extra ESM/ESP/DMP files, repeatable or semicolon-separated.
           --profile-output <path>     Profile/log output file. Defaults to a timestamped temp log.
+          --profile-jsonl <path>      Structured JSONL output. Defaults to profile-output with .jsonl.
           --profile-interval-ms <n>   Aggregate profile interval. Default: 2000.
           --duration-seconds <n>      Exit automatically after the viewer has loaded.
-          --stress-scene <name>       Sets FALLOUT_VIEWER_STRESS_SCENE before viewer creation.
+          --stress-scene <name>       Sets FALLOUT_VIEWER_STRESS_SCENE. Default: WastelandNV; use none to disable.
+          --camera-motion <mode>      static, forward, orbit, or sweep. Default: static.
+          --camera-speed <n>          Camera automation speed in world units/sec. Default: 2048.
+          --render-distance <cells>   Override the view/render distance in cells. Default: scene default (16).
+          --stall-threshold-ms <n>    Emit per-frame stall events at/above this time. Default: 50; 0 disables.
+          --gpu-timestamps            Collect D3D12 GPU timestamps from the first rendered frame.
           --no-frame-stats            Do not set FALLOUT_VIEWER_FRAME_STATS=1.
           --persistent-mesh-cache     Enables the opt-in persistent decoded mesh cache.
           --verbose                   Enables debug logging.
@@ -56,10 +70,16 @@ internal sealed record RendererProfilerOptions
         string? input = null;
         string? dataDir = null;
         string? profileOutput = null;
-        string? stressScene = null;
+        string? profileJsonl = null;
+        string? stressScene = DefaultStressScene;
         var loadOrder = new List<string>();
         var profileIntervalMs = 2000;
         int? durationSeconds = null;
+        var cameraMotion = RendererCameraMotionKind.Static;
+        var cameraSpeed = 2048f;
+        float? renderDistanceCells = null;
+        var stallThresholdMs = 50d;
+        var forceGpuTimestamps = false;
         var showFrameStats = true;
         var persistentMeshCache = false;
         var verbose = false;
@@ -101,6 +121,11 @@ internal sealed record RendererProfilerOptions
                     if (error != null) return Fail(out options, error);
                     break;
 
+                case "--profile-jsonl":
+                    profileJsonl = RequireValue(args, ref i, arg, out error);
+                    if (error != null) return Fail(out options, error);
+                    break;
+
                 case "--profile-interval-ms":
                     if (!TryReadPositiveInt(args, ref i, arg, out profileIntervalMs, out error))
                     {
@@ -117,8 +142,43 @@ internal sealed record RendererProfilerOptions
                     break;
 
                 case "--stress-scene":
-                    stressScene = RequireValue(args, ref i, arg, out error);
+                    stressScene = NormalizeStressScene(RequireValue(args, ref i, arg, out error));
                     if (error != null) return Fail(out options, error);
+                    break;
+
+                case "--camera-motion":
+                    var motionRaw = RequireValue(args, ref i, arg, out error);
+                    if (error != null) return Fail(out options, error);
+                    if (!RendererCameraMotion.TryParseKind(motionRaw, out cameraMotion))
+                    {
+                        return Fail(out options, $"Unknown camera motion: {motionRaw}");
+                    }
+                    break;
+
+                case "--camera-speed":
+                    if (!TryReadPositiveFloat(args, ref i, arg, out cameraSpeed, out error))
+                    {
+                        return Fail(out options, error);
+                    }
+                    break;
+
+                case "--render-distance":
+                    if (!TryReadPositiveFloat(args, ref i, arg, out var renderDistanceValue, out error))
+                    {
+                        return Fail(out options, error);
+                    }
+                    renderDistanceCells = renderDistanceValue;
+                    break;
+
+                case "--stall-threshold-ms":
+                    if (!TryReadNonNegativeDouble(args, ref i, arg, out stallThresholdMs, out error))
+                    {
+                        return Fail(out options, error);
+                    }
+                    break;
+
+                case "--gpu-timestamps":
+                    forceGpuTimestamps = true;
                     break;
 
                 case "--no-frame-stats":
@@ -180,17 +240,28 @@ internal sealed record RendererProfilerOptions
             }
         }
 
+        var resolvedProfileOutput = string.IsNullOrWhiteSpace(profileOutput)
+            ? CreateDefaultProfileOutputPath()
+            : Path.GetFullPath(profileOutput);
+        var resolvedProfileJsonl = string.IsNullOrWhiteSpace(profileJsonl)
+            ? CreateDefaultProfileJsonlOutputPath(resolvedProfileOutput)
+            : Path.GetFullPath(profileJsonl);
+
         options = new RendererProfilerOptions
         {
             InputPath = input is null ? null : Path.GetFullPath(input),
             DataDirectory = dataDir is null ? null : Path.GetFullPath(dataDir),
             LoadOrderPaths = loadOrder.Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
-            ProfileOutputPath = string.IsNullOrWhiteSpace(profileOutput)
-                ? CreateDefaultProfileOutputPath()
-                : Path.GetFullPath(profileOutput),
+            ProfileOutputPath = resolvedProfileOutput,
+            ProfileJsonlOutputPath = resolvedProfileJsonl,
             ProfileIntervalMilliseconds = profileIntervalMs,
             DurationSeconds = durationSeconds,
             StressScene = stressScene,
+            CameraMotion = cameraMotion,
+            CameraSpeed = cameraSpeed,
+            RenderDistanceCells = renderDistanceCells,
+            StallThresholdMilliseconds = stallThresholdMs,
+            ForceGpuTimestamps = forceGpuTimestamps,
             ShowFrameStats = showFrameStats,
             EnablePersistentMeshCache = persistentMeshCache,
             Verbose = verbose,
@@ -205,6 +276,37 @@ internal sealed record RendererProfilerOptions
     {
         options = Default;
         return false;
+    }
+
+    private static string? NormalizeStressScene(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var trimmed = value.Trim();
+        if (string.Equals(trimmed, "none", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "off", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "disabled", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return string.Equals(trimmed, "WastelandNV", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(trimmed, DefaultStressScene, StringComparison.OrdinalIgnoreCase)
+            ? DefaultStressScene
+            : trimmed;
+    }
+
+    private static RendererProfilerOptions CreateDefault()
+    {
+        var profileOutputPath = CreateDefaultProfileOutputPath();
+        return new RendererProfilerOptions
+        {
+            ProfileOutputPath = profileOutputPath,
+            ProfileJsonlOutputPath = CreateDefaultProfileJsonlOutputPath(profileOutputPath)
+        };
     }
 
     private static string? RequireValue(string[] args, ref int index, string option, out string? error)
@@ -244,6 +346,60 @@ internal sealed record RendererProfilerOptions
         return true;
     }
 
+    private static bool TryReadPositiveFloat(
+        string[] args,
+        ref int index,
+        string option,
+        out float value,
+        out string? error)
+    {
+        var raw = RequireValue(args, ref index, option, out error);
+        if (error != null)
+        {
+            value = 0;
+            return false;
+        }
+
+        if (!float.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out value) ||
+            value <= 0 ||
+            float.IsNaN(value) ||
+            float.IsInfinity(value))
+        {
+            error = $"{option} must be a positive number.";
+            return false;
+        }
+
+        error = null;
+        return true;
+    }
+
+    private static bool TryReadNonNegativeDouble(
+        string[] args,
+        ref int index,
+        string option,
+        out double value,
+        out string? error)
+    {
+        var raw = RequireValue(args, ref index, option, out error);
+        if (error != null)
+        {
+            value = 0;
+            return false;
+        }
+
+        if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out value) ||
+            value < 0 ||
+            double.IsNaN(value) ||
+            double.IsInfinity(value))
+        {
+            error = $"{option} must be a non-negative number.";
+            return false;
+        }
+
+        error = null;
+        return true;
+    }
+
     private static void AddPathList(List<string> paths, string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -264,5 +420,14 @@ internal sealed record RendererProfilerOptions
             CultureInfo.InvariantCulture,
             $"profile-{DateTime.Now:yyyyMMdd-HHmmss}.log");
         return Path.Combine(dir, name);
+    }
+
+    private static string CreateDefaultProfileJsonlOutputPath(string profileOutputPath)
+    {
+        var directory = Path.GetDirectoryName(profileOutputPath);
+        var fileName = Path.GetFileNameWithoutExtension(profileOutputPath);
+        return Path.Combine(
+            string.IsNullOrEmpty(directory) ? Directory.GetCurrentDirectory() : directory,
+            fileName + ".jsonl");
     }
 }

@@ -2,6 +2,7 @@ using Windows.Graphics;
 using Windows.UI;
 using FalloutXbox360Utils;
 using FalloutXbox360Utils.Core;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
 using Microsoft.UI;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
@@ -19,10 +20,12 @@ internal sealed class MainWindow : Window, IDisposable
     private readonly TextBlock _statusText;
     private readonly ProgressBar _progressBar;
     private readonly WorldView3DControl _worldView;
+    private Renderer3DScenario? _scenario;
     private DispatcherQueueTimer? _timedExitTimer;
     private bool _started;
     private bool _exiting;
     private bool _disposed;
+    private bool _traceClosed;
 
     public MainWindow(RendererProfilerOptions options)
     {
@@ -63,6 +66,8 @@ internal sealed class MainWindow : Window, IDisposable
         _disposed = true;
         _timedExitTimer?.Stop();
         _timedExitTimer = null;
+        _scenario?.Dispose();
+        _scenario = null;
         _worldView.Dispose();
         GC.SuppressFinalize(this);
     }
@@ -124,6 +129,7 @@ internal sealed class MainWindow : Window, IDisposable
     private void OnClosed(object sender, WindowEventArgs args)
     {
         Dispose();
+        CloseProfilerTrace(_exiting ? "timed-exit" : "window-closed");
         Log.CloseLogFile();
     }
 
@@ -161,6 +167,7 @@ internal sealed class MainWindow : Window, IDisposable
                 _options.ProfileOutputPath);
             SetStatus(summary);
             Log.Info(summary);
+            _scenario = Renderer3DScenario.Start(_worldView, DispatcherQueue, _options);
 
             StartTimedExitIfRequested();
         }
@@ -208,8 +215,26 @@ internal sealed class MainWindow : Window, IDisposable
         _timedExitTimer?.Stop();
         _timedExitTimer = null;
         Dispose();
+        CloseProfilerTrace("duration-elapsed");
         Log.CloseLogFile();
         Application.Current.Exit();
+    }
+
+    private void CloseProfilerTrace(string reason)
+    {
+        if (_traceClosed)
+        {
+            return;
+        }
+
+        _traceClosed = true;
+        RendererProfilerTrace.Event("shutdown", new Dictionary<string, object?>
+        {
+            ["reason"] = reason,
+            ["profileOutput"] = _options.ProfileOutputPath,
+            ["profileJsonl"] = _options.ProfileJsonlOutputPath
+        });
+        RendererProfilerTrace.Close();
     }
 
     private void SetStatus(string message)
