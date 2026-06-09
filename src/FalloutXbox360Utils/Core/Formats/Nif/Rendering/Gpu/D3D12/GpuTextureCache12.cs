@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Threading;
 using Vortice.Direct3D12;
 using Vortice.DXGI;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
@@ -653,7 +654,6 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
 
         ID3D12Resource? texture = null;
         ID3D12Resource? staging = null;
-        var recordedGpuUse = false;
         try
         {
             texture = _gpu.Device.CreateCommittedResource<ID3D12Resource>(
@@ -692,13 +692,26 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
                 staging.Unmap(0, null);
             }
 
-            var cmd = _recorder.CommandList;
-            cmd.CopyTextureRegion(
-                new TextureCopyLocation(texture, 0), 0, 0, 0,
-                new TextureCopyLocation(staging, footprints[0]));
-            recordedGpuUse = true;
-            cmd.ResourceBarrierTransition(texture, ResourceStates.CopyDest, ResourceStates.PixelShaderResource);
-            _recorder.EnqueueDisposeAfterCurrentFrame(staging);
+            // The two 1×1 fallback textures (WhitePixel/FlatNormal) are created lazily — the first
+            // time any resolve needs a placeholder, which happens during pipeline init / LoadData,
+            // BEFORE the first GpuCommandRecorder12.BeginFrame. The shared per-frame command list is
+            // CLOSED outside BeginFrame/EndFrame, and recording into a closed D3D12 list is undefined
+            // behavior (the "CommandListClosed" validation error → command-allocator corruption →
+            // process-wide heap corruption / silent ExecutionEngineException). So submit this one-time
+            // copy on a self-contained one-shot direct list that does not depend on a frame being open.
+            var textureResource = texture;
+            var stagingResource = staging;
+            ExecuteOneShotDirect(cmd =>
+            {
+                cmd.CopyTextureRegion(
+                    new TextureCopyLocation(textureResource, 0), 0, 0, 0,
+                    new TextureCopyLocation(stagingResource, footprints[0]));
+                cmd.ResourceBarrierTransition(
+                    textureResource, ResourceStates.CopyDest, ResourceStates.PixelShaderResource);
+            });
+            // ExecuteOneShotDirect blocks until the GPU finishes the copy, so the staging buffer is
+            // safe to free immediately (no frame-deferred disposal needed).
+            staging.Dispose();
             staging = null;
 
             var entry = CreateEntry(
@@ -713,29 +726,42 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
         }
         finally
         {
-            if (staging is not null)
-            {
-                if (recordedGpuUse)
-                {
-                    _recorder.EnqueueDisposeAfterCurrentFrame(staging);
-                }
-                else
-                {
-                    staging.Dispose();
-                }
-            }
+            // On the success path both are already null (ownership transferred). On a failure path the
+            // one-shot submit either never ran or was awaited to completion, so direct disposal is safe.
+            staging?.Dispose();
+            texture?.Dispose();
+        }
+    }
 
-            if (texture is not null)
-            {
-                if (recordedGpuUse)
-                {
-                    _recorder.EnqueueDisposeAfterCurrentFrame(texture);
-                }
-                else
-                {
-                    texture.Dispose();
-                }
-            }
+    /// <summary>
+    ///     Records + submits a one-shot <see cref="CommandListType.Direct" /> command list and blocks
+    ///     until the GPU completes it. Used only for the two rare, frame-independent fallback-texture
+    ///     uploads (<see cref="WhitePixel" /> / <see cref="FlatNormal" />), which are created lazily the
+    ///     first time a resolve needs a placeholder — typically during pipeline init, BEFORE the first
+    ///     <see cref="GpuCommandRecorder12.BeginFrame" />. They must NOT record into the shared per-frame
+    ///     recorder list: that list is closed outside BeginFrame/EndFrame, and recording into a closed
+    ///     list is undefined behavior. A self-contained allocator/list/fence is frame-independent, and
+    ///     <see cref="ID3D12CommandQueue" /> submit + signal are free-threaded, so this is safe from any
+    ///     thread at any time. Called at most twice per cache (once per fallback), so the per-call
+    ///     allocation + blocking wait is negligible.
+    /// </summary>
+    private void ExecuteOneShotDirect(Action<ID3D12GraphicsCommandList> record)
+    {
+        using var allocator = _gpu.Device.CreateCommandAllocator<ID3D12CommandAllocator>(CommandListType.Direct);
+        using var list = _gpu.Device.CreateCommandList<ID3D12GraphicsCommandList>(
+            nodeMask: 0, CommandListType.Direct, allocator, initialState: null);
+        record(list);
+        list.Close();
+
+        _gpu.DirectQueue.ExecuteCommandList(list);
+
+        using var fence = _gpu.Device.CreateFence(0, FenceFlags.None);
+        using var fenceEvent = new AutoResetEvent(false);
+        _gpu.DirectQueue.Signal(fence, 1).CheckError();
+        if (fence.CompletedValue < 1)
+        {
+            fence.SetEventOnCompletion(1, fenceEvent.SafeWaitHandle.DangerousGetHandle()).CheckError();
+            fenceEvent.WaitOne();
         }
     }
 
