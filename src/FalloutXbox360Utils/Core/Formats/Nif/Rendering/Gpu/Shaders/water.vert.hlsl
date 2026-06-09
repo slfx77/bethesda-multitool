@@ -18,6 +18,7 @@ cbuffer Uniforms : register(b0)
     float4 uLayer1;      // per-noise-layer: UvScale, WindDirDeg, WindSpeed, AmpScale (PS only)
     float4 uLayer2;
     float4 uLayer3;
+    uint4 uDepthParams;  // x = scene-depth SRV index, y/z = near/far bits (PS only; here for layout)
 };
 
 struct WaterInstance

@@ -78,6 +78,12 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
     /// every frame; depth resource is single-buffered so the handle is stable across frames.</summary>
     public CpuDescriptorHandle DepthStencilView => _dsvHeap.GetCPUDescriptorHandleForHeapStart();
 
+    /// <summary>The depth resource (R32_TYPELESS, AllowDepthStencil). Exposed so the caller can
+    /// create an R32_FLOAT SRV over it (the water shader samples scene depth for its depth-fade)
+    /// and transition it DEPTH_WRITE ↔ PIXEL_SHADER_RESOURCE around that pass. Changes identity on
+    /// <see cref="Resize" />, so any SRV over it must be recreated afterward.</summary>
+    public ID3D12Resource? DepthResource => _depthTexture;
+
     /// <summary>
     ///     Returns the current back buffer's resource handle + RTV descriptor for the frame.
     ///     The caller is responsible for transitioning the resource PRESENT → RENDER_TARGET

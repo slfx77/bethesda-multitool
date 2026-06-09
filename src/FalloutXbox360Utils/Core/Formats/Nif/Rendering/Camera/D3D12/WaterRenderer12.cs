@@ -27,8 +27,9 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12;
 /// </summary>
 internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
 {
-    // viewProj(64) + 3 DNAM colors(48) + camPosTime(16) + noiseParams(16) + surface0/1(32) + 3 layers(48)
-    private const uint UniformsByteSize = 224;
+    // viewProj(64) + 3 DNAM colors(48) + camPosTime(16) + noiseParams(16) + surface0/1(32)
+    // + 3 layers(48) + depthParams(16)
+    private const uint UniformsByteSize = 240;
 
     // Sentinel meaning "no resolved NNAM normal map" — the shader then uses a procedural ripple
     // normal so proto/test worldspaces with no water texture still animate.
@@ -49,13 +50,20 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     private readonly GpuDescriptorHeapAllocator12 _cbvSrvUavHeap;
     private readonly GpuPersistentDescriptorAllocator12 _persistentSrvs;
     private readonly GpuDeletionQueue12 _deletionQueue;
+    // _pso: depth-test variant (DSV bound, hardware depth test) used when no scene-depth SRV is
+    // available. _psoDepthSample: depth-test OFF (no DSV) used when the host hands us the scene
+    // depth as an SRV — occlusion is then done in-shader via the sampled depth (FNV WATER000 path).
     private readonly ID3D12PipelineState _pso;
+    private readonly ID3D12PipelineState _psoDepthSample;
 
     private readonly List<global::FalloutXbox360Utils.WorldWaterCell> _waterCells = new();
     private readonly List<global::FalloutXbox360Utils.WorldWaterCell> _visibleWaterScratch = new();
     private float? _worldspaceDefaultWaterHeight;
     private FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World.WaterAppearance? _appearance;
     private uint _noiseBindlessIndex = NoNormalMap;
+    private uint _depthBindlessIndex = NoNormalMap; // scene depth SRV; NoNormalMap => proxy + depth-test PSO
+    private float _depthNear = 16f;
+    private float _depthFar = 1f;
     private readonly long _startTimestamp = Stopwatch.GetTimestamp();
     private global::FalloutXbox360Utils.WorldSpatialIndex? _spatialIndex;
 
@@ -142,6 +150,19 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             SampleMask = uint.MaxValue,
         };
         _pso = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+
+        // Depth-sample variant: no hardware depth test and no DSV bound, so the scene depth buffer
+        // can be read as an SRV during this pass. Occlusion is done in the shader (discard where the
+        // sampled scene geometry is nearer than the water fragment). Blend/raster match _pso.
+        psoDesc.DepthStencilState = new D12.DepthStencilDescription
+        {
+            DepthEnable = false,
+            DepthWriteMask = D12.DepthWriteMask.Zero,
+            DepthFunc = ComparisonFunction.Always,
+            StencilEnable = false,
+        };
+        psoDesc.DepthStencilFormat = Format.Unknown;
+        _psoDepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
     }
 
     public global::FalloutXbox360Utils.WorldRenderStats LastStats { get; } = new();
@@ -199,6 +220,13 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         }
 
         EnsureInstanceCapacity(_waterCells.Count);
+    }
+
+    public void SetSceneDepth(uint depthBindlessIndex, float near, float far)
+    {
+        _depthBindlessIndex = depthBindlessIndex;
+        _depthNear = near;
+        _depthFar = far;
     }
 
     public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder)
@@ -266,6 +294,13 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
                 Layer1 = LayerToVector4(surface.Layer1),
                 Layer2 = LayerToVector4(surface.Layer2),
                 Layer3 = LayerToVector4(surface.Layer3),
+                // Scene-depth source: x = depth SRV bindless index (NoNormalMap => view-angle proxy),
+                // y/z = camera near/far (bit-reinterpreted; the shader asfloat()s them to linearize
+                // the sampled depth into the real water-column thickness for the DepthFalloff fade).
+                DepthIndex = _depthBindlessIndex,
+                DepthNear = _depthNear,
+                DepthFar = _depthFar,
+                DepthPad = 0,
             };
         }
 
@@ -282,7 +317,10 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             _instanceSrvPersistent,
             DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView);
 
-        cmd.SetPipelineState(_pso);
+        // With a scene-depth SRV the host has unbound the DSV + transitioned depth to
+        // PIXEL_SHADER_RESOURCE, so use the no-depth-test PSO (occlusion is done in-shader).
+        // Otherwise the DSV is still bound → use the hardware-depth-test PSO.
+        cmd.SetPipelineState(_depthBindlessIndex != NoNormalMap ? _psoDepthSample : _pso);
         cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, perFrameAlloc.GpuAddress);
         cmd.SetGraphicsRootDescriptorTable(GpuRootSignature12.Slots.SrvTable, srvAlloc.Gpu);
@@ -310,6 +348,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         }
         _persistentSrvs.Dispose();
         _pso.Dispose();
+        _psoDepthSample.Dispose();
     }
 
     private int GatherVisibleWater(VisibilityCylinder cylinder)
@@ -507,6 +546,12 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         public Vector4 Layer1;   // UvScale, WindDirDegrees, WindSpeed, AmpScale
         public Vector4 Layer2;
         public Vector4 Layer3;
+        // uint4 uDepthParams: x = scene-depth SRV bindless index (0xFFFFFFFF = none/proxy),
+        // y = near, z = far (both bit-reinterpreted floats), w = spare.
+        public uint DepthIndex;
+        public float DepthNear;
+        public float DepthFar;
+        public uint DepthPad;
     }
 }
 #endif

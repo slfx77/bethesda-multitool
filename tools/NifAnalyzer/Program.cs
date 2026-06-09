@@ -46,6 +46,7 @@ internal sealed class Program
         rootCommand.Subcommands.Add(ScanCommands.CreateAnimatedCommand());
         rootCommand.Subcommands.Add(ParityCommands.CreateParityCommand());
         rootCommand.Subcommands.Add(ParityCommands.CreateConvertCommand());
+        rootCommand.Subcommands.Add(BenchCommands.CreateBenchCommand());
 
         return rootCommand.Parse(args).Invoke();
     }

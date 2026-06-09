@@ -95,6 +95,85 @@ internal static class WorldMapLayerRenderer
     }
 
     /// <summary>
+    ///     Whole-worldspace TerrainTextures aggregate: renders every cell's ACTUAL blended terrain
+    ///     textures at the coarse heightmap resolution (<see cref="HmGridSize" /> px/cell) and
+    ///     composites them into ONE bitmap. Used as the zoomed-out LOD so a large worldspace shows the
+    ///     full textured overview in a single fast bitmap instead of per-cell streaming thousands of
+    ///     high-res cells (which floods decode/upload). When zoomed in, the caller switches back to the
+    ///     per-cell high-res path. Returns null if the worldspace is too large to fit one bitmap under
+    ///     <paramref name="maxDimension" /> (caller then keeps per-cell streaming).
+    /// </summary>
+    /// <summary>Minimum px/cell for the aggregate — even a huge worldspace keeps at least this much
+    /// detail (a 248-cell worldspace at the 2048 target lands here).</summary>
+    internal const int MinAggregatePixelsPerCell = 8;
+
+    internal static LayerBitmap? RenderTerrainTexturesAggregate(
+        List<CellRecord> cellSource, LandscapeTexturePalette palette,
+        float? defaultWaterHeight, bool showWater,
+        out int pixelsPerCell,
+        WorldRenderCache? cache = null, WaterColorPalette? waterPalette = null,
+        int targetLongEdge = 2048, int maxDimension = 8192)
+    {
+        pixelsPerCell = HmGridSize;
+
+        // ComputeHeightmapData sizes a 33 px/cell grid over cells WITH terrain data; we use only its
+        // (minX, maxY) + cell extent. Cells with grid coords but outside that terrain extent (sparse
+        // outliers) are skipped below so they can't overflow the buffer.
+        var hm = HeightmapRenderer.ComputeHeightmapData(cellSource, defaultWaterHeight, cache);
+        if (hm == null) return null;
+        var (_, _, hmWidth, hmHeight, minX, maxY) = hm.Value;
+        var gridW = hmWidth / HmGridSize;
+        var gridH = hmHeight / HmGridSize;
+        if (gridW <= 0 || gridH <= 0) return null;
+
+        // Adaptive resolution: size the longest edge to ~targetLongEdge so the zoomed-out view
+        // minifies the bitmap only mildly (≤~2-3×) instead of ~6× at a fixed 33 px/cell — that heavy
+        // minification (plus GPU bilinear with no mips) is what produced the moire. Clamped to
+        // [MinAggregatePixelsPerCell, HmGridSize]; small worldspaces stay at the crisp 33 px/cell.
+        var maxCells = Math.Max(gridW, gridH);
+        pixelsPerCell = Math.Clamp(targetLongEdge / maxCells, MinAggregatePixelsPerCell, HmGridSize);
+        var ppc = pixelsPerCell;
+        var width = gridW * ppc;
+        var height = gridH * ppc;
+        if (width <= 0 || height <= 0 || width > maxDimension || height > maxDimension) return null;
+
+        palette.Preload(cellSource);
+        var cellByGrid = BuildCellGridIndex(cellSource);
+        var rgba = InitMissingBackground(width, height);
+
+        // Render + blit cells in parallel: each writes a disjoint ppc×ppc block, so the shared buffer
+        // needs no locking. RenderTerrainTextureCellOverview's weight-table scratch is [ThreadStatic]
+        // and the palette is concurrent-read-safe (same as the streaming path). 16k cells at 33 px is
+        // far cheaper than the per-cell high-res stream, and one upload instead of thousands.
+        var cells = EnumerateCellsWithGrid(cellSource).ToList();
+        Parallel.ForEach(cells, cell =>
+        {
+            var imgCellX = cell.GridX!.Value - minX;
+            var imgCellY = maxY - cell.GridY!.Value;
+            if (imgCellX < 0 || imgCellY < 0 || imgCellX >= gridW || imgCellY >= gridH) return;
+            var bytes = RenderTerrainTextureCellOverview(
+                cell, palette, defaultWaterHeight, showWater, cache, ppc, cellByGrid, waterPalette);
+            if (bytes is null) return;
+            BlitCellRgbaBlock(rgba, width, bytes, ppc, imgCellX * ppc, imgCellY * ppc);
+        });
+
+        return new LayerBitmap(rgba, width, height, minX, maxY);
+    }
+
+    /// <summary>Copies a <paramref name="cellSize" />×<paramref name="cellSize" /> RGBA cell block into
+    /// the aggregate buffer at pixel offset (<paramref name="dstX" />,<paramref name="dstY" />).</summary>
+    private static void BlitCellRgbaBlock(byte[] dst, int dstStride, byte[] cell, int cellSize, int dstX, int dstY)
+    {
+        var rowBytes = cellSize * 4;
+        for (var row = 0; row < cellSize; row++)
+        {
+            var srcOff = row * rowBytes;
+            var dstOff = ((dstY + row) * dstStride + dstX) * 4;
+            Array.Copy(cell, srcOff, dst, dstOff, rowBytes);
+        }
+    }
+
+    /// <summary>
     ///     Texture-layer pixel density multiplier over the heightmap's HmGridSize. The terrain
     ///     textures layer is rendered at 4× the heightmap resolution so the BTXT tiling reads
     ///     sharply when the user zooms in. Memory cost scales 16× for this layer (typical
@@ -1032,14 +1111,27 @@ internal static class WorldMapLayerRenderer
 
     internal static int NormalizeTexturePixelsPerCell(int pixelsPerCell)
     {
+        // Snap to the tier set {33, 66, 132, 264, 528}. The two low tiers serve the zoomed-out
+        // transition zone (see ChooseTerrainTexturePixelsPerCell) so cells render near display
+        // resolution instead of a heavily-minified 132.
+        if (pixelsPerCell <= HmGridSize)
+        {
+            return HmGridSize; // 33
+        }
+
+        if (pixelsPerCell <= HmGridSize * 2)
+        {
+            return HmGridSize * 2; // 66
+        }
+
         if (pixelsPerCell <= TexturePixelsPerCell)
         {
-            return TexturePixelsPerCell;
+            return TexturePixelsPerCell; // 132
         }
 
         if (pixelsPerCell <= TexturePixelsPerCell * 2)
         {
-            return TexturePixelsPerCell * 2;
+            return TexturePixelsPerCell * 2; // 264
         }
 
         return MaxTexturePixelsPerCell;

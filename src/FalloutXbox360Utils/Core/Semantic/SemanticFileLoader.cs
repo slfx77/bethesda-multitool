@@ -97,7 +97,7 @@ internal static class SemanticFileLoader
                 accessor,
                 fileInfo.Length,
                 analysisResult.MinidumpInfo);
-            var records = parser.ParseAll(options.ParseProgress);
+            var records = parser.ParseAll(options.ParseProgress, options.ResidentRecoveryMasterFormIds);
             ApplyCellWorldspaceAuthorityIfNeeded(records, analysisResult.EsmRecords, fileType, options);
             var resolver = records.CreateResolver(analysisResult.FormIdMap);
 

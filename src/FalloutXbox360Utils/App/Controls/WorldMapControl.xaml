@@ -178,6 +178,11 @@
                 Checked="MapMarkersCheckBox_Changed" Unchecked="MapMarkersCheckBox_Changed" />
       <CheckBox x:Name="NavMeshCheckBox" Content="Nav mesh" IsChecked="False"
                 Checked="NavMeshCheckBox_Changed" Unchecked="NavMeshCheckBox_Changed" />
+      <CheckBox x:Name="RenderedObjectsCheckBox" Content="Rendered models" IsChecked="False"
+                IsEnabled="False"
+                AutomationProperties.Name="Render placed objects top-down via the 3D renderer"
+                ToolTipService.ToolTip="Replace placed-object dots/boxes with a top-down rendered view of the actual models, occluded by terrain (exterior cells only; needs Meshes + Textures BSAs)"
+                Checked="RenderedObjectsCheckBox_Changed" Unchecked="RenderedObjectsCheckBox_Changed" />
       <TextBlock x:Name="DanglingRefsLabel" Text="Dangling REFRs:" VerticalAlignment="Center"
                  FontSize="12"
                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />

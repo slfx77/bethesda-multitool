@@ -78,8 +78,7 @@ internal readonly record struct RenderableReference(
     }
 
     /// <summary>
-    ///     <c>world = S * Rz * Ry * Rx * T</c> in row-vector algebra (System.Numerics). This
-    ///     reproduces the engine's REFR orientation matrix EXACTLY — proven by decompiling the
+    ///     The composed model-to-world matrix. The engine's REFR orientation is decompiled from the
     ///     Xbox 360 MemDebug XEX (tools/GhidraProject/refr_rotation_decompiled.txt):
     ///     <list type="bullet">
     ///       <item>
@@ -92,15 +91,11 @@ internal readonly record struct RenderableReference(
     ///         matrix, e.g. <c>MakeZRotation = [c,-s,0; s,c,0; 0,0,1]</c>).
     ///       </item>
     ///     </list>
-    ///     System.Numerics is row-vector: <c>Vector3.Transform(v, A*B) == Transform(Transform(v,A),B)</c>
-    ///     and <c>Transform(v, CreateRotationZ(θ)) == MakeZRotation(θ)·v</c>. So the product
-    ///     <c>CreateRotationZ · CreateRotationY · CreateRotationX</c> below evaluates, under
-    ///     <c>Vector3.Transform</c>, to <c>Rx·Ry·Rz·v = M·v</c> — the engine matrix applied to a
-    ///     column vector. Verified by <c>EngineRotationConventionTests</c> against the decompiled
-    ///     per-axis builders. Do NOT negate or transpose RotZ: a yaw negation only appears to help
-    ///     because axis-aligned / symmetric props hide it, while diagonal props (fences, the HELIOS
-    ///     collector ring) then face the wrong way. Any residual on-screen rotation error is a
-    ///     view→screen handedness issue, not this matrix.
+    ///     On-screen the rotation is <c>W = Rx(RotX)·Ry(RotY)·Rz(−RotZ)</c> — the engine matrix with
+    ///     the YAW angle negated (the heading is the opposite hand from this renderer's world Z;
+    ///     pitch/roll are unchanged). See <see cref="ComposeWorldMatrix" /> for the empirical
+    ///     derivation (plain <c>M</c> = yaw wrong; full transpose <c>Mᵀ</c> = pitch/roll wrong;
+    ///     negating RotZ alone satisfies both). Pinned by <c>EngineRotationConventionTests</c>.
     /// </summary>
     // Live ground-truth diagnostic. Set FALLOUT_VIEWER_DUMP_REFR=<substring> (matched against the
     // ModelPath, e.g. "road" or "dome") to append, for every matching placed object the live viewer
@@ -143,18 +138,28 @@ internal readonly record struct RenderableReference(
     {
         var scale = p.Scale > 0f ? p.Scale : 1f;
         // The engine BUILDS its orientation as M = Rx·Ry·Rz (NiMatrix3::FromEulerAnglesXYZ,
-        // VA 0x82E20B38 — decompile-proven) but APPLIES it with the OPPOSITE handedness when it
-        // places the NiNode, so the on-screen orientation is the transpose Mᵀ (the inverse
-        // rotation). Empirically confirmed: with plain M, cardinal-aligned 180°-symmetric props
-        // (roads/walls at 0/90/180/270) looked right while diagonals were ~90° off — the exact
-        // signature of a yaw negation, which Mᵀ produces. Transposing also fixes pitch/roll
-        // (rocks) and asymmetric facings (HELIOS collectors, the REPCONN dome). The product below
-        // already equals Mᵀ under Vector3.Transform (v·M = Mᵀ·v), so transposing it yields M and
-        // the transform applies Mᵀ·v on-screen — the engine's convention.
-        var rotation = Matrix4x4.Transpose(
-            Matrix4x4.CreateRotationZ(p.RotZ)
+        // VA 0x82E20B38 — decompile-proven), with standard right-handed column-vector per-axis
+        // builders. The ONLY discrepancy vs the on-screen result is the sign of the YAW angle
+        // (RotZ): the engine's heading is the opposite hand from this renderer's world Z, so the
+        // correct on-screen rotation is W = Rx(RotX)·Ry(RotY)·Rz(−RotZ). Pitch (RotX) and roll
+        // (RotY) are kept as built.
+        //
+        // This was pinned by two empirical states, which together admit only this solution:
+        //   • plain M           → yaw WRONG, pitch/roll right   (Rz(+c) is the wrong-hand heading)
+        //   • full transpose Mᵀ → yaw right, pitch/roll WRONG   (inverting ALL axes, the pipes
+        //                                                          in Lucky38World)
+        // Mᵀ only appeared to fix yaw because for a pure-yaw object Mᵀ = Rz(−c) = W; for a
+        // pitched/rolled object Mᵀ also flips pitch/roll. Negating RotZ alone fixes the heading
+        // without disturbing pitch/roll.
+        //
+        // System.Numerics is row-vector (v·A), and Vector3.Transform(v, CreateRotationZ(θ)) ==
+        // MakeZRotation(θ)·v. So CreateRotationZ(−RotZ)·CreateRotationY(RotY)·CreateRotationX(RotX)
+        // evaluates under Vector3.Transform to Rx·Ry·Rz(−c)·v = W·v — exactly the engine matrix
+        // with the yaw angle negated. No transpose.
+        var rotation =
+            Matrix4x4.CreateRotationZ(-p.RotZ)
             * Matrix4x4.CreateRotationY(p.RotY)
-            * Matrix4x4.CreateRotationX(p.RotX));
+            * Matrix4x4.CreateRotationX(p.RotX);
         return Matrix4x4.CreateScale(scale)
              * rotation
              * Matrix4x4.CreateTranslation(p.X, p.Y, p.Z);

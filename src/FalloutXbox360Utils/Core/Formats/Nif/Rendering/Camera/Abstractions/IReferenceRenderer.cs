@@ -18,6 +18,12 @@ internal interface IReferenceRenderer : IWorldRenderer
     /// Toggled by the "Initially Disabled" checkbox; no cache rebuild (render-time filter).</summary>
     bool ShowInitiallyDisabled { get; set; }
 
+    /// <summary>When <c>false</c>, the per-frame mesh-streaming budget (upload count + time + bytes,
+    /// decode starts + concurrency) is lifted so a single render loads everything visible. The live
+    /// 60fps loop leaves this <c>true</c>; the on-demand top-down overlay sets it <c>false</c> for the
+    /// duration of its render (it has no framerate target). Default <c>true</c>.</summary>
+    bool StreamingThrottled { get; set; }
+
     void LoadData(
         global::FalloutXbox360Utils.WorldRenderCache renderCache,
         Dictionary<(int gx, int gy), CellRecord> cells,

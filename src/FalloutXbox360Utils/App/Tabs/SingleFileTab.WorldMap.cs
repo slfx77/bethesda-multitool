@@ -48,6 +48,10 @@ public sealed partial class SingleFileTab
                 _session.WorldMapPopulated = true;
                 WorldMapControl.LoadData(worldData);
                 WorldView3DControl.LoadData(worldData);
+                // Let the 2D map borrow the 3D control's D3D12 stack for the top-down "Rendered
+                // models" overlay (re-set after LoadData so the toggle reflects the new data's
+                // capability). Set after the 3D LoadData so its reference pipeline is up.
+                WorldMapControl.TopDownProvider = WorldView3DControl;
                 WorldMapPlaceholder.Visibility = Visibility.Collapsed;
                 WorldMapContent.Visibility = Visibility.Visible;
                 return;
@@ -85,6 +89,8 @@ public sealed partial class SingleFileTab
 
             WorldMapControl.LoadData(esmWorldData);
             WorldView3DControl.LoadData(esmWorldData);
+            // Wire the 2D map to the 3D control's top-down render provider (see above).
+            WorldMapControl.TopDownProvider = WorldView3DControl;
 
             WorldMapPlaceholder.Visibility = Visibility.Collapsed;
             WorldMapContent.Visibility = Visibility.Visible;

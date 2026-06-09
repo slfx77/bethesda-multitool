@@ -16,6 +16,19 @@ internal interface ITerrainRenderer : IWorldRenderer
     /// <summary>Toggles VCLR-only debug mode (Phase 2a look). Applied on next render.</summary>
     void SetVclrOnlyMode(bool on);
 
+    /// <summary>When <c>false</c>, the per-frame cell build/upload budget is lifted so a few back-to-back
+    /// renders build the whole visible terrain — used by the top-down overlay's depth pre-pass so ground
+    /// occlusion converges in lockstep with the (also-unthrottled) reference meshes. The live 60fps loop
+    /// leaves this <c>true</c>. Default <c>true</c>.</summary>
+    bool StreamingThrottled { get; set; }
+
+    /// <summary>
+    ///     Depth-only render (no color writes) for the 2D map's top-down overlay pre-pass, so
+    ///     placed references depth-test against the terrain and partially-buried meshes are clipped.
+    ///     Returns the cell count drawn.
+    /// </summary>
+    int RenderDepthOnly(System.Numerics.Matrix4x4 viewProj, VisibilityCylinder cylinder);
+
     void LoadData(Dictionary<(int gx, int gy), CellRecord> cells);
 
     void LoadData(

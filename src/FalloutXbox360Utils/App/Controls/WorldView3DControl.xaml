@@ -17,10 +17,15 @@
         <ColumnDefinition Width="Auto" />
         <ColumnDefinition Width="*" />
       </Grid.ColumnDefinitions>
-      <ComboBox x:Name="WorldspaceComboBox" Grid.Column="0" MinWidth="220"
-                SelectionChanged="WorldspaceComboBox_SelectionChanged"
-                AutomationProperties.Name="Worldspace"
-                PlaceholderText="Select Worldspace" />
+      <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+        <ComboBox x:Name="WorldspaceComboBox" MinWidth="220"
+                  SelectionChanged="WorldspaceComboBox_SelectionChanged"
+                  AutomationProperties.Name="Worldspace"
+                  PlaceholderText="Select Worldspace" />
+        <Button x:Name="InteriorsButton" Content="Interiors" IsEnabled="False"
+                Click="InteriorsButton_Click"
+                ToolTipService.ToolTip="Browse interior cells" />
+      </StackPanel>
       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12"
                   VerticalAlignment="Center">
         <CheckBox x:Name="WaterCheckBox" Content="Water" IsChecked="True"
@@ -56,6 +61,74 @@
                    AutomationProperties.Name="3D view HUD"
                    Text="" />
       </Border>
+
+      <!-- Interior cell browser — reuses the 2D viewer's searchable/filterable grouped list
+           (WorldMapCellBrowser). Overlays the viewport while browsing; picking a cell loads it
+           into the 3D scene and hides the panel. -->
+      <Grid x:Name="CellBrowserPanel" Visibility="Collapsed" Padding="8"
+            Background="{ThemeResource SolidBackgroundFillColorBaseBrush}">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <Grid Grid.Row="0" Margin="0,0,0,4" ColumnSpacing="8">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <TextBlock Grid.Column="0" Text="Interior cells" VerticalAlignment="Center"
+                     FontWeight="SemiBold" />
+          <Button Grid.Column="1" x:Name="CellBrowserCloseButton" Content="Close"
+                  Click="CellBrowserCloseButton_Click"
+                  AutomationProperties.Name="Close interior browser" />
+        </Grid>
+        <TextBox x:Name="CellSearchBox" Grid.Row="1" PlaceholderText="Search cells..."
+                 AutomationProperties.Name="Search cells"
+                 TextChanged="CellSearchBox_TextChanged" Margin="0,0,0,4" />
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="12" Margin="0,0,0,4">
+          <CheckBox x:Name="FilterHasObjects" Content="Has objects"
+                    Checked="CellFilter_Changed" Unchecked="CellFilter_Changed" />
+          <CheckBox x:Name="FilterNamedOnly" Content="Named only"
+                    Checked="CellFilter_Changed" Unchecked="CellFilter_Changed" />
+          <TextBlock x:Name="CellBrowserCountText" VerticalAlignment="Center" FontSize="11"
+                     Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        </StackPanel>
+        <ListView x:Name="CellListView" Grid.Row="3"
+                  SelectionMode="Single"
+                  AutomationProperties.Name="Interior cells"
+                  SelectionChanged="CellListView_SelectionChanged">
+          <ListView.GroupStyle>
+            <GroupStyle>
+              <GroupStyle.HeaderTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding Key}" FontSize="13" FontWeight="Bold"
+                             Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </DataTemplate>
+              </GroupStyle.HeaderTemplate>
+            </GroupStyle>
+          </ListView.GroupStyle>
+          <ListView.ItemTemplate>
+            <DataTemplate>
+              <Grid Padding="4,2" ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="70" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" FontSize="11" FontFamily="Consolas"
+                           Text="{Binding GridLabel}" />
+                <TextBlock Grid.Column="1" FontSize="11"
+                           Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+                <TextBlock Grid.Column="2" FontSize="11" FontFamily="Consolas"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           Text="{Binding ObjectCount}" />
+              </Grid>
+            </DataTemplate>
+          </ListView.ItemTemplate>
+        </ListView>
+      </Grid>
     </Grid>
   </Grid>
 </UserControl>

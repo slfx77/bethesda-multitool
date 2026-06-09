@@ -13,6 +13,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
 using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers;
 using FalloutXbox360Utils.Core.Minidump;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
@@ -94,7 +95,9 @@ public sealed class RecordParser
     /// <summary>
     ///     Perform full semantic parse of all supported record types.
     /// </summary>
-    public RecordCollection ParseAll(IProgress<(int percent, string phase)>? progress = null)
+    public RecordCollection ParseAll(
+        IProgress<(int percent, string phase)>? progress = null,
+        IReadOnlySet<uint>? residentRecoveryMasterFormIds = null)
     {
         var totalSw = Stopwatch.StartNew();
         var phaseSw = Stopwatch.StartNew();
@@ -115,6 +118,23 @@ public sealed class RecordParser
 
         // === Runtime enrichment phases (LAND, REFR, worldspace cell maps) ===
         RuntimeDataEnricher.EnrichLandRecords(_context);
+
+        // Resident-ref recovery: the form-table scan misses heap REFRs whose hash buckets
+        // weren't dumped. Sweep the heap for master refs the table missed and append them so
+        // EnrichPlacedReferences reads them and the authority/parent attribution places them in
+        // their owning cell (instead of the cell-merge deleting them as "uncaptured").
+        if (residentRecoveryMasterFormIds is { Count: > 0 })
+        {
+            phaseSw.Restart();
+            var beforeCount = _context.ScanResult.RuntimeRefrFormEntries.Count;
+            var recovered = RuntimeRefrHeapSweep.AppendMissingMasterRefrEntries(
+                _context, residentRecoveryMasterFormIds);
+            Logger.Instance.Info(
+                $"  [Semantic] Resident-ref recovery: swept {recovered:N0} master REFR(s) the form-table " +
+                $"missed (master set {residentRecoveryMasterFormIds.Count:N0}, table entries {beforeCount:N0}, " +
+                $"regions {_context.MinidumpInfo?.MemoryRegions.Count ?? 0:N0}); {phaseSw.Elapsed}");
+        }
+
         RuntimeDataEnricher.EnrichPlacedReferences(_context, phaseSw);
         RuntimeDataEnricher.EnrichWorldspaceCellMaps(_context, phaseSw);
 

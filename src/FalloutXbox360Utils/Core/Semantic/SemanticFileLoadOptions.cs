@@ -65,6 +65,16 @@ internal sealed record SemanticFileLoadOptions
     public IReadOnlyList<CellReferenceParentWindow>? CellReferenceParentWindows { get; init; }
 
     /// <summary>
+    ///     Optional set of master REFR/ACHR/ACRE FormIDs eligible for resident-ref recovery.
+    ///     When supplied, a vtable heap sweep finds master refs resident in the dump that the
+    ///     engine's form-table walk missed (broken hash buckets in a partial dump) and appends
+    ///     them to the runtime ref scan so they're emitted in their owning cell instead of
+    ///     deleted as "uncaptured". Master-scoped to keep recovery pure (proto data, master only
+    ///     used for cell attribution).
+    /// </summary>
+    public IReadOnlySet<uint>? ResidentRecoveryMasterFormIds { get; init; }
+
+    /// <summary>
     ///     Optional worldspace FormID to EditorID/name map from the authority JSON. Used to
     ///     label synthesized worldspace records when a DMP has cells but no WRLD record.
     /// </summary>

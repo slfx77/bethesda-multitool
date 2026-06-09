@@ -17,11 +17,13 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 {
     private static readonly Logger Log = Logger.Instance;
 
-    // Cold NIF conversion allocates heavily and competes with the UI/render thread. Keep the
-    // default conservative for smooth motion, with env overrides for profiling specific machines.
+    // Cold NIF conversion allocates heavily and competes with the UI/render thread, so the default
+    // scales with cores but stays GC-guarded: HALF the logical processors, clamped to [2, 8]. This
+    // leaves headroom for the render + UI + GC threads (full-core saturation caused the GC pauses the
+    // old conservative default of 2 was guarding against). Env override for profiling specific machines.
     private static readonly int DefaultMaxConcurrentDecodeTasks = ParsePositiveIntEnvironment(
         "FALLOUT_VIEWER_REFERENCE_DECODE_CONCURRENCY",
-        defaultValue: 2,
+        defaultValue: Math.Clamp(Environment.ProcessorCount / 2, 2, 8),
         min: 1,
         max: 16);
 
@@ -52,7 +54,12 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     private readonly GpuGeometryArena12 _geometryArena;
     private readonly Dictionary<string, Node> _entries = new(StringComparer.OrdinalIgnoreCase);
     private readonly LinkedList<string> _order = new();
-    private readonly Queue<string> _decodeQueue = new();
+    // Nearest-first decode queue: priority = squared distance from the view point at request time
+    // (smaller = nearer = dequeued first). The queue persists across frames, so when a dense area
+    // enters view the foreground meshes decode before the far edge instead of in arrival (FIFO)
+    // order. _queuedDecodePaths dedups (PriorityQueue has no Contains); a path keeps its first
+    // enqueued priority — approximate but cheap, no priority updates.
+    private readonly PriorityQueue<string, float> _decodeQueue = new();
     private readonly HashSet<string> _queuedDecodePaths = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<Task<DecodedNifMesh12?>> _decodeTasks = new();
     private readonly Dictionary<string, DecodedCacheNode> _decodedCache = new(StringComparer.OrdinalIgnoreCase);
@@ -95,6 +102,25 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     public int MaxConcurrentDecodeTasks { get; init; } = DefaultMaxConcurrentDecodeTasks;
     public long DecodedMeshCacheByteBudget { get; init; } = DefaultDecodedMeshCacheByteBudget;
     public long MaxUploadBytesPerFrame { get; init; } = DefaultMaxUploadBytesPerFrame;
+
+    // Concurrency ceiling used when streaming is unthrottled (the on-demand top-down overlay path,
+    // which has no framerate target). Wider than the conservative live-loop default so a single
+    // overlay pass can saturate the CPU with decodes instead of trickling 2 at a time.
+    private static readonly int UnthrottledMaxConcurrentDecodeTasks = Math.Clamp(Environment.ProcessorCount, 4, 16);
+
+    /// <summary>
+    ///     When <c>false</c>, the per-frame streaming budget (decode starts + concurrency + upload
+    ///     bytes) is lifted so a caller can load everything visible across a few back-to-back renders.
+    ///     The live 60fps loop leaves this <c>true</c> to keep motion smooth; the top-down overlay
+    ///     sets it <c>false</c> for the duration of its render. Set via <see cref="ReferenceRenderer12.StreamingThrottled"/>.
+    /// </summary>
+    public bool StreamingThrottled { get; set; } = true;
+
+    private int EffectiveMaxDecodeStartsPerFrame =>
+        StreamingThrottled ? MaxDecodeStartsPerFrame : int.MaxValue;
+
+    private int EffectiveMaxConcurrentDecodeTasks =>
+        StreamingThrottled ? MaxConcurrentDecodeTasks : Math.Max(MaxConcurrentDecodeTasks, UnthrottledMaxConcurrentDecodeTasks);
     public int FrameCacheMisses { get; private set; }
     public int FrameDecodeRequests { get; private set; }
     public int FrameQueuedDecodes { get; private set; }
@@ -125,12 +151,12 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         FrameCpuDecodedNegativeHits = 0;
         FrameGpuUploads = 0;
         FrameByteBudgetDeferrals = 0;
-        _frameUploadByteBudget = new FrameUploadByteBudget(MaxUploadBytesPerFrame);
+        _frameUploadByteBudget = new FrameUploadByteBudget(StreamingThrottled ? MaxUploadBytesPerFrame : long.MaxValue);
         _textureCache.ResetFrameStats();
         PruneCompletedDecodeTasks();
     }
 
-    public CachedNifMesh12? GetOrUpload(string modelPath, ref int uploadBudget)
+    public CachedNifMesh12? GetOrUpload(string modelPath, ref int uploadBudget, float priority = 0f)
     {
         if (_disposed) return null;
 
@@ -156,7 +182,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         var mesh = ResolveExisting(cacheKey, node, ref uploadBudget);
         if (mesh is null && !node.ResolvedNull && !node.DecodedCacheAvailable)
         {
-            QueueDecode(cacheKey, node);
+            QueueDecode(cacheKey, node, priority);
         }
         StartQueuedDecodes();
         return null;
@@ -166,6 +192,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        _persistentDecodedCache?.LogStatistics();
 
         Task[] pending;
         lock (_decodeTaskListLock)
@@ -331,7 +358,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         _order.AddFirst(node.OrderNode);
     }
 
-    private void QueueDecode(string modelPath, Node node)
+    private void QueueDecode(string modelPath, Node node, float priority)
     {
         if (node.DecodeTask is not null ||
             node.DecodeQueued ||
@@ -341,7 +368,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             return;
         }
 
-        _decodeQueue.Enqueue(modelPath);
+        _decodeQueue.Enqueue(modelPath, priority);
         _queuedDecodePaths.Add(modelPath);
         node.DecodeQueued = true;
         FrameQueuedDecodes++;
@@ -349,8 +376,8 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
     private void StartQueuedDecodes()
     {
-        while (FrameDecodeStarts < MaxDecodeStartsPerFrame &&
-               Volatile.Read(ref _activeDecodeTasks) < MaxConcurrentDecodeTasks &&
+        while (FrameDecodeStarts < EffectiveMaxDecodeStartsPerFrame &&
+               Volatile.Read(ref _activeDecodeTasks) < EffectiveMaxConcurrentDecodeTasks &&
                _decodeQueue.Count > 0)
         {
             var modelPath = _decodeQueue.Dequeue();
@@ -827,7 +854,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         }
 
         success = true;
-        var cached = new CachedNifMesh12(submeshes, geometry, _geometryArena, _deletionQueue);
+        var cached = new CachedNifMesh12(submeshes, geometry, _geometryArena, _deletionQueue, _textureCache);
         if (started != 0)
         {
             RendererProfilerTrace.Event("resource-event", new Dictionary<string, object?>
@@ -960,18 +987,22 @@ internal sealed class CachedNifMesh12 : IDisposable
     private readonly GeometryAllocation12 _geometry;
     private readonly GpuGeometryArena12 _arena;
     private readonly GpuDeletionQueue12 _deletionQueue;
+    private readonly GpuTextureCache12 _textureCache;
     private bool _texturesReady;
+    private bool _disposed;
 
     public CachedNifMesh12(
         IReadOnlyList<CachedSubmesh12> submeshes,
         GeometryAllocation12 geometry,
         GpuGeometryArena12 arena,
-        GpuDeletionQueue12 deletionQueue)
+        GpuDeletionQueue12 deletionQueue,
+        GpuTextureCache12 textureCache)
     {
         Submeshes = submeshes;
         _geometry = geometry;
         _arena = arena;
         _deletionQueue = deletionQueue;
+        _textureCache = textureCache;
     }
 
     public IReadOnlyList<CachedSubmesh12> Submeshes { get; }
@@ -1000,10 +1031,27 @@ internal sealed class CachedNifMesh12 : IDisposable
 
     public void Dispose()
     {
+        if (_disposed)
+        {
+            return;
+        }
+        _disposed = true;
+
         // Defer the arena free by FramesInFlight frames so in-flight draws referencing this mesh's
         // sub-range drain before the range is handed back out — the same GPU-safety guarantee the
         // deletion queue gave the per-mesh committed buffers this replaced.
         _deletionQueue.EnqueueDispose(_arena.DeferredFreeHandle(_geometry));
+
+        // Release this mesh's references on its submesh textures so the texture cache can evict and
+        // reclaim their bindless slots once no resident mesh needs them. Without this the texture
+        // cache grows unbounded and the persistent descriptor heap exhausts during sustained
+        // streaming (the ~5-minute walk-mode crash). Each GetOrUpload at build time is balanced by
+        // one Release here; shared textures stay alive until their last owning mesh is evicted.
+        foreach (var submesh in Submeshes)
+        {
+            _textureCache.Release(submesh.Diffuse);
+            _textureCache.Release(submesh.Normal);
+        }
     }
 }
 

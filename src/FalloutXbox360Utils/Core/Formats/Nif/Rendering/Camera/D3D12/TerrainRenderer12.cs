@@ -36,12 +36,14 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     private const uint PerDrawByteSize = 64;      // uint4[4] = 16 terrain texture bindless indices
     private const uint PerModeByteSize = 16;      // float4 (debugMode.x, uvScale, pad, pad)
     private const ShaderFlags EnableUnboundedDescriptorTables = (ShaderFlags)0x00100000;
-    private const int MaxNewUploadsPerFrame = 16;
+    // No per-frame COUNT cap by default — the wall-clock time budget below is the pacer, so the
+    // per-frame build cost is bounded by frame-TIME rather than a fixed cell count (a count cap
+    // couples terrain load rate to FPS; time-budgeting keeps the per-frame cost FPS-independent).
+    private const int MaxNewUploadsPerFrame = int.MaxValue;
 
-    // Wall-clock ceiling on render-thread cell build/upload work per frame. Bounds the
-    // movement-stutter spike when many new cells enter view at high render distance:
-    // MaxNewUploadsPerFrame caps *how many* cells build, this caps *how long* building may take.
-    // Tuned against MeshBuildUploadMilliseconds.
+    // Wall-clock ceiling on render-thread cell build/upload work per frame. The primary pacer:
+    // bounds the movement-stutter spike when many new cells enter view at high render distance by
+    // capping *how long* building may take. Tuned against MeshBuildUploadMilliseconds.
     private const double MaxMeshBuildMillisecondsPerFrame = 2.0;
 
     // Async cell build runs off the render thread, but it still allocates enough to compete with
@@ -99,6 +101,10 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     private readonly GpuDeletionQueue12 _deletionQueue;
     private readonly TerrainTextureResolver12 _textureResolver;
     private readonly ID3D12PipelineState _pso;
+    // Depth-only variant of _pso (same VS + depth state, no pixel shader, no render targets). Used
+    // by the 2D map's top-down overlay to lay down terrain depth so placed references are occluded
+    // by the ground without painting terrain color over the 2D map's own terrain layer.
+    private readonly ID3D12PipelineState _depthOnlyPso;
     private readonly ushort[] _sharedIndexData;
     private ID3D12Resource? _sharedIndexBuffer;
     private IndexBufferView _sharedIbv;
@@ -199,6 +205,24 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         };
         _pso = gpu.Device.CreateGraphicsPipelineState(psoDesc);
 
+        // Depth-only PSO: same vertex path + depth state, but no pixel shader and no render
+        // targets, so it writes only the depth buffer. Used by the top-down overlay pre-pass.
+        var depthOnlyPsoDesc = new GraphicsPipelineStateDescription
+        {
+            RootSignature = _rootSignature.RootSignature,
+            VertexShader = vsBytecode,
+            BlendState = blend,
+            RasterizerState = rasterizer,
+            DepthStencilState = depth,
+            InputLayout = new InputLayoutDescription(TerrainInputElements),
+            PrimitiveTopologyType = PrimitiveTopologyType.Triangle,
+            RenderTargetFormats = Array.Empty<Format>(),
+            DepthStencilFormat = Format.D32_Float,
+            SampleDescription = new SampleDescription(1, 0),
+            SampleMask = uint.MaxValue,
+        };
+        _depthOnlyPso = gpu.Device.CreateGraphicsPipelineState(depthOnlyPsoDesc);
+
         _sharedIndexData = TerrainMeshBuilder.BuildSharedIndexBufferData();
     }
 
@@ -224,12 +248,31 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         {
             _deletionQueue.EnqueueDispose(_sharedIndexBuffer);
         }
+        _depthOnlyPso.Dispose();
         _pso.Dispose();
     }
 
     public int CellCount => _spatialIndex?.CellCount ?? _cells?.Count ?? 0;
     public global::FalloutXbox360Utils.WorldRenderStats LastStats { get; } = new();
     public bool DetailedProfilingEnabled { get; set; }
+
+    // Concurrency ceiling used when streaming is unthrottled (the on-demand top-down overlay
+    // depth pre-pass, which has no framerate target).
+    private static readonly int UnthrottledMaxConcurrentBuildTasks = Math.Clamp(Environment.ProcessorCount, 4, 16);
+
+    /// <summary>
+    ///     When <c>false</c>, the per-frame cell build/upload budget (count + time + build starts +
+    ///     concurrency) is lifted so a few back-to-back renders build the whole visible terrain — used
+    ///     by the top-down overlay's depth pre-pass so ground occlusion converges in lockstep with the
+    ///     (also-unthrottled) reference meshes. The live 60fps loop leaves this <c>true</c>.
+    /// </summary>
+    public bool StreamingThrottled { get; set; } = true;
+
+    private int EffectiveMaxBuildStartsPerFrame =>
+        StreamingThrottled ? MaxBuildStartsPerFrame : int.MaxValue;
+
+    private int EffectiveMaxConcurrentBuildTasks =>
+        StreamingThrottled ? MaxConcurrentBuildTasks : Math.Max(MaxConcurrentBuildTasks, UnthrottledMaxConcurrentBuildTasks);
 
     public void SetVclrOnlyMode(bool on) => _vclrOnlyMode = on;
 
@@ -277,6 +320,19 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     }
 
     public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder)
+        => RenderInternal(viewProj, cylinder, _pso);
+
+    /// <summary>
+    ///     Depth-only render: lays terrain depth into the bound depth buffer without writing color.
+    ///     Used by the 2D map's top-down "Rendered models" overlay so placed references depth-test
+    ///     against the ground and partially-buried meshes are clipped, while the 2D map keeps its
+    ///     own terrain layer underneath. Shares the cell mesh cache + async build path with
+    ///     <see cref="Render" />.
+    /// </summary>
+    public int RenderDepthOnly(Matrix4x4 viewProj, VisibilityCylinder cylinder)
+        => RenderInternal(viewProj, cylinder, _depthOnlyPso);
+
+    private int RenderInternal(Matrix4x4 viewProj, VisibilityCylinder cylinder, ID3D12PipelineState pso)
     {
         if ((_spatialIndex is null || _spatialIndex.CellCount == 0) &&
             (_cells is null || _cells.Count == 0))
@@ -303,7 +359,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         var perModeAlloc = _ringBuffer.Allocate(frameIndex, PerModeByteSize, GpuRingBuffer12.CbAlignment);
         unsafe { *(Vector4*)perModeAlloc.CpuPtr = new Vector4(_vclrOnlyMode ? 1f : 0f, DefaultDiffuseUvScale, 0f, 0f); }
 
-        cmd.SetPipelineState(_pso);
+        cmd.SetPipelineState(pso);
         cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
         EnsureSharedIndexBuffer(cmd);
         cmd.IASetIndexBuffer(_sharedIbv);
@@ -371,7 +427,8 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         segmentStarted = StartTiming();
         _frameBuildStarts = 0;
         PruneCompletedBuildTasks();
-        var uploadBudget = MaxNewUploadsPerFrame;
+        var throttled = StreamingThrottled;
+        var uploadBudget = throttled ? MaxNewUploadsPerFrame : int.MaxValue;
         var uploadTimeBudget = new FrameUploadTimeBudget(MaxMeshBuildMillisecondsPerFrame);
         var vertexStride = (uint)Marshal.SizeOf<GpuMeshUploader.GpuVertex>();
         const uint blendWeightStride = 64; // SlotVectors (4) × sizeof(Vector4)
@@ -383,7 +440,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
                 // Stop building new cells once the per-frame time budget is spent. uploadBudget
                 // is captured by TryDrawVisibleCell, so zeroing it makes GetOrUploadMesh skip the
                 // build for the remaining misses; already-cached cells (the second loop) still draw.
-                if (uploadBudget > 0 && uploadTimeBudget.IsExpired)
+                if (throttled && uploadBudget > 0 && uploadTimeBudget.IsExpired)
                 {
                     uploadBudget = 0;
                 }
@@ -551,8 +608,8 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
 
     private void StartQueuedBuilds()
     {
-        while (_frameBuildStarts < MaxBuildStartsPerFrame &&
-               Volatile.Read(ref _activeBuildTasks) < MaxConcurrentBuildTasks &&
+        while (_frameBuildStarts < EffectiveMaxBuildStartsPerFrame &&
+               Volatile.Read(ref _activeBuildTasks) < EffectiveMaxConcurrentBuildTasks &&
                _buildQueue.Count > 0)
         {
             var key = _buildQueue.Dequeue();

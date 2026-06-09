@@ -33,9 +33,13 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
     // the placeholder→textured window stays short.
     private const int DefaultMaxUploadsPerFrame = 16;
     private const long DefaultMaxUploadBytesPerFrame = 48L * 1024L * 1024L;
+    // Scales with cores (GC-guarded: half the logical processors, clamped to [2, 8]) — texture
+    // resolve (BSA read + DDX→DDS transcode) is the documented streaming-hitch cost and is
+    // embarrassingly parallel + off the render thread, so more workers directly multiply throughput.
+    // Half-cores (not full) leaves headroom for mesh decode + render + GC. Env override for profiling.
     private static readonly int DefaultMaxConcurrentTextureResolves = ParsePositiveIntEnvironment(
         "FALLOUT_VIEWER_TEXTURE_RESOLVE_CONCURRENCY",
-        defaultValue: 2,
+        defaultValue: Math.Clamp(Environment.ProcessorCount / 2, 2, 8),
         min: 1,
         max: 8);
 
@@ -154,20 +158,22 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
             {
                 EnqueueForDispatch(node, newlyPending: false);
             }
+            node.Entry.RefCount++; // acquire — balanced by Release() when the owning mesh is evicted.
             return node.Entry;
         }
 
         var fallback = isNormalMap ? FlatNormal : WhitePixel;
         if (_resolver is null)
         {
-            return fallback;
+            return fallback; // pinned fallback — not reference-counted.
         }
 
         // Cold miss: hand back a fallback placeholder immediately and resolve the real DDS/DDX payload
         // on a background thread. The streamed GPU upload later overwrites this Entry's persistent
         // descriptor slot in place, so callers that cached the Entry upgrade from placeholder →
         // textured transparently (BindlessIndex is stable).
-        var entry = CreatePlaceholderEntry(fallback);
+        var entry = CreatePlaceholderEntry(fallback, cacheKey);
+        entry.RefCount = 1; // acquire (first reference).
         node = new TextureUploadNode(cacheKey, entry);
         _cache[cacheKey] = node;
         if (_resolveQueue.Enqueue(cacheKey))
@@ -176,6 +182,73 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
         }
         _resolveQueue.Pump();
         return entry;
+    }
+
+    /// <summary>
+    ///     Drops one reference acquired via <see cref="GetOrUpload" /> (render thread only). When the
+    ///     last reference is released the entry is evicted: removed from the cache, its GPU texture
+    ///     disposed, and its bindless slot returned for reuse — both deferred by frames-in-flight via
+    ///     the deletion queue so the GPU isn't still sampling them. Pinned fallback singletons (null
+    ///     <see cref="Entry.CacheKey" />) are ignored. This is what bounds the cache: without it the
+    ///     persistent descriptor heap exhausts after sustained streaming.
+    /// </summary>
+    public void Release(Entry? entry)
+    {
+        if (entry?.CacheKey is not { } key)
+        {
+            return; // null entry or pinned fallback.
+        }
+
+        if (entry.RefCount <= 0)
+        {
+            return; // already released (defensive against double-release).
+        }
+
+        if (--entry.RefCount > 0)
+        {
+            return; // still referenced by another resident mesh.
+        }
+
+        // Last reference dropped → evict.
+        if (!_cache.TryGetValue(key, out var node) || !ReferenceEquals(node.Entry, entry))
+        {
+            return; // node already gone or replaced; nothing to reclaim.
+        }
+        _cache.Remove(key);
+
+        // If a resolve/upload is still in flight for this node, the downstream paths already cope with
+        // the cache miss (DrainResolvedPayloads skips; PromoteCompletedUploads orphan-disposes the
+        // uploaded texture). Keep the pending-upload counter consistent for those in-flight nodes,
+        // since the orphan path won't decrement it.
+        if (node.Payload is not null && !entry.IsResident && !node.Failed)
+        {
+            _pendingUploadCount--;
+        }
+
+        // Dispose this entry's OWN uploaded texture. Non-resident placeholders (and failed nodes)
+        // still point at the shared fallback singleton, which must never be freed.
+        if (entry.IsResident && _ownedTextures.Remove(entry.Texture))
+        {
+            DisposeResource(entry.Texture);
+        }
+
+        // Return the bindless slot — deferred by frames-in-flight so a reused slot can't alias a
+        // texture the GPU is still sampling via an in-flight frame's draw records.
+        if (_deletionQueue is not null)
+        {
+            _deletionQueue.EnqueueDispose(new PersistentSlotReturn(_heap, entry.BindlessIndex));
+        }
+        else
+        {
+            _heap.FreePersistent(entry.BindlessIndex);
+        }
+    }
+
+    /// <summary>Deletion-queue payload that returns a persistent bindless slot to the allocator's
+    /// free-list once the GPU has drained the frame that evicted it.</summary>
+    private sealed class PersistentSlotReturn(GpuDescriptorHeapAllocator12 heap, uint slot) : IDisposable
+    {
+        public void Dispose() => heap.FreePersistent(slot);
     }
 
     public void Dispose()
@@ -633,7 +706,8 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
                 MakeSrvDesc(1, Format.R8G8B8A8_UNorm),
                 GpuTexturePayloadFormat.Rgba8,
                 GpuNormalDecodeMode.None,
-                isResident: true);
+                isResident: true,
+                cacheKey: null); // shared fallback singleton — pinned, never refcounted/evicted.
             texture = null;
             return entry;
         }
@@ -665,24 +739,26 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
         }
     }
 
-    private Entry CreatePlaceholderEntry(Entry fallback) =>
+    private Entry CreatePlaceholderEntry(Entry fallback, string cacheKey) =>
         CreateEntry(
             fallback.Texture,
             fallback.SrvDesc,
             fallback.Format,
             fallback.NormalDecodeMode,
-            isResident: false);
+            isResident: false,
+            cacheKey: cacheKey);
 
     private Entry CreateEntry(
         ID3D12Resource texture,
         ShaderResourceViewDescription srvDesc,
         GpuTexturePayloadFormat format,
         GpuNormalDecodeMode normalDecodeMode,
-        bool isResident)
+        bool isResident,
+        string? cacheKey)
     {
         var alloc = _heap.AllocatePersistent();
         _gpu.Device.CreateShaderResourceView(texture, srvDesc, alloc.Cpu);
-        return new Entry(texture, srvDesc, alloc.Cpu, alloc.BindlessIndex, format, normalDecodeMode, isResident);
+        return new Entry(texture, srvDesc, alloc.Cpu, alloc.BindlessIndex, format, normalDecodeMode, isResident, cacheKey);
     }
 
     private void DisposeResource(ID3D12Resource resource)
@@ -815,7 +891,8 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
             uint bindlessIndex,
             GpuTexturePayloadFormat format,
             GpuNormalDecodeMode normalDecodeMode,
-            bool isResident)
+            bool isResident,
+            string? cacheKey)
         {
             Texture = texture;
             SrvDesc = srvDesc;
@@ -825,7 +902,24 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
             NormalDecodeMode = normalDecodeMode;
             IsResident = isResident;
             IsReady = isResident;
+            CacheKey = cacheKey;
         }
+
+        /// <summary>
+        ///     The <c>_cache</c> key this entry is stored under, or null for the pinned shared
+        ///     fallback singletons (white pixel / flat normal), which are never reference-counted
+        ///     or evicted. Used by <see cref="GpuTextureCache12.Release" /> to find + remove the node.
+        /// </summary>
+        internal string? CacheKey { get; }
+
+        /// <summary>
+        ///     Live references held by cached meshes (render-thread only). Acquired in
+        ///     <see cref="GpuTextureCache12.GetOrUpload" />, dropped in
+        ///     <see cref="GpuTextureCache12.Release" />; at zero the entry is evicted so its bindless
+        ///     slot and GPU texture are reclaimed. Pinned fallbacks (null <see cref="CacheKey" />)
+        ///     ignore this.
+        /// </summary>
+        internal int RefCount;
 
         public ID3D12Resource Texture { get; private set; }
 

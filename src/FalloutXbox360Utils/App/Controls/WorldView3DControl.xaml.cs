@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
+using SharpGen.Runtime;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
@@ -29,7 +30,7 @@ namespace FalloutXbox360Utils;
 ///         so the host tab can toggle between 2D and 3D without reshaping data flow.
 ///     </para>
 /// </summary>
-public sealed partial class WorldView3DControl : UserControl, IDisposable
+public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopDownSceneRenderer
 {
     private static readonly Logger Log = Logger.Instance;
 
@@ -92,12 +93,19 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
     // still reading it crashes the process. Resources go here instead of being disposed
     // immediately, and are released N frames later.
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDeletionQueue12? _deletionQueue12;
+    // Scene-depth SRV feeding the water depth-fade. The depth resource is R32_TYPELESS; we create an
+    // R32_FLOAT SRV over it in the shared bindless heap so water.frag samples the real water-column
+    // depth (FNV WATER000's DepthMap path) instead of a view-angle proxy. Allocated once and the SRV
+    // recreated in place on resize (the depth resource changes identity). NoDepthSrv => proxy.
+    private const uint NoDepthSrv = 0xFFFFFFFF;
+    private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDescriptorHeapAllocator12.PersistentAllocation? _depthSrv;
     private bool _suppressWorldspaceSelectionEvent;
-    // Interior entries are appended to WorldspaceComboBox after the worldspaces + optional
-    // unlinked-exterior entry. The unlinked entry is conditional, so track the interior start
-    // index explicitly rather than inferring it from Worldspaces.Count.
-    private int _interiorEntryStartIndex = -1;
-    private readonly List<CellRecord> _interiorCellsInComboOrder = new();
+    // Interiors are browsed via the shared 2D-viewer cell browser (searchable/filterable grouped
+    // list — appropriate for the hundreds of interiors a dropdown can't handle), NOT the worldspace
+    // combo. _selectedInterior is the interior currently loaded into the 3D scene (null = exterior
+    // mode); _allInteriorItems is the unfiltered browser source the search/filter UI narrows.
+    private CellRecord? _selectedInterior;
+    private List<WorldMapControl.CellListItem> _allInteriorItems = new();
     private Dictionary<(int gx, int gy), CellRecord>? _cellGridLookup;
     private WorldSpatialIndex? _spatialIndex;
     private double _lastControllerUpdateMilliseconds;
@@ -214,19 +222,15 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         {
             WorldspaceComboBox.Items.Add($"Unlinked Exterior ({data.UnlinkedExteriorCells.Count} cells)");
         }
-
-        // Append interior cells (those with at least one static-mesh REFR) after the worldspace +
-        // unlinked entries, mirroring the 2D viewer's interior browser.
-        _interiorCellsInComboOrder.Clear();
-        _interiorEntryStartIndex = WorldspaceComboBox.Items.Count;
-        foreach (var interior in data.InteriorCells)
-        {
-            if (!InteriorHasRenderableRefs(interior)) continue;
-            _interiorCellsInComboOrder.Add(interior);
-            var label = interior.EditorId ?? interior.FullName ?? $"0x{interior.FormId:X8}";
-            WorldspaceComboBox.Items.Add($"Interior: {label}");
-        }
         _suppressWorldspaceSelectionEvent = false;
+
+        // Interiors live in the shared cell browser (Interiors button), not the combo.
+        _selectedInterior = null;
+        HideInteriorBrowser();
+        InteriorsButton.Content = data.InteriorCells.Count > 0
+            ? $"Interiors ({data.InteriorCells.Count})"
+            : "Interiors";
+        InteriorsButton.IsEnabled = data.InteriorCells.Count > 0;
 
         if (WorldspaceComboBox.Items.Count > 0)
         {
@@ -417,6 +421,191 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         _meshArchives?.Dispose(); _meshArchives = null;
     }
 
+    // Top-down overlay rendering for the 2D map (ITopDownSceneRenderer) ----------------------
+
+    // Render at 2× the requested size then box-downsample for AA — the live terrain/reference PSOs
+    // are 1-sample, so MSAA isn't an option without parallel PSOs. Final long-edge is capped so a
+    // large canvas doesn't blow up the per-request readback.
+    private const int TopDownSupersample = 2;
+    private const int MaxTopDownFinalDimension = 2048;
+
+    // Explicit interface implementation: the interface + TopDownRender are internal, so these can't
+    // be public members on this public control (CS0050). The 2D map only ever calls them via the
+    // ITopDownSceneRenderer reference it's handed, so explicit implementation is exactly right.
+
+    private bool CanRenderTopDownCore =>
+        _gpu12 is not null && _commandRecorder12 is not null &&
+        _ringBuffer12 is not null && _cbvSrvUavHeap12 is not null &&
+        _rootSignature12 is not null && _deletionQueue12 is not null &&
+        _terrain is not null && _references is not null;
+
+    /// <inheritdoc />
+    bool ITopDownSceneRenderer.CanRenderTopDown => CanRenderTopDownCore;
+
+    /// <inheritdoc />
+    async Task<TopDownRender?> ITopDownSceneRenderer.RenderTopDownAsync(
+        float worldMinX, float worldMaxX, float worldMinY, float worldMaxY,
+        int pixelWidth, int pixelHeight, bool showDisabled, uint? worldspaceFormId, CancellationToken ct)
+    {
+        if (!CanRenderTopDownCore) return null;
+        if (worldMaxX <= worldMinX || worldMaxY <= worldMinY) return null;
+        if (pixelWidth <= 0 || pixelHeight <= 0) return null;
+        ct.ThrowIfCancellationRequested();
+
+        // Sync the 3D control's active worldspace to the one the 2D map is showing (the 3D view picks
+        // its own initial worldspace independently). Switching reloads the renderers' cells, so the
+        // overlay matches the map instead of showing a stale worldspace. No-op when already current.
+        if (!EnsureActiveExteriorWorldspace(worldspaceFormId)) return null;
+
+        var finalW = Math.Clamp(pixelWidth, 1, MaxTopDownFinalDimension);
+        var finalH = Math.Clamp(pixelHeight, 1, MaxTopDownFinalDimension);
+        var ssWidth = finalW * TopDownSupersample;
+        var ssHeight = finalH * TopDownSupersample;
+
+        // Orthographic top-down viewProj + covering cylinder (see TopDownViewProjBuilder for the
+        // orientation contract — east→right, north→top, no readback flip). The renderers treat
+        // viewProj as an opaque matrix, so this bypasses the perspective CameraState.
+        var viewProj = TopDownViewProjBuilder.BuildViewProj(worldMinX, worldMaxX, worldMinY, worldMaxY);
+        var cylinder = TopDownViewProjBuilder.BuildCoverCylinder(
+            worldMinX, worldMaxX, worldMinY, worldMaxY, WorldGridConstants.CellSize);
+
+        GpuOffscreenSceneTarget12 target;
+        try
+        {
+            target = new GpuOffscreenSceneTarget12(_gpu12!, ssWidth, ssHeight);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn("WorldView3DControl: top-down target alloc failed: {0}", ex.Message);
+            return null;
+        }
+
+        ulong fenceValue;
+        bool isComplete;
+        var prevShowDisabled = _references!.ShowInitiallyDisabled;
+        var prevRefThrottled = _references.StreamingThrottled;
+        var prevTerrainThrottled = _terrain!.StreamingThrottled;
+        try
+        {
+            _references.ShowInitiallyDisabled = showDisabled;
+            // The overlay is on-demand, not a 60fps loop, so lift the live renderers' per-frame
+            // streaming budget: a single render starts every visible decode (CPU-saturating
+            // concurrency) and uploads everything that has decoded. Combined with the caller's
+            // re-render-while-incomplete loop, the overlay loads meshes as fast as the hardware
+            // allows instead of trickling 8/frame. Restored below so the live 3D loop stays smooth.
+            _references.StreamingThrottled = false;
+            _terrain.StreamingThrottled = false;
+            var recorder = _commandRecorder12!;
+            recorder.BeginFrame();
+            try
+            {
+                var cmd = recorder.CommandList;
+                _deletionQueue12!.Tick();
+                _ringBuffer12!.ResetFrame();
+                _cbvSrvUavHeap12!.BeginFrame(recorder.FrameIndex);
+                _gpu12!.PumpDebugMessages();
+
+                // SetDescriptorHeaps before SetGraphicsRootSignature (bindless ordering), mirroring
+                // RenderFrameD3D12.
+                cmd.SetDescriptorHeaps(1, new[] { _cbvSrvUavHeap12.Heap });
+                cmd.SetGraphicsRootSignature(_rootSignature12!.RootSignature);
+
+                target.Bind(cmd);
+                _terrain!.RenderDepthOnly(viewProj, cylinder); // depth pre-pass: ground occludes refs
+                _references.Render(viewProj, cylinder);        // textured objects, depth-tested
+                target.RecordReadback(cmd);
+            }
+            finally
+            {
+                recorder.EndFrame();
+            }
+
+            fenceValue = recorder.LastSubmittedFenceValue;
+            isComplete = TopDownStreamingComplete();
+            _gpu12.PumpDebugMessages();
+        }
+        catch (Exception ex)
+        {
+            target.Dispose();
+            Log.Warn("WorldView3DControl: top-down render failed: {0}", ex.Message);
+            try { _gpu12?.PumpDebugMessages(); }
+            catch (Exception pumpEx) { Log.Warn("PumpDebugMessages threw: {0}", pumpEx.Message); }
+            return null;
+        }
+        finally
+        {
+            _references.ShowInitiallyDisabled = prevShowDisabled;
+            _references.StreamingThrottled = prevRefThrottled;
+            _terrain.StreamingThrottled = prevTerrainThrottled;
+        }
+
+        // Off the UI thread: wait for the submission fence, then map + downsample. ct is NOT passed
+        // to Task.Run so the body always runs and the finally always disposes the target after the
+        // GPU is done (disposing a resource the GPU still references would crash).
+        try
+        {
+            return await Task.Run(() =>
+            {
+                try
+                {
+                    WaitForFrameFence(fenceValue);
+                    ct.ThrowIfCancellationRequested();
+                    var ssBytes = target.ReadbackToBytes();
+                    var pixels = TopDownSupersample > 1
+                        ? NifSpriteRenderer.Downsample(ssBytes, ssWidth, ssHeight, TopDownSupersample)
+                        : ssBytes;
+                    return new TopDownRender(pixels, finalW, finalH,
+                        worldMinX, worldMaxX, worldMinY, worldMaxY, isComplete);
+                }
+                finally
+                {
+                    target.Dispose();
+                }
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    ///     Heuristic completeness: is any terrain/mesh/texture streaming work still ACTIVE this frame?
+    ///     While false the 2D map keeps re-requesting so the overlay fills in (the 3D control's live
+    ///     loop is idle when the map is showing, so nothing else drives the caches forward).
+    ///     <para>
+    ///         Keyed on in-flight work (uploads this frame + queued/active decodes + texture queue
+    ///         depth) — deliberately NOT on <c>ReferenceMeshMissing</c>/<c>ReferenceTexturePending</c>,
+    ///         which count assets that returned null/pending THIS frame and never reach zero when a
+    ///         region has permanently-missing/cut meshes or textures (those are negative-cached, not
+    ///         re-queued). Settling on "nothing actively loading" lets the overlay converge instead of
+    ///         re-requesting forever.
+    ///     </para>
+    /// </summary>
+    private bool TopDownStreamingComplete()
+    {
+        var t = _terrain!.LastStats;
+        var r = _references!.LastStats;
+        return t.NewUploads == 0
+            && r.ReferenceGpuUploads == 0
+            && r.ReferenceQueuedDecodes == 0
+            && r.ReferenceActiveDecodes == 0
+            && r.ReferenceTexturePendingResolves == 0
+            && r.ReferenceTexturePendingUploads == 0;
+    }
+
+    /// <summary>Blocks until the device frame fence reaches <paramref name="value" />. Safe to call
+    /// off the UI thread (fence read + event are thread-safe). Always completes (the offscreen
+    /// frame is a single submission), so callers can dispose GPU resources afterwards safely.</summary>
+    private void WaitForFrameFence(ulong value)
+    {
+        var fence = _gpu12!.FrameFence;
+        if (fence.CompletedValue >= value) return;
+        using var ev = new AutoResetEvent(false);
+        fence.SetEventOnCompletion(value, ev.SafeWaitHandle.DangerousGetHandle()).CheckError();
+        ev.WaitOne();
+    }
+
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
         DetachRenderLoop();
@@ -487,6 +676,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
                 return;
             }
             HideStatus();
+            EnsureDepthSrv();
             _lastFrameTime = DateTime.UtcNow;
             AttachRenderLoop();
         }
@@ -496,8 +686,35 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
             // command lists. The recorder's WaitForGpuIdle drains the queue.
             _commandRecorder12!.WaitForGpuIdle();
             _surface12.Resize(width, height);
+            EnsureDepthSrv(); // depth resource was recreated → repoint the SRV at the new one
             HideStatus();
         }
+    }
+
+    /// <summary>
+    ///     Allocates (once) and (re)creates an R32_FLOAT SRV over the swap-chain's R32_TYPELESS
+    ///     depth resource in the shared bindless heap, so <c>water.frag</c> can sample the scene
+    ///     depth for its real water-column depth-fade. The persistent slot is allocated once and
+    ///     the SRV rewritten in place after each surface resize (the depth resource changes
+    ///     identity). Leaves <see cref="_depthSrv" /> null (→ proxy fade) if anything is missing.
+    /// </summary>
+    private void EnsureDepthSrv()
+    {
+        var depth = _surface12?.DepthResource;
+        if (_gpu12 is null || _cbvSrvUavHeap12 is null || depth is null)
+        {
+            return;
+        }
+
+        _depthSrv ??= _cbvSrvUavHeap12.AllocatePersistent();
+        var srvDesc = new Vortice.Direct3D12.ShaderResourceViewDescription
+        {
+            Format = Vortice.DXGI.Format.R32_Float,
+            ViewDimension = Vortice.Direct3D12.ShaderResourceViewDimension.Texture2D,
+            Shader4ComponentMapping = Vortice.Direct3D12.ShaderComponentMapping.Default,
+            Texture2D = new Vortice.Direct3D12.Texture2DShaderResourceView { MipLevels = 1, MostDetailedMip = 0 },
+        };
+        _gpu12.Device.CreateShaderResourceView(depth, srvDesc, _depthSrv.Value.Cpu);
     }
 
     private void DisposeRenderResources()
@@ -742,7 +959,32 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         var referencesMs = ElapsedMilliseconds(segmentStarted);
         segmentStarted = StartProfileTimestamp();
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.WaterStart);
+        // Feed water the real scene depth (terrain + references already wrote it) so it computes the
+        // WATER000-style water-column depth fade. The depth-sample PSO binds no DSV, so for this pass
+        // only: unbind the depth target and transition the R32_TYPELESS depth DEPTH_WRITE →
+        // PIXEL_SHADER_RESOURCE, then restore both for the depth-reading navmesh/wireframe overlays.
+        // Without a depth SRV, water keeps the hardware-depth-test PSO + view-angle proxy (DSV stays).
+        var depthRes = surface.DepthResource;
+        var waterUsesDepth = _showWater && _water is not null && _depthSrv is not null && depthRes is not null;
+        _water?.SetSceneDepth(
+            waterUsesDepth ? _depthSrv!.Value.BindlessIndex : NoDepthSrv,
+            _camera.NearPlane,
+            _camera.FarPlane);
+        if (waterUsesDepth)
+        {
+            cmd.OMSetRenderTargets(rtvHandle); // drop the DSV; keep the back-buffer RTV
+            cmd.ResourceBarrierTransition(depthRes!,
+                Vortice.Direct3D12.ResourceStates.DepthWrite,
+                Vortice.Direct3D12.ResourceStates.PixelShaderResource);
+        }
         var visibleWater = _showWater ? _water?.Render(viewProj, cylinder) ?? 0 : 0;
+        if (waterUsesDepth)
+        {
+            cmd.ResourceBarrierTransition(depthRes!,
+                Vortice.Direct3D12.ResourceStates.PixelShaderResource,
+                Vortice.Direct3D12.ResourceStates.DepthWrite);
+            cmd.OMSetRenderTargets(rtvHandle, surface.DepthStencilView);
+        }
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.WaterEnd);
         var waterMs = ElapsedMilliseconds(segmentStarted);
         // Navmesh overlay — translucent, drawn after water (depth-read) and before the
@@ -1049,6 +1291,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         _deletionQueue12?.Dispose(); _deletionQueue12 = null;
         _rootSignature12?.Dispose(); _rootSignature12 = null;
         _cbvSrvUavHeap12?.Dispose(); _cbvSrvUavHeap12 = null;
+        _depthSrv = null; // its slot lived in the heap just disposed; reallocate on the next surface
+
         _ringBuffer12?.Dispose(); _ringBuffer12 = null;
         _surface12?.Dispose(); _surface12 = null;
         _commandRecorder12?.Dispose(); _commandRecorder12 = null;
@@ -1063,7 +1307,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
 
         // Interiors have no grid coords (GridX/GridY null) — frame on the placed-object bounds
         // instead, and never run the GridX!.Value dereference below.
-        if (SelectedInterior() is { } interior)
+        if (_selectedInterior is { } interior)
         {
             ResetCameraToInteriorBounds(interior);
             return;
@@ -1249,23 +1493,19 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         if (_suppressWorldspaceSelectionEvent || _data is null) return;
         if (WorldspaceComboBox.SelectedIndex < 0) return;
 
+        // Picking a worldspace leaves interior mode and shows that exterior.
+        _selectedInterior = null;
+        HideInteriorBrowser();
         TryBuildCellGrid();
-        if (SelectedInterior() is { } interior)
-        {
-            ResetCameraToInteriorBounds(interior);
-        }
-        else
-        {
-            ResetCameraToDataCentroid();
-            ApplyStressSceneBookmarkIfRequested();
-        }
+        ResetCameraToDataCentroid();
+        ApplyStressSceneBookmarkIfRequested();
     }
 
     private void TryBuildCellGrid()
     {
         if (_data is null) return;
 
-        if (SelectedInterior() is { } interior)
+        if (_selectedInterior is { } interior)
         {
             BuildInteriorCellGrid(interior);
             return;
@@ -1305,29 +1545,64 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
             : null;
     }
 
-    /// <summary>True when the worldspace picker currently has an interior entry selected.</summary>
-    private bool IsInteriorSelected()
+    // ── Interior cell browser (shared 2D WorldMapCellBrowser logic) ──────────────────────────
+
+    private void InteriorsButton_Click(object sender, RoutedEventArgs e)
     {
-        var index = WorldspaceComboBox.SelectedIndex;
-        return _interiorEntryStartIndex >= 0
-            && index >= _interiorEntryStartIndex
-            && index - _interiorEntryStartIndex < _interiorCellsInComboOrder.Count;
+        if (_data is null || _data.InteriorCells.Count == 0) return;
+        PopulateInteriorBrowser();
+        CellBrowserPanel.Visibility = Microsoft.UI.Xaml.Visibility.Visible;
     }
 
-    /// <summary>The selected interior cell, or null when an exterior/unlinked entry is selected.</summary>
-    private CellRecord? SelectedInterior()
-        => IsInteriorSelected()
-            ? _interiorCellsInComboOrder[WorldspaceComboBox.SelectedIndex - _interiorEntryStartIndex]
-            : null;
+    private void CellBrowserCloseButton_Click(object sender, RoutedEventArgs e) => HideInteriorBrowser();
 
-    private static bool InteriorHasRenderableRefs(CellRecord cell)
+    private void HideInteriorBrowser() => CellBrowserPanel.Visibility = Microsoft.UI.Xaml.Visibility.Collapsed;
+
+    private void PopulateInteriorBrowser()
     {
-        foreach (var o in cell.PlacedObjects)
-        {
-            if (o.RecordType is "ACHR" or "ACRE") continue;
-            if (!string.IsNullOrEmpty(o.ModelPath)) return true;
-        }
-        return false;
+        if (_data is null) return;
+        // groupInteriors:false → group by first letter (A..Z), like the 2D viewer's Interiors browser.
+        _allInteriorItems = WorldMapCellBrowser.BuildCellListItems(_data.InteriorCells, groupInteriors: false, _data);
+        CellSearchBox.Text = "";
+        FilterHasObjects.IsChecked = false;
+        FilterNamedOnly.IsChecked = false;
+        RebuildInteriorList(_allInteriorItems);
+    }
+
+    private void CellSearchBox_TextChanged(object sender, TextChangedEventArgs e) => ApplyInteriorFilters();
+
+    private void CellFilter_Changed(object sender, RoutedEventArgs e) => ApplyInteriorFilters();
+
+    private void ApplyInteriorFilters()
+    {
+        var query = CellSearchBox.Text?.Trim() ?? "";
+        var hasObjects = FilterHasObjects.IsChecked == true;
+        var namedOnly = FilterNamedOnly.IsChecked == true;
+        RebuildInteriorList(WorldMapCellBrowser.ApplyFilters(_allInteriorItems, query, hasObjects, namedOnly));
+    }
+
+    private void RebuildInteriorList(List<WorldMapControl.CellListItem> items)
+    {
+        var source = WorldMapCellBrowser.BuildGroupedSource(items);
+        var cvs = new Microsoft.UI.Xaml.Data.CollectionViewSource { IsSourceGrouped = true, Source = source };
+        CellListView.ItemsSource = cvs.View;
+        CellBrowserCountText.Text = $"{items.Count} cells";
+    }
+
+    private void CellListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        // Fires with null while the ItemsSource is (re)built by populate/filter — ignore those.
+        if (CellListView.SelectedItem is not WorldMapControl.CellListItem item) return;
+
+        _selectedInterior = item.Cell;
+        // Drop the combo selection so re-picking the same worldspace later still returns to exterior.
+        _suppressWorldspaceSelectionEvent = true;
+        WorldspaceComboBox.SelectedIndex = -1;
+        _suppressWorldspaceSelectionEvent = false;
+
+        HideInteriorBrowser();
+        TryBuildCellGrid();
+        ResetCameraToInteriorBounds(item.Cell);
     }
 
     /// <summary>
@@ -1360,7 +1635,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
     private (IEnumerable<CellRecord> Cells, float? DefaultWaterHeight) GetSelectedWorldspaceCells(WorldViewData data)
     {
         var index = WorldspaceComboBox.SelectedIndex;
-        if (index < 0 || IsInteriorSelected()) return (Enumerable.Empty<CellRecord>(), null);
+        if (index < 0) return (Enumerable.Empty<CellRecord>(), null);
 
         if (index < data.Worldspaces.Count)
         {
@@ -1378,6 +1653,73 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         return index >= 0 && index < data.Worldspaces.Count
             ? data.Worldspaces[index].FormId
             : null;
+    }
+
+    /// <summary>
+    ///     Ensures the active worldspace matches <paramref name="worldspaceFormId" /> (null = the
+    ///     unlinked-exterior set) so the top-down overlay renders the worldspace the 2D map is showing.
+    ///     Switches + rebuilds the cell grid only when it differs (worldspace switches are infrequent).
+    ///     Suppresses the selection event so the camera isn't reset. Returns false when no matching
+    ///     exterior worldspace exists (the caller then skips the overlay).
+    /// </summary>
+    private bool EnsureActiveExteriorWorldspace(uint? worldspaceFormId)
+    {
+        if (_data is null) return false;
+
+        // Already on the requested exterior worldspace (and not in interior mode)?
+        if (_selectedInterior is null && GetSelectedWorldspaceFormId(_data) == worldspaceFormId)
+        {
+            return true;
+        }
+
+        var targetIndex = -1;
+        if (worldspaceFormId is uint ws)
+        {
+            for (var i = 0; i < _data.Worldspaces.Count; i++)
+            {
+                if (_data.Worldspaces[i].FormId == ws) { targetIndex = i; break; }
+            }
+        }
+        else if (_data.UnlinkedExteriorCells.Count > 0)
+        {
+            targetIndex = _data.Worldspaces.Count; // the unlinked-exterior tail entry
+        }
+
+        if (targetIndex < 0) return false;
+
+        _selectedInterior = null; // switching to an exterior worldspace leaves interior mode
+        _suppressWorldspaceSelectionEvent = true;
+        WorldspaceComboBox.SelectedIndex = targetIndex;
+        _suppressWorldspaceSelectionEvent = false;
+        TryBuildCellGrid();
+        return true;
+    }
+
+    /// <summary>Profiler hook: the FormId of the currently-selected exterior worldspace (null when an
+    /// unlinked-exterior / interior entry is selected). Lets the capture harness round-trip the
+    /// worldspace-sync parameter without switching.</summary>
+    internal uint? Profiler_SelectedWorldspaceFormId =>
+        _data is null ? null : GetSelectedWorldspaceFormId(_data);
+
+    /// <summary>Profiler hook: number of exterior worldspaces (for the capture harness to iterate).</summary>
+    internal int Profiler_ExteriorWorldspaceCount => _data?.Worldspaces.Count ?? 0;
+
+    /// <summary>Profiler hook: FormId + world-space centroid (north-Y) + name of exterior worldspace
+    /// <paramref name="index" />, so the capture harness can target a specific worldspace and verify
+    /// the top-down sync switches to it. Null when the index is out of range or has no placed cells.</summary>
+    internal (uint FormId, float CenterX, float CenterY, string Name)? Profiler_GetWorldspaceCenter(int index)
+    {
+        if (_data is null || index < 0 || index >= _data.Worldspaces.Count) return null;
+        var ws = _data.Worldspaces[index];
+        long sumX = 0, sumY = 0, n = 0;
+        foreach (var c in ws.Cells)
+        {
+            if (c.GridX is int gx && c.GridY is int gy) { sumX += gx; sumY += gy; n++; }
+        }
+        if (n == 0) return null;
+        var cx = (float)((sumX / (double)n + 0.5) * WorldGridConstants.CellSize);
+        var cy = (float)((sumY / (double)n + 0.5) * WorldGridConstants.CellSize);
+        return (ws.FormId, cx, cy, ws.EditorId ?? $"0x{ws.FormId:X8}");
     }
 
     private static List<PlacedReference> GetSelectedWorldspaceMarkers(WorldViewData data, uint? worldspaceFormId)
@@ -1480,12 +1822,39 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable
         _profileAccumulator.Add(sample, terrain, water, wireframe, references);
         if (_profileAccumulator.TryFlush(_profileLogIntervalMilliseconds, out var message, out var aggregate))
         {
-            Log.Info(message);
             var fields = new Dictionary<string, object?>(aggregate, StringComparer.Ordinal);
             foreach (var item in RendererProfilerTrace.CameraPoseFields(Profiler_CameraPose))
             {
                 fields[item.Key] = item.Value;
             }
+
+            // Resource gauges — the trajectory of these in the last log line(s) before a crash tells
+            // which resource exhausted (the usual "crash with no cause" under sustained streaming):
+            //   desc → bindless descriptor heap (texture-slot leak; capacity is the hard ceiling),
+            //   vramMb used/budget → GPU memory (device removal once usage exceeds budget),
+            //   managedMb → managed heap OOM (retained CPU buffers).
+            // Appended to BOTH the JSONL event and the plain text log line so the GUI log alone suffices.
+            var resourceGauge = "";
+            if (_cbvSrvUavHeap12 is not null)
+            {
+                fields["persistentDescriptors"] = _cbvSrvUavHeap12.PersistentCount;
+                fields["persistentDescriptorCapacity"] = _cbvSrvUavHeap12.PersistentCapacity;
+                resourceGauge += string.Create(CultureInfo.InvariantCulture,
+                    $" desc={_cbvSrvUavHeap12.PersistentCount}/{_cbvSrvUavHeap12.PersistentCapacity}");
+            }
+
+            var managedHeapMb = GC.GetTotalMemory(false) / (1024 * 1024);
+            fields["managedHeapMb"] = managedHeapMb;
+            resourceGauge += string.Create(CultureInfo.InvariantCulture, $" managedMb={managedHeapMb}");
+
+            if (_gpu12 is not null && _gpu12.TryQueryLocalVideoMemoryMb(out var vramUsedMb, out var vramBudgetMb))
+            {
+                fields["vramUsedMb"] = vramUsedMb;
+                fields["vramBudgetMb"] = vramBudgetMb;
+                resourceGauge += string.Create(CultureInfo.InvariantCulture, $" vramMb={vramUsedMb}/{vramBudgetMb}");
+            }
+
+            Log.Info(resourceGauge.Length > 0 ? message + " | res:" + resourceGauge : message);
             RendererProfilerTrace.Event("frame-aggregate", fields);
         }
     }

@@ -22,14 +22,16 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
 ///       Ry = [[c,0,s],[0,1,0],[-s,0,c]]
 ///       Rz = [[c,-s,0],[s,c,0],[0,0,1]]
 ///     </code>
-///     The engine BUILDS <c>M = Rx·Ry·Rz</c> from these, but APPLIES it with the opposite
-///     handedness when placing the NiNode, so the on-screen orientation is the transpose
-///     <c>Mᵀ</c> (the inverse rotation). This was established empirically: with plain <c>M</c>,
-///     cardinal-aligned 180°-symmetric props (roads/walls) rendered correctly while diagonals were
-///     ~90° off — the exact signature of a yaw negation, which <c>Mᵀ</c> produces. These tests
-///     therefore assert that <c>Vector3.Transform(v, WorldMatrix) == Mᵀ·v</c> (i.e. the inverse of
-///     each per-axis builder). If a future edit drops the transpose in
-///     <see cref="RenderableReference.ComposeWorldMatrix" />, these fail.
+///     The engine BUILDS <c>M = Rx·Ry·Rz</c> from these (with the raw DATA Euler angles, no
+///     per-angle negation — confirmed in <c>GetOrientation</c>). On-screen this renderer must
+///     negate ONLY the yaw angle to match the game: the heading is the opposite hand from the
+///     renderer's world Z, while pitch/roll are correct as built. So the applied rotation is
+///     <c>W = Rx(RotX)·Ry(RotY)·Rz(−RotZ)</c>. This was pinned by two empirical states: plain
+///     <c>M</c> rendered yaw wrong (pitch/roll right); the full transpose <c>Mᵀ</c> rendered yaw
+///     right but pitch/roll wrong (the inverted pipes in Lucky38World). Negating RotZ alone is the
+///     only transform consistent with both. These tests assert
+///     <c>Vector3.Transform(v, WorldMatrix) == W·v</c>; if a future edit drops the yaw negation or
+///     re-introduces the transpose in <see cref="RenderableReference.ComposeWorldMatrix" />, they fail.
 /// </summary>
 public sealed class EngineRotationConventionTests
 {
@@ -59,24 +61,25 @@ public sealed class EngineRotationConventionTests
     }
 
     [Fact]
-    public void PureRotX_AppliesInverseOfEngineMakeXRotation()
+    public void PureRotX_MatchesEngineMakeXRotation()
     {
-        // On-screen rotation is Mᵀ = Rx(-Theta): the s terms flip sign vs the column-vector builder.
+        // Pitch is NOT negated: on-screen rotation is the forward builder Rx(+Theta).
         float c = MathF.Cos(Theta), s = MathF.Sin(Theta);
         var world = WorldFor(Theta, 0f, 0f);
         AssertAxis(world, Vector3.UnitX, new Vector3(1f, 0f, 0f));
-        AssertAxis(world, Vector3.UnitY, new Vector3(0f, c, -s));
-        AssertAxis(world, Vector3.UnitZ, new Vector3(0f, s, c));
+        AssertAxis(world, Vector3.UnitY, new Vector3(0f, c, s));
+        AssertAxis(world, Vector3.UnitZ, new Vector3(0f, -s, c));
     }
 
     [Fact]
-    public void PureRotY_AppliesInverseOfEngineMakeYRotation()
+    public void PureRotY_MatchesEngineMakeYRotation()
     {
+        // Roll is NOT negated: on-screen rotation is the forward builder Ry(+Theta).
         float c = MathF.Cos(Theta), s = MathF.Sin(Theta);
         var world = WorldFor(0f, Theta, 0f);
-        AssertAxis(world, Vector3.UnitX, new Vector3(c, 0f, s));
+        AssertAxis(world, Vector3.UnitX, new Vector3(c, 0f, -s));
         AssertAxis(world, Vector3.UnitY, new Vector3(0f, 1f, 0f));
-        AssertAxis(world, Vector3.UnitZ, new Vector3(-s, 0f, c));
+        AssertAxis(world, Vector3.UnitZ, new Vector3(s, 0f, c));
     }
 
     // Engine column-vector per-axis matrices, transcribed verbatim from the decompile
@@ -100,17 +103,18 @@ public sealed class EngineRotationConventionTests
     }
 
     [Fact]
-    public void MultiAxis_MatchesEngineFromEulerAnglesXYZ()
+    public void MultiAxis_AppliesEngineEulerWithYawNegated()
     {
         // FromEulerAnglesXYZ (VA 0x82E20B38) builds M = Rx · (Ry · Rz) and applies it column-vector:
-        // v' = Rx(Ry(Rz(v))). Assert the viewer's row-vector WorldMatrix reproduces that for a
-        // genuinely multi-axis placement (the case single-axis tests can't cover).
+        // v' = Rx(Ry(Rz(v))). On-screen this renderer negates ONLY the yaw angle, so the applied
+        // rotation is W = Rx(rx)·Ry(ry)·Rz(-rz). Assert the viewer's row-vector WorldMatrix
+        // reproduces W·v for a genuinely multi-axis placement (the case single-axis tests can't cover).
         float rx = 0.21f, ry = 0.34f, rz = 0.78f;
         var world = WorldFor(rx, ry, rz);
         foreach (var v in new[] { Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ, new Vector3(1f, 2f, 3f) })
         {
-            // On-screen = Mᵀ·v = (Rx·Ry·Rz)ᵀ·v = Rz(-rz)·Ry(-ry)·Rx(-rx)·v.
-            var expected = EngineRz(-rz, EngineRy(-ry, EngineRx(-rx, v)));
+            // On-screen = W·v = Rx(rx)·Ry(ry)·Rz(-rz)·v — engine builders, yaw angle negated.
+            var expected = EngineRx(rx, EngineRy(ry, EngineRz(-rz, v)));
             var actual = Vector3.Transform(v, world);
             Assert.Equal(expected.X, actual.X, 4);
             Assert.Equal(expected.Y, actual.Y, 4);
@@ -121,9 +125,9 @@ public sealed class EngineRotationConventionTests
     [Fact]
     public void PureRotZ_Yaw_AppliesInverseOfEngineMakeZRotation()
     {
-        // The load-bearing case. The engine builds MakeZRotation(+RotZ) but applies it transposed,
-        // so on-screen +RotZ sends +X → −Y (the inverse). Plain M (sending +X → +Y) is what made
-        // diagonal roads/walls render ~90° off while cardinal ones looked fine.
+        // The load-bearing case. The renderer negates the yaw angle, so on-screen +RotZ applies
+        // Rz(−RotZ) — sending +X → −Y (the inverse of the engine's MakeZRotation). Plain M (sending
+        // +X → +Y) is what made diagonal roads/walls render ~90° off while cardinal ones looked fine.
         float c = MathF.Cos(Theta), s = MathF.Sin(Theta);
         var world = WorldFor(0f, 0f, Theta);
         AssertAxis(world, Vector3.UnitX, new Vector3(c, -s, 0f));

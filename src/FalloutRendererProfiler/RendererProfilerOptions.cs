@@ -30,6 +30,18 @@ internal sealed record RendererProfilerOptions
     internal int WindowWidth { get; init; } = 1450;
     internal int WindowHeight { get; init; } = 900;
 
+    /// <summary>When set, renders one top-down "Rendered models" overlay (the 2D-map feature) of a
+    /// window around the camera, saves it to this PNG, logs coverage, and exits. Autonomous test for
+    /// the offscreen top-down render path.</summary>
+    internal string? CaptureTopDownPath { get; init; }
+
+    /// <summary>Width/height of the top-down capture window in cells (default 6).</summary>
+    internal int CaptureSpanCells { get; init; } = 6;
+
+    /// <summary>When set with --capture-topdown, targets this exterior worldspace by index (centered
+    /// on its centroid) instead of the camera position — exercises the top-down worldspace sync.</summary>
+    internal int? CaptureWorldspaceIndex { get; init; }
+
     internal static string Usage =>
         """
         FalloutRendererProfiler
@@ -56,6 +68,9 @@ internal sealed record RendererProfilerOptions
           --verbose                   Enables debug logging.
           --width <px>                Window width. Default: 1450.
           --height <px>               Window height. Default: 900.
+          --capture-topdown <path>    Render one top-down "Rendered models" overlay to a PNG, log coverage, then exit.
+          --capture-cells <n>         Top-down capture window size in cells (default 6).
+          --capture-worldspace <i>    Target exterior worldspace index i (centered on its centroid) — tests the top-down worldspace sync.
 
         Examples:
           FalloutRendererProfiler --input "C:\Games\Fallout New Vegas\Data\FalloutNV.esm" --duration-seconds 60
@@ -85,6 +100,9 @@ internal sealed record RendererProfilerOptions
         var verbose = false;
         var width = 1450;
         var height = 900;
+        string? captureTopDown = null;
+        var captureSpanCells = 6;
+        int? captureWorldspaceIndex = null;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -193,6 +211,28 @@ internal sealed record RendererProfilerOptions
                     verbose = true;
                     break;
 
+                case "--capture-topdown":
+                    captureTopDown = RequireValue(args, ref i, arg, out error);
+                    if (error != null) return Fail(out options, error);
+                    break;
+
+                case "--capture-cells":
+                    if (!TryReadPositiveInt(args, ref i, arg, out captureSpanCells, out error))
+                    {
+                        return Fail(out options, error);
+                    }
+                    break;
+
+                case "--capture-worldspace":
+                    var wsRaw = RequireValue(args, ref i, arg, out error);
+                    if (error != null) return Fail(out options, error);
+                    if (!int.TryParse(wsRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var wsIdx) || wsIdx < 0)
+                    {
+                        return Fail(out options, $"{arg} requires a non-negative integer.");
+                    }
+                    captureWorldspaceIndex = wsIdx;
+                    break;
+
                 case "--width":
                     if (!TryReadPositiveInt(args, ref i, arg, out width, out error))
                     {
@@ -266,7 +306,10 @@ internal sealed record RendererProfilerOptions
             EnablePersistentMeshCache = persistentMeshCache,
             Verbose = verbose,
             WindowWidth = Math.Max(width, 640),
-            WindowHeight = Math.Max(height, 480)
+            WindowHeight = Math.Max(height, 480),
+            CaptureTopDownPath = string.IsNullOrWhiteSpace(captureTopDown) ? null : Path.GetFullPath(captureTopDown),
+            CaptureSpanCells = captureSpanCells,
+            CaptureWorldspaceIndex = captureWorldspaceIndex
         };
         error = null;
         return true;

@@ -49,6 +49,7 @@ internal static class WorldMapOverviewRenderer
         CanvasBitmap? worldHeightmapBitmap,
         int worldHmPixelWidth, int worldHmPixelHeight,
         int worldHmMinX, int worldHmMaxY,
+        int worldHmPixelsPerCell,
         IReadOnlyDictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap>? textureCellBitmaps,
         float zoom, Vector2 panOffset,
         float canvasWidth, float canvasHeight,
@@ -58,10 +59,16 @@ internal static class WorldMapOverviewRenderer
         PlacedReference? hoveredObject,
         Dictionary<MapMarkerType, CanvasBitmap>? markerIconBitmaps,
         HeightmapColorScheme colorScheme,
-        bool showCellGrid = true)
+        bool showCellGrid = true,
+        bool showRenderedObjects = false,
+        CanvasBitmap? renderedObjectsOverlay = null,
+        float overlayWorldMinX = 0f, float overlayWorldMaxX = 0f,
+        float overlayWorldMinY = 0f, float overlayWorldMaxY = 0f)
     {
         var transform = WorldMapViewportHelper.GetViewTransform(zoom, panOffset);
         ds.Transform = transform;
+
+        var overlayActive = showRenderedObjects && renderedObjectsOverlay is not null;
 
         // 1. Layer background — either a single giant bitmap (most layers) or a per-cell
         //    composite (TerrainTextures, to dodge the GPU max-texture-size limit). Only one
@@ -72,14 +79,22 @@ internal static class WorldMapOverviewRenderer
         }
         else if (worldHeightmapBitmap != null)
         {
-            var pixelScale = CellWorldSize / 33f; // HmGridSize
+            // Scale by the bitmap's actual px/cell: heightmap-family aggregates are 33 px/cell, but the
+            // TerrainTextures aggregate LOD uses an adaptive (smaller) px/cell sized to the worldspace.
+            var ppc = worldHmPixelsPerCell > 0 ? worldHmPixelsPerCell : 33f;
+            var pixelScale = CellWorldSize / ppc;
             var bitmapWorldW = worldHmPixelWidth * pixelScale;
             var bitmapWorldH = worldHmPixelHeight * pixelScale;
             var bitmapX = worldHmMinX * CellWorldSize;
             var bitmapY = -(worldHmMaxY + 1) * CellWorldSize;
 
+            // HighQualityCubic minifies far better than the default bilinear (no mips on a CanvasBitmap),
+            // which is what made the zoomed-out aggregate moire. Source rect = the full bitmap.
             ds.DrawImage(worldHeightmapBitmap,
-                new Rect(bitmapX, bitmapY, bitmapWorldW, bitmapWorldH));
+                new Rect(bitmapX, bitmapY, bitmapWorldW, bitmapWorldH),
+                new Rect(0, 0, worldHmPixelWidth, worldHmPixelHeight),
+                1f,
+                CanvasImageInterpolation.HighQualityCubic);
         }
 
         // 2. Cell grid (optional overlay)
@@ -90,8 +105,17 @@ internal static class WorldMapOverviewRenderer
                 zoom, panOffset, canvasWidth, canvasHeight);
         }
 
-        // 3. Placed objects (LOD-based)
-        if (zoom > 0.05f && activeCells.Count > 0)
+        // 2b. Rendered-models overlay — a top-down 3D render of the placed objects (terrain-occluded
+        //     via the real depth buffer). Drawn over the terrain layer + grid; replaces the static
+        //     dots/boxes below. Actor dots (4b) still draw on top.
+        if (overlayActive)
+        {
+            DrawRenderedObjectsOverlay(ds, renderedObjectsOverlay!,
+                overlayWorldMinX, overlayWorldMaxX, overlayWorldMinY, overlayWorldMaxY);
+        }
+
+        // 3. Placed objects (LOD-based) — skipped when the rendered-models overlay replaces them.
+        if (!overlayActive && zoom > 0.05f && activeCells.Count > 0)
         {
             var (tlWorld, brWorld) = WorldMapViewportHelper.GetVisibleWorldBounds(
                 canvasWidth, canvasHeight, zoom, panOffset);
@@ -148,6 +172,22 @@ internal static class WorldMapOverviewRenderer
         {
             DrawPlacedObjectHighlight(ds, hoveredObject, data, zoom);
         }
+    }
+
+    /// <summary>
+    ///     Composites a top-down rendered-models overlay bitmap over the terrain layer. The overlay
+    ///     covers the WORLD rectangle [<paramref name="worldMinX" />,<paramref name="worldMaxX" />] ×
+    ///     [<paramref name="worldMinY" />,<paramref name="worldMaxY" />] (world north-Y). Canvas Y is
+    ///     <c>-worldNorthY</c>, so the north edge (worldMaxY) maps to the top (min canvas Y), matching
+    ///     the heightmap-bitmap placement. Shared by the overview and (exterior) cell-detail paths.
+    /// </summary>
+    internal static void DrawRenderedObjectsOverlay(
+        CanvasDrawingSession ds, CanvasBitmap overlay,
+        float worldMinX, float worldMaxX, float worldMinY, float worldMaxY)
+    {
+        if (worldMaxX <= worldMinX || worldMaxY <= worldMinY) return;
+        var rect = new Rect(worldMinX, -worldMaxY, worldMaxX - worldMinX, worldMaxY - worldMinY);
+        ds.DrawImage(overlay, rect);
     }
 
     internal static void DrawCellGrid(
@@ -694,7 +734,15 @@ internal static class WorldMapOverviewRenderer
         {
             var originX = gx * CellWorldSize;
             var originY = -(gy + 1) * CellWorldSize;
-            ds.DrawImage(bmp, new Rect(originX, originY, CellWorldSize, CellWorldSize));
+            // HighQualityCubic: just past the aggregate→per-cell switch, 132 px/cell tiles are
+            // minified several × on screen; default bilinear aliases (moire). Output is tiny per
+            // cell, so the better filter costs little.
+            var src = bmp.SizeInPixels;
+            ds.DrawImage(bmp,
+                new Rect(originX, originY, CellWorldSize, CellWorldSize),
+                new Rect(0, 0, src.Width, src.Height),
+                1f,
+                CanvasImageInterpolation.HighQualityCubic);
         }
     }
 

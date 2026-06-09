@@ -8,8 +8,8 @@
 // path exactly — which is what the engine itself does when those RTs are disabled:
 //   * reflection  == ReflectionColor          (engine: lerp(ReflectionColor, RT, VarAmounts.y), VarAmounts.y=0)
 //   * refraction  == the water body color      (engine blends refraction by depth; we use the body)
-//   * depthT      == a view-angle proxy        (engine samples DepthMap; DepthFalloff is plumbed for
-//                                               the eventual D32-depth-SRV upgrade)
+//   * depthT      == real scene-depth column when the host binds the D32 depth as an SRV (matches
+//                    the engine's DepthMap fade over DepthFalloffStart/End); else a view-angle proxy
 // The Fresnel form (Schlick, F0 = DNAM FresnelAmount, exponent 5), the Shallow->Deep-by-depth body,
 // the ReflectionColor mix scaled by ReflectivityAmount, and the dual specular are the engine's exact
 // math. NNAM is a NORMAL map (unpack xy = rgb*2-1, rebuild z); sampling it as color is the classic
@@ -30,6 +30,7 @@ cbuffer Uniforms : register(b0)
     float4 uLayer1;      // per noise layer: UvScale, WindDirDeg, WindSpeed, AmpScale
     float4 uLayer2;
     float4 uLayer3;
+    uint4 uDepthParams;  // x = scene-depth SRV bindless index (0xFFFFFFFF = none), y/z = near/far bits
 };
 
 // Bindless texture table (slot 4, space1) shared with terrain/references. The NNAM normal map
@@ -76,6 +77,13 @@ float2 SampleLayerPerturb(uint idx, float2 worldXy, float baseUv, float normalsS
     return n * layer.w;
 }
 
+// D3D [0,1] depth -> positive view-space distance (world units). Matches System.Numerics
+// CreatePerspectiveFieldOfView: z=0 -> near, z=1 -> far.
+float LinearizeDepth(float ndcZ, float near, float far)
+{
+    return (near * far) / max(far - ndcZ * (far - near), 1e-4);
+}
+
 float4 main(PSInput input) : SV_Target
 {
     float t = uCamPosTime.w;
@@ -90,11 +98,31 @@ float4 main(PSInput input) : SV_Target
     float distXY = length(eye.xy);
     float3 V = normalize(eye);
 
-    // FNV depthT comes from the depth map (water-column thickness). No depth RT here -> a
-    // view-angle proxy: straight-down sees the full column (deep + developed ripples), grazing
-    // sees the surface (shallow + flat + reflection-dominated). DepthFalloff (uSurface1.yz) is the
-    // real range, applied once the D32 depth buffer is exposed as an SRV.
-    float depthT = saturate(dot(float3(0, 0, 1), V));
+    // FNV depthT = water-column thickness from the scene depth map, normalized over DepthFalloff.
+    // When the host hands us the scene depth SRV (uDepthParams.x != 0xFFFFFFFF) we reproduce that
+    // exactly: linearize the sampled scene depth and this water fragment's own depth, take the
+    // view-space gap, and normalize by DepthFalloffStart/End (uSurface1.yz). Where opaque geometry
+    // is NEARER than the water surface the fragment is occluded -> discard (no DSV is bound in this
+    // PSO, so occlusion is done here). Falls back to a view-angle proxy when no depth SRV is set.
+    uint depthIndex = uDepthParams.x;
+    float depthT;
+    if (depthIndex == 0xFFFFFFFFu)
+    {
+        depthT = saturate(dot(float3(0, 0, 1), V));
+    }
+    else
+    {
+        float near = asfloat(uDepthParams.y);
+        float far = asfloat(uDepthParams.z);
+        float sceneNdc = gWaterTextures[NonUniformResourceIndex(depthIndex)].Load(int3((int2)input.Position.xy, 0)).r;
+        float sceneDist = LinearizeDepth(sceneNdc, near, far);
+        float waterDist = LinearizeDepth(input.Position.z, near, far);
+        float column = sceneDist - waterDist;     // >0: water over a floor; <0: geometry occludes
+        clip(column);                              // discard water hidden behind opaque geometry
+        float start = uSurface1.y;                 // DepthFalloffStart
+        float end = uSurface1.z;                   // DepthFalloffEnd
+        depthT = saturate((column - start) / max(end - start, 1e-3));
+    }
 
     // FNV distance fade of ripples: full within 4096 world units, -> 0 at 8192.
     float noiseFade = saturate((8192.0 - distXY) / 4096.0);

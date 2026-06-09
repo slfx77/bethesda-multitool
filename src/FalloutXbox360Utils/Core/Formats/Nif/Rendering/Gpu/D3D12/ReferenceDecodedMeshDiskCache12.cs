@@ -9,7 +9,11 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 internal sealed class ReferenceDecodedMeshDiskCache12
 {
     internal const int CacheFormatVersion = 1;
-    internal const int DecoderVersion = 1;
+    // Bumped 1→2: the decoded float output changed when HalfToFloat moved from a Math.Pow
+    // approximation to the exact hardware (BitConverter.UInt16BitsToHalf) conversion — the low bits
+    // differ, so any cache written by the old decoder must be invalidated. Bump this whenever the
+    // decode output bytes can change.
+    internal const int DecoderVersion = 2;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
@@ -19,6 +23,15 @@ internal sealed class ReferenceDecodedMeshDiskCache12
     private const string FileExtension = ".fdmc";
     private static readonly byte[] Magic = Encoding.ASCII.GetBytes("FNVMC12\0");
 
+    // Soft on-disk size ceiling (default 4 GB, env FALLOUT_VIEWER_MESH_CACHE_MAX_MB). Enforced by a
+    // best-effort background prune at construction: oldest files deleted until under 80% of the cap.
+    // Required now that the cache is enabled by default — without it the dir would grow unbounded.
+    private static readonly long MaxCacheBytes = ResolveMaxCacheBytes();
+
+    private long _hits;
+    private long _misses;
+    private long _stores;
+
     internal ReferenceDecodedMeshDiskCache12(string cacheDirectory)
     {
         CacheDirectory = cacheDirectory;
@@ -26,9 +39,16 @@ internal sealed class ReferenceDecodedMeshDiskCache12
 
     internal string CacheDirectory { get; }
 
+    internal long Hits => Interlocked.Read(ref _hits);
+    internal long Misses => Interlocked.Read(ref _misses);
+    internal long Stores => Interlocked.Read(ref _stores);
+
     internal static ReferenceDecodedMeshDiskCache12? CreateFromEnvironment()
     {
-        if (!IsEnabled(Environment.GetEnvironmentVariable("FALLOUT_VIEWER_PERSISTENT_MESH_CACHE")))
+        // Enabled by DEFAULT — this is a shader-cache-style win: the cold first run writes decoded
+        // meshes, every warm run after skips the entire parse→convert→extract→build chain (the bulk
+        // of cold-load CPU cost). Disable with FALLOUT_VIEWER_PERSISTENT_MESH_CACHE=0/false/off.
+        if (IsDisabled(Environment.GetEnvironmentVariable("FALLOUT_VIEWER_PERSISTENT_MESH_CACHE")))
         {
             return null;
         }
@@ -46,10 +66,91 @@ internal sealed class ReferenceDecodedMeshDiskCache12
                 root,
                 "FalloutXbox360Utils",
                 "ReferenceDecodedMeshCache12",
-                "v1");
+                $"v{DecoderVersion}");
         }
 
-        return new ReferenceDecodedMeshDiskCache12(cacheDirectory);
+        var cache = new ReferenceDecodedMeshDiskCache12(cacheDirectory);
+        cache.SchedulePrune();
+        return cache;
+    }
+
+    private static long ResolveMaxCacheBytes()
+    {
+        const long defaultMb = 4096;
+        var raw = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_MESH_CACHE_MAX_MB");
+        var mb = long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed > 0
+            ? parsed
+            : defaultMb;
+        return mb * 1024L * 1024L;
+    }
+
+    /// <summary>Best-effort background size-cap enforcement: if the cache dir exceeds the cap, delete
+    /// the oldest files (by last-write time) until it is under 80% of the cap. Runs off-thread so it
+    /// never blocks renderer startup; failures are swallowed (cache pruning must never break rendering).</summary>
+    internal void SchedulePrune() => Task.Run(Prune);
+
+    private void Prune()
+    {
+        try
+        {
+            var dir = new DirectoryInfo(CacheDirectory);
+            if (!dir.Exists)
+            {
+                return;
+            }
+
+            var files = dir.EnumerateFiles("*" + FileExtension, SearchOption.AllDirectories).ToList();
+            var total = files.Sum(static f => f.Length);
+            if (total <= MaxCacheBytes)
+            {
+                return;
+            }
+
+            var target = (long)(MaxCacheBytes * 0.8);
+            foreach (var f in files.OrderBy(static f => f.LastWriteTimeUtc))
+            {
+                if (total <= target)
+                {
+                    break;
+                }
+
+                try
+                {
+                    var len = f.Length;
+                    f.Delete();
+                    total -= len;
+                }
+                catch
+                {
+                    // Best-effort; skip files we can't delete (in use, perms).
+                }
+            }
+
+            Logger.Instance.Info(
+                "ReferenceDecodedMeshDiskCache12: pruned to {0:N0} MB (cap {1:N0} MB).",
+                total / (1024 * 1024), MaxCacheBytes / (1024 * 1024));
+        }
+        catch (Exception ex)
+        {
+            Logger.Instance.Warn("ReferenceDecodedMeshDiskCache12: prune failed: {0}", ex.Message);
+        }
+    }
+
+    /// <summary>Logs cumulative hit/miss/store counts — call at teardown to confirm the cache is
+    /// working (warm runs should show a high hit ratio).</summary>
+    internal void LogStatistics()
+    {
+        var hits = Hits;
+        var misses = Misses;
+        var total = hits + misses;
+        if (total == 0)
+        {
+            return;
+        }
+
+        Logger.Instance.Info(
+            "ReferenceDecodedMeshDiskCache12: {0:N0} hits, {1:N0} misses ({2:P1} hit rate), {3:N0} stores.",
+            hits, misses, hits / (double)total, Stores);
     }
 
     internal bool TryLoad(
@@ -61,6 +162,7 @@ internal sealed class ReferenceDecodedMeshDiskCache12
         var path = GetCachePath(keyText);
         if (!File.Exists(path))
         {
+            Interlocked.Increment(ref _misses);
             return false;
         }
 
@@ -92,17 +194,20 @@ internal sealed class ReferenceDecodedMeshDiskCache12
             if (isNegative)
             {
                 entry = new ReferenceDecodedMeshDiskCacheEntry12(null, IsNegative: true);
+                Interlocked.Increment(ref _hits);
                 return true;
             }
 
             var mesh = ReadMesh(reader);
             entry = new ReferenceDecodedMeshDiskCacheEntry12(mesh, IsNegative: false);
+            Interlocked.Increment(ref _hits);
             return true;
         }
         catch
         {
             TryDelete(path);
             entry = default;
+            Interlocked.Increment(ref _misses);
             return false;
         }
     }
@@ -136,6 +241,7 @@ internal sealed class ReferenceDecodedMeshDiskCache12
             }
 
             File.Move(tempPath, path, overwrite: true);
+            Interlocked.Increment(ref _stores);
         }
         catch (Exception ex)
         {
@@ -188,11 +294,11 @@ internal sealed class ReferenceDecodedMeshDiskCache12
     private static string FormatNullable(ulong? value) =>
         value.HasValue ? value.Value.ToString(CultureInfo.InvariantCulture) : "";
 
-    private static bool IsEnabled(string? value) =>
-        string.Equals(value, "1", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(value, "on", StringComparison.OrdinalIgnoreCase);
+    private static bool IsDisabled(string? value) =>
+        string.Equals(value, "0", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(value, "false", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(value, "no", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(value, "off", StringComparison.OrdinalIgnoreCase);
 
     private static void WriteMesh(BinaryWriter writer, ReferenceDecodedMeshPayload12 mesh)
     {

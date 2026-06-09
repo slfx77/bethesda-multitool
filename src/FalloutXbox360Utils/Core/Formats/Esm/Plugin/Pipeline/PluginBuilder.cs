@@ -386,7 +386,16 @@ public sealed class PluginBuilder
                 new SemanticFileLoadOptions
                 {
                     FileType = AnalysisFileType.Minidump,
-                    ApplyDefaultCellWorldspaceAuthority = false
+                    ApplyDefaultCellWorldspaceAuthority = false,
+                    // Recover master refs resident in the dump that the engine's form-table walk
+                    // missed (partial-dump broken hash buckets). The cell merge would otherwise
+                    // delete them as "uncaptured"; the master child→cell map tells us which heap
+                    // refs to look for and where they belong. Pure proto data, master-scoped.
+                    // Scoped to REFR (not ACHR/ACRE) so every swept hit is unambiguously a REFR —
+                    // actors are persistent and already captured, so excluding them costs nothing.
+                    ResidentRecoveryMasterFormIds = new HashSet<uint>(
+                        refToCell.Keys.Where(k =>
+                            pcRecordsByFormId.TryGetValue(k, out var r) && r.Header.Signature == "REFR"))
                 },
                 ct);
             var dmpRecords = unified.Records;

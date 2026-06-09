@@ -93,6 +93,24 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private int _worldHmMinX, _worldHmMaxY;
     private int _worldHmPixelWidth, _worldHmPixelHeight;
 
+    // --- TerrainTextures aggregate LOD ---
+    // When zoomed out far enough that per-cell streaming would request the whole worldspace at once
+    // (the 13k-cell burst), show ONE downscaled whole-worldspace texture bitmap instead. Switches back
+    // to per-cell high-res streaming when zoomed in. The aggregate is built once per worldspace,
+    // cached, and composited via the single-bitmap path (it's 33 px/cell like the heightmap aggregate).
+    private bool _terrainTexturesAggregateActive;
+    private CanvasBitmap? _terrainAggregateBitmap;
+    private int _terrainAggMinX, _terrainAggMaxY, _terrainAggPixelWidth, _terrainAggPixelHeight;
+    private int _terrainAggPixelsPerCell = WorldMapLayerRenderer.HeightmapPixelsPerCell;
+    private uint? _terrainAggregateWorldspaceFormId;
+    private bool _terrainAggregateUnavailable; // worldspace too large for one bitmap → keep per-cell
+    private int _terrainAggregateVersion;
+    private bool _terrainAggregateBuilding;
+
+    /// <summary>Screen px/cell below which TerrainTextures uses the aggregate LOD (a cell smaller than
+    /// this can't show full per-cell texture detail anyway, and per-cell streaming would flood).</summary>
+    private const float TerrainAggregateScreenPxThreshold = 24f;
+
     /// <summary>
     ///     Cancellation source for the in-flight TerrainTextures streaming build. Replaced
     ///     and cancelled on every viewport change so abandoned cells don't keep decoding on
@@ -224,6 +242,47 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     // --- Pan/Zoom ---
     private float _zoom = 0.05f;
 
+    // --- Rendered-models overlay (top-down 3D render composited over the terrain layer) ---
+    // The 3D control implements ITopDownSceneRenderer; the host tab wires it in after both controls
+    // load the same WorldViewData. When the toggle is on (exterior views only) we request a top-down
+    // render of the visible world rect, upload the BGRA readback as a CanvasBitmap, and composite it
+    // in place of the static dot/box markers. Requests fire on viewport-settle (not mid pan/zoom) and
+    // repeat while the render reports incomplete (terrain/mesh/textures still streaming in).
+    private ITopDownSceneRenderer? _topDownProvider;
+    private bool _showRenderedObjects;
+    private CanvasBitmap? _topDownOverlay;
+    private float _topDownWorldMinX, _topDownWorldMaxX, _topDownWorldMinY, _topDownWorldMaxY;
+    private bool _topDownRequestPending;
+    private bool _topDownIncomplete;
+    private bool _topDownInFlight;
+    private int _topDownGen;
+    private CancellationTokenSource? _topDownCts;
+    private (ViewMode Mode, uint Cell, uint Ws, bool HideDisabled, bool Eligible)? _topDownContext;
+    private (int TlX, int TlY, int BrX, int BrY, int ZoomBucket)? _topDownBoundsKey;
+
+    /// <summary>Fraction of the viewport added as a margin on each side of the top-down render, so a
+    /// small pan reveals already-covered area instead of a blank edge before the next refresh.</summary>
+    private const float TopDownMarginFraction = 0.25f;
+
+    private readonly bool _dumpTopDown =
+        Environment.GetEnvironmentVariable("FALLOUT_MAP2D_TOPDOWN_DUMP") == "1";
+    private bool _topDownDumpWritten;
+
+    /// <summary>
+    ///     The 3D control's top-down render provider, set by the host tab after both controls have
+    ///     loaded the same data. Setting it re-evaluates whether the "Rendered models" toggle is
+    ///     available (the 3D backend + reference pipeline must be up).
+    /// </summary>
+    internal ITopDownSceneRenderer? TopDownProvider
+    {
+        get => _topDownProvider;
+        set
+        {
+            _topDownProvider = value;
+            UpdateRenderedObjectsAvailability();
+        }
+    }
+
     public WorldMapControl()
     {
         InitializeComponent();
@@ -232,6 +291,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         // keeps producing cells, tries to enqueue onto a now-null DispatcherQueue, and throws
         // NullReferenceException — visible as "TerrainTextures streaming failed" in the log.
         Unloaded += (_, _) => CancelTerrainStream();
+        Unloaded += (_, _) => CancelTopDownOverlay();
     }
 
     // --- Navigation ---
@@ -357,6 +417,71 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         MapCanvas?.Invalidate();
     }
 
+    private void RenderedObjectsCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        _showRenderedObjects = RenderedObjectsCheckBox?.IsChecked == true
+            && _topDownProvider?.CanRenderTopDown == true;
+        if (_showRenderedObjects)
+        {
+            // Re-evaluate the viewport + kick a request on the next settle.
+            _topDownContext = null;
+            _topDownBoundsKey = null;
+            _topDownRequestPending = true;
+            EnsureViewportTimerRunning();
+        }
+        else
+        {
+            // Off: drop the overlay so its VRAM is reclaimed and the dot/box markers return.
+            CancelTopDownOverlay();
+        }
+        MapCanvas?.Invalidate();
+    }
+
+    /// <summary>Enables the "Rendered models" toggle only when the 3D top-down provider is ready
+    /// (D3D12 backend + terrain + reference pipeline up). Disables + unchecks it otherwise.</summary>
+    private void UpdateRenderedObjectsAvailability()
+    {
+        if (RenderedObjectsCheckBox is null) return;
+        var available = _topDownProvider?.CanRenderTopDown == true;
+        RenderedObjectsCheckBox.IsEnabled = available;
+        if (!available && (RenderedObjectsCheckBox.IsChecked == true || _showRenderedObjects))
+        {
+            RenderedObjectsCheckBox.IsChecked = false;
+            _showRenderedObjects = false;
+            CancelTopDownOverlay();
+        }
+    }
+
+    /// <summary>Top-down sprites apply to exterior views only — World Overview, or a CellDetail view
+    /// of an exterior cell. Interiors keep the dot/box markers (a top-down render shows the ceiling).</summary>
+    private bool IsTopDownEligible() =>
+        _state.Mode == ViewMode.WorldOverview || _state.SelectedCell is { IsInterior: false };
+
+    private void DisposeTopDownOverlay()
+    {
+        _topDownOverlay?.Dispose();
+        _topDownOverlay = null;
+        _topDownIncomplete = false;
+    }
+
+    /// <summary>Cancels any in-flight top-down request, drops the overlay, and resets request state.
+    /// Idempotent; safe to call on teardown / toggle-off / worldspace switch.</summary>
+    private void CancelTopDownOverlay()
+    {
+        _topDownGen++;
+        _topDownRequestPending = false;
+        _topDownContext = null;
+        _topDownBoundsKey = null;
+        if (_topDownCts is not null)
+        {
+            try { _topDownCts.Cancel(); }
+            catch (ObjectDisposedException) { }
+            _topDownCts.Dispose();
+            _topDownCts = null;
+        }
+        DisposeTopDownOverlay();
+    }
+
     private void SetCanvasMode(bool canvasVisible)
     {
         MapCanvas.Visibility = canvasVisible ? Visibility.Visible : Visibility.Collapsed;
@@ -437,6 +562,9 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         _suppressMarkersCheckboxEvent = false;
         _showNavMesh = false;
         NavMeshCheckBox.IsChecked = false;
+        _showRenderedObjects = false;
+        if (RenderedObjectsCheckBox is not null) RenderedObjectsCheckBox.IsChecked = false;
+        CancelTopDownOverlay();
         DisposeWorldBitmaps();
         _worldHeightmapDirty = true;
         HideLayerBuildStatus();
@@ -450,6 +578,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     public void Dispose()
     {
         CancelTerrainStream();
+        CancelTopDownOverlay();
         DisposeWorldBitmaps();
         _cellHeightmapBitmap?.Dispose();
         _cellHeightmapBitmap = null;
@@ -506,6 +635,14 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         _terrainTextureViewportKey = null;
         _pendingCellApplies.Clear();
         _inFlightCellKeys.Clear();
+        // TerrainTextures aggregate LOD is worldspace/water/layer-specific — drop it so a switch
+        // rebuilds it (a stale aggregate bumps the version, so an in-flight build's result is dropped).
+        _terrainAggregateBitmap?.Dispose();
+        _terrainAggregateBitmap = null;
+        _terrainAggregateWorldspaceFormId = null;
+        _terrainTexturesAggregateActive = false;
+        _terrainAggregateUnavailable = false;
+        _terrainAggregateVersion++;
         _worldHeightmapBitmap?.Dispose();
         _worldHeightmapBitmap = null;
         if (_layerCellBitmaps is not null)
@@ -982,20 +1119,39 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         }
 
         EnsureHeightmapBitmap(canvasW, canvasH);
+        MaybeScheduleTopDownRequest(canvasW, canvasH);
 
         if (_state.Mode == ViewMode.WorldOverview)
         {
             EnsureMarkerIcons(sender);
+
+            // TerrainTextures aggregate LOD: when active, composite the single downscaled bitmap and
+            // suppress the per-cell dict so the renderer draws the aggregate (it prefers per-cell when
+            // present). Otherwise the normal single-bitmap (+ per-cell for TerrainTextures zoomed in).
+            var aggActive = _currentLayer == WorldMapLayer.TerrainTextures
+                && _terrainTexturesAggregateActive && _terrainAggregateBitmap is not null;
+            var overviewBitmap = aggActive ? _terrainAggregateBitmap : _worldHeightmapBitmap;
+            var overviewBmpW = aggActive ? _terrainAggPixelWidth : _worldHmPixelWidth;
+            var overviewBmpH = aggActive ? _terrainAggPixelHeight : _worldHmPixelHeight;
+            var overviewMinX = aggActive ? _terrainAggMinX : _worldHmMinX;
+            var overviewMaxY = aggActive ? _terrainAggMaxY : _worldHmMaxY;
+            var overviewCells = aggActive ? null : _layerCellBitmaps;
+            var overviewBmpPixelsPerCell = aggActive
+                ? _terrainAggPixelsPerCell
+                : WorldMapLayerRenderer.HeightmapPixelsPerCell;
+
             WorldMapOverviewRenderer.DrawWorldOverview(
                 ds, _data, GetActiveCells(), _state.FilteredMarkers, _cellGridLookup, _spatialIndex,
-                _worldHeightmapBitmap,
-                _worldHmPixelWidth, _worldHmPixelHeight, _worldHmMinX, _worldHmMaxY,
-                _layerCellBitmaps,
+                overviewBitmap,
+                overviewBmpW, overviewBmpH, overviewMinX, overviewMaxY, overviewBmpPixelsPerCell,
+                overviewCells,
                 _zoom, _panOffset, canvasW, canvasH,
                 _hiddenCategories, _hideDisabledActors,
                 _state.SelectedObject, _hoveredObject,
                 _markerIconBitmaps, _currentColorScheme,
-                _showCellGrid);
+                _showCellGrid,
+                _showRenderedObjects, _topDownOverlay,
+                _topDownWorldMinX, _topDownWorldMaxX, _topDownWorldMinY, _topDownWorldMaxY);
 
             if (_showNavMesh)
             {
@@ -1023,7 +1179,9 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                 ds, _state.SelectedCell, _data, _cellHeightmapBitmap,
                 _zoom, _panOffset, canvasW, canvasH,
                 _hiddenCategories, _hideDisabledActors,
-                _state.SelectedObject, _hoveredObject);
+                _state.SelectedObject, _hoveredObject,
+                _showRenderedObjects && IsTopDownEligible(), _topDownOverlay,
+                _topDownWorldMinX, _topDownWorldMaxX, _topDownWorldMinY, _topDownWorldMaxY);
 
             if (_showNavMesh)
             {
@@ -1390,7 +1548,23 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
         if (isTerrainTexturesViewport)
         {
-            // Hot path — cheap viewport-key compute only. The quantized key changes when the
+            // Zoomed out far enough that a cell is tiny on screen → use the aggregate LOD (one
+            // downscaled whole-worldspace bitmap) instead of streaming the whole worldspace per-cell.
+            var screenPxPerCell = WorldGridConstants.CellSize * _zoom;
+            var wantAggregate = screenPxPerCell < TerrainAggregateScreenPxThreshold && !_terrainAggregateUnavailable;
+            _terrainTexturesAggregateActive = wantAggregate;
+
+            if (wantAggregate)
+            {
+                var wsId = _state.SelectedWorldspace?.FormId;
+                if (_terrainAggregateBitmap is null || _terrainAggregateWorldspaceFormId != wsId)
+                {
+                    EnsureTerrainAggregateBuild(wsId);
+                }
+                return;
+            }
+
+            // Per-cell hot path — cheap viewport-key compute only. The quantized key changes when the
             // visible cell-grid bounds (or resolution) change; that's the signal to schedule the
             // expensive rebuild on the timer. A pan smaller than a cell, or a pan back over the
             // same cells, leaves the key unchanged and costs nothing here.
@@ -1591,6 +1765,156 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private void StopViewportTimer() => _viewportRebuildTimer?.Stop();
 
     /// <summary>
+    ///     Cheap per-draw check: when the rendered-models overlay is on, detect whether the view
+    ///     context (mode / cell / worldspace / disabled filter / eligibility) or the visible bounds
+    ///     have changed enough to warrant a fresh top-down render, and if so flag a request for the
+    ///     throttle timer. A context change also drops the stale overlay (its world coords no longer
+    ///     apply). Mirrors the terrain viewport-key approach — no heavy work on the draw path.
+    /// </summary>
+    private void MaybeScheduleTopDownRequest(float canvasW, float canvasH)
+    {
+        if (!_showRenderedObjects || _topDownProvider?.CanRenderTopDown != true) return;
+
+        var eligible = IsTopDownEligible();
+        var ctx = (_state.Mode, _state.SelectedCell?.FormId ?? 0u,
+            _state.SelectedWorldspace?.FormId ?? 0u, _hideDisabledActors, eligible);
+        if (!ctx.Equals(_topDownContext))
+        {
+            _topDownContext = ctx;
+            _topDownBoundsKey = null;
+            // Context changed — the old overlay's world coords no longer match the current view.
+            DisposeTopDownOverlay();
+            if (eligible)
+            {
+                _topDownRequestPending = true;
+                EnsureViewportTimerRunning();
+            }
+            return;
+        }
+
+        if (!eligible) return;
+
+        var (tl, br) = WorldMapViewportHelper.GetVisibleWorldBounds(canvasW, canvasH, _zoom, _panOffset);
+        // Quantum ≈ 128 screen px in world units: re-request after a pan of that much. Plus a zoom
+        // bucket so a zoom change also refreshes. The 25% render margin (> the quantum) keeps the
+        // edges covered between refreshes.
+        var q = 128f / MathF.Max(_zoom, 1e-6f);
+        var boundsKey = (
+            (int)MathF.Round(MathF.Min(tl.X, br.X) / q),
+            (int)MathF.Round(MathF.Min(tl.Y, br.Y) / q),
+            (int)MathF.Round(MathF.Max(tl.X, br.X) / q),
+            (int)MathF.Round(MathF.Max(tl.Y, br.Y) / q),
+            (int)MathF.Round(MathF.Log2(MathF.Max(_zoom, 1e-6f)) * 8f));
+        if (!boundsKey.Equals(_topDownBoundsKey))
+        {
+            _topDownBoundsKey = boundsKey;
+            _topDownRequestPending = true;
+            EnsureViewportTimerRunning();
+        }
+    }
+
+    /// <summary>
+    ///     Requests a top-down render of the visible world rect (+ a margin) from the 3D provider,
+    ///     uploads the BGRA readback as a <see cref="CanvasBitmap" />, and stores it as the overlay.
+    ///     Runs on the UI thread (the provider records D3D12 on the device thread and offloads only
+    ///     the readback). Single-flighted via <see cref="_topDownInFlight" />; stale results (after a
+    ///     teardown that bumped <see cref="_topDownGen" />) are discarded.
+    /// </summary>
+    private async Task RequestTopDownOverlayAsync()
+    {
+        var provider = _topDownProvider;
+        if (provider is null || _data is null) return;
+        var canvasW = (float)MapCanvas.ActualWidth;
+        var canvasH = (float)MapCanvas.ActualHeight;
+        if (canvasW < 1f || canvasH < 1f) return;
+
+        _topDownInFlight = true;
+        var gen = ++_topDownGen;
+        CancellationToken ct;
+        try
+        {
+            _topDownCts?.Dispose();
+            _topDownCts = new CancellationTokenSource();
+            ct = _topDownCts.Token;
+        }
+        catch (ObjectDisposedException)
+        {
+            _topDownInFlight = false;
+            return;
+        }
+
+        try
+        {
+            // Visible bounds are in map space (X = world X, Y = -worldNorthY). Add a margin, then
+            // convert to world north-Y for the renderer.
+            var (tl, br) = WorldMapViewportHelper.GetVisibleWorldBounds(canvasW, canvasH, _zoom, _panOffset);
+            var mapMinX = MathF.Min(tl.X, br.X);
+            var mapMaxX = MathF.Max(tl.X, br.X);
+            var mapMinY = MathF.Min(tl.Y, br.Y);
+            var mapMaxY = MathF.Max(tl.Y, br.Y);
+            var marginX = (mapMaxX - mapMinX) * TopDownMarginFraction;
+            var marginY = (mapMaxY - mapMinY) * TopDownMarginFraction;
+            mapMinX -= marginX; mapMaxX += marginX;
+            mapMinY -= marginY; mapMaxY += marginY;
+
+            var worldMinX = mapMinX;
+            var worldMaxX = mapMaxX;
+            var worldMinY = -mapMaxY; // map Y = -worldNorthY
+            var worldMaxY = -mapMinY;
+            var pxW = (int)MathF.Round(canvasW * (1f + 2f * TopDownMarginFraction));
+            var pxH = (int)MathF.Round(canvasH * (1f + 2f * TopDownMarginFraction));
+
+            var render = await provider.RenderTopDownAsync(
+                worldMinX, worldMaxX, worldMinY, worldMaxY, pxW, pxH,
+                showDisabled: !_hideDisabledActors,
+                worldspaceFormId: _state.SelectedWorldspace?.FormId, ct);
+
+            if (gen != _topDownGen) return; // superseded (teardown / toggle off)
+            if (render is null) { _topDownIncomplete = false; return; }
+
+            var bmp = CanvasBitmap.CreateFromBytes(
+                MapCanvas, render.Bgra, render.Width, render.Height,
+                Windows.Graphics.DirectX.DirectXPixelFormat.B8G8R8A8UIntNormalized);
+            _topDownOverlay?.Dispose();
+            _topDownOverlay = bmp;
+            _topDownWorldMinX = render.WorldMinX;
+            _topDownWorldMaxX = render.WorldMaxX;
+            _topDownWorldMinY = render.WorldMinY;
+            _topDownWorldMaxY = render.WorldMaxY;
+            _topDownIncomplete = !render.IsComplete;
+
+            if (_dumpTopDown && !_topDownDumpWritten)
+            {
+                _topDownDumpWritten = true;
+                try
+                {
+                    var path = Path.Combine(Path.GetTempPath(), "fallout-map2d-topdown.png");
+                    await bmp.SaveAsync(path, Microsoft.Graphics.Canvas.CanvasBitmapFileFormat.Png);
+                    Map2DProfilerTrace.Event("topdown-dump", path);
+                }
+                catch (Exception ex) { Map2DProfilerTrace.Event("topdown-dump-error", ex.Message); }
+            }
+
+            MapCanvas.Invalidate();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            Map2DProfilerTrace.Event("topdown-error", ex.Message);
+        }
+        finally
+        {
+            _topDownInFlight = false;
+            // While the render reported streaming still in flight, keep the viewport timer alive so it
+            // re-issues the next render. Single-flight + the timer ticking faster than a render
+            // completes already makes these effectively back-to-back; the real load-speed lever is the
+            // unthrottled per-render mesh budget (see WorldView3DControl.RenderTopDownAsync), which lets
+            // each render drain the whole decode backlog — so cadence is not the bottleneck.
+            if (_topDownIncomplete) EnsureViewportTimerRunning();
+        }
+    }
+
+    /// <summary>
     ///     Single timer tick: drain a bounded batch of completed cell bitmaps onto the GPU, then run
     ///     at most one throttled viewport rebuild. Self-stops when there's nothing left to do so we
     ///     don't keep a ~30 Hz wakeup alive forever.
@@ -1620,13 +1944,29 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             RebuildTerrainTextureViewport((float)MapCanvas.ActualWidth, (float)MapCanvas.ActualHeight);
         }
 
+        // Rendered-models overlay: request a fresh top-down render once the view settles (not mid
+        // pan/zoom), or keep re-requesting while the last render was still streaming in.
+        if (_showRenderedObjects
+            && _zoomSettleTicks == 0
+            && !_isPanning
+            && !_topDownInFlight
+            && _topDownProvider?.CanRenderTopDown == true
+            && (_topDownRequestPending || _topDownIncomplete)
+            && IsTopDownEligible())
+        {
+            _topDownRequestPending = false;
+            _ = RequestTopDownOverlayAsync();
+        }
+
         // Idle: no pending rebuild, not zoom-settling, not actively panning, nothing left to apply,
-        // and no stream still producing cells. Stop until the next viewport change / pointer event.
+        // no stream still producing cells, and no top-down overlay work outstanding. Stop until the
+        // next viewport change / pointer event.
         if (!_viewportRebuildPending
             && _zoomSettleTicks == 0
             && !_isPanning
             && _pendingCellApplies.IsEmpty
-            && Volatile.Read(ref _activeTerrainStreams) == 0)
+            && Volatile.Read(ref _activeTerrainStreams) == 0
+            && !(_showRenderedObjects && (_topDownInFlight || _topDownRequestPending || _topDownIncomplete)))
         {
             StopViewportTimer();
         }
@@ -1901,17 +2241,130 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private static int ChooseTerrainTexturePixelsPerCell(float zoom)
     {
         var screenPixelsPerCell = WorldGridConstants.CellSize * zoom;
+
+        // Low tiers (33/66) for the aggregate→per-cell transition zone: rendering cells at ~display
+        // resolution keeps minification to ≤~1.4× (vs ~5× at a fixed 132), which — with the
+        // HighQualityCubic composite — removes the moire there, and is cheaper (smaller tiles). The
+        // 132/264/528 upper tiers (zoomed-in detail) are unchanged.
+        if (screenPixelsPerCell <= WorldMapLayerRenderer.HeightmapPixelsPerCell)
+        {
+            return WorldMapLayerRenderer.HeightmapPixelsPerCell; // 33
+        }
+
+        if (screenPixelsPerCell <= WorldMapLayerRenderer.HeightmapPixelsPerCell * 2)
+        {
+            return WorldMapLayerRenderer.HeightmapPixelsPerCell * 2; // 66
+        }
+
         if (screenPixelsPerCell <= WorldMapLayerRenderer.TexturePixelsPerCell * 1.25f)
         {
-            return WorldMapLayerRenderer.TexturePixelsPerCell;
+            return WorldMapLayerRenderer.TexturePixelsPerCell; // 132
         }
 
         if (screenPixelsPerCell <= WorldMapLayerRenderer.TexturePixelsPerCell * 2.5f)
         {
-            return WorldMapLayerRenderer.TexturePixelsPerCell * 2;
+            return WorldMapLayerRenderer.TexturePixelsPerCell * 2; // 264
         }
 
-        return WorldMapLayerRenderer.MaxTexturePixelsPerCell;
+        return WorldMapLayerRenderer.MaxTexturePixelsPerCell; // 528
+    }
+
+    /// <summary>
+    ///     Kicks a background build of the whole-worldspace TerrainTextures aggregate (one downscaled
+    ///     bitmap), used as the zoomed-out LOD. Built once per worldspace + cached; on completion the
+    ///     bitmap is composited via the single-bitmap path. If the worldspace is too large for one
+    ///     bitmap, flags <see cref="_terrainAggregateUnavailable" /> so the view falls back to per-cell.
+    /// </summary>
+    private void EnsureTerrainAggregateBuild(uint? worldspaceFormId)
+    {
+        if (_terrainAggregateBuilding || _data is null) return;
+        var activeCells = GetActiveCells();
+        if (activeCells.Count == 0) return;
+        if (LandscapeTexturePalette.GetOrCreate(_data) is not { } palette) return;
+
+        _terrainAggregateBuilding = true;
+        var version = ++_terrainAggregateVersion;
+        ShowLayerBuildStatus("Building terrain overview...", busy: true);
+
+        var request = new LayerBuildRequest(
+            version,
+            activeCells.ToList(),
+            _state.SelectedWorldspace,
+            _data,
+            _currentDefaultWaterHeight,
+            _currentColorScheme,
+            _showWater,
+            WorldMapLayer.TerrainTextures,
+            _cachedGrayscale,
+            _cachedWaterMask,
+            _cachedHmWidth,
+            _cachedHmHeight,
+            _data.RenderCache,
+            palette,
+            WorldMapLayerRenderer.TexturePixelsPerCell,
+            PreferAggregate: true,
+            WaterPalette: _showWater ? _currentWaterPalette : null);
+
+        _ = BuildTerrainAggregateAsync(request, worldspaceFormId);
+    }
+
+    private async Task BuildTerrainAggregateAsync(LayerBuildRequest request, uint? worldspaceFormId)
+    {
+        try
+        {
+            var result = await WorldLayerBuildService.BuildAsync(request).ConfigureAwait(false);
+            _ = DispatcherQueue.TryEnqueue(() => ApplyTerrainAggregateResult(result, worldspaceFormId));
+        }
+        catch (Exception ex)
+        {
+            FalloutXbox360Utils.Core.Logger.Instance.Warn("Terrain aggregate build failed: {0}", ex.ToString());
+            _ = DispatcherQueue.TryEnqueue(() =>
+            {
+                _terrainAggregateBuilding = false;
+                HideLayerBuildStatus();
+            });
+        }
+    }
+
+    private void ApplyTerrainAggregateResult(LayerBuildResult result, uint? worldspaceFormId)
+    {
+        _terrainAggregateBuilding = false;
+        if (result.Version != _terrainAggregateVersion) return; // superseded by a newer aggregate build
+
+        if (result.Bitmap is { } bmp)
+        {
+            _terrainAggregateBitmap?.Dispose();
+            _terrainAggregateBitmap = CanvasBitmap.CreateFromBytes(
+                MapCanvas, bmp.Pixels, bmp.Width, bmp.Height,
+                Windows.Graphics.DirectX.DirectXPixelFormat.R8G8B8A8UIntNormalized);
+            _terrainAggMinX = bmp.MinCellX;
+            _terrainAggMaxY = bmp.MaxCellY;
+            _terrainAggPixelWidth = bmp.Width;
+            _terrainAggPixelHeight = bmp.Height;
+            // CellPixelsPerCell carries the aggregate's adaptive px/cell (< 33 for large worldspaces) —
+            // the composite scales by CellWorldSize / this so the bitmap lands on the right world rect.
+            _terrainAggPixelsPerCell = result.CellPixelsPerCell > 0
+                ? result.CellPixelsPerCell
+                : WorldMapLayerRenderer.HeightmapPixelsPerCell;
+            _terrainAggregateWorldspaceFormId = worldspaceFormId;
+            _terrainAggregateUnavailable = false;
+            FalloutXbox360Utils.Core.Logger.Instance.Info(
+                "TerrainTextures aggregate LOD built: {0}x{1}px @ {2}px/cell ws=0x{3:X8}",
+                bmp.Width, bmp.Height, _terrainAggPixelsPerCell, worldspaceFormId ?? 0);
+        }
+        else
+        {
+            // Worldspace too large for a single aggregate bitmap — fall back to per-cell streaming.
+            FalloutXbox360Utils.Core.Logger.Instance.Info(
+                "TerrainTextures aggregate LOD unavailable (worldspace too large) — using per-cell.");
+            _terrainAggregateUnavailable = true;
+            _terrainTexturesAggregateActive = false;
+            _viewportRebuildPending = true;
+            EnsureViewportTimerRunning();
+        }
+
+        HideLayerBuildStatus();
+        MapCanvas.Invalidate();
     }
 
     private async Task BuildAndApplyWorldBitmapAsync(LayerBuildRequest request)
@@ -2124,6 +2577,13 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     // ========================================================================
 
     internal int Profiler_WorldspaceCount => WorldspaceComboBox.Items.Count;
+
+    /// <summary>Worldspace picker labels ("Name — N cells") for the capture harness to pick a dense one.</summary>
+    internal IReadOnlyList<string> Profiler_WorldspaceLabels =>
+        [.. WorldspaceComboBox.Items.Select(o => o?.ToString() ?? string.Empty)];
+
+    /// <summary>True when the TerrainTextures aggregate-LOD bitmap is the active overview (zoomed out).</summary>
+    internal bool Profiler_TerrainAggregateActive => _terrainTexturesAggregateActive;
 
     internal int Profiler_WorldspaceSelectedIndex
     {

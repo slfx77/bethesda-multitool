@@ -27,9 +27,15 @@ internal static class WorldMapCellDetailRenderer
         HashSet<PlacedObjectCategory> hiddenCategories,
         bool hideDisabledActors,
         PlacedReference? selectedObject,
-        PlacedReference? hoveredObject)
+        PlacedReference? hoveredObject,
+        bool showRenderedObjects = false,
+        CanvasBitmap? renderedObjectsOverlay = null,
+        float overlayWorldMinX = 0f, float overlayWorldMaxX = 0f,
+        float overlayWorldMinY = 0f, float overlayWorldMaxY = 0f)
     {
         ds.Transform = WorldMapViewportHelper.GetViewTransform(zoom, panOffset);
+
+        var overlayActive = showRenderedObjects && renderedObjectsOverlay is not null;
 
         // 1. Cell heightmap background
         if (cellHeightmapBitmap != null && selectedCell.GridX.HasValue && selectedCell.GridY.HasValue)
@@ -54,28 +60,38 @@ internal static class WorldMapCellDetailRenderer
                 Color.FromArgb(80, 255, 255, 255), 2f / zoom);
         }
 
-        // 3. Placed objects
+        // 2b. Rendered-models overlay (exterior cells only — the caller passes null for interiors).
+        if (overlayActive)
+        {
+            WorldMapOverviewRenderer.DrawRenderedObjectsOverlay(ds, renderedObjectsOverlay!,
+                overlayWorldMinX, overlayWorldMaxX, overlayWorldMinY, overlayWorldMaxY);
+        }
+
+        // 3. Placed objects — skipped when the rendered-models overlay replaces them.
         var (tlWorld, brWorld) = WorldMapViewportHelper.GetVisibleWorldBounds(
             canvasWidth, canvasHeight, zoom, panOffset);
-        foreach (var obj in selectedCell.PlacedObjects)
+        if (!overlayActive)
         {
-            if (hiddenCategories.Contains(WorldMapOverviewRenderer.GetObjectCategory(obj, data)))
+            foreach (var obj in selectedCell.PlacedObjects)
             {
-                continue;
-            }
+                if (hiddenCategories.Contains(WorldMapOverviewRenderer.GetObjectCategory(obj, data)))
+                {
+                    continue;
+                }
 
-            if (hideDisabledActors && obj.IsInitiallyDisabled)
-            {
-                continue;
-            }
+                if (hideDisabledActors && obj.IsInitiallyDisabled)
+                {
+                    continue;
+                }
 
-            if (!WorldMapViewportHelper.IsPointInView(obj.X, -obj.Y, tlWorld, brWorld,
-                    WorldMapViewportHelper.GetObjectViewMargin(obj, data)))
-            {
-                continue;
-            }
+                if (!WorldMapViewportHelper.IsPointInView(obj.X, -obj.Y, tlWorld, brWorld,
+                        WorldMapViewportHelper.GetObjectViewMargin(obj, data)))
+                {
+                    continue;
+                }
 
-            WorldMapOverviewRenderer.DrawPlacedObjectBox(ds, obj, data, zoom);
+                WorldMapOverviewRenderer.DrawPlacedObjectBox(ds, obj, data, zoom);
+            }
         }
 
         // 4. Selected object highlight

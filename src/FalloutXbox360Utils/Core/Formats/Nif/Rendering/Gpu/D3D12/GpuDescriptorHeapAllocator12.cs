@@ -35,6 +35,10 @@ internal sealed class GpuDescriptorHeapAllocator12 : IDisposable
     private readonly uint _perFrameRegionStart;
     private readonly uint _perFrameCapacity;
     private readonly int _framesInFlight;
+    // Reclaimed persistent slots, available for reuse before the bump pointer advances. This is
+    // what bounds the bindless texture heap: without it, every streamed texture consumed a slot
+    // forever and the heap exhausted after sustained streaming (the ~5-minute walk-mode crash).
+    private readonly Stack<uint> _persistentFreeList = new();
     private uint _persistentBump;
     private uint _persistentPeak;
     private uint _bumpOffset;
@@ -100,8 +104,11 @@ internal sealed class GpuDescriptorHeapAllocator12 : IDisposable
     /// <summary>Bindless: total persistent slots reserved at construction.</summary>
     public uint PersistentCapacity => _persistentCapacity;
 
-    /// <summary>Bindless: persistent slots used so far.</summary>
-    public uint PersistentCount => _persistentBump;
+    /// <summary>Bindless: persistent slots currently live (bump pointer minus reclaimed free slots).</summary>
+    public uint PersistentCount => _persistentBump - (uint)_persistentFreeList.Count;
+
+    /// <summary>Bindless: high-water mark of the bump pointer (slots ever simultaneously reserved).</summary>
+    public uint PersistentPeak => _persistentPeak;
 
     /// <summary>
     ///     Bindless: GPU handle to slot 0 of the heap — the root descriptor table at
@@ -121,18 +128,41 @@ internal sealed class GpuDescriptorHeapAllocator12 : IDisposable
     /// </summary>
     public PersistentAllocation AllocatePersistent()
     {
-        if (_persistentBump >= _persistentCapacity)
+        uint index;
+        if (_persistentFreeList.Count > 0)
         {
-            throw new InvalidOperationException(
-                $"GpuDescriptorHeapAllocator12 persistent region exhausted ({_persistentBump}/{_persistentCapacity}). " +
-                "Increase persistentCapacity at construction.");
+            // Reuse a reclaimed slot before growing the bump pointer.
+            index = _persistentFreeList.Pop();
+        }
+        else
+        {
+            if (_persistentBump >= _persistentCapacity)
+            {
+                throw new InvalidOperationException(
+                    $"GpuDescriptorHeapAllocator12 persistent region exhausted ({_persistentBump}/{_persistentCapacity}). " +
+                    "Increase persistentCapacity at construction.");
+            }
+
+            index = _persistentBump;
+            _persistentBump++;
+            _persistentPeak = Math.Max(_persistentPeak, _persistentBump);
         }
 
-        var index = _persistentBump;
         var cpu = new CpuDescriptorHandle(_heap.GetCPUDescriptorHandleForHeapStart(), (int)index, _descriptorSize);
-        _persistentBump++;
-        _persistentPeak = Math.Max(_persistentPeak, _persistentBump);
         return new PersistentAllocation(cpu, index);
+    }
+
+    /// <summary>
+    ///     Returns a persistent slot to the free-list for reuse by a later
+    ///     <see cref="AllocatePersistent" />. The caller MUST guarantee the GPU is no longer
+    ///     reading the slot's descriptor (defer by frames-in-flight via the deletion queue) —
+    ///     reusing a slot the GPU still samples would alias a live texture.
+    /// </summary>
+    public void FreePersistent(uint index)
+    {
+        if (index >= _persistentCapacity)
+            throw new ArgumentOutOfRangeException(nameof(index), index, "Slot index is outside the persistent region.");
+        _persistentFreeList.Push(index);
     }
 
     /// <summary>

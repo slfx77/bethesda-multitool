@@ -21,12 +21,16 @@ internal sealed class NifGpuTextureResolver : IDisposable
         new(StringComparer.OrdinalIgnoreCase);
 
     private readonly List<INifTextureSource> _sources;
+    private readonly ReferenceDecodedTextureDiskCache12? _persistentCache;
+    private readonly string _sourceSetIdentity;
     private int _cacheHits;
     private int _cacheMisses;
 
     public NifGpuTextureResolver(params string[] textureSourcePaths)
     {
         _sources = NifTextureArchiveSourceFactory.Create(textureSourcePaths);
+        _sourceSetIdentity = BuildSourceSetIdentity(textureSourcePaths);
+        _persistentCache = ReferenceDecodedTextureDiskCache12.CreateFromEnvironment();
     }
 
     public int CacheHits => _cacheHits;
@@ -35,10 +39,50 @@ internal sealed class NifGpuTextureResolver : IDisposable
 
     public void Dispose()
     {
+        _persistentCache?.LogStatistics();
         foreach (var source in _sources)
         {
             source.Dispose();
         }
+    }
+
+    /// <summary>
+    ///     Stable identity for the texture source set — each source path plus its length and
+    ///     last-write time (for files) so the persistent texture cache invalidates wholesale when any
+    ///     BSA/loose source changes. Combined with the requested path to key a cached decode.
+    /// </summary>
+    private static string BuildSourceSetIdentity(string[] textureSourcePaths)
+    {
+        var builder = new System.Text.StringBuilder(256);
+        builder.Append("decoder=").Append(ReferenceDecodedTextureDiskCache12.DecoderVersion).Append('\n');
+        foreach (var path in textureSourcePaths)
+        {
+            builder.Append(path).Append('|');
+            try
+            {
+                if (File.Exists(path))
+                {
+                    var info = new FileInfo(path);
+                    builder.Append(info.Length).Append('|').Append(info.LastWriteTimeUtc.Ticks);
+                }
+                else if (Directory.Exists(path))
+                {
+                    builder.Append("dir|").Append(new DirectoryInfo(path).LastWriteTimeUtc.Ticks);
+                }
+                else
+                {
+                    builder.Append("missing");
+                }
+            }
+            catch
+            {
+                builder.Append("err");
+            }
+
+            builder.Append('\n');
+        }
+
+        return builder.ToString();
     }
 
     public GpuTexturePayload? GetTexture(string texturePath)
@@ -76,6 +120,27 @@ internal sealed class NifGpuTextureResolver : IDisposable
     {
         Interlocked.Increment(ref _cacheMisses);
 
+        // Persistent disk cache (default on): on warm runs this returns the already-transcoded
+        // payload (DDX→DDS LZX + untile + parse skipped entirely). Negatives are cached too, so a
+        // missing texture isn't re-searched across the BSAs each session.
+        if (_persistentCache is not null)
+        {
+            var keyText = string.Concat(_sourceSetIdentity, "|", path);
+            if (_persistentCache.TryLoad(keyText, out var cachedPayload, out _))
+            {
+                return cachedPayload;
+            }
+
+            var loaded = LoadTextureUncached(path);
+            _persistentCache.Store(keyText, loaded);
+            return loaded;
+        }
+
+        return LoadTextureUncached(path);
+    }
+
+    private GpuTexturePayload? LoadTextureUncached(string path)
+    {
         var texture = TryLoadFromSources(path);
         if (texture != null ||
             !path.EndsWith(".dds", StringComparison.OrdinalIgnoreCase))

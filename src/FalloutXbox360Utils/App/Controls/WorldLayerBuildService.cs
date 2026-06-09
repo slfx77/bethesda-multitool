@@ -13,6 +13,29 @@ internal static class WorldLayerBuildService
         {
             if (request.Layer == WorldMapLayer.TerrainTextures && request.Palette is not null)
             {
+                // Zoomed-out LOD: one downscaled whole-worldspace texture bitmap instead of streaming
+                // thousands of per-cell tiles. Falls through to per-cell when the worldspace is too
+                // large to fit a single bitmap.
+                if (request.PreferAggregate)
+                {
+                    await request.Palette.PreloadAsync(request.ActiveCells).ConfigureAwait(false);
+                    var aggregate = WorldMapLayerRenderer.RenderTerrainTexturesAggregate(
+                        request.ActiveCells,
+                        request.Palette,
+                        request.DefaultWaterHeight,
+                        request.ShowWater,
+                        out var aggregatePpc,
+                        request.Cache,
+                        request.WaterPalette);
+                    // Empty result (no bitmap, no cells) signals "too large for aggregate" so the
+                    // caller falls back to per-cell streaming instead of paying a full synchronous
+                    // per-cell render here. CellPixelsPerCell carries the aggregate's px/cell so the
+                    // composite can scale it correctly (it's < 33 for large worldspaces).
+                    return new LayerBuildResult(
+                        request.Version, aggregate, null, aggregatePpc,
+                        aggregate is null ? "Worldspace too large for a single terrain overview bitmap." : null);
+                }
+
                 var pixelsPerCell = WorldMapLayerRenderer.NormalizeTexturePixelsPerCell(request.TexturePixelsPerCell);
                 await request.Palette.PreloadAsync(request.ActiveCells).ConfigureAwait(false);
                 var cells = WorldMapLayerRenderer.RenderTerrainTexturesPerCell(
@@ -171,7 +194,9 @@ internal sealed record LayerBuildRequest(
     int CachedHeight,
     WorldRenderCache Cache,
     LandscapeTexturePalette? Palette,
-    int TexturePixelsPerCell = WorldMapLayerRenderer.TexturePixelsPerCell);
+    int TexturePixelsPerCell = WorldMapLayerRenderer.TexturePixelsPerCell,
+    bool PreferAggregate = false,
+    WaterColorPalette? WaterPalette = null);
 
 internal sealed record LayerBuildResult(
     int Version,

@@ -39,6 +39,8 @@ internal sealed class GpuDevice12 : IDisposable
     }
 
     private readonly ID3D12InfoQueue? _infoQueue;
+    private IDXGIAdapter3? _videoMemoryAdapter;
+    private bool _videoMemoryAdapterResolved;
 
     /// <summary>The underlying D3D12 device (resource + descriptor factory).</summary>
     public ID3D12Device Device { get; }
@@ -136,18 +138,19 @@ internal sealed class GpuDevice12 : IDisposable
                 return;
             }
 
-            if (dred.GetPageFaultAllocationOutput(out var pageFault).Success && pageFault.PageFaultVA != 0)
+            var foundPageFault = dred.GetPageFaultAllocationOutput(out var pageFault).Success && pageFault.PageFaultVA != 0;
+            if (foundPageFault)
             {
                 Log.Error("GpuDevice12: DRED page-fault GPU VA = 0x{0:X}", pageFault.PageFaultVA);
                 LogAllocationNodes("live-at-fault", pageFault.HeadExistingAllocationNode);
                 LogAllocationNodes("recently-freed", pageFault.HeadRecentFreedAllocationNode);
             }
 
+            var breadcrumbNodes = 0;
             if (dred.GetAutoBreadcrumbsOutput(out var breadcrumbs).Success)
             {
                 var node = breadcrumbs.HeadAutoBreadcrumbNode;
-                var nodeCount = 0;
-                while (node is not null && nodeCount < 32)
+                while (node is not null && breadcrumbNodes < 32)
                 {
                     var lastCompleted = node.LastBreadcrumbValue;
                     Log.Error("GpuDevice12: DRED breadcrumb queue='{0}' list='{1}' completed={2}/{3} ops",
@@ -169,8 +172,17 @@ internal sealed class GpuDevice12 : IDisposable
                     }
 
                     node = node.Next;
-                    nodeCount++;
+                    breadcrumbNodes++;
                 }
+            }
+
+            if (!foundPageFault && breadcrumbNodes == 0)
+            {
+                Log.Error(
+                    "GpuDevice12: DRED produced no page-fault VA and no auto-breadcrumb history — consistent with a " +
+                    "TDR timeout (a GPU op ran too long) rather than a memory fault. Reproduce with " +
+                    "FALLOUT_VIEWER_D3D12_DEBUG=1 (add FALLOUT_VIEWER_D3D12_GBV=1 to instrument shaders) to capture " +
+                    "the offending operation in the [D3D12 ...] validation log.");
             }
         }
         catch (SharpGenException ex)
@@ -202,8 +214,60 @@ internal sealed class GpuDevice12 : IDisposable
         _ => "see DXGI/D3D12 HRESULT reference"
     };
 
+    /// <summary>
+    ///     Queries the adapter's LOCAL (dedicated VRAM) memory usage + OS-assigned budget, in MB.
+    ///     Returns false if the adapter doesn't expose <see cref="IDXGIAdapter3" /> or the query
+    ///     fails. Used by the profiler/diagnostic logging to spot GPU-memory exhaustion (which
+    ///     surfaces as a device removal / "crash with no cause") before it happens.
+    /// </summary>
+    public bool TryQueryLocalVideoMemoryMb(out long currentUsageMb, out long budgetMb)
+    {
+        currentUsageMb = 0;
+        budgetMb = 0;
+        var adapter = ResolveVideoMemoryAdapter();
+        if (adapter is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            var info = adapter.QueryVideoMemoryInfo(0, MemorySegmentGroup.Local);
+            currentUsageMb = (long)(info.CurrentUsage / (1024UL * 1024UL));
+            budgetMb = (long)(info.Budget / (1024UL * 1024UL));
+            return true;
+        }
+        catch (SharpGenException)
+        {
+            return false;
+        }
+    }
+
+    private IDXGIAdapter3? ResolveVideoMemoryAdapter()
+    {
+        if (_videoMemoryAdapterResolved)
+        {
+            return _videoMemoryAdapter;
+        }
+
+        _videoMemoryAdapterResolved = true;
+        try
+        {
+            var luid = new Vortice.Luid((uint)(Device.AdapterLuid & 0xFFFFFFFF), (int)(Device.AdapterLuid >> 32));
+            using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory4>();
+            _videoMemoryAdapter = factory.EnumAdapterByLuid<IDXGIAdapter3>(luid);
+        }
+        catch (SharpGenException)
+        {
+            _videoMemoryAdapter = null;
+        }
+
+        return _videoMemoryAdapter;
+    }
+
     public void Dispose()
     {
+        _videoMemoryAdapter?.Dispose();
         _infoQueue?.Dispose();
         FrameFence.Dispose();
         DirectQueue.Dispose();
@@ -240,6 +304,26 @@ internal sealed class GpuDevice12 : IDisposable
                 if (result.Success && debug is not null)
                 {
                     debug.EnableDebugLayer();
+
+                    // GPU-based validation (FALLOUT_VIEWER_D3D12_GBV=1): instruments shaders to catch
+                    // out-of-bounds descriptor/bindless access, resource-state mismatches the CPU-side
+                    // layer can't see, and similar GPU-side faults — the usual cause of DEVICE_HUNG
+                    // (TDR) that DRED can't attribute (no page-fault VA, empty breadcrumbs). VERY slow
+                    // (often 10x+), so it's a separate opt-in from the plain debug layer.
+                    if (Environment.GetEnvironmentVariable("FALLOUT_VIEWER_D3D12_GBV") == "1")
+                    {
+                        using var debug1 = debug.QueryInterfaceOrNull<ID3D12Debug1>();
+                        if (debug1 is not null)
+                        {
+                            debug1.SetEnableGPUBasedValidation(true);
+                            Log.Info("GpuDevice12: D3D12 GPU-based validation enabled (slow — diagnostic only)");
+                        }
+                        else
+                        {
+                            Log.Warn("GpuDevice12: ID3D12Debug1 unavailable — GPU-based validation not enabled.");
+                        }
+                    }
+
                     debug.Dispose();
                     Log.Info("GpuDevice12: D3D12 debug layer enabled");
                 }

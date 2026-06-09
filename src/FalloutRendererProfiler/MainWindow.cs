@@ -167,6 +167,16 @@ internal sealed class MainWindow : Window, IDisposable
                 _options.ProfileOutputPath);
             SetStatus(summary);
             Log.Info(summary);
+
+            if (!string.IsNullOrWhiteSpace(_options.CaptureTopDownPath))
+            {
+                // Autonomous top-down overlay capture: render the 2D-map "Rendered models" overlay
+                // for a window around the camera, save a PNG + log coverage, then exit. No live
+                // scenario / timed exit in this mode.
+                _ = RunTopDownCaptureAsync();
+                return;
+            }
+
             _scenario = Renderer3DScenario.Start(_worldView, DispatcherQueue, _options);
 
             StartTimedExitIfRequested();
@@ -177,6 +187,130 @@ internal sealed class MainWindow : Window, IDisposable
             SetStatus($"Failed: {ex.GetType().Name}: {ex.Message}");
             Log.Error("Renderer profiler startup failed: {0}", ex);
         }
+    }
+
+    private async Task RunTopDownCaptureAsync()
+    {
+        var path = _options.CaptureTopDownPath!;
+        try
+        {
+            if (_worldView is not ITopDownSceneRenderer provider || !provider.CanRenderTopDown)
+            {
+                Log.Warn("Capture: top-down provider unavailable (D3D12 down or no Meshes BSA).");
+                Console.WriteLine("[Capture] UNAVAILABLE: top-down provider not ready (no D3D12 / no Meshes BSA).");
+                ExitProfiler("capture-unavailable");
+                return;
+            }
+
+            // Collapse the live 3D view so its render loop idles — mirrors production (the 3D control
+            // is collapsed while the 2D map shows) and avoids sharing the command recorder with live
+            // frames during the offscreen capture.
+            _worldView.Visibility = Visibility.Collapsed;
+            await Task.Delay(800); // let the worldspace bookmark + initial cell grid settle
+
+            // Center on a specific worldspace's centroid (to exercise the top-down worldspace sync)
+            // or, by default, on the camera position. targetFormId drives the sync param so the
+            // overlay renders the requested worldspace, not whichever the 3D view currently holds.
+            float cx, cy;
+            uint? targetFormId;
+            if (_options.CaptureWorldspaceIndex is int wsIdx)
+            {
+                var center = _worldView.Profiler_GetWorldspaceCenter(wsIdx);
+                if (center is null)
+                {
+                    Console.WriteLine($"[Capture] UNAVAILABLE: worldspace index {wsIdx} out of range / empty (count={_worldView.Profiler_ExteriorWorldspaceCount}).");
+                    ExitProfiler("capture-bad-worldspace");
+                    return;
+                }
+                cx = center.Value.CenterX; cy = center.Value.CenterY; targetFormId = center.Value.FormId;
+                Log.Info("Capture: worldspace[{0}] '{1}' formId=0x{2:X8} center=({3:F0},{4:F0})",
+                    wsIdx, center.Value.Name, center.Value.FormId, cx, cy);
+            }
+            else
+            {
+                var pose = _worldView.Profiler_CameraPose;
+                cx = pose.Position.X; cy = pose.Position.Y;
+                targetFormId = _worldView.Profiler_SelectedWorldspaceFormId;
+            }
+
+            var half = Math.Max(1, _options.CaptureSpanCells) * 0.5f * WorldGridConstants.CellSize;
+            float minX = cx - half, maxX = cx + half, minY = cy - half, maxY = cy + half;
+            const int px = 512;
+
+            TopDownRender? render = null;
+            for (var attempt = 0; attempt < 200; attempt++)
+            {
+                render = await provider.RenderTopDownAsync(
+                    minX, maxX, minY, maxY, px, px, showDisabled: true,
+                    worldspaceFormId: targetFormId, CancellationToken.None);
+                if (render is null)
+                {
+                    await Task.Delay(250);
+                    continue;
+                }
+
+                Log.Info("Capture attempt {0}: {1}x{2} complete={3} coverage={4:P2}",
+                    attempt, render.Width, render.Height, render.IsComplete, Coverage(render.Bgra));
+                if (render.IsComplete)
+                {
+                    break;
+                }
+                await Task.Delay(300);
+            }
+
+            if (render is null)
+            {
+                Console.WriteLine("[Capture] FAILED: render returned null.");
+                ExitProfiler("capture-null");
+                return;
+            }
+
+            var rgba = BgraToRgba(render.Bgra);
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+            FalloutXbox360Utils.Core.Formats.Esm.Analysis.PngWriter.SaveRgba(rgba, render.Width, render.Height, path);
+
+            var msg = string.Format(
+                System.Globalization.CultureInfo.InvariantCulture,
+                "[Capture] saved {0} ({1}x{2}) coverage={3:P2} complete={4} window={5}cells center=({6:F0},{7:F0})",
+                path, render.Width, render.Height, Coverage(render.Bgra), render.IsComplete,
+                _options.CaptureSpanCells, cx, cy);
+            Log.Info(msg);
+            Console.WriteLine(msg);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Capture failed: {0}", ex);
+            Console.WriteLine($"[Capture] EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+        }
+        finally
+        {
+            ExitProfiler("capture-complete");
+        }
+    }
+
+    private static double Coverage(byte[] bgra)
+    {
+        if (bgra.Length < 4) return 0;
+        var total = bgra.Length / 4;
+        long opaque = 0;
+        for (var i = 3; i < bgra.Length; i += 4)
+        {
+            if (bgra[i] > 0) opaque++;
+        }
+        return (double)opaque / total;
+    }
+
+    private static byte[] BgraToRgba(byte[] bgra)
+    {
+        var rgba = new byte[bgra.Length];
+        for (var i = 0; i + 3 < bgra.Length; i += 4)
+        {
+            rgba[i] = bgra[i + 2];     // R
+            rgba[i + 1] = bgra[i + 1]; // G
+            rgba[i + 2] = bgra[i];     // B
+            rgba[i + 3] = bgra[i + 3]; // A
+        }
+        return rgba;
     }
 
     private void StartTimedExitIfRequested()

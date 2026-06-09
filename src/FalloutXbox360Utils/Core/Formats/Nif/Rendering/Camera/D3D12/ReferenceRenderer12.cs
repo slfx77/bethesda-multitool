@@ -27,18 +27,22 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private const uint InstanceDrawByteSize = 80;
     private const float FrustumCullMargin = 512f;
 
-    // Cold mesh realization is render-thread work. Keep the default smooth, with env overrides
-    // for profiling throughput-vs-frame-pacing tradeoffs on specific machines.
+    // Cold mesh realization is render-thread work. By DEFAULT there is no per-frame COUNT cap: the
+    // wall-clock time budget (MaxUploadMillisecondsPerFrame) + the mesh cache's byte budget pace
+    // uploads, so the per-frame *cost* is bounded by frame-TIME rather than an arbitrary mesh count.
+    // A count cap couples loading rate to frame rate (N meshes × FPS); time-budgeting keeps the
+    // per-frame cost constant regardless of FPS, which is the correct "spend a fixed slice of each
+    // frame" pacing. The env var still imposes an explicit count for profiling.
     private static readonly int MaxNewUploadsPerFrame = ParsePositiveIntEnvironment(
         "FALLOUT_VIEWER_REFERENCE_UPLOADS_PER_FRAME",
-        defaultValue: 8,
+        defaultValue: int.MaxValue,
         min: 1,
-        max: 48);
+        max: int.MaxValue);
 
-    // Wall-clock ceiling on render-thread mesh-upload work per frame: caps *how long* uploading
-    // may take (MaxNewUploadsPerFrame caps *how many*) so a frame entering a dense area can't
-    // spike. A single very large mesh can still consume a frame, but this stops clusters of
-    // completed decoded meshes from being realized together.
+    // Wall-clock ceiling on render-thread mesh-upload work per frame: the primary pacer now that the
+    // count cap is lifted by default. Caps *how long* uploading may take so a frame entering a dense
+    // area can't spike. A single very large mesh can still consume a frame, but this stops clusters
+    // of completed decoded meshes from being realized together.
     private static readonly double MaxUploadMillisecondsPerFrame = ParsePositiveDoubleEnvironment(
         "FALLOUT_VIEWER_REFERENCE_UPLOAD_MS_PER_FRAME",
         defaultValue: 2.0,
@@ -131,6 +135,25 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     public bool DetailedProfilingEnabled { get; set; }
     public bool ShowInitiallyDisabled { get; set; }
 
+    private bool _streamingThrottled = true;
+
+    /// <summary>
+    ///     When <c>false</c>, the per-frame mesh-streaming budget (upload count + time + bytes, decode
+    ///     starts + concurrency) is lifted so a single <see cref="Render"/> loads everything visible
+    ///     instead of the live loop's smoothness-preserving trickle. Used by the on-demand top-down
+    ///     overlay, which has no framerate target; the live 60fps loop leaves it <c>true</c>.
+    ///     Forwards to the shared <see cref="ReferenceMeshCache12.StreamingThrottled"/>.
+    /// </summary>
+    public bool StreamingThrottled
+    {
+        get => _streamingThrottled;
+        set
+        {
+            _streamingThrottled = value;
+            _meshCache.StreamingThrottled = value;
+        }
+    }
+
     public void LoadData(
         global::FalloutXbox360Utils.WorldRenderCache renderCache,
         Dictionary<(int gx, int gy), CellRecord> cells,
@@ -165,7 +188,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         LastStats.ReferenceStateSetupMilliseconds = ElapsedMilliseconds(segmentStarted);
 
         var drawn = 0;
-        var uploadBudget = MaxNewUploadsPerFrame;
+        var throttled = _streamingThrottled;
+        var uploadBudget = throttled ? MaxNewUploadsPerFrame : int.MaxValue;
         var uploadTimeBudget = new FrameUploadTimeBudget(MaxUploadMillisecondsPerFrame);
         var cylinderRadius = cylinder.Radius;
         var cylinderX = cylinder.Position.X;
@@ -274,12 +298,18 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 {
                     // Stop *starting* new GPU uploads once the per-frame time budget is spent;
                     // GetOrUpload still queues background decodes and returns already-resident
-                    // meshes, so the remainder simply appears over the next frame(s).
-                    if (uploadBudget > 0 && uploadTimeBudget.IsExpired)
+                    // meshes, so the remainder simply appears over the next frame(s). Skipped when
+                    // unthrottled (overlay) so one pass uploads everything that has decoded.
+                    if (throttled && uploadBudget > 0 && uploadTimeBudget.IsExpired)
                     {
                         uploadBudget = 0;
                     }
-                    mesh = _meshCache.GetOrUpload(r.ModelPath, ref uploadBudget);
+                    // Nearest-first decode priority: squared XY distance from the view point, so a
+                    // dense area's foreground meshes decode before its far edge (the queue persists
+                    // across frames). Cheap — only computed on the first sighting of each MeshId.
+                    var pdx = r.BoundsCenter.X - cylinderX;
+                    var pdy = r.BoundsCenter.Y - cylinderY;
+                    mesh = _meshCache.GetOrUpload(r.ModelPath, ref uploadBudget, pdx * pdx + pdy * pdy);
                     _resolvedMeshesThisFrame[r.MeshId] = mesh;
                 }
                 if (mesh is null)
