@@ -53,6 +53,39 @@ internal static class NifParser
         return info;
     }
 
+    /// <summary>
+    ///     Cheaply determines a NIF's endianness without a full parse (no block list, string table,
+    ///     or group walk). Returns the same value <see cref="Parse" /> would compute for
+    ///     <see cref="NifInfo.IsBigEndian" /> — it reads the exact same header string + Endian-Type
+    ///     byte — or <c>null</c> when the header can't be read cheaply (too short / no newline / the
+    ///     endian byte is past the end), in which case the caller should fall back to a full parse.
+    ///     Lets the mesh-decode path skip parsing the source NIF just to decide whether it needs
+    ///     endian conversion.
+    /// </summary>
+    public static bool? TryProbeEndianness(byte[] data)
+    {
+        if (data.Length < 50)
+        {
+            return null;
+        }
+
+        var newlinePos = Array.IndexOf(data, (byte)0x0A, 0, Math.Min(60, data.Length));
+        if (newlinePos < 0)
+        {
+            return null;
+        }
+
+        // ParseVersionInfo reads IsBigEndian as the byte 4 past the header string (the version u32
+        // occupies the first 4). Mirror that exact offset (newlinePos + 1 is the version start).
+        var endianBytePos = newlinePos + 1 + 4;
+        if (endianBytePos >= data.Length)
+        {
+            return null;
+        }
+
+        return data[endianBytePos] == 0;
+    }
+
     private static int ParseHeaderString(byte[] data, NifInfo info)
     {
         var newlinePos = Array.IndexOf(data, (byte)0x0A, 0, Math.Min(60, data.Length));

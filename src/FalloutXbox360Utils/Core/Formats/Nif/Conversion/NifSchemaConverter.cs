@@ -25,6 +25,10 @@ internal sealed class NifSchemaConverter
     private readonly NifSchema _schema;
     private readonly NifVersionContext _versionContext;
 
+    // Reused across blocks (one converter instance is confined to a single conversion = single thread;
+    // see NifOutputWriter). Cleared per TryConvert instead of allocating a fresh dictionary per block.
+    private readonly Dictionary<string, object> _fieldValues = new();
+
     public NifSchemaConverter(NifSchema schema, uint version = 0x14020007, int userVersion = 0, int bsVersion = 34)
     {
         _schema = schema;
@@ -50,7 +54,8 @@ internal sealed class NifSchemaConverter
         try
         {
             var end = pos + size;
-            var context = new ConversionContext(buf, pos, end, blockRemap, new Dictionary<string, object>(), blockType);
+            _fieldValues.Clear();
+            var context = new ConversionContext(buf, pos, end, blockRemap, _fieldValues, blockType);
             ConvertFields(context, objDef.AllFields);
             return true;
         }
@@ -596,21 +601,11 @@ internal sealed class NifSchemaConverter
 
     private void StoreFieldValue(ConversionContext ctx, NifFieldDef field)
     {
-        // Store fields that may be needed for conditions or array lengths
-        // This includes: Num X, X Count, Has X, Data Flags, BS Data Flags, etc.
-        // Also store "Interpolation" which is used as #ARG# for Key struct conditions.
-        // "Block Size" is the 2D-array width for NiAGDDataBlock.Data — the converter's
-        // NiAGDDataBlock.Data swap path needs it alongside "Num Data".
-        var shouldStore = field.Name.StartsWith("Num ", StringComparison.Ordinal) ||
-                          field.Name.EndsWith(" Count", StringComparison.Ordinal) ||
-                          field.Name.StartsWith("Has ", StringComparison.Ordinal) ||
-                          field.Name.Contains("Flags", StringComparison.Ordinal) ||
-                          field.Name.Contains("Type", StringComparison.Ordinal) ||
-                          field.Name == "Compressed" ||
-                          field.Name == "Interpolation" || // For KeyGroup -> Key #ARG# propagation
-                          field.Name == "Block Size";
-
-        if (!shouldStore)
+        // Store fields that may be needed for conditions or array lengths (Num X, X Count, Has X,
+        // *Flags, *Type, Compressed, Interpolation for #ARG#, Block Size for NiAGDDataBlock.Data).
+        // The decision is precomputed once at schema load — see NifFieldDef.StoresValueForLaterUse /
+        // ComputeStoresValueForLaterUse (byte-for-byte the same predicate that used to run inline here).
+        if (!field.StoresValueForLaterUse)
         {
             return;
         }

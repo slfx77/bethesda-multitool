@@ -17,6 +17,32 @@ public sealed class NifFieldDef
     public string? OnlyT { get; init; } // Only for specific block types (onlyT)
     public string? Arg { get; init; } // Template argument for #ARG# substitution
 
+    /// <summary>
+    ///     True if this field's value must be captured during conversion for later use within the
+    ///     same block (array-length references, runtime conditions, <c>#ARG#</c> propagation).
+    ///     Precomputed once at schema-load time from <see cref="Name" /> via
+    ///     <see cref="ComputeStoresValueForLaterUse" /> so the per-field name scan runs once per field
+    ///     for the application lifetime instead of once per field per converted block.
+    /// </summary>
+    public required bool StoresValueForLaterUse { get; init; }
+
+    /// <summary>
+    ///     Pure predicate over a field name — the single source of truth for
+    ///     <see cref="StoresValueForLaterUse" />. Kept byte-for-byte equivalent to the inline scan it
+    ///     replaced: "Num X" / "X Count" / "Has X" / anything containing "Flags" or "Type", plus the
+    ///     explicit names "Compressed", "Interpolation" (#ARG# for Key structs) and "Block Size"
+    ///     (2D-array width for NiAGDDataBlock.Data).
+    /// </summary>
+    public static bool ComputeStoresValueForLaterUse(string name) =>
+        name.StartsWith("Num ", StringComparison.Ordinal) ||
+        name.EndsWith(" Count", StringComparison.Ordinal) ||
+        name.StartsWith("Has ", StringComparison.Ordinal) ||
+        name.Contains("Flags", StringComparison.Ordinal) ||
+        name.Contains("Type", StringComparison.Ordinal) ||
+        name == "Compressed" ||
+        name == "Interpolation" ||
+        name == "Block Size";
+
     public override string ToString()
     {
         return $"{Name}: {Type}" + (Length != null ? $"[{Length}]" : "") + (Width != null ? $"[{Width}]" : "");

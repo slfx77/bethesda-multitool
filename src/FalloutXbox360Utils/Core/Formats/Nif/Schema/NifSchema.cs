@@ -19,6 +19,12 @@ public sealed class NifSchema
     private readonly Dictionary<string, NifObjectDef> _objects = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, NifStructDef> _structs = new(StringComparer.OrdinalIgnoreCase);
 
+    // Memoizes Inherits() — a pure function of the (immutable) object graph. The schema is a shared
+    // cached singleton read concurrently by parallel conversions, so the cache is concurrent. The
+    // value factory is idempotent, so a benign concurrent double-compute on a cold key is harmless.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<(string BlockType, string AncestorType), bool>
+        _inheritsCache = new();
+
     public IReadOnlyDictionary<string, NifBasicType> BasicTypes => _basicTypes;
     public IReadOnlyDictionary<string, NifStructDef> Structs => _structs;
     public IReadOnlyDictionary<string, NifEnumDef> Enums => _enums;
@@ -183,7 +189,8 @@ public sealed class NifSchema
                 Since = field.Attribute("since")?.Value,
                 Until = field.Attribute("until")?.Value,
                 OnlyT = field.Attribute("onlyT")?.Value,
-                Arg = field.Attribute("arg")?.Value
+                Arg = field.Attribute("arg")?.Value,
+                StoresValueForLaterUse = NifFieldDef.ComputeStoresValueForLaterUse(name)
             });
         }
 
@@ -263,9 +270,18 @@ public sealed class NifSchema
     }
 
     /// <summary>
-    ///     Checks if a block type inherits from (or is) another type.
+    ///     Checks if a block type inherits from (or is) another type. Result is memoized
+    ///     (see <see cref="_inheritsCache" />) because the conversion hot path queries it per field.
     /// </summary>
     public bool Inherits(string blockType, string ancestorType)
+    {
+        return _inheritsCache.GetOrAdd(
+            (blockType, ancestorType),
+            static (key, self) => self.ComputeInherits(key.BlockType, key.AncestorType),
+            this);
+    }
+
+    private bool ComputeInherits(string blockType, string ancestorType)
     {
         if (string.Equals(blockType, ancestorType, StringComparison.OrdinalIgnoreCase))
         {

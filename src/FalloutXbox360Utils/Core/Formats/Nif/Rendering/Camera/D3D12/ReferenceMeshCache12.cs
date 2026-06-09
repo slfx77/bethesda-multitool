@@ -632,14 +632,32 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             }
 
             nifBytes = nifData.Length;
-            var nif = NifParser.Parse(nifData);
-            if (nif is null)
+
+            // Cheap endianness probe avoids fully parsing the source NIF just to decide whether it
+            // needs big-endian conversion. A determinate probe (true/false) is byte-for-byte the same
+            // verdict a full parse would give; null means the header wasn't cheaply readable, so fall
+            // back to a full parse. This drops the BE mesh path from three parses (source +
+            // convert-internal + converted output) to two.
+            var probe = NifParser.TryProbeEndianness(nifData);
+            NifInfo? sourceInfo = null;
+            bool isBigEndian;
+            if (probe.HasValue)
             {
-                result = "parse-failed";
-                return null;
+                isBigEndian = probe.Value;
+            }
+            else
+            {
+                sourceInfo = NifParser.Parse(nifData);
+                if (sourceInfo is null)
+                {
+                    result = "parse-failed";
+                    return null;
+                }
+                isBigEndian = sourceInfo.IsBigEndian;
             }
 
-            if (nif.IsBigEndian)
+            NifInfo? nif;
+            if (isBigEndian)
             {
                 var converted = NifConverter.Convert(nifData);
                 if (!converted.Success || converted.OutputData is null)
@@ -652,6 +670,16 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                 if (nif is null)
                 {
                     result = "converted-parse-failed";
+                    return null;
+                }
+            }
+            else
+            {
+                // LE source: reuse the fallback parse if we already made one, else parse now.
+                nif = sourceInfo ?? NifParser.Parse(nifData);
+                if (nif is null)
+                {
+                    result = "parse-failed";
                     return null;
                 }
             }

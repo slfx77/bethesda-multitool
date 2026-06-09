@@ -1,5 +1,6 @@
 using System.CommandLine;
 using System.Diagnostics;
+using FalloutXbox360Utils.Core.Formats.Nif;
 using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
 using FalloutXbox360Utils.Core.Utils;
 using Spectre.Console;
@@ -21,7 +22,94 @@ internal static class BenchCommands
         var command = new Command("bench", "Decode-pipeline throughput benchmarks");
         command.Subcommands.Add(CreateDecodeCommand());
         command.Subcommands.Add(CreateHalfMicroCommand());
+        command.Subcommands.Add(CreateProbeEndianCommand());
         return command;
+    }
+
+    private static Command CreateProbeEndianCommand()
+    {
+        var command = new Command("probe-endian",
+            "Correctness audit: assert NifParser.TryProbeEndianness == NifParser.Parse().IsBigEndian over a corpus");
+        var dirArg = new Argument<string>("dir")
+        {
+            Description = "Directory of (.nif) files, searched recursively"
+        };
+        var limitOpt = new Option<int>("--limit")
+        {
+            Description = "Maximum number of files (0 = all)",
+            DefaultValueFactory = _ => 0
+        };
+        command.Arguments.Add(dirArg);
+        command.Options.Add(limitOpt);
+        command.SetAction(p => ProbeEndian(p.GetValue(dirArg)!, p.GetValue(limitOpt)));
+        return command;
+    }
+
+    private static void ProbeEndian(string dir, int limit)
+    {
+        var root = new DirectoryInfo(dir);
+        if (!root.Exists)
+        {
+            AnsiConsole.MarkupLineInterpolated($"[red]Directory not found: {dir}[/]");
+            return;
+        }
+
+        var files = root.EnumerateFiles("*.nif", SearchOption.AllDirectories).ToList();
+        if (limit > 0 && files.Count > limit) files = files.Take(limit).ToList();
+        if (files.Count == 0)
+        {
+            AnsiConsole.MarkupLine("[yellow]No .nif files found.[/]");
+            return;
+        }
+
+        int agree = 0, indeterminate = 0, parseNull = 0, readFailed = 0;
+        var mismatches = new List<string>();
+        foreach (var f in files)
+        {
+            byte[] data;
+            try { data = File.ReadAllBytes(f.FullName); }
+            catch { readFailed++; continue; }
+
+            var parsed = NifParser.Parse(data);
+            var probe = NifParser.TryProbeEndianness(data);
+
+            if (parsed is null)
+            {
+                // The decode path also returns null here; the probe's value is irrelevant.
+                parseNull++;
+                continue;
+            }
+
+            if (!probe.HasValue)
+            {
+                // Indeterminate probe → DecodeMesh falls back to a full parse, so this is always safe.
+                indeterminate++;
+                continue;
+            }
+
+            if (probe.Value == parsed.IsBigEndian)
+            {
+                agree++;
+            }
+            else if (mismatches.Count < 25)
+            {
+                mismatches.Add($"{f.Name}: probe={probe.Value}, parse={parsed.IsBigEndian}");
+            }
+        }
+
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine("[bold]Endianness probe audit[/]");
+        AnsiConsole.MarkupLineInterpolated($"  files:                 [cyan]{files.Count:N0}[/]");
+        AnsiConsole.MarkupLineInterpolated($"  determinate & agree:   [green]{agree:N0}[/]");
+        AnsiConsole.MarkupLineInterpolated($"  indeterminate (probe null → full-parse fallback): [cyan]{indeterminate:N0}[/]");
+        AnsiConsole.MarkupLineInterpolated($"  parse returned null (decode also skips): [grey]{parseNull:N0}[/]");
+        AnsiConsole.MarkupLineInterpolated($"  read failed:           [grey]{readFailed:N0}[/]");
+        var mismatchColor = mismatches.Count == 0 ? "green" : "red";
+        AnsiConsole.MarkupLineInterpolated($"  [{mismatchColor}]MISMATCHES:            {mismatches.Count:N0}[/] (must be 0)");
+        foreach (var m in mismatches)
+        {
+            AnsiConsole.MarkupLineInterpolated($"    [red]{m}[/]");
+        }
     }
 
     private static Command CreateDecodeCommand()
