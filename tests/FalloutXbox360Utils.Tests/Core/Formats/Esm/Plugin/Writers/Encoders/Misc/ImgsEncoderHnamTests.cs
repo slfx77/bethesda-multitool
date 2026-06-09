@@ -47,7 +47,10 @@ public sealed class ImgsEncoderHnamTests : SubrecordEncoderTestBase<ImageSpaceHd
         return expected;
     }
 
-    protected override byte[] EncodeModel(ImageSpaceHdr model) => ImgsEncoder.EncodeHnam(model);
+    protected override byte[] EncodeModel(ImageSpaceHdr model)
+    {
+        return ImgsEncoder.EncodeHnam(model);
+    }
 
     protected override (bool Parsed, ImageSpaceHdr? Model) TryParseBytes(byte[] bytes)
     {

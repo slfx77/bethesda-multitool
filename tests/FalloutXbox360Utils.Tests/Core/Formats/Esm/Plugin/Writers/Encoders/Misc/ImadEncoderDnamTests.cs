@@ -48,11 +48,15 @@ public sealed class ImadEncoderDnamTests : SubrecordEncoderTestBase<ImageSpaceMo
         {
             BinaryPrimitives.WriteUInt32LittleEndian(expected.AsSpan(8 + i * 4, 4), payload[i]);
         }
+
         // Remaining bytes 8 + 8*4 = 40 onwards stay zero.
         return expected;
     }
 
-    protected override byte[] EncodeModel(ImageSpaceModifierData model) => ImadEncoder.EncodeDnam(model);
+    protected override byte[] EncodeModel(ImageSpaceModifierData model)
+    {
+        return ImadEncoder.EncodeDnam(model);
+    }
 
     protected override (bool Parsed, ImageSpaceModifierData? Model) TryParseBytes(byte[] bytes)
     {
