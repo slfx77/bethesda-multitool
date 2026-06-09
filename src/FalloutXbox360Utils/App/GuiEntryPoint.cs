@@ -105,6 +105,14 @@ public static class GuiEntryPoint
     private const uint ExceptionStackOverflow = 0xC00000FD;
     private const uint ExceptionFastFail = 0xC0000409;       // __fastfail (heap corruption, GSL checks)
     private const uint ExceptionIllegalInstruction = 0xC000001D;
+    // The two codes that account for nearly every "WinUI 3 app just vanished with no log" crash —
+    // and the exact gap that left this control's first-open crash silent. When a managed exception
+    // (or a WinRT/COM HRESULT) reaches the WinRT ABI boundary unhandled — e.g. inside a XAML event,
+    // a CompositionTarget.Rendering tick, or the SwapChainPanel/compositor — the framework does NOT
+    // route it to AppDomain.UnhandledException; it calls RoFailFast, which raises one of these and
+    // tears the process down. Neither is an "AV", so the original filter ignored both → no log.
+    private const uint ExceptionStowed = 0xC000027B;         // STATUS_STOWED_EXCEPTION (WinRT/XAML ABI-boundary fatal)
+    private const uint ExceptionFailFast = 0xC0000602;       // STATUS_FAIL_FAST_EXCEPTION (RaiseFailFastException / Environment.FailFast)
     private const int ExceptionContinueSearch = 0;            // log only; let normal teardown continue
 
     // Keep the delegate alive for the process lifetime — GC must not collect the thunk the OS holds.
@@ -143,7 +151,8 @@ public static class GuiEntryPoint
             // EXCEPTION_RECORD: ExceptionCode @0 (DWORD), ExceptionAddress @16 (x64 alignment).
             var code = (uint)Marshal.ReadInt32(record);
             if (code is not (ExceptionAccessViolation or ExceptionStackOverflow
-                or ExceptionFastFail or ExceptionIllegalInstruction))
+                or ExceptionFastFail or ExceptionIllegalInstruction
+                or ExceptionStowed or ExceptionFailFast))
             {
                 // Ignore first-chance CLR exceptions (0xE0434352) and everything non-fatal.
                 return ExceptionContinueSearch;
@@ -156,8 +165,34 @@ public static class GuiEntryPoint
                 ExceptionStackOverflow => "STACK_OVERFLOW",
                 ExceptionFastFail => "FASTFAIL (heap corruption / security check)",
                 ExceptionIllegalInstruction => "ILLEGAL_INSTRUCTION",
+                ExceptionStowed => "STOWED_EXCEPTION (WinRT/XAML ABI fatal)",
+                ExceptionFailFast => "FAIL_FAST",
                 _ => "UNKNOWN"
             };
+
+            // For a stowed/fail-fast the embedded HRESULT(s) live in the exception parameters; the
+            // first one is usually the originating HRESULT (e.g. 0x887A0005 device-removed, 0x80004003
+            // null-ref-across-ABI). Reading the record's OWN fields is safe — we deliberately do NOT
+            // chase the STOWED_EXCEPTION_INFORMATION pointers, which the failing thread may be tearing
+            // down. EXCEPTION_RECORD: NumberParameters @24 (DWORD), ExceptionInformation[] @32 (8B each).
+            var paramInfo = string.Empty;
+            if (code is ExceptionStowed or ExceptionFailFast)
+            {
+                var count = (uint)Marshal.ReadInt32(record, 24);
+                if (count > 15) count = 15;
+                if (count > 0)
+                {
+                    var sb = new System.Text.StringBuilder(" params=[");
+                    for (var i = 0; i < count; i++)
+                    {
+                        if (i > 0) sb.Append(", ");
+                        sb.Append($"0x{Marshal.ReadIntPtr(record, 32 + (i * 8)).ToInt64():X}");
+                    }
+
+                    sb.Append(']');
+                    paramInfo = sb.ToString();
+                }
+            }
 
             // Stack overflow leaves too little stack to walk safely; skip the managed trace there.
             var managedStack = code == ExceptionStackOverflow
@@ -165,7 +200,7 @@ public static class GuiEntryPoint
                 : SafeStackTrace();
 
             CrashLog(
-                $"NATIVE FAULT 0x{code:X8} ({name}) at 0x{address.ToInt64():X}",
+                $"NATIVE FAULT 0x{code:X8} ({name}) at 0x{address.ToInt64():X}{paramInfo}",
                 ex: null,
                 isTerminating: true,
                 extraStack: managedStack);

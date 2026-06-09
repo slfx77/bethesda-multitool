@@ -63,10 +63,50 @@ public sealed partial class FalloutApp : Application
 
     private static void App_UnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
+        // A windowed WinUI 3 app has no visible console (see MainWindow's log-file comment), so
+        // Console.WriteLine here lands nowhere the user can inspect — every UI-thread crash was
+        // dying with the stack trace written only to a detached console. Route the full exception
+        // (message + HRESULT + inner chain + stack) through the file logger so it survives in
+        // %TEMP%\FalloutXbox360Utils-gui.log. AutoFlush is on, so it persists even as the process
+        // tears down. Console output is kept for the terminal-launched case.
         Console.WriteLine($"[CRASH] Unhandled exception: {e.Exception}");
         Console.WriteLine($"[CRASH] Message: {e.Message}");
         PrintInnerExceptions(e.Exception);
+
+        try
+        {
+            var log = FalloutXbox360Utils.Core.Logger.Instance;
+            log.Error("[CRASH] Unhandled XAML exception: {0}", e.Message);
+            LogInnerExceptions(log, e.Exception);
+        }
+        catch
+        {
+            // Never throw from the crash handler — the console lines above are the fallback.
+        }
+
         e.Handled = false; // Let it crash but we logged it
+    }
+
+    /// <summary>
+    ///     File-logger counterpart to <see cref="PrintInnerExceptions" />. Walks the inner-exception
+    ///     chain, recording each layer's HRESULT, type, message, and stack trace to the persistent
+    ///     GUI log so a UI-thread crash can be diagnosed post-mortem without a debugger attached.
+    /// </summary>
+    private static void LogInnerExceptions(FalloutXbox360Utils.Core.Logger log, Exception? ex)
+    {
+        var depth = 0;
+        while (ex != null)
+        {
+            log.Error("[CRASH] [{0}] HRESULT=0x{1:X8} {2}: {3}",
+                depth, ex.HResult, ex.GetType().FullName ?? "(unknown)", ex.Message);
+            if (ex.StackTrace != null)
+            {
+                log.Error("[CRASH] [{0}] StackTrace:\n{1}", depth, ex.StackTrace);
+            }
+
+            ex = ex.InnerException;
+            depth++;
+        }
     }
 
     /// <summary>

@@ -251,6 +251,10 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private ITopDownSceneRenderer? _topDownProvider;
     private bool _showRenderedObjects;
     private CanvasBitmap? _topDownOverlay;
+
+    /// <summary>Last logged UI-thread-fault signature, so a deterministic per-frame draw exception
+    /// logs once instead of flooding the log (see <see cref="LogUiThreadFault" />).</summary>
+    private string? _lastUiFaultSignature;
     private float _topDownWorldMinX, _topDownWorldMaxX, _topDownWorldMinY, _topDownWorldMaxY;
     private bool _topDownRequestPending;
     private bool _topDownIncomplete;
@@ -1100,6 +1104,27 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     // Win2D Draw
     // ========================================================================
 
+    /// <summary>
+    ///     Logs a UI-thread render/timer-tick exception (with rich 2D view context) exactly once per
+    ///     distinct signature, so a deterministic per-frame fault doesn't flood the log. Callers
+    ///     swallow the exception so a single bad frame or rebuild tick can't tear down the whole
+    ///     window — WinUI routes an unhandled UI-thread exception to
+    ///     <see cref="FalloutApp.App_UnhandledException" />, which terminates the process. The full
+    ///     exception (incl. stack) goes to the file log so the root cause is still diagnosable.
+    /// </summary>
+    private void LogUiThreadFault(string where, Exception ex)
+    {
+        var sig = $"{where}|{ex.GetType().FullName}|{ex.Message}";
+        if (sig == _lastUiFaultSignature) return;
+        _lastUiFaultSignature = sig;
+        FalloutXbox360Utils.Core.Logger.Instance.Error(
+            "[Map2D] UI-thread fault in {0}: mode={1} layer={2} zoom={3:F5} pan=({4:F1},{5:F1}) " +
+            "ws=0x{6:X8} renderedObjects={7} navMesh={8} aggregate={9} cacheSize={10} cap={11}\n{12}",
+            where, _state.Mode, _currentLayer, _zoom, _panOffset.X, _panOffset.Y,
+            _state.SelectedWorldspace?.FormId ?? 0u, _showRenderedObjects, _showNavMesh,
+            _terrainTexturesAggregateActive, _layerCellBitmaps?.Count ?? 0, _layerCellBitmapCap, ex);
+    }
+
     private void MapCanvas_Draw(CanvasControl sender, CanvasDrawEventArgs args)
     {
         var ds = args.DrawingSession;
@@ -1118,12 +1143,27 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                 $"zoom={_zoom:F4} pan=({_panOffset.X:F1},{_panOffset.Y:F1}) layer={_currentLayer} cacheSize={cacheSize} cap={_layerCellBitmapCap} cacheGen={_layerCellBitmapsCacheGen} buildVersion={_worldHeightmapBuildVersion}");
         }
 
+        // A render exception here used to crash the whole app silently (routed to the console-only
+        // App.UnhandledException). Catch + log with full context, skip the bad frame, keep the window
+        // alive. The next Invalidate redraws cleanly once the transient condition clears.
+        try
+        {
+            DrawMapContent(ds, canvasW, canvasH);
+        }
+        catch (Exception ex)
+        {
+            LogUiThreadFault("MapCanvas_Draw", ex);
+        }
+    }
+
+    private void DrawMapContent(CanvasDrawingSession ds, float canvasW, float canvasH)
+    {
         EnsureHeightmapBitmap(canvasW, canvasH);
         MaybeScheduleTopDownRequest(canvasW, canvasH);
 
         if (_state.Mode == ViewMode.WorldOverview)
         {
-            EnsureMarkerIcons(sender);
+            EnsureMarkerIcons(MapCanvas);
 
             // TerrainTextures aggregate LOD: when active, composite the single downscaled bitmap and
             // suppress the per-cell dict so the renderer draws the aggregate (it prefers per-cell when
@@ -1928,34 +1968,44 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             return;
         }
 
-        DrainPendingCellApplies();
+        // Same rationale as MapCanvas_Draw: a throw here (e.g. a per-cell GPU upload in
+        // DrainPendingCellApplies, or a viewport rebuild) otherwise escapes to App.UnhandledException
+        // and kills the window. Log with context + skip this tick; the timer fires again next interval.
+        try
+        {
+            DrainPendingCellApplies();
 
-        // While a zoom gesture is settling, hold off the rebuild (keep pending set) so we don't
-        // re-stream throwaway intermediate zoom levels. Each wheel notch re-arms _zoomSettleTicks.
-        if (_zoomSettleTicks > 0)
-        {
-            _zoomSettleTicks--;
-        }
-        else if (_viewportRebuildPending
-            && _state.Mode == ViewMode.WorldOverview
-            && _currentLayer == WorldMapLayer.TerrainTextures)
-        {
-            _viewportRebuildPending = false;
-            RebuildTerrainTextureViewport((float)MapCanvas.ActualWidth, (float)MapCanvas.ActualHeight);
-        }
+            // While a zoom gesture is settling, hold off the rebuild (keep pending set) so we don't
+            // re-stream throwaway intermediate zoom levels. Each wheel notch re-arms _zoomSettleTicks.
+            if (_zoomSettleTicks > 0)
+            {
+                _zoomSettleTicks--;
+            }
+            else if (_viewportRebuildPending
+                && _state.Mode == ViewMode.WorldOverview
+                && _currentLayer == WorldMapLayer.TerrainTextures)
+            {
+                _viewportRebuildPending = false;
+                RebuildTerrainTextureViewport((float)MapCanvas.ActualWidth, (float)MapCanvas.ActualHeight);
+            }
 
-        // Rendered-models overlay: request a fresh top-down render once the view settles (not mid
-        // pan/zoom), or keep re-requesting while the last render was still streaming in.
-        if (_showRenderedObjects
-            && _zoomSettleTicks == 0
-            && !_isPanning
-            && !_topDownInFlight
-            && _topDownProvider?.CanRenderTopDown == true
-            && (_topDownRequestPending || _topDownIncomplete)
-            && IsTopDownEligible())
+            // Rendered-models overlay: request a fresh top-down render once the view settles (not mid
+            // pan/zoom), or keep re-requesting while the last render was still streaming in.
+            if (_showRenderedObjects
+                && _zoomSettleTicks == 0
+                && !_isPanning
+                && !_topDownInFlight
+                && _topDownProvider?.CanRenderTopDown == true
+                && (_topDownRequestPending || _topDownIncomplete)
+                && IsTopDownEligible())
+            {
+                _topDownRequestPending = false;
+                _ = RequestTopDownOverlayAsync();
+            }
+        }
+        catch (Exception ex)
         {
-            _topDownRequestPending = false;
-            _ = RequestTopDownOverlayAsync();
+            LogUiThreadFault("ViewportRebuildTimer_Tick", ex);
         }
 
         // Idle: no pending rebuild, not zoom-settling, not actively panning, nothing left to apply,
@@ -2634,4 +2684,36 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     internal float Profiler_CanvasWidth => (float)MapCanvas.ActualWidth;
     internal float Profiler_CanvasHeight => (float)MapCanvas.ActualHeight;
+
+    /// <summary>
+    ///     Centers the view on the centroid of the active worldspace's grid cells at the given
+    ///     zoom. The centroid sits inside the populated region — unlike <see cref="ApplyZoomToFitWorldspace" />'s
+    ///     bounding-box center, which on an irregular worldspace (e.g. WastelandNV) can land in an
+    ///     unpopulated notch, leaving a profiler zoom-in streaming a near-empty viewport. The capture
+    ///     harness uses this so the aggregate→per-cell transition actually streams a dense viewport.
+    /// </summary>
+    internal void Profiler_CenterOnActiveCells(float zoom)
+    {
+        double sx = 0, sy = 0;
+        var n = 0;
+        foreach (var c in GetActiveCells())
+        {
+            if (c.GridX is not int gx || c.GridY is not int gy) continue;
+            // Canvas-world space: X grows east, Y is the NEGATED grid Y (north is up / min canvas Y),
+            // matching WorldMapViewportHelper.GetViewTransform and the cell rects drawn in the overview.
+            sx += (gx + 0.5) * WorldGridConstants.CellSize;
+            sy += -(gy + 0.5) * WorldGridConstants.CellSize;
+            n++;
+        }
+
+        if (n == 0) return;
+
+        var centroid = new Vector2((float)(sx / n), (float)(sy / n));
+        var screenCenter = new Vector2(
+            (float)MapCanvas.ActualWidth * 0.5f, (float)MapCanvas.ActualHeight * 0.5f);
+        _zoom = Math.Clamp(zoom, 0.001f, 50f);
+        // screen = canvasWorld * zoom + pan  (see Profiler_SetView / MapCanvas_PointerWheelChanged).
+        _panOffset = screenCenter - centroid * _zoom;
+        MapCanvas.Invalidate();
+    }
 }
