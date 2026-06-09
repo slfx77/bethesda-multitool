@@ -1,8 +1,7 @@
-using FalloutXbox360Utils;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils;
 using FalloutXbox360Utils.Core.Semantic;
-
 namespace FalloutRendererProfiler;
 
 internal static class RendererProfilerDataLoader

@@ -1,9 +1,9 @@
-using Windows.Graphics;
-using Windows.UI;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
 using FalloutXbox360Utils;
 using FalloutXbox360Utils.Core;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
-using Microsoft.UI;
+using System.Globalization;
+using Windows.Graphics;
+using Windows.UI;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
@@ -17,14 +17,14 @@ internal sealed class MainWindow : Window, IDisposable
     private static readonly Logger Log = Logger.Instance;
 
     private readonly RendererProfilerOptions _options;
-    private readonly TextBlock _statusText;
     private readonly ProgressBar _progressBar;
+    private readonly TextBlock _statusText;
     private readonly WorldView3DControl _worldView;
-    private Renderer3DScenario? _scenario;
-    private DispatcherQueueTimer? _timedExitTimer;
-    private bool _started;
-    private bool _exiting;
     private bool _disposed;
+    private bool _exiting;
+    private Renderer3DScenario? _scenario;
+    private bool _started;
+    private DispatcherQueueTimer? _timedExitTimer;
     private bool _traceClosed;
 
     public MainWindow(RendererProfilerOptions options)
@@ -41,7 +41,7 @@ internal sealed class MainWindow : Window, IDisposable
             FontFamily = new FontFamily("Consolas"),
             FontSize = 12,
             VerticalAlignment = VerticalAlignment.Center,
-            TextTrimming = Microsoft.UI.Xaml.TextTrimming.CharacterEllipsis
+            TextTrimming = TextTrimming.CharacterEllipsis
         };
 
         _progressBar = new ProgressBar
@@ -159,7 +159,7 @@ internal sealed class MainWindow : Window, IDisposable
             _progressBar.Visibility = Visibility.Collapsed;
 
             var summary = string.Format(
-                System.Globalization.CultureInfo.InvariantCulture,
+                CultureInfo.InvariantCulture,
                 "Profiling {0:N0} cells, {1:N0} worldspace(s), {2:N0} placed refs. Log: {3}",
                 data.AllCells.Count,
                 data.Worldspaces.Count,
@@ -218,18 +218,23 @@ internal sealed class MainWindow : Window, IDisposable
                 var center = _worldView.Profiler_GetWorldspaceCenter(wsIdx);
                 if (center is null)
                 {
-                    Console.WriteLine($"[Capture] UNAVAILABLE: worldspace index {wsIdx} out of range / empty (count={_worldView.Profiler_ExteriorWorldspaceCount}).");
+                    Console.WriteLine(
+                        $"[Capture] UNAVAILABLE: worldspace index {wsIdx} out of range / empty (count={_worldView.Profiler_ExteriorWorldspaceCount}).");
                     ExitProfiler("capture-bad-worldspace");
                     return;
                 }
-                cx = center.Value.CenterX; cy = center.Value.CenterY; targetFormId = center.Value.FormId;
+
+                cx = center.Value.CenterX;
+                cy = center.Value.CenterY;
+                targetFormId = center.Value.FormId;
                 Log.Info("Capture: worldspace[{0}] '{1}' formId=0x{2:X8} center=({3:F0},{4:F0})",
                     wsIdx, center.Value.Name, center.Value.FormId, cx, cy);
             }
             else
             {
                 var pose = _worldView.Profiler_CameraPose;
-                cx = pose.Position.X; cy = pose.Position.Y;
+                cx = pose.Position.X;
+                cy = pose.Position.Y;
                 targetFormId = _worldView.Profiler_SelectedWorldspaceFormId;
             }
 
@@ -255,6 +260,7 @@ internal sealed class MainWindow : Window, IDisposable
                 {
                     break;
                 }
+
                 await Task.Delay(300);
             }
 
@@ -270,7 +276,7 @@ internal sealed class MainWindow : Window, IDisposable
             FalloutXbox360Utils.Core.Formats.Esm.Analysis.PngWriter.SaveRgba(rgba, render.Width, render.Height, path);
 
             var msg = string.Format(
-                System.Globalization.CultureInfo.InvariantCulture,
+                CultureInfo.InvariantCulture,
                 "[Capture] saved {0} ({1}x{2}) coverage={3:P2} complete={4} window={5}cells center=({6:F0},{7:F0})",
                 path, render.Width, render.Height, Coverage(render.Bgra), render.IsComplete,
                 _options.CaptureSpanCells, cx, cy);
@@ -297,6 +303,7 @@ internal sealed class MainWindow : Window, IDisposable
         {
             if (bgra[i] > 0) opaque++;
         }
+
         return (double)opaque / total;
     }
 
@@ -305,11 +312,12 @@ internal sealed class MainWindow : Window, IDisposable
         var rgba = new byte[bgra.Length];
         for (var i = 0; i + 3 < bgra.Length; i += 4)
         {
-            rgba[i] = bgra[i + 2];     // R
+            rgba[i] = bgra[i + 2]; // R
             rgba[i + 1] = bgra[i + 1]; // G
-            rgba[i + 2] = bgra[i];     // B
+            rgba[i + 2] = bgra[i]; // B
             rgba[i + 3] = bgra[i + 3]; // A
         }
+
         return rgba;
     }
 
@@ -327,7 +335,7 @@ internal sealed class MainWindow : Window, IDisposable
         _timedExitTimer.Tick += (_, _) =>
         {
             ExitProfiler(string.Format(
-                System.Globalization.CultureInfo.InvariantCulture,
+                CultureInfo.InvariantCulture,
                 "FalloutRendererProfiler: duration elapsed ({0}s); exiting.",
                 seconds));
         };

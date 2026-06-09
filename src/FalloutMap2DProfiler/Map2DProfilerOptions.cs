@@ -106,6 +106,7 @@ internal sealed record Map2DProfilerOptions
                     {
                         return Fail(out options);
                     }
+
                     worldspaceIndex = ws;
                     break;
 
@@ -119,6 +120,7 @@ internal sealed record Map2DProfilerOptions
                     {
                         return Fail(out options);
                     }
+
                     durationSeconds = seconds;
                     break;
 
@@ -131,6 +133,7 @@ internal sealed record Map2DProfilerOptions
                     {
                         return Fail(out options);
                     }
+
                     break;
 
                 case "--height":
@@ -138,6 +141,7 @@ internal sealed record Map2DProfilerOptions
                     {
                         return Fail(out options);
                     }
+
                     break;
 
                 default:

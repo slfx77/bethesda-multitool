@@ -1,7 +1,8 @@
-using System.Runtime.InteropServices;
 using FalloutXbox360Utils;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
+using System.Globalization;
+using System.Runtime.InteropServices;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using WinRT;
@@ -25,6 +26,7 @@ public static class Program
                 Console.Error.WriteLine(error);
                 Console.Error.WriteLine();
             }
+
             Console.WriteLine(RendererProfilerOptions.Usage);
             return;
         }
@@ -52,11 +54,11 @@ public static class Program
         Environment.SetEnvironmentVariable("FALLOUT_VIEWER_PROFILE_LOG", "1");
         Environment.SetEnvironmentVariable(
             "FALLOUT_VIEWER_PROFILE_INTERVAL_MS",
-            options.ProfileIntervalMilliseconds.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            options.ProfileIntervalMilliseconds.ToString(CultureInfo.InvariantCulture));
         Environment.SetEnvironmentVariable("FALLOUT_VIEWER_PROFILE_JSONL", options.ProfileJsonlOutputPath);
         Environment.SetEnvironmentVariable(
             "FALLOUT_VIEWER_STALL_THRESHOLD_MS",
-            options.StallThresholdMilliseconds.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            options.StallThresholdMilliseconds.ToString(CultureInfo.InvariantCulture));
 
         if (options.ShowFrameStats)
         {

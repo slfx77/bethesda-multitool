@@ -1,6 +1,6 @@
-using System.Runtime.InteropServices;
 using FalloutXbox360Utils;
 using FalloutXbox360Utils.Core;
+using System.Runtime.InteropServices;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using WinRT;
@@ -24,6 +24,7 @@ public static class Program
                 Console.Error.WriteLine(error);
                 Console.Error.WriteLine();
             }
+
             Console.WriteLine(Map2DProfilerOptions.Usage);
             return;
         }

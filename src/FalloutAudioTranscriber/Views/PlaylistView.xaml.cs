@@ -696,7 +696,7 @@ public sealed partial class PlaylistView : UserControl
                 _project ??= new TranscriptionProject();
 
                 var path = result.Path;
-                var ext = System.IO.Path.GetExtension(path);
+                var ext = Path.GetExtension(path);
                 if (string.Equals(ext, ".csv", StringComparison.OrdinalIgnoreCase))
                 {
                     await TranscriptionFileService.ExportCsvAsync(path, _project, _allEntries, _showEsmSubtitles);
@@ -707,7 +707,7 @@ public sealed partial class PlaylistView : UserControl
                 }
 
                 var esmNote = _showEsmSubtitles ? " (including ESM subtitles)" : "";
-                MainWindow.Instance?.SetStatus($"Exported transcriptions to {System.IO.Path.GetFileName(path)}{esmNote}");
+                MainWindow.Instance?.SetStatus($"Exported transcriptions to {Path.GetFileName(path)}{esmNote}");
             }
             catch (Exception ex)
             {

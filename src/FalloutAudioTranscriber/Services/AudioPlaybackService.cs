@@ -1,5 +1,5 @@
-using FalloutAudioTranscriber.Models;
 using FalloutXbox360Utils.Core.Formats.Bsa;
+using FalloutAudioTranscriber.Models;
 using NAudio.Wave;
 
 namespace FalloutAudioTranscriber.Services;

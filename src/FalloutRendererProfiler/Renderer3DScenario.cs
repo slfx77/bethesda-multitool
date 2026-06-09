@@ -1,20 +1,20 @@
-using System.Diagnostics;
-using FalloutXbox360Utils;
 using FalloutXbox360Utils.Core;
+using FalloutXbox360Utils;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
+using System.Diagnostics;
 using Microsoft.UI.Dispatching;
 
 namespace FalloutRendererProfiler;
 
 internal sealed class Renderer3DScenario : IDisposable
 {
-    private readonly WorldView3DControl _control;
-    private readonly RendererProfilerOptions _options;
-    private readonly RendererProfilerCameraPose _initialPose;
     private readonly Stopwatch _clock = new();
+    private readonly WorldView3DControl _control;
+    private readonly RendererProfilerCameraPose _initialPose;
+    private readonly RendererProfilerOptions _options;
     private readonly DispatcherQueueTimer? _timer;
-    private long _lastMotionLogMilliseconds = -1000;
     private bool _disposed;
+    private long _lastMotionLogMilliseconds = -1000;
 
     private Renderer3DScenario(
         WorldView3DControl control,
@@ -31,9 +31,10 @@ internal sealed class Renderer3DScenario : IDisposable
             _initialPose = _initialPose with { RenderDistance = cells * WorldGridConstants.CellSize };
             control.Profiler_SetCameraPose(_initialPose);
         }
+
         _control.Profiler_ClearInputState();
 
-        RendererProfilerTrace.Event("camera-motion", BuildEventFields("start", _initialPose, elapsedSeconds: 0));
+        RendererProfilerTrace.Event("camera-motion", BuildEventFields("start", _initialPose, 0));
         Logger.Instance.Info(
             "Renderer3DScenario: camera motion '{0}' speed={1:0.##}.",
             options.CameraMotion,
@@ -51,14 +52,6 @@ internal sealed class Renderer3DScenario : IDisposable
         _clock.Start();
     }
 
-    internal static Renderer3DScenario Start(
-        WorldView3DControl control,
-        DispatcherQueue dispatcherQueue,
-        RendererProfilerOptions options)
-    {
-        return new Renderer3DScenario(control, dispatcherQueue, options);
-    }
-
     public void Dispose()
     {
         if (_disposed)
@@ -71,6 +64,14 @@ internal sealed class Renderer3DScenario : IDisposable
         RendererProfilerTrace.Event(
             "camera-motion",
             BuildEventFields("stop", _control.Profiler_CameraPose, _clock.Elapsed.TotalSeconds));
+    }
+
+    internal static Renderer3DScenario Start(
+        WorldView3DControl control,
+        DispatcherQueue dispatcherQueue,
+        RendererProfilerOptions options)
+    {
+        return new Renderer3DScenario(control, dispatcherQueue, options);
     }
 
     private void OnTick(DispatcherQueueTimer sender, object args)

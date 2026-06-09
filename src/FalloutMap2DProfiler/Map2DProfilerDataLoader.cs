@@ -1,8 +1,7 @@
-using FalloutXbox360Utils;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils;
 using FalloutXbox360Utils.Core.Semantic;
-
 namespace FalloutMap2DProfiler;
 
 internal static class Map2DProfilerDataLoader

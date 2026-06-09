@@ -1,7 +1,8 @@
-using Windows.Graphics;
-using Windows.UI;
 using FalloutXbox360Utils;
 using FalloutXbox360Utils.Core;
+using System.Globalization;
+using Windows.Graphics;
+using Windows.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -14,11 +15,11 @@ internal sealed class MainWindow : Window, IDisposable
     private static readonly Logger Log = Logger.Instance;
 
     private readonly Map2DProfilerOptions _options;
-    private readonly TextBlock _statusText;
     private readonly ProgressBar _progressBar;
+    private readonly TextBlock _statusText;
     private readonly WorldMapControl _worldMap;
-    private bool _started;
     private bool _disposed;
+    private bool _started;
 
     public MainWindow(Map2DProfilerOptions options)
     {
@@ -34,7 +35,7 @@ internal sealed class MainWindow : Window, IDisposable
             FontFamily = new FontFamily("Consolas"),
             FontSize = 12,
             VerticalAlignment = VerticalAlignment.Center,
-            TextTrimming = Microsoft.UI.Xaml.TextTrimming.CharacterEllipsis
+            TextTrimming = TextTrimming.CharacterEllipsis
         };
 
         _progressBar = new ProgressBar
@@ -146,7 +147,7 @@ internal sealed class MainWindow : Window, IDisposable
             _progressBar.Visibility = Visibility.Collapsed;
 
             var summary = string.Format(
-                System.Globalization.CultureInfo.InvariantCulture,
+                CultureInfo.InvariantCulture,
                 "Profiling {0:N0} cells, {1:N0} worldspace(s). Log: {2}",
                 data.AllCells.Count,
                 data.Worldspaces.Count,

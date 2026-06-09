@@ -1,5 +1,5 @@
-using System.Globalization;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
+using System.Globalization;
 
 namespace FalloutRendererProfiler;
 
@@ -13,15 +13,19 @@ internal sealed record RendererProfilerOptions
     internal string? DataDirectory { get; init; }
     internal IReadOnlyList<string> LoadOrderPaths { get; init; } = [];
     internal string ProfileOutputPath { get; init; } = CreateDefaultProfileOutputPath();
+
     internal string ProfileJsonlOutputPath { get; init; } =
         CreateDefaultProfileJsonlOutputPath(CreateDefaultProfileOutputPath());
+
     internal int ProfileIntervalMilliseconds { get; init; } = 2000;
     internal int? DurationSeconds { get; init; }
     internal string? StressScene { get; init; } = DefaultStressScene;
     internal RendererCameraMotionKind CameraMotion { get; init; } = RendererCameraMotionKind.Static;
     internal float CameraSpeed { get; init; } = 2048f;
+
     /// <summary>Render distance in cells. Null = keep the worldspace/bookmark default (16 cells).</summary>
     internal float? RenderDistanceCells { get; init; }
+
     internal double StallThresholdMilliseconds { get; init; } = 50;
     internal bool ForceGpuTimestamps { get; init; }
     internal bool ShowFrameStats { get; init; } = true;
@@ -30,16 +34,20 @@ internal sealed record RendererProfilerOptions
     internal int WindowWidth { get; init; } = 1450;
     internal int WindowHeight { get; init; } = 900;
 
-    /// <summary>When set, renders one top-down "Rendered models" overlay (the 2D-map feature) of a
-    /// window around the camera, saves it to this PNG, logs coverage, and exits. Autonomous test for
-    /// the offscreen top-down render path.</summary>
+    /// <summary>
+    ///     When set, renders one top-down "Rendered models" overlay (the 2D-map feature) of a
+    ///     window around the camera, saves it to this PNG, logs coverage, and exits. Autonomous test for
+    ///     the offscreen top-down render path.
+    /// </summary>
     internal string? CaptureTopDownPath { get; init; }
 
     /// <summary>Width/height of the top-down capture window in cells (default 6).</summary>
     internal int CaptureSpanCells { get; init; } = 6;
 
-    /// <summary>When set with --capture-topdown, targets this exterior worldspace by index (centered
-    /// on its centroid) instead of the camera position — exercises the top-down worldspace sync.</summary>
+    /// <summary>
+    ///     When set with --capture-topdown, targets this exterior worldspace by index (centered
+    ///     on its centroid) instead of the camera position — exercises the top-down worldspace sync.
+    /// </summary>
     internal int? CaptureWorldspaceIndex { get; init; }
 
     internal static string Usage =>
@@ -86,7 +94,7 @@ internal sealed record RendererProfilerOptions
         string? dataDir = null;
         string? profileOutput = null;
         string? profileJsonl = null;
-        string? stressScene = DefaultStressScene;
+        var stressScene = DefaultStressScene;
         var loadOrder = new List<string>();
         var profileIntervalMs = 2000;
         int? durationSeconds = null;
@@ -149,6 +157,7 @@ internal sealed record RendererProfilerOptions
                     {
                         return Fail(out options, error);
                     }
+
                     break;
 
                 case "--duration-seconds":
@@ -156,6 +165,7 @@ internal sealed record RendererProfilerOptions
                     {
                         return Fail(out options, error);
                     }
+
                     durationSeconds = seconds;
                     break;
 
@@ -171,6 +181,7 @@ internal sealed record RendererProfilerOptions
                     {
                         return Fail(out options, $"Unknown camera motion: {motionRaw}");
                     }
+
                     break;
 
                 case "--camera-speed":
@@ -178,6 +189,7 @@ internal sealed record RendererProfilerOptions
                     {
                         return Fail(out options, error);
                     }
+
                     break;
 
                 case "--render-distance":
@@ -185,6 +197,7 @@ internal sealed record RendererProfilerOptions
                     {
                         return Fail(out options, error);
                     }
+
                     renderDistanceCells = renderDistanceValue;
                     break;
 
@@ -193,6 +206,7 @@ internal sealed record RendererProfilerOptions
                     {
                         return Fail(out options, error);
                     }
+
                     break;
 
                 case "--gpu-timestamps":
@@ -221,15 +235,18 @@ internal sealed record RendererProfilerOptions
                     {
                         return Fail(out options, error);
                     }
+
                     break;
 
                 case "--capture-worldspace":
                     var wsRaw = RequireValue(args, ref i, arg, out error);
                     if (error != null) return Fail(out options, error);
-                    if (!int.TryParse(wsRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var wsIdx) || wsIdx < 0)
+                    if (!int.TryParse(wsRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var wsIdx) ||
+                        wsIdx < 0)
                     {
                         return Fail(out options, $"{arg} requires a non-negative integer.");
                     }
+
                     captureWorldspaceIndex = wsIdx;
                     break;
 
@@ -238,6 +255,7 @@ internal sealed record RendererProfilerOptions
                     {
                         return Fail(out options, error);
                     }
+
                     break;
 
                 case "--height":
@@ -245,6 +263,7 @@ internal sealed record RendererProfilerOptions
                     {
                         return Fail(out options, error);
                     }
+
                     break;
 
                 default:

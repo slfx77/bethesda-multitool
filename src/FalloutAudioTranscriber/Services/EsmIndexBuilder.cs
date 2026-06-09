@@ -1,5 +1,5 @@
-using FalloutAudioTranscriber.Models;
 using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutAudioTranscriber.Models;
 
 namespace FalloutAudioTranscriber.Services;
 
